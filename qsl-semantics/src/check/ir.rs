@@ -22,6 +22,37 @@ use std::ops::ControlFlow;
 /// A local slot of one function frame or checked expression.
 pub type Slot = usize;
 
+/// The identity of a record field a checked read names (FR-359 item 2): the
+/// declaration key of the record the read is typed at, and the field's name
+/// there. It carries no position: the value read may be a child of that
+/// record, whose own fields are not a positional prefix of the record's, so
+/// the slot is found in the value's own declaration by this identity.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RecordField {
+    declaration: NodeKey,
+    name: String,
+}
+
+impl RecordField {
+    /// The field `name` of the record declared as `declaration`.
+    pub fn new(declaration: NodeKey, name: impl Into<String>) -> Self {
+        Self {
+            declaration,
+            name: name.into(),
+        }
+    }
+
+    /// The record the read is typed at.
+    pub fn declaration(&self) -> NodeKey {
+        self.declaration
+    }
+
+    /// The field's name in that record.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+}
+
 /// The state a model read in a state clause observes (FR-104
 /// "Observations of reads"): `current` in an invariant, `pre` in a
 /// precondition and `post` in a postcondition, except inside `pre(e)`,
@@ -683,7 +714,7 @@ pub enum NodeKind {
         /// The source operator.
         operator: IntegerDivisionOperator,
         /// The package's admitted law, absent only for `mod`.
-        selection: Option<crate::value::AdmittedIntegerDivision>,
+        selection: Option<crate::value::definition::AdmittedIntegerDivision>,
         /// The dividend.
         left: NodeId,
         /// The divisor.
@@ -746,8 +777,8 @@ pub enum NodeKind {
     Field {
         /// The record.
         operand: NodeId,
-        /// The field's declaration-order slot.
-        index: usize,
+        /// The field read, by identity (FR-359 item 2).
+        field: RecordField,
         /// Whether the field is optional.
         optional: bool,
     },

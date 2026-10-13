@@ -52,6 +52,7 @@ use crate::model::domain_package::{
 use crate::model::index::ModelIndex;
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
+use crate::model::refusal::{MemberPath, MemberRoot};
 use qsl_foundation::diagnostic::Code;
 
 /// FR-152's five disjoint systems-model kinds, plus `None` for a record
@@ -222,6 +223,7 @@ pub fn classify(
                 record_value_types.insert(record.key.clone());
             }
             DomainPackageRecord::EventType(_) => {}
+            DomainPackageRecord::Enum(_) | DomainPackageRecord::Variant(_) => {}
             DomainPackageRecord::StateMachine(_) => {}
             DomainPackageRecord::Process(_) => {}
             DomainPackageRecord::FieldMember(_)
@@ -301,7 +303,11 @@ pub fn classify(
             for (end, label) in record_ends {
                 refusals.push(ModelRefusal {
                     code: Code::InvalidModelBinding,
-                    cause: ModelRefusalCause::MalformedDeclaration,
+                    cause: crate::model::normalize::malformed_at(
+                        domain_package,
+                        &relationship.key,
+                        MemberPath::new(MemberRoot::Relationship).name(label),
+                    ),
                     detail: format!(
                         "{} end of {} names {}, a record value type",
                         label, relationship.key.node, end.type_identity.node

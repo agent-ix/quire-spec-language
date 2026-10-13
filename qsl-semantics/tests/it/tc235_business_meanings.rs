@@ -15,7 +15,7 @@ use qsl_semantics::model::intake::{
 };
 use qsl_semantics::model::key::{DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 use qsl_semantics::model::normalize::{
-    normalize_with_meter, ModelRefusal, ModelRefusalCause, NormalizeOutcome,
+    normalize_with_meter, MemberPath, ModelRefusal, ModelRefusalCause, NormalizeOutcome,
 };
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
@@ -23,6 +23,13 @@ use std::collections::{BTreeMap, BTreeSet};
 #[path = "../support/tc235_k2.rs"]
 mod tc235_k2;
 use tc235_k2::*;
+
+fn package_key(node: &str) -> DeclarationKey {
+    DeclarationKey {
+        package: PACKAGE.to_owned(),
+        node: id(node),
+    }
+}
 
 fn read_k2(document: &Value) -> Result<DomainPackage, Vec<ModelRefusal>> {
     let bytes = serde_json::to_vec(document).expect("K2 serializes");
@@ -564,19 +571,7 @@ fn read_refusals(document: &Value) -> Vec<ModelRefusal> {
     read_records(PACKAGE, &admitted).expect_err("mutation must refuse")
 }
 
-fn assert_malformed_refusal(document: &Value, detail: &str) {
-    let refusals = read_refusals(document);
-    assert_eq!(refusals.len(), 1, "one M08/M09 refusal: {refusals:?}");
-    assert_eq!(refusals[0].code, Code::InvalidModelBinding);
-    assert!(matches!(
-        refusals[0].cause,
-        ModelRefusalCause::IntakeMalformedDeclaration { .. }
-            | ModelRefusalCause::MalformedDeclaration
-    ));
-    assert!(refusals[0].detail.contains(detail), "{refusals:?}");
-}
-
-fn assert_normalized_malformed_refusal(document: &Value, detail: &str) {
+fn assert_normalized_malformed_refusal(document: &Value, declaration: &str) {
     let refusals = normalized_refusals(document, 21);
     assert_eq!(
         refusals.len(),
@@ -584,34 +579,95 @@ fn assert_normalized_malformed_refusal(document: &Value, detail: &str) {
         "one normalized M07 refusal: {refusals:?}"
     );
     assert_eq!(refusals[0].code, Code::InvalidModelBinding);
-    assert!(matches!(
-        refusals[0].cause,
-        ModelRefusalCause::IntakeMalformedDeclaration { .. }
-            | ModelRefusalCause::MalformedDeclaration
-    ));
-    assert!(refusals[0].detail.contains(detail), "{refusals:?}");
+    match &refusals[0].cause {
+        ModelRefusalCause::IntakeMalformedDeclaration { node, .. } => {
+            assert!(node.contains(declaration), "{refusals:?}");
+        }
+        ModelRefusalCause::MalformedDeclaration => {
+            assert!(refusals[0].detail.contains(declaration), "{refusals:?}");
+        }
+        other => panic!("expected a malformed declaration, got {other:?}"),
+    }
 }
 
-fn assert_unsupported_refusal(document: &Value, detail: &str) {
-    let refusals = read_refusals(document);
+/// The typed member path for the spec's spelling of it.
+fn member(path: &str) -> MemberPath {
+    path.parse().expect("the row's member path is well-formed")
+}
+
+/// The typed member paths of a `derivation-conflict`: each `(type, path)`
+/// is the spec's `<type>.<member>`, the redefining side first.
+fn assert_derivation_paths(refusal: &ModelRefusal, expected: &[(&str, &str)]) {
+    let ModelRefusalCause::DerivationConflict { paths, .. } = &refusal.cause else {
+        panic!("expected derivation-conflict, got {refusal:?}");
+    };
+    let expected: Vec<_> = expected
+        .iter()
+        .map(|(owner, path)| (id(owner), member(path)))
+        .collect();
+    let actual: Vec<_> = paths
+        .iter()
+        .map(|path| (path.owner.node.clone(), path.member.clone()))
+        .collect();
+    assert_eq!(actual, expected);
+}
+
+/// One typed `invalid_model_binding`/`malformed-declaration` naming `node`
+/// at member path `path`.
+fn assert_malformed_refusal(document: &Value, node: &str, path: &str, charges: usize) {
+    let refusals = normalized_refusals(document, charges);
     assert_eq!(refusals.len(), 1, "one M08/M09 refusal: {refusals:?}");
-    assert_eq!(refusals[0].code, Code::UnsupportedConstruct);
-    assert!(matches!(
-        refusals[0].cause,
-        ModelRefusalCause::UnsupportedDeclarationForm { .. }
-    ));
-    assert!(refusals[0].detail.contains(detail), "{refusals:?}");
+    assert_malformed_at(&refusals[0], &id(node), path);
 }
 
-fn assert_missing_refusal(document: &Value, detail: &str) {
-    let refusals = read_refusals(document);
+/// One typed `unsupported_construct`/`declaration-form` naming `node` at
+/// member path `path`.
+fn assert_unsupported_refusal(document: &Value, node: &str, path: &str, charges: usize) {
+    let refusals = normalized_refusals(document, charges);
+    assert_eq!(refusals.len(), 1, "one M08/M09 refusal: {refusals:?}");
+    assert_unsupported_at(&refusals[0], &id(node), path);
+}
+
+fn assert_unsupported_at(refusal: &ModelRefusal, node: &str, path: &str) {
+    assert_eq!(refusal.code, Code::UnsupportedConstruct);
+    assert_eq!(refusal.cause.as_str(), "declaration-form");
+    let ModelRefusalCause::UnsupportedDeclarationForm {
+        node: actual,
+        member: actual_member,
+        ..
+    } = &refusal.cause
+    else {
+        panic!("expected declaration-form, got {refusal:?}");
+    };
+    assert_eq!(actual, node);
+    assert_eq!(actual_member, &member(path));
+}
+
+/// One typed `missing_declaration`/`missing-name` on `node` whose reader
+/// pointer is `path` and whose absent declaration is `reference`.
+fn assert_missing_refusal(
+    document: &Value,
+    node: &str,
+    path: &str,
+    reference: &str,
+    charges: usize,
+) {
+    let refusals = normalized_refusals(document, charges);
     assert_eq!(refusals.len(), 1, "one M08/M09 refusal: {refusals:?}");
     assert_eq!(refusals[0].code, Code::MissingDeclaration);
-    assert!(matches!(
-        refusals[0].cause,
-        ModelRefusalCause::UnknownMember { .. }
-    ));
-    assert!(refusals[0].detail.contains(detail), "{refusals:?}");
+    assert_eq!(refusals[0].cause.as_str(), "missing-name");
+    let ModelRefusalCause::IntakeMissingDeclaration {
+        node: actual,
+        reference: absent,
+        path: actual_path,
+        ..
+    } = &refusals[0].cause
+    else {
+        panic!("expected intake missing-name, got {refusals:?}");
+    };
+    assert_eq!(actual, &id(node));
+    assert_eq!(absent, &id(reference));
+    assert_eq!(actual_path.as_str(), path);
 }
 
 fn assert_process_duplicate_step_refusal(document: &Value) {
@@ -622,18 +678,18 @@ fn assert_process_duplicate_step_refusal(document: &Value) {
         "one process duplicate refusal: {refusals:?}"
     );
     assert_eq!(refusals[0].code, Code::InvalidModelBinding);
-    let ModelRefusalCause::ConflictingBinding { key } = &refusals[0].cause else {
+    let ModelRefusalCause::ConflictingBinding {
+        key,
+        member: actual,
+    } = &refusals[0].cause
+    else {
         panic!(
             "expected conflicting process step, got {:?}",
             refusals[0].cause
         );
     };
-    assert_eq!(key.node, id("Fulfilment/reserve_stock"));
-    assert!(refusals[0].detail.contains("steps[3]"), "{refusals:?}");
-    assert!(
-        refusals[0].detail.contains("/types/5/steps/3/identity"),
-        "duplicate step pointer missing: {refusals:?}"
-    );
+    assert_eq!(key.node, id("Fulfilment"));
+    assert_eq!(actual.as_ref(), Some(&member("TypeDefinition.steps[3]")));
 }
 
 fn assert_process_non_event_refusal(document: &Value) {
@@ -644,16 +700,10 @@ fn assert_process_non_event_refusal(document: &Value) {
         "one process non-event refusal: {refusals:?}"
     );
     assert_eq!(refusals[0].code, Code::InvalidModelBinding);
-    let ModelRefusalCause::IntakeMalformedDeclaration { node, .. } = &refusals[0].cause else {
-        panic!(
-            "expected malformed process event binding, got {:?}",
-            refusals[0].cause
-        );
-    };
-    assert_eq!(node, &id("Fulfilment/reserve_stock"));
-    assert!(
-        refusals[0].detail.contains("steps[1].emits[0]"),
-        "reader locus missing from refusal: {refusals:?}"
+    assert_malformed_at(
+        &refusals[0],
+        &id("Fulfilment"),
+        "TypeDefinition.steps[1].emits[0]",
     );
 }
 
@@ -676,10 +726,6 @@ fn assert_process_missing_event_refusal(document: &Value, reference: &str) {
     assert_eq!(node, &id("Fulfilment"));
     assert_eq!(actual, &id(reference));
     assert_eq!(path.as_str(), "/types/5/steps/1/emits/0");
-    assert!(
-        refusals[0].detail.contains("steps[1].emits[0]"),
-        "{refusals:?}"
-    );
 }
 
 fn assert_record_charge_count(meter: &Meter, expected: usize) {
@@ -710,6 +756,13 @@ fn record_charges(
 /// exactly 21 `normalize.record` charges. Instant uses FCD's native Timestamp
 /// alias form, Money uses the canonical native Integer name, and the state
 /// transition guard names the declared clauseId.
+///
+/// Mutation used (derived by reading `normalize` in `model/normalize.rs`,
+/// not executed): shortening the `0..declared_record_count` charge loop by one
+/// flips the `normalize.record` count assertion from 21 to 20. Dropping the
+/// `intake` reader for any one meaning removes that record, which flips the
+/// `package.records.len() == 21` assertion and the matching payload
+/// assertion (states, transitions, steps, `persists`, namespace members).
 #[test]
 fn tc235_m01_literal_k2_is_admitted_as_declared() {
     let document = k2();
@@ -731,6 +784,195 @@ fn tc235_m01_literal_k2_is_admitted_as_declared() {
     let package = read_domain_package(selection, &admitted)
         .expect("TC-235 K2 must reach the semantic model reader");
     assert_eq!(package.records.len(), 21, "K2's declared source count");
+    let record = |node: &str| {
+        package
+            .records
+            .iter()
+            .find(|record| record.key() == &package_key(node))
+            .unwrap_or_else(|| panic!("M01 retains source record {node}"))
+    };
+
+    let DomainPackageRecord::RecordValueType(money) = record("Money") else {
+        panic!("M01 Money has record-value-type meaning");
+    };
+    assert!(money.identity_fields.is_empty());
+
+    let DomainPackageRecord::EventType(event) = record("OrderPlaced") else {
+        panic!("M01 OrderPlaced has event-type meaning");
+    };
+    assert_eq!(
+        event.occurrence_field,
+        Some(package_key("OrderPlaced/occurred_at"))
+    );
+    let DomainPackageRecord::FieldMember(occurrence) = record("OrderPlaced/occurred_at") else {
+        panic!("M01 event occurrence remains an authored field");
+    };
+    assert_eq!(occurrence.value_type.to_string(), id("Instant"));
+    let DomainPackageRecord::ScalarType(instant) = record("Instant") else {
+        panic!("M01 Instant remains a scalar alias");
+    };
+    assert_eq!(
+        instant.domain,
+        qsl_semantics::model::domain_package::ScalarValueDomain::Native(
+            qsl_semantics::model::domain_package::NativeValueType::Timestamp,
+        ),
+    );
+
+    let DomainPackageRecord::StateMachine(machine) = record("OrderLifecycle") else {
+        panic!("M01 OrderLifecycle has state-machine meaning");
+    };
+    assert_eq!(
+        machine
+            .states
+            .iter()
+            .map(|state| state.name.as_str())
+            .collect::<Vec<_>>(),
+        ["Draft", "Placed", "Cancelled"],
+    );
+    assert_eq!(
+        machine
+            .transitions
+            .iter()
+            .map(|transition| transition.key.node.as_str())
+            .collect::<Vec<_>>(),
+        [
+            id("OrderLifecycle/transition0"),
+            id("OrderLifecycle/transition1"),
+            id("OrderLifecycle/transition2")
+        ],
+    );
+    assert_eq!(
+        machine.transitions[0].from,
+        package_key("OrderLifecycle/Draft")
+    );
+    assert_eq!(
+        machine.transitions[0].to,
+        package_key("OrderLifecycle/Placed")
+    );
+    assert_eq!(
+        machine.transitions[0].trigger,
+        package_key("OrderLifecycle/place")
+    );
+    assert_eq!(
+        machine.transitions[0].guard.as_deref(),
+        Some("NotYetPlaced")
+    );
+    assert_eq!(machine.transitions[0].emits, [package_key("OrderPlaced")]);
+    for (index, from, to) in [(1, "Draft", "Cancelled"), (2, "Placed", "Cancelled")] {
+        let transition = &machine.transitions[index];
+        assert_eq!(
+            transition.from,
+            package_key(&format!("OrderLifecycle/{from}"))
+        );
+        assert_eq!(transition.to, package_key(&format!("OrderLifecycle/{to}")));
+        assert_eq!(transition.trigger, package_key("OrderLifecycle/cancel"));
+        assert!(transition.emits.is_empty());
+        assert_eq!(transition.guard, None);
+    }
+    // A machine's invariants are its owned `quire` clauses that no
+    // transition names as a guard; `NotYetPlaced` is the guard of `[0]`, so
+    // K2's `OrderLifecycle` has none.
+    let guards: Vec<_> = machine
+        .transitions
+        .iter()
+        .filter_map(|transition| transition.guard.as_deref())
+        .map(|guard| id(&format!("OrderLifecycle/{guard}")))
+        .collect();
+    let invariants: Vec<_> = package
+        .records
+        .iter()
+        .filter_map(|record| match record {
+            DomainPackageRecord::Clause(clause)
+                if clause.owner == machine.key
+                    && clause.language == "quire"
+                    && !guards.contains(&clause.key.node) =>
+            {
+                Some(clause.key.node.clone())
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(guards, [id("OrderLifecycle/NotYetPlaced")]);
+    assert!(invariants.is_empty(), "NotYetPlaced is no invariant");
+    assert!(machine
+        .transitions
+        .iter()
+        .all(|transition| transition.path.starts_with("/types/")));
+
+    let DomainPackageRecord::Process(process) = record("Fulfilment") else {
+        panic!("M01 Fulfilment has process meaning");
+    };
+    assert_eq!(
+        process.identity_fields,
+        [package_key("Fulfilment/correlation_id")]
+    );
+    assert_eq!(
+        process
+            .steps
+            .iter()
+            .map(|step| step.name.as_str())
+            .collect::<Vec<_>>(),
+        ["receive_order", "reserve_stock", "await_shipment"],
+    );
+    assert_eq!(process.steps[0].consumes, [package_key("OrderPlaced")]);
+    assert_eq!(
+        process
+            .steps
+            .iter()
+            .map(|step| step.step_kind)
+            .collect::<Vec<_>>(),
+        [
+            qsl_semantics::model::domain_package::ProcessStepKind::Event,
+            qsl_semantics::model::domain_package::ProcessStepKind::Command,
+            qsl_semantics::model::domain_package::ProcessStepKind::Wait,
+        ],
+    );
+    assert!(process.steps.iter().all(|step| step.emits.is_empty()));
+
+    let DomainPackageRecord::PersistenceInterface(storage) = record("OrderStore") else {
+        panic!("M01 OrderStore has persistence-interface meaning");
+    };
+    assert_eq!(storage.persists, [package_key("Order")]);
+    let operations = package
+        .records
+        .iter()
+        .filter_map(|record| match record {
+            DomainPackageRecord::OperationMember(operation)
+                if operation.owner == package_key("OrderStore") =>
+            {
+                Some(operation.key.clone())
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        operations,
+        [
+            package_key("OrderStore/get"),
+            package_key("OrderStore/save")
+        ]
+    );
+
+    let DomainPackageRecord::Namespace(namespace) = record("OrderManagement") else {
+        panic!("M01 OrderManagement has namespace meaning");
+    };
+    assert_eq!(
+        namespace.members,
+        [
+            package_key("Order"),
+            package_key("Money"),
+            package_key("OrderPlaced")
+        ],
+    );
+    assert_eq!(
+        namespace
+            .vocabulary
+            .iter()
+            .map(|term| term.term.as_str())
+            .collect::<Vec<_>>(),
+        ["Place"],
+    );
+
     let mut keys: Vec<DeclarationKey> = package
         .records
         .iter()
@@ -792,6 +1034,12 @@ fn tc235_m01_literal_k2_is_admitted_as_declared() {
             package: PACKAGE.to_owned(),
             node: id("Money"),
         }));
+    assert!(view
+        .type_identities()
+        .contains_key(&package_key("OrderPlaced")));
+    assert!(view
+        .type_identities()
+        .contains_key(&package_key("OrderLifecycle")));
     let process = qsl_semantics::model::key::DeclarationKey {
         package: PACKAGE.to_owned(),
         node: id("Fulfilment"),
@@ -826,6 +1074,15 @@ fn tc235_m01_literal_k2_is_admitted_as_declared() {
 
 /// M03: record-value meanings reject identity and operations, while retaining
 /// both native `quire` invariants and foreign-language clauses as originals.
+///
+/// Mutation used (derived by reading `model/normalize.rs` and, for run 3 and
+/// run 4, `read_clauses` in `model/intake.rs`; not executed), one per run: run
+/// 1, removing the `identity_fields` refusal for a record value type flips `NormalizeOutcome::Refused` to `Completed`, failing the
+/// `let ... else` before the code/locus asserts; run 2, skipping the
+/// `declared_operations` refusal loop does the same for the 22-charge
+/// operation run; run 3, dropping the clause record from `read_clauses` fails
+/// the `package.original(&invariant_key).is_some()` assertion; run 4,
+/// rewriting the clause language fails `assert_eq!(foreign.language, "ocl")`.
 #[test]
 fn tc235_m03_record_shape_and_clause_meanings() {
     let identity_document = mutate_k2(|document| {
@@ -839,11 +1096,7 @@ fn tc235_m03_record_shape_and_clause_meanings() {
     };
     assert_eq!(refusals.len(), 1);
     assert_eq!(refusals[0].code, Code::InvalidModelBinding);
-    let ModelRefusalCause::IntakeMalformedDeclaration { node, .. } = &refusals[0].cause else {
-        panic!("M03 run 1 cause differs: {:?}", refusals[0].cause);
-    };
-    assert_eq!(node, &id("Money"));
-    assert!(refusals[0].detail.contains("identityFields"));
+    assert_malformed_at(&refusals[0], &id("Money"), "TypeDefinition.identityFields");
 
     let operation_document = mutate_k2(|document| {
         type_named_mut(document, "Money")["operations"] = json!([operation("Money", "add")]);
@@ -856,15 +1109,15 @@ fn tc235_m03_record_shape_and_clause_meanings() {
     };
     assert_eq!(refusals.len(), 1);
     assert_eq!(refusals[0].code, Code::UnsupportedConstruct);
-    let ModelRefusalCause::UnsupportedDeclarationForm { node, what } = &refusals[0].cause else {
-        panic!(
-            "M03 run 2 must be declaration-form, got {:?}",
-            refusals[0].cause
-        );
+    assert_unsupported_at(
+        &refusals[0],
+        &id("Money/add"),
+        "TypeDefinition.operations[0]",
+    );
+    let ModelRefusalCause::UnsupportedDeclarationForm { what, .. } = &refusals[0].cause else {
+        panic!("M03 run 2 must be declaration-form");
     };
-    assert_eq!(node, &id("Money/add"));
     assert_eq!(what, &format!("{}:operations", meaning::RECORD_VALUE_TYPE));
-    assert!(refusals[0].detail.contains("operations[0]"));
 
     let invariant_document = mutate_k2(|document| {
         type_named_mut(document, "Money")["clauses"] =
@@ -1110,7 +1363,6 @@ fn tc235_taxed_money_assembly_resolves_composite_name_and_inherited_fields() {
 
 #[trace("FR-056-AC-18", "TC-235")]
 #[test]
-#[ignore = "requires PR #781 to map K2 Money.currency's native String field"]
 fn tc235_k2_money_and_order_placed_composites_require_qsl_781() {
     let document = k2();
     let assembled = assemble_k2_unit(
@@ -1133,10 +1385,27 @@ fn tc235_k2_money_and_order_placed_composites_require_qsl_781() {
         .any(|declaration| declaration.name() == "M::OrderPlaced"));
 }
 
+/// The Money / TaxedMoney record slice of K2, alone.
+fn money_slice_document() -> Value {
+    let mut document = k2_record_event_subtype_slice(true);
+    // Only the record slice is under test: the rest of K2 does not check
+    // today because of the String/Uuid/Timestamp lowering arm that PR #789
+    // replaces.
+    let kept = ["Money", "TaxedMoney"];
+    document["types"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|ty| kept.iter().any(|name| ty["identity"] == id(name)));
+    document["constructs"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|construct| construct["construct"]["meaning"] == meaning::RECORD_VALUE_TYPE);
+    document
+}
+
 #[trace("FR-056-AC-18", "TC-235")]
 #[test]
-#[ignore = "requires QSL-732 composite ancestor conformance in the pinned kernel"]
-fn tc235_record_subtype_value_conforms_to_parent_typed_parameter_requires_qsl_732() {
+fn tc235_record_subtype_value_conforms_to_parent_typed_parameter() {
     let document = k2_record_event_subtype_slice(true);
     let declarations = assemble_k2_unit(
         &document,
@@ -1146,6 +1415,27 @@ fn tc235_record_subtype_value_conforms_to_parent_typed_parameter_requires_qsl_73
     assert!(declarations
         .check(quire_semantic_value::checking::CheckingLimits::default())
         .is_ok());
+}
+
+/// A parent value is refused at a child-typed parameter at check time.
+#[trace("FR-056-AC-18", "TC-235")]
+#[test]
+fn tc235_record_parent_value_is_refused_at_child_typed_parameter() {
+    let declarations = assemble_k2_unit(
+        &money_slice_document(),
+        "function needsTaxed using v(money: M::TaxedMoney): Integer pure { 0 }\n\
+         function plainTotal using v(money: M::Money): Integer pure { needsTaxed(money) }",
+    );
+    let refusals = declarations
+        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .expect_err("a parent value does not conform to its child");
+    assert!(
+        refusals.iter().all(|refusal| refusal.cause
+            == qsl_semantics::check::CheckCause::IllTyped(
+                quire_exact::IllTypedCause::TypeMismatch
+            )),
+        "{refusals:?}"
+    );
 }
 
 /// M07: processes retain their run identity and ordered event steps, while
@@ -1278,43 +1568,85 @@ fn tc235_m08_persistence_interface_binder() {
             package: PACKAGE.to_owned(),
             node: id("Order")
         }));
-    assert!(!view
-        .type_identities()
-        .contains_key(&qsl_semantics::model::key::DeclarationKey {
-            package: PACKAGE.to_owned(),
-            node: id("OrderStore")
-        }));
+    // M01: `persists: [Order]`.
+    assert!(package.records.iter().any(|record| matches!(
+        record,
+        DomainPackageRecord::PersistenceInterface(interface)
+            if interface.key.node == id("OrderStore")
+                && interface.persists.iter().map(|key| key.node.clone()).eq([id("Order")])
+    )));
+    // FR-322-AC-25: a persistence interface is a declaring `model` node for
+    // its operations, so it has an effective identity; it has no object
+    // universe (FR-208: only a process does).
+    let store = qsl_semantics::model::key::DeclarationKey {
+        package: PACKAGE.to_owned(),
+        node: id("OrderStore"),
+    };
+    assert!(view.type_identities().contains_key(&store));
+    assert!(view.object_universe_of(&store).is_none());
 
     let mut document = k2();
     type_named_mut(&mut document, "OrderStore")["fields"] =
         json!([field("OrderStore", "cache", &id("Order"))]);
-    assert_malformed_refusal(&document, "OrderStore/cache");
+    assert_malformed_refusal(
+        &document,
+        "OrderStore/cache",
+        "TypeDefinition.fields[0]",
+        22,
+    );
 
     let mut document = k2();
     type_named_mut(&mut document, "OrderStore")["operations"] = json!([]);
-    assert_malformed_refusal(&document, "OrderStore");
+    assert_malformed_refusal(&document, "OrderStore", "TypeDefinition.operations", 19);
 
     let mut document = k2();
     type_named_mut(&mut document, "OrderStore")["persists"] = json!([]);
-    assert_malformed_refusal(&document, "persists");
+    assert_malformed_refusal(&document, "OrderStore", "TypeDefinition.persists", 21);
 
     let mut document = k2();
     type_named_mut(&mut document, "OrderStore")["persists"] = json!([id("Money")]);
-    assert_malformed_refusal(&document, "persists[0]");
+    assert_malformed_refusal(&document, "OrderStore", "TypeDefinition.persists[0]", 21);
 
     let mut document = k2();
     type_named_mut(&mut document, "OrderStore")["persists"] = json!([id("Invoice")]);
-    assert_missing_refusal(&document, "Invoice");
+    assert_missing_refusal(
+        &document,
+        "OrderStore",
+        "/types/6/persists/0",
+        "Invoice",
+        21,
+    );
 
     let mut document = k2();
-    type_named_mut(&mut document, "OrderStore")["operations"][1]["pre"] =
-        json!([{"language": "ix:native", "clauseId": "Requires"}]);
-    assert_unsupported_refusal(&document, "OrderStore/save");
+    type_named_mut(&mut document, "OrderStore")["operations"][1]["pre"] = json!([{
+        "language": "quire",
+        "text": "true",
+        "origin": origin("OrderStore/save"),
+    }]);
+    assert_unsupported_refusal(&document, "OrderStore/save", "Operation.pre", 21);
 
     let mut document = k2();
     type_named_mut(&mut document, "OrderStore")["clauses"] =
         json!([clause("OrderStore", "Healthy", "true")]);
-    assert_unsupported_refusal(&document, "OrderStore/Healthy");
+    assert_unsupported_refusal(
+        &document,
+        "OrderStore/Healthy",
+        "TypeDefinition.clauses[0]",
+        22,
+    );
+
+    // A refused clause names its own position, not the first.
+    let mut document = k2();
+    let mut foreign = clause("OrderStore", "Foreign", "true");
+    foreign["language"] = json!("ocl");
+    type_named_mut(&mut document, "OrderStore")["clauses"] =
+        json!([foreign, clause("OrderStore", "Healthy", "true")]);
+    assert_unsupported_refusal(
+        &document,
+        "OrderStore/Healthy",
+        "TypeDefinition.clauses[1]",
+        23,
+    );
 }
 
 /// M09: namespaces preserve their ordered payload, never become effective
@@ -1331,6 +1663,30 @@ fn tc235_m09_namespace_binder() {
         })
         .expect("OrderManagement original");
     assert_eq!(namespace.meaning.as_deref(), Some(meaning::NAMESPACE));
+    assert_eq!(namespace.origin, origin("OrderManagement"));
+    // M01: members `[Order, Money, OrderPlaced]`, vocabulary `[Place]`.
+    let key = |name: &str| qsl_semantics::model::key::DeclarationKey {
+        package: PACKAGE.to_owned(),
+        node: id(name),
+    };
+    let record = package
+        .records
+        .iter()
+        .find_map(|record| match record {
+            DomainPackageRecord::Namespace(namespace)
+                if namespace.key == key("OrderManagement") =>
+            {
+                Some(namespace)
+            }
+            _ => None,
+        })
+        .expect("OrderManagement retains its namespace record");
+    assert_eq!(
+        record.members,
+        [key("Order"), key("Money"), key("OrderPlaced")]
+    );
+    assert_eq!(record.vocabulary.len(), 1);
+    assert_eq!(record.vocabulary[0].term, "Place");
     let view = record_charges(&package, 21);
     assert!(!view
         .type_identities()
@@ -1341,12 +1697,22 @@ fn tc235_m09_namespace_binder() {
 
     type_named_mut(&mut document, "OrderManagement")["fields"] =
         json!([field("OrderManagement", "name", "ix://quire/native/String")]);
-    assert_malformed_refusal(&document, "OrderManagement/name");
+    assert_malformed_refusal(
+        &document,
+        "OrderManagement/name",
+        "TypeDefinition.fields[0]",
+        22,
+    );
 
     let mut document = k2();
     type_named_mut(&mut document, "OrderManagement")["operations"] =
         json!([operation("OrderManagement", "close")]);
-    assert_malformed_refusal(&document, "OrderManagement/close");
+    assert_malformed_refusal(
+        &document,
+        "OrderManagement/close",
+        "TypeDefinition.operations[0]",
+        22,
+    );
 
     let mut document = k2();
     document["types"].as_array_mut().unwrap().push(declaration(
@@ -1357,7 +1723,12 @@ fn tc235_m09_namespace_binder() {
             "vocabulary": [{"term": "Bill", "doc": "Bill an order", "origin": origin("Billing")}],
         }),
     ));
-    assert_malformed_refusal(&document, "Billing");
+    assert_malformed_refusal(
+        &document,
+        "OrderManagement",
+        "TypeDefinition.members[0]",
+        22,
+    );
 
     let mut document = k2();
     document["types"].as_array_mut().unwrap().push(declaration(
@@ -1368,17 +1739,50 @@ fn tc235_m09_namespace_binder() {
             "vocabulary": [{"term": "Scope", "doc": "An outer scope", "origin": origin("Outer")}],
         }),
     ));
-    assert_malformed_refusal(&document, "Outer");
+    assert_malformed_refusal(&document, "Outer", "TypeDefinition.members[0]", 22);
 
     let mut document = k2();
     type_named_mut(&mut document, "OrderManagement")["members"] =
         json!([id("Order"), id("Money"), id("OrderPlaced"), id("Ghost")]);
-    assert_missing_refusal(&document, "Ghost");
+    assert_missing_refusal(
+        &document,
+        "OrderManagement",
+        "/types/7/members/3",
+        "Ghost",
+        21,
+    );
 
     let mut document = k2();
     type_named_mut(&mut document, "OrderManagement")["clauses"] =
         json!([clause("OrderManagement", "Scoped", "true")]);
-    assert_unsupported_refusal(&document, "OrderManagement/Scoped");
+    assert_unsupported_refusal(
+        &document,
+        "OrderManagement/Scoped",
+        "TypeDefinition.clauses[0]",
+        22,
+    );
+}
+
+/// A foreign-package or native identity in `persists` or `members` is not a
+/// missing name of this package: the foreign/native guard still applies.
+#[test]
+fn foreign_identity_in_persists_and_members_is_not_a_missing_name() {
+    for foreign in ["ix://other/pkg/Thing", "ix://quire/native/Integer"] {
+        let mut persists = k2();
+        type_named_mut(&mut persists, "OrderStore")["persists"] = json!([foreign]);
+        let mut members = k2();
+        type_named_mut(&mut members, "OrderManagement")["members"] = json!([foreign]);
+        for document in [persists, members] {
+            let refusals = read_refusals(&document);
+            assert!(!refusals.is_empty());
+            assert!(
+                refusals
+                    .iter()
+                    .all(|refusal| refusal.code != Code::MissingDeclaration),
+                "{foreign}: {refusals:?}"
+            );
+        }
+    }
 }
 
 fn normalized_refusals(document: &Value, expected_charges: usize) -> Vec<ModelRefusal> {
@@ -1394,22 +1798,37 @@ fn normalized_refusals(document: &Value, expected_charges: usize) -> Vec<ModelRe
 fn assert_malformed_at(refusal: &ModelRefusal, node: &str, path: &str) {
     assert_eq!(refusal.code, Code::InvalidModelBinding);
     assert_eq!(refusal.cause.as_str(), "malformed-declaration");
-    let ModelRefusalCause::IntakeMalformedDeclaration { node: actual, .. } = &refusal.cause else {
+    let ModelRefusalCause::IntakeMalformedDeclaration {
+        node: actual,
+        member: actual_member,
+        ..
+    } = &refusal.cause
+    else {
         panic!(
             "expected the typed intake malformed-declaration, got {:?}",
             refusal.cause
         );
     };
     assert_eq!(actual, node);
-    assert!(
-        refusal.detail.contains(path),
-        "{}: {}",
-        refusal.detail,
-        path
-    );
+    assert_eq!(actual_member, &member(path));
 }
 
 /// M04: event-type identity, occurrence field, operation, and Timestamp rules.
+///
+/// Run 3 (`missing_declaration`/`missing-name`) asserts the typed
+/// `IntakeMissingDeclaration` cause: referring node, absent node, origin and
+/// the reader's document pointer. That cause carries no member-path field, so
+/// `TypeDefinition.occurrenceField` is not asserted as a string there; the
+/// pointer `/types/3/occurrenceField` is the typed locus the engine reports.
+///
+/// Mutation used (derived by reading `model/normalize.rs`, not executed), one
+/// per run: run 1, removing the event `identity_fields` refusal leaves no
+/// refusal, so the `Refused` let-else inside `normalized_refusals` panics
+/// before `refusals.len() == 1`; run 2 and run 5, removing the `timestamp` check
+/// flips the occurrence-field refusal to admission; run 3, removing the
+/// reader's missing-name mapping in `intake.rs` flips the code to
+/// `InvalidModelBinding`; run 4, removing the `declared_operations` loop
+/// for events flips the 22-charge refusal to admission.
 #[test]
 fn tc235_m04_event_type_refusal_vectors() {
     let identity_document = mutate_k2(|document| {
@@ -1439,7 +1858,7 @@ fn tc235_m04_event_type_refusal_vectors() {
     let absent_occurrence_document = mutate_k2(|document| {
         type_named_mut(document, "OrderPlaced")["occurrenceField"] = json!(id("OrderPlaced/at"));
     });
-    let refusals = read_refusals(&absent_occurrence_document);
+    let refusals = normalized_refusals(&absent_occurrence_document, 21);
     assert_eq!(refusals.len(), 1);
     assert_eq!(refusals[0].code, Code::MissingDeclaration);
     assert_eq!(refusals[0].cause.as_str(), "missing-name");
@@ -1481,6 +1900,15 @@ fn tc235_m04_event_type_refusal_vectors() {
 
 /// M18: event subtypes preserve the inherited occurrence field and reject a
 /// conflicting occurrence field or an ancestor of another business meaning.
+///
+/// Mutation used (derived by reading `model/normalize.rs`, not executed): run
+/// 2, removing the `child != parent` `DerivationConflict` branch leaves no
+/// refusal, so the `Refused` let-else inside `normalized_refusals` panics; run 3, removing the non-event-ancestor
+/// branch leaves no refusal, so the `Refused` let-else inside
+/// `normalized_refusals` panics before the two ordered `assert_malformed_at`
+/// loci. Run 1 asserts the
+/// inherited effective members, so dropping event supertype assembly fails
+/// the `effective_members` equality.
 #[test]
 fn tc235_m18_event_type_specialization_vectors() {
     let positive_document = mutate_k2(|document| {
@@ -1568,10 +1996,13 @@ fn tc235_m18_event_type_specialization_vectors() {
     assert_eq!(refusals.len(), 1);
     assert_eq!(refusals[0].code, Code::InvalidModelBinding);
     assert_eq!(refusals[0].cause.as_str(), "derivation-conflict");
-    assert!(refusals[0]
-        .detail
-        .contains("ExpressOrderPlaced.occurrenceField"));
-    assert!(refusals[0].detail.contains("OrderPlaced.occurrenceField"));
+    assert_derivation_paths(
+        &refusals[0],
+        &[
+            ("ExpressOrderPlaced", "TypeDefinition.occurrenceField"),
+            ("OrderPlaced", "TypeDefinition.occurrenceField"),
+        ],
+    );
 
     let wrong_general_document = mutate_k2(|document| {
         document["types"].as_array_mut().unwrap().push(declaration(
@@ -1607,3 +2038,6 @@ mod tc235_state_machine;
 
 #[path = "tc235_record_event.rs"]
 mod tc235_record_event;
+
+#[path = "tc235_origin_retained.rs"]
+mod tc235_origin_retained;

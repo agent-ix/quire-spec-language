@@ -126,6 +126,7 @@ fn relationship(
 ) -> DomainPackageRecord {
     DomainPackageRecord::Relationship(RelationshipRecord {
         key: DeclarationKey::fixture(identity),
+        declared_at: None,
         source: RelationshipEnd {
             type_identity: DeclarationKey::fixture(source),
             role: None,
@@ -155,6 +156,8 @@ fn operation_run() -> DomainPackageRecord {
         parameters: vec![],
         result: None,
         effect: OperationEffect::default(),
+        requires: Vec::new(),
+        ensures: Vec::new(),
         own_postcondition_clauses: vec![],
         has_body: true,
         redefines: None,
@@ -299,7 +302,7 @@ fn find_component<'a>(
 /// FR-208-AC-9: a relationship end naming a record value type refuses
 /// `invalid_model_binding`/`malformed-declaration`, not as a dangling end:
 /// the end names a declared type of the wrong meaning.
-#[trace("QSpec-TC-197")]
+#[trace("QSpec-TC-197", "TC-997", "FR-056-AC-32")]
 #[test]
 fn a_relationship_end_naming_a_record_value_type_refuses_malformed() {
     let domain_package = fixture_y(|records| {
@@ -324,13 +327,68 @@ fn a_relationship_end_naming_a_record_value_type_refuses_malformed() {
     let refusals: Vec<_> = classification
         .refusals
         .iter()
-        .filter(|refusal| refusal.detail.contains("model.Sys.owes"))
+        .filter(|refusal| {
+            matches!(&refusal.cause, ModelRefusalCause::IntakeMalformedDeclaration { node, .. }
+                if node == "model.Sys.owes")
+        })
         .collect();
     assert_eq!(refusals.len(), 1, "{:?}", classification.refusals);
     assert_eq!(refusals[0].code, Code::InvalidModelBinding);
-    assert_eq!(refusals[0].cause, ModelRefusalCause::MalformedDeclaration);
-    assert!(refusals[0].detail.contains("target end"));
-    assert!(refusals[0].detail.contains("model.Money"));
+    assert_eq!(
+        refusals[0].cause,
+        ModelRefusalCause::IntakeMalformedDeclaration {
+            node: "model.Sys.owes".to_owned(),
+            artifact: None,
+            span: None,
+            member: "Relationship.target".parse().unwrap(),
+        }
+    );
+}
+
+/// FR-208-AC-9: a relationship source end naming a record value type refuses
+/// `invalid_model_binding`/`malformed-declaration`, not as a dangling end:
+/// the end names a declared type of the wrong meaning.
+#[trace("QSpec-TC-197", "TC-997", "FR-056-AC-32")]
+#[test]
+fn a_relationship_source_end_naming_a_record_value_type_refuses_malformed() {
+    let domain_package = fixture_y(|records| {
+        records.push(DomainPackageRecord::RecordValueType(
+            qsl_semantics::model::domain_package::RecordValueTypeRecord {
+                key: DeclarationKey::fixture("model.Money"),
+                identity_fields: Vec::new(),
+                supertypes: Vec::new(),
+            },
+        ));
+        records.push(relationship(
+            "model.Sys.owes",
+            "model.Money",
+            one(),
+            "model.Sys",
+            one(),
+            RelationshipDirection::SourceToTarget,
+        ));
+    });
+    let classification =
+        classify(&domain_package, &mut unlimited_meter()).expect("classify completes");
+    let refusals: Vec<_> = classification
+        .refusals
+        .iter()
+        .filter(|refusal| {
+            matches!(&refusal.cause, ModelRefusalCause::IntakeMalformedDeclaration { node, .. }
+                if node == "model.Sys.owes")
+        })
+        .collect();
+    assert_eq!(refusals.len(), 1, "{:?}", classification.refusals);
+    assert_eq!(refusals[0].code, Code::InvalidModelBinding);
+    assert_eq!(
+        refusals[0].cause,
+        ModelRefusalCause::IntakeMalformedDeclaration {
+            node: "model.Sys.owes".to_owned(),
+            artifact: None,
+            span: None,
+            member: "Relationship.source".parse().unwrap(),
+        }
+    );
 }
 
 #[trace("TC-235", "FR-086-AC-3")]
@@ -431,11 +489,13 @@ fn systems_members_have_effective_owner_entries() {
     }
 }
 
-/// A subtype inherits every systems member from its composite ancestor. The
-/// role-less connection has two same-owner qualify facts, and inheritance adds
-/// exactly one ordered fact after that duplicate pair. This also exercises the
-/// repeated same-owner path control: dropping the ancestor member grouping or
-/// retaining only one connection end makes this assertion fail.
+/// A subtype inherits every systems member from its composite ancestor. An
+/// inherited member carries one inherit fact per ancestor path and no qualify
+/// fact (TC-195 N01), even for the role-less connection whose owner holds two
+/// same-owner qualify facts. This also exercises the repeated same-owner
+/// path control: dropping the ancestor member grouping makes the inherit
+/// fact assertions fail. The fact-boundary assertion below stops before any
+/// inherited fact is charged and does not catch that mutation.
 #[trace("TC-213", "QSpec-TC-197", "QSpec-FR-150-AC-1")]
 #[test]
 fn systems_members_inherit_with_ordered_duplicate_end_facts() {
@@ -447,13 +507,8 @@ fn systems_members_inherit_with_ordered_duplicate_end_facts() {
     for (member, expected_rules, expected_inputs) in [
         (
             "model.Sys.pump",
+            vec![RULE_INHERIT.identity, RULE_INHERIT.identity],
             vec![
-                RULE_QUALIFY.identity,
-                RULE_INHERIT.identity,
-                RULE_INHERIT.identity,
-            ],
-            vec![
-                vec![DeclarationKey::fixture("model.Sys.pump")],
                 vec![
                     DeclarationKey::fixture("model.Sys"),
                     DeclarationKey::fixture("model.Sys.pump"),
@@ -467,15 +522,8 @@ fn systems_members_inherit_with_ordered_duplicate_end_facts() {
         ),
         (
             "model.Sys.pipe",
+            vec![RULE_INHERIT.identity, RULE_INHERIT.identity],
             vec![
-                RULE_QUALIFY.identity,
-                RULE_QUALIFY.identity,
-                RULE_INHERIT.identity,
-                RULE_INHERIT.identity,
-            ],
-            vec![
-                vec![DeclarationKey::fixture("model.Sys.pipe")],
-                vec![DeclarationKey::fixture("model.Sys.pipe")],
                 vec![
                     DeclarationKey::fixture("model.Sys"),
                     DeclarationKey::fixture("model.Sys.pipe"),
@@ -489,13 +537,8 @@ fn systems_members_inherit_with_ordered_duplicate_end_facts() {
         ),
         (
             "model.Sys.pump.out",
+            vec![RULE_INHERIT.identity, RULE_INHERIT.identity],
             vec![
-                RULE_QUALIFY.identity,
-                RULE_INHERIT.identity,
-                RULE_INHERIT.identity,
-            ],
-            vec![
-                vec![DeclarationKey::fixture("model.Sys.pump.out")],
                 vec![
                     DeclarationKey::fixture("model.Sys"),
                     DeclarationKey::fixture("model.Sys.pump.out"),
@@ -509,13 +552,8 @@ fn systems_members_inherit_with_ordered_duplicate_end_facts() {
         ),
         (
             "model.rel.parts",
+            vec![RULE_INHERIT.identity, RULE_INHERIT.identity],
             vec![
-                RULE_QUALIFY.identity,
-                RULE_INHERIT.identity,
-                RULE_INHERIT.identity,
-            ],
-            vec![
-                vec![DeclarationKey::fixture("model.rel.parts")],
                 vec![
                     DeclarationKey::fixture("model.Sys"),
                     DeclarationKey::fixture("model.rel.parts"),
@@ -529,13 +567,8 @@ fn systems_members_inherit_with_ordered_duplicate_end_facts() {
         ),
         (
             "model.Pump.alloc",
+            vec![RULE_INHERIT.identity, RULE_INHERIT.identity],
             vec![
-                RULE_QUALIFY.identity,
-                RULE_INHERIT.identity,
-                RULE_INHERIT.identity,
-            ],
-            vec![
-                vec![DeclarationKey::fixture("model.Pump.alloc")],
                 vec![
                     DeclarationKey::fixture("model.Sys"),
                     DeclarationKey::fixture("model.Pump.alloc"),
@@ -1052,6 +1085,7 @@ fn two_components_sharing_one_declaration_key_refuse_conflicting_binding() {
                 refusal.cause,
                 ModelRefusalCause::ConflictingBinding {
                     key: DeclarationKey::fixture("model.Sys.pump"),
+                    member: None,
                 }
             );
         }

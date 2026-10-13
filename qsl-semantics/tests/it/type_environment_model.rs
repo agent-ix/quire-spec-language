@@ -186,7 +186,7 @@ fn is_type_mismatch(outcome: &LookupOutcome) -> bool {
     )
 }
 
-/// Whether `outcome` is the FR-082 `resource_exhausted`/`ancestor-steps`
+/// Whether `outcome` is the FR-082 `resource_exhausted` walk-ceiling
 /// refusal naming `limit`.
 fn is_ancestor_steps(outcome: &LookupOutcome, limit: u64) -> bool {
     matches!(
@@ -367,7 +367,7 @@ fn divergence_chain_within_the_ceiling_agrees_at_check_and_at_evaluation() {
 /// Divergence row 3, one past the ceiling: the same chain under a ceiling of
 /// `depth - 1`. The model still normalizes it (its longest path is `depth`
 /// steps) but refuses the walk from `c.0` to `z`, which follows `depth`
-/// edges, with `resource_exhausted`/`ancestor-steps`. Check time stops at an edge-count stage limit naming the
+/// edges, with `resource_exhausted`/`insufficient-next-charge`. Check time stops at an edge-count stage limit naming the
 /// same ceiling (FR-082, ADR-014 B-3) rather than answering `false` from a
 /// closure the model cannot compute.
 #[trace("TC-220", "FR-082-AC-3", "FR-082-AC-6")]
@@ -1299,7 +1299,8 @@ fn object_type_supertypes_rekeys_a_view_and_normalization_refuses_a_shared_key()
             assert!(
                 refusals.iter().any(|refusal| refusal.cause
                     == ModelRefusalCause::ConflictingBinding {
-                        key: DeclarationKey::fixture("model.A")
+                        key: DeclarationKey::fixture("model.A"),
+                        member: None,
                     }),
                 "expected conflicting-binding on model.A: {refusals:?}"
             );

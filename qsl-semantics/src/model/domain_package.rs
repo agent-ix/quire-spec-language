@@ -14,8 +14,10 @@ use std::collections::BTreeMap;
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::ModelRefusal;
 use crate::model::origin::JsonValue;
+use qsl_forms::Expression;
 use quire_canonical::FixedShape;
 use quire_exact::{OrderingOperator, Presence};
+use quire_semantic_value::location::OperationClauseKind;
 
 /// A field or association-end multiplicity (FCD FR-113).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -500,6 +502,39 @@ impl PostconditionClause {
     }
 }
 
+/// One `requires` or `ensures` clause of a domain-package operation, kept
+/// verbatim with its source identity (FR-103). Keeping it does not parse it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OperationContractClause {
+    /// The operation whose contract this clause belongs to.
+    pub operation: DeclarationKey,
+    /// Position in the operation's `pre` (for `requires`) or `post` (for
+    /// `ensures`) list.
+    pub position: usize,
+    /// The authored language identifier.
+    pub language: String,
+    /// The exact authored expression text.
+    pub text: String,
+    /// The clause's source artifact id, when its origin names one.
+    pub artifact: Option<String>,
+    /// The clause's source span, when its origin carries one.
+    pub span: Option<qsl_foundation::source::LocatedSpan>,
+}
+
+/// One kept `requires` or `ensures` clause of a domain-package operation,
+/// parsed by the compile driver (FR-103).
+#[derive(Clone, Debug)]
+pub struct ParsedOperationClause {
+    /// The operation whose contract the clause belongs to.
+    pub operation: DeclarationKey,
+    /// Whether the clause is a `requires` or an `ensures`.
+    pub kind: OperationClauseKind,
+    /// The clause's position in the operation's list of that kind.
+    pub position: usize,
+    /// The parsed clause text.
+    pub expression: Expression,
+}
+
 /// An operation member of an object type, state machine, or persistence interface.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OperationMemberRecord {
@@ -513,10 +548,22 @@ pub struct OperationMemberRecord {
     pub result: Option<OperationResult>,
     /// Declared effect frame.
     pub effect: OperationEffect,
+    /// The domain package's `pre` entries of this operation, kept as its
+    /// `requires` clauses in declared order (FR-103). Distinct from a unit
+    /// `pre` `StateClauseForm`.
+    pub requires: Vec<OperationContractClause>,
+    /// The domain package's `post` entries of this operation, kept as its
+    /// `ensures` clauses in declared order (FR-103). Its postcondition text;
+    /// distinct from a unit `post` `StateClauseForm` and from
+    /// [`Self::own_postcondition_clauses`].
+    pub ensures: Vec<OperationContractClause>,
     /// This operation's own postcondition clause(s), exactly as the caller
     /// states them (see [`PostconditionClause`]).
     pub own_postcondition_clauses: Vec<PostconditionClause>,
     /// Whether an `operation-body` declaration supplies this member's body.
+    /// A domain package never does: the assembler sets it on the compiled
+    /// unit's selected view from the unit's `operation-body` declarations
+    /// (`EffectiveView::with_operation_bodies`), and intake leaves it false.
     /// FR-151's dispatch family (`crate::model::dispatch`) is the original
     /// declaration together with every redefining operation reaching a
     /// subtype; only family members with a body are dispatch candidates. A
@@ -597,6 +644,15 @@ pub struct RelationshipEnd {
     pub multiplicity: Multiplicity,
 }
 
+/// Where a record sits in its declaring type's array (`relationships[i]`).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DeclaredSlot {
+    /// The declaring type.
+    pub owner: DeclarationKey,
+    /// The zero-based position in that type's array.
+    pub index: usize,
+}
+
 /// FCD FR-115 relationship traversal direction (`semantics.direction`).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RelationshipDirection {
@@ -620,6 +676,10 @@ pub enum RelationshipDirection {
 pub struct RelationshipRecord {
     /// This relationship's own original declaration key.
     pub key: DeclarationKey,
+    /// The declaring type and the position in its `relationships` array the
+    /// reader read this from; `None` for a relationship that has no such
+    /// array slot (a systems connection, or a record built in memory).
+    pub declared_at: Option<DeclaredSlot>,
     /// The source end.
     pub source: RelationshipEnd,
     /// The target end.
@@ -675,9 +735,54 @@ pub struct PopulationRecord {
     pub extent: Extent,
 }
 
+/// A variant type's `enum` export (FR-056 "Variant types"): the type's
+/// declaration, its artifact id as `name`, and its case names as the
+/// unordered set `members`, kept in ascending UTF-8 byte order of the name so
+/// the document's `variants` order changes no record. The export locus is the
+/// type's original FCD origin.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EnumRecord {
+    /// The variant type's own original declaration key; also the `enum`
+    /// export key.
+    pub key: DeclarationKey,
+    /// The type's artifact id.
+    pub name: String,
+    /// The declared case names, ascending by UTF-8 bytes.
+    pub members: Vec<String>,
+}
+
+/// One case of a variant type: the `variant` export (FR-056 "Variant types").
+///
+/// The record's [`key`](Self::key) is the case node's own declaration
+/// identity (`ix://<package>/variant/<Name>-<value>`, FR-154's variant slot),
+/// which is the declaration's key. The `variant` export is keyed instead by
+/// [`export_key`](Self::export_key), the owner's identity and the declared
+/// case name. The export locus is the case's original FCD origin.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VariantRecord {
+    /// The case node's own original declaration key.
+    pub key: DeclarationKey,
+    /// The owning variant type; also the owner `enum` export key.
+    pub owner: DeclarationKey,
+    /// The declared case name, compared as exact UTF-8 bytes.
+    pub case: String,
+}
+
+impl VariantRecord {
+    /// The `variant` export key: the owner's declaration identity and the
+    /// declared case name. Never the case node's minted identity.
+    pub fn export_key(&self) -> (&DeclarationKey, &str) {
+        (&self.owner, &self.case)
+    }
+}
+
 /// One producer record, in the domain package's declared order.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DomainPackageRecord {
+    /// A variant type's `enum` export (FR-056 "Variant types").
+    Enum(EnumRecord),
+    /// One case of a variant type: a `variant` export.
+    Variant(VariantRecord),
     /// An object type export.
     ObjectType(ObjectTypeRecord),
     /// A field member of an object type or record value type.
@@ -717,6 +822,8 @@ impl DomainPackageRecord {
     /// This record's own original declaration key.
     pub fn key(&self) -> &DeclarationKey {
         match self {
+            Self::Enum(record) => &record.key,
+            Self::Variant(record) => &record.key,
             Self::ObjectType(record) => &record.key,
             Self::FieldMember(record) => &record.key,
             Self::RecordValueType(record) => &record.key,
@@ -780,36 +887,6 @@ impl DomainPackageRef {
             identity: &self.identity,
             digest_domain: super::key::SHA256_JCS_DIGEST_DOMAIN,
             digest: super::key::hex(&self.digest),
-        }
-    }
-
-    /// A `test/orders` version-`1` selection whose digest is the SHA-256 of
-    /// `placeholder`'s exact UTF-8 bytes, following TC-195's own placeholder
-    /// selection convention: F1 selects `n01`, F2 selects `n02`, and F1 as
-    /// version `2` selects `n01v2`.
-    ///
-    /// Test-only (PR #140 F13): this derives a digest from a display
-    /// identity, which is exactly the name-derived-identity defect this
-    /// engine exists to exclude. Gated behind `test-support` so a production
-    /// caller cannot reach it; `cargo test --all-features` enables it for
-    /// `tests/model_normalization.rs`.
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn fixture(placeholder: impl Into<String>) -> Self {
-        Self::fixture_with_version(placeholder, "1")
-    }
-
-    /// [`Self::fixture`], with an explicit `version` rather than the
-    /// hard-wired `"1"` — needed to reach F1 as version `2` under
-    /// placeholder `n01v2` (TC-195 N09's third clause).
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn fixture_with_version(
-        placeholder: impl Into<String>,
-        version: impl Into<String>,
-    ) -> Self {
-        Self {
-            identity: "test/orders".to_owned(),
-            version: version.into(),
-            digest: qsl_foundation::ByteDigest::of(placeholder.into().as_bytes()).as_bytes(),
         }
     }
 }

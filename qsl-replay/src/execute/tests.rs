@@ -24,8 +24,10 @@ use crate::witness::{CanonicalAssignment, Witness, WitnessValue};
 mod admitted_charge;
 use admitted_charge::admitted_charge_points;
 
+mod child_composite;
 mod composite;
 mod composite_parity;
+mod variant_fields;
 
 const PROFILE: &str = "profile v = \"quire.value.complete/v1\";\n";
 

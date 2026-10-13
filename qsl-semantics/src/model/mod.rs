@@ -16,6 +16,8 @@ pub mod admitted;
 pub mod conformance;
 pub mod dispatch;
 pub mod domain_package;
+#[cfg(any(test, feature = "test-support"))]
+mod domain_package_fixture;
 mod event;
 pub mod index;
 pub mod intake;
@@ -34,3 +36,4 @@ mod record_value;
 pub mod refusal;
 mod state_machine;
 pub mod systems;
+mod variant_type;

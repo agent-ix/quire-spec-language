@@ -715,6 +715,7 @@ fn tc_792_population_and_foreign_model_admission_keep_typed_causes() {
         alias: "M".to_owned(),
         span: qsl_foundation::Span { start: 0, end: 0 },
         view: selected_view,
+        operation_clauses: Vec::new(),
     };
     let refusal = admit_model_arguments(
         &[selected],
@@ -743,11 +744,13 @@ fn tc_792_reference_foreign_model_precedes_universe_and_type_checks() {
         alias: "M".to_owned(),
         span: qsl_foundation::Span { start: 0, end: 0 },
         view: selected_view.clone(),
+        operation_clauses: Vec::new(),
     };
     let foreign_model = SelectedModel {
         alias: "M2".to_owned(),
         span: qsl_foundation::Span { start: 0, end: 0 },
         view: foreign_view.clone(),
+        operation_clauses: Vec::new(),
     };
     let declared = selected_view.type_identities()[&selected_type];
     let supplied = foreign_view.type_identities()[&foreign_type];
@@ -788,11 +791,13 @@ fn tc_792_foreign_type_maximum_and_dangling_controls_keep_admission_causes() {
             alias: "M".to_owned(),
             span: qsl_foundation::Span { start: 0, end: 0 },
             view: selected_view.clone(),
+            operation_clauses: Vec::new(),
         },
         SelectedModel {
             alias: "M2".to_owned(),
             span: qsl_foundation::Span { start: 0, end: 0 },
             view: foreign_view.clone(),
+            operation_clauses: Vec::new(),
         },
     ];
     let foreign_reference = Value::Reference(quire_exact::ObjectReference::new(
@@ -916,6 +921,7 @@ fn tc_792_reference_exact_subtype_and_unrelated_vectors_use_model_conformance() 
         alias: "M".to_owned(),
         span: qsl_foundation::Span { start: 0, end: 0 },
         view,
+        operation_clauses: Vec::new(),
     };
     let parameter = [("key".to_owned(), ValueType::Reference(target_id))];
     for reference in [target_ref, subtype_ref] {
@@ -1801,7 +1807,8 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
         other => panic!("{other:?}"),
     }
 
-    // `FamilyResult::Refused` with no row: `TypeMismatch`, `AncestorSteps`.
+    // `FamilyResult::Refused` with no row: `TypeMismatch`. A walk ceiling is
+    // a denied meter charge with a record (QSpec FR-150-AC-11).
     let type_mismatch = ModelCause(ModelRefusalCause::TypeMismatch);
     match convert(FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(
         Box::new(type_mismatch),
@@ -1826,10 +1833,67 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
     )))
     .unwrap()
     {
-        CallOutcome::Refused(CallRefusal::Family { code, .. }) => {
+        // QSL-745 (b): a reached walk ceiling is a denied charge carrying the
+        // charge record of FR-255 Behavior 1, so it is a record.
+        CallOutcome::Refused(CallRefusal::Record { code, fields, .. }) => {
             assert_eq!(
                 code,
-                CatalogCode::new("resource_exhausted", "ancestor-steps")
+                CatalogCode::new("resource_exhausted", "insufficient-next-charge")
+            );
+            assert_eq!(
+                fields,
+                BTreeMap::from([
+                    ("setting", "model.ancestor_steps".to_owned()),
+                    ("limit", "5".to_owned()),
+                    ("actual", "6".to_owned()),
+                    ("stage", "model-normalization".to_owned()),
+                    (
+                        "accounting_contract",
+                        "ModelNormalizationLimitsV1".to_owned()
+                    ),
+                    ("limit_kind", "ancestor_steps".to_owned()),
+                    ("consumed", "5".to_owned()),
+                    ("next_charge", "1".to_owned()),
+                    ("charge_point", "model.ancestor-edge".to_owned()),
+                ])
+            );
+        }
+        other => panic!("{other:?}"),
+    }
+
+    let family_steps = ModelCause(ModelRefusalCause::family_steps(
+        DeclarationKey {
+            package: "test/orders".to_owned(),
+            node: "n".to_owned(),
+        },
+        3,
+    ));
+    match convert(FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(
+        Box::new(family_steps),
+    )))
+    .unwrap()
+    {
+        CallOutcome::Refused(CallRefusal::Record { code, fields, .. }) => {
+            assert_eq!(
+                code,
+                CatalogCode::new("resource_exhausted", "insufficient-next-charge")
+            );
+            assert_eq!(
+                fields,
+                BTreeMap::from([
+                    ("setting", "model.family_steps".to_owned()),
+                    ("limit", "3".to_owned()),
+                    ("actual", "4".to_owned()),
+                    ("stage", "model-normalization".to_owned()),
+                    (
+                        "accounting_contract",
+                        "ModelNormalizationLimitsV1".to_owned()
+                    ),
+                    ("limit_kind", "family_steps".to_owned()),
+                    ("consumed", "3".to_owned()),
+                    ("next_charge", "1".to_owned()),
+                    ("charge_point", "model.family-edge".to_owned()),
+                ])
             );
         }
         other => panic!("{other:?}"),

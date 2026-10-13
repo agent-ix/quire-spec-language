@@ -75,6 +75,8 @@ mod capability;
 mod check;
 mod checked_dispatch;
 mod claims;
+mod dispatch_link;
+pub use dispatch_link::PendingLinks;
 mod facts;
 mod family;
 mod field_refinement;
@@ -92,8 +94,12 @@ pub mod imports;
 pub(crate) mod imports;
 mod ir;
 mod lowering;
+pub(crate) use assemble::variant_type_declarations;
+pub(crate) use lowering::record_node_key;
 mod node_key;
 mod observation;
+mod operation_body;
+mod operation_clause;
 mod profile;
 mod protocol_clause;
 mod refusal;
@@ -166,7 +172,7 @@ pub use family::fixtures::{
 };
 pub use ir::{
     Arithmetic, CheckedBody, CheckedLiteral, CheckedNode, Connective, IntegerDivisionOperator,
-    Node, NodeId, NodeKind, Observation, OrderedKind, RecordSlot, Slot, Visit,
+    Node, NodeId, NodeKind, Observation, OrderedKind, RecordField, RecordSlot, Slot, Visit,
 };
 
 pub use assemble::{
@@ -174,12 +180,17 @@ pub use assemble::{
     DEFAULT_DECIMAL_SCALE,
 };
 pub use capability::{Capability, UnknownCapabilityLabel};
-pub use check::{DispatchOperation, EnumBinding, PackageDeclarations, ResolvedSignatures};
+pub use check::{
+    DispatchOperation, EnumBinding, ModelRecords, PackageDeclarations, ResolvedSignatures,
+    VariantCaseDeclaration, VariantTypeDeclaration,
+};
 pub use checked_dispatch::{
     checked_dispatch_operation, object_type_supertypes, DispatchBridgeRefusal, DispatchRoot,
     MissingClauseField, OperationClauses,
 };
 pub use field_refinement::check_field_refinement_obligation;
+pub use operation_body::OperationBodyDeclaration;
+pub use operation_clause::OperationClauseDeclaration;
 use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 use quire_semantic_value::location::{Location, Origin};
 pub use region::DeclarationRegions;
@@ -207,8 +218,9 @@ pub use ir::{CollectionLoss, CollectionProperty, DispatchCandidate, DispatchTabl
 pub use protocol_clause::{CheckedAttempt, CheckedProtocol, ProtocolNodeId};
 pub use refusal::{
     AliasKind, CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, DispatchFunctionRole,
-    InvalidDispatchDeclaration, KeyFault, MeasureObligation, Obligation, ProtocolAnchorCause,
-    ProvedInterval, ShadowedDeclaration, StageLimitCause, WrongSnapshotCause,
+    DispatchLinkCause, DispatchSubtypeFailure, InvalidDispatchDeclaration, KeyFault,
+    MeasureObligation, Obligation, ProtocolAnchorCause, ProvedInterval, ShadowedDeclaration,
+    StageLimitCause, WrongSnapshotCause,
 };
 
 /// A checked function.
@@ -354,6 +366,9 @@ pub struct CheckedGraph {
     /// FR-096: the span of each declared type's name read from the unit, by
     /// its declared name, so an `Origin::TypeDeclaration` resolves.
     type_spans: BTreeMap<String, qsl_foundation::Span>,
+    /// FR-096, FR-302: the declaration each function synthesized for
+    /// dispatch without form spans was derived from, by function index.
+    synthesized_spans: BTreeMap<usize, qsl_foundation::Span>,
     /// FR-096-AC-1: the embedding map the spans resolve through, if any.
     embedding: Option<std::sync::Arc<qsl_foundation::source_map::SourceMap>>,
     /// ADR-011 §2.4 `model_selections`: each admitted domain package's
@@ -712,8 +727,8 @@ impl PackageDeclarations {
         }
         // Every declared signature is resolved against the package `Scope`
         // before dispatch validation, which compares resolved types.
-        let complete_identity = crate::value::DefinitionLock::pinned()
-            .entry(crate::value::CatalogRole::Root)
+        let complete_identity = crate::value::definition::DefinitionLock::pinned()
+            .entry(crate::value::definition::CatalogRole::Root)
             .identity;
         let complete_value = self
             .function_selections
@@ -736,6 +751,8 @@ impl PackageDeclarations {
             self.ieee_profile,
             self.dispatch_operations,
         )
+        .with_variant_types(self.variant_types)
+        .with_model_records(self.model_records)
         .with_imports(self.imports)
         .with_integer_division(self.integer_division)
         .with_complete_value(complete_value)
@@ -839,6 +856,7 @@ impl PackageDeclarations {
         }
         let source = self.source;
         let type_spans = self.declared_type_spans;
+        let synthesized_spans = self.synthesized_spans;
         let embedding = self.embedding;
         let form_spans = self
             .functions
@@ -1144,6 +1162,40 @@ impl PackageDeclarations {
                     let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
                     refusals.push(refusal);
                     if exhausted {
+                        return Err(refusals);
+                    }
+                }
+            }
+        }
+        // FR-103: each kept operation `requires`/`ensures`, checked as a
+        // Boolean under the clause kind its position gives. A kept clause
+        // adds no checked state clause, claim or requirement record: it
+        // yields a refusal or nothing.
+        for clause in &self.operation_clauses {
+            let location = clause.location();
+            let declarations = state_clause::ClauseDeclarations {
+                scope: &scope,
+                signatures: &signatures,
+                dispatch_tables: &dispatch_tables,
+                models: &models,
+                checking_limits: limits,
+                location: &location,
+                nodes_used,
+                cancel: Some(cancel),
+            };
+            let mut contract_cx = crate::family::CheckContext::new(
+                &declarations,
+                contract_limits,
+                &mut contract_meter,
+                &mut contract_diagnostics,
+                &mut contract_scopes,
+            );
+            match state_clause::check_operation_clause(clause, &declarations, &mut contract_cx) {
+                Ok(used) => nodes_used = used,
+                Err(refusal) => {
+                    let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
+                    refusals.push(refusal);
+                    if exhausted || cancel.tripped().is_some() {
                         return Err(refusals);
                     }
                 }
@@ -1714,6 +1766,7 @@ impl PackageDeclarations {
             effective_limits: limits,
             form_spans,
             type_spans,
+            synthesized_spans,
             embedding,
             model_selections,
             state_clauses,

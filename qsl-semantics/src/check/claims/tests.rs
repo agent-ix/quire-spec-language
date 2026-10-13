@@ -963,7 +963,7 @@ fn tc_160_a_root_of_an_undeclared_composite_is_a_fault() {
     let field = body.push(node(
         NodeKind::Field {
             operand: record,
-            index: 0,
+            field: crate::check::ir::RecordField::new(NodeKey::from_digest([9; 32]), "x"),
             optional: false,
         },
         ValueType::Integer,

@@ -16,7 +16,7 @@ pub(super) fn bind(context: &mut MeaningBindingContext<'_, '_>) -> Result<(), Mo
         context.type_value,
         context.node,
         context.at,
-        context.type_meanings,
+        context.meanings_by_node,
         context.records,
         context.pending,
     )

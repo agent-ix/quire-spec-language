@@ -19,13 +19,14 @@ use qsl_package::CheckedPackage;
 use qsl_semantics::check::NominalNode;
 use qsl_semantics::value::enumeration::mint_variant_id;
 use quire_exact::{
-    admit_text, form_collection, from_admitted_slots, ChargePoint, CollectionKind, CollectionType,
-    Decimal, EnumMember, FieldValue, IeeeValue, IeeeWidth, Incomplete, Integer, LimitKind, Meter,
-    NodeKey, ObjectId, ObjectReference, OptionValue, Outcome, Presence, Quantity, Rational,
-    ScalarLimits, TextPayload, UniverseId, Value, ValueType,
+    admit_text, form, from_admitted_slots, ChargePoint, CollectionKind, CollectionType, Decimal,
+    EnumMember, FieldValue, IeeeValue, IeeeWidth, Incomplete, Integer, LimitKind, Meter, NodeKey,
+    ObjectId, ObjectReference, OptionValue, Outcome, Presence, Quantity, Rational, ScalarLimits,
+    TextPayload, UniverseId, Value, ValueType,
 };
 use quire_semantic_value::call::InputRefusal;
-use quire_semantic_value::declaration::{CompositeShape, TypeEnvironment};
+use quire_semantic_value::declaration::{CompositeDeclaration, CompositeShape, TypeEnvironment};
+use std::collections::HashMap;
 
 use super::ReplayRefusal;
 use crate::witness::{QuantityMagnitude, WitnessSlot, WitnessValue};
@@ -79,20 +80,38 @@ impl EnumDeclaration {
     }
 }
 
-/// Every enum declaration of `package`'s checked graph.
+/// Every enum declaration of `package`: the enum declaration nodes of its
+/// checked graph and the model variant types of its scope. A variant type is
+/// keyed by its checked node (FR-360 item 11), and its cases are in the
+/// ascending UTF-8 byte order of their names.
 pub(super) fn enum_declarations(package: &CheckedPackage) -> Vec<EnumDeclaration> {
-    package
+    let declared =
+        package
+            .graph()
+            .semantic_graph()
+            .nodes()
+            .filter_map(|node| match node.nominal() {
+                Some(NominalNode::EnumDeclaration(preimage)) => Some(EnumDeclaration {
+                    key: node.key(),
+                    members: preimage.members().to_vec(),
+                }),
+                _ => None,
+            });
+    let variant_types = package
         .graph()
-        .semantic_graph()
-        .nodes()
-        .filter_map(|node| match node.nominal() {
-            Some(NominalNode::EnumDeclaration(preimage)) => Some(EnumDeclaration {
-                key: node.key(),
-                members: preimage.members().to_vec(),
-            }),
-            _ => None,
-        })
-        .collect()
+        .scope()
+        .variant_types()
+        .iter()
+        .filter(|variant_type| variant_type.shape().is_some())
+        .map(|variant_type| EnumDeclaration {
+            key: variant_type.node(),
+            members: variant_type
+                .cases()
+                .iter()
+                .map(|case| case.name().to_owned())
+                .collect(),
+        });
+    declared.chain(variant_types).collect()
 }
 
 /// The declaration whose members are exactly `shape`'s variants.
@@ -141,6 +160,9 @@ enum Step<'a> {
 /// The conversion of one package's arguments.
 struct Converter<'a> {
     types: &'a TypeEnvironment,
+    /// The checked composites by key bytes, built once: a record's wire
+    /// declaration digest is resolved against it, never minted into a key.
+    composites: HashMap<[u8; 32], &'a CompositeDeclaration>,
     enums: Vec<EnumDeclaration>,
     limits: &'a ScalarLimits,
     nodes: u64,
@@ -154,8 +176,13 @@ pub(super) fn convert_arguments(
     limits: &ScalarLimits,
 ) -> Result<Converted, Stopped> {
     let enums = enum_declarations(package);
+    let types = package.graph().scope().types();
     let mut converter = Converter {
-        types: package.graph().scope().types(),
+        types,
+        composites: types
+            .composites()
+            .map(|composite| (*composite.key().as_bytes(), composite))
+            .collect(),
         enums,
         limits,
         nodes: 0,
@@ -224,8 +251,16 @@ impl<'a> Converter<'a> {
                     };
                     values.push(match payload {
                         None => OptionValue::none(payload_type.clone()),
-                        Some(payload) => OptionValue::present(payload_type.clone(), payload)
-                            .map_err(|_| wrong_kind(parameter))?,
+                        // FR-359 item 5: the payload is admitted by conformance
+                        // under the environment, so a child of the payload's
+                        // record keeps its own type. `OptionValue::present`
+                        // is the exact test.
+                        Some(payload) => {
+                            if !self.types.admits(payload_type, &payload) {
+                                return Err(wrong_kind(parameter));
+                            }
+                            OptionValue::from_admitted(payload_type.clone(), Some(payload))
+                        }
                     });
                 }
                 Step::Composite { key, slots } => {
@@ -256,11 +291,19 @@ impl<'a> Converter<'a> {
                         .ok_or_else(|| invariant("converted-elements"))?;
                     let elements = values.split_off(start);
                     let mut meter = Meter::new(UNLIMITED);
-                    // Forming checks each element's type and the declared
-                    // cardinality, and collapses a duplicate the kernel's
-                    // equality relates, which a set or ordered set refuses.
-                    match form_collection(declared, elements, &mut meter) {
-                        Ok(Outcome::Completed(Value::Collection(formed))) => {
+                    // Each element is admitted by conformance under the
+                    // environment (FR-359 item 5), then formed: forming
+                    // checks the declared cardinality and collapses a
+                    // duplicate the kernel's equality relates, which a set or
+                    // ordered set refuses.
+                    if !elements
+                        .iter()
+                        .all(|element| self.types.admits(declared.element(), element))
+                    {
+                        return Err(wrong_kind(parameter));
+                    }
+                    match form(declared, elements, &mut meter) {
+                        Outcome::Completed(Value::Collection(formed)) => {
                             let unique = matches!(
                                 declared.kind(),
                                 CollectionKind::Set | CollectionKind::OrderedSet
@@ -411,19 +454,31 @@ impl<'a> Converter<'a> {
                 }
             }
             (
-                ValueType::Composite(key),
+                ValueType::Composite(slot_key),
                 WitnessValue::Record {
                     declaration,
                     fields,
                 },
             ) => {
                 let types: &'a TypeEnvironment = self.types;
-                let record = types.composite(*key).ok_or_else(refuse)?;
+                // FR-359 item 7: the record is decoded by the declaration its
+                // own `declaration` names, and its fields read by name against
+                // that declaration's fields, not the slot's. It is then
+                // admitted at the slot by conformance.
+                // The wire digest is resolved by lookup against the already
+                // checked composites (FR-087-AC-6), never minted into a key.
+                let record = *self
+                    .composites
+                    .get(declaration.as_bytes())
+                    .ok_or_else(refuse)?;
+                let key = record.key();
+                if !types.composite_conforms(key, *slot_key) {
+                    return Err(refuse());
+                }
                 let CompositeShape::Record(declared_fields) = record.shape() else {
                     return Err(refuse());
                 };
-                if declaration.as_bytes() != key.as_bytes() || fields.len() != declared_fields.len()
-                {
+                if fields.len() != declared_fields.len() {
                     return Err(refuse());
                 }
                 let mut slots = Vec::with_capacity(fields.len());
@@ -446,7 +501,7 @@ impl<'a> Converter<'a> {
                         WitnessSlot::Absent | WitnessSlot::Null => return Err(refuse()),
                     }
                 }
-                pending.push(Step::Composite { key: *key, slots });
+                pending.push(Step::Composite { key, slots });
                 pending.extend(present.into_iter().rev());
             }
             (

@@ -290,6 +290,8 @@ impl Site {
             | DeclarationKind::Clause
             | DeclarationKind::Namespace
             | DeclarationKind::EventType
+            | DeclarationKind::VariantType
+            | DeclarationKind::VariantCase
             | DeclarationKind::StateMachine
             | DeclarationKind::Process
             | DeclarationKind::PersistenceInterface

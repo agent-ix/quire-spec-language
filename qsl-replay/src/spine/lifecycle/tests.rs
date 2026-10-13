@@ -14,7 +14,7 @@ use qsl_eval::value::{CallFailure, QualifiedName};
 use qsl_foundation::diagnostic::{
     Category, LimitExceeded, LimitKind as FoundationKind, StageFailure, Staged,
 };
-use qsl_foundation::{Setting, SourceIdentity};
+use qsl_foundation::{Code, Setting, SourceIdentity};
 use qsl_package::{emit_checked, read_import_view, AdmittedPackages};
 use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::library::LibraryName;
@@ -650,9 +650,11 @@ fn a_cancel_inside_select_stops_within_one_charge() {
 }
 
 /// FR-260-AC-4 (FR-056-AC-2): a model document one byte over the caller's
-/// `intake.input_bytes` is a reached limit through `select` naming that
-/// setting, its bound and the document's size, never a missing package.
-#[trace("TC-732", "FR-260-AC-4")]
+/// `intake.input_bytes` refuses `resource_exhausted`/`intake-limit-exceeded`
+/// through `select` (FR-255 Behavior 1 and FR-260 item 5: `IntakeLimits` is a
+/// caller budget, not a stage's own limits type), naming that setting,
+/// its bound and the document's size, never a missing package.
+#[trace("TC-732", "FR-260-AC-4", "FR-255-AC-1")]
 #[test]
 fn select_names_the_intake_limit_for_an_oversize_document() {
     let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT.as_bytes()]);
@@ -666,14 +668,22 @@ fn select_names_the_intake_limit_for_an_oversize_document() {
     )
     .expect("the model fixture parses")
     .into_value();
-    let Err(StageFailure::Limit(exceeded)) =
+    let Err(StageFailure::Refused(refusal)) =
         select(&parsed, &packages, limits.model, &Cancel::new())
     else {
-        panic!("a document over the intake limit is a reached limit");
+        panic!("a document over the intake limit is a caller-budget refusal");
     };
-    assert_eq!(exceeded.setting(), Setting::IntakeInputBytes);
-    assert_eq!(exceeded.configured_bound(), size - 1);
-    assert_eq!(exceeded.actual(), u128::from(size));
+    assert_eq!(refusal.code(), Code::ResourceExhausted);
+    assert_eq!(refusal.cause(), Some("intake-limit-exceeded"));
+    assert_eq!(
+        refusal.fields(),
+        Some(BTreeMap::from([
+            ("kind", "input-bytes-exceeded".to_owned()),
+            ("bound", (size - 1).to_string()),
+            ("actual", size.to_string()),
+            ("setting", "intake.input_bytes".to_owned()),
+        ]))
+    );
 }
 
 /// FR-276-AC-2 for `package`: the emitter polls the handle at entry and at
@@ -1048,12 +1058,26 @@ enum Reached {
     Output,
     /// It stopped at a limit.
     Limit(LimitExceeded),
+    /// It refused `resource_exhausted`: a ceiling of the caller's budget
+    /// (ADR-014 section 1), with the cause and the typed fields it carries.
+    Budget {
+        cause: Option<&'static str>,
+        fields: BTreeMap<&'static str, String>,
+    },
 }
 
 fn reached<T>(outcome: Result<Staged<T>, FrontEndFailure>) -> Reached {
     match outcome {
         Ok(_) => Reached::Output,
         Err(StageFailure::Limit(limit)) => Reached::Limit(limit),
+        Err(StageFailure::Refused(refusal)) if refusal.code() == Code::ResourceExhausted => {
+            Reached::Budget {
+                cause: refusal.cause(),
+                fields: refusal
+                    .fields()
+                    .expect("a caller-budget refusal carries fields"),
+            }
+        }
         Err(other) => panic!("expected an output or a limit, got {other:?}"),
     }
 }
@@ -1071,15 +1095,10 @@ fn assert_field(
     assert_field_with(field, kind, high, |value| value, run)
 }
 
-/// [`assert_field`] for a field whose configured bound is `bound(value)`
-/// rather than the value itself.
-fn assert_field_with(
-    field: Setting,
-    kind: FoundationKind,
-    high: u64,
-    bound: impl Fn(u64) -> u64,
-    run: impl Fn(u64) -> Reached,
-) -> u64 {
+/// The smallest value of `field` at which `run` produces its output, found
+/// by bisection from `high`. Every run below it stops at `field` (a stage
+/// limit or a caller-budget refusal naming that setting).
+fn smallest_admitted(field: Setting, high: u64, run: &impl Fn(u64) -> Reached) -> u64 {
     assert!(
         matches!(run(high), Reached::Output),
         "`{field:?}` at {high} does not admit the input"
@@ -1093,10 +1112,26 @@ fn assert_field_with(
                 assert_eq!(limit.setting(), field, "limit at {middle}");
                 low = middle + 1;
             }
+            Reached::Budget { fields, .. } => {
+                assert_eq!(fields["setting"], field.name(), "limit at {middle}");
+                low = middle + 1;
+            }
         }
     }
-    let counter = low;
-    assert!(counter > 0, "`{field:?}` is not reached by the input");
+    assert!(low > 0, "`{field:?}` is not reached by the input");
+    low
+}
+
+/// [`assert_field`] for a field whose configured bound is `bound(value)`
+/// rather than the value itself.
+fn assert_field_with(
+    field: Setting,
+    kind: FoundationKind,
+    high: u64,
+    bound: impl Fn(u64) -> u64,
+    run: impl Fn(u64) -> Reached,
+) -> u64 {
+    let counter = smallest_admitted(field, high, &run);
     match run(counter - 1) {
         Reached::Limit(limit) => {
             assert_eq!(limit.setting(), field);
@@ -1104,6 +1139,39 @@ fn assert_field_with(
             assert_eq!(limit.configured_bound(), bound(counter - 1), "`{field:?}`");
         }
         Reached::Output => panic!("`{field:?}` at {} admits the input", counter - 1),
+        Reached::Budget { .. } => panic!("`{field:?}` is a stage limit, not a budget"),
+    }
+    assert!(
+        matches!(run(counter), Reached::Output),
+        "`{field:?}` at {counter}"
+    );
+    counter
+}
+
+/// [`assert_field`] for a field of the caller's budget (ADR-014 section 1,
+/// FR-255 Behavior 1): one below the counter the input reaches, `run`
+/// refuses `resource_exhausted` with `cause`, `setting` of `field`, the
+/// effective `limit` and an `actual` past it; at the counter it succeeds.
+fn assert_budget_field(
+    field: Setting,
+    cause: &str,
+    high: u64,
+    run: impl Fn(u64) -> Reached,
+) -> u64 {
+    let counter = smallest_admitted(field, high, &run);
+    match run(counter - 1) {
+        Reached::Budget {
+            cause: seen,
+            fields,
+        } => {
+            assert_eq!(seen, Some(cause), "`{field:?}`");
+            assert_eq!(fields["setting"], field.name());
+            assert_eq!(fields["limit"], (counter - 1).to_string(), "`{field:?}`");
+            let actual: u128 = fields["actual"].parse().expect("a count");
+            assert!(actual > u128::from(counter - 1), "`{field:?}`");
+        }
+        Reached::Output => panic!("`{field:?}` at {} admits the input", counter - 1),
+        Reached::Limit(_) => panic!("`{field:?}` is a budget, not a stage limit"),
     }
     assert!(
         matches!(run(counter), Reached::Output),
@@ -1148,7 +1216,9 @@ fn parse_names_the_source_limit_field_it_reached() {
     let scale =
         match run(|limits, value| limits.work_units = usize::try_from(value).expect("small"))(1) {
             Reached::Limit(limit) => limit.configured_bound(),
-            Reached::Output => panic!("one step per token admits the fixture"),
+            Reached::Output | Reached::Budget { .. } => {
+                panic!("one step per token refuses the fixture at a stage limit")
+            }
         };
     assert_field_with(
         Setting::S1WorkUnits,
@@ -1163,13 +1233,17 @@ fn parse_names_the_source_limit_field_it_reached() {
     limits.source_bytes = bytes.len() - 1;
     match reached(parse(&request(bytes), limits, &Cancel::new())) {
         Reached::Limit(limit) => assert_eq!(limit.actual(), length),
-        Reached::Output => panic!("one byte short admits the fixture"),
+        Reached::Output | Reached::Budget { .. } => {
+            panic!("one byte short refuses the fixture at a stage limit")
+        }
     }
 }
 
 /// FR-277-AC-1 (TC-758 step 1) for `select`: each field of the model
-/// normalization limits that a charge reaches.
-#[trace("TC-758", "FR-277-AC-1")]
+/// normalization limits that a charge reaches. `ModelNormalizationLimitsV1`
+/// is a caller budget, so `select` refuses `resource_exhausted` naming the
+/// field (ADR-014 section 1, FR-255 Behavior 1), not `LimitExceeded`.
+#[trace("TC-758", "FR-277-AC-1", "FR-255-AC-1")]
 #[test]
 fn select_names_the_model_limit_field_it_reached() {
     let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT.as_bytes()]);
@@ -1189,42 +1263,98 @@ fn select_names_the_model_limit_field_it_reached() {
             reached(select(parsed, packages, limits, &Cancel::new()))
         }
     };
-    assert_field(
+    assert_budget_field(
         Setting::ModelDeclarationRecords,
-        FoundationKind::NodeCount,
+        "insufficient-next-charge",
         100_000,
         run(|limits, value| limits.declaration_records = value),
     );
-    assert_field(
+    assert_budget_field(
         Setting::ModelDerivationFacts,
-        FoundationKind::NodeCount,
+        "insufficient-next-charge",
         100_000,
         run(|limits, value| limits.derivation_facts = value),
     );
-    assert_field(
+    assert_budget_field(
         Setting::ModelEffectiveDeclarations,
-        FoundationKind::NodeCount,
+        "insufficient-next-charge",
         100_000,
         run(|limits, value| limits.effective_declarations = value),
     );
-    assert_field(
+    assert_budget_field(
         Setting::ModelAncestorSteps,
-        FoundationKind::EdgeCount,
+        "insufficient-next-charge",
         10_000,
         run(|limits, value| limits.ancestor_steps = value),
     );
-    assert_field(
+    assert_budget_field(
         Setting::ModelHashedBytes,
-        FoundationKind::InputBytes,
+        "insufficient-next-charge",
         100_000,
         run(|limits, value| limits.hashed_bytes = value),
     );
-    assert_field(
+    assert_budget_field(
         Setting::ModelWorkUnits,
-        FoundationKind::WorkBudget,
+        "insufficient-next-charge",
         100_000,
         run(|limits, value| limits.work_units = value),
     );
+    // `model.dispatch_candidates` and `model.family_steps` are charged only
+    // where a dispatch family is linked (FR-302, TC-795), at `check`, and the
+    // model fixture declares no dispatched operation, so no `select` run
+    // reaches them; TC-795 and the dispatch tests in `qsl-semantics` drive them.
+}
+
+/// FR-255 Behavior 1 (QSL-745): a denied normalization charge through
+/// `select` retains the stage, accounting contract, prior usage, denied
+/// amount and charge point beside the setting, effective limit and actual.
+#[trace("TC-758", "FR-255-AC-1")]
+#[test]
+fn select_retains_the_denied_charge_of_a_normalization_ceiling() {
+    let packages = qsl_semantics::model::intake::package_input([MODEL_DOCUMENT.as_bytes()]);
+    let parsed = parse(
+        &request(MODEL_FIXTURE.as_bytes()),
+        SpineLimits::default().source,
+        &Cancel::new(),
+    )
+    .expect("the model fixture parses")
+    .into_value();
+    let limits = ModelNormalizationLimits {
+        work_units: 1,
+        ..ModelNormalizationLimits::default()
+    };
+    let Err(StageFailure::Refused(refusal)) = select(&parsed, &packages, limits, &Cancel::new())
+    else {
+        panic!("one work unit cannot normalize the model");
+    };
+    assert_eq!(refusal.code(), Code::ResourceExhausted);
+    assert_eq!(refusal.cause(), Some("insufficient-next-charge"));
+    let fields = refusal.fields().expect("a denied charge carries fields");
+    let keys: Vec<_> = fields.keys().copied().collect();
+    assert_eq!(
+        keys,
+        [
+            "accounting_contract",
+            "actual",
+            "charge_point",
+            "consumed",
+            "limit",
+            "limit_kind",
+            "next_charge",
+            "setting",
+            "stage"
+        ]
+    );
+    assert_eq!(fields["setting"], "model.work_units");
+    assert_eq!(fields["limit"], "1");
+    assert_eq!(fields["stage"], "model-normalization");
+    assert_eq!(fields["accounting_contract"], "ModelNormalizationLimitsV1");
+    assert_eq!(fields["limit_kind"], "work_units");
+    let consumed: u64 = fields["consumed"].parse().expect("a count");
+    let next_charge: u64 = fields["next_charge"].parse().expect("a count");
+    assert!(next_charge > 0);
+    assert_eq!(fields["actual"], (consumed + next_charge).to_string());
+    assert!(fields["charge_point"].starts_with("normalize."));
 }
 
 /// FR-277-AC-1 (TC-758 step 1) for `check`: each checking limit.
@@ -1701,4 +1831,97 @@ fn check_takes_the_lock_evidence_the_text_law_comes_from() {
         .reference();
     run(&LockEvidence::default().with_text_profile(text_profile))
         .expect("the lock evidence selects the text law");
+}
+
+/// The model fixture with an operation `touch` on `Widget` whose `pre`
+/// holds `clauses` (`language`, `text`), and the unit selecting it.
+fn widget_with_touch(clauses: &[(&str, &str)]) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
+    let mut document: serde_json::Value =
+        serde_json::from_str(MODEL_DOCUMENT).expect("the model fixture is JSON");
+    let generated = |identity: &str| {
+        serde_json::json!({"generated": {
+            "generatorIdentity": identity,
+            "generatorVersion": "1.0.0",
+            "inputIdentities": [identity],
+        }})
+    };
+    let identity = "ix://acme/orders/Widget/touch";
+    let widget = document["types"]
+        .as_array_mut()
+        .expect("types")
+        .iter_mut()
+        .find(|ty| ty["identity"] == "ix://acme/orders/Widget")
+        .expect("the fixture declares Widget");
+    widget["operations"] = serde_json::json!([{
+        "identity": identity,
+        "name": "touch",
+        "params": [],
+        "pre": clauses
+            .iter()
+            .map(|(language, text)| serde_json::json!({
+                "language": language,
+                "text": text,
+                "origin": generated(identity),
+            }))
+            .collect::<Vec<_>>(),
+        "post": [],
+        "origin": generated(identity),
+        "frame": {"modifies": [], "creates": [], "deletes": []},
+    }]);
+    let bytes = serde_json::to_vec(&document).expect("the document serializes");
+    let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()]);
+    let digest = packages.keys().next().expect("one package");
+    let original = MODEL_FIXTURE
+        .split("sha256-jcs:")
+        .nth(1)
+        .and_then(|rest| rest.get(..64))
+        .expect("the fixture names its digest");
+    let unit = MODEL_FIXTURE.replace(original, &qsl_semantics::model::key::hex(digest));
+    (unit, packages)
+}
+
+/// FR-103-AC-8: the driver parses each kept `quire` clause of a selected
+/// model's operations and leaves a clause in another language unparsed; a
+/// kept clause whose text does not parse refuses at I1 with the operation and
+/// its `Operation.pre[k]` member, never as a checked package.
+#[trace("FR-103-AC-8", "TC-993")]
+#[test]
+fn select_parses_kept_operation_clauses_and_refuses_text_that_does_not_parse() {
+    let limits = SpineLimits::default();
+    let live = Cancel::new();
+    let select_unit = |clauses: &[(&str, &str)]| {
+        let (unit, packages) = widget_with_touch(clauses);
+        let parsed = parse(&request(unit.as_bytes()), limits.source, &live)
+            .expect("the unit parses")
+            .into_value();
+        select(&parsed, &packages, limits.model, &live)
+    };
+    let models = select_unit(&[("quire", "true"), ("acme:rules", "not an expression (((")])
+        .expect("a quire clause parses and another language is kept verbatim")
+        .into_value();
+    let [model] = models.models() else {
+        panic!("one model");
+    };
+    assert_eq!(model.operation_clauses.len(), 1);
+    assert_eq!(model.operation_clauses[0].position, 0);
+
+    let failure = select_unit(&[("quire", "true"), ("quire", "true and")])
+        .expect_err("the second clause does not parse");
+    let refusal = refusal(failure);
+    let CompileRefusal::OperationClause {
+        operation, member, ..
+    } = &*refusal
+    else {
+        panic!("expected an operation clause refusal, got {refusal:?}");
+    };
+    assert_eq!(operation.node, "ix://acme/orders/Widget/touch");
+    assert_eq!(
+        *member,
+        qsl_semantics::model::refusal::MemberPath::new(
+            qsl_semantics::model::refusal::MemberRoot::Operation
+        )
+        .name("pre")
+        .index(1)
+    );
+    assert_eq!(refusal.code(), qsl_foundation::Code::InvalidSyntax);
 }

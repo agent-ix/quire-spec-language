@@ -163,6 +163,8 @@ fn operation_redefining(
             creates: creates.into_iter().map(DeclarationKey::fixture).collect(),
             deletes: deletes.into_iter().map(DeclarationKey::fixture).collect(),
         },
+        requires: Vec::new(),
+        ensures: Vec::new(),
         own_postcondition_clauses,
         has_body: true,
         redefines: redefines.map(DeclarationKey::fixture),
@@ -372,6 +374,7 @@ fn two_field_members_sharing_one_declaration_key_refuse_conflicting_binding() {
                 refusal.cause,
                 ModelRefusalCause::ConflictingBinding {
                     key: DeclarationKey::fixture("model.A.x"),
+                    member: None,
                 }
             );
         }
@@ -1320,8 +1323,18 @@ fn r08i_a_malformed_scalar_domain_refuses_rather_than_panicking() {
             assert_eq!(refusal.code, Code::InvalidModelBinding);
             // FR-272's `invalid_model_binding` cause list is closed; there
             // is no dedicated scalar-domain variant, so this is the
-            // catalogued `malformed-declaration`.
-            assert_eq!(refusal.cause, ModelRefusalCause::MalformedDeclaration);
+            // catalogued `malformed-declaration`, naming the scalar type and
+            // its `constraints` (a package built without the reader has no
+            // origin to retain).
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::IntakeMalformedDeclaration {
+                    node: "model.Count".to_owned(),
+                    artifact: None,
+                    span: None,
+                    member: "TypeDefinition.constraints".parse().unwrap(),
+                }
+            );
         }
         other => panic!("expected Err(malformed-declaration), got {other:?}"),
     }
@@ -1454,6 +1467,8 @@ fn r10_operation_redefinition_effect_axis_refuses_a_write_at_a_package_the_grant
                     creates: Vec::new(),
                     deletes: Vec::new(),
                 },
+                requires: Vec::new(),
+                ensures: Vec::new(),
                 own_postcondition_clauses: vec![],
                 has_body: true,
                 redefines: Some(DeclarationKey::fixture("model.A.op")),
@@ -1775,6 +1790,8 @@ fn r14a_field_refinement_writer_search_does_not_confuse_a_decoy_matching_the_red
                     creates: Vec::new(),
                     deletes: Vec::new(),
                 },
+                requires: Vec::new(),
+                ensures: Vec::new(),
                 own_postcondition_clauses: vec![PostconditionClause::Presence {
                     field: DeclarationKey::fixture("model.B.xb"),
                 }],
@@ -1862,6 +1879,8 @@ fn r14b_field_refinement_writer_search_does_not_confuse_a_decoy_matching_the_red
                     creates: Vec::new(),
                     deletes: Vec::new(),
                 },
+                requires: Vec::new(),
+                ensures: Vec::new(),
                 own_postcondition_clauses: vec![PostconditionClause::Presence {
                     field: DeclarationKey::fixture("model.B.xb"),
                 }],
@@ -1943,6 +1962,8 @@ fn r15a_field_refinement_chain_extension_does_not_confuse_a_decoy_matching_the_w
                 parameters: vec![],
                 result: None,
                 effect: OperationEffect::default(),
+                requires: Vec::new(),
+                ensures: Vec::new(),
                 own_postcondition_clauses: vec![PostconditionClause::Presence {
                     field: DeclarationKey::fixture("model.B.xb"),
                 }],
@@ -2025,6 +2046,8 @@ fn r15b_field_refinement_chain_extension_does_not_confuse_a_decoy_matching_the_o
                 parameters: vec![],
                 result: None,
                 effect: OperationEffect::default(),
+                requires: Vec::new(),
+                ensures: Vec::new(),
                 own_postcondition_clauses: vec![PostconditionClause::Presence {
                     field: DeclarationKey::fixture("model.B.xb"),
                 }],
@@ -2092,6 +2115,8 @@ fn r16a_field_refinement_names_field_filter_does_not_confuse_a_clause_matching_t
                     creates: Vec::new(),
                     deletes: Vec::new(),
                 },
+                requires: Vec::new(),
+                ensures: Vec::new(),
                 own_postcondition_clauses: vec![PostconditionClause::Presence {
                     field: DeclarationKey {
                         package: "other/pkg".to_owned(),
@@ -2166,6 +2191,8 @@ fn r16b_field_refinement_names_field_filter_does_not_confuse_a_clause_matching_t
                     creates: Vec::new(),
                     deletes: Vec::new(),
                 },
+                requires: Vec::new(),
+                ensures: Vec::new(),
                 own_postcondition_clauses: vec![PostconditionClause::Presence {
                     field: DeclarationKey {
                         package: "other/pkg".to_owned(),
@@ -2322,8 +2349,8 @@ fn an_ancestor_chain_at_the_configured_bound_is_admitted_and_one_longer_refuses(
             );
             let exceeded = refusal
                 .cause
-                .limit_exceeded()
-                .expect("a step ceiling is a stage limit");
+                .denial()
+                .expect("a step ceiling is a denied charge");
             assert_eq!(
                 exceeded.setting(),
                 qsl_foundation::Setting::ModelAncestorSteps
@@ -2397,8 +2424,8 @@ fn normalization_admits_an_ancestor_path_at_the_bound_and_refuses_one_longer() {
             );
             let exceeded = refusal
                 .cause
-                .limit_exceeded()
-                .expect("a step ceiling is a stage limit");
+                .denial()
+                .expect("a step ceiling is a denied charge");
             assert_eq!(
                 exceeded.setting(),
                 qsl_foundation::Setting::ModelAncestorSteps

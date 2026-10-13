@@ -24,8 +24,8 @@
 use std::collections::BTreeMap;
 
 use qsl_cst::{CompleteDiagnostic, HostCause};
-use qsl_forms::{FormsCause, FormsRefusal};
-use qsl_foundation::diagnostic::{LimitExceeded, Locus};
+use qsl_forms::{ClauseTextRefusal, FormsCause, FormsRefusal};
+use qsl_foundation::diagnostic::{CatalogCoded, LimitExceeded, Locus};
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
 use qsl_foundation::Setting;
 use qsl_foundation::{Code, SourceIdentity, Span};
@@ -38,6 +38,8 @@ use qsl_semantics::check::{
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{UnitIntakeCause, UnitIntakeRefusal};
+use qsl_semantics::model::key::DeclarationKey;
+use qsl_semantics::model::refusal::MemberPath;
 pub use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::StorageUnit;
 
@@ -106,6 +108,18 @@ pub enum CompileRefusal {
         refusal: UnitIntakeRefusal,
         /// The region of the `model` declaration.
         region: Option<SourceRegion>,
+    },
+    /// FR-103: a kept operation `requires`/`ensures` clause text did not
+    /// parse as an expression.
+    #[error("the {member} clause of `{}` does not parse: {}", .operation.node, clause_text_message(.failure))]
+    OperationClause {
+        /// The operation whose clause it is.
+        operation: DeclarationKey,
+        /// The member the clause is at: `Operation.pre[k]` or
+        /// `Operation.post[k]`.
+        member: MemberPath,
+        /// The S1 or S2 cause.
+        failure: ClauseTextRefusal,
     },
     /// E3 (FR-110): a header profile selection does not resolve against the
     /// `DefinitionLock` catalog.
@@ -182,6 +196,11 @@ impl CompileRefusal {
             Self::Source(diagnostic) => diagnostic.code,
             Self::Forms { failure, .. } => failure.catalog_code(),
             Self::Intake { refusal, .. } => refusal.cause.code(),
+            Self::OperationClause { failure, .. } => match failure {
+                ClauseTextRefusal::Source(diagnostic) => diagnostic.code,
+                ClauseTextRefusal::Forms(failure) => failure.catalog_code(),
+                ClauseTextRefusal::NotOneExpression => Code::InvalidSyntax,
+            },
             Self::Profile { refusals, .. } => refusals
                 .first()
                 .map_or(Code::RuntimeInvariant, ProfileRefusal::code),
@@ -214,12 +233,39 @@ impl CompileRefusal {
             Self::Dependency { refusal, .. } => refusal.cause(),
             Self::Link(refusal) => refusal.cause(),
             Self::Limit(limit) => Some(limit.kind().catalog_cause()),
+            Self::Intake { refusal, .. } => refusal.cause.cause(),
             Self::Source(_)
             | Self::Forms { .. }
-            | Self::Intake { .. }
+            | Self::OperationClause { .. }
             | Self::Assembly { .. }
             | Self::Emit(_)
             | Self::Omitted(_) => None,
+        }
+    }
+
+    /// The typed fields of a reached limit this refusal reports: a stage
+    /// limit's `kind`, `bound`, `actual` and `setting`, or a caller-budget
+    /// ceiling's record: the intake size record, or a denied charge's `setting`,
+    /// `limit`, `actual` and retained charge (FR-255 Behavior 1). `None`
+    /// for a refusal that is no limit.
+    pub fn fields(&self) -> Option<std::collections::BTreeMap<&'static str, String>> {
+        match self {
+            Self::Limit(limit) => limit.catalog_fields(),
+            Self::Intake { refusal, .. } => {
+                refusal.cause.denial().map(|denial| denial.catalog_fields())
+            }
+            Self::Dependency { refusal, .. } => refusal.fields(),
+            // FR-302: a family that stopped on a caller-budget ceiling
+            // reports its retained charge.
+            Self::Check { refusals, .. } => {
+                refusals.iter().find_map(|refusal| match &refusal.cause {
+                    CheckCause::DispatchLink(cause) => {
+                        cause.denial.as_ref().map(|denial| denial.catalog_fields())
+                    }
+                    _ => None,
+                })
+            }
+            _ => None,
         }
     }
 
@@ -228,9 +274,10 @@ impl CompileRefusal {
         match self {
             Self::Source(_) => SpineStage::Source,
             Self::Forms { .. } => SpineStage::Forms,
-            Self::Intake { .. } | Self::DependencyInput(_) | Self::Import { .. } => {
-                SpineStage::Intake
-            }
+            Self::Intake { .. }
+            | Self::OperationClause { .. }
+            | Self::DependencyInput(_)
+            | Self::Import { .. } => SpineStage::Intake,
             Self::Dependency { refusal, .. } => refusal.stage(),
             Self::Assembly { .. } | Self::Profile { .. } => SpineStage::Assembly,
             Self::Check { .. } => SpineStage::Check,
@@ -304,7 +351,11 @@ impl CompileRefusal {
                 Some(Locus::Region(region)) => Some(region),
                 Some(_) | None => None,
             },
-            Self::DependencyInput(_) | Self::Link(_) | Self::Emit(_) | Self::Omitted(_) => None,
+            Self::OperationClause { .. }
+            | Self::DependencyInput(_)
+            | Self::Link(_)
+            | Self::Emit(_)
+            | Self::Omitted(_) => None,
         }
     }
 
@@ -350,6 +401,15 @@ impl SpineStage {
             Self::Check => "check",
             Self::Emit => "emit",
         }
+    }
+}
+
+/// A readable account of a kept operation clause's parse failure.
+fn clause_text_message(failure: &ClauseTextRefusal) -> String {
+    match failure {
+        ClauseTextRefusal::Source(diagnostic) => diagnostic.message.clone(),
+        ClauseTextRefusal::Forms(refusal) => forms_message(refusal),
+        ClauseTextRefusal::NotOneExpression => "the text is not one expression".to_owned(),
     }
 }
 
@@ -483,6 +543,9 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
         AssemblyCause::UnadmittedModel { alias } => {
             format!("`model {alias}` names no admitted domain package")
         }
+        AssemblyCause::UnsupportedVariantType { name } => {
+            format!("`{name}` is a variant type with a case name that is not an identifier, which has no runtime enumeration yet")
+        }
         AssemblyCause::UnsupportedModelMember { alias, node } => format!(
             "the domain package of `model {alias}` declares `{node}`, which no type environment \
              entry represents yet"
@@ -496,6 +559,11 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
         AssemblyCause::AmbiguousOperation { context, operation } => {
             format!("`{context}` inherits more than one operation `{operation}`")
         }
+        AssemblyCause::DuplicateOperationBody { operation, bodies } => format!(
+            "{} operation-body declarations resolve to the operation `{}`",
+            bodies.len(),
+            operation.node
+        ),
         AssemblyCause::AmbiguousPopulation {
             context,
             populations,

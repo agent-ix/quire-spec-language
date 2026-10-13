@@ -11,7 +11,9 @@
 
 #[cfg(feature = "test-support")]
 mod business_meanings;
+mod child_composite;
 mod complete_value_lock;
+mod dispatch_linking;
 mod field_presence;
 mod identity_golden_vectors;
 mod ieee_profiles;
@@ -30,12 +32,16 @@ mod model_operations;
 mod model_population;
 #[cfg(feature = "test-support")]
 mod model_systems;
+mod operation_bodies;
+mod operation_clauses;
 mod quantities;
 mod state_clauses;
 #[cfg(feature = "test-support")]
 mod tc235_business_meanings;
 #[cfg(feature = "test-support")]
 mod type_environment_model;
+mod variant_fields;
+mod variant_type;
 
 #[path = "../../../tests/support/admitted_charge.rs"]
 mod admitted_charge;

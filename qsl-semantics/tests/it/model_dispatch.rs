@@ -58,6 +58,8 @@ fn operation(
         parameters: Vec::new(),
         result: None,
         effect: OperationEffect::default(),
+        requires: Vec::new(),
+        ensures: Vec::new(),
         own_postcondition_clauses: Vec::new(),
         has_body,
         redefines: redefines.map(DeclarationKey::fixture),
@@ -260,7 +262,7 @@ fn d01_the_eighth_dispatch_candidate_charge_is_incomplete_at_the_named_limit() {
     };
     assert_eq!(incomplete.limit_kind, LimitKind::DispatchCandidates);
     assert_eq!(
-        incomplete.limit_exceeded().setting(),
+        incomplete.denial().setting(),
         qsl_foundation::Setting::ModelDispatchCandidates
     );
     assert_eq!(incomplete.limit, 7);
@@ -556,6 +558,7 @@ fn two_operation_members_sharing_one_declaration_key_refuse_conflicting_binding(
                 refusal.cause,
                 ModelRefusalCause::ConflictingBinding {
                     key: DeclarationKey::fixture("model.A.size"),
+                    member: None,
                 }
             );
         }
@@ -836,8 +839,8 @@ fn a_family_at_the_configured_bound_links_and_one_step_more_refuses() {
             );
             let exceeded = refusal
                 .cause
-                .limit_exceeded()
-                .expect("a step ceiling is a stage limit");
+                .denial()
+                .expect("a step ceiling is a denied charge");
             assert_eq!(
                 exceeded.setting(),
                 qsl_foundation::Setting::ModelFamilySteps

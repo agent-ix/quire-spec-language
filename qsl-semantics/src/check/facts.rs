@@ -23,7 +23,7 @@ use self::persistent::PersistentMap;
 use super::check::DispatchOperation;
 use super::ir::{
     Arithmetic, CheckedLiteral, CheckedNode, Connective, DispatchTable, NodeKind, Observation,
-    OrderedKind, Slot, Visit,
+    OrderedKind, RecordField, Slot, Visit,
 };
 use super::observation::Observations;
 use super::refusal::{
@@ -38,7 +38,7 @@ use quire_semantic_value::location::Location;
 /// One step of a stable path.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) enum Step {
-    Field(usize),
+    Field(RecordField),
     Value,
     /// A model attribute read in a state clause (FR-104), with the
     /// observation it reads at: a fact about one observation of a path
@@ -447,8 +447,8 @@ impl<'a> Definedness<'a> {
         let root = loop {
             match current.kind() {
                 NodeKind::Local(slot) => break *slot,
-                NodeKind::Field { operand, index, .. } => {
-                    steps.push(PathStep::Field(*index));
+                NodeKind::Field { operand, field, .. } => {
+                    steps.push(PathStep::Field(field.clone()));
                     current = current.at(*operand);
                 }
                 NodeKind::Value(operand) => {
@@ -481,7 +481,7 @@ impl<'a> Definedness<'a> {
         });
         for step in steps.into_iter().rev() {
             match step {
-                PathStep::Field(index) => path.steps.push(Step::Field(index)),
+                PathStep::Field(field) => path.steps.push(Step::Field(field)),
                 PathStep::Value => {
                     if !facts.present.contains(&path) {
                         return None;
@@ -1296,7 +1296,7 @@ impl<'n> quire_walk::Walk for OutcomeWalk<'_, '_, 'n> {
 /// One step of a stable path, before the facts it is checked against are
 /// applied root first.
 enum PathStep {
-    Field(usize),
+    Field(RecordField),
     Value,
     Attribute(Step),
 }
@@ -1346,7 +1346,7 @@ pub(crate) fn established_field_fact(condition: CheckedNode<'_>, self_slot: Slot
     };
     let path = StablePath {
         root: self_slot,
-        steps: vec![Step::Field(0)],
+        steps: vec![Step::Field(super::field_refinement::self_field())],
     };
     Established {
         presence: facts.present.contains(&path),

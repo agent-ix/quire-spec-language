@@ -82,6 +82,15 @@ struct Document<'a> {
     embedding: Option<&'a SourceMap>,
 }
 
+/// The spans of declarations that are not function or state clause forms: a
+/// declared type's name by the name, and the declaration a function
+/// synthesized for dispatch was derived from by the function's index.
+#[derive(Clone, Copy)]
+struct DeclaredSpans<'a> {
+    types: &'a BTreeMap<String, Span>,
+    synthesized: &'a BTreeMap<usize, Span>,
+}
+
 /// The region `location` names, given each function's and each state
 /// clause's form spans by declaration index.
 fn resolve<'s>(
@@ -89,21 +98,30 @@ fn resolve<'s>(
     document: Document<'_>,
     spans: impl Fn(usize) -> Option<&'s DeclarationSpans>,
     clause_spans: impl Fn(usize) -> Option<&'s DeclarationSpans>,
-    type_spans: &BTreeMap<String, Span>,
+    declared: DeclaredSpans<'_>,
     attempt_span: impl Fn(usize, usize) -> Option<Span>,
     location: &Location,
 ) -> Option<SourceRegion> {
+    let DeclaredSpans { types, synthesized } = declared;
     let span = match &location.origin {
-        Origin::Body { index, .. } => memo.at(&spans(*index)?.body, location)?,
+        // A function synthesized for dispatch has no form spans: every
+        // occurrence in it is located at the declaration it came from.
+        Origin::Body { index, .. } => match spans(*index) {
+            Some(form) => memo.at(&form.body, location)?,
+            None => *synthesized.get(index)?,
+        },
         Origin::StateClause { index, .. } => memo.at(&clause_spans(*index)?.body, location)?,
         Origin::Measure { index, .. } => memo.at(spans(*index)?.measure.as_ref()?, location)?,
-        Origin::TypeDeclaration { name } if location.depth() == 0 => *type_spans.get(name)?,
+        Origin::TypeDeclaration { name } if location.depth() == 0 => *types.get(name)?,
         Origin::ProtocolAttempt { protocol, attempt } if location.depth() == 0 => {
             attempt_span(*protocol, *attempt)?
         }
-        Origin::TypeDeclaration { .. } | Origin::ProtocolAttempt { .. } | Origin::Expression => {
-            return None
-        }
+        // A kept operation clause is read from a domain package, not from
+        // this unit, so it names no region of the unit (FR-103).
+        Origin::TypeDeclaration { .. }
+        | Origin::ProtocolAttempt { .. }
+        | Origin::ModelOperationClause { .. }
+        | Origin::Expression => return None,
     };
     region(document.source, document.embedding, span)
 }
@@ -144,7 +162,10 @@ impl PackageDeclarations {
             },
             |index| self.functions.get(index)?.spans(),
             |index| Some(&self.state_clauses.get(index)?.spans),
-            &self.declared_type_spans,
+            DeclaredSpans {
+                types: &self.declared_type_spans,
+                synthesized: &self.synthesized_spans,
+            },
             |protocol, attempt| self.attempt_span(protocol, attempt),
             location,
         )
@@ -172,8 +193,11 @@ impl PackageDeclarations {
     /// FR-096: the region of function `index`'s whole declaration form, or
     /// `None` when it was not read from this unit.
     pub fn declaration_region(&self, index: usize) -> Option<SourceRegion> {
-        let spans = self.functions.get(index)?.spans()?;
-        region(&self.source, self.embedding.as_deref(), spans.declaration)
+        let span = match self.functions.get(index)?.spans() {
+            Some(spans) => spans.declaration,
+            None => *self.synthesized_spans.get(&index)?,
+        };
+        region(&self.source, self.embedding.as_deref(), span)
     }
 }
 
@@ -188,6 +212,8 @@ pub struct DeclarationRegions {
     /// Each state clause's form spans, by its index in source order.
     clause_spans: Vec<DeclarationSpans>,
     type_spans: BTreeMap<String, Span>,
+    /// The declaration each function synthesized for dispatch came from.
+    synthesized_spans: BTreeMap<usize, Span>,
     /// Each protocol's own attempts' declared name spans,
     /// index-aligned with the package's own `protocols`/`protocol_attempts`.
     /// `pub(super)`: `check::mod`'s own pipeline copies it onto the final
@@ -207,7 +233,10 @@ impl DeclarationRegions {
             },
             |index| self.spans.get(index)?.as_ref(),
             |index| self.clause_spans.get(index),
-            &self.type_spans,
+            DeclaredSpans {
+                types: &self.type_spans,
+                synthesized: &self.synthesized_spans,
+            },
             |protocol, attempt| *self.attempt_spans.get(protocol)?.get(attempt)?,
             location,
         )
@@ -216,8 +245,11 @@ impl DeclarationRegions {
     /// FR-096: the region of function `index`'s whole declaration form, or
     /// `None` when it was not read from the unit.
     pub fn declaration_region(&self, index: usize) -> Option<SourceRegion> {
-        let spans = self.spans.get(index)?.as_ref()?;
-        region(&self.source, self.embedding.as_deref(), spans.declaration)
+        let span = match self.spans.get(index)?.as_ref() {
+            Some(spans) => spans.declaration,
+            None => *self.synthesized_spans.get(&index)?,
+        };
+        region(&self.source, self.embedding.as_deref(), span)
     }
 
     /// FR-096: the region a check refusal names. A stage limit a family
@@ -255,6 +287,7 @@ impl PackageDeclarations {
                 .map(|clause| clause.spans.clone())
                 .collect(),
             type_spans: self.declared_type_spans.clone(),
+            synthesized_spans: self.synthesized_spans.clone(),
             // SR-770 FND-007: `None` for an attempt whose declaration index
             // names no declaration of its protocol (a hand-built form, never
             // one S2 built), so its region is simply unresolved instead of
@@ -305,7 +338,10 @@ impl CheckedGraph {
             },
             |index| self.form_spans.get(index)?.as_ref(),
             |index| Some(&self.state_clauses.get(index)?.spans),
-            &self.type_spans,
+            DeclaredSpans {
+                types: &self.type_spans,
+                synthesized: &self.synthesized_spans,
+            },
             |protocol, attempt| *self.attempt_spans.get(protocol)?.get(attempt)?,
             location,
         )
@@ -327,7 +363,10 @@ impl CheckedGraph {
                 },
                 |index| self.form_spans.get(index)?.as_ref(),
                 |index| Some(&self.state_clauses.get(index)?.spans),
-                &self.type_spans,
+                DeclaredSpans {
+                    types: &self.type_spans,
+                    synthesized: &self.synthesized_spans,
+                },
                 |protocol, attempt| *self.attempt_spans.get(protocol)?.get(attempt)?,
                 location,
             )
@@ -337,8 +376,11 @@ impl CheckedGraph {
     /// FR-096: the region of function `index`'s whole declaration form, or
     /// `None` when it was not read from this unit.
     pub fn declaration_region(&self, index: usize) -> Option<SourceRegion> {
-        let spans = self.form_spans.get(index)?.as_ref()?;
-        region(&self.source, self.embedding.as_deref(), spans.declaration)
+        let span = match self.form_spans.get(index)?.as_ref() {
+            Some(spans) => spans.declaration,
+            None => *self.synthesized_spans.get(&index)?,
+        };
+        region(&self.source, self.embedding.as_deref(), span)
     }
 }
 

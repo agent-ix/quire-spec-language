@@ -12,6 +12,7 @@ mod tc235_k2;
 
 mod call_verdicts;
 mod checked_package_call;
+mod child_composite;
 mod collection_algebra;
 mod collection_queries;
 mod composite_values;
@@ -27,3 +28,4 @@ mod source_call;
 mod state_model_family;
 mod tc235_business_meaning_runtime;
 mod total_functions;
+mod variant_fields;

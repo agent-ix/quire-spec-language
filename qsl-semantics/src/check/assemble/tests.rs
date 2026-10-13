@@ -135,6 +135,8 @@ fn a_state_machine_meaning_is_emitted_as_an_object_type() {
                 parameters: Vec::new(),
                 result: None,
                 effect: OperationEffect::default(),
+                requires: Vec::new(),
+                ensures: Vec::new(),
                 own_postcondition_clauses: Vec::new(),
                 has_body: true,
                 redefines: None,
@@ -167,15 +169,18 @@ fn a_state_machine_meaning_is_emitted_as_an_object_type() {
         alias: "M".to_owned(),
         span: Span { start: 0, end: 0 },
         view,
+        operation_clauses: Vec::new(),
     };
     let mut operations = super::OperationTable::default();
-    let owner = super::SourceOwner::new("test", "unit").expect("fixture source owner");
-    let (declarations, composites) = super::model_object_types(
+    let super::ModelTypes {
+        objects: declarations,
+        composites,
+        ..
+    } = super::model_object_types(
         "M",
         &selected,
         selected.span,
         &mut operations,
-        &owner,
         IdentityLimits::default(),
     )
     .expect("state-machine meaning is supported by the object-type seam");
@@ -1170,7 +1175,13 @@ fn model_field_of(
     let records: BTreeMap<&DeclarationKey, &DomainPackageRecord> = BTreeMap::new();
     let identities: BTreeMap<DeclarationKey, EffectiveId> = BTreeMap::new();
     let meaning_handles = BTreeMap::new();
-    model_field(&field, &records, &identities, &meaning_handles)
+    model_field(
+        &field,
+        &records,
+        &identities,
+        &meaning_handles,
+        &BTreeMap::new(),
+    )
 }
 
 fn mult(lower: u64, upper: Option<u64>, ordered: bool, unique: bool) -> Multiplicity {
@@ -1215,8 +1226,14 @@ fn timestamp_alias_field_assembles_with_its_distinct_kernel_type() {
     let identities: BTreeMap<DeclarationKey, EffectiveId> = BTreeMap::new();
     let meaning_handles = BTreeMap::new();
 
-    let declaration = model_field(&field, &records, &identities, &meaning_handles)
-        .expect("native Timestamp is supported by the shared value kernel");
+    let declaration = model_field(
+        &field,
+        &records,
+        &identities,
+        &meaning_handles,
+        &BTreeMap::new(),
+    )
+    .expect("native Timestamp is supported by the shared value kernel");
 
     assert_eq!(*declaration.value_type(), ValueType::Timestamp);
 }
@@ -1231,8 +1248,14 @@ fn native_string_field_assembles_as_a_distinct_kernel_type() {
     let identities: BTreeMap<DeclarationKey, EffectiveId> = BTreeMap::new();
     let meaning_handles = BTreeMap::new();
 
-    let declaration = model_field(&field, &records, &identities, &meaning_handles)
-        .expect("native String is supported by the shared value kernel");
+    let declaration = model_field(
+        &field,
+        &records,
+        &identities,
+        &meaning_handles,
+        &BTreeMap::new(),
+    )
+    .expect("native String is supported by the shared value kernel");
 
     assert_eq!(*declaration.value_type(), ValueType::String);
     assert_ne!(
@@ -2090,4 +2113,122 @@ fn the_dimension_and_unit_causes_have_their_catalog_codes() {
     for (cause, code) in cases {
         assert_eq!(cause.catalog_code().to_string(), code, "{cause:?}");
     }
+}
+
+fn composite_node(label: &str) -> quire_exact::NodeKey {
+    let mut digest = [0; 32];
+    digest[..label.len()].copy_from_slice(label.as_bytes());
+    quire_exact::NodeKey::from_digest(digest)
+}
+
+fn empty_record(
+    label: &str,
+    supertypes: &[&str],
+) -> quire_semantic_value::declaration::CompositeDeclaration {
+    quire_semantic_value::declaration::CompositeDeclaration::new(
+        composite_node(label),
+        label.to_owned(),
+        quire_semantic_value::declaration::CompositeShape::Record(Vec::new()),
+    )
+    .with_supertypes(
+        supertypes
+            .iter()
+            .map(|general| composite_node(general))
+            .collect(),
+    )
+}
+
+fn admit_composites(
+    declarations: Vec<quire_semantic_value::declaration::CompositeDeclaration>,
+) -> Result<quire_semantic_value::declaration::TypeEnvironment, AssemblyRefusal> {
+    super::admit_types(
+        declarations,
+        &[],
+        &BTreeMap::new(),
+        TypeEnvironmentLimits::default(),
+        &Cancel::new(),
+    )
+}
+
+/// QSL-732: a composite generalization cycle refuses with the typed cause,
+/// `ill_typed`, and the `type-mismatch` catalog cause beside the object-type
+/// cycle; it is not reported as a broken invariant.
+#[trace("FR-143-AC-9", "TC-188")]
+#[test]
+fn a_composite_supertype_cycle_refuses_as_ill_typed_type_mismatch() {
+    let refusal = admit_composites(vec![empty_record("A", &["B"]), empty_record("B", &["A"])])
+        .expect_err("a composite cycle refuses");
+    assert!(!refusal.errors.is_empty());
+    for error in &refusal.errors {
+        let AssemblyCause::InvalidTypeDeclaration(invalid) = &error.cause else {
+            panic!("expected the typed declaration refusal: {error:?}");
+        };
+        assert!(
+            matches!(
+                invalid.cause,
+                quire_semantic_value::declaration::DeclarationCause::CompositeGeneralizationCycle { .. }
+            ),
+            "{invalid:?}"
+        );
+        assert_eq!(
+            error.cause.code(),
+            qsl_foundation::diagnostic::Code::IllTyped
+        );
+        assert_eq!(
+            error.cause.catalog_code().to_string(),
+            "ill_typed/type-mismatch"
+        );
+    }
+}
+
+/// QSL-732: a composite supertype naming no declaration that any round set
+/// aside is its own refusal (`UnknownDeclaration`, a broken invariant), not a
+/// silently dropped child.
+#[trace("FR-143-AC-9", "TC-188")]
+#[test]
+fn a_dangling_composite_supertype_is_refused_not_dropped() {
+    let refusal = admit_composites(vec![empty_record("Child", &["Missing"])])
+        .expect_err("a dangling composite supertype refuses");
+    let [error] = refusal.errors.as_slice() else {
+        panic!("one refusal expected: {:?}", refusal.errors);
+    };
+    let AssemblyCause::InvalidTypeDeclaration(invalid) = &error.cause else {
+        panic!("expected the typed declaration refusal: {error:?}");
+    };
+    assert_eq!(invalid.declaration, "Child");
+    assert_eq!(
+        invalid.cause,
+        quire_semantic_value::declaration::DeclarationCause::UnknownDeclaration(composite_node(
+            "Missing"
+        ))
+    );
+    assert_eq!(
+        error.cause.catalog_code().to_string(),
+        "runtime_invariant/established-invariant-broken"
+    );
+}
+
+/// QSL-732: a child whose composite parent is itself refused is a
+/// consequence of the parent's refusal and is set aside unreported.
+#[trace("FR-143-AC-9", "TC-188")]
+#[test]
+fn a_child_of_a_refused_composite_parent_is_a_consequence() {
+    use quire_semantic_value::declaration::{
+        CompositeDeclaration, CompositeShape, FieldDeclaration,
+    };
+    let duplicate = || FieldDeclaration::new("x", ValueType::Integer, Presence::Required);
+    let parent = CompositeDeclaration::new(
+        composite_node("Parent"),
+        "Parent".to_owned(),
+        CompositeShape::Record(vec![duplicate(), duplicate()]),
+    );
+    let refusal = admit_composites(vec![parent, empty_record("Child", &["Parent"])])
+        .expect_err("the parent refuses");
+    let [error] = refusal.errors.as_slice() else {
+        panic!("only the parent is reported: {:?}", refusal.errors);
+    };
+    let AssemblyCause::InvalidTypeDeclaration(invalid) = &error.cause else {
+        panic!("expected the typed declaration refusal: {error:?}");
+    };
+    assert_eq!(invalid.declaration, "Parent");
 }
