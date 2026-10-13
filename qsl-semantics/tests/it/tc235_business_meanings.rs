@@ -1157,10 +1157,28 @@ fn tc235_k2_money_and_order_placed_composites_require_qsl_781() {
         .any(|declaration| declaration.name() == "M::OrderPlaced"));
 }
 
+/// The Money / TaxedMoney record slice of K2, alone.
+fn money_slice_document() -> Value {
+    let mut document = k2_record_event_subtype_slice(true);
+    // Only the record slice is under test: the rest of K2 does not check
+    // today because of the String/Uuid/Timestamp lowering arm that PR #789
+    // replaces.
+    let kept = ["Money", "TaxedMoney"];
+    document["types"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|ty| kept.iter().any(|name| ty["identity"] == id(name)));
+    document["constructs"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|construct| construct["construct"]["meaning"] == meaning::RECORD_VALUE_TYPE);
+    document
+}
+
 #[trace("FR-056-AC-18", "TC-235")]
 #[test]
-#[ignore = "requires QSL-732 composite ancestor conformance in the pinned kernel"]
-fn tc235_record_subtype_value_conforms_to_parent_typed_parameter_requires_qsl_732() {
+#[ignore = "requires check+eval support for child-at-parent slots (QSL-737)"]
+fn tc235_record_subtype_value_conforms_to_parent_typed_parameter() {
     let document = k2_record_event_subtype_slice(true);
     let declarations = assemble_k2_unit(
         &document,
@@ -1170,6 +1188,27 @@ fn tc235_record_subtype_value_conforms_to_parent_typed_parameter_requires_qsl_73
     assert!(declarations
         .check(quire_semantic_value::checking::CheckingLimits::default())
         .is_ok());
+}
+
+/// A parent value is refused at a child-typed parameter at check time.
+#[trace("FR-056-AC-18", "TC-235")]
+#[test]
+fn tc235_record_parent_value_is_refused_at_child_typed_parameter() {
+    let declarations = assemble_k2_unit(
+        &money_slice_document(),
+        "function needsTaxed using v(money: M::TaxedMoney): Integer pure { 0 }\n\
+         function plainTotal using v(money: M::Money): Integer pure { needsTaxed(money) }",
+    );
+    let refusals = declarations
+        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .expect_err("a parent value does not conform to its child");
+    assert!(
+        refusals.iter().all(|refusal| refusal.cause
+            == qsl_semantics::check::CheckCause::IllTyped(
+                quire_exact::IllTypedCause::TypeMismatch
+            )),
+        "{refusals:?}"
+    );
 }
 
 /// M07: processes retain their run identity and ordered event steps, while

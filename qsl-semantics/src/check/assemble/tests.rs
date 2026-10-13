@@ -2091,3 +2091,121 @@ fn the_dimension_and_unit_causes_have_their_catalog_codes() {
         assert_eq!(cause.catalog_code().to_string(), code, "{cause:?}");
     }
 }
+
+fn composite_node(label: &str) -> quire_exact::NodeKey {
+    let mut digest = [0; 32];
+    digest[..label.len()].copy_from_slice(label.as_bytes());
+    quire_exact::NodeKey::from_digest(digest)
+}
+
+fn empty_record(
+    label: &str,
+    supertypes: &[&str],
+) -> quire_semantic_value::declaration::CompositeDeclaration {
+    quire_semantic_value::declaration::CompositeDeclaration::new(
+        composite_node(label),
+        label.to_owned(),
+        quire_semantic_value::declaration::CompositeShape::Record(Vec::new()),
+    )
+    .with_supertypes(
+        supertypes
+            .iter()
+            .map(|general| composite_node(general))
+            .collect(),
+    )
+}
+
+fn admit_composites(
+    declarations: Vec<quire_semantic_value::declaration::CompositeDeclaration>,
+) -> Result<quire_semantic_value::declaration::TypeEnvironment, AssemblyRefusal> {
+    super::admit_types(
+        declarations,
+        &[],
+        &BTreeMap::new(),
+        TypeEnvironmentLimits::default(),
+        &Cancel::new(),
+    )
+}
+
+/// QSL-732: a composite generalization cycle refuses with the typed cause,
+/// `ill_typed`, and the `type-mismatch` catalog cause beside the object-type
+/// cycle; it is not reported as a broken invariant.
+#[trace("FR-143-AC-9", "TC-188")]
+#[test]
+fn a_composite_supertype_cycle_refuses_as_ill_typed_type_mismatch() {
+    let refusal = admit_composites(vec![empty_record("A", &["B"]), empty_record("B", &["A"])])
+        .expect_err("a composite cycle refuses");
+    assert!(!refusal.errors.is_empty());
+    for error in &refusal.errors {
+        let AssemblyCause::InvalidTypeDeclaration(invalid) = &error.cause else {
+            panic!("expected the typed declaration refusal: {error:?}");
+        };
+        assert!(
+            matches!(
+                invalid.cause,
+                quire_semantic_value::declaration::DeclarationCause::CompositeGeneralizationCycle { .. }
+            ),
+            "{invalid:?}"
+        );
+        assert_eq!(
+            error.cause.code(),
+            qsl_foundation::diagnostic::Code::IllTyped
+        );
+        assert_eq!(
+            error.cause.catalog_code().to_string(),
+            "ill_typed/type-mismatch"
+        );
+    }
+}
+
+/// QSL-732: a composite supertype naming no declaration that any round set
+/// aside is its own refusal (`UnknownDeclaration`, a broken invariant), not a
+/// silently dropped child.
+#[trace("FR-143-AC-9", "TC-188")]
+#[test]
+fn a_dangling_composite_supertype_is_refused_not_dropped() {
+    let refusal = admit_composites(vec![empty_record("Child", &["Missing"])])
+        .expect_err("a dangling composite supertype refuses");
+    let [error] = refusal.errors.as_slice() else {
+        panic!("one refusal expected: {:?}", refusal.errors);
+    };
+    let AssemblyCause::InvalidTypeDeclaration(invalid) = &error.cause else {
+        panic!("expected the typed declaration refusal: {error:?}");
+    };
+    assert_eq!(invalid.declaration, "Child");
+    assert_eq!(
+        invalid.cause,
+        quire_semantic_value::declaration::DeclarationCause::UnknownDeclaration(composite_node(
+            "Missing"
+        ))
+    );
+    assert_eq!(
+        error.cause.catalog_code().to_string(),
+        "runtime_invariant/established-invariant-broken"
+    );
+}
+
+/// QSL-732: a child whose composite parent is itself refused is a
+/// consequence of the parent's refusal and is set aside unreported.
+#[trace("FR-143-AC-9", "TC-188")]
+#[test]
+fn a_child_of_a_refused_composite_parent_is_a_consequence() {
+    use quire_semantic_value::declaration::{
+        CompositeDeclaration, CompositeShape, FieldDeclaration,
+    };
+    let duplicate = || FieldDeclaration::new("x", ValueType::Integer, Presence::Required);
+    let parent = CompositeDeclaration::new(
+        composite_node("Parent"),
+        "Parent".to_owned(),
+        CompositeShape::Record(vec![duplicate(), duplicate()]),
+    );
+    let refusal = admit_composites(vec![parent, empty_record("Child", &["Parent"])])
+        .expect_err("the parent refuses");
+    let [error] = refusal.errors.as_slice() else {
+        panic!("only the parent is reported: {:?}", refusal.errors);
+    };
+    let AssemblyCause::InvalidTypeDeclaration(invalid) = &error.cause else {
+        panic!("expected the typed declaration refusal: {error:?}");
+    };
+    assert_eq!(invalid.declaration, "Parent");
+}
