@@ -874,29 +874,6 @@ fn supersedes_relationship() -> Value {
     })
 }
 
-/// A `Note` record value type, as a sibling declaration
-/// (`extra_constructs`/`extra_types`) beside `ConfigVersion`.
-fn note_record_value_type() -> (Value, Value) {
-    let note = format!("ix://{PACKAGE_IDENTITY}/Note");
-    let construct = wire_construct("record_value_type", meaning::RECORD_VALUE_TYPE, json!({}));
-    let type_node = wire_type(
-        &note,
-        "record_value_type",
-        json!({
-            "supertypes": [],
-            "operations": [],
-            "fields": [wire_field(
-                &format!("{note}/text"),
-                "text",
-                "ix://quire/native/Integer",
-                "required",
-                1,
-            )],
-        }),
-    );
-    (construct, type_node)
-}
-
 fn frame_key(suffix: &str) -> DeclarationKey {
     DeclarationKey {
         package: PACKAGE_IDENTITY.to_owned(),
@@ -2279,27 +2256,28 @@ fn a_decimal_typed_parameter_refuses_at_intake_not_assembly() {
     let UnitIntakeCause::Refused(refusals) = missing_policy.cause else {
         panic!("{missing_policy:?}: expected a Refused cause");
     };
-    assert_eq!(refusals.len(), 1, "{refusals:?}");
-    assert_eq!(
-        refusals[0].code.as_str(),
-        "invalid_model_binding",
+    // FR-056 retains the reader's diagnostic with its IR node, the
+    // parameter; FR-103-AC-3 adds unsupported_construct/declaration-form at
+    // the same parameter. Exactly these two.
+    let parameter_node = note["identity"].as_str().unwrap();
+    assert_eq!(refusals.len(), 2, "{refusals:?}");
+    assert!(
+        refusals.iter().any(|refusal| refusal.code.as_str()
+            == "invalid_model_binding"
+            && matches!(
+                &refusal.cause,
+                qsl_semantics::model::refusal::ModelRefusalCause::IntakeMalformedDeclaration { node, .. }
+                    if node == parameter_node
+            )),
         "{refusals:?}"
     );
     assert!(
-        matches!(
-            &refusals[0].cause,
-            qsl_semantics::model::refusal::ModelRefusalCause::IntakeMalformedDeclaration { node, .. }
-                if node == note["identity"].as_str().unwrap()
-        ),
-        "{refusals:?}"
-    );
-    // A missing Decimal policy is diagnosed at the parameter owning the walk,
-    // not at its typeRef member (FCD FR-144, Decimal policy).
-    assert_eq!(
-        refusals[0].detail,
-        "agent-ix-semantic-ir refused this document at \
-         /ir/types/1/operations/0/params/0 (agent-ix.semantic-ir.DECIMAL_POLICY_MISSING): \
-         a decimal parameter carries a decimal policy",
+        refusals.iter().any(|refusal| refusal.code.as_str() == "unsupported_construct"
+            && matches!(
+                &refusal.cause,
+                qsl_semantics::model::refusal::ModelRefusalCause::UnsupportedDeclarationForm { node, .. }
+                    if node == parameter_node
+            )),
         "{refusals:?}"
     );
     // The wire policy admits this Decimal parameter at FCD's boundary;
@@ -2368,33 +2346,102 @@ fn a_version_number_typed_parameter_admits_and_is_typed_bound_integer() {
     );
 }
 
-/// FR-103-AC-4 (TC-458 step 4): a package holding a record value type still
-/// refuses `UnsupportedModelMember` naming that node, with the operation
-/// admitted beside it not changing the refusal.
+/// FR-103-AC-4 (TC-458 step 4): a record value type `Address { street:
+/// VersionNumber }` and `ConfigVersion.address: Address` assemble beside
+/// `attemptUpdate`, which modifies `ConfigVersion/address`; a clause reading
+/// `self.address.street` checks; `address` is typed by the record's
+/// composite, not a `Reference`; and no `UnsupportedModelMember` names it.
 #[trace("TC-458", "FR-103-AC-4")]
 #[test]
-fn a_record_value_type_beside_an_admitted_operation_still_refuses() {
-    let note = format!("ix://{PACKAGE_IDENTITY}/Note");
-    let (construct, type_node) = note_record_value_type();
-    let document = config_version_document(
+fn a_record_value_type_beside_an_admitted_operation_assembles() {
+    let address = format!("ix://{PACKAGE_IDENTITY}/Address");
+    let construct = wire_construct("record_value_type", meaning::RECORD_VALUE_TYPE, json!({}));
+    let address_type = wire_type(
+        &address,
+        "record_value_type",
+        json!({
+            "supertypes": [],
+            "operations": [],
+            "fields": [wire_field(
+                &format!("{address}/street"),
+                "street",
+                &version_number_identity(),
+                "required",
+                1,
+            )],
+        }),
+    );
+    let bytes = config_version_document(
         attempt_update(
             json!([]),
             json!({
-                "modifies": [config_version_identity("versionNumber")],
+                "modifies": [config_version_identity("address")],
                 "creates": [],
                 "deletes": [],
             }),
         ),
         vec![construct],
-        vec![type_node],
+        vec![address_type],
         json!([]),
     );
-    let error = admit_and_assemble(&document).expect_err("a record value type still refuses");
+    let mut document: Value = serde_json::from_slice(&bytes).expect("the fixture is JSON");
+    let config_version = format!("ix://{PACKAGE_IDENTITY}/ConfigVersion");
+    let owner = document["types"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|node| node["identity"] == config_version.as_str())
+        .expect("ConfigVersion is declared");
+    owner["fields"].as_array_mut().unwrap().push(wire_field(
+        &config_version_identity("address"),
+        "address",
+        &address,
+        "required",
+        1,
+    ));
+    let bytes = serde_json::to_vec(&document).unwrap();
+
+    let body = "invariant AddressStreet using v on Config::ConfigVersion at current { \
+                self.address.street >= 0 }\n";
+    let declarations =
+        admit_and_assemble_with_body(&bytes, body).expect("a record value type assembles");
+
+    let (unit, packages) = config_unit(&bytes);
+    let built = parse_and_build(&unit);
+    let views = admit_unit(
+        &built.selections().models,
+        &packages,
+        ModelNormalizationLimits::default(),
+    )
+    .expect("the package admits");
+    let config_version_id = views[0].view.type_identities()[&DeclarationKey {
+        package: PACKAGE_IDENTITY.to_owned(),
+        node: config_version.clone(),
+    }];
+    let declared = declarations
+        .types
+        .object_type(config_version_id)
+        .expect("ConfigVersion is declared");
+    let field = declared
+        .attributes()
+        .iter()
+        .find(|field| field.name() == "address")
+        .expect("address is an attribute");
     assert!(
-        error.contains("UnsupportedModelMember"),
-        "{error}: expected AssemblyCause::UnsupportedModelMember naming {note:?}"
+        matches!(field.value_type(), ValueType::Composite(_)),
+        "address is typed by the record value type, not a Reference: {:?}",
+        field.value_type()
     );
-    assert!(error.contains(&note), "{error}: expected the node named");
+    assert!(
+        declarations
+            .types
+            .composites()
+            .any(|composite| composite.name() == "Config::Address"),
+        "the record value type Address is declared"
+    );
+    declarations
+        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .expect("the clause reading self.address.street checks");
 }
 
 /// FR-103-AC-5 (TC-458 step 5): admission is deterministic. Admitting the

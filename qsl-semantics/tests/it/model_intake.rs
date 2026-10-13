@@ -221,55 +221,19 @@ fn lifts_the_architecture_bundle_and_admits_it() {
     assert_eq!(admitted_document.tree(), &package);
 }
 
-/// (a): `agent-ix/filament-core-data` PR #200 (merged; this crate's pinned
-/// `agent-ix-extraction-frontend`/`agent-ix-semantic-ir` rev now includes
-/// it) fixes FCD #199's four gaps and produces the architecture golden at
-/// `crates/extraction-frontend/fixtures/architecture/expected/semantic-ir.json`
-/// in the pinned dependency checkout: 12 types,
-/// `kind: {module, name}`, no package-local scalar/alias nodes, no
-/// `/type//field//operation/` identity segments, and `Flow2`'s inline
-/// `relationships[]` in the real `sourceEnd`/`targetEnd`
-/// (`role`+`multiplicity`+`type`) shape.
+/// FR-056 requires `UUID` among the native value types a field may name, so
+/// the architecture golden of the pinned `agent-ix-extraction-frontend`
+/// (12 types, no `populations[]`, asserted below) reads clean: `Pump.id`,
+/// `Sys.id` and `Tank.id` (`typeRef` `ix://quire/native/UUID`) read as
+/// `Native(Uuid)` field members.
 ///
-/// Measured (not predicted) against the now-pinned rev:
-/// `validate_with_semantic_ir` admits the whole document -- the schema at
-/// this pin recognizes both a field's `constraints[]` and a relationship's
-/// `sourceEnd`/`targetEnd`/`role`/`direction` shape, so `decide` reports no
-/// `Severity::Error` diagnostic and `read_records` reaches its own per-node
-/// reading over the golden for the first time. Of its 12 types (no
-/// `populations[]`, asserted below rather than assumed), **3 refuse and 9
-/// read clean**. `Count`, a `quire.meaning.model.record-value-type/v1`
-/// type, reads as a record value type (it refused as an unsupported
-/// declaration form until its reader was added):
-///
-/// - `Flow2`: its inline relationship uses FR-154's canonical relationship
-///   slot identity (`ix://agent-ix/architecture/relationship/Flow2-specializes-Flow`)
-///   and reads clean. Fields and operations retain FR-154's owner/name form;
-///   relationship members use the distinct slot-rooted form.
-/// - `Pump.id`, `Sys.id`, `Tank.id`: `IntakeMalformedDeclaration` -- each
-///   field's `typeRef` is `ix://quire/native/UUID`, R5's ruling that QSL's
-///   native-value-type vocabulary is the conformant side and FCD's wider
-///   one is not QSL's to narrow (see [`super::read_value_type_ref`]'s docs
-///   and its own
-///   `refuses_uuid_as_malformed_declaration_r5_holds_until_plat_836` test).
-///   PLAT-836 (a separate ticket) narrows what FCD *emits* for these
-///   fields, not this reader; until it lands, this refusal is correct.
-///
-/// A prior static reading of this reader predicted a relationship refusal from
-/// the wrong owner/name rule. The pinned Semantic IR and FR-154 instead define
-/// the slot-rooted relationship identity, so the golden relationship now reads
-/// clean while the three UUID field refusals remain the measured failures.
-///
-/// The remaining 9 -- `Count`, `Flow`, `pipe`, `pump_alloc`, `pump_out`,
-/// `sys_pump`, `sys_tank`, `tank_in` -- read clean, but `read_records` only proves that
-/// as "produced no refusal": it discards every already-read record when any
-/// node refuses, so no content assertion for these 7 is possible against
-/// the whole-document call above. `reads_pump_out_as_a_real_endpoint_record`
-/// below asserts real content for one of them by isolating it into its own
-/// single-type document.
+/// `read_records` discards every already-read record when any node refuses,
+/// so this whole-document read is the proof that no node of the golden
+/// refuses. `reads_pump_out_as_a_real_endpoint_record` below asserts content
+/// for one type by isolating it.
 #[trace("TC-145", "TC-146", "FR-056-AC-3", "FR-056-AC-5")]
 #[test]
-fn reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_3_of_its_12_types() {
+fn reading_fcd_199s_golden_shape_reads_all_12_types() {
     let package_identity = "agent-ix/architecture";
     let document =
         std::fs::read_to_string(fcd_fixtures_dir().join("architecture/expected/semantic-ir.json"))
@@ -284,49 +248,35 @@ fn reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_3_of_its_12_types
             .expect("the golden's types is an array")
             .len(),
         12,
-        "the golden's own type count; if this drifts, the 3-of-12/9-clean split below is stale"
+        "the golden's own type count"
     );
     assert!(
         parsed.get("populations").is_none(),
-        "this test's breakdown assumes no populations[] in the golden"
+        "this test assumes no populations[] in the golden"
     );
 
-    let refusals = read_records(package_identity, &parse_document(document.as_bytes())).expect_err(
-        "measured: 3 of the golden's 12 types refuse at read_records even though the whole \
-         document now clears validate_with_semantic_ir's schema check",
-    );
+    let records = read_records(package_identity, &parse_document(document.as_bytes()))
+        .expect("every type of the golden reads, `UUID` fields included");
 
-    assert_eq!(
-        refusals.len(),
-        3,
-        "measured refusal count over the post-#200 golden, canonical relationship identity, \
-         and the record-value-type reader: {refusals:#?}"
-    );
+    use qsl_semantics::model::domain_package::{
+        DomainPackageRecord, NativeValueType, ValueTypeRef,
+    };
 
-    use qsl_foundation::diagnostic::Code;
-    use qsl_semantics::model::normalize::ModelRefusalCause;
-
-    let (pump, sys, tank) = (&refusals[0], &refusals[1], &refusals[2]);
-
-    for (refusal, expected_node) in [
-        (pump, "ix://agent-ix/architecture/Pump/id"),
-        (sys, "ix://agent-ix/architecture/Sys/id"),
-        (tank, "ix://agent-ix/architecture/Tank/id"),
-    ] {
-        assert_eq!(refusal.code, Code::InvalidModelBinding);
-        match &refusal.cause {
-            ModelRefusalCause::IntakeMalformedDeclaration { node, .. } => {
-                assert_eq!(node, expected_node);
-            }
-            other => panic!("{expected_node}: expected IntakeMalformedDeclaration, got {other:?}"),
-        }
-        assert!(
-            refusal.detail.contains("ix://quire/native/UUID")
-                && refusal
-                    .detail
-                    .contains("names no native value type QSL declares"),
-            "{expected_node} detail: {}",
-            refusal.detail
+    for owner in ["Pump", "Sys", "Tank"] {
+        let identity = format!("ix://{package_identity}/{owner}/id");
+        let field = records
+            .iter()
+            .find_map(|record| match record {
+                DomainPackageRecord::FieldMember(field) if field.key.node == identity => {
+                    Some(field)
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("{identity} reads as a field member"));
+        assert_eq!(
+            field.value_type,
+            ValueTypeRef::Native(NativeValueType::Uuid),
+            "{identity}"
         );
     }
 }
@@ -708,6 +658,49 @@ fn missing_relationship_target_retains_its_referring_origin_and_pointer() {
     );
 }
 
+/// FR-056-AC-5: a reference to a node absent from the package refuses
+/// `missing_declaration`/`missing-name`, retained at the referring field with
+/// that field's identity, origin and pointer. A field with no origin is not a
+/// missing name: the semantic-IR schema requires every member's origin, and
+/// FR-056-AC-5 refuses a member missing its source
+/// `invalid_model_binding`/`malformed-declaration`, so that case never reaches
+/// the missing-name path and needs no origin fallback.
+#[trace("TC-145", "FR-056-AC-5")]
+#[test]
+fn missing_field_type_ref_retains_the_field_identity_origin_and_pointer() {
+    let field = "ix://test/origins/A/id";
+    let (mut missing, _, _) = original_document();
+    missing["types"][0]["fields"][0]["typeRef"] = "ix://test/origins/Missing".into();
+    let field_origin = missing["types"][0]["fields"][0]["origin"].clone();
+
+    let parsed = parse_document(&serde_json::to_vec(&missing).unwrap());
+    let refusals = read_records("test/origins", &parsed)
+        .expect_err("an absent field type admits no declarations");
+    assert_eq!(refusals.len(), 1, "{refusals:?}");
+    assert_eq!(refusals[0].code, qsl_foundation::Code::MissingDeclaration);
+    assert_eq!(refusals[0].cause.as_str(), "missing-name");
+    assert_eq!(
+        refusals[0].cause,
+        qsl_semantics::model::normalize::ModelRefusalCause::IntakeMissingDeclaration {
+            node: field.into(),
+            reference: "ix://test/origins/Missing".into(),
+            origin: field_origin,
+            path: "/types/0/fields/0/typeRef".parse().unwrap(),
+        }
+    );
+
+    missing["types"][0]["fields"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("origin");
+    let parsed = parse_document(&serde_json::to_vec(&missing).unwrap());
+    let refusals =
+        read_records("test/origins", &parsed).expect_err("a field with no origin refuses");
+    assert_eq!(refusals.len(), 1, "{refusals:?}");
+    assert_eq!(refusals[0].code, qsl_foundation::Code::InvalidModelBinding);
+    assert_eq!(refusals[0].cause.as_str(), "malformed-declaration");
+}
+
 /// (b): a hand-written Semantic IR 2.0.0 document using QSpec's own identity
 /// form throughout -- `ix://<package identity>/<artifact id>` for every
 /// type-definition node, never FCD's own `ix://<pkg>/type/<id>` form (FCD
@@ -725,7 +718,7 @@ fn missing_relationship_target_retains_its_referring_origin_and_pointer() {
 /// FCD's upstream fix), but this fixture simply was not authored to
 /// exercise that path -- native-typeRef resolution is covered separately by
 /// direct unit tests of `read_value_type_ref` and, end to end, by
-/// `reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_3_of_its_12_types`.
+/// `reading_fcd_199s_golden_shape_reads_all_12_types`.
 /// It admits through `agent-ix-semantic-ir`'s own validator (M5) --
 /// `wire_envelope`/`wire_construct`/`wire_type`/`wire_field` fill every
 /// member that validator's schema layer requires beyond the shape
@@ -1243,7 +1236,7 @@ fn a_composite_cycle_of_any_length_is_refused_by_the_readers_rule() {
                 read_records(package_identity, &parsed).expect_err("a composite cycle refuses");
             let closing = format!("ix://{package_identity}/relationship/C{}-has-C0", count - 1);
             let names_it = refusals.iter().any(|refusal| {
-                refusal.detail.contains("COMPOSITE_CYCLE")
+                refusal.code == qsl_foundation::diagnostic::Code::InvalidModelBinding
                     && matches!(
                         &refusal.cause,
                         qsl_semantics::model::refusal::ModelRefusalCause::IntakeMalformedDeclaration {
