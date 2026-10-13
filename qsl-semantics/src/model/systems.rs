@@ -404,8 +404,8 @@ pub struct ResolvedElement {
     pub kind: Kind,
 }
 
-/// Resolves `key` as `required`, refusing `wrong-export` (a different real
-/// kind) or `unsupplied-producer-record` (no kind at all) otherwise. Equal
+/// Resolves `key` as `required`, refusing `wrong-export` otherwise, whether
+/// the actual kind is a different real kind or `none` (FR-152-AC-8). Equal
 /// names never substitute for a kind match — this module never inspects a
 /// display name at all, only the full key and the classification.
 pub fn resolve_kind(
@@ -422,22 +422,8 @@ pub fn resolve_kind(
             key: resolved_key,
             kind: actual,
         })
-    } else if actual == Kind::None {
-        Err(unsupplied_or_wrong(required, key))
     } else {
         Err(wrong_export(required, actual, &key.node))
-    }
-}
-
-fn unsupplied_or_wrong(required: Kind, key: &DeclarationKey) -> ModelRefusal {
-    ModelRefusal {
-        code: Code::InvalidModelBinding,
-        cause: ModelRefusalCause::UnsuppliedProducerRecord,
-        detail: format!(
-            "{} does not resolve to the required kind {}",
-            key.node,
-            required.as_str()
-        ),
     }
 }
 

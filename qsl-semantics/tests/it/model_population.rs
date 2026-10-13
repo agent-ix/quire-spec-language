@@ -3432,6 +3432,95 @@ fn binding_admission_walks_member_types_under_the_callers_ancestor_steps() {
     }
 }
 
+/// TC-198 L12: PA2 declares member types `[A]` only, over P1 where `b1` is a
+/// direct subtype `B` of `A`. The identity check covers `a1` and `a2` before
+/// any edge, so only `b1`'s coverage walk follows an edge, exactly one.
+/// `ancestor_steps: 1` admits. `ancestor_steps: 0` is exactly
+/// `incomplete(ancestor_steps, 0, 0, 1, admission.ancestor-edge)` at stage
+/// `population-admission` with no binding. With `population_members: 3`,
+/// `work_units: 2` and `ancestor_steps: 0`, the `binding.member` charge of
+/// `b1` is denied first, so no edge is followed and the result is
+/// `incomplete(work_units, 2, 2, 1, binding.member)`.
+///
+/// Mutation used (derived by reading, not executed): charging the edge
+/// before the member's `binding.member` charge turns the third run into an
+/// `ancestor_steps` denial; reporting the walk ceiling with a different
+/// `consumed`, `next_charge` or charge point fails the field assertions.
+#[test]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-10")]
+fn l12_admission_ancestor_edge_denial_is_the_exact_record_and_the_member_charge_wins_first() {
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.n01"),
+        vec![
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
+            population_record(P1_POPULATION, &["model.A"], Extent::Closed),
+        ],
+    );
+    let view = view_of(&domain_package);
+    let admit = |limits: PopulationAdmissionLimits| {
+        admit_binding(
+            &view,
+            &p1("test/orders"),
+            &p1_population_key(),
+            GeneralizationClosure::Closed,
+            Some(3),
+            &mut AdmissionMeter::new(limits),
+        )
+    };
+
+    assert!(matches!(
+        admit(PopulationAdmissionLimits {
+            ancestor_steps: 1,
+            ..PopulationAdmissionLimits::UNLIMITED
+        }),
+        AdmissionOutcome::Admitted(_)
+    ));
+
+    let AdmissionOutcome::Refused(refusal) = admit(PopulationAdmissionLimits {
+        ancestor_steps: 0,
+        ..PopulationAdmissionLimits::UNLIMITED
+    }) else {
+        panic!("a zero ancestor_steps limit must deny the first followed edge");
+    };
+    assert_eq!(refusal.code, Code::ResourceExhausted);
+    let fields = refusal
+        .cause
+        .catalog_fields()
+        .expect("a walk ceiling carries its denied-charge record");
+    for (name, expected) in [
+        ("stage", "population-admission"),
+        ("limit_kind", "ancestor_steps"),
+        ("limit", "0"),
+        ("consumed", "0"),
+        ("next_charge", "1"),
+        ("charge_point", "admission.ancestor-edge"),
+    ] {
+        assert_eq!(
+            fields.get(name).map(String::as_str),
+            Some(expected),
+            "{name} in {fields:?}"
+        );
+    }
+
+    match admit(PopulationAdmissionLimits {
+        population_members: 3,
+        work_units: 2,
+        ancestor_steps: 0,
+    }) {
+        AdmissionOutcome::Incomplete(incomplete) => {
+            assert_eq!(incomplete.limit_kind, AdmissionLimitKind::WorkUnits);
+            assert_eq!(incomplete.limit, 2);
+            assert_eq!(incomplete.consumed, 2);
+            assert_eq!(incomplete.next_charge, 1);
+            assert_eq!(incomplete.charge_point, AdmissionChargePoint::BindingMember);
+        }
+        other => {
+            panic!("the binding.member charge of b1 must be denied before its edge, got {other:?}")
+        }
+    }
+}
+
 /// Normalizes `domain_package` under `limits` and, only when normalization
 /// completes, admits [`p1`] into [`P1_POPULATION`] against the resulting
 /// view: the whole admission pipeline, whose one normalization is metered
