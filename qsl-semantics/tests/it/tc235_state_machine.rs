@@ -345,43 +345,163 @@ fn tc235_m12_state_machine_meaning_is_explicit() {
     }
 }
 
+/// The retained state machine at `node`, then every ancestor reached through
+/// its `supertypes`.
+fn machine_with_ancestors<'a>(
+    package: &'a DomainPackage,
+    node: &str,
+) -> Vec<&'a qsl_semantics::model::domain_package::StateMachineRecord> {
+    let mut chain = Vec::new();
+    let mut pending = vec![id(node)];
+    while let Some(next) = pending.pop() {
+        let machine = package
+            .records
+            .iter()
+            .find_map(|record| match record {
+                DomainPackageRecord::StateMachine(machine) if machine.key.node == next => {
+                    Some(machine)
+                }
+                _ => None,
+            })
+            .expect("the chain names a retained state machine");
+        pending.extend(machine.supertypes.iter().map(|key| key.node.clone()));
+        chain.push(machine);
+    }
+    chain
+}
+
+/// M19 runs 1 and 7: `ExpressLifecycle` conforms to `OrderLifecycle`, and its
+/// effective states, transitions, operations and field are its own plus its
+/// ancestor's (FR-208), with `NotYetPlaced` guarding the inherited `[0]` and,
+/// when `own_guard`, its own `[0]`.
+fn assert_express_effective_machine(package: &DomainPackage, own_guard: bool) {
+    let chain = machine_with_ancestors(package, "ExpressLifecycle");
+    let states: std::collections::BTreeSet<_> = chain
+        .iter()
+        .flat_map(|machine| machine.states.iter().map(|state| state.name.as_str()))
+        .collect();
+    assert_eq!(
+        states,
+        ["Cancelled", "Draft", "Expedited", "Placed"]
+            .into_iter()
+            .collect()
+    );
+    assert_eq!(
+        chain[0]
+            .supertypes
+            .iter()
+            .map(|key| &key.node)
+            .collect::<Vec<_>>(),
+        [&id("OrderLifecycle")],
+        "ExpressLifecycle conforms to OrderLifecycle"
+    );
+    let order = chain[1];
+    assert_eq!(order.transitions.len(), 3, "OrderLifecycle [0]-[2]");
+    assert_eq!(order.transitions[0].guard.as_deref(), Some("NotYetPlaced"));
+    assert_eq!(chain[0].transitions.len(), 1, "its own [0]");
+    assert_eq!(
+        chain[0].transitions[0].guard.as_deref(),
+        own_guard.then_some("NotYetPlaced")
+    );
+    let operations: std::collections::BTreeSet<_> = package
+        .records
+        .iter()
+        .filter_map(|record| match record {
+            DomainPackageRecord::OperationMember(operation)
+                if chain.iter().any(|machine| machine.key == operation.owner) =>
+            {
+                operation.key.node.rsplit('/').next()
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        operations,
+        ["cancel", "expedite", "place"].into_iter().collect()
+    );
+    assert!(package.records.iter().any(|record| matches!(
+        record,
+        DomainPackageRecord::FieldMember(field)
+            if field.key.node == id("OrderLifecycle/placed") && field.owner == order.key
+    )));
+}
+
+fn assert_derivation_conflict(refusal: &ModelRefusal, type_: &str, member: &str, redefiner: &str) {
+    assert_eq!(refusal.code, Code::InvalidModelBinding);
+    let ModelRefusalCause::DerivationConflict {
+        type_: actual_type,
+        member: actual_member,
+        redefiners,
+    } = &refusal.cause
+    else {
+        panic!(
+            "expected a typed derivation conflict, got {:?}",
+            refusal.cause
+        );
+    };
+    assert_eq!(actual_type.node, id(type_), "{refusal:?}");
+    assert_eq!(actual_member.node, id(member), "{refusal:?}");
+    assert_eq!(
+        redefiners.iter().map(|key| &key.node).collect::<Vec<_>>(),
+        [&id(redefiner)],
+        "{refusal:?}"
+    );
+}
+
+/// `ExpressLifecycle`, a subtype whose one transition runs from `from` to its
+/// own `Expedited`, as the TC-235 M19 row declares it.
+fn express_lifecycle(supertype: &str, states: &[&str], from: &str) -> Value {
+    let own_states: Vec<Value> = states
+        .iter()
+        .map(|name| lifecycle_state("ExpressLifecycle", name))
+        .collect();
+    declaration(
+        "ExpressLifecycle",
+        "lifecycle",
+        json!({
+            "supertypes": [id(supertype)],
+            "operations": [operation("ExpressLifecycle", "expedite")],
+            "states": own_states,
+            "transitions": [lifecycle_transition(
+                "ExpressLifecycle", "transition0", from, "Expedited", "expedite", vec![],
+            )],
+        }),
+    )
+}
+
 /// M19: inherited states/transitions form the subtype's effective machine;
 /// duplicate local names and ancestor transitions to subtype-only states are
 /// rejected at their authored declaration paths.
+#[trace("QSpec-TC-235")]
 #[test]
 fn tc235_m19_state_machine_specialization_vectors() {
+    let inherited = "OrderLifecycle/Placed";
+
+    // Run 1.
     let positive = mutate_k2(|document| {
-        document["types"].as_array_mut().unwrap().push(declaration(
-            "ExpressLifecycle",
-            "lifecycle",
-            json!({
-                "supertypes": [id("OrderLifecycle")],
-                "operations": [operation("ExpressLifecycle", "expedite")],
-                "states": [lifecycle_state("ExpressLifecycle", "Expedited")],
-                "transitions": [lifecycle_transition(
-                    "ExpressLifecycle",
-                    "transition0", "OrderLifecycle/Placed", "Expedited", "expedite", vec![],
-                )],
-            }),
-        ));
+        document["types"]
+            .as_array_mut()
+            .unwrap()
+            .push(express_lifecycle(
+                "OrderLifecycle",
+                &["Expedited"],
+                inherited,
+            ));
     });
     let package = read_k2(&positive).expect("same-meaning state-machine subtype is valid");
     record_charges(&package, 23);
+    assert_express_effective_machine(&package, false);
 
+    // Run 7: `NotYetPlaced` guards the subtype's transition too.
     let inherited_state_and_guard = mutate_k2(|document| {
-        document["types"].as_array_mut().unwrap().push(declaration(
-            "ExpressLifecycle",
-            "lifecycle",
-            json!({
-                "supertypes": [id("OrderLifecycle")],
-                "operations": [operation("ExpressLifecycle", "expedite")],
-                "states": [lifecycle_state("ExpressLifecycle", "Expedited")],
-                "transitions": [lifecycle_transition(
-                    "ExpressLifecycle",
-                    "transition0", "OrderLifecycle/Placed", "Expedited", "expedite", vec![],
-                )],
-            }),
-        ));
+        document["types"]
+            .as_array_mut()
+            .unwrap()
+            .push(express_lifecycle(
+                "OrderLifecycle",
+                &["Expedited"],
+                inherited,
+            ));
         type_named_mut(document, "ExpressLifecycle")["transitions"][0]["guard"] =
             json!("NotYetPlaced");
     });
@@ -393,58 +513,60 @@ fn tc235_m19_state_machine_specialization_vectors() {
         node: id("ExpressLifecycle"),
     };
     assert!(view.type_identities().contains_key(&child_key));
+    assert_express_effective_machine(&package, true);
 
+    // Run 2: `Placed` redeclared beside the inherited one.
     let duplicate_state = mutate_k2(|document| {
-        document["types"].as_array_mut().unwrap().push(declaration(
-            "ExpressLifecycle",
-            "lifecycle",
-            json!({
-                "supertypes": [id("OrderLifecycle")],
-                "operations": [operation("ExpressLifecycle", "expedite")],
-                "states": [lifecycle_state("ExpressLifecycle", "Expedited"), lifecycle_state("ExpressLifecycle", "Placed")],
-                "transitions": [lifecycle_transition(
-                    "ExpressLifecycle",
-                    "transition0", "Placed", "Expedited", "expedite", vec![],
-                )],
-            }),
-        ));
+        document["types"]
+            .as_array_mut()
+            .unwrap()
+            .push(express_lifecycle(
+                "OrderLifecycle",
+                &["Expedited", "Placed"],
+                "Placed",
+            ));
     });
     let refusals = normalized_refusals(&duplicate_state, 23);
     assert_eq!(refusals.len(), 1);
-    assert_eq!(refusals[0].code, Code::InvalidModelBinding);
-    assert_eq!(refusals[0].cause.as_str(), "derivation-conflict");
-    assert!(refusals[0].detail.contains("ExpressLifecycle.states[1]"));
-    assert!(
-        refusals[0].detail.contains("OrderLifecycle.states[1]"),
-        "{refusals:?}"
+    assert_derivation_conflict(
+        &refusals[0],
+        "ExpressLifecycle",
+        "OrderLifecycle/Placed",
+        "ExpressLifecycle/Placed",
     );
+    assert!(refusals[0].detail.contains("ExpressLifecycle.states[1]"));
+    assert!(refusals[0].detail.contains("OrderLifecycle.states[1]"));
 
+    // Run 3: a transition repeating the inherited `Draft -> Placed` on `place`.
     let duplicate_transition = mutate_k2(|document| {
-        document["types"].as_array_mut().unwrap().push(declaration(
-            "ExpressLifecycle",
-            "lifecycle",
-            json!({
-                "supertypes": [id("OrderLifecycle")],
-                "operations": [operation("ExpressLifecycle", "expedite")],
-                "states": [lifecycle_state("ExpressLifecycle", "Expedited")],
-                "transitions": [
-                    lifecycle_transition("ExpressLifecycle", "transition0", "OrderLifecycle/Placed", "Expedited", "expedite", vec![]),
-                    lifecycle_transition("ExpressLifecycle", "transition1", "OrderLifecycle/Draft", "OrderLifecycle/Placed", "OrderLifecycle/place", vec![]),
-                ],
-            }),
-        ));
+        let mut declaration = express_lifecycle("OrderLifecycle", &["Expedited"], inherited);
+        declaration["transitions"]
+            .as_array_mut()
+            .unwrap()
+            .push(lifecycle_transition(
+                "ExpressLifecycle",
+                "transition1",
+                "OrderLifecycle/Draft",
+                "OrderLifecycle/Placed",
+                "OrderLifecycle/place",
+                vec![],
+            ));
+        document["types"].as_array_mut().unwrap().push(declaration);
     });
     let refusals = normalized_refusals(&duplicate_transition, 23);
     assert_eq!(refusals.len(), 1, "{refusals:?}");
-    assert_eq!(refusals[0].cause.as_str(), "derivation-conflict");
-    assert!(
-        refusals[0]
-            .detail
-            .contains("ExpressLifecycle.transitions[1]"),
-        "{refusals:?}"
+    assert_derivation_conflict(
+        &refusals[0],
+        "ExpressLifecycle",
+        "OrderLifecycle/transition0",
+        "ExpressLifecycle/transition1",
     );
+    assert!(refusals[0]
+        .detail
+        .contains("ExpressLifecycle.transitions[1]"));
     assert!(refusals[0].detail.contains("OrderLifecycle.transitions[0]"));
 
+    // Run 4: an ancestor transition to a subtype-only state.
     let ancestor_to_subtype_state = mutate_k2(|document| {
         type_named_mut(document, "OrderLifecycle")["transitions"]
             .as_array_mut()
@@ -457,19 +579,14 @@ fn tc235_m19_state_machine_specialization_vectors() {
                 "cancel",
                 vec![],
             ));
-        document["types"].as_array_mut().unwrap().push(declaration(
-            "ExpressLifecycle",
-            "lifecycle",
-            json!({
-                "supertypes": [id("OrderLifecycle")],
-                "operations": [operation("ExpressLifecycle", "expedite")],
-                "states": [lifecycle_state("ExpressLifecycle", "Expedited")],
-                "transitions": [lifecycle_transition(
-                    "ExpressLifecycle",
-                    "transition0", "OrderLifecycle/Placed", "Expedited", "expedite", vec![],
-                )],
-            }),
-        ));
+        document["types"]
+            .as_array_mut()
+            .unwrap()
+            .push(express_lifecycle(
+                "OrderLifecycle",
+                &["Expedited"],
+                inherited,
+            ));
     });
     let refusals = normalized_refusals(&ancestor_to_subtype_state, 23);
     assert_eq!(refusals.len(), 1);
@@ -479,26 +596,125 @@ fn tc235_m19_state_machine_specialization_vectors() {
         "TypeDefinition.transitions[3].to",
     );
 
+    // Run 5: the row's literal input, `supertypes: [Fulfilment]`. The single
+    // refusal is at `supertypes[0]`; the `from` it also leaves unresolvable
+    // is a phase-3 finding that never runs after an intake refusal.
     let wrong_supertype = mutate_k2(|document| {
-        document["types"].as_array_mut().unwrap().push(declaration(
-            "ExpressLifecycle",
-            "lifecycle",
-            json!({
-                "supertypes": [id("Fulfilment")],
-                "operations": [operation("ExpressLifecycle", "expedite")],
-                "states": [lifecycle_state("ExpressLifecycle", "Expedited")],
-                "transitions": [lifecycle_transition(
-                    "ExpressLifecycle",
-                    "transition0", "Expedited", "Expedited", "expedite", vec![],
-                )],
-            }),
-        ));
+        document["types"]
+            .as_array_mut()
+            .unwrap()
+            .push(express_lifecycle("Fulfilment", &["Expedited"], inherited));
     });
     let refusals = normalized_refusals(&wrong_supertype, 23);
-    assert_eq!(refusals.len(), 1);
+    assert_eq!(refusals.len(), 1, "{refusals:?}");
     assert_malformed_at(
         &refusals[0],
         &id("ExpressLifecycle"),
         "TypeDefinition.supertypes[0]",
+    );
+}
+
+/// M19 run 6 (FR-208-AC-12): a subtype transition whose guard names an
+/// ancestor's invariant that no ancestor transition names would remove that
+/// invariant from the subtype.
+#[trace("QSpec-TC-235", "FR-208-AC-12")]
+#[test]
+fn tc235_m19_run6_a_subtype_guard_naming_an_ancestor_invariant_is_malformed() {
+    let document = mutate_k2(|document| {
+        type_named_mut(document, "OrderLifecycle")["clauses"]
+            .as_array_mut()
+            .unwrap()
+            .push(clause(
+                "OrderLifecycle",
+                "Extra",
+                "self.placed or not self.placed",
+            ));
+        document["types"]
+            .as_array_mut()
+            .unwrap()
+            .push(express_lifecycle(
+                "OrderLifecycle",
+                &["Expedited"],
+                "OrderLifecycle/Placed",
+            ));
+        type_named_mut(document, "ExpressLifecycle")["transitions"][0]["guard"] = json!("Extra");
+    });
+    let refusals = normalized_refusals(&document, 24);
+    assert_eq!(refusals.len(), 1, "{refusals:?}");
+    assert_malformed_at(
+        &refusals[0],
+        &id("ExpressLifecycle"),
+        "TypeDefinition.transitions[0].guard",
+    );
+}
+
+/// FR-208: a machine naming a state, operation or clause of a machine that is
+/// not its ancestor is malformed in phase 3, not a missing name.
+#[trace("QSpec-TC-235")]
+#[test]
+fn tc235_a_reference_to_a_non_ancestor_machines_member_is_malformed() {
+    for member in ["from", "to", "trigger", "guard"] {
+        let document = mutate_k2(|document| {
+            document["types"].as_array_mut().unwrap().push(declaration(
+                "Standalone",
+                "lifecycle",
+                json!({
+                    "operations": [operation("Standalone", "act")],
+                    "states": [lifecycle_state("Standalone", "Idle")],
+                    "transitions": [lifecycle_transition(
+                        "Standalone", "transition0", "Idle", "Idle", "act", vec![],
+                    )],
+                }),
+            ));
+            let transition = &mut type_named_mut(document, "Standalone")["transitions"][0];
+            match member {
+                "from" => transition["from"] = json!(id("OrderLifecycle/Placed")),
+                "to" => transition["to"] = json!(id("OrderLifecycle/Placed")),
+                "trigger" => transition["trigger"] = json!(id("OrderLifecycle/place")),
+                _ => transition["guard"] = json!("NotYetPlaced"),
+            }
+        });
+        let refusals = normalized_refusals(&document, 23);
+        assert_eq!(refusals.len(), 1, "{member}: {refusals:?}");
+        assert_malformed_at(
+            &refusals[0],
+            &id("Standalone"),
+            &format!("TypeDefinition.transitions[0].{member}"),
+        );
+    }
+}
+
+/// FR-208: a state redeclared against a grandparent's is a derivation
+/// conflict with that grandparent, not only with the direct supertype.
+#[trace("QSpec-TC-235")]
+#[test]
+fn tc235_a_grandparent_state_redeclaration_is_a_derivation_conflict() {
+    let document = mutate_k2(|document| {
+        let types = document["types"].as_array_mut().unwrap();
+        types.push(express_lifecycle(
+            "OrderLifecycle",
+            &["Expedited"],
+            "OrderLifecycle/Placed",
+        ));
+        types.push(declaration(
+            "UrgentLifecycle",
+            "lifecycle",
+            json!({
+                "supertypes": [id("ExpressLifecycle")],
+                "operations": [operation("UrgentLifecycle", "rush")],
+                "states": [lifecycle_state("UrgentLifecycle", "Placed")],
+                "transitions": [lifecycle_transition(
+                    "UrgentLifecycle", "transition0", "Placed", "Placed", "rush", vec![],
+                )],
+            }),
+        ));
+    });
+    let refusals = normalized_refusals(&document, 25);
+    assert_eq!(refusals.len(), 1, "{refusals:?}");
+    assert_derivation_conflict(
+        &refusals[0],
+        "UrgentLifecycle",
+        "OrderLifecycle/Placed",
+        "UrgentLifecycle/Placed",
     );
 }

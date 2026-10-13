@@ -1317,6 +1317,7 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
             .iter()
             .map(|state| state.key.clone())
             .collect();
+        let mut ancestors: Vec<&crate::model::domain_package::StateMachineRecord> = Vec::new();
         let mut pending_ancestors = machine.supertypes.clone();
         while let Some(ancestor_key) = pending_ancestors.pop() {
             if !machine_chain.insert(ancestor_key.clone()) {
@@ -1334,8 +1335,10 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
             {
                 effective_states.extend(ancestor.states.iter().map(|state| state.key.clone()));
                 pending_ancestors.extend(ancestor.supertypes.iter().cloned());
+                ancestors.push(ancestor);
             }
         }
+        ancestors.sort_by(|left, right| left.key.cmp(&right.key));
 
         let mut state_names = HashMap::<&str, &DeclarationKey>::new();
         for (position, state) in machine.states.iter().enumerate() {
@@ -1397,7 +1400,27 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                     has_operation(&transition.trigger),
                 ),
             ] {
-                if !valid {
+                if valid {
+                    continue;
+                }
+                // FR-208: a reference that names a state or operation of some
+                // other machine, but no effective one of its own, is a
+                // phase-3 malformed declaration; one naming nothing is missing.
+                let declared_elsewhere = domain_package.records.iter().any(|record| match record {
+                    DomainPackageRecord::StateMachine(other) if member != "trigger" => {
+                        other.states.iter().any(|state| &state.key == reference)
+                    }
+                    DomainPackageRecord::OperationMember(operation) if member == "trigger" => {
+                        &operation.key == reference
+                    }
+                    _ => false,
+                });
+                if declared_elsewhere {
+                    refusals.push(malformed(
+                        &format!("TypeDefinition.transitions[{position}].{member}"),
+                        "names no effective state or operation of this machine",
+                    ));
+                } else {
                     refusals.push(missing(transition, member, reference));
                 }
             }
@@ -1453,6 +1476,18 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                         _ => None,
                     });
                 let Some(clause) = clause else {
+                    let names_other_clause = domain_package.records.iter().any(|record| {
+                        matches!(record, DomainPackageRecord::Clause(other)
+                            if other.key.node.strip_prefix(&format!("{}/", other.owner.node))
+                                == Some(guard.as_str()))
+                    });
+                    if names_other_clause {
+                        refusals.push(malformed(
+                            &format!("TypeDefinition.transitions[{position}].guard"),
+                            "names no effective clause of this machine",
+                        ));
+                        continue;
+                    }
                     let clause_key = DeclarationKey {
                         package: machine.key.package.clone(),
                         node: format!("{}/{guard}", machine.key.node),
@@ -1460,17 +1495,8 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                     refusals.push(missing(transition, "guard", &clause_key));
                     continue;
                 };
-                if clause.language != "quire"
-                    || !machine_chain.iter().any(|owner_key| {
-                        *owner_key == clause.owner
-                            && domain_package.records.iter().any(|record| {
-                                matches!(record, DomainPackageRecord::StateMachine(owner)
-                                    if owner.key == *owner_key
-                                        && owner.transitions.iter().any(|candidate| candidate.guard.as_deref() == Some(guard)))
-                            })
-                    })
-                {
-                    let path = format!("TypeDefinition.transitions[{position}].guard");
+                let path = format!("TypeDefinition.transitions[{position}].guard");
+                if clause.language != "quire" {
                     refusals.push(ModelRefusal {
                         code: Code::InvalidModelBinding,
                         cause: ModelRefusalCause::IntakeMalformedDeclaration {
@@ -1483,6 +1509,20 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                             transition.key.node
                         ),
                     });
+                } else if !machine_chain.iter().any(|owner_key| {
+                    *owner_key == clause.owner
+                        && domain_package.records.iter().any(|record| {
+                            matches!(record, DomainPackageRecord::StateMachine(owner)
+                                if owner.key == *owner_key
+                                    && owner.transitions.iter().any(|candidate| candidate.guard.as_deref() == Some(guard)))
+                        })
+                }) {
+                    // FR-208-AC-12: the guard would remove an ancestor's
+                    // invariant from this machine.
+                    refusals.push(malformed(
+                        &path,
+                        "guard must name a quire clause used by a transition",
+                    ));
                 }
             }
             if let Some(previous) = transition_shapes.insert(
@@ -1502,16 +1542,10 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
             }
         }
         for (position, general) in machine.supertypes.iter().enumerate() {
-            let parent = domain_package
-                .records
-                .iter()
-                .find_map(|record| match record {
-                    DomainPackageRecord::StateMachine(parent) if &parent.key == general => {
-                        Some(parent)
-                    }
-                    _ => None,
-                });
-            let Some(parent) = parent else {
+            let is_machine = domain_package.records.iter().any(|record| {
+                matches!(record, DomainPackageRecord::StateMachine(parent) if &parent.key == general)
+            });
+            if !is_machine {
                 if domain_package
                     .records
                     .iter()
@@ -1534,10 +1568,14 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                         ),
                     });
                 }
-                continue;
-            };
+            }
+        }
+        // FR-208: a state name, or a transition's `from`, `to` and `trigger`,
+        // declared by two distinct owners reaching the subtype is a
+        // derivation conflict; every ancestor is checked, once.
+        for ancestor in &ancestors {
             for (position, state) in machine.states.iter().enumerate() {
-                if let Some((inherited_position, inherited)) = parent
+                if let Some((inherited_position, inherited)) = ancestor
                     .states
                     .iter()
                     .enumerate()
@@ -1552,30 +1590,14 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                         },
                         detail: format!(
                             "{}.states[{position}] conflicts with {}.states[{inherited_position}]",
-                            machine.key.node, parent.key.node
+                            machine.key.node, ancestor.key.node
                         ),
                     });
                 }
             }
             for (position, transition) in machine.transitions.iter().enumerate() {
-                let inherited_state = parent
-                    .states
-                    .iter()
-                    .find(|state| state.key == transition.to);
-                let child_state = machine
-                    .states
-                    .iter()
-                    .any(|state| state.key == transition.to);
-                if inherited_state.is_none() && child_state {
-                    continue;
-                }
-                if inherited_state.is_none() {
-                    // A child transition may target a child state; an
-                    // ancestor transition may never target a subtype-only state.
-                    continue;
-                }
                 if let Some((inherited_position, inherited)) =
-                    parent.transitions.iter().enumerate().find(|(_, other)| {
+                    ancestor.transitions.iter().enumerate().find(|(_, other)| {
                         other.from == transition.from
                             && other.to == transition.to
                             && other.trigger == transition.trigger
@@ -1590,29 +1612,7 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                         },
                         detail: format!(
                             "{}.transitions[{position}] conflicts with {}.transitions[{inherited_position}]",
-                            machine.key.node, parent.key.node
-                        ),
-                    });
-                }
-            }
-            for (position, transition) in parent.transitions.iter().enumerate() {
-                let absent_from_parent =
-                    !parent.states.iter().any(|state| state.key == transition.to);
-                let introduced_by_child = machine
-                    .states
-                    .iter()
-                    .any(|state| state.key == transition.to);
-                if absent_from_parent && introduced_by_child {
-                    refusals.push(ModelRefusal {
-                        code: Code::InvalidModelBinding,
-                        cause: ModelRefusalCause::IntakeMalformedDeclaration {
-                            node: parent.key.node.clone(),
-                            artifact: None,
-                            span: None,
-                        },
-                        detail: format!(
-                            "{}: TypeDefinition.transitions[{position}].to: ancestor transition cannot target subtype-only state {}",
-                            parent.key.node, transition.to.node
+                            machine.key.node, ancestor.key.node
                         ),
                     });
                 }
