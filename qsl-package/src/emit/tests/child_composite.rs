@@ -107,12 +107,10 @@ fn records_are_model_owned_nodes_and_the_call_takes_its_argument_by_ref() {
 }
 
 /// FR-359-AC-3, FR-359-AC-8: the package reads back `Verified` through IR's
-/// reader. Depends on quire-contract-ir FR-347 (a conforming record at an
-/// operation argument) and on QSpec FR-322 reading a `record_value_type`
-/// owner.
+/// reader (quire-contract-ir FR-347, a conforming record at an operation
+/// argument, and QSpec FR-322's `record_value_type` owner).
 #[trace("FR-359-AC-3", "FR-359-AC-8", "TC-998", "TC-1001")]
 #[test]
-#[ignore = "IR's reader refuses a model-owned record_value_type node and a conforming record operand until quire-contract-ir lands IR-770 and FR-347 (QSL-737)"]
 fn a_child_record_argument_reads_back_verified() {
     let (emission, _, read) = emit_unit(UNIT);
     match read {
