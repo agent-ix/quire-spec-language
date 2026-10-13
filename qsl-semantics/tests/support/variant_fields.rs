@@ -37,10 +37,31 @@ fn sourced(line: u64) -> Value {
     }})
 }
 
+/// The slug the lift mints a case identity from: every run of characters
+/// that are not ASCII alphanumeric becomes one `-`, with none leading or
+/// trailing.
+fn slug(name: &str) -> String {
+    let mut slug = String::new();
+    let mut separated = false;
+    for character in name.chars() {
+        if character.is_ascii_alphanumeric() {
+            if separated && !slug.is_empty() {
+                slug.push('-');
+            }
+            separated = false;
+            slug.push(character);
+        } else {
+            separated = true;
+        }
+    }
+    slug
+}
+
 /// A case with the identity the lift mints for it.
 fn case(owner: &str, name: &str, line: u64) -> Value {
+    let label = slug(name);
     json!({
-        "identity": id(&format!("variant/{owner}-{name}")),
+        "identity": id(&format!("variant/{owner}-{label}")),
         "name": name,
         "origin": sourced(line),
     })
@@ -232,6 +253,24 @@ pub(crate) fn variants_only() -> Value {
             .collect(),
         false,
     )
+}
+
+/// [`document`] with the variant type `Odd`, holding `cases`, and an optional
+/// `grade: Odd` field on `Account`.
+pub(crate) fn with_odd_grade(cases: &[&str]) -> Value {
+    let mut all = types();
+    all.push(variant_type("Odd", cases));
+    let account = all
+        .iter_mut()
+        .find(|declaration| declaration["displayName"] == "Account")
+        .expect("the fixture declares Account");
+    account["fields"]
+        .as_array_mut()
+        .expect("Account has fields")
+        .push(optional("Account", "grade", &id("Odd")));
+    let mut document = package(all, true);
+    document["populations"] = document_populations();
+    document
 }
 
 /// [`document`] with `extra` types appended.

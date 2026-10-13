@@ -1131,8 +1131,12 @@ impl quire_canonical::Encode for ElementEncode<'_> {
                         Self::open_kind(writer, "collection", next, &mut pending)?;
                     }
                     // A state clause cannot name a population (ADR-016 FE-4),
-                    // so no claim's domain holds one.
-                    Value::Population(_) | Value::Uuid(_) | Value::Timestamp(_) => {
+                    // so no claim's domain holds one, and no source form
+                    // builds a union.
+                    Value::Population(_)
+                    | Value::Uuid(_)
+                    | Value::Timestamp(_)
+                    | Value::Union(_) => {
                         self.unsupported.set(true);
                         return Err(quire_canonical::Error::Serialize(
                             "this value kind has no deciding-element encoding".to_owned(),

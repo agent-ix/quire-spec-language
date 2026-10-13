@@ -82,6 +82,7 @@ use crate::value::unit::{DimensionPreimage, UnitPreimage};
 use quire_semantic_value::declaration::{
     CompositeShape, EqualityOperator, FieldDeclaration, TypeEnvironment,
 };
+use quire_semantic_value::enumeration::EnumValue;
 use quire_semantic_value::location::{Location, Origin};
 use quire_semantic_value::quantity::UnitTable;
 
@@ -1903,16 +1904,19 @@ impl<'a> Lowering<'a> {
             ValueType::Enum(shape) => {
                 // FR-092 rule 1: an enum type is its QSpec nominal
                 // declaration node, `value::enumeration`'s key.
-                let declaration = self
-                    .scope
-                    .enum_binding_of(shape)
-                    .map(|binding| binding.declaration.key());
-                declaration.ok_or_else(|| {
-                    refuse(
+                let scope: &'a Scope = self.scope;
+                if let Some(binding) = scope.enum_binding_of(shape) {
+                    Ok(binding.declaration.key())
+                } else if let Some(variant) = scope.variant_type_of(shape) {
+                    // FR-360 item 12: a model variant type is its
+                    // `model`/`variant_type` node.
+                    self.variant_type_nodes(variant, location)
+                } else {
+                    Err(refuse(
                         location,
                         CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch),
-                    )
-                })
+                    ))
+                }
             }
             ValueType::Quantity(unit) => self.quantity_type(*unit, location),
             ValueType::Reference(target) => self.reference_type(*target, location),
@@ -2175,30 +2179,40 @@ impl<'a> Lowering<'a> {
             self.record(declaration, OccurrenceRole::Declaration, site.clone());
         }
         for member in &binding.members {
-            let key = member.member();
-            let bytes = member_preimage_bytes(declaration, member.case(), self.identity)
-                .map_err(|_| fault(&site, KeyFault::NonCanonicalNominal(key)))?;
-            self.insert_nominal(
-                &site,
-                key,
-                bytes,
-                NodeContent {
-                    node_tag: NodeTag::Value,
-                    semantic_form: "enum_value",
-                    semantic_type: Some(declaration),
-                    declaration: None,
-                    owner: None,
-                    body: BodyTerm::literal(
-                        declaration,
-                        LiteralValue::Enum(member.case().to_owned()),
-                    ),
-                },
-                NominalNode::EnumMember {
-                    declaration,
-                    case: member.case().to_owned(),
-                },
-            )?;
+            self.enum_member_node(&site, declaration, member)?;
         }
+        Ok(())
+    }
+
+    /// The `value`/`enum_value` node of `member`, a case of the enumeration
+    /// node `declaration` (FR-092 rule 1, FR-360 item 12): keyed by its QSpec
+    /// nominal preimage over `declaration` and the exact case name.
+    pub(crate) fn enum_member_node(
+        &mut self,
+        location: &Location,
+        declaration: NodeKey,
+        member: &EnumValue,
+    ) -> Result<(), CheckRefusal> {
+        let key = member.member();
+        let bytes = member_preimage_bytes(declaration, member.case(), self.identity)
+            .map_err(|_| fault(location, KeyFault::NonCanonicalNominal(key)))?;
+        self.insert_nominal(
+            location,
+            key,
+            bytes,
+            NodeContent {
+                node_tag: NodeTag::Value,
+                semantic_form: "enum_value",
+                semantic_type: Some(declaration),
+                declaration: None,
+                owner: None,
+                body: BodyTerm::literal(declaration, LiteralValue::Enum(member.case().to_owned())),
+            },
+            NominalNode::EnumMember {
+                declaration,
+                case: member.case().to_owned(),
+            },
+        )?;
         Ok(())
     }
 
@@ -3933,7 +3947,9 @@ impl<'a> Lowering<'a> {
             Value::Rational(value) => LiteralValue::Rational(value.clone()),
             Value::Enum(member) => {
                 // FR-093: the enum member's QSpec `enum_value` node, whose
-                // key is its `VariantId` (ADR-013 O-14).
+                // key is its `VariantId` (ADR-013 O-14). A model variant
+                // type's nodes are built where it is first named, here.
+                self.type_node(node.value_type(), node.location())?;
                 let key = NodeKey::from_digest(*member.variant().as_bytes());
                 self.record(key, OccurrenceRole::Expression, node.location().clone());
                 return Ok(LeafTerm::reference(key));

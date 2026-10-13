@@ -38,6 +38,7 @@ mod deep_bodies;
 mod golden;
 mod identity_depth;
 mod owners;
+mod variant_types;
 
 /// The unit the fixture packages are read from; every occurrence's region is
 /// the whole of it.

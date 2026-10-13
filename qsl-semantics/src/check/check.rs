@@ -57,6 +57,7 @@ use super::ir::{
 use super::refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, Obligation, StageLimitCause,
 };
+use crate::model::key::DeclarationKey;
 use crate::model::operation::OperationTable;
 use crate::value::definition::{AdmittedIeeeProfile, AdmittedIntegerDivision};
 use crate::value::enumeration::{mint_variant_id, AdmittedEnumDeclaration};
@@ -150,11 +151,12 @@ impl ResolvedSignatures {
 /// The runtime members of a model variant type whose checked node is
 /// `declaration`, for `cases` in ascending UTF-8 byte order of their names
 /// (QSpec FR-144's key order for an unordered enumeration). Each member is
-/// keyed by [`mint_variant_id`] over the declaration and its case. `None`
-/// when a case name is not an identifier, which the shared
-/// [`EnumDeclaration`] does not hold.
+/// keyed by [`mint_variant_id`] over the declaration and its case, and a case
+/// name is any non-empty string, kept exactly. `None` when `cases` is empty,
+/// repeats a name or has an empty name, which the model's intake refuses
+/// before a variant type is declared.
 fn variant_type_members(declaration: NodeKey, cases: &[String]) -> Option<Vec<EnumValue>> {
-    let runtime = EnumDeclaration::new(declaration, false, cases.to_vec()).ok()?;
+    let runtime = EnumDeclaration::model_owned(declaration, cases.to_vec()).ok()?;
     cases
         .iter()
         .map(|case| {
@@ -175,25 +177,29 @@ fn variant_type_members(declaration: NodeKey, cases: &[String]) -> Option<Vec<En
 pub struct VariantTypeDeclaration {
     key: EffectiveId,
     name: String,
+    declaration: DeclarationKey,
     node: NodeKey,
     cases: Vec<VariantCaseDeclaration>,
-    members: Option<Vec<EnumValue>>,
+    members: Vec<EnumValue>,
 }
 
 impl VariantTypeDeclaration {
-    /// The variant type `name` with effective identity `key` and checked
-    /// node key `node`; `cases` are kept in ascending UTF-8 byte order of
-    /// their names. Each case's checked key is the FR-141 member identity
-    /// over `node` and the case name.
+    /// The variant type `name` with effective identity `key`, declared by
+    /// the model record `declaration` and checked node key `node`; `cases`
+    /// are kept in ascending UTF-8 byte order of their names. Each case's
+    /// checked key is the FR-141 member identity over `node` and the case
+    /// name. `None` when `cases` is not a valid case set of a model-owned
+    /// enumeration (see [`variant_type_members`]).
     pub(crate) fn new(
         key: EffectiveId,
         name: String,
+        declaration: DeclarationKey,
         node: NodeKey,
         mut cases: Vec<(EffectiveId, String)>,
-    ) -> Self {
+    ) -> Option<Self> {
         cases.sort_by(|left, right| left.1.cmp(&right.1));
         let names: Vec<String> = cases.iter().map(|(_, case)| case.clone()).collect();
-        let members = variant_type_members(node, &names);
+        let members = variant_type_members(node, &names)?;
         let cases = cases
             .into_iter()
             .map(|(key, case)| {
@@ -205,13 +211,14 @@ impl VariantTypeDeclaration {
                 }
             })
             .collect();
-        Self {
+        Some(Self {
             key,
             name,
+            declaration,
             node,
             cases,
             members,
-        }
+        })
     }
 
     /// The variant type's effective identity.
@@ -222,6 +229,11 @@ impl VariantTypeDeclaration {
     /// The qualified name `M::<artifact id>`.
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// The model record that declares the variant type.
+    pub(crate) fn declaration(&self) -> &DeclarationKey {
+        &self.declaration
     }
 
     /// The variant type's checked node key (QSpec FR-322 "Model-owned
@@ -238,20 +250,17 @@ impl VariantTypeDeclaration {
 
     /// The kernel enum shape of the type: its cases' checked keys in
     /// ascending UTF-8 byte order of the case names, which is QSpec FR-144's
-    /// key order for an unordered enumeration. `None` when a case name is
-    /// not an identifier: the shared enumeration declaration holds
-    /// identifiers only, so such a type has no runtime enumeration yet.
-    pub fn shape(&self) -> Option<EnumShape> {
-        self.members.as_ref()?;
-        Some(EnumShape::new(
+    /// key order for an unordered enumeration.
+    pub fn shape(&self) -> EnumShape {
+        EnumShape::new(
             false,
             self.cases.iter().map(VariantCaseDeclaration::variant),
-        ))
+        )
     }
 
     /// The runtime members, in the order of [`Self::cases`].
-    pub(crate) fn members(&self) -> Option<&[EnumValue]> {
-        self.members.as_deref()
+    pub(crate) fn members(&self) -> &[EnumValue] {
+        &self.members
     }
 }
 
@@ -651,8 +660,9 @@ struct ScopeIndex {
     /// Variant type name, then case, to the position of the variant type in
     /// [`Scope::variant_types`] and of the case in its runtime members.
     variant_cases: BTreeMap<String, BTreeMap<String, (usize, usize)>>,
-    /// The enum shape of every variant type that has one.
-    variant_shapes: BTreeSet<EnumShape>,
+    /// Each variant type's enum shape to the type's position in
+    /// [`Scope::variant_types`].
+    variant_shapes: BTreeMap<EnumShape, usize>,
     /// Every case name of every variant type, for the bare-case refusal.
     bare_cases: BTreeSet<String>,
 }
@@ -708,16 +718,14 @@ impl ScopeIndex {
     /// and each `T::Case` to its runtime member (FR-360 item 4).
     fn variant_types(&mut self, variant_types: &[VariantTypeDeclaration]) {
         for (position, declared) in variant_types.iter().enumerate() {
-            let (Some(shape), Some(members)) = (declared.shape(), declared.members()) else {
-                continue;
-            };
+            let shape = declared.shape();
             self.named_type(declared.name(), ValueType::Enum(shape.clone()));
-            self.variant_shapes.insert(shape);
+            self.variant_shapes.insert(shape, position);
             let cases = self
                 .variant_cases
                 .entry(declared.name().to_owned())
                 .or_default();
-            for (member, value) in members.iter().enumerate() {
+            for (member, value) in declared.members().iter().enumerate() {
                 cases.insert(value.case().to_owned(), (position, member));
                 self.bare_cases.insert(value.case().to_owned());
                 self.enum_member_index.record(value.clone());
@@ -859,7 +867,13 @@ impl Scope {
 
     /// Whether `shape` is the enum shape of a variant type.
     pub(crate) fn is_variant_shape(&self, shape: &EnumShape) -> bool {
-        self.index.variant_shapes.contains(shape)
+        self.index.variant_shapes.contains_key(shape)
+    }
+
+    /// The variant type whose enum shape is `shape`.
+    pub(crate) fn variant_type_of(&self, shape: &EnumShape) -> Option<&VariantTypeDeclaration> {
+        self.variant_types
+            .get(*self.index.variant_shapes.get(shape)?)
     }
 
     /// The variant type `name` names, when it is a variant type name.
@@ -874,7 +888,7 @@ impl Scope {
         let (type_name, case) = name.rsplit_once("::")?;
         let &(position, member) = self.index.variant_cases.get(type_name)?.get(case)?;
         let declared = self.variant_types.get(position)?;
-        Some((declared.shape()?, declared.members()?.get(member)?))
+        Some((declared.shape(), declared.members().get(member)?))
     }
 
     /// Whether `name` is the case name of some variant type.

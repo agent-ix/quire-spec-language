@@ -24,6 +24,7 @@ use crate::check::node_key::{
     Binding, BodyTerm, GroupMember, GroupTerm, LeafTerm, MemberTerm, ModelOwner, NodeTag, Owner,
 };
 use crate::check::refusal::{CheckCause, CheckRefusal, KeyFault};
+use crate::check::VariantTypeDeclaration;
 use crate::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, PopulationRecord,
 };
@@ -329,26 +330,15 @@ pub(crate) fn record_node_key(
 /// declares (QSpec FR-322 "Model-owned members" step 2), a function of the
 /// declaring package's identity and the type's node alone, so no alias a
 /// unit gives the model enters it (FR-360 item 11). `None` for a record that
-/// declares no variant type. The emitter does not yet add this node to a
-/// graph (FR-360 item 12), so [`record_form`] does not name it.
+/// declares no variant type.
 pub(crate) fn variant_type_node_key(
     record: &DomainPackageRecord,
     identity: qsl_foundation::IdentityLimits,
 ) -> Result<Option<NodeKey>, RecordKeyError> {
-    let DomainPackageRecord::Enum(variant_type) = record else {
-        return Ok(None);
-    };
-    let owner = ModelOwner::new(
-        variant_type.key.package.clone(),
-        variant_type.key.node.clone(),
-    )
-    .map_err(|_| RecordKeyError::EmptyOwner)?;
-    crate::check::node_key::node_key(
-        &model_node_content(owner, NodeTag::Model, "variant_type").input(),
-        identity,
-    )
-    .map(|keyed| Some(keyed.key))
-    .map_err(RecordKeyError::Preimage)
+    match record {
+        DomainPackageRecord::Enum(_) => record_node_key(record, identity),
+        _ => Ok(None),
+    }
 }
 
 /// Why [`record_node_key`] has no key for a record it names.
@@ -380,8 +370,10 @@ fn record_form(record: &DomainPackageRecord) -> Option<(NodeTag, &'static str)> 
         // with a source owner.
         DomainPackageRecord::RecordValueType(_) => Some((NodeTag::Model, "record_value_type")),
         DomainPackageRecord::EventType(_) => Some((NodeTag::Model, "event_type")),
-        DomainPackageRecord::Enum(_)
-        | DomainPackageRecord::Variant(_)
+        // FR-360 item 12: a variant type is a model declaration node with
+        // its `ModelOwner`, never a unit-owned `scalar_type`/`enum`.
+        DomainPackageRecord::Enum(_) => Some((NodeTag::Model, "variant_type")),
+        DomainPackageRecord::Variant(_)
         | DomainPackageRecord::FieldMember(_)
         | DomainPackageRecord::Clause(_)
         | DomainPackageRecord::Namespace(_)
@@ -466,6 +458,22 @@ impl<'a> Lowering<'a> {
             .record(key, declaration.clone())
             .map_err(|conflict| fault(location, KeyFault::CorrespondenceConflict(conflict)))?;
         Ok(key)
+    }
+
+    /// The model declaration node of the variant type `variant` and one
+    /// `enum_value` node per case (FR-360 item 12), each keyed over the
+    /// type's node and the exact case name, any non-empty name kept as
+    /// written. Returns the type's node key.
+    pub(super) fn variant_type_nodes(
+        &mut self,
+        variant: &VariantTypeDeclaration,
+        location: &Location,
+    ) -> Result<NodeKey, CheckRefusal> {
+        let declaration = self.model_node(variant.declaration(), location)?;
+        for member in variant.members() {
+            self.enum_member_node(location, declaration, member)?;
+        }
+        Ok(declaration)
     }
 
     /// Key every relationship declaration selected by this unit. Unlike an
