@@ -56,7 +56,7 @@ struct CalledFamily {
 struct PendingFamily {
     member: String,
     receivers: BTreeSet<EffectiveId>,
-    refusal: CheckRefusal,
+    refusals: Vec<CheckRefusal>,
 }
 
 /// The families that did not link, held until the unit is checked: a family
@@ -70,11 +70,15 @@ impl PendingLinks {
     /// that found no dispatch operation, and whose receiver's static type is
     /// one a failed family answers for under that member, is refused with
     /// that family's refusal, at the call; the family is reported once, at
-    /// its first call. Every other refusal is kept as it is, and a failed
-    /// family no call needed is dropped.
+    /// its first call, and the reported families come in charge order
+    /// (ascending alias, then root key), not call order. Every other refusal
+    /// is kept as it is, and a failed family no call needed is dropped.
     pub fn report(self, refusals: Vec<CheckRefusal>) -> Vec<CheckRefusal> {
-        let mut reported = BTreeSet::new();
+        // Each reached family, by its place in the charge order, with the
+        // location of its first call.
+        let mut reached: BTreeMap<usize, Location> = BTreeMap::new();
         let mut kept = Vec::with_capacity(refusals.len());
+        let mut block_at = None;
         for refusal in refusals {
             let Some((member, receiver)) = unresolved_call(&refusal) else {
                 kept.push(refusal);
@@ -86,13 +90,23 @@ impl PendingLinks {
                 .position(|family| family.member == member && family.receivers.contains(&receiver));
             match family {
                 None => kept.push(refusal),
-                Some(index) if reported.insert(index) => {
-                    let mut family = self.0[index].refusal.clone();
-                    family.location = refusal.location;
-                    kept.push(family);
+                Some(index) => {
+                    block_at.get_or_insert(kept.len());
+                    reached.entry(index).or_insert(refusal.location);
                 }
-                Some(_) => {}
             }
+        }
+        // One record for each failing subtype, family by family in charge
+        // order, each at its family's first call.
+        let block = reached.into_iter().flat_map(|(index, location)| {
+            self.0[index].refusals.iter().map(move |refusal| {
+                let mut refusal = refusal.clone();
+                refusal.location = location.clone();
+                refusal
+            })
+        });
+        if let Some(at) = block_at {
+            kept.splice(at..at, block);
         }
         kept
     }
@@ -143,7 +157,7 @@ impl PackageDeclarations {
                 .entry(family.alias.clone())
                 .or_insert_with(|| self.view_clauses(view));
             let cause = match clauses {
-                None => Err(invariant(family.root.clone())),
+                None => Err(vec![invariant(family.root.clone())]),
                 Some(clauses) => {
                     let root = DispatchRoot {
                         key: family.root.clone(),
@@ -158,7 +172,7 @@ impl PackageDeclarations {
                         self.identity,
                     )
                     .map(|declarations| (declarations, CallSite::of(&family.root, clauses)))
-                    .map_err(|refusal| link_cause(family.root.clone(), &refusal))
+                    .map_err(|refusal| link_causes(family.root.clone(), &refusal))
                 }
             };
             match cause {
@@ -172,7 +186,7 @@ impl PackageDeclarations {
                     pending.0.push(PendingFamily {
                         member: family.member,
                         receivers: receivers.into_iter().collect(),
-                        refusal: dispatch_link(cause),
+                        refusals: cause.into_iter().map(dispatch_link).collect(),
                     });
                 }
             }
@@ -531,60 +545,68 @@ fn receiver_as_parameter(expression: &Expression) -> Option<Expression> {
         .ok()
 }
 
-/// The cause for a family the bridge refused.
-fn link_cause(operation: DeclarationKey, refusal: &DispatchBridgeRefusal) -> DispatchLinkCause {
+/// The causes for a family the bridge refused: one for each subtype of an
+/// ambiguous family, in ascending effective identity (the QSpec FR-272 record
+/// names one closed subtype), otherwise one for the family. An ambiguous
+/// outcome that names no subtype is an invariant fault.
+fn link_causes(
+    operation: DeclarationKey,
+    refusal: &DispatchBridgeRefusal,
+) -> Vec<DispatchLinkCause> {
     match refusal {
         DispatchBridgeRefusal::Unlinked(outcome) => match outcome.as_ref() {
-            LinkCheckOutcome::Completed(DispatchLinkOutcome::Ambiguous(failed)) => {
-                let subtypes: Vec<DispatchSubtypeFailure> = failed
-                    .iter()
-                    .map(|failure| DispatchSubtypeFailure {
-                        subtype: failure.subtype.clone(),
-                        cause: failure.cause.catalog_code().cause(),
-                        candidates: failure.candidates.clone(),
-                        dominance_pairs: failure
-                            .dominance_pairs
-                            .iter()
-                            .map(|pair| (pair.dominant.clone(), pair.dominated.clone()))
-                            .collect(),
-                    })
-                    .collect();
-                DispatchLinkCause {
-                    operation,
-                    code: Code::AmbiguousDispatch,
-                    catalog: CatalogCode::new(
-                        "ambiguous_dispatch",
-                        subtypes
-                            .first()
-                            .map_or("no-applicable", |failure| failure.cause),
-                    ),
-                    denial: None,
-                    subtypes,
-                }
+            LinkCheckOutcome::Completed(DispatchLinkOutcome::Ambiguous(failed))
+                if failed.is_empty() =>
+            {
+                vec![invariant(operation)]
             }
-            LinkCheckOutcome::Completed(DispatchLinkOutcome::Linked(_)) => invariant(operation),
-            LinkCheckOutcome::Refused(model) => model_cause(operation, model),
-            LinkCheckOutcome::Incomplete(incomplete) => DispatchLinkCause {
+            LinkCheckOutcome::Completed(DispatchLinkOutcome::Ambiguous(failed)) => failed
+                .iter()
+                .map(|failure| {
+                    let cause = failure.cause.catalog_code().cause();
+                    DispatchLinkCause {
+                        operation: operation.clone(),
+                        code: Code::AmbiguousDispatch,
+                        catalog: CatalogCode::new("ambiguous_dispatch", cause),
+                        denial: None,
+                        subtype: Some(DispatchSubtypeFailure {
+                            subtype: failure.subtype.clone(),
+                            cause,
+                            candidates: failure.candidates.clone(),
+                            dominance_pairs: failure
+                                .dominance_pairs
+                                .iter()
+                                .map(|pair| (pair.dominant.clone(), pair.dominated.clone()))
+                                .collect(),
+                        }),
+                    }
+                })
+                .collect(),
+            LinkCheckOutcome::Completed(DispatchLinkOutcome::Linked(_)) => {
+                vec![invariant(operation)]
+            }
+            LinkCheckOutcome::Refused(model) => vec![model_cause(operation, model)],
+            LinkCheckOutcome::Incomplete(incomplete) => vec![DispatchLinkCause {
                 operation,
                 code: Code::ResourceExhausted,
                 catalog: CatalogCode::new("resource_exhausted", "insufficient-next-charge"),
                 denial: Some(incomplete.denial()),
-                subtypes: Vec::new(),
-            },
-            LinkCheckOutcome::OpenClosure(open) => DispatchLinkCause {
+                subtype: None,
+            }],
+            LinkCheckOutcome::OpenClosure(open) => vec![DispatchLinkCause {
                 operation,
                 code: open.code,
                 catalog: open.cause.catalog_code(),
                 denial: None,
-                subtypes: Vec::new(),
-            },
+                subtype: None,
+            }],
         },
         DispatchBridgeRefusal::FamilyStepsExceeded(model)
         | DispatchBridgeRefusal::NotAQuery(model)
-        | DispatchBridgeRefusal::UnknownCandidate(model) => model_cause(operation, model),
+        | DispatchBridgeRefusal::UnknownCandidate(model) => vec![model_cause(operation, model)],
         DispatchBridgeRefusal::MissingClauseData { .. }
         | DispatchBridgeRefusal::MissingObjectKey { .. }
-        | DispatchBridgeRefusal::DuplicateObjectKey { .. } => invariant(operation),
+        | DispatchBridgeRefusal::DuplicateObjectKey { .. } => vec![invariant(operation)],
     }
 }
 
@@ -594,7 +616,7 @@ fn model_cause(operation: DeclarationKey, model: &ModelRefusal) -> DispatchLinkC
         code: model.code,
         catalog: model.catalog_code(),
         denial: model.cause.denial(),
-        subtypes: Vec::new(),
+        subtype: None,
     }
 }
 
@@ -606,6 +628,30 @@ fn invariant(operation: DeclarationKey) -> DispatchLinkCause {
         code: Code::RuntimeInvariant,
         catalog: CatalogCode::new("runtime_invariant", "established-invariant-broken"),
         denial: None,
-        subtypes: Vec::new(),
+        subtype: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ix_trace_rs::trace;
+
+    /// FR-302-AC-4: an ambiguous outcome that names no failing subtype yields
+    /// the invariant cause, never no cause, so the call's own refusal is
+    /// replaced by a record.
+    #[trace("TC-794", "FR-302-AC-4")]
+    #[test]
+    fn an_ambiguous_outcome_naming_no_subtype_is_an_invariant_fault() {
+        let refusal = DispatchBridgeRefusal::Unlinked(Box::new(LinkCheckOutcome::Completed(
+            DispatchLinkOutcome::Ambiguous(Vec::new()),
+        )));
+        let causes = link_causes(DeclarationKey::fixture("ix://p/A/size"), &refusal);
+        let [cause] = causes.as_slice() else {
+            panic!("one cause, got {causes:?}");
+        };
+        assert_eq!(cause.code, Code::RuntimeInvariant);
+        assert_eq!(cause.catalog.code(), "runtime_invariant");
+        assert!(cause.subtype.is_none());
     }
 }

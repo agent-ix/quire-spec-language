@@ -28,8 +28,9 @@ use crate::model::accounting::{Meter, ModelNormalizationLimits};
 use crate::model::dispatch::GeneralizationClosure;
 use crate::model::domain_package::{
     FieldMemberRecord, Multiplicity, NativeValueType, ObjectTypeRecord, OperationEffect,
-    OperationMemberRecord, OperationParameterRecord, OperationResult, RelationshipDirection,
-    RelationshipEnd, RelationshipRecord, ValueTypeRef,
+    OperationMemberRecord, OperationParameterRecord, OperationResult, PersistenceInterfaceRecord,
+    RecordValueTypeRecord, RelationshipDirection, RelationshipEnd, RelationshipRecord,
+    StateMachineRecord, StateMachineStateRecord, StateMachineTransitionRecord, ValueTypeRef,
 };
 use crate::model::normalize::{normalize, NormalizeOutcome};
 use quire_semantic_value::checking::CheckingLimits;
@@ -1399,4 +1400,156 @@ mod quantities {
         });
         assert_eq!(record_node_key(&bare, limits).unwrap().unwrap(), event_key);
     }
+}
+
+/// QSpec FR-322-AC-25: lowering keys a state machine as a `model` node of
+/// semantic form `state_machine`, so a state clause or operation anchor on it
+/// has its node instead of an unnamed-record-kind fault.
+#[trace("QSpec-FR-322-AC-25")]
+#[test]
+fn state_machine_declaration_keys_as_a_state_machine_model_node() {
+    let package = DomainPackage::new(
+        DomainPackageRef {
+            identity: PACKAGE.to_owned(),
+            version: "1.0.0".to_owned(),
+            digest: Sha256::digest(b"acme/orders@machine").into(),
+        },
+        vec![
+            DomainPackageRecord::StateMachine(StateMachineRecord {
+                key: key("Lifecycle"),
+                supertypes: Vec::new(),
+                states: ["Draft", "Placed"]
+                    .map(|name| StateMachineStateRecord {
+                        key: key(&format!("Lifecycle/{name}")),
+                        name: name.to_owned(),
+                    })
+                    .to_vec(),
+                transitions: vec![StateMachineTransitionRecord {
+                    key: key("Lifecycle/transition0"),
+                    from: key("Lifecycle/Draft"),
+                    to: key("Lifecycle/Placed"),
+                    trigger: key("Lifecycle/place"),
+                    guard: None,
+                    emits: Vec::new(),
+                    path: "/types/0/transitions/0".to_owned(),
+                    origin: json!({}),
+                }],
+            }),
+            query("Lifecycle/place", "Lifecycle", None),
+        ],
+    );
+    let NormalizeOutcome::Completed(view) =
+        normalize(&package, ModelNormalizationLimits::UNLIMITED)
+    else {
+        panic!("the state machine normalizes");
+    };
+    let model = AdmittedModel::new(&package, &view).expect("the view is the package's own");
+    let models = std::slice::from_ref(&model);
+    let location = generated_location();
+    let (node, graph) = lower(models, Default::default(), |lowering| {
+        lowering.model_node(&key("Lifecycle"), &location)
+    });
+    let node = node.expect("a state machine has a model node");
+    let node = graph.node(node).expect("the node is in the graph");
+    assert_eq!(node.node_tag(), NodeTag::Model);
+    assert_eq!(node.semantic_form(), "state_machine");
+}
+
+/// FR-056 "K2 canonical native String, UUID and Timestamp payloads": the
+/// three natives a record or event field may carry are distinct scalar type
+/// nodes, so a composite holding one keys instead of refusing the whole
+/// check as `ill_typed`/`type-mismatch`.
+#[test]
+fn native_string_uuid_and_timestamp_key_as_distinct_scalar_nodes() {
+    let location = generated_location();
+    let ((string, uuid, timestamp), graph) = lower(&[], Default::default(), |lowering| {
+        (
+            lowering.type_node(&ValueType::String, &location),
+            lowering.type_node(&ValueType::Uuid, &location),
+            lowering.type_node(&ValueType::Timestamp, &location),
+        )
+    });
+    let forms: Vec<_> = [string, uuid, timestamp]
+        .into_iter()
+        .map(|result| {
+            let node = graph
+                .node(result.expect("a native scalar keys"))
+                .expect("the node is in the graph");
+            (node.node_tag(), node.semantic_form())
+        })
+        .collect();
+    assert_eq!(
+        forms,
+        [
+            (NodeTag::ScalarType, "string"),
+            (NodeTag::ScalarType, "uuid"),
+            (NodeTag::ScalarType, "timestamp"),
+        ]
+    );
+}
+
+/// The node tag and form `name` keys to in a package holding `records`.
+fn keyed_form(records: Vec<DomainPackageRecord>, name: &str) -> (NodeTag, String) {
+    let package = DomainPackage::new(
+        DomainPackageRef {
+            identity: PACKAGE.to_owned(),
+            version: "1.0.0".to_owned(),
+            digest: Sha256::digest(b"acme/orders@forms").into(),
+        },
+        records,
+    );
+    let NormalizeOutcome::Completed(view) =
+        normalize(&package, ModelNormalizationLimits::UNLIMITED)
+    else {
+        panic!("the package normalizes");
+    };
+    let model = AdmittedModel::new(&package, &view).expect("the view is the package's own");
+    let location = generated_location();
+    let (node, graph) = lower(
+        std::slice::from_ref(&model),
+        Default::default(),
+        |lowering| lowering.model_node(&key(name), &location),
+    );
+    let node = graph
+        .node(node.expect("the declaration has a model node"))
+        .expect("the node is in the graph");
+    (node.node_tag(), node.semantic_form().to_owned())
+}
+
+/// QSpec FR-322-AC-25: lowering keys a persistence interface as a `model`
+/// node, so an anchor on one has its node instead of an unnamed-record-kind
+/// fault.
+#[trace("QSpec-FR-322-AC-25")]
+#[test]
+fn persistence_interface_declaration_keys_as_a_model_node() {
+    let form = keyed_form(
+        vec![
+            object("Order", &[]),
+            DomainPackageRecord::PersistenceInterface(PersistenceInterfaceRecord {
+                key: key("Store"),
+                persists: vec![key("Order")],
+            }),
+            query("Store/save", "Store", None),
+        ],
+        "Store",
+    );
+    assert_eq!(form, (NodeTag::Model, "persistence_interface".to_owned()));
+}
+
+/// QSpec FR-340: lowering keys a record value type as a `model` node, so a
+/// frame field entry on one has its owner node instead of an
+/// unnamed-record-kind fault.
+#[test]
+fn record_value_type_declaration_keys_as_a_model_node() {
+    let form = keyed_form(
+        vec![DomainPackageRecord::RecordValueType(
+            RecordValueTypeRecord {
+                key: key("Money"),
+                identity_fields: Vec::new(),
+                supertypes: Vec::new(),
+            },
+        )],
+        "Money",
+    );
+    assert_eq!(form, (NodeTag::Model, "record_value_type".to_owned()));
 }
