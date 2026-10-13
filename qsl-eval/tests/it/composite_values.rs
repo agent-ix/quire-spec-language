@@ -1006,8 +1006,10 @@ mod checked {
         assert!(meter.admitted_charges().is_empty());
     }
 
-    /// QSL-732: a call admits a child composite at a parent-typed parameter
-    /// and refuses the parent at a child-typed one.
+    /// Runtime input admission (`TypeEnvironment::admits`): a call argument of
+    /// a child composite is admitted at a parent-typed parameter and a parent
+    /// is refused at a child-typed one. Check-time acceptance is not covered.
+    #[trace("QSpec-TC-188", "QSpec-FR-143-AC-9")]
     #[test]
     fn a_call_admits_a_child_composite_at_its_parent_parameter_only() {
         let types = TypeEnvironment::new(

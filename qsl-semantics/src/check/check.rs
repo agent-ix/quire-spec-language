@@ -899,10 +899,9 @@ fn contextual(expression: ExprRef<'_>) -> bool {
 }
 
 impl Typer<'_> {
-    /// Admit `node` where `required` is expected: identical types, a composite
-    /// into a declared ancestor composite, an integer into `Integer` or a
-    /// containing `Int[..]`, or an integer into another `Int[..]` through a
-    /// range-obligated [`NodeKind::Coerce`].
+    /// Admit `node` where `required` is expected: identical types, an integer into
+    /// `Integer` or a containing `Int[..]`, or an integer into another `Int[..]`
+    /// through a range-obligated [`NodeKind::Coerce`].
     pub(crate) fn coerce(
         &mut self,
         node: Node,
@@ -913,13 +912,6 @@ impl Typer<'_> {
         }
         match (&node.value_type, required) {
             (ValueType::Integer | ValueType::Int(_), ValueType::Integer) => Ok(node),
-            // A record or event value conforms to a declared ancestor
-            // composite; the node keeps its own (more specific) type.
-            (ValueType::Composite(sub), ValueType::Composite(sup))
-                if self.scope.types.composite_conforms(*sub, *sup) =>
-            {
-                Ok(node)
-            }
             (ValueType::Int(source), ValueType::Int(target))
                 if target.lower() <= source.lower() && source.upper() <= target.upper() =>
             {

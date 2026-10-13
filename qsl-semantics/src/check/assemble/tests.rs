@@ -2130,6 +2130,7 @@ fn admit_composites(
 /// QSL-732: a composite generalization cycle refuses with the typed cause,
 /// `ill_typed`, and the `type-mismatch` catalog cause beside the object-type
 /// cycle; it is not reported as a broken invariant.
+#[trace("FR-143-AC-9", "TC-188")]
 #[test]
 fn a_composite_supertype_cycle_refuses_as_ill_typed_type_mismatch() {
     let refusal = admit_composites(vec![empty_record("A", &["B"]), empty_record("B", &["A"])])
@@ -2160,6 +2161,7 @@ fn a_composite_supertype_cycle_refuses_as_ill_typed_type_mismatch() {
 /// QSL-732: a composite supertype naming no declaration that any round set
 /// aside is its own refusal (`UnknownDeclaration`, a broken invariant), not a
 /// silently dropped child.
+#[trace("FR-143-AC-9", "TC-188")]
 #[test]
 fn a_dangling_composite_supertype_is_refused_not_dropped() {
     let refusal = admit_composites(vec![empty_record("Child", &["Missing"])])
@@ -2185,6 +2187,7 @@ fn a_dangling_composite_supertype_is_refused_not_dropped() {
 
 /// QSL-732: a child whose composite parent is itself refused is a
 /// consequence of the parent's refusal and is set aside unreported.
+#[trace("FR-143-AC-9", "TC-188")]
 #[test]
 fn a_child_of_a_refused_composite_parent_is_a_consequence() {
     use quire_semantic_value::declaration::{
