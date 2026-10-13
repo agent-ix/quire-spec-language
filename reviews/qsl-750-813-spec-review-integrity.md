@@ -69,3 +69,11 @@ Round 1, reviewed at 485c2fad7374250b5ceb6a95cf7a4c8c4031ba9b.
 | FND-002 | fixed | e01e00c9f |
 | FND-003 | still-open | The table was reordered to four rows (operation-body, abstraction, dispatch-call, lookup). Item 5 now says "QSpec's shared grammar names the first, fourth and fifth rows, and QSpec FR-450-AC-3 names the second". There is no fifth row, and the shared grammar's forms are rows 1, 3 and 4. It should say "first, third and fourth". |
 | FND-004 | fixed | e01e00c9f |
+
+Round 2, reviewed at f7b6bb3aaad45cdcddf2f91e081a1eb1fe438ac2.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-003 | fixed | f7b6bb3aa |
+| FND-005 | fixed | f7b6bb3aa |
+| FND-006 | fixed | f7b6bb3aa |
