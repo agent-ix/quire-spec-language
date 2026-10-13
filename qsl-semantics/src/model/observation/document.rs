@@ -1213,16 +1213,21 @@ fn admit_value<'a: 'w, 'w>(
                 }
             }
             Admit::Record { own, count } => {
-                let mut slots: Vec<FieldValue> = done.split_off(done.len() - count);
-                slots.shrink_to_fit();
+                let Some(start) = done.len().checked_sub(count) else {
+                    return Err(refuse_at("wrong-value-kind", &path));
+                };
+                let slots: Vec<FieldValue> = done.split_off(start);
                 done.push(FieldValue::Present(quire_exact::from_admitted_slots(
                     own,
                     slots.into_boxed_slice(),
                 )));
             }
             Admit::Sequence { collection, count } => {
+                let Some(start) = done.len().checked_sub(count) else {
+                    return Err(refuse_at("wrong-value-kind", &path));
+                };
                 let elements: Vec<Value> = done
-                    .split_off(done.len() - count)
+                    .split_off(start)
                     .into_iter()
                     .filter_map(|element| match element {
                         FieldValue::Present(value) => Some(value),

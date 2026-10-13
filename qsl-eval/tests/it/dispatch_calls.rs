@@ -518,6 +518,16 @@ fn record_dispatch_package_guarded(
             crate::support::type_form::named_type_form("Money"),
         ));
     }
+    // The candidate body reads the argument's `amount`, so the value that
+    // reaches it is observable.
+    package.functions[0] = FunctionDeclaration::clause(
+        "candidate.body",
+        package.functions[0].parameters.clone(),
+        crate::support::type_form::type_form(&ValueType::Integer),
+        None,
+        Expression::field(Expression::name("arg".to_owned()), "amount"),
+        DeclaredClauseKind::Body,
+    );
     package.dispatch_operations[0].parameters = vec![ValueType::Composite(money)];
     package.types = TypeEnvironment::new(
         [
@@ -599,7 +609,8 @@ fn dispatch_argument_admits_a_conforming_record_and_refuses_the_rest() {
 /// `TaxedMoney` argument at the `Money` parameter evaluates through the
 /// linked candidate's body, and through its effective precondition when it
 /// holds; a false guard is `Undefined::PreconditionFalse` and never runs the
-/// body. The candidate receives the argument with its own type.
+/// body. The body returns the argument's `amount`, so the child's value
+/// reaches the candidate.
 #[trace("FR-359-AC-8", "TC-1001")]
 #[test]
 fn a_dispatched_call_with_a_child_argument_runs_through_guard_and_body() {
@@ -610,8 +621,8 @@ fn a_dispatched_call_with_a_child_argument_runs_through_guard_and_body() {
         vec![Expression::name("arg".to_owned())],
     );
     for (guard, expected) in [
-        (None, Some(1_i64)),
-        (Some(true), Some(1)),
+        (None, Some(5_i64)),
+        (Some(true), Some(5)),
         (Some(false), None),
     ] {
         let precondition = guard.map(Expression::boolean);

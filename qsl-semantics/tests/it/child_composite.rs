@@ -584,6 +584,7 @@ fn order_fields(total: Value, items: Vec<Value>) -> serde_json::Map<String, Valu
     fields.insert("discount".to_owned(), json!({"absent": {}}));
     fields.insert("taxed".to_owned(), json!({"absent": {}}));
     fields.insert("chain".to_owned(), json!({"absent": {}}));
+    fields.insert("bundle".to_owned(), json!({"absent": {}}));
     fields.insert("items".to_owned(), json!({"sequence": items}));
     fields
 }
@@ -883,10 +884,11 @@ fn a_recursive_record_nested_far_beyond_256_levels_admits() {
     }
 }
 
-/// FR-106-AC-16: the same chain past the values-per-document bound refuses
-/// with the observation-values limit cause, and a defect at the bottom names
+/// FR-261-AC-3: the same chain past the values-per-document bound refuses
+/// `stage_limit_exceeded` naming `observation.values` (the repository's
+/// limit cause; FR-106-AC-16 words it `resource_exhausted`), and a defect at the bottom names
 /// its whole typed path: a field, an option-value step, a field, and so on.
-#[trace("FR-106-AC-16", "FR-359-AC-9", "TC-1002")]
+#[trace("FR-261-AC-3", "FR-359-AC-9", "TC-1002")]
 #[test]
 fn a_deep_chain_is_bounded_by_the_value_limit_and_names_its_path() {
     let limits = ObservationLimits::default().with_values_per_document(100);
@@ -923,8 +925,11 @@ fn a_deep_chain_is_bounded_by_the_value_limit_and_names_its_path() {
     );
 }
 
-/// FR-106-AC-15: a `present` wrapper adds an option-value step, and a
-/// scalar element defect inside a record's sequence field has its index.
+/// FR-106-AC-15: a `present` wrapper adds an option-value step; a scalar
+/// element of a record's sequence field has its index; and a record field
+/// inside a sequence element is a field step after the index step. A step
+/// is typed, so a position never reads as a field name (a model field cannot
+/// be named `0`: its identity must be `<Type>/<name>` with an identifier).
 #[trace("FR-106-AC-15", "FR-359-AC-9", "TC-1002")]
 #[test]
 fn a_nested_path_carries_option_value_and_index_steps() {
@@ -941,6 +946,67 @@ fn a_nested_path_carries_option_value_and_index_steps() {
             vec![PathStep::OptionValue, field_step("tax_minor")]
         )
     );
-    // A record field named "0" is a field step, never the first element.
-    assert_ne!(field_step("0"), PathStep::Index(0));
+    let bundle = |amounts: Value, tagged: Value| {
+        let mut fields = order_fields(money("1"), vec![]);
+        fields.insert(
+            "bundle".to_owned(),
+            json!({"present": {"record": {"type": fixture::id("Bundle"), "fields": {
+                "amounts": amounts, "tagged": tagged,
+            }}}}),
+        );
+        fields
+    };
+    let tagged =
+        |value: Value| json!({"record": {"type": fixture::id("Tagged"), "fields": {"tag": value}}});
+    // A scalar element of a sequence field inside a record: option value,
+    // the field, then the element's index.
+    assert_eq!(
+        refusal_of(admit_order(bundle(
+            json!({"sequence": [{"integer": "1"}, {"integer": "x"}]}),
+            json!({"sequence": []}),
+        ))),
+        refusal(
+            "invalid-value",
+            "bundle",
+            vec![
+                PathStep::OptionValue,
+                field_step("amounts"),
+                PathStep::Index(1)
+            ]
+        )
+    );
+    // A defect in the second element's field: the exact steps are the
+    // position, then the field.
+    assert_eq!(
+        refusal_of(admit_order(bundle(
+            json!({"sequence": []}),
+            json!({"sequence": [tagged(json!({"integer": "1"})), tagged(json!({"integer": "x"}))]}),
+        ))),
+        refusal(
+            "invalid-value",
+            "bundle",
+            vec![
+                PathStep::OptionValue,
+                field_step("tagged"),
+                PathStep::Index(1),
+                field_step("tag")
+            ]
+        )
+    );
+    assert_eq!(
+        refusal_of(admit_order(bundle(
+            json!({"sequence": []}),
+            json!({"sequence": [{"record": {"type": fixture::id("Tagged"), "fields": {}}}]}),
+        ))),
+        refusal(
+            "missing-member",
+            "bundle",
+            vec![
+                PathStep::OptionValue,
+                field_step("tagged"),
+                PathStep::Index(0),
+                field_step("tag")
+            ]
+        )
+    );
 }

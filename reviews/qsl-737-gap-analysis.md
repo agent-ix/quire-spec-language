@@ -121,9 +121,18 @@ Round 1, reviewed at `eb90798d0e`.
 | FND-004 | deferred | Blocked by PR #789 (QSL-723), which is open: String leaves do not lower yet. `a_mixed_pair_with_equal_text_leaves_is_unequal` is `#[ignore]`d with that citation and asserts a `StampedTicket` and a `Ticket` with an equal `label` are unequal. Un-ignore it when #789 merges. |
 | FND-005 | fixed | 3a3f6e00c: `equality_over_event_operands_stays_refused` covers `=` and `!=` over two events, a record holding an event, `Option<Shipped>` and `Sequence<Shipped>`. Each case asserts `operator-ineligible` and the comparing function's body. |
 | FND-006 | fixed | c764dff09: the oracles use `quire_exact::compare_keys(..) == Some(Equal)` (`same_value`), which compares declaration and fields. The AC-11 test adds negative controls (`!same_value(taxed, money)` within and across units), so the oracle can fail. The wire round-trip compares `compare_keys`. |
+| FND-007 | deferred | The dispatch half is fixed in 14fda4097: `a_dispatched_call_with_a_child_argument_runs_through_guard_and_body` runs a dispatched call with a `TaxedMoney` at the `Money` parameter, with no guard, a true guard (body result 1) and a false guard (`PreconditionFalse`). The `Upcast` of the operation and a redeclared subtype body are still not exercised at run level. The reason this is not blocking: they reach the same `Form::Argument` conformance arm (unit-tested) and the same evaluation as the dispatch case. QSL-737 stays open for them, and AC-8 is partly backed until then. |
+
+Round 2 rows reviewed at `14fda4097`.
 
 ## New findings (disposition pass 1)
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-007 | low | Part of FR-359-AC-8 still has no test: a run through an `Upcast` of the operation, and a dispatch guard or body binding that binds a child argument, are not exercised at run level. Dispatch argument admission is tested at check level only, and the Upcast not at all. The production path (the `Form::Argument` conformance arm, then evaluation by `record_slot`) is the one already exercised for functions and operation clauses, so the risk is low. AC-8 stays partly unbacked until a run-level test is written with the TC-196 dispatch harness. The PR body declares this gap. | qsl-eval/tests/it/dispatch_calls.rs; qsl-semantics/src/check/state_model.rs |
+
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | low | The doc of `a_dispatched_call_with_a_child_argument_runs_through_guard_and_body` says "The candidate receives the argument with its own type", but no assertion checks it. The guard is a boolean literal and the body a constant, so neither reads `arg`. The test shows only that the run does not refuse a child argument. | qsl-eval/tests/it/dispatch_calls.rs:598-669 |
