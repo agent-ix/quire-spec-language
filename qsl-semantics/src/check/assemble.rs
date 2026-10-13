@@ -2294,25 +2294,16 @@ impl PackageDeclarations {
         // SR-770 FND-006: both resolved before either refuses, so a unit
         // with a bad state clause and a bad attempt reports both in one
         // refusal (clause errors first, then attempt errors).
-        let state_clauses = state_clauses(
-            unit.state_clauses,
-            &selections.profiles,
-            &object_names,
-            &variant_type_names,
-            &types,
-            &operations,
-            &admitted,
-            &models,
-        );
-        let operation_bodies = operation_bodies(
-            unit.operation_bodies,
-            &selections.profiles,
-            &object_names,
-            &variant_type_names,
-            &types,
-            &operations,
-            &models,
-        );
+        let resolve = Resolve {
+            profiles: &selections.profiles,
+            object_names: &object_names,
+            variant_type_names: &variant_type_names,
+            types: &types,
+            operations: &operations,
+            selected: &models,
+        };
+        let state_clauses = state_clauses(unit.state_clauses, &resolve, &admitted);
+        let operation_bodies = operation_bodies(unit.operation_bodies, &resolve);
         let protocol_attempts = protocol_attempts(
             &unit.protocols,
             &object_names,
@@ -2411,6 +2402,20 @@ impl PackageDeclarations {
     }
 }
 
+/// What the assembler resolves a unit's state clauses and operation bodies
+/// against: its profile selections, the object types and variant types the
+/// admitted models declare, the type environment and operation table built
+/// over them, and the selected models.
+#[derive(Clone, Copy)]
+struct Resolve<'a> {
+    profiles: &'a [qsl_foundation::selection::ProfileSelection],
+    object_names: &'a BTreeMap<String, EffectiveId>,
+    variant_type_names: &'a BTreeSet<String>,
+    types: &'a TypeEnvironment,
+    operations: &'a OperationTable,
+    selected: &'a [SelectedModel],
+}
+
 /// FR-104 "Resolution": each state clause's `using` alias resolved to one
 /// of the unit's profile selections, as a function's is (FR-091); its
 /// context `M::T` to an object type of an admitted domain package; a `pre`
@@ -2421,14 +2426,17 @@ impl PackageDeclarations {
 /// context.
 fn state_clauses(
     forms: Vec<StateClauseForm>,
-    profiles: &[qsl_foundation::selection::ProfileSelection],
-    object_names: &BTreeMap<String, EffectiveId>,
-    variant_type_names: &BTreeSet<String>,
-    types: &TypeEnvironment,
-    operations: &OperationTable,
+    resolve: &Resolve<'_>,
     models: &[AdmittedModel],
-    selected: &[SelectedModel],
 ) -> Result<(Vec<StateClauseDeclaration>, BTreeMap<usize, DeclarationKey>), AssemblyRefusal> {
+    let Resolve {
+        profiles,
+        object_names,
+        variant_type_names,
+        types,
+        operations,
+        selected,
+    } = *resolve;
     let mut errors = Vec::new();
     let mut clauses = Vec::with_capacity(forms.len());
     let mut keys = BTreeMap::new();
@@ -2610,13 +2618,16 @@ fn operation_key_of(
 /// that resolved to the key.
 fn operation_bodies(
     forms: Vec<OperationBodyForm>,
-    profiles: &[qsl_foundation::selection::ProfileSelection],
-    object_names: &BTreeMap<String, EffectiveId>,
-    variant_type_names: &BTreeSet<String>,
-    types: &TypeEnvironment,
-    operations: &OperationTable,
-    selected: &[SelectedModel],
+    resolve: &Resolve<'_>,
 ) -> Result<Vec<OperationBodyDeclaration>, AssemblyRefusal> {
+    let Resolve {
+        profiles,
+        object_names,
+        variant_type_names,
+        types,
+        operations,
+        selected,
+    } = *resolve;
     let mut errors = Vec::new();
     let mut bodies = Vec::with_capacity(forms.len());
     for form in forms {
