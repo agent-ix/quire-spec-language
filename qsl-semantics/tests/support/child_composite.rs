@@ -274,6 +274,7 @@ pub(crate) fn document() -> Value {
                         plain("Order", "order_id", &native("Integer")),
                         plain("Order", "total", &money),
                         optional("Order", "discount", &money),
+                        optional("Order", "taxed", &id("TaxedMoney")),
                         many("Order", "items", &money, true, false),
                     ],
                 }),
@@ -302,6 +303,7 @@ pub(crate) fn document() -> Value {
     let constructs = vec![
         base::construct("money", base_meaning::RECORD_VALUE_TYPE),
         base::construct("thing", base_meaning::OBJECT_TYPE),
+        base::construct("population", base_meaning::POPULATION),
         {
             let mut bounded = base::construct("bounded", base_meaning::VALUE_TYPE);
             bounded["construct"]["members"] = json!({});
@@ -309,7 +311,22 @@ pub(crate) fn document() -> Value {
             bounded
         },
     ];
-    base::domain_document(types, constructs)
+    let mut document = base::domain_document(types, constructs);
+    document["populations"] = json!([
+        population("orders", "Order"),
+        population("ledgers", "Ledger")
+    ]);
+    document
+}
+
+/// The closed population `name` of the object type `member`.
+fn population(name: &str, member: &str) -> Value {
+    json!({
+        "identity": id(name), "displayName": id(name),
+        "kind": {"module": base::BUSINESS, "name": "population"},
+        "members": [id(member)], "extent": "closed",
+        "origin": base::origin(name),
+    })
 }
 
 use qsl_semantics::model::intake::meaning as base_meaning;

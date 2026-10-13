@@ -526,3 +526,283 @@ fn uuid_timestamp_and_string_fields_are_read_through_a_child() {
     .check(CheckingLimits::default())
     .expect("native leaves check once PR #789 lowers them");
 }
+
+// ---------------------------------------------------------------------------
+// FR-359-AC-9 / FR-106: the `record` value form in a snapshot
+// ---------------------------------------------------------------------------
+
+use std::collections::BTreeMap;
+
+use qsl_semantics::model::observation::{
+    admit_current_snapshot, AdmissionFailure, AdmissionRecord, DocumentRef, ObservationLimits,
+};
+use serde_json::json;
+
+/// `{"record": {"type": <name>, "fields": {<field>: {"integer": ..}}}}`.
+fn record_value(name: &str, fields: &[(&str, &str)]) -> Value {
+    let fields: serde_json::Map<String, Value> = fields
+        .iter()
+        .map(|(field, integer)| ((*field).to_owned(), json!({"integer": integer})))
+        .collect();
+    json!({"record": {"type": fixture::id(name), "fields": fields}})
+}
+
+fn money(amount: &str) -> Value {
+    record_value("Money", &[("amount_minor", amount), ("currency", "978")])
+}
+
+fn taxed(amount: &str, tax: &str) -> Value {
+    record_value(
+        "TaxedMoney",
+        &[
+            ("amount_minor", amount),
+            ("currency", "978"),
+            ("tax_minor", tax),
+        ],
+    )
+}
+
+fn gift(amount: &str) -> Value {
+    record_value(
+        "GiftTaxedMoney",
+        &[
+            ("amount_minor", amount),
+            ("currency", "978"),
+            ("tax_minor", "20"),
+            ("wrap_minor", "3"),
+        ],
+    )
+}
+
+/// The one `Order` object's fields, with `total` and `items` replaced by
+/// the given values; `discount` and `taxed` are absent unless supplied.
+fn order_fields(total: Value, items: Vec<Value>) -> serde_json::Map<String, Value> {
+    let mut fields = serde_json::Map::new();
+    fields.insert("order_id".to_owned(), json!({"integer": "1"}));
+    fields.insert("total".to_owned(), total);
+    fields.insert("discount".to_owned(), json!({"absent": {}}));
+    fields.insert("taxed".to_owned(), json!({"absent": {}}));
+    fields.insert("items".to_owned(), json!({"sequence": items}));
+    fields
+}
+
+/// Admit a current snapshot holding one `Order` named `o1` with `fields`.
+fn admit_order(fields: serde_json::Map<String, Value>) -> Result<(), AdmissionFailure> {
+    let document = serde_json::to_vec(&fixture::document()).expect("the fixture serializes");
+    let packages = package_input([document.as_slice()]);
+    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
+        panic!("one model package");
+    };
+    let model_digest = qsl_semantics::model::key::hex(digest);
+    let graph = check("function noop using v(): Boolean pure { true }").expect("the unit checks");
+    let label = DocumentRef {
+        authority: "test".to_owned(),
+        identity: "orders".to_owned(),
+        revision_namespace: "fixture".to_owned(),
+        revision: "1".to_owned(),
+        digest: [0; 32],
+    };
+    let bytes = serde_json::to_vec(&json!({
+        "format": "quire.state.snapshot/v1",
+        "identity": {
+            "authority": label.authority, "identity": label.identity,
+            "revision_namespace": label.revision_namespace, "revision": label.revision,
+        },
+        "observation": "current",
+        "anchor": {"kind": "handler", "name": "validate"},
+        "model": {
+            "identity": fixture::PACKAGE, "version": "1",
+            "digest": format!("sha256-jcs:{model_digest}"),
+        },
+        "populations": [{
+            "population": fixture::id("orders"),
+            "complete": true,
+            "objects": [{"key": "o1", "type": fixture::id("Order"), "fields": fields}],
+        }],
+    }))
+    .expect("the snapshot serializes");
+    let parsed = quire_canonical::read(&bytes, u64::MAX).expect("the snapshot is JSON");
+    let digest = *quire_canonical::sha256(&parsed, quire_canonical::Limits::new(u64::MAX))
+        .expect("the snapshot is canonical")
+        .as_bytes();
+    let selected = DocumentRef { digest, ..label };
+    let snapshots = BTreeMap::from([(digest, bytes)]);
+    admit_current_snapshot(
+        graph.model_selections(),
+        graph.scope().types(),
+        &packages,
+        ModelNormalizationLimits::default(),
+        &snapshots,
+        &selected,
+        ObservationLimits::default(),
+    )
+    .map(|_| ())
+}
+
+/// The refusal of `result`: its cause and its object, field and nested-path
+/// components.
+fn refusal_of(result: Result<(), AdmissionFailure>) -> (String, String, String, String) {
+    let Err(AdmissionFailure::Refused(AdmissionRecord {
+        code,
+        cause,
+        fields,
+    })) = result
+    else {
+        panic!("a refusal, not {result:?}");
+    };
+    assert_eq!(code.as_str(), "invalid_runtime_input");
+    let component = |name: &str| fields.get(name).cloned().unwrap_or_default();
+    (
+        cause.to_owned(),
+        component("object"),
+        component("field"),
+        component("path"),
+    )
+}
+
+fn refusal(cause: &str, field: &str, path: &str) -> (String, String, String, String) {
+    (
+        cause.to_owned(),
+        "o1".to_owned(),
+        field.to_owned(),
+        path.to_owned(),
+    )
+}
+
+/// FR-359-AC-9: a snapshot whose `Order.total: Money` holds a `TaxedMoney`
+/// admits, and so does a `GiftTaxedMoney` there, a `Money`, the same record as
+/// the payload of the optional `discount: Money?` and as an element of the
+/// `items: Sequence<Money>` field; a `GiftTaxedMoney` admits at the
+/// `taxed: TaxedMoney?` slot.
+#[trace("FR-359-AC-9", "TC-1002")]
+#[test]
+fn a_snapshot_admits_a_child_record_at_an_ancestor_typed_field() {
+    admit_order(order_fields(money("100"), vec![])).expect("a Money at Money");
+    admit_order(order_fields(taxed("100", "20"), vec![])).expect("a TaxedMoney at Money");
+    admit_order(order_fields(gift("100"), vec![])).expect("a GiftTaxedMoney at Money");
+    let mut fields = order_fields(money("1"), vec![]);
+    fields.insert("discount".to_owned(), json!({"present": taxed("5", "1")}));
+    admit_order(fields).expect("a TaxedMoney as the payload of Money?");
+    admit_order(order_fields(
+        money("1"),
+        vec![taxed("2", "1"), money("3"), gift("4")],
+    ))
+    .expect("children as the elements of Sequence<Money>");
+    let mut fields = order_fields(money("1"), vec![]);
+    fields.insert("taxed".to_owned(), json!({"present": gift("9")}));
+    admit_order(fields).expect("a GiftTaxedMoney at a TaxedMoney? field");
+}
+
+/// FR-359-AC-9: a record that is only an ancestor of the slot's type, an
+/// unrelated record, a `type` naming an object type or no record, and an
+/// object reference in place of a record refuse `wrong-value-kind` at the
+/// slot.
+#[trace("FR-359-AC-9", "FR-106-AC-15", "TC-1002")]
+#[test]
+fn a_snapshot_refuses_a_record_that_does_not_conform_to_its_slot() {
+    let mut ancestor_at_child = order_fields(money("1"), vec![]);
+    ancestor_at_child.insert("taxed".to_owned(), json!({"present": money("1")}));
+    assert_eq!(
+        refusal_of(admit_order(ancestor_at_child)),
+        refusal("wrong-value-kind", "taxed", "")
+    );
+    assert_eq!(
+        refusal_of(admit_order(order_fields(
+            record_value("Fee", &[("fee_minor", "1")]),
+            vec![]
+        ))),
+        refusal("wrong-value-kind", "total", "")
+    );
+    for ty in [fixture::id("Order"), fixture::id("NoSuchRecord")] {
+        let value = json!({"record": {"type": ty, "fields": {}}});
+        assert_eq!(
+            refusal_of(admit_order(order_fields(value, vec![]))),
+            refusal("wrong-value-kind", "total", ""),
+            "{ty}"
+        );
+    }
+    let reference = json!({"reference": {"population": fixture::id("orders"), "key": "o1"}});
+    assert_eq!(
+        refusal_of(admit_order(order_fields(reference, vec![]))),
+        refusal("wrong-value-kind", "total", "")
+    );
+}
+
+/// FR-359-AC-9, FR-106-AC-15: a `TaxedMoney` missing `tax_minor` refuses
+/// `missing-member` naming the nested field, though a `Money` without it
+/// admits; an extra field refuses `unknown-member`; a malformed scalar
+/// refuses `invalid-value`. The path names the element for a sequence.
+#[trace("FR-359-AC-9", "FR-106-AC-15", "TC-1002")]
+#[test]
+fn a_snapshot_record_is_checked_for_its_own_effective_fields() {
+    let without_tax = record_value(
+        "TaxedMoney",
+        &[("amount_minor", "100"), ("currency", "978")],
+    );
+    assert_eq!(
+        refusal_of(admit_order(order_fields(without_tax.clone(), vec![]))),
+        refusal("missing-member", "total", "tax_minor")
+    );
+    assert_eq!(
+        refusal_of(admit_order(order_fields(
+            money("1"),
+            vec![money("1"), without_tax]
+        ))),
+        refusal("missing-member", "items", "1.tax_minor")
+    );
+    let extra = record_value(
+        "Money",
+        &[
+            ("amount_minor", "1"),
+            ("currency", "978"),
+            ("tax_minor", "2"),
+        ],
+    );
+    assert_eq!(
+        refusal_of(admit_order(order_fields(extra, vec![]))),
+        refusal("unknown-member", "total", "tax_minor")
+    );
+    let bad_integer = record_value(
+        "Money",
+        &[("amount_minor", "not-a-number"), ("currency", "978")],
+    );
+    assert_eq!(
+        refusal_of(admit_order(order_fields(bad_integer, vec![]))),
+        refusal("invalid-value", "total", "amount_minor")
+    );
+}
+
+/// FR-106-AC-15: the refusal names the first path reached in field order: of
+/// two defective fields of one record the earlier declared one, and of two
+/// defective fields of the object the earlier declared one.
+#[trace("FR-359-AC-9", "FR-106-AC-15", "TC-1002")]
+#[test]
+fn a_snapshot_refusal_names_the_first_path_in_field_order() {
+    let two_bad = json!({"record": {"type": fixture::id("TaxedMoney"), "fields": {
+        "tax_minor": {"boolean": true},
+        "currency": {"integer": "978"},
+        "amount_minor": {"integer": "x"},
+    }}});
+    assert_eq!(
+        refusal_of(admit_order(order_fields(two_bad.clone(), vec![]))),
+        refusal("invalid-value", "total", "amount_minor")
+    );
+    // `total` is declared before `items`, so its defect is the first reached
+    // even though `items` also holds one.
+    assert_eq!(
+        refusal_of(admit_order(order_fields(
+            two_bad,
+            vec![record_value("Fee", &[("fee_minor", "1")])]
+        ))),
+        refusal("invalid-value", "total", "amount_minor")
+    );
+    // Within a sequence the first defective element is reached first.
+    let fee = || record_value("Fee", &[("fee_minor", "1")]);
+    assert_eq!(
+        refusal_of(admit_order(order_fields(
+            money("1"),
+            vec![money("1"), fee(), fee()]
+        ))),
+        refusal("wrong-value-kind", "items", "1")
+    );
+}

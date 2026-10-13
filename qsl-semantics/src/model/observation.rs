@@ -133,6 +133,10 @@ pub struct OutOfRange {
     pub range: quire_exact::IntegerInterval,
     /// The value observed.
     pub observed: quire_exact::Integer,
+    /// For an integer inside a record value, the record field names from the
+    /// field (or sequence element) down to it, outermost first; empty
+    /// otherwise.
+    pub steps: Vec<String>,
 }
 
 impl Default for ObservationLimits {
@@ -355,6 +359,20 @@ impl AdmissionRecord {
         self.fields.insert(key, value.into());
         self
     }
+
+    /// This record under one more step of a nested value path: a record
+    /// field name or a sequence position, prepended to the `path` it
+    /// already names (FR-106 check 6.5: a refusal names the nested value
+    /// path from the checked field down).
+    #[must_use]
+    fn within(mut self, step: String) -> Self {
+        let path = match self.fields.remove("path") {
+            Some(inner) => format!("{step}.{inner}"),
+            None => step,
+        };
+        self.fields.insert("path", path);
+        self
+    }
 }
 
 /// FR-106 Outputs: admission's non-`Ok` result.
@@ -508,6 +526,13 @@ enum RawNode {
     Present(usize),
     Reference(SelectedObject),
     Sequence(Vec<usize>),
+    /// `{"record": {"type": .., "fields": {..}}}`: the record's `type`
+    /// identity and its fields in document order, each the index of its
+    /// value's node.
+    Record {
+        type_identity: String,
+        fields: Vec<(String, usize)>,
+    },
 }
 
 /// The form of one value of a [`SnapshotValue`], with nested values as
@@ -526,6 +551,8 @@ pub enum RawForm<'v> {
     Reference(&'v SelectedObject),
     /// `{"sequence": [<value>, ...]}`, its items in order.
     Sequence(RawItems<'v>),
+    /// `{"record": {"type": <declaration identity>, "fields": {..}}}`.
+    Record(RawRecord<'v>),
 }
 
 /// One value inside a [`SnapshotValue`].
@@ -533,6 +560,39 @@ pub enum RawForm<'v> {
 pub struct RawValue<'v> {
     arena: &'v SnapshotValue,
     index: usize,
+}
+
+/// A `record` value: the identity of its most-specific record type and its
+/// fields in document order.
+#[derive(Clone, Copy, Debug)]
+pub struct RawRecord<'v> {
+    arena: &'v SnapshotValue,
+    type_identity: &'v str,
+    fields: &'v [(String, usize)],
+}
+
+impl<'v> RawRecord<'v> {
+    /// The `type` member: the IR node identity of the value's most-specific
+    /// record value type.
+    #[must_use]
+    pub fn type_identity(self) -> &'v str {
+        self.type_identity
+    }
+
+    /// The `fields` members, in document order.
+    pub fn fields(
+        self,
+    ) -> impl DoubleEndedIterator<Item = (&'v str, RawValue<'v>)> + ExactSizeIterator {
+        self.fields.iter().map(move |(name, index)| {
+            (
+                name.as_str(),
+                RawValue {
+                    arena: self.arena,
+                    index: *index,
+                },
+            )
+        })
+    }
 }
 
 /// The items of a `sequence` value, in order.
@@ -604,6 +664,25 @@ impl SnapshotValue {
         Self { nodes, root: at }
     }
 
+    /// `{"record": {"type": type_identity, "fields": {..}}}`, its fields in
+    /// the given order.
+    #[must_use]
+    pub fn record(type_identity: impl Into<String>, fields: Vec<(String, Self)>) -> Self {
+        let mut nodes = Vec::new();
+        let mut members = Vec::with_capacity(fields.len());
+        for (name, value) in fields {
+            let offset = nodes.len();
+            nodes.extend(value.nodes.into_iter().map(|node| node.shifted(offset)));
+            members.push((name, value.root + offset));
+        }
+        let at = nodes.len();
+        nodes.push(RawNode::Record {
+            type_identity: type_identity.into(),
+            fields: members,
+        });
+        Self { nodes, root: at }
+    }
+
     /// The root value's form.
     #[must_use]
     pub fn form(&self) -> RawForm<'_> {
@@ -621,6 +700,14 @@ impl SnapshotValue {
             }),
             RawNode::Reference(reference) => RawForm::Reference(reference),
             RawNode::Sequence(items) => RawForm::Sequence(RawItems { arena: self, items }),
+            RawNode::Record {
+                type_identity,
+                fields,
+            } => RawForm::Record(RawRecord {
+                arena: self,
+                type_identity,
+                fields,
+            }),
         }
     }
 }
@@ -649,6 +736,19 @@ impl PartialEq for SnapshotValue {
                             .map(|(left, right)| (left.form(), right.form())),
                     );
                 }
+                (RawForm::Record(left), RawForm::Record(right))
+                    if left.type_identity() == right.type_identity()
+                        && left.fields().len() == right.fields().len() =>
+                {
+                    for ((left_name, left), (right_name, right)) in
+                        left.fields().zip(right.fields())
+                    {
+                        if left_name != right_name {
+                            return false;
+                        }
+                        work.push((left.form(), right.form()));
+                    }
+                }
                 _ => return false,
             }
         }
@@ -666,6 +766,16 @@ impl RawNode {
             Self::Sequence(items) => {
                 Self::Sequence(items.into_iter().map(|item| item + offset).collect())
             }
+            Self::Record {
+                type_identity,
+                fields,
+            } => Self::Record {
+                type_identity,
+                fields: fields
+                    .into_iter()
+                    .map(|(name, index)| (name, index + offset))
+                    .collect(),
+            },
             other @ (Self::Boolean(_) | Self::Integer(_) | Self::Absent | Self::Reference(_)) => {
                 other
             }

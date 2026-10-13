@@ -108,7 +108,7 @@ fn push(nodes: &mut Vec<RawNode>, node: RawNode) -> usize {
 type Charge<'c, E> = &'c mut dyn FnMut() -> Result<(), E>;
 
 /// Read one FR-106 value form from `json`, or `Ok(None)` when it is not one
-/// of the six tagged shapes: a wire-reading edge (ADR-012 §9), converting
+/// of the seven tagged shapes: a wire-reading edge (ADR-012 §9), converting
 /// each value's tag to a closed form once, here. The tree is walked from an
 /// explicit heap stack, so a value of any depth reads in constant native
 /// stack; `charge` runs once per value form read (`observation.values`),
@@ -128,6 +128,14 @@ pub(super) fn read_raw_value<E>(
         Present,
         /// `{"sequence": [...]}`, waiting for `remaining` more items.
         Sequence { remaining: usize, items: Vec<usize> },
+        /// `{"record": {"type": .., "fields": {..}}}`, waiting for the
+        /// values of `names[items.len()..]`, its field names in document
+        /// order.
+        Record {
+            type_identity: String,
+            names: Vec<String>,
+            items: Vec<usize>,
+        },
     }
     // The arena every form is pushed into, as each completes.
     let mut nodes: Vec<RawNode> = Vec::new();
@@ -145,6 +153,26 @@ pub(super) fn read_raw_value<E>(
                 Some(Open::Present) => {
                     nodes.push(RawNode::Present(done));
                     finished = Some(nodes.len() - 1);
+                }
+                Some(Open::Record {
+                    type_identity,
+                    names,
+                    mut items,
+                }) => {
+                    items.push(done);
+                    if items.len() == names.len() {
+                        nodes.push(RawNode::Record {
+                            type_identity,
+                            fields: names.into_iter().zip(items).collect(),
+                        });
+                        finished = Some(nodes.len() - 1);
+                    } else {
+                        open.push(Open::Record {
+                            type_identity,
+                            names,
+                            items,
+                        });
+                    }
                 }
                 Some(Open::Sequence {
                     remaining,
@@ -231,6 +259,41 @@ pub(super) fn read_raw_value<E>(
                     // Pushed last-first, so the first item reads first.
                     let elements: Vec<Json<'_>> = items.collect();
                     pending.extend(elements.into_iter().rev());
+                }
+            }
+            "record" => {
+                // Exactly `type` and `fields`: a payload with any other
+                // member, or either missing or of the wrong kind, is not
+                // this shape.
+                let Some(payload) = payload.as_object() else {
+                    return Ok(None);
+                };
+                if payload.keys().count() != 2 {
+                    return Ok(None);
+                }
+                let (Some(type_identity), Some(fields)) = (
+                    payload.member("type").and_then(Json::as_str),
+                    payload.member("fields").and_then(Json::as_object),
+                ) else {
+                    return Ok(None);
+                };
+                let members: Vec<(&str, Json<'_>)> = fields.iter().collect();
+                if members.is_empty() {
+                    finished = Some(push(
+                        &mut nodes,
+                        RawNode::Record {
+                            type_identity: type_identity.to_owned(),
+                            fields: Vec::new(),
+                        },
+                    ));
+                } else {
+                    open.push(Open::Record {
+                        type_identity: type_identity.to_owned(),
+                        names: members.iter().map(|(name, _)| (*name).to_owned()).collect(),
+                        items: Vec::with_capacity(members.len()),
+                    });
+                    // Pushed last-first, so the first field reads first.
+                    pending.extend(members.into_iter().rev().map(|(_, value)| value));
                 }
             }
             _ => return Ok(None),
