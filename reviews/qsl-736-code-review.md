@@ -62,6 +62,14 @@ Reviewed at agent-ix/quire-spec-language@77a645298 (fix commit 4d84820a5 plus a 
 | FND-012 | low | `semantic_member_path` gives a root IR pointer (`/ir` or empty) a single empty `Name`, which `Display`s as `$.`. The type's own `FromStr` rejects that, so the value breaks its round-trip guarantee. JSON-pointer escapes (`~0`, `~1`) are not decoded either. | qsl-semantics/src/model/intake.rs:1890-1915 |
 | FND-013 | low | An operation's precondition is spelled two ways. `Operation.pre` is hard-coded for M08 run 6 and for every operation-owned clause record, even a postcondition one. Path-derived refusals inside an operation spell it `TypeDefinition.operations[m].pre[k]...`, which is what #792 (QSL-726, open) will produce for its contract clauses. | qsl-semantics/src/model/normalize.rs:2104-2108; qsl-semantics/src/model/intake.rs:2753-2760 |
 
+## New findings (disposition pass 2)
+
+Reviewed at agent-ix/quire-spec-language@d5ff63254 (fix commit 11bb95903 plus d5ff63254, which marks `from_document_location` and `operation_contract` `#[string_edge]`).
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-014 | low | `identity_member` misnames two records that have no array slot. A systems connection is a top-level `types[n]` node, but its `RelationshipRecord` has `declared_at: None`, so it is named `Relationship.identity` (and `Relationship` in the normalize source-owner refusal), not `TypeDefinition.identity`. An operation-owned clause is counted among its operation's clauses and named `TypeDefinition.clauses[k].identity`, while normalize names the same record `Operation`. Today the reader never emits either case, so only in-memory packages reach it. | qsl-semantics/src/model/admitted.rs:139-150; qsl-semantics/src/model/normalize.rs:2297-2304; qsl-semantics/src/model/intake.rs:3480-3482 |
+
 ## Dispositions
 
 | FND | outcome | sha/reason |
@@ -73,3 +81,9 @@ Reviewed at agent-ix/quire-spec-language@77a645298 (fix commit 4d84820a5 plus a 
 | FND-005 | fixed | 4d84820a5 |
 | FND-006 | fixed | 4d84820a5 |
 | FND-007 | fixed | 4d84820a5 |
+| FND-008 | fixed | 11bb95903 |
+| FND-009 | fixed | 11bb95903 (no-slot records are FND-014) |
+| FND-010 | fixed | 11bb95903 |
+| FND-011 | fixed | 11bb95903 |
+| FND-012 | fixed | 11bb95903 (root maps to `$`; undecoded `~0`/`~1` is not a defect, since IR object keys are schema names or identifiers and an undecoded segment still round-trips) |
+| FND-013 | fixed | 11bb95903 |

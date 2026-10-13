@@ -134,6 +134,15 @@ fn identity_member(records: &[DomainPackageRecord], record: &DomainPackageRecord
                 &|other| matches!(other, DomainPackageRecord::OperationMember(o) if o.owner == operation.owner),
             ),
         ),
+        // A clause owned by an operation is named at the operation, as
+        // normalize names it: the record does not say pre or post.
+        DomainPackageRecord::Clause(clause)
+            if records.iter().any(|other| {
+                matches!(other, DomainPackageRecord::OperationMember(o) if o.key == clause.owner)
+            }) =>
+        {
+            MemberPath::new(MemberRoot::Operation)
+        }
         DomainPackageRecord::Clause(clause) => member(
             "clauses",
             position(
@@ -142,7 +151,9 @@ fn identity_member(records: &[DomainPackageRecord], record: &DomainPackageRecord
         ),
         DomainPackageRecord::Relationship(relationship) => match &relationship.declared_at {
             Some(slot) => member("relationships", slot.index),
-            None => MemberPath::new(MemberRoot::Relationship).name("identity"),
+            // A relationship without a slot is a systems connection, a
+            // top-level type node.
+            None => MemberPath::type_definition().name("identity"),
         },
         DomainPackageRecord::Population(_) => {
             MemberPath::new(MemberRoot::PopulationDefinition).name("identity")
@@ -582,6 +593,80 @@ mod tests {
                 (
                     key("relationship/bad").node,
                     "TypeDefinition.relationships[3].identity".to_owned()
+                ),
+            ]
+        );
+    }
+
+    /// A record with no array slot is named at the node the refusal is
+    /// about: a systems connection at its type node and an operation-owned
+    /// clause at its operation (as normalize names it).
+    #[test]
+    fn slotless_records_name_the_node_they_are_about() {
+        use crate::model::domain_package::{
+            ClauseRecord, OperationEffect, OperationMemberRecord, RelationshipDirection,
+            RelationshipEnd, RelationshipRecord,
+        };
+        let multiplicity = Multiplicity {
+            lower: 0,
+            upper: None,
+            ordered: false,
+            unique: false,
+        };
+        let end = |role: Option<&str>| RelationshipEnd {
+            type_identity: key("Order"),
+            role: role.map(str::to_owned),
+            multiplicity,
+        };
+        let relationship = |name: &str, role: Option<&str>| {
+            DomainPackageRecord::Relationship(RelationshipRecord {
+                key: key(name),
+                declared_at: None,
+                source: end(role),
+                target: end(None),
+                direction: RelationshipDirection::SourceToTarget,
+            })
+        };
+        let Err(AdmitFailure::Refused(refusals)) = admit(vec![
+            order(key("Order")),
+            DomainPackageRecord::OperationMember(OperationMemberRecord {
+                key: key("Order/open"),
+                owner: key("Order"),
+                parameters: Vec::new(),
+                result: None,
+                effect: OperationEffect::default(),
+                own_postcondition_clauses: Vec::new(),
+                has_body: false,
+                redefines: None,
+            }),
+            DomainPackageRecord::Clause(ClauseRecord {
+                key: key("Order/open-clause"),
+                owner: key("Order/open"),
+                language: "quire".to_owned(),
+                text: "true".to_owned(),
+            }),
+            relationship("connection/bad", None),
+        ]) else {
+            panic!("the package refuses")
+        };
+        let members: Vec<(String, String)> = refusals
+            .iter()
+            .map(|refusal| {
+                let ModelRefusalCause::IntakeMalformedDeclaration { node, member, .. } =
+                    &refusal.cause
+                else {
+                    panic!("expected a malformed declaration, got {refusal:?}")
+                };
+                (node.clone(), member.to_string())
+            })
+            .collect();
+        assert_eq!(
+            members,
+            [
+                (key("Order/open-clause").node, "Operation".to_owned()),
+                (
+                    key("connection/bad").node,
+                    "TypeDefinition.identity".to_owned()
                 ),
             ]
         );

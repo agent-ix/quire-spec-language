@@ -65,3 +65,5 @@ Reviewed at agent-ix/quire-spec-language@77a645298.
 | FND-001 | fixed | 77a645298 |
 | FND-002 | fixed | 4d84820a5 (clauses remain, see FND-004) |
 | FND-003 | fixed | 77a645298 (M21 row spelling is FND-005) |
+| FND-004 | fixed | 11bb95903 |
+| FND-005 | deferred | QSpec-side row defect, out of scope for this QSL PR. The test now names the divergence at M21 runs 3-4. M10 runs 7-8 have no such comment. No QSpec ticket exists yet. |

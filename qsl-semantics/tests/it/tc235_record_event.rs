@@ -698,6 +698,9 @@ fn tc235_m21_relationship_sources_and_owner_rules_are_retained() {
     });
     let refusals = normalized_refusals(&bad_owner, 22);
     assert_eq!(refusals.len(), 1);
+    // QSpec M10 runs 7-8 spell their relationship nodes the same way
+    // (`Order/scope`, `OrderLifecycle/next`); the divergence is carried by
+    // QSpec PR #240, which this test code does not wait on.
     // QSpec M21 runs 3-4 spell these nodes `Fulfilment/store` and
     // `Money/owner`; FR-154-AC-9 gives a relationship the identity
     // `<package>/relationship/<Name>-<verb>-<TargetName>`, so the FR-154 key is
