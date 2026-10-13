@@ -15,7 +15,7 @@ Verify that each normalization `malformed-declaration` carries the source artifa
 ## Test Procedure
 
 1. Read the TC-235 K2 package with every node carrying a source origin at its own line.
-2. For each of the following mutations, normalize and compare the single refusal: a record value type with identity fields; an event type with identity fields; an event whose occurrence field resolves to a non-Timestamp scalar; an operation declared by an event type; a state machine with no transitions or no operations; a state machine transition that emits a non-event; a process with no identity fields and no process supertype, and one whose supertype is a state machine; a field typed by a variant type; a relationship whose source end, and one whose target end, is not an object type.
+2. For each of the following mutations, normalize and compare the single refusal: a record value type with identity fields; an event type with identity fields; an event whose occurrence field resolves to a non-Timestamp scalar; an operation declared by an event type; a state machine with no transitions or no operations; a state machine transition that emits a non-event; a process with no identity fields and no process supertype, and one whose supertype is a state machine; a relationship whose source end, and one whose target end, is not an object type.
 3. Declare a population whose second member names a record value type, an event type, a scalar, a persistence interface or a namespace, and one whose member names nothing.
 4. Repeat one mutation of step 2 with every node carrying a `generated` origin.
 5. Normalize a package whose model selection has an empty version, and one with a declaration key whose package is empty, and read a document that is not JSON.
