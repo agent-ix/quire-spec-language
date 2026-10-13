@@ -4333,6 +4333,15 @@ fn a_deep_hierarchy_is_judged_by_the_callers_ancestor_steps_not_a_fixed_ceiling(
         Some("model.work_units")
     );
     assert_eq!(record.fields.get("bound").map(String::as_str), Some("1"));
+    let field = |name: &str| record.fields.get(name).map(String::as_str);
+    assert_eq!(field("stage"), Some("model-normalization"));
+    assert_eq!(
+        field("accounting_contract"),
+        Some("ModelNormalizationLimitsV1")
+    );
+    assert_eq!(field("consumed"), Some("1"));
+    assert!(field("next_charge").is_some_and(|charge| charge != "0"));
+    assert!(field("charge_point").is_some_and(|point| point.starts_with("normalize.")));
 }
 
 /// Row 39 (check 11.1 over 11.2): `Sub` specializes `ConfigVersion` and is

@@ -869,6 +869,16 @@ fn model_views(
                 return Err(caller_budget_refusal(
                     &incomplete.limit_exceeded(),
                     INSUFFICIENT_NEXT_CHARGE,
+                    &[
+                        ("stage", "model-normalization".to_owned()),
+                        (
+                            "accounting_contract",
+                            "ModelNormalizationLimitsV1".to_owned(),
+                        ),
+                        ("consumed", incomplete.consumed.to_string()),
+                        ("next_charge", incomplete.next_charge.to_string()),
+                        ("charge_point", incomplete.charge_point.as_str().to_owned()),
+                    ],
                 ))
             }
             NormalizeOutcome::Refused(refusals) => {
@@ -879,6 +889,7 @@ fn model_views(
                         Some(caller_budget_refusal(
                             &limit,
                             refusal.cause.catalog_code().cause(),
+                            &[],
                         ))
                     })
                     .unwrap_or_else(|| fault("model-reconsistent-normalize")))
@@ -1049,10 +1060,16 @@ fn input_bytes_exceeded(bound: u64, actual: u128) -> AdmissionFailure {
 /// (`ModelNormalizationLimits`, ADR-014 B-2) as an admission refusal: the
 /// compile path's `resource_exhausted` with its `cause` (for example
 /// `ancestor-steps`, or `insufficient-next-charge` for a denied charge),
-/// carrying the `setting`, `bound` and `actual` of FR-255 and no limit
-/// `kind`, which only a stage limit has.
-fn caller_budget_refusal(limit: &LimitExceeded, cause: &'static str) -> AdmissionFailure {
+/// carrying the `setting`, `bound` and `actual` of FR-255, the `retained`
+/// fields of a denied charge, and no limit `kind`, which only a stage limit
+/// has.
+fn caller_budget_refusal(
+    limit: &LimitExceeded,
+    cause: &'static str,
+    retained: &[(&'static str, String)],
+) -> AdmissionFailure {
     let mut record = AdmissionRecord::new(Code::ResourceExhausted, cause);
+    record.fields.extend(retained.iter().cloned());
     if let Some(mut fields) = limit.catalog_fields() {
         fields.remove("kind");
         record.fields.extend(fields);

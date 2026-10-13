@@ -1467,6 +1467,7 @@ pub(super) fn admit_population_values<'t>(
                             Some(limit) => super::caller_budget_refusal(
                                 &limit,
                                 refusal.cause.catalog_code().cause(),
+                                &[],
                             ),
                             None => fault("conformance-walk-refused"),
                         });

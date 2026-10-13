@@ -134,9 +134,17 @@ rule and a row in this table.
    | a stage's or reader's own limits type | `stage_limit_exceeded` | `s1.*`, `s3.*`, `environment.*`, `i2.*`, `replay.input_bytes`, `observation.*`, `dependency.*`, `identity.input_bytes` |
    | exploration limits | no catalog code: exploration returns `Outcome::Bounded` (FR-101) | `explore.*` |
 
-   Each outcome with a catalog code keeps it and carries the setting name as
-   its `setting` field with `bound` and `actual`; a `stage_limit_exceeded`
-   record also carries `kind`.
+   Each `stage_limit_exceeded` outcome carries `kind`, `bound`, `actual` and
+   `setting`. The observation admission's re-run of a `model.*` walk carries
+   `setting`, `bound` and `actual`; a denied charge there also retains
+   `stage`, `accounting_contract`, `consumed`, `next_charge` and
+   `charge_point`. Follow-up (QSL-745), where the code does not yet carry
+   this: (a) replay `select` reports a model-normalization ceiling as
+   `stage_limit_exceeded` (FR-277-AC-1); (b) the `model.*` and S6a family
+   refusals on the compile and evaluation paths carry no `setting`, `bound`
+   or `actual`; (c) the QSpec catalog does not list `ancestor-steps` or
+   `family-steps` as causes of `resource_exhausted` (FR-150-AC-11 describes
+   the shape as an incomplete record).
 2. **One mapping per limits type.** Each stage's limits type SHALL map each
    of its fields to its setting name in one place, and every producer of a
    `LimitExceeded` for that stage SHALL take the setting from that mapping.
@@ -179,7 +187,7 @@ rule and a row in this table.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-255-AC-1 | For each row of the setting table, driving its stage or operation past that limit at a configured bound `B` returns the code Behavior 1's table gives for the limit's carrying type, with the row's limit kind, bound `B`, the count the refused charge would have reached, and the row's setting name, and its catalog record carries fields `bound`, `actual` and `setting` holding those values, and `kind` for `stage_limit_exceeded`. The `explore.*` rows return their `Outcome::Bounded` instead. The `format.output_bytes` case uses FR-003's `resource_exhausted` outcome over emitted UTF-8 bytes. | Test (TC-720, TC-931) |
+| FR-255-AC-1 | For each row of the setting table, driving its stage or operation past that limit at a configured bound `B` returns the code Behavior 1's table gives for the limit's carrying type, with the row's limit kind, bound `B`, the count the refused charge would have reached, and the row's setting name, and, for a `stage_limit_exceeded` row, its catalog record carries fields `kind`, `bound`, `actual` and `setting` holding those values; the caller-budget rows are as Behavior 1 states, with the QSL-745 follow-ups listed there. The `explore.*` rows return their `Outcome::Bounded` instead. The `format.output_bytes` case uses FR-003's `resource_exhausted` outcome over emitted UTF-8 bytes. | Test (TC-720, TC-931) |
 | FR-255-AC-2 | A function `f` whose body is `1 + 1 + 1` (five expression nodes), checked with `s3.nodes` at 4, renders as "S3 node limit 4 reached (5) at <locus>; raise it with `--limit s3.nodes=<n>` or the request's `stage_limits` entry `s3.nodes`", where <locus> renders FR-096's locus of the node whose entry failed, in QSpec FR-461's rendering. | Test (TC-720) |
 | FR-255-AC-3 | Each stage's limits type, including `FormatLimits`, maps every one of its fields to exactly one setting name, the names across all limits types are distinct, and the union of those names equals the setting table. Setting a field through its builder method changes that field's bound and leaves every other field at its prior value. | Test (TC-720) |
 | FR-255-AC-4 | For each row of the setting table, an input or operation that reaches that limit at its default succeeds once the row's setting is raised to fit it, through each applicable entry point: the library limits type's builder method, the replay request's `stage_limits` entry of that name, and the settings operation given the operand `<name>=<value>`. `replay.input_bytes`, `format.output_bytes`, and a row whose stage a replay does not run are exercised through the builder and the settings operation; the formatter receives the resulting `FormatLimits`. | Test (TC-721, TC-931) |

@@ -409,6 +409,9 @@ required; check 10 settles it.
   Invariant evaluation follows QSpec FR-208-AC-10 after admission, once for
   each reachable record value, with the same path; admission does not turn a
   false invariant into an input refusal.
+- Admission re-runs the model walks of the selected domain packages. A
+  ceiling of `ModelNormalizationLimitsV1` reached there refuses
+  `resource_exhausted` with the compile path's cause (FR-255 Behavior 1).
 - Every code and cause above is in QSpec `native-diagnostics.md`.
 
 ## Acceptance Criteria
