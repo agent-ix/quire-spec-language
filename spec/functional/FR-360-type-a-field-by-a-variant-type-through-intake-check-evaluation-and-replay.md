@@ -228,8 +228,7 @@ own behaviour above.
    `Alias::Tier::Gold` already parses. QSpec states how a model alias, a variant
    type name and a case name resolve (item 4), as FR-317 states `q::m`.
 
-Linear tickets for these three requirements are filed by the planner, and their
-ids are added to this requirement when known.
+QSL-748 owns and tracks cross-repo requirements 1 to 3.
 
 ## Inputs
 
