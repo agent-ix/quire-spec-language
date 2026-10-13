@@ -19,8 +19,8 @@ diagnostic. Scope: FR-302-AC-7. TC-986 is the single-body control.
 1. In a `1-draft` unit selecting profile alias `V`, select a domain package
    through model alias `M` with object type `A` and operation `A.size`.
 2. Declare two operation bodies with distinct local labels but identical
-   resolved targets: `body first using V on M::A::size() { 11 }` and
-   `body second using V on M::A::size() { 22 }`.
+   resolved targets: `body firstBody using V on M::A::size() { 11 }` and
+   `body secondBody using V on M::A::size() { 22 }`.
 3. Compile the unit and inspect the S3 refusal.
 
 ## Expected Results

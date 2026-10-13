@@ -31,8 +31,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_forms::{
     AliasForm, BuiltinType, DeclarationForm, DeclaredName, DimensionForm, EnumForm, ExprNode,
-    Expression, FunctionDeclaration, ParsedUnit, RecordFieldForm, StateClauseForm, TypeForm,
-    TypeFormHead, UnitForm,
+    Expression, FunctionDeclaration, OperationBodyForm, ParsedUnit, RecordFieldForm,
+    StateClauseForm, TypeForm, TypeFormHead, UnitForm,
 };
 use qsl_foundation::diagnostic::{CatalogCode, LimitExceeded};
 use qsl_foundation::source::provenance::RawSourceRef;
@@ -48,6 +48,7 @@ use super::check::{
 };
 use super::lowering::{record_node_key, strongly_connected, AdmittedModel, RecordKeyError};
 use super::node_key::{declared_type_handle, nominal_key, NodeKeyRefusal, SourceOwner};
+use super::operation_body::OperationBodyDeclaration;
 use super::operation_clause::OperationClauseDeclaration;
 use super::refusal::AliasKind;
 use super::state_clause::{
@@ -353,6 +354,14 @@ pub enum AssemblyCause {
         /// The operation name as written.
         operation: String,
     },
+    /// Two unit `operation-body` declarations resolve to one operation's
+    /// `DeclarationKey` (FR-302: exactly one executable body per key).
+    DuplicateOperationBody {
+        /// The operation both bodies resolve to.
+        operation: DeclarationKey,
+        /// The span of each body's declaration, in source order.
+        bodies: Vec<Span>,
+    },
     /// A state clause's context type (or the type declaring its operation)
     /// is a member type of two or more populations with no maximum, so its
     /// extent cannot name exactly one (FR-104 "Requirements").
@@ -381,6 +390,7 @@ impl AssemblyCause {
             | Self::AmbiguousOperation { .. }
             | Self::AmbiguousPopulation { .. } => Code::AmbiguousDeclaration,
             Self::UnresolvedQuantityName { .. } => Code::MissingDeclaration,
+            Self::DuplicateOperationBody { .. } => Code::ConflictingDeclaration,
             Self::QuantityCycle { .. } => Code::InvalidPackage,
             Self::ZeroDenominator => Code::UndefinedExpression,
             Self::DecimalScaleLimit(_) => Code::StageLimitExceeded,
@@ -452,6 +462,7 @@ impl AssemblyCause {
             | Self::AmbiguousOperation { .. }
             | Self::AmbiguousPopulation { .. } => "ambiguous-name",
             Self::UnresolvedQuantityName { .. } => "missing-name",
+            Self::DuplicateOperationBody { .. } => "duplicate-declaration",
             Self::UnsupportedVariantType { .. } => "declaration-form",
             Self::QuantityCycle { .. } => "definition-cycle",
             Self::ZeroDenominator => "unproved-nonzero",
@@ -576,6 +587,9 @@ struct Unit {
     /// State clause declarations in declaration order (FR-102), resolved
     /// by the caller into `StateClauseDeclaration`s (FR-104).
     state_clauses: Vec<StateClauseForm>,
+    /// Operation body declarations in declaration order (FR-102), resolved
+    /// by the caller into `OperationBodyDeclaration`s (FR-104).
+    operation_bodies: Vec<OperationBodyForm>,
     /// Each `protocol` declaration's form, in source order, for FR-113's
     /// `check::protocol_clause` checker to resolve at S3.
     protocols: Vec<qsl_forms::ProtocolDeclarationForm>,
@@ -592,6 +606,7 @@ impl Unit {
             functions: Vec::new(),
             declared: BTreeMap::new(),
             state_clauses: Vec::new(),
+            operation_bodies: Vec::new(),
             protocols: Vec::new(),
         };
         for form in forms {
@@ -622,6 +637,7 @@ impl Unit {
                     unit.enums.push(enumeration);
                 }
                 DeclarationForm::StateClause(clause) => unit.state_clauses.push(*clause),
+                DeclarationForm::OperationBody(body) => unit.operation_bodies.push(*body),
                 DeclarationForm::Protocol(protocol) => unit.protocols.push(protocol),
             }
         }
@@ -2030,6 +2046,19 @@ impl PackageDeclarations {
                 );
             }
         }
+        for body in &unit.operation_bodies {
+            for form in expression_type_forms([&body.body]) {
+                check_names(
+                    &unit,
+                    &object_names,
+                    &model_composite_names,
+                    &variant_type_names,
+                    &qualified,
+                    &form,
+                    &mut errors,
+                );
+            }
+        }
         for clause in &unit.state_clauses {
             for form in expression_type_forms([&clause.body]) {
                 check_names(
@@ -2273,6 +2302,16 @@ impl PackageDeclarations {
             &types,
             &operations,
             &admitted,
+            &models,
+        );
+        let operation_bodies = operation_bodies(
+            unit.operation_bodies,
+            &selections.profiles,
+            &object_names,
+            &variant_type_names,
+            &types,
+            &operations,
+            &models,
         );
         let protocol_attempts = protocol_attempts(
             &unit.protocols,
@@ -2281,16 +2320,43 @@ impl PackageDeclarations {
             &operations,
             &admitted,
         );
-        let (state_clauses, protocol_attempts) = match (state_clauses, protocol_attempts) {
-            (Ok(clauses), Ok(attempts)) => (clauses, attempts),
-            (clauses, attempts) => {
-                let mut errors = Vec::new();
-                for refusal in [clauses.err(), attempts.err()].into_iter().flatten() {
-                    errors.extend(refusal.errors);
+        let (state_clauses, protocol_attempts, operation_bodies) =
+            match (state_clauses, protocol_attempts, operation_bodies) {
+                (Ok(clauses), Ok(attempts), Ok(bodies)) => (clauses, attempts, bodies),
+                (clauses, attempts, bodies) => {
+                    let mut errors = Vec::new();
+                    for refusal in [clauses.err(), attempts.err(), bodies.err()]
+                        .into_iter()
+                        .flatten()
+                    {
+                        errors.extend(refusal.errors);
+                    }
+                    return refuse(errors);
                 }
-                return refuse(errors);
+            };
+        let (state_clauses, state_clause_operations) = state_clauses;
+        // FR-103: each selected model's view, with `has_body` set from the
+        // bodies that resolved into it. A model no body names keeps the
+        // view normalization built, whose `has_body` is false throughout.
+        let mut selected_views = BTreeMap::new();
+        for selection in &selections.models {
+            let Some(model) = models.iter().find(|model| model.alias == selection.alias) else {
+                continue;
+            };
+            let bodies: BTreeSet<DeclarationKey> = operation_bodies
+                .iter()
+                .filter(|body| body.model == selection.alias)
+                .map(|body| body.key.clone())
+                .collect();
+            let view = model.view.with_operation_bodies(&bodies);
+            if let Some(entry) = admitted
+                .iter_mut()
+                .find(|entry| entry.alias() == Some(selection.alias.as_str()))
+            {
+                *entry = AdmittedModel::from_view(&view).with_alias(&selection.alias);
             }
-        };
+            selected_views.insert(selection.alias.clone(), view);
+        }
 
         let mut package = PackageDeclarations::new(source, limits.identity);
         package.types = types;
@@ -2333,6 +2399,9 @@ impl PackageDeclarations {
         package.functions = unit.functions;
         package.function_selections = function_selections;
         package.state_clauses = state_clauses;
+        package.state_clause_operations = state_clause_operations;
+        package.operation_bodies = operation_bodies;
+        package.selected_views = selected_views;
         package.protocols = unit.protocols;
         package.protocol_attempts = protocol_attempts;
         package.declared_type_spans = declared_type_spans;
@@ -2358,9 +2427,11 @@ fn state_clauses(
     types: &TypeEnvironment,
     operations: &OperationTable,
     models: &[AdmittedModel],
-) -> Result<Vec<StateClauseDeclaration>, AssemblyRefusal> {
+    selected: &[SelectedModel],
+) -> Result<(Vec<StateClauseDeclaration>, BTreeMap<usize, DeclarationKey>), AssemblyRefusal> {
     let mut errors = Vec::new();
     let mut clauses = Vec::with_capacity(forms.len());
+    let mut keys = BTreeMap::new();
     for form in forms {
         let error = |cause, span| AssemblyError { cause, span };
         let selection = profiles
@@ -2390,16 +2461,34 @@ fn state_clauses(
             errors.push(error(cause, form.context.span));
             continue;
         };
+        let mut operation_key = None;
         let operation = match &form.operation {
             None => None,
             Some(operation) => match operations.resolve(types, context, &operation.name) {
                 OperationLookup::Declared {
                     declaring,
-                    operation,
-                } => Some(ClauseOperation {
-                    declaring,
-                    declaration: operation.clone(),
-                }),
+                    operation: declaration,
+                } => {
+                    // FR-302: the key of the declaring operation joins the
+                    // clause to the body and the model record.
+                    let alias = form.context.name.split("::").next().unwrap_or_default();
+                    operation_key =
+                        operation_key_of(selected, alias, declaring, declaration.name());
+                    if operation_key.is_none() {
+                        errors.push(error(
+                            AssemblyCause::ModelType {
+                                alias: alias.to_owned(),
+                                node: operation.name.clone(),
+                            },
+                            operation.span,
+                        ));
+                        continue;
+                    }
+                    Some(ClauseOperation {
+                        declaring,
+                        declaration: declaration.clone(),
+                    })
+                }
                 OperationLookup::Missing => {
                     errors.push(error(
                         AssemblyCause::UnresolvedOperation {
@@ -2455,6 +2544,9 @@ fn state_clauses(
         let Some(selection) = selection else {
             continue;
         };
+        if let Some(key) = operation_key {
+            keys.insert(clauses.len(), key);
+        }
         clauses.push(StateClauseDeclaration {
             kind: form.kind,
             name: form.name.name,
@@ -2468,7 +2560,176 @@ fn state_clauses(
         });
     }
     if errors.is_empty() {
-        Ok(clauses)
+        Ok((clauses, keys))
+    } else {
+        refuse(errors)
+    }
+}
+
+/// FR-103, FR-302: the `DeclarationKey` of the operation `name` that the
+/// object type `declaring` of the `model` declaration `alias` declares, read
+/// from that model's effective view. `None` when the alias, the type or the
+/// operation is not in it: a broken invariant of the assembler's own
+/// resolution, never a property of the source.
+fn operation_key_of(
+    models: &[SelectedModel],
+    alias: &str,
+    declaring: EffectiveId,
+    name: &str,
+) -> Option<DeclarationKey> {
+    let model = models.iter().find(|model| model.alias == alias)?;
+    let owner = model
+        .view
+        .type_identities()
+        .iter()
+        .find_map(|(key, identity)| (*identity == declaring).then_some(key))?;
+    model
+        .view
+        .domain_package()
+        .records
+        .iter()
+        .find_map(|record| match record {
+            DomainPackageRecord::OperationMember(operation)
+                if &operation.owner == owner
+                    && member_identity_name(&operation.owner.node, &operation.key.node)
+                        == Some(name) =>
+            {
+                Some(operation.key.clone())
+            }
+            _ => None,
+        })
+}
+
+/// FR-104 "Resolution", FR-302: each `operation-body`'s `using` alias
+/// resolved to one of the unit's profile selections, and its target
+/// `M::T::op` resolved through the selected model's effective view to the
+/// declaring operation's `DeclarationKey`, exactly as a `pre` or `post`
+/// clause's operation is. An unresolved name refuses at the target. Exactly
+/// one body resolves to each key: a second refuses as
+/// [`AssemblyCause::DuplicateOperationBody`], naming every body declaration
+/// that resolved to the key.
+fn operation_bodies(
+    forms: Vec<OperationBodyForm>,
+    profiles: &[qsl_foundation::selection::ProfileSelection],
+    object_names: &BTreeMap<String, EffectiveId>,
+    variant_type_names: &BTreeSet<String>,
+    types: &TypeEnvironment,
+    operations: &OperationTable,
+    selected: &[SelectedModel],
+) -> Result<Vec<OperationBodyDeclaration>, AssemblyRefusal> {
+    let mut errors = Vec::new();
+    let mut bodies = Vec::with_capacity(forms.len());
+    for form in forms {
+        let error = |cause, span| AssemblyError { cause, span };
+        let selection = profiles
+            .iter()
+            .find(|profile| profile.alias == form.profile.alias)
+            .cloned();
+        if selection.is_none() {
+            errors.push(error(
+                AssemblyCause::UndeclaredAlias {
+                    alias: form.profile.alias.clone(),
+                },
+                form.profile.span,
+            ));
+        }
+        let [model, object, member] = form.target.as_slice() else {
+            // The grammar admits any qualified name; only
+            // `model-alias::Type::operation` names an operation.
+            let name = form
+                .target
+                .iter()
+                .map(|segment| segment.name.as_str())
+                .collect::<Vec<_>>()
+                .join("::");
+            errors.push(error(
+                AssemblyCause::UnresolvedTypeName { name },
+                form.target_span,
+            ));
+            continue;
+        };
+        let context_name = format!("{}::{}", model.name, object.name);
+        let Some(context) = object_names.get(&context_name).copied() else {
+            let cause = if variant_type_names.contains(&context_name) {
+                AssemblyCause::UnsupportedVariantType { name: context_name }
+            } else {
+                AssemblyCause::UnresolvedTypeName { name: context_name }
+            };
+            errors.push(error(cause, form.target_span));
+            continue;
+        };
+        let (declaring, declaration) = match operations.resolve(types, context, &member.name) {
+            OperationLookup::Declared {
+                declaring,
+                operation,
+            } => (declaring, operation),
+            OperationLookup::Missing => {
+                errors.push(error(
+                    AssemblyCause::UnresolvedOperation {
+                        context: context_name,
+                        operation: member.name.clone(),
+                    },
+                    member.span,
+                ));
+                continue;
+            }
+            OperationLookup::Ambiguous(_) => {
+                errors.push(error(
+                    AssemblyCause::AmbiguousOperation {
+                        context: context_name,
+                        operation: member.name.clone(),
+                    },
+                    member.span,
+                ));
+                continue;
+            }
+        };
+        let Some(key) = operation_key_of(selected, &model.name, declaring, declaration.name())
+        else {
+            errors.push(error(
+                AssemblyCause::ModelType {
+                    alias: model.name.clone(),
+                    node: member.name.clone(),
+                },
+                member.span,
+            ));
+            continue;
+        };
+        let Some(selection) = selection else {
+            continue;
+        };
+        bodies.push(OperationBodyDeclaration {
+            key,
+            model: model.name.clone(),
+            label: form.label,
+            selection,
+            context,
+            operation: ClauseOperation {
+                declaring,
+                declaration: declaration.clone(),
+            },
+            parameters: form.parameters,
+            body: form.body,
+            spans: form.spans,
+        });
+    }
+    let mut by_key: BTreeMap<&DeclarationKey, Vec<Span>> = BTreeMap::new();
+    for body in &bodies {
+        by_key.entry(&body.key).or_default().push(body.label.span);
+    }
+    for (key, spans) in by_key {
+        if let [_, second, ..] = spans.as_slice() {
+            errors.push(AssemblyError {
+                cause: AssemblyCause::DuplicateOperationBody {
+                    operation: key.clone(),
+                    bodies: spans.clone(),
+                },
+                span: *second,
+            });
+        }
+    }
+    if errors.is_empty() {
+        Ok(bodies)
     } else {
         refuse(errors)
     }

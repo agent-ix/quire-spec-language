@@ -275,6 +275,7 @@ fn source_and_types(g: &mut Grammar) {
         r(P::FunctionDeclaration),
         r(P::Predicate),
         r(P::StateClause),
+        r(P::OperationBody),
         r(P::TemporalClause),
         r(P::ProtocolClause),
         r(P::RelationClause),
@@ -535,6 +536,24 @@ fn source_and_types(g: &mut Grammar) {
                 r(P::OperationName),
                 r(P::Block),
             ]),
+        ]),
+    );
+    // `body <label> using <alias> on <qualified-name> ( <ident>, ... ) <block>`
+    // (QSpec Complete-V1 `operation-body`): the label and the receiver-less
+    // parameter names are plain identifiers.
+    g.insert(
+        P::OperationBody,
+        s(vec![
+            x("body"),
+            ident(),
+            x("using"),
+            ident(),
+            x("on"),
+            r(P::QualifiedName),
+            x("("),
+            opt(list(ident)),
+            x(")"),
+            r(P::Block),
         ]),
     );
     g.insert(P::Block, s(vec![x("{"), r(P::Expression), x("}")]));

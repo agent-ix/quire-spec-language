@@ -2663,6 +2663,8 @@ pub(super) fn read_operation_member(
         requires,
         ensures,
         own_postcondition_clauses: Vec::new(),
+        // A domain package supplies no body. The assembler sets this from the
+        // unit's `operation-body` declarations (FR-103, FR-302).
         has_body: false,
         redefines: None,
     })

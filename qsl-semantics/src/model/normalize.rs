@@ -187,7 +187,7 @@
 )]
 
 use quire_canonical::FixedShape;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::model::accounting::{
@@ -601,6 +601,25 @@ impl ObjectUniverses {
 }
 
 impl EffectiveView {
+    /// This view with each operation record's `has_body` set from `bodies`:
+    /// true for an operation whose key is in it, false for every other
+    /// (FR-103, FR-302). Only that flag changes, so no identity, record
+    /// position or normalization charge does: the view is re-indexed over
+    /// the same records.
+    #[must_use]
+    pub fn with_operation_bodies(&self, bodies: &BTreeSet<DeclarationKey>) -> Self {
+        let mut package = self.domain_package().clone();
+        for record in &mut package.records {
+            if let DomainPackageRecord::OperationMember(operation) = record {
+                operation.has_body = bodies.contains(&operation.key);
+            }
+        }
+        Self {
+            index: Arc::new(ModelIndex::build(package)),
+            body: self.body.clone(),
+        }
+    }
+
     /// The domain package this view was normalized from.
     pub fn domain_package(&self) -> &DomainPackage {
         self.index.package()
