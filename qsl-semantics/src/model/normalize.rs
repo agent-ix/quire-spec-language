@@ -1414,6 +1414,7 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
             })
         };
         let missing = |transition: &crate::model::domain_package::StateMachineTransitionRecord,
+                       position: usize,
                        field: &str,
                        reference: &DeclarationKey| {
             let path: JsonPointer = format!("{}/{field}", transition.path)
@@ -1426,6 +1427,10 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                     reference: reference.node.clone(),
                     origin: transition.origin.clone(),
                     path,
+                    member: MemberPath::type_definition()
+                        .name("transitions")
+                        .index(position)
+                        .name(field),
                 },
                 detail: format!(
                     "{}: TypeDefinition.transitions.{field}: absent {}",
@@ -1469,7 +1474,7 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                         "names no effective state or operation of this machine",
                     ));
                 } else {
-                    refusals.push(missing(transition, member, reference));
+                    refusals.push(missing(transition, position, member, reference));
                 }
             }
             for (emit_position, emitted) in transition.emits.iter().enumerate() {
@@ -1500,6 +1505,7 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                                 reference: emitted.node.clone(),
                                 origin: transition.origin.clone(),
                                 path,
+                                member: member_path.clone(),
                             },
                             detail: format!(
                                 "{}: {member_path}: absent {}",
@@ -1547,7 +1553,7 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                         package: machine.key.package.clone(),
                         node: format!("{}/{guard}", machine.key.node),
                     };
-                    refusals.push(missing(transition, "guard", &clause_key));
+                    refusals.push(missing(transition, position, "guard", &clause_key));
                     continue;
                 };
                 let path = MemberPath::type_definition()

@@ -774,6 +774,9 @@ pub enum ModelRefusalCause {
         origin: JsonValue,
         /// The reader's original document pointer to the reference.
         path: JsonPointer,
+        /// The referring member, as FR-208 and the TC-235 rows name it
+        /// (`TypeDefinition.transitions[0].to`).
+        member: MemberPath,
     },
     /// A type's resolved construct meaning, or a member capability, is real
     /// under FR-208 but [`crate::model::intake`] has no reader for it yet
@@ -1709,7 +1712,7 @@ pub mod fixtures {
             member: super::MemberPath::type_definition(),
         },
         IntakeMissingDeclaration => ModelRefusalCause::IntakeMissingDeclaration {
-            node: String::new(), reference: String::new(), origin: super::JsonValue::default(), path: qsl_foundation::diagnostic::JsonPointer::root(),
+            node: String::new(), reference: String::new(), origin: super::JsonValue::default(), path: qsl_foundation::diagnostic::JsonPointer::root(), member: super::MemberPath::type_definition(),
         },
         FrameEntryMissing => ModelRefusalCause::FrameEntryMissing {
             node: String::new(),
