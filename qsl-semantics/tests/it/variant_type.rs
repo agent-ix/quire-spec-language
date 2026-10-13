@@ -172,7 +172,7 @@ fn read(document: &Value) -> Result<DomainPackage, Vec<ModelRefusal>> {
 
 fn admitted(document: &Value) -> DomainPackage {
     let package = read(document).expect("the variant types are read");
-    let (outcome, _) = normalize_with_meter(&package, ModelNormalizationLimits::UNLIMITED);
+    let (outcome, _) = normalize_with_meter(&package, ModelNormalizationLimits::default());
     assert!(
         matches!(outcome, NormalizeOutcome::Completed(_)),
         "{outcome:?}"
@@ -187,7 +187,7 @@ fn refusals(document: &Value) -> Vec<ModelRefusal> {
         Ok(package) => package,
         Err(refusals) => return refusals,
     };
-    let (outcome, _) = normalize_with_meter(&package, ModelNormalizationLimits::UNLIMITED);
+    let (outcome, _) = normalize_with_meter(&package, ModelNormalizationLimits::default());
     match outcome {
         NormalizeOutcome::Refused(refusals) => refusals.iter().cloned().collect(),
         other => panic!("the document must refuse, got {other:?}"),
@@ -296,7 +296,7 @@ fn a_variant_type_is_admitted_as_one_enum_and_one_variant_per_case() {
     // The admitted package finds each case under its owner and name.
     let admitted_package = AdmittedPackage::admit(
         package.clone(),
-        &mut Meter::new(ModelNormalizationLimits::UNLIMITED),
+        &mut Meter::new(ModelNormalizationLimits::default()),
     )
     .expect("the variant types admit for linking");
     for name in ["Gold", "Standard"] {
