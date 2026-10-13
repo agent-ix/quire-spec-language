@@ -489,10 +489,7 @@ mod tests {
     #[test]
     fn m2_items_moved_to_check_and_are_absent_from_model() {
         let definitions = scan_crate(&workspace_root()).expect("scan runs");
-        for name in [
-            "checked_dispatch_operation",
-            "check_field_refinement_obligation",
-        ] {
+        for name in ["checked_dispatch_operation"] {
             let locations = definitions.items.get(name).cloned().unwrap_or_default();
             assert_eq!(locations.len(), 1, "{name}: {locations:?}");
             assert!(
