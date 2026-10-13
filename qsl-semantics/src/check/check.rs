@@ -467,7 +467,7 @@ pub struct Scope {
     model_records: ModelRecords,
     /// Fixed once built, like `types`.
     enums: Vec<EnumBinding>,
-    /// The admitted models' variant types, ascending by effective identity.
+    /// The admitted models' variant types, as the assembler ordered them.
     /// Looked up by identity only: no source name resolves to one.
     variant_types: Vec<VariantTypeDeclaration>,
     /// The model object types' own declared operations (FR-103).
@@ -644,11 +644,7 @@ impl Scope {
     }
 
     /// This scope with the admitted models' variant types.
-    pub(crate) fn with_variant_types(
-        mut self,
-        mut variant_types: Vec<VariantTypeDeclaration>,
-    ) -> Self {
-        variant_types.sort_by_key(VariantTypeDeclaration::key);
+    pub(crate) fn with_variant_types(mut self, variant_types: Vec<VariantTypeDeclaration>) -> Self {
         self.variant_types = variant_types;
         self
     }
@@ -707,9 +703,8 @@ impl Scope {
     /// The variant type whose effective identity is `key`.
     pub fn variant_type(&self, key: EffectiveId) -> Option<&VariantTypeDeclaration> {
         self.variant_types
-            .binary_search_by_key(&key, VariantTypeDeclaration::key)
-            .ok()
-            .map(|position| &self.variant_types[position])
+            .iter()
+            .find(|declared| declared.key() == key)
     }
 
     /// The package's admitted enum declarations, in declaration order.

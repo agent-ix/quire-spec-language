@@ -27,6 +27,7 @@ use qsl_semantics::model::normalize::{
 };
 use qsl_semantics::model::refusal::MemberPath;
 use quire_exact::EffectiveId;
+use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value};
 
 use qsl_semantics::model::intake::admit_unit;
@@ -526,7 +527,7 @@ fn a_unit_with_no_clause_naming_the_variant_type_assembles() {
 /// TC-997 step 2: a clause naming `Tier` refuses `unsupported_construct`/
 /// `declaration-form` at the clause, while the declaration and its exports
 /// stay admitted and equal to step 1's.
-#[trace("TC-997", "FR-056-AC-27")]
+#[trace("TC-997", "FR-056-AC-27", "FR-056-AC-31")]
 #[test]
 fn a_clause_naming_a_variant_type_refuses_while_the_declaration_is_admitted() {
     let document = tiers(&["Gold", "Standard"]);
@@ -802,7 +803,7 @@ fn assert_only_qualify(preimage: &EffectiveDeclarationPreimage) {
 
 /// TC-1003 step 1: a variant type is one effective type and each case one
 /// effective member of it, derived from the case node's own key.
-#[trace("TC-1003", "FR-056-AC-29")]
+#[trace("TC-1003", "FR-056-AC-29", "FR-081-AC-16")]
 #[test]
 fn a_variant_type_and_its_cases_have_effective_identities() {
     let view = view_of(&tiers(&["Gold", "Standard"]));
@@ -839,7 +840,7 @@ fn a_variant_type_and_its_cases_have_effective_identities() {
 
 /// TC-1003 step 2: the order the document lists the cases in changes no
 /// effective identity, entry or position.
-#[trace("TC-1003", "FR-056-AC-29")]
+#[trace("TC-1003", "FR-056-AC-29", "FR-081-AC-16")]
 #[test]
 fn reordering_the_cases_changes_no_effective_identity() {
     let gold_first = view_of(&tiers(&["Gold", "Standard"]));
@@ -895,14 +896,15 @@ fn a_same_name_case_conflict_yields_no_effective_view() {
     );
 }
 
-/// TC-1003 step 5: two cases that mint one identity are refused at the later
-/// case of the `variants` list, whichever order the document lists them in:
+/// TC-1003 step 5: two cases that share one identity are refused at the second
+/// case of the `variants` list, whichever of them is minted correctly:
 /// `invalid_model_binding`/`malformed-declaration` at path
-/// `TypeDefinition.variants[1].identity`, located at that case's span, with
+/// `TypeDefinition.variants[1].identity`, located at that case's span (the
+/// correctly minted `Gold` when `Silver` is listed first), with
 /// the reader's `DUPLICATE_IDENTITY` diagnostic retained.
 #[trace("TC-1003", "FR-056-AC-30")]
 #[test]
-fn the_later_case_that_mints_an_earlier_cases_identity_is_refused() {
+fn two_cases_sharing_an_identity_are_refused_at_the_second_listed() {
     for (gold_line, silver_line) in [(10_u64, 11_u64), (11, 10)] {
         let gold = case("Tier", "Gold", gold_line);
         let mut silver = case("Tier", "Silver", silver_line);
@@ -969,4 +971,15 @@ fn the_assembler_declares_variant_types_in_the_type_environment() {
     }
     let keys: Vec<_> = declarations.variant_types.iter().map(|v| v.key()).collect();
     assert!(keys.windows(2).all(|pair| pair[0] < pair[1]));
+
+    // The checked scope holds them too, found by effective identity.
+    let expected = declarations.variant_types.clone();
+    let graph = declarations
+        .check(CheckingLimits::default())
+        .expect("the unit checks");
+    let scope = graph.scope();
+    assert_eq!(scope.variant_types(), expected.as_slice());
+    for declared in &expected {
+        assert_eq!(scope.variant_type(declared.key()), Some(declared));
+    }
 }
