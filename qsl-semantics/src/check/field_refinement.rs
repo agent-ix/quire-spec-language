@@ -43,15 +43,19 @@ use super::ir::{
 };
 use super::refusal::ProvedInterval;
 use crate::model::conformance::{missing_member, AxisFailure, ConformanceOutcome};
-use crate::model::domain_package::PostconditionClause;
+use crate::model::domain_package::{DomainPackage, PostconditionClause};
 use crate::model::index::ModelIndex;
 use crate::model::key::DeclarationKey;
-use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
+use crate::model::normalize::{malformed_at, ModelRefusal, ModelRefusalCause};
+use crate::model::refusal::MemberPath;
 use qsl_foundation::diagnostic::Code;
 use quire_exact::OrderingOperator;
 use quire_exact::{Integer, IntegerInterval};
 use quire_exact::{Presence, Value, ValueType};
 use quire_semantic_value::location::{Location, Origin};
+
+/// A scalar type's key and its declared `[lower, upper]`.
+type ScalarDomain<'a> = (&'a DeclarationKey, (i128, i128));
 
 /// `self`, bound as local slot 0, for every synthetic guard tree
 /// [`self_field_node`] builds — the one variable a [`PostconditionClause`]
@@ -89,18 +93,22 @@ fn self_field_node(body: &mut BodyBuilder, value_type: ValueType) -> NodeId {
     })
 }
 
-/// `domain`'s value type: `None` (a non-scalar, or unknown, domain) is the
+/// `scalar`'s value type: `None` (a non-scalar, or unknown, domain) is the
 /// unbounded `ValueType::Integer` fallback, per FR-146's rule that a
 /// projection onto the field a narrowing redefinition redefines carries the
 /// declared facts of the *redefined* parent member, never the narrowing
 /// type — so callers seed this from `redefined`'s own declared scalar
-/// bounds, not `redefining`'s. `Some((lower, upper))` is the closed interval
-/// type, or a [`ModelRefusal`] when a domain package's `ScalarTypeRecord` is
-/// malformed (its own lower greater than its upper) — a real defect in
-/// caller-supplied domain package data, refused rather than panicked on.
-fn field_domain_type(domain: Option<(i128, i128)>) -> Result<ValueType, ModelRefusal> {
-    match domain {
-        Some((lower, upper)) => {
+/// bounds, not `redefining`'s. `Some((type, (lower, upper)))` is the closed
+/// interval type of the scalar declared at `type`, or a [`ModelRefusal`] at
+/// that scalar type's node when its `ScalarTypeRecord` is malformed (its own
+/// lower greater than its upper) — a real defect in caller-supplied domain
+/// package data, refused rather than panicked on.
+fn field_domain_type(
+    package: &DomainPackage,
+    scalar: Option<ScalarDomain<'_>>,
+) -> Result<ValueType, ModelRefusal> {
+    match scalar {
+        Some((scalar_type, (lower, upper))) => {
             let interval =
                 IntegerInterval::new(Integer::from(lower), Integer::from(upper)).map_err(|_| {
                     ModelRefusal {
@@ -110,8 +118,13 @@ fn field_domain_type(domain: Option<(i128, i128)>) -> Result<ValueType, ModelRef
                         // variant, so this is the catalogued
                         // `malformed-declaration` (its own payload: "the IR
                         // node identity and invalid member path" — here the
-                        // scalar type's own declaration).
-                        cause: ModelRefusalCause::MalformedDeclaration,
+                        // scalar type's node and the `constraints` the
+                        // bounds come from).
+                        cause: malformed_at(
+                            package,
+                            scalar_type,
+                            MemberPath::type_definition().name("constraints"),
+                        ),
                         detail: format!(
                             "a scalar type's declared domain has lower {lower} greater than its upper {upper}"
                         ),
@@ -138,11 +151,12 @@ fn presence_condition(body: &mut BodyBuilder) -> Node {
 /// [`PostconditionClause::Comparison`] clause describes.
 fn comparison_condition(
     body: &mut BodyBuilder,
-    domain: Option<(i128, i128)>,
+    package: &DomainPackage,
+    domain: Option<ScalarDomain<'_>>,
     operator: OrderingOperator,
     literal: i128,
 ) -> Result<Node, ModelRefusal> {
-    let field = self_field_node(body, field_domain_type(domain)?);
+    let field = self_field_node(body, field_domain_type(package, domain)?);
     let literal_node = body.push(Node {
         kind: NodeKind::Literal(CheckedLiteral(Value::Integer(Integer::from(literal)))),
         value_type: ValueType::Integer,
@@ -166,15 +180,16 @@ fn comparison_condition(
 /// whichever clause happened to be checked first. `Err` when `domain`
 /// itself is malformed (see [`field_domain_type`]).
 fn established_facts(
+    package: &DomainPackage,
     clauses: &[&PostconditionClause],
-    domain: Option<(i128, i128)>,
+    domain: Option<ScalarDomain<'_>>,
 ) -> Result<Established, ModelRefusal> {
     let mut body = BodyBuilder::default();
     let condition = |body: &mut BodyBuilder, clause: &PostconditionClause| match clause {
         PostconditionClause::Presence { .. } => Ok(presence_condition(body)),
         PostconditionClause::Comparison {
             operator, literal, ..
-        } => comparison_condition(body, domain, *operator, *literal),
+        } => comparison_condition(body, package, domain, *operator, *literal),
     };
     let Some((first, rest)) = clauses.split_first() else {
         return Ok(Established::default());
@@ -289,13 +304,13 @@ pub fn check_field_refinement_obligation(
     let domain = redefined
         .value_type
         .as_package()
-        .and_then(|key| index.scalar_bounds(key));
+        .and_then(|key| index.scalar_bounds(key).map(|bounds| (key, bounds)));
     let field_clauses: Vec<&PostconditionClause> = clauses
         .iter()
         .filter(|clause| names_field(clause.field()))
         .copied()
         .collect();
-    let established = established_facts(&field_clauses, domain)?;
+    let established = established_facts(index.package(), &field_clauses, domain)?;
 
     if narrows_presence && !established.presence {
         return Ok(ConformanceOutcome::Refused(vec![AxisFailure {
@@ -382,5 +397,58 @@ pub fn check_field_refinement_obligation(
                 redefining_key.node
             ),
         }])),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::domain_package::{
+        DomainPackageRecord, DomainPackageRef, OriginalDeclaration, ScalarTypeRecord,
+        ScalarValueDomain,
+    };
+
+    /// A scalar whose declared domain has lower > upper (a package the reader
+    /// would refuse, so the domain is set after reading) refuses at the
+    /// scalar type, keeping the origin the package retains for it.
+    #[test]
+    fn a_malformed_scalar_domain_refuses_at_the_scalar_with_its_origin() {
+        let scalar = DeclarationKey::fixture("model.Count");
+        let mut package = DomainPackage::new(
+            DomainPackageRef::fixture("origin"),
+            vec![DomainPackageRecord::ScalarType(ScalarTypeRecord {
+                key: scalar.clone(),
+                domain: ScalarValueDomain::Integer { lower: 9, upper: 0 },
+            })],
+        );
+        package.originals.insert(
+            scalar.clone(),
+            OriginalDeclaration {
+                meaning: None,
+                origin: serde_json::json!({"source": {
+                    "sourceIdentity": "ix://test/orders/spec",
+                    "path": "spec.qspec",
+                    "startLine": 4,
+                    "startColumn": 2,
+                }}),
+                member_name: None,
+            },
+        );
+        let refusal = field_domain_type(&package, Some((&scalar, (9, 0))))
+            .expect_err("lower greater than upper refuses");
+        let ModelRefusalCause::IntakeMalformedDeclaration {
+            node,
+            artifact,
+            span,
+            member,
+        } = &refusal.cause
+        else {
+            panic!("expected a malformed declaration: {refusal:?}");
+        };
+        assert_eq!(node, &scalar.node);
+        assert_eq!(member, &MemberPath::type_definition().name("constraints"));
+        assert_eq!(artifact.as_deref(), Some("ix://test/orders/spec"));
+        let span = span.expect("the retained position");
+        assert_eq!((span.start.line, span.start.column), (4, 2));
     }
 }

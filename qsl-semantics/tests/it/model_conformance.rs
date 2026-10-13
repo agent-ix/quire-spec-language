@@ -1323,8 +1323,18 @@ fn r08i_a_malformed_scalar_domain_refuses_rather_than_panicking() {
             assert_eq!(refusal.code, Code::InvalidModelBinding);
             // FR-272's `invalid_model_binding` cause list is closed; there
             // is no dedicated scalar-domain variant, so this is the
-            // catalogued `malformed-declaration`.
-            assert_eq!(refusal.cause, ModelRefusalCause::MalformedDeclaration);
+            // catalogued `malformed-declaration`, naming the scalar type and
+            // its `constraints` (a package built without the reader has no
+            // origin to retain).
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::IntakeMalformedDeclaration {
+                    node: "model.Count".to_owned(),
+                    artifact: None,
+                    span: None,
+                    member: "TypeDefinition.constraints".parse().unwrap(),
+                }
+            );
         }
         other => panic!("expected Err(malformed-declaration), got {other:?}"),
     }
