@@ -172,15 +172,9 @@ impl AdmittedModel {
         if self.selection.identity != declaration.package {
             return None;
         }
-        let (node_tag, form) = record_form(self.records.get(declaration)?)?;
-        let owner =
-            ModelOwner::new(self.selection.identity.clone(), declaration.node.clone()).ok()?;
-        crate::check::node_key::node_key(
-            &model_node_content(owner, node_tag, form).input(),
-            identity,
-        )
-        .ok()
-        .map(|keyed| keyed.key)
+        record_node_key(self.records.get(declaration)?, identity)
+            .ok()
+            .flatten()
     }
 
     /// The record `key` names in this package.
@@ -272,6 +266,19 @@ fn fault(location: &Location, fault: KeyFault) -> CheckRefusal {
     refuse(location, CheckCause::InternalFault(Box::new(fault)))
 }
 
+/// The refusal for a record whose model node key [`record_node_key`] could
+/// not form.
+fn record_key_refusal(
+    location: &Location,
+    declaration: &DeclarationKey,
+    error: RecordKeyError,
+) -> CheckRefusal {
+    match error {
+        RecordKeyError::EmptyOwner => fault(location, KeyFault::EmptyNode(declaration.clone())),
+        RecordKeyError::Preimage(refusal) => super::preimage_refusal(location, refusal),
+    }
+}
+
 /// FR-094's `clause` binding value. No postcondition arm:
 /// `DeclaredClauseKind` has none (FR-094-CON-1).
 fn clause_spelling(kind: DeclaredClauseKind) -> &'static str {
@@ -297,6 +304,36 @@ fn model_node_content(owner: ModelOwner, node_tag: NodeTag, form: &'static str) 
     }
 }
 
+/// The key of the model declaration node of `record`, or `None` for a record
+/// kind no checked node names. It is a function of the declaring package's
+/// identity and the record's node alone (FR-322 "Model-owned members"
+/// step 2), so it is also the declaration key under which a model record
+/// value type or event type is declared in the type environment (FR-359
+/// item 9): a unit's alias for the model never enters it.
+pub(crate) fn record_node_key(
+    record: &DomainPackageRecord,
+    identity: qsl_foundation::IdentityLimits,
+) -> Result<Option<NodeKey>, RecordKeyError> {
+    let Some((node_tag, form)) = record_form(record) else {
+        return Ok(None);
+    };
+    let key = record.key();
+    let owner = ModelOwner::new(key.package.clone(), key.node.clone())
+        .map_err(|_| RecordKeyError::EmptyOwner)?;
+    crate::check::node_key::node_key(&model_node_content(owner, node_tag, form).input(), identity)
+        .map(|keyed| Some(keyed.key))
+        .map_err(RecordKeyError::Preimage)
+}
+
+/// Why [`record_node_key`] has no key for a record it names.
+#[derive(Debug)]
+pub(crate) enum RecordKeyError {
+    /// The record's package identity or node is empty.
+    EmptyOwner,
+    /// The node's preimage has no key.
+    Preimage(crate::check::node_key::NodeKeyRefusal),
+}
+
 /// A domain package record's model node tag and form, or `None` for a
 /// record kind no checked node names (FR-094 "Model declaration nodes";
 /// one arm per record kind, FR-094-CON-1).
@@ -307,14 +344,17 @@ fn record_form(record: &DomainPackageRecord) -> Option<(NodeTag, &'static str)> 
             Some(_) => (NodeTag::Model, "systems_interface"),
         }),
         DomainPackageRecord::Relationship(_) => Some((NodeTag::Relation, "relationship")),
+        // FR-359 item 3: a record value type and an event type are model
+        // declaration nodes with their `ModelOwner`, never a `composite_type`
+        // with a source owner.
+        DomainPackageRecord::RecordValueType(_) => Some((NodeTag::Model, "record_value_type")),
+        DomainPackageRecord::EventType(_) => Some((NodeTag::Model, "event_type")),
         DomainPackageRecord::Enum(_)
         | DomainPackageRecord::Variant(_)
         | DomainPackageRecord::FieldMember(_)
         | DomainPackageRecord::Clause(_)
         | DomainPackageRecord::Namespace(_)
         | DomainPackageRecord::PersistenceInterface(_)
-        | DomainPackageRecord::RecordValueType(_)
-        | DomainPackageRecord::EventType(_)
         | DomainPackageRecord::StateMachine(_)
         | DomainPackageRecord::Process(_)
         | DomainPackageRecord::ScalarType(_)
@@ -342,6 +382,41 @@ impl<'a> Lowering<'a> {
         let owner = ModelOwner::new(model.selection.identity.clone(), declaration.node.clone())
             .map_err(|_| fault(location, KeyFault::EmptyNode(declaration.clone())))?;
         Ok((owner, model))
+    }
+
+    /// The model record value type or event type whose model node key is
+    /// `handle`, the declaration key a model record carries in the type
+    /// environment (FR-359 item 9); `None` when `handle` is a source
+    /// composite.
+    pub(super) fn model_record_declaration(
+        &mut self,
+        handle: NodeKey,
+        location: &Location,
+    ) -> Result<Option<DeclarationKey>, CheckRefusal> {
+        if self.model_records.is_none() {
+            let mut records = BTreeMap::new();
+            for model in self.models {
+                for (declaration, record) in &model.records {
+                    if !matches!(
+                        record,
+                        DomainPackageRecord::RecordValueType(_) | DomainPackageRecord::EventType(_)
+                    ) {
+                        continue;
+                    }
+                    let key = record_node_key(record, self.identity)
+                        .map_err(|error| record_key_refusal(location, declaration, error))?;
+                    if let Some(key) = key {
+                        records.insert(key, declaration.clone());
+                    }
+                }
+            }
+            self.model_records = Some(records);
+        }
+        Ok(self
+            .model_records
+            .as_ref()
+            .and_then(|records| records.get(&handle))
+            .cloned())
     }
 
     /// The model declaration node of `declaration`, recorded in the model

@@ -1187,7 +1187,6 @@ fn money_slice_document() -> Value {
 
 #[trace("FR-056-AC-18", "TC-235")]
 #[test]
-#[ignore = "requires check+eval support for child-at-parent slots (QSL-737)"]
 fn tc235_record_subtype_value_conforms_to_parent_typed_parameter() {
     let document = k2_record_event_subtype_slice(true);
     let declarations = assemble_k2_unit(

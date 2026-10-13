@@ -92,6 +92,7 @@ pub mod imports;
 pub(crate) mod imports;
 mod ir;
 mod lowering;
+pub(crate) use lowering::record_node_key;
 mod node_key;
 mod observation;
 mod operation_clause;
@@ -167,7 +168,7 @@ pub use family::fixtures::{
 };
 pub use ir::{
     Arithmetic, CheckedBody, CheckedLiteral, CheckedNode, Connective, IntegerDivisionOperator,
-    Node, NodeId, NodeKind, Observation, OrderedKind, RecordSlot, Slot, Visit,
+    Node, NodeId, NodeKind, Observation, OrderedKind, RecordField, RecordSlot, Slot, Visit,
 };
 
 pub use assemble::{
@@ -175,7 +176,9 @@ pub use assemble::{
     DEFAULT_DECIMAL_SCALE,
 };
 pub use capability::{Capability, UnknownCapabilityLabel};
-pub use check::{DispatchOperation, EnumBinding, PackageDeclarations, ResolvedSignatures};
+pub use check::{
+    DispatchOperation, EnumBinding, ModelRecords, PackageDeclarations, ResolvedSignatures,
+};
 pub use checked_dispatch::{
     checked_dispatch_operation, object_type_supertypes, DispatchBridgeRefusal, DispatchRoot,
     MissingClauseField, OperationClauses,
@@ -738,6 +741,7 @@ impl PackageDeclarations {
             self.ieee_profile,
             self.dispatch_operations,
         )
+        .with_model_records(self.model_records)
         .with_imports(self.imports)
         .with_integer_division(self.integer_division)
         .with_complete_value(complete_value)

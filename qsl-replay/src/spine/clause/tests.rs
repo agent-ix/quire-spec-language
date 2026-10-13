@@ -2542,6 +2542,7 @@ fn admission_failure_exits_by_its_record_code_category() {
         code,
         cause: "any-cause",
         fields: BTreeMap::new(),
+        path: Vec::new(),
     };
     let refused = |code| ClauseDisposition::Admit(AdmissionFailure::Refused(record(code)));
     assert_eq!(

@@ -11,6 +11,7 @@
 
 #[cfg(feature = "test-support")]
 mod business_meanings;
+mod child_composite;
 mod complete_value_lock;
 mod field_presence;
 mod identity_golden_vectors;
