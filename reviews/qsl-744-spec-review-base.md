@@ -38,3 +38,17 @@ Examined:
 - No hash, digest, pin or tracking record is added.
 
 **PASS with one low finding.**
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-002 | low | TC-1005 gains an expected result ("So do the refusals that name no declaration: an empty model selection, an empty declaration key and the package document at node `$`"), and FR-056-AC-33 gains the same clause. But TC-1005's procedure has no step that produces those refusals, and no test traced to TC-1005 or FR-056-AC-33 asserts them. The expected result cannot be observed by running the TC as written. The behaviour is true, and is shown elsewhere: the unit `MalformedDeclaration` has no origin fields, and intake's own tests assert `node: "$"` with `artifact: None`. Fix: add a TC-1005 step (or a traced vector) that raises an empty selection and a malformed document and checks that no artifact or span is present. Or keep the clause in the FR-056 paragraph as a statement and drop it from the AC and TC expected results. | spec/test-cases/TC-1005-malformed-declaration-retains-the-nodes-origin.md:26; spec/functional/FR-056-admit-domain-package-model-declarations.md:806 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 44f6c4298 |
+
+Disposition pass 1 (reviewed 44f6c4298). The FR-056 paragraph now says the two node-less refusals carry no declaration origin. It adds that the refusals about the package document itself, at node `$`, likewise have no declaration origin to retain. FR-056-AC-33 and TC-1005 list the same three exceptions. FND-002 above is new and comes from that addition.

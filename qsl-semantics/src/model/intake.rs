@@ -5136,7 +5136,7 @@ mod tests {
         node
     }
 
-    #[trace("TC-145", "FR-056-AC-2")]
+    #[trace("TC-145", "FR-056-AC-2", "TC-1005", "FR-056-AC-33")]
     #[test]
     fn refuses_a_document_that_is_not_json() {
         let refusal = PackageDocument::parse(b"not json", qsl_foundation::IntakeLimits::default())

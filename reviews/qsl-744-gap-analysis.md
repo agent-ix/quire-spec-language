@@ -59,3 +59,17 @@ AC5: met for the documentation (the reasons at normalize.rs:1083-1086 and 1987-1
 No stubs, no coverage inflation, and no code without an owning requirement.
 
 **Mergeable. The three findings are low and can be fixed in the FND-001 code-review round.**
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 44f6c4298 |
+| FND-002 | fixed | 44f6c4298 |
+| FND-003 | fixed | 44f6c4298 |
+
+Disposition pass 1 (reviewed 44f6c4298, read-only, no build).
+
+- **FND-001.** `a_malformed_scalar_domain_refuses_at_the_scalar_with_its_origin` (field_refinement.rs tests) places a source origin on a hand-built package. It asserts node `model.Count`, `TypeDefinition.constraints`, artifact `ix://test/orders/spec` and line 4, column 2. A reader-built package cannot reach this: the reader refuses `lower > upper` at intake.rs:3328.
+- **FND-002.** `an_identity_refusal_keeps_the_records_origin` (admitted.rs tests) asserts the foreign-key caller's artifact and line 7, column 3. Its doc comment states that only a hand-built package reaches these refusals. For the foreign-key caller this is certain, because the reader keys every record under the selection identity. For the "neither identity form" caller it is plausible but not shown: the reader's identity checks (`type_identity_segment`, `member_identity_name`) refuse those forms first. The helper is shared, so the one vector covers both callers' plumbing.
+- **FND-003.** `tc235_m10_run_10_population_of_a_namespace_refuses_at_members_zero` reproduces the amended QSpec row (#245, merged). It uses `PA` (closed) with `[OrderManagement]`, asserts 22 `normalize.record` charges through `assert_record_charge_count`, exactly one refusal, `malformed-declaration` naming `PA` at `PopulationDefinition.members[0]`, and the origin.

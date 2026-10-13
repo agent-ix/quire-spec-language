@@ -45,3 +45,22 @@ Test oracles: the red log shows 10 of 13 functions failing on the old code at th
 Gate logs (read, not re-run): fmt clean. Clippy finished with no warnings, but the log does not show the command, and `make ci` also runs `--all-features`. qsl-semantics lib: 518 passed, 1 ignored. it: 609 passed, 2 ignored. Spec validation: warnings only in untouched FRs, no errors, and the log records no exit status. `make ci` has not been run and is required before merge.
 
 **Mergeable once FND-001 is fixed.**
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 44f6c4298 |
+
+Disposition pass 1 (reviewed 44f6c4298, read-only, no build). The `operations: []` run now asserts the full summary: four refusals as (code, cause, node), in order, plus the machine refusal's origin. A second case adds `Order/ghost` typed `Nope` and asserts exactly five refusals in node order: the ghost's `missing-name`, then the machine's four. A double report, a dropped refusal or a reordering would each fail one of the two equality checks.
+
+The expected second-case list is what the code before #808 would also report, apart from the machine refusal's origin:
+- The ghost refusal comes from `validate_with_semantic_ir`, which runs before the origin loop.
+- `Order` is not in `refused_nodes` (the refusal names `Order/ghost`), so its loop runs as it did before.
+- The machine's refusals come from `intake_state_machine_refusals` plus the intake trigger refusals, the same set as before.
+
+The coder's `qsl744-fix-a.log` shows the expected list was first written with the wrong node and order and then corrected to the observed list. That observed list matches the derivation above, so the expectation was not just copied from the output.
+
+The `!node_refused` guard still has no vector that tells it apart. In both fixtures the refused machine's loop raises no reader error. The guard is largely redundant with the existing `refusal_node ∈ refused_nodes` filter, because an error about a node names that node.
+
+Fix-round gates (logs read): fmt exit 0. Clippy, with the command line shown (`--workspace --all-targets --all-features -D warnings`), exit 0. qsl-semantics `--all-features` lib 520 passed, it 610 passed. Spec validation exit 0. xtask `--lib`: 179 passed, 2 failed. The failures name `qsl-replay/src/execute/argument.rs` (tc_255) and `RawRecord.type_identity` (tc_260). Both are sites #807 fixes, not code from this PR. The new unit tests sit in `#[cfg(test)]` modules, mint no `NodeKey` and add no model struct field, so the fixed scans cannot trip on them.

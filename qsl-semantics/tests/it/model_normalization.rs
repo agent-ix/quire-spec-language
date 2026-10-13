@@ -1956,7 +1956,7 @@ fn n04_empty_model_selection_identity_refuses_malformed_declaration() {
 }
 
 /// The same phase-1 check, over an empty domain package `version`.
-#[trace("QSpec-TC-195", "QSpec-FR-150-AC-3")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-3", "TC-1005", "FR-056-AC-33")]
 #[test]
 fn n04_empty_model_selection_version_refuses_malformed_declaration() {
     let mut model_selection = DomainPackageRef::fixture("bundle.n04-empty-version");
@@ -1979,7 +1979,7 @@ fn n04_empty_model_selection_version_refuses_malformed_declaration() {
 }
 
 /// The same phase-1 check, over a `DeclarationKey` with an empty `package`.
-#[trace("QSpec-TC-195", "QSpec-FR-150-AC-3")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-3", "TC-1005", "FR-056-AC-33")]
 #[test]
 fn n04_empty_declaration_key_package_refuses_malformed_declaration() {
     let key = DeclarationKey {
