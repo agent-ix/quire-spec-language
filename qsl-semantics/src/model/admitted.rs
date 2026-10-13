@@ -167,19 +167,17 @@ fn identity_member(records: &[DomainPackageRecord], record: &DomainPackageRecord
 }
 
 fn identity_refusal(
-    records: &[DomainPackageRecord],
+    package: &DomainPackage,
     record: &DomainPackageRecord,
     detail: String,
 ) -> ModelRefusal {
-    let key = record.key();
     ModelRefusal {
         code: Code::InvalidModelBinding,
-        cause: ModelRefusalCause::IntakeMalformedDeclaration {
-            node: key.node.clone(),
-            artifact: None,
-            span: None,
-            member: identity_member(records, record),
-        },
+        cause: crate::model::normalize::malformed_at(
+            package,
+            record.key(),
+            identity_member(&package.records, record),
+        ),
         detail,
     }
 }
@@ -212,7 +210,7 @@ impl AdmittedPackage {
                 });
             } else if key.package != identity {
                 refusals.push(identity_refusal(
-                    &package.records,
+                    &package,
                     record,
                     format!(
                         "{} is keyed under domain package {:?}, not the selected {identity:?}",
@@ -281,7 +279,7 @@ impl AdmittedPackage {
             };
             let Some((owner, name)) = owner_and_name else {
                 refusals.push(identity_refusal(
-                    &package.records,
+                    &package,
                     record,
                     format!(
                         "{} is neither ix://{identity}/<artifact id> nor <owner>/<name>",
@@ -716,5 +714,49 @@ mod tests {
         ])
         .expect("admits");
         assert!(package.member(&key("Order"), "paid").is_some());
+    }
+
+    /// An identity refusal keeps the origin the package retains for the
+    /// record's key (FR-154). The reader keys every record under the
+    /// selection's identity, so only a package assembled by hand reaches
+    /// these refusals; the origin is placed on it to test the plumbing.
+    #[test]
+    fn an_identity_refusal_keeps_the_records_origin() {
+        let foreign = DeclarationKey {
+            package: "test/other".to_owned(),
+            node: "ix://test/orders/Shipment".to_owned(),
+        };
+        let mut package = DomainPackage::new(
+            DomainPackageRef::fixture("n01"),
+            vec![order(foreign.clone())],
+        );
+        package.originals.insert(
+            foreign,
+            crate::model::domain_package::OriginalDeclaration {
+                meaning: None,
+                origin: serde_json::json!({"source": {
+                    "sourceIdentity": "ix://test/orders/spec",
+                    "path": "spec.qspec",
+                    "startLine": 7,
+                    "startColumn": 3,
+                }}),
+                member_name: None,
+            },
+        );
+        let Err(AdmitFailure::Refused(refusals)) = AdmittedPackage::admit(
+            package,
+            &mut Meter::new(ModelNormalizationLimits::default()),
+        ) else {
+            panic!("the foreign key refuses")
+        };
+        assert_eq!(refusals.len(), 1, "{refusals:?}");
+        let ModelRefusalCause::IntakeMalformedDeclaration { artifact, span, .. } =
+            &refusals[0].cause
+        else {
+            panic!("expected a malformed declaration: {refusals:?}");
+        };
+        assert_eq!(artifact.as_deref(), Some("ix://test/orders/spec"));
+        let span = span.expect("the retained position");
+        assert_eq!((span.start.line, span.start.column), (7, 3));
     }
 }

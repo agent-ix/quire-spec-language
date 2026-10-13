@@ -489,11 +489,13 @@ fn systems_members_have_effective_owner_entries() {
     }
 }
 
-/// A subtype inherits every systems member from its composite ancestor. The
-/// role-less connection has two same-owner qualify facts, and inheritance adds
-/// exactly one ordered fact after that duplicate pair. This also exercises the
-/// repeated same-owner path control: dropping the ancestor member grouping or
-/// retaining only one connection end makes this assertion fail.
+/// A subtype inherits every systems member from its composite ancestor. An
+/// inherited member carries one inherit fact per ancestor path and no qualify
+/// fact (TC-195 N01), even for the role-less connection whose owner holds two
+/// same-owner qualify facts. This also exercises the repeated same-owner
+/// path control: dropping the ancestor member grouping makes the inherit
+/// fact assertions fail. The fact-boundary assertion below stops before any
+/// inherited fact is charged and does not catch that mutation.
 #[trace("TC-213", "QSpec-TC-197", "QSpec-FR-150-AC-1")]
 #[test]
 fn systems_members_inherit_with_ordered_duplicate_end_facts() {
@@ -505,13 +507,8 @@ fn systems_members_inherit_with_ordered_duplicate_end_facts() {
     for (member, expected_rules, expected_inputs) in [
         (
             "model.Sys.pump",
+            vec![RULE_INHERIT.identity, RULE_INHERIT.identity],
             vec![
-                RULE_QUALIFY.identity,
-                RULE_INHERIT.identity,
-                RULE_INHERIT.identity,
-            ],
-            vec![
-                vec![DeclarationKey::fixture("model.Sys.pump")],
                 vec![
                     DeclarationKey::fixture("model.Sys"),
                     DeclarationKey::fixture("model.Sys.pump"),
@@ -525,15 +522,8 @@ fn systems_members_inherit_with_ordered_duplicate_end_facts() {
         ),
         (
             "model.Sys.pipe",
+            vec![RULE_INHERIT.identity, RULE_INHERIT.identity],
             vec![
-                RULE_QUALIFY.identity,
-                RULE_QUALIFY.identity,
-                RULE_INHERIT.identity,
-                RULE_INHERIT.identity,
-            ],
-            vec![
-                vec![DeclarationKey::fixture("model.Sys.pipe")],
-                vec![DeclarationKey::fixture("model.Sys.pipe")],
                 vec![
                     DeclarationKey::fixture("model.Sys"),
                     DeclarationKey::fixture("model.Sys.pipe"),
@@ -547,13 +537,8 @@ fn systems_members_inherit_with_ordered_duplicate_end_facts() {
         ),
         (
             "model.Sys.pump.out",
+            vec![RULE_INHERIT.identity, RULE_INHERIT.identity],
             vec![
-                RULE_QUALIFY.identity,
-                RULE_INHERIT.identity,
-                RULE_INHERIT.identity,
-            ],
-            vec![
-                vec![DeclarationKey::fixture("model.Sys.pump.out")],
                 vec![
                     DeclarationKey::fixture("model.Sys"),
                     DeclarationKey::fixture("model.Sys.pump.out"),
@@ -567,13 +552,8 @@ fn systems_members_inherit_with_ordered_duplicate_end_facts() {
         ),
         (
             "model.rel.parts",
+            vec![RULE_INHERIT.identity, RULE_INHERIT.identity],
             vec![
-                RULE_QUALIFY.identity,
-                RULE_INHERIT.identity,
-                RULE_INHERIT.identity,
-            ],
-            vec![
-                vec![DeclarationKey::fixture("model.rel.parts")],
                 vec![
                     DeclarationKey::fixture("model.Sys"),
                     DeclarationKey::fixture("model.rel.parts"),
@@ -587,13 +567,8 @@ fn systems_members_inherit_with_ordered_duplicate_end_facts() {
         ),
         (
             "model.Pump.alloc",
+            vec![RULE_INHERIT.identity, RULE_INHERIT.identity],
             vec![
-                RULE_QUALIFY.identity,
-                RULE_INHERIT.identity,
-                RULE_INHERIT.identity,
-            ],
-            vec![
-                vec![DeclarationKey::fixture("model.Pump.alloc")],
                 vec![
                     DeclarationKey::fixture("model.Sys"),
                     DeclarationKey::fixture("model.Pump.alloc"),

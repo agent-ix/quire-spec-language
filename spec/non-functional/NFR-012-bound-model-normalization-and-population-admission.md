@@ -85,8 +85,9 @@ per-charge record, so its memory does not grow with the work it bounds.
   member is at least one entry of the package or population document it is
   read from.
 - **Derivation facts, 1600000.** Sixteen facts per record at the record
-  ceiling. An effective declaration's derivation holds one qualify fact and
-  one inherit fact per ancestor path, so this admits a package at the record
+  ceiling. A type's derivation holds one qualify fact and one inherit
+  fact per ancestor path; an inherited member holds one inherit fact per
+  ancestor path and no qualify fact. This admits a package at the record
   ceiling whose declarations average fifteen ancestor paths.
 - **Effective declarations and dispatch candidates, 1600000.** Every
   effective declaration carries at least one derivation fact, so this

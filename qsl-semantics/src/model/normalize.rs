@@ -17,7 +17,7 @@
 //! runtime, by FR-153's `binding.subset-value` check (`subsetting-violation`)
 //! — FR-153 territory, not yet implemented anywhere in this crate (see
 //! `crate::model::conformance`'s own module doc).
-//! Operation members enter [`EffectiveView`] with qualify and inherit facts,
+//! Operation members enter [`EffectiveView`] with qualify (direct) or inherit (inherited) facts,
 //! then receive both redefine facts for each reachable redefinition. The
 //! `m + r` redefinition check counts field and operation members alike.
 //! Phase 2 also qualifies relationship and systems members at their resolved
@@ -1099,6 +1099,10 @@ fn validate_selection(domain_package: &DomainPackage) -> Result<(), ModelRefusal
     if domain_package.model_selection.identity.is_empty()
         || domain_package.model_selection.version.is_empty()
     {
+        // The unit `MalformedDeclaration` carries no node on purpose: the
+        // selection is a field of the package reference, not an IR
+        // declaration, so no node identity or origin exists to retain
+        // (FR-056, node-less refusals).
         return Err(ModelRefusal {
             code: Code::InvalidModelBinding,
             cause: ModelRefusalCause::MalformedDeclaration,
@@ -1132,12 +1136,11 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
         if !record_type.identity_fields.is_empty() {
             refusals.push(ModelRefusal {
                 code: Code::InvalidModelBinding,
-                cause: ModelRefusalCause::IntakeMalformedDeclaration {
-                    node: record_type.key.node.clone(),
-                    artifact: None,
-                    span: None,
-                    member: MemberPath::type_definition().name("identityFields"),
-                },
+                cause: malformed_at(
+                    domain_package,
+                    &record_type.key,
+                    MemberPath::type_definition().name("identityFields"),
+                ),
                 detail: format!(
                     "{}: TypeDefinition.identityFields: a record value type has no identity field",
                     record_type.key.node
@@ -1184,12 +1187,7 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
     for event in event_types {
         let malformed = |path: MemberPath, reason: &str| ModelRefusal {
             code: Code::InvalidModelBinding,
-            cause: ModelRefusalCause::IntakeMalformedDeclaration {
-                node: event.key.node.clone(),
-                artifact: None,
-                span: None,
-                member: path.clone(),
-            },
+            cause: malformed_at(domain_package, &event.key, path.clone()),
             detail: format!("{}: {path}: {reason}", event.key.node),
         };
         if !event.identity_fields.is_empty() {
@@ -1206,14 +1204,13 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
             // operation node, not the event type.
             refusals.push(ModelRefusal {
                 code: Code::InvalidModelBinding,
-                cause: ModelRefusalCause::IntakeMalformedDeclaration {
-                    node: operation.key.node.clone(),
-                    artifact: None,
-                    span: None,
-                    member: MemberPath::type_definition()
+                cause: malformed_at(
+                    domain_package,
+                    &operation.key,
+                    MemberPath::type_definition()
                         .name("operations")
                         .index(position),
-                },
+                ),
                 detail: format!(
                     "{}: TypeDefinition.operations[{position}]: an event type declares no operations",
                     operation.key.node
@@ -1316,12 +1313,7 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
     for machine in machines {
         let malformed = |path: MemberPath, reason: &str| ModelRefusal {
             code: Code::InvalidModelBinding,
-            cause: ModelRefusalCause::IntakeMalformedDeclaration {
-                node: machine.key.node.clone(),
-                artifact: None,
-                span: None,
-                member: path.clone(),
-            },
+            cause: malformed_at(domain_package, &machine.key, path.clone()),
             detail: format!("{}: {path}: {reason}", machine.key.node),
         };
         let mut operations: Vec<_> = domain_package
@@ -1338,6 +1330,7 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
             .collect();
         operations.sort_by(|left, right| left.key.cmp(&right.key));
         refusals.extend(state_machine_required_members(
+            domain_package,
             machine,
             operations.is_empty(),
         ));
@@ -1703,17 +1696,13 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
 /// transition. Each missing member is `invalid_model_binding`/
 /// `malformed-declaration` naming the machine.
 fn state_machine_required_members(
+    domain_package: &DomainPackage,
     machine: &crate::model::domain_package::StateMachineRecord,
     no_operations: bool,
 ) -> Vec<ModelRefusal> {
     let malformed = |path: MemberPath, reason: &str| ModelRefusal {
         code: Code::InvalidModelBinding,
-        cause: ModelRefusalCause::IntakeMalformedDeclaration {
-            node: machine.key.node.clone(),
-            artifact: None,
-            span: None,
-            member: path.clone(),
-        },
+        cause: malformed_at(domain_package, &machine.key, path.clone()),
         detail: format!("{}: {path}: {reason}", machine.key.node),
     };
     let mut refusals = Vec::new();
@@ -1758,7 +1747,7 @@ fn intake_state_machine_refusals(domain_package: &DomainPackage) -> Vec<ModelRef
                 matches!(record, DomainPackageRecord::OperationMember(operation)
                     if operation.owner == machine.key)
             });
-            state_machine_required_members(machine, no_operations)
+            state_machine_required_members(domain_package, machine, no_operations)
         })
         .collect()
 }
@@ -1796,12 +1785,11 @@ fn validate_process_meanings(domain_package: &DomainPackage) -> Vec<ModelRefusal
         {
             refusals.push(ModelRefusal {
                 code: Code::InvalidModelBinding,
-                cause: ModelRefusalCause::IntakeMalformedDeclaration {
-                    node: process.key.node.clone(),
-                    artifact: None,
-                    span: None,
-                    member: MemberPath::type_definition().name("identityFields"),
-                },
+                cause: malformed_at(
+                    domain_package,
+                    &process.key,
+                    MemberPath::type_definition().name("identityFields"),
+                ),
                 detail: format!(
                     "{}: TypeDefinition.identityFields: a process declaration must supply identityFields or inherit them from a process supertype",
                     process.key.node
@@ -1828,14 +1816,13 @@ fn validate_process_meanings(domain_package: &DomainPackage) -> Vec<ModelRefusal
             };
             refusals.push(ModelRefusal {
                 code: Code::InvalidModelBinding,
-                cause: ModelRefusalCause::IntakeMalformedDeclaration {
-                    node: process.key.node.clone(),
-                    artifact: None,
-                    span: None,
-                    member: MemberPath::type_definition()
+                cause: malformed_at(
+                    domain_package,
+                    &process.key,
+                    MemberPath::type_definition()
                         .name("supertypes")
                         .index(position),
-                },
+                ),
                 detail,
             });
         }
@@ -1871,6 +1858,11 @@ fn owned_member(owner: &DeclarationKey, member: MemberPath) -> OwnedMemberPath {
         owner: owner.clone(),
         member,
     }
+}
+
+/// Whether some record of `package` declares `key`, whatever its meaning.
+fn declares(package: &DomainPackage, key: &DeclarationKey) -> bool {
+    package.records.iter().any(|record| record.key() == key)
 }
 
 fn is_ordinary_object_type(package: &DomainPackage, key: &DeclarationKey) -> bool {
@@ -2011,6 +2003,9 @@ fn check_node<'a>(
     // check for this node can run: every later check assumes a
     // well-formed key to look up or insert.
     if key.package.is_empty() || key.node.is_empty() {
+        // The unit `MalformedDeclaration` carries no node on purpose: a key
+        // with an empty component names no IR node, and an empty `node` has
+        // no identity to report (FR-056, node-less refusals).
         return vec![ModelRefusal {
             code: Code::InvalidModelBinding,
             cause: ModelRefusalCause::MalformedDeclaration,
@@ -2066,12 +2061,11 @@ fn check_node<'a>(
                 if index.is_variant_type(target) {
                     refusals.push(ModelRefusal {
                         code: Code::InvalidModelBinding,
-                        cause: ModelRefusalCause::IntakeMalformedDeclaration {
-                            node: member.key.node.clone(),
-                            artifact: None,
-                            span: None,
-                            member: MemberPath::new(MemberRoot::Field).name("typeRef"),
-                        },
+                        cause: malformed_at(
+                            domain_package,
+                            &member.key,
+                            MemberPath::new(MemberRoot::Field).name("typeRef"),
+                        ),
                         detail: format!(
                             "{}: Field.typeRef: {} is a variant type; fields typed by a variant type are not yet supported",
                             member.key.node, target.node
@@ -2424,12 +2418,7 @@ fn check_node<'a>(
                 );
                 refusals.push(ModelRefusal {
                     code: Code::InvalidModelBinding,
-                    cause: ModelRefusalCause::IntakeMalformedDeclaration {
-                        node: relationship.key.node.clone(),
-                        artifact: None,
-                        span: None,
-                        member: member.clone(),
-                    },
+                    cause: malformed_at(domain_package, &relationship.key, member.clone()),
                     detail: format!(
                         "{}: {member}: relationship source owner {} is not an object type",
                         relationship.key.node, relationship.source.type_identity.node
@@ -2441,12 +2430,11 @@ fn check_node<'a>(
             {
                 refusals.push(ModelRefusal {
                     code: Code::InvalidModelBinding,
-                    cause: ModelRefusalCause::IntakeMalformedDeclaration {
-                        node: relationship.key.node.clone(),
-                        artifact: None,
-                        span: None,
-                        member: MemberPath::new(MemberRoot::Relationship).name("target"),
-                    },
+                    cause: malformed_at(
+                        domain_package,
+                        &relationship.key,
+                        MemberPath::new(MemberRoot::Relationship).name("target"),
+                    ),
                     detail: format!(
                         "{}: Relationship.target: {} is not a declared object type",
                         relationship.key.node, relationship.target.type_identity.node
@@ -2458,13 +2446,12 @@ fn check_node<'a>(
         | DomainPackageRecord::Endpoint(_)
         | DomainPackageRecord::Allocation(_) => {}
         // model-complete.md's "Populations" row: each member type names
-        // a declared object type; a missing one refuses
-        // `missing_declaration`/`missing-name`.
+        // a declared object type; a member naming a declaration of another
+        // meaning refuses `malformed-declaration` (TC-235 M10 run 10, FR-208-AC-9)
+        // and one naming nothing refuses `missing_declaration`/`missing-name`.
         DomainPackageRecord::Population(population) => {
             for (position, type_name) in population.member_types.iter().enumerate() {
-                // FR-208-AC-9: a record value type is a declared type of
-                // another meaning, not a missing one.
-                if index.is_record_value_type(type_name) {
+                if !index.is_object_type(type_name) && declares(domain_package, type_name) {
                     refusals.push(ModelRefusal {
                         code: Code::InvalidModelBinding,
                         cause: malformed_at(
@@ -2475,7 +2462,7 @@ fn check_node<'a>(
                                 .index(position),
                         ),
                         detail: format!(
-                            "population {} names member type {}, a record value type, not an object type",
+                            "population {} names member type {}, a declaration of another meaning, not an object type",
                             population.key.node, type_name.node
                         ),
                     });
@@ -2819,8 +2806,8 @@ fn build(
 
     // Phase 3, member level: each type's directly declared members (their
     // qualify facts were charged in phase 2) and the members it inherits
-    // along its ancestor paths. An inherited effective member starts with
-    // its own qualify fact, then records one inherit fact per ancestor path.
+    // along its ancestor paths. An inherited effective member records one
+    // inherit fact per ancestor path and no qualify fact (TC-195 N01).
     let mut member_preimages: HashMap<
         (DeclarationKey, DeclarationKey),
         EffectiveDeclarationPreimage,
@@ -2856,25 +2843,16 @@ fn build(
                 // so memory grows with facts plus total path length, not
                 // facts times path length.
                 let key = (type_key.clone(), member.clone());
-                let entry = match member_preimages.entry(key) {
-                    std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
-                    std::collections::hash_map::Entry::Vacant(entry) => {
-                        for _ in group {
-                            charges.fact()?;
-                        }
-                        entry.insert(EffectiveDeclarationPreimage {
+                // TC-195 N01: an inherited member derives the inherit fact
+                // only; no qualify fact precedes it.
+                let entry =
+                    member_preimages
+                        .entry(key)
+                        .or_insert_with(|| EffectiveDeclarationPreimage {
                             owner_effective_type: Some(owner_effective_id),
                             original: member.clone(),
-                            derivation: (0..group.len())
-                                .map(|ordinal| Fact {
-                                    ordinal,
-                                    rule: RULE_QUALIFY,
-                                    inputs: vec![member.clone()].into(),
-                                })
-                                .collect(),
-                        })
-                    }
-                };
+                            derivation: Vec::new(),
+                        });
                 charges.fact()?;
                 work_step();
                 let inputs = FactInputs::new(ancestor.path.clone(), vec![member.clone()]);
@@ -4885,10 +4863,10 @@ mod tests {
         assert_eq!(small.limit_kind, LimitKind::DerivationFacts);
         assert_eq!(large.limit_kind, LimitKind::DerivationFacts);
         // Three remaining fact charges admit B's type inheritance fact and
-        // the first inherited member's qualify+inherit pair. The next
-        // member's qualify charge is denied before its inheritance work, so
-        // only the ancestor walk and first member are counted at either size.
-        assert_eq!((small_steps, large_steps), (2, 2));
+        // the first two inherited members' inherit facts. The third member's
+        // inherit charge is denied before its inheritance work, so only the
+        // ancestor walk and two members are counted at either size.
+        assert_eq!((small_steps, large_steps), (3, 3));
 
         let lattice = ModelNormalizationLimits {
             derivation_facts: 200,
