@@ -528,6 +528,13 @@ fn each_mistyped_use_of_a_variant_type_refuses_with_its_cause() {
         "a bare case name at a Tier slot",
     );
     refuses(
+        &[],
+        name("Standard"),
+        Some(&ValueType::Integer),
+        CheckCause::MissingName("Standard".to_owned()),
+        "an unbound name that is a case name where no variant is expected",
+    );
+    refuses(
         &[("t", tier)],
         name("t"),
         Some(level),
@@ -855,9 +862,19 @@ fn a_variant_form_is_admitted_at_a_field_a_payload_and_an_element() {
 fn refusal_of(
     replay: &Replay,
     tier: serde_json::Value,
-) -> (qsl_foundation::Code, &'static str, Vec<PathStep>) {
+) -> (
+    qsl_foundation::Code,
+    &'static str,
+    Vec<PathStep>,
+    Option<String>,
+) {
     match replay.admit(json!({"tier": tier})) {
-        Err(AdmissionFailure::Refused(record)) => (record.code, record.cause, record.path),
+        Err(AdmissionFailure::Refused(record)) => (
+            record.code,
+            record.cause,
+            record.path,
+            record.fields.get("member").cloned(),
+        ),
         other => panic!("a refusal, not {other:?}"),
     }
 }
@@ -873,90 +890,113 @@ fn each_malformed_variant_form_refuses_with_its_cause_in_item_9_order() {
     let tier = Replay::type_id("Tier");
     let level = Replay::type_id("Level");
     let invalid = Code::InvalidRuntimeInput;
-    for (label, value, cause) in [
+    for (label, value, cause, expected_member) in [
         (
             "a missing case",
             json!({"variant": {"type": tier}}),
             "missing-member",
+            Some("case"),
+        ),
+        (
+            "no member at all reports type first",
+            json!({"variant": {}}),
+            "missing-member",
+            Some("type"),
         ),
         (
             "a missing type",
             json!({"variant": {"case": "Gold"}}),
             "missing-member",
+            Some("type"),
         ),
         (
             "an extra member",
             json!({"variant": {"type": tier, "case": "Gold", "x": 1}}),
             "unknown-member",
+            None,
         ),
         (
             "a type naming another variant type",
             json!({"variant": {"type": level, "case": "Gold"}}),
             "wrong-value-kind",
+            None,
         ),
         (
             "a type naming a record",
             json!({"variant": {"type": id("Settings"), "case": "Gold"}}),
             "wrong-value-kind",
+            None,
         ),
         (
             "a type naming an object",
             json!({"variant": {"type": id("Account"), "case": "Gold"}}),
             "wrong-value-kind",
+            None,
         ),
         (
             "a type naming no declaration",
             json!({"variant": {"type": id("Nope"), "case": "Gold"}}),
             "wrong-value-kind",
+            None,
         ),
         (
             "a Text value at the slot",
             json!({"string": "Gold"}),
             "wrong-value-kind",
+            None,
         ),
         (
             "an Integer value at the slot",
             json!({"integer": "0"}),
             "wrong-value-kind",
+            None,
         ),
         (
             "a payload that is not an object",
             json!({"variant": "Gold"}),
             "wrong-value-kind",
+            None,
         ),
         (
             "an absent value at a required field",
             json!({"absent": {}}),
             "wrong-value-kind",
+            None,
         ),
         (
             "an undeclared case",
             json!({"variant": {"type": tier, "case": "Silver"}}),
             "invalid-value",
+            None,
         ),
         (
             "a letter-case variant of a case",
             json!({"variant": {"type": tier, "case": "gold"}}),
             "invalid-value",
+            None,
         ),
         (
             "a missing case beats a wrong type",
             json!({"variant": {"type": level}}),
             "missing-member",
+            Some("case"),
         ),
         (
             "an extra member beats an undeclared case",
             json!({"variant": {"type": tier, "case": "Silver", "x": 1}}),
             "unknown-member",
+            None,
         ),
         (
             "a wrong type beats an undeclared case",
             json!({"variant": {"type": level, "case": "Silver"}}),
             "wrong-value-kind",
+            None,
         ),
     ] {
-        let (code, found, path) = refusal_of(&replay, value);
+        let (code, found, path, member) = refusal_of(&replay, value);
         assert_eq!((code, found), (invalid, cause), "{label}");
+        assert_eq!(member.as_deref(), expected_member, "{label}");
         assert!(path.is_empty(), "{label}: the value is the field itself");
     }
 }
@@ -1040,16 +1080,26 @@ fn a_call_with_a_value_of_another_variant_type_refuses_at_the_argument() {
     );
 }
 
-/// TC-1009 step 3 and FR-360 item 12 (FR-360-AC-8): until QSL-748
-/// requirement 1 holds in the emitter, a unit whose function takes a variant
-/// type refuses at emission with `ill_typed`/`type-mismatch` at the
-/// parameter's type node, and checks nothing else.
+/// TC-1009 step 3 and FR-360 item 12 (FR-360-AC-8): until the IR reader admits
+/// a `model`/`variant_type` node, a unit whose function takes a variant type
+/// refuses at emission with `ill_typed`/`type-mismatch` at the parameter's
+/// type node, and checks nothing else.
 #[trace("TC-1009", "FR-360-AC-8")]
 #[test]
 fn the_emitter_refuses_a_variant_typed_parameter_at_its_type_node() {
     let refusals = check_refusals("function pick using v(t: Config::Tier): Boolean pure { true }");
     assert_eq!(refusals.len(), 1, "{refusals:?}");
     assert_eq!(refusals[0].cause, mismatch(), "{refusals:?}");
+    // The refusal's origin names the function `pick`.
+    assert_eq!(
+        refusals[0].location.origin,
+        quire_semantic_value::location::Origin::Body {
+            function: "pick".to_owned(),
+            index: 1
+        }
+    );
+    // The same signature without the variant type raises nothing.
+    assert!(check_refusals("function pick using v(a: Integer): Boolean pure { true }").is_empty());
 }
 
 // ---------------------------------------------------------------------------
@@ -1232,4 +1282,151 @@ fn a_malformed_variant_form_as_a_parameter_or_result_refuses() {
         assert_eq!(record.code, qsl_foundation::Code::InvalidRuntimeInput);
         assert_eq!(record.cause, cause);
     }
+}
+
+/// FR-360-AC-5: the Text literal, `none` and `case` rows of the criterion have
+/// no source form at this ref. The expression forms of `qsl-forms` hold no
+/// text literal, no `none` and no `case`, and each spelling is refused before
+/// a checked graph exists, so no checker row can be written for them.
+#[trace("TC-1007", "FR-360-AC-5")]
+#[test]
+fn the_text_none_and_case_spellings_have_no_form_to_check() {
+    for body in [
+        "Config::Tier::Gold = \"Gold\"",
+        "Config::Tier::Gold = none",
+        "case Config::Tier::Gold { Gold: true }",
+    ] {
+        let source = format!(
+            "language \"ix:native\" edition \"1-draft\";\n\
+             profile v = \"quire.value.complete/v1\";\n\
+             function f using v(): Boolean pure {{ {body} }}\n"
+        );
+        let parsed = qsl_cst::parse(
+            SourceIdentity::new("test", "variant-fields", "fixture", "fixture:1"),
+            "variant-fields.native",
+            source.as_bytes(),
+            qsl_cst::Limits::default(),
+        )
+        .expect("S1 reads the source");
+        assert!(
+            !parsed.is_admissible() || build_unit(&parsed).is_err(),
+            "{body} builds a unit"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// FR-360 item 10: the encoder
+// ---------------------------------------------------------------------------
+
+use qsl_semantics::model::observation::ValueEncoder;
+
+/// FR-360-AC-11 (TC-1010): the variant values an admitted snapshot holds
+/// encode as the item 9 form, naming their own variant type and case; a
+/// document whose members are written in the other order has the same
+/// digest, and the encoded value decodes to the same value again.
+#[trace("TC-1010", "FR-360-AC-10", "FR-360-AC-11")]
+#[test]
+fn an_admitted_variant_value_encodes_as_its_form_and_decodes_to_itself() {
+    let replay = replay();
+    let encoder = ValueEncoder::over(
+        replay.graph.model_selections(),
+        &replay.packages,
+        ModelNormalizationLimits::default(),
+    )
+    .expect("the encoder reads the selected package");
+    let standard = json!({"variant": {"case": "Standard", "type": id("Tier")}});
+    let closure = replay
+        .admit(json!({
+            "tier": variant_json("Tier", "Gold"),
+            "backup": {"present": standard},
+            "history": {"sequence": [variant_json("Tier", "Gold"), variant_json("Tier", "Standard")]},
+        }))
+        .expect("the snapshot admits");
+
+    let FieldValue::Present(tier) = replay.slot(&closure, "tier") else {
+        panic!("present");
+    };
+    let encoded = encoder.encode(&tier).expect("a variant value encodes");
+    assert_eq!(encoded.to_json(), variant_json("Tier", "Gold"));
+
+    let FieldValue::Present(backup) = replay.slot(&closure, "backup") else {
+        panic!("present");
+    };
+    let tier_shape = replay
+        .graph
+        .scope()
+        .variant_types()
+        .iter()
+        .find(|declared| declared.name() == "Config::Tier")
+        .and_then(VariantTypeDeclaration::shape)
+        .expect("Tier has a shape");
+    let present = encoder
+        .encode(&quire_exact::OptionValue::from_admitted(
+            ValueType::Enum(tier_shape),
+            Some(backup.clone()),
+        ))
+        .expect("an Option of a variant encodes");
+    assert_eq!(
+        present.to_json(),
+        json!({"present": variant_json("Tier", "Standard")})
+    );
+
+    let FieldValue::Present(history) = replay.slot(&closure, "history") else {
+        panic!("present");
+    };
+    let written_history = encoder
+        .encode(&history)
+        .expect("a sequence encodes")
+        .to_json();
+    assert_eq!(
+        written_history,
+        json!({"sequence": [variant_json("Tier", "Gold"), variant_json("Tier", "Standard")]})
+    );
+    // Decoding what was written gives the same value again.
+    let again = replay
+        .admit(json!({"history": written_history}))
+        .expect("the written form admits");
+    let FieldValue::Present(Datum::Collection(again)) = replay.slot(&again, "history") else {
+        panic!("a sequence");
+    };
+    let FieldValue::Present(Datum::Collection(first)) = replay.slot(&closure, "history") else {
+        panic!("a sequence");
+    };
+    assert_eq!(again.elements().len(), first.elements().len());
+    for (left, right) in again.elements().iter().zip(first.elements()) {
+        assert!(same_value(left, right));
+    }
+
+    // Member order of the written document changes neither the typed value nor
+    // the digest: the reordered spelling and the encoding are one document.
+    let reordered = serde_json::to_vec(&standard).unwrap();
+    let written = serde_json::to_vec(&variant_json("Tier", "Standard")).unwrap();
+    assert_eq!(
+        document_ref("a", &reordered).digest,
+        document_ref("a", &written).digest
+    );
+
+    // A value of no variant type does not encode.
+    assert!(encoder
+        .encode(&Datum::Enum(EnumMember::new(
+            quire_exact::VariantId::from_digest([9; 32]),
+            0
+        )))
+        .is_none());
+}
+
+/// FR-360-AC-7: a tuple position holding a variant value needs a unit that
+/// declares a tuple naming the variant type, which the interim emitter refusal
+/// holds back like every other declaration of a unit naming the type, so tuple
+/// equality has no evaluation test until emission lands.
+#[trace("TC-1008", "FR-360-AC-7")]
+#[test]
+fn a_tuple_naming_a_variant_type_is_held_back_by_the_emitter() {
+    let refusals = check_refusals("tuple Pair(Config::Tier, Config::Tier);");
+    assert!(!refusals.is_empty());
+    assert!(
+        refusals.iter().all(|refusal| refusal.cause == mismatch()),
+        "{refusals:?}"
+    );
 }

@@ -880,16 +880,8 @@ pub(super) struct References<'a> {
     /// node identity, built on first use.
     record_keys: Option<BTreeMap<String, quire_exact::NodeKey>>,
     /// Each selected variant type by its IR node identity, built on first
-    /// use.
-    variants: Option<BTreeMap<String, VariantAdmission>>,
-}
-
-/// What admitting a `variant` value against one variant type reads
-/// (FR-360 item 9): the type's enum shape and each declared case with the
-/// key and canonical rank a value of it carries.
-struct VariantAdmission {
-    shape: quire_exact::EnumShape,
-    cases: BTreeMap<String, quire_exact::EnumMember>,
+    /// use from the same declarations the type environment holds.
+    variant_keys: Option<BTreeMap<String, crate::check::VariantTypeDeclaration>>,
 }
 
 impl<'a> References<'a> {
@@ -928,60 +920,31 @@ impl<'a> References<'a> {
             completeness,
             unresolved: Vec::new(),
             record_keys: None,
-            variants: None,
+            variant_keys: None,
         }
     }
 
     /// The variant type the IR node identity `identity` names, or `None`
     /// when no selected package declares a variant type by that identity
-    /// (another meaning or no declaration at all). Its cases are keyed over
-    /// its checked node key, so a value admitted here equals the same case
+    /// (another meaning or no declaration at all). It is the declaration the
+    /// type environment holds, so a value admitted here equals the same case
     /// a unit's literal builds (FR-360 item 11).
-    fn variant_type(&mut self, identity: &str) -> Option<&VariantAdmission> {
+    fn variant_type(&mut self, identity: &str) -> Option<&crate::check::VariantTypeDeclaration> {
         let views = self.views;
-        self.variants
+        self.variant_keys
             .get_or_insert_with(|| {
                 let unbounded = qsl_foundation::IdentityLimits {
                     input_bytes: u64::MAX,
                 };
                 let mut found = BTreeMap::new();
                 for view in views {
-                    for record in &view.view.domain_package().records {
-                        let crate::model::domain_package::DomainPackageRecord::Enum(declared) =
-                            record
-                        else {
-                            continue;
-                        };
-                        let Ok(Some(node)) = crate::check::variant_type_node_key(record, unbounded)
-                        else {
-                            continue;
-                        };
-                        // `members` ascend by UTF-8 bytes: the canonical
-                        // rank of a case is its position.
-                        let cases: BTreeMap<String, quire_exact::EnumMember> = declared
-                            .members
-                            .iter()
-                            .enumerate()
-                            .filter_map(|(rank, case)| {
-                                let rank = u32::try_from(rank).ok()?;
-                                Some((
-                                    case.clone(),
-                                    quire_exact::EnumMember::new(
-                                        crate::value::enumeration::mint_variant_id(node, case),
-                                        rank,
-                                    ),
-                                ))
-                            })
-                            .collect();
-                        let shape = quire_exact::EnumShape::new(
-                            false,
-                            declared.members.iter().filter_map(|case| {
-                                cases.get(case).map(quire_exact::EnumMember::variant)
-                            }),
-                        );
-                        found
-                            .entry(declared.key.node.clone())
-                            .or_insert(VariantAdmission { shape, cases });
+                    let Ok(declared) =
+                        crate::check::variant_type_declarations(&view.view, "", unbounded)
+                    else {
+                        continue;
+                    };
+                    for (key, declaration) in declared {
+                        found.entry(key.node).or_insert(declaration);
                     }
                 }
                 found
@@ -1228,14 +1191,21 @@ fn admit_variant(
     }
     let Some(declared) = references
         .variant_type(type_identity)
-        .filter(|declared| &declared.shape == slot)
+        .filter(|declared| declared.shape().as_ref() == Some(slot))
     else {
         return Err(refuse("wrong-value-kind"));
     };
     declared
-        .cases
-        .get(case)
-        .map(|member| Value::Enum(*member))
+        .cases()
+        .iter()
+        .enumerate()
+        .find(|(_, declared_case)| declared_case.name() == case)
+        .and_then(|(rank, declared_case)| {
+            Some(Value::Enum(quire_exact::EnumMember::new(
+                declared_case.variant(),
+                u32::try_from(rank).ok()?,
+            )))
+        })
         .ok_or_else(|| refuse("invalid-value"))
 }
 

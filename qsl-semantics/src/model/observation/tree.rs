@@ -323,7 +323,7 @@ pub(super) fn read_raw_value<E>(
                 finished = Some(push(
                     &mut nodes,
                     RawNode::Variant {
-                        identity: type_identity,
+                        type_identity,
                         case,
                         extra_member,
                     },

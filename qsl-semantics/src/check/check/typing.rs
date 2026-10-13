@@ -657,7 +657,7 @@ impl<'a> Typer<'a> {
             ExprNode::Rational(numerator, denominator) => {
                 self.rational_literal(numerator, denominator, hint.as_deref(), &location)?
             }
-            ExprNode::Name(name) => self.name(name, &location)?,
+            ExprNode::Name(name) => self.name(name, hint.as_deref(), &location)?,
             ExprNode::Let { name, value, body } => {
                 return Ok(Self::binding(
                     Branches::Inferred(hint),

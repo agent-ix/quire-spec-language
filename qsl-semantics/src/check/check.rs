@@ -1830,7 +1830,12 @@ impl<'a> Typer<'a> {
         ))
     }
 
-    fn name(&self, name: &str, location: &Location) -> Result<Node, CheckRefusal> {
+    fn name(
+        &self,
+        name: &str,
+        expected: Option<&ValueType>,
+        location: &Location,
+    ) -> Result<Node, CheckRefusal> {
         if let Some(local) = self.local(name) {
             return Ok(node(
                 NodeKind::Local(local.slot),
@@ -1857,7 +1862,7 @@ impl<'a> Typer<'a> {
                     location,
                 ))
             }
-            [] => self.variant_case(name, location),
+            [] => self.variant_case(name, expected, location),
             _ => Err(refuse(
                 location,
                 CheckCause::AmbiguousName {
@@ -1869,9 +1874,15 @@ impl<'a> Typer<'a> {
     }
 
     /// A name no local or enum binds: a case of a variant type (FR-360
-    /// item 4), a case the type does not declare or a bare case name, which
-    /// is no variant value, or a name nothing binds.
-    fn variant_case(&self, name: &str, location: &Location) -> Result<Node, CheckRefusal> {
+    /// item 4), a case the type does not declare, a bare case name where a
+    /// variant value is expected, which is no variant value, or a name nothing
+    /// binds.
+    fn variant_case(
+        &self,
+        name: &str,
+        expected: Option<&ValueType>,
+        location: &Location,
+    ) -> Result<Node, CheckRefusal> {
         if let Some((shape, member)) = self.scope.variant_case_named(name) {
             let rank = u32::try_from(member.position())
                 .expect("an admitted variant type has far fewer than u32::MAX members");
@@ -1889,7 +1900,8 @@ impl<'a> Typer<'a> {
             .is_some_and(|(type_name, _)| self.scope.variant_type_named(type_name).is_some());
         if undeclared_case
             || self.signatures.declares(name)
-            || self.scope.is_variant_case_name(name)
+            || (self.scope.is_variant_case_name(name)
+                && matches!(expected, Some(ValueType::Enum(shape)) if self.scope.is_variant_shape(shape)))
         {
             return Err(mismatch(location));
         }

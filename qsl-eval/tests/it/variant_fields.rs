@@ -426,46 +426,111 @@ fn a_set_orders_cases_by_name_bytes_not_declaration_order() {
         .any(|(member, other)| !same_value(member, other)));
 }
 
-/// FR-360-AC-7: an `Option<Tier>` and a `Sequence<Tier>` compare their cases
-/// by the same rule; a `Sequence` keeps its supply order.
+/// A collection of `kind` over `tier` holding `cases`, formed by the kernel.
+fn formed(kind: CollectionKind, tier: &ValueType, cases: &[&Value]) -> Value {
+    let collection_type = CollectionType::new(kind, tier.clone(), None);
+    quire_exact::form_collection(
+        &collection_type,
+        cases.iter().map(|value| (*value).clone()).collect(),
+        &mut Meter::new(UNLIMITED),
+    )
+    .unwrap()
+    .completed()
+    .unwrap()
+}
+
+/// `left = right` over two parameters of type `value_type`.
+fn equals(package: &CheckedPackage, value_type: &ValueType, left: Value, right: Value) -> bool {
+    let parameters = [("a", value_type.clone()), ("b", value_type.clone())];
+    match evaluate(
+        package,
+        &parameters,
+        vec![left, right],
+        &equal(name("a"), name("b")),
+    ) {
+        Value::Boolean(value) => value,
+        other => panic!("a Boolean, not {other:?}"),
+    }
+}
+
+/// FR-360-AC-7: two `Sequence<Tier>` compare their cases in supply order.
 #[trace("FR-360-AC-7", "TC-1008")]
 #[test]
-fn option_and_sequence_payloads_compare_by_case() {
+fn a_sequence_of_cases_compares_by_case_in_supply_order() {
     let package = package();
     let tier = variant_type(&package, "Config", "Tier");
     let gold = evaluate(&package, &[], Vec::new(), &case("Tier::Gold"));
     let standard = evaluate(&package, &[], Vec::new(), &case("Tier::Standard"));
-    let collection_type = CollectionType::new(CollectionKind::Sequence, tier.clone(), None);
-    let sequence = |cases: &[&Value]| {
-        quire_exact::form_collection(
-            &collection_type,
-            cases.iter().map(|value| (*value).clone()).collect(),
-            &mut Meter::new(UNLIMITED),
-        )
-        .unwrap()
-        .completed()
-        .unwrap()
-    };
-    let sequence_type = ValueType::collection(collection_type.clone());
-    let parameters = [("a", sequence_type.clone()), ("b", sequence_type)];
+    let kind = CollectionKind::Sequence;
+    let sequence_type = ValueType::collection(CollectionType::new(kind, tier.clone(), None));
     for (left, right, expected) in [
-        (
-            sequence(&[&gold, &standard]),
-            sequence(&[&gold, &standard]),
-            true,
-        ),
-        (
-            sequence(&[&gold, &standard]),
-            sequence(&[&standard, &gold]),
-            false,
-        ),
+        (&[&gold, &standard], &[&gold, &standard], true),
+        (&[&gold, &standard], &[&standard, &gold], false),
     ] {
-        let found = evaluate(
-            &package,
-            &parameters,
-            vec![left, right],
-            &equal(name("a"), name("b")),
+        assert_eq!(
+            equals(
+                &package,
+                &sequence_type,
+                formed(kind, &tier, left),
+                formed(kind, &tier, right)
+            ),
+            expected
         );
-        assert!(matches!(found, Value::Boolean(value) if value == expected));
+    }
+}
+
+/// FR-360-AC-7: two `Set<Tier>` are equal exactly when they hold the same
+/// cases, whatever order they were built in.
+#[trace("FR-360-AC-7", "TC-1008")]
+#[test]
+fn a_set_of_cases_compares_by_case_whatever_its_build_order() {
+    let package = package();
+    let tier = variant_type(&package, "Config", "Tier");
+    let gold = evaluate(&package, &[], Vec::new(), &case("Tier::Gold"));
+    let standard = evaluate(&package, &[], Vec::new(), &case("Tier::Standard"));
+    let kind = CollectionKind::Set;
+    let set_type = ValueType::collection(CollectionType::new(kind, tier.clone(), None));
+    for (left, right, expected) in [
+        (&[&gold, &standard][..], &[&standard, &gold][..], true),
+        (&[&gold, &gold, &standard], &[&gold, &standard], true),
+        (&[&gold, &standard], &[&gold], false),
+        (&[&gold], &[&standard], false),
+    ] {
+        assert_eq!(
+            equals(
+                &package,
+                &set_type,
+                formed(kind, &tier, left),
+                formed(kind, &tier, right)
+            ),
+            expected
+        );
+    }
+}
+
+/// FR-360-AC-7: two `Option<Tier>` are equal exactly when both are `none` or
+/// both hold the same case.
+#[trace("FR-360-AC-7", "TC-1008")]
+#[test]
+fn an_option_of_a_case_compares_by_case() {
+    let package = package();
+    let tier = variant_type(&package, "Config", "Tier");
+    let gold = evaluate(&package, &[], Vec::new(), &case("Tier::Gold"));
+    let standard = evaluate(&package, &[], Vec::new(), &case("Tier::Standard"));
+    let option_type = ValueType::option(tier.clone());
+    let held = |value: Option<&Value>| {
+        quire_exact::OptionValue::from_admitted(tier.clone(), value.cloned())
+    };
+    for (left, right, expected) in [
+        (None, None, true),
+        (None, Some(&gold), false),
+        (Some(&gold), None, false),
+        (Some(&gold), Some(&gold), true),
+        (Some(&gold), Some(&standard), false),
+    ] {
+        assert_eq!(
+            equals(&package, &option_type, held(left), held(right)),
+            expected
+        );
     }
 }
