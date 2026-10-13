@@ -36,3 +36,20 @@ Reading the merged FR-102 and FR-302 text against QSpec while checking the PR su
 
 - TC-987 traces FR-302-AC-7, and its expected results match the refusal the code emits.
 - TC-986 and TC-987 stay 🚧 in spec/tests.md, which is consistent with AC-3 and AC-4 being open.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | The rewritten FR-302 note says QSpec FR-151 "does not specify body multiplicity within a unit" and that the rule is "pending a QSpec alignment follow-up tracked as QSL-727". QSpec FR-151 on main now requires at most one `operation-body` per operation identity across all linked source units, which includes within one unit. QSL-727 has landed, so the note is stale and the claim is false. | spec/functional/FR-302-link-dispatch-during-unit-compile.md:88-96 |
+| FND-005 | low | The new FR-102-AC-7 names the target `Config::Sub::resize` and its span `Config::Sub::resize`. The test bound to it builds `Config::ConfigVersion::resize` and asserts segments `Config`, `ConfigVersion`, `resize`, so the criterion's literal oracle and the test disagree. | spec/functional/FR-102-build-state-clause-forms.md:130; qsl-forms/tests/it/protocol_clause_forms.rs:1192-1212 |
+
+## Dispositions
+
+Round 1, reviewed at 8aac7cf6ba714f11ee9bc35f2d4f83f807040f78.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | deferred | QSL-750 (model-profile selection and gating) owns it. The planner accepted the deferral. The FR-102 and FR-302 sentences are accurate: `resolve_profiles` accepts only the root row (`quire.value.complete/v1`) and refuses every other identity `unknown_profile`, so no package can select `quire.model.complete/v1` today, and FR-304-AC-8 and FR-308 likewise have no enforcing code |
+| FND-002 | fixed | 8aac7cf6b: FR-102-AC-7 is added, bound to TC-457 and to the spec/tests.md row. The id is unique across remote branches and open PRs |
+| FND-003 | fixed | 8aac7cf6b: FR-302 now cites QSpec FR-151 as the source of the code and cause. Rewording the same sentence introduced FND-004 |

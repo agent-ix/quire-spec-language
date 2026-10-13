@@ -48,3 +48,18 @@ TC-986 and TC-987 stay 🚧. That is correct: their dispatch-table and evaluatio
 - Stubs: none.
 - Semantic review: performed inline by the reviewer.
 - Plan completion: not assessed
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | low | The deferred parameter-count, parameter-type and body-type check now has a stated home ("when dispatch linking first reads a body"). It has no acceptance criterion in FR-302 and no TC row, and QSL-726 AC-3's text does not name it, so AC-3 could land green without it. It needs an FR-302 AC (arity mismatch and wrong body type refuse, with code and cause) bound to a TC. | spec/functional/FR-302-link-dispatch-during-unit-compile.md:78-81; spec/functional/FR-103-admit-model-operations-and-frames-on-the-spine.md:102-105 |
+
+## Dispositions
+
+Round 1, reviewed at 8aac7cf6ba714f11ee9bc35f2d4f83f807040f78.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | deferred | AC-3 owns it. FR-103 and FR-302 (8aac7cf6b) now say the check runs when dispatch linking first reads a body, before any consumer uses one, and nothing reads bodies yet. The missing AC is tracked as FND-003 |
+| FND-002 | fixed | 8aac7cf6b: new tests cover a 2- and a 4-segment target, an undeclared `using` alias, an unknown target type, a variant-type target (variant_type.rs) and an ambiguous diamond-inherited operation. Each pins the exact cause |

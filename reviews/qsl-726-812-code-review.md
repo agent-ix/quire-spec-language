@@ -48,3 +48,15 @@ The following were judged against the AC and recorded as clean:
 - `body` was not entered into the clause/function namespace. FR-104 scopes that namespace to clauses and functions, FR-102 says the label is local, and FR-109 is silent.
 - A target with other than three segments refuses as `UnresolvedTypeName` (`missing_declaration`/`missing-name`). That is consistent with FR-104's name-resolution refusals and FR-302's missing-operation rule.
 - The new `ModelType` refusal on the pre/post clause path is reachable only when an assembler invariant breaks (`runtime_invariant`, as `ModelType` already is). The root and crate suites show no regression.
+
+## Dispositions
+
+Round 1, reviewed at 8aac7cf6ba714f11ee9bc35f2d4f83f807040f78.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 8aac7cf6b: `StateClauseDeclaration::operation_key: Option<DeclarationKey>` replaces the index map; `unit_clauses_for` filters on it; both constructors (assemble.rs, qsl-eval dispatch_calls.rs) are updated |
+| FND-002 | fixed | 8aac7cf6b: `if bodies.is_empty() { continue; }`. Only models a body resolved into get a rebuilt view, and the comment now matches the code |
+| FND-003 | fixed | 8aac7cf6b: the `AdmittedModel` rebuild is removed, so `selected_views` is the single holder. The no-body test asserts `selected_views.is_empty()`. No current reader takes `has_body` from `AdmittedModel` records or qsl-package emission; the only reader is model/dispatch.rs over the view index |
+| FND-004 | fixed | 8aac7cf6b: both forms tests are retagged `TC-457`/`FR-102-AC-7` |
+| FND-005 | fixed | 8aac7cf6b: the doc comment states that `conflicting_declaration` has no QSpec catalog row yet |

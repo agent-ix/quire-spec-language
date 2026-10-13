@@ -89,11 +89,11 @@ This reuses the duplicate-declaration diagnostic for repeated same-name
 declarations in [FR-246](FR-246-check-task-sets-and-schedulability-claims.md)
 and the at-most-one declaration rule in
 [FR-211](FR-211-declare-a-protocol-s-intended-terminal-states-and-report-its-deadlocks.md);
-QSpec FR-151 is the QSpec source of this code and cause. It specifies that
-an `operation-body` supplies a body but does not specify body multiplicity
-within a unit; this QSL rule settles the QSL compile outcome pending a
-QSpec alignment follow-up tracked as QSL-727. This note points to that
-follow-up without restating its QSpec normative text.
+QSpec FR-151 requires the same outcome: across all source units linked into
+one package, at most one `operation-body` declaration resolves to a given
+operation identity, and a second is refused as
+`conflicting_declaration`/`duplicate-declaration`. A single unit is the
+one-unit case of that rule.
 
 ### A failed link refuses the compile
 
@@ -125,6 +125,7 @@ caller's value, with the published default of
 | FR-302-AC-5 | A unit whose called family has `n` `redefines` edges compiles with `family_steps = n` and, with `family_steps = n - 1`, refuses at S3 with the resource-exhaustion cause `family-steps` naming `family_steps`, the value `n - 1` and the limits field that raises it. | Test (TC-795) |
 | FR-302-AC-6 | A unit whose precondition makes a dispatched call on an operation redefined at `A` and at `B` (`B` a subtype of `A`) compiles; evaluating the precondition with a receiver whose most-specific type is `B` runs `B`'s body, and with a receiver of type `A` runs `A`'s body. | Test (TC-809) |
 | FR-302-AC-7 | A single body for each of `A.size` and `B.size` joins with retained expressions and unit pre/post clauses to admitted operations by resolved `DeclarationKey`, independent of body labels and declaration order; `has_body` is true for those resolved operations and false for an operation without a body, whose called family is not applicable under FR-151. Two body forms resolving to the same `DeclarationKey` refuse as `conflicting_declaration`/`duplicate-declaration`, naming both forms and producing no checked package or partial table. TC-986 is the single-body control; TC-987 covers the duplicate. | Test |
+| FR-302-AC-8 | A body whose parameter count differs from its operation's signature, and a body whose type does not match its operation's declared result, each refuse at S3 when dispatch linking first reads the body, with no checked package or partial dispatch table. FR-103 names no code or cause for the count mismatch; the AC-3 slice settles it in this spec before implementing the check. | Test (TC-1011) |
 
 ## Dependencies
 
