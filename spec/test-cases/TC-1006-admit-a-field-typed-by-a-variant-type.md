@@ -14,15 +14,15 @@ Verify admission, export shape and assembler mapping of a member typed by a vari
 
 ## Test Procedure
 
-1. Admit a package with variant type `Tier`, object `Account.tier: Tier`, record `Settings.tier: Tier`, an optional `Account.maybe` and an ordered non-unique `[0, 3]` `Account.many`, each typed `Tier`, and an event whose occurrence field is `Tier`; repeat with a non-occurrence event field.
+1. Admit a package with variant type `Tier`, object `Account.tier: Tier`, record `Settings.tier: Tier`, an optional `Account.maybe` and an ordered non-unique `[0, 3]` `Account.many`, each typed `Tier`, a state machine context field and a process field typed `Tier`, and an event whose occurrence field is `Tier`; repeat with a non-occurrence event field.
 2. Compare `Tier`'s `enum` and `variant` exports with the same package without those members.
 3. Assemble units that select the package as `Config` and as `Cfg`; read the type of each member and the key of `Config::Tier` and its cases.
 4. Admit a field naming a case-less variant type, then fields naming an event type, state machine, process, persistence interface and namespace.
 
 ## Expected Results
 
-- Step 1 admits every member with one `field` export each and no `reference` export; the occurrence-field case refuses `invalid_model_binding`/`malformed-declaration` at `TypeDefinition.occurrenceField` and the other is admitted.
+- Step 1 admits every member with one `field` export each and no `reference` export; the occurrence-field case refuses `invalid_model_binding`/`malformed-declaration` at the event type node, path `TypeDefinition.occurrenceField`, and the other is admitted.
 - Step 2 finds the exports equal.
-- Step 3 types the members `Config::Tier`, `Option<Config::Tier>` and `Sequence<Config::Tier>[0, 3]`, never a `Reference`; the keys equal the view's effective identities and are equal under both aliases.
+- Step 3 types the members `Config::Tier`, `Option<Config::Tier>` and `Sequence<Config::Tier>[0, 3]`, never a `Reference`; each type and case holds the view's effective identity and the checked node key, equal under both aliases.
 - Step 4 refuses once at the case-less variant type, path `TypeDefinition.variants`, with no refusal at the field, and refuses each other meaning at the field, path `Field.typeRef`.
 - Assertions compare typed codes, causes, keys and paths.
