@@ -1132,9 +1132,14 @@ fn input_bytes_exceeded(bound: u64, actual: u128) -> AdmissionFailure {
 /// `resource_exhausted` with its `cause`, carrying FR-255 Behavior 1's
 /// record from [`BudgetDenial::catalog_fields`].
 fn caller_budget_refusal(denial: &BudgetDenial, cause: &'static str) -> AdmissionFailure {
+    refuse(caller_budget_record(denial, cause))
+}
+
+/// [`caller_budget_refusal`]'s record.
+fn caller_budget_record(denial: &BudgetDenial, cause: &'static str) -> AdmissionRecord {
     let mut record = AdmissionRecord::new(Code::ResourceExhausted, cause);
     record.fields.extend(denial.catalog_fields());
-    refuse(record)
+    record
 }
 
 /// `limit` as an admission refusal: `stage_limit_exceeded` with the limit's
@@ -1562,6 +1567,7 @@ pub fn admit_observations(
                 PreCallInput {
                     call: None,
                     receiver_invocation: None,
+                    invocation: None,
                     invocation_usage: AdmissionUsage::default(),
                     pre: read,
                     self_object,
@@ -1583,7 +1589,7 @@ pub fn admit_observations(
                 provisions,
                 invocation,
                 limits,
-                model_limits.ancestor_steps,
+                model_limits,
             ),
             // Check 2 above refused an invariant's `Invocation` selection.
             StateClauseKind::Invariant => Err(fault("invariant-selected-by-invocation")),
@@ -1886,8 +1892,18 @@ fn admit_invocation_documents(
     check_model(context_view, &pre_snapshot.model)?;
     check_model(context_view, &post_snapshot.model)?;
 
-    // Check 5: operation.
+    // Check 5: operation, then the invocation each snapshot names.
     check_operation(&invocation.call, context_name, operation)?;
+    document::check_snapshot_invocation(
+        pre_snapshot,
+        &documents.pre.identity,
+        &documents.invocation.identity,
+    )?;
+    document::check_snapshot_invocation(
+        post_snapshot,
+        &documents.post.identity,
+        &documents.invocation.identity,
+    )?;
 
     // Checks 6 to 8: pre's own check 6, then post's, then pre's check 7,
     // then post's, then pre's check 8, then post's -- never fully
@@ -2081,6 +2097,8 @@ fn check_operation(
 struct PreCallInput<'a> {
     call: Option<&'a document::InvocationCall>,
     receiver_invocation: Option<&'a DocumentRef>,
+    /// The selected invocation's own identity, when one is selected.
+    invocation: Option<&'a DocumentRef>,
     invocation_usage: AdmissionUsage,
     pre: document::ReadDocument,
     self_object: &'a SelectedObject,
@@ -2119,6 +2137,7 @@ fn admit_pre_call_invocation(
         PreCallInput {
             call: Some(call),
             receiver_invocation: Some(selected),
+            invocation: Some(&invocation_read.identity),
             invocation_usage: invocation_read.usage,
             pre: pre_read,
             self_object: &call.self_object,
@@ -2159,6 +2178,9 @@ fn admit_pre_call(
     // Check 5: operation.
     if let Some(call) = call {
         check_operation(call, context.context_name, context.operation)?;
+    }
+    if let Some(invocation) = input.invocation {
+        document::check_snapshot_invocation(snapshot, &input.pre.identity, invocation)?;
     }
 
     // Checks 6 to 8, with every declared population a reference parameter
@@ -2268,7 +2290,7 @@ fn admit_operation(
     provisions: &Provisions<'_>,
     selected: &DocumentRef,
     limits: ObservationLimits,
-    ancestor_steps: u64,
+    model_limits: ModelNormalizationLimits,
 ) -> Result<AdmittedObservations, AdmissionFailure> {
     let operation = operation.ok_or_else(|| fault("clause-declares-no-operation"))?;
     let admitted = admit_invocation_documents(
@@ -2281,7 +2303,7 @@ fn admit_operation(
         provisions,
         selected,
         limits,
-        ancestor_steps,
+        model_limits.ancestor_steps,
     )?;
     let invocation = admitted.documents.invocation()?;
 
@@ -2290,11 +2312,13 @@ fn admit_operation(
         views,
         types,
         context_view,
-        ancestor_steps,
+        limits: model_limits,
         effect: operation.declaration.effect(),
     };
+    let binding = frame_binding(invocation);
     let (created, deleted) = frame::enforce(
         &frame_context,
+        &binding,
         &admitted.documents.pre()?.populations,
         &admitted.documents.post()?.populations,
         &invocation.created,
@@ -2363,7 +2387,7 @@ pub struct AdmittedInvocation<'t> {
     views: Vec<ModelView>,
     types: &'t TypeEnvironment,
     context: EffectiveId,
-    ancestor_steps: u64,
+    model_limits: ModelNormalizationLimits,
     documents: InvocationDocuments,
 }
 
@@ -2379,6 +2403,23 @@ impl std::fmt::Debug for AdmittedInvocation<'_> {
     }
 }
 
+/// The receiver and the reference arguments of `invocation`, which the
+/// frame's receiver-scoped and argument-scoped entries ground in (FR-013).
+fn frame_binding(invocation: &document::InvocationDocument) -> frame::FrameBinding<'_> {
+    let call = &invocation.call;
+    frame::FrameBinding {
+        receiver: &call.self_object,
+        arguments: call
+            .parameters
+            .iter()
+            .filter_map(|(name, value)| match value.form() {
+                RawForm::Reference(object) => Some((name.clone(), object)),
+                _ => None,
+            })
+            .collect(),
+    }
+}
+
 /// FR-115: check 11's result as the thing under test.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum FrameVerdict {
@@ -2388,8 +2429,10 @@ pub enum FrameVerdict {
     Violation(Box<FrameWitness>),
     /// The frame cannot be evaluated over the invocation: check 11's step 4
     /// found a declared delta that disagrees
-    /// (`population_delta_mismatch`/`delta-disagreement`), or the
-    /// conformance walk reached its ceiling.
+    /// (`population_delta_mismatch`/`delta-disagreement`), the
+    /// conformance walk reached its ceiling, or a `frame.write` or
+    /// `frame.redefines-link` charge was denied (`resource_exhausted`/
+    /// `insufficient-next-charge`).
     Refused(AdmissionRecord),
 }
 
@@ -2476,11 +2519,13 @@ impl AdmittedInvocation<'_> {
             views: &self.views,
             types: self.types,
             context_view,
-            ancestor_steps: self.ancestor_steps,
+            limits: self.model_limits,
             effect,
         };
+        let binding = frame_binding(invocation);
         frame::verdict(
             &frame_context,
+            &binding,
             &frame::WitnessDocuments {
                 invocation: &self.invocation,
                 pre: &self.pre,
@@ -2539,7 +2584,7 @@ pub fn admit_frame_invocation<'t>(
         views,
         types,
         context: frame.context,
-        ancestor_steps: model_limits.ancestor_steps,
+        model_limits,
         documents: admitted.documents,
     })
 }

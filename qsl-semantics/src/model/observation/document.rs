@@ -106,8 +106,50 @@ pub(super) enum ObservationRole {
 pub(super) struct SnapshotDocument {
     pub(super) observation: ObservationRole,
     pub(super) anchor: Option<DocAnchor>,
+    /// The invocation this snapshot says it observes, when it names one.
+    pub(super) invocation: Option<InvocationLabels>,
     pub(super) model: ModelHeader,
     pub(super) populations: Vec<RawPopulation>,
+}
+
+/// The four FR-001 labels of an invocation document's own `identity`: how
+/// a snapshot names the invocation it observes. No digest: the
+/// invocation's digest covers its `pre` and `post` references, whose
+/// digests cover these snapshots.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct InvocationLabels {
+    authority: String,
+    identity: String,
+    revision_namespace: String,
+    revision: String,
+}
+
+impl InvocationLabels {
+    fn names(&self, invocation: &DocumentRef) -> bool {
+        self.authority == invocation.authority
+            && self.identity == invocation.identity
+            && self.revision_namespace == invocation.revision_namespace
+            && self.revision == invocation.revision
+    }
+}
+
+/// FR-106 check 5: a snapshot that names an invocation names the selected
+/// invocation's own identity. A snapshot that names none is unbound.
+pub(super) fn check_snapshot_invocation(
+    snapshot: &SnapshotDocument,
+    snapshot_identity: &DocumentRef,
+    invocation: &DocumentRef,
+) -> Result<(), AdmissionFailure> {
+    match &snapshot.invocation {
+        Some(named) if !named.names(invocation) => Err(refuse(
+            admission_record(Code::WrongSnapshot, "wrong-invocation")
+                .with("document", snapshot_identity.identity.clone())
+                .with("field", "invocation")
+                .with("required", invocation.identity.clone())
+                .with("actual", named.identity.clone()),
+        )),
+        Some(_) | None => Ok(()),
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -139,7 +181,7 @@ pub(super) struct InvocationDocument {
 }
 
 enum Body {
-    Snapshot(SnapshotDocument),
+    Snapshot(Box<SnapshotDocument>),
     Invocation(Box<InvocationDocument>),
     InvocationCall(Box<InvocationCall>),
 }
@@ -155,7 +197,7 @@ pub(super) struct ReadDocument {
 impl ReadDocument {
     pub(super) fn as_snapshot(&self) -> Option<&SnapshotDocument> {
         match &self.body {
-            Body::Snapshot(snapshot) => Some(snapshot),
+            Body::Snapshot(snapshot) => Some(snapshot.as_ref()),
             Body::Invocation(_) | Body::InvocationCall(_) => None,
         }
     }
@@ -297,6 +339,7 @@ pub(super) fn read_document(
             "identity",
             "observation",
             "anchor",
+            "invocation",
             "model",
             "populations",
         ],
@@ -357,7 +400,9 @@ pub(super) fn read_document(
     let model = read_model(object)?;
 
     let body = match kind {
-        DocumentKind::Snapshot => Body::Snapshot(read_snapshot_body(object, model, &mut meter)?),
+        DocumentKind::Snapshot => {
+            Body::Snapshot(Box::new(read_snapshot_body(object, model, &mut meter)?))
+        }
         DocumentKind::Invocation => {
             Body::Invocation(Box::new(read_invocation_body(object, model, &mut meter)?))
         }
@@ -569,12 +614,36 @@ fn read_snapshot_body(
         }
         None => None,
     };
+    let invocation = match object.member("invocation") {
+        Some(value) => Some(read_invocation_labels(value)?),
+        None => None,
+    };
     let populations = read_populations(object, meter)?;
     Ok(SnapshotDocument {
         observation,
         anchor,
+        invocation,
         model,
         populations,
+    })
+}
+
+/// Reads a snapshot's `invocation` member: the invocation's four identity
+/// labels.
+fn read_invocation_labels(value: Json<'_>) -> Result<InvocationLabels, AdmissionFailure> {
+    let object = value.as_object().ok_or_else(|| wrong_kind("invocation"))?;
+    let label = |name: &'static str| {
+        object
+            .member(name)
+            .and_then(|value| value.as_str())
+            .map(str::to_owned)
+            .ok_or_else(|| missing_member("invocation"))
+    };
+    Ok(InvocationLabels {
+        authority: label("authority")?,
+        identity: label("identity")?,
+        revision_namespace: label("revision_namespace")?,
+        revision: label("revision")?,
     })
 }
 

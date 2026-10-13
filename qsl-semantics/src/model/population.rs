@@ -92,7 +92,8 @@
 //!   conform to a declared `creates`/`deletes` grant, and every changed
 //!   field on a surviving object must be a declared `modifies` member
 //!   (directly, or reaching one through a member's own `redefines` property
-//!   — FR-151's own effect-inclusion rule). A field's declared collection kind
+//!   — FR-151's own effect-inclusion rule, each changed field charged as
+//!   `frame.write` and each link followed as `frame.redefines-link`). A field's declared collection kind
 //!   (`Multiplicity::ordered`) decides whether its pre/post values compare
 //!   by exact sequence or by order-insensitive multiset, so re-serializing
 //!   an unordered field in a different order is never itself a write. An
@@ -315,17 +316,30 @@ pub enum AdmissionChargePoint {
     BindingMember,
     /// `binding.subset-value`; see the module docs.
     BindingSubsetValue,
+    /// `frame.write` (FR-013): one per changed field, before the write is
+    /// tested against the frame's `modifies` entries.
+    FrameWrite,
+    /// `frame.redefines-link` (FR-013): one before each `redefines` link
+    /// followed from a written member.
+    FrameRedefinesLink,
 }
 
 impl AdmissionChargePoint {
     /// Every named point this schedule defines.
-    pub const ALL: [Self; 2] = [Self::BindingMember, Self::BindingSubsetValue];
+    pub const ALL: [Self; 4] = [
+        Self::BindingMember,
+        Self::BindingSubsetValue,
+        Self::FrameWrite,
+        Self::FrameRedefinesLink,
+    ];
 
     /// Normative identifier.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::BindingMember => "binding.member",
             Self::BindingSubsetValue => "binding.subset-value",
+            Self::FrameWrite => "frame.write",
+            Self::FrameRedefinesLink => "frame.redefines-link",
         }
     }
 }
@@ -1661,13 +1675,12 @@ pub struct InvocationDelta<'a> {
 /// against its own meter (rather than inventing an unspecified combined
 /// schedule) is the conservative reading.
 ///
-/// Deciding created/deleted-identity, field-write frame membership and delta
-/// agreement is, like the object/subtype-closure and `modelIdentity` checks
-/// [`admit_binding`] already makes, a structural admission decision over
-/// already-charged data, not itself a new charge point: neither FR-151's nor
-/// FR-153's model module defines one, and the two admitted bindings' own
-/// `binding.member`/`binding.subset-value` charges already measured the data
-/// this check reads.
+/// Deciding created/deleted-identity and delta agreement is, like the
+/// object/subtype-closure and `modelIdentity` checks [`admit_binding`]
+/// already makes, a structural decision over already-charged data. A field
+/// write is not: FR-013 charges one `frame.write` for each changed field and
+/// one `frame.redefines-link` before each `redefines` link followed from it,
+/// to a frame meter of its own (see [`admit_invocation_bound`]).
 ///
 /// # Native duplication
 ///
@@ -1695,6 +1708,54 @@ pub fn admit_invocation(
     pre_meter: &mut AdmissionMeter,
     post_meter: &mut AdmissionMeter,
 ) -> AdmissionOutcome {
+    let mut frame_meter = AdmissionMeter::new(*post_meter.limits());
+    admit_invocation_bound(
+        context,
+        pre_document,
+        post_document,
+        declared,
+        &InvocationBinding::default(),
+        pre_meter,
+        post_meter,
+        &mut frame_meter,
+    )
+}
+
+/// Who the invocation's receiver and reference arguments are, for the
+/// frame's receiver-scoped and argument-scoped entries (FR-013): `self`
+/// and `deletes p` ground in these objects, and a frame that names neither
+/// reads none of it.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct InvocationBinding<'a> {
+    /// The invocation's receiver, by object identity in the admitted
+    /// population.
+    pub receiver: Option<&'a str>,
+    /// Each reference parameter's bound argument, as `(parameter name,
+    /// object identity)`.
+    pub arguments: &'a [(String, String)],
+}
+
+/// [`admit_invocation`] with the invocation's receiver and reference
+/// arguments: a `modifies self.f` entry grants the write to `f` on
+/// `binding.receiver` only, `deletes self` the deletion of the receiver
+/// only, and `deletes p` the deletion of the argument bound to `p` only.
+///
+/// The frame check charges `frame_meter`, a meter of its own beside
+/// `pre_meter` and `post_meter`, so its `frame.write` and
+/// `frame.redefines-link` charges are counted on their own and never against
+/// the members the two admissions charged. A denied charge ends the check
+/// with [`AdmissionOutcome::Incomplete`] and no frame verdict.
+#[allow(clippy::too_many_arguments)]
+pub fn admit_invocation_bound(
+    context: InvocationContext<'_>,
+    pre_document: &PopulationDocument,
+    post_document: &PopulationDocument,
+    declared: &InvocationDelta<'_>,
+    binding: &InvocationBinding<'_>,
+    pre_meter: &mut AdmissionMeter,
+    post_meter: &mut AdmissionMeter,
+    frame_meter: &mut AdmissionMeter,
+) -> AdmissionOutcome {
     let pre = match admit_binding_as(context, pre_document, AdmissionRole::Pre, pre_meter) {
         AdmissionOutcome::Admitted(binding) => binding,
         other => return other,
@@ -1708,9 +1769,17 @@ pub fn admit_invocation(
         AdmissionOutcome::Admitted(binding) => binding,
         other => return other,
     };
-    match enforce_frame(&pre, pre_document, post_document, declared) {
+    match enforce_frame(
+        &pre,
+        pre_document,
+        post_document,
+        declared,
+        binding,
+        frame_meter,
+    ) {
         Ok(()) => AdmissionOutcome::Admitted(post.with_pre_anchor(pre)),
-        Err(refusal) => AdmissionOutcome::Refused(refusal),
+        Err(FrameStop::Refused(refusal)) => AdmissionOutcome::Refused(refusal),
+        Err(FrameStop::Denied(incomplete)) => AdmissionOutcome::Incomplete(incomplete),
     }
 }
 
@@ -1772,23 +1841,6 @@ fn field_values_equal(
     pre == post
 }
 
-/// Whether `field` (the field a runtime population document names on some
-/// member) is covered by `effect.modifies`, directly or because it reaches
-/// one through a chain of members' own `redefines` properties -- FR-151's
-/// own effect-inclusion rule (`quire.model.conformance.effect/v1`), applied here to one
-/// operation's own declared writes rather than to a redefining operation's
-/// writes against its redefined ancestor's. Walks the full chain
-/// ([`ModelIndex::redefinition_reaches`]), not just one hop:
-/// `modifies: [model.A.x]` covers a write to `model.C.x` through
-/// `model.C.x -> model.B.x -> model.A.x`.
-fn field_write_covered(
-    index: &ModelIndex,
-    effect: &OperationEffect,
-    field: &DeclarationKey,
-) -> bool {
-    index.redefinition_reaches(field, |candidate| effect.modifies.contains(candidate))
-}
-
 /// One object as [`decide_frame`] reads it: its declared identity, its
 /// most-specific type, and its declared field values keyed by the field's
 /// own [`DeclarationKey`]. `V` is the caller's own field-value form (a
@@ -1818,6 +1870,38 @@ pub(crate) struct FrameDecision<'e> {
     pub(crate) declared_created: &'e [String],
     /// The invocation's own declared deleted identities.
     pub(crate) declared_deleted: &'e [String],
+    /// The identity, in this population, of the invocation's receiver, when
+    /// the receiver is in this population. A receiver-scoped entry grants
+    /// nothing without one.
+    pub(crate) receiver: Option<&'e str>,
+    /// The identity, in this population, of the object each reference
+    /// parameter is bound to, as `(parameter name, object)`.
+    pub(crate) arguments: &'e [(String, String)],
+}
+
+/// One charge FR-013 makes while it decides a field write.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum FrameCharge {
+    /// `frame.write`.
+    Write,
+    /// `frame.redefines-link`.
+    RedefinesLink,
+}
+
+/// Why [`decide_frame`] stopped: a finding about the invocation, or a
+/// denied charge (`E` is the caller's own incomplete record).
+#[derive(Debug)]
+pub(crate) enum FrameStop<E> {
+    /// A refusal or violation.
+    Refused(ModelRefusal),
+    /// The first charge the caller's meter denied.
+    Denied(E),
+}
+
+impl<E> From<ModelRefusal> for FrameStop<E> {
+    fn from(refusal: ModelRefusal) -> Self {
+        Self::Refused(refusal)
+    }
 }
 
 /// [`decide_frame`]'s result: the computed created and deleted identities.
@@ -1848,6 +1932,29 @@ fn granted(
     Ok(false)
 }
 
+/// Whether `frame` permits deleting `object`, of most-specific type
+/// `type_identity`: its type conforms to a type-wide `deletes` entry, or it
+/// is the receiver under `deletes self`, or it is the argument bound to `p`
+/// under `deletes p`.
+fn delete_granted(
+    frame: &FrameDecision<'_>,
+    object: &str,
+    type_identity: &DeclarationKey,
+) -> Result<bool, ModelRefusal> {
+    let effect = frame.effect;
+    if effect.deletes_receiver && frame.receiver == Some(object) {
+        return Ok(true);
+    }
+    if frame
+        .arguments
+        .iter()
+        .any(|(name, bound)| bound == object && effect.deletes_arguments.contains(name))
+    {
+        return Ok(true);
+    }
+    granted(frame, &effect.deletes, type_identity)
+}
+
 /// The one frame and delta decision (FR-046/FR-151, FR-106 check 11) over
 /// one population's `pre` and `post` objects, both in document order. Both
 /// [`enforce_frame`] and FR-106 admission (`model::observation::frame`)
@@ -1863,11 +1970,21 @@ fn granted(
 /// 2. `pre`'s objects absent from `post`, ascending identity order, whose
 ///    type conforms to no `deletes` grant
 ///    ([`ModelRefusalCause::FrameDeleteOutsideGrant`]).
-/// 3. surviving objects in `pre` document order, fields in ascending
+/// 3. surviving objects in ascending identity order, fields in ascending
 ///    [`DeclarationKey`] order: a changed field (`values_equal` false) that
 ///    reaches no `modifies` entry through its `redefines` chain
-///    ([`ModelRefusalCause::FrameFieldWriteOutsideGrant`]).
+///    ([`ModelRefusalCause::FrameFieldWriteOutsideGrant`]). An every-object
+///    entry grants the write on any object, a receiver-scoped entry only on
+///    `frame.receiver`. Each changed field charges `charge(Write)` first,
+///    then `charge(RedefinesLink)` before each `redefines` link followed
+///    from it, stopping at the first member an entry names; the first
+///    charge `charge` denies ends the decision as [`FrameStop::Denied`]
+///    with no verdict.
 /// 4. the declared delta against the computed one ([`check_declared_delta`]).
+///
+/// A deletion (step 2) is granted by a type-wide entry the object's type
+/// conforms to, by `deletes self` for the receiver, or by `deletes p` for
+/// the argument bound to `p`.
 ///
 /// Created/deleted classification is by *object identity* alone, never by
 /// type: an object present under the same identity in both `pre` and `post`
@@ -1875,12 +1992,13 @@ fn granted(
 /// one -- FR-151's effect vocabulary grants `modifies`, `creates` and
 /// `deletes` only, and FR-143 treats the most-specific type as part of a
 /// reference's identity, never a mutable attribute.
-pub(crate) fn decide_frame<V>(
+pub(crate) fn decide_frame<V, E>(
     frame: &FrameDecision<'_>,
     pre: &[FrameObject<'_, V>],
     post: &[FrameObject<'_, V>],
     values_equal: impl Fn(&DeclarationKey, Option<&V>, Option<&V>) -> bool,
-) -> Result<FrameDelta, ModelRefusal> {
+    charge: &mut impl FnMut(FrameCharge) -> Result<(), E>,
+) -> Result<FrameDelta, FrameStop<E>> {
     let pre_by_object: BTreeMap<&str, &FrameObject<'_, V>> =
         pre.iter().map(|object| (object.object, object)).collect();
     let post_by_object: BTreeMap<&str, &FrameObject<'_, V>> =
@@ -1901,7 +2019,8 @@ pub(crate) fn decide_frame<V>(
                          declared creates frame",
                         post_type.node
                     ),
-                ));
+                )
+                .into());
             }
             delta.created.insert((*object).to_owned());
             continue;
@@ -1920,7 +2039,8 @@ pub(crate) fn decide_frame<V>(
                      effect grants cover modifies/creates/deletes only)",
                     pre_type.node, post_type.node
                 ),
-            ));
+            )
+            .into());
         }
     }
 
@@ -1929,7 +2049,7 @@ pub(crate) fn decide_frame<V>(
             continue; // Survivor or retype; already decided above.
         }
         let pre_type = &pre_object.type_identity;
-        if !granted(frame, &frame.effect.deletes, pre_type)? {
+        if !delete_granted(frame, object, pre_type)? {
             return Err(frame_violation(
                 ModelRefusalCause::FrameDeleteOutsideGrant {
                     object: (*object).to_owned(),
@@ -1940,15 +2060,17 @@ pub(crate) fn decide_frame<V>(
                      declared deletes frame",
                     pre_type.node
                 ),
-            ));
+            )
+            .into());
         }
         delta.deleted.insert((*object).to_owned());
     }
 
-    for pre_object in pre {
+    for pre_object in pre_by_object.values() {
         let Some(post_object) = post_by_object.get(pre_object.object) else {
             continue; // Deleted; already decided above.
         };
+        let is_receiver = frame.receiver == Some(pre_object.object);
         let fields: BTreeSet<&DeclarationKey> = pre_object
             .fields
             .keys()
@@ -1962,7 +2084,19 @@ pub(crate) fn decide_frame<V>(
             ) {
                 continue;
             }
-            if field_write_covered(frame.index, frame.effect, field) {
+            charge(FrameCharge::Write).map_err(FrameStop::Denied)?;
+            let covered = frame
+                .index
+                .redefinition_walk(
+                    field,
+                    |candidate| {
+                        frame.effect.modifies.contains(candidate)
+                            || (is_receiver && frame.effect.receiver_modifies.contains(candidate))
+                    },
+                    || charge(FrameCharge::RedefinesLink),
+                )
+                .map_err(FrameStop::Denied)?;
+            if covered {
                 continue;
             }
             return Err(frame_violation(
@@ -1975,7 +2109,8 @@ pub(crate) fn decide_frame<V>(
                      modifies frame",
                     pre_object.object, field.node
                 ),
-            ));
+            )
+            .into());
         }
     }
 
@@ -1992,7 +2127,9 @@ fn enforce_frame(
     pre_document: &PopulationDocument,
     post_document: &PopulationDocument,
     declared: &InvocationDelta<'_>,
-) -> Result<(), ModelRefusal> {
+    binding: &InvocationBinding<'_>,
+    meter: &mut AdmissionMeter,
+) -> Result<(), FrameStop<AdmissionIncomplete>> {
     let index = &*pre.index;
     let frame = FrameDecision {
         index,
@@ -2000,6 +2137,8 @@ fn enforce_frame(
         effect: declared.effect,
         declared_created: declared.declared_created,
         declared_deleted: declared.declared_deleted,
+        receiver: binding.receiver,
+        arguments: binding.arguments,
     };
     decide_frame(
         &frame,
@@ -2012,6 +2151,13 @@ fn enforce_frame(
                 pre_values.copied().unwrap_or(&[]),
                 post_values.copied().unwrap_or(&[]),
             )
+        },
+        &mut |charge| {
+            let point = match charge {
+                FrameCharge::Write => AdmissionChargePoint::FrameWrite,
+                FrameCharge::RedefinesLink => AdmissionChargePoint::FrameRedefinesLink,
+            };
+            meter.charge(AdmissionCharge::new(point))
         },
     )
     .map(|_| ())

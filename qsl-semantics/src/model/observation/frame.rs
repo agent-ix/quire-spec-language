@@ -20,13 +20,17 @@ use quire_exact::{EffectiveId, ObjectReference};
 use super::document::{find_declaration, raw_field, RawObject, RawPopulation};
 use super::helpers::object_reference;
 use super::{
-    fault, refuse, view_of, AdmissionFailure, AdmissionRecord, DocumentRef, FrameChange,
-    FrameVerdict, FrameWitness, ModelView, SelectedObject, SnapshotValue,
+    caller_budget_record, fault, refuse, view_of, AdmissionFailure, AdmissionRecord, DocumentRef,
+    FrameChange, FrameVerdict, FrameWitness, ModelView, SelectedObject, SnapshotValue,
+    INSUFFICIENT_NEXT_CHARGE,
 };
+use crate::model::accounting::{Charge, ChargePoint, Incomplete, Meter, ModelNormalizationLimits};
 use crate::model::domain_package::OperationEffect;
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
-use crate::model::population::{decide_frame, FrameDecision, FrameObject};
+use crate::model::population::{
+    decide_frame, FrameCharge, FrameDecision, FrameObject, FrameStop as DecisionStop,
+};
 use qsl_foundation::diagnostic::{Code, InternalFault};
 use quire_semantic_value::declaration::TypeEnvironment;
 
@@ -39,10 +43,37 @@ pub(super) struct FrameContext<'a> {
     pub(super) types: &'a TypeEnvironment,
     /// The view the clause's context type and operation resolve in.
     pub(super) context_view: &'a ModelView,
-    /// The conformance walk's `ancestor_steps` ceiling.
-    pub(super) ancestor_steps: u64,
+    /// The model limits: the conformance walk's `ancestor_steps` ceiling and
+    /// the `work_units` the frame's own charges are counted against.
+    pub(super) limits: ModelNormalizationLimits,
     /// The operation's authored frame.
     pub(super) effect: &'a OperationEffect,
+}
+
+/// Who the invocation's receiver and reference arguments are (FR-013): what
+/// the frame's receiver-scoped and argument-scoped entries ground in.
+pub(super) struct FrameBinding<'a> {
+    /// The invocation's `self`.
+    pub(super) receiver: &'a SelectedObject,
+    /// Each reference parameter's bound object, by parameter name.
+    pub(super) arguments: Vec<(String, &'a SelectedObject)>,
+}
+
+impl FrameBinding<'_> {
+    /// The receiver's identity when it is in population `name`.
+    fn receiver_in(&self, name: &str) -> Option<&str> {
+        (self.receiver.population == name).then_some(self.receiver.key.as_str())
+    }
+
+    /// `(parameter, object)` for each argument bound to an object of
+    /// population `name`.
+    fn arguments_in(&self, name: &str) -> Vec<(String, String)> {
+        self.arguments
+            .iter()
+            .filter(|(_, object)| object.population == name)
+            .map(|(parameter, object)| (parameter.clone(), object.key.clone()))
+            .collect()
+    }
 }
 
 /// What this module keeps about one wire object beside its
@@ -178,6 +209,8 @@ enum FrameStop<'a> {
     Admission(AdmissionFailure),
     /// [`decide_frame`]'s first finding.
     Decision(Box<Decision<'a>>),
+    /// A `frame.write` or `frame.redefines-link` charge the meter denied.
+    Denied(Incomplete),
 }
 
 /// [`decide_frame`]'s first finding, in `population`, with the pre side it
@@ -205,6 +238,7 @@ type AdmittedDelta = (Vec<ObjectReference>, Vec<ObjectReference>);
 /// from one side is an empty document there. Stops at the first finding.
 fn run<'a>(
     context: &FrameContext<'a>,
+    binding: &FrameBinding<'_>,
     pre_populations: &'a [RawPopulation],
     post_populations: &'a [RawPopulation],
     declared_created: &'a [SelectedObject],
@@ -235,6 +269,7 @@ fn run<'a>(
             .collect()
     };
 
+    let mut meter = Meter::new(context.limits);
     let mut created = Vec::new();
     let mut deleted = Vec::new();
     for name in order {
@@ -242,24 +277,38 @@ fn run<'a>(
         let post = wire_side(context, post_populations, name)?;
         let population_created = keys_in(declared_created, name);
         let population_deleted = keys_in(declared_deleted, name);
+        let arguments = binding.arguments_in(name);
         let frame = FrameDecision {
             index: context.context_view.view.model_index(),
-            ancestor_steps: context.ancestor_steps,
+            ancestor_steps: context.limits.ancestor_steps,
             effect: context.effect,
             declared_created: &population_created,
             declared_deleted: &population_deleted,
+            receiver: binding.receiver_in(name),
+            arguments: &arguments,
         };
-        let delta = match decide_frame(&frame, &pre.frame, &post.frame, |_, left, right| {
-            raw_values_equal(left.copied(), right.copied())
-        }) {
+        let delta = match decide_frame(
+            &frame,
+            &pre.frame,
+            &post.frame,
+            |_, left, right| raw_values_equal(left.copied(), right.copied()),
+            &mut |charge| {
+                let point = match charge {
+                    FrameCharge::Write => ChargePoint::FrameWrite,
+                    FrameCharge::RedefinesLink => ChargePoint::FrameRedefinesLink,
+                };
+                meter.charge(Charge::new(point))
+            },
+        ) {
             Ok(delta) => delta,
-            Err(refusal) => {
+            Err(DecisionStop::Refused(refusal)) => {
                 return Err(FrameStop::Decision(Box::new(Decision {
                     refusal,
                     population: name,
                     pre,
                 })))
             }
+            Err(DecisionStop::Denied(incomplete)) => return Err(FrameStop::Denied(incomplete)),
         };
 
         for (keys, side, into) in [
@@ -282,6 +331,7 @@ fn run<'a>(
 /// test (FR-115 Description). Returns the admitted `(created, deleted)`.
 pub(super) fn enforce(
     context: &FrameContext<'_>,
+    binding: &FrameBinding<'_>,
     pre_populations: &[RawPopulation],
     post_populations: &[RawPopulation],
     declared_created: &[SelectedObject],
@@ -289,6 +339,7 @@ pub(super) fn enforce(
 ) -> Result<AdmittedDelta, AdmissionFailure> {
     run(
         context,
+        binding,
         pre_populations,
         post_populations,
         declared_created,
@@ -301,6 +352,7 @@ pub(super) fn enforce(
             decision.population,
             &decision.pre,
         )),
+        FrameStop::Denied(incomplete) => refuse(budget_record(&incomplete)),
     })
 }
 
@@ -318,6 +370,7 @@ pub(super) struct WitnessDocuments<'a> {
 /// frame cannot be evaluated over that input.
 pub(super) fn verdict(
     context: &FrameContext<'_>,
+    binding: &FrameBinding<'_>,
     documents: &WitnessDocuments<'_>,
     pre_populations: &[RawPopulation],
     post_populations: &[RawPopulation],
@@ -326,6 +379,7 @@ pub(super) fn verdict(
 ) -> Result<FrameVerdict, InternalFault> {
     let stop = match run(
         context,
+        binding,
         pre_populations,
         post_populations,
         declared_created,
@@ -345,6 +399,11 @@ pub(super) fn verdict(
             ))
         }
         FrameStop::Admission(AdmissionFailure::Fault(fault)) => return Err(fault),
+        // The first denied charge ends the check with the caller's budget
+        // record and no frame verdict.
+        FrameStop::Denied(incomplete) => {
+            return Ok(FrameVerdict::Refused(budget_record(&incomplete)))
+        }
         FrameStop::Decision(decision) => *decision,
     };
     let Decision {
@@ -366,7 +425,15 @@ pub(super) fn verdict(
             FrameChange::FieldWrite {
                 object: object.clone(),
                 field: field_name(&pre, object, field).to_owned(),
-                modifies: effect.modifies.clone(),
+                // Every `modifies` entry the write was checked against,
+                // whichever its scope: the witness names the field grants,
+                // and the receiver is named by the invocation it carries.
+                modifies: effect
+                    .modifies
+                    .iter()
+                    .chain(&effect.receiver_modifies)
+                    .cloned()
+                    .collect(),
             }
         }
         ModelRefusalCause::FrameCreateOutsideGrant { object, type_name } => FrameChange::Created {
@@ -406,6 +473,12 @@ pub(super) fn verdict(
         population: population.to_owned(),
         change,
     })))
+}
+
+/// `incomplete` as the admission record of the caller-budget refusal
+/// [`enforce`] raises for it.
+fn budget_record(incomplete: &Incomplete) -> AdmissionRecord {
+    caller_budget_record(&incomplete.denial(), INSUFFICIENT_NEXT_CHARGE)
 }
 
 fn raw_values_equal(left: Option<&SnapshotValue>, right: Option<&SnapshotValue>) -> bool {

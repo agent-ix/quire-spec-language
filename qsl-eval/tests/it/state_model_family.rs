@@ -729,3 +729,113 @@ fn source_reaches_context_refuses_before_operand_name_resolution() {
     );
     assert_eq!(code.prefix(), Some("state-model"));
 }
+
+/// FR-153-AC-8, result typing: `allInstances<T>(p)` over `Population<T>[N]`
+/// is `Set<Reference<T>>[0,N]`, including `N = 0`, and `lookup`'s present
+/// result is `Reference<T>` under `undefined` and `refused` but
+/// `Option<Reference<T>>` under `empty`, always typed to the queried `T`. The
+/// source grammar spells every population type with its `[N]`, so the
+/// unbounded binding of FR-153-AC-9 is reached through the checked-type API
+/// and covered in `model_reference_queries.rs`, not here.
+///
+/// Mutation used (derived by reading, not executed): treating a zero maximum
+/// as absent, widening the lookup result to `Option` in every mode, or typing
+/// the result to the declared type of `r` instead of the queried `T` each
+/// fails one assertion below.
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-8")]
+#[test]
+fn population_queries_are_typed_to_the_queried_type_and_the_declared_maximum() {
+    let (bounded, view) = graph(
+        "function F using v(p: Population<M::A>[0]): Set<M::A>[0,0] pure { allInstances<M::A>(p) }",
+        true,
+    );
+    let ValueType::Collection(result) = function(&bounded, "F").value_type() else {
+        panic!("Set result");
+    };
+    assert_eq!(result.element(), &ValueType::Reference(object_type(&view)));
+    assert_eq!(
+        (
+            result.bound().unwrap().minimum(),
+            result.bound().unwrap().maximum()
+        ),
+        (0, 0),
+        "a zero maximum is a declared maximum"
+    );
+
+    for mode in ["undefined", "refused"] {
+        let (lookup, view) = graph(
+            &format!("function F using v(p: Population<M::A>[3], r: M::A): M::A pure {{ lookup<M::A>(p,r) absent {mode} }}"),
+            true,
+        );
+        assert_eq!(
+            function(&lookup, "F").value_type(),
+            &ValueType::Reference(object_type(&view)),
+            "{mode}"
+        );
+    }
+    let (empty, view) = graph(
+        "function F using v(p: Population<M::A>[3], r: M::A): Option<M::A> pure { lookup<M::A>(p,r) absent empty }",
+        true,
+    );
+    assert_eq!(
+        function(&empty, "F").value_type(),
+        &ValueType::Option(std::sync::Arc::new(ValueType::Reference(object_type(
+            &view
+        )))),
+        "empty mode"
+    );
+}
+
+/// FR-153-AC-8, binding admission: a `Population<T>[N]` whose `T` is not a
+/// model object type refuses `ill_typed`/`type-mismatch`.
+///
+/// Mutation used (derived by reading, not executed): admitting any resolvable
+/// type as the population target (dropping the `ValueType::Reference` match in
+/// `population_target`) lets the record through and fails the refusal match.
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-8")]
+#[test]
+fn a_population_binding_over_a_non_object_target_refuses_type_mismatch() {
+    let view = view();
+    let selection = view.model_selection();
+    let source = format!(
+        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\nmodel M = {:?} version {:?} digest \"sha256-jcs:{}\";\nrecord R {{ flag: Boolean; }}\nfunction F using v(p: Population<R>[3]): Boolean pure {{ true }}\n",
+        selection.identity,
+        selection.version,
+        qsl_semantics::model::key::hex(&selection.digest),
+    );
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("test", "sm1", "fixture", "1"),
+        "sm1.native",
+        source.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 parses source");
+    assert!(parsed.is_admissible(), "S1: {:?}", parsed.diagnostics());
+    let unit = qsl_forms::build_unit(&parsed).expect("S2 builds source");
+    let model_span = unit.selections().models[0].span;
+    let assembled = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        unit,
+        vec![SelectedModel {
+            alias: "M".to_owned(),
+            span: model_span,
+            view,
+            operation_clauses: Vec::new(),
+        }],
+        vec![],
+    );
+    let declarations = assembled.expect("a record target assembles; S3 decides the binding");
+    let refusals = declarations
+        .check(CheckingLimits::default())
+        .expect_err("S3 must refuse a population over a non-object target");
+    let [refusal] = refusals.as_slice() else {
+        panic!("one refusal: {refusals:?}");
+    };
+    assert!(
+        matches!(
+            &refusal.cause,
+            CheckCause::IllTyped(IllTypedCause::TypeMismatch)
+        ),
+        "{refusal:?}"
+    );
+}

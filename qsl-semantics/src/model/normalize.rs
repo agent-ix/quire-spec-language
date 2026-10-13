@@ -2366,7 +2366,12 @@ fn check_node<'a>(
                     }
                 }
             }
-            for field in &op.effect.modifies {
+            for field in op
+                .effect
+                .modifies
+                .iter()
+                .chain(&op.effect.receiver_modifies)
+            {
                 if !index.is_field_member(field) {
                     refusals.push(ModelRefusal {
                         code: Code::DanglingReference,
@@ -2377,6 +2382,27 @@ fn check_node<'a>(
                         detail: format!(
                             "operation {} effect writes {}, which is not a declared field member",
                             op.key.node, field.node
+                        ),
+                    });
+                }
+            }
+            // FR-013: an every-object entry and a receiver-scoped entry for
+            // one field cannot both be authored; the frame is refused, never
+            // merged.
+            for field in &op.effect.receiver_modifies {
+                if op.effect.modifies.contains(field) {
+                    refusals.push(ModelRefusal {
+                        code: Code::InvalidModelBinding,
+                        cause: ModelRefusalCause::ConflictingBinding {
+                            key: field.clone(),
+                            member: None,
+                        },
+                        detail: format!(
+                            "operation {} frame holds both `modifies {name}` and `modifies \
+                             self.{name}` for {}",
+                            op.key.node,
+                            field.node,
+                            name = field.node.rsplit('/').next().unwrap_or(&field.node),
                         ),
                     });
                 }
@@ -2416,47 +2442,69 @@ fn check_node<'a>(
         // independently (crate::model::systems); FR-150's phase 1 does
         // not concern itself with them.
         DomainPackageRecord::Relationship(relationship) => {
-            // Systems-model connections have no source role; their endpoints
-            // are resolved by the systems boundary rather than this inline
-            // business-relationship rule.
-            if relationship.source.role.is_some()
-                && !index.is_object_type(&relationship.source.type_identity)
-            {
-                // The position the reader recorded in the declaring type's
-                // `relationships` array; a relationship with no slot is
-                // named at `Relationship` alone.
-                let member = relationship.declared_at.as_ref().map_or_else(
-                    || MemberPath::new(MemberRoot::Relationship),
-                    |slot| {
-                        MemberPath::type_definition()
-                            .name("relationships")
-                            .index(slot.index)
-                    },
-                );
-                refusals.push(ModelRefusal {
-                    code: Code::InvalidModelBinding,
-                    cause: malformed_at(domain_package, &relationship.key, member.clone()),
-                    detail: format!(
-                        "{}: {member}: relationship source owner {} is not an object type",
-                        relationship.key.node, relationship.source.type_identity.node
-                    ),
-                });
-            }
-            if relationship.source.role.is_some()
-                && !index.is_object_type(&relationship.target.type_identity)
-            {
-                refusals.push(ModelRefusal {
-                    code: Code::InvalidModelBinding,
-                    cause: malformed_at(
-                        domain_package,
-                        &relationship.key,
-                        MemberPath::new(MemberRoot::Relationship).name("target"),
-                    ),
-                    detail: format!(
-                        "{}: Relationship.target: {} is not a declared object type",
-                        relationship.key.node, relationship.target.type_identity.node
-                    ),
-                });
+            // A systems-model connection has no source role and no slot in a
+            // declaring type's `relationships` array; its ends are resolved
+            // by the systems boundary rather than this business-relationship
+            // rule. A dangling end of a business relationship is refused here
+            // once per end (FR-085-AC-1), naming that end alone.
+            let is_business =
+                relationship.source.role.is_some() || relationship.declared_at.is_some();
+            if is_business {
+                for (label, end) in [
+                    ("source", &relationship.source),
+                    ("target", &relationship.target),
+                ] {
+                    if index.is_object_type(&end.type_identity) {
+                        continue;
+                    }
+                    if !declares(domain_package, &end.type_identity) {
+                        let member = MemberPath::new(MemberRoot::Relationship).name(label);
+                        refusals.push(ModelRefusal {
+                            code: Code::MissingDeclaration,
+                            cause: ModelRefusalCause::UnknownRelationshipEnd {
+                                relationship: relationship.key.clone(),
+                                missing: end.type_identity.clone(),
+                                member: member.clone(),
+                            },
+                            detail: format!(
+                                "{}: {member}: {} is not a declared type",
+                                relationship.key.node, end.type_identity.node
+                            ),
+                        });
+                        continue;
+                    }
+                    // The end names a declaration of another meaning. The
+                    // source is read at the declaring type's slot; the target
+                    // at the relationship's own `target` member.
+                    let (member, detail) = if label == "source" {
+                        let member = relationship.declared_at.as_ref().map_or_else(
+                            || MemberPath::new(MemberRoot::Relationship),
+                            |slot| {
+                                MemberPath::type_definition()
+                                    .name("relationships")
+                                    .index(slot.index)
+                            },
+                        );
+                        let detail = format!(
+                            "{}: {member}: relationship source owner {} is not an object type",
+                            relationship.key.node, end.type_identity.node
+                        );
+                        (member, detail)
+                    } else {
+                        (
+                            MemberPath::new(MemberRoot::Relationship).name("target"),
+                            format!(
+                                "{}: Relationship.target: {} is not a declared object type",
+                                relationship.key.node, end.type_identity.node
+                            ),
+                        )
+                    };
+                    refusals.push(ModelRefusal {
+                        code: Code::InvalidModelBinding,
+                        cause: malformed_at(domain_package, &relationship.key, member),
+                        detail,
+                    });
+                }
             }
         }
         DomainPackageRecord::Component(_)

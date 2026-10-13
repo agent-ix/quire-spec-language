@@ -173,20 +173,6 @@ outright before the target-kind charge.
   this requirement resolves each record's own original declaration key and
   kind only, consistent with AD-006's export table, which names no export
   record for the five systems meanings beyond binding to their FR-152 kind.
-- `qsl-semantics/src/model/systems.rs::classify` does not yet implement FR-086-AC-5's
-  ordering or its port interface-type condition: interface types are
-  collected inline while scanning every record and are never charged
-  through `charge_kind`, so they are not classified as their own, first
-  charged phase; and the endpoint loop checks only direction and
-  owning-component kind, never whether the endpoint's declared
-  interface-type reference itself classifies as `Interface`. FR-086-AC-5
-  does not ship today. Remaining work: #120.
-- `check_connection` already accumulates all three of FR-086-AC-2's
-  conditions into one refusal without returning early (it is exhaustive
-  today), but no existing test constructs a fixture where two of the three
-  conditions fail at once — every existing test violates exactly one. The
-  combined-failure fixture TC-234 describes is owed by the implementation
-  work, not by this specification. Remaining work: #120.
 - `ComponentRecord::has_part_signature` (`qsl-semantics/src/model/domain_package.rs`) and
   `classify`'s `unsupplied("part-signature", ...)` refusal arm for it are
   dead code: `qsl-semantics/src/model/intake.rs` hardcodes `has_part_signature: true`

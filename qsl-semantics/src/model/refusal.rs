@@ -568,6 +568,16 @@ pub enum ModelRefusalCause {
         /// The absent type.
         type_name: DeclarationKey,
     },
+    /// A business relationship's end names a type the domain package does
+    /// not declare (FR-085-AC-1).
+    UnknownRelationshipEnd {
+        /// The relationship naming the end.
+        relationship: DeclarationKey,
+        /// The absent type.
+        missing: DeclarationKey,
+        /// The end, as `Relationship.source` or `Relationship.target`.
+        member: MemberPath,
+    },
     /// One object is declared with two conflicting types.
     ConflictingIdentity {
         /// The object.
@@ -1238,6 +1248,7 @@ impl ModelRefusalCause {
             | Self::ForeignType { .. }
             | Self::AbstractInstance { .. }
             | Self::UnknownPopulationMemberType { .. }
+            | Self::UnknownRelationshipEnd { .. }
             | Self::ConflictingIdentity { .. }
             | Self::OperatorIneligible { .. }
             | Self::AboveMaximum { .. }
@@ -1317,7 +1328,9 @@ impl ModelRefusalCause {
             Self::UnclosedSubtypes { .. } => "unclosed-subtypes",
             Self::ForeignType { .. } => "foreign-type",
             Self::AbstractInstance { .. } => "abstract-instance",
-            Self::UnknownPopulationMemberType { .. } => "missing-name",
+            Self::UnknownPopulationMemberType { .. } | Self::UnknownRelationshipEnd { .. } => {
+                "missing-name"
+            }
             Self::ConflictingIdentity { .. } => "conflicting-identity",
             Self::OperatorIneligible => "operator-ineligible",
             Self::AboveMaximum { .. } => "above-maximum",
@@ -1435,6 +1448,7 @@ impl ModelRefusalCause {
             | Self::DuplicateMember { .. }
             | Self::SubsettingViolation { .. } => "invalid_runtime_input",
             Self::UnknownPopulationMemberType { .. }
+            | Self::UnknownRelationshipEnd { .. }
             | Self::FrameEntryMissing { .. }
             | Self::IntakeMissingDeclaration { .. } => "missing_declaration",
             Self::AboveMaximum { .. } => "cardinality_out_of_bound",
@@ -1477,7 +1491,7 @@ pub mod fixtures {
     //! module's tests and the layer-5 evaluator's catalog tests
     //! (`value::expression::causes`), which reach it across the
     //! `qsl-semantics` crate boundary through `test-support`.
-    use super::{ModelRefusalCause, OfferedSelection};
+    use super::{MemberPath, MemberRoot, ModelRefusalCause, OfferedSelection};
     use crate::model::domain_package::{DomainPackageRef, Multiplicity, ValueTypeRef};
     use crate::model::key::DeclarationKey;
     use qsl_foundation::source::{LocatedSpan, Position};
@@ -1632,6 +1646,11 @@ pub mod fixtures {
         UnknownPopulationMemberType => ModelRefusalCause::UnknownPopulationMemberType {
             population: key("p"),
             type_name: key("p"),
+        },
+        UnknownRelationshipEnd => ModelRefusalCause::UnknownRelationshipEnd {
+            relationship: key("p"),
+            missing: key("p"),
+            member: MemberPath::new(MemberRoot::Relationship).name("source"),
         },
         ConflictingIdentity => ModelRefusalCause::ConflictingIdentity {
             object: String::new(),
@@ -1957,7 +1976,8 @@ pub(crate) mod tests {
             ModelRefusalCause::UnclosedSubtypes { .. } => "unclosed-subtypes",
             ModelRefusalCause::ForeignType { .. } => "foreign-type",
             ModelRefusalCause::AbstractInstance { .. } => "abstract-instance",
-            ModelRefusalCause::UnknownPopulationMemberType { .. } => "missing-name",
+            ModelRefusalCause::UnknownPopulationMemberType { .. }
+            | ModelRefusalCause::UnknownRelationshipEnd { .. } => "missing-name",
             ModelRefusalCause::ConflictingIdentity { .. } => "conflicting-identity",
             ModelRefusalCause::OperatorIneligible => "operator-ineligible",
             ModelRefusalCause::AboveMaximum { .. } => "above-maximum",
@@ -2078,7 +2098,8 @@ pub(crate) mod tests {
             ModelRefusalCause::AbsentKey { .. } => "invalid_runtime_input",
             ModelRefusalCause::DuplicateMember { .. } => "invalid_runtime_input",
             ModelRefusalCause::SubsettingViolation { .. } => "invalid_runtime_input",
-            ModelRefusalCause::UnknownPopulationMemberType { .. } => "missing_declaration",
+            ModelRefusalCause::UnknownPopulationMemberType { .. }
+            | ModelRefusalCause::UnknownRelationshipEnd { .. } => "missing_declaration",
             ModelRefusalCause::FrameEntryMissing { .. }
             | ModelRefusalCause::IntakeMissingDeclaration { .. } => "missing_declaration",
             ModelRefusalCause::AboveMaximum { .. } => "cardinality_out_of_bound",

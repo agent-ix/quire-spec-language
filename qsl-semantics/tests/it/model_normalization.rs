@@ -122,6 +122,7 @@ fn operation_member_redefining(
             modifies: Vec::new(),
             creates: Vec::new(),
             deletes: Vec::new(),
+            ..Default::default()
         },
         requires: Vec::new(),
         ensures: Vec::new(),
@@ -853,12 +854,84 @@ fn n02_normalizes_f2_diamond_inheritance_to_stable_deterministic_identities() {
     assert_eq!(&universe.identity().to_string()[..8], "c45b5094");
 }
 
+/// TC-195 N03, normalization half: F2 plus fields `B/y` and `C/y`, both of
+/// type `A`, admits twelve effective declarations -- N02's eight plus
+/// `(B, B/y)`, `(C, C/y)` and the distinct, equal-shaped `(D, B/y)` and
+/// `(D, C/y)`. The two `D` members share owner, value type and multiplicity
+/// and differ only in their original declaration, so only the original key
+/// can keep them apart. N02's eight identities are unchanged, because an
+/// effective declaration identity binds only its own owner, original and
+/// derivation. The checker half of N03 (`ambiguous_declaration` at `self.y`)
+/// is not exercised here.
+///
+/// Mutation used (derived by reading, not executed): merging effective
+/// members by shape, or dropping the original key from an effective
+/// member's identity, leaves ten declarations, or equal `(D, B/y)` and
+/// `(D, C/y)` identities, and fails the count and distinctness assertions.
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-2")]
+#[test]
+fn n03_equal_shaped_members_from_distinct_originals_stay_distinct_effective_declarations() {
+    let mut records = fixture_f2().records;
+    records.push(field_member(
+        "ix://test/orders/B/y",
+        "ix://test/orders/B",
+        "ix://test/orders/A",
+    ));
+    records.push(field_member(
+        "ix://test/orders/C/y",
+        "ix://test/orders/C",
+        "ix://test/orders/A",
+    ));
+    let view = completed(
+        &DomainPackage::new(DomainPackageRef::fixture("n02"), records),
+        ModelNormalizationLimits::UNLIMITED,
+    );
+    assert_eq!(view.declarations().len(), 12);
+
+    let prefix = |id: &dyn std::fmt::Display| id.to_string()[..8].to_string();
+    let type_of = |name: &str| find_type(&view, &format!("ix://test/orders/{name}"));
+    // N02's published type identities are unchanged by the added members.
+    assert_eq!(prefix(&type_of("A").effective_id), "23664417");
+    assert_eq!(prefix(&type_of("B").effective_id), "ca6ff932");
+    assert_eq!(prefix(&type_of("C").effective_id), "b23df80c");
+    assert_eq!(prefix(&type_of("D").effective_id), "9fb83dd4");
+
+    let owner_d = &type_of("D").effective_id;
+    let d_by = find_member(&view, owner_d, "ix://test/orders/B/y");
+    let d_cy = find_member(&view, owner_d, "ix://test/orders/C/y");
+    assert_ne!(d_by.effective_id, d_cy.effective_id);
+    assert_ne!(d_by.preimage.original, d_cy.preimage.original);
+    assert_eq!(
+        d_by.preimage.owner_effective_type, d_cy.preimage.owner_effective_type,
+        "the two members are equal-shaped: same owner effective type"
+    );
+    assert_eq!(
+        d_by.preimage.derivation[0].inputs,
+        keys(&["ix://test/orders/B", "ix://test/orders/B/y"])
+    );
+    assert_eq!(
+        d_cy.preimage.derivation[0].inputs,
+        keys(&["ix://test/orders/C", "ix://test/orders/C/y"])
+    );
+    assert_eq!(rules_of(d_by), vec![RULE_INHERIT.identity]);
+    assert_eq!(rules_of(d_cy), vec![RULE_INHERIT.identity]);
+    // The declaring owners keep their own qualify-only members.
+    for (owner, member) in [("B", "B/y"), ("C", "C/y")] {
+        let own = find_member(
+            &view,
+            &type_of(owner).effective_id,
+            &format!("ix://test/orders/{member}"),
+        );
+        assert_eq!(rules_of(own), vec![RULE_QUALIFY.identity]);
+    }
+}
+
 /// TC-195 N09's third clause: F1's nodes as version `2` under placeholder
 /// selection `n01v2` yield declarations byte-equal to F1's own version-1
 /// declarations (an effective declaration identity binds no
 /// `ModelSelection`), but a different view and universe, because only the
 /// model selection differs.
-#[trace("QSpec-TC-195", "QSpec-FR-150-AC-6")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-6", "QSpec-FR-150-AC-7")]
 #[test]
 fn n01v2_a_version_only_change_reuses_declarations_but_changes_view_and_universe() {
     let v1 = completed(&fixture_f1(), ModelNormalizationLimits::UNLIMITED);
@@ -5494,4 +5567,70 @@ fn subset_and_redefine_facts_of_one_member_are_ordered_together() {
         member.preimage.derivation[2].inputs,
         keys(&["model.B.y", "model.A.z"])
     );
+}
+
+/// An operation member on `ix://test/orders/A` whose frame is `effect`.
+fn operation_with_effect(effect: OperationEffect) -> DomainPackageRecord {
+    let DomainPackageRecord::OperationMember(mut record) =
+        operation_member("ix://test/orders/A/bump", "ix://test/orders/A")
+    else {
+        unreachable!("operation_member builds an operation member");
+    };
+    record.effect = effect;
+    DomainPackageRecord::OperationMember(record)
+}
+
+/// QSpec FR-013-AC-8: an every-object entry and a receiver-scoped entry for
+/// one field refuse the operation's frame `invalid_model_binding`/
+/// `conflicting-binding`, naming the field; either entry alone normalizes.
+#[test]
+#[trace("QSpec-V1-EXPR-022", "QSpec-FR-013-AC-8")]
+fn an_every_object_and_a_receiver_scoped_entry_for_one_field_refuse_conflicting_binding() {
+    let field = DeclarationKey::fixture("ix://test/orders/A/x");
+    let normalize_with = |effect: OperationEffect| {
+        let mut records = fixture_f1().records;
+        records.push(operation_with_effect(effect));
+        normalize(
+            &DomainPackage::new(DomainPackageRef::fixture("n01"), records),
+            ModelNormalizationLimits::UNLIMITED,
+        )
+    };
+
+    let NormalizeOutcome::Refused(refusals) = normalize_with(OperationEffect {
+        modifies: vec![field.clone()],
+        receiver_modifies: vec![field.clone()],
+        ..Default::default()
+    }) else {
+        panic!("both scopes for one field must refuse");
+    };
+    assert_eq!(refusals.len(), 1);
+    let refusal = refusals.into_first();
+    assert_eq!(
+        refusal.code,
+        qsl_foundation::diagnostic::Code::InvalidModelBinding
+    );
+    assert_eq!(refusal.cause.as_str(), "conflicting-binding");
+    assert_eq!(
+        refusal.cause,
+        ModelRefusalCause::ConflictingBinding {
+            key: field.clone(),
+            member: None,
+        }
+    );
+
+    for effect in [
+        OperationEffect {
+            modifies: vec![field.clone()],
+            ..Default::default()
+        },
+        OperationEffect {
+            receiver_modifies: vec![field.clone()],
+            ..Default::default()
+        },
+    ] {
+        assert!(
+            matches!(normalize_with(effect), NormalizeOutcome::Completed(_)),
+            "one scope alone normalizes"
+        );
+    }
 }

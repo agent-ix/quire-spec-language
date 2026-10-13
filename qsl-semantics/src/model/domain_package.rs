@@ -442,14 +442,29 @@ pub struct OperationResult {
 
 /// An operation's producer-supplied effect frame: `{modifies, creates,
 /// deletes}` (FR-151's `quire.model.conformance.effect/v1`).
+///
+/// `modifies` holds the every-object entries (`modifies f`) and `deletes`
+/// the type-wide entries (`deletes T`). The receiver-scoped `modifies
+/// self.f` entries, the receiver-scoped `deletes self` entry and the
+/// argument-scoped `deletes p` entries are kept apart in the fields below
+/// (FR-154), so a frame without them reads exactly as before.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct OperationEffect {
-    /// Field members this operation writes.
+    /// Field members this operation writes on every object of the
+    /// invocation's populations that has them (an every-object entry).
     pub modifies: Vec<DeclarationKey>,
     /// Object types this operation creates.
     pub creates: Vec<DeclarationKey>,
-    /// Object types this operation deletes.
+    /// Object types this operation deletes (a type-wide entry).
     pub deletes: Vec<DeclarationKey>,
+    /// Field members this operation writes on the invocation's receiver
+    /// only (a receiver-scoped entry, `modifies self.f`).
+    pub receiver_modifies: Vec<DeclarationKey>,
+    /// Whether the operation deletes its receiver (`deletes self`).
+    pub deletes_receiver: bool,
+    /// The names of the reference parameters whose bound argument the
+    /// operation deletes (an argument-scoped entry, `deletes p`).
+    pub deletes_arguments: Vec<String>,
 }
 
 /// One `requires` or `ensures` clause of a domain-package operation, kept

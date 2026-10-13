@@ -458,7 +458,12 @@ pub fn check_operation_redefinition(
     // model-complete.md:56/:64 make a multi-hop chain like `C.x -> B.x ->
     // A.x` legal with no direct `C.x -> A.x` record.
     let mut effect_work = 0_u64;
-    for write in &redefining.effect.modifies {
+    for write in redefining
+        .effect
+        .modifies
+        .iter()
+        .chain(&redefining.effect.receiver_modifies)
+    {
         let path = index.field_lineage(write);
         let links = path.len().saturating_sub(1);
         effect_work = effect_work.saturating_add(
@@ -485,12 +490,27 @@ pub fn check_operation_redefinition(
     {
         return ConformanceCheckOutcome::Incomplete(incomplete);
     }
-    for write in &redefining.effect.modifies {
+    // An every-object write must be granted to every object by the redefined
+    // effect; a receiver-scoped write is also covered by a receiver-scoped
+    // grant.
+    let writes = redefining
+        .effect
+        .modifies
+        .iter()
+        .map(|write| (write, false))
+        .chain(
+            redefining
+                .effect
+                .receiver_modifies
+                .iter()
+                .map(|write| (write, true)),
+        );
+    for (write, receiver_only) in writes {
         let path = index.field_lineage(write);
-        let mut covered = false;
-        for grant in &redefined.effect.modifies {
-            covered |= path.contains(&grant);
-        }
+        let covered = path.iter().any(|candidate| {
+            redefined.effect.modifies.contains(candidate)
+                || (receiver_only && redefined.effect.receiver_modifies.contains(candidate))
+        });
         if !covered {
             failures.push(AxisFailure {
                 axis: "effect",

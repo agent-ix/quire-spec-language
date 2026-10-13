@@ -292,7 +292,9 @@ impl LimitKind {
 /// (`crate::model::systems`); its own module docs record that this rung
 /// does not implement `systems.resolve`/`model.navigate` (static/runtime
 /// navigation), which need a qualified-name binder and an object
-/// population this crate does not build.
+/// population this crate does not build. FR-013 adds `frame.write` and
+/// `frame.redefines-link` (`crate::model::population::decide_frame`), one
+/// `work_units` unit each.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ChargePoint {
     /// `normalize.record`.
@@ -325,11 +327,15 @@ pub enum ChargePoint {
     SystemsConnectionCondition,
     /// `systems.allocation`.
     SystemsAllocation,
+    /// `frame.write`.
+    FrameWrite,
+    /// `frame.redefines-link`.
+    FrameRedefinesLink,
 }
 
 impl ChargePoint {
     /// Every named point this rung charges, in first-use order.
-    pub const ALL: [Self; 15] = [
+    pub const ALL: [Self; 17] = [
         Self::NormalizeRecord,
         Self::NormalizeFact,
         Self::NormalizeCycleCheck,
@@ -345,6 +351,8 @@ impl ChargePoint {
         Self::SystemsKind,
         Self::SystemsConnectionCondition,
         Self::SystemsAllocation,
+        Self::FrameWrite,
+        Self::FrameRedefinesLink,
     ];
 
     /// Normative identifier.
@@ -365,6 +373,8 @@ impl ChargePoint {
             Self::SystemsKind => "systems.kind",
             Self::SystemsConnectionCondition => "systems.connection-condition",
             Self::SystemsAllocation => "systems.allocation",
+            Self::FrameWrite => "frame.write",
+            Self::FrameRedefinesLink => "frame.redefines-link",
         }
     }
 }

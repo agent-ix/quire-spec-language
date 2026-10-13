@@ -962,6 +962,7 @@ mod tests {
             modifies: vec![modifies_decl.clone()],
             creates: vec![creates_decl.clone()],
             deletes: Vec::new(),
+            ..Default::default()
         };
         let operation = ClauseOperation {
             declaring: EffectiveId::from_digest([9_u8; 32]),

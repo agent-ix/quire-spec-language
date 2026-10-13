@@ -2959,6 +2959,7 @@ fn config_version_model(with_sub: bool) -> qsl_semantics::model::intake::Selecte
                 modifies: vec![key("ConfigVersion/versionNumber")],
                 creates: Vec::new(),
                 deletes: Vec::new(),
+                ..Default::default()
             },
             requires: Vec::new(),
             ensures: Vec::new(),

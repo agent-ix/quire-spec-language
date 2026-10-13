@@ -472,6 +472,16 @@ impl ModelIndex {
         self.records.member_owner(key)
     }
 
+    /// See [`RecordIndex::redefinition_walk`].
+    pub(crate) fn redefinition_walk<E>(
+        &self,
+        field: &DeclarationKey,
+        admits: impl Fn(&DeclarationKey) -> bool,
+        before_link: impl FnMut() -> Result<(), E>,
+    ) -> Result<bool, E> {
+        self.records.redefinition_walk(field, admits, before_link)
+    }
+
     /// See [`RecordIndex::redefinition_reaches`].
     pub(crate) fn redefinition_reaches(
         &self,
@@ -1036,22 +1046,38 @@ impl RecordIndex {
         field: &DeclarationKey,
         admits: impl Fn(&DeclarationKey) -> bool,
     ) -> bool {
+        self.redefinition_walk(field, admits, || Ok::<(), std::convert::Infallible>(()))
+            .unwrap_or_else(|never| match never {})
+    }
+
+    /// [`Self::redefinition_reaches`], calling `before_link` before each
+    /// `redefines` link it follows (and so never for the member `admits`
+    /// accepts first, nor for a member with no link). The first `Err`
+    /// `before_link` returns ends the walk and is returned: that is how a
+    /// caller meters the walk (FR-013's `frame.redefines-link`).
+    pub(crate) fn redefinition_walk<E>(
+        &self,
+        field: &DeclarationKey,
+        admits: impl Fn(&DeclarationKey) -> bool,
+        mut before_link: impl FnMut() -> Result<(), E>,
+    ) -> Result<bool, E> {
         if admits(field) {
-            return true;
+            return Ok(true);
         }
         let Some(mut current) = self.position(field) else {
-            return false;
+            return Ok(false);
         };
         for _ in 0..self.record_count {
             let Some(&redefined) = self.redefines.get(&current) else {
-                return false;
+                return Ok(false);
             };
+            before_link()?;
             if admits(self.key(redefined)) {
-                return true;
+                return Ok(true);
             }
             current = redefined;
         }
-        false // Cycle: exceeded the maximum possible acyclic chain length.
+        Ok(false) // Cycle: exceeded the maximum possible acyclic chain length.
     }
 
     /// `index`'s ancestry, computed on first use.

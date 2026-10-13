@@ -441,7 +441,7 @@ fn admitted_original_keys_survive_normalization() {
 
 /// The original inventory includes a scalar even though phase 2 gives it no
 /// effective entry or derivation charge.
-#[trace("FR-081-AC-8")]
+#[trace("FR-081-AC-8", "QSpec-TC-195", "QSpec-FR-150-AC-9")]
 #[test]
 fn scalar_original_has_no_effective_entry_or_extra_charge() {
     let mut scalar = declaration("Instant", "value", json!({}));
