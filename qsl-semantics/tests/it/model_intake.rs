@@ -654,7 +654,9 @@ fn missing_relationship_target_retains_its_referring_origin_and_pointer() {
             reference: "ix://test/origins/Missing".into(),
             origin: relationship_origin,
             path: "/types/0/relationships/0/targetEnd/type".parse().unwrap(),
-            member: "TypeDefinition.relationships[0].targetEnd.type".parse().unwrap(),
+            member: "TypeDefinition.relationships[0].targetEnd.type"
+                .parse()
+                .unwrap(),
         }
     );
 }
