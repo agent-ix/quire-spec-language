@@ -645,9 +645,11 @@ pub enum CheckCause {
     __SeamProbe,
 }
 
-/// FR-302: why one called operation's dispatch family did not link. One
-/// value per failed family; a refusal that reports several failed families
-/// carries one of these for each.
+/// FR-302: why one called operation's dispatch family did not link. An
+/// ambiguous family has one value for each subtype that did not link, as the
+/// QSpec FR-272 `ambiguous_dispatch` record names one closed subtype; any other
+/// failure has one value for the family. A compile that fails several
+/// families holds all of them in its one refusal.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct DispatchLinkCause {
     /// The called operation: the root of the family that failed.
@@ -662,9 +664,9 @@ pub struct DispatchLinkCause {
     /// setting that raises it, the limit, the count the refused step would
     /// have reached and the retained charge (FR-255 Behavior 1).
     pub denial: Option<qsl_foundation::diagnostic::BudgetDenial>,
-    /// Every subtype that did not link, in enumeration order; empty unless
-    /// the family was ambiguous.
-    pub subtypes: Vec<DispatchSubtypeFailure>,
+    /// The subtype that did not link, with its candidates and dominance
+    /// pairs; `None` unless the family was ambiguous.
+    pub subtype: Option<DispatchSubtypeFailure>,
 }
 
 /// One subtype that did not link in an ambiguous family (FR-083): its
