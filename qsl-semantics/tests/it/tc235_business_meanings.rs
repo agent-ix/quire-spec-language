@@ -858,6 +858,42 @@ fn tc235_m01_literal_k2_is_admitted_as_declared() {
         Some("NotYetPlaced")
     );
     assert_eq!(machine.transitions[0].emits, [package_key("OrderPlaced")]);
+    for (index, from, to) in [(1, "Draft", "Cancelled"), (2, "Placed", "Cancelled")] {
+        let transition = &machine.transitions[index];
+        assert_eq!(
+            transition.from,
+            package_key(&format!("OrderLifecycle/{from}"))
+        );
+        assert_eq!(transition.to, package_key(&format!("OrderLifecycle/{to}")));
+        assert_eq!(transition.trigger, package_key("OrderLifecycle/cancel"));
+        assert!(transition.emits.is_empty());
+        assert_eq!(transition.guard, None);
+    }
+    // A machine's invariants are its owned `quire` clauses that no
+    // transition names as a guard; `NotYetPlaced` is the guard of `[0]`, so
+    // K2's `OrderLifecycle` has none.
+    let guards: Vec<_> = machine
+        .transitions
+        .iter()
+        .filter_map(|transition| transition.guard.as_deref())
+        .map(|guard| id(&format!("OrderLifecycle/{guard}")))
+        .collect();
+    let invariants: Vec<_> = package
+        .records
+        .iter()
+        .filter_map(|record| match record {
+            DomainPackageRecord::Clause(clause)
+                if clause.owner == machine.key
+                    && clause.language == "quire"
+                    && !guards.contains(&clause.key.node) =>
+            {
+                Some(clause.key.node.clone())
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(guards, [id("OrderLifecycle/NotYetPlaced")]);
+    assert!(invariants.is_empty(), "NotYetPlaced is no invariant");
     assert!(machine
         .transitions
         .iter()
@@ -879,6 +915,18 @@ fn tc235_m01_literal_k2_is_admitted_as_declared() {
         ["receive_order", "reserve_stock", "await_shipment"],
     );
     assert_eq!(process.steps[0].consumes, [package_key("OrderPlaced")]);
+    assert_eq!(
+        process
+            .steps
+            .iter()
+            .map(|step| step.step_kind)
+            .collect::<Vec<_>>(),
+        [
+            qsl_semantics::model::domain_package::ProcessStepKind::Event,
+            qsl_semantics::model::domain_package::ProcessStepKind::Command,
+            qsl_semantics::model::domain_package::ProcessStepKind::Wait,
+        ],
+    );
     assert!(process.steps.iter().all(|step| step.emits.is_empty()));
 
     let DomainPackageRecord::PersistenceInterface(storage) = record("OrderStore") else {
@@ -1027,9 +1075,9 @@ fn tc235_m01_literal_k2_is_admitted_as_declared() {
 /// M03: record-value meanings reject identity and operations, while retaining
 /// both native `quire` invariants and foreign-language clauses as originals.
 ///
-/// Mutation used (derived by reading `model/normalize.rs`, not executed), one
-/// per run: run 1, removing the `identity_fields` refusal for a record value
-/// type flips `NormalizeOutcome::Refused` to `Completed`, failing the
+/// Mutation used (derived by reading `model/normalize.rs` and, for run 3 and
+/// run 4, `read_clauses` in `model/intake.rs`; not executed), one per run: run
+/// 1, removing the `identity_fields` refusal for a record value type flips `NormalizeOutcome::Refused` to `Completed`, failing the
 /// `let ... else` before the code/locus asserts; run 2, skipping the
 /// `declared_operations` refusal loop does the same for the 22-charge
 /// operation run; run 3, dropping the clause record from `read_clauses` fails
@@ -1774,8 +1822,9 @@ fn assert_malformed_at(refusal: &ModelRefusal, node: &str, path: &str) {
 /// pointer `/types/3/occurrenceField` is the typed locus the engine reports.
 ///
 /// Mutation used (derived by reading `model/normalize.rs`, not executed), one
-/// per run: run 1, removing the event `identity_fields` refusal flips
-/// `refusals.len() == 1`; run 2 and run 5, removing the `timestamp` check
+/// per run: run 1, removing the event `identity_fields` refusal leaves no
+/// refusal, so the `Refused` let-else inside `normalized_refusals` panics
+/// before `refusals.len() == 1`; run 2 and run 5, removing the `timestamp` check
 /// flips the occurrence-field refusal to admission; run 3, removing the
 /// reader's missing-name mapping in `intake.rs` flips the code to
 /// `InvalidModelBinding`; run 4, removing the `declared_operations` loop
@@ -1853,9 +1902,11 @@ fn tc235_m04_event_type_refusal_vectors() {
 /// conflicting occurrence field or an ancestor of another business meaning.
 ///
 /// Mutation used (derived by reading `model/normalize.rs`, not executed): run
-/// 2, removing the `child != parent` `DerivationConflict` branch flips the
-/// one-refusal assertion to admission; run 3, removing the non-event-ancestor
-/// branch flips the two ordered `assert_malformed_at` loci. Run 1 asserts the
+/// 2, removing the `child != parent` `DerivationConflict` branch leaves no
+/// refusal, so the `Refused` let-else inside `normalized_refusals` panics; run 3, removing the non-event-ancestor
+/// branch leaves no refusal, so the `Refused` let-else inside
+/// `normalized_refusals` panics before the two ordered `assert_malformed_at`
+/// loci. Run 1 asserts the
 /// inherited effective members, so dropping event supertype assembly fails
 /// the `effective_members` equality.
 #[test]
