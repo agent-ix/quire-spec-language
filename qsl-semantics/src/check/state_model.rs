@@ -450,4 +450,85 @@ mod tests {
             .contains("node limit=37, meter admissions=3"));
         assert_eq!(scopes.path(), "enclosing");
     }
+
+    /// FR-359-AC-8 (TC-1001): a model-operation argument whose record type
+    /// conforms to the parameter's record type is admitted and keeps the
+    /// parameter's declared type; a parent at a child-typed parameter, an
+    /// unrelated record, and a collection of the child at a collection of the
+    /// parent are refused `ill_typed`/`type-mismatch`.
+    #[trace("FR-359-AC-8", "TC-1001")]
+    #[test]
+    fn a_dispatch_argument_admits_a_conforming_record_only() {
+        use quire_exact::{CollectionKind, CollectionType, NodeKey, Presence};
+        use quire_semantic_value::declaration::{
+            CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment,
+        };
+        let [money, taxed, fee] = [1, 2, 3].map(|byte| NodeKey::from_digest([byte; 32]));
+        let record = |key, name: &str, supertypes: Vec<NodeKey>| {
+            CompositeDeclaration::new(
+                key,
+                name,
+                CompositeShape::Record(vec![FieldDeclaration::new(
+                    "amount",
+                    ValueType::Integer,
+                    Presence::Required,
+                )]),
+            )
+            .with_supertypes(supertypes)
+        };
+        let types = TypeEnvironment::new(
+            [
+                record(money, "Money", vec![]),
+                record(taxed, "TaxedMoney", vec![money]),
+                record(fee, "Fee", vec![]),
+            ],
+            [],
+        )
+        .unwrap();
+        let scope = crate::check::family::fixtures::scope_with(types, Vec::new());
+        let mut meter = quire_exact::Meter::new(crate::check::SCALAR_LIMITS_UNLIMITED);
+        let mut diagnostics = DiagnosticSink::default();
+        let mut scopes = ScopeStack::default();
+        let mut enclosing = CheckContext::new(
+            &(),
+            StageLimits {
+                input_bytes: 123,
+                node_count: 37,
+            },
+            &mut meter,
+            &mut diagnostics,
+            &mut scopes,
+        );
+        let mut argument = |actual: ValueType, required: ValueType| {
+            let mut nested = enclosing.reborrow(&scope);
+            StateModelFamily::check(
+                &Request {
+                    form: Form::Argument { actual, required },
+                    location: root_location(),
+                },
+                &mut nested,
+            )
+            .map(|staged| staged.into_value())
+        };
+        let composite = ValueType::Composite;
+        let sequence_of = |element| {
+            ValueType::collection(CollectionType::new(CollectionKind::Sequence, element, None))
+        };
+        for (actual, required) in [
+            (composite(taxed), composite(money)),
+            (composite(money), composite(money)),
+        ] {
+            match argument(actual, required.clone()) {
+                Ok(Checked::Type(declared)) => assert_eq!(declared, required),
+                other => panic!("admitted at the parameter's type, not {:?}", other.is_ok()),
+            }
+        }
+        for (actual, required) in [
+            (composite(money), composite(taxed)),
+            (composite(fee), composite(money)),
+            (sequence_of(composite(taxed)), sequence_of(composite(money))),
+        ] {
+            assert!(argument(actual, required).is_err());
+        }
+    }
 }

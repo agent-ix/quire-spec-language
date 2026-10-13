@@ -22,7 +22,11 @@ mod fixture;
 
 /// `declarations` as a unit selecting the FR-359 package as model `alias`.
 fn assemble_as(alias: &str, declarations: &str) -> PackageDeclarations {
-    let bytes = serde_json::to_vec(&fixture::document()).expect("the fixture serializes");
+    assemble_document(&fixture::document(), alias, declarations)
+}
+
+fn assemble_document(document: &Value, alias: &str, declarations: &str) -> PackageDeclarations {
+    let bytes = serde_json::to_vec(document).expect("the fixture serializes");
     let packages = package_input([bytes.as_slice()]);
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
         panic!("one model package");
@@ -192,6 +196,26 @@ fn a_collection_literal_of_the_parent_admits_a_child_element() {
          function lines using v(m: M::TaxedMoney, n: M::Money): M::Lines pure { M::Lines { lines: sequence[m, n], tags: set[m, n], counted: bag[n, m], queue: orderedSet[m, n] } }",
     )
     .expect("a child checks as a collection element");
+}
+
+/// FR-359-AC-5: FR-208 gives an event type no equality, so `==` over event
+/// operands, and over a record holding one, is `ill_typed`/`operator-ineligible`
+/// whether or not the two have one type.
+#[trace("FR-359-AC-5", "TC-999")]
+#[test]
+fn equality_over_event_operands_stays_refused() {
+    let refusals = assemble_document(
+        &fixture::document_with_event(),
+        "M",
+        "function same using v(a: M::Shipped, b: M::Shipped): Boolean pure { a = b }",
+    )
+    .check(CheckingLimits::default())
+    .expect_err("an event has no equality");
+    assert_eq!(refusals.len(), 1, "{refusals:?}");
+    assert_eq!(
+        refusals[0].cause,
+        CheckCause::IllTyped(IllTypedCause::OperatorIneligible)
+    );
 }
 
 fn model_nodes(graph: &CheckedGraph) -> Vec<(NodeTag, &'static str, Value)> {

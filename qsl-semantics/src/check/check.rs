@@ -162,7 +162,7 @@ pub struct PackageDeclarations {
     /// Record, tuple and model object-type declarations.
     pub types: TypeEnvironment,
     /// Where each record keeps the fields its ancestors name (FR-359).
-    pub record_slots: RecordSlots,
+    pub model_records: ModelRecords,
     /// The model object types' own declared operations (FR-103), resolved
     /// through [`Self::types`]' effective view.
     pub operations: OperationTable,
@@ -273,7 +273,7 @@ impl PackageDeclarations {
             source,
             lock_evidence: super::lowering::LockEvidence::default(),
             types: TypeEnvironment::default(),
-            record_slots: RecordSlots::default(),
+            model_records: ModelRecords::default(),
             operations: OperationTable::default(),
             enums: Vec::new(),
             aliases: Vec::new(),
@@ -328,20 +328,23 @@ pub struct DispatchOperation {
     pub table: usize,
 }
 
-/// Where a record value keeps a field another record names (FR-359 item 2).
+/// What the checker knows of a model's record value types and event types
+/// beyond their composite declarations (FR-359).
 ///
 /// A checked field read names its field by the record it is typed at and the
 /// name there. The value read is a child of that record, whose effective
 /// fields are ordered by their own keys, and which may redefine the field
 /// under another name (FR-082). This holds, for each record that redefines an
-/// ancestor's field under a different name, the name of its own field.
-/// A record with no such field keeps every field under its name.
+/// ancestor's field under a different name, the name of its own field; a
+/// record with no such field keeps every field under its name. It also holds
+/// which declarations are event types, which FR-208 gives no equality.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct RecordSlots {
+pub struct ModelRecords {
     renamed: BTreeMap<(quire_exact::NodeKey, quire_exact::NodeKey, String), String>,
+    events: BTreeSet<quire_exact::NodeKey>,
 }
 
-impl RecordSlots {
+impl ModelRecords {
     /// Record that the record `value` keeps the field `name` of the record
     /// `read_at` under its own field `own`.
     pub fn rename(
@@ -355,9 +358,15 @@ impl RecordSlots {
             .insert((value, read_at, name.into()), own.into());
     }
 
+    /// Record that `declaration` is an event type.
+    pub fn declare_event(&mut self, declaration: quire_exact::NodeKey) {
+        self.events.insert(declaration);
+    }
+
     /// Every entry of `other`.
-    pub(crate) fn extend(&mut self, other: RecordSlots) {
+    pub(crate) fn extend(&mut self, other: ModelRecords) {
         self.renamed.extend(other.renamed);
+        self.events.extend(other.events);
     }
 
     /// The name under which a value of `declaration` keeps `field`.
@@ -378,7 +387,7 @@ pub struct Scope {
     /// Fixed once built: [`Self::index`] is derived from it.
     types: TypeEnvironment,
     /// Where a record value keeps the fields its ancestors name (FR-359).
-    record_slots: RecordSlots,
+    model_records: ModelRecords,
     /// Fixed once built, like `types`.
     enums: Vec<EnumBinding>,
     /// The model object types' own declared operations (FR-103).
@@ -514,7 +523,7 @@ impl Scope {
         let index = ScopeIndex::new(&types, &enums, &aliases, &model_operations);
         Self {
             types,
-            record_slots: RecordSlots::default(),
+            model_records: ModelRecords::default(),
             enums,
             operations,
             ieee_profile,
@@ -548,8 +557,8 @@ impl Scope {
 
     /// This scope with where its record values keep the fields their
     /// ancestors name.
-    pub(crate) fn with_record_slots(mut self, record_slots: RecordSlots) -> Self {
-        self.record_slots = record_slots;
+    pub(crate) fn with_model_records(mut self, model_records: ModelRecords) -> Self {
+        self.model_records = model_records;
         self
     }
 
@@ -643,6 +652,39 @@ impl Scope {
         &self.types
     }
 
+    /// Whether a value of `value_type` holds an event type anywhere inside
+    /// it: FR-208 gives an event type no equality, so none compares one.
+    pub(crate) fn reaches_event(&self, value_type: &ValueType) -> bool {
+        if self.model_records.events.is_empty() {
+            return false;
+        }
+        let mut seen = BTreeSet::new();
+        let mut pending = vec![value_type];
+        while let Some(value_type) = pending.pop() {
+            match value_type {
+                ValueType::Option(payload) => pending.push(payload),
+                ValueType::Collection(collection) => pending.push(collection.element()),
+                ValueType::Composite(declaration) => {
+                    if self.model_records.events.contains(declaration) {
+                        return true;
+                    }
+                    if !seen.insert(*declaration) {
+                        continue;
+                    }
+                    match self.types.composite(*declaration).map(|c| c.shape()) {
+                        Some(CompositeShape::Record(fields)) => {
+                            pending.extend(fields.iter().map(FieldDeclaration::value_type));
+                        }
+                        Some(CompositeShape::Tuple(positions)) => pending.extend(positions),
+                        None => {}
+                    }
+                }
+                _ => {}
+            }
+        }
+        false
+    }
+
     /// The position, in the record `declaration`'s own fields, of the field
     /// `field` names (FR-359 item 2): found in the value's own declaration by
     /// the field's identity, never by a position computed from the record
@@ -656,7 +698,7 @@ impl Scope {
         let CompositeShape::Record(fields) = self.types.composite(declaration)?.shape() else {
             return None;
         };
-        let name = self.record_slots.own_name(declaration, field);
+        let name = self.model_records.own_name(declaration, field);
         fields.iter().position(|candidate| candidate.name() == name)
     }
 
@@ -1573,6 +1615,12 @@ impl<'a> Typer<'a> {
         (right, right_operand): (Node, EqualityOperand),
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
+        // FR-359 item 4: FR-208 gives an event type no equality, so an
+        // operand holding one is ineligible, not compared.
+        if self.scope.reaches_event(&left.value_type) || self.scope.reaches_event(&right.value_type)
+        {
+            return Err(ineligible(location));
+        }
         let checked = self
             .scope
             .types

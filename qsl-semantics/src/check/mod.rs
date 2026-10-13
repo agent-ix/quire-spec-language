@@ -158,7 +158,7 @@ pub use node_key::{
 // `check_context` and the constant are test-support views of
 // `pub(crate)` items (`CheckContext::new`, `SCALAR_LIMITS_UNLIMITED`), so
 // the layer-5 evaluator's tests reach them without widening the items.
-pub use check::RecordSlots;
+pub use check::ModelRecords;
 #[cfg(any(test, feature = "test-support"))]
 pub use family::fixtures::{
     admitted_source, check_context, declaration, declaration_signature, declarations_for,
@@ -737,7 +737,7 @@ impl PackageDeclarations {
             self.ieee_profile,
             self.dispatch_operations,
         )
-        .with_record_slots(self.record_slots)
+        .with_model_records(self.model_records)
         .with_imports(self.imports)
         .with_integer_division(self.integer_division)
         .with_complete_value(complete_value)

@@ -42,7 +42,7 @@ use quire_exact::{
     IntegerInterval, NodeKey, Presence, RoundingMode, ValueType,
 };
 
-use super::check::{EnumBinding, PackageDeclarations, RecordSlots, ResolvedSignature};
+use super::check::{EnumBinding, ModelRecords, PackageDeclarations, ResolvedSignature};
 use super::lowering::{record_node_key, strongly_connected, AdmittedModel, RecordKeyError};
 use super::node_key::{declared_type_handle, nominal_key, NodeKeyRefusal, SourceOwner};
 use super::refusal::AliasKind;
@@ -667,7 +667,7 @@ impl TypeNames for Names {
 struct ModelTypes {
     objects: Vec<ObjectTypeDeclaration>,
     composites: Vec<CompositeDeclaration>,
-    record_slots: RecordSlots,
+    model_records: ModelRecords,
 }
 
 /// The object types of the domain package admitted for the `model`
@@ -929,12 +929,17 @@ fn model_object_types(
             .with_supertypes(composite_supertypes),
         );
     }
-    let record_slots = record_slots(model, &records, &meaning_handles);
+    let mut model_records = record_renames(model, &records, &meaning_handles);
+    for (key, handle) in &meaning_handles {
+        if matches!(records.get(key), Some(DomainPackageRecord::EventType(_))) {
+            model_records.declare_event(*handle);
+        }
+    }
     if errors.is_empty() {
         Ok(ModelTypes {
             objects: declarations,
             composites,
-            record_slots,
+            model_records,
         })
     } else {
         Err(errors)
@@ -949,11 +954,11 @@ fn model_object_types(
 /// ancestor's field, so each record lists, for every ancestor field one of
 /// its own fields redefines (transitively) under a different name, that own
 /// name. An unrenamed field needs no entry: it is found by its name.
-fn record_slots(
+fn record_renames(
     model: &SelectedModel,
     records: &BTreeMap<&DeclarationKey, &DomainPackageRecord>,
     handles: &BTreeMap<DeclarationKey, NodeKey>,
-) -> RecordSlots {
+) -> ModelRecords {
     let identities = model.view.type_identities();
     let effective_fields = |declaration: &DeclarationKey| -> Vec<&FieldMemberRecord> {
         let Some(effective_type) = identities.get(declaration) else {
@@ -982,7 +987,7 @@ fn record_slots(
     fn name_of(field: &FieldMemberRecord) -> Option<&str> {
         member_identity_name(&field.owner.node, &field.key.node)
     }
-    let mut slots = RecordSlots::default();
+    let mut slots = ModelRecords::default();
     for (declaration, handle) in handles {
         let own: Vec<&FieldMemberRecord> = effective_fields(declaration)
             .into_iter()
@@ -1679,7 +1684,7 @@ impl PackageDeclarations {
         let mut admitted = Vec::with_capacity(selections.models.len());
         let mut object_types = Vec::new();
         let mut model_composites = Vec::new();
-        let mut record_slots = RecordSlots::default();
+        let mut model_records = ModelRecords::default();
         let mut admitted_variant_types = Vec::new();
         let mut operations = OperationTable::default();
         let mut object_spans = BTreeMap::new();
@@ -1714,7 +1719,7 @@ impl PackageDeclarations {
                     }
                     object_types.extend(types.objects);
                     model_composites.extend(types.composites);
-                    record_slots.extend(types.record_slots);
+                    model_records.extend(types.model_records);
                 }
                 Err(refused) => errors.extend(refused),
             }
@@ -2225,7 +2230,7 @@ impl PackageDeclarations {
         package.protocols = unit.protocols;
         package.protocol_attempts = protocol_attempts;
         package.declared_type_spans = declared_type_spans;
-        package.record_slots = record_slots;
+        package.model_records = model_records;
         package.imports = qualified;
         Ok(package)
     }

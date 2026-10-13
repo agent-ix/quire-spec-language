@@ -10,6 +10,8 @@
 //! `[promised_by, occurred_at, order_id]` while `OrderPlaced` is
 //! `[occurred_at, order_id]`.
 
+#![allow(dead_code, reason = "each test binary uses part of the fixture")]
+
 use serde_json::{json, Value};
 
 #[path = "tc235_k2.rs"]
@@ -307,3 +309,43 @@ pub(crate) fn document() -> Value {
 }
 
 use qsl_semantics::model::intake::meaning as base_meaning;
+
+/// [`document`] with the event type `Shipped`, whose occurrence field is a
+/// native Timestamp through the `Instant` value type. A unit over it checks
+/// only while no function reaches the event's Timestamp field: lowering a
+/// Timestamp leaf is not implemented on this ref, so it serves the checker's
+/// refusals, which come before lowering.
+pub(crate) fn document_with_event() -> Value {
+    let mut document = document();
+    let mut instant = base::declaration("Instant", "value", json!({}));
+    instant["target"] = json!(native("Timestamp"));
+    let event = base::declaration(
+        "Shipped",
+        "happened",
+        json!({
+            "supertypes": [],
+            "occurrenceField": id("Shipped/occurred_at"),
+            "fields": [
+                plain("Shipped", "order_id", &native("Integer")),
+                plain("Shipped", "occurred_at", &id("Instant")),
+            ],
+        }),
+    );
+    document["types"]
+        .as_array_mut()
+        .unwrap()
+        .extend([instant, event]);
+    document["constructs"].as_array_mut().unwrap().extend([
+        base::construct("value", base_meaning::VALUE_TYPE),
+        base::construct("happened", base_meaning::EVENT_TYPE),
+    ]);
+    let types = document["types"].clone();
+    let digest = base::jcs_digest(&types);
+    document["source"]["digest"] = json!(digest);
+    document["package"]["manifestDigest"] = json!(digest);
+    document["package"]["lockDigest"] = json!(digest);
+    for construct in document["constructs"].as_array_mut().unwrap() {
+        construct["manifestDigest"] = json!(digest);
+    }
+    document
+}
