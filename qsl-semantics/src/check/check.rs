@@ -331,13 +331,10 @@ pub struct PackageDeclarations {
     /// declaration order, each resolved to its operation's `DeclarationKey`
     /// by the FR-091 assembler. At most one per key.
     pub operation_bodies: Vec<super::OperationBodyDeclaration>,
-    /// FR-103: the `DeclarationKey` of the operation each entry of
-    /// [`Self::state_clauses`] names, by index into it. An invariant names
-    /// no operation and has no entry.
-    pub state_clause_operations: BTreeMap<usize, crate::model::key::DeclarationKey>,
-    /// FR-103: each admitted `model` declaration's effective view with
-    /// `has_body` set from the unit's `operation-body` declarations, by the
-    /// declaration's alias.
+    /// FR-103: the effective view of each `model` declaration a unit
+    /// `operation-body` resolved into, with `has_body` set from those bodies,
+    /// by the declaration's alias. A model no body names has no entry and
+    /// keeps its admitted view, whose `has_body` is false.
     pub selected_views: BTreeMap<String, crate::model::normalize::EffectiveView>,
     /// The byte limit every node identity of this package encodes under
     /// (`identity.input_bytes`), carried from the assembly that built it.
@@ -383,7 +380,6 @@ impl PackageDeclarations {
             protocol_attempts: Vec::new(),
             operation_clauses: Vec::new(),
             operation_bodies: Vec::new(),
-            state_clause_operations: BTreeMap::new(),
             selected_views: BTreeMap::new(),
             identity,
         }
@@ -404,10 +400,9 @@ impl PackageDeclarations {
         &self,
         key: &crate::model::key::DeclarationKey,
     ) -> Vec<&super::StateClauseDeclaration> {
-        self.state_clause_operations
+        self.state_clauses
             .iter()
-            .filter(|(_, operation)| *operation == key)
-            .filter_map(|(index, _)| self.state_clauses.get(*index))
+            .filter(|clause| clause.operation_key.as_ref() == Some(key))
             .collect()
     }
 

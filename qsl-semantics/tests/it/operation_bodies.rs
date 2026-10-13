@@ -253,15 +253,14 @@ fn an_operation_without_a_body_declaration_has_no_body() {
     assert_eq!(package.unit_clauses_for(&empty).len(), 1);
     assert_eq!(package.operation_bodies.len(), 1);
 
-    // No body declaration at all: every operation's `has_body` is false.
+    // No body declaration at all: no model has a rebuilt view, and the
+    // admitted view keeps the intake value, false throughout.
     let none = assembled(
         &document,
         "function same using v(a: Boolean): Boolean pure { a }",
     );
     assert!(none.operation_bodies.is_empty());
-    for name in [&a, &b, &empty] {
-        assert!(!record(&none, name).has_body, "{name:?}");
-    }
+    assert!(none.selected_views.is_empty());
 }
 
 /// FR-103: a body resolves through the target type's effective view, so a
@@ -400,4 +399,95 @@ fn a_body_with_no_matching_operation_refuses_missing_declaration() {
         error.cause
     );
     assert_eq!(error.cause.catalog_code().code(), "missing_declaration");
+}
+
+/// The refusals of `source`, which must not assemble.
+fn refusals(source: &str) -> Vec<AssemblyCause> {
+    assemble(&document(&[]), source)
+        .expect_err("the unit does not assemble")
+        .errors
+        .into_iter()
+        .map(|error| error.cause)
+        .collect()
+}
+
+/// A target with other than `model-alias::Type::operation` segments names no
+/// operation and refuses `missing_declaration`.
+#[trace("TC-986", "FR-302-AC-7")]
+#[test]
+fn a_target_with_the_wrong_segment_count_refuses() {
+    for target in [
+        "Config::ConfigVersion",
+        "Config::ConfigVersion::size::extra",
+    ] {
+        let causes = refusals(&format!("body b using v on {target}() {{ 1 }}\n"));
+        assert!(
+            matches!(causes.as_slice(), [AssemblyCause::UnresolvedTypeName { name }] if name == target),
+            "{target}: {causes:?}"
+        );
+    }
+}
+
+/// A `using` alias naming no profile selection refuses `missing_selection`.
+#[trace("TC-986", "FR-302-AC-7")]
+#[test]
+fn an_undeclared_using_alias_refuses() {
+    let causes = refusals("body b using nope on Config::ConfigVersion::size() { 1 }\n");
+    assert!(
+        matches!(causes.as_slice(), [AssemblyCause::UndeclaredAlias { alias }] if alias == "nope"),
+        "{causes:?}"
+    );
+}
+
+/// A target type that is no object type of an admitted model refuses.
+#[trace("TC-986", "FR-302-AC-7")]
+#[test]
+fn an_unknown_target_type_refuses() {
+    let causes = refusals("body b using v on Config::Missing::size() { 1 }\n");
+    assert!(
+        matches!(causes.as_slice(), [AssemblyCause::UnresolvedTypeName { name }] if name == "Config::Missing"),
+        "{causes:?}"
+    );
+}
+
+/// An operation inherited from two unrelated ancestors refuses
+/// `ambiguous_declaration`, as a `pre` clause's operation does.
+#[trace("TC-986", "FR-302-AC-7")]
+#[test]
+fn an_operation_inherited_from_two_ancestors_refuses_as_ambiguous() {
+    let mut envelope: Value = serde_json::from_slice(&document(&[])).expect("valid JSON");
+    let types = envelope["types"].as_array_mut().expect("types");
+    let sub = types
+        .iter()
+        .find(|node| node["identity"] == format!("ix://{PACKAGE_IDENTITY}/Sub"))
+        .expect("Sub")
+        .clone();
+    let mut other = sub.clone();
+    let other_identity = format!("ix://{PACKAGE_IDENTITY}/Other");
+    other["identity"] = json!(other_identity);
+    other["displayName"] = json!(other_identity);
+    other["supertypes"] = json!([]);
+    other["operations"] = json!([domain_operation("Other", "size")]);
+    let mut both = sub;
+    let both_identity = format!("ix://{PACKAGE_IDENTITY}/Both");
+    both["identity"] = json!(both_identity);
+    both["displayName"] = json!(both_identity);
+    both["supertypes"] = json!([
+        format!("ix://{PACKAGE_IDENTITY}/ConfigVersion"),
+        other_identity
+    ]);
+    both["operations"] = json!([]);
+    types.push(other);
+    types.push(both);
+    let document = serde_json::to_vec(&envelope).expect("valid JSON");
+    let refusal = assemble(&document, "body b using v on Config::Both::size() { 1 }\n")
+        .expect_err("two undominated declarations of size");
+    assert!(
+        matches!(
+            refusal.errors.as_slice(),
+            [error] if matches!(&error.cause, AssemblyCause::AmbiguousOperation { operation, .. } if operation == "size")
+        ),
+        "{:?}",
+        refusal.errors
+    );
 }

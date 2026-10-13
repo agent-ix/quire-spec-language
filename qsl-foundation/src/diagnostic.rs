@@ -934,6 +934,9 @@ impl InternalFault {
 
 /// Every code of the `quire.native.diagnostics/v1` "Required distinguishing
 /// causes" table with its ADR-013 O-16 category, in the catalog's row order.
+/// One row has no catalog row yet: `conflicting_declaration`, which QSpec
+/// FR-151 requires but QSpec's native-diagnostics catalog (FR-271, FR-272)
+/// does not list.
 ///
 /// This is the refusal-record map: the category a code has when a refusal
 /// record carries it (O-17: each cause type has a fixed category). Every

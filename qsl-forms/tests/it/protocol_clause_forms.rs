@@ -1187,7 +1187,7 @@ fn a_100000_deep_repeat_chain_builds_its_anchors_on_a_small_stack() {
 /// positional parameter name and the body expression, each with its own
 /// source span, and resolves none of them. The label is local and is not the
 /// operation's identity.
-#[trace("TC-457", "FR-102-AC-4")]
+#[trace("TC-457", "FR-102-AC-7")]
 #[test]
 fn a_body_builds_one_operation_body_form_with_every_part_spelled_and_spanned() {
     let (text, unit) =
@@ -1229,7 +1229,7 @@ fn a_body_builds_one_operation_body_form_with_every_part_spelled_and_spanned() {
 /// FR-102 "Behavior": a `body` with no parameters and a reserved operation
 /// member name (`size`) builds, and two bodies keep their own labels in
 /// source order.
-#[trace("TC-457", "FR-102-AC-4")]
+#[trace("TC-457", "FR-102-AC-7")]
 #[test]
 fn a_parameterless_body_builds_and_bodies_keep_source_order() {
     let (_, unit) = build(

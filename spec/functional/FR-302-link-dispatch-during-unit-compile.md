@@ -69,6 +69,17 @@ or body from them. A body declaration with no
 matching operation SHALL refuse under FR-104's missing-operation resolution
 rule at S3 without a checked package or partial dispatch table.
 
+QSpec requires an `operation-body` to refuse `unsupported_construct` unless
+the package selects `quire.model.complete/v1`. QSL does not enforce that yet,
+because it has no model-profile selection: `resolve_profiles` accepts only
+`quire.value.complete/v1`, and FR-304-AC-8 and FR-308 state the same rule
+without code behind it. The follow-up is model-profile selection and gating.
+
+A body's parameter count and types against the operation's signature, and its
+body type against the operation's declared result, are checked when dispatch
+linking first reads a body, before any consumer uses it. Resolving a body to
+its `DeclarationKey` and setting `has_body` do not depend on that check.
+
 Exactly one executable unit `operation-body` SHALL resolve to each
 `DeclarationKey`. If a second body form resolves to a key already targeted by
 another body form, S3 SHALL refuse the compile as
@@ -78,9 +89,9 @@ This reuses the duplicate-declaration diagnostic for repeated same-name
 declarations in [FR-246](FR-246-check-task-sets-and-schedulability-claims.md)
 and the at-most-one declaration rule in
 [FR-211](FR-211-declare-a-protocol-s-intended-terminal-states-and-report-its-deadlocks.md);
-QSpec FR-429-AC-6 is the corresponding QSpec diagnostic precedent. QSpec
-FR-151 specifies that an `operation-body` supplies a body but does not specify
-body multiplicity; this QSL rule settles the QSL compile outcome pending a
+QSpec FR-151 is the QSpec source of this code and cause. It specifies that
+an `operation-body` supplies a body but does not specify body multiplicity
+within a unit; this QSL rule settles the QSL compile outcome pending a
 QSpec alignment follow-up tracked as QSL-727. This note points to that
 follow-up without restating its QSpec normative text.
 

@@ -2325,10 +2325,12 @@ impl PackageDeclarations {
                     return refuse(errors);
                 }
             };
-        let (state_clauses, state_clause_operations) = state_clauses;
-        // FR-103: each selected model's view, with `has_body` set from the
-        // bodies that resolved into it. A model no body names keeps the
-        // view normalization built, whose `has_body` is false throughout.
+        // FR-103: the view of each selected model a body resolved into, with
+        // `has_body` set from those bodies. A model no body names has no
+        // entry: its view is the one intake admitted, whose `has_body` is
+        // false throughout, and nothing is cloned or re-indexed for it. This
+        // is the one place the flag is held; `AdmittedModel` records keep the
+        // intake value and no reader takes the flag from them.
         let mut selected_views = BTreeMap::new();
         for selection in &selections.models {
             let Some(model) = models.iter().find(|model| model.alias == selection.alias) else {
@@ -2339,14 +2341,13 @@ impl PackageDeclarations {
                 .filter(|body| body.model == selection.alias)
                 .map(|body| body.key.clone())
                 .collect();
-            let view = model.view.with_operation_bodies(&bodies);
-            if let Some(entry) = admitted
-                .iter_mut()
-                .find(|entry| entry.alias() == Some(selection.alias.as_str()))
-            {
-                *entry = AdmittedModel::from_view(&view).with_alias(&selection.alias);
+            if bodies.is_empty() {
+                continue;
             }
-            selected_views.insert(selection.alias.clone(), view);
+            selected_views.insert(
+                selection.alias.clone(),
+                model.view.with_operation_bodies(&bodies),
+            );
         }
 
         let mut package = PackageDeclarations::new(source, limits.identity);
@@ -2390,7 +2391,6 @@ impl PackageDeclarations {
         package.functions = unit.functions;
         package.function_selections = function_selections;
         package.state_clauses = state_clauses;
-        package.state_clause_operations = state_clause_operations;
         package.operation_bodies = operation_bodies;
         package.selected_views = selected_views;
         package.protocols = unit.protocols;
@@ -2428,7 +2428,7 @@ fn state_clauses(
     forms: Vec<StateClauseForm>,
     resolve: &Resolve<'_>,
     models: &[AdmittedModel],
-) -> Result<(Vec<StateClauseDeclaration>, BTreeMap<usize, DeclarationKey>), AssemblyRefusal> {
+) -> Result<Vec<StateClauseDeclaration>, AssemblyRefusal> {
     let Resolve {
         profiles,
         object_names,
@@ -2439,7 +2439,6 @@ fn state_clauses(
     } = *resolve;
     let mut errors = Vec::new();
     let mut clauses = Vec::with_capacity(forms.len());
-    let mut keys = BTreeMap::new();
     for form in forms {
         let error = |cause, span| AssemblyError { cause, span };
         let selection = profiles
@@ -2552,15 +2551,13 @@ fn state_clauses(
         let Some(selection) = selection else {
             continue;
         };
-        if let Some(key) = operation_key {
-            keys.insert(clauses.len(), key);
-        }
         clauses.push(StateClauseDeclaration {
             kind: form.kind,
             name: form.name.name,
             selection,
             context,
             operation,
+            operation_key,
             context_population,
             frame_population,
             body: form.body,
@@ -2568,7 +2565,7 @@ fn state_clauses(
         });
     }
     if errors.is_empty() {
-        Ok((clauses, keys))
+        Ok(clauses)
     } else {
         refuse(errors)
     }
