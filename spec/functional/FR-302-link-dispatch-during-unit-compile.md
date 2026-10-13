@@ -123,8 +123,10 @@ for any subtype of any called family, the compile SHALL refuse at S3 with the
 QSpec FR-151 code and cause for that failure (`ambiguous_dispatch`/
 `no-applicable` or `ambiguous_dispatch`/`multiple-undominated`), naming the
 subtype, the candidates and the dominance pairs. The checker SHALL report
-every failing subtype of every called family in one refusal, and SHALL
-produce no checked package and no partial dispatch table.
+every failing subtype of every called family in one refusal, as one FR-272
+record for each failing subtype, grouped by family in call order and by
+subtype in enumeration order, and SHALL produce no checked package and no
+partial dispatch table.
 
 ### The family walk is bounded by a caller limit
 

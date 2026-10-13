@@ -11,6 +11,18 @@
 
 use std::collections::BTreeMap;
 
+use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
+use qsl_semantics::family::FamilyOutcome;
+use qsl_semantics::model::object_environment::ObjectEnvironment;
+use qsl_semantics::model::observation::{
+    AdmissionUsage, AdmittedObservations, DocumentRef, Observation,
+};
+use quire_exact::{
+    EffectiveId, FieldValue, Integer, Meter, ObjectId, ObjectReference, Outcome, UniverseId,
+    Value as Quire,
+};
+use quire_semantic_value::object_closure::ObjectClosure;
+
 use ix_trace_rs::trace;
 use qsl_replay::spine::{self, CheckedUnit, CompileRefusal, ParseRequest, SpineLimits};
 use qsl_replay::{Code, DependencyInput, SourceIdentity};
@@ -538,8 +550,8 @@ fn a_family_with_no_body_for_a_concrete_subtype_refuses_at_s3() {
         panic!("a dispatch link refusal, got {:?}", refusal.cause);
     };
     assert_eq!(cause.catalog.cause(), "no-applicable");
-    let [failure] = cause.subtypes.as_slice() else {
-        panic!("one failing subtype, got {:?}", cause.subtypes);
+    let Some(failure) = &cause.subtype else {
+        panic!("a failing subtype, got none");
     };
     assert_eq!(
         failure.subtype.node,
@@ -865,4 +877,275 @@ fn a_function_synthesized_for_dispatch_is_located_at_the_declarations_it_came_fr
         region_text(&format!("{size_b}.precondition.effective")).0,
         pre_b
     );
+}
+
+/// `document` with the object type `name` given `supertypes` (its names).
+fn with_supertypes(document: &[u8], name: &str, supertypes: &[&str]) -> Vec<u8> {
+    let mut envelope: Value = serde_json::from_slice(document).expect("valid JSON");
+    envelope["types"]
+        .as_array_mut()
+        .expect("types")
+        .iter_mut()
+        .find(|node| node["identity"] == format!("ix://{PACKAGE}/{name}"))
+        .expect("the type")["supertypes"] = json!(supertypes
+        .iter()
+        .map(|supertype| format!("ix://{PACKAGE}/{supertype}"))
+        .collect::<Vec<_>>());
+    serde_json::to_vec(&envelope).expect("valid JSON")
+}
+
+/// `size` redefined at `Sub` (`B`) and at `C`, both subtypes of
+/// `ConfigVersion` (`A`), with the concrete `D` inheriting from both and redefining it without a
+/// body; `area`
+/// redefined at `Sub` only. The probes the calls are written in.
+fn diamond() -> Vec<u8> {
+    with_supertypes(
+        &package(
+            vec![
+                query("ConfigVersion", "size", &[], None),
+                query("ConfigVersion", "area", &[], None),
+                query("ConfigVersion", "probe1", &[], None),
+                query("ConfigVersion", "probe2", &[], None),
+            ],
+            &[
+                (
+                    "Sub",
+                    "ConfigVersion",
+                    vec![
+                        query("Sub", "size", &[], Some("ConfigVersion")),
+                        query("Sub", "area", &[], Some("ConfigVersion")),
+                    ],
+                ),
+                (
+                    "C",
+                    "ConfigVersion",
+                    vec![query("C", "size", &[], Some("ConfigVersion"))],
+                ),
+                (
+                    "D",
+                    "ConfigVersion",
+                    vec![query("D", "size", &[], Some("ConfigVersion"))],
+                ),
+            ],
+        ),
+        "D",
+        &["Sub", "C"],
+    )
+}
+
+/// The failing subtypes of `refusal`, as `(operation, cause, subtype)` in
+/// report order.
+fn failures(refusal: &CompileRefusal) -> Vec<(String, &'static str, String)> {
+    let CompileRefusal::Check { refusals, .. } = refusal else {
+        panic!("an S3 refusal, got {refusal:?}");
+    };
+    refusals
+        .iter()
+        .map(|refusal| {
+            let CheckCause::DispatchLink(cause) = &refusal.cause else {
+                panic!("a dispatch link refusal, got {:?}", refusal.cause);
+            };
+            assert_eq!(cause.code, Code::AmbiguousDispatch);
+            assert_eq!(cause.catalog.code(), "ambiguous_dispatch");
+            let failure = cause.subtype.as_ref().expect("a failing subtype");
+            assert_eq!(cause.catalog.cause(), failure.cause);
+            (
+                cause.operation.node.clone(),
+                failure.cause,
+                failure.subtype.node.clone(),
+            )
+        })
+        .collect()
+}
+
+/// FR-302-AC-2 and FR-302-AC-4 (TC-794 steps 1 and 3): `D` inherits `size`
+/// from `Sub` and `C`, which both redefine `ConfigVersion.size` and neither
+/// dominates the other, so the unit refuses `ambiguous_dispatch`/
+/// `multiple-undominated` naming `D`, both candidates and the dominance
+/// pairs. A unit whose second call is `area`, with bodies only at `Sub`, adds
+/// `no-applicable` for `C` and `ConfigVersion` (the enumeration order): one refusal names all
+/// three failures, the same on a second compile, with no checked package.
+#[trace("TC-794", "FR-302-AC-2", "FR-302-AC-4")]
+#[test]
+fn a_unit_with_several_ambiguous_families_is_refused_once_naming_each() {
+    let document = diamond();
+    let size = "body sizeA using v on Config::ConfigVersion::size() { 1 }\n\
+                body sizeB using v on Config::Sub::size() { 2 }\n\
+                body sizeC using v on Config::C::size() { 3 }\n\
+                pre c1 using v on Config::ConfigVersion::probe1 { self.size() > 0 }\n";
+    let refusal = compile(&document, size, SpineLimits::default())
+        .expect_err("D has two undominated candidates");
+    assert_eq!(refusal.code(), Code::AmbiguousDispatch);
+    assert_eq!(
+        failures(&refusal),
+        [(
+            operation_name("ConfigVersion", "size"),
+            "multiple-undominated",
+            operation_name_of_type("D"),
+        )]
+    );
+    let cause = refused_family(&refusal);
+    let failure = cause.subtype.as_ref().expect("a failing subtype");
+    assert_eq!(
+        failure
+            .candidates
+            .iter()
+            .map(|key| key.node.clone())
+            .collect::<Vec<_>>(),
+        [
+            operation_name("C", "size"),
+            operation_name("ConfigVersion", "size"),
+            operation_name("Sub", "size"),
+        ]
+    );
+    assert_eq!(
+        failure
+            .dominance_pairs
+            .iter()
+            .map(|(over, under)| (over.node.clone(), under.node.clone()))
+            .collect::<Vec<_>>(),
+        [
+            (
+                operation_name("C", "size"),
+                operation_name("ConfigVersion", "size")
+            ),
+            (
+                operation_name("Sub", "size"),
+                operation_name("ConfigVersion", "size")
+            ),
+        ]
+    );
+
+    let both = format!(
+        "{size}body areaB using v on Config::Sub::area() {{ 4 }}\n\
+         pre c2 using v on Config::ConfigVersion::probe2 {{ self.area() > 0 }}\n"
+    );
+    let refusal = compile(&document, &both, SpineLimits::default()).expect_err("two families fail");
+    let expected = [
+        (
+            operation_name("ConfigVersion", "size"),
+            "multiple-undominated",
+            operation_name_of_type("D"),
+        ),
+        (
+            operation_name("ConfigVersion", "area"),
+            "no-applicable",
+            operation_name_of_type("C"),
+        ),
+        (
+            operation_name("ConfigVersion", "area"),
+            "no-applicable",
+            operation_name_of_type("ConfigVersion"),
+        ),
+    ];
+    assert_eq!(failures(&refusal), expected);
+    let again = compile(&document, &both, SpineLimits::default()).expect_err("refused again");
+    assert_eq!(failures(&again), expected);
+}
+
+fn object_reference(effective: EffectiveId, key: &str) -> ObjectReference {
+    ObjectReference::new(
+        UniverseId::from_digest([7; 32]),
+        effective,
+        ObjectId::new(key.to_owned()).expect("a key"),
+    )
+}
+
+/// Evaluates clause `name` of `checked` over one object of type `receiver`,
+/// a `ConfigVersion` with `versionNumber` 1 and no parent.
+fn evaluate_pre(checked: &CheckedUnit, name: &str, receiver: EffectiveId) -> bool {
+    let package = checked.package();
+    let graph = package.graph();
+    let clause = graph.state_clause(name).expect("the clause");
+    let reference = object_reference(receiver, "self");
+    let environment = ObjectEnvironment::new(
+        ObjectClosure::new(
+            graph.scope().types(),
+            vec![(
+                reference.clone(),
+                vec![
+                    (
+                        "versionNumber",
+                        FieldValue::Present(Quire::Integer(Integer::from(1_i64))),
+                    ),
+                    ("parent", FieldValue::Absent),
+                ],
+            )],
+            &[],
+        )
+        .expect("a closed environment"),
+    );
+    let observations = AdmittedObservations {
+        usage: AdmissionUsage::default(),
+        clause: clause.identity(),
+        current: None,
+        pre: Some(Observation {
+            identity: DocumentRef {
+                authority: "test".to_owned(),
+                identity: "pre".to_owned(),
+                revision_namespace: "ns".to_owned(),
+                revision: "1".to_owned(),
+                digest: [0; 32],
+            },
+            environment,
+            populations: BTreeMap::new(),
+            out_of_range: Vec::new(),
+        }),
+        post: None,
+        self_object: reference,
+        receiver_invocation: None,
+        receiver_pre: None,
+        receiver_post: None,
+        parameters: Vec::new(),
+        result: None,
+        created: Vec::new(),
+        deleted: Vec::new(),
+    };
+    let mut meter = Meter::new(qsl_replay::spine::default_accounting(1_000_000));
+    let evaluation = package
+        .evaluate_clause(
+            &QualifiedName::unqualified(name).unwrap(),
+            &observations,
+            &mut meter,
+        )
+        .unwrap_or_else(|failure| panic!("{name} evaluates, got {failure:?}"))
+        .evaluation;
+    match evaluation.outcome {
+        FamilyOutcome::Evaluated(Outcome::Completed(Quire::Boolean(value))) => value,
+        other => panic!("a completed Boolean, got {other:?}"),
+    }
+}
+
+/// FR-302-AC-6 (TC-809): `size` has a body at `ConfigVersion` (`A`) returning
+/// 1 and a redefinition at `Sub` (`B`) returning 2; the precondition is
+/// `self.size() = 2`. The unit compiles; the precondition is `true` for a
+/// receiver whose most-specific type is `B` and `false` for one of type `A`.
+#[trace("TC-809", "FR-302-AC-6")]
+#[test]
+fn evaluation_runs_the_body_the_linked_table_selects_for_the_receivers_type() {
+    let document = package(
+        vec![
+            query("ConfigVersion", "size", &[], None),
+            query("ConfigVersion", "probe", &[], None),
+        ],
+        &[(
+            "Sub",
+            "ConfigVersion",
+            vec![query("Sub", "size", &[], Some("ConfigVersion"))],
+        )],
+    );
+    let checked = compiled(
+        &document,
+        "body sizeA using v on Config::ConfigVersion::size() { 1 }\n\
+         body sizeB using v on Config::Sub::size() { 2 }\n\
+         pre onA using v on Config::ConfigVersion::probe { self.size() = 2 }\n\
+         pre onB using v on Config::Sub::probe { self.size() = 2 }\n",
+        SpineLimits::default(),
+    );
+    let graph = checked.package().graph();
+    let a = graph.state_clause("onA").expect("onA").context();
+    let b = graph.state_clause("onB").expect("onB").context();
+    assert_ne!(a, b);
+    assert!(evaluate_pre(&checked, "onA", b));
+    assert!(!evaluate_pre(&checked, "onA", a));
 }
