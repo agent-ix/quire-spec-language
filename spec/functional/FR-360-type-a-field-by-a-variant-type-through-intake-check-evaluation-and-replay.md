@@ -211,9 +211,13 @@ element, tuple position or record field whose declared type is a variant type.
     `ill_typed`/`type-mismatch` at the member's, parameter's or result's type
     node, the code and cause the lowering gives a type with no enum binding. The
     emitter SHALL NOT rely on the IR reader's own read-back refusal (QSpec
-    FR-322 step 4, `operator-ineligible` at the application). Check, evaluation
-    and replay (items 4 to 11) do not depend on emission. This obligation ends
+    FR-322 step 4, `operator-ineligible` at the application). This obligation ends
     when cross-repo requirement 1 holds, and emission then succeeds as above.
+    The interim obligation fires during check, so the code slice for
+    FR-360-AC-4 to FR-360-AC-11 depends on QSL-748 requirement 1: check, run and
+    replay of a unit holding a variant-typed member are not deliverable before
+    it. This requirement states the target state, and no stand-in lowering node
+    stands in for requirement 1.
 
 ## Cross-repo requirements
 

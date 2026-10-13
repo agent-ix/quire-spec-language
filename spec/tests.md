@@ -225,6 +225,7 @@ names different artifacts in each.
 | TC-1002 | Replay decodes a child at an ancestor slot and no kernel check refuses a conforming value | Integration | P1 | FR-359-AC-9, FR-359-AC-10 | 🚧 |
 | TC-1003 | A variant type and its cases have effective identities independent of case order, and conflicting cases leave no view | Unit | P1 | FR-056-AC-29, FR-056-AC-30, FR-081-AC-16 | 🚧 |
 | TC-1004 | The assembler declares each variant type in the type environment by effective identity | Unit | P1 | FR-056-AC-31 | 🚧 |
+| TC-1005 | A normalization malformed declaration retains the artifact and position of the refused node's source origin | Integration | P1 | FR-056-AC-33 | 🚧 |
 | TC-1006 | A field, parameter or result typed by a variant type is admitted, exported without a reference and assembled as the enum type | Unit | P1 | FR-360-AC-1, FR-360-AC-2, FR-360-AC-3 | 🚧 |
 | TC-1007 | A variant case literal and every variant-producing form check, and each mistyped use refuses | Unit | P1 | FR-360-AC-4, FR-360-AC-5 | 🚧 |
 | TC-1008 | Equality of variant values is by case, never a fault, and reaches nested values | Integration | P1 | FR-360-AC-6, FR-360-AC-7 | 🚧 |
