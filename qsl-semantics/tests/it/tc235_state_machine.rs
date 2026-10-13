@@ -891,3 +891,29 @@ fn tc235_m19_derivation_conflict_member_paths() {
         ],
     );
 }
+
+/// A clause named like an operation of its owner refuses `conflicting-binding`
+/// (QSpec TC-235 / FR-154-AC-12, cited by id). Typed code, cause and member
+/// path only.
+#[trace("QSpec-TC-235", "QSpec-FR-154-AC-12")]
+#[test]
+fn tc235_m32_run2_clause_named_like_an_operation_is_conflicting_binding() {
+    let document = mutate_k2(|document| {
+        type_named_mut(document, "OrderLifecycle")["clauses"]
+            .as_array_mut()
+            .unwrap()
+            .push(clause(
+                "OrderLifecycle",
+                "cancel",
+                "self.placed or not self.placed",
+            ));
+    });
+    let refusals = normalized_refusals(&document, 22);
+    assert_eq!(refusals.len(), 1, "one refusal: {refusals:?}");
+    assert_eq!(refusals[0].code, Code::InvalidModelBinding);
+    assert_eq!(refusals[0].cause.as_str(), "conflicting-binding");
+    let ModelRefusalCause::ConflictingBinding { member: at, .. } = &refusals[0].cause else {
+        panic!("expected conflicting-binding, got {:?}", refusals[0]);
+    };
+    assert_eq!(at.as_ref(), Some(&member("TypeDefinition.clauses[1]")));
+}
