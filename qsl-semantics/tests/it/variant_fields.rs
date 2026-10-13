@@ -1455,11 +1455,11 @@ fn an_admitted_variant_value_encodes_as_its_form_and_decodes_to_itself() {
     // Member order of the written document changes neither the typed value nor
     // the digest: the encoder's output and the input spelled with its members
     // in the other order are one document.
-    let input_order = serde_json::to_vec(&json!({"sequence": [
-        {"variant": {"case": "Gold", "type": id("Tier")}},
-        {"variant": {"case": "Standard", "type": id("Tier")}},
-    ]}))
-    .unwrap();
+    let tier = id("Tier");
+    let input_order = format!(
+        r#"{{"sequence":[{{"variant":{{"type":"{tier}","case":"Gold"}}}},{{"variant":{{"type":"{tier}","case":"Standard"}}}}]}}"#
+    )
+    .into_bytes();
     let encoded_bytes = serde_json::to_vec(&written_history).unwrap();
     assert_ne!(input_order, encoded_bytes, "the spellings differ");
     assert_eq!(
