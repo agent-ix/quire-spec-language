@@ -21,6 +21,9 @@ pub(super) struct MeaningBindingContext<'a, 'm> {
     /// The `shape` of the type's own construct, when it declares one.
     pub(super) construct_shape: Option<&'a str>,
     pub(super) records: &'a mut Vec<DomainPackageRecord>,
+    /// Refusals a binder reports after the one it returns, for a node with
+    /// several defects (FR-154: every failing check of one node).
+    pub(super) more_refusals: &'a mut Vec<ModelRefusal>,
     pub(super) pending: &'a mut Vec<PendingFrame>,
 }
 

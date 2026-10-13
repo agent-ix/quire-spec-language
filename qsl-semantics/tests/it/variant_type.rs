@@ -25,7 +25,12 @@ use qsl_semantics::model::normalize::{
 };
 use serde_json::{json, Value};
 
-use crate::model_operations::{admit_and_assemble_with_body, PACKAGE_IDENTITY};
+use qsl_semantics::model::intake::admit_unit;
+
+use crate::model_operations::{
+    admit_and_assemble_with_body, config_unit_with_body, config_version_document, empty_frame,
+    operation, operation_parameter, parse_and_build, PACKAGE_IDENTITY,
+};
 
 const P: &str = PACKAGE_IDENTITY;
 const MODULE: &str = "test/variant";
@@ -62,6 +67,7 @@ fn construct(name: &str, meaning: &str, shape: &str, members: Value) -> Value {
     json!({
         "kind": {"module": MODULE, "name": name},
         "moduleVersion": "1.0.0",
+        "manifestDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
         "construct": {
             "identity": "none", "shape": shape, "members": members, "meaning": meaning,
         },
@@ -149,8 +155,8 @@ fn read(document: &Value) -> Result<DomainPackage, Vec<ModelRefusal>> {
     let packages = package_input([bytes.as_slice()]);
     let digest = *packages.keys().next().expect("one authored package");
     let selection = DomainPackageRef {
-        identity: P.to_owned(),
-        version: "1.0.0".to_owned(),
+        identity: document["package"]["identity"].as_str().unwrap().to_owned(),
+        version: document["package"]["version"].as_str().unwrap().to_owned(),
         digest,
     };
     let (selection, admitted) = admit(
@@ -404,8 +410,6 @@ fn a_case_with_no_source_span_refuses_as_malformed() {
 fn a_variant_meaning_on_a_record_shaped_construct_refuses_as_malformed() {
     let document = single_type(|d| {
         d["constructs"][0]["construct"]["shape"] = json!("record");
-        d["constructs"][0]["construct"]["members"] = json!({});
-        d["types"][0].as_object_mut().unwrap().remove("variants");
     });
     assert_one_malformed(&document, "Tier");
 }
@@ -420,17 +424,14 @@ fn two_cases_sharing_one_identity_are_refused_by_the_reader() {
         d["types"][0]["variants"] = json!([case("Tier", "Gold", 10), case("Tier", "Gold", 11)]);
     });
     let found = refusals(&document);
-    assert!(!found.is_empty());
-    for refusal in &found {
-        assert_eq!(refusal.code, Code::InvalidModelBinding);
-        assert!(
-            matches!(
-                refusal.cause,
-                ModelRefusalCause::IntakeMalformedDeclaration { .. }
-            ),
-            "{refusal:?}"
-        );
-    }
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert_malformed(&found[0], "variant/Tier-Gold");
+    assert!(
+        !found
+            .iter()
+            .any(|refusal| matches!(refusal.cause, ModelRefusalCause::ConflictingBinding { .. })),
+        "the reader's diagnostic is kept, not intake's conflicting-binding"
+    );
 }
 
 /// TC-996 step 5: two cases of one name with distinct identities, which the
@@ -459,7 +460,7 @@ fn a_case_identity_that_is_not_minted_refuses_as_malformed() {
         &single_type(|d| {
             d["types"][0]["variants"][0]["identity"] = json!(id("variant/Tier-Platinum"));
         }),
-        "Tier",
+        "variant/Tier-Platinum",
     );
 }
 
@@ -519,13 +520,42 @@ fn a_clause_naming_a_variant_type_refuses_while_the_declaration_is_admitted() {
         "unsupported_construct/declaration-form"
     );
 
-    // The declaration and exports are those of the package no clause names.
-    let package = admitted(&document);
-    assert_eq!(enum_of(&package, "Tier").members, ["Gold", "Standard"]);
-    assert_eq!(variants_of(&package, "Tier").len(), 2);
+    // The package the refused unit selected carries the declaration and
+    // exports of step 1's package, which no clause names.
+    let step_one = admitted(&document);
+    let (unit, packages) = config_unit_with_body(
+        &bytes,
+        "invariant OnTier using v on Config::Tier at current { true }",
+    );
+    let built = parse_and_build(&unit);
+    let models = admit_unit(
+        &built.selections().models,
+        &packages,
+        ModelNormalizationLimits::default(),
+    )
+    .expect("the package is admitted although the clause is refused");
+    assert_eq!(models[0].view.domain_package().records, step_one.records);
+    assert_eq!(enum_of(&step_one, "Tier").members, ["Gold", "Standard"]);
+    assert_eq!(variants_of(&step_one, "Tier").len(), 2);
+}
+
+/// FR-056 "Variant types": a `Reference<Config::Tier>` in source names the
+/// variant type too, and refuses the same way.
+#[trace("TC-997", "FR-056-AC-27")]
+#[test]
+fn a_reference_to_a_variant_type_in_source_refuses_as_a_declaration_form() {
+    let bytes = serde_json::to_vec(&tiers(&["Gold", "Standard"])).unwrap();
+    let refusal = admit_and_assemble_with_body(
+        &bytes,
+        "function pick using v(r: Reference<Config::Tier>): Boolean pure { true }",
+    )
+    .expect_err("a reference to the variant type refuses");
+    assert_eq!(refusal.errors.len(), 1, "{refusal:?}");
     assert_eq!(
-        package.records,
-        admitted(&tiers(&["Gold", "Standard"])).records
+        refusal.errors[0].cause,
+        AssemblyCause::UnsupportedVariantType {
+            name: "Config::Tier".to_owned()
+        }
     );
 }
 
@@ -563,4 +593,141 @@ fn a_field_typed_by_a_variant_type_refuses_at_the_field() {
     let found = refusals(&document);
     assert_eq!(found.len(), 1, "{found:?}");
     assert_malformed(&found[0], "Account/tier");
+}
+
+/// FR-056 "Variant types": a signature typeRef naming a variant type is a
+/// reference to a node of a meaning it may not name, `malformed-declaration`
+/// (parameter and result alike).
+#[trace("TC-997", "FR-056-AC-28")]
+#[test]
+fn an_operation_signature_naming_a_variant_type_refuses_as_malformed() {
+    let tier = variant_type(
+        "Tier",
+        vec![case("Tier", "Gold", 10), case("Tier", "Standard", 11)],
+    );
+    let setter = operation(
+        "setTier",
+        json!([operation_parameter("setTier", "t", &id("Tier"))]),
+        Some(&id("Tier")),
+        empty_frame(),
+    );
+    let bytes = config_version_document(setter, vec![variant_construct()], vec![tier], json!([]));
+    let document: Value = serde_json::from_slice(&bytes).unwrap();
+    let found = refusals(&document);
+    assert_eq!(found.len(), 2, "parameter and result: {found:?}");
+    for refusal in &found {
+        assert_eq!(refusal.code, Code::InvalidModelBinding);
+        assert_eq!(refusal.cause, ModelRefusalCause::MalformedDeclaration);
+    }
+}
+
+/// FR-154: every failing check of one node is reported. A type with two
+/// payload cases reports both, each at its own case node.
+#[trace("TC-995", "FR-056-AC-25")]
+#[test]
+fn every_payload_case_of_one_type_is_reported() {
+    let mut document = payload_tiers();
+    let standard = &mut document["types"][0]["variants"][0];
+    standard["payloadType"] = json!("ix://quire/native/Integer");
+    let found = refusals(&document);
+    assert_eq!(found.len(), 2, "{found:?}");
+    let mut nodes: Vec<_> = found.iter().map(node_of).collect();
+    nodes.sort_unstable();
+    assert_eq!(
+        nodes,
+        [id("variant/Tier-Gold"), id("variant/Tier-Standard")]
+    );
+    for refusal in &found {
+        assert_eq!(refusal.code, Code::UnsupportedConstruct);
+    }
+}
+
+/// FR-154: an empty `variants` list and a wrong construct shape can both
+/// hold, and both are reported for the one type node.
+#[trace("TC-996", "FR-056-AC-26")]
+#[test]
+fn an_empty_and_mis_shaped_variant_type_reports_both() {
+    let found = refusals(&single_type(|d| {
+        d["constructs"][0]["construct"]["shape"] = json!("record");
+        d["constructs"][0]["construct"]["members"] = json!({});
+        d["types"][0]["variants"] = json!([]);
+    }));
+    assert_eq!(found.len(), 2, "{found:?}");
+    for refusal in &found {
+        assert_malformed(refusal, "Tier");
+    }
+}
+
+fn lifted(values: &[&str]) -> Result<Vec<u8>, qsl_semantics::model::intake::LiftFailure> {
+    let fixtures = crate::model_intake::fcd_fixtures_dir();
+    let bundle = tempfile::tempdir().expect("tempdir");
+    let functional = bundle.path().join("spec/functional");
+    std::fs::create_dir_all(&functional).expect("bundle dirs");
+    std::fs::copy(
+        fixtures.join("resolve/enumeration/spec/spec.md"),
+        bundle.path().join("spec/spec.md"),
+    )
+    .expect("copy master spec");
+    let mut rows = String::new();
+    for value in values {
+        rows.push_str(&format!("| {value} | A tier |\n"));
+    }
+    std::fs::write(
+        functional.join("EN_001-tier.md"),
+        format!(
+            "---\nid: EN_001\ntitle: Tier\nobject: enumeration\ntype: FR\n---\n\n\
+             # EN_001: Tier\n\n## Values\n\n| Value | Description |\n|-------|-------------|\n{rows}"
+        ),
+    )
+    .expect("write enumeration");
+    qsl_semantics::model::intake::lift_document(
+        bundle.path(),
+        &[fixtures.join("modules/fixture-domain")],
+    )
+}
+
+/// TC-994 step 1 through the real lift: the lifted enumeration is a variant
+/// type whose minted case identities the reader accepts.
+#[trace("TC-994", "FR-056-AC-24")]
+#[test]
+fn a_lifted_enumeration_is_admitted_as_a_variant_type() {
+    let bytes = lifted(&["Gold", "Standard"]).expect("the bundle lifts");
+    let document: Value = serde_json::from_slice(&bytes).unwrap();
+    let package = admitted(&document);
+    let tier = package
+        .records
+        .iter()
+        .find_map(|record| match record {
+            DomainPackageRecord::Enum(record) => Some(record),
+            _ => None,
+        })
+        .expect("one enum export");
+    assert_eq!(tier.name, "EN_001");
+    assert_eq!(tier.members, ["Gold", "Standard"]);
+    let cases: Vec<_> = package
+        .records
+        .iter()
+        .filter_map(|record| match record {
+            DomainPackageRecord::Variant(case) => Some((case.case.as_str(), &case.owner)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(cases, [("Gold", &tier.key), ("Standard", &tier.key)]);
+}
+
+/// TC-996 step 4, lift half: enumeration rows that slug alike are refused by
+/// the lift with `UNSLUGGABLE_NAME`, before any document exists.
+#[trace("TC-996", "FR-056-AC-26")]
+#[test]
+fn enumeration_rows_that_slug_alike_are_refused_by_the_lift() {
+    let refused = lifted(&["Snap_Shot", "Snap__Shot"]).expect_err("slug-alike rows are refused");
+    let qsl_semantics::model::intake::LiftFailure::Blocked(diagnostics) = refused else {
+        panic!("a blocking diagnostic, got {refused:?}");
+    };
+    assert!(
+        diagnostics
+            .iter()
+            .any(|d| d.code.to_string() == "agent-ix.extraction-frontend.UNSLUGGABLE_NAME"),
+        "{diagnostics:?}"
+    );
 }

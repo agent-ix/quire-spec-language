@@ -1226,7 +1226,13 @@ fn check_names(
                         | TypeFormHead::Collection(_)
                         | TypeFormHead::Population => continue,
                     };
-                    if !object_types.contains_key(name) {
+                    if variant_types.contains(name) {
+                        // FR-150: a model variant type referenced by source.
+                        errors.push(AssemblyError {
+                            cause: AssemblyCause::UnsupportedVariantType { name: name.clone() },
+                            span: target.span,
+                        });
+                    } else if !object_types.contains_key(name) {
                         errors.push(AssemblyError {
                             cause: AssemblyCause::UnresolvedTypeName { name: name.clone() },
                             span: target.span,

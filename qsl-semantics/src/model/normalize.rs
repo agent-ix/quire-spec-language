@@ -1778,7 +1778,8 @@ fn signature_type_refusal(
         package.records.iter().any(|record| {
             record.key() == key
                 && match record {
-                    DomainPackageRecord::EventType(_)
+                    DomainPackageRecord::Enum(_)
+                    | DomainPackageRecord::EventType(_)
                     | DomainPackageRecord::StateMachine(_)
                     | DomainPackageRecord::Process(_)
                     | DomainPackageRecord::PersistenceInterface(_)

@@ -499,7 +499,9 @@ path `TypeDefinition.variants[i]`: the cases share one `variant` export key
 (owner identity and name), the same collision FR-154 refuses for two nodes
 that share one identity. If a case's identity is not the minted
 `variant/<Name>-<value>` of its owner and name, then intake SHALL refuse the
-case with `invalid_model_binding`/`malformed-declaration`.
+case with `invalid_model_binding`/`malformed-declaration`, naming the later
+case node (the case whose identity is not minted) and the path
+`TypeDefinition.variants[i].identity` for that case.
 
 If a member's `typeRef` names a declaration bound to
 `quire.meaning.model.variant-type/v1`, then intake SHALL refuse the member with

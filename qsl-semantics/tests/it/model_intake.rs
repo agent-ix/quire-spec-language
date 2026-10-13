@@ -73,7 +73,7 @@ fn parse_document(bytes: &[u8]) -> PackageDocument {
 /// `manifest_path` for that package -- the same shell-out-and-parse pattern
 /// `tools/arch-lint/metadata.rs` already uses. Memoized: every test below that needs it calls this, and
 /// `cargo metadata` is not free.
-fn fcd_fixtures_dir() -> &'static Path {
+pub(super) fn fcd_fixtures_dir() -> &'static Path {
     static DIR: OnceLock<PathBuf> = OnceLock::new();
     DIR.get_or_init(|| {
         let output = Command::new(env!("CARGO"))

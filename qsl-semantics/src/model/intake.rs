@@ -133,11 +133,7 @@ pub mod meaning {
 
     /// Every meaning id FR-208 declares, as this reader knows it. A type's
     /// resolved meaning outside this closed list is not a real FR-208
-    /// meaning at all (`invalid_model_binding`/`malformed-declaration`); one
-    /// inside it but not covered by `read_type_node`'s dispatch is
-    /// instead a known-but-unsupported declaration form
-    /// (`unsupported_construct`/`declaration-form`) -- two different
-    /// refusal causes for two different defects.
+    /// meaning at all (`invalid_model_binding`/`malformed-declaration`).
     pub const ALL: &[&str] = &[
         OBJECT_TYPE,
         VALUE_TYPE,
@@ -3589,12 +3585,13 @@ fn meaning_index(document: &Value) -> Result<HashMap<(String, String), String>, 
 /// Reads a `VARIANT_TYPE` type (FR-056 "Variant types") into one
 /// [`EnumRecord`] and one [`VariantRecord`] per case.
 ///
-/// `shape` is the `shape` of the type's own construct. Checks run in this
-/// order and the first failure refuses: the construct shape, a non-empty
-/// `variants` list, two cases of one name, then each case in turn (its
-/// source span, its minted identity, its payload). Records are emitted in
-/// ascending case-name byte order, so the document's `variants` order
-/// changes no record.
+/// `shape` is the `shape` of the type's own construct. Every defect of the
+/// type is reported, not only the first (FR-154: every failing check of one
+/// node), in member-path order: the construct shape (`TypeDefinition.kind`),
+/// the empty `variants` list, then each case in turn -- a repeated name
+/// (`variants[i]`), then its `identity`, `origin` and `payloadType`. Records
+/// are emitted in ascending case-name byte order, so the document's
+/// `variants` order changes no record.
 #[qsl_attrs::string_edge]
 pub(super) fn read_variant_type(
     package: &str,
@@ -3603,29 +3600,41 @@ pub(super) fn read_variant_type(
     at: &str,
     shape: Option<&str>,
     records: &mut Vec<DomainPackageRecord>,
-) -> Result<(), ModelRefusal> {
+) -> Result<(), Vec<ModelRefusal>> {
     let ctx = NodeCtx::new(type_value, at);
+    let mut refusals = Vec::new();
     if shape != Some("enumeration") {
-        return Err(ctx.malformed(
+        refusals.push(ctx.malformed(
             "kind: a variant type's construct has shape enumeration (path TypeDefinition.kind)",
         ));
     }
-    let variants = ctx.array_field("variants")?;
+    let variants = match ctx.array_field("variants") {
+        Ok(variants) => variants,
+        Err(refusal) => return Err(vec![refusal]),
+    };
     if variants.is_empty() {
-        return Err(ctx.malformed(
+        refusals.push(ctx.malformed(
             "variants: a variant type declares one or more cases (path TypeDefinition.variants)",
         ));
     }
     let owner = declaration_key(package, node);
-    let artifact = type_identity_segment(package, node)
-        .ok_or_else(|| ctx.malformed("identity: has no artifact id"))?;
+    let Some(artifact) = type_identity_segment(package, node) else {
+        refusals.push(ctx.malformed("identity: has no artifact id"));
+        return Err(refusals);
+    };
     let mut cases = Vec::with_capacity(variants.len());
-    let mut first_of: HashMap<&str, (usize, Option<&str>)> = HashMap::new();
+    let mut first_of: HashMap<&str, (usize, &str)> = HashMap::new();
     for (position, case) in variants.iter().enumerate() {
         let case_at = format!("{at}.variants[{position}]");
         let case_ctx = NodeCtx::new(case, case_at.clone());
-        let name = case_ctx.str_field("name")?;
-        let identity = case.get("identity").and_then(Value::as_str);
+        let (name, identity) = match (case_ctx.str_field("name"), case_ctx.str_field("identity")) {
+            (Ok(name), Ok(identity)) => (name, identity),
+            (name, identity) => {
+                refusals.extend(name.err());
+                refusals.extend(identity.err());
+                continue;
+            }
+        };
         if let Some(&(first, first_identity)) = first_of.get(name) {
             if identity == first_identity {
                 // One identity declared twice: the reader's own
@@ -3633,57 +3642,55 @@ pub(super) fn read_variant_type(
                 // (FR-056's reader-first rule), so no second case is read.
                 continue;
             }
-            return Err(ModelRefusal {
+            refusals.push(ModelRefusal {
                 code: Code::InvalidModelBinding,
-                cause: ModelRefusalCause::ConflictingBinding { key: owner },
+                cause: ModelRefusalCause::ConflictingBinding { key: owner.clone() },
                 detail: format!(
                     "{case_at}: TypeDefinition.variants[{position}]: case {name:?} repeats \
                      variants[{first}]; the cases share one variant export key"
                 ),
             });
+            continue;
+        } else {
+            first_of.insert(name, (position, identity));
         }
-        first_of.insert(name, (position, identity));
-        cases.push((position, name, case, case_ctx));
-    }
-    for (position, name, case, case_ctx) in &cases {
-        if node_span(case).1.is_none() {
-            return Err(ctx.malformed(format!(
-                "variants[{position}].origin: a variant case with no source span refuses \
-                 (path TypeDefinition.variants[{position}].origin)"
-            )));
-        }
-        let identity = case_ctx.str_field("identity")?;
         let minted = agent_ix_extraction_frontend::slug(name)
             .is_ok_and(|slug| identity == format!("ix://{package}/variant/{artifact}-{slug}"));
         if !minted {
-            return Err(ctx.malformed(format!(
+            refusals.push(case_ctx.malformed(format!(
                 "variants[{position}].identity: {identity:?} is not the case's minted \
                  variant/<Name>-<value> (path TypeDefinition.variants[{position}].identity)"
             )));
         }
+        if node_span(case).1.is_none() {
+            refusals.push(ctx.malformed(format!(
+                "variants[{position}].origin: a variant case with no source span refuses \
+                 (path TypeDefinition.variants[{position}].origin)"
+            )));
+        }
         if case.get("payloadType").is_some() {
-            return Err(unsupported_at(
+            refusals.push(unsupported_at(
                 case,
-                &case_ctx.at,
+                &case_at,
                 format!("{}:payloadType", meaning::VARIANT_TYPE),
             ));
         }
+        cases.push((name, identity));
     }
-    cases.sort_by(|left, right| left.1.cmp(right.1));
+    if !refusals.is_empty() {
+        return Err(refusals);
+    }
+    cases.sort_by(|left, right| left.0.cmp(right.0));
     records.push(DomainPackageRecord::Enum(EnumRecord {
         key: owner.clone(),
         name: artifact.to_owned(),
-        members: cases
-            .iter()
-            .map(|(_, name, _, _)| (*name).to_owned())
-            .collect(),
+        members: cases.iter().map(|(name, _)| (*name).to_owned()).collect(),
     }));
-    for (_, name, case, _) in &cases {
-        let identity = case.get("identity").and_then(Value::as_str).unwrap_or(node);
+    for (name, identity) in cases {
         records.push(DomainPackageRecord::Variant(VariantRecord {
             key: declaration_key(package, identity),
             owner: owner.clone(),
-            case: (*name).to_owned(),
+            case: name.to_owned(),
         }));
     }
     Ok(())
@@ -3717,6 +3724,10 @@ fn shape_index(document: &Value) -> HashMap<(String, String), String> {
 /// order: the node's own identity form first (the object-id check), then
 /// its `kind`/meaning, then the meaning-specific shape.
 #[qsl_attrs::string_edge]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "one reader entry point threading the package-wide indexes and the pending-frame and extra-refusal sinks"
+)]
 fn read_type_node(
     package: &str,
     meanings: &HashMap<(String, String), String>,
@@ -3725,6 +3736,7 @@ fn read_type_node(
     type_value: &Value,
     at: &str,
     pending: &mut Vec<PendingFrame>,
+    more_refusals: &mut Vec<ModelRefusal>,
 ) -> Result<Vec<DomainPackageRecord>, ModelRefusal> {
     let ctx = NodeCtx::new(type_value, at);
     let (_, key) = read_type_identity(package, &ctx)?;
@@ -3779,6 +3791,7 @@ fn read_type_node(
                 .get(&(module.to_owned(), name.to_owned()))
                 .map(String::as_str),
             records: &mut records,
+            more_refusals,
             pending,
         };
         super::meaning_dispatch::bind(construct_meaning, &mut context)
@@ -3821,14 +3834,13 @@ fn read_type_node(
                 package, &ctx, node,
             )?));
         }
-        other if meaning::ALL.contains(&other) => {
-            // A real FR-208 meaning with no
-            // QSL record shape yet, or a real meaning whose shape this
-            // reader claims only part of (VALUE_TYPE's record-shaped form,
-            // caught above before this match) -- refused as a
-            // known-but-unsupported declaration form, never silently folded
-            // into `ObjectTypeRecord`.
-            return Err(unsupported_at(type_value, at, other));
+        // A population is read from `populations[]`; a `types[]` entry
+        // bound to it is a node not valid for its construct's meaning
+        // (FR-056 "Meaning binding", FR-154's construct validity rule).
+        meaning::POPULATION => {
+            return Err(
+                ctx.malformed("kind: a type definition is not valid for the population meaning")
+            );
         }
         other => {
             return Err(ctx.malformed(format!(
@@ -4364,6 +4376,7 @@ fn read_nodes_partial(
     let mut records = Vec::new();
     let mut refusals = Vec::new();
     let mut pending: Vec<PendingFrame> = Vec::new();
+    let mut more_refusals: Vec<ModelRefusal> = Vec::new();
     let mut namespace_members: HashMap<DeclarationKey, DeclarationKey> = HashMap::new();
     for node in nodes {
         match node {
@@ -4377,6 +4390,7 @@ fn read_nodes_partial(
                     type_value,
                     &at,
                     &mut pending,
+                    &mut more_refusals,
                 ) {
                     Ok(mut new_records) => {
                         let mut duplicate = None;
@@ -4410,7 +4424,10 @@ fn read_nodes_partial(
                             records.append(&mut new_records);
                         }
                     }
-                    Err(refusal) => refusals.push(refusal),
+                    Err(refusal) => {
+                        refusals.push(refusal);
+                        refusals.append(&mut more_refusals);
+                    }
                 }
             }
             DocumentNode::Population(population, position, _) => {
@@ -5982,14 +5999,14 @@ mod tests {
         );
     }
 
-    /// A real FR-208 meaning (`POPULATION`, which is read from `populations[]`, never from a `types[]` entry) FCD's own schema accepts
-    /// generically -- any string in `kind`'s resolved `meaning` is
-    /// schema-valid -- but [`read_type_node`]'s dispatch has no reader for
-    /// yet, refuses as a known-but-unsupported declaration form rather than
-    /// silently folding into `ObjectTypeRecord`.
+    /// FR-056 "Meaning binding": "If an IR node is not valid for its
+    /// construct's meaning under FR-154's construct validity rule, then the
+    /// compiler SHALL refuse it with `invalid_model_binding`/
+    /// `malformed-declaration`." A `types[]` entry bound to the population
+    /// meaning is such a node.
     #[trace("TC-146", "FR-056-AC-3")]
     #[test]
-    fn refuses_a_known_but_unsupported_fr208_meaning_as_unsupported() {
+    fn refuses_a_type_definition_bound_to_the_population_meaning_as_malformed() {
         let document = wire_envelope(
             "acme/orders",
             serde_json::json!([wire_construct(
@@ -6006,24 +6023,15 @@ mod tests {
         )
         .to_string()
         .into_bytes();
-        let refusals = read_records("acme/orders", &parse_document(&document)).expect_err(
-            "a real FR-208 meaning with no QSL record shape yet refuses, not folds into \
-             ObjectTypeRecord",
-        );
-        assert_eq!(
-            refusals,
-            vec![ModelRefusal {
-                code: Code::UnsupportedConstruct,
-                cause: ModelRefusalCause::UnsupportedDeclarationForm {
-                    node: "ix://acme/orders/OrderPlaced".to_owned(),
-                    what: meaning::POPULATION.to_owned(),
-                },
-                detail: format!(
-                    "$.types[0]: construct meaning/capability {:?} has no reader yet",
-                    meaning::POPULATION
-                ),
-            }]
-        );
+        let refusals = read_records("acme/orders", &parse_document(&document))
+            .expect_err("a type definition bound to the population meaning refuses");
+        assert_eq!(refusals.len(), 1);
+        assert_eq!(refusals[0].code, Code::InvalidModelBinding);
+        assert!(matches!(
+            &refusals[0].cause,
+            ModelRefusalCause::IntakeMalformedDeclaration { node, .. }
+                if node == "ix://acme/orders/OrderPlaced"
+        ));
     }
 
     fn money_field(name: &str, type_ref: &str) -> Value {
