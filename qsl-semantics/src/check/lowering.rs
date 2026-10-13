@@ -74,11 +74,11 @@ use super::node_key::{
 use super::refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, KeyFault, StageLimitCause,
 };
+use crate::model::key::DeclarationKey;
 use crate::value::definition::{CatalogRole, DefinitionLock, DefinitionReference};
 use crate::value::enumeration::{member_preimage_bytes, EnumDeclarationPreimage};
 use crate::value::member::Member;
 use crate::value::unit::{DimensionPreimage, UnitPreimage};
-use crate::model::key::DeclarationKey;
 use quire_semantic_value::declaration::{
     CompositeShape, EqualityOperator, FieldDeclaration, TypeEnvironment,
 };
@@ -89,8 +89,8 @@ mod model;
 mod state;
 mod wire;
 
-pub use model::{AdmittedModel, ForeignView, ModelClause};
 pub(crate) use model::{record_node_key, RecordKeyError};
+pub use model::{AdmittedModel, ForeignView, ModelClause};
 pub(crate) use state::{
     AnchorInput, AttemptInput, LoweredAttempt, LoweredClause, OperationBinding, StateClauseInput,
 };

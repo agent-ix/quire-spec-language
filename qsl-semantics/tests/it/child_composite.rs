@@ -234,7 +234,10 @@ fn records_and_events_are_model_owned_nodes_without_supertypes() {
             })
             .collect();
         assert_eq!(owned.len(), 1, "{name} is one {form} node");
-        assert_eq!(owned[0].2["owner"]["kind"], "model", "{name} has a ModelOwner");
+        assert_eq!(
+            owned[0].2["owner"]["kind"], "model",
+            "{name} has a ModelOwner"
+        );
         assert_eq!(owned[0].2["owner"]["identity"], fixture::PACKAGE);
     }
     assert!(

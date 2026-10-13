@@ -149,88 +149,228 @@ impl FamilyContract for StateModelFamily {
                 Form::Target(form) => {
                     let value_type = super::type_form::resolve_type_form(scope, form, location)
                         .map_err(|error| refuse(&error.location, error.cause))?;
-                    if !matches!(value_type, ValueType::Reference(_)) { return Err(mismatch(location)); }
+                    if !matches!(value_type, ValueType::Reference(_)) {
+                        return Err(mismatch(location));
+                    }
                     Checked::Type(value_type)
                 }
-                Form::Attribute { reference, value_type, field, operand_location, derefed } => {
-                    let ValueType::Reference(object) = value_type else { return Err(mismatch(operand_location)); };
-                    let attribute = scope.types().attribute(*object, field).ok_or_else(|| mismatch(location))?;
+                Form::Attribute {
+                    reference,
+                    value_type,
+                    field,
+                    operand_location,
+                    derefed,
+                } => {
+                    let ValueType::Reference(object) = value_type else {
+                        return Err(mismatch(operand_location));
+                    };
+                    let attribute = scope
+                        .types()
+                        .attribute(*object, field)
+                        .ok_or_else(|| mismatch(location))?;
                     let declared = attribute.field();
                     let optional = declared.presence() == Presence::Optional;
-                    let value_type = if optional { ValueType::option(declared.value_type().clone()) } else { declared.value_type().clone() };
-                    make(NodeKind::Attribute { reference: *reference, field: attribute.identity(), optional, derefed: *derefed }, value_type)
+                    let value_type = if optional {
+                        ValueType::option(declared.value_type().clone())
+                    } else {
+                        declared.value_type().clone()
+                    };
+                    make(
+                        NodeKind::Attribute {
+                            reference: *reference,
+                            field: attribute.identity(),
+                            optional,
+                            derefed: *derefed,
+                        },
+                        value_type,
+                    )
                 }
-                Form::Reaches { source, source_type, target, target_type, edge } => {
-                    let (ValueType::Reference(object), ValueType::Reference(other)) = (source_type, target_type) else { return Err(ineligible(location)); };
+                Form::Reaches {
+                    source,
+                    source_type,
+                    target,
+                    target_type,
+                    edge,
+                } => {
+                    let (ValueType::Reference(object), ValueType::Reference(other)) =
+                        (source_type, target_type)
+                    else {
+                        return Err(ineligible(location));
+                    };
                     let attribute = scope
                         .types()
                         .attribute(*object, edge)
                         .ok_or_else(|| missing(edge))?;
                     let owner = attribute.owner();
                     let endpoints_admitted = if scope.complete_model {
-                        scope.types().conforms(*object, owner) && scope.types().conforms(*other, owner)
+                        scope.types().conforms(*object, owner)
+                            && scope.types().conforms(*other, owner)
                     } else {
                         *object == owner && *other == owner
                     };
-                    if !endpoints_admitted { return Err(ineligible(location)); }
+                    if !endpoints_admitted {
+                        return Err(ineligible(location));
+                    }
                     let declared = attribute.field();
                     let names_object = |ty: &ValueType| ty == &ValueType::Reference(owner);
                     let admitted = match (declared.presence(), declared.value_type()) {
                         (_, ValueType::Reference(_)) => names_object(declared.value_type()),
-                        (Presence::Required, ValueType::Collection(collection)) => collection.kind() == CollectionKind::Sequence && names_object(collection.element()),
+                        (Presence::Required, ValueType::Collection(collection)) => {
+                            collection.kind() == CollectionKind::Sequence
+                                && names_object(collection.element())
+                        }
                         _ => false,
                     };
-                    if !admitted { return Err(ineligible(location)); }
-                    make(NodeKind::Reaches { source: *source, target: *target, edge: attribute.identity() }, ValueType::Boolean)
+                    if !admitted {
+                        return Err(ineligible(location));
+                    }
+                    make(
+                        NodeKind::Reaches {
+                            source: *source,
+                            target: *target,
+                            edge: attribute.identity(),
+                        },
+                        ValueType::Boolean,
+                    )
                 }
                 Form::ReachesContext(in_state_clause) => {
-                    if !in_state_clause { return Err(ineligible(location)); }
+                    if !in_state_clause {
+                        return Err(ineligible(location));
+                    }
                     Checked::Admitted
                 }
-                Form::AllInstances { target, population, population_type, operand_location } => {
-                    let ValueType::Population(maximum) = population_type else { return Err(ineligible(operand_location)); };
-                    let bound = maximum.map(|maximum| CardinalityBound::new(0, maximum)
-                        .map_err(|_| refuse(location, CheckCause::UnrepresentableBound))).transpose()?;
-                    make(NodeKind::AllInstances { population: *population }, ValueType::collection(CollectionType::new(CollectionKind::Set, target.clone(), bound)))
+                Form::AllInstances {
+                    target,
+                    population,
+                    population_type,
+                    operand_location,
+                } => {
+                    let ValueType::Population(maximum) = population_type else {
+                        return Err(ineligible(operand_location));
+                    };
+                    let bound = maximum
+                        .map(|maximum| {
+                            CardinalityBound::new(0, maximum)
+                                .map_err(|_| refuse(location, CheckCause::UnrepresentableBound))
+                        })
+                        .transpose()?;
+                    make(
+                        NodeKind::AllInstances {
+                            population: *population,
+                        },
+                        ValueType::collection(CollectionType::new(
+                            CollectionKind::Set,
+                            target.clone(),
+                            bound,
+                        )),
+                    )
                 }
                 Form::Population { value_type } => {
-                    if !matches!(value_type, ValueType::Population(_)) { return Err(ineligible(location)); }
+                    if !matches!(value_type, ValueType::Population(_)) {
+                        return Err(ineligible(location));
+                    }
                     Checked::Admitted
                 }
-                Form::Lookup { target, population, reference, reference_type, reference_location, absence } => {
-                    let (ValueType::Reference(s), ValueType::Reference(t)) = (reference_type, target) else { return Err(mismatch(reference_location)); };
-                    if !scope.types().conforms(*s, *t) { return Err(mismatch(reference_location)); }
-                    let value_type = match absence { AbsenceMode::Undefined | AbsenceMode::Refused => target.clone(), AbsenceMode::Empty => ValueType::option(target.clone()) };
-                    make(NodeKind::Lookup { population: *population, reference: *reference, absence: *absence }, value_type)
+                Form::Lookup {
+                    target,
+                    population,
+                    reference,
+                    reference_type,
+                    reference_location,
+                    absence,
+                } => {
+                    let (ValueType::Reference(s), ValueType::Reference(t)) =
+                        (reference_type, target)
+                    else {
+                        return Err(mismatch(reference_location));
+                    };
+                    if !scope.types().conforms(*s, *t) {
+                        return Err(mismatch(reference_location));
+                    }
+                    let value_type = match absence {
+                        AbsenceMode::Undefined | AbsenceMode::Refused => target.clone(),
+                        AbsenceMode::Empty => ValueType::option(target.clone()),
+                    };
+                    make(
+                        NodeKind::Lookup {
+                            population: *population,
+                            reference: *reference,
+                            absence: *absence,
+                        },
+                        value_type,
+                    )
                 }
                 Form::DispatchContext(kind) => {
-                    if !matches!(kind, ClauseKind::Invariant | ClauseKind::Precondition | ClauseKind::Postcondition) { return Err(ineligible(location)); }
+                    if !matches!(
+                        kind,
+                        ClauseKind::Invariant
+                            | ClauseKind::Precondition
+                            | ClauseKind::Postcondition
+                    ) {
+                        return Err(ineligible(location));
+                    }
                     Checked::Admitted
                 }
-                Form::DispatchOperation { receiver_type, member, arity } => {
-                    let ValueType::Reference(receiver_type) = receiver_type else { return Err(ineligible(location)); };
-                    let (index, operation) = scope.dispatch_operations().iter().enumerate()
-                        .find(|(_, operation)| operation.receiver_type == *receiver_type && operation.member == *member).ok_or_else(|| missing(member))?;
-                    if operation.parameters.len() != *arity { return Err(mismatch(location)); }
+                Form::DispatchOperation {
+                    receiver_type,
+                    member,
+                    arity,
+                } => {
+                    let ValueType::Reference(receiver_type) = receiver_type else {
+                        return Err(ineligible(location));
+                    };
+                    let (index, operation) = scope
+                        .dispatch_operations()
+                        .iter()
+                        .enumerate()
+                        .find(|(_, operation)| {
+                            operation.receiver_type == *receiver_type && operation.member == *member
+                        })
+                        .ok_or_else(|| missing(member))?;
+                    if operation.parameters.len() != *arity {
+                        return Err(mismatch(location));
+                    }
                     Checked::Operation(index)
                 }
-                Form::Dispatch { receiver, operation, arguments } => {
-                    let operation_decl = scope.dispatch_operations().get(*operation).ok_or_else(|| fault(location))?;
-                    make(NodeKind::Dispatch { receiver: *receiver, table: operation_decl.table, operation: *operation, arguments: arguments.clone() }, operation_decl.result.clone())
+                Form::Dispatch {
+                    receiver,
+                    operation,
+                    arguments,
+                } => {
+                    let operation_decl = scope
+                        .dispatch_operations()
+                        .get(*operation)
+                        .ok_or_else(|| fault(location))?;
+                    make(
+                        NodeKind::Dispatch {
+                            receiver: *receiver,
+                            table: operation_decl.table,
+                            operation: *operation,
+                            arguments: arguments.clone(),
+                        },
+                        operation_decl.result.clone(),
+                    )
                 }
                 Form::Argument { actual, required } => {
                     // A reference upcast, or (FR-359 item 6) a record whose most-specific type conforms to the parameter's record type.
                     let admitted = actual == required
                         || match (actual, required) {
-                            (ValueType::Reference(s), ValueType::Reference(t)) => scope.types().conforms(*s, *t),
-                            (ValueType::Composite(s), ValueType::Composite(t)) => scope.types().composite_conforms(*s, *t),
+                            (ValueType::Reference(s), ValueType::Reference(t)) => {
+                                scope.types().conforms(*s, *t)
+                            }
+                            (ValueType::Composite(s), ValueType::Composite(t)) => {
+                                scope.types().composite_conforms(*s, *t)
+                            }
                             _ => false,
                         };
-                    if !admitted { return Err(mismatch(location)); }
+                    if !admitted {
+                        return Err(mismatch(location));
+                    }
                     Checked::Type(required.clone())
                 }
             })
-        })().map_err(StageFailure::Refused)?;
+        })()
+        .map_err(StageFailure::Refused)?;
         cx.diagnostics.record(
             cx.scopes,
             format!(

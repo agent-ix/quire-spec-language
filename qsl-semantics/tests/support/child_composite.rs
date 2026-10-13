@@ -13,6 +13,7 @@
 use serde_json::{json, Value};
 
 #[path = "tc235_k2.rs"]
+#[allow(dead_code, reason = "this fixture uses part of the shared K2 builder")]
 mod base;
 pub(crate) use base::{id, PACKAGE};
 
@@ -229,11 +230,7 @@ pub(crate) fn document() -> Value {
             &[],
             vec![optional("TaxedInvoice", "total", &id("TaxedMoney"))],
         ),
-        record(
-            "Quant",
-            &[],
-            vec![plain("Quant", "n", &native("Integer"))],
-        ),
+        record("Quant", &[], vec![plain("Quant", "n", &native("Integer"))]),
         record(
             "NarrowQuant",
             &["Quant"],

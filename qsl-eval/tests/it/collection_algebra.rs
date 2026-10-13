@@ -109,7 +109,7 @@ fn equal(env: &TypeEnvironment, value_type: &ValueType, left: &Value, right: &Va
             &EnumMemberIndex::default(),
         )
         .unwrap();
-    match checked.evaluate(left, right, &mut Meter::new(UNLIMITED)) {
+    match checked.evaluate(&env, left, right, &mut Meter::new(UNLIMITED)) {
         Outcome::Completed(result) => result,
         other => panic!("equality completes, not {other:?}"),
     }

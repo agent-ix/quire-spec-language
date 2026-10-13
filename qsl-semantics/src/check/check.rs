@@ -161,6 +161,8 @@ pub struct PackageDeclarations {
     pub lock_evidence: super::lowering::LockEvidence,
     /// Record, tuple and model object-type declarations.
     pub types: TypeEnvironment,
+    /// Where each record keeps the fields its ancestors name (FR-359).
+    pub record_slots: RecordSlots,
     /// The model object types' own declared operations (FR-103), resolved
     /// through [`Self::types`]' effective view.
     pub operations: OperationTable,
@@ -271,6 +273,7 @@ impl PackageDeclarations {
             source,
             lock_evidence: super::lowering::LockEvidence::default(),
             types: TypeEnvironment::default(),
+            record_slots: RecordSlots::default(),
             operations: OperationTable::default(),
             enums: Vec::new(),
             aliases: Vec::new(),
@@ -325,11 +328,57 @@ pub struct DispatchOperation {
     pub table: usize,
 }
 
+/// Where a record value keeps a field another record names (FR-359 item 2).
+///
+/// A checked field read names its field by the record it is typed at and the
+/// name there. The value read is a child of that record, whose effective
+/// fields are ordered by their own keys, and which may redefine the field
+/// under another name (FR-082). This holds, for each record that redefines an
+/// ancestor's field under a different name, the name of its own field.
+/// A record with no such field keeps every field under its name.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct RecordSlots {
+    renamed: BTreeMap<(quire_exact::NodeKey, quire_exact::NodeKey, String), String>,
+}
+
+impl RecordSlots {
+    /// Record that the record `value` keeps the field `name` of the record
+    /// `read_at` under its own field `own`.
+    pub fn rename(
+        &mut self,
+        value: quire_exact::NodeKey,
+        read_at: quire_exact::NodeKey,
+        name: impl Into<String>,
+        own: impl Into<String>,
+    ) {
+        self.renamed
+            .insert((value, read_at, name.into()), own.into());
+    }
+
+    /// Every entry of `other`.
+    pub(crate) fn extend(&mut self, other: RecordSlots) {
+        self.renamed.extend(other.renamed);
+    }
+
+    /// The name under which a value of `declaration` keeps `field`.
+    fn own_name<'f>(
+        &'f self,
+        declaration: quire_exact::NodeKey,
+        field: &'f RecordField,
+    ) -> &'f str {
+        self.renamed
+            .get(&(declaration, field.declaration(), field.name().to_owned()))
+            .map_or(field.name(), String::as_str)
+    }
+}
+
 /// Everything names resolve against, apart from function bodies.
 #[derive(Clone, Debug)]
 pub struct Scope {
     /// Fixed once built: [`Self::index`] is derived from it.
     types: TypeEnvironment,
+    /// Where a record value keeps the fields its ancestors name (FR-359).
+    record_slots: RecordSlots,
     /// Fixed once built, like `types`.
     enums: Vec<EnumBinding>,
     /// The model object types' own declared operations (FR-103).
@@ -465,6 +514,7 @@ impl Scope {
         let index = ScopeIndex::new(&types, &enums, &aliases, &model_operations);
         Self {
             types,
+            record_slots: RecordSlots::default(),
             enums,
             operations,
             ieee_profile,
@@ -493,6 +543,13 @@ impl Scope {
 
     pub(crate) fn with_complete_value(mut self, complete_value: bool) -> Self {
         self.complete_value = complete_value;
+        self
+    }
+
+    /// This scope with where its record values keep the fields their
+    /// ancestors name.
+    pub(crate) fn with_record_slots(mut self, record_slots: RecordSlots) -> Self {
+        self.record_slots = record_slots;
         self
     }
 
@@ -584,6 +641,23 @@ impl Scope {
     /// The package's composite and object type declarations.
     pub fn types(&self) -> &TypeEnvironment {
         &self.types
+    }
+
+    /// The position, in the record `declaration`'s own fields, of the field
+    /// `field` names (FR-359 item 2): found in the value's own declaration by
+    /// the field's identity, never by a position computed from the record
+    /// the read was typed at. `None` when the declaration is no record or
+    /// holds no such field.
+    pub fn record_slot(
+        &self,
+        declaration: quire_exact::NodeKey,
+        field: &RecordField,
+    ) -> Option<usize> {
+        let CompositeShape::Record(fields) = self.types.composite(declaration)?.shape() else {
+            return None;
+        };
+        let name = self.record_slots.own_name(declaration, field);
+        fields.iter().position(|candidate| candidate.name() == name)
     }
 
     /// The package's model object types' declared operations (FR-103).

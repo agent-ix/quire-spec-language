@@ -104,7 +104,7 @@ fn equal(
         EqualityOperand::typed(value_type.clone()),
         &EnumMemberIndex::default(),
     )
-    .map(|checked| checked.evaluate(left, right, &mut Meter::new(UNLIMITED)))
+    .map(|checked| checked.evaluate(env, left, right, &mut Meter::new(UNLIMITED)))
 }
 
 /// `record P { a: Integer; b: Integer?; }` and `tuple T(Integer, Integer);`.

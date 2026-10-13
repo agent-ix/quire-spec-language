@@ -515,7 +515,7 @@ fn equal(
     (right_type, right): (&ValueType, &Value),
 ) -> Result<Outcome<bool>, IllTyped> {
     check(env, left_type, right_type)
-        .map(|checked| checked.evaluate(left, right, &mut Meter::new(UNLIMITED)))
+        .map(|checked| checked.evaluate(env, left, right, &mut Meter::new(UNLIMITED)))
 }
 
 fn is(expected: bool) -> Result<Outcome<bool>, IllTyped> {
@@ -607,7 +607,7 @@ fn e02_integers_and_admitted_rational_conversion() {
         .unwrap();
     let mut meter = Meter::new(UNLIMITED);
     assert_eq!(
-        converted.evaluate(&source, &rational(1, 1), &mut meter),
+        converted.evaluate(&env, &source, &rational(1, 1), &mut meter),
         Outcome::Completed(true)
     );
     assert_eq!(
@@ -643,7 +643,7 @@ fn e03_decimals_compare_mathematically_and_convert_without_mutation() {
         .unwrap();
     let one = rational(1, 1);
     assert_eq!(
-        converted.evaluate(&left, &one, &mut Meter::new(UNLIMITED)),
+        converted.evaluate(&env, &left, &one, &mut Meter::new(UNLIMITED)),
         Outcome::Completed(true)
     );
     let Value::Decimal(source) = &left else {
@@ -699,7 +699,12 @@ fn e05_quantities_after_explicit_canonical_unit_conversion() {
         .unwrap();
     let mut meter = Meter::new(UNLIMITED);
     assert_eq!(
-        converted.evaluate(&Value::Quantity(source.clone()), &one_metre, &mut meter),
+        converted.evaluate(
+            &env,
+            &Value::Quantity(source.clone()),
+            &one_metre,
+            &mut meter
+        ),
         Outcome::Completed(true)
     );
     assert!(!crate::support::admitted_charge_points(&meter).contains(&ChargePoint::EqualityPlan));
@@ -730,6 +735,7 @@ fn e06_text_under_one_pinned_profile() {
     let mut meter = Meter::new(UNLIMITED);
     assert_eq!(
         check(&env, &nfc, &nfc).unwrap().evaluate(
+            &env,
             &composed,
             &text("e\u{301}", TextProfile::Nfc),
             &mut meter
@@ -796,7 +802,7 @@ fn e07_enumerations_by_declaration_node_and_case() {
     let equal_enum =
         |left_type: &ValueType, left: &Value, right_type: &ValueType, right: &Value| {
             check_with_enums(&env, left_type, right_type, &index)
-                .map(|checked| checked.evaluate(left, right, &mut Meter::new(UNLIMITED)))
+                .map(|checked| checked.evaluate(&env, left, right, &mut Meter::new(UNLIMITED)))
         };
     let ready = member(&a, "READY");
     assert_eq!(
@@ -1143,6 +1149,7 @@ fn e16_references_compare_identity_triple_only() {
     let mut meter = Meter::new(UNLIMITED);
     assert_eq!(
         check(&env, &r, &r).unwrap().evaluate(
+            &env,
             &left,
             &Value::Reference(reference("u2", "a")),
             &mut meter
@@ -1502,7 +1509,7 @@ fn e21_duplicated_and_shared_lists_charge_seventeen_pairs() {
         assert_eq!(pairs(&left, &right), 17);
         let mut meter = Meter::new(E21);
         assert_eq!(
-            checked.evaluate(&left, &right, &mut meter),
+            checked.evaluate(&env, &left, &right, &mut meter),
             Outcome::Completed(true)
         );
         assert_eq!(
@@ -1520,11 +1527,17 @@ fn e21_duplicated_and_shared_lists_charge_seventeen_pairs() {
             })
         };
         assert_eq!(
-            checked.evaluate(&left, &right, &mut denied(ChargePoint::EqualityPair, 17)),
+            checked.evaluate(
+                &env,
+                &left,
+                &right,
+                &mut denied(ChargePoint::EqualityPair, 17)
+            ),
             incomplete(LimitKind::WorkUnits, 49, 49, 1, ChargePoint::EqualityPair)
         );
         assert_eq!(
             checked.evaluate(
+                &env,
                 &left,
                 &right,
                 &mut denied(ChargePoint::EqualityResultRetain, 1)
@@ -1561,7 +1574,7 @@ fn e22_sets_and_bags_match_reference_holders_by_key_rank() {
         let mut meter = Meter::new(UNLIMITED);
         let outcome = check(&env, value_type, value_type)
             .unwrap()
-            .evaluate(left, right, &mut meter);
+            .evaluate(&env, left, right, &mut meter);
         (
             outcome,
             pairs(left, right),
@@ -1627,7 +1640,7 @@ fn e23_plan_reservation_is_unavailable_after_plan_formation() {
     assert_eq!(
         check(&env, &list, &list)
             .unwrap()
-            .evaluate(&left, &right, &mut meter),
+            .evaluate(&env, &left, &right, &mut meter),
         incomplete(LimitKind::WorkUnits, 50, 32, 19, ChargePoint::EqualityPlan)
     );
     assert_eq!(
@@ -1673,7 +1686,7 @@ fn e24_quantity_leaf_charges_only_its_pair() {
     };
     let mut meter = Meter::new(limits);
     assert_eq!(
-        checked.evaluate(&record(), &record(), &mut meter),
+        checked.evaluate(&env, &record(), &record(), &mut meter),
         Outcome::Completed(true)
     );
     assert_eq!(
@@ -1703,7 +1716,10 @@ fn e24_quantity_leaf_charges_only_its_pair() {
             work_units: work,
             ..limits
         });
-        assert_eq!(checked.evaluate(&record(), &record(), &mut short), expected);
+        assert_eq!(
+            checked.evaluate(&env, &record(), &record(), &mut short),
+            expected
+        );
     }
 }
 
@@ -1755,7 +1771,7 @@ fn e25_top_level_scalar_and_reference_equality_is_a_one_pair_plan() {
             .unwrap();
         let mut meter = Meter::new(limits);
         assert_eq!(
-            checked.evaluate(&left, &right, &mut meter),
+            checked.evaluate(&env, &left, &right, &mut meter),
             Outcome::Completed(expected)
         );
         assert_eq!(
@@ -1780,7 +1796,12 @@ fn e25_top_level_scalar_and_reference_equality_is_a_one_pair_plan() {
             ..limits
         });
         assert_eq!(
-            boolean.evaluate(&Value::Boolean(true), &Value::Boolean(true), &mut meter),
+            boolean.evaluate(
+                &env,
+                &Value::Boolean(true),
+                &Value::Boolean(true),
+                &mut meter
+            ),
             expected
         );
     }
@@ -1854,7 +1875,7 @@ fn e26_exactly_the_tabled_equality_conversions_are_admitted() {
             Some(expected) => assert_eq!(
                 checked
                     .unwrap()
-                    .evaluate(&left, &right, &mut Meter::new(UNLIMITED)),
+                    .evaluate(&env, &left, &right, &mut Meter::new(UNLIMITED)),
                 Outcome::Completed(expected),
                 "row {row}"
             ),
@@ -1888,7 +1909,7 @@ fn e27_structural_mismatch_and_cardinality_short_circuit_pair_counts() {
         let mut meter = Meter::new(UNLIMITED);
         let outcome = check(&env, value_type, value_type)
             .unwrap()
-            .evaluate(left, right, &mut meter);
+            .evaluate(&env, left, right, &mut meter);
         (
             outcome.completed().unwrap(),
             pairs(left, right),
@@ -2006,7 +2027,7 @@ fn e29_integer_to_decimal_conversion_charges_its_decimal_schedule() {
     };
     let mut meter = Meter::new(limits);
     assert_eq!(
-        checked.evaluate(&int(1), &decimal(100, 2), &mut meter),
+        checked.evaluate(&env, &int(1), &decimal(100, 2), &mut meter),
         Outcome::Completed(true)
     );
     let mut expected = vec![
@@ -2028,7 +2049,7 @@ fn e29_integer_to_decimal_conversion_charges_its_decimal_schedule() {
         ..limits
     });
     assert_eq!(
-        checked.evaluate(&int(1), &decimal(100, 2), &mut short),
+        checked.evaluate(&env, &int(1), &decimal(100, 2), &mut short),
         incomplete(LimitKind::WorkUnits, 8, 6, 3, ChargePoint::EqualityPlan)
     );
 }
