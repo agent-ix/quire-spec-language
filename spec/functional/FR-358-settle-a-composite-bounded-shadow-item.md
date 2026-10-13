@@ -410,9 +410,7 @@ step 6 recomputes over that call's own harness bounds.
 The `K<T>` cases of
 FR-358-AC-4 and AC-5 are tested on the derivation and coverage seam, over
 each of `Sequence`, `Set`, `Bag` and `OrderedSet`, not through a source
-function, because the grammar takes only `K<T>[min, max]`. The `Text` leaf of
-FR-358-AC-5 is tested with a rational leaf until text-profile selection
-exists (QSL-646).
+function, because the grammar takes only `K<T>[min, max]`.
 
 ## Dependencies
 

@@ -2008,6 +2008,8 @@ fn evaluator_source_call_fixture_keeps_checked_identity() {
 #[trace("TC-885", "FR-003-AC-9")]
 #[test]
 fn replay_composite_fixture_keeps_checked_identity() {
+    use qsl_replay::spine::{LockEvidence, SpineLimits};
+    use qsl_semantics::value::{CatalogRole, DefinitionLock};
     let profile = source_literal(
         include_str!("../../qsl-replay/src/execute/tests.rs"),
         "PROFILE",
@@ -2017,14 +2019,21 @@ fn replay_composite_fixture_keeps_checked_identity() {
         "UNIT",
     );
     let source = format!("language \"ix:native\" edition \"1-draft\";\n{profile}{body}");
-    emitted(
+    let lock = LockEvidence::default().with_text_profile(
+        DefinitionLock::pinned()
+            .entry(CatalogRole::TextProfile)
+            .reference(),
+    );
+    crate::support::front_end::emitted_with_authority(
         SourceIdentity::new("agent-ix", "test:replay", "git", "r1"),
         "test:replay",
         source.as_bytes(),
         &BTreeMap::new(),
         &DependencyInput::default(),
+        SpineLimits::default(),
+        &lock,
     )
-    .expect("the recursive-record, sequence, enum and rational fixture checks");
+    .expect("the recursive-record, sequence, enum and text fixture checks");
 }
 
 #[trace("TC-885", "FR-003-AC-9")]
