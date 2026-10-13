@@ -239,7 +239,7 @@ names different artifacts in each.
 | TC-451 | Spine run binds arguments by name and maps each outcome and refusal to its exit code | Integration | P1 | FR-100-AC-4, FR-100-AC-5, FR-100-AC-6 | ✅ |
 | TC-452 | The spine run entry is qsl_replay::spine::run, agrees with the CLI, and maps every outcome | Unit | P1 | FR-100-AC-7, FR-100-AC-8, FR-100-AC-9, FR-100-AC-12 | ✅ |
 | TC-456 | S2 builds state clause forms and the self, result and reaches expressions | Unit | P1 | FR-102-AC-1, FR-102-AC-2, FR-102-AC-3 | 🚧 |
-| TC-457 | S2 state clause dispatch is thin, bounded and seam-probed | Unit | P1 | FR-102-AC-4, FR-102-AC-5, FR-102-AC-6 | 🚧 |
+| TC-457 | S2 state clause dispatch is thin, bounded and seam-probed | Unit | P1 | FR-102-AC-4, FR-102-AC-5, FR-102-AC-6, FR-102-AC-7 | 🚧 |
 | TC-458 | Spine intake and assembly admit operations and frames | Integration | P1 | FR-103-AC-1, FR-103-AC-2, FR-103-AC-3, FR-103-AC-4, FR-103-AC-5 | 🚧 |
 | TC-993 | Model operations keep and check their own requires and ensures clauses | Integration | P1 | FR-103-AC-7, FR-103-AC-8 | 🚧 |
 | TC-985 | Record-valued model fields and observations | Integration | P1 | FR-056-AC-21, FR-056-AC-22, FR-103-AC-4, FR-103-AC-6, FR-106-AC-14..FR-106-AC-17 | 🚧 |
@@ -299,6 +299,7 @@ names different artifacts in each.
 | TC-809 | Evaluation selects the dispatched body from the linked table by the receiver's most-specific type | Integration | P1 | FR-302-AC-6 | 🚧 |
 | TC-986 | Unit compile joins operation bodies and clauses by resolved operation identity | Integration | P1 | FR-302-AC-7, FR-103-AC-9 | 🚧 |
 | TC-987 | Unit compile refuses duplicate operation bodies resolving to one key | Integration | P1 | FR-302-AC-7 | 🚧 |
+| TC-1011 | Unit compile checks a body's arity and type against its operation | Integration | P1 | FR-302-AC-8 | 🚧 |
 | TC-810 | Abstraction binding keys are unique across all of a unit's declarations | Integration | P1 | FR-304-AC-7 | 🚧 |
 | TC-811 | Abstraction declarations parse from source and refuse unsupported or malformed forms | Integration | P1 | FR-304-AC-8 | 🚧 |
 | TC-518 | S3 checks fairness constraints and interval operators of infinite-trace clauses | Unit | P1 | FR-123-AC-1, FR-123-AC-2, FR-123-AC-3, FR-123-AC-4 | 🚧 |

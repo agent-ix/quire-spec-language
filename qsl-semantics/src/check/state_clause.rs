@@ -178,6 +178,10 @@ pub struct StateClauseDeclaration {
     /// The operation a `pre` or `post` clause names; `None` for an
     /// invariant.
     pub operation: Option<ClauseOperation>,
+    /// The `DeclarationKey` of the resolved operation a `pre` or `post`
+    /// clause names, the key the unit's operation bodies and clauses join on
+    /// (FR-103, FR-302); `None` for an invariant.
+    pub operation_key: Option<crate::model::key::DeclarationKey>,
     /// The context's population domain, the assembler's own resolution
     /// (FR-104 "Resolution", "Requirements"): the one population with no
     /// maximum whose member types cover `context`, by conformance

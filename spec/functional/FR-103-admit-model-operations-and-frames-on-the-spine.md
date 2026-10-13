@@ -99,7 +99,11 @@ operation `pre`/`post` text is shape-checked and not kept (QSL-726).
   available to checking and dispatch linking. It SHALL bind the body's
   receiver-less parameter names positionally to the operation's parameters in
   signature order, as required by the QSpec Complete-V1 grammar, and type its
-  body against the operation's declared result. At most one unit
+  body against the operation's declared result. The parameter count and
+  types and the body type are checked when dispatch linking first reads a
+  body (FR-302), before any consumer uses it, and a mismatch refuses
+  `ill_typed`/`type-mismatch` at the body; resolving the body to its
+  `DeclarationKey` and setting `has_body` do not depend on that check. At most one unit
   `operation-body` SHALL resolve to a given `DeclarationKey`; FR-302 defines
   the duplicate refusal. This multiplicity rule applies to executable bodies,
   not to the distinct unit `pre`/`post` `StateClauseForm`s.

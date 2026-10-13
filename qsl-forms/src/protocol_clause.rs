@@ -20,9 +20,10 @@ use super::dispatch::{Construct, FormsRefusal};
 use super::spans::DeclarationSpans;
 use super::syntax::{
     AnchorForm, AnchorSegment, AnchorSite, AttemptForm, BinderForm, BinderKind, DeclarationForm,
-    DeclaredName, ProtocolBodyForm, ProtocolConstructForm, ProtocolConstructKind,
-    ProtocolDeclarationForm, ProtocolNodeDeclaration, ProtocolNodeKind, RoleForm, ScopeEntry,
-    ScopeId, ScopeName, ScopedAnchorForm, StateClauseForm, StateClauseKind, UsingAlias,
+    DeclaredName, OperationBodyForm, ProtocolBodyForm, ProtocolConstructForm,
+    ProtocolConstructKind, ProtocolDeclarationForm, ProtocolNodeDeclaration, ProtocolNodeKind,
+    RoleForm, ScopeEntry, ScopeId, ScopeName, ScopedAnchorForm, StateClauseForm, StateClauseKind,
+    UsingAlias,
 };
 use super::value::{
     declared_name, expression, has_token, items, name_form, nodes_of, only, production_node, text,
@@ -114,6 +115,66 @@ pub(crate) fn state_clause(construct: Construct<'_>) -> Result<DeclarationForm, 
         },
     };
     Ok(DeclarationForm::StateClause(Box::new(form)))
+}
+
+/// `body L using p on M::T::op (a, b) { e }` (FR-102 "Outputs"): the label,
+/// the `using` alias, every segment of the target name, every parameter name
+/// and the body expression, all spelled and spanned, none resolved.
+pub(crate) fn operation_body(construct: Construct<'_>) -> Result<DeclarationForm, FormsRefusal> {
+    let cst = construct.cst;
+    let node = production_node(construct)?;
+    let body_items = items(cst, node);
+    // `body L using p on <target> ( a, b ) { e }`: the label, the `using`
+    // alias and then the parameter names are the only direct identifier
+    // tokens (the target and the block are nested nodes).
+    let identifiers = tokens_of(&body_items, TokenKind::Identifier);
+    let [label, alias, parameter_tokens @ ..] = identifiers.as_slice() else {
+        return Err(unexpected(node));
+    };
+    let target_node = only(&body_items, Production::QualifiedName, node)?;
+    let target_items = items(cst, target_node);
+    let mut target = Vec::new();
+    for item in &target_items {
+        if let Item::Token(token) = item {
+            if token.spelling() != b"::" {
+                target.push(DeclaredName {
+                    name: text(token, target_node)?,
+                    span: token.span(),
+                });
+            }
+        }
+    }
+    let mut parameters = Vec::with_capacity(parameter_tokens.len());
+    for token in parameter_tokens {
+        parameters.push(DeclaredName {
+            name: text(token, node)?,
+            span: token.span(),
+        });
+    }
+    let block = only(&body_items, Production::Block, node)?;
+    let block_items = items(cst, block);
+    let body_node = only(&block_items, Production::Expression, block)?;
+    let (body, body_spans) = expression(cst, body_node)?;
+    let form = OperationBodyForm {
+        label: DeclaredName {
+            name: text(label, node)?,
+            span: label.span(),
+        },
+        profile: UsingAlias {
+            alias: text(alias, node)?,
+            span: alias.span(),
+        },
+        target,
+        target_span: target_node.span(),
+        parameters,
+        body,
+        spans: DeclarationSpans {
+            declaration: construct.node.span(),
+            body: body_spans,
+            measure: None,
+        },
+    };
+    Ok(DeclarationForm::OperationBody(Box::new(form)))
 }
 
 /// `protocol Name using p over (params) activation { ... run Control Finish

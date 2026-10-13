@@ -327,6 +327,15 @@ pub struct PackageDeclarations {
     /// driver parsed, with its operation resolved, checked beside the state
     /// clauses. Checking yields a refusal or nothing.
     pub operation_clauses: Vec<super::OperationClauseDeclaration>,
+    /// FR-103, FR-302: the unit's `operation-body` declarations in
+    /// declaration order, each resolved to its operation's `DeclarationKey`
+    /// by the FR-091 assembler. At most one per key.
+    pub operation_bodies: Vec<super::OperationBodyDeclaration>,
+    /// FR-103: the effective view of each `model` declaration a unit
+    /// `operation-body` resolved into, with `has_body` set from those bodies,
+    /// by the declaration's alias. A model no body names has no entry and
+    /// keeps its admitted view, whose `has_body` is false.
+    pub selected_views: BTreeMap<String, crate::model::normalize::EffectiveView>,
     /// The byte limit every node identity of this package encodes under
     /// (`identity.input_bytes`), carried from the assembly that built it.
     pub identity: qsl_foundation::IdentityLimits,
@@ -370,8 +379,31 @@ impl PackageDeclarations {
             protocols: Vec::new(),
             protocol_attempts: Vec::new(),
             operation_clauses: Vec::new(),
+            operation_bodies: Vec::new(),
+            selected_views: BTreeMap::new(),
             identity,
         }
+    }
+
+    /// FR-302: the unit's body for the operation `key`, if one resolved to
+    /// it.
+    pub fn operation_body(
+        &self,
+        key: &crate::model::key::DeclarationKey,
+    ) -> Option<&super::OperationBodyDeclaration> {
+        self.operation_bodies.iter().find(|body| &body.key == key)
+    }
+
+    /// FR-103, FR-302: the unit `pre` and `post` clauses that resolved to
+    /// the operation `key`, in declaration order.
+    pub fn unit_clauses_for(
+        &self,
+        key: &crate::model::key::DeclarationKey,
+    ) -> Vec<&super::StateClauseDeclaration> {
+        self.state_clauses
+            .iter()
+            .filter(|clause| clause.operation_key.as_ref() == Some(key))
+            .collect()
     }
 
     /// The unit's owner, `SourceOwner{authority, identity}` taken from its

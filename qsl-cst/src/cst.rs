@@ -110,7 +110,7 @@ productions! {
     RoundingMode, TextProfile,
     DimensionDeclaration, DimensionTerm, UnitDeclaration, EnumDeclaration,
     EnumMember, RecordDeclaration, Field, TupleDeclaration, AliasDeclaration,
-    FunctionDeclaration, Predicate, Parameter, StateClause, Block, Expression,
+    FunctionDeclaration, Predicate, Parameter, StateClause, OperationBody, Block, Expression,
     Implication, Disjunction, Conjunction, Comparison, Sum, Product, Unary,
     Postfix, Primary, ExactNumber, FloatValue,
     #[doc = "`0x` followed by exactly 8 hexadecimal digits: the bit-exact `float32` literal payload in `float32(bits: <Hex32>)`."]
