@@ -14,6 +14,7 @@ relationships:
   - { target: ix://agent-ix/quire-specification/FR-154, type: depends_on }
   - { target: ix://agent-ix/quire-specification/FR-208, type: depends_on }
   - { target: ix://agent-ix/quire-specification/FR-322, type: depends_on }
+  - { target: ix://agent-ix/quire-spec-language/FR-359, type: depends_on }
   - { target: ix://agent-ix/quire-specification/FR-272, type: depends_on }
   - { target: ix://agent-ix/filament-core-data/FR-142, type: depends_on }
   - { target: ix://agent-ix/filament-core-data/FR-143, type: depends_on }
@@ -346,7 +347,9 @@ SHALL preserve FR-208's effective fields, inherited invariants and ancestor
 conformance. A subtype value is accepted wherever its ancestor is the declared
 field, parameter or result type. Equality compares the most-specific type and
 every effective field, so a subtype value is unequal to a value of a proper
-ancestor. Cross-meaning supertypes and specialization cycles retain FR-208's
+ancestor. FR-359 states how check, evaluation and replay type, read, compare
+and store that value, including as an `Option` payload and a collection
+element. Cross-meaning supertypes and specialization cycles retain FR-208's
 named refusals. An object reference or a Boolean stand-in is not a record value.
 
 The reader owns resolution of each module-qualified

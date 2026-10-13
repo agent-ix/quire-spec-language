@@ -23,6 +23,7 @@ use qsl_semantics::model::key::{hex, DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 use qsl_semantics::model::normalize::{
     normalize_with_meter, ModelRefusal, ModelRefusalCause, NormalizeOutcome,
 };
+use qsl_semantics::model::refusal::MemberPath;
 use serde_json::{json, Value};
 
 use qsl_semantics::model::intake::admit_unit;
@@ -219,12 +220,28 @@ fn node_of(refusal: &ModelRefusal) -> &str {
     match &refusal.cause {
         ModelRefusalCause::IntakeMalformedDeclaration { node, .. }
         | ModelRefusalCause::UnsupportedDeclarationForm { node, .. } => node,
-        ModelRefusalCause::ConflictingBinding { key } => &key.node,
+        ModelRefusalCause::ConflictingBinding { key, .. } => &key.node,
         other => panic!("no node on {other:?}"),
     }
 }
 
-fn assert_malformed(refusal: &ModelRefusal, node: &str) {
+fn member_of(refusal: &ModelRefusal) -> MemberPath {
+    match &refusal.cause {
+        ModelRefusalCause::IntakeMalformedDeclaration { member, .. }
+        | ModelRefusalCause::UnsupportedDeclarationForm { member, .. } => member.clone(),
+        ModelRefusalCause::ConflictingBinding {
+            member: Some(member),
+            ..
+        } => member.clone(),
+        other => panic!("no member on {other:?}"),
+    }
+}
+
+fn path(text: &str) -> MemberPath {
+    text.parse().expect("a member path")
+}
+
+fn assert_malformed(refusal: &ModelRefusal, node: &str, member: &str) {
     assert_eq!(refusal.code, Code::InvalidModelBinding);
     assert!(
         matches!(
@@ -234,6 +251,7 @@ fn assert_malformed(refusal: &ModelRefusal, node: &str) {
         "{refusal:?}"
     );
     assert_eq!(node_of(refusal), id(node));
+    assert_eq!(member_of(refusal), path(member));
 }
 
 /// TC-994 step 1: one declaration for `Tier` and one per case node; one
@@ -356,6 +374,7 @@ fn a_payload_on_a_case_refuses_as_an_unsupported_declaration_form() {
         found[0]
     );
     assert_eq!(node_of(&found[0]), id("variant/Tier-Gold"));
+    assert_eq!(member_of(&found[0]), path("Variant.payloadType"));
 }
 
 /// TC-995 step 2: without the payload the type admits as in TC-994 step 1.
@@ -378,10 +397,10 @@ fn single_type(mutate: impl FnOnce(&mut Value)) -> Value {
     document
 }
 
-fn assert_one_malformed(document: &Value, node: &str) {
+fn assert_one_malformed(document: &Value, node: &str, member: &str) {
     let found = refusals(document);
     assert_eq!(found.len(), 1, "{found:?}");
-    assert_malformed(&found[0], node);
+    assert_malformed(&found[0], node, member);
 }
 
 /// TC-996 step 1: a variant type with no case.
@@ -391,6 +410,7 @@ fn a_variant_type_with_no_case_refuses_as_malformed() {
     assert_one_malformed(
         &single_type(|d| d["types"][0]["variants"] = json!([])),
         "Tier",
+        "TypeDefinition.variants",
     );
 }
 
@@ -401,6 +421,7 @@ fn a_case_with_no_source_span_refuses_as_malformed() {
     assert_one_malformed(
         &single_type(|d| d["types"][0]["variants"][0]["origin"] = generated("variant/Tier-Gold")),
         "Tier",
+        "TypeDefinition.variants[0].origin",
     );
 }
 
@@ -411,7 +432,7 @@ fn a_variant_meaning_on_a_record_shaped_construct_refuses_as_malformed() {
     let document = single_type(|d| {
         d["constructs"][0]["construct"]["shape"] = json!("record");
     });
-    assert_one_malformed(&document, "Tier");
+    assert_one_malformed(&document, "Tier", "TypeDefinition.kind");
 }
 
 /// TC-996 step 4: two cases of one name and one identity are refused by the
@@ -425,7 +446,8 @@ fn two_cases_sharing_one_identity_are_refused_by_the_reader() {
     });
     let found = refusals(&document);
     assert_eq!(found.len(), 1, "{found:?}");
-    assert_malformed(&found[0], "variant/Tier-Gold");
+    assert_eq!(node_of(&found[0]), id("variant/Tier-Gold"));
+    assert_eq!(found[0].code, Code::InvalidModelBinding);
     assert!(
         !found
             .iter()
@@ -449,7 +471,10 @@ fn equal_case_names_with_distinct_identities_conflict_at_the_type() {
     assert_eq!(found[0].code, Code::InvalidModelBinding);
     assert_eq!(
         found[0].cause,
-        ModelRefusalCause::ConflictingBinding { key: key("Tier") }
+        ModelRefusalCause::ConflictingBinding {
+            key: key("Tier"),
+            member: Some(path("TypeDefinition.variants[1]")),
+        }
     );
 }
 
@@ -461,6 +486,7 @@ fn a_case_identity_that_is_not_minted_refuses_as_malformed() {
             d["types"][0]["variants"][0]["identity"] = json!(id("variant/Tier-Platinum"));
         }),
         "variant/Tier-Platinum",
+        "Variant.identity",
     );
 }
 
@@ -592,7 +618,7 @@ fn a_field_typed_by_a_variant_type_refuses_at_the_field() {
     );
     let found = refusals(&document);
     assert_eq!(found.len(), 1, "{found:?}");
-    assert_malformed(&found[0], "Account/tier");
+    assert_malformed(&found[0], "Account/tier", "Field.typeRef");
 }
 
 /// FR-056 "Variant types": a signature typeRef naming a variant type is a
@@ -639,6 +665,7 @@ fn every_payload_case_of_one_type_is_reported() {
     );
     for refusal in &found {
         assert_eq!(refusal.code, Code::UnsupportedConstruct);
+        assert_eq!(member_of(refusal), path("Variant.payloadType"));
     }
 }
 
@@ -653,9 +680,9 @@ fn an_empty_and_mis_shaped_variant_type_reports_both() {
         d["types"][0]["variants"] = json!([]);
     }));
     assert_eq!(found.len(), 2, "{found:?}");
-    for refusal in &found {
-        assert_malformed(refusal, "Tier");
-    }
+    // Member-path order: the construct shape, then the empty list.
+    assert_malformed(&found[0], "Tier", "TypeDefinition.kind");
+    assert_malformed(&found[1], "Tier", "TypeDefinition.variants");
 }
 
 fn lifted(values: &[&str]) -> Result<Vec<u8>, qsl_semantics::model::intake::LiftFailure> {

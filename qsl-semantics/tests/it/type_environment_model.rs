@@ -1299,7 +1299,8 @@ fn object_type_supertypes_rekeys_a_view_and_normalization_refuses_a_shared_key()
             assert!(
                 refusals.iter().any(|refusal| refusal.cause
                     == ModelRefusalCause::ConflictingBinding {
-                        key: DeclarationKey::fixture("model.A")
+                        key: DeclarationKey::fixture("model.A"),
+                        member: None,
                     }),
                 "expected conflicting-binding on model.A: {refusals:?}"
             );

@@ -597,6 +597,15 @@ pub struct RelationshipEnd {
     pub multiplicity: Multiplicity,
 }
 
+/// Where a record sits in its declaring type's array (`relationships[i]`).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DeclaredSlot {
+    /// The declaring type.
+    pub owner: DeclarationKey,
+    /// The zero-based position in that type's array.
+    pub index: usize,
+}
+
 /// FCD FR-115 relationship traversal direction (`semantics.direction`).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RelationshipDirection {
@@ -620,6 +629,10 @@ pub enum RelationshipDirection {
 pub struct RelationshipRecord {
     /// This relationship's own original declaration key.
     pub key: DeclarationKey,
+    /// The declaring type and the position in its `relationships` array the
+    /// reader read this from; `None` for a relationship that has no such
+    /// array slot (a systems connection, or a record built in memory).
+    pub declared_at: Option<DeclaredSlot>,
     /// The source end.
     pub source: RelationshipEnd,
     /// The target end.
