@@ -1207,3 +1207,141 @@ fn namespace_field_operation_quire_clause_and_supertypes_remain_refused() {
         }
     }
 }
+
+/// TC-195 N15-N18: a member inherited by a subtype derives the inherit fact
+/// only (inputs `[owner, member]`), never a qualify fact first, for record
+/// value types, event types, state machines, persistence interfaces and
+/// clauses, as TC-195 N01 specifies for fields.
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-1")]
+#[test]
+fn inherited_business_members_derive_the_inherit_fact_only() {
+    use qsl_semantics::model::domain_package::{
+        ClauseRecord, EventTypeRecord, ObjectTypeRecord, OperationEffect, OperationMemberRecord,
+        RecordValueTypeRecord, StateMachineRecord, StateMachineStateRecord,
+        StateMachineTransitionRecord,
+    };
+    use qsl_semantics::model::key::{RULE_INHERIT, RULE_QUALIFY};
+    let p = "test/owner-boundary";
+    let base = normalization_owner_package();
+    let mut records = base.records;
+    // N15: record value type subtype.
+    records.push(DomainPackageRecord::RecordValueType(
+        RecordValueTypeRecord {
+            key: key(p, "Money2"),
+            identity_fields: Vec::new(),
+            supertypes: vec![key(p, "Money")],
+        },
+    ));
+    // N16: event type subtype.
+    records.push(DomainPackageRecord::EventType(EventTypeRecord {
+        key: key(p, "OrderPlaced2"),
+        identity_fields: Vec::new(),
+        occurrence_field: Some(key(p, "OrderPlaced/occurred_at")),
+        supertypes: vec![key(p, "OrderPlaced")],
+    }));
+    // N17: state machine subtype with its own operation, state and transition.
+    records.push(DomainPackageRecord::StateMachine(StateMachineRecord {
+        key: key(p, "OrderLifecycle2"),
+        supertypes: vec![key(p, "OrderLifecycle")],
+        states: vec![StateMachineStateRecord {
+            key: key(p, "OrderLifecycle2/Done"),
+            name: "Done".to_owned(),
+        }],
+        transitions: vec![StateMachineTransitionRecord {
+            key: key(p, "OrderLifecycle2/finish"),
+            from: key(p, "OrderLifecycle/Ready"),
+            to: key(p, "OrderLifecycle2/Done"),
+            trigger: key(p, "OrderLifecycle2/close"),
+            guard: None,
+            emits: Vec::new(),
+            path: "/types/0/transitions/0".to_owned(),
+            origin: origin(p, "OrderLifecycle2/finish"),
+        }],
+    }));
+    records.push(DomainPackageRecord::OperationMember(
+        OperationMemberRecord {
+            key: key(p, "OrderLifecycle2/close"),
+            owner: key(p, "OrderLifecycle2"),
+            parameters: Vec::new(),
+            result: None,
+            effect: OperationEffect::default(),
+            requires: Vec::new(),
+            ensures: Vec::new(),
+            own_postcondition_clauses: Vec::new(),
+            has_body: false,
+            redefines: None,
+        },
+    ));
+    // N18: a quire clause on an object type, inherited by its subtype.
+    records.push(DomainPackageRecord::ObjectType(ObjectTypeRecord {
+        key: key(p, "Order2"),
+        interface_features: None,
+        abstract_type: false,
+        supertypes: vec![key(p, "Order")],
+    }));
+    records.push(DomainPackageRecord::Clause(ClauseRecord {
+        key: key(p, "Order/Invariant"),
+        owner: key(p, "Order"),
+        language: "quire".to_owned(),
+        text: "true".to_owned(),
+    }));
+    let package = DomainPackage::new(base.model_selection, records);
+    let (outcome, _meter) = normalize_with_meter(&package, ModelNormalizationLimits::UNLIMITED);
+    let NormalizeOutcome::Completed(view) = outcome else {
+        panic!("inheriting business members must normalize: {outcome:?}");
+    };
+
+    let facts = |owner: &str, member: &str| {
+        let owner = view.type_identities()[&key(p, owner)];
+        let entry = view
+            .declarations()
+            .iter()
+            .find(|entry| {
+                entry.preimage.owner_effective_type == Some(owner)
+                    && entry.preimage.original == key(p, member)
+            })
+            .unwrap_or_else(|| panic!("{member} is an effective member"));
+        entry
+            .preimage
+            .derivation
+            .iter()
+            .map(|fact| (fact.rule.identity, fact.inputs.clone()))
+            .collect::<Vec<_>>()
+    };
+    for (supertype, subtype, member) in [
+        ("Money", "Money2", "Money/amount_minor"),
+        ("OrderPlaced", "OrderPlaced2", "OrderPlaced/occurred_at"),
+        (
+            "OrderLifecycle",
+            "OrderLifecycle2",
+            "OrderLifecycle/advance",
+        ),
+        ("Order", "Order2", "Order/Invariant"),
+    ] {
+        let own = facts(supertype, member);
+        assert_eq!(
+            own.iter().map(|(rule, _)| *rule).collect::<Vec<_>>(),
+            vec![RULE_QUALIFY.identity],
+            "{member} at {supertype}: one qualify fact"
+        );
+        let inherited = facts(subtype, member);
+        assert_eq!(
+            inherited.iter().map(|(rule, _)| *rule).collect::<Vec<_>>(),
+            vec![RULE_INHERIT.identity],
+            "{member} at {subtype}: the inherit fact only"
+        );
+        assert_eq!(
+            inherited[0].1,
+            vec![key(p, supertype), key(p, member)],
+            "{member} at {subtype}: inherit inputs"
+        );
+    }
+    // The persistence interface has no subtype and no inherit fact.
+    assert_eq!(
+        facts("OrderStore", "OrderStore/get")
+            .iter()
+            .map(|(rule, _)| *rule)
+            .collect::<Vec<_>>(),
+        vec![RULE_QUALIFY.identity]
+    );
+}
