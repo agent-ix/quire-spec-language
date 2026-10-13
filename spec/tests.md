@@ -281,6 +281,10 @@ names different artifacts in each.
 | TC-809 | Evaluation selects the dispatched body from the linked table by the receiver's most-specific type | Integration | P1 | FR-302-AC-6 | 🚧 |
 | TC-986 | Unit compile joins operation bodies and clauses by resolved operation identity | Integration | P1 | FR-302-AC-7 | 🚧 |
 | TC-987 | Unit compile refuses duplicate operation bodies resolving to one key | Integration | P1 | FR-302-AC-7 | 🚧 |
+| TC-988 | A variant type is admitted as one enum and one variant per case | Unit | P1 | FR-056-AC-24 | 🚧 |
+| TC-989 | A variant case carrying a payload refuses as an unsupported declaration form | Unit | P1 | FR-056-AC-25 | 🚧 |
+| TC-990 | Duplicate, missing and absent variant cases refuse as malformed declarations | Unit | P1 | FR-056-AC-26 | 🚧 |
+| TC-991 | A clause or member naming a variant type refuses while the declaration is admitted | Unit | P1 | FR-056-AC-27 | 🚧 |
 | TC-810 | Abstraction binding keys are unique across all of a unit's declarations | Integration | P1 | FR-304-AC-7 | 🚧 |
 | TC-811 | Abstraction declarations parse from source and refuse unsupported or malformed forms | Integration | P1 | FR-304-AC-8 | 🚧 |
 | TC-518 | S3 checks fairness constraints and interval operators of infinite-trace clauses | Unit | P1 | FR-123-AC-1, FR-123-AC-2, FR-123-AC-3, FR-123-AC-4 | 🚧 |

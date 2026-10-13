@@ -384,7 +384,7 @@ table fixes:
 | `quire.meaning.model.object-type/v1` | one `object` |
 | `quire.meaning.model.value-type/v1` | one `scalar` naming the value type and its bound native value type |
 | `quire.meaning.model.record-value-type/v1` | one `record` naming the most-specific record value type and its effective fields; no object identity or reference export |
-| `quire.meaning.model.variant-type/v1` | one `enum`, one `variant` per case |
+| `quire.meaning.model.variant-type/v1` | one `enum` naming the type and its cases, one `variant` per case ("Variant types" below) |
 | `quire.meaning.model.population/v1` | one `population` |
 | `quire.meaning.systems.interface/v1`, `quire.meaning.systems.part/v1`, `quire.meaning.systems.port/v1`, `quire.meaning.systems.connection/v1`, `quire.meaning.systems.allocation/v1` | none; the node binds to its FR-152 kind |
 
@@ -408,7 +408,57 @@ under FR-154 before assembly, retaining that named refusal.
 
 If a clause names a declaration bound to `quire.meaning.model.variant-type/v1`,
 then the compiler SHALL refuse the clause with
-`unsupported_construct`/`declaration-form` (FR-150).
+`unsupported_construct`/`declaration-form` (FR-150). The refusal belongs to the
+clause that names the variant type, never to the variant type's declaration:
+intake admits and exports the declaration under "Variant types" whether or not
+any clause names it.
+
+#### Variant types
+
+A variant type is a closed set of named cases (FR-208). In Semantic IR it is a
+type definition whose construct has shape `enumeration`, with a `variants`
+list. Each list item has `identity`, `name`, `origin` and an optional
+`payloadType`. The `variants` list is read in the member order the document
+gives it, and that order carries no meaning.
+
+When a type definition binds to `quire.meaning.model.variant-type/v1`, intake
+SHALL admit it as one original declaration and the compiler SHALL derive these
+export records:
+
+- one `enum`, keyed by the type's declaration identity, carrying the type's
+  artifact id as `name`, its `sourceSpan`, and `cases`, the declared case names
+  in ascending UTF-8 byte order of `name`;
+- one `variant` per case, keyed by the owner's declaration identity and the
+  case's declared `name` (as FR-056 keys a `relationship`), carrying `name`, the
+  owner `enum` key, and the case's `sourceSpan` as export locus.
+
+The node identity of a case is FR-154's variant slot,
+`ix://<package identity>/variant/<Name>-<value>`; it is the declaration
+identity of the case node and is not the `variant` export key. Case names
+compare as exact UTF-8 byte sequences. Two variant types may declare the same
+case name, because their owners differ. A case has no value, ordinal or
+payload in v1; the order of `cases` is the only order, and it is derived, so
+reordering the `variants` list in the document changes no key, export or
+ordering.
+
+If a case has a `payloadType`, then intake SHALL refuse the case with
+`unsupported_construct`/`declaration-form` at the case, naming the case and
+`payloadType`. This is the same refusal FR-056 gives other schema-valid forms
+the model reader has no meaning for (an unsupported `Text` profile, a `Rational`
+`typeRef`). A payload-carrying variant is not a malformed node.
+
+If two cases of one variant type have the same `name`, then intake SHALL refuse
+the second with `invalid_model_binding`/`malformed-declaration`, naming the
+case name, the owner and both case spans. If a variant type declares no case,
+or a case has no declared name or no source span, then intake SHALL refuse it
+with `invalid_model_binding`/`malformed-declaration`.
+
+If a member's `typeRef` names a declaration bound to
+`quire.meaning.model.variant-type/v1`, then intake SHALL refuse the member with
+`unsupported_construct`/`declaration-form` at the member, naming the `typeRef`
+(FR-150: a variant type referenced by source). The variant type's own
+declaration and exports are unaffected. Typing a field by a variant type is a
+separate requirement.
 
 The compiler SHALL key each `relationship` export by its owner's declaration
 identity and declared `name`, with its `sourceSpan` as the export locus.
@@ -614,6 +664,10 @@ the assembler SHALL refuse it with `missing_declaration` at the name.
 | FR-056-AC-21 | An admitted package containing record value type `Address { street: Text[0, 64; nfc] }`, object field `Account.address: Address` and a record subtype `PostalAddress` retains one `record` export per record, all effective fields and invariants, and subtype conformance. The type environment gives `Account.address` the record value type, an optional `Address` field `Option<Address>`, and an ordered non-unique `[0, 3]` field `Sequence<Address>[0, 3]`, never `Reference<Address>`; an operation parameter or result naming `Address` has the same value type. | Test |
 | FR-056-AC-22 | A record value type with an identity field or an operation refuses with FR-208's named cause before assembly; an object or record field whose `typeRef` names an event type, state machine, process, persistence interface or namespace refuses `invalid_model_binding`/`malformed-declaration` at intake. A valid finite recursive record field, such as `Node { next?: Node }`, retains its record type and optional edge in the type environment; it is not refused solely because the declaration graph is recursive. | Test |
 | FR-056-AC-23 | K2's native String value retains any Unicode scalar sequence exactly, including empty, ASCII, multibyte and UUID-looking text; equality is exact-sequence equality, its key is UTF-8 byte order, and Text normalization does not apply. The closed String object accepts exactly `kind: string` and `text`; an extra member and a lone surrogate refuse, and the typed result wire round trip preserves each value and its UTF-8 byte contribution to result sizing. Existing Text, UUID and Timestamp kind encodings remain unchanged. String gains no arithmetic, concatenation or general relational operator. | Test (TC-992) |
+| FR-056-AC-24 | An admitted package containing variant type `Tier` with cases `Standard` and `Gold`, listed in the document as `Gold` then `Standard`, retains one declaration for `Tier` and one for each case node (`ix://<package identity>/variant/Tier-Gold`, `.../Tier-Standard`), one `enum` keyed by `Tier`'s declaration identity with `name` `Tier` and `cases` `[Gold, Standard]`, and one `variant` per case keyed by (`Tier`'s identity, case name) carrying its `name`, owner `enum` key and span. Listing the cases as `Standard` then `Gold` changes no key, export or ordering. A second variant type `Level` with a case named `Gold` is admitted beside it with a distinct `variant` key. | Test (TC-988) |
+| FR-056-AC-25 | A variant type with a case carrying `payloadType` refuses `unsupported_construct`/`declaration-form` at that case, naming the case and `payloadType`; it is not `invalid_model_binding`, and it admits no declaration of the package. A payload-free case beside it raises no refusal of its own. | Test (TC-989) |
+| FR-056-AC-26 | A variant type with two cases named `Gold` refuses `invalid_model_binding`/`malformed-declaration` on the second, naming the name, owner and both spans. A variant type with no case, and a case with no name or no span, each refuse `invalid_model_binding`/`malformed-declaration`. Cases differing only in letter case are distinct and admitted. | Test (TC-990) |
+| FR-056-AC-27 | A clause naming `Tier` refuses `unsupported_construct`/`declaration-form` at the clause, while the package, `Tier`'s declaration and its `enum` and `variant` exports are admitted and unchanged by the clause. A field whose `typeRef` names `Tier` refuses `unsupported_construct`/`declaration-form` at the member. With no clause or member naming `Tier`, no refusal is raised. | Test (TC-991) |
 | FR-056-AC-8 | End to end, the filament-core-data#173 architecture fixture runs bundle → quire-rs → lift → intake seam; its ports resolve with owning part, direction, interface type and multiplicity, a connection between them is admitted under FR-152, and the model linker binds a native package's references to those declarations. | Test |
 
 ### FR-056-AC-17
