@@ -520,6 +520,18 @@ placeholder: QSL-738 owns fields typed by a variant type and replaces it. As
 with every declaration refusal, it leaves the package unadmitted; the variant
 type's declaration is not refused because it is a variant type.
 
+An operation parameter or result whose `typeRef` is refused as a signature value
+type SHALL refuse at the operation node, never without a node. This covers every
+cause: a `typeRef` naming a variant type, or any other meaning a signature may
+not name (an enum, event, state machine, process, persistence interface,
+namespace or interface-featured object type), refuses
+`invalid_model_binding`/`malformed-declaration`; a `typeRef` naming no declared
+type, in a package that reaches normalization without the reader, refuses
+`dangling_reference`/`unknown-value-type`. Each retains the
+operation's node identity and the typed member path `Operation.params[i].typeRef`
+for the parameter at zero-based position `i`, or `Operation.returns.typeRef` for
+the result. Variant types are owned by QSL-738 as for fields.
+
 ### Declarations
 
 The compiler SHALL build declarations under FR-154: one original declaration per
@@ -715,6 +727,7 @@ the assembler SHALL refuse it with `missing_declaration` at the name.
 | FR-056-AC-26 | A variant type with no case, a case with no source span, and a type bound to the variant-type meaning whose construct shape is not `enumeration` each refuse `invalid_model_binding`/`malformed-declaration`. Two cases named `Gold` with one identity are refused by the lift or the reader with that diagnostic retained and no declaration; two cases named `Gold` with distinct identities, in a document the reader admits, refuse `invalid_model_binding`/`conflicting-binding` at node `.../Tier`, path `TypeDefinition.variants[1]`. A case with no name is refused by the reader's schema. | Test (TC-996) |
 | FR-056-AC-27 | A clause naming `Tier` refuses `unsupported_construct`/`declaration-form` at the clause, while the package, `Tier`'s declaration and its `enum` and `variant` exports are admitted and equal to those of a package no clause names; with no clause naming `Tier`, no refusal is raised. | Test (TC-997) |
 | FR-056-AC-28 | A field whose `typeRef` names `Tier` refuses `invalid_model_binding`/`malformed-declaration` at the field node, path `Field.typeRef`, and the package is unadmitted as for any declaration refusal. Fields typed by a variant type are owned by QSL-738. | Test (TC-997) |
+| FR-056-AC-32 | An operation parameter whose `typeRef` names `Tier` refuses `invalid_model_binding`/`malformed-declaration` at the operation node, path `Operation.params[i].typeRef`; its result refuses at the same node, path `Operation.returns.typeRef`. A parameter or result naming an enum, or an undeclared type in a package built without the reader, retains the same node and path under `malformed-declaration` and `dangling_reference`/`unknown-value-type` respectively. | Test (TC-997) |
 | FR-056-AC-8 | End to end, the filament-core-data#173 architecture fixture runs bundle → quire-rs → lift → intake seam; its ports resolve with owning part, direction, interface type and multiplicity, a connection between them is admitted under FR-152, and the model linker binds a native package's references to those declarations. | Test |
 
 ### FR-056-AC-17

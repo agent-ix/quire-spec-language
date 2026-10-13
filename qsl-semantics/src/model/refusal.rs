@@ -389,6 +389,9 @@ pub enum ModelRefusalCause {
         parameter: Option<DeclarationKey>,
         /// The absent value type.
         value_type: ValueTypeRef,
+        /// The `typeRef` the operation names it at:
+        /// `Operation.params[i].typeRef` or `Operation.returns.typeRef`.
+        member: MemberPath,
     },
     /// An operation effect writes a field that is not a declared member.
     UnknownFieldWrite {
@@ -1502,6 +1505,7 @@ pub mod fixtures {
             operation: key("p"),
             parameter: Some(key("p")),
             value_type: ValueTypeRef::Package(key("p")),
+            member: crate::model::refusal::MemberPath::new(crate::model::refusal::MemberRoot::Operation),
         },
         UnknownFieldWrite => ModelRefusalCause::UnknownFieldWrite {
             operation: key("p"),

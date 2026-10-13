@@ -646,6 +646,7 @@ fn operation_signature_type_meaning_matrix() {
         ("Fulfilment", false),
         ("OrderStore", false),
         ("OrderManagement", false),
+        ("Missing", false),
     ] {
         let operation_key = key(p, "Order/change");
         let parameter_key = key(p, "Order/change/value");
@@ -692,12 +693,40 @@ fn operation_signature_type_meaning_matrix() {
                 panic!("signature type {name} must refuse");
             };
             assert_eq!(refusals.len(), 2, "parameter and result must each refuse");
+            // Every cause keeps the operation node and the typed `typeRef`
+            // path: `params[0]` for the parameter, `returns` for the result.
+            let mut members = Vec::new();
             for refusal in refusals.iter() {
-                assert_eq!(refusal.code, Code::InvalidModelBinding);
-                assert_eq!(refusal.cause, ModelRefusalCause::MalformedDeclaration);
+                let member = match &refusal.cause {
+                    ModelRefusalCause::IntakeMalformedDeclaration { node, member, .. }
+                        if name != "Missing" =>
+                    {
+                        assert_eq!(refusal.code, Code::InvalidModelBinding);
+                        assert_eq!(node, &operation_key.node);
+                        member
+                    }
+                    ModelRefusalCause::UnknownValueType {
+                        operation,
+                        value_type: actual,
+                        member,
+                        ..
+                    } if name == "Missing" => {
+                        assert_eq!(refusal.code, Code::DanglingReference);
+                        assert_eq!(operation, &operation_key);
+                        assert_eq!(actual, &value_type);
+                        member
+                    }
+                    other => panic!("unexpected cause for {name}: {other:?}"),
+                };
+                members.push(member.to_string());
                 assert!(refusal.detail.contains(&value_type.to_string()));
                 assert!(refusal.detail.contains(&operation_key.node));
             }
+            members.sort();
+            assert_eq!(
+                members,
+                ["Operation.params[0].typeRef", "Operation.returns.typeRef"]
+            );
             for position in [
                 format!("parameter {}", parameter_key.node),
                 "result".to_owned(),

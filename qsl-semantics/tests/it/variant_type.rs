@@ -623,8 +623,8 @@ fn a_field_typed_by_a_variant_type_refuses_at_the_field() {
 
 /// FR-056 "Variant types": a signature typeRef naming a variant type is a
 /// reference to a node of a meaning it may not name, `malformed-declaration`
-/// (parameter and result alike).
-#[trace("TC-997", "FR-056-AC-28")]
+/// at the operation node, parameter and result alike.
+#[trace("TC-997", "FR-056-AC-32")]
 #[test]
 fn an_operation_signature_naming_a_variant_type_refuses_as_malformed() {
     let tier = variant_type(
@@ -641,10 +641,9 @@ fn an_operation_signature_naming_a_variant_type_refuses_as_malformed() {
     let document: Value = serde_json::from_slice(&bytes).unwrap();
     let found = refusals(&document);
     assert_eq!(found.len(), 2, "parameter and result: {found:?}");
-    for refusal in &found {
-        assert_eq!(refusal.code, Code::InvalidModelBinding);
-        assert_eq!(refusal.cause, ModelRefusalCause::MalformedDeclaration);
-    }
+    let operation = "ConfigVersion/setTier";
+    assert_malformed(&found[0], operation, "Operation.params[0].typeRef");
+    assert_malformed(&found[1], operation, "Operation.returns.typeRef");
 }
 
 /// FR-154: every failing check of one node is reported. A type with two

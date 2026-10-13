@@ -4457,6 +4457,7 @@ pub(crate) fn refusal_node(refusal: &ModelRefusal) -> Option<&str> {
         | ModelRefusalCause::IntakeMissingDeclaration { node, .. }
         | ModelRefusalCause::UnsupportedDeclarationForm { node, .. } => Some(node),
         ModelRefusalCause::ConflictingBinding { key, .. } => Some(&key.node),
+        ModelRefusalCause::UnknownValueType { operation, .. } => Some(&operation.node),
         _ => None,
     }
 }

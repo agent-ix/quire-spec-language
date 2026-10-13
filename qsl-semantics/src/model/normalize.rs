@@ -1864,7 +1864,7 @@ fn is_ordinary_object_type(package: &DomainPackage, key: &DeclarationKey) -> boo
 fn signature_type_refusal(
     package: &DomainPackage,
     operation: &DeclarationKey,
-    parameter: Option<&DeclarationKey>,
+    parameter: Option<(usize, &DeclarationKey)>,
     value_type: &ValueTypeRef,
 ) -> ModelRefusal {
     let forbidden_meaning = value_type.as_package().is_some_and(|key| {
@@ -1884,12 +1884,32 @@ fn signature_type_refusal(
     });
     let position = parameter.map_or_else(
         || "result".to_owned(),
-        |key| format!("parameter {}", key.node),
+        |(_, key)| format!("parameter {}", key.node),
+    );
+    // FR-056 "Variant types": every signature type refusal sits at the
+    // operation node, at the `typeRef` of the parameter or the result.
+    let member = parameter.map_or_else(
+        || {
+            MemberPath::new(MemberRoot::Operation)
+                .name("returns")
+                .name("typeRef")
+        },
+        |(index, _)| {
+            MemberPath::new(MemberRoot::Operation)
+                .name("params")
+                .index(index)
+                .name("typeRef")
+        },
     );
     let (code, cause, reason) = if forbidden_meaning {
         (
             Code::InvalidModelBinding,
-            ModelRefusalCause::MalformedDeclaration,
+            ModelRefusalCause::IntakeMalformedDeclaration {
+                node: operation.node.clone(),
+                artifact: None,
+                span: None,
+                member,
+            },
             "has a meaning forbidden as a signature value type",
         )
     } else {
@@ -1897,8 +1917,9 @@ fn signature_type_refusal(
             Code::DanglingReference,
             ModelRefusalCause::UnknownValueType {
                 operation: operation.clone(),
-                parameter: parameter.cloned(),
+                parameter: parameter.map(|(_, key)| key.clone()),
                 value_type: value_type.clone(),
+                member,
             },
             "is not a declared type",
         )
@@ -2250,7 +2271,7 @@ fn check_node<'a>(
             // A native value type ([`ValueTypeRef::Native`]) names no
             // node of any package, so it has nothing to dangle against
             // here; only a package value type is checked.
-            for parameter in &op.parameters {
+            for (position, parameter) in op.parameters.iter().enumerate() {
                 if let Some(value_type) = parameter.value_type.as_package() {
                     if !is_ordinary_object_type(domain_package, value_type)
                         && !index.is_scalar_type(value_type)
@@ -2259,7 +2280,7 @@ fn check_node<'a>(
                         refusals.push(signature_type_refusal(
                             domain_package,
                             &op.key,
-                            Some(&parameter.key),
+                            Some((position, &parameter.key)),
                             &parameter.value_type,
                         ));
                     }
@@ -4621,7 +4642,7 @@ mod tests {
                 for parameter in [Some(parameter_key.clone()), None] {
                     assert!(refusals.iter().any(|refusal| {
                         refusal.code == Code::DanglingReference && matches!(&refusal.cause,
-                            ModelRefusalCause::UnknownValueType { operation, parameter: actual_parameter, value_type: actual_type }
+                            ModelRefusalCause::UnknownValueType { operation, parameter: actual_parameter, value_type: actual_type, .. }
                             if operation == &operation_key && actual_parameter == &parameter && actual_type == &value_type)
                     }));
                 }
