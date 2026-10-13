@@ -688,9 +688,54 @@ pub struct PopulationRecord {
     pub extent: Extent,
 }
 
+/// A variant type's `enum` export (FR-056 "Variant types"): the type's
+/// declaration, its artifact id as `name`, and its case names as the
+/// unordered set `members`, kept in ascending UTF-8 byte order of the name so
+/// the document's `variants` order changes no record. The export locus is the
+/// type's original FCD origin.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EnumRecord {
+    /// The variant type's own original declaration key; also the `enum`
+    /// export key.
+    pub key: DeclarationKey,
+    /// The type's artifact id.
+    pub name: String,
+    /// The declared case names, ascending by UTF-8 bytes.
+    pub members: Vec<String>,
+}
+
+/// One case of a variant type: the `variant` export (FR-056 "Variant types").
+///
+/// The record's [`key`](Self::key) is the case node's own declaration
+/// identity (`ix://<package>/variant/<Name>-<value>`, FR-154's variant slot),
+/// which is the declaration's key. The `variant` export is keyed instead by
+/// [`export_key`](Self::export_key), the owner's identity and the declared
+/// case name. The export locus is the case's original FCD origin.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VariantRecord {
+    /// The case node's own original declaration key.
+    pub key: DeclarationKey,
+    /// The owning variant type; also the owner `enum` export key.
+    pub owner: DeclarationKey,
+    /// The declared case name, compared as exact UTF-8 bytes.
+    pub case: String,
+}
+
+impl VariantRecord {
+    /// The `variant` export key: the owner's declaration identity and the
+    /// declared case name. Never the case node's minted identity.
+    pub fn export_key(&self) -> (&DeclarationKey, &str) {
+        (&self.owner, &self.case)
+    }
+}
+
 /// One producer record, in the domain package's declared order.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DomainPackageRecord {
+    /// A variant type's `enum` export (FR-056 "Variant types").
+    Enum(EnumRecord),
+    /// One case of a variant type: a `variant` export.
+    Variant(VariantRecord),
     /// An object type export.
     ObjectType(ObjectTypeRecord),
     /// A field member of an object type or record value type.
@@ -730,6 +775,8 @@ impl DomainPackageRecord {
     /// This record's own original declaration key.
     pub fn key(&self) -> &DeclarationKey {
         match self {
+            Self::Enum(record) => &record.key,
+            Self::Variant(record) => &record.key,
             Self::ObjectType(record) => &record.key,
             Self::FieldMember(record) => &record.key,
             Self::RecordValueType(record) => &record.key,

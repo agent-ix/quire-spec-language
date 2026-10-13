@@ -38,6 +38,10 @@ pub enum DeclarationKind {
     ValueType,
     /// A record value type: named fields and no identity (FR-208).
     RecordValueType,
+    /// A variant type: a closed set of named cases (FR-208).
+    VariantType,
+    /// One case of a variant type.
+    VariantCase,
     /// An event type with a Timestamp occurrence field (FR-208).
     EventType,
     /// A state machine with states and transitions (FR-208).
@@ -251,7 +255,14 @@ impl AdmittedPackage {
                     member_identity_name(&member.owner.node, &key.node)
                         .map(|name| (member.owner.node.as_str(), name))
                 }
-                DomainPackageRecord::ObjectType(_)
+                // A case is a member of its variant type, named by its
+                // declared case name; its own node identity is the
+                // `variant` slot, not `<owner>/<name>`.
+                DomainPackageRecord::Variant(case) => {
+                    Some((case.owner.node.as_str(), case.case.as_str()))
+                }
+                DomainPackageRecord::Enum(_)
+                | DomainPackageRecord::ObjectType(_)
                 | DomainPackageRecord::RecordValueType(_)
                 | DomainPackageRecord::EventType(_)
                 | DomainPackageRecord::StateMachine(_)
@@ -386,6 +397,8 @@ impl AdmittedPackage {
             DomainPackageRecord::ObjectType(_) => DeclarationKind::ObjectType,
             DomainPackageRecord::FieldMember(_) => DeclarationKind::Field,
             DomainPackageRecord::RecordValueType(_) => DeclarationKind::RecordValueType,
+            DomainPackageRecord::Enum(_) => DeclarationKind::VariantType,
+            DomainPackageRecord::Variant(_) => DeclarationKind::VariantCase,
             DomainPackageRecord::EventType(_) => DeclarationKind::EventType,
             DomainPackageRecord::StateMachine(_) => DeclarationKind::StateMachine,
             DomainPackageRecord::Process(_) => DeclarationKind::Process,

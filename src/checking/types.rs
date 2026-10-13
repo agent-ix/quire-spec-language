@@ -58,6 +58,8 @@ impl<'a> DomainType<'a> {
             | DeclarationKind::Allocation
             | DeclarationKind::Population
             | DeclarationKind::EventType
+            | DeclarationKind::VariantType
+            | DeclarationKind::VariantCase
             | DeclarationKind::StateMachine
             | DeclarationKind::Process
             | DeclarationKind::PersistenceInterface => None,

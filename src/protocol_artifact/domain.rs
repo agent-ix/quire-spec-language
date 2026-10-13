@@ -55,6 +55,11 @@ pub(super) enum DomainTarget<'a> {
     /// The population input of an object type, under an FR-153 population
     /// declaration covering it.
     Population(DomainType<'a>),
+    /// A variant type's `enum` export (FR-056 "Variant types").
+    Enum,
+    /// One case of a variant type: a `variant` export, by owner and case
+    /// name.
+    Variant,
 }
 
 /// One export: its kind, path and target, ascending by `(kind, path)`.
@@ -145,6 +150,39 @@ pub(super) fn exports<'a>(
                     {
                         return Err(Error::Invalid(Invalid::Duplicate));
                     }
+                }
+                continue;
+            }
+            DomainPackageRecord::Enum(variant_type) => {
+                work.bytes(artifact_id(&variant_type.key).len())?;
+                work.charge(Dimension::Entries, 1)?;
+                if result
+                    .insert(
+                        (
+                            w::ExportKind::Enum.as_str(),
+                            artifact_id(&variant_type.key),
+                            "",
+                        ),
+                        (w::ExportKind::Enum, DomainTarget::Enum),
+                    )
+                    .is_some()
+                {
+                    return Err(Error::Invalid(Invalid::Duplicate));
+                }
+                continue;
+            }
+            DomainPackageRecord::Variant(case) => {
+                let owner = artifact_id(&case.owner);
+                work.bytes(owner.len().saturating_add(case.case.len()))?;
+                work.charge(Dimension::Entries, 1)?;
+                if result
+                    .insert(
+                        (w::ExportKind::Variant.as_str(), owner, case.case.as_str()),
+                        (w::ExportKind::Variant, DomainTarget::Variant),
+                    )
+                    .is_some()
+                {
+                    return Err(Error::Invalid(Invalid::Duplicate));
                 }
                 continue;
             }
@@ -441,5 +479,56 @@ mod tests {
         };
         assert_eq!(exhausted.limit, size - 1);
         assert_eq!(exhausted.requested, size);
+    }
+
+    /// FR-056 "Variant types": the compiler derives one `enum` export per
+    /// variant type and one `variant` export per case, the case keyed by
+    /// owner and case name.
+    #[trace("FR-056-AC-24")]
+    #[test]
+    fn a_variant_type_exports_one_enum_and_one_variant_per_case() {
+        use qsl_semantics::model::accounting::{Meter, ModelNormalizationLimits};
+        use qsl_semantics::model::domain_package::{DomainPackage, EnumRecord, VariantRecord};
+        let key = |node: &str| DeclarationKey {
+            package: "acme/orders".to_owned(),
+            node: format!("ix://acme/orders/{node}"),
+        };
+        let records = vec![
+            DomainPackageRecord::Enum(EnumRecord {
+                key: key("Tier"),
+                name: "Tier".to_owned(),
+                members: vec!["Gold".to_owned(), "Standard".to_owned()],
+            }),
+            DomainPackageRecord::Variant(VariantRecord {
+                key: key("variant/Tier-Gold"),
+                owner: key("Tier"),
+                case: "Gold".to_owned(),
+            }),
+            DomainPackageRecord::Variant(VariantRecord {
+                key: key("variant/Tier-Standard"),
+                owner: key("Tier"),
+                case: "Standard".to_owned(),
+            }),
+        ];
+        let package = AdmittedPackage::admit(
+            DomainPackage::new(selection(), records),
+            &mut Meter::new(ModelNormalizationLimits::UNLIMITED),
+        )
+        .expect("the variant type admits");
+        let found = exports(&package, &mut Work::new(Limits::default())).expect("exports");
+        let shape: Vec<_> = found
+            .iter()
+            .map(|export| (export.kind.as_str(), export.owner, export.member))
+            .collect();
+        assert_eq!(
+            shape,
+            [
+                (w::ExportKind::Enum.as_str(), "Tier", None),
+                (w::ExportKind::Variant.as_str(), "Tier", Some("Gold")),
+                (w::ExportKind::Variant.as_str(), "Tier", Some("Standard")),
+            ]
+        );
+        assert!(matches!(found[0].target, DomainTarget::Enum));
+        assert!(matches!(found[1].target, DomainTarget::Variant));
     }
 }

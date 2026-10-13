@@ -49,15 +49,15 @@ use serde_json::Value;
 
 use crate::model::domain_package::{
     AllocationRecord, ClauseRecord, ComponentRecord, DeclaredSlot, DomainPackage,
-    DomainPackageRecord, DomainPackageRef, EndpointRecord, Extent, FieldMemberRecord, Multiplicity,
-    NamespaceRecord, NamespaceTerm, NativeValueType, ObjectTypeRecord, OperationEffect,
-    OperationMemberRecord, OperationParameterRecord, OperationResult, OriginalDeclaration,
-    PersistenceInterfaceRecord, PopulationRecord, PortDirection, RecordValueTypeRecord,
-    RelationshipDirection, RelationshipEnd, RelationshipRecord, ScalarTypeRecord,
-    ScalarValueDomain, ValueTypeRef,
+    DomainPackageRecord, DomainPackageRef, EndpointRecord, EnumRecord, Extent, FieldMemberRecord,
+    Multiplicity, NamespaceRecord, NamespaceTerm, NativeValueType, ObjectTypeRecord,
+    OperationEffect, OperationMemberRecord, OperationParameterRecord, OperationResult,
+    OriginalDeclaration, PersistenceInterfaceRecord, PopulationRecord, PortDirection,
+    RecordValueTypeRecord, RelationshipDirection, RelationshipEnd, RelationshipRecord,
+    ScalarTypeRecord, ScalarValueDomain, ValueTypeRef, VariantRecord,
 };
 use crate::model::key::{hex, raw_bytes_digest, DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
-use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
+use crate::model::normalize::{ModelRefusal, ModelRefusalCause, Refusals};
 use crate::model::refusal::{Inexact, IntakeLimit, MemberPath, MemberRoot};
 use qsl_foundation::diagnostic::{Code, JsonPointer};
 use qsl_foundation::source::{LocatedSpan, Position};
@@ -133,11 +133,7 @@ pub mod meaning {
 
     /// Every meaning id FR-208 declares, as this reader knows it. A type's
     /// resolved meaning outside this closed list is not a real FR-208
-    /// meaning at all (`invalid_model_binding`/`malformed-declaration`); one
-    /// inside it but not covered by `read_type_node`'s dispatch is
-    /// instead a known-but-unsupported declaration form
-    /// (`unsupported_construct`/`declaration-form`) -- two different
-    /// refusal causes for two different defects.
+    /// meaning at all (`invalid_model_binding`/`malformed-declaration`).
     pub const ALL: &[&str] = &[
         OBJECT_TYPE,
         VALUE_TYPE,
@@ -3730,6 +3726,162 @@ fn meaning_index(document: &Value) -> Result<HashMap<(String, String), String>, 
     Ok(index)
 }
 
+/// Reads a `VARIANT_TYPE` type (FR-056 "Variant types") into one
+/// [`EnumRecord`] and one [`VariantRecord`] per case.
+///
+/// `shape` is the `shape` of the type's own construct. Every defect of the
+/// type is reported, not only the first (FR-154: every failing check of one
+/// node), in member-path order: the construct shape (`TypeDefinition.kind`),
+/// the empty `variants` list, then each case in turn -- a repeated name
+/// (`variants[i]`), then its `identity`, `origin` and `payloadType`. Records
+/// are emitted in ascending case-name byte order, so the document's
+/// `variants` order changes no record.
+#[qsl_attrs::string_edge]
+pub(super) fn read_variant_type(
+    package: &str,
+    type_value: &Value,
+    node: &str,
+    at: &str,
+    shape: Option<&str>,
+    records: &mut Vec<DomainPackageRecord>,
+) -> Result<(), Refusals> {
+    let ctx = NodeCtx::new(type_value, at);
+    let mut refusals = Vec::new();
+    if shape != Some("enumeration") {
+        refusals.push(ctx.malformed_in("kind", "a variant type's construct has shape enumeration"));
+    }
+    let variants = ctx.array_field("variants")?;
+    if variants.is_empty() {
+        refusals.push(ctx.malformed_in("variants", "a variant type declares one or more cases"));
+    }
+    let owner = declaration_key(package, node);
+    let Some(artifact) = type_identity_segment(package, node) else {
+        return Err(refused_after(
+            refusals,
+            ctx.malformed("identity: has no artifact id"),
+        ));
+    };
+    let mut cases = Vec::with_capacity(variants.len());
+    let mut first_of: HashMap<&str, (usize, &str)> = HashMap::new();
+    for (position, case) in variants.iter().enumerate() {
+        let case_at = format!("{at}.variants[{position}]");
+        let case_ctx = NodeCtx::new(case, case_at.clone());
+        let (name, identity) = match (case_ctx.str_field("name"), case_ctx.str_field("identity")) {
+            (Ok(name), Ok(identity)) => (name, identity),
+            (name, identity) => {
+                refusals.extend(name.err());
+                refusals.extend(identity.err());
+                continue;
+            }
+        };
+        if let Some(&(first, first_identity)) = first_of.get(name) {
+            if identity == first_identity {
+                // One identity declared twice: the reader's own
+                // `duplicate_identities` diagnostic is retained for it
+                // (FR-056's reader-first rule), so no second case is read.
+                continue;
+            }
+            refusals.push(ModelRefusal {
+                code: Code::InvalidModelBinding,
+                cause: ModelRefusalCause::ConflictingBinding {
+                    key: owner.clone(),
+                    member: Some(
+                        MemberPath::type_definition()
+                            .name("variants")
+                            .index(position),
+                    ),
+                },
+                detail: format!(
+                    "{case_at}: TypeDefinition.variants[{position}]: case {name:?} repeats \
+                     variants[{first}]; the cases share one variant export key"
+                ),
+            });
+            continue;
+        } else {
+            first_of.insert(name, (position, identity));
+        }
+        let minted = agent_ix_extraction_frontend::slug(name)
+            .is_ok_and(|slug| identity == format!("ix://{package}/variant/{artifact}-{slug}"));
+        if !minted {
+            refusals.push(case_ctx.malformed_member(
+                MemberPath::new(MemberRoot::Variant).name("identity"),
+                format!("identity: {identity:?} is not the case's minted variant/<Name>-<value>"),
+            ));
+        }
+        if node_span(case).1.is_none() {
+            refusals.push(
+                ctx.malformed_member(
+                    MemberPath::type_definition()
+                        .name("variants")
+                        .index(position)
+                        .name("origin"),
+                    format!(
+                        "variants[{position}].origin: a variant case with no source span refuses"
+                    ),
+                ),
+            );
+        }
+        if case.get("payloadType").is_some() {
+            refusals.push(unsupported_member(
+                case,
+                &case_at,
+                MemberPath::new(MemberRoot::Variant).name("payloadType"),
+                format!("{}:payloadType", meaning::VARIANT_TYPE),
+            ));
+        }
+        cases.push((name, identity));
+    }
+    if let Ok(found) = Refusals::try_from(refusals) {
+        return Err(found);
+    }
+    cases.sort_by(|left, right| left.0.cmp(right.0));
+    records.push(DomainPackageRecord::Enum(EnumRecord {
+        key: owner.clone(),
+        name: artifact.to_owned(),
+        members: cases.iter().map(|(name, _)| (*name).to_owned()).collect(),
+    }));
+    for (name, identity) in cases {
+        records.push(DomainPackageRecord::Variant(VariantRecord {
+            key: declaration_key(package, identity),
+            owner: owner.clone(),
+            case: name.to_owned(),
+        }));
+    }
+    Ok(())
+}
+
+/// `earlier` refusals followed by `last`, as the non-empty [`Refusals`].
+fn refused_after(mut earlier: Vec<ModelRefusal>, last: ModelRefusal) -> Refusals {
+    if earlier.is_empty() {
+        return Refusals::new(last, Vec::new());
+    }
+    let first = earlier.remove(0);
+    earlier.push(last);
+    Refusals::new(first, earlier)
+}
+
+/// The `shape` each `constructs[]` entry declares, by its `kind` key.
+fn shape_index(document: &Value) -> HashMap<(String, String), String> {
+    let entries = document
+        .get("constructs")
+        .and_then(Value::as_array)
+        .map_or(&[][..], Vec::as_slice);
+    entries
+        .iter()
+        .filter_map(|entry| {
+            let kind = entry.get("kind")?;
+            let shape = entry.get("construct")?.get("shape")?.as_str()?;
+            Some((
+                (
+                    kind.get("module")?.as_str()?.to_owned(),
+                    kind.get("name")?.as_str()?.to_owned(),
+                ),
+                shape.to_owned(),
+            ))
+        })
+        .collect()
+}
+
 /// Reads one `types[]` entry, dispatching purely by the `meaning` its `kind`
 /// resolves to in the document's own `constructs[]` table (FR-208) -- never
 /// by `kind.name`/`kind.module` directly. Checks report in FR-154's own
@@ -3739,11 +3891,12 @@ fn meaning_index(document: &Value) -> Result<HashMap<(String, String), String>, 
 fn read_type_node(
     package: &str,
     meanings: &HashMap<(String, String), String>,
+    shapes: &HashMap<(String, String), String>,
     type_meanings: &HashMap<&str, &str>,
     type_value: &Value,
     at: &str,
     pending: &mut Vec<PendingFrame>,
-) -> Result<Vec<DomainPackageRecord>, ModelRefusal> {
+) -> Result<Vec<DomainPackageRecord>, Refusals> {
     let ctx = NodeCtx::new(type_value, at);
     let (_, key) = read_type_identity(package, &ctx)?;
     let node = key.node.as_str();
@@ -3756,9 +3909,11 @@ fn read_type_node(
             || !ctx.array_field("supertypes")?.is_empty()
             || !ctx.array_field("constraints")?.is_empty()
         {
-            return Err(ctx.malformed(
-                "a native Timestamp alias declares no fields, operations, relationships, supertypes, or constraints",
-            ));
+            return Err(ctx
+                .malformed(
+                    "a native Timestamp alias declares no fields, operations, relationships, supertypes, or constraints",
+                )
+                .into());
         }
         return Ok(vec![DomainPackageRecord::ScalarType(ScalarTypeRecord {
             key,
@@ -3769,14 +3924,18 @@ fn read_type_node(
         // Other bare-string core kinds remain outside this reader's declared
         // FR-208 meanings. The Timestamp alias above is the explicit native
         // value-type exception required by FR-056-AC-17.
-        return Err(ctx.malformed_in(
-            "kind",
-            "a bare-string core kind is not a declared FR-208 meaning",
-        ));
+        return Err(ctx
+            .malformed_in(
+                "kind",
+                "a bare-string core kind is not a declared FR-208 meaning",
+            )
+            .into());
     }
     let (module, name) = ctx.kind_key()?;
     let Some(construct_meaning) = meanings.get(&(module.to_owned(), name.to_owned())) else {
-        return Err(ctx.malformed_in("kind", "names no constructs[] entry"));
+        return Err(ctx
+            .malformed_in("kind", "names no constructs[] entry")
+            .into());
     };
     // `agent-ix-semantic-ir` binds `VALUE_TYPE` to two wire shapes: a plain
     // scalar (`scalar` + `constraints`, no `fields`) and a record-shaped one
@@ -3786,7 +3945,7 @@ fn read_type_node(
     // refusal it got before that reader existed, rather than being routed
     // into the scalar reader's own malformed/missing-declaration checks.
     if construct_meaning.as_str() == meaning::VALUE_TYPE && !ctx.array_field("fields")?.is_empty() {
-        return Err(unsupported_at(type_value, at, meaning::VALUE_TYPE));
+        return Err(unsupported_at(type_value, at, meaning::VALUE_TYPE).into());
     }
     let mut records = Vec::new();
     let binding_result = {
@@ -3796,6 +3955,9 @@ fn read_type_node(
             node,
             at,
             type_meanings,
+            construct_shape: shapes
+                .get(&(module.to_owned(), name.to_owned()))
+                .map(String::as_str),
             records: &mut records,
             pending,
         };
@@ -3839,20 +4001,24 @@ fn read_type_node(
                 package, &ctx, node,
             )?));
         }
-        other if meaning::ALL.contains(&other) => {
-            // A real FR-208 meaning (e.g. VARIANT_TYPE) with no
-            // QSL record shape yet, or a real meaning whose shape this
-            // reader claims only part of (VALUE_TYPE's record-shaped form,
-            // caught above before this match) -- refused as a
-            // known-but-unsupported declaration form, never silently folded
-            // into `ObjectTypeRecord`.
-            return Err(unsupported_at(type_value, at, other));
+        // A population is read from `populations[]`; a `types[]` entry
+        // bound to it is a node not valid for its construct's meaning
+        // (FR-056 "Meaning binding", FR-154's construct validity rule).
+        meaning::POPULATION => {
+            return Err(ctx
+                .malformed_in(
+                    "kind",
+                    "a type definition is not valid for the population meaning",
+                )
+                .into());
         }
         other => {
-            return Err(ctx.malformed_member(
-                MemberPath::new(MemberRoot::Constructs).name("meaning"),
-                format!("kind: resolves to {other:?}, outside FR-208 at constructs[].meaning"),
-            ));
+            return Err(ctx
+                .malformed_member(
+                    MemberPath::new(MemberRoot::Constructs).name("meaning"),
+                    format!("kind: resolves to {other:?}, outside FR-208 at constructs[].meaning"),
+                )
+                .into());
         }
     }
     Ok(records)
@@ -3877,7 +4043,9 @@ fn frame_entry_kind(record: &DomainPackageRecord) -> FrameEntryKind {
         DomainPackageRecord::ObjectType(_) => FrameEntryKind::ObjectType,
         DomainPackageRecord::Process(_) => FrameEntryKind::Process,
         DomainPackageRecord::Relationship(_) => FrameEntryKind::Relationship,
-        DomainPackageRecord::RecordValueType(_)
+        DomainPackageRecord::Enum(_)
+        | DomainPackageRecord::Variant(_)
+        | DomainPackageRecord::RecordValueType(_)
         | DomainPackageRecord::EventType(_)
         | DomainPackageRecord::StateMachine(_)
         | DomainPackageRecord::Clause(_)
@@ -4189,6 +4357,32 @@ pub fn read_domain_package(
                             member_name: None,
                         },
                     );
+                    for (case_position, case) in node
+                        .get("variants")
+                        .and_then(Value::as_array)
+                        .into_iter()
+                        .flatten()
+                        .enumerate()
+                    {
+                        let case_ctx =
+                            NodeCtx::new(case, format!("{at}.variants[{case_position}]"));
+                        let case_key =
+                            declaration_key(&selection.identity, case_ctx.str_field("identity")?);
+                        if !declared.contains(&case_key) {
+                            continue;
+                        }
+                        let origin = case
+                            .get("origin")
+                            .ok_or_else(|| case_ctx.malformed("origin: missing"))?;
+                        originals.insert(
+                            case_key,
+                            OriginalDeclaration {
+                                meaning: None,
+                                origin: origin.clone(),
+                                member_name: Some(case_ctx.str_field("name")?.to_owned()),
+                            },
+                        );
+                    }
                     for members in ["fields", "operations", "relationships", "clauses"] {
                         for (member_position, member) in node
                             .get(members)
@@ -4263,7 +4457,13 @@ fn source_record_count(document: &Value) -> usize {
     let populations = document.get("populations").and_then(Value::as_array);
     let mut count = types.map_or(0, Vec::len) + populations.map_or(0, Vec::len);
     for type_value in types.into_iter().flatten() {
-        for member in ["fields", "operations", "relationships", "clauses"] {
+        for member in [
+            "fields",
+            "operations",
+            "relationships",
+            "clauses",
+            "variants",
+        ] {
             count += type_value
                 .get(member)
                 .and_then(Value::as_array)
@@ -4298,6 +4498,7 @@ fn read_nodes_partial(
         Ok(meanings) => meanings,
         Err(refusal) => return (Vec::new(), vec![refusal]),
     };
+    let shapes = shape_index(document);
     // `agent-ix-semantic-ir`'s own `IR_MEMBERS` requires `types` present and
     // `expect_array` guarantees it is an array; `populations` is optional
     // but array-shaped when present.
@@ -4358,6 +4559,7 @@ fn read_nodes_partial(
                 match read_type_node(
                     package_identity,
                     &meanings,
+                    &shapes,
                     &type_meanings,
                     type_value,
                     &at,
@@ -4395,7 +4597,7 @@ fn read_nodes_partial(
                             records.append(&mut new_records);
                         }
                     }
-                    Err(refusal) => refusals.push(refusal),
+                    Err(found) => refusals.extend(found),
                 }
             }
             DocumentNode::Population(population, position, _) => {
@@ -5975,20 +6177,20 @@ mod tests {
         );
     }
 
-    /// A real FR-208 meaning (`VARIANT_TYPE`) FCD's own schema accepts
-    /// generically -- any string in `kind`'s resolved `meaning` is
-    /// schema-valid -- but [`read_type_node`]'s dispatch has no reader for
-    /// yet, refuses as a known-but-unsupported declaration form rather than
-    /// silently folding into `ObjectTypeRecord`.
+    /// FR-056 "Meaning binding": "If an IR node is not valid for its
+    /// construct's meaning under FR-154's construct validity rule, then the
+    /// compiler SHALL refuse it with `invalid_model_binding`/
+    /// `malformed-declaration`." A `types[]` entry bound to the population
+    /// meaning is such a node.
     #[trace("TC-146", "FR-056-AC-3")]
     #[test]
-    fn refuses_a_known_but_unsupported_fr208_meaning_as_unsupported() {
+    fn refuses_a_type_definition_bound_to_the_population_meaning_as_malformed() {
         let document = wire_envelope(
             "acme/orders",
             serde_json::json!([wire_construct(
                 "acme/orders",
                 "happened",
-                meaning::VARIANT_TYPE,
+                meaning::POPULATION,
                 serde_json::json!({}),
             )]),
             serde_json::json!([wire_type(
@@ -5999,25 +6201,16 @@ mod tests {
         )
         .to_string()
         .into_bytes();
-        let refusals = read_records("acme/orders", &parse_document(&document)).expect_err(
-            "a real FR-208 meaning with no QSL record shape yet refuses, not folds into \
-             ObjectTypeRecord",
-        );
-        assert_eq!(
-            refusals,
-            vec![ModelRefusal {
-                code: Code::UnsupportedConstruct,
-                cause: ModelRefusalCause::UnsupportedDeclarationForm {
-                    node: "ix://acme/orders/OrderPlaced".to_owned(),
-                    what: meaning::VARIANT_TYPE.to_owned(),
-                    member: MemberPath::type_definition(),
-                },
-                detail: format!(
-                    "$.types[0]: construct meaning/capability {:?} has no reader yet",
-                    meaning::VARIANT_TYPE
-                ),
-            }]
-        );
+        let refusals = read_records("acme/orders", &parse_document(&document))
+            .expect_err("a type definition bound to the population meaning refuses");
+        assert_eq!(refusals.len(), 1);
+        assert_eq!(refusals[0].code, Code::InvalidModelBinding);
+        assert!(matches!(
+            &refusals[0].cause,
+            ModelRefusalCause::IntakeMalformedDeclaration { node, member, .. }
+                if node == "ix://acme/orders/OrderPlaced"
+                    && *member == MemberPath::type_definition().name("kind")
+        ));
     }
 
     fn money_field(name: &str, type_ref: &str) -> Value {

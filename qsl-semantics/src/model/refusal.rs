@@ -60,6 +60,10 @@ pub enum MemberRoot {
     Relationship,
     /// The package's `constructs[]` array.
     Constructs,
+    /// One case of a variant type.
+    Variant,
+    /// A field member.
+    Field,
 }
 
 /// One step below a [`MemberPath`]'s root.
@@ -243,6 +247,8 @@ impl std::str::FromStr for MemberPath {
             ("PopulationDefinition", MemberRoot::PopulationDefinition),
             ("Operation", MemberRoot::Operation),
             ("Relationship", MemberRoot::Relationship),
+            ("Variant", MemberRoot::Variant),
+            ("Field", MemberRoot::Field),
             ("constructs[]", MemberRoot::Constructs),
         ] {
             if let Some(rest) = text.strip_prefix(spelling) {
@@ -266,6 +272,8 @@ impl std::fmt::Display for MemberPath {
             MemberRoot::PopulationDefinition => "PopulationDefinition",
             MemberRoot::Operation => "Operation",
             MemberRoot::Relationship => "Relationship",
+            MemberRoot::Variant => "Variant",
+            MemberRoot::Field => "Field",
             MemberRoot::Constructs => "constructs[]",
         })?;
         for segment in &self.segments {

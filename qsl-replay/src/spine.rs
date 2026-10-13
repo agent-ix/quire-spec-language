@@ -483,6 +483,9 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
         AssemblyCause::UnadmittedModel { alias } => {
             format!("`model {alias}` names no admitted domain package")
         }
+        AssemblyCause::UnsupportedVariantType { name } => {
+            format!("`{name}` is a variant type, which source cannot yet name")
+        }
         AssemblyCause::UnsupportedModelMember { alias, node } => format!(
             "the domain package of `model {alias}` declares `{node}`, which no type environment \
              entry represents yet"
