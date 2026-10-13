@@ -37,7 +37,7 @@ fn check(declarations: &str) -> Checked {
     let graph = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         unit,
-        Vec::new(),
+        crate::model::intake::SelectedModels::default(),
         Vec::new(),
     )
     .expect("the unit assembles")
@@ -840,7 +840,7 @@ fn family_check(
     let package = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         unit,
-        Vec::new(),
+        crate::model::intake::SelectedModels::default(),
         Vec::new(),
     )
     .expect("the unit assembles");
@@ -963,7 +963,7 @@ fn tc_160_a_root_of_an_undeclared_composite_is_a_fault() {
     let field = body.push(node(
         NodeKind::Field {
             operand: record,
-            index: 0,
+            field: crate::check::ir::RecordField::new(NodeKey::from_digest([9; 32]), "x"),
             optional: false,
         },
         ValueType::Integer,

@@ -61,7 +61,7 @@ use super::family::{OccurrenceMap, OccurrenceRole};
 use super::identity::ModelCorrespondence;
 use super::ir::{
     Arithmetic, CheckedLiteral, CheckedNode, Connective, IntegerDivisionOperator, NodeId, NodeKind,
-    OrderedKind, RecordSlot, Slot, Visit,
+    OrderedKind, RecordField, RecordSlot, Slot, Visit,
 };
 use super::node_key::{
     group_keys, node_key, LawRole, LeafSegment, LiteralValue, NodeInput, NodeKeyRefusal, NodeTag,
@@ -74,6 +74,7 @@ use super::node_key::{
 use super::refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, KeyFault, StageLimitCause,
 };
+use crate::model::key::DeclarationKey;
 use crate::value::definition::{CatalogRole, DefinitionLock, DefinitionReference};
 use crate::value::enumeration::{member_preimage_bytes, EnumDeclarationPreimage};
 use crate::value::member::Member;
@@ -81,6 +82,7 @@ use crate::value::unit::{DimensionPreimage, UnitPreimage};
 use quire_semantic_value::declaration::{
     CompositeShape, EqualityOperator, FieldDeclaration, TypeEnvironment,
 };
+use quire_semantic_value::enumeration::EnumValue;
 use quire_semantic_value::location::{Location, Origin};
 use quire_semantic_value::quantity::UnitTable;
 
@@ -88,6 +90,8 @@ mod model;
 mod state;
 mod wire;
 
+pub(crate) use model::ParentSlotFailure;
+pub(crate) use model::{record_node_key, variant_type_node_key, RecordKeyError};
 pub use model::{AdmittedModel, ForeignView, ModelClause};
 pub(crate) use state::{
     AnchorInput, AttemptInput, LoweredAttempt, LoweredClause, OperationBinding, StateClauseInput,
@@ -519,6 +523,9 @@ pub(crate) struct Lowering<'a> {
     functions: Vec<Option<NodeKey>>,
     /// Each declared composite's node key, by its declaration key.
     composites: BTreeMap<NodeKey, NodeKey>,
+    /// The model record value type or event type each model-owned composite
+    /// declaration key stands for (FR-359 item 9), built on first use.
+    model_records: Option<BTreeMap<NodeKey, DeclarationKey>>,
     /// The `functions` slots and `composites` entries written since the
     /// last settle, the only keys that settle can still resolve
     /// (a settle per function group resolves its own keys, not every key
@@ -1140,6 +1147,8 @@ impl<'w> LeafWalk<'w> {
         match value_type {
             // Rule 1.
             ValueType::Text(text) => self.append(Leaf::Text(text.profile()), location)?,
+            // Native String is not profile-bounded Text and adds no Text leaf.
+            ValueType::String => {}
             // Rule 2.
             ValueType::Option(payload) => queued.push(LeafVisit::Type {
                 segment: Some(WalkSegment::Inner),
@@ -1255,6 +1264,7 @@ impl<'w> LeafWalk<'w> {
                     | ValueType::Decimal(_)
                     | ValueType::Float(_)
                     | ValueType::Quantity(_)
+                    | ValueType::String
                     | ValueType::Enum(_)
                     | ValueType::Reference(_)
                     | ValueType::Population(_) => {}
@@ -1386,6 +1396,7 @@ impl<'a> Lowering<'a> {
             occurrences,
             functions: vec![None; function_count],
             composites: BTreeMap::new(),
+            model_records: None,
             unsettled_functions: Vec::new(),
             unsettled_composites: Vec::new(),
             composites_in_progress: Vec::new(),
@@ -1894,16 +1905,19 @@ impl<'a> Lowering<'a> {
             ValueType::Enum(shape) => {
                 // FR-092 rule 1: an enum type is its QSpec nominal
                 // declaration node, `value::enumeration`'s key.
-                let declaration = self
-                    .scope
-                    .enum_binding_of(shape)
-                    .map(|binding| binding.declaration.key());
-                declaration.ok_or_else(|| {
-                    refuse(
+                let scope: &'a Scope = self.scope;
+                if let Some(binding) = scope.enum_binding_of(shape) {
+                    Ok(binding.declaration.key())
+                } else if let Some(variant) = scope.variant_type_of(shape) {
+                    // FR-360 item 12: a model variant type is its
+                    // `model`/`variant_type` node.
+                    self.variant_type_nodes(variant, location)
+                } else {
+                    Err(refuse(
                         location,
                         CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch),
-                    )
-                })
+                    ))
+                }
             }
             ValueType::Quantity(unit) => self.quantity_type(*unit, location),
             ValueType::Reference(target) => self.reference_type(*target, location),
@@ -1911,10 +1925,11 @@ impl<'a> Lowering<'a> {
             // resolved type form ([`Self::binder_type`]); the checked type
             // alone carries no `T`.
             ValueType::Population(_) => Err(fault(location, KeyFault::UntargetedPopulation)),
-            ValueType::Uuid | ValueType::Timestamp => Err(refuse(
-                location,
-                CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch),
-            )),
+            // FR-056: the native String, UUID and Timestamp each a distinct
+            // bare scalar node, as a record or event field carries them.
+            ValueType::String => self.scalar("string", location),
+            ValueType::Uuid => self.scalar("uuid", location),
+            ValueType::Timestamp => self.scalar("timestamp", location),
         }?;
         Ok(TypeStep::Built(key))
     }
@@ -1979,6 +1994,25 @@ impl<'a> Lowering<'a> {
     {
         if let Some(key) = self.composites.get(&declaration) {
             return Ok(OpenComposite::Built(*key));
+        }
+        // FR-359 item 3: a model record value type or event type is a
+        // model-owned node, never a `composite_type`.
+        if let Some(model_record) = self.model_record_declaration(declaration, location)? {
+            let key = self.model_node(&model_record, location)?;
+            // The record has no checked occurrence of its own: root it at the
+            // `model` declaration that selects its package, as a relationship
+            // is. The selecting declaration is the model that holds the
+            // record, not a part of its display name.
+            let alias = self
+                .models
+                .iter()
+                .find(|model| model.record(&model_record).is_some())
+                .and_then(|model| model.alias())
+                .ok_or_else(|| fault(location, KeyFault::UnknownDeclaration(model_record.clone())))?
+                .to_owned();
+            self.record(key, OccurrenceRole::Generated, type_declaration(&alias));
+            self.composites.insert(declaration, key);
+            return Ok(OpenComposite::Built(key));
         }
         let scope: &'a Scope = self.scope;
         let Some(composite) = scope.types().composite(declaration) else {
@@ -2146,30 +2180,40 @@ impl<'a> Lowering<'a> {
             self.record(declaration, OccurrenceRole::Declaration, site.clone());
         }
         for member in &binding.members {
-            let key = member.member();
-            let bytes = member_preimage_bytes(declaration, member.case(), self.identity)
-                .map_err(|_| fault(&site, KeyFault::NonCanonicalNominal(key)))?;
-            self.insert_nominal(
-                &site,
-                key,
-                bytes,
-                NodeContent {
-                    node_tag: NodeTag::Value,
-                    semantic_form: "enum_value",
-                    semantic_type: Some(declaration),
-                    declaration: None,
-                    owner: None,
-                    body: BodyTerm::literal(
-                        declaration,
-                        LiteralValue::Enum(member.case().to_owned()),
-                    ),
-                },
-                NominalNode::EnumMember {
-                    declaration,
-                    case: member.case().to_owned(),
-                },
-            )?;
+            self.enum_member_node(&site, declaration, member)?;
         }
+        Ok(())
+    }
+
+    /// The `value`/`enum_value` node of `member`, a case of the enumeration
+    /// node `declaration` (FR-092 rule 1, FR-360 item 12): keyed by its QSpec
+    /// nominal preimage over `declaration` and the exact case name.
+    pub(crate) fn enum_member_node(
+        &mut self,
+        location: &Location,
+        declaration: NodeKey,
+        member: &EnumValue,
+    ) -> Result<(), CheckRefusal> {
+        let key = member.member();
+        let bytes = member_preimage_bytes(declaration, member.case(), self.identity)
+            .map_err(|_| fault(location, KeyFault::NonCanonicalNominal(key)))?;
+        self.insert_nominal(
+            location,
+            key,
+            bytes,
+            NodeContent {
+                node_tag: NodeTag::Value,
+                semantic_form: "enum_value",
+                semantic_type: Some(declaration),
+                declaration: None,
+                owner: None,
+                body: BodyTerm::literal(declaration, LiteralValue::Enum(member.case().to_owned())),
+            },
+            NominalNode::EnumMember {
+                declaration,
+                case: member.case().to_owned(),
+            },
+        )?;
         Ok(())
     }
 
@@ -2700,18 +2744,23 @@ impl<'a> Lowering<'a> {
         let key = match function.clause {
             // FR-094: a clause function carries its declaration's
             // `ModelOwner`, no `declaration` and a trailing `clause`
-            // binding; it has no source `declaration` occurrence.
+            // binding; it has no source `declaration` occurrence. Its one
+            // occurrence is `generated`, at its own body, which FR-096
+            // resolves to the clause or body the function was built from
+            // (FR-302), so emission places it.
             Some(clause) => {
                 let (owner, clause) = self.clause_owner(clause, function.location)?;
                 members.push(clause);
-                self.insert_owned(
+                let key = self.insert_owned(
                     function.location,
                     NodeTag::Function,
                     semantic_form,
                     Some(result),
                     owner,
                     BodyTerm::aggregate(members),
-                )?
+                )?;
+                self.record(key, OccurrenceRole::Generated, function.location.clone());
+                key
             }
             None => {
                 let declaration = qualified_name(function.name, function.location)?;
@@ -3152,9 +3201,8 @@ impl<'a> Lowering<'a> {
                 Keyed::Application(Operator::Unary, plain("quire.op.boolean.not")),
                 Operands::One(operand),
             ),
-            NodeKind::Field { operand, index, .. } => {
-                let member =
-                    self.field_member(node.at(*operand).value_type(), *index, node.location())?;
+            NodeKind::Field { operand, field, .. } => {
+                let member = self.field_member(field, node.location())?;
                 (
                     Keyed::Application(
                         Operator::Query,
@@ -3900,7 +3948,9 @@ impl<'a> Lowering<'a> {
             Value::Rational(value) => LiteralValue::Rational(value.clone()),
             Value::Enum(member) => {
                 // FR-093: the enum member's QSpec `enum_value` node, whose
-                // key is its `VariantId` (ADR-013 O-14).
+                // key is its `VariantId` (ADR-013 O-14). A model variant
+                // type's nodes are built where it is first named, here.
+                self.type_node(node.value_type(), node.location())?;
                 let key = NodeKey::from_digest(*member.variant().as_bytes());
                 self.record(key, OccurrenceRole::Expression, node.location().clone());
                 return Ok(LeafTerm::reference(key));
@@ -3913,10 +3963,12 @@ impl<'a> Lowering<'a> {
             | Value::Composite(_)
             | Value::Collection(_)
             | Value::Reference(_)
-            | Value::Population(_) => return Err(fault(node.location(), KeyFault::UnbuiltLiteral)),
+            | Value::Population(_)
+            | Value::Union(_) => return Err(fault(node.location(), KeyFault::UnbuiltLiteral)),
             Value::Uuid(_) | Value::Timestamp(_) => {
                 return Err(fault(node.location(), KeyFault::UnbuiltLiteral))
             }
+            Value::String(_) => return Err(fault(node.location(), KeyFault::UnbuiltLiteral)),
         };
         let semantic_type = self.type_node(node.value_type(), node.location())?;
         self.value_node(
@@ -3927,42 +3979,21 @@ impl<'a> Lowering<'a> {
         )
     }
 
-    /// The `record.project` member naming field `index` of `record`.
+    /// The `record.project` member naming `field` (FR-359 item 2): the node
+    /// of the record the read is typed at, and the field's name there.
     fn field_member(
         &mut self,
-        record: &ValueType,
-        index: usize,
+        field: &RecordField,
         location: &Location,
     ) -> Result<Member, CheckRefusal> {
-        let mismatch = || {
-            refuse(
-                location,
-                CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch),
-            )
-        };
-        let ValueType::Composite(declaration) = record else {
-            return Err(mismatch());
-        };
-        let name = match self
-            .scope
-            .types()
-            .composite(*declaration)
-            .map(|c| c.shape())
-        {
-            Some(CompositeShape::Record(fields)) => fields
-                .get(index)
-                .map(|field| field.name().to_owned())
-                .ok_or_else(mismatch)?,
-            _ => return Err(mismatch()),
-        };
-        let name = Identifier::new(name).map_err(|_| {
+        let name = Identifier::new(field.name()).map_err(|_| {
             refuse(
                 location,
                 CheckCause::NodePreimage(NodeKeyRefusal::EmptyBindingName),
             )
         })?;
         Ok(Member::Field {
-            declaration: self.composite(*declaration, location)?,
+            declaration: self.composite(field.declaration(), location)?,
             name,
         })
     }
@@ -4008,7 +4039,10 @@ impl<'a> Lowering<'a> {
             }
             // FR-153: a population is never an equality operand; the
             // checker refuses one before lowering.
-            ValueType::Population(_) | ValueType::Uuid | ValueType::Timestamp => {
+            ValueType::Population(_)
+            | ValueType::Uuid
+            | ValueType::String
+            | ValueType::Timestamp => {
                 return Err(refuse(
                     location,
                     CheckCause::IllTyped(quire_exact::IllTypedCause::OperatorIneligible),

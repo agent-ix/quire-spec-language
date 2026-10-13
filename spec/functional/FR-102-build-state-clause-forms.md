@@ -80,10 +80,20 @@ parses all of them (`qsl-cst/src/grammar.rs:566-591`, `:864-865`,
   It SHALL NOT resolve the profile, model alias, target type, operation or
   parameters; S3 resolution follows FR-104's selected-model and
   effective-operation rules.
+- QSpec requires an `operation-body` to refuse `unsupported_construct` unless
+  the package selects `quire.model.complete/v1`. QSL does not enforce that
+  yet, because it has no model-profile selection: `resolve_profiles` accepts
+  only `quire.value.complete/v1`, and FR-304-AC-8 states the same rule for the
+  abstraction form without code behind it. FR-361 states the gate. Delete
+  this sentence when FR-110 layer selection is built and FR-361's gate is
+  implemented.
 - An `operation-body` supplies an operation candidate's body under QSpec
   FR-151. It is distinct from `StateClauseForm`: it supplies one operation
   body, while a unit `pre` or `post` `StateClauseForm` supplies a contract
-  clause. An invariant is not associated with an operation body.
+  clause. An invariant is not associated with an operation body. Both are
+  distinct from the `requires` and `ensures` clauses a domain package
+  authors on its own operation: those are kept by intake and parsed at S3
+  (FR-103), are not built at S2 and are not `StateClauseForm`s.
 - The production SHALL read the kind from the leading token alone:
   `invariant` gives `Invariant`, `pre` gives `Precondition` and `post` gives
   `Postcondition`.
@@ -118,6 +128,7 @@ parses all of them (`qsl-cst/src/grammar.rs:566-591`, `:864-865`,
 | FR-102-AC-4 | The `dispatch` arms for `Invariant`, `Pre`, `Post` and `Body` each make exactly one call (the existing `dispatch_entry_is_a_single_thin_call` check passes over them). A unit whose only declaration begins with a spelling no family claims, such as `temporal`, still refuses `NoDispatchEntry`, naming that spelling. | Test (TC-457) |
 | FR-102-AC-5 | An invariant whose body is 128 nested `not`s around `true`, and one of 100,000 nested `not`s around `true` parsed on a thread with a 512 KiB stack under S1 limits raised to fit it, each build their form on that thread, and no S2 outcome names a depth. | Test (TC-457) |
 | FR-102-AC-6 | With the `seam-probe` feature, the probe variant of `LeadingTokenKind` and of `Expression` still fails to compile at exactly the checked-in S2 seam list, which is unchanged by this feature (FR-063). | Test (TC-457) |
+| FR-102-AC-7 | `body forB using v on Config::ConfigVersion::resize(amount, extra) { amount + 22 }` builds one `OperationBodyForm` with label `forB`, profile alias `v`, target segments `Config`, `ConfigVersion` and `resize`, parameter names `amount` and `extra`, and a body expression, each with a span that slices to its source text and the target span slicing to `Config::ConfigVersion::resize`; a body with no parameters and a reserved member name (`size`) builds, and several bodies keep their source order. | Test (TC-457) |
 
 ## Dependencies
 

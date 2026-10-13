@@ -163,6 +163,8 @@ pub enum LeadingTokenKind {
     /// `post`: the `ProtocolClause` state clause form, kind
     /// `Postcondition` (FR-102).
     Post,
+    /// `body`: the `ProtocolClause` operation-body form (FR-102).
+    Body,
     /// `protocol`: the `ProtocolClause` protocol declaration form, holding
     /// its scoped anchors (FR-112, ADR-012 §12.2).
     Protocol,
@@ -366,6 +368,7 @@ fn dispatch(
         LeadingTokenKind::Invariant => protocol_clause::state_clause(construct),
         LeadingTokenKind::Pre => protocol_clause::state_clause(construct),
         LeadingTokenKind::Post => protocol_clause::state_clause(construct),
+        LeadingTokenKind::Body => protocol_clause::operation_body(construct),
         LeadingTokenKind::Protocol => protocol_clause::protocol_declaration(construct),
         #[cfg(test)]
         LeadingTokenKind::TestProbe => test_support::stub_production(construct),
@@ -401,6 +404,7 @@ fn from_spelling(spelling: &[u8]) -> Option<LeadingTokenKind> {
         b"invariant" => Some(LeadingTokenKind::Invariant),
         b"pre" => Some(LeadingTokenKind::Pre),
         b"post" => Some(LeadingTokenKind::Post),
+        b"body" => Some(LeadingTokenKind::Body),
         b"protocol" => Some(LeadingTokenKind::Protocol),
         _ => None,
     }

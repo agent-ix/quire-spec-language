@@ -448,6 +448,8 @@ impl<'a> Solver<'_, 'a, '_, '_> {
             NativeType::Object { model, role } => (*model, &role.record),
             NativeType::Domain(domain) => return self.domain_field(domain, name, at),
             NativeType::Boolean
+            | NativeType::Uuid
+            | NativeType::String
             | NativeType::Scalar { .. }
             | NativeType::Enumeration { .. }
             | NativeType::Reference { .. }

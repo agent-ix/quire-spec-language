@@ -186,7 +186,7 @@ fn is_type_mismatch(outcome: &LookupOutcome) -> bool {
     )
 }
 
-/// Whether `outcome` is the FR-082 `resource_exhausted`/`ancestor-steps`
+/// Whether `outcome` is the FR-082 `resource_exhausted` walk-ceiling
 /// refusal naming `limit`.
 fn is_ancestor_steps(outcome: &LookupOutcome, limit: u64) -> bool {
     matches!(
@@ -367,7 +367,7 @@ fn divergence_chain_within_the_ceiling_agrees_at_check_and_at_evaluation() {
 /// Divergence row 3, one past the ceiling: the same chain under a ceiling of
 /// `depth - 1`. The model still normalizes it (its longest path is `depth`
 /// steps) but refuses the walk from `c.0` to `z`, which follows `depth`
-/// edges, with `resource_exhausted`/`ancestor-steps`. Check time stops at an edge-count stage limit naming the
+/// edges, with `resource_exhausted`/`insufficient-next-charge`. Check time stops at an edge-count stage limit naming the
 /// same ceiling (FR-082, ADR-014 B-3) rather than answering `false` from a
 /// closure the model cannot compute.
 #[trace("TC-220", "FR-082-AC-3", "FR-082-AC-6")]
@@ -1041,15 +1041,13 @@ fn reference_field(name: &str, target: &str) -> FieldDeclaration {
     )
 }
 
-/// A reference field is redefined only with its own reference type:
-/// evaluation's `ValueType::admits` matches a reference's object type
-/// exactly, so `B.o: Reference<B>?` redefining `A.o: Reference<A>?` would
-/// pass the check and then refuse `CheckedInvariant` when `o` is read
-/// through `A`. Refused `RedefinitionWidens` naming `A.o`; the same
-/// redefinition typed `Reference<A>?` is admitted.
+/// A reference field is redefined by a reference to the same object type or
+/// to a subtype (FR-151 covariance): `B.o: Reference<B>?` redefining
+/// `A.o: Reference<A>?` is admitted, and a reference to an unrelated type is
+/// refused `RedefinitionWidens` naming `A.o`.
 #[trace("QSpec-TC-196", "QSpec-FR-151-AC-2")]
 #[test]
-fn a_reference_field_is_redefined_only_with_its_own_reference_type() {
+fn a_reference_field_is_redefined_by_the_same_or_a_subtype_reference() {
     let redefined = |b_field: FieldDeclaration| {
         TypeEnvironment::new(
             [],
@@ -1060,10 +1058,11 @@ fn a_reference_field_is_redefined_only_with_its_own_reference_type() {
                     vec![b_field.with_redefines(field_ref("M::A", "o"))],
                     &["M::A"],
                 ),
+                object("M::C", vec![], &[]),
             ],
         )
     };
-    let refusal = redefined(reference_field("o", "M::B"))
+    let refusal = redefined(reference_field("o", "M::C"))
         .unwrap_err()
         .into_refused()
         .unwrap();
@@ -1074,10 +1073,12 @@ fn a_reference_field_is_redefined_only_with_its_own_reference_type() {
     );
     assert_eq!(refusal.code(), "ill_typed");
 
-    let environment = redefined(reference_field("o", "M::A")).unwrap();
-    let exposed = environment.attribute(effective("M::B"), "o").unwrap();
-    assert_eq!(exposed.owner(), effective("M::B"));
-    assert!(exposed.stands_for(&field_ref("M::A", "o")));
+    for target in ["M::A", "M::B"] {
+        let environment = redefined(reference_field("o", target)).unwrap();
+        let exposed = environment.attribute(effective("M::B"), "o").unwrap();
+        assert_eq!(exposed.owner(), effective("M::B"));
+        assert!(exposed.stands_for(&field_ref("M::A", "o")));
+    }
 }
 
 /// Record and tuple construction admit a reference by the same FR-151
@@ -1299,7 +1300,8 @@ fn object_type_supertypes_rekeys_a_view_and_normalization_refuses_a_shared_key()
             assert!(
                 refusals.iter().any(|refusal| refusal.cause
                     == ModelRefusalCause::ConflictingBinding {
-                        key: DeclarationKey::fixture("model.A")
+                        key: DeclarationKey::fixture("model.A"),
+                        member: None,
                     }),
                 "expected conflicting-binding on model.A: {refusals:?}"
             );

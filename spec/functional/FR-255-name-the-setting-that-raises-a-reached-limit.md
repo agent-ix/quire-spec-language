@@ -145,12 +145,29 @@ these names through the same operand grammar as the stage settings
    outcome carrying the limit kind, the configured bound, the count the
    refused charge would have reached, the setting name of that limit, and
    the locus FR-096 defines for the producer. For a stage limit the outcome
-   is `LimitExceeded`. A stage whose requirement gives its limits another
-   code (intake's `resource_exhausted`/`intake-limit-exceeded`, library
-   resolution's `resource_exhausted`/`insufficient-next-charge`) keeps that
-   code and carries the same four values. The catalog record of each such
-   outcome SHALL carry the setting name as its `setting` field, beside
-   `kind`, `bound` and `actual`.
+   is `LimitExceeded`. The type that carries the limit decides the code, not
+   the stage that reads it (ADR-014 section 1, ADR-013 T-4):
+
+   | Carrying type | Code | Settings |
+   | --- | --- | --- |
+   | `ModelNormalizationLimitsV1`, `PopulationAdmissionLimitsV1` (caller budgets) | `resource_exhausted`/`insufficient-next-charge` for a denied charge, a walk ceiling (`model.ancestor_steps`, `model.family_steps`, `admission.ancestor_steps`) being a denied one-edge charge (FR-082-AC-3, FR-083, QSpec FR-150-AC-11), wherever the ceiling is read, observation admission's re-run walks included | `model.*`, `admission.*` |
+   | the format, intake and library resolution budgets | `resource_exhausted`/`input-bytes-exceeded`, `resource_exhausted`/`intake-limit-exceeded`, `resource_exhausted`/`insufficient-next-charge` | `format.output_bytes`, `intake.input_bytes`, `library.*` |
+   | a stage's or reader's own limits type | `stage_limit_exceeded` | `s1.*`, `s3.*`, `environment.*`, `i2.*`, `replay.input_bytes`, `observation.*`, `dependency.*`, `identity.input_bytes` |
+   | exploration limits | no catalog code: exploration returns `Outcome::Bounded` (FR-101) | `explore.*` |
+
+   Each `stage_limit_exceeded` outcome carries `kind`, `bound`, `actual` and
+   `setting`. So does `resource_exhausted`/`intake-limit-exceeded`, wherever
+   intake runs (replay `select`, the compile path and observation admission),
+   because it is a size ceiling. A denied charge, `resource_exhausted`/
+   `insufficient-next-charge`, carries `setting`, `limit` (QSpec FR-272's
+   canonical name for the effective limit), `actual` (the prior usage plus the
+   denied amount), `stage`, `accounting_contract`, `limit_kind`, `consumed`, `next_charge`
+   and `charge_point`, wherever the budget is read: the compile path, replay
+   `select`, observation admission's re-run walks and the S6a family
+   refusals. A `model.*` or `admission.*` walk ceiling is a denied one-edge
+   charge, so its `consumed` is the limit, its `next_charge` is 1 and its
+   `charge_point` is `model.ancestor-edge`, `model.family-edge` or
+   `admission.ancestor-edge`.
 2. **One mapping per limits type.** Each stage's limits type SHALL map each
    of its fields to its setting name in one place, and every producer of a
    `LimitExceeded` for that stage SHALL take the setting from that mapping.
@@ -207,7 +224,7 @@ these names through the same operand grammar as the stage settings
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-255-AC-1 | For each row of the setting table, driving its stage or operation past that limit at a configured bound `B` returns the row owner's specified limit outcome with the row's limit kind, bound `B`, the count the refused charge would have reached, and the row's setting name, and its catalog record carries the outcome code with fields `kind`, `bound`, `actual` and `setting` holding those values. The `format.output_bytes` case uses FR-003's `resource_exhausted` outcome over emitted UTF-8 bytes. | Test (TC-720, TC-931) |
+| FR-255-AC-1 | For each row of the setting table, driving its stage or operation past that limit at a configured bound `B` returns the code Behavior 1's table gives for the limit's carrying type, with the row's limit kind, bound `B`, the count the refused charge would have reached, and the row's setting name, and, for a `stage_limit_exceeded` row, its catalog record carries fields `kind`, `bound`, `actual` and `setting` holding those values; the caller-budget rows are as Behavior 1 states. The `explore.*` rows return their `Outcome::Bounded` instead. The `format.output_bytes` case uses FR-003's `resource_exhausted` outcome over emitted UTF-8 bytes. | Test (TC-720, TC-931) |
 | FR-255-AC-2 | A function `f` whose body is `1 + 1 + 1` (five expression nodes), checked with `s3.nodes` at 4, renders as "S3 node limit 4 reached (5) at <locus>; raise it with `--limit s3.nodes=<n>` or the request's `stage_limits` entry `s3.nodes`", where <locus> renders FR-096's locus of the node whose entry failed, in QSpec FR-461's rendering. | Test (TC-720) |
 | FR-255-AC-3 | Each stage's and operation's limits type, including `FormatLimits`, and the call's accounting limits, maps every one of its fields to exactly one setting name, the names across all of them are distinct, and the union of those names equals the names of the setting table and the accounting table together. Setting a field through its builder method changes that field's bound and leaves every other field at its prior value. | Test (TC-720) |
 | FR-255-AC-4 | For each row of the setting table, an input or operation that reaches that limit at its default succeeds once the row's setting is raised to fit it, through each applicable entry point: the library limits type's builder method, the replay request's `stage_limits` entry of that name, and the settings operation given the operand `<name>=<value>`. `replay.input_bytes`, `format.output_bytes`, and a row whose stage a replay does not run are exercised through the builder and the settings operation; the formatter receives the resulting `FormatLimits`. | Test (TC-721, TC-931) |

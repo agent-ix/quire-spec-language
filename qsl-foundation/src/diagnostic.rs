@@ -4,8 +4,10 @@
 //! [`Locus`] is ADR-013 T-5's foundation diagnostic locus.
 use crate::source::{LocatedSpan, Source, SourceIdentity, SourceReadCause, Span};
 
+mod budget;
 mod locus;
 mod stage;
+pub use budget::{BudgetDenial, BudgetOwner, DeniedCharge};
 pub use locus::{InvalidJsonPointer, JsonPointer, Locus, UnresolvedLocus};
 pub use stage::{LimitExceeded, LimitKind, StageFailure, StageWork, Staged, Stopped};
 
@@ -123,6 +125,9 @@ pub enum Code {
     AmbiguousDeclaration,
     /// A required formal or lexical declaration is absent.
     MissingDeclaration,
+    /// Two declarations that must be unique resolve to one identity (FR-302:
+    /// two unit `operation-body` declarations resolving to one operation).
+    ConflictingDeclaration,
     /// Import digest, context binding or clause identity is invalid.
     InvalidModelBinding,
     /// Native runtime artifact structure or selected runtime data is invalid.
@@ -209,6 +214,7 @@ impl Code {
             Self::StaleDependency => "stale_dependency",
             Self::AmbiguousDeclaration => "ambiguous_declaration",
             Self::MissingDeclaration => "missing_declaration",
+            Self::ConflictingDeclaration => "conflicting_declaration",
             Self::InvalidModelBinding => "invalid_model_binding",
             Self::InvalidRuntimeInput => "invalid_runtime_input",
             Self::WrongSnapshot => "wrong_snapshot",
@@ -264,6 +270,7 @@ impl Code {
             Self::StaleDependency,
             Self::AmbiguousDeclaration,
             Self::MissingDeclaration,
+            Self::ConflictingDeclaration,
             Self::InvalidModelBinding,
             Self::InvalidRuntimeInput,
             Self::WrongSnapshot,
@@ -851,6 +858,12 @@ impl std::fmt::Display for CatalogCode {
 pub const ALLOCATION_FAILED: CatalogCode =
     CatalogCode::new("resource_exhausted", "allocation-failed");
 
+/// FR-082-AC-11: the shared type registry could not represent or compute the
+/// requested reservation size. The payload carries the original amount and
+/// unit, distinct from a denied allocator request.
+pub const RESERVATION_SIZE_OVERFLOW: CatalogCode =
+    CatalogCode::new("resource_exhausted", "reservation-size-overflow");
+
 /// ADR-013 T-4: a broken runtime, evaluator or mapping invariant, raised
 /// from a compiler stage, the I2 reader, `replay` or `route` (and, for
 /// evaluation, `CheckedPackage::call`). Names the stage and the violated
@@ -862,11 +875,12 @@ pub const ALLOCATION_FAILED: CatalogCode =
 /// (`runtime_invariant`/`established-invariant-broken`, confirmed by the
 /// catalog's revision `1-draft.6` note) and exactly one category
 /// (`Category::InternalFailure`), and is never a `Refusal` (ADR-013 T-4).
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct InternalFault {
     stage: &'static str,
     invariant: &'static str,
     kernel_cause: Option<quire_exact::CheckedInvariantCause>,
+    named: Vec<(&'static str, String)>,
 }
 
 impl InternalFault {
@@ -877,7 +891,23 @@ impl InternalFault {
             stage,
             invariant,
             kernel_cause: None,
+            named: Vec::new(),
         }
+    }
+
+    /// This fault with the values it concerns, each under a stable field
+    /// name (for example the node and declarations of a rebound
+    /// correspondence entry).
+    #[must_use]
+    pub fn with_named(mut self, named: Vec<(&'static str, String)>) -> Self {
+        self.named = named;
+        self
+    }
+
+    /// The values this fault concerns, by stable field name; empty when the
+    /// invariant names none.
+    pub fn named(&self) -> &[(&'static str, String)] {
+        &self.named
     }
 
     /// A received kernel invariant, retaining its original typed provenance.
@@ -890,6 +920,7 @@ impl InternalFault {
             stage,
             invariant,
             kernel_cause: Some(cause),
+            named: Vec::new(),
         }
     }
 
@@ -923,6 +954,9 @@ impl InternalFault {
 
 /// Every code of the `quire.native.diagnostics/v1` "Required distinguishing
 /// causes" table with its ADR-013 O-16 category, in the catalog's row order.
+/// One row has no catalog row yet: `conflicting_declaration`, which QSpec
+/// FR-151 requires but QSpec's native-diagnostics catalog (FR-271, FR-272)
+/// does not list.
 ///
 /// This is the refusal-record map: the category a code has when a refusal
 /// record carries it (O-17: each cause type has a fixed category). Every
@@ -933,7 +967,7 @@ impl InternalFault {
 /// `incomplete` row names (FR-106, ADR-012's admission table) and
 /// [`Code::is_incomplete`] agrees with.
 /// `resource_exhausted` is the caller work-budget code (the catalog's
-/// `insufficient-next-charge`; a semantic maximum is not a work budget). It
+/// `insufficient-next-charge`; a maximum fixed by the language is not a work budget). It
 /// is a refusal here, when a refusal record carries it (ADR-013's read-only
 /// ceiling row). When a denied charge stops a run instead, the outcome is
 /// incomplete and still carries `resource_exhausted` (ADR-014 B-2; FR-101's
@@ -948,7 +982,7 @@ impl InternalFault {
 /// codes (`unsupported_construct`, `unknown_required_feature`,
 /// `unsupported_projection`) and the incomplete `resource_exhausted` that
 /// this table files under `Refusal`.
-const CATALOG_CATEGORIES: [(&str, Category); 49] = [
+const CATALOG_CATEGORIES: [(&str, Category); 50] = [
     ("invalid_syntax", Category::Refusal),
     ("unsupported_construct", Category::Refusal),
     ("unknown_language", Category::Refusal),
@@ -958,6 +992,7 @@ const CATALOG_CATEGORIES: [(&str, Category); 49] = [
     ("unknown_required_feature", Category::Refusal),
     ("missing_import", Category::Refusal),
     ("missing_declaration", Category::Refusal),
+    ("conflicting_declaration", Category::Refusal),
     ("stale_dependency", Category::Refusal),
     ("source_digest_mismatch", Category::Refusal),
     ("ambiguous_declaration", Category::Refusal),

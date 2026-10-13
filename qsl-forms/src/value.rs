@@ -968,6 +968,7 @@ impl<'c> Mapping<'c> {
             | Production::Predicate
             | Production::Parameter
             | Production::StateClause
+            | Production::OperationBody
             | Production::Block
             | Production::ExactNumber
             | Production::FloatValue
@@ -1475,6 +1476,7 @@ impl<'c> Mapping<'c> {
             | Production::Predicate
             | Production::Parameter
             | Production::StateClause
+            | Production::OperationBody
             | Production::Block
             | Production::Expression
             | Production::Implication

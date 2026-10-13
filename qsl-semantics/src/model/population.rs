@@ -92,7 +92,8 @@
 //!   conform to a declared `creates`/`deletes` grant, and every changed
 //!   field on a surviving object must be a declared `modifies` member
 //!   (directly, or reaching one through a member's own `redefines` property
-//!   — FR-151's own effect-inclusion rule). A field's declared collection kind
+//!   — FR-151's own effect-inclusion rule, each changed field charged as
+//!   `frame.write` and each link followed as `frame.redefines-link`). A field's declared collection kind
 //!   (`Multiplicity::ordered`) decides whether its pre/post values compare
 //!   by exact sequence or by order-insensitive multiset, so re-serializing
 //!   an unordered field in a different order is never itself a write. An
@@ -185,10 +186,11 @@ pub struct PopulationAdmissionLimits {
     /// Ceiling on the `supertypes` edges one member-type conformance walk
     /// follows, with the same meaning as
     /// [`crate::model::accounting::ModelNormalizationLimits::ancestor_steps`].
-    /// Not charged by admission itself; recorded on the admitted
-    /// [`PopulationBinding`], so the frame check and the
-    /// [`all_instances`]/[`lookup`] queries over that binding walk under the
-    /// same caller-configured bound. Reaching it refuses
+    /// Charged by every walk that follows `supertypes` edges: the coverage
+    /// walk of admission, subsetting applicability, the frame check, and the
+    /// member walk of [`all_instances`] and the key walk of [`lookup`]. It is
+    /// recorded on the admitted [`PopulationBinding`], so the later walks run
+    /// under the same caller-configured bound. Reaching it refuses
     /// `ModelRefusalCause::AncestorSteps` naming this bound.
     pub ancestor_steps: u64,
 }
@@ -314,17 +316,30 @@ pub enum AdmissionChargePoint {
     BindingMember,
     /// `binding.subset-value`; see the module docs.
     BindingSubsetValue,
+    /// `frame.write` (FR-013): one per changed field, before the write is
+    /// tested against the frame's `modifies` entries.
+    FrameWrite,
+    /// `frame.redefines-link` (FR-013): one before each `redefines` link
+    /// followed from a written member.
+    FrameRedefinesLink,
 }
 
 impl AdmissionChargePoint {
     /// Every named point this schedule defines.
-    pub const ALL: [Self; 2] = [Self::BindingMember, Self::BindingSubsetValue];
+    pub const ALL: [Self; 4] = [
+        Self::BindingMember,
+        Self::BindingSubsetValue,
+        Self::FrameWrite,
+        Self::FrameRedefinesLink,
+    ];
 
     /// Normative identifier.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::BindingMember => "binding.member",
             Self::BindingSubsetValue => "binding.subset-value",
+            Self::FrameWrite => "frame.write",
+            Self::FrameRedefinesLink => "frame.redefines-link",
         }
     }
 }
@@ -346,17 +361,29 @@ pub struct AdmissionIncomplete {
 }
 
 impl AdmissionIncomplete {
-    /// This stop as the stage limit outcome FR-255 Behavior 1 describes: the
-    /// counter's setting, its bound and the total the denied charge would
-    /// have reached.
-    pub fn limit_exceeded(&self) -> qsl_foundation::diagnostic::LimitExceeded {
-        qsl_foundation::diagnostic::LimitExceeded::new(
+    /// This stop as the caller-budget denial FR-255 Behavior 1 describes
+    /// (`resource_exhausted`/`insufficient-next-charge`).
+    pub fn denial(&self) -> qsl_foundation::diagnostic::BudgetDenial {
+        qsl_foundation::diagnostic::BudgetDenial::charge(
             self.limit_kind.setting(),
             self.limit,
-            u128::from(self.consumed) + u128::from(self.next_charge),
+            qsl_foundation::diagnostic::DeniedCharge {
+                owner: ADMISSION_OWNER,
+                limit_kind: self.limit_kind.as_str(),
+                charge_point: self.charge_point.as_str(),
+                consumed: self.consumed,
+                next_charge: self.next_charge,
+            },
         )
     }
 }
+
+/// The owner of a `PopulationAdmissionLimitsV1` charge.
+pub const ADMISSION_OWNER: qsl_foundation::diagnostic::BudgetOwner =
+    qsl_foundation::diagnostic::BudgetOwner {
+        stage: "population-admission",
+        accounting_contract: "PopulationAdmissionLimitsV1",
+    };
 
 struct AdmissionCharge {
     point: AdmissionChargePoint,
@@ -991,7 +1018,20 @@ enum PopulationIdentityFailure {
     InternalFault {
         fault: InternalFault,
         upstream_error: String,
+        encoder_limit: Option<EncoderLimit>,
     },
+}
+
+/// The canonical encoder's limit record, retained when the derived identity
+/// byte bound is reached (a broken invariant, not a limit).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EncoderLimit {
+    /// The encoder limit that was reached.
+    pub kind: quire_canonical::LimitKind,
+    /// The derived byte bound.
+    pub bound: u64,
+    /// The bytes the encoder required.
+    pub required: u64,
 }
 
 fn population_identity_encoding_failure(
@@ -999,12 +1039,18 @@ fn population_identity_encoding_failure(
 ) -> PopulationIdentityFailure {
     let detail = format!("bounded population identity encoding failed: {error}");
     let cause = match error {
+        // The byte bound is derived from the members (`population_id_byte_bound`),
+        // not configured, so a correct preimage never reaches it.
         quire_canonical::Error::Limit(limit) => {
-            ModelRefusalCause::PopulationIdentityLimitExceeded {
-                kind: limit.kind,
-                bound: limit.bound,
-                required: limit.required,
-            }
+            return PopulationIdentityFailure::InternalFault {
+                fault: InternalFault::new("population.identity", "identity-byte-bound-reached"),
+                upstream_error: error.to_string(),
+                encoder_limit: Some(EncoderLimit {
+                    kind: limit.kind,
+                    bound: limit.bound,
+                    required: limit.required,
+                }),
+            };
         }
         quire_canonical::Error::Allocation { requested } => {
             ModelRefusalCause::AllocationFailed { requested }
@@ -1013,6 +1059,7 @@ fn population_identity_encoding_failure(
             return PopulationIdentityFailure::InternalFault {
                 fault: InternalFault::new("population.identity", "canonical-encoding-failed"),
                 upstream_error: other.to_string(),
+                encoder_limit: None,
             };
         }
     };
@@ -1029,9 +1076,11 @@ fn population_identity_admission_failure(failure: PopulationIdentityFailure) -> 
         PopulationIdentityFailure::InternalFault {
             fault,
             upstream_error,
+            encoder_limit,
         } => AdmissionOutcome::InternalFault {
             fault,
             upstream_error,
+            encoder_limit,
         },
     }
 }
@@ -1135,6 +1184,9 @@ pub enum AdmissionOutcome {
         fault: InternalFault,
         /// The canonical encoder's diagnostic text for investigation.
         upstream_error: String,
+        /// The encoder's limit record, when the fault is the derived
+        /// identity byte bound being reached.
+        encoder_limit: Option<EncoderLimit>,
     },
     /// Object or subtype closure is not established. Not a refusal
     /// (`Code::IncompletePopulation`); no charge and no binding.
@@ -1630,13 +1682,12 @@ pub struct InvocationDelta<'a> {
 /// against its own meter (rather than inventing an unspecified combined
 /// schedule) is the conservative reading.
 ///
-/// Deciding created/deleted-identity, field-write frame membership and delta
-/// agreement is, like the object/subtype-closure and `modelIdentity` checks
-/// [`admit_binding`] already makes, a structural admission decision over
-/// already-charged data, not itself a new charge point: neither FR-151's nor
-/// FR-153's model module defines one, and the two admitted bindings' own
-/// `binding.member`/`binding.subset-value` charges already measured the data
-/// this check reads.
+/// Deciding created/deleted-identity and delta agreement is, like the
+/// object/subtype-closure and `modelIdentity` checks [`admit_binding`]
+/// already makes, a structural decision over already-charged data. A field
+/// write is not: FR-013 charges one `frame.write` for each changed field and
+/// one `frame.redefines-link` before each `redefines` link followed from it,
+/// to a frame meter of its own (see [`admit_invocation_bound`]).
 ///
 /// # Native duplication
 ///
@@ -1664,6 +1715,54 @@ pub fn admit_invocation(
     pre_meter: &mut AdmissionMeter,
     post_meter: &mut AdmissionMeter,
 ) -> AdmissionOutcome {
+    let mut frame_meter = AdmissionMeter::new(*post_meter.limits());
+    admit_invocation_bound(
+        context,
+        pre_document,
+        post_document,
+        declared,
+        &InvocationBinding::default(),
+        pre_meter,
+        post_meter,
+        &mut frame_meter,
+    )
+}
+
+/// Who the invocation's receiver and reference arguments are, for the
+/// frame's receiver-scoped and argument-scoped entries (FR-013): `self`
+/// and `deletes p` ground in these objects, and a frame that names neither
+/// reads none of it.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct InvocationBinding<'a> {
+    /// The invocation's receiver, by object identity in the admitted
+    /// population.
+    pub receiver: Option<&'a str>,
+    /// Each reference parameter's bound argument, as `(parameter name,
+    /// object identity)`.
+    pub arguments: &'a [(String, String)],
+}
+
+/// [`admit_invocation`] with the invocation's receiver and reference
+/// arguments: a `modifies self.f` entry grants the write to `f` on
+/// `binding.receiver` only, `deletes self` the deletion of the receiver
+/// only, and `deletes p` the deletion of the argument bound to `p` only.
+///
+/// The frame check charges `frame_meter`, a meter of its own beside
+/// `pre_meter` and `post_meter`, so its `frame.write` and
+/// `frame.redefines-link` charges are counted on their own and never against
+/// the members the two admissions charged. A denied charge ends the check
+/// with [`AdmissionOutcome::Incomplete`] and no frame verdict.
+#[allow(clippy::too_many_arguments)]
+pub fn admit_invocation_bound(
+    context: InvocationContext<'_>,
+    pre_document: &PopulationDocument,
+    post_document: &PopulationDocument,
+    declared: &InvocationDelta<'_>,
+    binding: &InvocationBinding<'_>,
+    pre_meter: &mut AdmissionMeter,
+    post_meter: &mut AdmissionMeter,
+    frame_meter: &mut AdmissionMeter,
+) -> AdmissionOutcome {
     let pre = match admit_binding_as(context, pre_document, AdmissionRole::Pre, pre_meter) {
         AdmissionOutcome::Admitted(binding) => binding,
         other => return other,
@@ -1677,9 +1776,17 @@ pub fn admit_invocation(
         AdmissionOutcome::Admitted(binding) => binding,
         other => return other,
     };
-    match enforce_frame(&pre, pre_document, post_document, declared) {
+    match enforce_frame(
+        &pre,
+        pre_document,
+        post_document,
+        declared,
+        binding,
+        frame_meter,
+    ) {
         Ok(()) => AdmissionOutcome::Admitted(post.with_pre_anchor(pre)),
-        Err(refusal) => AdmissionOutcome::Refused(refusal),
+        Err(FrameStop::Refused(refusal)) => AdmissionOutcome::Refused(refusal),
+        Err(FrameStop::Denied(incomplete)) => AdmissionOutcome::Incomplete(incomplete),
     }
 }
 
@@ -1741,23 +1848,6 @@ fn field_values_equal(
     pre == post
 }
 
-/// Whether `field` (the field a runtime population document names on some
-/// member) is covered by `effect.modifies`, directly or because it reaches
-/// one through a chain of members' own `redefines` properties -- FR-151's
-/// own effect-inclusion rule (`quire.model.conformance.effect/v1`), applied here to one
-/// operation's own declared writes rather than to a redefining operation's
-/// writes against its redefined ancestor's. Walks the full chain
-/// ([`ModelIndex::redefinition_reaches`]), not just one hop:
-/// `modifies: [model.A.x]` covers a write to `model.C.x` through
-/// `model.C.x -> model.B.x -> model.A.x`.
-fn field_write_covered(
-    index: &ModelIndex,
-    effect: &OperationEffect,
-    field: &DeclarationKey,
-) -> bool {
-    index.redefinition_reaches(field, |candidate| effect.modifies.contains(candidate))
-}
-
 /// One object as [`decide_frame`] reads it: its declared identity, its
 /// most-specific type, and its declared field values keyed by the field's
 /// own [`DeclarationKey`]. `V` is the caller's own field-value form (a
@@ -1787,6 +1877,38 @@ pub(crate) struct FrameDecision<'e> {
     pub(crate) declared_created: &'e [String],
     /// The invocation's own declared deleted identities.
     pub(crate) declared_deleted: &'e [String],
+    /// The identity, in this population, of the invocation's receiver, when
+    /// the receiver is in this population. A receiver-scoped entry grants
+    /// nothing without one.
+    pub(crate) receiver: Option<&'e str>,
+    /// The identity, in this population, of the object each reference
+    /// parameter is bound to, as `(parameter name, object)`.
+    pub(crate) arguments: &'e [(String, String)],
+}
+
+/// One charge FR-013 makes while it decides a field write.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum FrameCharge {
+    /// `frame.write`.
+    Write,
+    /// `frame.redefines-link`.
+    RedefinesLink,
+}
+
+/// Why [`decide_frame`] stopped: a finding about the invocation, or a
+/// denied charge (`E` is the caller's own incomplete record).
+#[derive(Debug)]
+pub(crate) enum FrameStop<E> {
+    /// A refusal or violation.
+    Refused(ModelRefusal),
+    /// The first charge the caller's meter denied.
+    Denied(E),
+}
+
+impl<E> From<ModelRefusal> for FrameStop<E> {
+    fn from(refusal: ModelRefusal) -> Self {
+        Self::Refused(refusal)
+    }
 }
 
 /// [`decide_frame`]'s result: the computed created and deleted identities.
@@ -1817,6 +1939,29 @@ fn granted(
     Ok(false)
 }
 
+/// Whether `frame` permits deleting `object`, of most-specific type
+/// `type_identity`: its type conforms to a type-wide `deletes` entry, or it
+/// is the receiver under `deletes self`, or it is the argument bound to `p`
+/// under `deletes p`.
+fn delete_granted(
+    frame: &FrameDecision<'_>,
+    object: &str,
+    type_identity: &DeclarationKey,
+) -> Result<bool, ModelRefusal> {
+    let effect = frame.effect;
+    if effect.deletes_receiver && frame.receiver == Some(object) {
+        return Ok(true);
+    }
+    if frame
+        .arguments
+        .iter()
+        .any(|(name, bound)| bound == object && effect.deletes_arguments.contains(name))
+    {
+        return Ok(true);
+    }
+    granted(frame, &effect.deletes, type_identity)
+}
+
 /// The one frame and delta decision (FR-046/FR-151, FR-106 check 11) over
 /// one population's `pre` and `post` objects, both in document order. Both
 /// [`enforce_frame`] and FR-106 admission (`model::observation::frame`)
@@ -1832,11 +1977,21 @@ fn granted(
 /// 2. `pre`'s objects absent from `post`, ascending identity order, whose
 ///    type conforms to no `deletes` grant
 ///    ([`ModelRefusalCause::FrameDeleteOutsideGrant`]).
-/// 3. surviving objects in `pre` document order, fields in ascending
+/// 3. surviving objects in ascending identity order, fields in ascending
 ///    [`DeclarationKey`] order: a changed field (`values_equal` false) that
 ///    reaches no `modifies` entry through its `redefines` chain
-///    ([`ModelRefusalCause::FrameFieldWriteOutsideGrant`]).
+///    ([`ModelRefusalCause::FrameFieldWriteOutsideGrant`]). An every-object
+///    entry grants the write on any object, a receiver-scoped entry only on
+///    `frame.receiver`. Each changed field charges `charge(Write)` first,
+///    then `charge(RedefinesLink)` before each `redefines` link followed
+///    from it, stopping at the first member an entry names; the first
+///    charge `charge` denies ends the decision as [`FrameStop::Denied`]
+///    with no verdict.
 /// 4. the declared delta against the computed one ([`check_declared_delta`]).
+///
+/// A deletion (step 2) is granted by a type-wide entry the object's type
+/// conforms to, by `deletes self` for the receiver, or by `deletes p` for
+/// the argument bound to `p`.
 ///
 /// Created/deleted classification is by *object identity* alone, never by
 /// type: an object present under the same identity in both `pre` and `post`
@@ -1844,12 +1999,13 @@ fn granted(
 /// one -- FR-151's effect vocabulary grants `modifies`, `creates` and
 /// `deletes` only, and FR-143 treats the most-specific type as part of a
 /// reference's identity, never a mutable attribute.
-pub(crate) fn decide_frame<V>(
+pub(crate) fn decide_frame<V, E>(
     frame: &FrameDecision<'_>,
     pre: &[FrameObject<'_, V>],
     post: &[FrameObject<'_, V>],
     values_equal: impl Fn(&DeclarationKey, Option<&V>, Option<&V>) -> bool,
-) -> Result<FrameDelta, ModelRefusal> {
+    charge: &mut impl FnMut(FrameCharge) -> Result<(), E>,
+) -> Result<FrameDelta, FrameStop<E>> {
     let pre_by_object: BTreeMap<&str, &FrameObject<'_, V>> =
         pre.iter().map(|object| (object.object, object)).collect();
     let post_by_object: BTreeMap<&str, &FrameObject<'_, V>> =
@@ -1870,7 +2026,8 @@ pub(crate) fn decide_frame<V>(
                          declared creates frame",
                         post_type.node
                     ),
-                ));
+                )
+                .into());
             }
             delta.created.insert((*object).to_owned());
             continue;
@@ -1889,7 +2046,8 @@ pub(crate) fn decide_frame<V>(
                      effect grants cover modifies/creates/deletes only)",
                     pre_type.node, post_type.node
                 ),
-            ));
+            )
+            .into());
         }
     }
 
@@ -1898,7 +2056,7 @@ pub(crate) fn decide_frame<V>(
             continue; // Survivor or retype; already decided above.
         }
         let pre_type = &pre_object.type_identity;
-        if !granted(frame, &frame.effect.deletes, pre_type)? {
+        if !delete_granted(frame, object, pre_type)? {
             return Err(frame_violation(
                 ModelRefusalCause::FrameDeleteOutsideGrant {
                     object: (*object).to_owned(),
@@ -1909,15 +2067,17 @@ pub(crate) fn decide_frame<V>(
                      declared deletes frame",
                     pre_type.node
                 ),
-            ));
+            )
+            .into());
         }
         delta.deleted.insert((*object).to_owned());
     }
 
-    for pre_object in pre {
+    for pre_object in pre_by_object.values() {
         let Some(post_object) = post_by_object.get(pre_object.object) else {
             continue; // Deleted; already decided above.
         };
+        let is_receiver = frame.receiver == Some(pre_object.object);
         let fields: BTreeSet<&DeclarationKey> = pre_object
             .fields
             .keys()
@@ -1931,7 +2091,19 @@ pub(crate) fn decide_frame<V>(
             ) {
                 continue;
             }
-            if field_write_covered(frame.index, frame.effect, field) {
+            charge(FrameCharge::Write).map_err(FrameStop::Denied)?;
+            let covered = frame
+                .index
+                .redefinition_walk(
+                    field,
+                    |candidate| {
+                        frame.effect.modifies.contains(candidate)
+                            || (is_receiver && frame.effect.receiver_modifies.contains(candidate))
+                    },
+                    || charge(FrameCharge::RedefinesLink),
+                )
+                .map_err(FrameStop::Denied)?;
+            if covered {
                 continue;
             }
             return Err(frame_violation(
@@ -1944,7 +2116,8 @@ pub(crate) fn decide_frame<V>(
                      modifies frame",
                     pre_object.object, field.node
                 ),
-            ));
+            )
+            .into());
         }
     }
 
@@ -1961,7 +2134,9 @@ fn enforce_frame(
     pre_document: &PopulationDocument,
     post_document: &PopulationDocument,
     declared: &InvocationDelta<'_>,
-) -> Result<(), ModelRefusal> {
+    binding: &InvocationBinding<'_>,
+    meter: &mut AdmissionMeter,
+) -> Result<(), FrameStop<AdmissionIncomplete>> {
     let index = &*pre.index;
     let frame = FrameDecision {
         index,
@@ -1969,6 +2144,8 @@ fn enforce_frame(
         effect: declared.effect,
         declared_created: declared.declared_created,
         declared_deleted: declared.declared_deleted,
+        receiver: binding.receiver,
+        arguments: binding.arguments,
     };
     decide_frame(
         &frame,
@@ -1981,6 +2158,13 @@ fn enforce_frame(
                 pre_values.copied().unwrap_or(&[]),
                 post_values.copied().unwrap_or(&[]),
             )
+        },
+        &mut |charge| {
+            let point = match charge {
+                FrameCharge::Write => AdmissionChargePoint::FrameWrite,
+                FrameCharge::RedefinesLink => AdmissionChargePoint::FrameRedefinesLink,
+            };
+            meter.charge(AdmissionCharge::new(point))
         },
     )
     .map(|_| ())
@@ -2546,13 +2730,16 @@ mod tests {
         assert_eq!(observations.digest_calls, 1);
     }
 
-    /// FND-008: a real digest byte-limit refusal retains the canonical
-    /// encoder's kind, bound and required-byte count.
+    /// FND-008 and QSL-745: the identity preimage's byte bound is derived from
+    /// the members, not configured (no setting, limits field or contract), so
+    /// reaching it is a broken invariant, `runtime_invariant`/
+    /// `established-invariant-broken`, never a limit. The fault retains the
+    /// canonical encoder's kind, bound and required-byte count.
     #[trace("TC-434", "NFR-012")]
     #[test]
-    fn population_identity_digest_limit_preserves_encoder_limit_details() {
+    fn population_identity_digest_limit_is_a_broken_invariant_retaining_encoder_details() {
         let members = BTreeMap::new();
-        let refusal = mint_population_id(
+        let failure = mint_population_id(
             &domain_package(),
             &DeclarationKey::fixture("model.pop"),
             AdmissionRole::Direct,
@@ -2562,20 +2749,21 @@ mod tests {
         )
         .expect_err("the nonempty identity preimage exceeds a zero-byte digest bound");
 
-        let AdmissionOutcome::Refused(refusal) = population_identity_admission_failure(refusal)
+        let AdmissionOutcome::InternalFault {
+            fault,
+            encoder_limit: Some(limit),
+            ..
+        } = population_identity_admission_failure(failure)
         else {
-            panic!("canonical byte limit must remain a refusal");
+            panic!("the derived byte bound is an internal fault, not a refusal");
         };
-        assert_eq!(refusal.code, Code::ResourceExhausted);
-        assert!(matches!(
-            refusal.cause,
-            ModelRefusalCause::PopulationIdentityLimitExceeded {
-                kind: quire_canonical::LimitKind::CanonicalBytes,
-                bound: 0,
-                required,
-            } if required > 0
-        ));
-        assert!(refusal.detail.contains("canonical bytes limit exceeded"));
+        assert_eq!(fault.catalog_code().code(), "runtime_invariant");
+        assert_eq!(fault.catalog_code().cause(), "established-invariant-broken");
+        assert_eq!(fault.stage(), "population.identity");
+        assert_eq!(fault.invariant(), "identity-byte-bound-reached");
+        assert_eq!(limit.kind, quire_canonical::LimitKind::CanonicalBytes);
+        assert_eq!(limit.bound, 0);
+        assert!(limit.required > 0);
     }
 
     /// A reservation failure keeps its actual requested size.
@@ -2610,6 +2798,7 @@ mod tests {
         let AdmissionOutcome::InternalFault {
             fault,
             upstream_error,
+            encoder_limit,
         } = outcome
         else {
             panic!("unexpected canonical error must be an internal fault");
@@ -2628,6 +2817,7 @@ mod tests {
         assert_eq!(Code::RuntimeInvariant.category(), fault.category());
         assert_ne!(Code::RuntimeInvariant, Code::ResourceExhausted);
         assert_eq!(upstream_error, "unexpected serializer error");
+        assert_eq!(encoder_limit, None);
     }
 
     fn object_type(identity: &str, supertypes: &[&str]) -> DomainPackageRecord {

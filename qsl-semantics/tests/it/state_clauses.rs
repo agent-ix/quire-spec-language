@@ -118,7 +118,7 @@ const VERSION_UNCHANGED: &str = "post VersionUnchanged using v on \
 /// postcondition each check, typing `self`, `self.versionNumber` and
 /// `self.parent`, with `ParentOrder`'s reads all `current` and
 /// `VersionUnchanged`'s left read `post` and right `pre`.
-#[trace("TC-459", "FR-104-AC-1")]
+#[trace("TC-459", "FR-104-AC-1", "QSpec-V1-EXPR-018", "QSpec-V1-EXPR-020")]
 #[test]
 fn the_configversion_state_clauses_check() {
     let document = config_version_document(
@@ -294,7 +294,7 @@ fn a_complete_function_does_not_enable_integer_operators_in_a_state_only_clause(
 /// TC-459 step 2 / FR-104-AC-2: `post R using v on
 /// Config::ConfigVersion::attemptUpdate { result }` checks with
 /// `result: Boolean`.
-#[trace("TC-459", "FR-104-AC-2")]
+#[trace("TC-459", "FR-104-AC-2", "QSpec-V1-EXPR-020")]
 #[test]
 fn a_postcondition_reads_result_typed_as_the_operations_result() {
     let document = config_version_document(
@@ -311,7 +311,13 @@ fn a_postcondition_reads_result_typed_as_the_operations_result() {
 
 /// TC-459 step 3 / FR-104-AC-2: `result` in an invariant, and in a `pre`
 /// clause of `attemptUpdate`, each refuse `wrong_snapshot`/`wrong-anchor`.
-#[trace("TC-459", "FR-104-AC-2")]
+#[trace(
+    "TC-459",
+    "FR-104-AC-2",
+    "QSpec-V1-EXPR-018",
+    "QSpec-V1-EXPR-020",
+    "QSpec-FR-012-AC-3"
+)]
 #[test]
 fn result_outside_a_postcondition_refuses_wrong_anchor() {
     let document = config_version_document(
@@ -366,7 +372,7 @@ fn result_outside_a_postcondition_refuses_wrong_anchor() {
 
 /// TC-459 step 4 / FR-104-AC-7, over a package whose `attemptUpdate` frame
 /// also modifies `parent`.
-#[trace("TC-459", "FR-104-AC-7")]
+#[trace("TC-459", "FR-104-AC-7", "QSpec-V1-EXPR-021")]
 #[test]
 fn postconditions_of_an_operation_that_modifies_parent() {
     let document = config_version_document(
@@ -716,6 +722,47 @@ fn ill_typed_and_operator_ineligible_clauses_refuse() {
         }),
         "the reaches call is the whole function body"
     );
+}
+
+/// QSpec FR-012-AC-8: `pre(..)` in an invariant, and in a precondition,
+/// each refuse `wrong_snapshot`/`forbidden-pre-read` at the `pre` node when
+/// the clause is checked (linking), and none completes a Boolean. The
+/// postcondition form of the same body checks, so the refusal is the
+/// clause kind's, not the body's.
+///
+/// Mutation used (derived by reading, not executed): widening the
+/// `Expression::Pre` kind test in `state_clause.rs` (the clause kind as the
+/// typer reads it) to also accept `Invariant` or `Precondition` makes the
+/// matching case check instead of refuse, so this test goes red.
+#[trace("QSpec-V1-EXPR-018", "QSpec-V1-EXPR-019", "QSpec-FR-012-AC-8")]
+#[test]
+fn pre_in_an_invariant_or_a_precondition_refuses_forbidden_pre_read_at_the_pre() {
+    let document = config_version_document(
+        attempt_update_modifies_version_number(),
+        Vec::new(),
+        Vec::new(),
+        json!([]),
+    );
+    let cases = [
+        "invariant I using v on Config::ConfigVersion at current { \
+            pre(self.versionNumber) = 1 }\n",
+        "pre P using v on Config::ConfigVersion::attemptUpdate { \
+            pre(self.versionNumber) = 1 }\n",
+    ];
+    for body in cases {
+        let refusals = check_refusals(&document, body).expect_err("pre refuses outside a post");
+        assert_eq!(refusals.len(), 1, "{body}");
+        assert_eq!(
+            refusals[0].cause,
+            CheckCause::WrongSnapshot(WrongSnapshotCause::ForbiddenPreRead),
+            "{body}"
+        );
+        // `= 1`'s left child (index 0) is the `pre`.
+        assert_eq!(refusals[0].location.path(), vec![0], "{body}");
+    }
+    let post = "post P using v on Config::ConfigVersion::attemptUpdate { \
+        pre(self.versionNumber) = 1 }\n";
+    check(&document, post).expect("the same body checks as a postcondition");
 }
 
 /// TC-461 / FR-104-AC-5, AC-6: one `operation-contract` requirement per
@@ -1349,6 +1396,38 @@ fn run_frame_clause_limited(
     qsl_semantics::model::observation::AdmittedObservations,
     qsl_semantics::model::observation::AdmissionFailure,
 > {
+    run_frame_clause_with(
+        clause_name,
+        pre_objects,
+        post_objects,
+        self_key,
+        created,
+        deleted,
+        edit_invocation,
+        |bytes| bytes,
+        |bytes| bytes,
+        limits,
+    )
+}
+
+/// [`run_frame_clause_limited`], with the pre and post snapshots' bytes
+/// passed through `edit_pre` and `edit_post` before they are digested.
+#[allow(clippy::too_many_arguments)]
+fn run_frame_clause_with(
+    clause_name: &str,
+    pre_objects: &[(&str, i64, Option<&str>)],
+    post_objects: &[(&str, i64, Option<&str>)],
+    self_key: &str,
+    created: &[&str],
+    deleted: &[&str],
+    edit_invocation: impl FnOnce(Vec<u8>) -> Vec<u8>,
+    edit_pre: impl FnOnce(Vec<u8>) -> Vec<u8>,
+    edit_post: impl FnOnce(Vec<u8>) -> Vec<u8>,
+    limits: qsl_semantics::model::observation::ObservationLimits,
+) -> Result<
+    qsl_semantics::model::observation::AdmittedObservations,
+    qsl_semantics::model::observation::AdmissionFailure,
+> {
     let document = frame_test_document();
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
@@ -1364,13 +1443,23 @@ fn run_frame_clause_limited(
     let clause = graph.state_clause(clause_name).expect("clause is declared");
 
     let pre = frame_label("pre-snap");
-    let pre_bytes = frame_snapshot_bytes(&pre, &model_digest, "pre", pre_objects);
+    let pre_bytes = edit_pre(frame_snapshot_bytes(
+        &pre,
+        &model_digest,
+        "pre",
+        pre_objects,
+    ));
     let pre = qsl_semantics::model::observation::DocumentRef {
         digest: frame_document_digest(&pre_bytes),
         ..pre
     };
     let post = frame_label("post-snap");
-    let post_bytes = frame_snapshot_bytes(&post, &model_digest, "post", post_objects);
+    let post_bytes = edit_post(frame_snapshot_bytes(
+        &post,
+        &model_digest,
+        "post",
+        post_objects,
+    ));
     let post = qsl_semantics::model::observation::DocumentRef {
         digest: frame_document_digest(&post_bytes),
         ..post
@@ -1454,10 +1543,157 @@ fn assert_frame_refused(
     }
 }
 
+/// An invocation whose `pre` and `post` references do not
+/// select the pre and post observations of one invocation -- `pre` naming
+/// the post-role snapshot, and `post` naming the pre-role snapshot -- is
+/// refused `wrong_snapshot`/`wrong-observation` at admission, before any
+/// clause value exists. The identity half of QSpec FR-012-AC-1 is
+/// [`a_snapshot_naming_another_invocation_refuses_wrong_invocation`].
+///
+/// Mutation used (derived by reading, not executed): deleting the check-3
+/// role comparison in `admit_invocation_documents` admits both swapped
+/// invocations, so each `expect_err` below goes red.
+#[trace("QSpec-V1-EXPR-020")]
+#[test]
+fn an_invocation_naming_the_wrong_observation_roles_refuses_wrong_observation() {
+    let pre = [("child", 2, None)];
+    let post = [("child", 3, None)];
+    let swap = |bytes: Vec<u8>| {
+        let mut value: serde_json::Value = serde_json::from_slice(&bytes).expect("JSON");
+        let object = value.as_object_mut().expect("an invocation object");
+        let pre_ref = object.remove("pre").expect("pre");
+        let post_ref = object.remove("post").expect("post");
+        object.insert("pre".to_owned(), post_ref);
+        object.insert("post".to_owned(), pre_ref);
+        value.to_string().into_bytes()
+    };
+    let post_as_pre = |bytes: Vec<u8>| {
+        let mut value: serde_json::Value = serde_json::from_slice(&bytes).expect("JSON");
+        let object = value.as_object_mut().expect("an invocation object");
+        let pre_ref = object.get("pre").cloned().expect("pre");
+        object.insert("post".to_owned(), pre_ref);
+        value.to_string().into_bytes()
+    };
+    let swapped =
+        run_frame_clause_editing("AttemptUpdatePost", &pre, &post, "child", &[], &[], swap);
+    assert_frame_refused(swapped, "wrong_snapshot", "wrong-observation", None);
+    let doubled = run_frame_clause_editing(
+        "AttemptUpdatePost",
+        &pre,
+        &post,
+        "child",
+        &[],
+        &[],
+        post_as_pre,
+    );
+    assert_frame_refused(doubled, "wrong_snapshot", "wrong-observation", None);
+}
+
+/// Sets a snapshot's `invocation` member to the labels of the invocation
+/// whose identity is `identity` (the labels `frame_label` gives it).
+fn name_invocation(identity: &str) -> impl FnOnce(Vec<u8>) -> Vec<u8> {
+    let named = frame_identity_json(&frame_label(identity));
+    move |bytes| {
+        let mut value: serde_json::Value = serde_json::from_slice(&bytes).expect("JSON");
+        value
+            .as_object_mut()
+            .expect("a snapshot object")
+            .insert("invocation".to_owned(), named);
+        value.to_string().into_bytes()
+    }
+}
+
+fn run_bound_frame_clause(
+    clause_name: &str,
+    edit_pre: impl FnOnce(Vec<u8>) -> Vec<u8>,
+    edit_post: impl FnOnce(Vec<u8>) -> Vec<u8>,
+) -> Result<
+    qsl_semantics::model::observation::AdmittedObservations,
+    qsl_semantics::model::observation::AdmissionFailure,
+> {
+    run_frame_clause_with(
+        clause_name,
+        &[("child", 2, None)],
+        &[("child", 3, None)],
+        "child",
+        &[],
+        &[],
+        |bytes| bytes,
+        edit_pre,
+        edit_post,
+        qsl_semantics::model::observation::ObservationLimits::default(),
+    )
+}
+
+fn assert_wrong_invocation(
+    result: Result<
+        qsl_semantics::model::observation::AdmittedObservations,
+        qsl_semantics::model::observation::AdmissionFailure,
+    >,
+    snapshot: &str,
+    named: &str,
+) {
+    match result {
+        Err(qsl_semantics::model::observation::AdmissionFailure::Refused(record)) => {
+            assert_eq!(record.code.as_str(), "wrong_snapshot");
+            assert_eq!(record.cause, "wrong-invocation");
+            let field = |name: &str| record.fields.get(name).map(String::as_str);
+            assert_eq!(field("document"), Some(snapshot));
+            assert_eq!(field("field"), Some("invocation"));
+            assert_eq!(field("required"), Some("invocation"));
+            assert_eq!(field("actual"), Some(named));
+        }
+        other => panic!("expected Err(Refused(wrong_snapshot/wrong-invocation)), got {other:?}"),
+    }
+}
+
+/// QSpec FR-012-AC-1: a snapshot that names an invocation other than the
+/// selected one is refused `wrong_snapshot`/`wrong-invocation`, located at
+/// that snapshot, whichever of `pre` and `post` names it, for a
+/// postcondition and for a precondition over the same invocation.
+#[trace("QSpec-FR-012-AC-1", "QSpec-V1-EXPR-020")]
+#[test]
+fn a_snapshot_naming_another_invocation_refuses_wrong_invocation() {
+    let post = run_bound_frame_clause(
+        "AttemptUpdatePost",
+        |bytes| bytes,
+        name_invocation("other-invocation"),
+    );
+    assert_wrong_invocation(post, "post-snap", "other-invocation");
+    let pre = run_bound_frame_clause(
+        "AttemptUpdatePost",
+        name_invocation("other-invocation"),
+        |bytes| bytes,
+    );
+    assert_wrong_invocation(pre, "pre-snap", "other-invocation");
+    let precondition = run_bound_frame_clause(
+        "AttemptUpdatePre",
+        name_invocation("other-invocation"),
+        |bytes| bytes,
+    );
+    assert_wrong_invocation(precondition, "pre-snap", "other-invocation");
+}
+
+/// Snapshots that name the selected invocation, and snapshots that name no
+/// invocation, admit.
+#[test]
+fn snapshots_naming_the_selected_invocation_or_none_admit() {
+    for clause in ["AttemptUpdatePost", "AttemptUpdatePre"] {
+        run_bound_frame_clause(
+            clause,
+            name_invocation("invocation"),
+            name_invocation("invocation"),
+        )
+        .expect("matching invocation admits");
+        run_bound_frame_clause(clause, |bytes| bytes, |bytes| bytes)
+            .expect("an unbound snapshot admits");
+    }
+}
+
 /// TC-464 (precondition over an invocation): `root`'s `versionNumber`
 /// changes from 1 to 2; a precondition admits the pre side alone, with no
 /// post observation.
-#[trace("TC-464", "FR-106-AC-9")]
+#[trace("TC-464", "FR-106-AC-9", "QSpec-V1-EXPR-019")]
 #[test]
 fn attempt_update_precondition_admits_an_authorized_change() {
     let pre = [("root", 1, None)];
@@ -1470,7 +1706,7 @@ fn attempt_update_precondition_admits_an_authorized_change() {
 
 /// TC-464 (FR-106 check 11, postcondition): the same authorized change,
 /// admitted for `AttemptUpdatePost` over the same pre/post snapshots.
-#[trace("TC-465", "FR-106-AC-5")]
+#[trace("TC-465", "FR-106-AC-5", "QSpec-V1-EXPR-020")]
 #[test]
 fn attempt_update_postcondition_admits_an_authorized_change() {
     let pre = [("root", 1, None)];
@@ -1483,7 +1719,7 @@ fn attempt_update_postcondition_admits_an_authorized_change() {
 
 /// FR-106 check 11.1: the post snapshot's `child`, absent from pre, is not
 /// granted by `attemptUpdate`'s (empty) `creates` -- refuses naming `child`.
-#[trace("TC-465", "FR-106-AC-5")]
+#[trace("TC-465", "FR-106-AC-5", "QSpec-V1-EXPR-022")]
 #[test]
 fn attempt_update_refuses_an_unauthorized_create() {
     let pre = [("root", 1, None)];
@@ -1499,7 +1735,7 @@ fn attempt_update_refuses_an_unauthorized_create() {
 
 /// FR-106 check 11.2: the pre snapshot's `child`, absent from post, is not
 /// granted by `attemptUpdate`'s (empty) `deletes` -- refuses naming `child`.
-#[trace("TC-465", "FR-106-AC-5")]
+#[trace("TC-465", "FR-106-AC-5", "QSpec-V1-EXPR-022")]
 #[test]
 fn attempt_update_refuses_an_unauthorized_delete() {
     let pre = [("root", 1, None), ("child", 1, Some("root"))];
@@ -1515,7 +1751,7 @@ fn attempt_update_refuses_an_unauthorized_delete() {
 
 /// FR-106 check 11.3: `root`'s `parent` changes, a field outside
 /// `attemptUpdate`'s `modifies [versionNumber]` -- refuses naming `root`.
-#[trace("TC-465", "FR-106-AC-5")]
+#[trace("TC-465", "FR-106-AC-5", "QSpec-V1-EXPR-022", "QSpec-FR-013-AC-1")]
 #[test]
 fn attempt_update_refuses_a_change_outside_modifies() {
     let pre = [("root", 1, None), ("child", 1, None)];
@@ -1532,7 +1768,7 @@ fn attempt_update_refuses_a_change_outside_modifies() {
 /// FR-106 check 11.4: nothing is actually created between pre and post, but
 /// the invocation declares `created: [child]` -- refuses
 /// `population_delta_mismatch`/`delta-disagreement`.
-#[trace("TC-465", "FR-106-AC-5")]
+#[trace("TC-465", "FR-106-AC-5", "QSpec-V1-EXPR-022", "QSpec-FR-013-AC-2")]
 #[test]
 fn attempt_update_refuses_a_declared_delta_mismatch() {
     let pre = [("root", 1, None)];
@@ -1558,7 +1794,7 @@ fn attempt_update_refuses_a_declared_delta_mismatch() {
 /// `root.parent` absent, `child.versionNumber` 2, `child.parent` present
 /// naming `root`, `self` is `child`, and the snapshot's identity and digest
 /// are retained.
-#[trace("TC-464", "FR-106-AC-1")]
+#[trace("TC-464", "FR-106-AC-1", "QSpec-V1-EXPR-018")]
 #[test]
 fn tc464_step1_healthy_parent_admits_one_current_observation() {
     let document = tc465_document();
@@ -1681,7 +1917,7 @@ fn tc464_step2_a_reserialized_snapshot_gives_the_same_digest_and_an_equal_value(
 /// `VersionUnchanged`, with distinct pre and post observations, `self`
 /// `child` in both, `result` true, no parameters, and empty created and
 /// deleted.
-#[trace("TC-464", "FR-106-AC-2")]
+#[trace("TC-464", "FR-106-AC-2", "QSpec-V1-EXPR-020")]
 #[test]
 fn tc464_step3_changed_version_invocation_admits_a_full_observation_set() {
     let document = tc465_document();
@@ -1901,7 +2137,7 @@ const TC464_CONFIG_HISTORY: &str = "ix://example/config-version/config_history";
 /// a} }` for `ReachesTarget` admits one pre observation, `self` `a`, the
 /// parameter `target` naming `a`, and no post observation, result or delta
 /// (no frame check runs: there is no post state to compare).
-#[trace("TC-464", "FR-106-AC-8")]
+#[trace("TC-464", "FR-106-AC-8", "QSpec-V1-EXPR-019")]
 #[test]
 fn tc464_step5_a_pre_call_admits_one_pre_observation() {
     let document = tc465_document();
@@ -1930,7 +2166,7 @@ fn tc464_step5_a_pre_call_admits_one_pre_observation() {
 
 /// Step 5 (FR-106-AC-8): the same selection for `VersionUnchanged`, a
 /// postcondition, refuses `wrong_snapshot`/`wrong-observation`.
-#[trace("TC-464", "FR-106-AC-8")]
+#[trace("TC-464", "FR-106-AC-8", "QSpec-V1-EXPR-019")]
 #[test]
 fn tc464_step5_a_pre_call_for_a_postcondition_refuses_wrong_observation() {
     let document = tc465_document();
@@ -1945,7 +2181,7 @@ fn tc464_step5_a_pre_call_for_a_postcondition_refuses_wrong_observation() {
 
 /// Step 5 (FR-106-AC-8): a pre-call snapshot that says `post` refuses
 /// `wrong_snapshot`/`wrong-observation`.
-#[trace("TC-464", "FR-106-AC-8")]
+#[trace("TC-464", "FR-106-AC-8", "QSpec-V1-EXPR-019")]
 #[test]
 fn tc464_step5_a_pre_call_snapshot_saying_post_refuses_wrong_observation() {
     let document = tc465_document();
@@ -2308,7 +2544,7 @@ fn tc464_step5_an_incomplete_pre_call_snapshot_is_incomplete() {
 /// authorizes a write to `Tag::versionNumber` -- a same-named field of an
 /// unrelated type, present as a surviving object across the same
 /// invocation's pre and post.
-#[trace("TC-465", "FR-106-AC-5")]
+#[trace("TC-465", "FR-106-AC-5", "QSpec-V1-EXPR-022", "QSpec-FR-013-AC-5")]
 #[test]
 fn a_same_named_field_of_an_unrelated_type_is_never_authorized() {
     let document = tc465_document_with_tag_type_sharing_a_field_name();
@@ -2353,7 +2589,7 @@ fn a_same_named_field_of_an_unrelated_type_is_never_authorized() {
 /// `ConfigVersion`; the post snapshot adds `s1` of type `Sub` (a subtype
 /// of `ConfigVersion`, a member of `config_history`), declared in
 /// `created`. This admits, with `s1` created as a `Sub`.
-#[trace("TC-465", "FR-106-AC-5")]
+#[trace("TC-465", "FR-106-AC-5", "QSpec-V1-EXPR-022", "QSpec-FR-013-AC-6")]
 #[test]
 fn a_creation_of_a_subtype_of_a_creates_grant_admits() {
     let document = tc465_creates_subtype_document();
@@ -2388,7 +2624,7 @@ fn a_creation_of_a_subtype_of_a_creates_grant_admits() {
 /// `ConfigVersion::versionNumber`; `attemptUpdate` modifies only
 /// `versionNumber`. A surviving `Sub` object whose `version` changes is
 /// covered by that grant, so this admits.
-#[trace("TC-465", "FR-106-AC-5")]
+#[trace("TC-465", "FR-106-AC-5", "QSpec-V1-EXPR-022", "QSpec-FR-013-AC-5")]
 #[test]
 fn a_write_to_a_field_that_redefines_a_modifies_grant_admits() {
     let document = tc465_document_with_sub_redefining_version_number();
@@ -2767,6 +3003,32 @@ fn run_tc465_invocation(
     qsl_semantics::model::observation::AdmittedObservations,
     qsl_semantics::model::observation::AdmissionFailure,
 > {
+    run_tc465_invocation_limited(
+        document,
+        mutate_pre,
+        mutate_post,
+        mutate_invocation,
+        qsl_semantics::model::observation::ObservationLimits::default(),
+    )
+}
+
+/// The changed-version invocation's selection and the snapshot and
+/// invocation provisions holding its three documents.
+struct Tc465Documents {
+    invocation: qsl_semantics::model::observation::DocumentRef,
+    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    invocations: BTreeMap<[u8; 32], Vec<u8>>,
+}
+
+/// The changed-version invocation's documents, with `mutate_pre`/
+/// `mutate_post`/`mutate_invocation` applied to each document's JSON before
+/// it is digested.
+fn tc465_invocation_documents(
+    document: &[u8],
+    mutate_pre: impl FnOnce(&mut serde_json::Value),
+    mutate_post: impl FnOnce(&mut serde_json::Value),
+    mutate_invocation: impl FnOnce(&mut serde_json::Value),
+) -> Tc465Documents {
     let model_digest_hex = tc465_model_digest_hex(document);
     let pre_label = frame_label("pre-snap");
     let mut pre_value = tc465_pre_snapshot(&pre_label, &model_digest_hex);
@@ -2800,12 +3062,59 @@ fn run_tc465_invocation(
     snapshots.insert(post.digest, post_bytes);
     let mut invocations = BTreeMap::new();
     invocations.insert(invocation.digest, invocation_bytes);
-    run_tc465(
-        document,
-        "VersionUnchanged",
-        qsl_semantics::model::observation::ClauseSelectionInput::Invocation { invocation },
+    Tc465Documents {
+        invocation,
         snapshots,
         invocations,
+    }
+}
+
+/// [`run_tc465_invocation`] under the given observation limits.
+fn run_tc465_invocation_limited(
+    document: &[u8],
+    mutate_pre: impl FnOnce(&mut serde_json::Value),
+    mutate_post: impl FnOnce(&mut serde_json::Value),
+    mutate_invocation: impl FnOnce(&mut serde_json::Value),
+    limits: qsl_semantics::model::observation::ObservationLimits,
+) -> Result<
+    qsl_semantics::model::observation::AdmittedObservations,
+    qsl_semantics::model::observation::AdmissionFailure,
+> {
+    run_tc465_invocation_under(
+        document,
+        mutate_pre,
+        mutate_post,
+        mutate_invocation,
+        limits,
+        qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+    )
+}
+
+/// [`run_tc465_invocation_limited`] under the model limits `model_limits`.
+fn run_tc465_invocation_under(
+    document: &[u8],
+    mutate_pre: impl FnOnce(&mut serde_json::Value),
+    mutate_post: impl FnOnce(&mut serde_json::Value),
+    mutate_invocation: impl FnOnce(&mut serde_json::Value),
+    limits: qsl_semantics::model::observation::ObservationLimits,
+    model_limits: qsl_semantics::model::accounting::ModelNormalizationLimits,
+) -> Result<
+    qsl_semantics::model::observation::AdmittedObservations,
+    qsl_semantics::model::observation::AdmissionFailure,
+> {
+    let documents =
+        tc465_invocation_documents(document, mutate_pre, mutate_post, mutate_invocation);
+    run_tc465_with_clauses_under(
+        document,
+        TC465_CLAUSES,
+        "VersionUnchanged",
+        qsl_semantics::model::observation::ClauseSelectionInput::Invocation {
+            invocation: documents.invocation,
+        },
+        documents.snapshots,
+        documents.invocations,
+        limits,
+        model_limits,
     )
 }
 
@@ -2896,6 +3205,26 @@ fn run_tc465_probe_with(
     qsl_semantics::model::observation::AdmittedObservations,
     qsl_semantics::model::observation::AdmissionFailure,
 > {
+    run_tc465_probe_limited(
+        document,
+        clause,
+        mutate_pre,
+        mutate_invocation,
+        qsl_semantics::model::observation::ObservationLimits::default(),
+    )
+}
+
+/// [`run_tc465_probe_with`] under the given observation limits.
+fn run_tc465_probe_limited(
+    document: &[u8],
+    clause: &str,
+    mutate_pre: impl FnOnce(&mut serde_json::Value),
+    mutate_invocation: impl FnOnce(&mut serde_json::Value),
+    limits: qsl_semantics::model::observation::ObservationLimits,
+) -> Result<
+    qsl_semantics::model::observation::AdmittedObservations,
+    qsl_semantics::model::observation::AdmissionFailure,
+> {
     let model_digest_hex = tc465_model_digest_hex(document);
     let pre_label = frame_label("pre-snap");
     let mut pre_value = tc465_healthy_parent_observed(&pre_label, &model_digest_hex, "pre");
@@ -2929,12 +3258,13 @@ fn run_tc465_probe_with(
     snapshots.insert(post.digest, post_bytes);
     let mut invocations = BTreeMap::new();
     invocations.insert(invocation.digest, invocation_bytes);
-    run_tc465(
+    run_tc465_with_limits(
         document,
         clause,
         qsl_semantics::model::observation::ClauseSelectionInput::Invocation { invocation },
         snapshots,
         invocations,
+        limits,
     )
 }
 
@@ -3060,9 +3390,9 @@ fn objects_per_document_limit_refuses_naming_observation_objects() {
     assert!(run_tc465_current_with_limits(&document, |_| {}, raised).is_ok());
 }
 
-/// FR-261 B4, FR-255: `values_per_document` counts every value form of the
-/// document as the reader walks it: a ceiling of 0 refuses at the first,
-/// naming `observation.values`.
+/// FR-261 B4, FR-255, FR-106-AC-16: `values_per_document` counts every value
+/// form of the document as the reader walks it: a ceiling of 0 refuses at the
+/// first, `stage_limit_exceeded` naming `observation.values`.
 #[trace("TC-465", "FR-106-AC-3")]
 #[trace("TC-720", "FR-255-AC-1")]
 #[test]
@@ -3077,7 +3407,62 @@ fn values_per_document_limit_refuses_naming_observation_values() {
         Some("observation.values")
     );
     assert_eq!(record.fields.get("bound").map(String::as_str), Some("0"));
+    assert_eq!(
+        record.fields.get("kind").map(String::as_str),
+        Some("node-count-exceeded")
+    );
     assert_eq!(record.fields.get("actual").map(String::as_str), Some("1"));
+}
+
+/// A `sequence` value form of `count` integers: `count + 1` value forms.
+fn tc465_long_sequence(count: usize) -> serde_json::Value {
+    json!({"sequence": vec![json!({"integer": "1"}); count]})
+}
+
+/// FR-106-AC-16: the invocation's `parameters` count against
+/// `observation.values` too. At a bound of 20, a 30-element sequence at
+/// `target` is refused at the 21st form, naming the setting, bound and count.
+#[trace("FR-106-AC-16")]
+#[test]
+fn an_invocation_parameter_past_the_values_bound_refuses_stage_limit_exceeded() {
+    let document = tc465_document();
+    let limits = qsl_semantics::model::observation::ObservationLimits::default()
+        .with_values_per_document(20);
+    let result = run_tc465_probe_limited(
+        &document,
+        "ReachesTarget",
+        |_| {},
+        |value| value["parameters"]["target"] = tc465_long_sequence(30),
+        limits,
+    );
+    let record = assert_tc465_refused(result, "stage_limit_exceeded", "node-count-exceeded");
+    let field = |name: &str| record.fields.get(name).map(String::as_str);
+    assert_eq!(field("setting"), Some("observation.values"));
+    assert_eq!(field("kind"), Some("node-count-exceeded"));
+    assert_eq!(field("bound"), Some("20"));
+    assert_eq!(field("actual"), Some("21"));
+}
+
+/// FR-106-AC-16: the invocation's `result` counts against
+/// `observation.values`: refused at the 21st form under a bound of 20.
+#[trace("FR-106-AC-16")]
+#[test]
+fn an_invocation_result_past_the_values_bound_refuses_stage_limit_exceeded() {
+    let document = tc465_document();
+    let limits = qsl_semantics::model::observation::ObservationLimits::default()
+        .with_values_per_document(20);
+    let result = run_tc465_invocation_limited(
+        &document,
+        |_| {},
+        |_| {},
+        |value| value["result"] = tc465_long_sequence(30),
+        limits,
+    );
+    let record = assert_tc465_refused(result, "stage_limit_exceeded", "node-count-exceeded");
+    let field = |name: &str| record.fields.get(name).map(String::as_str);
+    assert_eq!(field("setting"), Some("observation.values"));
+    assert_eq!(field("bound"), Some("20"));
+    assert_eq!(field("actual"), Some("21"));
 }
 
 /// `run_tc465_current_with_limits` over snapshot text built by `build`
@@ -3164,8 +3549,8 @@ fn a_snapshot_nested_100_000_deep_is_digested_on_content() {
 /// `observation.values` as it is walked and judged on its content. With the
 /// limits raised the field's declared type refuses it as `wrong-value-kind`
 /// at that field. With `observation.values` at 50,000, which the nested
-/// value alone crosses, it refuses naming `observation.values`, bound 50,000
-/// and the count reached, 50,001.
+/// value alone crosses, it refuses `stage_limit_exceeded` naming
+/// `observation.values`, bound 50,000 and the count reached, 50,001.
 #[trace("TC-733", "FR-261-AC-3")]
 #[test]
 fn a_value_nested_100_000_deep_is_counted_as_observation_values() {
@@ -3326,7 +3711,7 @@ fn tc465_row8_blank_authority_refuses_blank_label() {
 
 /// Row 10 (check 2): `Current` selecting `VersionUnchanged` (a
 /// postcondition).
-#[trace("TC-465", "FR-106-AC-3")]
+#[trace("TC-465", "FR-106-AC-3", "QSpec-V1-EXPR-018")]
 #[test]
 fn tc465_row10_current_selecting_a_postcondition_refuses_wrong_observation() {
     let document = tc465_document();
@@ -3376,7 +3761,7 @@ fn tc465_row11_wrong_observation_role_refuses_wrong_observation() {
 }
 
 /// Row 12 (check 3): the selection's anchor `{handler, other}`.
-#[trace("TC-465", "FR-106-AC-3")]
+#[trace("TC-465", "FR-106-AC-3", "QSpec-V1-EXPR-018")]
 #[test]
 fn tc465_row12_anchor_mismatch_refuses_wrong_anchor() {
     let document = tc465_document();
@@ -4005,7 +4390,7 @@ fn a_dangling_reference_into_an_incomplete_population_still_admits() {
 /// Row 26 (check 11.3): with `attemptUpdate` modifying `[versionNumber]`
 /// only, post sets `child.parent` absent -- refuses naming `child` and
 /// `parent`.
-#[trace("TC-465", "FR-106-AC-5")]
+#[trace("TC-465", "FR-106-AC-5", "QSpec-V1-EXPR-022", "QSpec-FR-013-AC-1")]
 #[test]
 fn tc465_row26_forbidden_parent_change_refuses_unauthorized_change() {
     let document = tc465_document_with(attempt_update_modifies_version_number());
@@ -4034,7 +4419,7 @@ fn tc465_row26_forbidden_parent_change_refuses_unauthorized_change() {
 /// Row 27 (check 11.3): `attemptUpdate` modifying `[parent]` only, over
 /// the changed-version invocation (post `child.versionNumber` 3) --
 /// refuses naming `child` and `versionNumber`.
-#[trace("TC-465", "FR-106-AC-5")]
+#[trace("TC-465", "FR-106-AC-5", "QSpec-V1-EXPR-022", "QSpec-FR-013-AC-1")]
 #[test]
 fn tc465_row27_change_outside_a_narrower_modifies_refuses_unauthorized_change() {
     let document = tc465_document_with_frame_modifies_parent_only();
@@ -4052,7 +4437,7 @@ fn tc465_row27_change_outside_a_narrower_modifies_refuses_unauthorized_change() 
 
 /// Row 28 (check 11.4): invocation `created: [{config_history, child}]`
 /// with nothing actually created.
-#[trace("TC-465", "FR-106-AC-5")]
+#[trace("TC-465", "FR-106-AC-5", "QSpec-V1-EXPR-022", "QSpec-FR-013-AC-2")]
 #[test]
 fn tc465_row28_undeclared_creation_refuses_delta_disagreement() {
     let document = tc465_document();
@@ -4163,8 +4548,11 @@ fn tc465_row32_an_object_of_an_undeclared_member_type_refuses_wrong_role_mapping
 /// of their own. An object whose type sits 70 edges below its population's
 /// member type is admitted under the default `model.ancestor_steps` (a fixed
 /// 64 refused it as `wrong-role-mapping`), and under `ancestor_steps` 60 the
-/// same document stops with `stage_limit_exceeded` naming
-/// `model.ancestor_steps` and its bound, never `wrong-role-mapping`.
+/// same document stops with `resource_exhausted`/`insufficient-next-charge`
+/// (the walk is a one-edge charge past the limit, QSpec FR-150-AC-11) naming
+/// `model.ancestor_steps` and its limit, never `wrong-role-mapping`: a
+/// `ModelNormalizationLimitsV1` ceiling is a caller budget wherever it is
+/// read (ADR-014 section 1), so admission re-emits the compile path's code.
 #[trace("TC-465", "FR-106-AC-3")]
 #[trace("TC-720", "FR-255-AC-1")]
 #[test]
@@ -4211,12 +4599,46 @@ fn a_deep_hierarchy_is_judged_by_the_callers_ancestor_steps_not_a_fixed_ceiling(
         ancestor_steps: 60,
         ..qsl_semantics::model::accounting::ModelNormalizationLimits::default()
     };
-    let record = assert_tc465_refused(run(tight), "stage_limit_exceeded", "edge-count-exceeded");
+    let record = assert_tc465_refused(run(tight), "resource_exhausted", "insufficient-next-charge");
+    let field = |name: &str| record.fields.get(name).map(String::as_str);
+    assert_eq!(field("setting"), Some("model.ancestor_steps"));
+    assert_eq!(field("limit"), Some("60"));
+    assert_eq!(field("actual"), Some("61"));
+    assert_eq!(field("stage"), Some("model-normalization"));
+    assert_eq!(
+        field("accounting_contract"),
+        Some("ModelNormalizationLimitsV1")
+    );
+    assert_eq!(field("limit_kind"), Some("ancestor_steps"));
+    assert_eq!(field("consumed"), Some("60"));
+    assert_eq!(field("next_charge"), Some("1"));
+    assert_eq!(field("charge_point"), Some("model.ancestor-edge"));
+    assert!(!record.fields.contains_key("kind"));
+    assert!(!record.fields.contains_key("bound"));
+    // A tight work budget is a denied charge: `insufficient-next-charge`.
+    let starved = qsl_semantics::model::accounting::ModelNormalizationLimits {
+        work_units: 1,
+        ..qsl_semantics::model::accounting::ModelNormalizationLimits::default()
+    };
+    let record = assert_tc465_refused(
+        run(starved),
+        "resource_exhausted",
+        "insufficient-next-charge",
+    );
     assert_eq!(
         record.fields.get("setting").map(String::as_str),
-        Some("model.ancestor_steps")
+        Some("model.work_units")
     );
-    assert_eq!(record.fields.get("bound").map(String::as_str), Some("60"));
+    assert_eq!(record.fields.get("limit").map(String::as_str), Some("1"));
+    let field = |name: &str| record.fields.get(name).map(String::as_str);
+    assert_eq!(field("stage"), Some("model-normalization"));
+    assert_eq!(
+        field("accounting_contract"),
+        Some("ModelNormalizationLimitsV1")
+    );
+    assert_eq!(field("consumed"), Some("1"));
+    assert!(field("next_charge").is_some_and(|charge| charge != "0"));
+    assert!(field("charge_point").is_some_and(|point| point.starts_with("normalize.")));
 }
 
 /// Row 39 (check 11.1 over 11.2): `Sub` specializes `ConfigVersion` and is
@@ -4845,4 +5267,290 @@ fn an_out_of_range_argument_refuses_whatever_the_limits() {
         );
         assert!(run("1000", limits).is_ok());
     }
+}
+
+// ---------------------------------------------------------------------------
+// QSpec FR-013-AC-7, AC-8 and AC-9 over FR-106 check 11 and the FR-115
+// frame check: frame accounting, and receiver- and argument-scoped entries.
+// ---------------------------------------------------------------------------
+
+const CONFIG_VERSION_NODE: &str = "ix://example/config-version/ConfigVersion";
+
+/// The field `ConfigVersion::<name>`'s declaration key in the TC-465 package.
+fn tc465_field_key(name: &str) -> qsl_semantics::model::key::DeclarationKey {
+    qsl_semantics::model::key::DeclarationKey {
+        package: "example/config-version".to_owned(),
+        node: format!("{CONFIG_VERSION_NODE}/{name}"),
+    }
+}
+
+/// The `config_history` object `key` at `version`, no parent.
+fn tc465_object(key: &str, version: i64) -> serde_json::Value {
+    json!({
+        "key": key, "type": CONFIG_VERSION_NODE,
+        "fields": {"versionNumber": {"integer": version.to_string()}, "parent": {"absent": {}}},
+    })
+}
+
+fn tc465_push_objects(objects: Vec<serde_json::Value>) -> impl FnOnce(&mut serde_json::Value) {
+    move |value| {
+        value["populations"][0]["objects"]
+            .as_array_mut()
+            .unwrap()
+            .extend(objects);
+    }
+}
+
+/// FR-115's check 11 over the changed-version invocation of `operation`
+/// (`attemptUpdate` or `probe`), `effect` the frame it is checked against.
+fn tc465_check_frame(
+    document: &[u8],
+    operation: &str,
+    mutate_pre: impl FnOnce(&mut serde_json::Value),
+    mutate_post: impl FnOnce(&mut serde_json::Value),
+    mutate_invocation: impl FnOnce(&mut serde_json::Value),
+    effect: &qsl_semantics::model::domain_package::OperationEffect,
+) -> qsl_semantics::model::observation::FrameVerdict {
+    use qsl_semantics::model::observation::{
+        admit_frame_invocation, FrameFacts, ObservationLimits, OperationFacts, Provisions,
+    };
+    let identifier = |text: &str| quire_exact::Identifier::new(text).expect("an identifier");
+    let documents = tc465_invocation_documents(
+        document,
+        mutate_pre,
+        mutate_post,
+        |value: &mut serde_json::Value| {
+            value["operation"] = json!(operation);
+            mutate_invocation(value);
+        },
+    );
+    let packages = qsl_semantics::model::intake::package_input([document]);
+    let declarations = admit_and_assemble_with_body(document, TC465_CLAUSES)
+        .unwrap_or_else(|refusal| panic!("assembly refused: {refusal:?}"));
+    let graph = declarations
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("check refused: {refusals:?}"));
+    let selection = graph
+        .resolve_operation(
+            &identifier("Config"),
+            &identifier("ConfigVersion"),
+            &identifier(operation),
+        )
+        .expect("the operation resolves");
+    let (context, operation_frame) = graph
+        .operation_frame(&selection)
+        .expect("a clause names the operation, so the package holds its frame");
+    let facts = FrameFacts {
+        context,
+        frame: operation_frame.frame(),
+        operation: OperationFacts {
+            declaring: operation_frame.operation().declaring,
+            declaration: operation_frame.operation().declaration.clone(),
+        },
+    };
+    let provisions = Provisions {
+        snapshots: &documents.snapshots,
+        invocations: &documents.invocations,
+    };
+    let admitted = admit_frame_invocation(
+        graph.model_selections(),
+        graph.scope().types(),
+        &facts,
+        &packages,
+        qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+        &provisions,
+        &documents.invocation,
+        ObservationLimits::default(),
+    )
+    .unwrap_or_else(|failure| panic!("expected admission, got {failure:?}"));
+    admitted
+        .check_frame(effect)
+        .expect("check 11 does not fault")
+}
+
+fn assert_field_violation(
+    verdict: qsl_semantics::model::observation::FrameVerdict,
+    object: &str,
+    field: &str,
+) {
+    use qsl_semantics::model::observation::{FrameChange, FrameVerdict};
+    let FrameVerdict::Violation(witness) = verdict else {
+        panic!("expected a violation of {object}.{field}, got {verdict:?}");
+    };
+    assert_eq!(witness.code, Code::FrameViolation);
+    assert_eq!(witness.cause, "unauthorized-change");
+    let FrameChange::FieldWrite {
+        object: at,
+        field: written,
+        ..
+    } = &witness.change
+    else {
+        panic!("expected a field write, got {:?}", witness.change);
+    };
+    assert_eq!((at.as_str(), written.as_str()), (object, field));
+}
+
+/// QSpec FR-013-AC-8 over the FR-115 frame check: with the invocation's
+/// `self` the receiver `child`, the receiver-scoped entry `self.versionNumber`
+/// permits the write to `child.versionNumber` and `frame_violation`s the same
+/// write to `other`, and the every-object entry `versionNumber` permits both.
+#[trace("QSpec-V1-EXPR-022", "QSpec-FR-013-AC-8")]
+#[test]
+fn the_frame_check_scopes_a_receiver_entry_to_the_invocations_self() {
+    use qsl_semantics::model::domain_package::OperationEffect;
+    use qsl_semantics::model::observation::FrameVerdict;
+    let document = tc465_document();
+    let check = |effect: &OperationEffect, other_after: i64| {
+        tc465_check_frame(
+            &document,
+            "attemptUpdate",
+            tc465_push_objects(vec![tc465_object("other", 1)]),
+            tc465_push_objects(vec![tc465_object("other", other_after)]),
+            |_| {},
+            effect,
+        )
+    };
+    let receiver_only = OperationEffect {
+        receiver_modifies: vec![tc465_field_key("versionNumber")],
+        ..Default::default()
+    };
+    let every_object = OperationEffect {
+        modifies: vec![tc465_field_key("versionNumber")],
+        ..Default::default()
+    };
+
+    // `child` moves 2 -> 3 in every case; `other` stays at 1 or moves to 2.
+    assert_eq!(check(&receiver_only, 1), FrameVerdict::Holds);
+    assert_field_violation(check(&receiver_only, 2), "other", "versionNumber");
+    assert_eq!(check(&every_object, 1), FrameVerdict::Holds);
+    assert_eq!(check(&every_object, 2), FrameVerdict::Holds);
+}
+
+/// QSpec FR-013-AC-9 over the FR-115 frame check: `deletes self` permits
+/// deleting the receiver `child` and `frame_violation`s deleting `other`;
+/// `deletes p` for `probe(target)` bound to `other` permits deleting `other`
+/// and `frame_violation`s deleting `child`.
+#[trace("QSpec-V1-EXPR-022", "QSpec-FR-013-AC-9")]
+#[test]
+fn the_frame_check_scopes_a_deletion_to_the_receiver_or_the_argument() {
+    use qsl_semantics::model::domain_package::OperationEffect;
+    use qsl_semantics::model::observation::{FrameChange, FrameVerdict};
+    let document = tc465_document();
+    let population = "ix://example/config-version/config_history";
+    let without = |gone: &'static str| {
+        move |value: &mut serde_json::Value| {
+            value["populations"][0]["objects"]
+                .as_array_mut()
+                .unwrap()
+                .retain(|object| object["key"] != gone);
+        }
+    };
+    let pre = || tc465_push_objects(vec![tc465_object("other", 1)]);
+    let check = |operation: &str, effect: &OperationEffect, gone: &'static str| {
+        let target = json!({"target": {"reference": {"population": population, "key": "other"}}});
+        tc465_check_frame(
+            &document,
+            operation,
+            pre(),
+            // The post snapshot is the pre one, less the deleted object and
+            // with `child` at its pre version so only the deletion differs.
+            move |value| {
+                tc465_push_objects(vec![tc465_object("other", 1)])(value);
+                value["populations"][0]["objects"][0] = tc465_object("child", 2);
+                without(gone)(value);
+            },
+            move |invocation| {
+                if operation == "probe" {
+                    invocation["parameters"] = target;
+                    invocation["result"] = serde_json::Value::Null;
+                }
+                invocation["deleted"] = json!([{"population": population, "key": gone}]);
+            },
+            effect,
+        )
+    };
+    let assert_deleted = |verdict: FrameVerdict, object: &str| {
+        let FrameVerdict::Violation(witness) = verdict else {
+            panic!("expected a violation deleting {object}, got {verdict:?}");
+        };
+        assert_eq!(witness.code, Code::FrameViolation);
+        let FrameChange::Deleted { object: at, .. } = &witness.change else {
+            panic!("expected a deletion, got {:?}", witness.change);
+        };
+        assert_eq!(at, object);
+    };
+
+    let receiver = OperationEffect {
+        deletes_receiver: true,
+        ..Default::default()
+    };
+    assert_eq!(
+        check("attemptUpdate", &receiver, "child"),
+        FrameVerdict::Holds
+    );
+    assert_deleted(check("attemptUpdate", &receiver, "other"), "other");
+
+    let argument = OperationEffect {
+        deletes_arguments: vec!["target".to_owned()],
+        ..Default::default()
+    };
+    assert_eq!(check("probe", &argument, "other"), FrameVerdict::Holds);
+    assert_deleted(check("probe", &argument, "child"), "child");
+}
+
+/// QSpec FR-013-AC-7 over FR-106 check 11: each changed field charges one
+/// `frame.write` and one `frame.redefines-link` per `redefines` link, against
+/// the model `work_units` limit, and the first denied charge ends the check
+/// with the caller-budget record and no frame verdict.
+///
+/// `child.versionNumber` (granted outright) costs 1; each `Sub` object's
+/// `version` (one link to the granted `versionNumber`) costs 2. With
+/// `work_units = 60`, `child` and 29 `Sub` objects consume 59 and the 30th
+/// `Sub` write takes the 60th unit, so its link is the denied charge; at 59
+/// its `frame.write` is.
+#[trace("QSpec-V1-EXPR-022", "QSpec-FR-013-AC-7")]
+#[test]
+fn a_denied_frame_charge_ends_check_eleven_with_the_budget_record() {
+    let document = tc465_document_with_sub_redefining_version_number();
+    let sub = "ix://example/config-version/Sub";
+    let sub_objects = |version: &str| -> Vec<serde_json::Value> {
+        (0..40)
+            .map(|index| {
+                json!({
+                    "key": format!("s{index:02}"), "type": sub,
+                    "fields": {"version": {"integer": version}, "parent": {"absent": {}}},
+                })
+            })
+            .collect()
+    };
+    let run = |work_units: u64| {
+        run_tc465_invocation_under(
+            &document,
+            tc465_push_objects(sub_objects("1")),
+            tc465_push_objects(sub_objects("2")),
+            |_| {},
+            qsl_semantics::model::observation::ObservationLimits::default(),
+            qsl_semantics::model::accounting::ModelNormalizationLimits::default()
+                .with_work_units(work_units),
+        )
+    };
+    for (work_units, charge_point) in [(60, "frame.redefines-link"), (59, "frame.write")] {
+        let record = assert_tc465_refused(
+            run(work_units),
+            "resource_exhausted",
+            "insufficient-next-charge",
+        );
+        let field = |name: &str| record.fields.get(name).map(String::as_str);
+        assert_eq!(field("limit_kind"), Some("work_units"), "{work_units}");
+        assert_eq!(field("charge_point"), Some(charge_point), "{work_units}");
+        assert_eq!(field("limit"), Some(work_units.to_string().as_str()));
+        assert_eq!(field("consumed"), Some(work_units.to_string().as_str()));
+        assert_eq!(field("next_charge"), Some("1"), "{work_units}");
+        assert_eq!(field("stage"), Some("model-normalization"), "{work_units}");
+    }
+    // Control: the default limit admits the same invocation, so the denial
+    // above is the frame's charge and not a defect of the documents.
+    let admitted =
+        run(qsl_semantics::model::accounting::ModelNormalizationLimits::default().work_units);
+    assert!(admitted.is_ok(), "expected admission, got {admitted:?}");
 }

@@ -721,13 +721,18 @@ fn forms_s2_report(workspace_root: &Path) -> Result<String> {
         production(arm)
             .is_some_and(|path| path.segments.len() == 2 && path.segments[0].ident == "state_model")
     });
+    // ADR-016 FP-1/FP-3: StateModel's forms are expressions nested in Value and
+    // ProtocolClause bodies, so the declaration dispatch has no StateModel arm
+    // by design. An arm appearing here contradicts that design.
+    if state_model_present {
+        return Err(Error::SeamProbeMismatch {
+            unexpected_but_present: format!("{FILE}::dispatch state_model:: arm"),
+            expected_but_missing:
+                "no StateModel arm in the declaration dispatch (ADR-016 FP-1, FP-3)".to_owned(),
+        });
+    }
     Ok(format!(
-        "StateModel S2 {}: {FILE}::dispatch (Value producer present)",
-        if state_model_present {
-            "PRESENT"
-        } else {
-            "ABSENT"
-        }
+        "StateModel S2 ABSENT by design (ADR-016 FP-1, FP-3): {FILE}::dispatch (Value producer present)"
     ))
 }
 
@@ -754,7 +759,9 @@ mod state_model_tests {
             );
         }
         assert!(
-            report.contains("StateModel S2 ABSENT: qsl-forms/src/dispatch.rs::dispatch"),
+            report.contains(
+                "StateModel S2 ABSENT by design (ADR-016 FP-1, FP-3): qsl-forms/src/dispatch.rs::dispatch"
+            ),
             "{report}"
         );
         assert!(!report.contains("StateModel S2 hook arm"), "{report}");
@@ -829,6 +836,35 @@ mod state_model_tests {
             "{message}"
         );
         eprintln!("{message}");
+    }
+
+    #[trace("TC-791")]
+    #[test]
+    fn a_state_model_arm_in_the_s2_dispatch_is_rejected() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let scratch = tempfile::tempdir().unwrap();
+        for file in [
+            "qsl-semantics/src/family/mod.rs",
+            "qsl-forms/src/dispatch.rs",
+            "qsl-semantics/src/check/state_model.rs",
+        ] {
+            let destination = scratch.path().join(file);
+            fs::create_dir_all(destination.parent().unwrap()).unwrap();
+            fs::copy(root.join(file), destination).unwrap();
+        }
+        state_model_arm_report(scratch.path()).unwrap();
+        let file = scratch.path().join("qsl-forms/src/dispatch.rs");
+        let source = fs::read_to_string(&file).unwrap();
+        let changed = source.replace(
+            "LeadingTokenKind::Body => protocol_clause::operation_body(construct),",
+            "LeadingTokenKind::Body => state_model::declaration(construct),",
+        );
+        assert_ne!(changed, source, "the real Body arm was found");
+        fs::write(file, changed).unwrap();
+        let error = state_model_arm_report(scratch.path())
+            .expect_err("a StateModel arm in the declaration dispatch contradicts the design");
+        let message = error.to_string();
+        assert!(message.contains("state_model::"), "{message}");
     }
 
     #[trace("TC-791")]

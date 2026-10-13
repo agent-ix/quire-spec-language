@@ -1,44 +1,31 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-150 model normalization: phases 1 (decode), 2 (qualify), 3 (inherit),
-//! 4 (`quire.model.normalize.redefine/v1`, explicit field redefinition) and
+//! 4 (`quire.model.normalize.subset/v1` and `quire.model.normalize.redefine/v1`,
+//! explicit subsetting and member redefinition) and
 //! 5 (canonicalize).
 //!
-//! Phase 4 here covers exactly TC-195 N06's shape: **field** members' own
+//! Phase 4 covers TC-195 N06's field members' and operation members' own
 //! explicit `redefines` property (`model-complete.md`:159/160), resolved by
 //! the same proper-descendant dominance FR-151 dispatch later reuses (a
 //! redefining owner that is a proper descendant of every other contesting owner wins
 //! outright; two or more undominated owners refuse `derivation-conflict`).
-//! `quire.model.normalize.subset/v1` (explicit subsetting) derives no
-//! replacement member — FR-150 says so explicitly ("subsetting never
-//! conflicts with redefinition because it derives no replacement") — so a
-//! field member's own `subsets` property (`model-complete.md`:159) carries
-//! no normalization derivation at all; it is checked directly by
-//! `crate::model::conformance` (the static `subsetting-type` axis) and, at
-//! runtime, by FR-153's `binding.subset-value` check (`subsetting-violation`)
-//! — FR-153 territory, not yet implemented anywhere in this crate (see
-//! `crate::model::conformance`'s own module doc).
-//! **Operation-member** redefinition (TC-196 R02–R08) builds no *view* entry
-//! here: `crate::model::conformance` constructs its own
-//! [`EffectiveDeclarationPreimage`] directly over the domain package's
-//! [`crate::model::domain_package::OperationMemberRecord`]'s own `redefines`
-//! property for FR-151's conformance checking, so this pass — which exists to
-//! grow [`EffectiveView`] itself — has no member to add for operations. This
-//! split is a scope decision recorded here, not a silent gap. It covers only
-//! the *view* this pass grows, though: the `m + r`
-//! `normalize.redefinition-check` charge below still prices every
-//! redefining member and every effective member the spec names,
-//! operation and field alike (QSL #145), and a contested operation target
-//! (`c >= 2` redefining operation members reaching the same target) is
-//! detected and resolved by the identical proper-descendant dominance search
-//! this pass's own field-redefinition contention uses (#173): a winner if
-//! one redefiner's owner dominates every other, otherwise a typed
-//! `redefinition-target`/`derivation-conflict` refusal, naming every
-//! competing redefiner exactly as the field case does, and priced by the
-//! same `Σ (c − 1) × f(o)` `normalize.conflict-check` charge (QSL #145).
-//! Resolving a contested operation target this way builds no
-//! [`EffectiveView`] member entry and touches no `member_preimages`/`hidden`
-//! state: the view stays field-only, as above; only the ambiguity check
-//! itself is shared.
+//! `quire.model.normalize.subset/v1` (explicit subsetting) derives one fact
+//! on `(T, s)` per `subsets` entry of each field `s` whose owner is `T` or a
+//! supertype of `T`, with inputs `[path types..., s, t]`. Subsetting derives
+//! no replacement member, so it never conflicts with redefinition and hides
+//! nothing. Subset facts and redefine facts form one phase-4 sequence: they
+//! are charged together as `normalize.fact`, and each member's derivation
+//! takes them sorted by inputs. The subsetting type axis is checked by
+//! `crate::model::conformance` and the runtime `binding.subset-value` check
+//! (`subsetting-violation`) by FR-153, not here.
+//! Operation members enter [`EffectiveView`] with qualify (direct) or inherit (inherited) facts,
+//! then receive both redefine facts for each reachable redefinition. The
+//! `m + r` redefinition check counts field and operation members alike.
+//! Phase 2 also qualifies relationship and systems members at their resolved
+//! owners. Connections and allocations retain one fact per end, source first.
+//! Contested operation targets retain the proper-descendant dominance search
+//! and typed `redefinition-target` or `derivation-conflict` refusal. Operation
+//! conformance axes remain checked by `crate::model::conformance`.
 //!
 //! This engine takes a [`DomainPackage`] value the caller constructs; it holds no
 //! ambient registry. Every identity is SHA-256 over RFC 8785 JCS bytes of a
@@ -67,19 +54,21 @@
 //! follows it, and the first edge past the ceiling refuses `AncestorSteps`
 //! where the walk reaches it, unless an earlier charge was already denied.
 //!
-//! A closing cycle edge (TC-196 R01) refuses `specialization-cycle` naming
-//! every contributing declaration in the cycle, rotated to start at its
-//! least key. `ancestor_paths` charges every closing extension it finds
+//! A closing cycle edge (TC-196 R01) refuses `specialization-cycle` once at
+//! each declaration on the cycle, in declaration-key order; every refusal
+//! lists the cycle's keys in path order, rotated to start at its least
+//! key. `ancestor_paths` charges every closing extension it finds
 //! (`value-accounting.md:491`: "a closing extension is charged even when
 //! its cycle's edge set was already reported") and keeps walking past it —
 //! this frame's remaining siblings, every other frame still on its stack,
 //! and, in `build`'s own per-type loop, every remaining type — rather than
 //! stopping at the first one, so R01's own six-`normalize.cycle-check`
 //! accounting across both types' walks is reproduced exactly (QSL #193).
-//! `build` deduplicates the refusals themselves by edge set, keeping only
-//! each distinct cycle's own first (charge-order-earliest) closing
-//! extension, per `model-complete.md`:292-295's "each cycle is refused
-//! exactly once" — and reported only
+//! `build` deduplicates the cycles themselves by edge set, keeping only each
+//! distinct cycle's own first (charge-order-earliest) closing extension. A
+//! declaration is refused once per cycle it lies on, so a declaration on two
+//! cycles is refused twice, once listing each.
+//! The refusals are reported only
 //! once every phase 2/3 charge has admitted (`:505-511`'s "every refusal
 //! that work exposes is reported, in charge order, when its stage ends").
 //!
@@ -201,7 +190,7 @@
 )]
 
 use quire_canonical::FixedShape;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::model::accounting::{
@@ -209,22 +198,25 @@ use crate::model::accounting::{
 };
 use crate::model::domain_package::DomainPackageRefWire;
 use crate::model::domain_package::{
-    DomainPackage, DomainPackageRecord, DomainPackageRef, PopulationRecord,
+    DomainPackage, DomainPackageRecord, DomainPackageRef, NativeValueType, PopulationRecord,
+    ScalarValueDomain, ValueTypeRef,
 };
-use crate::model::index::{DeclIdx, ModelIndex, RecordIndex, Redefiner};
+use crate::model::index::{ModelIndex, RecordIndex, Redefiner};
 use crate::model::key::{
     canonical_len, sha256_and_len, DeclarationKey, EffectiveDeclarationPreimage,
-    EffectiveDeclarationWire, EffectiveId, EffectiveIdWire, Fact, FactInputs, KeyPath, RuleRefWire,
-    RULE_INHERIT, RULE_QUALIFY, RULE_REDEFINE,
+    EffectiveDeclarationWire, EffectiveId, EffectiveIdWire, Fact, FactInputs, KeyPath, RuleRef,
+    RuleRefWire, RULE_INHERIT, RULE_QUALIFY, RULE_REDEFINE, RULE_SUBSET,
 };
-use qsl_foundation::diagnostic::Code;
+use qsl_foundation::diagnostic::{Code, JsonPointer};
 use quire_exact::{length_amount, Cancel};
 use serde::Serialize;
 
 /// Re-exported from [`crate::model::refusal`] (#141 finding 4): that module
 /// is lower-level than this one so [`crate::model::key`] can depend on the
 /// cause type without a cycle. This path is unchanged for every caller.
-pub use crate::model::refusal::{ModelRefusalCause, OfferedSelection};
+pub use crate::model::refusal::{
+    MemberPath, MemberRoot, ModelRefusalCause, OfferedSelection, OwnedMemberPath,
+};
 
 /// A refusal FR-150 normalization returns for a real defect (never a
 /// resource limit; see [`Incomplete`] for that).
@@ -323,6 +315,12 @@ impl Refusals {
     /// `Refusals` is non-empty by construction.
     pub fn into_first(self) -> ModelRefusal {
         self.first
+    }
+}
+
+impl From<ModelRefusal> for Refusals {
+    fn from(refusal: ModelRefusal) -> Self {
+        Self::new(refusal, Vec::new())
     }
 }
 
@@ -430,9 +428,9 @@ pub struct ViewEntry {
     pub visible: bool,
 }
 
-/// A `quire.model.effective-view/v1` result: every effective declaration a
-/// [`DomainPackage`] admits, sorted ascending by effective identity, together
-/// with the domain package it was normalized from.
+/// A `quire.model.effective-view/v1` result: every declaration selected by a
+/// normalization rule, sorted ascending by effective identity, together with
+/// the exact original inventory in the domain package it was normalized from.
 ///
 /// Every field is private and [`normalize`]/[`normalize_shared`] are this
 /// type's only constructors, so a view always carries the exact
@@ -457,7 +455,7 @@ pub struct EffectiveView {
 /// refused or runs out of limits never copies or retains the package.
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ViewBody {
-    /// Every admitted declaration, ascending by [`EffectiveId`].
+    /// Every effective declaration, ascending by [`EffectiveId`].
     declarations: Vec<ViewEntry>,
     /// Every top-level declaration's effective identity, keyed by its
     /// original producer [`DeclarationKey`], and the reverse: exactly the
@@ -606,6 +604,25 @@ impl ObjectUniverses {
 }
 
 impl EffectiveView {
+    /// This view with each operation record's `has_body` set from `bodies`:
+    /// true for an operation whose key is in it, false for every other
+    /// (FR-103, FR-302). Only that flag changes, so no identity, record
+    /// position or normalization charge does: the view is re-indexed over
+    /// the same records.
+    #[must_use]
+    pub fn with_operation_bodies(&self, bodies: &BTreeSet<DeclarationKey>) -> Self {
+        let mut package = self.domain_package().clone();
+        for record in &mut package.records {
+            if let DomainPackageRecord::OperationMember(operation) = record {
+                operation.has_body = bodies.contains(&operation.key);
+            }
+        }
+        Self {
+            index: Arc::new(ModelIndex::build(package)),
+            body: self.body.clone(),
+        }
+    }
+
     /// The domain package this view was normalized from.
     pub fn domain_package(&self) -> &DomainPackage {
         self.index.package()
@@ -640,7 +657,7 @@ impl EffectiveView {
         &self.body.limits
     }
 
-    /// Every admitted declaration, ascending by [`EffectiveId`].
+    /// Every effective declaration, ascending by [`EffectiveId`].
     pub fn declarations(&self) -> &[ViewEntry] {
         &self.body.declarations
     }
@@ -801,12 +818,9 @@ struct ObjectUniverseWire<'a> {
 /// supertype graph restricted to object types (ADR-013 §8 OQ-E:
 /// `model-complete.md`'s "Object universe" -- "the connected component of
 /// `T` in the supertype graph restricted to object types"). `supertypes[]`
-/// edges are read in both directions: `type_keys` and every key a
-/// [`ModelIndex::generalization_edges`] edge names are already guaranteed
-/// declared object types by the time this runs (a dangling supertype
-/// reference is an intake refusal reported before `build` ever reaches this
-/// call, and the index only ever collects `ObjectTypeRecord.supertypes[]`
-/// entries). A type with no supertype and no
+/// edges are read in both directions. The index also retains record ancestry,
+/// so only edges whose two ends are actual object types enter this graph.
+/// `type_keys` contains only object types. A type with no supertype and no
 /// subtype is its own singleton component. Component ids are assigned in
 /// `type_keys`' own ascending order and carry no meaning beyond grouping --
 /// callers needing a stable, spec-meaningful order sort the resulting
@@ -821,6 +835,9 @@ fn connected_components(
         adjacency.entry(key).or_default();
     }
     for (specific, general) in index.generalization_edges() {
+        if !index.is_object_type(specific) || !index.is_object_type(general) {
+            continue;
+        }
         adjacency.entry(specific).or_default().push(general);
         adjacency.entry(general).or_default().push(specific);
     }
@@ -856,17 +873,17 @@ struct AncestorPath {
 }
 
 /// One generalization cycle a `root_key`'s own ancestor walk closes: the
-/// closing extension's own [`ModelRefusal`] (`SpecializationCycle`, keyed by
-/// its rotated edge listing) and the path length charged to it
+/// cycle's keys (path order, rotated to the least key) and the path length
+/// charged to it
 /// (`normalize.cycle-check`'s own `work_units += L`,
-/// `value-accounting.md:491`). `edge_set` is the same rotated node listing
-/// the refusal's own `detail` reports, kept structured here so refusals
-/// found by different types' own walks that close the identical cycle can
-/// be recognized as the same cycle and deduplicated
-/// (`model-complete.md`:292-295: "each cycle is refused ... exactly once,
-/// keyed by the set of its supertype edges").
+/// `value-accounting.md:491`). `directed_edges` is the same rotated cycle
+/// represented as ordered supertype edges, kept structured here so refusals
+/// found by different types' own walks that close the identical directed
+/// cycle can be recognized as the same cycle and deduplicated
+/// (a cycle is identified by its set of supertype edges).
 struct ClosingCycle {
-    refusal: ModelRefusal,
+    /// The cycle's keys in path order, rotated to start at the least key.
+    cycle: Vec<DeclarationKey>,
     /// The extended path that closes this cycle — the same shape as
     /// [`AncestorPath::path`], reused as this closing extension's own
     /// phase-3 charge-order key, so it sorts into
@@ -875,27 +892,51 @@ struct ClosingCycle {
     /// fact from the same type, and its length is `normalize.cycle-check`'s
     /// own `work_units += L` (`:491`).
     path: KeyPath,
-    edge_set: Vec<DeclarationKey>,
+    directed_edges: Vec<(DeclarationKey, DeclarationKey)>,
 }
 
 /// One [`ClosingCycle`] collected build-wide across `build`'s own per-type
 /// loop, tagged with the type whose walk found it (L3 finding, PR #228
 /// review: previously an anonymous 4-tuple). Sorted by `(type_key, path)` --
 /// the same charge-order key `ancestor_paths` charges its path in --
-/// then deduplicated by `edge_set` only after every type
-/// has been walked (`model-complete.md`:292-295's "each cycle is refused ...
-/// exactly once"; see the module docs).
+/// then deduplicated by canonical directed edges only after every type
+/// has been walked (a declaration is refused once per cycle it lies on; see
+/// the module docs).
 struct CycleCandidate {
     type_key: DeclarationKey,
     path: KeyPath,
-    refusal: ModelRefusal,
-    edge_set: Vec<DeclarationKey>,
+    cycle: Vec<DeclarationKey>,
+    directed_edges: Vec<(DeclarationKey, DeclarationKey)>,
+}
+
+/// One `specialization-cycle` refusal per declaration on `cycle`, in
+/// declaration-key order, each listing the whole cycle (path order, rotated to
+/// start at the least key).
+fn specialization_cycle_refusals(cycle: &[DeclarationKey]) -> Vec<ModelRefusal> {
+    let listing: Vec<&str> = cycle.iter().map(|key| key.node.as_str()).collect();
+    let listing = listing.join(", ");
+    let mut declarations: Vec<&DeclarationKey> = cycle.iter().collect();
+    declarations.sort();
+    declarations
+        .into_iter()
+        .map(|declaration| ModelRefusal {
+            code: Code::InvalidModelBinding,
+            cause: ModelRefusalCause::SpecializationCycle {
+                declaration: declaration.clone(),
+                cycle: cycle.to_vec(),
+            },
+            detail: format!(
+                "{} lies on the specialization cycle [{listing}]",
+                declaration.node
+            ),
+        })
+        .collect()
 }
 
 /// [`ancestor_paths`]'s own result: every ordinary ancestor path (`paths`,
 /// unchanged meaning) plus every generalization cycle this same walk closed
 /// (`closing_cycles`) — one entry per closing extension, not deduplicated
-/// here (`build` deduplicates by `edge_set` across every type's own walk;
+/// here (`build` deduplicates by directed edges across every type's own walk;
 /// see the module docs). The walk never stops at its first closing
 /// extension: `value-accounting.md:491`'s "a closing extension is charged
 /// even when its cycle's edge set was already reported" requires every
@@ -971,27 +1012,22 @@ fn ancestor_paths(
             .expect("every Frame is seeded with root_key and only ever grows visited");
         let ancestor_key = frame.directs[frame.next].clone();
         frame.next += 1;
-        // Charge the edge before following it: each distinct edge of the
-        // closure costs one step, however many paths reach it.
+        // The owning cycle work admits first, so a simultaneous work denial
+        // wins; the edge ceiling adds no work and refunds none. Each distinct
+        // edge of the closure costs one step, however many paths reach it.
+        charges.cycle_check(frame.path.len().saturating_add(1))?;
         if followed.insert((specific_key.clone(), ancestor_key.clone()))
             && u64::try_from(followed.len()).unwrap_or(u64::MAX) > max_steps
         {
-            return Err(Denial::from(ModelRefusal {
-                code: Code::ResourceExhausted,
-                cause: ModelRefusalCause::ancestor_steps(
-                    root_key.clone(),
-                    max_steps,
-                    qsl_foundation::Setting::ModelAncestorSteps,
-                ),
-                detail: format!(
-                    "ancestor walk from {} exceeded the ancestor_steps limit of {max_steps}",
-                    root_key.node
-                ),
+            return Err(Denial::Incomplete(Incomplete {
+                limit_kind: LimitKind::AncestorSteps,
+                limit: max_steps,
+                consumed: max_steps,
+                next_charge: 1,
+                charge_point: ChargePoint::ModelAncestorEdge,
             }));
         }
         let new_path = frame.path.extended(&ancestor_key);
-
-        charges.cycle_check(new_path.len())?;
         if frame.visited.contains(&ancestor_key) {
             // Every contributing declaration in the cycle itself, not the
             // whole path from the walk's root: `frame.visited` is that whole
@@ -1015,24 +1051,15 @@ fn ancestor_paths(
             {
                 chain.rotate_left(least);
             }
-            let listing: Vec<&str> = chain.iter().map(|key| key.node.as_str()).collect();
-            let refusal = ModelRefusal {
-                code: Code::InvalidModelBinding,
-                cause: ModelRefusalCause::SpecializationCycle {
-                    ancestor: ancestor_key.clone(),
-                    via: specific_key.clone(),
-                },
-                detail: format!(
-                    "{} generalizes back to itself via {}, through the cycle [{}]",
-                    ancestor_key.node,
-                    specific_key.node,
-                    listing.join(", ")
-                ),
-            };
+            let directed_edges = chain
+                .iter()
+                .enumerate()
+                .map(|(index, from)| (from.clone(), chain[(index + 1) % chain.len()].clone()))
+                .collect();
             closing_cycles.push(ClosingCycle {
-                refusal,
+                cycle: chain,
                 path: new_path,
-                edge_set: chain,
+                directed_edges,
             });
             continue;
         }
@@ -1080,6 +1107,10 @@ fn validate_selection(domain_package: &DomainPackage) -> Result<(), ModelRefusal
     if domain_package.model_selection.identity.is_empty()
         || domain_package.model_selection.version.is_empty()
     {
+        // The unit `MalformedDeclaration` carries no node on purpose: the
+        // selection is a field of the package reference, not an IR
+        // declaration, so no node identity or origin exists to retain
+        // (FR-056, node-less refusals).
         return Err(ModelRefusal {
             code: Code::InvalidModelBinding,
             cause: ModelRefusalCause::MalformedDeclaration,
@@ -1090,6 +1121,877 @@ fn validate_selection(domain_package: &DomainPackage) -> Result<(), ModelRefusal
         });
     }
     Ok(())
+}
+
+/// FR-208 record-value constraints that are semantic binder decisions rather
+/// than reader-shape errors. `build` calls this only after admitting every
+/// `normalize.record` charge, so a refusal retains the meter for the exact
+/// records already processed.
+#[qsl_attrs::string_edge]
+fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRefusal> {
+    let mut record_types: Vec<_> = domain_package
+        .records
+        .iter()
+        .filter_map(|record| match record {
+            DomainPackageRecord::RecordValueType(record) => Some(record),
+            _ => None,
+        })
+        .collect();
+    record_types.sort_by(|left, right| left.key.cmp(&right.key));
+
+    let mut refusals = Vec::new();
+    for record_type in record_types {
+        if !record_type.identity_fields.is_empty() {
+            refusals.push(ModelRefusal {
+                code: Code::InvalidModelBinding,
+                cause: malformed_at(
+                    domain_package,
+                    &record_type.key,
+                    MemberPath::type_definition().name("identityFields"),
+                ),
+                detail: format!(
+                    "{}: TypeDefinition.identityFields: a record value type has no identity field",
+                    record_type.key.node
+                ),
+            });
+            continue;
+        }
+
+        // Records keep the order the reader read the declaration's
+        // operations in, so the position is the operation's own.
+        for (position, operation) in declared_operations(domain_package, &record_type.key) {
+            refusals.push(ModelRefusal {
+                code: Code::UnsupportedConstruct,
+                cause: ModelRefusalCause::UnsupportedDeclarationForm {
+                    node: operation.key.node.clone(),
+                    what: format!(
+                        "{}:operations",
+                        crate::model::intake::meaning::RECORD_VALUE_TYPE
+                    ),
+                    member: MemberPath::type_definition()
+                        .name("operations")
+                        .index(position),
+                },
+                detail: format!(
+                    "{}: TypeDefinition.operations[{position}]: a record value type declares no operations",
+                    operation.key.node
+                ),
+            });
+        }
+    }
+
+    let mut event_types: Vec<_> = domain_package
+        .records
+        .iter()
+        .filter_map(|record| {
+            if let DomainPackageRecord::EventType(event) = record {
+                Some(event)
+            } else {
+                None
+            }
+        })
+        .collect();
+    event_types.sort_by(|left, right| left.key.cmp(&right.key));
+    for event in event_types {
+        let malformed = |path: MemberPath, reason: &str| ModelRefusal {
+            code: Code::InvalidModelBinding,
+            cause: malformed_at(domain_package, &event.key, path.clone()),
+            detail: format!("{}: {path}: {reason}", event.key.node),
+        };
+        if !event.identity_fields.is_empty() {
+            refusals.push(malformed(
+                MemberPath::type_definition().name("identityFields"),
+                "an event type has no identity fields",
+            ));
+            continue;
+        }
+        let mut has_operation = false;
+        for (position, operation) in declared_operations(domain_package, &event.key) {
+            has_operation = true;
+            // TC-235 M04 / FR-208-AC-4: malformed-declaration naming the
+            // operation node, not the event type.
+            refusals.push(ModelRefusal {
+                code: Code::InvalidModelBinding,
+                cause: malformed_at(
+                    domain_package,
+                    &operation.key,
+                    MemberPath::type_definition()
+                        .name("operations")
+                        .index(position),
+                ),
+                detail: format!(
+                    "{}: TypeDefinition.operations[{position}]: an event type declares no operations",
+                    operation.key.node
+                ),
+            });
+        }
+        if has_operation {
+            continue;
+        }
+        let field = event.occurrence_field.as_ref().and_then(|key| {
+            domain_package.records.iter().find_map(|record| {
+                if let DomainPackageRecord::FieldMember(field) = record {
+                    if &field.key == key {
+                        return Some(field);
+                    }
+                }
+                None
+            })
+        });
+        let timestamp = field.is_some_and(|field| match &field.value_type {
+            ValueTypeRef::Native(NativeValueType::Timestamp) => true,
+            ValueTypeRef::Package(key) => domain_package.records.iter().any(|record| {
+                matches!(record,
+                DomainPackageRecord::ScalarType(scalar) if &scalar.key == key
+                    && scalar.domain == ScalarValueDomain::Native(NativeValueType::Timestamp))
+            }),
+            _ => false,
+        });
+        if !timestamp {
+            refusals.push(malformed(
+                MemberPath::type_definition().name("occurrenceField"),
+                "the occurrence field must resolve to native Timestamp",
+            ));
+        }
+        for (position, general) in event.supertypes.iter().enumerate() {
+            let ancestor = domain_package
+                .records
+                .iter()
+                .find_map(|record| match record {
+                    DomainPackageRecord::EventType(ancestor) if ancestor.key == *general => {
+                        Some(ancestor)
+                    }
+                    _ => None,
+                });
+            let Some(ancestor) = ancestor else {
+                // AC-17 reports the invalid event meaning at the occurrence binding
+                // before reporting the offending supertype reference.
+                refusals.push(malformed(
+                    MemberPath::type_definition().name("occurrenceField"),
+                    "event occurrence inheritance requires event-type supertypes",
+                ));
+                refusals.push(malformed(
+                    MemberPath::type_definition()
+                        .name("supertypes")
+                        .index(position),
+                    "an event type generalizes only an event type",
+                ));
+                continue;
+            };
+            if let (Some(child), Some(parent)) =
+                (&event.occurrence_field, &ancestor.occurrence_field)
+            {
+                if child != parent {
+                    refusals.push(ModelRefusal {
+                        code: Code::InvalidModelBinding,
+                        cause: ModelRefusalCause::DerivationConflict {
+                            type_: event.key.clone(),
+                            member: parent.clone(),
+                            redefiners: vec![child.clone()],
+                            paths: vec![
+                                owned_member(
+                                    &event.key,
+                                    MemberPath::type_definition().name("occurrenceField"),
+                                ),
+                                owned_member(
+                                    &ancestor.key,
+                                    MemberPath::type_definition().name("occurrenceField"),
+                                ),
+                            ],
+                        },
+                        detail: format!(
+                            "{}.occurrenceField conflicts with inherited {}.occurrenceField",
+                            event.key.node, ancestor.key.node
+                        ),
+                    });
+                }
+            }
+        }
+    }
+
+    let mut machines: Vec<_> = domain_package
+        .records
+        .iter()
+        .filter_map(|record| match record {
+            DomainPackageRecord::StateMachine(machine) => Some(machine),
+            _ => None,
+        })
+        .collect();
+    machines.sort_by(|left, right| left.key.cmp(&right.key));
+    for machine in machines {
+        let malformed = |path: MemberPath, reason: &str| ModelRefusal {
+            code: Code::InvalidModelBinding,
+            cause: malformed_at(domain_package, &machine.key, path.clone()),
+            detail: format!("{}: {path}: {reason}", machine.key.node),
+        };
+        let mut operations: Vec<_> = domain_package
+            .records
+            .iter()
+            .filter_map(|record| match record {
+                DomainPackageRecord::OperationMember(operation)
+                    if operation.owner == machine.key =>
+                {
+                    Some(operation)
+                }
+                _ => None,
+            })
+            .collect();
+        operations.sort_by(|left, right| left.key.cmp(&right.key));
+        refusals.extend(state_machine_required_members(
+            domain_package,
+            machine,
+            operations.is_empty(),
+        ));
+
+        let mut machine_chain = HashSet::from([machine.key.clone()]);
+        let mut effective_states: HashSet<DeclarationKey> = machine
+            .states
+            .iter()
+            .map(|state| state.key.clone())
+            .collect();
+        let mut ancestors: Vec<&crate::model::domain_package::StateMachineRecord> = Vec::new();
+        let mut pending_ancestors = machine.supertypes.clone();
+        while let Some(ancestor_key) = pending_ancestors.pop() {
+            if !machine_chain.insert(ancestor_key.clone()) {
+                continue;
+            }
+            if let Some(ancestor) = domain_package
+                .records
+                .iter()
+                .find_map(|record| match record {
+                    DomainPackageRecord::StateMachine(ancestor) if ancestor.key == ancestor_key => {
+                        Some(ancestor)
+                    }
+                    _ => None,
+                })
+            {
+                effective_states.extend(ancestor.states.iter().map(|state| state.key.clone()));
+                pending_ancestors.extend(ancestor.supertypes.iter().cloned());
+                ancestors.push(ancestor);
+            }
+        }
+        ancestors.sort_by(|left, right| left.key.cmp(&right.key));
+
+        let mut state_names = HashMap::<&str, &DeclarationKey>::new();
+        for (position, state) in machine.states.iter().enumerate() {
+            if let Some(previous) = state_names.insert(&state.name, &state.key) {
+                refusals.push(ModelRefusal {
+                    code: Code::InvalidModelBinding,
+                    cause: ModelRefusalCause::ConflictingBinding {
+                        key: state.key.clone(),
+                        member: Some(MemberPath::type_definition().name("states").index(position)),
+                    },
+                    detail: format!(
+                        "{}: TypeDefinition.states[{position}] conflicts with {}",
+                        machine.key.node, previous.node
+                    ),
+                });
+            }
+        }
+        let has_state = |key: &DeclarationKey| effective_states.contains(key);
+        // A trigger names an operation of the machine or of an ancestor.
+        let has_operation = |key: &DeclarationKey| {
+            domain_package.records.iter().any(|record| {
+                matches!(record, DomainPackageRecord::OperationMember(operation)
+                    if &operation.key == key && machine_chain.contains(&operation.owner))
+            })
+        };
+        let has_event = |key: &DeclarationKey| {
+            domain_package.records.iter().any(|record| {
+                matches!(record, DomainPackageRecord::EventType(event) if &event.key == key)
+            })
+        };
+        // FR-208: only a state machine's own operations and clauses make a
+        // reference "declared elsewhere"; any other owner leaves it missing.
+        let owned_by_a_machine = |owner: &DeclarationKey| {
+            domain_package.records.iter().any(|record| {
+                matches!(record, DomainPackageRecord::StateMachine(other) if &other.key == owner)
+            })
+        };
+        let missing = |transition: &crate::model::domain_package::StateMachineTransitionRecord,
+                       position: usize,
+                       field: &str,
+                       reference: &DeclarationKey| {
+            let path: JsonPointer = format!("{}/{field}", transition.path)
+                .parse()
+                .expect("reader builds a JSON pointer for each transition");
+            ModelRefusal {
+                code: Code::MissingDeclaration,
+                cause: ModelRefusalCause::IntakeMissingDeclaration {
+                    node: machine.key.node.clone(),
+                    reference: reference.node.clone(),
+                    origin: transition.origin.clone(),
+                    path,
+                    member: MemberPath::type_definition()
+                        .name("transitions")
+                        .index(position)
+                        .name(field),
+                },
+                detail: format!(
+                    "{}: TypeDefinition.transitions.{field}: absent {}",
+                    machine.key.node, reference.node
+                ),
+            }
+        };
+        let mut transition_shapes =
+            HashMap::<(&DeclarationKey, &DeclarationKey, &DeclarationKey), &DeclarationKey>::new();
+        for (position, transition) in machine.transitions.iter().enumerate() {
+            for (member, reference, valid) in [
+                ("from", &transition.from, has_state(&transition.from)),
+                ("to", &transition.to, has_state(&transition.to)),
+                (
+                    "trigger",
+                    &transition.trigger,
+                    has_operation(&transition.trigger),
+                ),
+            ] {
+                if valid {
+                    continue;
+                }
+                // FR-208: a reference that names a state or operation of some
+                // other machine, but no effective one of its own, is a
+                // phase-3 malformed declaration; one naming nothing is missing.
+                let declared_elsewhere = domain_package.records.iter().any(|record| match record {
+                    DomainPackageRecord::StateMachine(other) if member != "trigger" => {
+                        other.states.iter().any(|state| &state.key == reference)
+                    }
+                    DomainPackageRecord::OperationMember(operation) if member == "trigger" => {
+                        &operation.key == reference && owned_by_a_machine(&operation.owner)
+                    }
+                    _ => false,
+                });
+                if declared_elsewhere {
+                    refusals.push(malformed(
+                        MemberPath::type_definition()
+                            .name("transitions")
+                            .index(position)
+                            .name(member),
+                        "names no effective state or operation of this machine",
+                    ));
+                } else {
+                    refusals.push(missing(transition, position, member, reference));
+                }
+            }
+            for (emit_position, emitted) in transition.emits.iter().enumerate() {
+                if !has_event(emitted) {
+                    let member_path = MemberPath::type_definition()
+                        .name("transitions")
+                        .index(position)
+                        .name("emits")
+                        .index(emit_position);
+                    if domain_package
+                        .records
+                        .iter()
+                        .any(|record| record.key() == emitted)
+                    {
+                        refusals.push(malformed(
+                            member_path,
+                            "emitted reference names a non-event type",
+                        ));
+                    } else {
+                        let path: JsonPointer =
+                            format!("{}/emits/{emit_position}", transition.path)
+                                .parse()
+                                .expect("reader builds a JSON pointer for each emitted type");
+                        refusals.push(ModelRefusal {
+                            code: Code::MissingDeclaration,
+                            cause: ModelRefusalCause::IntakeMissingDeclaration {
+                                node: machine.key.node.clone(),
+                                reference: emitted.node.clone(),
+                                origin: transition.origin.clone(),
+                                path,
+                                member: member_path.clone(),
+                            },
+                            detail: format!(
+                                "{}: {member_path}: absent {}",
+                                machine.key.node, emitted.node
+                            ),
+                        });
+                    }
+                }
+            }
+            if let Some(guard) = &transition.guard {
+                let clause = domain_package
+                    .records
+                    .iter()
+                    .find_map(|record| match record {
+                        DomainPackageRecord::Clause(clause)
+                            if machine_chain.contains(&clause.owner)
+                                && clause
+                                    .key
+                                    .node
+                                    .strip_prefix(&format!("{}/", clause.owner.node))
+                                    == Some(guard.as_str()) =>
+                        {
+                            Some(clause)
+                        }
+                        _ => None,
+                    });
+                let Some(clause) = clause else {
+                    let names_other_clause = domain_package.records.iter().any(|record| {
+                        matches!(record, DomainPackageRecord::Clause(other)
+                            if owned_by_a_machine(&other.owner)
+                                && other.key.node.strip_prefix(&format!("{}/", other.owner.node))
+                                    == Some(guard.as_str()))
+                    });
+                    if names_other_clause {
+                        refusals.push(malformed(
+                            MemberPath::type_definition()
+                                .name("transitions")
+                                .index(position)
+                                .name("guard"),
+                            "names no effective clause of this machine",
+                        ));
+                        continue;
+                    }
+                    let clause_key = DeclarationKey {
+                        package: machine.key.package.clone(),
+                        node: format!("{}/{guard}", machine.key.node),
+                    };
+                    refusals.push(missing(transition, position, "guard", &clause_key));
+                    continue;
+                };
+                let path = MemberPath::type_definition()
+                    .name("transitions")
+                    .index(position)
+                    .name("guard");
+                if clause.language != "quire" {
+                    refusals.push(malformed(
+                        path.clone(),
+                        "guard must name a quire clause used by a transition",
+                    ));
+                } else if !machine_chain.iter().any(|owner_key| {
+                    *owner_key == clause.owner
+                        && domain_package.records.iter().any(|record| {
+                            matches!(record, DomainPackageRecord::StateMachine(owner)
+                                if owner.key == *owner_key
+                                    && owner.transitions.iter().any(|candidate| candidate.guard.as_deref() == Some(guard)))
+                        })
+                }) {
+                    // FR-208-AC-12: the guard would remove an ancestor's
+                    // invariant from this machine.
+                    refusals.push(malformed(
+                        path.clone(),
+                        "guard must name a quire clause used by a transition",
+                    ));
+                }
+            }
+            if let Some(previous) = transition_shapes.insert(
+                (&transition.from, &transition.to, &transition.trigger),
+                &transition.key,
+            ) {
+                refusals.push(ModelRefusal {
+                    code: Code::InvalidModelBinding,
+                    cause: ModelRefusalCause::ConflictingBinding {
+                        key: transition.key.clone(),
+                        member: Some(
+                            MemberPath::type_definition()
+                                .name("transitions")
+                                .index(position),
+                        ),
+                    },
+                    detail: format!(
+                        "{}: TypeDefinition.transitions[{position}] conflicts with {}",
+                        machine.key.node, previous.node
+                    ),
+                });
+            }
+        }
+        for (position, general) in machine.supertypes.iter().enumerate() {
+            let is_machine = domain_package.records.iter().any(|record| {
+                matches!(record, DomainPackageRecord::StateMachine(parent) if &parent.key == general)
+            });
+            if !is_machine {
+                if domain_package
+                    .records
+                    .iter()
+                    .any(|record| record.key() == general)
+                {
+                    refusals.push(malformed(
+                        MemberPath::type_definition()
+                            .name("supertypes")
+                            .index(position),
+                        "a state machine generalizes only a state machine",
+                    ));
+                } else {
+                    refusals.push(ModelRefusal {
+                        code: Code::DanglingReference,
+                        cause: ModelRefusalCause::UnknownGeneral {
+                            supertype: machine.key.clone(),
+                            general: general.clone(),
+                        },
+                        detail: format!(
+                            "{}: TypeDefinition.supertypes[{position}]: absent {}",
+                            machine.key.node, general.node
+                        ),
+                    });
+                }
+            }
+        }
+        // FR-208: a state name, or a transition's `from`, `to` and `trigger`,
+        // declared by two distinct owners reaching the subtype is a
+        // derivation conflict; every ancestor is checked, once.
+        for ancestor in &ancestors {
+            for (position, state) in machine.states.iter().enumerate() {
+                if let Some((inherited_position, inherited)) = ancestor
+                    .states
+                    .iter()
+                    .enumerate()
+                    .find(|(_, other)| other.name == state.name)
+                {
+                    refusals.push(ModelRefusal {
+                        code: Code::InvalidModelBinding,
+                        cause: ModelRefusalCause::DerivationConflict {
+                            type_: machine.key.clone(),
+                            member: inherited.key.clone(),
+                            redefiners: vec![state.key.clone()],
+                            paths: vec![
+                                owned_member(
+                                    &machine.key,
+                                    MemberPath::type_definition().name("states").index(position),
+                                ),
+                                owned_member(
+                                    &ancestor.key,
+                                    MemberPath::type_definition()
+                                        .name("states")
+                                        .index(inherited_position),
+                                ),
+                            ],
+                        },
+                        detail: format!(
+                            "{}.states[{position}] conflicts with {}.states[{inherited_position}]",
+                            machine.key.node, ancestor.key.node
+                        ),
+                    });
+                }
+            }
+            for (position, transition) in machine.transitions.iter().enumerate() {
+                if let Some((inherited_position, inherited)) =
+                    ancestor.transitions.iter().enumerate().find(|(_, other)| {
+                        other.from == transition.from
+                            && other.to == transition.to
+                            && other.trigger == transition.trigger
+                    })
+                {
+                    refusals.push(ModelRefusal {
+                        code: Code::InvalidModelBinding,
+                        cause: ModelRefusalCause::DerivationConflict {
+                            type_: machine.key.clone(),
+                            member: inherited.key.clone(),
+                            redefiners: vec![transition.key.clone()],
+                            paths: vec![
+                                owned_member(
+                                    &machine.key,
+                                    MemberPath::type_definition()
+                                        .name("transitions")
+                                        .index(position),
+                                ),
+                                owned_member(
+                                    &ancestor.key,
+                                    MemberPath::type_definition()
+                                        .name("transitions")
+                                        .index(inherited_position),
+                                ),
+                            ],
+                        },
+                        detail: format!(
+                            "{}.transitions[{position}] conflicts with {}.transitions[{inherited_position}]",
+                            machine.key.node, ancestor.key.node
+                        ),
+                    });
+                }
+            }
+        }
+    }
+    refusals
+}
+
+/// FR-208-AC-5: a state machine declares at least one operation, state and
+/// transition. Each missing member is `invalid_model_binding`/
+/// `malformed-declaration` naming the machine.
+fn state_machine_required_members(
+    domain_package: &DomainPackage,
+    machine: &crate::model::domain_package::StateMachineRecord,
+    no_operations: bool,
+) -> Vec<ModelRefusal> {
+    let malformed = |path: MemberPath, reason: &str| ModelRefusal {
+        code: Code::InvalidModelBinding,
+        cause: malformed_at(domain_package, &machine.key, path.clone()),
+        detail: format!("{}: {path}: {reason}", machine.key.node),
+    };
+    let mut refusals = Vec::new();
+    if no_operations {
+        refusals.push(malformed(
+            MemberPath::type_definition().name("operations"),
+            "a state machine declares at least one operation",
+        ));
+    }
+    if machine.states.is_empty() {
+        refusals.push(malformed(
+            MemberPath::type_definition().name("states"),
+            "a state machine declares at least one state",
+        ));
+    }
+    if machine.transitions.is_empty() {
+        refusals.push(malformed(
+            MemberPath::type_definition().name("transitions"),
+            "a state machine declares at least one transition",
+        ));
+    }
+    refusals
+}
+
+/// The required-member refusals of every state machine, for the intake
+/// phase: intake reports every refusal in node order, so a machine's missing
+/// members precede its own unresolved references.
+fn intake_state_machine_refusals(domain_package: &DomainPackage) -> Vec<ModelRefusal> {
+    let mut machines: Vec<_> = domain_package
+        .records
+        .iter()
+        .filter_map(|record| match record {
+            DomainPackageRecord::StateMachine(machine) => Some(machine),
+            _ => None,
+        })
+        .collect();
+    machines.sort_by(|left, right| left.key.cmp(&right.key));
+    machines
+        .into_iter()
+        .flat_map(|machine| {
+            let no_operations = !domain_package.records.iter().any(|record| {
+                matches!(record, DomainPackageRecord::OperationMember(operation)
+                    if operation.owner == machine.key)
+            });
+            state_machine_required_members(domain_package, machine, no_operations)
+        })
+        .collect()
+}
+
+/// Process subtype identity and ancestry checks are normalization decisions:
+/// an empty authored identity list inherits from a process supertype, while a
+/// missing list and a cross-meaning supertype retain their ordered loci.
+fn validate_process_meanings(domain_package: &DomainPackage) -> Vec<ModelRefusal> {
+    let mut processes: Vec<_> = domain_package
+        .records
+        .iter()
+        .filter_map(|record| match record {
+            DomainPackageRecord::Process(process) => Some(process),
+            _ => None,
+        })
+        .collect();
+    processes.sort_by(|left, right| left.key.cmp(&right.key));
+    let process_keys: std::collections::HashSet<_> = processes
+        .iter()
+        .map(|process| process.key.clone())
+        .collect();
+    let declared_kinds: std::collections::HashMap<_, _> = domain_package
+        .records
+        .iter()
+        .map(|record| (record.key().clone(), record))
+        .collect();
+    let mut refusals = Vec::new();
+    for process in processes {
+        let has_process_supertype = process
+            .supertypes
+            .iter()
+            .any(|supertype| process_keys.contains(supertype));
+        if !process.identity_fields_declared
+            || (process.identity_fields.is_empty() && !has_process_supertype)
+        {
+            refusals.push(ModelRefusal {
+                code: Code::InvalidModelBinding,
+                cause: malformed_at(
+                    domain_package,
+                    &process.key,
+                    MemberPath::type_definition().name("identityFields"),
+                ),
+                detail: format!(
+                    "{}: TypeDefinition.identityFields: a process declaration must supply identityFields or inherit them from a process supertype",
+                    process.key.node
+                ),
+            });
+        }
+        for (position, supertype) in process.supertypes.iter().enumerate() {
+            if process_keys.contains(supertype) {
+                continue;
+            }
+            let detail = match declared_kinds.get(supertype) {
+                Some(DomainPackageRecord::ObjectType(_)) => format!(
+                    "{}: TypeDefinition.supertypes[{position}]: {} resolves to a non-process type",
+                    process.key.node, supertype.node
+                ),
+                Some(record) => format!(
+                    "{}: TypeDefinition.supertypes[{position}]: {} resolves to {:?}, a process may generalize only a process",
+                    process.key.node, supertype.node, record.key()
+                ),
+                None => format!(
+                    "{}: TypeDefinition.supertypes[{position}]: {} names no type of this domain package",
+                    process.key.node, supertype.node
+                ),
+            };
+            refusals.push(ModelRefusal {
+                code: Code::InvalidModelBinding,
+                cause: malformed_at(
+                    domain_package,
+                    &process.key,
+                    MemberPath::type_definition()
+                        .name("supertypes")
+                        .index(position),
+                ),
+                detail,
+            });
+        }
+    }
+    refusals
+}
+
+/// The operations `owner` declares, with each one's position in the
+/// declaration's `operations` array (the order the reader recorded them).
+fn declared_operations<'a>(
+    domain_package: &'a DomainPackage,
+    owner: &'a DeclarationKey,
+) -> impl Iterator<
+    Item = (
+        usize,
+        &'a crate::model::domain_package::OperationMemberRecord,
+    ),
+> {
+    domain_package
+        .records
+        .iter()
+        .filter_map(move |record| match record {
+            DomainPackageRecord::OperationMember(operation) if &operation.owner == owner => {
+                Some(operation)
+            }
+            _ => None,
+        })
+        .enumerate()
+}
+
+fn owned_member(owner: &DeclarationKey, member: MemberPath) -> OwnedMemberPath {
+    OwnedMemberPath {
+        owner: owner.clone(),
+        member,
+    }
+}
+
+/// Whether some record of `package` declares `key`, whatever its meaning.
+fn declares(package: &DomainPackage, key: &DeclarationKey) -> bool {
+    package.records.iter().any(|record| record.key() == key)
+}
+
+fn is_ordinary_object_type(package: &DomainPackage, key: &DeclarationKey) -> bool {
+    package.records.iter().any(|record| {
+        matches!(record, DomainPackageRecord::ObjectType(object)
+            if &object.key == key && object.interface_features.is_none())
+    })
+}
+
+/// A `malformed-declaration` cause at `key`'s node and `member`, retaining the
+/// node's FCD origin when the package kept one (FR-154: every declaration
+/// refusal keeps the node identity and its origin). A package built without
+/// the reader has no origin, so artifact and span are then `None`.
+pub(crate) fn malformed_at(
+    package: &DomainPackage,
+    key: &DeclarationKey,
+    member: MemberPath,
+) -> ModelRefusalCause {
+    let (artifact, span) = origin_of(package, key);
+    ModelRefusalCause::IntakeMalformedDeclaration {
+        node: key.node.clone(),
+        artifact,
+        span,
+        member,
+    }
+}
+
+/// `key`'s retained FCD source artifact and position; both `None` for a node
+/// the package holds no origin for.
+fn origin_of(
+    package: &DomainPackage,
+    key: &DeclarationKey,
+) -> (Option<String>, Option<qsl_foundation::source::LocatedSpan>) {
+    package.original(key).map_or((None, None), |original| {
+        crate::model::intake::origin_locus(&original.origin)
+    })
+}
+
+/// Whether `value_type` names a declaration whose model meaning is no value
+/// type: an event type, state machine, process, persistence interface,
+/// namespace or systems interface (FR-208-AC-9).
+fn names_forbidden_value_meaning(package: &DomainPackage, value_type: &ValueTypeRef) -> bool {
+    value_type.as_package().is_some_and(|key| {
+        package.records.iter().any(|record| {
+            record.key() == key
+                && match record {
+                    DomainPackageRecord::EventType(_)
+                    | DomainPackageRecord::StateMachine(_)
+                    | DomainPackageRecord::Process(_)
+                    | DomainPackageRecord::PersistenceInterface(_)
+                    | DomainPackageRecord::Namespace(_) => true,
+                    DomainPackageRecord::ObjectType(object) => object.interface_features.is_some(),
+                    _ => false,
+                }
+        })
+    })
+}
+
+fn signature_type_refusal(
+    package: &DomainPackage,
+    operation: &DeclarationKey,
+    parameter: Option<(usize, &DeclarationKey)>,
+    value_type: &ValueTypeRef,
+) -> ModelRefusal {
+    let forbidden_meaning = names_forbidden_value_meaning(package, value_type);
+    let position = parameter.map_or_else(
+        || "result".to_owned(),
+        |(_, key)| format!("parameter {}", key.node),
+    );
+    // FR-056 "Variant types": every signature type refusal sits at the
+    // operation node, at the `typeRef` of the parameter or the result.
+    let member = parameter.map_or_else(
+        || {
+            MemberPath::new(MemberRoot::Operation)
+                .name("returns")
+                .name("typeRef")
+        },
+        |(index, _)| {
+            MemberPath::new(MemberRoot::Operation)
+                .name("params")
+                .index(index)
+                .name("typeRef")
+        },
+    );
+    let (code, cause, reason) = if forbidden_meaning {
+        (
+            Code::InvalidModelBinding,
+            malformed_at(package, operation, member),
+            "has a meaning forbidden as a signature value type",
+        )
+    } else {
+        let (artifact, span) = origin_of(package, operation);
+        (
+            Code::DanglingReference,
+            ModelRefusalCause::UnknownValueType {
+                operation: operation.clone(),
+                parameter: parameter.map(|(_, key)| key.clone()),
+                value_type: value_type.clone(),
+                site: Box::new(crate::model::refusal::SignatureSite {
+                    member,
+                    artifact,
+                    span,
+                }),
+            },
+            "is not a declared type",
+        )
+    };
+    ModelRefusal {
+        code,
+        cause,
+        detail: format!(
+            "operation {} {position} names value type {value_type}, which {reason}",
+            operation.node
+        ),
+    }
 }
 
 /// Every FR-154 per-node check for one already-key-validated node, in
@@ -1104,9 +2006,11 @@ fn validate_selection(domain_package: &DomainPackage) -> Result<(), ModelRefusal
 /// this node, regardless of whether an earlier check on this same node
 /// already failed -- a node's own dangling references do not exempt it from
 /// also being reported as a duplicate key.
+#[qsl_attrs::string_edge]
 fn check_node<'a>(
     record: &'a DomainPackageRecord,
     index: &RecordIndex,
+    domain_package: &DomainPackage,
     seen_keys: &mut std::collections::HashSet<&'a DeclarationKey>,
 ) -> Vec<ModelRefusal> {
     let key = record.key();
@@ -1119,6 +2023,9 @@ fn check_node<'a>(
     // check for this node can run: every later check assumes a
     // well-formed key to look up or insert.
     if key.package.is_empty() || key.node.is_empty() {
+        // The unit `MalformedDeclaration` carries no node on purpose: a key
+        // with an empty component names no IR node, and an empty `node` has
+        // no identity to report (FR-056, node-less refusals).
         return vec![ModelRefusal {
             code: Code::InvalidModelBinding,
             cause: ModelRefusalCause::MalformedDeclaration,
@@ -1150,8 +2057,28 @@ fn check_node<'a>(
                 }
             }
         }
+        DomainPackageRecord::Enum(_) => {}
+        DomainPackageRecord::Variant(case) => {
+            if !index.is_variant_type(&case.owner) {
+                refusals.push(ModelRefusal {
+                    code: Code::DanglingReference,
+                    cause: ModelRefusalCause::UnknownOwner {
+                        member: case.key.clone(),
+                        owner: case.owner.clone(),
+                    },
+                    detail: format!(
+                        "variant case {} names owner {}, which is not a declared variant type",
+                        case.key.node, case.owner.node
+                    ),
+                });
+            }
+        }
         DomainPackageRecord::FieldMember(member) => {
-            if !index.is_object_type(&member.owner) && !index.is_record_value_type(&member.owner) {
+            if !index.is_object_type(&member.owner)
+                && !index.is_record_value_type(&member.owner)
+                && !index.is_event_type(&member.owner)
+                && !index.is_state_machine(&member.owner)
+            {
                 refusals.push(ModelRefusal {
                     code: Code::DanglingReference,
                     cause: ModelRefusalCause::UnknownOwner {
@@ -1159,8 +2086,22 @@ fn check_node<'a>(
                         owner: member.owner.clone(),
                     },
                     detail: format!(
-                        "field member {} names owner {}, which is not a declared object type or record value type",
+                        "field member {} names owner {}, which is not a declared object, record value, event, or state-machine type",
                         member.key.node, member.owner.node
+                    ),
+                });
+            }
+            if names_forbidden_value_meaning(domain_package, &member.value_type) {
+                refusals.push(ModelRefusal {
+                    code: Code::InvalidModelBinding,
+                    cause: malformed_at(
+                        domain_package,
+                        &member.key,
+                        MemberPath::new(MemberRoot::Field).name("typeRef"),
+                    ),
+                    detail: format!(
+                        "field member {} names value type {}, which has a meaning forbidden as a field type",
+                        member.key.node, member.value_type
                     ),
                 });
             }
@@ -1195,9 +2136,189 @@ fn check_node<'a>(
                 }
             }
         }
-        DomainPackageRecord::RecordValueType(_) | DomainPackageRecord::ScalarType(_) => {}
+        DomainPackageRecord::RecordValueType(record) => {
+            for general in &record.supertypes {
+                if !index.is_record_value_type(general) {
+                    refusals.push(ModelRefusal {
+                        code: Code::DanglingReference,
+                        cause: ModelRefusalCause::UnknownGeneral {
+                            supertype: record.key.clone(),
+                            general: general.clone(),
+                        },
+                        detail: format!(
+                            "record value type {} names no record ancestor {}",
+                            record.key.node, general.node
+                        ),
+                    });
+                }
+            }
+        }
+        DomainPackageRecord::EventType(event) => {
+            for general in &event.supertypes {
+                if !index.is_event_type(general) {
+                    refusals.push(ModelRefusal {
+                        code: Code::DanglingReference,
+                        cause: ModelRefusalCause::UnknownGeneral {
+                            supertype: event.key.clone(),
+                            general: general.clone(),
+                        },
+                        detail: format!(
+                            "event type {} names no event ancestor {}",
+                            event.key.node, general.node
+                        ),
+                    });
+                }
+            }
+        }
+        DomainPackageRecord::StateMachine(machine) => {
+            for general in &machine.supertypes {
+                if !index.is_state_machine(general) {
+                    refusals.push(ModelRefusal {
+                        code: Code::DanglingReference,
+                        cause: ModelRefusalCause::UnknownGeneral {
+                            supertype: machine.key.clone(),
+                            general: general.clone(),
+                        },
+                        detail: format!(
+                            "state machine {} names no state-machine ancestor {}",
+                            machine.key.node, general.node
+                        ),
+                    });
+                }
+            }
+        }
+        DomainPackageRecord::Process(_) => {}
+        DomainPackageRecord::Clause(clause) => {
+            let operation_owner = domain_package
+                .records
+                .iter()
+                .find_map(|record| match record {
+                    DomainPackageRecord::OperationMember(operation)
+                        if operation.key == clause.owner =>
+                    {
+                        Some(&operation.owner)
+                    }
+                    _ => None,
+                });
+            let contract_owner = operation_owner.unwrap_or(&clause.owner);
+            let container_meaning = if index.is_namespace(contract_owner) {
+                Some(crate::model::intake::meaning::NAMESPACE)
+            } else if index.is_persistence_interface(contract_owner) {
+                Some(crate::model::intake::meaning::PERSISTENCE_INTERFACE)
+            } else {
+                None
+            };
+            if let Some(meaning) = container_meaning.filter(|_| clause.language == "quire") {
+                refusals.push(ModelRefusal {
+                    code: Code::UnsupportedConstruct,
+                    cause: ModelRefusalCause::UnsupportedDeclarationForm {
+                        node: clause.key.node.clone(),
+                        what: format!("{meaning}:clauses"),
+                        member: {
+                            let position = domain_package
+                                .records
+                                .iter()
+                                .take_while(|record| record.key() != &clause.key)
+                                .filter(|record| {
+                                    matches!(record, DomainPackageRecord::Clause(other)
+                                        if other.owner == clause.owner)
+                                })
+                                .count();
+                            if operation_owner.is_some() {
+                                // A clause record does not say whether it is
+                                // the operation's `pre` or `post`, so the
+                                // path names the operation only.
+                                MemberPath::new(MemberRoot::Operation)
+                            } else {
+                                MemberPath::type_definition()
+                                    .name("clauses")
+                                    .index(position)
+                            }
+                        },
+                    },
+                    detail: format!(
+                        "clause {}: {meaning} owns no quire invariant",
+                        clause.key.node
+                    ),
+                });
+            } else if !index.is_record_value_type(&clause.owner)
+                && !index.is_event_type(&clause.owner)
+                && !index.is_state_machine(&clause.owner)
+                && container_meaning.is_none()
+                && !operation_owner.is_some_and(|owner| {
+                    is_ordinary_object_type(domain_package, owner)
+                        || index.is_state_machine(owner)
+                        || domain_package.records.iter().any(|record| {
+                            matches!(record,
+                            DomainPackageRecord::Process(process) if &process.key == owner)
+                        })
+                })
+                && !domain_package.records.iter().any(|record| match record {
+                    DomainPackageRecord::ObjectType(object) => {
+                        object.key == clause.owner && object.interface_features.is_none()
+                    }
+                    DomainPackageRecord::Process(process) => process.key == clause.owner,
+                    _ => false,
+                })
+            {
+                refusals.push(ModelRefusal {
+                    code: Code::DanglingReference,
+                    cause: ModelRefusalCause::UnknownOwner {
+                        member: clause.key.clone(),
+                        owner: clause.owner.clone(),
+                    },
+                    detail: format!(
+                        "clause {} names no admitted business owner {}",
+                        clause.key.node, clause.owner.node
+                    ),
+                });
+            }
+        }
+        DomainPackageRecord::Namespace(namespace) => {
+            for (position, member) in namespace.members.iter().enumerate() {
+                if index.is_namespace(member) {
+                    refusals.push(ModelRefusal {
+                        code: Code::InvalidModelBinding,
+                        cause: malformed_at(
+                            domain_package,
+                            &namespace.key,
+                            MemberPath::type_definition()
+                                .name("members")
+                                .index(position),
+                        ),
+                        detail: format!(
+                            "namespace {} contains namespace {}",
+                            namespace.key.node, member.node
+                        ),
+                    });
+                } else if !domain_package
+                    .records
+                    .iter()
+                    .any(|record| record.key() == member)
+                {
+                    refusals.push(ModelRefusal {
+                        code: Code::DanglingReference,
+                        cause: ModelRefusalCause::UnknownMember {
+                            record: namespace.key.clone(),
+                            member: member.clone(),
+                        },
+                        detail: format!(
+                            "namespace {} names absent member {}",
+                            namespace.key.node, member.node
+                        ),
+                    });
+                }
+            }
+        }
+        DomainPackageRecord::PersistenceInterface(_) => {}
+        DomainPackageRecord::ScalarType(_) => {}
         DomainPackageRecord::OperationMember(op) => {
-            if !index.is_object_type(&op.owner) {
+            // FR-208:48,217-219 gives a persistence interface its own
+            // operation signatures, distinct from object-type operations.
+            if !index.is_object_type(&op.owner)
+                && !index.is_state_machine(&op.owner)
+                && !index.is_persistence_interface(&op.owner)
+            {
                 refusals.push(ModelRefusal {
                     code: Code::DanglingReference,
                     cause: ModelRefusalCause::UnknownOwner {
@@ -1213,43 +2334,44 @@ fn check_node<'a>(
             // A native value type ([`ValueTypeRef::Native`]) names no
             // node of any package, so it has nothing to dangle against
             // here; only a package value type is checked.
-            for parameter in &op.parameters {
+            for (position, parameter) in op.parameters.iter().enumerate() {
                 if let Some(value_type) = parameter.value_type.as_package() {
-                    if !index.is_object_type(value_type) && !index.is_scalar_type(value_type) {
-                        refusals.push(ModelRefusal {
-                            code: Code::DanglingReference,
-                            cause: ModelRefusalCause::UnknownValueType {
-                                operation: op.key.clone(),
-                                parameter: Some(parameter.key.clone()),
-                                value_type: parameter.value_type.clone(),
-                            },
-                            detail: format!(
-                                "operation {} parameter {} names value type {}, which is not a declared type",
-                                op.key.node, parameter.key.node, parameter.value_type
-                            ),
-                        });
+                    if !is_ordinary_object_type(domain_package, value_type)
+                        && !index.is_scalar_type(value_type)
+                        && !index.is_variant_type(value_type)
+                        && !index.is_record_value_type(value_type)
+                    {
+                        refusals.push(signature_type_refusal(
+                            domain_package,
+                            &op.key,
+                            Some((position, &parameter.key)),
+                            &parameter.value_type,
+                        ));
                     }
                 }
             }
             if let Some(result) = &op.result {
                 if let Some(value_type) = result.value_type.as_package() {
-                    if !index.is_object_type(value_type) && !index.is_scalar_type(value_type) {
-                        refusals.push(ModelRefusal {
-                            code: Code::DanglingReference,
-                            cause: ModelRefusalCause::UnknownValueType {
-                                operation: op.key.clone(),
-                                parameter: None,
-                                value_type: result.value_type.clone(),
-                            },
-                            detail: format!(
-                                "operation {} result names value type {}, which is not a declared type",
-                                op.key.node, result.value_type
-                            ),
-                        });
+                    if !is_ordinary_object_type(domain_package, value_type)
+                        && !index.is_scalar_type(value_type)
+                        && !index.is_variant_type(value_type)
+                        && !index.is_record_value_type(value_type)
+                    {
+                        refusals.push(signature_type_refusal(
+                            domain_package,
+                            &op.key,
+                            None,
+                            &result.value_type,
+                        ));
                     }
                 }
             }
-            for field in &op.effect.modifies {
+            for field in op
+                .effect
+                .modifies
+                .iter()
+                .chain(&op.effect.receiver_modifies)
+            {
                 if !index.is_field_member(field) {
                     refusals.push(ModelRefusal {
                         code: Code::DanglingReference,
@@ -1260,6 +2382,27 @@ fn check_node<'a>(
                         detail: format!(
                             "operation {} effect writes {}, which is not a declared field member",
                             op.key.node, field.node
+                        ),
+                    });
+                }
+            }
+            // FR-013: an every-object entry and a receiver-scoped entry for
+            // one field cannot both be authored; the frame is refused, never
+            // merged.
+            for field in &op.effect.receiver_modifies {
+                if op.effect.modifies.contains(field) {
+                    refusals.push(ModelRefusal {
+                        code: Code::InvalidModelBinding,
+                        cause: ModelRefusalCause::ConflictingBinding {
+                            key: field.clone(),
+                            member: None,
+                        },
+                        detail: format!(
+                            "operation {} frame holds both `modifies {name}` and `modifies \
+                             self.{name}` for {}",
+                            op.key.node,
+                            field.node,
+                            name = field.node.rsplit('/').next().unwrap_or(&field.node),
                         ),
                     });
                 }
@@ -1298,23 +2441,93 @@ fn check_node<'a>(
         // FR-152 systems-model records validate their own references
         // independently (crate::model::systems); FR-150's phase 1 does
         // not concern itself with them.
-        DomainPackageRecord::Component(_)
-        | DomainPackageRecord::Endpoint(_)
-        | DomainPackageRecord::Relationship(_)
-        | DomainPackageRecord::Allocation(_) => {}
-        // model-complete.md's "Populations" row: each member type names
-        // a declared object type; a missing one refuses
-        // `missing_declaration`/`missing-name`.
-        DomainPackageRecord::Population(population) => {
-            for type_name in &population.member_types {
-                // FR-208-AC-9: a record value type is a declared type of
-                // another meaning, not a missing one.
-                if index.is_record_value_type(type_name) {
+        DomainPackageRecord::Relationship(relationship) => {
+            // A systems-model connection has no source role and no slot in a
+            // declaring type's `relationships` array; its ends are resolved
+            // by the systems boundary rather than this business-relationship
+            // rule. A dangling end of a business relationship is refused here
+            // once per end (FR-085-AC-1), naming that end alone.
+            let is_business =
+                relationship.source.role.is_some() || relationship.declared_at.is_some();
+            if is_business {
+                for (label, end) in [
+                    ("source", &relationship.source),
+                    ("target", &relationship.target),
+                ] {
+                    if index.is_object_type(&end.type_identity) {
+                        continue;
+                    }
+                    if !declares(domain_package, &end.type_identity) {
+                        let member = MemberPath::new(MemberRoot::Relationship).name(label);
+                        refusals.push(ModelRefusal {
+                            code: Code::MissingDeclaration,
+                            cause: ModelRefusalCause::UnknownRelationshipEnd {
+                                relationship: relationship.key.clone(),
+                                missing: end.type_identity.clone(),
+                                member: member.clone(),
+                            },
+                            detail: format!(
+                                "{}: {member}: {} is not a declared type",
+                                relationship.key.node, end.type_identity.node
+                            ),
+                        });
+                        continue;
+                    }
+                    // The end names a declaration of another meaning. The
+                    // source is read at the declaring type's slot; the target
+                    // at the relationship's own `target` member.
+                    let (member, detail) = if label == "source" {
+                        let member = relationship.declared_at.as_ref().map_or_else(
+                            || MemberPath::new(MemberRoot::Relationship),
+                            |slot| {
+                                MemberPath::type_definition()
+                                    .name("relationships")
+                                    .index(slot.index)
+                            },
+                        );
+                        let detail = format!(
+                            "{}: {member}: relationship source owner {} is not an object type",
+                            relationship.key.node, end.type_identity.node
+                        );
+                        (member, detail)
+                    } else {
+                        (
+                            MemberPath::new(MemberRoot::Relationship).name("target"),
+                            format!(
+                                "{}: Relationship.target: {} is not a declared object type",
+                                relationship.key.node, end.type_identity.node
+                            ),
+                        )
+                    };
                     refusals.push(ModelRefusal {
                         code: Code::InvalidModelBinding,
-                        cause: ModelRefusalCause::MalformedDeclaration,
+                        cause: malformed_at(domain_package, &relationship.key, member),
+                        detail,
+                    });
+                }
+            }
+        }
+        DomainPackageRecord::Component(_)
+        | DomainPackageRecord::Endpoint(_)
+        | DomainPackageRecord::Allocation(_) => {}
+        // model-complete.md's "Populations" row: each member type names
+        // a declared object type; a member naming a declaration of another
+        // meaning refuses `malformed-declaration` (TC-235 M10 run 10, FR-208-AC-9)
+        // and one naming nothing refuses `missing_declaration`/`missing-name`.
+        DomainPackageRecord::Population(population) => {
+            for (position, type_name) in population.member_types.iter().enumerate() {
+                if !index.is_object_type(type_name) && declares(domain_package, type_name) {
+                    refusals.push(ModelRefusal {
+                        code: Code::InvalidModelBinding,
+                        cause: malformed_at(
+                            domain_package,
+                            &population.key,
+                            MemberPath::new(MemberRoot::PopulationDefinition)
+                                .name("members")
+                                .index(position),
+                        ),
                         detail: format!(
-                            "population {} names member type {}, a record value type, not an object type",
+                            "population {} names member type {}, a declaration of another meaning, not an object type",
                             population.key.node, type_name.node
                         ),
                     });
@@ -1343,7 +2556,10 @@ fn check_node<'a>(
     if !seen_keys.insert(key) {
         refusals.push(ModelRefusal {
             code: Code::InvalidModelBinding,
-            cause: ModelRefusalCause::ConflictingBinding { key: key.clone() },
+            cause: ModelRefusalCause::ConflictingBinding {
+                key: key.clone(),
+                member: None,
+            },
             detail: format!(
                 "{} is declared by more than one record in this domain package",
                 key.node
@@ -1388,7 +2604,7 @@ fn validate_references(domain_package: &DomainPackage, index: &RecordIndex) -> V
         std::collections::HashSet::new();
     let mut refusals = Vec::new();
     for record in records {
-        refusals.extend(check_node(record, index, &mut seen_keys));
+        refusals.extend(check_node(record, index, domain_package, &mut seen_keys));
     }
     refusals
 }
@@ -1428,6 +2644,65 @@ fn work_step() {
     WORK_STEPS.with(|steps| steps.set(steps.get() + 1));
 }
 
+/// Resolve the type that owns a systems end. A port belongs to its part's
+/// owning type, while a part and an operation name their owning type directly.
+fn element_owner<'a>(
+    key: &DeclarationKey,
+    records: &HashMap<&DeclarationKey, &'a DomainPackageRecord>,
+) -> Option<&'a DeclarationKey> {
+    match records.get(key)? {
+        DomainPackageRecord::ObjectType(record) => Some(&record.key),
+        DomainPackageRecord::Process(record) => Some(&record.key),
+        DomainPackageRecord::Component(record) => Some(&record.owning_type),
+        DomainPackageRecord::OperationMember(record) => Some(&record.owner),
+        DomainPackageRecord::Endpoint(record) => match records.get(&record.owning_component)? {
+            DomainPackageRecord::Component(component) => Some(&component.owning_type),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Phase-2 member owners of the records that are not fields, clauses or
+/// operations: a variant case's type, and systems members in source-end order. A connection or allocation has
+/// a qualify fact at each end, even when both ends resolve to the same type.
+fn record_member_owners<'a>(
+    record: &'a DomainPackageRecord,
+    records: &HashMap<&DeclarationKey, &'a DomainPackageRecord>,
+) -> Vec<&'a DeclarationKey> {
+    match record {
+        DomainPackageRecord::Component(part) => vec![&part.owning_type],
+        DomainPackageRecord::Endpoint(port) => element_owner(&port.owning_component, records)
+            .into_iter()
+            .collect(),
+        DomainPackageRecord::Relationship(relationship) => {
+            let source = element_owner(&relationship.source.type_identity, records);
+            if relationship.source.role.is_some()
+                || !matches!(
+                    records.get(&relationship.source.type_identity),
+                    Some(DomainPackageRecord::Endpoint(_))
+                )
+            {
+                source.into_iter().collect()
+            } else {
+                source
+                    .into_iter()
+                    .chain(element_owner(&relationship.target.type_identity, records))
+                    .collect()
+            }
+        }
+        DomainPackageRecord::Allocation(allocation) => {
+            element_owner(&allocation.source_element, records)
+                .into_iter()
+                .chain(element_owner(&allocation.target_element, records))
+                .collect()
+        }
+        // A variant case is a member of its variant type (FR-081).
+        DomainPackageRecord::Variant(case) => vec![&case.owner],
+        _ => Vec::new(),
+    }
+}
+
 /// Normalize `domain_package`, charging `meter` inside each phase as the
 /// work happens (see the module docs). Every charge is made in
 /// `value-accounting.md`'s charge order before the work it prices grows any
@@ -1446,11 +2721,32 @@ fn build(
     // property of the declaration record that owns it, never a record of
     // its own, so `records.len()` is the exact IR node count. Only the
     // running position is charged (#141 F11).
-    for position in 0..domain_package.records.len() {
-        meter.charge(
-            Charge::new(ChargePoint::NormalizeRecord)
-                .size(LimitKind::DeclarationRecords, length_amount(position + 1)),
-        )?;
+    let declared_record_count = domain_package
+        .declared_record_count
+        .unwrap_or(domain_package.records.len());
+    let retained_records = meter.consumed(LimitKind::DeclarationRecords);
+    for position in 0..declared_record_count {
+        meter.charge(Charge::new(ChargePoint::NormalizeRecord).size(
+            LimitKind::DeclarationRecords,
+            retained_records.saturating_add(length_amount(position + 1)),
+        ))?;
+    }
+    if !domain_package.intake_refusals.is_empty() {
+        let mut refusals = intake_state_machine_refusals(domain_package);
+        refusals.extend(domain_package.intake_refusals.iter().cloned());
+        // Stable: a machine's missing members stay ahead of its references.
+        refusals.sort_by(|left, right| {
+            crate::model::intake::refusal_node(left).cmp(&crate::model::intake::refusal_node(right))
+        });
+        if let Ok(refusals) = Refusals::try_from(refusals) {
+            return Err(Denial::Refused(refusals));
+        }
+    }
+    if let Ok(refusals) = Refusals::try_from(validate_record_value_meanings(domain_package)) {
+        return Err(Denial::Refused(refusals));
+    }
+    if let Ok(refusals) = Refusals::try_from(validate_process_meanings(domain_package)) {
+        return Err(Denial::Refused(refusals));
     }
     let index = RecordIndex::build(domain_package);
     // QSL #199: every `normalize.record` charge above is admitted before any
@@ -1461,21 +2757,61 @@ fn build(
     }
     let limits = *meter.limits();
     let mut charges = Charges::new(meter);
-    let type_keys: Vec<DeclarationKey> = index.object_types().cloned().collect();
+    let type_keys: Vec<DeclarationKey> = index.normalizable_types().cloned().collect();
 
-    // Phase 2: one qualify fact per type and one per directly declared field
-    // member. Every phase-2 fact sorts before every phase-3 fact, and every
-    // `normalize.fact` charge differs only in the running count it sizes, so
-    // charging them here, in any order, admits the same sequence as charging
-    // them sorted.
-    let mut direct_fields = Vec::with_capacity(type_keys.len());
+    // Phase 2: owner-less type facts first, then each owner's member facts
+    // in key order. The owners of systems members (resolved through the
+    // admitted declarations) and of variant cases are found before any
+    // effective identity is minted.
+    let records_by_key: HashMap<_, _> = domain_package
+        .records
+        .iter()
+        .map(|record| (record.key(), record))
+        .collect();
+    let mut systems_by_owner: HashMap<DeclarationKey, Vec<DeclarationKey>> = HashMap::new();
+    for record in &domain_package.records {
+        for owner in record_member_owners(record, &records_by_key) {
+            systems_by_owner
+                .entry(owner.clone())
+                .or_default()
+                .push(record.key().clone());
+        }
+    }
+    let mut direct_members = Vec::with_capacity(type_keys.len());
     for type_key in &type_keys {
+        let mut members: Vec<DeclarationKey> = index
+            .sorted_direct_fields(&domain_package.records, type_key)
+            .iter()
+            .map(|field| field.key.clone())
+            .collect();
+        members.extend(
+            index
+                .sorted_direct_clauses(&domain_package.records, type_key)
+                .iter()
+                .map(|clause| clause.key.clone()),
+        );
+        members.extend(
+            index
+                .direct_operations(type_key)
+                .iter()
+                .map(|operation| index.key(*operation).clone()),
+        );
+        members.extend(systems_by_owner.remove(type_key).unwrap_or_default());
+        members.sort();
+        direct_members.push(members);
+    }
+    let direct_member_positions: HashMap<_, _> = type_keys
+        .iter()
+        .enumerate()
+        .map(|(at, key)| (key, at))
+        .collect();
+    for _ in &type_keys {
         charges.fact()?;
-        let fields = index.sorted_direct_fields(&domain_package.records, type_key);
-        for _ in &fields {
+    }
+    for members in &direct_members {
+        for _ in members {
             charges.fact()?;
         }
-        direct_fields.push(fields);
     }
 
     // Phase 3, type level: every type's ancestor paths, charged as each walk
@@ -1490,8 +2826,8 @@ fn build(
     let mut type_paths: HashMap<DeclarationKey, Vec<AncestorPath>> = HashMap::new();
     // QSL #193: every generalization cycle any type's own walk closes,
     // tagged with its charge-order key `(type_key, path)`, deduplicated by
-    // edge set only once every type is walked (`model-complete.md`:292-295's
-    // "each cycle is refused ... exactly once"; see the module docs).
+    // edge set only once every type is walked (a declaration is refused once
+    // per cycle it lies on; see the module docs).
     let mut cycle_candidates: Vec<CycleCandidate> = Vec::new();
     for type_key in &type_keys {
         let walk = ancestor_paths(type_key, &index, limits.ancestor_steps, &mut charges)?;
@@ -1511,8 +2847,8 @@ fn build(
             cycle_candidates.push(CycleCandidate {
                 type_key: type_key.clone(),
                 path: closing.path,
-                refusal: closing.refusal,
-                edge_set: closing.edge_set,
+                cycle: closing.cycle,
+                directed_edges: closing.directed_edges,
             });
         }
         let preimage = EffectiveDeclarationPreimage {
@@ -1536,57 +2872,56 @@ fn build(
 
     // Phase 3, member level: each type's directly declared members (their
     // qualify facts were charged in phase 2) and the members it inherits
-    // along its ancestor paths. An inherited effective member starts with
-    // its own qualify fact, then records one inherit fact per ancestor path.
+    // along its ancestor paths. An inherited effective member records one
+    // inherit fact per ancestor path and no qualify fact (TC-195 N01).
     let mut member_preimages: HashMap<
         (DeclarationKey, DeclarationKey),
         EffectiveDeclarationPreimage,
     > = HashMap::new();
-    for (type_key, fields) in type_keys.iter().zip(&direct_fields) {
+    for (type_key, members) in type_keys.iter().zip(&direct_members) {
         let owner_effective_id = type_effective_ids[type_key];
-        for member in fields {
-            member_preimages.insert(
-                (type_key.clone(), member.key.clone()),
-                EffectiveDeclarationPreimage {
+        for member in members {
+            let entry = member_preimages
+                .entry((type_key.clone(), member.clone()))
+                .or_insert_with(|| EffectiveDeclarationPreimage {
                     owner_effective_type: Some(owner_effective_id),
-                    original: member.key.clone(),
-                    derivation: vec![Fact {
-                        ordinal: 0,
-                        rule: RULE_QUALIFY,
-                        inputs: vec![member.key.clone()].into(),
-                    }],
-                },
-            );
+                    original: member.clone(),
+                    derivation: Vec::new(),
+                });
+            entry.derivation.push(Fact {
+                ordinal: entry.derivation.len(),
+                rule: RULE_QUALIFY,
+                inputs: vec![member.clone()].into(),
+            });
         }
         let Some(paths) = type_paths.get(type_key) else {
             continue;
         };
         for ancestor in paths {
-            for member in
-                index.sorted_direct_fields(&domain_package.records, &ancestor.ancestor_key)
-            {
+            let Some(&ancestor_position) = direct_member_positions.get(&ancestor.ancestor_key)
+            else {
+                continue;
+            };
+            let ancestor_members = &direct_members[ancestor_position];
+            for group in ancestor_members.chunk_by(|left, right| left == right) {
+                let member = &group[0];
                 // The fact shares the ancestor path rather than copying it,
                 // so memory grows with facts plus total path length, not
                 // facts times path length.
-                let key = (type_key.clone(), member.key.clone());
-                let entry = match member_preimages.entry(key) {
-                    std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
-                    std::collections::hash_map::Entry::Vacant(entry) => {
-                        charges.fact()?;
-                        entry.insert(EffectiveDeclarationPreimage {
+                let key = (type_key.clone(), member.clone());
+                // TC-195 N01: an inherited member derives the inherit fact
+                // only; no qualify fact precedes it.
+                let entry =
+                    member_preimages
+                        .entry(key)
+                        .or_insert_with(|| EffectiveDeclarationPreimage {
                             owner_effective_type: Some(owner_effective_id),
-                            original: member.key.clone(),
-                            derivation: vec![Fact {
-                                ordinal: 0,
-                                rule: RULE_QUALIFY,
-                                inputs: vec![member.key.clone()].into(),
-                            }],
-                        })
-                    }
-                };
+                            original: member.clone(),
+                            derivation: Vec::new(),
+                        });
                 charges.fact()?;
                 work_step();
-                let inputs = FactInputs::new(ancestor.path.clone(), vec![member.key.clone()]);
+                let inputs = FactInputs::new(ancestor.path.clone(), vec![member.clone()]);
                 let ordinal = entry.derivation.len();
                 entry.derivation.push(Fact {
                     ordinal,
@@ -1596,22 +2931,22 @@ fn build(
             }
         }
     }
-    drop(direct_fields);
+    drop(direct_members);
 
     // QSL #193: keep each distinct cycle's own first (charge-order-earliest)
-    // closing extension (`model-complete.md`:292-295), reported once every
-    // phase 2/3 charge is admitted; `value-accounting.md:509`: "a stage that
+    // closing extension, refused at each declaration on it and reported once
+    // every phase 2/3 charge is admitted; `value-accounting.md:509`: "a stage that
     // reports a refusal ends checking: no later stage runs or charges".
     cycle_candidates.sort_by(|a, b| {
         a.type_key
             .cmp(&b.type_key)
             .then_with(|| a.path.keys().cmp(b.path.keys()))
     });
-    let mut seen_edge_sets: HashSet<Vec<DeclarationKey>> = HashSet::new();
+    let mut seen_edge_sets: HashSet<Vec<(DeclarationKey, DeclarationKey)>> = HashSet::new();
     let mut phase3_refusals: Vec<ModelRefusal> = Vec::new();
     for candidate in cycle_candidates {
-        if seen_edge_sets.insert(candidate.edge_set) {
-            phase3_refusals.push(candidate.refusal);
+        if seen_edge_sets.insert(candidate.directed_edges) {
+            phase3_refusals.extend(specialization_cycle_refusals(&candidate.cycle));
         }
     }
     if let Ok(refusals) = Refusals::try_from(phase3_refusals) {
@@ -1630,23 +2965,8 @@ fn build(
     for (owner, _member) in member_preimages.keys() {
         *member_counts_by_owner.entry(owner.clone()).or_insert(0) += 1;
     }
-    // `m` counts *every* effective member, not only fields (QSL #145): each
-    // type's own directly-declared operation members, plus every operation
-    // directly declared on a proper ancestor reached along that type's own
-    // phase-3 `type_paths`.
-    for type_key in &type_keys {
-        let mut effective_operations: HashSet<DeclIdx> = HashSet::new();
-        effective_operations.extend(index.direct_operations(type_key));
-        if let Some(paths) = type_paths.get(type_key) {
-            for ancestor in paths {
-                effective_operations.extend(index.direct_operations(&ancestor.ancestor_key));
-            }
-        }
-        if !effective_operations.is_empty() {
-            *member_counts_by_owner.entry(type_key.clone()).or_insert(0) +=
-                length_amount(effective_operations.len());
-        }
-    }
+    // `member_preimages` contains every effective field, clause and operation,
+    // so its count is the complete `m` used by redefinition accounting.
     let type_fact_counts: HashMap<DeclarationKey, u64> = type_preimages
         .iter()
         .map(|(key, preimage)| (key.clone(), length_amount(preimage.derivation.len())))
@@ -1827,9 +3147,10 @@ fn build(
     // ADR-013 §8 OQ-E: one universe per connected component of the
     // object-type supertype graph, never one universe over every root type
     // in the domain package (`model-complete.md`'s "Object universe").
-    let component_of = connected_components(&type_keys, &index);
+    let object_keys: Vec<DeclarationKey> = index.object_types().cloned().collect();
+    let component_of = connected_components(&object_keys, &index);
     let mut members_by_component: HashMap<usize, Vec<DeclarationKey>> = HashMap::new();
-    for key in &type_keys {
+    for key in &object_keys {
         members_by_component
             .entry(component_of[key])
             .or_default()
@@ -1946,6 +3267,14 @@ struct RedefinitionEdge {
     path: KeyPath,
 }
 
+/// One subsetting field's `subsets` entry, reachable at `type_key` along
+/// `path` (empty when the field's owner is `type_key` itself).
+struct SubsetEdge {
+    subsetting: DeclarationKey,
+    target: DeclarationKey,
+    path: KeyPath,
+}
+
 /// Every cross-type input and output `plan_redefinitions` needs beyond its
 /// own `type_key`'s local bookkeeping, grouped into one `&mut` borrow
 /// (rather than five separate parameters) so the function stays within
@@ -1977,10 +3306,7 @@ struct Phase4Accounting<'a> {
     conflict_charges: &'a mut Vec<(EffectiveId, DeclarationKey, u64)>,
     /// The running count of phase-4 redefine facts awaiting their own
     /// `normalize.fact` charge (`build` charges each type's after this
-    /// function returns) — field redefinition only, exactly like `member_preimages`/
-    /// `hidden`: an operation-member redefinition edge never reaches
-    /// [`Fact`] construction here at all (see the module docs), so it
-    /// contributes nothing to this count.
+    /// function returns), for field and operation members alike.
     phase4_fact_count: &'a mut u64,
     /// Every phase-4 refusal this pass exposes, across every `type_key`'s
     /// own call, each tagged with its own [`Phase4Rank`] — every one, not
@@ -2023,15 +3349,10 @@ fn record_phase4_refusal(
     accounting.refusals.push((rank, refusal));
 }
 
-/// Phase 4 (TC-195 N06): grows [`EffectiveView`] for field redefinition
-/// only — operation-member redefinition contributes no view entry here (see
-/// the module docs); `conformance` resolves each operation redefinition's
-/// own conformance axes directly against its own
-/// [`EffectiveDeclarationPreimage`] values instead of this pass's exposure
-/// bookkeeping. This function still detects and resolves *contention* — two
-/// or more redefiners of the same target — for operation members as well as
-/// fields (#173), sharing [`resolve_redefinition_contest`]'s dominance
-/// search; see this function's own operation-edges loop below.
+/// Phase 4 grows [`EffectiveView`] for field and operation redefinitions.
+/// Conformance resolves each operation's own axes directly against its own
+/// [`EffectiveDeclarationPreimage`]. Both member kinds use the same dominance
+/// search for contested targets.
 ///
 /// For every field member's own `redefines` property reachable at `type_key` (declared on
 /// `type_key` itself or a generalization ancestor, per `paths` — already
@@ -2089,19 +3410,9 @@ fn plan_redefinitions(
     // yet grouped by target) and split by member kind, from each field's or
     // operation's own inline `redefines` property (`model-complete.md`:159/
     // 160/270/271).
-    // `normalize.redefinition-check`'s own charge sequence does not come
-    // from either list: it is `build`'s own domain-package-wide pass over every
-    // redefining member, field and operation alike; `all_edges`
-    // (field-only) feeds this type's own field conflict *resolution and
-    // view growth*, exactly as the module docs describe. `operation_edges`
-    // feeds the contention *charge* below (QSL #145) and, like `all_edges`,
-    // its own dominance-search *resolution* (#173) — but never
-    // `member_preimages`/`hidden`/view growth: `crate::model::conformance`
-    // still checks each operation redefinition's own conformance axes
-    // directly (see the module docs), and a contested operation target
-    // (`c >= 2`) still owes `normalize.conflict-check`'s own
-    // `value-accounting.md:456` price, exactly as a contested field target
-    // does.
+    // `normalize.redefinition-check` is charged by `build`'s package-wide
+    // pass over both kinds. These lists plan each type's facts, visibility,
+    // and any contested-target charge.
     //
     // Read from the index's redefiners grouped by owner, for the
     // owners that reach `type_key` only, in the records' own order: the
@@ -2117,6 +3428,21 @@ fn plan_redefinitions(
         })
         .collect();
     reaching.sort_unstable_by_key(|(_, _, redefiner)| redefiner.record);
+    // `model-complete.md` phase 4: one subset fact on `(T, s)` per `subsets[]`
+    // entry of each field `s` whose owner is `T` or a supertype of `T`.
+    // Subsetting derives no replacement, so it is never contested and is
+    // priced whether or not the subsetted feature is reachable at `T`.
+    let mut subset_edges: Vec<SubsetEdge> = Vec::new();
+    for (owner, path) in &owner_paths {
+        for subsetter in index.subsetters_of_owner(owner) {
+            subset_edges.push(SubsetEdge {
+                subsetting: index.key(subsetter.member).clone(),
+                target: index.key(subsetter.target).clone(),
+                path: path.clone(),
+            });
+        }
+    }
+    *accounting.phase4_fact_count += length_amount(subset_edges.len());
     let mut all_edges: Vec<RedefinitionEdge> = Vec::new();
     let mut operation_edges: Vec<RedefinitionEdge> = Vec::new();
     for (owner, path, redefiner) in reaching {
@@ -2187,36 +3513,46 @@ fn plan_redefinitions(
         });
     }
 
-    let mut operation_groups: HashMap<DeclarationKey, Vec<RedefinitionEdge>> = HashMap::new();
+    let mut operation_groups_by_target: HashMap<DeclarationKey, Vec<RedefinitionEdge>> =
+        HashMap::new();
     for edge in operation_edges {
-        operation_groups
+        operation_groups_by_target
             .entry(edge.target.clone())
             .or_default()
             .push(edge);
     }
-    let mut operation_target_keys: Vec<DeclarationKey> = operation_groups.keys().cloned().collect();
+    let mut operation_target_keys: Vec<DeclarationKey> =
+        operation_groups_by_target.keys().cloned().collect();
     operation_target_keys.sort();
-    let mut contested_operations = Vec::new();
+    let mut operation_groups = Vec::new();
     for target_key in operation_target_keys {
-        let edges = operation_groups.remove(&target_key).expect("just listed");
-        // Operation redefinitions derive no fact and grow no view entry (see
-        // the module docs); a contested target (`c >= 2`) still owes the same
-        // `normalize.conflict-check` price as a field target (QSL #145, #173).
-        if edges.len() < 2 {
-            continue;
+        let mut edges = operation_groups_by_target
+            .remove(&target_key)
+            .expect("just listed");
+        edges.sort_by(|a, b| {
+            a.owner
+                .cmp(&b.owner)
+                .then_with(|| a.redefining.cmp(&b.redefining))
+        });
+        let reachable = member_preimages.contains_key(&(type_key.clone(), target_key.clone()));
+        if reachable {
+            *accounting.phase4_fact_count += 2 * length_amount(edges.len());
         }
-        push_conflict_charge(accounting, owner_effective_id, &target_key, &edges);
-        contested_operations.push(TargetGroup {
+        if edges.len() >= 2 {
+            push_conflict_charge(accounting, owner_effective_id, &target_key, &edges);
+        }
+        operation_groups.push(TargetGroup {
             target: target_key,
             edges,
-            reachable: true,
+            reachable,
         });
     }
 
     TypeRedefinitions {
         owner_effective_id,
         field_groups,
-        contested_operations,
+        operation_groups,
+        subset_edges,
     }
 }
 
@@ -2252,8 +3588,7 @@ fn push_conflict_charge(
 struct TargetGroup {
     target: DeclarationKey,
     edges: Vec<RedefinitionEdge>,
-    /// Whether `target` is one of the type's effective members. Always
-    /// `true` for an operation group.
+    /// Whether `target` is one of the type's effective members.
     reachable: bool,
 }
 
@@ -2264,14 +3599,36 @@ struct TypeRedefinitions {
     owner_effective_id: EffectiveId,
     /// Field target groups, ascending by target key.
     field_groups: Vec<TargetGroup>,
-    /// Operation target groups with two or more redefiners, ascending by
-    /// target key.
-    contested_operations: Vec<TargetGroup>,
+    /// Operation target groups, ascending by target key.
+    operation_groups: Vec<TargetGroup>,
+    /// Subsetting edges reaching the type, priced with the redefine facts.
+    subset_edges: Vec<SubsetEdge>,
+}
+
+/// One phase-4 derivation fact awaiting its position in the type's single
+/// phase-4 sequence.
+struct PendingFact {
+    member: DeclarationKey,
+    rule: RuleRef,
+    inputs: FactInputs,
+}
+
+impl PendingFact {
+    /// `value-accounting.md` phase-4 order: the effective member, then
+    /// the fact's inputs, then the rule in `model-complete.md` table order
+    /// (subset before redefine).
+    fn order(&self, other: &Self) -> std::cmp::Ordering {
+        let rank = |fact: &Self| u8::from(fact.rule == RULE_REDEFINE);
+        self.member
+            .cmp(&other.member)
+            .then_with(|| self.inputs.iter().cmp(other.inputs.iter()))
+            .then_with(|| rank(self).cmp(&rank(other)))
+    }
 }
 
 /// Resolves one type's planned phase-4 work, once every phase-4 charge is
 /// admitted: each field group's dominance contest, its redefine
-/// facts and hidden members, and each contested operation group's contest.
+/// facts and hidden members, and each operation group's facts and contest.
 /// Every refusal goes to `accounting.refusals`, ranked for charge order, and
 /// every remaining group is still resolved (see the module docs).
 fn resolve_redefinitions(
@@ -2284,8 +3641,10 @@ fn resolve_redefinitions(
     let TypeRedefinitions {
         owner_effective_id,
         field_groups,
-        contested_operations,
+        operation_groups,
+        subset_edges,
     } = plan;
+    let mut pending: Vec<PendingFact> = Vec::new();
     'targets: for group in field_groups {
         let TargetGroup {
             target: target_key,
@@ -2438,33 +3797,16 @@ fn resolve_redefinitions(
             );
 
             let redefining_key = (type_key.clone(), edge.redefining.clone());
-            // Always present: `owner_paths.get(owner)` above already
-            // restricted every edge in this group to an `owner` that is
-            // either `type_key` itself or one of its ancestors in `paths`,
-            // and phase 3's own per-type loop inserts a `member_preimages`
-            // entry for every direct member of `type_key` and of every
-            // ancestor along `paths` -- `edge.redefining` is one such direct
-            // member of `edge.owner`, so `(type_key, edge.redefining)` was
-            // already inserted before this phase-4 pass ever runs.
-            let entry = member_preimages.get_mut(&redefining_key).expect(
-                "a redefining member whose owner reaches type_key is always one of type_key's own effective members, inserted by phase 3 above",
-            );
-            let ordinal = entry.derivation.len();
-            entry.derivation.push(Fact {
-                ordinal,
+            pending.push(PendingFact {
+                member: edge.redefining.clone(),
                 rule: RULE_REDEFINE,
                 inputs: inputs.clone(),
             });
             if winner_index != Some(i) {
                 hidden.insert(redefining_key);
             }
-
-            let target_entry = member_preimages
-                .get_mut(&member_key)
-                .expect("checked reachable above");
-            let ordinal = target_entry.derivation.len();
-            target_entry.derivation.push(Fact {
-                ordinal,
+            pending.push(PendingFact {
+                member: target_key.clone(),
                 rule: RULE_REDEFINE,
                 inputs,
             });
@@ -2472,36 +3814,80 @@ fn resolve_redefinitions(
         hidden.insert(member_key);
     }
 
-    // Operation-member redefinition contention (#173): applies the identical
-    // `resolve_redefinition_contest` dominance rule field targets get above —
-    // a winner if one edge's owner dominates every other, otherwise a typed
-    // `redefinition-target`/`derivation-conflict` refusal — but touches no
-    // `member_preimages`/`hidden` state: operation members never enter
-    // `member_preimages` (see the module docs), so there is nothing here for
-    // a winner to resolve or hide; a resolved group's winner needs no further
-    // bookkeeping in this pass, and a contested target still owes
-    // `normalize.conflict-check`'s own `Σ (c − 1) × f(o)` price
-    // (`value-accounting.md:456`) whenever `c >= 2`, exactly like a
-    // contested field target (QSL #145), whether or not it resolves.
+    // Reachable operation members keep both facts for every declared edge;
+    // only the winning redefiner stays visible. Unreachable targets retain
+    // the existing operation contention check without deriving a fact.
     for TargetGroup {
         target: target_key,
         edges,
-        ..
-    } in contested_operations
+        reachable,
+    } in operation_groups
     {
-        if let Err((rank, refusal)) = resolve_redefinition_contest(
-            accounting.owner_ancestor_sets,
-            &owner_effective_id,
-            type_key,
-            &target_key,
-            &edges,
-        ) {
-            // `resolve_redefinition_contest` bundles its own `Phase4Rank`
-            // with its refusal (M1 finding, PR #228 round 2 review) -- see
-            // the field-edges loop's identical call above -- so there is no
-            // cause to re-match here.
-            record_phase4_refusal(accounting, rank, refusal);
+        let winner_index = if edges.len() < 2 {
+            Some(0)
+        } else {
+            match resolve_redefinition_contest(
+                accounting.owner_ancestor_sets,
+                &owner_effective_id,
+                type_key,
+                &target_key,
+                &edges,
+            ) {
+                Ok(index) => Some(index),
+                Err((rank, refusal)) => {
+                    record_phase4_refusal(accounting, rank, refusal);
+                    None
+                }
+            }
+        };
+        if !reachable {
+            continue;
         }
+        for (index, edge) in edges.iter().enumerate() {
+            let inputs = FactInputs::new(
+                edge.path.clone(),
+                vec![edge.redefining.clone(), edge.target.clone()],
+            );
+            let redefining_key = (type_key.clone(), edge.redefining.clone());
+            pending.push(PendingFact {
+                member: edge.redefining.clone(),
+                rule: RULE_REDEFINE,
+                inputs: inputs.clone(),
+            });
+            if winner_index != Some(index) {
+                hidden.insert(redefining_key);
+            }
+            pending.push(PendingFact {
+                member: target_key.clone(),
+                rule: RULE_REDEFINE,
+                inputs,
+            });
+        }
+        hidden.insert((type_key.clone(), target_key));
+    }
+
+    for edge in subset_edges {
+        pending.push(PendingFact {
+            member: edge.subsetting.clone(),
+            rule: RULE_SUBSET,
+            inputs: FactInputs::new(edge.path, vec![edge.subsetting, edge.target]),
+        });
+    }
+    // One phase-4 sequence for the type: subset and redefine facts sorted
+    // together, so each member's derivation takes them in that order.
+    pending.sort_by(PendingFact::order);
+    for fact in pending {
+        let entry = member_preimages
+            .get_mut(&(type_key.clone(), fact.member))
+            .expect(
+                "a phase-4 fact member is an effective member of the type, inserted by phase 3",
+            );
+        let ordinal = entry.derivation.len();
+        entry.derivation.push(Fact {
+            ordinal,
+            rule: fact.rule,
+            inputs: fact.inputs,
+        });
     }
 }
 
@@ -2552,14 +3938,9 @@ fn owner_dominates(
 ///
 /// Sorted here, once, by `(owner, redefining)` (M1, #204 round 1) so the
 /// refusal payload built below (`DerivationConflict`'s own `redefiners`/
-/// `detail`, and `RedefinitionTarget`'s `detail`) is deterministic
-/// regardless of a caller's own incoming order: the field-target loop above
-/// already sorts its own `edges` the identical way before calling, for its
-/// *other* (`member_preimages`/`hidden`) needs downstream, so this sort is a
-/// stable no-op there and `Ok(i)` still indexes that caller's own slice the
-/// same way; the operation-target loop does not pre-sort, and never reads
-/// `Ok(i)` (operation members have no winner bookkeeping of their own — see
-/// that loop's comment), so sorting only here, once, covers both callers.
+/// `detail`, and `RedefinitionTarget`'s `detail`) is deterministic.
+/// Both callers sort their edges in the same order before calling, so the
+/// returned `Ok(i)` indexes the caller's slice for visibility bookkeeping.
 ///
 /// `Err`'s own [`Phase4Rank`] travels with its refusal (MEDIUM finding, PR
 /// #228 round 2 review): both callers used to re-derive it from the returned
@@ -2689,6 +4070,7 @@ fn resolve_redefinition_contest(
                     type_: type_key.clone(),
                     member: target_key.clone(),
                     redefiners: edges.iter().map(|edge| edge.redefining.clone()).collect(),
+                    paths: Vec::new(),
                 },
                 detail: format!(
                     "type {} has {} undominated redefinitions of {}: {}",
@@ -2734,10 +4116,14 @@ struct Charges<'m> {
 
 impl<'m> Charges<'m> {
     fn new(meter: &'m mut Meter) -> Self {
+        // A meter shared across selections already holds the earlier
+        // selections' facts and declarations.
+        let facts = meter.consumed(LimitKind::DerivationFacts);
+        let declarations = meter.consumed(LimitKind::EffectiveDeclarations);
         Self {
             meter,
-            facts: 0,
-            declarations: 0,
+            facts,
+            declarations,
         }
     }
 
@@ -2854,15 +4240,42 @@ fn normalize_body(
 
 /// The outcome of a normalization whose completed body is paired with the
 /// package `package` supplies, called only when normalization completed.
+fn completed_view(
+    (body, records): (ViewBody, RecordIndex),
+    package: Arc<DomainPackage>,
+) -> EffectiveView {
+    let type_fact_counts = body
+        .declarations
+        .iter()
+        .filter(|entry| entry.preimage.owner_effective_type.is_none())
+        .map(|entry| {
+            (
+                entry.preimage.original.clone(),
+                length_amount(entry.preimage.derivation.len()),
+            )
+        })
+        .collect();
+    EffectiveView {
+        index: Arc::new(ModelIndex::from_parts(package, records, type_fact_counts)),
+        body,
+    }
+}
+
+/// Normalize `domain_package` on the caller's `meter`, which keeps every
+/// charge it already holds: the one model-admission meter shared by all of a
+/// unit's selections.
+pub(crate) fn normalize_on(domain_package: &DomainPackage, meter: &mut Meter) -> NormalizeOutcome {
+    into_outcome(build(domain_package, meter), || {
+        Arc::new(domain_package.clone())
+    })
+}
+
 fn into_outcome(
     body: Result<(ViewBody, RecordIndex), Denial>,
     package: impl FnOnce() -> Arc<DomainPackage>,
 ) -> NormalizeOutcome {
     match body {
-        Ok((body, records)) => NormalizeOutcome::Completed(EffectiveView {
-            index: Arc::new(ModelIndex::from_parts(package(), records)),
-            body,
-        }),
+        Ok(body) => NormalizeOutcome::Completed(completed_view(body, package())),
         Err(Denial::Incomplete(incomplete)) => NormalizeOutcome::Incomplete(incomplete),
         // `Denial::Refused` already carries `Refusals` (L1
         // finding, PR #228 round 2 review): every raise site builds it
@@ -2875,6 +4288,8 @@ fn into_outcome(
 #[cfg(test)]
 mod tests {
     use ix_trace_rs::trace;
+
+    use crate::model::domain_package::{ClauseRecord, NamespaceRecord};
 
     use super::*;
 
@@ -2999,6 +4414,517 @@ mod tests {
         DomainPackage::new(DomainPackageRef::fixture("test/bounded"), records)
     }
 
+    /// Directed cycles over the same node set remain distinct: A→B→C→A and
+    /// A→C→B→A have different edge orderings even though their members match.
+    #[trace("QSpec-TC-196")]
+    #[test]
+    fn distinct_directed_cycles_with_the_same_nodes_are_not_deduplicated() {
+        let package = DomainPackage::new(
+            DomainPackageRef::fixture("test/orders"),
+            vec![
+                object_type("A", &["B".to_owned(), "C".to_owned()]),
+                object_type("B", &["A".to_owned(), "C".to_owned()]),
+                object_type("C", &["A".to_owned(), "B".to_owned()]),
+            ],
+        );
+        let NormalizeOutcome::Refused(refusals) =
+            normalize(&package, ModelNormalizationLimits::UNLIMITED)
+        else {
+            panic!("the directed cycle graph must be refused");
+        };
+        let details: Vec<_> = refusals
+            .iter()
+            .filter(|refusal| refusal.cause.as_str() == "specialization-cycle")
+            .map(|refusal| refusal.detail.as_str())
+            .collect();
+        assert!(details.iter().any(|detail| detail.contains("A, B, C")));
+        assert!(details.iter().any(|detail| detail.contains("A, C, B")));
+    }
+
+    /// A clause with an absent owner or a field, relationship or population as owner is dangling.
+    /// A namespace cannot contain another namespace.
+    #[trace("FR-056-AC-1", "QSpec-TC-235")]
+    #[test]
+    fn invalid_clause_owner_and_nested_namespace_are_refused() {
+        use crate::model::domain_package::{
+            Extent, Multiplicity, RelationshipDirection, RelationshipEnd, RelationshipRecord,
+        };
+        for owner_name in [
+            "model.Absent",
+            "model.Order/id",
+            "model.Related",
+            "model.Orders",
+            "model.Interface",
+            "model.Number",
+        ] {
+            let clause_owner = DeclarationKey::fixture(owner_name);
+            let clause_key = DeclarationKey::fixture(format!("{owner_name}/InvalidOwner"));
+            let clause_package = package(vec![
+                object_type("model.Order", &[]),
+                DomainPackageRecord::ObjectType(crate::model::domain_package::ObjectTypeRecord {
+                    key: DeclarationKey::fixture("model.Interface"),
+                    interface_features: Some(Vec::new()),
+                    abstract_type: false,
+                    supertypes: Vec::new(),
+                }),
+                DomainPackageRecord::ScalarType(crate::model::domain_package::ScalarTypeRecord {
+                    key: DeclarationKey::fixture("model.Number"),
+                    domain: ScalarValueDomain::Native(NativeValueType::Integer),
+                }),
+                field("model.Order/id", "model.Order"),
+                DomainPackageRecord::Relationship(RelationshipRecord {
+                    key: DeclarationKey::fixture("model.Related"),
+                    declared_at: None,
+                    source: RelationshipEnd {
+                        type_identity: DeclarationKey::fixture("model.Order"),
+                        role: Some("source".to_owned()),
+                        multiplicity: Multiplicity {
+                            lower: 0,
+                            upper: None,
+                            ordered: false,
+                            unique: true,
+                        },
+                    },
+                    target: RelationshipEnd {
+                        type_identity: DeclarationKey::fixture("model.Order"),
+                        role: Some("target".to_owned()),
+                        multiplicity: Multiplicity {
+                            lower: 0,
+                            upper: None,
+                            ordered: false,
+                            unique: true,
+                        },
+                    },
+                    direction: RelationshipDirection::SourceToTarget,
+                }),
+                DomainPackageRecord::Population(PopulationRecord {
+                    key: DeclarationKey::fixture("model.Orders"),
+                    member_types: vec![DeclarationKey::fixture("model.Order")],
+                    extent: Extent::Closed,
+                }),
+                DomainPackageRecord::Clause(ClauseRecord {
+                    key: clause_key.clone(),
+                    owner: clause_owner.clone(),
+                    language: "quire".to_owned(),
+                    text: "true".to_owned(),
+                }),
+            ]);
+            let NormalizeOutcome::Refused(clause_refusals) =
+                normalize(&clause_package, ModelNormalizationLimits::UNLIMITED)
+            else {
+                panic!("clause owner {owner_name} must be refused");
+            };
+            assert!(clause_refusals.iter().any(|refusal| {
+                refusal.code == Code::DanglingReference
+                    && matches!(
+                        &refusal.cause,
+                        ModelRefusalCause::UnknownOwner { member, owner }
+                            if member == &clause_key && owner == &clause_owner
+                    )
+            }));
+        }
+
+        let outer = DeclarationKey::fixture("model/Outer");
+        let inner = DeclarationKey::fixture("model/Inner");
+        let nested_namespaces = package(vec![
+            DomainPackageRecord::Namespace(NamespaceRecord {
+                key: outer.clone(),
+                members: vec![DeclarationKey::fixture("model/Leaf"), inner.clone()],
+                vocabulary: Vec::new(),
+            }),
+            DomainPackageRecord::Namespace(NamespaceRecord {
+                key: inner.clone(),
+                members: Vec::new(),
+                vocabulary: Vec::new(),
+            }),
+        ]);
+        let NormalizeOutcome::Refused(namespace_refusals) =
+            normalize(&nested_namespaces, ModelNormalizationLimits::UNLIMITED)
+        else {
+            panic!("a namespace containing a namespace must be refused");
+        };
+        assert!(namespace_refusals.iter().any(|refusal| {
+            refusal.code == Code::InvalidModelBinding
+                && refusal.cause
+                    == (ModelRefusalCause::IntakeMalformedDeclaration {
+                        node: outer.node.clone(),
+                        artifact: None,
+                        span: None,
+                        member: MemberPath::type_definition().name("members").index(1),
+                    })
+        }));
+    }
+
+    /// A refused relationship is named at the position the reader recorded in
+    /// its declaring type's `relationships` array, not at a count of the
+    /// relationships sharing a source end.
+    #[test]
+    fn a_refused_relationship_names_its_declared_slot() {
+        use crate::model::domain_package::{
+            DeclaredSlot, Multiplicity, RelationshipDirection, RelationshipEnd, RelationshipRecord,
+        };
+        let end = |role: Option<&str>| RelationshipEnd {
+            type_identity: DeclarationKey::fixture("model.Number"),
+            role: role.map(str::to_owned),
+            multiplicity: Multiplicity {
+                lower: 0,
+                upper: None,
+                ordered: false,
+                unique: true,
+            },
+        };
+        let relationship = |name: &str, index: usize| {
+            DomainPackageRecord::Relationship(RelationshipRecord {
+                key: DeclarationKey::fixture(name),
+                declared_at: Some(DeclaredSlot {
+                    owner: DeclarationKey::fixture("model.Number"),
+                    index,
+                }),
+                source: end(Some("source")),
+                target: end(None),
+                direction: RelationshipDirection::SourceToTarget,
+            })
+        };
+        let package = package(vec![
+            DomainPackageRecord::ScalarType(crate::model::domain_package::ScalarTypeRecord {
+                key: DeclarationKey::fixture("model.Number"),
+                domain: ScalarValueDomain::Native(NativeValueType::Integer),
+            }),
+            relationship("model.Number/first", 4),
+            relationship("model.Number/second", 7),
+        ]);
+        let NormalizeOutcome::Refused(refusals) =
+            normalize(&package, ModelNormalizationLimits::UNLIMITED)
+        else {
+            panic!("a relationship owned by a scalar must be refused");
+        };
+        let members: Vec<_> = refusals
+            .iter()
+            .filter_map(|refusal| match &refusal.cause {
+                ModelRefusalCause::IntakeMalformedDeclaration { node, member, .. }
+                    if member.root() == MemberRoot::TypeDefinition =>
+                {
+                    Some((node.as_str(), member.to_string()))
+                }
+                _ => None,
+            })
+            .collect();
+        assert!(members.contains(&(
+            "model.Number/first",
+            "TypeDefinition.relationships[4]".to_owned()
+        )));
+        assert!(members.contains(&(
+            "model.Number/second",
+            "TypeDefinition.relationships[7]".to_owned()
+        )));
+    }
+
+    /// A refused quire clause on a namespace names its own position among
+    /// the owner's clauses, not the first.
+    #[test]
+    fn a_refused_clause_names_its_position_among_the_owners_clauses() {
+        let scope = DeclarationKey::fixture("model/Scope");
+        let package = package(vec![
+            object_type("model.Order", &[]),
+            DomainPackageRecord::Namespace(NamespaceRecord {
+                key: scope.clone(),
+                members: vec![DeclarationKey::fixture("model.Order")],
+                vocabulary: Vec::new(),
+            }),
+            DomainPackageRecord::Clause(ClauseRecord {
+                key: DeclarationKey::fixture("model/Scope/First"),
+                owner: scope.clone(),
+                language: "ocl".to_owned(),
+                text: "true".to_owned(),
+            }),
+            DomainPackageRecord::Clause(ClauseRecord {
+                key: DeclarationKey::fixture("model/Scope/Second"),
+                owner: scope,
+                language: "quire".to_owned(),
+                text: "true".to_owned(),
+            }),
+        ]);
+        let NormalizeOutcome::Refused(refusals) =
+            normalize(&package, ModelNormalizationLimits::UNLIMITED)
+        else {
+            panic!("a quire clause on a namespace must be refused");
+        };
+        let members: Vec<_> = refusals
+            .iter()
+            .filter_map(|refusal| match &refusal.cause {
+                ModelRefusalCause::UnsupportedDeclarationForm { node, member, .. } => {
+                    Some((node.as_str(), member.to_string()))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            members,
+            [("model/Scope/Second", "TypeDefinition.clauses[1]".to_owned())]
+        );
+    }
+
+    /// The model-complete Invariant row permits an operation owner.
+    #[trace("FR-056-AC-1")]
+    #[test]
+    fn operation_clause_owner_is_admitted() {
+        use crate::model::domain_package::{OperationEffect, OperationMemberRecord};
+        let owner = DeclarationKey::fixture("model.Order/place");
+        let clause_key = DeclarationKey::fixture("model.Order/place/Contract");
+        let package = package(vec![
+            object_type("model.Order", &[]),
+            DomainPackageRecord::OperationMember(OperationMemberRecord {
+                key: owner.clone(),
+                owner: DeclarationKey::fixture("model.Order"),
+                parameters: Vec::new(),
+                result: None,
+                effect: OperationEffect::default(),
+                requires: Vec::new(),
+                ensures: Vec::new(),
+                has_body: false,
+                redefines: None,
+            }),
+            DomainPackageRecord::Clause(ClauseRecord {
+                key: clause_key.clone(),
+                owner,
+                language: "quire".to_owned(),
+                text: "true".to_owned(),
+            }),
+        ]);
+        let NormalizeOutcome::Completed(view) =
+            normalize(&package, ModelNormalizationLimits::UNLIMITED)
+        else {
+            panic!("the declared operation may own its contract clause");
+        };
+        assert!(view
+            .domain_package()
+            .records
+            .iter()
+            .any(|record| record.key() == &clause_key));
+    }
+
+    /// Quire container clauses refuse even when constructed after intake.
+    #[trace("QSpec-TC-235")]
+    #[test]
+    fn business_container_quire_clause_normalization_is_unsupported() {
+        use crate::model::domain_package::PersistenceInterfaceRecord;
+        for (owner_name, meaning) in [
+            ("model.Scope", crate::model::intake::meaning::NAMESPACE),
+            (
+                "model.Store",
+                crate::model::intake::meaning::PERSISTENCE_INTERFACE,
+            ),
+        ] {
+            let owner = DeclarationKey::fixture(owner_name);
+            let clause_key = DeclarationKey::fixture(format!("{owner_name}/Forbidden"));
+            let package = package(vec![
+                object_type("model.Order", &[]),
+                DomainPackageRecord::Namespace(NamespaceRecord {
+                    key: DeclarationKey::fixture("model.Scope"),
+                    members: vec![DeclarationKey::fixture("model.Order")],
+                    vocabulary: Vec::new(),
+                }),
+                DomainPackageRecord::PersistenceInterface(PersistenceInterfaceRecord {
+                    key: DeclarationKey::fixture("model.Store"),
+                    persists: vec![DeclarationKey::fixture("model.Order")],
+                }),
+                DomainPackageRecord::Clause(ClauseRecord {
+                    key: clause_key.clone(),
+                    owner,
+                    language: "quire".to_owned(),
+                    text: "true".to_owned(),
+                }),
+            ]);
+            let NormalizeOutcome::Refused(refusals) =
+                normalize(&package, ModelNormalizationLimits::UNLIMITED)
+            else {
+                panic!("quire clause on {owner_name} must refuse");
+            };
+            assert!(refusals.iter().any(|refusal| {
+                refusal.code == Code::UnsupportedConstruct
+                    && matches!(&refusal.cause,
+                    ModelRefusalCause::UnsupportedDeclarationForm { node, what, .. }
+                    if node == &clause_key.node && what == &format!("{meaning}:clauses"))
+            }));
+        }
+    }
+
+    /// Record values are operation signature types; declaration members are not.
+    #[trace("FR-103-AC-6", "QSpec-TC-235")]
+    #[test]
+    fn operation_signature_admits_records_and_refuses_non_type_names() {
+        use crate::model::domain_package::{
+            Multiplicity, OperationEffect, OperationMemberRecord, OperationParameterRecord,
+            OperationResult, RecordValueTypeRecord, RelationshipDirection, RelationshipEnd,
+            RelationshipRecord,
+        };
+        let operation_key = DeclarationKey::fixture("model.Order/change");
+        let parameter_key = DeclarationKey::fixture("model.Order/change/value");
+        let multiplicity = Multiplicity {
+            lower: 1,
+            upper: Some(1),
+            ordered: false,
+            unique: true,
+        };
+        for type_name in [
+            "model.Amount",
+            "model.Absent",
+            "model.Order/id",
+            "model.Related",
+        ] {
+            let value_type = ValueTypeRef::Package(DeclarationKey::fixture(type_name));
+            let end = RelationshipEnd {
+                type_identity: DeclarationKey::fixture("model.Order"),
+                role: None,
+                multiplicity,
+            };
+            let package = package(vec![
+                object_type("model.Order", &[]),
+                field("model.Order/id", "model.Order"),
+                DomainPackageRecord::RecordValueType(RecordValueTypeRecord {
+                    key: DeclarationKey::fixture("model.Amount"),
+                    identity_fields: Vec::new(),
+                    supertypes: Vec::new(),
+                }),
+                DomainPackageRecord::FieldMember(crate::model::domain_package::FieldMemberRecord {
+                    key: DeclarationKey::fixture("model.Amount/value"),
+                    owner: DeclarationKey::fixture("model.Amount"),
+                    value_type: ValueTypeRef::Native(NativeValueType::Integer),
+                    multiplicity,
+                    presence: quire_exact::Presence::Required,
+                    subsets: Vec::new(),
+                    redefines: None,
+                }),
+                DomainPackageRecord::Relationship(RelationshipRecord {
+                    key: DeclarationKey::fixture("model.Related"),
+                    declared_at: None,
+                    source: end.clone(),
+                    target: end,
+                    direction: RelationshipDirection::SourceToTarget,
+                }),
+                DomainPackageRecord::OperationMember(OperationMemberRecord {
+                    key: operation_key.clone(),
+                    owner: DeclarationKey::fixture("model.Order"),
+                    parameters: vec![OperationParameterRecord {
+                        key: parameter_key.clone(),
+                        value_type: value_type.clone(),
+                        multiplicity,
+                    }],
+                    result: Some(OperationResult {
+                        value_type: value_type.clone(),
+                        multiplicity,
+                    }),
+                    effect: OperationEffect::default(),
+                    requires: Vec::new(),
+                    ensures: Vec::new(),
+                    has_body: false,
+                    redefines: None,
+                }),
+            ]);
+            let outcome = normalize(&package, ModelNormalizationLimits::UNLIMITED);
+            if type_name == "model.Amount" {
+                let NormalizeOutcome::Completed(view) = outcome else {
+                    panic!("record-valued parameter and result must normalize: {outcome:?}");
+                };
+                assert_eq!(view.domain_package().records, package.records);
+            } else {
+                let NormalizeOutcome::Refused(refusals) = outcome else {
+                    panic!("signature type {type_name} must refuse");
+                };
+                for parameter in [Some(parameter_key.clone()), None] {
+                    assert!(refusals.iter().any(|refusal| {
+                        refusal.code == Code::DanglingReference && matches!(&refusal.cause,
+                            ModelRefusalCause::UnknownValueType { operation, parameter: actual_parameter, value_type: actual_type, .. }
+                            if operation == &operation_key && actual_parameter == &parameter && actual_type == &value_type)
+                    }));
+                }
+            }
+        }
+    }
+
+    #[trace("QSpec-TC-235")]
+    #[test]
+    fn persistence_interface_owns_its_declared_operations() {
+        use crate::model::domain_package::{
+            OperationEffect, OperationMemberRecord, PersistenceInterfaceRecord,
+        };
+
+        let interface = DeclarationKey::fixture("model.Store");
+        let order = DeclarationKey::fixture("model.Order");
+        let operation = |owner: DeclarationKey| {
+            DomainPackageRecord::OperationMember(OperationMemberRecord {
+                key: DeclarationKey::fixture("model.Store.get"),
+                owner,
+                parameters: Vec::new(),
+                result: None,
+                effect: OperationEffect::default(),
+                requires: Vec::new(),
+                ensures: Vec::new(),
+                has_body: false,
+                redefines: None,
+            })
+        };
+        let valid = package(vec![
+            object_type("model.Order", &[]),
+            DomainPackageRecord::PersistenceInterface(PersistenceInterfaceRecord {
+                key: interface.clone(),
+                persists: vec![order],
+            }),
+            operation(interface),
+        ]);
+        assert!(matches!(
+            normalize(&valid, ModelNormalizationLimits::UNLIMITED),
+            NormalizeOutcome::Completed(_)
+        ));
+
+        for language in ["quire", "ocl"] {
+            let clause_key = DeclarationKey::fixture("model.Store.get/Contract");
+            let mut records = valid.records.clone();
+            records.push(DomainPackageRecord::Clause(ClauseRecord {
+                key: clause_key.clone(),
+                owner: DeclarationKey::fixture("model.Store.get"),
+                language: language.to_owned(),
+                text: "true".to_owned(),
+            }));
+            let outcome = normalize(&package(records), ModelNormalizationLimits::UNLIMITED);
+            if language == "quire" {
+                let NormalizeOutcome::Refused(refusals) = outcome else {
+                    panic!("a persistence operation declares no quire contract");
+                };
+                assert!(refusals.iter().any(|refusal| {
+                    refusal.code == Code::UnsupportedConstruct && matches!(&refusal.cause,
+                        ModelRefusalCause::UnsupportedDeclarationForm { node, what, .. }
+                        if node == &clause_key.node && what == &format!("{}:clauses", crate::model::intake::meaning::PERSISTENCE_INTERFACE))
+                }));
+            } else {
+                let NormalizeOutcome::Completed(view) = outcome else {
+                    panic!("a foreign-language clause is retained: {outcome:?}");
+                };
+                assert!(view
+                    .domain_package()
+                    .records
+                    .iter()
+                    .any(|record| record.key() == &clause_key));
+            }
+        }
+
+        let unknown_owner = package(vec![operation(DeclarationKey::fixture("model.Missing"))]);
+        let NormalizeOutcome::Refused(refusals) =
+            normalize(&unknown_owner, ModelNormalizationLimits::UNLIMITED)
+        else {
+            panic!("an undeclared operation owner must be refused");
+        };
+        assert!(refusals.iter().any(|refusal| {
+            refusal.code == Code::DanglingReference
+                && matches!(
+                    &refusal.cause,
+                    ModelRefusalCause::UnknownOwner { owner, .. }
+                        if owner == &DeclarationKey::fixture("model.Missing")
+                )
+                && refusal.detail.contains("not a declared object type")
+        }));
+    }
+
     /// `A` declaring `fields` fields, and `B` generalizing `A`, so `B`
     /// inherits every one of them.
     fn wide(fields: usize) -> DomainPackage {
@@ -3079,10 +5005,10 @@ mod tests {
         assert_eq!(small.limit_kind, LimitKind::DerivationFacts);
         assert_eq!(large.limit_kind, LimitKind::DerivationFacts);
         // Three remaining fact charges admit B's type inheritance fact and
-        // the first inherited member's qualify+inherit pair. The next
-        // member's qualify charge is denied before its inheritance work, so
-        // only the ancestor walk and first member are counted at either size.
-        assert_eq!((small_steps, large_steps), (2, 2));
+        // the first two inherited members' inherit facts. The third member's
+        // inherit charge is denied before its inheritance work, so only the
+        // ancestor walk and two members are counted at either size.
+        assert_eq!((small_steps, large_steps), (3, 3));
 
         let lattice = ModelNormalizationLimits {
             derivation_facts: 200,
@@ -3167,7 +5093,7 @@ mod tests {
     /// of a 10-deep chain's 11 records is incomplete on
     /// `declaration_records`, even though the walk would pass
     /// `ancestor_steps` 5. With records unlimited, the walk reaches that
-    /// ceiling and refuses `AncestorSteps`.
+    /// ceiling and stops at the ancestor-edge ceiling.
     #[trace("TC-434", "NFR-012")]
     #[test]
     fn a_counted_limit_denied_first_wins_over_ancestor_steps() {
@@ -3190,14 +5116,19 @@ mod tests {
             ..short
         };
         match normalize(&chain, records_unlimited) {
-            NormalizeOutcome::Refused(refusals) => {
-                assert_eq!(refusals.len(), 1);
-                assert!(matches!(
-                    refusals[0].cause,
-                    ModelRefusalCause::AncestorSteps { limit: 5, .. }
-                ));
+            NormalizeOutcome::Incomplete(incomplete) => {
+                assert_eq!(
+                    incomplete,
+                    Incomplete {
+                        limit_kind: LimitKind::AncestorSteps,
+                        limit: 5,
+                        consumed: 5,
+                        next_charge: 1,
+                        charge_point: ChargePoint::ModelAncestorEdge,
+                    }
+                );
             }
-            other => panic!("expected Refused(AncestorSteps), got {other:?}"),
+            other => panic!("expected Incomplete(AncestorSteps), got {other:?}"),
         }
     }
 

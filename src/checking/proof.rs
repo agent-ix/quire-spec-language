@@ -253,6 +253,8 @@ pub(super) fn representation(
             value: ir::CollectionType::new(representation(element, interpretation)?, *maximum)?,
         },
         NativeType::Boolean
+        | NativeType::Uuid
+        | NativeType::String
         | NativeType::Enumeration { .. }
         | NativeType::Record { .. }
         | NativeType::Object { .. }

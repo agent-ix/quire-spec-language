@@ -33,10 +33,12 @@ use super::*;
 use crate::checked_v2::{read_v2, Read, V2ReadLimits};
 
 mod admission_corpus;
+mod child_composite;
 mod deep_bodies;
 mod golden;
 mod identity_depth;
 mod owners;
+mod variant_types;
 
 /// The unit the fixture packages are read from; every occurrence's region is
 /// the whole of it.
@@ -2631,10 +2633,13 @@ fn normalization_refusals_and_limits_stop_intake_at_the_declaration() {
         ),
         "{limited:?}"
     );
+    // The ceiling is `ModelNormalizationLimitsV1`, the caller's budget
+    // (ADR-014 section 1, FR-255 Behavior 1).
     assert_eq!(
         limited.cause.code(),
-        qsl_foundation::Code::StageLimitExceeded
+        qsl_foundation::Code::ResourceExhausted
     );
+    assert_eq!(limited.cause.cause(), Some("insufficient-next-charge"));
     assert!(UNIT[limited.span.start..limited.span.end].starts_with("model M = "));
 
     let mut cyclic: Value = serde_json::from_slice(SPINE_MODEL_DOCUMENT).unwrap();
@@ -2954,8 +2959,10 @@ fn config_version_model(with_sub: bool) -> qsl_semantics::model::intake::Selecte
                 modifies: vec![key("ConfigVersion/versionNumber")],
                 creates: Vec::new(),
                 deletes: Vec::new(),
+                ..Default::default()
             },
-            own_postcondition_clauses: Vec::new(),
+            requires: Vec::new(),
+            ensures: Vec::new(),
             has_body: false,
             redefines: None,
         }),
@@ -2985,6 +2992,7 @@ fn config_version_model(with_sub: bool) -> qsl_semantics::model::intake::Selecte
         alias: "Config".to_owned(),
         span: SPAN,
         view,
+        operation_clauses: Vec::new(),
     }
 }
 

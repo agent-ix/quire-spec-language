@@ -89,7 +89,7 @@ names different artifacts in each.
 | TC-209 | The witness envelope's Debug and Display rendering never reproduces the full transcript | Unit | P1 | FR-073-AC-1 | ✅ |
 | TC-210 | The replay request's Debug and Display rendering never reproduces a byte-provision entry's raw bytes | Unit | P1 | FR-073-AC-2 | ✅ |
 | TC-211 | A refusal cause from any of the four envelopes renders with no unredacted transcript, byte or value content, while the typed accessor stays fully readable | Unit | P1 | FR-073-AC-3 | ✅ |
-| TC-213 | Original declaration keys survive normalization unchanged | Unit | P1 | FR-081-AC-1 | ❌ |
+| TC-213 | Original declaration keys survive normalization unchanged | Integration | P1 | FR-081-AC-1 | ✅ |
 | TC-214 | Structurally identical declarations from distinct originals never collapse to one effective identity | Unit | P1 | FR-081-AC-2 | 🚧 |
 | TC-215 | A dominated redefinition is retained for provenance, not deleted | Unit | P1 | FR-081-AC-3 | ✅ |
 | TC-216 | Changing only a display name leaves every key, identity and ordering unchanged | Property | P1 | FR-081-AC-4 | 🚧 |
@@ -109,15 +109,15 @@ names different artifacts in each.
 | TC-230 | A relationship end naming an undeclared type refuses the whole relationship record | Unit | P1 | FR-085-AC-1 | 🚧 |
 | TC-231 | A resolved relationship end retains its declared role and multiplicity exactly | Unit | P1 | FR-085-AC-2 | 🚧 |
 | TC-232 | A relationship between two object types carries no systems-model kind | Unit | P1 | FR-085-AC-3 | 🚧 |
-| TC-233 | Systems classification reports every no-kind cascade, not only the first | Unit | P1 | FR-086-AC-1 | 🚧 |
-| TC-234 | Connection admission checks all three conditions independently and reports every failure | Unit | P1 | FR-086-AC-2 | 🚧 |
+| TC-233 | Systems classification reports every no-kind cascade, not only the first | Unit | P1 | FR-086-AC-1 | ✅ |
+| TC-234 | Connection admission checks all three conditions independently and reports every failure | Unit | P1 | FR-086-AC-2 | ✅ |
 | TC-235 | An allocation whose target does not classify as Part refuses wrong-export | Unit | P1 | FR-086-AC-3 | ✅ |
-| TC-236 | Two declarations sharing a display title classify and resolve independently by key | Unit | P1 | FR-086-AC-4 | 🚧 |
+| TC-236 | Two declarations sharing a display title classify and resolve independently by key | Unit | P1 | FR-086-AC-4 | ✅ |
 | TC-237 | A derivation conflict with no descendant redefiner exposes no effective member for either path | Unit | P1 | FR-081-AC-6 | ✅ |
 | TC-238 | Replaying normalization over a permuted IR node order reproduces the same correspondence | Property | P1 | FR-081-AC-7 | ✅ |
 | TC-239 | An arity mismatch refuses without checking per-parameter axes, while result and effect axes are still checked | Unit | P1 | FR-082-AC-5 | ✅ |
 | TC-240 | allInstances and lookup return the FR-153 typed result shape and its bound/foreign/ineligible refusals | Unit | P1 | FR-084-AC-5 | 🚧 |
-| TC-241 | Kind mapping runs interfaces first, and a port whose interface type is not an Interface refuses wrong-export | Unit | P1 | FR-086-AC-5 | 🚧 |
+| TC-241 | Kind mapping runs interfaces first, and a port whose interface type is not an Interface refuses wrong-export | Unit | P1 | FR-086-AC-5 | ✅ |
 | TC-242 | A selected object's reference key names the same most-specific type through every conforming query | Unit | P1 | FR-084-AC-6 | ✅ |
 | TC-243 | Typestate constructors are private to their stage module | Manual | P1 | FR-087-AC-1 | 🚧 |
 | TC-244 | compile_fail matrix over every forbidden typestate construction (R-10, O-15) | Unit | P1 | FR-087-AC-2 | ✅ |
@@ -179,7 +179,7 @@ names different artifacts in each.
 | TC-407 | A false dispatched precondition reaches the caller as a family-owned undefined result, not a kernel Undefined | Integration | P1 | FR-090-AC-11 | ✅ |
 | TC-408 | An absent lookup key reaches the caller as a StateModel undefined result, and an absent-refused lookup as a refusal | Integration | P1 | FR-090-AC-12 | ✅ |
 | TC-409 | An enum value's VariantId is its FR-141 member node key, and its rank orders sets and bags | Unit | P1 | FR-088-AC-11 | ✅ |
-| TC-410 | Each connected supertype component has its own object universe, and a reference key carries the authored object identity | Unit | P1 | FR-084-AC-7 | 🚧 |
+| TC-410 | Each connected supertype component has its own object universe, and a reference key carries the authored object identity | Unit | P1 | FR-084-AC-7 | ✅ |
 | TC-411 | A quantity UnitId is a declared unit's node key or a compound unit's digest, and the two never compare equal | Unit | P1 | FR-088-AC-12 | ✅ |
 | TC-412 | The assembler resolves each using alias to a declared profile selection and refuses an undeclared one | Unit | P1 | FR-091-AC-22 | ✅ |
 | TC-413 | Type and declared record nodes key to the structural-node golden vectors, scoped only by owner | Unit | P1 | FR-092-AC-1, FR-092-AC-2, FR-092-AC-3, FR-092-AC-7, FR-092-AC-8, FR-092-AC-9, FR-092-AC-11, FR-092-AC-12 | ✅ |
@@ -214,6 +214,23 @@ names different artifacts in each.
 | TC-455 | Stopped explorations stay incomplete, and unbounded requests require a bound | Unit | P1 | FR-101-AC-6, FR-101-AC-7, FR-101-AC-8 | ✅ |
 | TC-442 | Spine compile admits a domain package and locks its model selection | Integration | P1 | FR-027-AC-9, FR-056-AC-9 | ✅ |
 | TC-443 | A model field's multiplicity and presence give its assembled value type | Unit | P1 | FR-056-AC-10 | ✅ |
+| TC-994 | A variant type is admitted as one enum and one variant per case | Unit | P1 | FR-056-AC-24 | 🚧 |
+| TC-995 | A variant case carrying a payload refuses as an unsupported declaration form | Unit | P1 | FR-056-AC-25 | 🚧 |
+| TC-996 | Empty, spanless, mis-shaped and duplicate variant cases refuse with their causes | Unit | P1 | FR-056-AC-26 | 🚧 |
+| TC-997 | A variant type is admitted whether or not a clause, field or signature names it, and the remaining signature refusals keep their node and path | Unit | P1 | FR-056-AC-27, FR-056-AC-28, FR-056-AC-32 | 🚧 |
+| TC-998 | A field read at a parent-typed slot reads the field by identity and the checked IR carries no conversion | Integration | P1 | FR-359-AC-1, FR-359-AC-2, FR-359-AC-3 | 🚧 |
+| TC-999 | Equality of a child at a parent-typed slot is false, never a fault | Integration | P1 | FR-359-AC-4, FR-359-AC-5 | 🚧 |
+| TC-1000 | An optional field, a collection element and a payload accept a child and refuse a parent or an unrelated record | Integration | P1 | FR-359-AC-6, FR-359-AC-7, FR-359-AC-11 | 🚧 |
+| TC-1001 | A model-operation argument and a function argument admit a child at a parent-typed parameter | Integration | P1 | FR-359-AC-8 | 🚧 |
+| TC-1002 | Replay decodes a child at an ancestor slot and no kernel check refuses a conforming value | Integration | P1 | FR-359-AC-9, FR-359-AC-10 | 🚧 |
+| TC-1003 | A variant type and its cases have effective identities independent of case order, and conflicting cases leave no view | Unit | P1 | FR-056-AC-29, FR-056-AC-30, FR-081-AC-16 | 🚧 |
+| TC-1004 | The assembler declares each variant type in the type environment by effective identity | Unit | P1 | FR-056-AC-31 | 🚧 |
+| TC-1005 | A normalization malformed declaration retains the artifact and position of the refused node's source origin | Integration | P1 | FR-056-AC-33 | 🚧 |
+| TC-1006 | A field, parameter or result typed by a variant type is admitted, exported without a reference and assembled as the enum type | Unit | P1 | FR-360-AC-1, FR-360-AC-2, FR-360-AC-3 | 🚧 |
+| TC-1007 | A variant case literal and every variant-producing form check, and each mistyped use refuses | Unit | P1 | FR-360-AC-4, FR-360-AC-5 | 🚧 |
+| TC-1008 | Equality of variant values is by case, never a fault, and reaches nested values | Integration | P1 | FR-360-AC-6, FR-360-AC-7 | 🚧 |
+| TC-1009 | An operation parameter and result typed by a variant type are admitted, checked and run | Integration | P1 | FR-360-AC-8 | 🚧 |
+| TC-1010 | Replay admits and encodes a variant value and refuses each malformed form at its nested path | Integration | P1 | FR-360-AC-9, FR-360-AC-10, FR-360-AC-11 | 🚧 |
 | TC-444 | The replay executor recompiles, selects, calls, and refuses each O-26 case | Unit | P1 | FR-098-AC-1, FR-098-AC-2, FR-098-AC-3, FR-098-AC-4, FR-098-AC-5, FR-098-AC-6, FR-098-AC-7 | ✅ |
 | TC-446 | Spine compile resolves imports against supplied libraries | Integration | P1 | FR-099-AC-1, FR-099-AC-2, FR-099-AC-3, FR-099-AC-4, FR-099-AC-5, FR-099-AC-6, FR-099-AC-7, FR-027-AC-10 | ✅ |
 | TC-490 | E3 resolves header profile selections against the DefinitionLock catalog | Integration | P1 | FR-110-AC-1, FR-110-AC-2, FR-110-AC-3, FR-110-AC-5, FR-110-AC-6, FR-110-AC-7, FR-110-AC-8, FR-110-AC-9 | 🚧 |
@@ -222,10 +239,11 @@ names different artifacts in each.
 | TC-451 | Spine run binds arguments by name and maps each outcome and refusal to its exit code | Integration | P1 | FR-100-AC-4, FR-100-AC-5, FR-100-AC-6 | ✅ |
 | TC-452 | The spine run entry is qsl_replay::spine::run, agrees with the CLI, and maps every outcome | Unit | P1 | FR-100-AC-7, FR-100-AC-8, FR-100-AC-9, FR-100-AC-12 | ✅ |
 | TC-456 | S2 builds state clause forms and the self, result and reaches expressions | Unit | P1 | FR-102-AC-1, FR-102-AC-2, FR-102-AC-3 | 🚧 |
-| TC-457 | S2 state clause dispatch is thin, bounded and seam-probed | Unit | P1 | FR-102-AC-4, FR-102-AC-5, FR-102-AC-6 | 🚧 |
+| TC-457 | S2 state clause dispatch is thin, bounded and seam-probed | Unit | P1 | FR-102-AC-4, FR-102-AC-5, FR-102-AC-6, FR-102-AC-7 | 🚧 |
 | TC-458 | Spine intake and assembly admit operations and frames | Integration | P1 | FR-103-AC-1, FR-103-AC-2, FR-103-AC-3, FR-103-AC-4, FR-103-AC-5 | 🚧 |
+| TC-993 | Model operations keep and check their own requires and ensures clauses | Integration | P1 | FR-103-AC-7, FR-103-AC-8 | 🚧 |
 | TC-985 | Record-valued model fields and observations | Integration | P1 | FR-056-AC-21, FR-056-AC-22, FR-103-AC-4, FR-103-AC-6, FR-106-AC-14..FR-106-AC-17 | 🚧 |
-| TC-992 | Native String and UUID remain distinct checked value leaves | Integration | P1 | FR-056-AC-23 | 🚧 |
+| TC-992 | Native String and UUID remain distinct checked value leaves | Integration | P1 | FR-056-AC-34 | 🚧 |
 | TC-459 | S3 checks the ConfigVersion state clauses and types self, result and pre | Unit | P1 | FR-104-AC-1, FR-104-AC-2, FR-104-AC-7, FR-104-AC-8, FR-104-AC-9 | 🚧 |
 | TC-460 | S3 refuses ill-formed state clauses with their catalog codes | Unit | P1 | FR-104-AC-3, FR-104-AC-4, FR-104-AC-9 | 🚧 |
 | TC-461 | S3 records one operation-contract requirement per state clause and frame | Unit | P1 | FR-104-AC-5, FR-104-AC-6 | ✅ |
@@ -262,11 +280,11 @@ names different artifacts in each.
 | TC-747 | The canonical-types gate finds namesakes, re-exports and same-shaped copies | Unit | P1 | FR-272-AC-1, FR-272-AC-2, FR-272-AC-3, FR-272-AC-4 | ✅ |
 | TC-748 | Once every namesake is deleted or renamed, the canonical-types gate and make ci pass | Integration | P1 | FR-273-AC-1 | 🚧 |
 | TC-790 | Each model form types through StateModel and refuses with a StateModel cause | Integration | P1 | FR-300-AC-1, FR-300-AC-2 | 🚧 |
-| TC-791 | The seam probe reports the StateModel arms at S1, S2 and S3 | Integration | P1 | FR-300-AC-3 | 🚧 |
+| TC-791 | The seam probe reports the StateModel arms at S1 and S3 and no StateModel arm at S2 | Integration | P1 | FR-300-AC-3 | ✅ |
 | TC-792 | StateModel causes raised under Value and ProtocolClause evaluation render with the state-model prefix | Integration | P1 | FR-301-AC-1, FR-301-AC-2 | 🚧 |
-| TC-793 | Unit compile carries one linked dispatch table per called operation, named by each call | Integration | P1 | FR-302-AC-1 | 🚧 |
-| TC-794 | Unit compile refuses ambiguous and inapplicable dispatch with no checked package | Integration | P1 | FR-302-AC-2, FR-302-AC-3, FR-302-AC-4 | 🚧 |
-| TC-795 | Unit compile refuses a dispatch family past the caller's family_steps limit | Integration | P1 | FR-302-AC-5 | 🚧 |
+| TC-793 | Unit compile carries one linked dispatch table per called operation, named by each call | Integration | P1 | FR-302-AC-1 | ✅ |
+| TC-794 | Unit compile refuses ambiguous and inapplicable dispatch with no checked package | Integration | P1 | FR-302-AC-2, FR-302-AC-3, FR-302-AC-4 | ✅ |
+| TC-795 | Unit compile refuses a dispatch family past the caller's family_steps limit | Integration | P1 | FR-302-AC-5 | ✅ |
 | TC-796 | The model correspondence faults on a second, different entry in either direction | Integration | P1 | FR-303-AC-1, FR-303-AC-2, FR-303-AC-3, FR-303-AC-4 | ✅ |
 | TC-797 | An abstraction relation checks into one binding per key, total or partial | Unit | P1 | FR-304-AC-1, FR-304-AC-2 | 🚧 |
 | TC-798 | An abstraction binding whose model key resolves to nothing refuses missing-name | Unit | P1 | FR-304-AC-3 | 🚧 |
@@ -279,9 +297,19 @@ names different artifacts in each.
 | TC-805 | The abstraction relation changes no requirement record, route result or clause run | Integration | P1 | FR-306-AC-3, FR-306-AC-4 | 🚧 |
 | TC-806 | The export refuses each item with an unbound element and returns the others | Integration | P1 | FR-307-AC-1, FR-307-AC-2, FR-307-AC-3 | 🚧 |
 | TC-807 | The export references the receiver's static type and the operation key | Integration | P1 | FR-307-AC-4, FR-307-AC-5 | 🚧 |
-| TC-809 | Evaluation selects the dispatched body from the linked table by the receiver's most-specific type | Integration | P1 | FR-302-AC-6 | 🚧 |
-| TC-986 | Unit compile joins operation bodies and clauses by resolved operation identity | Integration | P1 | FR-302-AC-7 | 🚧 |
+| TC-809 | Evaluation selects the dispatched body from the linked table by the receiver's most-specific type | Integration | P1 | FR-302-AC-6 | ✅ |
+| TC-986 | Unit compile joins operation bodies and clauses by resolved operation identity | Integration | P1 | FR-302-AC-7, FR-103-AC-9 | 🚧 |
 | TC-987 | Unit compile refuses duplicate operation bodies resolving to one key | Integration | P1 | FR-302-AC-7 | 🚧 |
+| TC-1011 | Unit compile checks a body's arity and type against its operation | Integration | P1 | FR-302-AC-8 | ✅ |
+| TC-1012 | An operation body refuses without the model profile and compiles with it | Integration | P1 | FR-361-AC-1 | 🚧 |
+| TC-1013 | A dispatched call and a lookup refuse without the model profile | Integration | P1 | FR-361-AC-2 | 🚧 |
+| TC-1014 | An abstraction declaration refuses without the model profile | Integration | P1 | FR-361-AC-3 | 🚧 |
+| TC-1015 | Forms this requirement does not gate raise no model-gate refusal | Integration | P1 | FR-361-AC-4 | 🚧 |
+| TC-1016 | State clauses against a model alias are admitted under every other layer | Integration | P1 | FR-361-AC-5 | 🚧 |
+| TC-1017 | The model profile is selected by the header only | Integration | P1 | FR-361-AC-6, FR-361-AC-7, FR-361-AC-8, FR-361-AC-9, FR-361-AC-10, FR-361-AC-11, FR-361-AC-12 | 🚧 |
+| TC-1018 | A function synthesized for dispatch is located at the unit declarations it came from | Integration | P1 | FR-096-AC-20 | ✅ |
+| TC-1019 | A family is called by the call that reaches it, and a body does not dispatch | Integration | P1 | FR-302-AC-9 | ✅ |
+| TC-1020 | A specialization cycle is refused once per declaration and cycle | Unit | P1 | FR-082-AC-15 | ✅ |
 | TC-810 | Abstraction binding keys are unique across all of a unit's declarations | Integration | P1 | FR-304-AC-7 | 🚧 |
 | TC-811 | Abstraction declarations parse from source and refuse unsupported or malformed forms | Integration | P1 | FR-304-AC-8 | 🚧 |
 | TC-518 | S3 checks fairness constraints and interval operators of infinite-trace clauses | Unit | P1 | FR-123-AC-1, FR-123-AC-2, FR-123-AC-3, FR-123-AC-4 | 🚧 |

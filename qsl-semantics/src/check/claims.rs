@@ -373,6 +373,7 @@ fn scalar_equality(compared: &ValueType) -> bool {
         | ValueType::Rational(_)
         | ValueType::Decimal(_)
         | ValueType::Text(_)
+        | ValueType::String
         | ValueType::Enum(_)
         | ValueType::Quantity(_) => true,
         ValueType::Boolean

@@ -91,7 +91,6 @@ impl ModelForm {
             Self::InheritedPrecondition => return inherited_precondition(&acme, levels),
         };
         let mut declarations = dispatch(&acme, "Order/size");
-        declarations.models = vec![acme.model];
         declarations.functions.push(f);
         declarations
     }

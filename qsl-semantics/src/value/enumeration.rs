@@ -365,9 +365,9 @@ impl AdmittedEnumDeclaration {
 }
 
 /// The byte limit a variant id's preimage encodes under: none. The preimage
-/// is one validated case identifier and a 32-byte digest, so it is bounded by
-/// the case name the check stage already bounded, and no setting could
-/// raise a bound here.
+/// is one case name (an identifier for a source enum, any non-empty name for a
+/// model variant type) and a 32-byte digest, so it is bounded by the case name
+/// admission already bounded, and no setting could raise a bound here.
 const VARIANT_ID_LIMITS: IdentityLimits = IdentityLimits {
     input_bytes: u64::MAX,
 };
@@ -392,8 +392,8 @@ pub fn mint_variant_id(declaration: NodeKey, case: &str) -> VariantId {
         VARIANT_ID_LIMITS,
     )
     .expect(
-        "a declaration NodeKey and a validated case identifier are always \
-         representable as canonical JSON",
+        "a declaration NodeKey and a case name are always representable as \
+         canonical JSON under an unbounded input limit",
     );
     VariantId::from_digest(digest)
 }

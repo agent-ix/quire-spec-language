@@ -5,7 +5,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use quire_exact::{CollectionKind, FieldValue, Integer, ObjectReference, Value};
+use quire_exact::{
+    CollectionKind, FieldValue, Integer, ObjectId, ObjectReference, UniverseId, Value,
+};
 
 use qsl_foundation::diagnostic::Code;
 
@@ -13,14 +15,14 @@ use super::helpers::{admission_record, object_reference};
 use super::tree::{read_raw_value, Json, Object};
 use super::{
     check_document_digest, fault, incomplete, population_universe, refuse, AdmissionFailure,
-    AdmissionRecord, DocumentRef, ModelView, ObservationLimits, OutOfRange, PostStateRange,
-    RawForm, RawValue, ReadMeter, SelectedObject, SnapshotValue,
+    AdmissionRecord, DocumentRef, ModelView, ObservationLimits, OutOfRange, PathStep,
+    PostStateRange, RawForm, RawValue, ReadMeter, SelectedObject, SnapshotValue,
 };
 use crate::model::key::DeclarationKey;
 use crate::model::object_environment::ObjectEnvironment;
 use crate::model::operation::OperationDeclaration;
 use quire_semantic_value::declaration::{
-    FieldDeclaration, FieldRef, ObjectTypeDeclaration, TypeEnvironment,
+    CompositeShape, FieldDeclaration, FieldRef, ObjectTypeDeclaration, TypeEnvironment,
 };
 use quire_semantic_value::object_closure::{
     ObjectClosure, ObjectClosureCause, ObjectClosureRefusal,
@@ -104,8 +106,50 @@ pub(super) enum ObservationRole {
 pub(super) struct SnapshotDocument {
     pub(super) observation: ObservationRole,
     pub(super) anchor: Option<DocAnchor>,
+    /// The invocation this snapshot says it observes, when it names one.
+    pub(super) invocation: Option<InvocationLabels>,
     pub(super) model: ModelHeader,
     pub(super) populations: Vec<RawPopulation>,
+}
+
+/// The four FR-001 labels of an invocation document's own `identity`: how
+/// a snapshot names the invocation it observes. No digest: the
+/// invocation's digest covers its `pre` and `post` references, whose
+/// digests cover these snapshots.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct InvocationLabels {
+    authority: String,
+    identity: String,
+    revision_namespace: String,
+    revision: String,
+}
+
+impl InvocationLabels {
+    fn names(&self, invocation: &DocumentRef) -> bool {
+        self.authority == invocation.authority
+            && self.identity == invocation.identity
+            && self.revision_namespace == invocation.revision_namespace
+            && self.revision == invocation.revision
+    }
+}
+
+/// FR-106 check 5: a snapshot that names an invocation names the selected
+/// invocation's own identity. A snapshot that names none is unbound.
+pub(super) fn check_snapshot_invocation(
+    snapshot: &SnapshotDocument,
+    snapshot_identity: &DocumentRef,
+    invocation: &DocumentRef,
+) -> Result<(), AdmissionFailure> {
+    match &snapshot.invocation {
+        Some(named) if !named.names(invocation) => Err(refuse(
+            admission_record(Code::WrongSnapshot, "wrong-invocation")
+                .with("document", snapshot_identity.identity.clone())
+                .with("field", "invocation")
+                .with("required", invocation.identity.clone())
+                .with("actual", named.identity.clone()),
+        )),
+        Some(_) | None => Ok(()),
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -137,7 +181,7 @@ pub(super) struct InvocationDocument {
 }
 
 enum Body {
-    Snapshot(SnapshotDocument),
+    Snapshot(Box<SnapshotDocument>),
     Invocation(Box<InvocationDocument>),
     InvocationCall(Box<InvocationCall>),
 }
@@ -153,7 +197,7 @@ pub(super) struct ReadDocument {
 impl ReadDocument {
     pub(super) fn as_snapshot(&self) -> Option<&SnapshotDocument> {
         match &self.body {
-            Body::Snapshot(snapshot) => Some(snapshot),
+            Body::Snapshot(snapshot) => Some(snapshot.as_ref()),
             Body::Invocation(_) | Body::InvocationCall(_) => None,
         }
     }
@@ -295,6 +339,7 @@ pub(super) fn read_document(
             "identity",
             "observation",
             "anchor",
+            "invocation",
             "model",
             "populations",
         ],
@@ -355,7 +400,9 @@ pub(super) fn read_document(
     let model = read_model(object)?;
 
     let body = match kind {
-        DocumentKind::Snapshot => Body::Snapshot(read_snapshot_body(object, model, &mut meter)?),
+        DocumentKind::Snapshot => {
+            Body::Snapshot(Box::new(read_snapshot_body(object, model, &mut meter)?))
+        }
         DocumentKind::Invocation => {
             Body::Invocation(Box::new(read_invocation_body(object, model, &mut meter)?))
         }
@@ -567,12 +614,36 @@ fn read_snapshot_body(
         }
         None => None,
     };
+    let invocation = match object.member("invocation") {
+        Some(value) => Some(read_invocation_labels(value)?),
+        None => None,
+    };
     let populations = read_populations(object, meter)?;
     Ok(SnapshotDocument {
         observation,
         anchor,
+        invocation,
         model,
         populations,
+    })
+}
+
+/// Reads a snapshot's `invocation` member: the invocation's four identity
+/// labels.
+fn read_invocation_labels(value: Json<'_>) -> Result<InvocationLabels, AdmissionFailure> {
+    let object = value.as_object().ok_or_else(|| wrong_kind("invocation"))?;
+    let label = |name: &'static str| {
+        object
+            .member(name)
+            .and_then(|value| value.as_str())
+            .map(str::to_owned)
+            .ok_or_else(|| missing_member("invocation"))
+    };
+    Ok(InvocationLabels {
+        authority: label("authority")?,
+        identity: label("identity")?,
+        revision_namespace: label("revision_namespace")?,
+        revision: label("revision")?,
     })
 }
 
@@ -818,6 +889,8 @@ fn field_kind_matches(raw: &SnapshotValue, value_type: &quire_exact::ValueType) 
                 quire_exact::ValueType::Option(_)
             )
             | (RawForm::Sequence(_), quire_exact::ValueType::Collection(_))
+            | (RawForm::Record(_), quire_exact::ValueType::Composite(_))
+            | (RawForm::Variant(_), quire_exact::ValueType::Enum(_))
     )
 }
 
@@ -832,15 +905,15 @@ fn field_kind_matches(raw: &SnapshotValue, value_type: &quire_exact::ValueType) 
 /// `absent`/`present` object-field forms key off `presence`, not off
 /// matching `value_type` against `ValueType::Option`.
 fn object_field_kind_matches(
-    raw: &SnapshotValue,
+    raw: RawForm<'_>,
     value_type: &quire_exact::ValueType,
     presence: quire_exact::Presence,
 ) -> bool {
     if presence == quire_exact::Presence::Optional {
-        return matches!(raw.form(), RawForm::Absent | RawForm::Present(_));
+        return matches!(raw, RawForm::Absent | RawForm::Present(_));
     }
     matches!(
-        (raw.form(), value_type),
+        (raw, value_type),
         (RawForm::Boolean(_), quire_exact::ValueType::Boolean)
             | (
                 RawForm::Integer(_),
@@ -848,6 +921,8 @@ fn object_field_kind_matches(
             )
             | (RawForm::Reference(_), quire_exact::ValueType::Reference(_))
             | (RawForm::Sequence(_), quire_exact::ValueType::Collection(_))
+            | (RawForm::Record(_), quire_exact::ValueType::Composite(_))
+            | (RawForm::Variant(_), quire_exact::ValueType::Enum(_))
     )
 }
 
@@ -870,6 +945,12 @@ pub(super) struct References<'a> {
     /// Each reference that named no object of the snapshot, with the wire
     /// population it named, in walk order.
     unresolved: Vec<(String, ObjectReference)>,
+    /// The declaration key of each selected record value type by its IR
+    /// node identity, built on first use.
+    record_keys: Option<BTreeMap<String, quire_exact::NodeKey>>,
+    /// Each selected variant type by its IR node identity, built on first
+    /// use from the same declarations the type environment holds.
+    variant_keys: Option<BTreeMap<String, crate::check::VariantTypeDeclaration>>,
 }
 
 impl<'a> References<'a> {
@@ -907,7 +988,73 @@ impl<'a> References<'a> {
             admitted,
             completeness,
             unresolved: Vec::new(),
+            record_keys: None,
+            variant_keys: None,
         }
+    }
+
+    /// The variant type the IR node identity `identity` names, or `None`
+    /// when no selected package declares a variant type by that identity
+    /// (another meaning or no declaration at all). It is the declaration the
+    /// type environment holds, so a value admitted here equals the same case
+    /// a unit's literal builds (FR-360 item 11).
+    fn variant_type(&mut self, identity: &str) -> Option<&crate::check::VariantTypeDeclaration> {
+        let views = self.views;
+        self.variant_keys
+            .get_or_insert_with(|| {
+                let unbounded = qsl_foundation::IdentityLimits {
+                    input_bytes: u64::MAX,
+                };
+                let mut found = BTreeMap::new();
+                for view in views {
+                    let Ok(declared) =
+                        crate::check::variant_type_declarations(&view.view, "", unbounded)
+                    else {
+                        continue;
+                    };
+                    for (key, declaration) in declared {
+                        found.entry(key.node).or_insert(declaration);
+                    }
+                }
+                found
+            })
+            .get(identity)
+    }
+
+    /// The declaration key the record value type named by the IR node
+    /// identity `identity` is declared under in the type environment, or
+    /// `None` when no selected package declares a record value type by that
+    /// identity (an object type, an event type or no declaration at all).
+    /// It is the record's model node key (FR-359 item 9), a function of the
+    /// declaring package and node alone. The keys of every selected record
+    /// are computed once, on the first record value, with no byte bound: a
+    /// record the unit assembled had already keyed under the unit's own
+    /// identity limits, and the key does not depend on the limit.
+    fn record_type(&mut self, identity: &str) -> Option<quire_exact::NodeKey> {
+        let views = self.views;
+        self.record_keys
+            .get_or_insert_with(|| {
+                let unbounded = qsl_foundation::IdentityLimits {
+                    input_bytes: u64::MAX,
+                };
+                let mut keys = BTreeMap::new();
+                for view in views {
+                    for record in &view.view.domain_package().records {
+                        let crate::model::domain_package::DomainPackageRecord::RecordValueType(
+                            declared,
+                        ) = record
+                        else {
+                            continue;
+                        };
+                        if let Ok(Some(key)) = crate::check::record_node_key(record, unbounded) {
+                            keys.entry(declared.key.node.clone()).or_insert(key);
+                        }
+                    }
+                }
+                keys
+            })
+            .get(identity)
+            .copied()
     }
 
     /// FR-106 check 8 over one check-10 value (a parameter or the result):
@@ -979,94 +1126,70 @@ struct RangeBreach {
     range: quire_exact::IntegerInterval,
     observed: Integer,
     index: Option<usize>,
-}
-
-/// A value inside a sequence admitted as a value of `value_type`: scalars
-/// only, since no declared element type nests a collection or an option.
-/// `witness` is `Some` for a post-state field (FR-106 check 6.5's
-/// post-state rule): an integer outside its declared range is admitted
-/// exactly and recorded there instead of refused. `None` refuses it.
-fn admit_scalar(
-    references: &mut References<'_>,
-    raw: RawValue<'_>,
-    value_type: &quire_exact::ValueType,
-    witness: Option<&mut Vec<RangeBreach>>,
-) -> Result<Value, AdmissionRecord> {
-    admit_form(references, raw.form(), value_type, witness)
+    /// The record field names from the checked field or element down to the
+    /// integer, outermost first (FR-106 check 6.5's nested-record steps).
+    steps: Vec<PathStep>,
 }
 
 /// An object type's own field's admission: `presence`, not `value_type`,
 /// decides whether `absent`/`present` is admitted (see
 /// [`object_field_kind_matches`]'s doc). Parameters and results have no
 /// `FieldValue` slot to fill (they admit straight to a [`Value`] via
-/// [`admit_value`]), so this is the one caller [`admit_populations`] needs.
+/// [`admit_form`] plus [`field_kind_matches`]'s `ValueType::Option`
+/// reading), so this is the one caller [`admit_populations`] needs.
 fn admit_object_field(
     references: &mut References<'_>,
     raw: &SnapshotValue,
     value_type: &quire_exact::ValueType,
     presence: quire_exact::Presence,
-    mut witness: Option<&mut Vec<RangeBreach>>,
+    witness: Option<&mut Vec<RangeBreach>>,
 ) -> Result<FieldValue, AdmissionRecord> {
-    let mut raw = raw.form();
-    if presence == quire_exact::Presence::Optional {
-        raw = match raw {
-            RawForm::Absent => return Ok(FieldValue::Absent),
-            // A present value is admitted as a required one of the same
-            // type, so an optional collection-typed member admits its
-            // sequence.
-            RawForm::Present(inner) => inner.form(),
-            // `object_field_kind_matches` already refused every other raw
-            // form for an optional field before this is called.
-            RawForm::Boolean(_)
-            | RawForm::Integer(_)
-            | RawForm::Reference(_)
-            | RawForm::Sequence(_) => {
-                return Err(admission_record(
-                    Code::InvalidRuntimeInput,
-                    "wrong-value-kind",
-                ))
-            }
-        };
-    }
-    match (raw, value_type) {
-        (RawForm::Sequence(items), quire_exact::ValueType::Collection(collection)) => {
-            if collection.kind() != CollectionKind::Sequence {
-                return Err(admission_record(
-                    Code::UnknownRequiredFeature,
-                    "unsupported-feature",
-                ));
-            }
-            let mut elements = Vec::with_capacity(items.iter().len());
-            for (index, item) in items.iter().enumerate() {
-                let first = witness.as_deref().map_or(0, Vec::len);
-                elements.push(admit_scalar(
-                    references,
-                    item,
-                    collection.element(),
-                    witness.as_deref_mut(),
-                )?);
-                // Each breach this element recorded is at `index`.
-                if let Some(found) = witness.as_deref_mut() {
-                    for breach in &mut found[first..] {
-                        breach.index = Some(index);
-                    }
-                }
-            }
-            Ok(FieldValue::Present(quire_exact::from_admitted(
-                (**collection).clone(),
-                elements,
-            )))
-        }
-        (form, value_type) => {
-            admit_form(references, form, value_type, witness).map(FieldValue::Present)
-        }
+    admit_field_form(references, raw.form(), value_type, presence, witness)
+}
+
+/// [`admit_object_field`] over a value's form.
+fn admit_field_form(
+    references: &mut References<'_>,
+    raw: RawForm<'_>,
+    value_type: &quire_exact::ValueType,
+    presence: quire_exact::Presence,
+    witness: Option<&mut Vec<RangeBreach>>,
+) -> Result<FieldValue, AdmissionRecord> {
+    admit_value(references, raw, value_type, presence, witness)
+}
+
+/// A form admitted as a value of `value_type`: a boolean, an integer in its
+/// declared interval, a reference to an object of a conforming type, a
+/// sequence, or a record whose type conforms to the declared record type; any
+/// other pairing is `wrong-value-kind`.
+fn admit_form(
+    references: &mut References<'_>,
+    form: RawForm<'_>,
+    value_type: &quire_exact::ValueType,
+    witness: Option<&mut Vec<RangeBreach>>,
+) -> Result<Value, AdmissionRecord> {
+    match admit_value(
+        references,
+        form,
+        value_type,
+        quire_exact::Presence::Required,
+        witness,
+    )? {
+        FieldValue::Present(value) => Ok(value),
+        FieldValue::Absent | FieldValue::Null => Err(admission_record(
+            Code::InvalidRuntimeInput,
+            "wrong-value-kind",
+        )),
     }
 }
 
 /// A scalar form admitted as a value of `value_type`: a boolean, an integer
 /// in its declared interval, or a reference to an object of a conforming
-/// type; any other pairing is `wrong-value-kind`.
-fn admit_form(
+/// type; any other pairing is `wrong-value-kind`. `witness` is `Some` for a
+/// post-state field (FR-106 check 6.5's post-state rule): an integer outside
+/// its declared range is admitted exactly and recorded there instead of
+/// refused. `None` refuses it.
+fn admit_leaf(
     references: &mut References<'_>,
     form: RawForm<'_>,
     value_type: &quire_exact::ValueType,
@@ -1091,6 +1214,7 @@ fn admit_form(
                         range: interval.clone(),
                         observed: value.clone(),
                         index: None,
+                        steps: Vec::new(),
                     });
                     Ok(Value::Integer(value))
                 }
@@ -1102,6 +1226,9 @@ fn admit_form(
                 .resolve(reference, *type_identity)
                 .map(Value::Reference)
         }
+        (RawForm::Variant(variant), quire_exact::ValueType::Enum(slot)) => {
+            admit_variant(references, variant, slot)
+        }
         _ => Err(admission_record(
             Code::InvalidRuntimeInput,
             "wrong-value-kind",
@@ -1109,75 +1236,309 @@ fn admit_form(
     }
 }
 
-/// Check 10's typed values, including genuine `Option` values and ordered
-/// sequences. Object-field presence remains a separate declaration-level
-/// rule in `admit_object_field`. Children are admitted in wire order on a
-/// heap worklist, before the shared exact-value constructors retain them.
-fn admit_value(
+/// A `variant` form admitted as a value of the enum type `slot` (FR-360
+/// item 9). The first defect found refuses, in this order: a missing `type`
+/// or `case` (`type` reported first), an extra payload member, a `type` that
+/// names any declaration other than the slot's variant type, and a `case`
+/// that is not a declared case of it, compared byte for byte.
+fn admit_variant(
     references: &mut References<'_>,
-    raw: &SnapshotValue,
-    value_type: &quire_exact::ValueType,
+    variant: super::RawVariant<'_>,
+    slot: &quire_exact::EnumShape,
 ) -> Result<Value, AdmissionRecord> {
-    enum Step<'a> {
-        Visit(RawForm<'a>, &'a quire_exact::ValueType),
-        Present(&'a quire_exact::ValueType),
-        Sequence(&'a quire_exact::CollectionType, usize),
+    let refuse = |cause: &'static str| admission_record(Code::InvalidRuntimeInput, cause);
+    let (Some(type_identity), Some(case)) = (variant.type_identity(), variant.case()) else {
+        let member = if variant.type_identity().is_none() {
+            "type"
+        } else {
+            "case"
+        };
+        return Err(refuse("missing-member").with("member", member));
+    };
+    if variant.has_extra_member() {
+        return Err(refuse("unknown-member"));
     }
+    let Some(declared) = references
+        .variant_type(type_identity)
+        .filter(|declared| &declared.shape() == slot)
+    else {
+        return Err(refuse("wrong-value-kind"));
+    };
+    declared
+        .cases()
+        .iter()
+        .enumerate()
+        .find(|(_, declared_case)| declared_case.name() == case)
+        .and_then(|(rank, declared_case)| {
+            Some(Value::Enum(quire_exact::EnumMember::new(
+                declared_case.variant(),
+                u32::try_from(rank).ok()?,
+            )))
+        })
+        .ok_or_else(|| refuse("invalid-value"))
+}
 
-    let mut pending = vec![Step::Visit(raw.form(), value_type)];
-    let mut admitted = Vec::new();
-    while let Some(step) = pending.pop() {
-        match step {
-            Step::Visit(RawForm::Absent, quire_exact::ValueType::Option(payload)) => {
-                admitted.push(quire_exact::OptionValue::none((**payload).clone()));
+/// One unit of the explicit work stack [`admit_value`] drains.
+enum Admit<'w, 'v> {
+    /// Admit `form` as a value of `value_type`. `field` is set for a record
+    /// field, whose kind is judged first (FR-106 check 6.5).
+    Value {
+        form: RawForm<'v>,
+        value_type: &'w quire_exact::ValueType,
+        presence: quire_exact::Presence,
+        field: bool,
+    },
+    /// Descend one step of the value path.
+    Enter(PathStep),
+    /// Leave the step last entered, moving the post-state range breaches it
+    /// recorded under it.
+    Leave,
+    /// Build the record of declaration `own` from its `count` admitted
+    /// fields.
+    Record {
+        own: quire_exact::NodeKey,
+        count: usize,
+    },
+    /// Wrap the admitted payload as a present value of the option type
+    /// whose payload type is `payload`.
+    SomeOf { payload: &'w quire_exact::ValueType },
+    /// Build the sequence of type `collection` from its `count` admitted
+    /// elements.
+    Sequence {
+        collection: &'w quire_exact::CollectionType,
+        count: usize,
+    },
+}
+
+/// FR-106 check 6.5 value validation, on an explicit work stack and result
+/// stack, so a value of any nesting depth admits in constant native stack
+/// and is bounded only by the document's byte and value limits (FR-106
+/// Behavior; FR-261): a form is admitted as a value of `value_type`, with
+/// `presence` deciding whether `absent`/`present` is expected. A record is
+/// resolved to the record value type its `type` names, which must conform
+/// to the declared record type; its fields are admitted in effective field
+/// order, a sequence's elements by ascending index. A refusal names the
+/// typed path of steps (record field, option value, sequence index) from the
+/// checked field down to the value.
+fn admit_value<'a: 'w, 'w>(
+    references: &mut References<'a>,
+    form: RawForm<'_>,
+    value_type: &'w quire_exact::ValueType,
+    presence: quire_exact::Presence,
+    mut witness: Option<&mut Vec<RangeBreach>>,
+) -> Result<FieldValue, AdmissionRecord> {
+    let types: &'w TypeEnvironment = references.types;
+    let mut work = vec![Admit::Value {
+        form,
+        value_type,
+        presence,
+        field: false,
+    }];
+    let mut done: Vec<FieldValue> = Vec::new();
+    let mut path: Vec<PathStep> = Vec::new();
+    // The breach count when each entered step was entered.
+    let mut marks: Vec<usize> = Vec::new();
+    while let Some(next) = work.pop() {
+        let refuse_at = |cause: &'static str, path: &[PathStep]| {
+            admission_record(Code::InvalidRuntimeInput, cause).at(path.to_vec())
+        };
+        match next {
+            Admit::Enter(step) => {
+                path.push(step);
+                marks.push(witness.as_deref().map_or(0, Vec::len));
             }
-            Step::Visit(RawForm::Present(inner), quire_exact::ValueType::Option(payload)) => {
-                pending.push(Step::Present(payload));
-                pending.push(Step::Visit(inner.form(), payload));
-            }
-            Step::Visit(RawForm::Sequence(items), quire_exact::ValueType::Collection(kind)) => {
-                if kind.kind() != CollectionKind::Sequence {
-                    return Err(admission_record(
-                        Code::UnknownRequiredFeature,
-                        "unsupported-feature",
-                    ));
+            Admit::Leave => {
+                let (Some(step), Some(first)) = (path.pop(), marks.pop()) else {
+                    return Err(refuse_at("wrong-value-kind", &path));
+                };
+                if let Some(found) = witness.as_deref_mut() {
+                    for breach in &mut found[first..] {
+                        match &step {
+                            // The element of the checked sequence field.
+                            PathStep::Index(index) if path.is_empty() => {
+                                breach.index = Some(*index);
+                            }
+                            _ => breach.steps.insert(0, step.clone()),
+                        }
+                    }
                 }
-                pending.push(Step::Sequence(kind, items.iter().len()));
-                pending.extend(
-                    items
-                        .iter()
-                        .rev()
-                        .map(|item| Step::Visit(item.form(), kind.element())),
-                );
             }
-            Step::Visit(form, declared) => {
-                admitted.push(admit_form(references, form, declared, None)?);
+            Admit::Record { own, count } => {
+                let Some(start) = done.len().checked_sub(count) else {
+                    return Err(refuse_at("wrong-value-kind", &path));
+                };
+                let slots: Vec<FieldValue> = done.split_off(start);
+                done.push(FieldValue::Present(quire_exact::from_admitted_slots(
+                    own,
+                    slots.into_boxed_slice(),
+                )));
             }
-            Step::Present(payload) => {
-                let value = admitted.pop().ok_or_else(|| {
-                    admission_record(Code::InvalidRuntimeInput, "wrong-value-kind")
-                })?;
-                admitted.push(quire_exact::OptionValue::from_admitted(
+            Admit::SomeOf { payload } => {
+                let Some(FieldValue::Present(value)) = done.pop() else {
+                    return Err(refuse_at("wrong-value-kind", &path));
+                };
+                done.push(FieldValue::Present(quire_exact::OptionValue::from_admitted(
                     payload.clone(),
                     Some(value),
-                ));
+                )));
             }
-            Step::Sequence(kind, count) => {
-                if kind.bound().is_some_and(|bound| {
-                    bound.violation(quire_exact::length_amount(count)).is_some()
-                }) {
-                    return Err(admission_record(Code::InvalidRuntimeInput, "invalid-value"));
+            Admit::Sequence { collection, count } => {
+                let Some(start) = done.len().checked_sub(count) else {
+                    return Err(refuse_at("wrong-value-kind", &path));
+                };
+                let elements: Vec<Value> = done
+                    .split_off(start)
+                    .into_iter()
+                    .filter_map(|element| match element {
+                        FieldValue::Present(value) => Some(value),
+                        FieldValue::Absent | FieldValue::Null => None,
+                    })
+                    .collect();
+                done.push(FieldValue::Present(quire_exact::from_admitted(
+                    collection.clone(),
+                    elements,
+                )));
+            }
+            Admit::Value {
+                form,
+                value_type,
+                presence,
+                field,
+            } => {
+                if field && !object_field_kind_matches(form, value_type, presence) {
+                    return Err(refuse_at("wrong-value-kind", &path));
                 }
-                let start = admitted.len().checked_sub(count).ok_or_else(|| {
-                    admission_record(Code::InvalidRuntimeInput, "wrong-value-kind")
-                })?;
-                let elements = admitted.split_off(start);
-                admitted.push(quire_exact::from_admitted(kind.clone(), elements));
+                if presence == quire_exact::Presence::Optional {
+                    match form {
+                        RawForm::Absent => done.push(FieldValue::Absent),
+                        // A present value is admitted as a required one of
+                        // the same type, one option-value step down.
+                        RawForm::Present(inner) => {
+                            work.push(Admit::Leave);
+                            work.push(Admit::Value {
+                                form: inner.form(),
+                                value_type,
+                                presence: quire_exact::Presence::Required,
+                                field: false,
+                            });
+                            work.push(Admit::Enter(PathStep::OptionValue));
+                        }
+                        _ => return Err(refuse_at("wrong-value-kind", &path)),
+                    }
+                    continue;
+                }
+                match (form, value_type) {
+                    // A genuinely `Option`-typed value (an operation
+                    // parameter or result).
+                    (RawForm::Absent, quire_exact::ValueType::Option(payload)) => {
+                        done.push(FieldValue::Present(quire_exact::OptionValue::none(
+                            (**payload).clone(),
+                        )));
+                    }
+                    (RawForm::Present(inner), quire_exact::ValueType::Option(payload)) => {
+                        let payload: &'w quire_exact::ValueType = payload;
+                        work.push(Admit::SomeOf { payload });
+                        work.push(Admit::Leave);
+                        work.push(Admit::Value {
+                            form: inner.form(),
+                            value_type: payload,
+                            presence: quire_exact::Presence::Required,
+                            field: false,
+                        });
+                        work.push(Admit::Enter(PathStep::OptionValue));
+                    }
+                    (RawForm::Sequence(items), quire_exact::ValueType::Collection(collection)) => {
+                        if collection.kind() != CollectionKind::Sequence {
+                            return Err(admission_record(
+                                Code::UnknownRequiredFeature,
+                                "unsupported-feature",
+                            )
+                            .at(path.clone()));
+                        }
+                        let collection: &'w quire_exact::CollectionType = collection;
+                        work.push(Admit::Sequence {
+                            collection,
+                            count: items.iter().len(),
+                        });
+                        for (index, item) in items.iter().enumerate().rev() {
+                            work.push(Admit::Leave);
+                            work.push(Admit::Value {
+                                form: item.form(),
+                                value_type: collection.element(),
+                                presence: quire_exact::Presence::Required,
+                                field: false,
+                            });
+                            work.push(Admit::Enter(PathStep::Index(index)));
+                        }
+                    }
+                    (RawForm::Record(record), quire_exact::ValueType::Composite(slot)) => {
+                        let Some(own) = references.record_type(record.type_identity()) else {
+                            return Err(refuse_at("wrong-value-kind", &path));
+                        };
+                        if !types.composite_conforms(own, *slot) {
+                            return Err(refuse_at("wrong-value-kind", &path));
+                        }
+                        let Some(CompositeShape::Record(declared)) =
+                            types.composite(own).map(|declaration| declaration.shape())
+                        else {
+                            return Err(refuse_at("wrong-value-kind", &path));
+                        };
+                        let nested = |name: &str| {
+                            let mut nested = path.clone();
+                            nested.push(PathStep::Field(name.to_owned()));
+                            nested
+                        };
+                        if let Some(missing) = declared
+                            .iter()
+                            .find(|field| !record.fields().any(|(name, _)| name == field.name()))
+                        {
+                            return Err(admission_record(
+                                Code::InvalidRuntimeInput,
+                                "missing-member",
+                            )
+                            .at(nested(missing.name())));
+                        }
+                        if let Some((extra, _)) = record
+                            .fields()
+                            .find(|(name, _)| !declared.iter().any(|field| field.name() == *name))
+                        {
+                            return Err(admission_record(
+                                Code::InvalidRuntimeInput,
+                                "unknown-member",
+                            )
+                            .at(nested(extra)));
+                        }
+                        work.push(Admit::Record {
+                            own,
+                            count: declared.len(),
+                        });
+                        for field in declared.iter().rev() {
+                            let Some((_, raw)) =
+                                record.fields().find(|(name, _)| *name == field.name())
+                            else {
+                                return Err(refuse_at("wrong-value-kind", &nested(field.name())));
+                            };
+                            work.push(Admit::Leave);
+                            work.push(Admit::Value {
+                                form: raw.form(),
+                                value_type: field.value_type(),
+                                presence: field.presence(),
+                                field: true,
+                            });
+                            work.push(Admit::Enter(PathStep::Field(field.name().to_owned())));
+                        }
+                    }
+                    (form, value_type) => {
+                        let value =
+                            admit_leaf(references, form, value_type, witness.as_deref_mut())
+                                .map_err(|record| record.at(path.clone()))?;
+                        done.push(FieldValue::Present(value));
+                    }
+                }
             }
         }
     }
-    admitted
-        .pop()
+    done.pop()
         .ok_or_else(|| admission_record(Code::InvalidRuntimeInput, "wrong-value-kind"))
 }
 
@@ -1197,7 +1558,10 @@ fn collect_references(raw: &SnapshotValue, into: &mut Vec<(String, String)>) {
             RawForm::Sequence(items) => {
                 pending.extend(items.iter().rev().map(RawValue::form));
             }
-            RawForm::Boolean(_) | RawForm::Integer(_) | RawForm::Absent => {}
+            RawForm::Record(record) => {
+                pending.extend(record.fields().rev().map(|(_, value)| value.form()));
+            }
+            RawForm::Boolean(_) | RawForm::Integer(_) | RawForm::Absent | RawForm::Variant(_) => {}
         }
     }
 }
@@ -1278,8 +1642,11 @@ pub(super) fn admit_population_values<'t>(
                     }
                     Ok(false) => {}
                     Err(refusal) => {
-                        return Err(match refusal.cause.limit_exceeded() {
-                            Some(limit) => super::limit_refusal(&limit),
+                        return Err(match refusal.cause.denial() {
+                            Some(denial) => super::caller_budget_refusal(
+                                &denial,
+                                refusal.cause.catalog_code().cause(),
+                            ),
                             None => fault("conformance-walk-refused"),
                         });
                     }
@@ -1364,7 +1731,7 @@ pub(super) fn admit_population_values<'t>(
                 // raw value here.
                 let raw = raw_field(&object.fields, name)
                     .ok_or_else(|| fault("declared-field-missing-after-check-6-4"))?;
-                if !object_field_kind_matches(raw, value_type, presence) {
+                if !object_field_kind_matches(raw.form(), value_type, presence) {
                     return Err(refuse(
                         admission_record(Code::InvalidRuntimeInput, "wrong-value-kind")
                             .with("object", object.key.clone())
@@ -1403,6 +1770,7 @@ pub(super) fn admit_population_values<'t>(
                 index: breach.index,
                 range: breach.range,
                 observed: breach.observed,
+                steps: breach.steps,
             }));
             objects.push((reference, attributes));
         }
@@ -1415,6 +1783,173 @@ pub(super) fn admit_population_values<'t>(
         unresolved: references.unresolved,
         out_of_range,
     })
+}
+
+/// Admit one state-machine context alongside any ordinary declared
+/// populations in the same snapshot. A machine context is owned by its
+/// observation and therefore receives an internal observation-scoped
+/// reference only for evaluator lookup; that reference is never exposed as
+/// a declared-object path subject.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn admit_state_machine_context_values<'t>(
+    views: &[ModelView],
+    types: &'t TypeEnvironment,
+    context_view: &ModelView,
+    context_name: &str,
+    populations: &[RawPopulation],
+    observation: &DocumentRef,
+    invocation: &DocumentRef,
+    range: PostStateRange,
+    ancestor_steps: u64,
+) -> Result<(PopulationValues<'t>, ObjectReference), AdmissionFailure> {
+    let mut contexts = Vec::new();
+    let mut ordinary = Vec::new();
+    for (population_index, population) in populations.iter().enumerate() {
+        if population.population == context_name {
+            for (object_index, object) in population.objects.iter().enumerate() {
+                contexts.push((population_index, object_index, object));
+            }
+        } else {
+            ordinary.push(population.clone());
+        }
+    }
+
+    let required = format!("({context_name}, {})", invocation.identity);
+    let Some((_, _, context)) = contexts.first().copied() else {
+        return Err(refuse(
+            admission_record(Code::InvalidModelBinding, "wrong-context")
+                .with("document", observation.identity.clone())
+                .with("required", required)
+                .with("actual", "none"),
+        ));
+    };
+    if let Some((population_index, object_index, _)) = contexts.get(1).copied() {
+        return Err(refuse(
+            admission_record(Code::InvalidRuntimeInput, "duplicate-member")
+                .with("document", observation.identity.clone())
+                .with(
+                    "path",
+                    format!("/populations/{population_index}/objects/{object_index}"),
+                ),
+        ));
+    }
+
+    let context_key = context_view
+        .view
+        .type_identities()
+        .keys()
+        .find(|key| key.node == context_name)
+        .ok_or_else(|| fault("context-type-unresolved"))?;
+    if context.type_identity.as_str() != context_name {
+        return Err(refuse(
+            admission_record(Code::InvalidModelBinding, "wrong-context")
+                .with("document", observation.identity.clone())
+                .with("required", required)
+                .with("actual", context.type_identity.as_str().to_owned()),
+        ));
+    }
+    let effective_type = *context_view
+        .view
+        .type_identities()
+        .get(context_key)
+        .ok_or_else(|| fault("context-type-has-no-effective-id"))?;
+    let declared = types
+        .attributes(effective_type)
+        .ok_or_else(|| fault("context-type-has-no-checked-attributes"))?;
+
+    for attribute in declared {
+        if let quire_exact::ValueType::Collection(collection) = attribute.field().value_type() {
+            if collection.kind() != CollectionKind::Sequence {
+                return Err(refuse(
+                    admission_record(Code::UnknownRequiredFeature, "unsupported-feature")
+                        .with("field", attribute.field().name().to_owned()),
+                ));
+            }
+        }
+    }
+    for attribute in declared {
+        let name = attribute.field().name();
+        if raw_field(&context.fields, name).is_none() {
+            return Err(refuse(
+                admission_record(Code::InvalidRuntimeInput, "missing-member")
+                    .with("document", observation.identity.clone())
+                    .with("field", name.to_owned()),
+            ));
+        }
+    }
+    for (name, _) in &context.fields {
+        if !declared
+            .iter()
+            .any(|attribute| attribute.field().name() == name)
+        {
+            return Err(refuse(
+                admission_record(Code::InvalidRuntimeInput, "unknown-member")
+                    .with("document", observation.identity.clone())
+                    .with("field", name.clone()),
+            ));
+        }
+    }
+
+    let mut references = References::over(views, types, &ordinary);
+    let mut attributes = Vec::with_capacity(declared.len());
+    let mut breaches = Vec::new();
+    for attribute in declared {
+        let name = attribute.field().name();
+        let value_type = attribute.field().value_type();
+        let presence = attribute.field().presence();
+        let raw = raw_field(&context.fields, name)
+            .ok_or_else(|| fault("context-field-missing-after-check"))?;
+        if !object_field_kind_matches(raw.form(), value_type, presence) {
+            return Err(refuse(
+                admission_record(Code::InvalidRuntimeInput, "wrong-value-kind")
+                    .with("document", observation.identity.clone())
+                    .with("field", name.to_owned()),
+            ));
+        }
+        let mut found = Vec::new();
+        let witness = match range {
+            PostStateRange::Witness => Some(&mut found),
+            PostStateRange::Refuse => None,
+        };
+        let value = admit_object_field(&mut references, raw, value_type, presence, witness)
+            .map_err(|record| {
+                refuse(
+                    record
+                        .with("document", observation.identity.clone())
+                        .with("field", name.to_owned()),
+                )
+            })?;
+        breaches.extend(
+            found
+                .into_iter()
+                .map(|breach| (attribute.identity(), breach)),
+        );
+        attributes.push((name, value));
+    }
+
+    let object = ObjectId::new(invocation.identity.clone()).map_err(|_| {
+        refuse(
+            admission_record(Code::InvalidRuntimeInput, "invalid-value").with("field", "identity"),
+        )
+    })?;
+    let reference = ObjectReference::new(
+        UniverseId::from_digest(observation.digest),
+        effective_type,
+        object,
+    );
+    let mut values = admit_population_values(views, types, &ordinary, range, ancestor_steps)?;
+    values
+        .out_of_range
+        .extend(breaches.into_iter().map(|(field, breach)| OutOfRange {
+            object: reference.clone(),
+            field,
+            index: breach.index,
+            range: breach.range,
+            observed: breach.observed,
+            steps: breach.steps,
+        }));
+    values.objects.push((reference.clone(), attributes));
+    Ok((values, reference))
 }
 
 /// FR-106's required populations from parameters: every population of the
@@ -1467,6 +2002,7 @@ fn holds_references(value_type: &quire_exact::ValueType) -> bool {
             | quire_exact::ValueType::Float(_)
             | quire_exact::ValueType::Quantity(_)
             | quire_exact::ValueType::Text(_)
+            | quire_exact::ValueType::String
             | quire_exact::ValueType::Enum(_)
             | quire_exact::ValueType::Composite(_)
             | quire_exact::ValueType::Population(_)
@@ -1787,7 +2323,7 @@ pub(super) fn admit_parameters(
                     .with("field", name.clone()),
             ));
         }
-        let value = admit_value(references, raw, value_type)
+        let value = admit_form(references, raw.form(), value_type, None)
             .map_err(|record| refuse(record.with("field", name.clone())))?;
         references.check_closure(raw).map_err(refuse)?;
         admitted.push((name.clone(), value));
@@ -1833,7 +2369,8 @@ pub(super) fn admit_result(
                     "wrong-value-kind",
                 )));
             }
-            let value = admit_value(references, raw, value_type).map_err(refuse)?;
+            let value = admit_form(references, raw.form(), value_type, None)
+                .map_err(|record| refuse(record.with("field", "result")))?;
             references.check_closure(raw).map_err(refuse)?;
             Ok(Some(value))
         }
@@ -2085,5 +2622,101 @@ mod tests {
         )
         .expect_err("an unwitnessed sequence refuses");
         assert_eq!(record.cause, "invalid-value");
+    }
+
+    /// The raw value `text` spells, or `None` when it is not a value form.
+    fn read(text: &str) -> Option<SnapshotValue> {
+        let document =
+            quire_canonical::read(text.as_bytes(), u64::MAX).expect("test fixture is JSON");
+        read_raw_value(Json::of(document.root()), &mut || Ok::<(), ()>(()))
+            .expect("an uncharged read does not fail")
+    }
+
+    /// FR-106 record form: the `record` tag reads its `type` and its fields
+    /// in document order, nested records included, and equals the value built
+    /// from its parts; a payload with any member besides `type` and `fields`,
+    /// or either missing or of the wrong kind, is not a value form.
+    #[trace("FR-106-AC-15", "FR-359-AC-9")]
+    #[test]
+    fn a_record_value_reads_by_its_type_and_fields_in_document_order() {
+        let read_back = snapshot(
+            r#"{"record":{"type":"ix://p/T","fields":{"b":{"integer":"2"},"a":{"record":{"type":"ix://p/U","fields":{}}}}}}"#,
+        );
+        let RawForm::Record(record) = read_back.form() else {
+            panic!("a record");
+        };
+        assert_eq!(record.type_identity(), "ix://p/T");
+        let names: Vec<&str> = record.fields().map(|(name, _)| name).collect();
+        assert_eq!(names, ["b", "a"], "document order");
+        assert_eq!(
+            read_back,
+            SnapshotValue::record(
+                "ix://p/T",
+                vec![
+                    ("b".to_owned(), SnapshotValue::integer("2")),
+                    (
+                        "a".to_owned(),
+                        SnapshotValue::record("ix://p/U", Vec::new())
+                    ),
+                ]
+            )
+        );
+        for malformed in [
+            r#"{"record":{"type":"ix://p/T"}}"#,
+            r#"{"record":{"fields":{}}}"#,
+            r#"{"record":{"type":"ix://p/T","fields":{},"extra":1}}"#,
+            r#"{"record":{"type":7,"fields":{}}}"#,
+            r#"{"record":{"type":"ix://p/T","fields":[]}}"#,
+            r#"{"record":{"type":"ix://p/T","fields":{"a":{"nope":1}}}}"#,
+            r#"{"record":"ix://p/T"}"#,
+        ] {
+            assert!(read(malformed).is_none(), "{malformed}");
+        }
+    }
+
+    /// FR-360 item 9: the `variant` tag keeps the members of its payload as
+    /// written, so a missing or an extra one is judged by admission in its
+    /// own order; a payload that is not an object, or a `type` or `case` that
+    /// is not text, is not a value form.
+    #[trace("FR-360-AC-9", "FR-360-AC-10")]
+    #[test]
+    fn a_variant_value_reads_its_members_as_written() {
+        let read_back = snapshot(r#"{"variant":{"case":"Gold","type":"ix://p/Tier"}}"#);
+        let RawForm::Variant(variant) = read_back.form() else {
+            panic!("a variant");
+        };
+        assert_eq!(variant.type_identity(), Some("ix://p/Tier"));
+        assert_eq!(variant.case(), Some("Gold"));
+        assert!(!variant.has_extra_member());
+        assert_eq!(
+            read_back,
+            SnapshotValue::variant("ix://p/Tier", "Gold"),
+            "member order does not change the value"
+        );
+        let partial = snapshot(r#"{"variant":{"x":1}}"#);
+        let RawForm::Variant(variant) = partial.form() else {
+            panic!("a variant");
+        };
+        assert_eq!((variant.type_identity(), variant.case()), (None, None));
+        assert!(variant.has_extra_member());
+        for malformed in [
+            r#"{"variant":"Gold"}"#,
+            r#"{"variant":{"type":7,"case":"Gold"}}"#,
+            r#"{"variant":{"type":"ix://p/Tier","case":null}}"#,
+        ] {
+            assert!(read(malformed).is_none(), "{malformed}");
+        }
+    }
+
+    /// A reference inside a record is found by the closure walk.
+    #[trace("FR-106-AC-15", "FR-359-AC-9")]
+    #[test]
+    fn collect_references_walks_into_a_record() {
+        let raw = snapshot(
+            r#"{"record":{"type":"ix://p/T","fields":{"a":{"reference":{"population":"p","key":"k"}}}}}"#,
+        );
+        let mut found = Vec::new();
+        collect_references(&raw, &mut found);
+        assert_eq!(found, [("p".to_owned(), "k".to_owned())]);
     }
 }

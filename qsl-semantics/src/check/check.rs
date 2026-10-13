@@ -52,11 +52,12 @@ mod typing;
 
 use super::ir::{
     Arithmetic, BodyBuilder, CheckedLiteral, Connective, DispatchTable, Node, NodeId, NodeKind,
-    OrderedKind, RecordSlot, Slot, Visit,
+    OrderedKind, RecordField, RecordSlot, Slot, Visit,
 };
 use super::refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, Obligation, StageLimitCause,
 };
+use crate::model::key::DeclarationKey;
 use crate::model::operation::OperationTable;
 use crate::value::definition::{AdmittedIeeeProfile, AdmittedIntegerDivision};
 use crate::value::enumeration::{mint_variant_id, AdmittedEnumDeclaration};
@@ -75,13 +76,14 @@ use quire_exact::Presence;
 use quire_exact::Rational;
 use quire_exact::{ArithmeticOperator, OrderingOperator};
 use quire_exact::{CardinalityBound, CollectionKind, CollectionType, Integer};
+use quire_exact::{NodeKey, VariantId};
 use quire_exact::{Value, ValueType};
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::{
     admits_equality_conversion, CompositeShape, EqualityOperand, EqualityOperator,
     FieldDeclaration, TypeEnvironment,
 };
-use quire_semantic_value::enumeration::{EnumMemberIndex, EnumValue};
+use quire_semantic_value::enumeration::{EnumDeclaration, EnumMemberIndex, EnumValue};
 use quire_semantic_value::location::Location;
 use quire_semantic_value::quantity::{
     check_comparable, result_unit, IdentifiedUnit, UnitOperation, UnitScope,
@@ -146,9 +148,171 @@ impl ResolvedSignatures {
     }
 }
 
+/// The runtime members of a model variant type whose checked node is
+/// `declaration`, for `cases` in ascending UTF-8 byte order of their names
+/// (QSpec FR-144's key order for an unordered enumeration). Each member is
+/// keyed by [`mint_variant_id`] over the declaration and its case, and a case
+/// name is any non-empty string, kept exactly. `None` when `cases` is empty,
+/// repeats a name or has an empty name, which the model's intake refuses
+/// before a variant type is declared.
+fn variant_type_members(declaration: NodeKey, cases: &[String]) -> Option<Vec<EnumValue>> {
+    let runtime = EnumDeclaration::model_owned(declaration, cases.to_vec()).ok()?;
+    cases
+        .iter()
+        .map(|case| {
+            let member = NodeKey::from_digest(*mint_variant_id(declaration, case).as_bytes());
+            runtime.member(case, member).ok()
+        })
+        .collect()
+}
+
+/// A model variant type in the type environment (FR-056 "Variant types",
+/// FR-081, FR-360 item 11): the effective type the normalized view gives a
+/// `quire.meaning.model.variant-type/v1` declaration, named `M::<artifact
+/// id>`, with its cases. One declaration holds both keys of the type and of
+/// each case: the FR-081 effective identity and the checked node key, so
+/// neither is derived from the other and neither depends on the alias a unit
+/// gives the model.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VariantTypeDeclaration {
+    key: EffectiveId,
+    name: String,
+    declaration: DeclarationKey,
+    node: NodeKey,
+    cases: Vec<VariantCaseDeclaration>,
+    members: Vec<EnumValue>,
+}
+
+impl VariantTypeDeclaration {
+    /// The variant type `name` with effective identity `key`, declared by
+    /// the model record `declaration` and checked node key `node`; `cases`
+    /// are kept in ascending UTF-8 byte order of their names. Each case's
+    /// checked key is the FR-141 member identity over `node` and the case
+    /// name. `None` when `cases` is not a valid case set of a model-owned
+    /// enumeration (see [`variant_type_members`]).
+    pub(crate) fn new(
+        key: EffectiveId,
+        name: String,
+        declaration: DeclarationKey,
+        node: NodeKey,
+        mut cases: Vec<(EffectiveId, String)>,
+    ) -> Option<Self> {
+        cases.sort_by(|left, right| left.1.cmp(&right.1));
+        let names: Vec<String> = cases.iter().map(|(_, case)| case.clone()).collect();
+        let members = variant_type_members(node, &names)?;
+        let cases = cases
+            .into_iter()
+            .map(|(key, case)| {
+                let variant = mint_variant_id(node, &case);
+                VariantCaseDeclaration {
+                    key,
+                    name: case,
+                    variant,
+                }
+            })
+            .collect();
+        Some(Self {
+            key,
+            name,
+            declaration,
+            node,
+            cases,
+            members,
+        })
+    }
+
+    /// The variant type's effective identity.
+    pub fn key(&self) -> EffectiveId {
+        self.key
+    }
+
+    /// The qualified name `M::<artifact id>`.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// The model record that declares the variant type.
+    pub(crate) fn declaration(&self) -> &DeclarationKey {
+        &self.declaration
+    }
+
+    /// The variant type's checked node key (QSpec FR-322 "Model-owned
+    /// members" step 2), a function of the selected document's identity and
+    /// the type node alone.
+    pub fn node(&self) -> NodeKey {
+        self.node
+    }
+
+    /// The cases, ascending by the UTF-8 bytes of their names.
+    pub fn cases(&self) -> &[VariantCaseDeclaration] {
+        &self.cases
+    }
+
+    /// The kernel enum shape of the type: its cases' checked keys in
+    /// ascending UTF-8 byte order of the case names, which is QSpec FR-144's
+    /// key order for an unordered enumeration.
+    pub fn shape(&self) -> EnumShape {
+        EnumShape::new(
+            false,
+            self.cases.iter().map(VariantCaseDeclaration::variant),
+        )
+    }
+
+    /// The runtime members, in the order of [`Self::cases`].
+    pub(crate) fn members(&self) -> &[EnumValue] {
+        &self.members
+    }
+}
+
+/// One case of a [`VariantTypeDeclaration`]: an effective member of the
+/// variant type, keyed by its own effective identity and by its checked key.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VariantCaseDeclaration {
+    key: EffectiveId,
+    name: String,
+    variant: VariantId,
+}
+
+impl VariantCaseDeclaration {
+    /// The case's effective identity.
+    pub fn key(&self) -> EffectiveId {
+        self.key
+    }
+
+    /// The case name, compared as exact UTF-8 bytes.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// The case's checked key: the FR-141 member identity over the variant
+    /// type's checked node and the case name.
+    pub fn variant(&self) -> VariantId {
+        self.variant
+    }
+}
+
+/// The staged model type admission, held until the conformance stage has
+/// judged every redefinition.
+pub struct StagedTypes(pub quire_semantic_value::declaration::PendingTypeEnvironment);
+
+impl std::fmt::Debug for StagedTypes {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("StagedTypes")
+    }
+}
+
 /// The closed declarations of one package that expressions resolve against.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct PackageDeclarations {
+    /// The staged model admission, completed once the conformance stage has
+    /// judged every model redefinition.
+    pub pending_types: Option<StagedTypes>,
+    /// The models and the meter their admission counted on, which the
+    /// conformance stage continues.
+    pub model_inputs: Option<(
+        Vec<crate::model::intake::SelectedModel>,
+        crate::model::accounting::Meter,
+    )>,
     /// The declaring source unit's `RawSourceRef` (FR-001), the reference
     /// its caller named and S0 minted. Its authority and identity are the
     /// unit's owner (ADR-013 O-04, FR-091), carried by every declared
@@ -161,11 +325,15 @@ pub struct PackageDeclarations {
     pub lock_evidence: super::lowering::LockEvidence,
     /// Record, tuple and model object-type declarations.
     pub types: TypeEnvironment,
+    /// Where each record keeps the fields its ancestors name (FR-359).
+    pub model_records: ModelRecords,
     /// The model object types' own declared operations (FR-103), resolved
     /// through [`Self::types`]' effective view.
     pub operations: OperationTable,
     /// Enum declarations.
     pub enums: Vec<EnumBinding>,
+    /// The admitted models' variant types, ascending by effective identity.
+    pub variant_types: Vec<VariantTypeDeclaration>,
     /// `type Name = T;` aliases, which create no declaration identity.
     pub aliases: Vec<(String, ValueType)>,
     /// The unit's own `profile p = ...;` and `model M = ...;` selection
@@ -220,6 +388,12 @@ pub struct PackageDeclarations {
     /// unit (the FR-091 assembler fills it). A declaration built by hand has
     /// none, and its `declaration` occurrence then names no region.
     pub declared_type_spans: BTreeMap<String, qsl_foundation::Span>,
+    /// FR-096, FR-302: the span of the unit declaration each function
+    /// synthesized for dispatch without form spans of its own was derived
+    /// from, by index into [`Self::functions`]: every occurrence in such a
+    /// function resolves to that span. `link_dispatch` fills it for the
+    /// precondition functions it synthesizes from the unit's `pre` clauses.
+    pub synthesized_spans: BTreeMap<usize, qsl_foundation::Span>,
     /// FR-096-AC-1, ADR-013 C-21: the map of a body embedded in a document.
     /// The spans above are body offsets; with a map, each region resolves
     /// under the document's `RawSourceRef`, shifted by the body's offset in
@@ -254,12 +428,50 @@ pub struct PackageDeclarations {
     /// inner list is in the same order as its protocol's own
     /// `ProtocolDeclarationForm::attempts`.
     pub protocol_attempts: Vec<Vec<super::state_clause::AttemptDeclaration>>,
+    /// FR-103: each domain-package operation `requires`/`ensures` clause the
+    /// driver parsed, with its operation resolved, checked beside the state
+    /// clauses. Checking yields a refusal or nothing.
+    pub operation_clauses: Vec<super::OperationClauseDeclaration>,
+    /// FR-103, FR-302: the unit's `operation-body` declarations in
+    /// declaration order, each resolved to its operation's `DeclarationKey`
+    /// by the FR-091 assembler. At most one per key.
+    pub operation_bodies: Vec<super::OperationBodyDeclaration>,
+    /// FR-103, FR-302: the effective view of each selected `model`
+    /// declaration, by its alias, with `has_body` set from the unit's
+    /// `operation-body` declarations that resolved into it. A model no body
+    /// names holds its admitted view, whose `has_body` is false throughout.
+    /// Dispatch linking reads a called operation's family from these views.
+    pub selected_views: BTreeMap<String, crate::model::normalize::EffectiveView>,
     /// The byte limit every node identity of this package encodes under
     /// (`identity.input_bytes`), carried from the assembly that built it.
     pub identity: qsl_foundation::IdentityLimits,
 }
 
 impl PackageDeclarations {
+    /// The work units the staged model type admission has spent so far
+    /// (structural admission plus its metered reads), when one is staged.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn staged_work_units(&self) -> Option<u64> {
+        self.pending_types.as_ref().map(|staged| staged.0.spent())
+    }
+
+    /// Test fixture declarations retaining the genuine admission operation.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn fixture_with_selected_models(
+        source: qsl_foundation::source::provenance::RawSourceRef,
+        identity: qsl_foundation::IdentityLimits,
+        selected: crate::model::intake::SelectedModels,
+    ) -> Self {
+        let (entries, meter) = selected.into_parts();
+        let mut declarations = Self::new(source, identity);
+        declarations.models = entries
+            .iter()
+            .map(|entry| super::AdmittedModel::from_view(&entry.view))
+            .collect();
+        declarations.model_inputs = Some((entries, meter));
+        declarations
+    }
+
     /// A package declared by the source unit `source` names, with no
     /// declaration yet and no lock evidence, whose node identities encode
     /// under `identity`.
@@ -268,11 +480,15 @@ impl PackageDeclarations {
         identity: qsl_foundation::IdentityLimits,
     ) -> Self {
         Self {
+            model_inputs: None,
+            pending_types: None,
             source,
             lock_evidence: super::lowering::LockEvidence::default(),
             types: TypeEnvironment::default(),
+            model_records: ModelRecords::default(),
             operations: OperationTable::default(),
             enums: Vec::new(),
+            variant_types: Vec::new(),
             aliases: Vec::new(),
             alias_names: std::collections::BTreeMap::new(),
             native_names: std::collections::BTreeSet::new(),
@@ -286,6 +502,7 @@ impl PackageDeclarations {
             model_clauses: std::collections::BTreeMap::new(),
             resolved_signatures: ResolvedSignatures::default(),
             declared_type_spans: BTreeMap::new(),
+            synthesized_spans: BTreeMap::new(),
             embedding: None,
             units: quire_semantic_value::unit::UnitGraph::default(),
             nominal_spans: BTreeMap::new(),
@@ -294,8 +511,32 @@ impl PackageDeclarations {
             state_clauses: Vec::new(),
             protocols: Vec::new(),
             protocol_attempts: Vec::new(),
+            operation_clauses: Vec::new(),
+            operation_bodies: Vec::new(),
+            selected_views: BTreeMap::new(),
             identity,
         }
+    }
+
+    /// FR-302: the unit's body for the operation `key`, if one resolved to
+    /// it.
+    pub fn operation_body(
+        &self,
+        key: &crate::model::key::DeclarationKey,
+    ) -> Option<&super::OperationBodyDeclaration> {
+        self.operation_bodies.iter().find(|body| &body.key == key)
+    }
+
+    /// FR-103, FR-302: the unit `pre` and `post` clauses that resolved to
+    /// the operation `key`, in declaration order.
+    pub fn unit_clauses_for(
+        &self,
+        key: &crate::model::key::DeclarationKey,
+    ) -> Vec<&super::StateClauseDeclaration> {
+        self.state_clauses
+            .iter()
+            .filter(|clause| clause.operation_key.as_ref() == Some(key))
+            .collect()
     }
 
     /// The unit's owner, `SourceOwner{authority, identity}` taken from its
@@ -325,13 +566,80 @@ pub struct DispatchOperation {
     pub table: usize,
 }
 
+/// What the checker knows of a model's record value types and event types
+/// beyond their composite declarations (FR-359).
+///
+/// A checked field read names its field by the record it is typed at and the
+/// name there. The value read is a child of that record, whose effective
+/// fields are ordered by their own keys, and which may redefine the field
+/// under another name (FR-082). This holds, for each record that redefines an
+/// ancestor's field under a different name, the name of its own field; a
+/// record with no such field keeps every field under its name. It also holds
+/// which declarations are event types, which FR-208 gives no equality.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ModelRecords {
+    /// By the value's declaration and the declaration the read is typed at,
+    /// then the name there: a read looks a borrowed name up and allocates
+    /// nothing, and a package with no redefinition under another name
+    /// holds an empty map.
+    renamed: BTreeMap<(quire_exact::NodeKey, quire_exact::NodeKey), BTreeMap<String, String>>,
+    events: BTreeSet<quire_exact::NodeKey>,
+}
+
+impl ModelRecords {
+    /// Record that the record `value` keeps the field `name` of the record
+    /// `read_at` under its own field `own`.
+    pub(crate) fn rename(
+        &mut self,
+        value: quire_exact::NodeKey,
+        read_at: quire_exact::NodeKey,
+        name: impl Into<String>,
+        own: impl Into<String>,
+    ) {
+        self.renamed
+            .entry((value, read_at))
+            .or_default()
+            .insert(name.into(), own.into());
+    }
+
+    /// Record that `declaration` is an event type.
+    pub(crate) fn declare_event(&mut self, declaration: quire_exact::NodeKey) {
+        self.events.insert(declaration);
+    }
+
+    /// Every entry of `other`.
+    pub(crate) fn extend(&mut self, other: ModelRecords) {
+        for (key, names) in other.renamed {
+            self.renamed.entry(key).or_default().extend(names);
+        }
+        self.events.extend(other.events);
+    }
+
+    /// The name under which a value of `declaration` keeps `field`.
+    fn own_name<'f>(
+        &'f self,
+        declaration: quire_exact::NodeKey,
+        field: &'f RecordField,
+    ) -> &'f str {
+        self.renamed
+            .get(&(declaration, field.declaration()))
+            .and_then(|names| names.get(field.name()))
+            .map_or(field.name(), String::as_str)
+    }
+}
+
 /// Everything names resolve against, apart from function bodies.
 #[derive(Clone, Debug)]
 pub struct Scope {
     /// Fixed once built: [`Self::index`] is derived from it.
     types: TypeEnvironment,
+    /// Where a record value keeps the fields its ancestors name (FR-359).
+    model_records: ModelRecords,
     /// Fixed once built, like `types`.
     enums: Vec<EnumBinding>,
+    /// The admitted models' variant types, as the assembler ordered them.
+    /// A source name `M::T` resolves to one through [`Self::index`].
+    variant_types: Vec<VariantTypeDeclaration>,
     /// The model object types' own declared operations (FR-103).
     operations: OperationTable,
     pub(crate) ieee_profile: Option<AdmittedIeeeProfile>,
@@ -394,6 +702,14 @@ struct ScopeIndex {
     /// The checked `VariantId -> EnumValue` index over every binding's
     /// members, in binding then member order (ADR-013 T-6).
     enum_member_index: EnumMemberIndex,
+    /// Variant type name, then case, to the position of the variant type in
+    /// [`Scope::variant_types`] and of the case in its runtime members.
+    variant_cases: BTreeMap<String, BTreeMap<String, (usize, usize)>>,
+    /// Each variant type's enum shape to the type's position in
+    /// [`Scope::variant_types`].
+    variant_shapes: BTreeMap<EnumShape, usize>,
+    /// Every case name of every variant type, for the bare-case refusal.
+    bare_cases: BTreeSet<String>,
 }
 
 impl ScopeIndex {
@@ -443,6 +759,25 @@ impl ScopeIndex {
         index
     }
 
+    /// Index `variant_types`: each type's name resolves to its enum shape
+    /// and each `T::Case` to its runtime member (FR-360 item 4).
+    fn variant_types(&mut self, variant_types: &[VariantTypeDeclaration]) {
+        for (position, declared) in variant_types.iter().enumerate() {
+            let shape = declared.shape();
+            self.named_type(declared.name(), ValueType::Enum(shape.clone()));
+            self.variant_shapes.insert(shape, position);
+            let cases = self
+                .variant_cases
+                .entry(declared.name().to_owned())
+                .or_default();
+            for (member, value) in declared.members().iter().enumerate() {
+                cases.insert(value.case().to_owned(), (position, member));
+                self.bare_cases.insert(value.case().to_owned());
+                self.enum_member_index.record(value.clone());
+            }
+        }
+    }
+
     fn named_type(&mut self, name: &str, value_type: ValueType) {
         self.types
             .entry(name.to_owned())
@@ -465,7 +800,9 @@ impl Scope {
         let index = ScopeIndex::new(&types, &enums, &aliases, &model_operations);
         Self {
             types,
+            model_records: ModelRecords::default(),
             enums,
+            variant_types: Vec::new(),
             operations,
             ieee_profile,
             integer_division: None,
@@ -493,6 +830,20 @@ impl Scope {
 
     pub(crate) fn with_complete_value(mut self, complete_value: bool) -> Self {
         self.complete_value = complete_value;
+        self
+    }
+
+    /// This scope with where its record values keep the fields their
+    /// ancestors name.
+    pub(crate) fn with_model_records(mut self, model_records: ModelRecords) -> Self {
+        self.model_records = model_records;
+        self
+    }
+
+    /// This scope with the admitted models' variant types.
+    pub(crate) fn with_variant_types(mut self, variant_types: Vec<VariantTypeDeclaration>) -> Self {
+        self.index.variant_types(&variant_types);
+        self.variant_types = variant_types;
         self
     }
 
@@ -542,9 +893,52 @@ impl Scope {
             })
     }
 
+    /// The admitted models' variant types, ascending by effective identity.
+    pub fn variant_types(&self) -> &[VariantTypeDeclaration] {
+        &self.variant_types
+    }
+
+    /// The variant type whose effective identity is `key`.
+    pub fn variant_type(&self, key: EffectiveId) -> Option<&VariantTypeDeclaration> {
+        self.variant_types
+            .iter()
+            .find(|declared| declared.key() == key)
+    }
+
     /// The package's admitted enum declarations, in declaration order.
     pub(crate) fn enums(&self) -> &[EnumBinding] {
         &self.enums
+    }
+
+    /// Whether `shape` is the enum shape of a variant type.
+    pub(crate) fn is_variant_shape(&self, shape: &EnumShape) -> bool {
+        self.index.variant_shapes.contains_key(shape)
+    }
+
+    /// The variant type whose enum shape is `shape`.
+    pub(crate) fn variant_type_of(&self, shape: &EnumShape) -> Option<&VariantTypeDeclaration> {
+        self.variant_types
+            .get(*self.index.variant_shapes.get(shape)?)
+    }
+
+    /// The variant type `name` names, when it is a variant type name.
+    pub(crate) fn variant_type_named(&self, name: &str) -> Option<&VariantTypeDeclaration> {
+        let (position, _) = *self.index.variant_cases.get(name)?.values().next()?;
+        self.variant_types.get(position)
+    }
+
+    /// The runtime member of the case `name` (`T::Case`) names, with its
+    /// variant type's enum shape.
+    pub(crate) fn variant_case_named(&self, name: &str) -> Option<(EnumShape, &EnumValue)> {
+        let (type_name, case) = name.rsplit_once("::")?;
+        let &(position, member) = self.index.variant_cases.get(type_name)?.get(case)?;
+        let declared = self.variant_types.get(position)?;
+        Some((declared.shape(), declared.members().get(member)?))
+    }
+
+    /// Whether `name` is the case name of some variant type.
+    pub(crate) fn is_variant_case_name(&self, name: &str) -> bool {
+        self.index.bare_cases.contains(name)
     }
 
     /// The first enum binding whose shape is `shape`.
@@ -584,6 +978,56 @@ impl Scope {
     /// The package's composite and object type declarations.
     pub fn types(&self) -> &TypeEnvironment {
         &self.types
+    }
+
+    /// Whether a value of `value_type` holds an event type anywhere inside
+    /// it: FR-208 gives an event type no equality, so none compares one.
+    pub(crate) fn reaches_event(&self, value_type: &ValueType) -> bool {
+        if self.model_records.events.is_empty() {
+            return false;
+        }
+        let mut seen = BTreeSet::new();
+        let mut pending = vec![value_type];
+        while let Some(value_type) = pending.pop() {
+            match value_type {
+                ValueType::Option(payload) => pending.push(payload),
+                ValueType::Collection(collection) => pending.push(collection.element()),
+                ValueType::Composite(declaration) => {
+                    if self.model_records.events.contains(declaration) {
+                        return true;
+                    }
+                    if !seen.insert(*declaration) {
+                        continue;
+                    }
+                    match self.types.composite(*declaration).map(|c| c.shape()) {
+                        Some(CompositeShape::Record(fields)) => {
+                            pending.extend(fields.iter().map(FieldDeclaration::value_type));
+                        }
+                        Some(CompositeShape::Tuple(positions)) => pending.extend(positions),
+                        None => {}
+                    }
+                }
+                _ => {}
+            }
+        }
+        false
+    }
+
+    /// The position, in the record `declaration`'s own fields, of the field
+    /// `field` names (FR-359 item 2): found in the value's own declaration by
+    /// the field's identity, never by a position computed from the record
+    /// the read was typed at. `None` when the declaration is no record or
+    /// holds no such field.
+    pub fn record_slot(
+        &self,
+        declaration: quire_exact::NodeKey,
+        field: &RecordField,
+    ) -> Option<usize> {
+        let CompositeShape::Record(fields) = self.types.composite(declaration)?.shape() else {
+            return None;
+        };
+        let name = self.model_records.own_name(declaration, field);
+        fields.iter().position(|candidate| candidate.name() == name)
     }
 
     /// The package's model object types' declared operations (FR-103).
@@ -747,6 +1191,8 @@ pub(crate) struct Typer<'a> {
 /// `result` are bound to.
 #[derive(Clone, Debug)]
 pub(crate) struct StateContext {
+    pub(crate) parent_projections:
+        BTreeMap<quire_semantic_value::declaration::FieldRef, (ValueType, Presence)>,
     /// The clause kind.
     pub(crate) kind: qsl_forms::StateClauseKind,
     /// The operation's name, for a `pre` or `post` clause.
@@ -899,9 +1345,10 @@ fn contextual(expression: ExprRef<'_>) -> bool {
 }
 
 impl Typer<'_> {
-    /// Admit `node` where `required` is expected: identical types, an integer into
-    /// `Integer` or a containing `Int[..]`, or an integer into another `Int[..]`
-    /// through a range-obligated [`NodeKind::Coerce`].
+    /// Admit `node` where `required` is expected: identical types, a record
+    /// into a record type it conforms to (FR-359), an integer into `Integer` or
+    /// a containing `Int[..]`, or an integer into another `Int[..]` through a
+    /// range-obligated [`NodeKind::Coerce`].
     pub(crate) fn coerce(
         &mut self,
         node: Node,
@@ -911,6 +1358,16 @@ impl Typer<'_> {
             return Ok(node);
         }
         match (&node.value_type, required) {
+            // FR-359 items 1 and 6: a record whose most-specific type
+            // conforms to the slot's record type is admitted as it is, with
+            // no conversion node; its own type stays on the node. A type
+            // constructor over a record is not covariant, so only the slot's
+            // own record type reaches this arm.
+            (ValueType::Composite(sub), ValueType::Composite(sup))
+                if self.scope.types.composite_conforms(*sub, *sup) =>
+            {
+                Ok(node)
+            }
             (ValueType::Integer | ValueType::Int(_), ValueType::Integer) => Ok(node),
             (ValueType::Int(source), ValueType::Int(target))
                 if target.lower() <= source.lower() && source.upper() <= target.upper() =>
@@ -1349,7 +1806,9 @@ impl<'a> Typer<'a> {
                     // source can trigger today. The check stays here as
                     // defense in depth, matching `Composite`/`Reference`'s
                     // own (`TypeEnvironment`-level) declaration checks.
-                    if self.scope.enum_binding_of(shape).is_none() {
+                    if self.scope.enum_binding_of(shape).is_none()
+                        && !self.scope.is_variant_shape(shape)
+                    {
                         return Err(mismatch(location));
                     }
                 }
@@ -1363,6 +1822,7 @@ impl<'a> Typer<'a> {
                 | ValueType::Float(_)
                 | ValueType::Quantity(_)
                 | ValueType::Text(_)
+                | ValueType::String
                 | ValueType::Composite(_)
                 | ValueType::Reference(_)
                 | ValueType::Population(_) => {}
@@ -1439,7 +1899,12 @@ impl<'a> Typer<'a> {
         ))
     }
 
-    fn name(&self, name: &str, location: &Location) -> Result<Node, CheckRefusal> {
+    fn name(
+        &self,
+        name: &str,
+        expected: Option<&ValueType>,
+        location: &Location,
+    ) -> Result<Node, CheckRefusal> {
         if let Some(local) = self.local(name) {
             return Ok(node(
                 NodeKind::Local(local.slot),
@@ -1466,8 +1931,7 @@ impl<'a> Typer<'a> {
                     location,
                 ))
             }
-            [] if self.signatures.declares(name) => Err(mismatch(location)),
-            [] => Err(refuse(location, CheckCause::MissingName(name.to_owned()))),
+            [] => self.variant_case(name, expected, location),
             _ => Err(refuse(
                 location,
                 CheckCause::AmbiguousName {
@@ -1476,6 +1940,41 @@ impl<'a> Typer<'a> {
                 },
             )),
         }
+    }
+
+    /// A name no local or enum binds: a case of a variant type (FR-360
+    /// item 4), a case the type does not declare, a bare case name where a
+    /// variant value is expected, which is no variant value, or a name nothing
+    /// binds.
+    fn variant_case(
+        &self,
+        name: &str,
+        expected: Option<&ValueType>,
+        location: &Location,
+    ) -> Result<Node, CheckRefusal> {
+        if let Some((shape, member)) = self.scope.variant_case_named(name) {
+            let rank = u32::try_from(member.position())
+                .expect("an admitted variant type has far fewer than u32::MAX members");
+            return Ok(node(
+                NodeKind::Literal(CheckedLiteral(Value::Enum(EnumMember::new(
+                    member.variant(),
+                    rank,
+                )))),
+                ValueType::Enum(shape),
+                location,
+            ));
+        }
+        let undeclared_case = name
+            .rsplit_once("::")
+            .is_some_and(|(type_name, _)| self.scope.variant_type_named(type_name).is_some());
+        if undeclared_case
+            || self.signatures.declares(name)
+            || (self.scope.is_variant_case_name(name)
+                && matches!(expected, Some(ValueType::Enum(shape)) if self.scope.is_variant_shape(shape)))
+        {
+            return Err(mismatch(location));
+        }
+        Err(refuse(location, CheckCause::MissingName(name.to_owned())))
     }
 
     /// `left = right` or `left != right` over its two typed operands, each
@@ -1487,6 +1986,12 @@ impl<'a> Typer<'a> {
         (right, right_operand): (Node, EqualityOperand),
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
+        // FR-359 item 4: FR-208 gives an event type no equality, so an
+        // operand holding one is ineligible, not compared.
+        if self.scope.reaches_event(&left.value_type) || self.scope.reaches_event(&right.value_type)
+        {
+            return Err(ineligible(location));
+        }
         let checked = self
             .scope
             .types
@@ -1740,6 +2245,7 @@ impl<'a> Typer<'a> {
             | ValueType::Reference(_)
             | ValueType::Population(_)
             | ValueType::Uuid
+            | ValueType::String
             | ValueType::Timestamp => return Err(mismatch(location)),
         };
         Ok(node(kind, value_type, location))
@@ -1759,8 +2265,11 @@ impl<'a> Typer<'a> {
         derefed: bool,
     ) -> Result<Node, CheckRefusal> {
         let value_type = reference.value_type.clone();
+        let on_self = self.state.as_ref().is_some_and(
+            |state| matches!(&reference.kind, NodeKind::Local(slot) if *slot == state.self_slot),
+        );
         let reference = self.push(reference);
-        self.model_node(
+        let mut attribute = self.model_node(
             super::state_model::Form::Attribute {
                 reference,
                 value_type,
@@ -1769,7 +2278,29 @@ impl<'a> Typer<'a> {
                 derefed,
             },
             location,
-        )
+        )?;
+        // A field the writing operation narrows reads through its
+        // immediate parent's declared type and presence.
+        if on_self {
+            if let NodeKind::Attribute {
+                field, optional, ..
+            } = &mut attribute.kind
+            {
+                let projected = self
+                    .state
+                    .as_ref()
+                    .and_then(|state| state.parent_projections.get(&*field));
+                if let Some((declared, presence)) = projected {
+                    *optional = *presence == Presence::Optional;
+                    attribute.value_type = if *optional {
+                        ValueType::option(declared.clone())
+                    } else {
+                        declared.clone()
+                    };
+                }
+            }
+        }
+        Ok(attribute)
     }
 
     /// `self` (FR-104): in a state clause, the context object,
@@ -1929,10 +2460,9 @@ impl<'a> Typer<'a> {
         else {
             return Err(mismatch(location));
         };
-        let (index, declared) = fields
+        let declared = fields
             .iter()
-            .enumerate()
-            .find(|(_, declared)| declared.name() == field)
+            .find(|declared| declared.name() == field)
             .ok_or_else(|| mismatch(location))?;
         let optional = declared.presence() == Presence::Optional;
         let value_type = if optional {
@@ -1943,7 +2473,7 @@ impl<'a> Typer<'a> {
         Ok(node(
             NodeKind::Field {
                 operand: self.push(operand),
-                index,
+                field: RecordField::new(key, field),
                 optional,
             },
             value_type,

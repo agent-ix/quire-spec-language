@@ -20,8 +20,10 @@
 //! the stage types do not carry.
 //!
 //! A stage refusal is the refusing stage's [`CompileRefusal`], boxed. A
-//! reached limit is [`StageFailure::Limit`] naming its setting
-//! (FR-255), and a broken invariant is [`StageFailure::Fault`] (FR-275). Each
+//! reached stage limit is [`StageFailure::Limit`] naming its setting
+//! (FR-255), a reached ceiling of the caller's budget (model normalization,
+//! intake) is that stage's `resource_exhausted` refusal (FR-255 Behavior 1),
+//! and a broken invariant is [`StageFailure::Fault`] (FR-275). Each
 //! output carries the work each stage did ([`Staged::work`], FR-275-AC-5). The
 //! composition `parse`, `select`, `check`, `package` over a source returns
 //! the same bytes, stage and cause code the CLI's `compile` writes for it.
@@ -84,7 +86,7 @@ use std::sync::Arc;
 
 use qsl_cst::Limits as SourceLimits;
 use qsl_eval::value::{CallFailure, CheckedPackageEvaluation, Evaluation};
-use qsl_forms::{build_unit, ParsedUnit};
+use qsl_forms::{build_unit, parse_clause_text, ParsedUnit};
 use qsl_foundation::diagnostic::{
     InternalFault, LimitExceeded, Locus, StageFailure, StageWork, Staged,
 };
@@ -100,11 +102,14 @@ use qsl_package::{
     ImportViewRefusal,
 };
 use qsl_semantics::check::{
-    resolve_profiles, AdmittedImport, AssemblyCause, CheckCause, LockEvidence, PackageDeclarations,
+    resolve_profiles, AdmittedImport, AssemblyCause, CheckCause, CorrespondenceConflict, KeyFault,
+    LockEvidence, PackageDeclarations,
 };
 use qsl_semantics::library::{ImportView, LibraryName};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
-use qsl_semantics::model::intake::{admit_unit_with_cancel, SelectedModel, UnitIntakeCause};
+use qsl_semantics::model::intake::{
+    admit_unit_with_cancel, SelectedModel, SelectedModels, UnitIntakeCause,
+};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::value::identity_limit;
 use quire_exact::{Cancel, Meter, ScalarLimits, Value};
@@ -203,22 +208,11 @@ fn limit_of(
             );
             Some(at(limit, diagnostic.region.as_ref()))
         }
-        CompileRefusal::Intake { refusal, region } => {
-            let incomplete = match &refusal.cause {
-                UnitIntakeCause::Limit(incomplete) => incomplete,
-                // The two edge ceilings refuse as model causes; the
-                // counter is the edge count the denied charge would have
-                // reached, the first value past the bound.
-                UnitIntakeCause::Refused(refusals) => {
-                    let limit = refusals
-                        .iter()
-                        .find_map(|refusal| refusal.cause.limit_exceeded())?;
-                    return Some(at(limit, region.as_ref()));
-                }
-                _ => return None,
-            };
-            Some(at(incomplete.limit_exceeded(), region.as_ref()))
-        }
+        // A `ModelNormalizationLimitsV1` ceiling and the intake byte limit
+        // are the caller's budgets wherever they are read, so intake keeps
+        // them as its `resource_exhausted` refusal (ADR-014 section 1,
+        // FR-255 Behavior 1), not a stage limit.
+        CompileRefusal::Intake { .. } => None,
         CompileRefusal::Check { refusals, region } => {
             if let Some((bound, required)) =
                 refusals.iter().find_map(|refusal| match refusal.cause {
@@ -265,6 +259,7 @@ fn limit_of(
         },
         CompileRefusal::Limit(limit) => Some(limit.clone()),
         CompileRefusal::Forms { .. }
+        | CompileRefusal::OperationClause { .. }
         | CompileRefusal::Profile { .. }
         | CompileRefusal::DependencyInput(_)
         | CompileRefusal::Import { .. }
@@ -281,7 +276,30 @@ fn fault_of(refusal: &CompileRefusal) -> Option<InternalFault> {
         CompileRefusal::Check { refusals, .. } => {
             refusals.iter().find_map(|refusal| match &refusal.cause {
                 CheckCause::InternalFault(fault) => {
-                    Some(InternalFault::new("S3", fault.invariant()))
+                    let named = match fault.as_ref() {
+                        KeyFault::CorrespondenceConflict(conflict) => match conflict.as_ref() {
+                            CorrespondenceConflict::NodeRebound {
+                                node,
+                                recorded,
+                                offered,
+                            } => vec![
+                                ("node", format!("{node:?}")),
+                                ("recorded", format!("{recorded:?}")),
+                                ("offered", format!("{offered:?}")),
+                            ],
+                            CorrespondenceConflict::DeclarationRebound {
+                                declaration,
+                                recorded,
+                                offered,
+                            } => vec![
+                                ("declaration", format!("{declaration:?}")),
+                                ("recorded", format!("{recorded:?}")),
+                                ("offered", format!("{offered:?}")),
+                            ],
+                        },
+                        _ => Vec::new(),
+                    };
+                    Some(InternalFault::new("S3", fault.invariant()).with_named(named))
                 }
                 _ => None,
             })
@@ -357,7 +375,7 @@ impl ParsedSource {
 /// I1, with the package documents they were admitted from.
 #[derive(Clone, Debug, Default)]
 pub struct AdmittedModels {
-    models: Vec<SelectedModel>,
+    models: SelectedModels,
     packages: BTreeMap<[u8; 32], Vec<u8>>,
 }
 
@@ -615,16 +633,37 @@ fn select_models(
     packages: &BTreeMap<[u8; 32], Vec<u8>>,
     limits: ModelNormalizationLimits,
     cancel: &Cancel,
-) -> Result<Vec<SelectedModel>, Box<CompileRefusal>> {
+) -> Result<SelectedModels, Box<CompileRefusal>> {
     let raw = parsed.source().reference();
-    admit_unit_with_cancel(&parsed.unit.selections().models, packages, limits, cancel).map_err(
-        |refusal| {
+    let models = admit_unit_with_cancel(&parsed.unit.selections().models, packages, limits, cancel)
+        .map_err(|refusal| {
             Box::new(CompileRefusal::Intake {
                 region: region(raw, refusal.span),
                 refusal,
             })
-        },
-    )
+        })?;
+    let source_limits = parsed.syntax.effective_limits();
+    parse_operation_clauses(models, source_limits)
+}
+
+/// FR-103: parses each kept `quire`-language `requires` and `ensures` clause
+/// of `model`'s operations with the unit clause production, and hands the
+/// parsed expressions to the assembler on the model. The first clause that
+/// does not parse refuses, located at the operation's `Operation.pre[k]` or
+/// `Operation.post[k]` member.
+fn parse_operation_clauses(
+    models: SelectedModels,
+    limits: SourceLimits,
+) -> Result<SelectedModels, Box<CompileRefusal>> {
+    models
+        .with_parsed_operation_clauses(|text| parse_clause_text(text, limits))
+        .map_err(|failure| {
+            Box::new(CompileRefusal::OperationClause {
+                operation: failure.operation,
+                member: failure.member,
+                failure: failure.cause,
+            })
+        })
 }
 
 /// E4 over one checked package, refusing a wire that would omit nodes: a
@@ -752,7 +791,7 @@ struct Resolution<'a> {
 struct Frame {
     raw: RawSourceRef,
     unit: ParsedUnit,
-    models: Vec<SelectedModel>,
+    models: SelectedModels,
     lock: LockEvidence,
     /// The index of the import being resolved.
     next: usize,
@@ -761,7 +800,7 @@ struct Frame {
 }
 
 impl Frame {
-    fn new(parsed: &ParsedSource, models: Vec<SelectedModel>, lock: LockEvidence) -> Self {
+    fn new(parsed: &ParsedSource, models: SelectedModels, lock: LockEvidence) -> Self {
         let imports = parsed.unit.selections().imports.len();
         Self {
             raw: parsed.source().reference().clone(),
@@ -904,11 +943,29 @@ impl<'a> Resolution<'a> {
             })
         })?;
         declarations.lock_evidence = frame.lock.clone();
+        // FR-302: link the dispatch table of each family a dispatched call's
+        // member name may name, under the caller's model normalization
+        // limits, before `check` types the calls against them. A family
+        // that did not link is reported if the check cannot resolve a call
+        // for want of it.
+        let pending = charged(cancel, &mut self.work.s3, || {
+            declarations.link_dispatch(limits.model)
+        })
+        .map_err(|refusals| {
+            let regions = declarations.regions();
+            Box::new(CompileRefusal::Check {
+                region: refusals
+                    .first()
+                    .and_then(|refusal| regions.refusal_region(refusal)),
+                refusals,
+            })
+        })?;
         let regions = declarations.regions();
         let graph = charged(cancel, &mut self.work.s3, || {
             declarations.check_with_cancel(limits.checking, cancel)
         })
         .map_err(|refusals| {
+            let refusals = pending.report(refusals);
             Box::new(CompileRefusal::Check {
                 region: refusals
                     .first()
@@ -929,7 +986,7 @@ impl<'a> Resolution<'a> {
     fn check_unit(
         &mut self,
         parsed: &ParsedSource,
-        models: Vec<SelectedModel>,
+        models: SelectedModels,
         lock: &LockEvidence,
     ) -> Result<pkg::CheckedPackage, Box<CompileRefusal>> {
         let mut root = Frame::new(parsed, models, lock.clone());

@@ -47,6 +47,8 @@ impl<'a> DomainType<'a> {
                 declaration,
             }),
             DeclarationKind::ValueType
+            | DeclarationKind::Clause
+            | DeclarationKind::Namespace
             | DeclarationKind::Field
             | DeclarationKind::Operation
             | DeclarationKind::Part
@@ -54,7 +56,13 @@ impl<'a> DomainType<'a> {
             | DeclarationKind::Connection
             | DeclarationKind::Relationship
             | DeclarationKind::Allocation
-            | DeclarationKind::Population => None,
+            | DeclarationKind::Population
+            | DeclarationKind::EventType
+            | DeclarationKind::VariantType
+            | DeclarationKind::VariantCase
+            | DeclarationKind::StateMachine
+            | DeclarationKind::Process
+            | DeclarationKind::PersistenceInterface => None,
         }
     }
 
@@ -138,6 +146,10 @@ fn domain_leaf_type<'a>(
 ) -> Option<NativeType<'a>> {
     Some(match value_type {
         ValueTypeRef::Native(NativeValueType::Boolean) => NativeType::Boolean,
+        ValueTypeRef::Native(NativeValueType::Uuid) => NativeType::Uuid,
+        ValueTypeRef::Native(NativeValueType::String) => NativeType::String,
+        // The domain checker maps only the closed scalar leaves above; other
+        // native leaves follow the existing unsupported-native path below.
         ValueTypeRef::Native(
             NativeValueType::Integer
             | NativeValueType::Rational
@@ -233,6 +245,10 @@ mod tests {
 pub enum NativeType<'a> {
     /// The profile Boolean type.
     Boolean,
+    /// The opaque UUID native type from an admitted domain package.
+    Uuid,
+    /// The opaque String native type from an admitted domain package.
+    String,
     /// Explicit nominal primitive, retaining its original role and representation.
     Scalar {
         /// Exact admitted model owner.
@@ -290,7 +306,9 @@ fn owner_equal(left: &NativeModel, right: &NativeModel) -> bool {
 impl PartialEq for NativeType<'_> {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::Boolean, Self::Boolean) => true,
+            (Self::Boolean, Self::Boolean)
+            | (Self::Uuid, Self::Uuid)
+            | (Self::String, Self::String) => true,
             (
                 Self::Scalar {
                     model: a, role: ar, ..
@@ -390,6 +408,8 @@ impl<'a> NativeType<'a> {
                 ScalarKind::Rational { .. } | ScalarKind::Text { .. } => None,
             },
             Self::Boolean
+            | Self::Uuid
+            | Self::String
             | Self::Enumeration { .. }
             | Self::Record { .. }
             | Self::Object { .. }
@@ -410,6 +430,8 @@ impl<'a> NativeType<'a> {
                 ScalarKind::Rational { .. } | ScalarKind::Text { .. } => false,
             },
             Self::Boolean
+            | Self::Uuid
+            | Self::String
             | Self::Enumeration { .. }
             | Self::Record { .. }
             | Self::Object { .. }
@@ -630,6 +652,8 @@ impl<'a> Catalog<'a> {
     pub fn equality(&self, ty: &NativeType<'_>) -> bool {
         match ty {
             NativeType::Boolean
+            | NativeType::Uuid
+            | NativeType::String
             | NativeType::Enumeration { .. }
             | NativeType::Object { .. }
             | NativeType::Reference { .. } => true,
@@ -755,5 +779,35 @@ mod profile_tests {
             assert!(!leaf.dimensionless());
             assert!(!historical.equality(leaf));
         }
+    }
+
+    #[test]
+    #[trace("QSL-729-TC-1", "QSL-729-FR-056-AC-1")]
+    fn native_uuid_and_string_domain_leaves_are_direct_checked_types() {
+        let package = qsl_semantics::model::admitted::AdmittedPackage::admit(
+            qsl_semantics::model::domain_package::DomainPackage::new(
+                qsl_semantics::model::domain_package::DomainPackageRef::fixture(
+                    "qsl-729-native-leaves",
+                ),
+                Vec::new(),
+            ),
+            &mut qsl_semantics::model::accounting::Meter::new(
+                qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+            ),
+        )
+        .expect("an empty synthetic package supplies the native-leaf context");
+        let uuid = domain_leaf_type(&package, &ValueTypeRef::Native(NativeValueType::Uuid))
+            .expect("UUID maps to a checked native leaf");
+        let string = domain_leaf_type(&package, &ValueTypeRef::Native(NativeValueType::String))
+            .expect("String maps to a checked native leaf");
+        assert_eq!(uuid, NativeType::Uuid);
+        assert_eq!(string, NativeType::String);
+        assert_ne!(uuid, string);
+        assert_eq!(format!("{uuid:?}"), "Uuid");
+        assert_eq!(format!("{string:?}"), "String");
+        assert!(uuid.integer().is_none());
+        assert!(string.integer().is_none());
+        assert!(!uuid.dimensionless());
+        assert!(!string.dimensionless());
     }
 }
