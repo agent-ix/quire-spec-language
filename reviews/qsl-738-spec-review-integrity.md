@@ -34,3 +34,14 @@ Ticket: QSL-738. PR: quire-spec-language#809 (spec only). Consistency, id unique
 ## Verdict
 
 Findings. The ids are unique and the indexes are complete. One open PR, #808, contradicts this PR in meaning, and some unqualified ids now point at the wrong requirement.
+
+## Dispositions
+
+Round 1, reviewed at df6246c9d97bdd68697696aa6701a527ab142714.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | deferred | Per the coordinator's instruction, the #808 interplay is handled in the PR body. It says that when #808 lands, its ref is merged into this branch, the variant-field item in FR-056-AC-33 and TC-1005 is removed or replaced, and the FR-056 AC-table and spec/tests.md conflicts are resolved keeping both. The code slice rewrites `a_field_typed_by_a_variant_type_keeps_its_origin`. No change is required in this PR now. |
+| FND-002 | fixed | 3d7e167f0 |
+| FND-003 | fixed | 3d7e167f0. ADR-023 HV-5 is now qualified at its first mention. The ADR-014 line 68 cited in the review pass was already 'QSpec FR-360', split across a line wrap, so that half of the finding was a false positive. |
+| FND-004 | fixed | 3d7e167f0 |

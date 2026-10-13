@@ -64,3 +64,25 @@ Ticket: QSL-738. PR: quire-spec-language#809 (spec only). Checklist review of FR
 ## Verdict
 
 Findings. Admission, export shape, signature positions, the replay form and the witness shape are sound and consistent with FR-056, FR-106 and FR-070. Two rules contradict existing requirements (the refusal for an unknown variant type name, and the Set/Bag order), three refusal causes are left to the implementer, two different keys are treated as one, and no item says how a variant value is lowered and emitted although AC-8 asserts read-back.
+
+## Dispositions
+
+Round 1, reviewed at df6246c9d97bdd68697696aa6701a527ab142714.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 3d7e167f0 |
+| FND-002 | fixed | 3d7e167f0 |
+| FND-003 | fixed | 3d7e167f0. Checked against the code. `CheckRefusal::from_ill_typed` maps `UnorderedEnumOrdering` to `operator-ineligible` and `DistinctEnumDeclarations` to `type-mismatch` (qsl-semantics/src/check/refusal.rs). The ADR-012 section 16.5 table row 'Scrutinee not a union' gives `ill_typed`/`type-mismatch` at the scrutinee, and section 16.2 admits `case` over a declared union only. |
+| FND-004 | fixed | 3d7e167f0. Checked: the item 11 statement is true and sufficient. The type environment keys by the FR-081 effective identity (FR-056). The checked IR keys by the QSpec FR-322 step-2 ModelDeclarationNode key, which is built from `{kind: model, identity, node}`, and the FR-141 member key over `{declaration_node_id, case}`. Both are injective in (document identity, type node, case name) and independent of the alias, so a one-to-one join holds. FR-056's type-environment paragraph and AC-31 still name only the effective-identity key, but item 11 adds the second key to the same declaration and contradicts neither. |
+| FND-005 | fixed | 3d7e167f0 |
+| FND-006 | fixed | 3d7e167f0 |
+| FND-007 | fixed | 3d7e167f0 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | medium | Item 7 says that the canonical key order of the cases 'in a `Set`, `Bag` or `OrderedSet` SHALL be the ascending UTF-8 byte order of the case names'. An `OrderedSet` keeps first-occurrence order and never reads the key: see FR-359 item 5, quire-exact FR-377 item 5 ('Only Set and Bag are ordered by the canonical key'), and the ADR-012 section 16.4 collection row. Remove `OrderedSet` from that sentence, or say that it keeps first-occurrence order. This text was already in the review-pass head and the review pass missed it. | spec/functional/FR-360-type-a-field-by-a-variant-type-through-intake-check-evaluation-and-replay.md:142-147 |
+| FND-009 | medium | Item 12 says that until cross-repo requirement 1 holds, 'emission of a variant-typed expression refuses at emission'. It gives no code, cause or locus, and no AC or TC vector covers it, so the interim behaviour is left to the implementer. Pin the code and cause (for example `unsupported_construct` with a named cause at the expression, or whatever FR-093 gives an unemittable node) and add the vector to AC-8 and TC-1009. | spec/functional/FR-360-type-a-field-by-a-variant-type-through-intake-check-evaluation-and-replay.md:205-208 |
+| FND-010 | low | Item 9 says `{"absent": {}}` at a required variant field is `wrong-value-kind` 'under FR-106 check 5'. FR-106 check 5 is the operation check (`wrong_snapshot`/`wrong-invocation`). The value-kind rule is check 6, step 5. Cite 'FR-106 check 6 step 5'. | spec/functional/FR-360-type-a-field-by-a-variant-type-through-intake-check-evaluation-and-replay.md:170-171 |

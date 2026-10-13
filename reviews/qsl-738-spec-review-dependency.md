@@ -33,3 +33,13 @@ Ticket: QSL-738. PR: quire-spec-language#809 (spec only). Cross-reference check 
 ## Verdict
 
 Findings. The citations to FR-070's enum shape, FR-106's record form, ADR-012 section 16.2 ('no `case` over an enum') and QSpec FR-141-AC-2/AC-5 are accurate. Cross-repo requirement 1 is incomplete, requirement 3 asks for something that already exists, and the QSpec divergence has no tracking ticket.
+
+## Dispositions
+
+Round 1, reviewed at df6246c9d97bdd68697696aa6701a527ab142714.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 3d7e167f0 |
+| FND-002 | fixed | 3d7e167f0 |
+| FND-003 | fixed | df6246c9d |

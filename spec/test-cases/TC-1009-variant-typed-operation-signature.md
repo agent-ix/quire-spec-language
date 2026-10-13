@@ -16,11 +16,13 @@ Verify the signature positions. Scope: FR-360-AC-8.
 
 1. Admit an operation with a `Tier` parameter and a `Tier` result and call it with `Config::Tier::Gold`.
 2. Call it with a `Config::Level` value.
-3. Admit an operation whose parameter and result name an interface-featured object type.
+3. Emit a checked package that references a variant-typed member while cross-repo requirement 1 does not hold.
+4. Admit an operation whose parameter and result name an interface-featured object type.
 
 ## Expected Results
 
 - Step 1 admits, checks and runs; the checked package emits the `model`/`variant_type` node, an `enum_value` and a `ref` argument, and reads back `Verified` once cross-repo requirement 1 holds; the result compares by case.
 - Step 2 refuses `ill_typed`/`type-mismatch` naming the parameter.
-- Step 3 refuses `invalid_model_binding`/`malformed-declaration` at the operation node, paths `Operation.params[i].typeRef` and `Operation.returns.typeRef`.
+- Step 3 refuses `ill_typed`/`operator-ineligible` at the application that references the member, with check, evaluation and replay unaffected.
+- Step 4 refuses `invalid_model_binding`/`malformed-declaration` at the operation node, paths `Operation.params[i].typeRef` and `Operation.returns.typeRef`.
 - Assertions compare typed codes, causes, keys and paths.

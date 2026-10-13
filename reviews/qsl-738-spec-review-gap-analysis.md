@@ -48,3 +48,14 @@ Ticket: QSL-738. PR: quire-spec-language#809 (spec only). Planless spec-level tr
 ## Verdict
 
 Findings. The AC-to-TC mapping is complete, with no orphan ACs or TCs. Some item claims are not covered by any AC, and one TC step cannot fail.
+
+## Dispositions
+
+Round 1, reviewed at df6246c9d97bdd68697696aa6701a527ab142714.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 3d7e167f0 |
+| FND-002 | fixed | 3d7e167f0 |
+| FND-003 | fixed | 3d7e167f0 |
+| FND-004 | fixed | 3d7e167f0 |

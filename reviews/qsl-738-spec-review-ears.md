@@ -38,3 +38,12 @@ Ticket: QSL-738. PR: quire-spec-language#809 (spec only). EARS form of FR-360's 
 ## Verdict
 
 Findings, low only. The statement is event-driven and well formed, but it is compound, and the items mix SHALL with indicative wording.
+
+## Dispositions
+
+Round 1, reviewed at df6246c9d97bdd68697696aa6701a527ab142714.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 3d7e167f0 |
+| FND-002 | fixed | 3d7e167f0 |
