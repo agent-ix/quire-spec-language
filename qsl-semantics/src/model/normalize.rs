@@ -1353,8 +1353,13 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
             }
         }
         let has_state = |key: &DeclarationKey| effective_states.contains(key);
-        let has_operation =
-            |key: &DeclarationKey| operations.iter().any(|operation| &operation.key == key);
+        // A trigger names an operation of the machine or of an ancestor.
+        let has_operation = |key: &DeclarationKey| {
+            domain_package.records.iter().any(|record| {
+                matches!(record, DomainPackageRecord::OperationMember(operation)
+                    if &operation.key == key && machine_chain.contains(&operation.owner))
+            })
+        };
         let has_event = |key: &DeclarationKey| {
             domain_package.records.iter().any(|record| {
                 matches!(record, DomainPackageRecord::EventType(event) if &event.key == key)
@@ -1532,7 +1537,11 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                 continue;
             };
             for (position, state) in machine.states.iter().enumerate() {
-                if let Some(inherited) = parent.states.iter().find(|other| other.name == state.name)
+                if let Some((inherited_position, inherited)) = parent
+                    .states
+                    .iter()
+                    .enumerate()
+                    .find(|(_, other)| other.name == state.name)
                 {
                     refusals.push(ModelRefusal {
                         code: Code::InvalidModelBinding,
@@ -1542,7 +1551,7 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                             redefiners: vec![state.key.clone()],
                         },
                         detail: format!(
-                            "{}.states[{position}] conflicts with {}.states",
+                            "{}.states[{position}] conflicts with {}.states[{inherited_position}]",
                             machine.key.node, parent.key.node
                         ),
                     });
@@ -1565,11 +1574,13 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                     // ancestor transition may never target a subtype-only state.
                     continue;
                 }
-                if let Some(inherited) = parent.transitions.iter().find(|other| {
-                    other.from == transition.from
-                        && other.to == transition.to
-                        && other.trigger == transition.trigger
-                }) {
+                if let Some((inherited_position, inherited)) =
+                    parent.transitions.iter().enumerate().find(|(_, other)| {
+                        other.from == transition.from
+                            && other.to == transition.to
+                            && other.trigger == transition.trigger
+                    })
+                {
                     refusals.push(ModelRefusal {
                         code: Code::InvalidModelBinding,
                         cause: ModelRefusalCause::DerivationConflict {
@@ -1578,7 +1589,7 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                             redefiners: vec![transition.key.clone()],
                         },
                         detail: format!(
-                            "{}.transitions[{position}] conflicts with {}.transitions",
+                            "{}.transitions[{position}] conflicts with {}.transitions[{inherited_position}]",
                             machine.key.node, parent.key.node
                         ),
                     });

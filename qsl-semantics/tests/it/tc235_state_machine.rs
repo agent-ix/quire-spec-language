@@ -16,16 +16,19 @@ fn lifecycle_transition(
     emits: Vec<String>,
 ) -> Value {
     let node = format!("{owner}/{name}");
-    // A `from` already qualified as `Owner/State` names an inherited state.
-    let from = if from.contains('/') {
-        from.to_owned()
-    } else {
-        format!("{owner}/{from}")
+    // A state already qualified as `Owner/State` names a state of another type.
+    let qualify = |state: &str| {
+        if state.contains('/') {
+            state.to_owned()
+        } else {
+            format!("{owner}/{state}")
+        }
     };
+    let (from, to) = (qualify(from), qualify(to));
     json!({
         "identity": id(&node), "from": id(&from),
-        "to": id(&format!("{owner}/{to}")),
-        "trigger": id(&format!("{owner}/{trigger}")),
+        "to": id(&to),
+        "trigger": id(&qualify(trigger)),
         "emits": emits, "origin": origin(&node),
     })
 }
@@ -398,10 +401,10 @@ fn tc235_m19_state_machine_specialization_vectors() {
             json!({
                 "supertypes": [id("OrderLifecycle")],
                 "operations": [operation("ExpressLifecycle", "expedite")],
-                "states": [lifecycle_state("ExpressLifecycle", "Expedited")],
+                "states": [lifecycle_state("ExpressLifecycle", "Expedited"), lifecycle_state("ExpressLifecycle", "Placed")],
                 "transitions": [lifecycle_transition(
                     "ExpressLifecycle",
-                    "transition0", "OrderLifecycle/Placed", "Expedited", "expedite", vec![],
+                    "transition0", "Placed", "Expedited", "expedite", vec![],
                 )],
             }),
         ));
@@ -411,7 +414,10 @@ fn tc235_m19_state_machine_specialization_vectors() {
     assert_eq!(refusals[0].code, Code::InvalidModelBinding);
     assert_eq!(refusals[0].cause.as_str(), "derivation-conflict");
     assert!(refusals[0].detail.contains("ExpressLifecycle.states[1]"));
-    assert!(refusals[0].detail.contains("OrderLifecycle.states[1]"));
+    assert!(
+        refusals[0].detail.contains("OrderLifecycle.states[1]"),
+        "{refusals:?}"
+    );
 
     let duplicate_transition = mutate_k2(|document| {
         document["types"].as_array_mut().unwrap().push(declaration(
@@ -420,20 +426,23 @@ fn tc235_m19_state_machine_specialization_vectors() {
             json!({
                 "supertypes": [id("OrderLifecycle")],
                 "operations": [operation("ExpressLifecycle", "expedite")],
-                "states": [lifecycle_state("ExpressLifecycle", "Expedited"), lifecycle_state("ExpressLifecycle", "Placed")],
+                "states": [lifecycle_state("ExpressLifecycle", "Expedited")],
                 "transitions": [
-                    lifecycle_transition("ExpressLifecycle", "transition0", "Placed", "Expedited", "expedite", vec![]),
-                    lifecycle_transition("ExpressLifecycle", "transition1", "Draft", "Placed", "place", vec![]),
+                    lifecycle_transition("ExpressLifecycle", "transition0", "OrderLifecycle/Placed", "Expedited", "expedite", vec![]),
+                    lifecycle_transition("ExpressLifecycle", "transition1", "OrderLifecycle/Draft", "OrderLifecycle/Placed", "OrderLifecycle/place", vec![]),
                 ],
             }),
         ));
     });
     let refusals = normalized_refusals(&duplicate_transition, 23);
-    assert_eq!(refusals.len(), 1);
+    assert_eq!(refusals.len(), 1, "{refusals:?}");
     assert_eq!(refusals[0].cause.as_str(), "derivation-conflict");
-    assert!(refusals[0]
-        .detail
-        .contains("ExpressLifecycle.transitions[1]"));
+    assert!(
+        refusals[0]
+            .detail
+            .contains("ExpressLifecycle.transitions[1]"),
+        "{refusals:?}"
+    );
     assert!(refusals[0].detail.contains("OrderLifecycle.transitions[0]"));
 
     let ancestor_to_subtype_state = mutate_k2(|document| {
@@ -444,7 +453,7 @@ fn tc235_m19_state_machine_specialization_vectors() {
                 "OrderLifecycle",
                 "transition3",
                 "Draft",
-                "Expedited",
+                "ExpressLifecycle/Expedited",
                 "cancel",
                 vec![],
             ));
@@ -480,7 +489,7 @@ fn tc235_m19_state_machine_specialization_vectors() {
                 "states": [lifecycle_state("ExpressLifecycle", "Expedited")],
                 "transitions": [lifecycle_transition(
                     "ExpressLifecycle",
-                    "transition0", "OrderLifecycle/Placed", "Expedited", "expedite", vec![],
+                    "transition0", "Expedited", "Expedited", "expedite", vec![],
                 )],
             }),
         ));

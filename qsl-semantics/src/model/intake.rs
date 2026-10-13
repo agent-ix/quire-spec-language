@@ -1731,6 +1731,37 @@ fn missing_reader_reference(
     if transition_member == "occurrenceField" && document_declares(&document.tree, reference) {
         return None;
     }
+    // Likewise a transition state declared elsewhere in the document but not
+    // visible to the transition's type is a malformed binding (TC-235 M19
+    // run 4), not a missing name.
+    if transition_reference
+        && matches!(transition_member, "from" | "to")
+        && document_declares(&document.tree, reference)
+    {
+        let position = pointer
+            .strip_prefix("/types/")?
+            .split('/')
+            .next()?
+            .parse::<usize>()
+            .ok()?;
+        let machine = document
+            .tree
+            .get("types")?
+            .as_array()?
+            .get(position)?
+            .get("identity")?
+            .as_str()?;
+        let (artifact, span) = located_span(located);
+        return Some(malformed_declaration(
+            machine.to_owned(),
+            artifact,
+            span,
+            format!(
+                "{} ({pointer}) on {machine}: {reference:?} is not a state visible to this transition's type",
+                semantic_member_path(&located.pointer).unwrap_or_else(|| pointer.to_owned())
+            ),
+        ));
+    }
     let package = document.tree.get("package")?.get("identity")?.as_str()?;
     // A malformed native or foreign identity is not a missing declaration
     // of this selected package.
