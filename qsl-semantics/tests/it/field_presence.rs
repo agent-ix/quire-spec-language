@@ -62,6 +62,7 @@ fn index(
                     modifies: vec![key("Parent/x")],
                     creates: vec![],
                     deletes: vec![],
+                    ..Default::default()
                 },
                 requires: Vec::new(),
                 ensures: Vec::new(),

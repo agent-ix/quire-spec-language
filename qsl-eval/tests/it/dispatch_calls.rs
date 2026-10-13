@@ -2626,6 +2626,7 @@ fn checked_dispatch_operation_refuses_a_dispatch_target_with_a_non_empty_effect(
             modifies: Vec::new(),
             creates: vec![DeclarationKey::fixture("model.A")],
             deletes: Vec::new(),
+            ..Default::default()
         },
     );
     match not_a_query_refusal(&domain_package) {
