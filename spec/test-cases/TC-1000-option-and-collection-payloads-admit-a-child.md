@@ -27,6 +27,6 @@ Catches an implementation that admits the child at the field but faults on proje
 - Step 1 returns the same `TaxedMoney`, with `tax_minor` and its most-specific type intact, and reports no `field-option-payload-rejected`.
 - Step 2 refuses `ill_typed`/`type-mismatch` for the `Money` at the `TaxedMoney?` field and for the `Fee`, naming the field.
 - Step 3 admits each element and keeps its identity through every operation.
-- Step 4 holds two elements in each order, with one canonical key.
+- Step 4 holds two elements in each order, in the same order both times (ascending declaration key bytes), and reports no `CanonicalKeyUnavailable`.
 - Step 5 refuses `ill_typed`/`type-mismatch` at each argument.
 - Assertions compare typed values, causes and member paths, never message text.
