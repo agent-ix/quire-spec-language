@@ -681,7 +681,7 @@ fn assert_process_duplicate_step_refusal(document: &Value) {
             refusals[0].cause
         );
     };
-    assert_eq!(key.node, id("Fulfilment/reserve_stock"));
+    assert_eq!(key.node, id("Fulfilment"));
     assert_eq!(actual.as_ref(), Some(&member("TypeDefinition.steps[3]")));
 }
 
@@ -1145,7 +1145,6 @@ fn tc235_taxed_money_assembly_resolves_composite_name_and_inherited_fields() {
 
 #[trace("FR-056-AC-18", "TC-235")]
 #[test]
-#[ignore = "requires PR #781 to map K2 Money.currency's native String field"]
 fn tc235_k2_money_and_order_placed_composites_require_qsl_781() {
     let document = k2();
     let assembled = assemble_k2_unit(

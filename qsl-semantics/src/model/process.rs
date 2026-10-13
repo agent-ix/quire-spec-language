@@ -73,7 +73,11 @@ pub(super) fn bind(context: &mut MeaningBindingContext<'_, '_>) -> Result<(), Mo
             return Err(ModelRefusal {
                 code: Code::InvalidModelBinding,
                 cause: ModelRefusalCause::ConflictingBinding {
-                    key: step_key,
+                    // TC-235 M07 run 3 names the process, not the step.
+                    key: DeclarationKey {
+                        package: context.package.to_owned(),
+                        node: context.node.to_owned(),
+                    },
                     member: Some(MemberPath::from_document_location(&step_at)),
                 },
                 detail: format!("{step_at}: duplicate process step"),

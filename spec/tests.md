@@ -214,6 +214,10 @@ names different artifacts in each.
 | TC-455 | Stopped explorations stay incomplete, and unbounded requests require a bound | Unit | P1 | FR-101-AC-6, FR-101-AC-7, FR-101-AC-8 | ✅ |
 | TC-442 | Spine compile admits a domain package and locks its model selection | Integration | P1 | FR-027-AC-9, FR-056-AC-9 | ✅ |
 | TC-443 | A model field's multiplicity and presence give its assembled value type | Unit | P1 | FR-056-AC-10 | ✅ |
+| TC-994 | A variant type is admitted as one enum and one variant per case | Unit | P1 | FR-056-AC-24 | 🚧 |
+| TC-995 | A variant case carrying a payload refuses as an unsupported declaration form | Unit | P1 | FR-056-AC-25 | 🚧 |
+| TC-996 | Empty, spanless, mis-shaped and duplicate variant cases refuse with their causes | Unit | P1 | FR-056-AC-26 | 🚧 |
+| TC-997 | A clause or field naming a variant type refuses while the declaration is admitted | Unit | P1 | FR-056-AC-27, FR-056-AC-28 | 🚧 |
 | TC-444 | The replay executor recompiles, selects, calls, and refuses each O-26 case | Unit | P1 | FR-098-AC-1, FR-098-AC-2, FR-098-AC-3, FR-098-AC-4, FR-098-AC-5, FR-098-AC-6, FR-098-AC-7 | ✅ |
 | TC-446 | Spine compile resolves imports against supplied libraries | Integration | P1 | FR-099-AC-1, FR-099-AC-2, FR-099-AC-3, FR-099-AC-4, FR-099-AC-5, FR-099-AC-6, FR-099-AC-7, FR-027-AC-10 | ✅ |
 | TC-490 | E3 resolves header profile selections against the DefinitionLock catalog | Integration | P1 | FR-110-AC-1, FR-110-AC-2, FR-110-AC-3, FR-110-AC-5, FR-110-AC-6, FR-110-AC-7, FR-110-AC-8, FR-110-AC-9 | 🚧 |
