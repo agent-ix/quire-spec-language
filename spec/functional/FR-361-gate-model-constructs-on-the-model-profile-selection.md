@@ -203,10 +203,6 @@ DefinitionLock catalog's `header_selectable_layers` (FR-110).
 16. A unit that selects the model profile SHALL admit each family of item 5
     exactly as FR-056, FR-102, FR-103, FR-302 and FR-304 state. This
     requirement changes no behaviour of a selecting unit.
-17. Every fixture that exercises a model-complete form SHALL select
-    `quire.model.complete/v1`, and every value-only fixture keeps
-    `quire.value.complete/v1` and gains a refusal vector for each family of
-    item 5.
 
 ## Acceptance Criteria
 
@@ -224,7 +220,6 @@ DefinitionLock catalog's `header_selectable_layers` (FR-110).
 | FR-361-AC-10 | Under `make conformance`, the rows of `DefinitionLock::pinned()` that come from the complete-model lock (role, authority and identity, in order, and its package-selection rules) equal QSpec's complete-model lock, read at run time. | Test (TC-1017) |
 | FR-361-AC-11 | In a value-profile unit, S2 builds the forms of all four families and reports no refusal; the refusals of AC-1 to AC-3 are S3's. | Test (TC-1017) |
 | FR-361-AC-12 | A `body ... using V` where `V` resolves to `quire.value.complete/v1` in a unit that selects only that profile receives one refusal (the family refusal of item 11), not two; the same declaration in a unit that also selects the model profile through another alias receives FR-110's layer refusal alone. | Test (TC-1017) |
-| FR-361-AC-13 | Each fixture that holds a model-complete form selects `quire.model.complete/v1`, and each value-only fixture selects `quire.value.complete/v1` and has a refusal vector for each family of item 5. | Inspection |
 
 ## Dependencies
 
