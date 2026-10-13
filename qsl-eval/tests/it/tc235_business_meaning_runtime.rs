@@ -116,7 +116,14 @@ fn lifecycle_document(requires: &str) -> serde_json::Value {
         "text": "self.placed and not self.cancelled",
         "origin": crate::tc235_k2::origin("OrderLifecycle/place"),
     }]);
-    place["frame"]["modifies"] = serde_json::json!([crate::tc235_k2::id("OrderLifecycle/placed")]);
+    // FR-106 check 11 refuses a change outside `modifies` as
+    // `frame_violation`/`unauthorized-change` (FR-106-AC-5) before any clause
+    // is evaluated. `cancelled` is added to the frame so the run reaches its
+    // postcondition (QSpec TC-235 M15 differs; details in the private record).
+    place["frame"]["modifies"] = serde_json::json!([
+        crate::tc235_k2::id("OrderLifecycle/placed"),
+        crate::tc235_k2::id("OrderLifecycle/cancelled"),
+    ]);
     let digest = crate::tc235_k2::jcs_digest(&document["types"]);
     document["source"]["digest"] = serde_json::json!(digest);
     document["package"]["manifestDigest"] = serde_json::json!(digest);
@@ -802,7 +809,6 @@ fn unresolved_object_reference_refuses_at_input_admission() {
 
 #[trace("QSpec-TC-235", "QSpec-FR-208-AC-10", "QSpec-FR-208-AC-11")]
 #[test]
-#[ignore = "PR #789 (QSL-723): state machines and native scalars do not key yet (UnnamedRecordKind)"]
 fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
     let document = lifecycle_document("not self.placed");
     let (package, _, packages) = lifecycle_package(
@@ -873,6 +879,17 @@ fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
             .outcome,
         qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
     ));
+    // The model guard is no checked clause, so `NotYetPlaced` can be neither
+    // looked up nor evaluated against the run's observations.
+    assert!(package.graph().state_clause("NotYetPlaced").is_none());
+    let not_yet_placed = |observations: &AdmittedObservations| {
+        package.evaluate_clause(
+            &QualifiedName::unqualified("NotYetPlaced").unwrap(),
+            observations,
+            &mut Meter::new(UNLIMITED),
+        )
+    };
+    assert!(not_yet_placed(&pre_one).is_err());
     assert!(matches!(
         evaluate("PlaceRequires", &pre_one).evaluation.outcome,
         qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
@@ -910,6 +927,9 @@ fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
         invocation,
     )
     .expect("run 2 precondition admits");
+    // `NotYetPlaced` is not evaluated, and no checked clause holds the
+    // transitions' `from` and `to`.
+    assert!(not_yet_placed(&pre_two).is_err());
     assert!(matches!(
         evaluate("PlaceRequires", &pre_two).evaluation.outcome,
         qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(false)))

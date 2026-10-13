@@ -808,10 +808,9 @@ fn two_aliases_of_one_model_agree_on_keys_order_and_equality() {
 /// most-specific type decides by type first and performs no text-leaf
 /// comparison. A `StampedTicket` and a `Ticket` with the same `label` are
 /// unequal, where an implementation that compared the parent's text leaves
-/// first would call them equal. Needs PR #789 (String leaves lower).
+/// first would call them equal.
 #[trace("FR-359-AC-5", "TC-999")]
 #[test]
-#[ignore = "PR #789 (QSL-723): String leaves do not lower yet"]
 fn a_mixed_pair_with_equal_text_leaves_is_unequal() {
     let document = fixture::document_with_native_leaves();
     let package = package_from(

@@ -369,6 +369,10 @@ fn record_form(record: &DomainPackageRecord) -> Option<(NodeTag, &'static str)> 
             None => (NodeTag::Model, "object_type"),
             Some(_) => (NodeTag::Model, "systems_interface"),
         }),
+        DomainPackageRecord::StateMachine(_) => Some((NodeTag::Model, "state_machine")),
+        DomainPackageRecord::PersistenceInterface(_) => {
+            Some((NodeTag::Model, "persistence_interface"))
+        }
         DomainPackageRecord::Relationship(_) => Some((NodeTag::Relation, "relationship")),
         // FR-359 item 3: a record value type and an event type are model
         // declaration nodes with their `ModelOwner`, never a `composite_type`
@@ -380,8 +384,6 @@ fn record_form(record: &DomainPackageRecord) -> Option<(NodeTag, &'static str)> 
         | DomainPackageRecord::FieldMember(_)
         | DomainPackageRecord::Clause(_)
         | DomainPackageRecord::Namespace(_)
-        | DomainPackageRecord::PersistenceInterface(_)
-        | DomainPackageRecord::StateMachine(_)
         | DomainPackageRecord::Process(_)
         | DomainPackageRecord::ScalarType(_)
         | DomainPackageRecord::OperationMember(_)

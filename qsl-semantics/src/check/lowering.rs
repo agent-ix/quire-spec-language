@@ -1920,10 +1920,11 @@ impl<'a> Lowering<'a> {
             // resolved type form ([`Self::binder_type`]); the checked type
             // alone carries no `T`.
             ValueType::Population(_) => Err(fault(location, KeyFault::UntargetedPopulation)),
-            ValueType::String | ValueType::Uuid | ValueType::Timestamp => Err(refuse(
-                location,
-                CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch),
-            )),
+            // FR-056: the native String, UUID and Timestamp each a distinct
+            // bare scalar node, as a record or event field carries them.
+            ValueType::String => self.scalar("string", location),
+            ValueType::Uuid => self.scalar("uuid", location),
+            ValueType::Timestamp => self.scalar("timestamp", location),
         }?;
         Ok(TypeStep::Built(key))
     }

@@ -103,6 +103,7 @@ from the node itself.
 |---|---|---|---|
 | `ObjectTypeRecord` with no `interfaceFeatures` | `model` / `object_type` | itself | `aggregate{[]}` |
 | `ObjectTypeRecord` with `interfaceFeatures` (FR-152 Interface) | `model` / `systems_interface` | itself | `aggregate{[]}` |
+| `StateMachineRecord` | `model` / `state_machine` | itself | `aggregate{[]}` |
 | `RelationshipRecord` | `relation` / `relationship` | itself | `aggregate{[]}` |
 | `RecordValueTypeRecord` | `model` / `record_value_type` | itself | `aggregate{[]}` |
 | `EventTypeRecord` | `model` / `event_type` | itself | `aggregate{[]}` |
