@@ -11,6 +11,7 @@
 
 use std::collections::BTreeMap;
 
+use qsl_foundation::diagnostic::{BudgetDenial, CatalogCode};
 use qsl_foundation::selection::{ModelDigest, ModelSelection};
 use qsl_foundation::{Code, IntakeLimits, Span};
 use quire_exact::Cancel;
@@ -114,14 +115,48 @@ pub enum UnitIntakeCause {
 }
 
 impl UnitIntakeCause {
-    /// This cause's catalog code: the first model refusal's own, and
-    /// `stage_limit_exceeded` for a normalization ceiling.
+    /// This cause's catalog code and cause, from one source: the first model
+    /// refusal's own catalog code (ADR-013 R-09), and
+    /// `resource_exhausted`/`insufficient-next-charge` for a denied
+    /// normalization charge, which is the caller's budget wherever it is read
+    /// (ADR-014 section 1). `None` for a cause with no catalog cause.
+    pub fn catalog_code(&self) -> Option<CatalogCode> {
+        match self {
+            Self::Refused(refusals) => Some(refusals[0].catalog_code()),
+            Self::Limit(_) => Some(CatalogCode::new(
+                "resource_exhausted",
+                "insufficient-next-charge",
+            )),
+            Self::ArtifactDigest | Self::Invariant => None,
+        }
+    }
+
+    /// This cause's native code, read from [`Self::catalog_code`] where the
+    /// cause has one.
     pub fn code(&self) -> Code {
         match self {
             Self::ArtifactDigest => Code::InvalidModelBinding,
-            Self::Refused(refusals) => refusals[0].code,
-            Self::Limit(_) => Code::StageLimitExceeded,
             Self::Invariant => Code::RuntimeInvariant,
+            Self::Refused(_) | Self::Limit(_) => self
+                .catalog_code()
+                .and_then(|catalog| Code::from_code(catalog.code()))
+                .unwrap_or(Code::RuntimeInvariant),
+        }
+    }
+
+    /// The catalog cause under [`Self::code`], where the cause names one.
+    pub fn cause(&self) -> Option<&'static str> {
+        self.catalog_code().map(|catalog| catalog.cause())
+    }
+
+    /// The caller-budget denial of a reached ceiling (FR-255 Behavior 1):
+    /// a denied normalization charge, a walk ceiling or intake's byte limit.
+    /// `None` for a cause that is no ceiling.
+    pub fn denial(&self) -> Option<BudgetDenial> {
+        match self {
+            Self::Refused(refusals) => refusals[0].cause.denial(),
+            Self::Limit(incomplete) => Some(incomplete.denial()),
+            Self::ArtifactDigest | Self::Invariant => None,
         }
     }
 }

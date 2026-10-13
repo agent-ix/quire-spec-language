@@ -300,6 +300,12 @@ names different artifacts in each.
 | TC-986 | Unit compile joins operation bodies and clauses by resolved operation identity | Integration | P1 | FR-302-AC-7, FR-103-AC-9 | 🚧 |
 | TC-987 | Unit compile refuses duplicate operation bodies resolving to one key | Integration | P1 | FR-302-AC-7 | 🚧 |
 | TC-1011 | Unit compile checks a body's arity and type against its operation | Integration | P1 | FR-302-AC-8 | ✅ |
+| TC-1012 | An operation body refuses without the model profile and compiles with it | Integration | P1 | FR-361-AC-1 | 🚧 |
+| TC-1013 | A dispatched call and a lookup refuse without the model profile | Integration | P1 | FR-361-AC-2 | 🚧 |
+| TC-1014 | An abstraction declaration refuses without the model profile | Integration | P1 | FR-361-AC-3 | 🚧 |
+| TC-1015 | Forms this requirement does not gate raise no model-gate refusal | Integration | P1 | FR-361-AC-4 | 🚧 |
+| TC-1016 | State clauses against a model alias are admitted under every other layer | Integration | P1 | FR-361-AC-5 | 🚧 |
+| TC-1017 | The model profile is selected by the header only | Integration | P1 | FR-361-AC-6, FR-361-AC-7, FR-361-AC-8, FR-361-AC-9, FR-361-AC-10, FR-361-AC-11, FR-361-AC-12 | 🚧 |
 | TC-810 | Abstraction binding keys are unique across all of a unit's declarations | Integration | P1 | FR-304-AC-7 | 🚧 |
 | TC-811 | Abstraction declarations parse from source and refuse unsupported or malformed forms | Integration | P1 | FR-304-AC-8 | 🚧 |
 | TC-518 | S3 checks fairness constraints and interval operators of infinite-trace clauses | Unit | P1 | FR-123-AC-1, FR-123-AC-2, FR-123-AC-3, FR-123-AC-4 | 🚧 |

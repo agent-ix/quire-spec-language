@@ -4,8 +4,8 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 
+use qsl_foundation::diagnostic::Code;
 use qsl_foundation::diagnostic::Locus;
-use qsl_foundation::diagnostic::{CatalogCoded, Code};
 use qsl_foundation::digest::{parse_lower_hex32, DigestDomain, DigestRecord};
 use qsl_foundation::wire_format::WireFormat;
 use qsl_foundation::LocatedSpan;
@@ -1981,8 +1981,8 @@ impl Disposition {
                 while let super::CompileRefusal::Dependency { refusal, .. } = source {
                     source = refusal.as_ref();
                 }
+                record.fields = source.fields();
                 if let super::CompileRefusal::Limit(limit) = source {
-                    record.fields = limit.catalog_fields();
                     record.locus = limit.locus().map(crate::outcome::OutcomeLocus::from);
                 }
                 result.refusal = Some(record);

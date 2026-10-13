@@ -20,8 +20,7 @@ relationships:
 
 ## Description
 
-When S2 builds the form of a protocol declaration under
-`quire.model.complete/v1`, it SHALL accept every surface form of QSpec's
+When S2 builds the form of a protocol declaration, it SHALL accept every surface form of QSpec's
 shared grammar "Complete temporal, choreography and analysis forms" that
 the protocol system runs, and SHALL build one typed form for each, holding
 every member the production writes with its span (ADR-012 §1, §3;
@@ -80,9 +79,10 @@ In `forms::protocol_clause` (crate `qsl-forms`):
 - A well-formed CST adds no S2 refusal. A CST that carries an error or
   recovery node SHALL refuse as `FormsCause::RecoveringCst`, with no
   partial form.
-- Under a profile that does not select `quire.model.complete/v1`, S2 SHALL
-  build no complete form, and S3 refuses each such construct
-  `unsupported_construct` (QSpec shared grammar).
+- S2 builds each complete form whether or not the unit selects
+  `quire.protocol.complete/v1`. QSpec's facet rule (an unselected facet gives
+  `unsupported_construct`) applies to it, but QSL has no header layer for that
+  profile, so the gate is not enforced (FR-361 item 8).
 
 ## Acceptance Criteria
 
