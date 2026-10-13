@@ -305,10 +305,7 @@ fn tc235_m11_state_machine_supertype_meaning_rules() {
         });
         let refusals = normalized_refusals(&document, 21);
         assert_eq!(refusals.len(), 1, "{node}: {refusals:?}");
-        assert_eq!(refusals[0].code, Code::UnsupportedConstruct);
-        assert_eq!(refusals[0].cause.as_str(), "declaration-form");
-        assert!(refusals[0].detail.contains(&id(node)));
-        assert!(refusals[0].detail.contains("TypeDefinition.supertypes"));
+        assert_unsupported_at(&refusals[0], &id(node), "TypeDefinition.supertypes");
     }
 }
 

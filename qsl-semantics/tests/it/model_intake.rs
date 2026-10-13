@@ -1190,6 +1190,7 @@ fn a_deep_member_the_schema_refuses_is_judged_by_the_readers_rule() {
                         node,
                         artifact: Some(artifact),
                         span: Some(span),
+                        ..
                     } if *node == widget
                         && artifact == "ix://acme/orders/spec"
                         && (span.start.line, span.start.column) == (3, 5)

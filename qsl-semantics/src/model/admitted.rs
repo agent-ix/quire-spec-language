@@ -22,7 +22,7 @@ use crate::model::domain_package::{
 };
 use crate::model::intake::{member_identity_name, type_identity_segment};
 use crate::model::key::DeclarationKey;
-use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
+use crate::model::normalize::{MemberPath, MemberRoot, ModelRefusal, ModelRefusalCause};
 use crate::model::systems::{classify, Kind, SystemsClassification};
 use qsl_foundation::diagnostic::Code;
 
@@ -109,6 +109,7 @@ fn identity_refusal(key: &DeclarationKey, detail: String) -> ModelRefusal {
             node: key.node.clone(),
             artifact: None,
             span: None,
+            member: MemberPath::new(MemberRoot::Package).name("identity"),
         },
         detail,
     }

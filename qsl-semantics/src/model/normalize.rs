@@ -211,7 +211,7 @@ use serde::Serialize;
 /// Re-exported from [`crate::model::refusal`] (#141 finding 4): that module
 /// is lower-level than this one so [`crate::model::key`] can depend on the
 /// cause type without a cycle. This path is unchanged for every caller.
-pub use crate::model::refusal::{ModelRefusalCause, OfferedSelection};
+pub use crate::model::refusal::{MemberPath, MemberRoot, ModelRefusalCause, OfferedSelection};
 
 /// A refusal FR-150 normalization returns for a real defect (never a
 /// resource limit; see [`Incomplete`] for that).
@@ -1108,6 +1108,7 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                     node: record_type.key.node.clone(),
                     artifact: None,
                     span: None,
+                    member: MemberPath::type_definition().name("identityFields"),
                 },
                 detail: format!(
                     "{}: TypeDefinition.identityFields: a record value type has no identity field",
@@ -1139,6 +1140,7 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                         "{}:operations",
                         crate::model::intake::meaning::RECORD_VALUE_TYPE
                     ),
+                    member: MemberPath::type_definition().name("operations").index(0),
                 },
                 detail: format!(
                     "{}: TypeDefinition.operations[0]: a record value type declares no operations",
@@ -1161,18 +1163,19 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
         .collect();
     event_types.sort_by(|left, right| left.key.cmp(&right.key));
     for event in event_types {
-        let malformed = |path: &str, reason: &str| ModelRefusal {
+        let malformed = |path: MemberPath, reason: &str| ModelRefusal {
             code: Code::InvalidModelBinding,
             cause: ModelRefusalCause::IntakeMalformedDeclaration {
                 node: event.key.node.clone(),
                 artifact: None,
                 span: None,
+                member: path.clone(),
             },
             detail: format!("{}: {path}: {reason}", event.key.node),
         };
         if !event.identity_fields.is_empty() {
             refusals.push(malformed(
-                "TypeDefinition.identityFields",
+                MemberPath::type_definition().name("identityFields"),
                 "an event type has no identity fields",
             ));
             continue;
@@ -1197,6 +1200,7 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                     node: operation.key.node.clone(),
                     artifact: None,
                     span: None,
+                    member: MemberPath::type_definition().name("operations").index(0),
                 },
                 detail: format!(
                     "{}: TypeDefinition.operations[0]: an event type declares no operations",
@@ -1226,7 +1230,7 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
         });
         if !timestamp {
             refusals.push(malformed(
-                "TypeDefinition.occurrenceField",
+                MemberPath::type_definition().name("occurrenceField"),
                 "the occurrence field must resolve to native Timestamp",
             ));
         }
@@ -1244,11 +1248,13 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                 // AC-17 reports the invalid event meaning at the occurrence binding
                 // before reporting the offending supertype reference.
                 refusals.push(malformed(
-                    "TypeDefinition.occurrenceField",
+                    MemberPath::type_definition().name("occurrenceField"),
                     "event occurrence inheritance requires event-type supertypes",
                 ));
                 refusals.push(malformed(
-                    &format!("TypeDefinition.supertypes[{position}]"),
+                    MemberPath::type_definition()
+                        .name("supertypes")
+                        .index(position),
                     "an event type generalizes only an event type",
                 ));
                 continue;
@@ -1284,12 +1290,13 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
         .collect();
     machines.sort_by(|left, right| left.key.cmp(&right.key));
     for machine in machines {
-        let malformed = |path: &str, reason: &str| ModelRefusal {
+        let malformed = |path: MemberPath, reason: &str| ModelRefusal {
             code: Code::InvalidModelBinding,
             cause: ModelRefusalCause::IntakeMalformedDeclaration {
                 node: machine.key.node.clone(),
                 artifact: None,
                 span: None,
+                member: path.clone(),
             },
             detail: format!("{}: {path}: {reason}", machine.key.node),
         };
@@ -1398,15 +1405,18 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
             }
             for (emit_position, emitted) in transition.emits.iter().enumerate() {
                 if !has_event(emitted) {
-                    let member_path =
-                        format!("TypeDefinition.transitions[{position}].emits[{emit_position}]");
+                    let member_path = MemberPath::type_definition()
+                        .name("transitions")
+                        .index(position)
+                        .name("emits")
+                        .index(emit_position);
                     if domain_package
                         .records
                         .iter()
                         .any(|record| record.key() == emitted)
                     {
                         refusals.push(malformed(
-                            &member_path,
+                            member_path,
                             "emitted reference names a non-event type",
                         ));
                     } else {
@@ -1465,13 +1475,17 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                             })
                     })
                 {
-                    let path = format!("TypeDefinition.transitions[{position}].guard");
+                    let path = MemberPath::type_definition()
+                        .name("transitions")
+                        .index(position)
+                        .name("guard");
                     refusals.push(ModelRefusal {
                         code: Code::InvalidModelBinding,
                         cause: ModelRefusalCause::IntakeMalformedDeclaration {
                             node: transition.key.node.clone(),
                             artifact: None,
                             span: None,
+                            member: path.clone(),
                         },
                         detail: format!(
                             "{}: {path}: guard must name a quire clause used by a transition",
@@ -1513,7 +1527,9 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                     .any(|record| record.key() == general)
                 {
                     refusals.push(malformed(
-                        &format!("TypeDefinition.supertypes[{position}]"),
+                        MemberPath::type_definition()
+                            .name("supertypes")
+                            .index(position),
                         "a state machine generalizes only a state machine",
                     ));
                 } else {
@@ -1598,6 +1614,10 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                             node: parent.key.node.clone(),
                             artifact: None,
                             span: None,
+                            member: MemberPath::type_definition()
+                                .name("transitions")
+                                .index(position)
+                                .name("to"),
                         },
                         detail: format!(
                             "{}: TypeDefinition.transitions[{position}].to: ancestor transition cannot target subtype-only state {}",
@@ -1618,31 +1638,32 @@ fn state_machine_required_members(
     machine: &crate::model::domain_package::StateMachineRecord,
     no_operations: bool,
 ) -> Vec<ModelRefusal> {
-    let malformed = |path: &str, reason: &str| ModelRefusal {
+    let malformed = |path: MemberPath, reason: &str| ModelRefusal {
         code: Code::InvalidModelBinding,
         cause: ModelRefusalCause::IntakeMalformedDeclaration {
             node: machine.key.node.clone(),
             artifact: None,
             span: None,
+            member: path.clone(),
         },
         detail: format!("{}: {path}: {reason}", machine.key.node),
     };
     let mut refusals = Vec::new();
     if no_operations {
         refusals.push(malformed(
-            "TypeDefinition.operations",
+            MemberPath::type_definition().name("operations"),
             "a state machine declares at least one operation",
         ));
     }
     if machine.states.is_empty() {
         refusals.push(malformed(
-            "TypeDefinition.states",
+            MemberPath::type_definition().name("states"),
             "a state machine declares at least one state",
         ));
     }
     if machine.transitions.is_empty() {
         refusals.push(malformed(
-            "TypeDefinition.transitions",
+            MemberPath::type_definition().name("transitions"),
             "a state machine declares at least one transition",
         ));
     }
@@ -1711,6 +1732,7 @@ fn validate_process_meanings(domain_package: &DomainPackage) -> Vec<ModelRefusal
                     node: process.key.node.clone(),
                     artifact: None,
                     span: None,
+                    member: MemberPath::type_definition().name("identityFields"),
                 },
                 detail: format!(
                     "{}: TypeDefinition.identityFields: a process declaration must supply identityFields or inherit them from a process supertype",
@@ -1742,6 +1764,9 @@ fn validate_process_meanings(domain_package: &DomainPackage) -> Vec<ModelRefusal
                     node: process.key.node.clone(),
                     artifact: None,
                     span: None,
+                    member: MemberPath::type_definition()
+                        .name("supertypes")
+                        .index(position),
                 },
                 detail,
             });
@@ -1994,6 +2019,24 @@ fn check_node<'a>(
                     cause: ModelRefusalCause::UnsupportedDeclarationForm {
                         node: clause.key.node.clone(),
                         what: format!("{meaning}:clauses"),
+                        member: {
+                            let position = domain_package
+                                .records
+                                .iter()
+                                .take_while(|record| record.key() != &clause.key)
+                                .filter(|record| {
+                                    matches!(record, DomainPackageRecord::Clause(other)
+                                        if other.owner == clause.owner)
+                                })
+                                .count();
+                            if operation_owner.is_some() {
+                                MemberPath::new(MemberRoot::Operation)
+                            } else {
+                                MemberPath::type_definition()
+                            }
+                            .name("clauses")
+                            .index(position)
+                        },
                     },
                     detail: format!(
                         "clause {}: {meaning} owns no quire invariant",
@@ -2179,6 +2222,9 @@ fn check_node<'a>(
                         node: relationship.source.type_identity.node.clone(),
                         artifact: None,
                         span: None,
+                        member: MemberPath::type_definition()
+                            .name("relationships")
+                            .index(0),
                     },
                     detail: format!(
                         "{}: TypeDefinition.relationships[0]: relationship source owner {} is not an object type",
@@ -2196,6 +2242,7 @@ fn check_node<'a>(
                         node: relationship.key.node.clone(),
                         artifact: None,
                         span: None,
+                        member: MemberPath::new(MemberRoot::Relationship).name("target"),
                     },
                     detail: format!(
                         "{}: Relationship.target: {} is not a declared object type",
@@ -4242,7 +4289,7 @@ mod tests {
             assert!(refusals.iter().any(|refusal| {
                 refusal.code == Code::UnsupportedConstruct
                     && matches!(&refusal.cause,
-                    ModelRefusalCause::UnsupportedDeclarationForm { node, what }
+                    ModelRefusalCause::UnsupportedDeclarationForm { node, what, .. }
                     if node == &clause_key.node && what == &format!("{meaning}:clauses"))
             }));
         }
@@ -4389,7 +4436,7 @@ mod tests {
                 };
                 assert!(refusals.iter().any(|refusal| {
                     refusal.code == Code::UnsupportedConstruct && matches!(&refusal.cause,
-                        ModelRefusalCause::UnsupportedDeclarationForm { node, what }
+                        ModelRefusalCause::UnsupportedDeclarationForm { node, what, .. }
                         if node == &clause_key.node && what == &format!("{}:clauses", crate::model::intake::meaning::PERSISTENCE_INTERFACE))
                 }));
             } else {

@@ -57,7 +57,7 @@ use crate::model::domain_package::{
 };
 use crate::model::key::{hex, raw_bytes_digest, DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
-use crate::model::refusal::{Inexact, IntakeLimit};
+use crate::model::refusal::{Inexact, IntakeLimit, MemberPath, MemberRoot};
 use qsl_foundation::diagnostic::{Code, JsonPointer};
 use qsl_foundation::source::{LocatedSpan, Position};
 use qsl_foundation::IntakeLimits;
@@ -426,6 +426,7 @@ fn read_refusal(error: quire_canonical::ReadError, bound: u64, actual: u64) -> M
             "$".to_owned(),
             None,
             None,
+            MemberPath::new(MemberRoot::Package),
             format!("package document is malformed JSON at byte {offset}: {kind}"),
         ),
         quire_canonical::ReadError::Limit(_) => input_bytes_exceeded(bound, actual),
@@ -440,6 +441,7 @@ fn read_refusal(error: quire_canonical::ReadError, bound: u64, actual: u64) -> M
                 "$".to_owned(),
                 None,
                 None,
+                MemberPath::new(MemberRoot::Package),
                 format!("package document number {lexeme} has no finite double"),
             ),
         },
@@ -447,6 +449,7 @@ fn read_refusal(error: quire_canonical::ReadError, bound: u64, actual: u64) -> M
             "$".to_owned(),
             None,
             None,
+            MemberPath::new(MemberRoot::Package),
             format!("package document could not be read: {other}"),
         ),
     }
@@ -479,6 +482,7 @@ fn digest_refusal(error: quire_canonical::Error, bound: u64, actual: u64) -> Mod
             "$".to_owned(),
             None,
             None,
+            MemberPath::new(MemberRoot::Package),
             format!("package document could not be RFC 8785-encoded: {other}"),
         ),
     }
@@ -955,7 +959,13 @@ fn view_refusal(fault: BuildFault<&str>) -> ModelRefusal {
         }
         BuildFault::Empty => "package document read to a tree with no root".to_owned(),
     };
-    malformed_declaration("$".to_owned(), None, None, detail)
+    malformed_declaration(
+        "$".to_owned(),
+        None,
+        None,
+        MemberPath::new(MemberRoot::Package),
+        detail,
+    )
 }
 
 /// FR-154 Intake's four-check admission table (`model-complete.md:58-70`).
@@ -1446,16 +1456,23 @@ fn validate_with_semantic_ir(document: &PackageDocument) -> Result<(), Vec<Model
                 .to_owned()
             };
             let (artifact, span) = located_span(located);
+            let member = semantic_member_path(&located.pointer);
             let detail = format!(
                 "agent-ix-semantic-ir refused this document at {} ({}) on {node} ({}): {}",
-                semantic_member_path(&located.pointer)
-                    .as_deref()
-                    .unwrap_or("the source member"),
+                member
+                    .as_ref()
+                    .map_or_else(|| "the source member".to_owned(), ToString::to_string),
                 located.pointer,
                 located.code,
                 located.message
             );
-            Some(malformed_declaration(node, artifact, span, detail))
+            Some(malformed_declaration(
+                node,
+                artifact,
+                span,
+                member.unwrap_or_else(|| MemberPath::new(MemberRoot::Package)),
+                detail,
+            ))
         })
         .collect();
     if refusals.is_empty() {
@@ -1760,7 +1777,8 @@ fn missing_reader_reference(
             },
             detail: format!(
                 "{} ({pointer}) on {step_identity}: {reference:?} names no event type of this domain package",
-                semantic_member_path(&located.pointer).unwrap_or_else(|| pointer.to_owned())
+                semantic_member_path(&located.pointer)
+                    .map_or_else(|| pointer.to_owned(), |member| member.to_string())
             ),
         });
     }
@@ -1821,37 +1839,31 @@ fn document_declares(value: &Value, identity: &str) -> bool {
 
 /// Keep the source document's canonical member path in the diagnostic while
 /// retaining the reader's raw JSON pointer as evidence of where it refused.
-fn semantic_member_path(pointer: &str) -> Option<String> {
+fn semantic_member_path(pointer: &str) -> Option<MemberPath> {
     let pointer = pointer.strip_prefix("/ir").unwrap_or(pointer);
     let mut parts = pointer.trim_start_matches('/').split('/');
+    let segments = |parts: std::str::Split<'_, char>, mut path: MemberPath| {
+        for part in parts {
+            path = match part.parse::<usize>() {
+                Ok(index) => path.index(index),
+                Err(_) if part == "identity_fields" => path.name("identityFields"),
+                Err(_) => path.name(part),
+            };
+        }
+        path
+    };
     match parts.next()? {
         "types" => {
             let _index = parts.next()?;
-            let member = parts.collect::<Vec<_>>();
-            if member.is_empty() {
-                return Some("TypeDefinition".to_owned());
-            }
-            let mut formatted = String::new();
-            for part in member {
-                if part.bytes().all(|byte| byte.is_ascii_digit()) {
-                    formatted.push('[');
-                    formatted.push_str(part);
-                    formatted.push(']');
-                } else {
-                    if !formatted.is_empty() {
-                        formatted.push('.');
-                    }
-                    formatted.push_str(part);
-                }
-            }
-            let member = formatted.replace("identity_fields", "identityFields");
-            Some(format!("TypeDefinition.{member}"))
+            Some(segments(parts, MemberPath::type_definition()))
         }
-        "constructs" => Some("constructs[].meaning".to_owned()),
+        "constructs" => Some(MemberPath::new(MemberRoot::Constructs).name("meaning")),
         "populations" => {
             let _index = parts.next()?;
-            let member = parts.collect::<Vec<_>>().join(".");
-            Some(format!("PopulationDefinition.{member}"))
+            Some(segments(
+                parts,
+                MemberPath::new(MemberRoot::PopulationDefinition),
+            ))
         }
         _ => None,
     }
@@ -1964,8 +1976,13 @@ fn business_generalization_refusal(
         .contains(&located.code)
         && !ctx.array_field("supertypes").ok()?.is_empty()
     {
-        let mut refusal = unsupported_at(node, &ctx.at, format!("{resolved}:supertypes"));
-        let member = semantic_member_path(&located.pointer).unwrap_or_default();
+        let member = MemberPath::from_document_location(&ctx.at).name("supertypes");
+        let mut refusal = unsupported_member(
+            node,
+            &ctx.at,
+            member.clone(),
+            format!("{resolved}:supertypes"),
+        );
         refusal.detail = format!(
             "{}: {owner}: {member} are unsupported for {resolved}",
             ctx.at
@@ -2060,6 +2077,7 @@ fn malformed_declaration(
     node: String,
     artifact: Option<String>,
     span: Option<LocatedSpan>,
+    member: MemberPath,
     detail: String,
 ) -> ModelRefusal {
     ModelRefusal {
@@ -2068,18 +2086,41 @@ fn malformed_declaration(
             node,
             artifact,
             span,
+            member,
         },
         detail,
     }
 }
 
 fn malformed_at(value: &Value, at: &str, reason: impl std::fmt::Display) -> ModelRefusal {
+    malformed_member(value, at, MemberPath::from_document_location(at), reason)
+}
+
+/// [`malformed_at`] for a refusal whose member is not the node's own
+/// location (for example `constructs[].meaning`).
+pub(super) fn malformed_member(
+    value: &Value,
+    at: &str,
+    member: MemberPath,
+    reason: impl std::fmt::Display,
+) -> ModelRefusal {
     let (artifact, span) = node_span(value);
     let node = node_identity_label(value, at);
-    malformed_declaration(node.clone(), artifact, span, format!("{at}: {reason}"))
+    malformed_declaration(node, artifact, span, member, format!("{at}: {reason}"))
 }
 
 pub(super) fn unsupported_at(value: &Value, at: &str, what: impl Into<String>) -> ModelRefusal {
+    unsupported_member(value, at, MemberPath::from_document_location(at), what)
+}
+
+/// [`unsupported_at`] for a refusal whose member is not the node's own
+/// location (for example `Operation.pre`).
+pub(super) fn unsupported_member(
+    value: &Value,
+    at: &str,
+    member: MemberPath,
+    what: impl Into<String>,
+) -> ModelRefusal {
     let node = node_identity_label(value, at);
     let what = what.into();
     ModelRefusal {
@@ -2087,6 +2128,7 @@ pub(super) fn unsupported_at(value: &Value, at: &str, what: impl Into<String>) -
         cause: ModelRefusalCause::UnsupportedDeclarationForm {
             node,
             what: what.clone(),
+            member,
         },
         detail: format!("{at}: construct meaning/capability {what:?} has no reader yet"),
     }
@@ -2182,6 +2224,7 @@ fn unsupported_native_parameters(
         cause: ModelRefusalCause::UnsupportedDeclarationForm {
             node,
             what: what.clone(),
+            member: MemberPath::from_document_location(at).name("typeRef"),
         },
         detail: format!(
             "{at}: typeRef: native value type {:?} requires parameter(s) {} that agent-ix-semantic-ir's constraint vocabulary cannot express",
@@ -2213,11 +2256,27 @@ impl<'a> NodeCtx<'a> {
         malformed_at(self.value, &self.at, reason)
     }
 
+    /// A refusal at the node's own member `field` (`persists`, `members`).
+    pub(super) fn malformed_in(&self, field: &str, reason: impl std::fmt::Display) -> ModelRefusal {
+        self.malformed_member(
+            MemberPath::from_document_location(&self.at).name(field),
+            format_args!("{field}: {reason}"),
+        )
+    }
+
+    pub(super) fn malformed_member(
+        &self,
+        member: MemberPath,
+        reason: impl std::fmt::Display,
+    ) -> ModelRefusal {
+        malformed_member(self.value, &self.at, member, reason)
+    }
+
     pub(super) fn str_field(&self, field: &'static str) -> Result<&'a str, ModelRefusal> {
         self.value
             .get(field)
             .and_then(Value::as_str)
-            .ok_or_else(|| self.malformed(format!("{field}: missing or not a string")))
+            .ok_or_else(|| self.malformed_in(field, "missing or not a string"))
     }
 
     fn opt_str_field(&self, field: &str) -> Option<&'a str> {
@@ -2234,7 +2293,7 @@ impl<'a> NodeCtx<'a> {
             Some(array) => array
                 .as_array()
                 .map(Vec::as_slice)
-                .ok_or_else(|| self.malformed(format!("{field}: not an array"))),
+                .ok_or_else(|| self.malformed_in(field, "not an array")),
         }
     }
 
@@ -2517,9 +2576,10 @@ pub(super) fn read_persistence_interface(
     }
     let persists = ctx.identity_keys(package, "persists")?;
     if persists.is_empty() {
-        return Err(
-            ctx.malformed("persists: a persistence interface names one or more object types")
-        );
+        return Err(ctx.malformed_in(
+            "persists",
+            "a persistence interface names one or more object types",
+        ));
     }
     for (position, target) in persists.iter().enumerate() {
         let target_at = NodeCtx::new(ctx.value, format!("{}.persists[{position}]", ctx.at));
@@ -2543,17 +2603,19 @@ pub(super) fn read_persistence_interface(
     }
     let operations = ctx.array_field("operations")?;
     if operations.is_empty() {
-        return Err(
-            ctx.malformed("operations: a persistence interface declares one or more operations")
-        );
+        return Err(ctx.malformed_in(
+            "operations",
+            "a persistence interface declares one or more operations",
+        ));
     }
     for (position, operation) in operations.iter().enumerate() {
         let operation_at = format!("{}.operations[{position}]", ctx.at);
         if let Some(pre) = operation.get("pre").and_then(Value::as_array) {
             if !pre.is_empty() {
-                return Err(unsupported_at(
+                return Err(unsupported_member(
                     operation,
                     &operation_at,
+                    MemberPath::new(MemberRoot::Operation).name("pre"),
                     format!("{}:operation-pre", meaning::PERSISTENCE_INTERFACE),
                 ));
             }
@@ -2729,7 +2791,7 @@ pub(super) fn read_object_type(
         None => false,
         Some(value) => value
             .as_bool()
-            .ok_or_else(|| ctx.malformed("abstract: not a boolean"))?,
+            .ok_or_else(|| ctx.malformed_in("abstract", "not a boolean"))?,
     };
     let interface_features = if is_interface {
         Some(ctx.identity_keys(package, "featureOrder")?)
@@ -2919,7 +2981,7 @@ pub(super) fn read_namespace(
         }
     }
     if !ctx.array_field("identityFields")?.is_empty() {
-        return Err(ctx.malformed("identityFields: a namespace has no object identity"));
+        return Err(ctx.malformed_in("identityFields", "a namespace has no object identity"));
     }
     for (position, clause) in ctx.array_field("clauses")?.iter().enumerate() {
         let member = NodeCtx::new(clause, format!("{}.clauses[{position}]", ctx.at));
@@ -2933,7 +2995,7 @@ pub(super) fn read_namespace(
     }
     let members = ctx.identity_keys(package, "members")?;
     if members.is_empty() {
-        return Err(ctx.malformed("members: a namespace has one or more members"));
+        return Err(ctx.malformed_in("members", "a namespace has one or more members"));
     }
     for (position, member) in members.iter().enumerate() {
         let at = NodeCtx::new(ctx.value, format!("{}.members[{position}]", ctx.at));
@@ -3628,9 +3690,10 @@ fn read_type_node(
             return Err(unsupported_at(type_value, at, other));
         }
         other => {
-            return Err(ctx.malformed(format!(
-                "kind: resolves to {other:?}, outside FR-208 at constructs[].meaning"
-            )));
+            return Err(ctx.malformed_member(
+                MemberPath::new(MemberRoot::Constructs).name("meaning"),
+                format!("kind: resolves to {other:?}, outside FR-208 at constructs[].meaning"),
+            ));
         }
     }
     Ok(records)
@@ -4684,6 +4747,7 @@ mod tests {
                     node: "$".to_owned(),
                     artifact: None,
                     span: None,
+                    member: MemberPath::new(MemberRoot::Package),
                 },
                 detail: "package document is malformed JSON at byte 0: unexpected character"
                     .to_owned(),
@@ -4714,6 +4778,7 @@ mod tests {
                     node: "ix://acme/orders/Count".to_owned(),
                     artifact: None,
                     span: None,
+                    member: MemberPath::type_definition(),
                 },
                 detail: "$.types[0]: kind: a bare-string core kind is not a declared \
                           FR-208 meaning"
@@ -4903,6 +4968,7 @@ mod tests {
                     node: "ix://acme/orders/type/Order".to_owned(),
                     artifact: None,
                     span: None,
+                    member: MemberPath::type_definition(),
                 },
                 detail: "$.types[0]: identity: \"ix://acme/orders/type/Order\" is not \
                           ix://acme/orders/<artifact id>"
@@ -4957,6 +5023,7 @@ mod tests {
                 node: "ix://acme/orders/Order".to_owned(),
                 artifact: None,
                 span: None,
+                member: MemberPath::type_definition().name("abstract"),
             }
         );
         assert!(
@@ -5221,6 +5288,7 @@ mod tests {
                     node: "ix://acme/orders/Widget/flag".to_owned(),
                     artifact: None,
                     span: None,
+                    member: MemberPath::type_definition().name("fields").index(0),
                 },
                 detail: "$.types[0].fields[0]: typeRef: \"ix://quire/native/Frobnicate\" \
                           names no native value type QSL declares"
@@ -5758,6 +5826,7 @@ mod tests {
                 cause: ModelRefusalCause::UnsupportedDeclarationForm {
                     node: "ix://acme/orders/OrderPlaced".to_owned(),
                     what: meaning::VARIANT_TYPE.to_owned(),
+                    member: MemberPath::type_definition(),
                 },
                 detail: format!(
                     "$.types[0]: construct meaning/capability {:?} has no reader yet",
@@ -6122,6 +6191,7 @@ mod tests {
                     node: "$.types[0].constraints[0]".to_owned(),
                     artifact: None,
                     span: None,
+                    member: MemberPath::type_definition().name("constraints").index(0),
                 }
             );
             assert_eq!(
@@ -6266,6 +6336,7 @@ mod tests {
                 cause: ModelRefusalCause::UnsupportedDeclarationForm {
                     node: "ix://acme/orders/Money".to_owned(),
                     what: meaning::VALUE_TYPE.to_owned(),
+                    member: MemberPath::type_definition(),
                 },
                 detail: format!(
                     "$.types[0]: construct meaning/capability {:?} has no reader yet",
@@ -6474,6 +6545,7 @@ mod tests {
                 cause: ModelRefusalCause::UnsupportedDeclarationForm {
                     node: "ix://acme/orders/Wide/constraints/enumValues".to_owned(),
                     what: "quire.meaning.model.value-type/v1:constraints:enumValues".to_owned(),
+                    member: MemberPath::type_definition().name("constraints").index(0),
                 },
                 detail: "$.types[0].constraints[0]: construct meaning/capability \
                          \"quire.meaning.model.value-type/v1:constraints:enumValues\" has no reader yet"
@@ -6505,6 +6577,11 @@ mod tests {
                     node: "ix://acme/orders/Wide".to_owned(),
                     artifact: None,
                     span: None,
+                    member: MemberPath::type_definition()
+                        .name("constraints")
+                        .index(position)
+                        .name("operands")
+                        .name("value"),
                 }
             );
             // The validator's code and input path have no typed field.
@@ -6554,6 +6631,7 @@ mod tests {
                     node: "ix://acme/orders/Gadget".to_owned(),
                     artifact: None,
                     span: None,
+                    member: MemberPath::new(MemberRoot::Constructs).name("meaning"),
                 },
                 detail: "$.types[0]: kind: resolves to \"acme.custom.meaning/v1\", outside \
                           FR-208 at constructs[].meaning"
@@ -6656,6 +6734,7 @@ mod tests {
                     node: "ix://acme/orders/Fleet".to_owned(),
                     artifact: None,
                     span: None,
+                    member: MemberPath::new(MemberRoot::PopulationDefinition),
                 },
                 detail: format!(
                     "$.populations[0]: kind: resolves to {:?}, not {:?}",
@@ -6703,6 +6782,7 @@ mod tests {
                     node: "ix://acme/other/Thing".to_owned(),
                     artifact: None,
                     span: None,
+                    member: MemberPath::type_definition(),
                 },
                 detail: "$.types[0]: identity: \"ix://acme/other/Thing\" is not \
                           ix://acme/orders/<artifact id>"
@@ -6737,6 +6817,7 @@ mod tests {
                     node: "ix://acme/orders/Widget-other".to_owned(),
                     artifact: None,
                     span: None,
+                    member: MemberPath::type_definition().name("fields").index(0),
                 },
                 detail: "$.types[0].fields[0]: identity: \"ix://acme/orders/Widget-other\" \
                           is not ix://acme/orders/Widget/<name>"
@@ -6803,6 +6884,7 @@ mod tests {
                         node: "ix://acme/orders/Widget/other".to_owned(),
                         artifact: None,
                         span: None,
+                        member: MemberPath::type_definition().name("fields").index(0),
                     },
                     detail: "$.types[0].fields[0]: typeRef: \"ix://acme/other/Thing\" is not \
                               ix://quire/native/<Name> or ix://acme/orders/<artifact id>"
@@ -6814,6 +6896,7 @@ mod tests {
                         node: "ix://acme/other/Thing".to_owned(),
                         artifact: None,
                         span: None,
+                        member: MemberPath::type_definition(),
                     },
                     detail: "$.types[1]: identity: \"ix://acme/other/Thing\" is not \
                               ix://acme/orders/<artifact id>"
@@ -6905,6 +6988,7 @@ mod tests {
                     node: "ix://acme/orders/Pipe".to_owned(),
                     artifact: None,
                     span: None,
+                    member: MemberPath::type_definition(),
                 },
                 detail: "$.types[2]: sourceEnd.multiplicity: missing multiplicity".to_owned(),
             }]
@@ -7205,7 +7289,29 @@ mod tests {
     /// The expected reader refusal for a generated-origin node: no artifact,
     /// no span.
     fn malformed(node: &str, detail: &str) -> ModelRefusal {
-        malformed_declaration(node.to_owned(), None, None, detail.to_owned())
+        let location = detail
+            .split_once(": ")
+            .map(|(location, _)| location)
+            .filter(|location| location.starts_with('$'))
+            .unwrap_or("$");
+        malformed_declaration(
+            node.to_owned(),
+            None,
+            None,
+            MemberPath::from_document_location(location),
+            detail.to_owned(),
+        )
+    }
+
+    /// [`malformed`] for a refusal at a member the location does not name.
+    fn malformed_member(node: &str, detail: &str, member: &str) -> ModelRefusal {
+        malformed_declaration(
+            node.to_owned(),
+            None,
+            None,
+            member.parse().expect("a well-formed member path"),
+            detail.to_owned(),
+        )
     }
 
     #[trace("TC-145", "FR-056-AC-1")]
@@ -7236,9 +7342,10 @@ mod tests {
     fn refuses_a_non_boolean_abstract_in_the_reader() {
         assert_refuses_without_panicking(
             |document| document["types"][0]["abstract"] = serde_json::json!("yes"),
-            malformed(
+            malformed_member(
                 "ix://acme/orders/Widget",
                 "$.types[0]: abstract: not a boolean",
+                "TypeDefinition.abstract",
             ),
         );
     }
@@ -7369,7 +7476,7 @@ mod tests {
     fn refuses_a_populations_member_that_is_not_an_array() {
         assert_refuses_without_panicking(
             |document| document["populations"] = serde_json::json!({}),
-            malformed("$", "$: populations: not an array"),
+            malformed_member("$", "$: populations: not an array", "$.populations"),
         );
     }
 
@@ -7581,6 +7688,7 @@ mod tests {
                 "$".to_owned(),
                 None,
                 None,
+                MemberPath::new(MemberRoot::Package),
                 format!(
                     "package document is malformed JSON at byte {offset}: lone surrogate escape"
                 ),
@@ -7634,6 +7742,7 @@ mod tests {
                 "$".to_owned(),
                 None,
                 None,
+                MemberPath::new(MemberRoot::Package),
                 format!(
                     "package document is malformed JSON at byte {offset}: lone surrogate escape"
                 ),
