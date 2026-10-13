@@ -158,17 +158,20 @@ evaluates it; it is not discarded and it is not shape-checked only.
   invocation. If its text uses `pre(e)`, then the checker SHALL refuse
   `wrong_snapshot`/`forbidden-pre-read`, the cause FR-104 gives a unit `pre`
   clause that reads `pre(e)`. The refusal SHALL name the operation's
-  `DeclarationKey`, SHALL be located at `Operation.pre` with the clause's
-  position in that list, and SHALL retain the artifact id and span. No checked
+  `DeclarationKey`, and SHALL be located at `Operation.pre[k]`, k being the
+  clause's position in that list. A kept clause's location is the typed
+  origin `ModelOperationClause` (operation, kind, position), which is not a
+  unit state clause's origin. The clause's artifact id and span are the kept
+  clause's own, found from that operation, kind and position. No checked
   package is produced.
 - An `ensures` clause is the operation's postcondition and may use `pre(e)`.
   It is retained on the operation as its postcondition clause, bound to that
   operation's `DeclarationKey`, and it adds no declaration. A checking
-  refusal of an `ensures` clause is located at `Operation.post` in the same
+  refusal of an `ensures` clause is located at `Operation.post[k]` in the same
   form.
 - A text that fails FR-146 parsing or Boolean checking refuses with the
-  refusal that parse or check gives, located at `Operation.pre` for a
-  `requires` clause and `Operation.post` for an `ensures` clause.
+  refusal that parse or check gives, located at `Operation.pre[k]` for a
+  `requires` clause and `Operation.post[k]` for an `ensures` clause.
 - These kept clauses are distinct from the two unit-level forms. A unit `pre`
   or `post` `StateClauseForm` (FR-102) is a clause the unit authors about an
   operation, and a unit `operation-body` is the candidate body the unit
@@ -196,7 +199,7 @@ evaluates it; it is not discarded and it is not shape-checked only.
 | FR-103-AC-5 | Admission is deterministic: admitting the ConfigVersion package twice, and admitting it with its operation and population records reordered in the document, gives equal `PackageDeclarations` and equal effect key lists. | Test |
 | FR-103-AC-6 | A frame modifying `Account.address` and a frame entry naming `Address.street` bind distinct declaration-and-field pairs; a record subtype's inherited field resolves through its effective fields. An operation parameter and result typed `Address` retain record value typing through check and emission; a record node supplied as an object-reference target refuses the QSpec FR-322 derived-shape check. | Test |
 | FR-103-AC-7 | K2's `OrderLifecycle` with operation `place` given `ensures` `self.placed` admits after the same 21 charges as K2 and adds no declaration. The `OperationMemberRecord` of `place` holds one `ensures` clause with language `quire`, text `self.placed`, position 0, and the source identity of its `origin` (operation key, artifact id, span), and no `requires` clause; `self.placed` is bound as the postcondition of `place`. A domain package whose operation declares no `pre` and `post` keeps empty lists. | Test (TC-993) |
-| FR-103-AC-8 | K2 with `OrderLifecycle` given field `cancelled`, and `place` given `requires` `pre(self.placed) = false`, refuses `wrong_snapshot`/`forbidden-pre-read` naming `ix://test/orders/OrderLifecycle/place` at `Operation.pre`, with no checked package. The same package with `requires` `not self.placed` and `ensures` `self.placed and not self.cancelled` checks, and an `ensures` that reads `pre(self.placed)` checks. | Test (TC-993) |
+| FR-103-AC-8 | K2 with `OrderLifecycle` given field `cancelled`, and `place` given `requires` `pre(self.placed) = false`, refuses `wrong_snapshot`/`forbidden-pre-read` naming `ix://test/orders/OrderLifecycle/place` at `Operation.pre[0]`, with no checked package. A kept clause is checked under no profile: integer `div` in it refuses `profile_prohibited_operator`. The same package with `requires` `not self.placed` and `ensures` `self.placed and not self.cancelled` checks, and an `ensures` that reads `pre(self.placed)` checks. | Test (TC-993) |
 | FR-103-AC-9 | A domain operation's `requires` and `ensures` texts do not become unit clauses or bodies: with domain texts `false` on `A.size` and `B.size` and unit `pre`/`post` clauses `true`, the retained unit clauses are `true`, and `has_body` is set only by the unit `operation-body` declarations. | Test (TC-986) |
 
 ## Dependencies
