@@ -240,7 +240,17 @@ own behaviour above.
    `Alias::Tier::Gold` already parses. QSpec states how a model alias, a variant
    type name and a case name resolve (item 4), as FR-317 states `q::m`.
 
-QSL-748 owns and tracks cross-repo requirements 1 to 3.
+QSL-748 owns and tracks cross-repo requirements 1 to 3. Their rows are
+specified in `agent-ix/quire-specification` and this requirement cites them
+by id rather than restating them:
+
+- requirement 1: QSpec FR-322-AC-71 (the model-owned `variant_type` node and
+  the step 4 element-type row) and QSpec FR-141-AC-7 and FR-141-AC-8 (the
+  identity of an enum member over a variant type node);
+- requirement 2: QSpec FR-208-AC-16 (a variant `typeRef` of a field,
+  parameter or result is admitted) and QSpec FR-208-AC-17 (the typing and
+  naming of a case literal and the refusals of a mistyped use);
+- the cross-repo test cases QSpec TC-939 to TC-942.
 
 ## Inputs
 

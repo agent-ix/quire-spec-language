@@ -92,7 +92,7 @@ pub mod imports;
 pub(crate) mod imports;
 mod ir;
 mod lowering;
-pub(crate) use lowering::record_node_key;
+pub(crate) use lowering::{record_node_key, variant_type_node_key};
 mod node_key;
 mod observation;
 mod operation_clause;

@@ -821,6 +821,7 @@ fn field_kind_matches(raw: &SnapshotValue, value_type: &quire_exact::ValueType) 
             )
             | (RawForm::Sequence(_), quire_exact::ValueType::Collection(_))
             | (RawForm::Record(_), quire_exact::ValueType::Composite(_))
+            | (RawForm::Variant(_), quire_exact::ValueType::Enum(_))
     )
 }
 
@@ -852,6 +853,7 @@ fn object_field_kind_matches(
             | (RawForm::Reference(_), quire_exact::ValueType::Reference(_))
             | (RawForm::Sequence(_), quire_exact::ValueType::Collection(_))
             | (RawForm::Record(_), quire_exact::ValueType::Composite(_))
+            | (RawForm::Variant(_), quire_exact::ValueType::Enum(_))
     )
 }
 
@@ -877,6 +879,17 @@ pub(super) struct References<'a> {
     /// The declaration key of each selected record value type by its IR
     /// node identity, built on first use.
     record_keys: Option<BTreeMap<String, quire_exact::NodeKey>>,
+    /// Each selected variant type by its IR node identity, built on first
+    /// use.
+    variant_types: Option<BTreeMap<String, VariantAdmission>>,
+}
+
+/// What admitting a `variant` value against one variant type reads
+/// (FR-360 item 9): the type's enum shape and each declared case with the
+/// key and canonical rank a value of it carries.
+struct VariantAdmission {
+    shape: quire_exact::EnumShape,
+    cases: BTreeMap<String, quire_exact::EnumMember>,
 }
 
 impl<'a> References<'a> {
@@ -915,7 +928,65 @@ impl<'a> References<'a> {
             completeness,
             unresolved: Vec::new(),
             record_keys: None,
+            variant_types: None,
         }
+    }
+
+    /// The variant type the IR node identity `identity` names, or `None`
+    /// when no selected package declares a variant type by that identity
+    /// (another meaning or no declaration at all). Its cases are keyed over
+    /// its checked node key, so a value admitted here equals the same case
+    /// a unit's literal builds (FR-360 item 11).
+    fn variant_type(&mut self, identity: &str) -> Option<&VariantAdmission> {
+        let views = self.views;
+        self.variant_types
+            .get_or_insert_with(|| {
+                let unbounded = qsl_foundation::IdentityLimits {
+                    input_bytes: u64::MAX,
+                };
+                let mut found = BTreeMap::new();
+                for view in views {
+                    for record in &view.view.domain_package().records {
+                        let crate::model::domain_package::DomainPackageRecord::Enum(declared) =
+                            record
+                        else {
+                            continue;
+                        };
+                        let Ok(Some(node)) = crate::check::variant_type_node_key(record, unbounded)
+                        else {
+                            continue;
+                        };
+                        // `members` ascend by UTF-8 bytes: the canonical
+                        // rank of a case is its position.
+                        let cases: BTreeMap<String, quire_exact::EnumMember> = declared
+                            .members
+                            .iter()
+                            .enumerate()
+                            .filter_map(|(rank, case)| {
+                                let rank = u32::try_from(rank).ok()?;
+                                Some((
+                                    case.clone(),
+                                    quire_exact::EnumMember::new(
+                                        crate::value::enumeration::mint_variant_id(node, case),
+                                        rank,
+                                    ),
+                                ))
+                            })
+                            .collect();
+                        let shape = quire_exact::EnumShape::new(
+                            false,
+                            declared.members.iter().filter_map(|case| {
+                                cases.get(case).map(quire_exact::EnumMember::variant)
+                            }),
+                        );
+                        found
+                            .entry(declared.key.node.clone())
+                            .or_insert(VariantAdmission { shape, cases });
+                    }
+                }
+                found
+            })
+            .get(identity)
     }
 
     /// The declaration key the record value type named by the IR node
@@ -1123,11 +1194,49 @@ fn admit_leaf(
                 .resolve(reference, *type_identity)
                 .map(Value::Reference)
         }
+        (RawForm::Variant(variant), quire_exact::ValueType::Enum(slot)) => {
+            admit_variant(references, variant, slot)
+        }
         _ => Err(admission_record(
             Code::InvalidRuntimeInput,
             "wrong-value-kind",
         )),
     }
+}
+
+/// A `variant` form admitted as a value of the enum type `slot` (FR-360
+/// item 9). The first defect found refuses, in this order: a missing `type`
+/// or `case` (`type` reported first), an extra payload member, a `type` that
+/// names any declaration other than the slot's variant type, and a `case`
+/// that is not a declared case of it, compared byte for byte.
+fn admit_variant(
+    references: &mut References<'_>,
+    variant: super::RawVariant<'_>,
+    slot: &quire_exact::EnumShape,
+) -> Result<Value, AdmissionRecord> {
+    let refuse = |cause: &'static str| admission_record(Code::InvalidRuntimeInput, cause);
+    let (Some(type_identity), Some(case)) = (variant.type_identity(), variant.case()) else {
+        let member = if variant.type_identity().is_none() {
+            "type"
+        } else {
+            "case"
+        };
+        return Err(refuse("missing-member").with("member", member));
+    };
+    if variant.has_extra_member() {
+        return Err(refuse("unknown-member"));
+    }
+    let Some(declared) = references
+        .variant_type(type_identity)
+        .filter(|declared| &declared.shape == slot)
+    else {
+        return Err(refuse("wrong-value-kind"));
+    };
+    declared
+        .cases
+        .get(case)
+        .map(|member| Value::Enum(*member))
+        .ok_or_else(|| refuse("invalid-value"))
 }
 
 /// One unit of the explicit work stack [`admit_value`] drains.
@@ -1382,7 +1491,7 @@ fn collect_references(raw: &SnapshotValue, into: &mut Vec<(String, String)>) {
             RawForm::Record(record) => {
                 pending.extend(record.fields().rev().map(|(_, value)| value.form()));
             }
-            RawForm::Boolean(_) | RawForm::Integer(_) | RawForm::Absent => {}
+            RawForm::Boolean(_) | RawForm::Integer(_) | RawForm::Absent | RawForm::Variant(_) => {}
         }
     }
 }
@@ -2491,6 +2600,40 @@ mod tests {
             r#"{"record":{"type":"ix://p/T","fields":[]}}"#,
             r#"{"record":{"type":"ix://p/T","fields":{"a":{"nope":1}}}}"#,
             r#"{"record":"ix://p/T"}"#,
+        ] {
+            assert!(read(malformed).is_none(), "{malformed}");
+        }
+    }
+
+    /// FR-360 item 9: the `variant` tag keeps the members of its payload as
+    /// written, so a missing or an extra one is judged by admission in its
+    /// own order; a payload that is not an object, or a `type` or `case` that
+    /// is not text, is not a value form.
+    #[trace("FR-360-AC-9", "FR-360-AC-10")]
+    #[test]
+    fn a_variant_value_reads_its_members_as_written() {
+        let read_back = snapshot(r#"{"variant":{"case":"Gold","type":"ix://p/Tier"}}"#);
+        let RawForm::Variant(variant) = read_back.form() else {
+            panic!("a variant");
+        };
+        assert_eq!(variant.type_identity(), Some("ix://p/Tier"));
+        assert_eq!(variant.case(), Some("Gold"));
+        assert!(!variant.has_extra_member());
+        assert_eq!(
+            read_back,
+            SnapshotValue::variant("ix://p/Tier", "Gold"),
+            "member order does not change the value"
+        );
+        let partial = snapshot(r#"{"variant":{"x":1}}"#);
+        let RawForm::Variant(variant) = partial.form() else {
+            panic!("a variant");
+        };
+        assert_eq!((variant.type_identity(), variant.case()), (None, None));
+        assert!(variant.has_extra_member());
+        for malformed in [
+            r#"{"variant":"Gold"}"#,
+            r#"{"variant":{"type":7,"case":"Gold"}}"#,
+            r#"{"variant":{"type":"ix://p/Tier","case":null}}"#,
         ] {
             assert!(read(malformed).is_none(), "{malformed}");
         }

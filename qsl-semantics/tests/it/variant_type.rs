@@ -2,8 +2,9 @@
 //! FR-056 "Variant types" (QSL-734): a variant type is admitted as one `enum`
 //! export and one `variant` export per case (TC-994), refuses a payload
 //! (TC-995), refuses malformed and duplicate cases with their causes
-//! (TC-996), and refuses a clause or field that names it while its own
-//! declaration stays admitted (TC-997).
+//! (TC-996), and admits a clause, field, parameter or result that names it
+//! while its own declaration stays unchanged (TC-997; FR-360 states how a
+//! member typed by it is assembled and checked).
 //!
 //! Every assertion compares typed code, cause variant and node identity.
 //! The typed member path of these causes (`Variant.payloadType`,
@@ -524,56 +525,37 @@ fn a_unit_with_no_clause_naming_the_variant_type_assembles() {
     assert!(assembled.is_ok(), "{:?}", assembled.err());
 }
 
-/// TC-997 step 2: a clause naming `Tier` refuses `unsupported_construct`/
-/// `declaration-form` at the clause, while the declaration and its exports
-/// stay admitted and equal to step 1's.
+/// TC-997 step 2: a signature naming `Tier` raises no refusal, and the
+/// package the unit selected carries the declaration and exports of step 1's
+/// package, which no member names.
 #[trace("TC-997", "FR-056-AC-27", "FR-056-AC-31")]
 #[test]
-fn a_clause_naming_a_variant_type_refuses_while_the_declaration_is_admitted() {
+fn a_unit_naming_a_variant_type_leaves_the_declaration_and_exports_unchanged() {
     let document = tiers(&["Gold", "Standard"]);
     let bytes = serde_json::to_vec(&document).unwrap();
-    let refusal = admit_and_assemble_with_body(
-        &bytes,
-        "invariant OnTier using v on Config::Tier at current { true }",
-    )
-    .expect_err("a clause naming the variant type refuses");
-    assert_eq!(refusal.errors.len(), 1, "{refusal:?}");
-    let cause = &refusal.errors[0].cause;
-    assert_eq!(
-        cause,
-        &AssemblyCause::UnsupportedVariantType {
-            name: "Config::Tier".to_owned()
-        }
-    );
-    assert_eq!(
-        cause.catalog_code().to_string(),
-        "unsupported_construct/declaration-form"
-    );
+    let body = "function pick using v(t: Config::Tier): Config::Tier pure { t }";
+    admit_and_assemble_with_body(&bytes, body)
+        .expect("a function typed by the variant type assembles");
 
-    // The package the refused unit selected carries the declaration and
-    // exports of step 1's package, which no clause names.
     let step_one = admitted(&document);
-    let (unit, packages) = config_unit_with_body(
-        &bytes,
-        "invariant OnTier using v on Config::Tier at current { true }",
-    );
+    let (unit, packages) = config_unit_with_body(&bytes, body);
     let built = parse_and_build(&unit);
     let models = admit_unit(
         &built.selections().models,
         &packages,
         ModelNormalizationLimits::default(),
     )
-    .expect("the package is admitted although the clause is refused");
+    .expect("the package is admitted");
     assert_eq!(models[0].view.domain_package().records, step_one.records);
     assert_eq!(enum_of(&step_one, "Tier").members, ["Gold", "Standard"]);
     assert_eq!(variants_of(&step_one, "Tier").len(), 2);
 }
 
-/// FR-056 "Variant types": a `Reference<Config::Tier>` in source names the
-/// variant type too, and refuses the same way.
+/// FR-360 item 4: a `Reference<Config::Tier>` is no object reference, so the
+/// target names no object type and refuses as an unresolved type name.
 #[trace("TC-997", "FR-056-AC-27")]
 #[test]
-fn a_reference_to_a_variant_type_in_source_refuses_as_a_declaration_form() {
+fn a_reference_to_a_variant_type_names_no_object_type() {
     let bytes = serde_json::to_vec(&tiers(&["Gold", "Standard"])).unwrap();
     let refusal = admit_and_assemble_with_body(
         &bytes,
@@ -583,31 +565,26 @@ fn a_reference_to_a_variant_type_in_source_refuses_as_a_declaration_form() {
     assert_eq!(refusal.errors.len(), 1, "{refusal:?}");
     assert_eq!(
         refusal.errors[0].cause,
-        AssemblyCause::UnsupportedVariantType {
+        AssemblyCause::UnresolvedTypeName {
             name: "Config::Tier".to_owned()
         }
     );
 }
 
-/// TC-997 step 3: a field whose `typeRef` names `Tier` refuses
-/// `invalid_model_binding`/`malformed-declaration` at the field node and
-/// admits nothing. QSL-738 replaces this placeholder.
-#[trace("TC-997", "FR-056-AC-28")]
-#[test]
-fn a_field_typed_by_a_variant_type_refuses_at_the_field() {
-    let field = json!({
+fn tier_field_package() -> Value {
+    let fields = vec![json!({
         "identity": id("Account/tier"), "name": "tier",
         "typeRef": id("Tier"), "presence": "required", "nullable": false,
         "defaultKind": "none",
         "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
         "origin": generated("Account/tier"),
-    });
+    })];
     let account = definition(
         "Account",
         "object_type",
-        json!({"supertypes": [], "fields": [field], "operations": [], "relationships": []}),
+        json!({"supertypes": [], "fields": fields, "operations": [], "relationships": []}),
     );
-    let document = document(
+    document(
         vec![
             variant_construct(),
             construct("object_type", meaning::OBJECT_TYPE, "record", json!({})),
@@ -619,10 +596,32 @@ fn a_field_typed_by_a_variant_type_refuses_at_the_field() {
             ),
             account,
         ],
-    );
-    let found = refusals(&document);
-    assert_eq!(found.len(), 1, "{found:?}");
-    assert_malformed(&found[0], "Account/tier", "Field.typeRef");
+    )
+}
+
+/// TC-997 step 3: a field whose `typeRef` names `Tier` is admitted with one
+/// field export and no reference export, and the variant type keeps its
+/// `enum` and `variant` exports.
+#[trace("TC-997", "FR-056-AC-28")]
+#[test]
+fn a_field_typed_by_a_variant_type_is_admitted() {
+    let package = admitted(&tier_field_package());
+    let fields: Vec<_> = package
+        .records
+        .iter()
+        .filter_map(|record| match record {
+            DomainPackageRecord::FieldMember(field) => Some(field),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].key, key("Account/tier"));
+    assert_eq!(fields[0].value_type, ValueTypeRef::Package(key("Tier")));
+    assert_eq!(enum_of(&package, "Tier").members, ["Gold", "Standard"]);
+    assert!(!package
+        .records
+        .iter()
+        .any(|record| matches!(record, DomainPackageRecord::Relationship(_))));
 }
 
 /// The origin the signature refusals retain: the operation's own FCD
@@ -637,38 +636,11 @@ fn assert_operation_origin(refusal: &ModelRefusal) {
     assert_eq!((span.start.line, span.start.column), (1, 1));
 }
 
-/// FR-056 "Variant types": a signature typeRef naming a variant type is a
-/// reference to a node of a meaning it may not name, `malformed-declaration`
-/// at the operation node, parameter and result alike, keeping the operation's
-/// origin.
+/// FR-360 item 8: a signature `typeRef` naming a variant type is admitted,
+/// parameter and result alike, at any parameter position.
 #[trace("TC-997", "FR-056-AC-32")]
 #[test]
-fn an_operation_signature_naming_a_variant_type_refuses_as_malformed() {
-    let tier = variant_type(
-        "Tier",
-        vec![case("Tier", "Gold", 10), case("Tier", "Standard", 11)],
-    );
-    let setter = operation(
-        "setTier",
-        json!([operation_parameter("setTier", "t", &id("Tier"))]),
-        Some(&id("Tier")),
-        empty_frame(),
-    );
-    let bytes = config_version_document(setter, vec![variant_construct()], vec![tier], json!([]));
-    let document: Value = serde_json::from_slice(&bytes).unwrap();
-    let found = refusals(&document);
-    assert_eq!(found.len(), 2, "parameter and result: {found:?}");
-    let operation = "ConfigVersion/setTier";
-    assert_malformed(&found[0], operation, "Operation.params[0].typeRef");
-    assert_malformed(&found[1], operation, "Operation.returns.typeRef");
-    found.iter().for_each(assert_operation_origin);
-}
-
-/// FR-056 "Variant types": the parameter position is the declared position,
-/// not a constant. Only the second parameter (and the result) name `Tier`.
-#[trace("TC-997", "FR-056-AC-32")]
-#[test]
-fn a_later_parameter_naming_a_variant_type_keeps_its_own_position() {
+fn an_operation_signature_naming_a_variant_type_is_admitted() {
     let tier = variant_type(
         "Tier",
         vec![case("Tier", "Gold", 10), case("Tier", "Standard", 11)],
@@ -678,18 +650,94 @@ fn a_later_parameter_naming_a_variant_type_keeps_its_own_position() {
         json!([
             operation_parameter("setTier", "n", "ix://quire/native/Integer"),
             operation_parameter("setTier", "t", &id("Tier")),
-            operation_parameter("setTier", "m", "ix://quire/native/Integer"),
         ]),
         Some(&id("Tier")),
         empty_frame(),
     );
     let bytes = config_version_document(setter, vec![variant_construct()], vec![tier], json!([]));
     let document: Value = serde_json::from_slice(&bytes).unwrap();
+    let package = admitted(&document);
+    let operation = package
+        .records
+        .iter()
+        .find_map(|record| match record {
+            DomainPackageRecord::OperationMember(operation) => Some(operation),
+            _ => None,
+        })
+        .expect("the operation is admitted");
+    assert_eq!(
+        operation.parameters[1].value_type,
+        ValueTypeRef::Package(key("Tier"))
+    );
+    assert_eq!(
+        operation.result.as_ref().map(|result| &result.value_type),
+        Some(&ValueTypeRef::Package(key("Tier")))
+    );
+}
+
+/// FR-360 item 8: the signature refusal stays for the meanings FR-056 lists:
+/// a state machine named by a parameter or the result still refuses at the
+/// operation node with the parameter's own position.
+#[trace("TC-997", "FR-056-AC-32")]
+#[test]
+fn a_later_parameter_naming_a_forbidden_meaning_keeps_its_own_position() {
+    let tier = variant_type(
+        "Tier",
+        vec![case("Tier", "Gold", 10), case("Tier", "Standard", 11)],
+    );
+    let machine = definition(
+        "Machine",
+        "state_machine",
+        json!({
+            "fields": [],
+            "operations": [{
+                "identity": id("Machine/go"), "name": "go", "params": [], "pre": [], "post": [],
+                "frame": {"modifies": [], "creates": [], "deletes": []},
+                "origin": generated("Machine/go"),
+            }],
+            "clauses": [],
+            "states": [
+                {"identity": id("Machine/Open"), "name": "Open", "origin": generated("Machine/Open")},
+                {"identity": id("Machine/Closed"), "name": "Closed", "origin": generated("Machine/Closed")},
+            ],
+            "transitions": [{
+                "identity": id("Machine/step"), "from": id("Machine/Open"),
+                "to": id("Machine/Closed"), "trigger": id("Machine/go"),
+                "emits": [], "origin": generated("Machine/step"),
+            }],
+        }),
+    );
+    let setter = operation(
+        "setTier",
+        json!([
+            operation_parameter("setTier", "n", "ix://quire/native/Integer"),
+            operation_parameter("setTier", "m", &id("Machine")),
+            operation_parameter("setTier", "t", &id("Tier")),
+        ]),
+        Some(&id("Machine")),
+        empty_frame(),
+    );
+    let bytes = config_version_document(
+        setter,
+        vec![
+            variant_construct(),
+            construct(
+                "state_machine",
+                meaning::STATE_MACHINE,
+                "record",
+                json!({"states": "required", "transitions": "required"}),
+            ),
+        ],
+        vec![tier, machine],
+        json!([]),
+    );
+    let document: Value = serde_json::from_slice(&bytes).unwrap();
     let found = refusals(&document);
     assert_eq!(found.len(), 2, "parameter and result: {found:?}");
     let operation = "ConfigVersion/setTier";
     assert_malformed(&found[0], operation, "Operation.params[1].typeRef");
     assert_malformed(&found[1], operation, "Operation.returns.typeRef");
+    found.iter().for_each(assert_operation_origin);
 }
 
 /// FR-056 "Variant types": an undeclared signature type keeps the operation

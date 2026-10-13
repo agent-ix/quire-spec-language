@@ -398,6 +398,26 @@ pub fn mint_variant_id(declaration: NodeKey, case: &str) -> VariantId {
     VariantId::from_digest(digest)
 }
 
+/// The runtime members of a model variant type whose checked node is
+/// `declaration`, for `cases` in ascending UTF-8 byte order of their names
+/// (QSpec FR-144's key order for an unordered enumeration). Each member is
+/// keyed by [`mint_variant_id`] over the declaration and its case. `None`
+/// when a case name is not an identifier, which the shared
+/// [`EnumDeclaration`] does not hold.
+pub(crate) fn variant_type_members(
+    declaration: NodeKey,
+    cases: &[String],
+) -> Option<Vec<EnumValue>> {
+    let runtime = EnumDeclaration::new(declaration, false, cases.to_vec()).ok()?;
+    cases
+        .iter()
+        .map(|case| {
+            let member = NodeKey::from_digest(*mint_variant_id(declaration, case).as_bytes());
+            runtime.member(case, member).ok()
+        })
+        .collect()
+}
+
 /// The RFC 8785 bytes of the `quire.enum-member-node/v1` preimage of member
 /// `case` of the enum declaration keyed by `declaration`: the checked graph
 /// node's preimage (FR-092 rule 1), whose SHA-256 is [`mint_variant_id`]'s
