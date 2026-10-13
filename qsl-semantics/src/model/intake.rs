@@ -1660,10 +1660,14 @@ fn duplicate_process_step_refusal(
     let type_position = segments.next()?.parse::<usize>().ok()?;
     // FR-208-AC-5: a state machine's duplicate state or transition identity
     // is a conflicting binding, as a process's duplicate step is (AC-6).
+    // A clause named like an operation of its owner (or like any earlier
+    // declaration) is reported by the reader at `/clauses/j/identity`; a
+    // clause belongs to any owning meaning, so none is required.
     let (member, expected_meaning) = match segments.next()? {
-        "steps" => ("steps", meaning::PROCESS),
-        "states" => ("states", meaning::STATE_MACHINE),
-        "transitions" => ("transitions", meaning::STATE_MACHINE),
+        "steps" => ("steps", Some(meaning::PROCESS)),
+        "states" => ("states", Some(meaning::STATE_MACHINE)),
+        "transitions" => ("transitions", Some(meaning::STATE_MACHINE)),
+        "clauses" => ("clauses", None),
         _ => return None,
     };
     let step_position = segments.next()?.parse::<usize>().ok()?;
@@ -1679,8 +1683,10 @@ fn duplicate_process_step_refusal(
         kind.get("module")?.as_str()?.to_owned(),
         kind.get("name")?.as_str()?.to_owned(),
     );
-    if meaning_index(&document.tree).ok()?.get(&kind_key)? != expected_meaning {
-        return None;
+    if let Some(expected) = expected_meaning {
+        if meaning_index(&document.tree).ok()?.get(&kind_key)? != expected {
+            return None;
+        }
     }
     let step = process.get(member)?.as_array()?.get(step_position)?;
     let step_identity = step.get("identity")?.as_str()?;
