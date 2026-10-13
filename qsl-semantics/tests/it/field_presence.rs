@@ -63,6 +63,8 @@ fn index(
                     creates: vec![],
                     deletes: vec![],
                 },
+                requires: Vec::new(),
+                ensures: Vec::new(),
                 own_postcondition_clauses: if proves_presence {
                     vec![PostconditionClause::Presence {
                         field: key("Parent/x"),

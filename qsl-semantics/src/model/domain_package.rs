@@ -500,6 +500,25 @@ impl PostconditionClause {
     }
 }
 
+/// One `requires` or `ensures` clause of a domain-package operation, kept
+/// verbatim with its source identity (FR-103). Keeping it does not parse it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OperationContractClause {
+    /// The operation whose contract this clause belongs to.
+    pub operation: DeclarationKey,
+    /// Position in the operation's `pre` (for `requires`) or `post` (for
+    /// `ensures`) list.
+    pub position: usize,
+    /// The authored language identifier.
+    pub language: String,
+    /// The exact authored expression text.
+    pub text: String,
+    /// The clause's source artifact id, when its origin names one.
+    pub artifact: Option<String>,
+    /// The clause's source span, when its origin carries one.
+    pub span: Option<qsl_foundation::source::LocatedSpan>,
+}
+
 /// An operation member of an object type, state machine, or persistence interface.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OperationMemberRecord {
@@ -513,6 +532,15 @@ pub struct OperationMemberRecord {
     pub result: Option<OperationResult>,
     /// Declared effect frame.
     pub effect: OperationEffect,
+    /// The domain package's `pre` entries of this operation, kept as its
+    /// `requires` clauses in declared order (FR-103). Distinct from a unit
+    /// `pre` `StateClauseForm`.
+    pub requires: Vec<OperationContractClause>,
+    /// The domain package's `post` entries of this operation, kept as its
+    /// `ensures` clauses in declared order (FR-103). Its postcondition text;
+    /// distinct from a unit `post` `StateClauseForm` and from
+    /// [`Self::own_postcondition_clauses`].
+    pub ensures: Vec<OperationContractClause>,
     /// This operation's own postcondition clause(s), exactly as the caller
     /// states them (see [`PostconditionClause`]).
     pub own_postcondition_clauses: Vec<PostconditionClause>,

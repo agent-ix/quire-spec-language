@@ -135,6 +135,8 @@ fn a_state_machine_meaning_is_emitted_as_an_object_type() {
                 parameters: Vec::new(),
                 result: None,
                 effect: OperationEffect::default(),
+                requires: Vec::new(),
+                ensures: Vec::new(),
                 own_postcondition_clauses: Vec::new(),
                 has_body: true,
                 redefines: None,
