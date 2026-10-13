@@ -46,7 +46,9 @@ lock's edition and definition selections come from the same catalog
 through the emitter (ADR-011 §2.4, amended 2026-09-24).
 
 Layer selection (AC-7, AC-8) and AC-1's layer-closure lock
-rows are not yet implemented.
+rows are not yet implemented. FR-361 states what a unit that selects
+`quire.model.complete/v1` gains, and the complete-model lock rows the
+catalog then holds.
 
 ## Inputs
 
@@ -139,6 +141,8 @@ section "Header-selectable layers" cites): `quire.state.core/v1`,
   form outside that set, S3 SHALL refuse it with
   `unsupported_construct`/`expression-form` at the expression's span,
   naming the selected layer. S3 never admits a form under a wider layer.
+  FR-361 item 12 governs a form of the model families that a unit not
+  selecting the model profile writes: it receives FR-361's refusal alone.
 
 ### Model selections
 
