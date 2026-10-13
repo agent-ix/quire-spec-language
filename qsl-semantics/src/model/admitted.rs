@@ -167,19 +167,17 @@ fn identity_member(records: &[DomainPackageRecord], record: &DomainPackageRecord
 }
 
 fn identity_refusal(
-    records: &[DomainPackageRecord],
+    package: &DomainPackage,
     record: &DomainPackageRecord,
     detail: String,
 ) -> ModelRefusal {
-    let key = record.key();
     ModelRefusal {
         code: Code::InvalidModelBinding,
-        cause: ModelRefusalCause::IntakeMalformedDeclaration {
-            node: key.node.clone(),
-            artifact: None,
-            span: None,
-            member: identity_member(records, record),
-        },
+        cause: crate::model::normalize::malformed_at(
+            package,
+            record.key(),
+            identity_member(&package.records, record),
+        ),
         detail,
     }
 }
@@ -212,7 +210,7 @@ impl AdmittedPackage {
                 });
             } else if key.package != identity {
                 refusals.push(identity_refusal(
-                    &package.records,
+                    &package,
                     record,
                     format!(
                         "{} is keyed under domain package {:?}, not the selected {identity:?}",
@@ -281,7 +279,7 @@ impl AdmittedPackage {
             };
             let Some((owner, name)) = owner_and_name else {
                 refusals.push(identity_refusal(
-                    &package.records,
+                    &package,
                     record,
                     format!(
                         "{} is neither ix://{identity}/<artifact id> nor <owner>/<name>",

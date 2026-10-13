@@ -225,6 +225,7 @@ names different artifacts in each.
 | TC-1002 | Replay decodes a child at an ancestor slot and no kernel check refuses a conforming value | Integration | P1 | FR-359-AC-9, FR-359-AC-10 | 🚧 |
 | TC-1003 | A variant type and its cases have effective identities independent of case order, and conflicting cases leave no view | Unit | P1 | FR-056-AC-29, FR-056-AC-30, FR-081-AC-16 | 🚧 |
 | TC-1004 | The assembler declares each variant type in the type environment by effective identity | Unit | P1 | FR-056-AC-31 | 🚧 |
+| TC-1005 | A normalization malformed declaration retains the artifact and position of the refused node's source origin | Integration | P1 | FR-056-AC-33 | 🚧 |
 | TC-444 | The replay executor recompiles, selects, calls, and refuses each O-26 case | Unit | P1 | FR-098-AC-1, FR-098-AC-2, FR-098-AC-3, FR-098-AC-4, FR-098-AC-5, FR-098-AC-6, FR-098-AC-7 | ✅ |
 | TC-446 | Spine compile resolves imports against supplied libraries | Integration | P1 | FR-099-AC-1, FR-099-AC-2, FR-099-AC-3, FR-099-AC-4, FR-099-AC-5, FR-099-AC-6, FR-099-AC-7, FR-027-AC-10 | ✅ |
 | TC-490 | E3 resolves header profile selections against the DefinitionLock catalog | Integration | P1 | FR-110-AC-1, FR-110-AC-2, FR-110-AC-3, FR-110-AC-5, FR-110-AC-6, FR-110-AC-7, FR-110-AC-8, FR-110-AC-9 | 🚧 |

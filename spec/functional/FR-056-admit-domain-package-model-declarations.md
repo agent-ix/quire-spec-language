@@ -547,8 +547,22 @@ raises at normalization on a node it holds: a relationship end naming a record
 value type refuses at the relationship node, path `Relationship.source` or
 `Relationship.target`; a namespace member that is itself a namespace refuses at
 the namespace node, path `TypeDefinition.members[i]`; a population member type
-that is a record value type refuses at the population node, path
-`PopulationDefinition.members[i]`.
+that names a declaration of any other meaning than an object type (a record
+value type, an event type, a scalar, a persistence interface and so on)
+refuses at the population node, path `PopulationDefinition.members[i]`; a
+member type that names no declaration stays `missing_declaration`/`missing-name`.
+
+Every `malformed-declaration` refusal on a node, at intake and at normalization
+alike, retains that node's FCD `origin` as FR-154 requires: the refusal's
+artifact is the origin's source artifact and its span the origin's source
+position. Both are absent only when the node has no source origin: a `generated`
+origin, or a package built without the reader. The refusal keeps the origin of
+the node it names, so an operation an event type declares is located at the
+operation and a scalar type's bad `constraints` at the scalar type. Two
+refusals carry no node by design, because no IR node exists to name: a model
+selection with an empty identity or version (the selection is a field of the
+package reference, not a declaration) and a declaration key with an empty
+package or node component (the key names no node).
 
 ##### Effective identity of a variant type
 
@@ -787,6 +801,7 @@ the assembler SHALL refuse it with `missing_declaration` at the name.
 | FR-056-AC-30 | Two cases named `Gold` with distinct identities leave no effective view and refuse `invalid_model_binding`/`conflicting-binding` at node `.../Tier`, path `TypeDefinition.variants[1]`, even beside a valid variant type. Two cases that share one identity (`Gold` and a `Silver` carrying `.../variant/Tier-Gold`), listed in either order, refuse once at the reader, `invalid_model_binding`/`malformed-declaration` at path `TypeDefinition.variants[1].identity`, located at the second listed case's span (`Silver` for `[Gold, Silver]`, the correctly minted `Gold` for `[Silver, Gold]`), with the reader's `DUPLICATE_IDENTITY` diagnostic. | Test (TC-1003) |
 | FR-056-AC-31 | The unit assembled over the TC-994 package declares `Config::Tier` with cases `Gold`, `Standard` and `Config::Level` with case `Gold` in the type environment, ascending by effective identity; each declaration's key is the effective identity the view gives the type, and each case's key is the view's effective identity for the case node. A unit that names no variant type assembles, and one that names one still refuses `unsupported_construct`/`declaration-form`. | Test (TC-1004) |
 | FR-056-AC-32 | An operation parameter whose `typeRef` names `Tier` refuses `invalid_model_binding`/`malformed-declaration` at the operation node, path `Operation.params[i].typeRef` for the parameter at position `i` (position 1 for the second parameter), retaining the operation's artifact and source position; its result refuses at the same node, path `Operation.returns.typeRef`. A parameter or result naming an event type, state machine, process, persistence interface, namespace or interface-featured object type retains the same node and path under `malformed-declaration`; one naming an undeclared type, in a package built without the reader, does so under `dangling_reference`/`unknown-value-type`. A relationship end, namespace member or population member type naming the wrong meaning refuses at its own node with the paths `Relationship.source`/`Relationship.target`, `TypeDefinition.members[i]` and `PopulationDefinition.members[i]`. | Test (TC-997) |
+| FR-056-AC-33 | A normalization `malformed-declaration` retains the artifact and source position of the refused node's source origin: a record value type or event type with identity fields, an event occurrence that is not a Timestamp, an operation an event type declares (located at the operation), a state machine missing required members or emitting a non-event, a process with no identity or a supertype of another meaning, a field typed by a variant type, a relationship source or target of another meaning, and a population member of another meaning at `PopulationDefinition.members[i]`. A node with a `generated` origin leaves both absent. | Test (TC-1005) |
 | FR-056-AC-8 | End to end, the filament-core-data#173 architecture fixture runs bundle → quire-rs → lift → intake seam; its ports resolve with owning part, direction, interface type and multiplicity, a connection between them is admitted under FR-152, and the model linker binds a native package's references to those declarations. | Test |
 
 ### FR-056-AC-17

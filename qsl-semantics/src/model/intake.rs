@@ -4323,13 +4323,13 @@ pub fn read_domain_package(
                 .flatten()
                 .enumerate()
             {
-                if node
+                // A refused node still keeps its origin: the refusals normalization
+                // adds for it (FR-154) read it. Only the origin's own defects are
+                // not reported twice.
+                let node_refused = node
                     .get("identity")
                     .and_then(Value::as_str)
-                    .is_some_and(|identity| refused_nodes.contains(identity))
-                {
-                    continue;
-                }
+                    .is_some_and(|identity| refused_nodes.contains(identity));
                 let at = format!("$.{array}[{position}]");
                 let ctx = NodeCtx::new(node, &at);
                 let result = (|| {
@@ -4440,7 +4440,9 @@ pub fn read_domain_package(
                     Ok::<_, ModelRefusal>(())
                 })();
                 if let Err(refusal) = result {
-                    if !refusal_node(&refusal).is_some_and(|node| refused_nodes.contains(node)) {
+                    if !node_refused
+                        && !refusal_node(&refusal).is_some_and(|node| refused_nodes.contains(node))
+                    {
                         intake_refusals.push(refusal);
                     }
                 }
