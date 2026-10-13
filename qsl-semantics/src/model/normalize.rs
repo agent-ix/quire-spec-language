@@ -211,7 +211,9 @@ use serde::Serialize;
 /// Re-exported from [`crate::model::refusal`] (#141 finding 4): that module
 /// is lower-level than this one so [`crate::model::key`] can depend on the
 /// cause type without a cycle. This path is unchanged for every caller.
-pub use crate::model::refusal::{MemberPath, MemberRoot, ModelRefusalCause, OfferedSelection};
+pub use crate::model::refusal::{
+    MemberPath, MemberRoot, ModelRefusalCause, OfferedSelection, OwnedMemberPath,
+};
 
 /// A refusal FR-150 normalization returns for a real defect (never a
 /// resource limit; see [`Incomplete`] for that).
@@ -1118,20 +1120,9 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
             continue;
         }
 
-        let mut operations: Vec<_> = domain_package
-            .records
-            .iter()
-            .filter_map(|record| match record {
-                DomainPackageRecord::OperationMember(operation)
-                    if operation.owner == record_type.key =>
-                {
-                    Some(operation)
-                }
-                _ => None,
-            })
-            .collect();
-        operations.sort_by(|left, right| left.key.cmp(&right.key));
-        if let Some(operation) = operations.first() {
+        // Records keep the order the reader read the declaration's
+        // operations in, so the position is the operation's own.
+        for (position, operation) in declared_operations(domain_package, &record_type.key) {
             refusals.push(ModelRefusal {
                 code: Code::UnsupportedConstruct,
                 cause: ModelRefusalCause::UnsupportedDeclarationForm {
@@ -1140,10 +1131,12 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                         "{}:operations",
                         crate::model::intake::meaning::RECORD_VALUE_TYPE
                     ),
-                    member: MemberPath::type_definition().name("operations").index(0),
+                    member: MemberPath::type_definition()
+                        .name("operations")
+                        .index(position),
                 },
                 detail: format!(
-                    "{}: TypeDefinition.operations[0]: a record value type declares no operations",
+                    "{}: TypeDefinition.operations[{position}]: a record value type declares no operations",
                     operation.key.node
                 ),
             });
@@ -1180,18 +1173,9 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
             ));
             continue;
         }
-        let mut operations: Vec<_> = domain_package
-            .records
-            .iter()
-            .filter_map(|record| match record {
-                DomainPackageRecord::OperationMember(operation) if operation.owner == event.key => {
-                    Some(operation)
-                }
-                _ => None,
-            })
-            .collect();
-        operations.sort_by(|left, right| left.key.cmp(&right.key));
-        if let Some(operation) = operations.first() {
+        let mut has_operation = false;
+        for (position, operation) in declared_operations(domain_package, &event.key) {
+            has_operation = true;
             // TC-235 M04 / FR-208-AC-4: malformed-declaration naming the
             // operation node, not the event type.
             refusals.push(ModelRefusal {
@@ -1200,13 +1184,17 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                     node: operation.key.node.clone(),
                     artifact: None,
                     span: None,
-                    member: MemberPath::type_definition().name("operations").index(0),
+                    member: MemberPath::type_definition()
+                        .name("operations")
+                        .index(position),
                 },
                 detail: format!(
-                    "{}: TypeDefinition.operations[0]: an event type declares no operations",
+                    "{}: TypeDefinition.operations[{position}]: an event type declares no operations",
                     operation.key.node
                 ),
             });
+        }
+        if has_operation {
             continue;
         }
         let field = event.occurrence_field.as_ref().and_then(|key| {
@@ -1269,6 +1257,16 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                             type_: event.key.clone(),
                             member: parent.clone(),
                             redefiners: vec![child.clone()],
+                            paths: vec![
+                                owned_member(
+                                    &event.key,
+                                    MemberPath::type_definition().name("occurrenceField"),
+                                ),
+                                owned_member(
+                                    &ancestor.key,
+                                    MemberPath::type_definition().name("occurrenceField"),
+                                ),
+                            ],
                         },
                         detail: format!(
                             "{}.occurrenceField conflicts with inherited {}.occurrenceField",
@@ -1351,6 +1349,7 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                     code: Code::InvalidModelBinding,
                     cause: ModelRefusalCause::ConflictingBinding {
                         key: state.key.clone(),
+                        member: Some(MemberPath::type_definition().name("states").index(position)),
                     },
                     detail: format!(
                         "{}: TypeDefinition.states[{position}] conflicts with {}",
@@ -1502,6 +1501,11 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                     code: Code::InvalidModelBinding,
                     cause: ModelRefusalCause::ConflictingBinding {
                         key: transition.key.clone(),
+                        member: Some(
+                            MemberPath::type_definition()
+                                .name("transitions")
+                                .index(position),
+                        ),
                     },
                     detail: format!(
                         "{}: TypeDefinition.transitions[{position}] conflicts with {}",
@@ -1548,7 +1552,11 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                 continue;
             };
             for (position, state) in machine.states.iter().enumerate() {
-                if let Some(inherited) = parent.states.iter().find(|other| other.name == state.name)
+                if let Some((inherited_position, inherited)) = parent
+                    .states
+                    .iter()
+                    .enumerate()
+                    .find(|(_, other)| other.name == state.name)
                 {
                     refusals.push(ModelRefusal {
                         code: Code::InvalidModelBinding,
@@ -1556,6 +1564,18 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                             type_: machine.key.clone(),
                             member: inherited.key.clone(),
                             redefiners: vec![state.key.clone()],
+                            paths: vec![
+                                owned_member(
+                                    &machine.key,
+                                    MemberPath::type_definition().name("states").index(position),
+                                ),
+                                owned_member(
+                                    &parent.key,
+                                    MemberPath::type_definition()
+                                        .name("states")
+                                        .index(inherited_position),
+                                ),
+                            ],
                         },
                         detail: format!(
                             "{}.states[{position}] conflicts with {}.states",
@@ -1581,17 +1601,33 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                     // ancestor transition may never target a subtype-only state.
                     continue;
                 }
-                if let Some(inherited) = parent.transitions.iter().find(|other| {
-                    other.from == transition.from
-                        && other.to == transition.to
-                        && other.trigger == transition.trigger
-                }) {
+                if let Some((inherited_position, inherited)) =
+                    parent.transitions.iter().enumerate().find(|(_, other)| {
+                        other.from == transition.from
+                            && other.to == transition.to
+                            && other.trigger == transition.trigger
+                    })
+                {
                     refusals.push(ModelRefusal {
                         code: Code::InvalidModelBinding,
                         cause: ModelRefusalCause::DerivationConflict {
                             type_: machine.key.clone(),
                             member: inherited.key.clone(),
                             redefiners: vec![transition.key.clone()],
+                            paths: vec![
+                                owned_member(
+                                    &machine.key,
+                                    MemberPath::type_definition()
+                                        .name("transitions")
+                                        .index(position),
+                                ),
+                                owned_member(
+                                    &parent.key,
+                                    MemberPath::type_definition()
+                                        .name("transitions")
+                                        .index(inherited_position),
+                                ),
+                            ],
                         },
                         detail: format!(
                             "{}.transitions[{position}] conflicts with {}.transitions",
@@ -1773,6 +1809,36 @@ fn validate_process_meanings(domain_package: &DomainPackage) -> Vec<ModelRefusal
         }
     }
     refusals
+}
+
+/// The operations `owner` declares, with each one's position in the
+/// declaration's `operations` array (the order the reader recorded them).
+fn declared_operations<'a>(
+    domain_package: &'a DomainPackage,
+    owner: &'a DeclarationKey,
+) -> impl Iterator<
+    Item = (
+        usize,
+        &'a crate::model::domain_package::OperationMemberRecord,
+    ),
+> {
+    domain_package
+        .records
+        .iter()
+        .filter_map(move |record| match record {
+            DomainPackageRecord::OperationMember(operation) if &operation.owner == owner => {
+                Some(operation)
+            }
+            _ => None,
+        })
+        .enumerate()
+}
+
+fn owned_member(owner: &DeclarationKey, member: MemberPath) -> OwnedMemberPath {
+    OwnedMemberPath {
+        owner: owner.clone(),
+        member,
+    }
 }
 
 fn is_ordinary_object_type(package: &DomainPackage, key: &DeclarationKey) -> bool {
@@ -2030,12 +2096,14 @@ fn check_node<'a>(
                                 })
                                 .count();
                             if operation_owner.is_some() {
-                                MemberPath::new(MemberRoot::Operation)
+                                // An operation's own clauses are its `pre`
+                                // contract (TC-235 M08 run 6).
+                                MemberPath::new(MemberRoot::Operation).name("pre")
                             } else {
                                 MemberPath::type_definition()
+                                    .name("clauses")
+                                    .index(position)
                             }
-                            .name("clauses")
-                            .index(position)
                         },
                     },
                     detail: format!(
@@ -2216,19 +2284,30 @@ fn check_node<'a>(
             if relationship.source.role.is_some()
                 && !index.is_object_type(&relationship.source.type_identity)
             {
+                // The relationship's position in its owner's `relationships`
+                // array (records keep the reader's order).
+                let position = domain_package
+                    .records
+                    .iter()
+                    .filter(|record| {
+                        matches!(record, DomainPackageRecord::Relationship(other)
+                            if other.source.type_identity == relationship.source.type_identity)
+                    })
+                    .position(|record| record.key() == &relationship.key)
+                    .unwrap_or_default();
                 refusals.push(ModelRefusal {
                     code: Code::InvalidModelBinding,
                     cause: ModelRefusalCause::IntakeMalformedDeclaration {
-                        node: relationship.source.type_identity.node.clone(),
+                        node: relationship.key.node.clone(),
                         artifact: None,
                         span: None,
                         member: MemberPath::type_definition()
                             .name("relationships")
-                            .index(0),
+                            .index(position),
                     },
                     detail: format!(
-                        "{}: TypeDefinition.relationships[0]: relationship source owner {} is not an object type",
-                        relationship.source.type_identity.node,
+                        "{}: TypeDefinition.relationships[{position}]: relationship source owner {} is not an object type",
+                        relationship.key.node,
                         relationship.source.type_identity.node
                     ),
                 });
@@ -2295,7 +2374,10 @@ fn check_node<'a>(
     if !seen_keys.insert(key) {
         refusals.push(ModelRefusal {
             code: Code::InvalidModelBinding,
-            cause: ModelRefusalCause::ConflictingBinding { key: key.clone() },
+            cause: ModelRefusalCause::ConflictingBinding {
+                key: key.clone(),
+                member: None,
+            },
             detail: format!(
                 "{} is declared by more than one record in this domain package",
                 key.node
@@ -3762,6 +3844,7 @@ fn resolve_redefinition_contest(
                     type_: type_key.clone(),
                     member: target_key.clone(),
                     redefiners: edges.iter().map(|edge| edge.redefining.clone()).collect(),
+                    paths: Vec::new(),
                 },
                 detail: format!(
                     "type {} has {} undominated redefinitions of {}: {}",

@@ -1052,6 +1052,7 @@ fn two_components_sharing_one_declaration_key_refuse_conflicting_binding() {
                 refusal.cause,
                 ModelRefusalCause::ConflictingBinding {
                     key: DeclarationKey::fixture("model.Sys.pump"),
+                    member: None,
                 }
             );
         }

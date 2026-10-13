@@ -123,13 +123,30 @@ impl MemberPath {
         &self.segments
     }
 
+    /// This path extended by the dotted relative path `relative`
+    /// (`kind.module`, `steps[1].emits`). Text that is not such a path
+    /// becomes one named segment, so the result always names something.
+    #[must_use]
+    pub fn child(mut self, relative: &str) -> Self {
+        match segments(&format!(".{relative}")) {
+            Some(more) => self.segments.extend(more),
+            None => self.segments.push(MemberSegment::Name(relative.to_owned())),
+        }
+        self
+    }
+
     /// The member path of the node the reader locates at `location`, the
     /// reader's own dotted document location (`$.types[3].fields[0]`): the
     /// `types[n]`, `populations[n]` or `constructs[n]` prefix becomes the
     /// root, and the rest the segments.
     #[must_use]
     pub fn from_document_location(location: &str) -> Self {
-        let mut tokens = segments(location.strip_prefix('$').unwrap_or(location));
+        let rest = location.strip_prefix('$').unwrap_or(location);
+        let Some(mut tokens) = segments(rest) else {
+            // The reader builds every location itself; an unparseable one is
+            // kept whole rather than dropped.
+            return Self::new(MemberRoot::Package).name(location);
+        };
         let root = match tokens.as_slice() {
             [MemberSegment::Name(name), MemberSegment::Index(_), ..] => match name.as_str() {
                 "types" => Some(MemberRoot::TypeDefinition),
@@ -152,34 +169,39 @@ impl MemberPath {
     }
 }
 
-/// Splits `.name` and `[n]` steps; text that is neither becomes a name.
-fn segments(mut rest: &str) -> Vec<MemberSegment> {
+/// Splits `.name` and `[n]` steps exactly as [`MemberPath`]'s `Display`
+/// prints them: a name is non-empty and holds none of `.`, `[`, `]`, and an
+/// index is decimal digits. Anything else is `None`.
+fn segments(mut rest: &str) -> Option<Vec<MemberSegment>> {
     let mut tokens = Vec::new();
     while !rest.is_empty() {
         if let Some(after) = rest.strip_prefix('[') {
-            let (digits, tail) = after.split_once(']').unwrap_or((after, ""));
-            tokens.push(digits.parse().map_or_else(
-                |_| MemberSegment::Name(digits.to_owned()),
-                MemberSegment::Index,
-            ));
+            let (digits, tail) = after.split_once(']')?;
+            if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+                return None;
+            }
+            tokens.push(MemberSegment::Index(digits.parse().ok()?));
             rest = tail;
         } else {
-            let body = rest.strip_prefix('.').unwrap_or(rest);
-            let end = body.find(['.', '[']).unwrap_or(body.len());
+            let body = rest.strip_prefix('.')?;
+            let end = body.find(['.', '[', ']']).unwrap_or(body.len());
+            if end == 0 {
+                return None;
+            }
             tokens.push(MemberSegment::Name(body[..end].to_owned()));
             rest = &body[end..];
         }
     }
-    tokens
+    Some(tokens)
 }
 
-/// A member path whose root is not one of [`MemberRoot`]'s spellings.
+/// Text that is not a member path as [`MemberPath`]'s `Display` prints one.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ParseMemberPathError;
 
 impl std::fmt::Display for ParseMemberPathError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("a member path starts with $, TypeDefinition, PopulationDefinition, Operation, Relationship or constructs[]")
+        f.write_str("not a member path: it starts with $, TypeDefinition, PopulationDefinition, Operation, Relationship or constructs[], then .name and [n] steps")
     }
 }
 
@@ -203,7 +225,7 @@ impl std::str::FromStr for MemberPath {
                 if rest.is_empty() || rest.starts_with(['.', '[']) {
                     return Ok(Self {
                         root,
-                        segments: segments(rest),
+                        segments: segments(rest).ok_or(ParseMemberPathError)?,
                     });
                 }
             }
@@ -230,6 +252,17 @@ impl std::fmt::Display for MemberPath {
         }
         Ok(())
     }
+}
+
+/// A [`MemberPath`] read on a named type: the spec's
+/// `ExpressLifecycle.states[1]` is `owner` `ExpressLifecycle` and member
+/// `TypeDefinition.states[1]`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OwnedMemberPath {
+    /// The type whose member this is.
+    pub owner: DeclarationKey,
+    /// The member, rooted at that type's declaration.
+    pub member: MemberPath,
 }
 
 /// The closed FR-150/151/152/153/272 cause of a
@@ -355,6 +388,10 @@ pub enum ModelRefusalCause {
         member: DeclarationKey,
         /// The undominated redefining members, in domain package order.
         redefiners: Vec<DeclarationKey>,
+        /// The member paths the TC-235 rows name for the conflict, the
+        /// redefining side first (`ExpressLifecycle.states[1]`, then
+        /// `OrderLifecycle.states[1]`). Empty where no row names one.
+        paths: Vec<OwnedMemberPath>,
     },
     /// A required item does not supply the producer capability its
     /// interface revision requires.
@@ -543,6 +580,9 @@ pub enum ModelRefusalCause {
     ConflictingBinding {
         /// The key more than one record declares.
         key: DeclarationKey,
+        /// The member the duplicate sits at (`TypeDefinition.states[3]`),
+        /// or `None` for a declaration key declared twice at package level.
+        member: Option<MemberPath>,
     },
     /// A systems relationship names an endpoint absent from the domain package.
     UnknownRelationship {
@@ -1444,6 +1484,7 @@ pub mod fixtures {
             type_: key("p"),
             member: key("p"),
             redefiners: vec![key("p")],
+            paths: Vec::new(),
         },
         UnsuppliedProducerRecord => ModelRefusalCause::UnsuppliedProducerRecord,
         AncestorSteps => ModelRefusalCause::ancestor_steps(
@@ -1514,7 +1555,10 @@ pub mod fixtures {
             key: Vec::new()
         },
         WrongExport => ModelRefusalCause::WrongExport,
-        ConflictingBinding => ModelRefusalCause::ConflictingBinding { key: key("p") },
+        ConflictingBinding => ModelRefusalCause::ConflictingBinding {
+            key: key("p"),
+            member: None,
+        },
         UnknownRelationship => ModelRefusalCause::UnknownRelationship {
             relationship: key("p"),
         },
@@ -1747,7 +1791,22 @@ pub(crate) mod tests {
             let parsed: super::MemberPath = spelling.parse().expect("well-formed");
             assert_eq!(parsed.to_string(), spelling);
         }
-        assert!("Types.x".parse::<super::MemberPath>().is_err());
+        for malformed in [
+            "Types.x",
+            "TypeDefinition.a[x]",
+            "TypeDefinition.a[",
+            "TypeDefinition.a[]",
+            "TypeDefinition.",
+            "TypeDefinition..a",
+            "TypeDefinition.a]",
+            "TypeDefinitionX",
+            "TypeDefinition[0].a.",
+        ] {
+            assert!(
+                malformed.parse::<super::MemberPath>().is_err(),
+                "{malformed}"
+            );
+        }
         assert_eq!(
             super::MemberPath::from_document_location("$.types[3].fields[0]"),
             "TypeDefinition.fields[0]".parse().unwrap()

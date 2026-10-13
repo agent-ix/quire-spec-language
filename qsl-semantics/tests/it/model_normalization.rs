@@ -498,6 +498,7 @@ fn r07_two_owners_sharing_a_node_across_packages_refuse_derivation_conflict_not_
                                 node: "model.A.x2".to_owned(),
                             },
                         ],
+                        paths: Vec::new(),
                     },
                     detail: "type model.D has 2 undominated redefinitions of model.Root.x: \
                               [model.A, model.A.x3, model.Root.x] and \
@@ -1374,6 +1375,7 @@ fn n06_two_undominated_redefiners_of_the_same_target_refuse_as_a_conflict() {
                         DeclarationKey::fixture("model.B.x2"),
                         DeclarationKey::fixture("model.C.x3"),
                     ],
+                    paths: Vec::new(),
                 }
             );
             assert!(refusal.detail.contains("ix://test/orders/B"));
@@ -1712,6 +1714,7 @@ fn two_object_types_sharing_one_declaration_key_refuse_conflicting_binding() {
                 refusal.cause,
                 ModelRefusalCause::ConflictingBinding {
                     key: DeclarationKey::fixture("model.T"),
+                    member: None,
                 }
             );
             assert!(refusal.detail.contains("model.T"));
@@ -1753,6 +1756,7 @@ fn two_field_members_sharing_one_declaration_key_refuse_conflicting_binding() {
                 refusal.cause,
                 ModelRefusalCause::ConflictingBinding {
                     key: DeclarationKey::fixture("model.A.x"),
+                    member: None,
                 }
             );
             assert!(refusal.detail.contains("model.A.x"));
@@ -1788,6 +1792,7 @@ fn ordering_a_dangling_owner_at_an_earlier_node_reports_before_a_later_nodes_con
             code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
             cause: ModelRefusalCause::ConflictingBinding {
                 key: DeclarationKey::fixture("model.B"),
+                member: None,
             },
             detail: "model.B is declared by more than one record in this domain package".to_owned(),
         },
@@ -1820,6 +1825,7 @@ fn ordering_input_record_order_does_not_change_which_sorted_node_wins() {
             code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
             cause: ModelRefusalCause::ConflictingBinding {
                 key: DeclarationKey::fixture("model.B"),
+                member: None,
             },
             detail: "model.B is declared by more than one record in this domain package".to_owned(),
         },
@@ -1844,6 +1850,7 @@ fn ordering_a_conflicting_binding_at_an_earlier_node_reports_before_a_later_node
             code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
             cause: ModelRefusalCause::ConflictingBinding {
                 key: DeclarationKey::fixture("model.A"),
+                member: None,
             },
             detail: "model.A is declared by more than one record in this domain package".to_owned(),
         },
@@ -3390,7 +3397,8 @@ fn operation_diamond_derivation_conflict_reports_the_full_typed_payload() {
                             DeclarationKey::fixture("model.B.op2"),
                             DeclarationKey::fixture("model.C.op3"),
                         ],
-                    },
+paths: Vec::new(),
+},
                     "reversed={reversed}"
                 );
             }
@@ -3762,7 +3770,8 @@ fn n06_conflict_check_charges_order_by_effective_identity_not_producer_key() {
                                 DeclarationKey::fixture("ix://aaa/D1/w1"),
                                 DeclarationKey::fixture("ix://aaa/D2/w2"),
                             ],
-                        },
+paths: Vec::new(),
+},
                         detail: "type ix://aaa/O9 has 2 undominated redefinitions of ix://aaa/R/w: \
                                   [ix://aaa/D1, ix://aaa/D1/w1, ix://aaa/R/w] and \
                                   [ix://aaa/D2, ix://aaa/D2/w2, ix://aaa/R/w]"
@@ -3777,7 +3786,8 @@ fn n06_conflict_check_charges_order_by_effective_identity_not_producer_key() {
                                 DeclarationKey::fixture("ix://zzz/D1/w1"),
                                 DeclarationKey::fixture("ix://zzz/D2/w2"),
                             ],
-                        },
+paths: Vec::new(),
+},
                         detail: "type ix://zzz/O9 has 2 undominated redefinitions of ix://zzz/R/w: \
                                   [ix://zzz/D1, ix://zzz/D1/w1, ix://zzz/R/w] and \
                                   [ix://zzz/D2, ix://zzz/D2/w2, ix://zzz/R/w]"
@@ -4189,7 +4199,8 @@ fn n06_conflict_refusal_waits_for_every_phase4_charge_to_admit() {
                             DeclarationKey::fixture("model.B.x2"),
                             DeclarationKey::fixture("model.C.x3"),
                         ],
-                    },
+paths: Vec::new(),
+},
                     detail: "type ix://test/orders/D has 2 undominated redefinitions of ix://test/orders/A/x: \
                               [ix://test/orders/B, model.B.x2, ix://test/orders/A/x] and \
                               [ix://test/orders/C, model.C.x3, ix://test/orders/A/x]"
@@ -4329,6 +4340,7 @@ fn unreachable_redefiner_refusals() -> Vec<ModelRefusal> {
                     DeclarationKey::fixture("model.B.x2"),
                     DeclarationKey::fixture("model.C.x3"),
                 ],
+                paths: Vec::new(),
             },
             detail:
                 "type ix://test/orders/D has 2 undominated redefinitions of ix://test/orders/A/x: \
@@ -4376,6 +4388,7 @@ fn n06_redefinition_check_refusal_outranks_earlier_processed_conflict_check_refu
                                 DeclarationKey::fixture("model.H.h2"),
                                 DeclarationKey::fixture("model.I.i3"),
                             ],
+                            paths: Vec::new(),
                         },
                         detail: "type model.J has 2 undominated redefinitions of model.G.g: \
                                   [model.H, model.H.h2, model.G.g] and \
@@ -4417,7 +4430,8 @@ fn n06_conflict_check_refusal_ranks_by_type_before_target() {
                                 DeclarationKey::fixture("model.B.x2"),
                                 DeclarationKey::fixture("model.C.x3"),
                             ],
-                        },
+paths: Vec::new(),
+},
                         detail: "type ix://test/orders/D has 2 undominated redefinitions of ix://test/orders/A/x: \
                                   [ix://test/orders/B, model.B.x2, ix://test/orders/A/x] and \
                                   [ix://test/orders/C, model.C.x3, ix://test/orders/A/x]"
@@ -4432,7 +4446,8 @@ fn n06_conflict_check_refusal_ranks_by_type_before_target() {
                                 DeclarationKey::fixture("ix://n06/M1/w1"),
                                 DeclarationKey::fixture("ix://n06/M2/w2"),
                             ],
-                        },
+paths: Vec::new(),
+},
                         detail: "type ix://n06/B9 has 2 undominated redefinitions of ix://n06/M/w: \
                                   [ix://n06/M1, ix://n06/M1/w1, ix://n06/M/w] and \
                                   [ix://n06/M2, ix://n06/M2/w2, ix://n06/M/w]"
@@ -4589,6 +4604,7 @@ fn a_duplicate_key_with_one_dangling_owner_copy_still_reports_conflicting_bindin
             code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
             cause: ModelRefusalCause::ConflictingBinding {
                 key: DeclarationKey::fixture("model.Dup.f"),
+                member: None,
             },
             detail: "model.Dup.f is declared by more than one record in this domain package"
                 .to_string(),
@@ -4778,6 +4794,7 @@ fn m1_a_same_owner_redefinition_target_refusal_outranks_a_derivation_conflict_wi
                         DeclarationKey::fixture("model.aaa_h.h2"),
                         DeclarationKey::fixture("model.aaa_i.i3"),
                     ],
+                    paths: Vec::new(),
                 },
                 detail: "type model.aaa_j has 2 undominated redefinitions of model.aaa_g.g: \
                           [model.aaa_h, model.aaa_h.h2, model.aaa_g.g] and \

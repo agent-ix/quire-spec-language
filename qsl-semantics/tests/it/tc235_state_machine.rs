@@ -46,13 +46,18 @@ fn assert_missing_name(refusal: &ModelRefusal, path: &str, reference: Option<&st
 }
 
 /// A typed `conflicting-binding` whose key is the repeated declaration.
-fn assert_conflicting_binding(refusal: &ModelRefusal, key: &str) {
+fn assert_conflicting_binding(refusal: &ModelRefusal, key: &str, path: &str) {
     assert_eq!(refusal.code, Code::InvalidModelBinding);
     assert_eq!(refusal.cause.as_str(), "conflicting-binding");
-    let ModelRefusalCause::ConflictingBinding { key: actual } = &refusal.cause else {
+    let ModelRefusalCause::ConflictingBinding {
+        key: actual,
+        member: actual_member,
+    } = &refusal.cause
+    else {
         panic!("expected conflicting-binding, got {refusal:?}");
     };
     assert_eq!(actual.node, id(key));
+    assert_eq!(actual_member.as_ref(), Some(&member(path)));
 }
 
 /// M05: resolve transition targets, triggers, guards, and emitted event types
@@ -236,7 +241,11 @@ fn tc235_m06_state_machine_required_members_and_bindings() {
     });
     let refusals = normalized_refusals(&duplicate_state, 21);
     assert_eq!(refusals.len(), 1);
-    assert_conflicting_binding(&refusals[0], "OrderLifecycle/Draft");
+    assert_conflicting_binding(
+        &refusals[0],
+        "OrderLifecycle/Draft",
+        "TypeDefinition.states[3]",
+    );
 
     let duplicate_transition = mutate_k2(|document| {
         type_named_mut(document, "OrderLifecycle")["transitions"]
@@ -253,7 +262,11 @@ fn tc235_m06_state_machine_required_members_and_bindings() {
     });
     let refusals = normalized_refusals(&duplicate_transition, 21);
     assert_eq!(refusals.len(), 1);
-    assert_conflicting_binding(&refusals[0], "OrderLifecycle/transition3");
+    assert_conflicting_binding(
+        &refusals[0],
+        "OrderLifecycle/transition3",
+        "TypeDefinition.transitions[3]",
+    );
 
     let operation_postcondition = mutate_k2(|document| {
         type_named_mut(document, "OrderLifecycle")["operations"][0]["post"] = json!([{
@@ -401,8 +414,13 @@ fn tc235_m19_state_machine_specialization_vectors() {
     assert_eq!(refusals.len(), 1);
     assert_eq!(refusals[0].code, Code::InvalidModelBinding);
     assert_eq!(refusals[0].cause.as_str(), "derivation-conflict");
-    assert!(refusals[0].detail.contains("ExpressLifecycle.states[1]"));
-    assert!(refusals[0].detail.contains("OrderLifecycle.states[1]"));
+    assert_derivation_paths(
+        &refusals[0],
+        &[
+            ("ExpressLifecycle", "TypeDefinition.states[1]"),
+            ("OrderLifecycle", "TypeDefinition.states[1]"),
+        ],
+    );
 
     let duplicate_transition = mutate_k2(|document| {
         document["types"].as_array_mut().unwrap().push(declaration(
@@ -422,10 +440,13 @@ fn tc235_m19_state_machine_specialization_vectors() {
     let refusals = normalized_refusals(&duplicate_transition, 23);
     assert_eq!(refusals.len(), 1);
     assert_eq!(refusals[0].cause.as_str(), "derivation-conflict");
-    assert!(refusals[0]
-        .detail
-        .contains("ExpressLifecycle.transitions[1]"));
-    assert!(refusals[0].detail.contains("OrderLifecycle.transitions[0]"));
+    assert_derivation_paths(
+        &refusals[0],
+        &[
+            ("ExpressLifecycle", "TypeDefinition.transitions[1]"),
+            ("OrderLifecycle", "TypeDefinition.transitions[0]"),
+        ],
+    );
 
     let ancestor_to_subtype_state = mutate_k2(|document| {
         type_named_mut(document, "OrderLifecycle")["transitions"]
@@ -482,5 +503,39 @@ fn tc235_m19_state_machine_specialization_vectors() {
         &refusals[0],
         &id("ExpressLifecycle"),
         "TypeDefinition.supertypes[0]",
+    );
+}
+
+/// M19 run 2: the derivation conflict carries both sides' member paths as
+/// typed values (the spec's `ExpressLifecycle.states[1]` is the owner and the
+/// member `TypeDefinition.states[1]`).
+#[test]
+fn tc235_m19_derivation_conflict_member_paths() {
+    let document = mutate_k2(|document| {
+        document["types"].as_array_mut().unwrap().push(declaration(
+            "ExpressLifecycle",
+            "lifecycle",
+            json!({
+                "supertypes": [id("OrderLifecycle")],
+                "operations": [operation("ExpressLifecycle", "expedite")],
+                "states": [
+                    lifecycle_state("ExpressLifecycle", "Expedited"),
+                    lifecycle_state("ExpressLifecycle", "Placed"),
+                ],
+                "transitions": [lifecycle_transition(
+                    "ExpressLifecycle", "transition0", "Placed", "Expedited", "expedite", vec![],
+                )],
+            }),
+        ));
+    });
+    let refusals = normalized_refusals(&document, 23);
+    assert_eq!(refusals.len(), 1, "{refusals:?}");
+    assert_eq!(refusals[0].cause.as_str(), "derivation-conflict");
+    assert_derivation_paths(
+        &refusals[0],
+        &[
+            ("ExpressLifecycle", "TypeDefinition.states[1]"),
+            ("OrderLifecycle", "TypeDefinition.states[1]"),
+        ],
     );
 }

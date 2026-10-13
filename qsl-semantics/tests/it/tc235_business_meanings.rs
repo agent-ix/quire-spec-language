@@ -588,6 +588,23 @@ fn member(path: &str) -> MemberPath {
     path.parse().expect("the row's member path is well-formed")
 }
 
+/// The typed member paths of a `derivation-conflict`: each `(type, path)`
+/// is the spec's `<type>.<member>`, the redefining side first.
+fn assert_derivation_paths(refusal: &ModelRefusal, expected: &[(&str, &str)]) {
+    let ModelRefusalCause::DerivationConflict { paths, .. } = &refusal.cause else {
+        panic!("expected derivation-conflict, got {refusal:?}");
+    };
+    let expected: Vec<_> = expected
+        .iter()
+        .map(|(owner, path)| (id(owner), member(path)))
+        .collect();
+    let actual: Vec<_> = paths
+        .iter()
+        .map(|path| (path.owner.node.clone(), path.member.clone()))
+        .collect();
+    assert_eq!(actual, expected);
+}
+
 /// One typed `invalid_model_binding`/`malformed-declaration` naming `node`
 /// at member path `path`.
 fn assert_malformed_refusal(document: &Value, node: &str, path: &str, charges: usize) {
@@ -654,18 +671,18 @@ fn assert_process_duplicate_step_refusal(document: &Value) {
         "one process duplicate refusal: {refusals:?}"
     );
     assert_eq!(refusals[0].code, Code::InvalidModelBinding);
-    let ModelRefusalCause::ConflictingBinding { key } = &refusals[0].cause else {
+    let ModelRefusalCause::ConflictingBinding {
+        key,
+        member: actual,
+    } = &refusals[0].cause
+    else {
         panic!(
             "expected conflicting process step, got {:?}",
             refusals[0].cause
         );
     };
     assert_eq!(key.node, id("Fulfilment/reserve_stock"));
-    assert!(refusals[0].detail.contains("steps[3]"), "{refusals:?}");
-    assert!(
-        refusals[0].detail.contains("/types/5/steps/3/identity"),
-        "duplicate step pointer missing: {refusals:?}"
-    );
+    assert_eq!(actual.as_ref(), Some(&member("TypeDefinition.steps[3]")));
 }
 
 fn assert_process_non_event_refusal(document: &Value) {
@@ -678,7 +695,7 @@ fn assert_process_non_event_refusal(document: &Value) {
     assert_eq!(refusals[0].code, Code::InvalidModelBinding);
     assert_malformed_at(
         &refusals[0],
-        &id("Fulfilment/reserve_stock"),
+        &id("Fulfilment"),
         "TypeDefinition.steps[1].emits[0]",
     );
 }
@@ -1726,10 +1743,13 @@ fn tc235_m18_event_type_specialization_vectors() {
     assert_eq!(refusals.len(), 1);
     assert_eq!(refusals[0].code, Code::InvalidModelBinding);
     assert_eq!(refusals[0].cause.as_str(), "derivation-conflict");
-    assert!(refusals[0]
-        .detail
-        .contains("ExpressOrderPlaced.occurrenceField"));
-    assert!(refusals[0].detail.contains("OrderPlaced.occurrenceField"));
+    assert_derivation_paths(
+        &refusals[0],
+        &[
+            ("ExpressOrderPlaced", "TypeDefinition.occurrenceField"),
+            ("OrderPlaced", "TypeDefinition.occurrenceField"),
+        ],
+    );
 
     let wrong_general_document = mutate_k2(|document| {
         document["types"].as_array_mut().unwrap().push(declaration(

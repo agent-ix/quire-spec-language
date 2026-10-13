@@ -102,14 +102,26 @@ pub struct AdmittedPackage {
     members: BTreeMap<String, BTreeMap<String, usize>>,
 }
 
-fn identity_refusal(key: &DeclarationKey, detail: String) -> ModelRefusal {
+/// The declaration's own `identity` member: a population's, an operation's,
+/// or a type-definition's.
+fn identity_member(record: &DomainPackageRecord) -> MemberPath {
+    let root = match record {
+        DomainPackageRecord::Population(_) => MemberRoot::PopulationDefinition,
+        DomainPackageRecord::OperationMember(_) => MemberRoot::Operation,
+        _ => MemberRoot::TypeDefinition,
+    };
+    MemberPath::new(root).name("identity")
+}
+
+fn identity_refusal(record: &DomainPackageRecord, detail: String) -> ModelRefusal {
+    let key = record.key();
     ModelRefusal {
         code: Code::InvalidModelBinding,
         cause: ModelRefusalCause::IntakeMalformedDeclaration {
             node: key.node.clone(),
             artifact: None,
             span: None,
-            member: MemberPath::new(MemberRoot::Package).name("identity"),
+            member: identity_member(record),
         },
         detail,
     }
@@ -135,12 +147,15 @@ impl AdmittedPackage {
             if !seen.insert(key) {
                 refusals.push(ModelRefusal {
                     code: Code::InvalidModelBinding,
-                    cause: ModelRefusalCause::ConflictingBinding { key: key.clone() },
+                    cause: ModelRefusalCause::ConflictingBinding {
+                        key: key.clone(),
+                        member: None,
+                    },
                     detail: format!("{} is declared more than once", key.node),
                 });
             } else if key.package != identity {
                 refusals.push(identity_refusal(
-                    key,
+                    record,
                     format!(
                         "{} is keyed under domain package {:?}, not the selected {identity:?}",
                         key.node, key.package
@@ -201,7 +216,7 @@ impl AdmittedPackage {
             };
             let Some((owner, name)) = owner_and_name else {
                 refusals.push(identity_refusal(
-                    key,
+                    record,
                     format!(
                         "{} is neither ix://{identity}/<artifact id> nor <owner>/<name>",
                         key.node
