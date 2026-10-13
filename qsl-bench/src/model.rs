@@ -518,28 +518,25 @@ mod tests {
         let NormalizeOutcome::Refused(refusals) = outcome else {
             panic!("normalization reports the retained reader refusal");
         };
-        assert_eq!(refusals.len(), 2, "both reader diagnostics are retained");
-        for (refusal, node) in [
-            (&refusals[0], "ix://bench/model/C0"),
-            (&refusals[1], "ix://bench/model/C0/flag"),
-        ] {
-            assert_eq!(refusal.code.as_str(), "invalid_model_binding");
-            assert!(matches!(
-                &refusal.cause,
-                qsl_semantics::model::refusal::ModelRefusalCause::IntakeMalformedDeclaration {
-                    node: actual,
-                    ..
-                } if actual == node
-            ));
-        }
-        assert!(refusals[0].detail.contains("SCHEMA_VIOLATION"));
-        assert!(refusals[0].detail.contains("/ir/types/0/fields/0/presence"));
-        assert!(refusals[0]
-            .detail
-            .contains("presence is a closed enumeration"));
-        assert!(refusals[1].detail.contains("$.types[0].fields[0]"));
-        assert!(refusals[1]
-            .detail
-            .contains("presence: \"sometimes\" is not required/optional"));
+        // FR-056: a reader diagnostic is retained at its deepest identified
+        // member, and the model reader's own refusal of the same member
+        // repeats it, so one refusal names `C0/flag`.
+        assert_eq!(
+            refusals.len(),
+            1,
+            "the reader diagnostic is retained once, at the member"
+        );
+        let refusal = &refusals[0];
+        assert_eq!(refusal.code.as_str(), "invalid_model_binding");
+        assert!(matches!(
+            &refusal.cause,
+            qsl_semantics::model::refusal::ModelRefusalCause::IntakeMalformedDeclaration {
+                node,
+                ..
+            } if node == "ix://bench/model/C0/flag"
+        ));
+        assert!(refusal.detail.contains("SCHEMA_VIOLATION"));
+        assert!(refusal.detail.contains("/ir/types/0/fields/0/presence"));
+        assert!(refusal.detail.contains("presence is a closed enumeration"));
     }
 }
