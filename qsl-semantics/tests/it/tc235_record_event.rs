@@ -1129,3 +1129,117 @@ fn tc235_m17_record_value_specialization_vectors() {
         assert_eq!(actual_via, &key(via));
     }
 }
+
+/// QSL-732: the effective composite of a record or event type named `name`.
+fn assembled_composite(
+    declarations: &PackageDeclarations,
+    name: &str,
+) -> quire_semantic_value::declaration::CompositeDeclaration {
+    declarations
+        .types
+        .composites()
+        .find(|declaration| declaration.name() == name)
+        .unwrap_or_else(|| panic!("{name} is assembled"))
+        .clone()
+}
+
+/// A `Money` or `TaxedMoney` value over the assembled environment.
+fn money_value(
+    declarations: &PackageDeclarations,
+    name: &str,
+    with_tax: bool,
+) -> quire_exact::Value {
+    use quire_exact::{FieldValue, Integer, Value};
+    let mut fields = vec![(
+        "amount_minor",
+        FieldValue::Present(Value::Integer(Integer::from(100_i64))),
+    )];
+    if with_tax {
+        fields.push((
+            "tax_minor",
+            FieldValue::Present(Value::Integer(Integer::from(7_i64))),
+        ));
+    }
+    declarations
+        .types
+        .record(assembled_composite(declarations, name).key(), fields)
+        .expect("the record constructs")
+}
+
+/// QSL-732 / FR-056: a domain package's record and event `supertypes[]`
+/// assemble as composite ancestry. A child value is admitted at its parent's
+/// slot and keeps its own identity; the parent value is refused at the
+/// child's slot; an unrelated record is refused at either.
+#[trace("FR-056-AC-18", "TC-235")]
+#[test]
+fn qsl_732_composite_subtype_is_admitted_at_its_parent_slot_only() {
+    use quire_exact::{Value, ValueType};
+    let document = mutate_k2(|document| {
+        // Same slice as `k2_record_event_subtype_slice(true)`, plus a record
+        // that is related to neither Money nor TaxedMoney.
+        *document = k2_record_event_subtype_slice(true);
+        document["types"].as_array_mut().unwrap().push(declaration(
+            "Discount",
+            "money",
+            json!({
+                "fields": [field("Discount", "amount_minor", "ix://quire/native/Integer")],
+            }),
+        ));
+    });
+    let declarations = assemble_k2_unit(
+        &document,
+        "function noop using v(money: M::Money): Integer pure { 0 }",
+    );
+    let (money, taxed, discount) = (
+        assembled_composite(&declarations, "M::Money").key(),
+        assembled_composite(&declarations, "M::TaxedMoney").key(),
+        assembled_composite(&declarations, "M::Discount").key(),
+    );
+    assert_eq!(
+        assembled_composite(&declarations, "M::TaxedMoney").supertypes(),
+        [money]
+    );
+    assert!(assembled_composite(&declarations, "M::Money")
+        .supertypes()
+        .is_empty());
+
+    let types = &declarations.types;
+    let child = money_value(&declarations, "M::TaxedMoney", true);
+    let parent = money_value(&declarations, "M::Money", false);
+    let unrelated = money_value(&declarations, "M::Discount", false);
+
+    assert!(types.admits(&ValueType::Composite(money), &child));
+    assert!(types.admits(&ValueType::Composite(taxed), &child));
+    // The child keeps its own identity when admitted at the parent's slot.
+    let Value::Composite(record) = &child else {
+        panic!("a composite value");
+    };
+    assert_eq!(record.declaration(), taxed);
+
+    assert!(!types.admits(&ValueType::Composite(taxed), &parent));
+    assert!(!types.admits(&ValueType::Composite(money), &unrelated));
+    assert!(!types.admits(&ValueType::Composite(taxed), &unrelated));
+    assert!(!types.admits(&ValueType::Composite(discount), &child));
+    assert!(!types.admits(&ValueType::Composite(discount), &parent));
+}
+
+/// QSL-732: an event type's `supertypes[]` assemble the same way.
+#[trace("FR-056-AC-18", "TC-235")]
+#[test]
+fn qsl_732_event_subtype_conforms_to_its_parent_event() {
+    let document = k2_record_event_subtype_slice(true);
+    let declarations = assemble_k2_unit(
+        &document,
+        "function noop using v(money: M::Money): Integer pure { 0 }",
+    );
+    let (placed, express) = (
+        assembled_composite(&declarations, "M::OrderPlaced").key(),
+        assembled_composite(&declarations, "M::ExpressOrderPlaced").key(),
+    );
+    let types = &declarations.types;
+    assert!(types.composite_conforms(express, placed));
+    assert!(types.composite_conforms(express, express));
+    assert!(!types.composite_conforms(placed, express));
+    let money = assembled_composite(&declarations, "M::Money").key();
+    assert!(!types.composite_conforms(express, money));
+}

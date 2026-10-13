@@ -385,6 +385,7 @@ impl AssemblyCause {
                 DeclarationCause::Type(_)
                 | DeclarationCause::Recursion { .. }
                 | DeclarationCause::GeneralizationCycle { .. }
+                | DeclarationCause::CompositeGeneralizationCycle { .. }
                 | DeclarationCause::RedefinitionTarget(_)
                 | DeclarationCause::RedefinitionConflict(_)
                 | DeclarationCause::RedefinitionWidens(_) => Code::IllTyped,
@@ -461,6 +462,7 @@ impl AssemblyCause {
                 DeclarationCause::Type(cause) => cause.tag().unwrap_or("type-mismatch"),
                 DeclarationCause::Recursion { .. }
                 | DeclarationCause::GeneralizationCycle { .. }
+                | DeclarationCause::CompositeGeneralizationCycle { .. }
                 | DeclarationCause::RedefinitionTarget(_)
                 | DeclarationCause::RedefinitionConflict(_)
                 | DeclarationCause::RedefinitionWidens(_) => "type-mismatch",
@@ -870,11 +872,26 @@ fn model_object_types(
                 })),
             }
         }
-        composites.push(CompositeDeclaration::new(
-            *handle,
-            format!("{alias}::{artifact}"),
-            CompositeShape::Record(declared_fields),
-        ));
+        let declared_supertypes: &[DeclarationKey] = match record {
+            DomainPackageRecord::RecordValueType(record) => &record.supertypes,
+            DomainPackageRecord::EventType(event) => &event.supertypes,
+            _ => &[],
+        };
+        let mut composite_supertypes = Vec::with_capacity(declared_supertypes.len());
+        for supertype in declared_supertypes {
+            match meaning_handles.get(supertype) {
+                Some(general) => composite_supertypes.push(*general),
+                None => errors.push(broken(&supertype.node)),
+            }
+        }
+        composites.push(
+            CompositeDeclaration::new(
+                *handle,
+                format!("{alias}::{artifact}"),
+                CompositeShape::Record(declared_fields),
+            )
+            .with_supertypes(composite_supertypes),
+        );
     }
     if errors.is_empty() {
         Ok((declarations, composites))
@@ -1372,6 +1389,7 @@ fn admit_types_with(
     ) -> Result<TypeEnvironment, EnvironmentFailure>,
 ) -> Result<TypeEnvironment, AssemblyRefusal> {
     let mut errors = Vec::new();
+    let mut set_aside_keys = Vec::new();
     loop {
         match construct(&declarations, object_types, environment, cancel) {
             Ok(types) if errors.is_empty() => return Ok(types),
@@ -1389,10 +1407,23 @@ fn admit_types_with(
             }
             Err(EnvironmentFailure::Refused(invalid)) => {
                 let before = declarations.len();
+                set_aside_keys.extend(
+                    declarations
+                        .iter()
+                        .filter(|declaration| declaration.name() == invalid.declaration)
+                        .map(CompositeDeclaration::key),
+                );
                 declarations.retain(|declaration| declaration.name() != invalid.declaration);
                 let set_aside = declarations.len() < before;
-                let consequence =
-                    set_aside && matches!(invalid.cause, DeclarationCause::UnknownDeclaration(_));
+                // Only a name that an earlier round set aside is a
+                // consequence; a key no declaration ever held (a dangling
+                // field type or composite supertype) is its own refusal.
+                let consequence = set_aside
+                    && matches!(
+                        &invalid.cause,
+                        DeclarationCause::UnknownDeclaration(missing)
+                            if set_aside_keys.contains(missing)
+                    );
                 if !consequence {
                     let span = spans
                         .get(&invalid.declaration)
