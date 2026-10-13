@@ -2797,7 +2797,12 @@ fn enforce_frame_refuses_an_object_that_changes_type_between_pre_and_post() {
 /// not exact type equality, exactly like `all_instances`'s own subtype
 /// selection (`tests/model_population.rs`'s `l01_*` test).
 #[test]
-#[trace("QSpec-TC-198", "QSpec-FR-046-AC-3")]
+#[trace(
+    "QSpec-TC-198",
+    "QSpec-FR-046-AC-3",
+    "QSpec-V1-EXPR-022",
+    "QSpec-FR-013-AC-6"
+)]
 fn invocation_admits_a_subtype_created_and_deleted_under_a_supertype_grant() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);

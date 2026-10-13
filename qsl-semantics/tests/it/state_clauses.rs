@@ -1501,18 +1501,19 @@ fn assert_frame_refused(
     }
 }
 
-/// QSpec FR-012-AC-1: an invocation whose `pre` and `post` references do not
+/// An invocation whose `pre` and `post` references do not
 /// select the pre and post observations of one invocation -- `pre` naming
 /// the post-role snapshot, and `post` naming the pre-role snapshot -- is
 /// refused `wrong_snapshot`/`wrong-observation` at admission, before any
-/// clause value exists. Not covered: the wire has no field binding a snapshot
+/// clause value exists. This does not cover QSpec FR-012-AC-1 (observations of different
+/// invocation identities): the wire has no field binding a snapshot
 /// to the invocation that names it, so two snapshots of the right roles taken
 /// from different invocations cannot be told apart.
 ///
 /// Mutation used (derived by reading, not executed): deleting the check-3
 /// role comparison in `admit_invocation_documents` admits both swapped
 /// invocations, so each `expect_err` below goes red.
-#[trace("QSpec-V1-EXPR-020", "QSpec-FR-012-AC-1")]
+#[trace("QSpec-V1-EXPR-020")]
 #[test]
 fn an_invocation_naming_the_wrong_observation_roles_refuses_wrong_observation() {
     let pre = [("child", 2, None)];
