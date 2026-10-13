@@ -2463,6 +2463,7 @@ fn n02_charges_fifteen_facts_and_six_cycle_checks() {
 /// exact six-`normalize.cycle-check`-charge accounting across both types'
 /// walks is not).
 #[trace("TC-219", "FR-082-AC-2")]
+#[trace("TC-1020", "FR-082-AC-15")]
 #[trace("QSpec-TC-196", "QSpec-FR-151-AC-2")]
 #[test]
 fn r01_a_closing_generalization_cycle_names_the_full_rotated_chain() {
@@ -2474,31 +2475,28 @@ fn r01_a_closing_generalization_cycle_names_the_full_rotated_chain() {
         ],
     );
     match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
-        NormalizeOutcome::Refused(refusal) => {
+        NormalizeOutcome::Refused(refusals) => {
             assert_eq!(
-                refusal.len(),
-                1,
-                "expected exactly one refusal: {refusal:?}"
+                refusals.len(),
+                2,
+                "one refusal per declaration on the cycle: {refusals:?}"
             );
-            let refusal = refusal[0].clone();
-            assert_eq!(
-                refusal.code,
-                qsl_foundation::diagnostic::Code::InvalidModelBinding
-            );
-            assert_eq!(
-                refusal.cause,
-                ModelRefusalCause::SpecializationCycle {
-                    ancestor: DeclarationKey::fixture("model.A"),
-                    via: DeclarationKey::fixture("model.B"),
-                }
-            );
-            assert!(
-                refusal.detail.contains("[model.A, model.B]"),
-                "the chain must be rotated to start at its least key regardless of \
-                 which type's own walk closes the cycle first, got: {}",
-                refusal.detail
-            );
-            assert!(refusal.detail.contains("generalizes back to itself via"));
+            for (refusal, declaration) in refusals.iter().zip(["model.A", "model.B"]) {
+                assert_eq!(
+                    refusal.code,
+                    qsl_foundation::diagnostic::Code::InvalidModelBinding
+                );
+                assert_eq!(
+                    refusal.cause,
+                    ModelRefusalCause::SpecializationCycle {
+                        declaration: DeclarationKey::fixture(declaration),
+                        cycle: vec![
+                            DeclarationKey::fixture("model.A"),
+                            DeclarationKey::fixture("model.B"),
+                        ],
+                    }
+                );
+            }
         }
         other => {
             panic!("expected Refused(invalid_model_binding/specialization-cycle), got {other:?}")
@@ -2524,39 +2522,39 @@ fn r01b_the_cycle_listing_excludes_a_type_that_only_leads_into_it() {
         ],
     );
     match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
-        NormalizeOutcome::Refused(refusal) => {
+        NormalizeOutcome::Refused(refusals) => {
             assert_eq!(
-                refusal.len(),
-                1,
-                "expected exactly one refusal: {refusal:?}"
-            );
-            let refusal = refusal[0].clone();
-            assert_eq!(
-                refusal.code,
-                qsl_foundation::diagnostic::Code::InvalidModelBinding
-            );
-            assert_eq!(
-                refusal.cause,
-                ModelRefusalCause::SpecializationCycle {
-                    ancestor: DeclarationKey::fixture("model.C"),
-                    via: DeclarationKey::fixture("model.B"),
-                }
-            );
-            assert!(
-                refusal.detail.contains("[model.B, model.C]"),
-                "the listing must name only the cycle itself, excluding model.A, \
-                 which only leads into it, got: {}",
-                refusal.detail
-            );
-            assert!(
-                !refusal.detail.contains("model.A"),
-                "model.A is not part of the cycle and must not be named, got: {}",
-                refusal.detail
+                refusals,
+                Refusals::from_vec(vec![
+                    cycle_refusal("model.B", &["model.B", "model.C"]),
+                    cycle_refusal("model.C", &["model.B", "model.C"]),
+                ]),
+                "model.A only leads into the cycle and is neither refused nor listed"
             );
         }
         other => {
             panic!("expected Refused(invalid_model_binding/specialization-cycle), got {other:?}")
         }
+    }
+}
+
+/// One `invalid_model_binding`/`specialization-cycle` refusal at
+/// `declaration`, listing `cycle` (typed fields only; the detail text is not
+/// asserted by tests built on this helper).
+fn cycle_refusal(declaration: &str, cycle: &[&str]) -> ModelRefusal {
+    ModelRefusal {
+        code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
+        cause: ModelRefusalCause::SpecializationCycle {
+            declaration: DeclarationKey::fixture(declaration),
+            cycle: cycle
+                .iter()
+                .map(|key| DeclarationKey::fixture(*key))
+                .collect(),
+        },
+        detail: format!(
+            "{declaration} lies on the specialization cycle [{}]",
+            cycle.join(", ")
+        ),
     }
 }
 
@@ -4023,16 +4021,10 @@ fn n06_specialization_cycle_refusal_waits_for_every_phase3_charge_to_admit() {
         NormalizeOutcome::Refused(refusal) => {
             assert_eq!(
                 refusal,
-                vec![ModelRefusal {
-                    code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
-                    cause: ModelRefusalCause::SpecializationCycle {
-                        ancestor: DeclarationKey::fixture("model.Y"),
-                        via: DeclarationKey::fixture("model.Z"),
-                    },
-                    detail: "model.Y generalizes back to itself via model.Z, \
-                              through the cycle [model.Y, model.Z]"
-                        .to_string(),
-                }]
+                vec![
+                    cycle_refusal("model.Y", &["model.Y", "model.Z"]),
+                    cycle_refusal("model.Z", &["model.Y", "model.Z"]),
+                ]
             );
         }
         other => panic!("expected Refused([SpecializationCycle]) at work_units=46, got {other:?}"),
@@ -4051,31 +4043,16 @@ fn phase3_specialization_cycle_refusal_wins_over_phase4_derivation_conflict() {
         &fixture_n06_conflict_with_unrelated_cycle(),
         ModelNormalizationLimits::UNLIMITED,
     ) {
-        NormalizeOutcome::Refused(refusal) => {
+        NormalizeOutcome::Refused(refusals) => {
             assert_eq!(
-                refusal.len(),
-                1,
-                "expected exactly one refusal: {refusal:?}"
-            );
-            let refusal = refusal[0].clone();
-            assert_eq!(
-                refusal.code,
-                qsl_foundation::diagnostic::Code::InvalidModelBinding
-            );
-            assert_eq!(
-                refusal.cause,
-                ModelRefusalCause::SpecializationCycle {
-                    ancestor: DeclarationKey::fixture("model.Y"),
-                    via: DeclarationKey::fixture("model.Z"),
-                },
-                "phase 3's own refusal must win over phase 4's undominated-\
+                refusals,
+                Refusals::from_vec(vec![
+                    cycle_refusal("model.Y", &["model.Y", "model.Z"]),
+                    cycle_refusal("model.Z", &["model.Y", "model.Z"]),
+                ]),
+                "phase 3's own refusals must win over phase 4's undominated-\
                  redefiner derivation-conflict, matching FR-150's \
                  charge-order precedence"
-            );
-            assert!(
-                refusal.detail.contains("[model.Y, model.Z]"),
-                "detail must name the unrelated cycle, got: {}",
-                refusal.detail
             );
         }
         other => {
@@ -4720,22 +4697,10 @@ fn h2_a_closing_cycle_extension_is_capped_by_work_units_room_not_derivation_fact
     assert_eq!(
         normalize(&domain_package, limits),
         NormalizeOutcome::Refused(Refusals::from_vec(vec![
-            ModelRefusal {
-                code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
-                cause: ModelRefusalCause::SpecializationCycle {
-                    ancestor: DeclarationKey::fixture("model.A"),
-                    via: DeclarationKey::fixture("model.Z"),
-                },
-                detail: "model.A generalizes back to itself via model.Z, through the cycle [model.A, model.Z]".to_string(),
-            },
-            ModelRefusal {
-                code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
-                cause: ModelRefusalCause::SpecializationCycle {
-                    ancestor: DeclarationKey::fixture("model.Z"),
-                    via: DeclarationKey::fixture("model.B"),
-                },
-                detail: "model.Z generalizes back to itself via model.B, through the cycle [model.B, model.Z]".to_string(),
-            },
+            cycle_refusal("model.A", &["model.A", "model.Z"]),
+            cycle_refusal("model.Z", &["model.A", "model.Z"]),
+            cycle_refusal("model.B", &["model.B", "model.Z"]),
+            cycle_refusal("model.Z", &["model.B", "model.Z"]),
         ])),
         "one normalize.cycle-check charge above the N boundary: both closing cycles found"
     );
@@ -5033,7 +4998,8 @@ fn n06_budget_sweep_from_zero_stops_in_spec_charge_order() {
 /// TEST GAP (#193, PR #228 review): two distinct closing cycles (`A`<->`B`
 /// and `Y`<->`Z`, unrelated to one another) in the same domain package are
 /// both reported, in charge order -- `A`/`B`'s own cycle, whose least key
-/// (`model.A`) sorts before `Y`/`Z`'s own (`model.Y`), is reported first.
+/// (`model.A`) sorts before `Y`/`Z`'s own (`model.Y`), is reported first --
+/// each as one refusal per declaration on it, in key order.
 #[trace("QSpec-TC-196", "QSpec-FR-151-AC-2")]
 #[test]
 fn two_distinct_cycles_are_both_reported_in_charge_order() {
@@ -5049,22 +5015,89 @@ fn two_distinct_cycles_are_both_reported_in_charge_order() {
     assert_eq!(
         normalize(&domain_package, ModelNormalizationLimits::UNLIMITED),
         NormalizeOutcome::Refused(Refusals::from_vec(vec![
-            ModelRefusal {
-                code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
-                cause: ModelRefusalCause::SpecializationCycle {
-                    ancestor: DeclarationKey::fixture("model.A"),
-                    via: DeclarationKey::fixture("model.B"),
-                },
-                detail: "model.A generalizes back to itself via model.B, through the cycle [model.A, model.B]".to_string(),
-            },
-            ModelRefusal {
-                code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
-                cause: ModelRefusalCause::SpecializationCycle {
-                    ancestor: DeclarationKey::fixture("model.Y"),
-                    via: DeclarationKey::fixture("model.Z"),
-                },
-                detail: "model.Y generalizes back to itself via model.Z, through the cycle [model.Y, model.Z]".to_string(),
-            },
+            cycle_refusal("model.A", &["model.A", "model.B"]),
+            cycle_refusal("model.B", &["model.A", "model.B"]),
+            cycle_refusal("model.Y", &["model.Y", "model.Z"]),
+            cycle_refusal("model.Z", &["model.Y", "model.Z"]),
+        ]))
+    );
+}
+
+/// A declaration on two cycles is refused once per cycle: `A`<->`B` plus
+/// `A`<->`C` are two cycles with different edge sets, so `A` is refused twice,
+/// once listing each. Cycle detection order comes first (`A`'s walk closes
+/// `[A, B]` before `[A, C]`), declaration-key order within a cycle.
+#[trace("TC-219", "FR-082-AC-2")]
+#[trace("TC-1020", "FR-082-AC-15")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-2")]
+#[test]
+fn a_declaration_on_two_cycles_is_refused_once_per_cycle() {
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.multi-cycle"),
+        vec![
+            object_type("model.A", vec!["model.B", "model.C"]),
+            object_type("model.B", vec!["model.A"]),
+            object_type("model.C", vec!["model.A"]),
+        ],
+    );
+    assert_eq!(
+        normalize(&domain_package, ModelNormalizationLimits::UNLIMITED),
+        NormalizeOutcome::Refused(Refusals::from_vec(vec![
+            cycle_refusal("model.A", &["model.A", "model.B"]),
+            cycle_refusal("model.B", &["model.A", "model.B"]),
+            cycle_refusal("model.A", &["model.A", "model.C"]),
+            cycle_refusal("model.C", &["model.A", "model.C"]),
+        ]))
+    );
+}
+
+/// A cycle of three or more keeps its path order, rotated to start at the
+/// least key. `A` only leads into the cycle `C -> D -> B -> C`, so the walk
+/// from `A` first revisits `C`, yet every refusal lists `[B, C, D]`.
+#[trace("TC-219", "FR-082-AC-2")]
+#[trace("TC-1020", "FR-082-AC-15")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-2")]
+#[test]
+fn a_three_cycle_lists_its_keys_in_path_order_rotated_to_the_least_key() {
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.three-cycle"),
+        vec![
+            object_type("model.A", vec!["model.C"]),
+            object_type("model.B", vec!["model.C"]),
+            object_type("model.C", vec!["model.D"]),
+            object_type("model.D", vec!["model.B"]),
+        ],
+    );
+    assert_eq!(
+        normalize(&domain_package, ModelNormalizationLimits::UNLIMITED),
+        NormalizeOutcome::Refused(Refusals::from_vec(vec![
+            cycle_refusal("model.B", &["model.B", "model.C", "model.D"]),
+            cycle_refusal("model.C", &["model.B", "model.C", "model.D"]),
+            cycle_refusal("model.D", &["model.B", "model.C", "model.D"]),
+        ]))
+    );
+}
+
+/// A cycle whose path order is not its key order: `B -> D -> C -> B` lists
+/// `[B, D, C]`, and its refusals follow declaration-key order, `B`, `C`, `D`.
+#[trace("TC-1020", "FR-082-AC-15")]
+#[test]
+fn a_cycle_lists_path_order_and_refuses_in_declaration_key_order() {
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.unsorted-cycle"),
+        vec![
+            object_type("model.B", vec!["model.D"]),
+            object_type("model.C", vec!["model.B"]),
+            object_type("model.D", vec!["model.C"]),
+        ],
+    );
+    let cycle = ["model.B", "model.D", "model.C"];
+    assert_eq!(
+        normalize(&domain_package, ModelNormalizationLimits::UNLIMITED),
+        NormalizeOutcome::Refused(Refusals::from_vec(vec![
+            cycle_refusal("model.B", &cycle),
+            cycle_refusal("model.C", &cycle),
+            cycle_refusal("model.D", &cycle),
         ]))
     );
 }

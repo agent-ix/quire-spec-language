@@ -1795,6 +1795,48 @@ fn normalized_refusals(document: &Value, expected_charges: usize) -> Vec<ModelRe
     refusals.iter().cloned().collect()
 }
 
+/// Every refusal of an authored document, from intake or normalization, as
+/// `(declaration, cycle)` pairs when each one is a `specialization-cycle`.
+/// Any other refusal fails with the full list.
+fn specialization_cycles(document: &Value) -> Vec<(DeclarationKey, Vec<DeclarationKey>)> {
+    let refusals: Vec<ModelRefusal> = match read_k2(document) {
+        Err(refusals) => refusals,
+        Ok(package) => {
+            match normalize_with_meter(&package, ModelNormalizationLimits::default()).0 {
+                NormalizeOutcome::Refused(refusals) => refusals.iter().cloned().collect(),
+                other => panic!("the cycle must be refused, got {other:?}"),
+            }
+        }
+    };
+    refusals
+        .iter()
+        .map(|refusal| match &refusal.cause {
+            ModelRefusalCause::SpecializationCycle { declaration, cycle } => {
+                assert_eq!(refusal.code, Code::InvalidModelBinding);
+                (declaration.clone(), cycle.clone())
+            }
+            _ => panic!("expected only specialization-cycle refusals: {refusals:#?}"),
+        })
+        .collect()
+}
+
+/// `expected` is `(declaration, cycle)` by node name.
+fn assert_specialization_cycles(document: &Value, expected: &[(&str, &[&str])]) {
+    let expected: Vec<_> = expected
+        .iter()
+        .map(|(declaration, cycle)| {
+            (
+                package_key(declaration),
+                cycle
+                    .iter()
+                    .map(|node| package_key(node))
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .collect();
+    assert_eq!(specialization_cycles(document), expected);
+}
+
 fn assert_malformed_at(refusal: &ModelRefusal, node: &str, path: &str) {
     assert_eq!(refusal.code, Code::InvalidModelBinding);
     assert_eq!(refusal.cause.as_str(), "malformed-declaration");

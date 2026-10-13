@@ -369,13 +369,14 @@ pub enum ModelRefusalCause {
         /// The effective identity at the out-of-order position.
         at: EffectiveId,
     },
-    /// A type generalizes back to itself through its own ancestor path.
+    /// A declaration lies on a generalization cycle. Each declaration on a
+    /// cycle is refused once, at its own declaration.
     SpecializationCycle {
-        /// The ancestor that closes the cycle.
-        ancestor: DeclarationKey,
-        /// The object type whose own `supertypes[]` entry the cycle is
-        /// discovered via.
-        via: DeclarationKey,
+        /// The declaration this refusal is raised at.
+        declaration: DeclarationKey,
+        /// The cycle's type declaration keys in path order, rotated to start
+        /// at the least key.
+        cycle: Vec<DeclarationKey>,
     },
     /// A field or operation member names an owner that is not a declared
     /// object type.
@@ -1535,8 +1536,8 @@ pub mod fixtures {
         MultipleUndominated => ModelRefusalCause::MultipleUndominated,
         UnsortedView => ModelRefusalCause::UnsortedView { at: effective_id() },
         SpecializationCycle => ModelRefusalCause::SpecializationCycle {
-            ancestor: key("p"),
-            via: key("p"),
+            declaration: key("p"),
+            cycle: vec![key("p")],
         },
         UnknownOwner => ModelRefusalCause::UnknownOwner {
             member: key("p"),

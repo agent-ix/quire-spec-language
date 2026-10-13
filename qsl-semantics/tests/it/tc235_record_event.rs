@@ -360,14 +360,10 @@ fn tc235_m20_process_subtype_inherits_identity_and_steps() {
     let NormalizeOutcome::Refused(refusals) = outcome else {
         panic!("cycle must be refused, got {outcome:?}");
     };
-    assert_eq!(refusals.len(), 1);
-    assert_eq!(refusals[0].code, Code::InvalidModelBinding);
-    assert_eq!(refusals[0].cause.as_str(), "specialization-cycle");
-    assert!(
-        refusals[0]
-            .detail
-            .contains("[ix://test/orders/ExpressFulfilment, ix://test/orders/Fulfilment]"),
-        "{refusals:#?}"
+    assert_specialization_cycle_refusals(
+        refusals.iter(),
+        &["ExpressFulfilment", "Fulfilment"],
+        &["ExpressFulfilment", "Fulfilment"],
     );
 }
 
@@ -566,13 +562,11 @@ fn tc235_m20_json_acceptance_reports_specialization_cycle() {
         }]);
     });
     let refusals = normalized_refusals(&document, 23);
-    assert_eq!(refusals.len(), 1);
-    assert_eq!(refusals[0].code, Code::InvalidModelBinding);
-    assert_eq!(refusals[0].cause.as_str(), "specialization-cycle");
-    assert!(refusals[0].detail.contains("ix://test/orders/Fulfilment"));
-    assert!(refusals[0]
-        .detail
-        .contains("ix://test/orders/ExpressFulfilment"));
+    assert_specialization_cycle_refusals(
+        refusals.iter(),
+        &["ExpressFulfilment", "Fulfilment"],
+        &["ExpressFulfilment", "Fulfilment"],
+    );
 }
 
 /// TC-235 M21's semantic-model half: relationship ends remain attached to
@@ -1124,20 +1118,10 @@ fn tc235_m14_event_invariant_is_bound_without_an_event_value() {
 /// its own effective identity, and reports wrong-meaning ancestry and a
 /// specialization cycle with the specified typed outcomes.
 ///
-/// Deviation from the TC-235 M17 row. Run 3: the row lists one
-/// specialization-cycle refusal over `[Money, TaxedMoney]`; the engine reports
-/// one refusal per declaration on the cycle (`Money` then `TaxedMoney`), as
-/// FR-082 requires ("refuse specialization for every declaration on the
-/// cycle"), and this test asserts both. Run 1 here retypes `Order/total` to
-/// `TaxedMoney` to check the effective members; the row's own input (total
-/// stays `Money`) is `tc235_m17_run1_taxed_money_is_admitted_at_order_total_and_not_equal_to_money`.
+/// Run 1 here retypes `Order/total` to `TaxedMoney` to check the effective
+/// members; the unretyped input is
+/// `tc235_m17_run1_taxed_money_is_admitted_at_order_total_and_not_equal_to_money`.
 ///
-/// Mutation used (derived by reading `model/intake.rs`, not executed): run 1,
-/// removing the supertype inheritance flips the `effective_members` equality;
-/// run 2, accepting a non-record supertype leaves no refusal, so the
-/// `Refused` let-else inside `normalized_refusals` panics first;
-/// run 3, bypassing the cycle mapping in `intake.rs` flips
-/// `cycle_refusals.len() == 2` and the `SpecializationCycle` cause match.
 #[test]
 fn tc235_m17_record_value_specialization_vectors() {
     let positive_document = mutate_k2(|document| {
@@ -1225,21 +1209,36 @@ fn tc235_m17_record_value_specialization_vectors() {
         ));
     });
     let cycle_refusals = normalized_refusals(&cycle, 24);
-    assert_eq!(cycle_refusals.len(), 2, "{cycle_refusals:#?}");
-    for (refusal, (ancestor, via)) in cycle_refusals
-        .iter()
-        .zip([("Money", "TaxedMoney"), ("TaxedMoney", "Money")])
-    {
+    assert_specialization_cycle_refusals(
+        cycle_refusals.iter(),
+        &["Money", "TaxedMoney"],
+        &["Money", "TaxedMoney"],
+    );
+}
+
+/// TC-235 M17 run 3 / M20 run 4: one `invalid_model_binding`/
+/// `specialization-cycle` refusal per declaration on the cycle, in
+/// declaration-key order, each listing the cycle's keys rotated to start at
+/// the least key. Typed fields only.
+fn assert_specialization_cycle_refusals<'a>(
+    refusals: impl Iterator<Item = &'a qsl_semantics::model::normalize::ModelRefusal>,
+    declarations: &[&str],
+    cycle: &[&str],
+) {
+    let refusals: Vec<_> = refusals.collect();
+    assert_eq!(refusals.len(), declarations.len(), "{refusals:#?}");
+    for (refusal, declaration) in refusals.into_iter().zip(declarations) {
         assert_eq!(refusal.code, Code::InvalidModelBinding);
         let ModelRefusalCause::SpecializationCycle {
-            ancestor: actual,
-            via: actual_via,
+            declaration: actual,
+            cycle: actual_cycle,
         } = &refusal.cause
         else {
             panic!("expected typed specialization cycle cause: {refusal:?}");
         };
-        assert_eq!(actual, &key(ancestor));
-        assert_eq!(actual_via, &key(via));
+        assert_eq!(actual, &key(declaration));
+        let expected: Vec<_> = cycle.iter().map(|name| key(name)).collect();
+        assert_eq!(actual_cycle, &expected);
     }
 }
 
@@ -1493,4 +1492,81 @@ fn tc235_m18_run1_express_event_conforms_to_the_event_receive_order_consumes() {
     let consumed = assembled_composite(&declarations, "M::OrderPlaced").key();
     let express = assembled_composite(&declarations, "M::ExpressOrderPlaced").key();
     assert!(declarations.types.composite_conforms(express, consumed));
+}
+
+fn money_record(name: &str, supertypes: &[&str]) -> serde_json::Value {
+    let supertypes: Vec<_> = supertypes.iter().map(|node| id(node)).collect();
+    declaration(
+        name,
+        "money",
+        json!({
+            "supertypes": supertypes,
+            "fields": [field(name, &format!("{name}_minor"), "ix://quire/native/Integer")],
+        }),
+    )
+}
+
+/// Record value types with one declaration on two cycles: `A` is refused once
+/// per cycle, `A` and `B` listing `[A, B]`, then `A` and `C` listing `[A, C]`.
+#[trace("TC-1020", "FR-082-AC-15")]
+#[test]
+fn a_record_declaration_on_two_cycles_is_refused_once_per_cycle() {
+    let document = mutate_k2(|document| {
+        document["types"].as_array_mut().unwrap().extend([
+            money_record("RecA", &["RecB", "RecC"]),
+            money_record("RecB", &["RecA"]),
+            money_record("RecC", &["RecA"]),
+        ]);
+    });
+    assert_specialization_cycles(
+        &document,
+        &[
+            ("RecA", &["RecA", "RecB"]),
+            ("RecB", &["RecA", "RecB"]),
+            ("RecA", &["RecA", "RecC"]),
+            ("RecC", &["RecA", "RecC"]),
+        ],
+    );
+}
+
+/// A record cycle whose path order is not its key order: `B -> D -> C -> B`
+/// lists `[B, D, C]`, refused at `B`, `C` and `D` in key order.
+#[trace("TC-1020", "FR-082-AC-15")]
+#[test]
+fn a_record_cycle_lists_path_order_and_refuses_in_key_order() {
+    let document = mutate_k2(|document| {
+        document["types"].as_array_mut().unwrap().extend([
+            money_record("RecB", &["RecD"]),
+            money_record("RecC", &["RecB"]),
+            money_record("RecD", &["RecC"]),
+        ]);
+    });
+    let cycle = ["RecB", "RecD", "RecC"];
+    assert_specialization_cycles(
+        &document,
+        &[("RecB", &cycle), ("RecC", &cycle), ("RecD", &cycle)],
+    );
+}
+
+/// An event type cycle is a `specialization-cycle`, at each event type on it.
+#[trace("TC-1020", "FR-082-AC-15")]
+#[test]
+fn an_event_type_cycle_is_a_specialization_cycle() {
+    let document = mutate_k2(|document| {
+        type_named_mut(document, "OrderPlaced")["supertypes"] = json!([id("ExpressOrderPlaced")]);
+        document["types"].as_array_mut().unwrap().push(declaration(
+            "ExpressOrderPlaced",
+            "happened",
+            json!({
+                "supertypes": [id("OrderPlaced")],
+                "occurrenceField": id("OrderPlaced/occurred_at"),
+                "fields": [field("ExpressOrderPlaced", "promised_by", &id("Instant"))],
+            }),
+        ));
+    });
+    let cycle = ["ExpressOrderPlaced", "OrderPlaced"];
+    assert_specialization_cycles(
+        &document,
+        &[("ExpressOrderPlaced", &cycle), ("OrderPlaced", &cycle)],
+    );
 }

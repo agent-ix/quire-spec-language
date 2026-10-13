@@ -53,19 +53,21 @@
 //! follows it, and the first edge past the ceiling refuses `AncestorSteps`
 //! where the walk reaches it, unless an earlier charge was already denied.
 //!
-//! A closing cycle edge (TC-196 R01) refuses `specialization-cycle` naming
-//! every contributing declaration in the cycle, rotated to start at its
-//! least key. `ancestor_paths` charges every closing extension it finds
+//! A closing cycle edge (TC-196 R01) refuses `specialization-cycle` once at
+//! each declaration on the cycle, in declaration-key order; every refusal
+//! lists the cycle's keys in path order, rotated to start at its least
+//! key. `ancestor_paths` charges every closing extension it finds
 //! (`value-accounting.md:491`: "a closing extension is charged even when
 //! its cycle's edge set was already reported") and keeps walking past it —
 //! this frame's remaining siblings, every other frame still on its stack,
 //! and, in `build`'s own per-type loop, every remaining type — rather than
 //! stopping at the first one, so R01's own six-`normalize.cycle-check`
 //! accounting across both types' walks is reproduced exactly (QSL #193).
-//! `build` deduplicates the refusals themselves by edge set, keeping only
-//! each distinct cycle's own first (charge-order-earliest) closing
-//! extension, per `model-complete.md`:292-295's "each cycle is refused
-//! exactly once" — and reported only
+//! `build` deduplicates the cycles themselves by edge set, keeping only each
+//! distinct cycle's own first (charge-order-earliest) closing extension. A
+//! declaration is refused once per cycle it lies on, so a declaration on two
+//! cycles is refused twice, once listing each.
+//! The refusals are reported only
 //! once every phase 2/3 charge has admitted (`:505-511`'s "every refusal
 //! that work exposes is reported, in charge order, when its stage ends").
 //!
@@ -870,17 +872,17 @@ struct AncestorPath {
 }
 
 /// One generalization cycle a `root_key`'s own ancestor walk closes: the
-/// closing extension's own [`ModelRefusal`] (`SpecializationCycle`, keyed by
-/// its rotated edge listing) and the path length charged to it
+/// cycle's keys (path order, rotated to the least key) and the path length
+/// charged to it
 /// (`normalize.cycle-check`'s own `work_units += L`,
 /// `value-accounting.md:491`). `directed_edges` is the same rotated cycle
 /// represented as ordered supertype edges, kept structured here so refusals
 /// found by different types' own walks that close the identical directed
 /// cycle can be recognized as the same cycle and deduplicated
-/// (`model-complete.md`:292-295: "each cycle is refused ... exactly once,
-/// keyed by its canonical directed supertype edges").
+/// (a cycle is identified by its set of supertype edges).
 struct ClosingCycle {
-    refusal: ModelRefusal,
+    /// The cycle's keys in path order, rotated to start at the least key.
+    cycle: Vec<DeclarationKey>,
     /// The extended path that closes this cycle — the same shape as
     /// [`AncestorPath::path`], reused as this closing extension's own
     /// phase-3 charge-order key, so it sorts into
@@ -897,13 +899,37 @@ struct ClosingCycle {
 /// review: previously an anonymous 4-tuple). Sorted by `(type_key, path)` --
 /// the same charge-order key `ancestor_paths` charges its path in --
 /// then deduplicated by canonical directed edges only after every type
-/// has been walked (`model-complete.md`:292-295's "each cycle is refused ...
-/// exactly once"; see the module docs).
+/// has been walked (a declaration is refused once per cycle it lies on; see
+/// the module docs).
 struct CycleCandidate {
     type_key: DeclarationKey,
     path: KeyPath,
-    refusal: ModelRefusal,
+    cycle: Vec<DeclarationKey>,
     directed_edges: Vec<(DeclarationKey, DeclarationKey)>,
+}
+
+/// One `specialization-cycle` refusal per declaration on `cycle`, in
+/// declaration-key order, each listing the whole cycle (path order, rotated to
+/// start at the least key).
+fn specialization_cycle_refusals(cycle: &[DeclarationKey]) -> Vec<ModelRefusal> {
+    let listing: Vec<&str> = cycle.iter().map(|key| key.node.as_str()).collect();
+    let listing = listing.join(", ");
+    let mut declarations: Vec<&DeclarationKey> = cycle.iter().collect();
+    declarations.sort();
+    declarations
+        .into_iter()
+        .map(|declaration| ModelRefusal {
+            code: Code::InvalidModelBinding,
+            cause: ModelRefusalCause::SpecializationCycle {
+                declaration: declaration.clone(),
+                cycle: cycle.to_vec(),
+            },
+            detail: format!(
+                "{} lies on the specialization cycle [{listing}]",
+                declaration.node
+            ),
+        })
+        .collect()
 }
 
 /// [`ancestor_paths`]'s own result: every ordinary ancestor path (`paths`,
@@ -1029,27 +1055,13 @@ fn ancestor_paths(
             {
                 chain.rotate_left(least);
             }
-            let listing: Vec<&str> = chain.iter().map(|key| key.node.as_str()).collect();
-            let refusal = ModelRefusal {
-                code: Code::InvalidModelBinding,
-                cause: ModelRefusalCause::SpecializationCycle {
-                    ancestor: ancestor_key.clone(),
-                    via: specific_key.clone(),
-                },
-                detail: format!(
-                    "{} generalizes back to itself via {}, through the cycle [{}]",
-                    ancestor_key.node,
-                    specific_key.node,
-                    listing.join(", ")
-                ),
-            };
             let directed_edges = chain
                 .iter()
                 .enumerate()
                 .map(|(index, from)| (from.clone(), chain[(index + 1) % chain.len()].clone()))
                 .collect();
             closing_cycles.push(ClosingCycle {
-                refusal,
+                cycle: chain,
                 path: new_path,
                 directed_edges,
             });
@@ -2742,8 +2754,8 @@ fn build(
     let mut type_paths: HashMap<DeclarationKey, Vec<AncestorPath>> = HashMap::new();
     // QSL #193: every generalization cycle any type's own walk closes,
     // tagged with its charge-order key `(type_key, path)`, deduplicated by
-    // edge set only once every type is walked (`model-complete.md`:292-295's
-    // "each cycle is refused ... exactly once"; see the module docs).
+    // edge set only once every type is walked (a declaration is refused once
+    // per cycle it lies on; see the module docs).
     let mut cycle_candidates: Vec<CycleCandidate> = Vec::new();
     for type_key in &type_keys {
         let walk = ancestor_paths(type_key, &index, limits.ancestor_steps, &mut charges)?;
@@ -2763,7 +2775,7 @@ fn build(
             cycle_candidates.push(CycleCandidate {
                 type_key: type_key.clone(),
                 path: closing.path,
-                refusal: closing.refusal,
+                cycle: closing.cycle,
                 directed_edges: closing.directed_edges,
             });
         }
@@ -2850,8 +2862,8 @@ fn build(
     drop(direct_members);
 
     // QSL #193: keep each distinct cycle's own first (charge-order-earliest)
-    // closing extension (`model-complete.md`:292-295), reported once every
-    // phase 2/3 charge is admitted; `value-accounting.md:509`: "a stage that
+    // closing extension, refused at each declaration on it and reported once
+    // every phase 2/3 charge is admitted; `value-accounting.md:509`: "a stage that
     // reports a refusal ends checking: no later stage runs or charges".
     cycle_candidates.sort_by(|a, b| {
         a.type_key
@@ -2862,7 +2874,7 @@ fn build(
     let mut phase3_refusals: Vec<ModelRefusal> = Vec::new();
     for candidate in cycle_candidates {
         if seen_edge_sets.insert(candidate.directed_edges) {
-            phase3_refusals.push(candidate.refusal);
+            phase3_refusals.extend(specialization_cycle_refusals(&candidate.cycle));
         }
     }
     if let Ok(refusals) = Refusals::try_from(phase3_refusals) {

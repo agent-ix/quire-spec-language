@@ -1429,8 +1429,9 @@ fn validate_with_semantic_ir(document: &PackageDocument) -> Result<(), Vec<Model
         // subtype case for QSL's typed process binder and normalizer.
         .filter(|located| !process_subtype_identity_schema_diagnostic(document, located))
         // The upstream validator also emits generic supertype diagnostics for
-        // process cross-meaning edges and cycles. The process binder retains
-        // those edges so normalization can report the ordered QSL loci.
+        // process cross-meaning edges and cycles, and for record, event and
+        // state machine cycles. The binder retains those edges so
+        // normalization can report the ordered QSL loci.
         .filter(|located| !process_subtype_generalization_schema_diagnostic(document, located))
         .filter_map(|located| {
             if let Some(refusal) = duplicate_process_step_refusal(document, located) {
@@ -1637,7 +1638,19 @@ fn process_subtype_generalization_schema_diagnostic(
     };
     meanings
         .get(&(kind.0.to_owned(), kind.1.to_owned()))
-        .is_some_and(|resolved| resolved == meaning::PROCESS)
+        .is_some_and(|resolved| {
+            // A cycle among record, event or state machine types is reported
+            // by normalization, once per declaration and cycle, like a
+            // process cycle.
+            resolved == meaning::PROCESS
+                || (located.code == SUPERTYPE_CYCLE
+                    && [
+                        meaning::RECORD_VALUE_TYPE,
+                        meaning::EVENT_TYPE,
+                        meaning::STATE_MACHINE,
+                    ]
+                    .contains(&resolved.as_str()))
+        })
 }
 
 /// FR-208 binding owns duplicate step, state, transition and clause
@@ -2075,51 +2088,6 @@ fn business_generalization_refusal(
             ctx.at
         );
         return Some(refusal);
-    }
-    if resolved != meaning::RECORD_VALUE_TYPE || located.code != SUPERTYPE_CYCLE {
-        return None;
-    }
-    // The actual declared edges, not diagnostic prose, identify the closing
-    // edge. Each node is visited once, so even a hostile cyclic graph terminates.
-    let graph: BTreeMap<&str, &Value> = types
-        .iter()
-        .filter_map(|value| Some((value.get("identity")?.as_str()?, value)))
-        .collect();
-    let mut pending = vec![(owner, vec![owner])];
-    let mut visited = std::collections::BTreeSet::new();
-    while let Some((current, path)) = pending.pop() {
-        if !visited.insert(current) {
-            continue;
-        }
-        let value = graph.get(current)?;
-        for parent in value
-            .get("supertypes")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-        {
-            let parent = parent.as_str()?;
-            if parent == owner {
-                // Each participating declaration retains its own refusal,
-                // with the closing edge reached from that declaration.
-                let package = document.tree.get("package")?.get("identity")?.as_str()?;
-                return Some(ModelRefusal {
-                    code: Code::InvalidModelBinding,
-                    cause: ModelRefusalCause::SpecializationCycle {
-                        ancestor: declaration_key(package, owner),
-                        via: declaration_key(package, current),
-                    },
-                    detail: format!(
-                        "{}: record generalization returns to {owner} through {current}, through the cycle [{}]",
-                        located.pointer,
-                        path.join(", "),
-                    ),
-                });
-            }
-            let mut next_path = path.clone();
-            next_path.push(parent);
-            pending.push((parent, next_path));
-        }
     }
     None
 }
