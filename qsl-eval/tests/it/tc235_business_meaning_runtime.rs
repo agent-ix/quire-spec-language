@@ -870,9 +870,8 @@ fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
             .outcome,
         qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
     ));
-    // Row, run 1: no result names `NotYetPlaced` or transition `[0]`. The
-    // model guard is no checked clause, so it can be neither looked up nor
-    // evaluated against the run's observations.
+    // The model guard is no checked clause, so `NotYetPlaced` can be neither
+    // looked up nor evaluated against the run's observations.
     assert!(package.graph().state_clause("NotYetPlaced").is_none());
     let not_yet_placed = |observations: &AdmittedObservations| {
         package.evaluate_clause(
@@ -919,8 +918,8 @@ fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
         invocation,
     )
     .expect("run 2 precondition admits");
-    // Row, run 2: `NotYetPlaced` is not evaluated, and the transitions'
-    // `from` and `to` are not read (no checked clause holds them).
+    // `NotYetPlaced` is not evaluated, and no checked clause holds the
+    // transitions' `from` and `to`.
     assert!(not_yet_placed(&pre_two).is_err());
     assert!(matches!(
         evaluate("PlaceRequires", &pre_two).evaluation.outcome,

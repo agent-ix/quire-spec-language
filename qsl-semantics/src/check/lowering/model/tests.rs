@@ -1353,10 +1353,9 @@ mod quantities {
     }
 }
 
-/// QSpec FR-322-AC-25 / FR-208: a state machine is a declaring `model` node of
-/// semantic form `state_machine`, so lowering keys it like an object type
-/// (a state clause or operation anchor on it needs its node) instead of
-/// refusing the declaration as an unnamed record kind.
+/// QSpec FR-322-AC-25: lowering keys a state machine as a `model` node of
+/// semantic form `state_machine`, so a state clause or operation anchor on it
+/// has its node instead of an unnamed-record-kind fault.
 #[trace("QSpec-FR-322-AC-25")]
 #[test]
 fn state_machine_declaration_keys_as_a_state_machine_model_node() {
@@ -1468,8 +1467,9 @@ fn keyed_form(records: Vec<DomainPackageRecord>, name: &str) -> (NodeTag, String
     (node.node_tag(), node.semantic_form().to_owned())
 }
 
-/// QSpec FR-322-AC-25: a persistence interface declares operations, so an
-/// anchor on one needs its model node instead of an unnamed-record-kind fault.
+/// QSpec FR-322-AC-25: lowering keys a persistence interface as a `model`
+/// node, so an anchor on one has its node instead of an unnamed-record-kind
+/// fault.
 #[trace("QSpec-FR-322-AC-25")]
 #[test]
 fn persistence_interface_declaration_keys_as_a_model_node() {
@@ -1487,9 +1487,9 @@ fn persistence_interface_declaration_keys_as_a_model_node() {
     assert_eq!(form, (NodeTag::Model, "persistence_interface".to_owned()));
 }
 
-/// QSpec FR-340: a frame field entry may be declared on a record value
-/// type, so its owner needs a model node instead of an unnamed-record-kind
-/// fault.
+/// QSpec FR-340: lowering keys a record value type as a `model` node, so a
+/// frame field entry on one has its owner node instead of an
+/// unnamed-record-kind fault.
 #[test]
 fn record_value_type_declaration_keys_as_a_model_node() {
     let form = keyed_form(
