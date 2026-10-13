@@ -40,7 +40,15 @@ const UNLIMITED: ScalarLimits = ScalarLimits {
 /// `declarations` checked and linked as a unit selecting the FR-359 package
 /// as model `alias`.
 fn package_as(alias: &str, declarations: &str) -> CheckedPackage {
-    let bytes = serde_json::to_vec(&fixture::document()).expect("the fixture serializes");
+    package_over(&fixture::document(), alias, declarations)
+}
+
+fn package_from(document: &serde_json::Value, declarations: &str) -> CheckedPackage {
+    package_over(document, "M", declarations)
+}
+
+fn package_over(document: &serde_json::Value, alias: &str, declarations: &str) -> CheckedPackage {
+    let bytes = serde_json::to_vec(document).expect("the fixture serializes");
     let packages = package_input([bytes.as_slice()]);
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
         panic!("one model package");
@@ -186,8 +194,10 @@ fn integer(package: &CheckedPackage, function: &str, arguments: Vec<Value>) -> i
     }
 }
 
-fn shown(value: &Value) -> String {
-    format!("{value:?}")
+/// Whether two values are one value: the same declarations and every field
+/// equal, by the kernel's canonical key order, not by their printed form.
+fn same_value(left: &Value, right: &Value) -> bool {
+    quire_exact::compare_keys(left, right) == Some(std::cmp::Ordering::Equal)
 }
 
 fn declaration_of(value: &Value) -> NodeKey {
@@ -342,7 +352,7 @@ fn a_child_is_read_through_a_record_field_an_option_and_a_sequence_element() {
         declaration_of(&unwrapped),
         declaration(&package, "ExpressOrderPlaced")
     );
-    assert_eq!(shown(&unwrapped), shown(&express));
+    assert!(same_value(&unwrapped, &express));
 }
 
 /// FR-359-AC-2: a child that redefines an inherited field with a narrower
@@ -638,13 +648,13 @@ fn an_optional_field_holding_a_child_reads_back_the_same_child() {
     };
     let payload = option.payload().expect("present");
     assert_eq!(declaration_of(payload), declaration(&package, "TaxedMoney"));
-    assert_eq!(shown(payload), shown(&child));
+    assert!(same_value(payload, &child));
     assert!(boolean(&package, "has", vec![invoice.clone()]));
     let unwrapped = completed(&package, "unwrap", vec![invoice, plain(&package, 0)]);
-    assert_eq!(shown(&unwrapped), shown(&child));
+    assert!(same_value(&unwrapped, &child));
     // A function argument and result keep the child's own type as well.
     let passed = completed(&package, "pass", vec![child.clone()]);
-    assert_eq!(shown(&passed), shown(&child));
+    assert!(same_value(&passed, &child));
     let grand = gift(&package, 1, 2, 3);
     let upcast = completed(&package, "asMoney", vec![grand.clone()]);
     assert_eq!(
@@ -712,7 +722,7 @@ fn collections_of_the_parent_hold_children_and_order_by_declaration_key() {
             .into_iter()
             .find(|element| declaration_of(element) == child_key)
             .expect("the child is kept");
-        assert_eq!(shown(&held), shown(&child));
+        assert!(same_value(&held, &child));
     }
 }
 
@@ -757,6 +767,7 @@ fn two_aliases_of_one_model_agree_on_keys_order_and_equality() {
                 ],
             )
             .unwrap();
+        let money_copy = money.clone();
         let built = completed(&package, "made", vec![taxed.clone(), money]);
         let tags: Vec<NodeKey> = {
             let Value::Composite(lines) = &built else {
@@ -777,11 +788,42 @@ fn two_aliases_of_one_model_agree_on_keys_order_and_equality() {
             .into_iter()
             .map(|name| (name.to_owned(), key_of(name)))
             .collect();
-        (names, tags, shown(&taxed))
+        (names, tags, taxed, money_copy)
     };
-    let (m_names, m_tags, m_taxed) = build("M");
-    let (n_names, n_tags, n_taxed) = build("N");
+    let (m_names, m_tags, m_taxed, m_money) = build("M");
+    let (n_names, n_tags, n_taxed, n_money) = build("N");
     assert_eq!(m_names, n_names, "every model record has one key");
     assert_eq!(m_tags, n_tags, "a Set orders its elements identically");
-    assert_eq!(m_taxed, n_taxed, "the same value is the same value");
+    assert!(
+        same_value(&m_taxed, &n_taxed),
+        "a TaxedMoney built in one unit equals the same value built in the other"
+    );
+    // The oracle can fail: a child is not its parent, nor equal across
+    // the two units' parents.
+    assert!(!same_value(&m_taxed, &m_money));
+    assert!(!same_value(&m_taxed, &n_money));
+}
+
+/// FR-359-AC-5, TC-999 step 3: comparing a child with a different
+/// most-specific type decides by type first and performs no text-leaf
+/// comparison. A `StampedTicket` and a `Ticket` with the same `label` are
+/// unequal, where an implementation that compared the parent's text leaves
+/// first would call them equal. Needs PR #789 (String leaves lower).
+#[trace("FR-359-AC-5", "TC-999")]
+#[test]
+#[ignore = "PR #789 (QSL-723): String leaves do not lower yet"]
+fn a_mixed_pair_with_equal_text_leaves_is_unequal() {
+    let document = fixture::document_with_native_leaves();
+    let package = package_from(
+        &document,
+        "function same using v(a: M::Ticket, b: M::Ticket): Boolean pure { a = b }",
+    );
+    let ticket = |name: &str, extra: Vec<(&str, Value)>| {
+        let mut fields = vec![("label", Value::String("EUR".to_owned()))];
+        fields.extend(extra);
+        record(&package, name, fields)
+    };
+    let child = ticket("StampedTicket", vec![("stamp", int(1))]);
+    let parent = ticket("Ticket", vec![]);
+    assert!(!boolean(&package, "same", vec![child, parent]));
 }

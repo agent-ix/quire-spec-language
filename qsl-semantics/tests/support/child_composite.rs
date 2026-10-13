@@ -353,13 +353,50 @@ pub(crate) fn document_with_event() -> Value {
         base::construct("value", base_meaning::VALUE_TYPE),
         base::construct("happened", base_meaning::EVENT_TYPE),
     ]);
-    let types = document["types"].clone();
-    let digest = base::jcs_digest(&types);
+    refresh_digests(&mut document);
+    document
+}
+
+/// `document` with every digest its construct manifests and package header
+/// carry recomputed from its `types`.
+fn refresh_digests(document: &mut Value) {
+    let digest = base::jcs_digest(&document["types"]);
     document["source"]["digest"] = json!(digest);
     document["package"]["manifestDigest"] = json!(digest);
     document["package"]["lockDigest"] = json!(digest);
     for construct in document["constructs"].as_array_mut().unwrap() {
         construct["manifestDigest"] = json!(digest);
     }
+}
+
+/// [`document_with_event`] plus the native leaves PR #789 lowers: a
+/// `Ticket { label: String }` with a `StampedTicket` child, and a
+/// `Credential { token: UUID, issued: Timestamp }`. A unit that reads or
+/// compares these fails lowering until #789 merges; the ignored tests that
+/// use it name that blocker.
+pub(crate) fn document_with_native_leaves() -> Value {
+    let mut document = document_with_event();
+    let types = [
+        record(
+            "Ticket",
+            &[],
+            vec![plain("Ticket", "label", &native("String"))],
+        ),
+        record(
+            "StampedTicket",
+            &["Ticket"],
+            vec![plain("StampedTicket", "stamp", &native("Integer"))],
+        ),
+        record(
+            "Credential",
+            &[],
+            vec![
+                plain("Credential", "token", &native("UUID")),
+                plain("Credential", "issued", &id("Instant")),
+            ],
+        ),
+    ];
+    document["types"].as_array_mut().unwrap().extend(types);
+    refresh_digests(&mut document);
     document
 }

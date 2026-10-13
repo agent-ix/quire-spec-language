@@ -367,6 +367,46 @@ fn records_and_events_are_model_owned_nodes_without_supertypes() {
     }
 }
 
+/// FR-359-AC-3, event half: a package whose unit takes an event-typed
+/// parameter holds the event as one `model`/`event_type` node owned by its
+/// declaring package and node, beside the record nodes, with no
+/// `composite_type` and no `supertypes` member. The unit needs no read of the
+/// event's Timestamp field, whose lowering waits on PR #789.
+#[trace("FR-359-AC-3", "TC-998")]
+#[test]
+fn an_event_type_is_one_model_owned_event_type_node_in_a_package() {
+    let graph = assemble_document(
+        &fixture::document_with_event(),
+        "M",
+        "function shipped using v(e: M::Shipped): Boolean pure { true }\n\
+         function placed using v(e: M::OrderPlaced): Boolean pure { true }",
+    )
+    .check(CheckingLimits::default())
+    .expect("the event unit checks");
+    let nodes = model_nodes(&graph);
+    let events: Vec<_> = nodes
+        .iter()
+        .filter(|(_, form, _)| *form == "event_type")
+        .collect();
+    assert_eq!(events.len(), 1, "one event_type node: {nodes:?}");
+    let owner = &events[0].2["owner"];
+    assert_eq!(owner["kind"], "model");
+    assert_eq!(owner["identity"], fixture::PACKAGE);
+    assert_eq!(owner["node"], fixture::id("Shipped"));
+    assert!(
+        nodes
+            .iter()
+            .any(|(_, form, preimage)| *form == "record_value_type"
+                && preimage["owner"]["node"] == fixture::id("OrderPlaced")),
+        "the record sits beside the event"
+    );
+    for node in graph.semantic_graph().nodes() {
+        let preimage: Value = serde_json::from_slice(node.preimage()).unwrap();
+        assert!(!contains_member(&preimage, "supertypes"));
+        assert_ne!(node.node_tag(), NodeTag::CompositeType);
+    }
+}
+
 fn contains_member(value: &Value, member: &str) -> bool {
     match value {
         Value::Object(map) => {
@@ -466,4 +506,23 @@ fn a_model_record_key_is_its_model_node_key_whatever_the_alias() {
     let (m, n) = (keys("M"), keys("N"));
     assert!(m.len() >= 10, "the package declares its records: {m:?}");
     assert_eq!(m, n, "the alias does not enter a declaration key");
+}
+
+/// FR-359-AC-1: a field typed UUID or Timestamp is read, and compared, at a
+/// parent-typed slot like any other. Lowering a UUID, Timestamp or String leaf
+/// is PR #789; until it merges the unit is refused at lowering.
+#[trace("FR-359-AC-1", "TC-998")]
+#[test]
+#[ignore = "PR #789 (QSL-723): String, UUID and Timestamp leaves do not lower yet"]
+fn uuid_timestamp_and_string_fields_are_read_through_a_child() {
+    assemble_document(
+        &fixture::document_with_native_leaves(),
+        "M",
+        "function token using v(c: M::Credential): Boolean pure { c.token = c.token }\n\
+         function issued using v(c: M::Credential): Boolean pure { c.issued = c.issued }\n\
+         function label using v(t: M::Ticket): Boolean pure { t.label = t.label }\n\
+         function viaChild using v(t: M::StampedTicket): Boolean pure { label(t) }",
+    )
+    .check(CheckingLimits::default())
+    .expect("native leaves check once PR #789 lowers them");
 }

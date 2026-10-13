@@ -199,7 +199,11 @@ mod tests {
             let encoded = encode_element(&value).unwrap();
             let document = quire_canonical::read(encoded.get().as_bytes(), u64::MAX).unwrap();
             let decoded = decode_element(document.root(), Keys::new(&package)).unwrap();
-            assert_eq!(format!("{decoded:?}"), format!("{value:?}"));
+            assert_eq!(
+                quire_exact::compare_keys(&decoded, &value),
+                Some(std::cmp::Ordering::Equal),
+                "the decoded value is the encoded one"
+            );
             let again = encode_element(&decoded).unwrap();
             assert_eq!(
                 again.get(),
