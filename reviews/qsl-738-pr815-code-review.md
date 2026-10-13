@@ -73,3 +73,11 @@ Round 1, reviewed at 101dbdf0809546eae22d2047c429a58f805ff612.
 | FND-002 | fixed | 101dbdf08 |
 | FND-003 | fixed | 101dbdf08 |
 | FND-004 | fixed | 101dbdf08 |
+
+## Dispositions (round 2)
+
+Round 2, reviewed at d764d9277feeebb94c79e96e4740c92e0c94df67.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-005 | fixed | d760c7210 |

@@ -72,3 +72,12 @@ Round 1, reviewed at 101dbdf0809546eae22d2047c429a58f805ff612.
 | FND-003 | deferred | To QSL-752 (Linear edge: QSL-738 blocked-by QSL-752); QSL-738 stays open. Remaining: AC-4 (`f(t: Config::Tier)` and a call to it, a literal at an `Account.tier` slot and in an `Option` literal, a clause naming the type, and a variant type with a `Gold Plus` case); AC-7 tuple position; AC-8 check-and-run, emission and `Verified` read-back; AC-9 replay through a run; AC-11 counterexample witness encode and the digest round trip of an encoded run result. The item 10 encoder has landed (FR-360-AC-11 partly covered). |
 | FND-004 | fixed | 101dbdf08 |
 | FND-005 | fixed | 101dbdf08 |
+
+## Dispositions (round 2)
+
+Round 2, reviewed at d764d9277feeebb94c79e96e4740c92e0c94df67.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-006 | fixed | 51ac1f054 |
+| FND-007 | fixed | d764d9277 |

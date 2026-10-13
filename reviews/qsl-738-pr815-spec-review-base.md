@@ -66,3 +66,18 @@ Round 1, reviewed at 101dbdf0809546eae22d2047c429a58f805ff612.
 | FND-004 | fixed | 101dbdf08 |
 | FND-005 | fixed | 101dbdf08 |
 | FND-006 | fixed | 101dbdf08 |
+
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-009 | low | FR-062 attributes 'a maximum fixed by the language is not a caller work budget' to the catalog's `stage_limit_exceeded` row. On QSpec main the sentence is on the `resource_exhausted` row only; the `stage_limit_exceeded` row instead says its limits are caller-configured FR-461 settings, distinct from the work-budget meter. QSpec's own review flagged the same misattribution and corrected it. Read with the new wording, FR-062 implies that stage limits are maxima fixed by the language, which is false. ADR-014 and FR-096 attribute the sentence to `resource_exhausted` and are fine. Fix: say the `stage_limit_exceeded` row gives stage limits as caller-configured settings, distinct from the `resource_exhausted` work-budget meter. | spec/functional/FR-062-implement-checked-family-contract.md:183-187 |
+
+## Dispositions (round 2)
+
+Round 2, reviewed at d764d9277feeebb94c79e96e4740c92e0c94df67.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-007 | fixed | d760c7210 |
+| FND-008 | fixed | d760c7210 |
