@@ -21,6 +21,7 @@ use qsl_foundation::diagnostic::{Code, JsonPointer};
 
 use super::meaning_dispatch::MeaningBindingContext;
 
+#[qsl_attrs::string_edge]
 pub(super) fn bind(context: &mut MeaningBindingContext<'_, '_>) -> Result<(), ModelRefusal> {
     let ctx = NodeCtx::new(context.type_value, context.at);
     let identity_fields = ctx.identity_keys(context.package, "identityFields")?;
@@ -192,6 +193,7 @@ fn read_step_events(
     Ok(result)
 }
 
+#[qsl_attrs::string_edge]
 fn reader_pointer(step_at: &str, field: &str, position: usize) -> JsonPointer {
     let mut pointer = JsonPointer::root();
     let path = step_at.strip_prefix("$.").unwrap_or(step_at);

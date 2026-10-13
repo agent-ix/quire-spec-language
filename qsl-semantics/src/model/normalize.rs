@@ -1088,6 +1088,7 @@ fn validate_selection(domain_package: &DomainPackage) -> Result<(), ModelRefusal
 /// than reader-shape errors. `build` calls this only after admitting every
 /// `normalize.record` charge, so a refusal retains the meter for the exact
 /// records already processed.
+#[qsl_attrs::string_edge]
 fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRefusal> {
     let mut record_types: Vec<_> = domain_package
         .records
@@ -1831,6 +1832,7 @@ fn signature_type_refusal(
 /// this node, regardless of whether an earlier check on this same node
 /// already failed -- a node's own dangling references do not exempt it from
 /// also being reported as a duplicate key.
+#[qsl_attrs::string_edge]
 fn check_node<'a>(
     record: &'a DomainPackageRecord,
     index: &RecordIndex,
