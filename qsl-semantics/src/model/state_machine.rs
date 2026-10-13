@@ -32,7 +32,7 @@ fn array<'a>(
         Some(value) => value
             .as_array()
             .map(Vec::as_slice)
-            .ok_or_else(|| ctx.malformed(format!("{field}: not an array"))),
+            .ok_or_else(|| ctx.malformed_in(field, "not an array")),
     }
 }
 
@@ -45,7 +45,10 @@ fn member_key(
     let ctx = NodeCtx::new(value, at);
     let identity = ctx.str_field("identity")?;
     if member_identity_name(owner, identity).is_none() {
-        return Err(ctx.malformed(format!("identity: {identity:?} is not a member of {owner}")));
+        return Err(ctx.malformed_in(
+            "identity",
+            format!("{identity:?} is not a member of {owner}"),
+        ));
     }
     Ok(key(package, identity))
 }
@@ -67,7 +70,7 @@ fn read_states(
             let name = state_ctx.str_field("name")?;
             if member_identity_name(owner, &key.node) != Some(name) {
                 return Err(
-                    state_ctx.malformed("name: differs from the state's identity member name")
+                    state_ctx.malformed_in("name", "differs from the state's identity member name")
                 );
             }
             Ok(StateMachineStateRecord {
@@ -100,16 +103,17 @@ fn read_transitions(
                 None => Vec::new(),
                 Some(value) => value
                     .as_array()
-                    .ok_or_else(|| transition_ctx.malformed("emits: not an array"))?
+                    .ok_or_else(|| transition_ctx.malformed_in("emits", "not an array"))?
                     .iter()
                     .enumerate()
                     .map(|(emit_position, emit)| {
                         emit.as_str()
                             .map(|node| key_for(package, node))
                             .ok_or_else(|| {
-                                transition_ctx.malformed(format!(
-                                    "emits[{emit_position}]: not an identity string"
-                                ))
+                                transition_ctx.malformed_in(
+                                    &format!("emits[{emit_position}]"),
+                                    "not an identity string",
+                                )
                             })
                     })
                     .collect::<Result<_, _>>()?,
@@ -119,7 +123,9 @@ fn read_transitions(
                 Some(value) => Some(
                     value
                         .as_str()
-                        .ok_or_else(|| transition_ctx.malformed("guard: not a string clauseId"))?
+                        .ok_or_else(|| {
+                            transition_ctx.malformed_in("guard", "not a string clauseId")
+                        })?
                         .to_owned(),
                 ),
             };

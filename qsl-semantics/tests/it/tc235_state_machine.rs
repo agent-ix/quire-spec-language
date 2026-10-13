@@ -55,13 +55,18 @@ fn assert_missing_name(refusal: &ModelRefusal, path: &str, reference: Option<&st
 }
 
 /// A typed `conflicting-binding` whose key is the repeated declaration.
-fn assert_conflicting_binding(refusal: &ModelRefusal, key: &str) {
+fn assert_conflicting_binding(refusal: &ModelRefusal, key: &str, path: &str) {
     assert_eq!(refusal.code, Code::InvalidModelBinding);
     assert_eq!(refusal.cause.as_str(), "conflicting-binding");
-    let ModelRefusalCause::ConflictingBinding { key: actual } = &refusal.cause else {
+    let ModelRefusalCause::ConflictingBinding {
+        key: actual,
+        member: actual_member,
+    } = &refusal.cause
+    else {
         panic!("expected conflicting-binding, got {refusal:?}");
     };
     assert_eq!(actual.node, id(key));
+    assert_eq!(actual_member.as_ref(), Some(&member(path)));
 }
 
 /// M05: resolve transition targets, triggers, guards, and emitted event types
@@ -245,7 +250,11 @@ fn tc235_m06_state_machine_required_members_and_bindings() {
     });
     let refusals = normalized_refusals(&duplicate_state, 21);
     assert_eq!(refusals.len(), 1);
-    assert_conflicting_binding(&refusals[0], "OrderLifecycle/Draft");
+    assert_conflicting_binding(
+        &refusals[0],
+        "OrderLifecycle/Draft",
+        "TypeDefinition.states[3]",
+    );
 
     let duplicate_transition = mutate_k2(|document| {
         type_named_mut(document, "OrderLifecycle")["transitions"]
@@ -262,7 +271,11 @@ fn tc235_m06_state_machine_required_members_and_bindings() {
     });
     let refusals = normalized_refusals(&duplicate_transition, 21);
     assert_eq!(refusals.len(), 1);
-    assert_conflicting_binding(&refusals[0], "OrderLifecycle/transition3");
+    assert_conflicting_binding(
+        &refusals[0],
+        "OrderLifecycle/transition3",
+        "TypeDefinition.transitions[3]",
+    );
 
     let operation_postcondition = mutate_k2(|document| {
         type_named_mut(document, "OrderLifecycle")["operations"][0]["post"] = json!([{
@@ -314,10 +327,7 @@ fn tc235_m11_state_machine_supertype_meaning_rules() {
         });
         let refusals = normalized_refusals(&document, 21);
         assert_eq!(refusals.len(), 1, "{node}: {refusals:?}");
-        assert_eq!(refusals[0].code, Code::UnsupportedConstruct);
-        assert_eq!(refusals[0].cause.as_str(), "declaration-form");
-        assert!(refusals[0].detail.contains(&id(node)));
-        assert!(refusals[0].detail.contains("TypeDefinition.supertypes"));
+        assert_unsupported_at(&refusals[0], &id(node), "TypeDefinition.supertypes");
     }
 }
 
@@ -432,6 +442,7 @@ fn assert_derivation_conflict(refusal: &ModelRefusal, type_: &str, member: &str,
         type_: actual_type,
         member: actual_member,
         redefiners,
+        ..
     } = &refusal.cause
     else {
         panic!(
@@ -534,8 +545,13 @@ fn tc235_m19_state_machine_specialization_vectors() {
         "OrderLifecycle/Placed",
         "ExpressLifecycle/Placed",
     );
-    assert!(refusals[0].detail.contains("ExpressLifecycle.states[1]"));
-    assert!(refusals[0].detail.contains("OrderLifecycle.states[1]"));
+    assert_derivation_paths(
+        &refusals[0],
+        &[
+            ("ExpressLifecycle", "TypeDefinition.states[1]"),
+            ("OrderLifecycle", "TypeDefinition.states[1]"),
+        ],
+    );
 
     // Run 3: a transition repeating the inherited `Draft -> Placed` on `place`.
     let duplicate_transition = mutate_k2(|document| {
@@ -561,10 +577,13 @@ fn tc235_m19_state_machine_specialization_vectors() {
         "OrderLifecycle/transition0",
         "ExpressLifecycle/transition1",
     );
-    assert!(refusals[0]
-        .detail
-        .contains("ExpressLifecycle.transitions[1]"));
-    assert!(refusals[0].detail.contains("OrderLifecycle.transitions[0]"));
+    assert_derivation_paths(
+        &refusals[0],
+        &[
+            ("ExpressLifecycle", "TypeDefinition.transitions[1]"),
+            ("OrderLifecycle", "TypeDefinition.transitions[0]"),
+        ],
+    );
 
     // Run 4: an ancestor transition to a subtype-only state.
     let ancestor_to_subtype_state = mutate_k2(|document| {
@@ -752,4 +771,55 @@ fn tc235_a_reference_to_an_object_types_member_is_a_missing_name() {
         assert_eq!(refusals[0].code, Code::MissingDeclaration, "{member}");
         assert_eq!(refusals[0].cause.as_str(), "missing-name", "{member}");
     }
+}
+
+/// M19 runs 2-3: the derivation conflict carries both sides' member paths as
+/// typed values, for a repeated state and for a repeated transition.
+#[test]
+fn tc235_m19_derivation_conflict_member_paths() {
+    let state = mutate_k2(|document| {
+        document["types"]
+            .as_array_mut()
+            .unwrap()
+            .push(express_lifecycle(
+                "OrderLifecycle",
+                &["Expedited", "Placed"],
+                "Placed",
+            ));
+    });
+    let refusals = normalized_refusals(&state, 23);
+    assert_eq!(refusals.len(), 1, "{refusals:?}");
+    assert_derivation_paths(
+        &refusals[0],
+        &[
+            ("ExpressLifecycle", "TypeDefinition.states[1]"),
+            ("OrderLifecycle", "TypeDefinition.states[1]"),
+        ],
+    );
+
+    let transition = mutate_k2(|document| {
+        let mut declaration =
+            express_lifecycle("OrderLifecycle", &["Expedited"], "OrderLifecycle/Placed");
+        declaration["transitions"]
+            .as_array_mut()
+            .unwrap()
+            .push(lifecycle_transition(
+                "ExpressLifecycle",
+                "transition1",
+                "OrderLifecycle/Draft",
+                "OrderLifecycle/Placed",
+                "OrderLifecycle/place",
+                vec![],
+            ));
+        document["types"].as_array_mut().unwrap().push(declaration);
+    });
+    let refusals = normalized_refusals(&transition, 23);
+    assert_eq!(refusals.len(), 1, "{refusals:?}");
+    assert_derivation_paths(
+        &refusals[0],
+        &[
+            ("ExpressLifecycle", "TypeDefinition.transitions[1]"),
+            ("OrderLifecycle", "TypeDefinition.transitions[0]"),
+        ],
+    );
 }

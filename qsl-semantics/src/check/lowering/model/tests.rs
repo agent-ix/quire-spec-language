@@ -225,6 +225,7 @@ fn acme(version: &str) -> DomainPackage {
             query_over("Sub/scaled", "Sub", Some("Order/scaled"), &["m"]),
             DomainPackageRecord::Relationship(RelationshipRecord {
                 key: key("billedTo"),
+                declared_at: None,
                 source: RelationshipEnd {
                     type_identity: key("Order"),
                     role: Some("order".to_owned()),

@@ -556,6 +556,7 @@ fn two_operation_members_sharing_one_declaration_key_refuse_conflicting_binding(
                 refusal.cause,
                 ModelRefusalCause::ConflictingBinding {
                     key: DeclarationKey::fixture("model.A.size"),
+                    member: None,
                 }
             );
         }

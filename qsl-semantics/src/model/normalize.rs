@@ -211,7 +211,9 @@ use serde::Serialize;
 /// Re-exported from [`crate::model::refusal`] (#141 finding 4): that module
 /// is lower-level than this one so [`crate::model::key`] can depend on the
 /// cause type without a cycle. This path is unchanged for every caller.
-pub use crate::model::refusal::{ModelRefusalCause, OfferedSelection};
+pub use crate::model::refusal::{
+    MemberPath, MemberRoot, ModelRefusalCause, OfferedSelection, OwnedMemberPath,
+};
 
 /// A refusal FR-150 normalization returns for a real defect (never a
 /// resource limit; see [`Incomplete`] for that).
@@ -1108,6 +1110,7 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                     node: record_type.key.node.clone(),
                     artifact: None,
                     span: None,
+                    member: MemberPath::type_definition().name("identityFields"),
                 },
                 detail: format!(
                     "{}: TypeDefinition.identityFields: a record value type has no identity field",
@@ -1117,20 +1120,9 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
             continue;
         }
 
-        let mut operations: Vec<_> = domain_package
-            .records
-            .iter()
-            .filter_map(|record| match record {
-                DomainPackageRecord::OperationMember(operation)
-                    if operation.owner == record_type.key =>
-                {
-                    Some(operation)
-                }
-                _ => None,
-            })
-            .collect();
-        operations.sort_by(|left, right| left.key.cmp(&right.key));
-        if let Some(operation) = operations.first() {
+        // Records keep the order the reader read the declaration's
+        // operations in, so the position is the operation's own.
+        for (position, operation) in declared_operations(domain_package, &record_type.key) {
             refusals.push(ModelRefusal {
                 code: Code::UnsupportedConstruct,
                 cause: ModelRefusalCause::UnsupportedDeclarationForm {
@@ -1139,9 +1131,12 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                         "{}:operations",
                         crate::model::intake::meaning::RECORD_VALUE_TYPE
                     ),
+                    member: MemberPath::type_definition()
+                        .name("operations")
+                        .index(position),
                 },
                 detail: format!(
-                    "{}: TypeDefinition.operations[0]: a record value type declares no operations",
+                    "{}: TypeDefinition.operations[{position}]: a record value type declares no operations",
                     operation.key.node
                 ),
             });
@@ -1161,34 +1156,26 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
         .collect();
     event_types.sort_by(|left, right| left.key.cmp(&right.key));
     for event in event_types {
-        let malformed = |path: &str, reason: &str| ModelRefusal {
+        let malformed = |path: MemberPath, reason: &str| ModelRefusal {
             code: Code::InvalidModelBinding,
             cause: ModelRefusalCause::IntakeMalformedDeclaration {
                 node: event.key.node.clone(),
                 artifact: None,
                 span: None,
+                member: path.clone(),
             },
             detail: format!("{}: {path}: {reason}", event.key.node),
         };
         if !event.identity_fields.is_empty() {
             refusals.push(malformed(
-                "TypeDefinition.identityFields",
+                MemberPath::type_definition().name("identityFields"),
                 "an event type has no identity fields",
             ));
             continue;
         }
-        let mut operations: Vec<_> = domain_package
-            .records
-            .iter()
-            .filter_map(|record| match record {
-                DomainPackageRecord::OperationMember(operation) if operation.owner == event.key => {
-                    Some(operation)
-                }
-                _ => None,
-            })
-            .collect();
-        operations.sort_by(|left, right| left.key.cmp(&right.key));
-        if let Some(operation) = operations.first() {
+        let mut has_operation = false;
+        for (position, operation) in declared_operations(domain_package, &event.key) {
+            has_operation = true;
             // TC-235 M04 / FR-208-AC-4: malformed-declaration naming the
             // operation node, not the event type.
             refusals.push(ModelRefusal {
@@ -1197,12 +1184,17 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                     node: operation.key.node.clone(),
                     artifact: None,
                     span: None,
+                    member: MemberPath::type_definition()
+                        .name("operations")
+                        .index(position),
                 },
                 detail: format!(
-                    "{}: TypeDefinition.operations[0]: an event type declares no operations",
+                    "{}: TypeDefinition.operations[{position}]: an event type declares no operations",
                     operation.key.node
                 ),
             });
+        }
+        if has_operation {
             continue;
         }
         let field = event.occurrence_field.as_ref().and_then(|key| {
@@ -1226,7 +1218,7 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
         });
         if !timestamp {
             refusals.push(malformed(
-                "TypeDefinition.occurrenceField",
+                MemberPath::type_definition().name("occurrenceField"),
                 "the occurrence field must resolve to native Timestamp",
             ));
         }
@@ -1244,11 +1236,13 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                 // AC-17 reports the invalid event meaning at the occurrence binding
                 // before reporting the offending supertype reference.
                 refusals.push(malformed(
-                    "TypeDefinition.occurrenceField",
+                    MemberPath::type_definition().name("occurrenceField"),
                     "event occurrence inheritance requires event-type supertypes",
                 ));
                 refusals.push(malformed(
-                    &format!("TypeDefinition.supertypes[{position}]"),
+                    MemberPath::type_definition()
+                        .name("supertypes")
+                        .index(position),
                     "an event type generalizes only an event type",
                 ));
                 continue;
@@ -1263,6 +1257,16 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                             type_: event.key.clone(),
                             member: parent.clone(),
                             redefiners: vec![child.clone()],
+                            paths: vec![
+                                owned_member(
+                                    &event.key,
+                                    MemberPath::type_definition().name("occurrenceField"),
+                                ),
+                                owned_member(
+                                    &ancestor.key,
+                                    MemberPath::type_definition().name("occurrenceField"),
+                                ),
+                            ],
                         },
                         detail: format!(
                             "{}.occurrenceField conflicts with inherited {}.occurrenceField",
@@ -1284,12 +1288,13 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
         .collect();
     machines.sort_by(|left, right| left.key.cmp(&right.key));
     for machine in machines {
-        let malformed = |path: &str, reason: &str| ModelRefusal {
+        let malformed = |path: MemberPath, reason: &str| ModelRefusal {
             code: Code::InvalidModelBinding,
             cause: ModelRefusalCause::IntakeMalformedDeclaration {
                 node: machine.key.node.clone(),
                 artifact: None,
                 span: None,
+                member: path.clone(),
             },
             detail: format!("{}: {path}: {reason}", machine.key.node),
         };
@@ -1347,6 +1352,7 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                     code: Code::InvalidModelBinding,
                     cause: ModelRefusalCause::ConflictingBinding {
                         key: state.key.clone(),
+                        member: Some(MemberPath::type_definition().name("states").index(position)),
                     },
                     detail: format!(
                         "{}: TypeDefinition.states[{position}] conflicts with {}",
@@ -1424,7 +1430,10 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                 });
                 if declared_elsewhere {
                     refusals.push(malformed(
-                        &format!("TypeDefinition.transitions[{position}].{member}"),
+                        MemberPath::type_definition()
+                            .name("transitions")
+                            .index(position)
+                            .name(member),
                         "names no effective state or operation of this machine",
                     ));
                 } else {
@@ -1433,15 +1442,18 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
             }
             for (emit_position, emitted) in transition.emits.iter().enumerate() {
                 if !has_event(emitted) {
-                    let member_path =
-                        format!("TypeDefinition.transitions[{position}].emits[{emit_position}]");
+                    let member_path = MemberPath::type_definition()
+                        .name("transitions")
+                        .index(position)
+                        .name("emits")
+                        .index(emit_position);
                     if domain_package
                         .records
                         .iter()
                         .any(|record| record.key() == emitted)
                     {
                         refusals.push(malformed(
-                            &member_path,
+                            member_path,
                             "emitted reference names a non-event type",
                         ));
                     } else {
@@ -1491,7 +1503,10 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                     });
                     if names_other_clause {
                         refusals.push(malformed(
-                            &format!("TypeDefinition.transitions[{position}].guard"),
+                            MemberPath::type_definition()
+                                .name("transitions")
+                                .index(position)
+                                .name("guard"),
                             "names no effective clause of this machine",
                         ));
                         continue;
@@ -1503,10 +1518,13 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                     refusals.push(missing(transition, "guard", &clause_key));
                     continue;
                 };
-                let path = format!("TypeDefinition.transitions[{position}].guard");
+                let path = MemberPath::type_definition()
+                    .name("transitions")
+                    .index(position)
+                    .name("guard");
                 if clause.language != "quire" {
                     refusals.push(malformed(
-                        &path,
+                        path.clone(),
                         "guard must name a quire clause used by a transition",
                     ));
                 } else if !machine_chain.iter().any(|owner_key| {
@@ -1520,7 +1538,7 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                     // FR-208-AC-12: the guard would remove an ancestor's
                     // invariant from this machine.
                     refusals.push(malformed(
-                        &path,
+                        path.clone(),
                         "guard must name a quire clause used by a transition",
                     ));
                 }
@@ -1533,6 +1551,11 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                     code: Code::InvalidModelBinding,
                     cause: ModelRefusalCause::ConflictingBinding {
                         key: transition.key.clone(),
+                        member: Some(
+                            MemberPath::type_definition()
+                                .name("transitions")
+                                .index(position),
+                        ),
                     },
                     detail: format!(
                         "{}: TypeDefinition.transitions[{position}] conflicts with {}",
@@ -1552,7 +1575,9 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                     .any(|record| record.key() == general)
                 {
                     refusals.push(malformed(
-                        &format!("TypeDefinition.supertypes[{position}]"),
+                        MemberPath::type_definition()
+                            .name("supertypes")
+                            .index(position),
                         "a state machine generalizes only a state machine",
                     ));
                 } else {
@@ -1587,6 +1612,18 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                             type_: machine.key.clone(),
                             member: inherited.key.clone(),
                             redefiners: vec![state.key.clone()],
+                            paths: vec![
+                                owned_member(
+                                    &machine.key,
+                                    MemberPath::type_definition().name("states").index(position),
+                                ),
+                                owned_member(
+                                    &ancestor.key,
+                                    MemberPath::type_definition()
+                                        .name("states")
+                                        .index(inherited_position),
+                                ),
+                            ],
                         },
                         detail: format!(
                             "{}.states[{position}] conflicts with {}.states[{inherited_position}]",
@@ -1609,6 +1646,20 @@ fn validate_record_value_meanings(domain_package: &DomainPackage) -> Vec<ModelRe
                             type_: machine.key.clone(),
                             member: inherited.key.clone(),
                             redefiners: vec![transition.key.clone()],
+                            paths: vec![
+                                owned_member(
+                                    &machine.key,
+                                    MemberPath::type_definition()
+                                        .name("transitions")
+                                        .index(position),
+                                ),
+                                owned_member(
+                                    &ancestor.key,
+                                    MemberPath::type_definition()
+                                        .name("transitions")
+                                        .index(inherited_position),
+                                ),
+                            ],
                         },
                         detail: format!(
                             "{}.transitions[{position}] conflicts with {}.transitions[{inherited_position}]",
@@ -1629,31 +1680,32 @@ fn state_machine_required_members(
     machine: &crate::model::domain_package::StateMachineRecord,
     no_operations: bool,
 ) -> Vec<ModelRefusal> {
-    let malformed = |path: &str, reason: &str| ModelRefusal {
+    let malformed = |path: MemberPath, reason: &str| ModelRefusal {
         code: Code::InvalidModelBinding,
         cause: ModelRefusalCause::IntakeMalformedDeclaration {
             node: machine.key.node.clone(),
             artifact: None,
             span: None,
+            member: path.clone(),
         },
         detail: format!("{}: {path}: {reason}", machine.key.node),
     };
     let mut refusals = Vec::new();
     if no_operations {
         refusals.push(malformed(
-            "TypeDefinition.operations",
+            MemberPath::type_definition().name("operations"),
             "a state machine declares at least one operation",
         ));
     }
     if machine.states.is_empty() {
         refusals.push(malformed(
-            "TypeDefinition.states",
+            MemberPath::type_definition().name("states"),
             "a state machine declares at least one state",
         ));
     }
     if machine.transitions.is_empty() {
         refusals.push(malformed(
-            "TypeDefinition.transitions",
+            MemberPath::type_definition().name("transitions"),
             "a state machine declares at least one transition",
         ));
     }
@@ -1722,6 +1774,7 @@ fn validate_process_meanings(domain_package: &DomainPackage) -> Vec<ModelRefusal
                     node: process.key.node.clone(),
                     artifact: None,
                     span: None,
+                    member: MemberPath::type_definition().name("identityFields"),
                 },
                 detail: format!(
                     "{}: TypeDefinition.identityFields: a process declaration must supply identityFields or inherit them from a process supertype",
@@ -1753,12 +1806,45 @@ fn validate_process_meanings(domain_package: &DomainPackage) -> Vec<ModelRefusal
                     node: process.key.node.clone(),
                     artifact: None,
                     span: None,
+                    member: MemberPath::type_definition()
+                        .name("supertypes")
+                        .index(position),
                 },
                 detail,
             });
         }
     }
     refusals
+}
+
+/// The operations `owner` declares, with each one's position in the
+/// declaration's `operations` array (the order the reader recorded them).
+fn declared_operations<'a>(
+    domain_package: &'a DomainPackage,
+    owner: &'a DeclarationKey,
+) -> impl Iterator<
+    Item = (
+        usize,
+        &'a crate::model::domain_package::OperationMemberRecord,
+    ),
+> {
+    domain_package
+        .records
+        .iter()
+        .filter_map(move |record| match record {
+            DomainPackageRecord::OperationMember(operation) if &operation.owner == owner => {
+                Some(operation)
+            }
+            _ => None,
+        })
+        .enumerate()
+}
+
+fn owned_member(owner: &DeclarationKey, member: MemberPath) -> OwnedMemberPath {
+    OwnedMemberPath {
+        owner: owner.clone(),
+        member,
+    }
 }
 
 fn is_ordinary_object_type(package: &DomainPackage, key: &DeclarationKey) -> bool {
@@ -2005,6 +2091,27 @@ fn check_node<'a>(
                     cause: ModelRefusalCause::UnsupportedDeclarationForm {
                         node: clause.key.node.clone(),
                         what: format!("{meaning}:clauses"),
+                        member: {
+                            let position = domain_package
+                                .records
+                                .iter()
+                                .take_while(|record| record.key() != &clause.key)
+                                .filter(|record| {
+                                    matches!(record, DomainPackageRecord::Clause(other)
+                                        if other.owner == clause.owner)
+                                })
+                                .count();
+                            if operation_owner.is_some() {
+                                // A clause record does not say whether it is
+                                // the operation's `pre` or `post`, so the
+                                // path names the operation only.
+                                MemberPath::new(MemberRoot::Operation)
+                            } else {
+                                MemberPath::type_definition()
+                                    .name("clauses")
+                                    .index(position)
+                            }
+                        },
                     },
                     detail: format!(
                         "clause {}: {meaning} owns no quire invariant",
@@ -2184,17 +2291,28 @@ fn check_node<'a>(
             if relationship.source.role.is_some()
                 && !index.is_object_type(&relationship.source.type_identity)
             {
+                // The position the reader recorded in the declaring type's
+                // `relationships` array; a relationship with no slot is
+                // named at `Relationship` alone.
+                let member = relationship.declared_at.as_ref().map_or_else(
+                    || MemberPath::new(MemberRoot::Relationship),
+                    |slot| {
+                        MemberPath::type_definition()
+                            .name("relationships")
+                            .index(slot.index)
+                    },
+                );
                 refusals.push(ModelRefusal {
                     code: Code::InvalidModelBinding,
                     cause: ModelRefusalCause::IntakeMalformedDeclaration {
-                        node: relationship.source.type_identity.node.clone(),
+                        node: relationship.key.node.clone(),
                         artifact: None,
                         span: None,
+                        member: member.clone(),
                     },
                     detail: format!(
-                        "{}: TypeDefinition.relationships[0]: relationship source owner {} is not an object type",
-                        relationship.source.type_identity.node,
-                        relationship.source.type_identity.node
+                        "{}: {member}: relationship source owner {} is not an object type",
+                        relationship.key.node, relationship.source.type_identity.node
                     ),
                 });
             }
@@ -2207,6 +2325,7 @@ fn check_node<'a>(
                         node: relationship.key.node.clone(),
                         artifact: None,
                         span: None,
+                        member: MemberPath::new(MemberRoot::Relationship).name("target"),
                     },
                     detail: format!(
                         "{}: Relationship.target: {} is not a declared object type",
@@ -2259,7 +2378,10 @@ fn check_node<'a>(
     if !seen_keys.insert(key) {
         refusals.push(ModelRefusal {
             code: Code::InvalidModelBinding,
-            cause: ModelRefusalCause::ConflictingBinding { key: key.clone() },
+            cause: ModelRefusalCause::ConflictingBinding {
+                key: key.clone(),
+                member: None,
+            },
             detail: format!(
                 "{} is declared by more than one record in this domain package",
                 key.node
@@ -3726,6 +3848,7 @@ fn resolve_redefinition_contest(
                     type_: type_key.clone(),
                     member: target_key.clone(),
                     redefiners: edges.iter().map(|edge| edge.redefining.clone()).collect(),
+                    paths: Vec::new(),
                 },
                 detail: format!(
                     "type {} has {} undominated redefinitions of {}: {}",
@@ -4098,6 +4221,7 @@ mod tests {
                 field("model.Order/id", "model.Order"),
                 DomainPackageRecord::Relationship(RelationshipRecord {
                     key: DeclarationKey::fixture("model.Related"),
+                    declared_at: None,
                     source: RelationshipEnd {
                         type_identity: DeclarationKey::fixture("model.Order"),
                         role: Some("source".to_owned()),
@@ -4173,6 +4297,115 @@ mod tests {
                     .detail
                     .contains("namespace model/Outer contains namespace model/Inner")
         }));
+    }
+
+    /// A refused relationship is named at the position the reader recorded in
+    /// its declaring type's `relationships` array, not at a count of the
+    /// relationships sharing a source end.
+    #[test]
+    fn a_refused_relationship_names_its_declared_slot() {
+        use crate::model::domain_package::{
+            DeclaredSlot, Multiplicity, RelationshipDirection, RelationshipEnd, RelationshipRecord,
+        };
+        let end = |role: Option<&str>| RelationshipEnd {
+            type_identity: DeclarationKey::fixture("model.Number"),
+            role: role.map(str::to_owned),
+            multiplicity: Multiplicity {
+                lower: 0,
+                upper: None,
+                ordered: false,
+                unique: true,
+            },
+        };
+        let relationship = |name: &str, index: usize| {
+            DomainPackageRecord::Relationship(RelationshipRecord {
+                key: DeclarationKey::fixture(name),
+                declared_at: Some(DeclaredSlot {
+                    owner: DeclarationKey::fixture("model.Number"),
+                    index,
+                }),
+                source: end(Some("source")),
+                target: end(None),
+                direction: RelationshipDirection::SourceToTarget,
+            })
+        };
+        let package = package(vec![
+            DomainPackageRecord::ScalarType(crate::model::domain_package::ScalarTypeRecord {
+                key: DeclarationKey::fixture("model.Number"),
+                domain: ScalarValueDomain::Native(NativeValueType::Integer),
+            }),
+            relationship("model.Number/first", 4),
+            relationship("model.Number/second", 7),
+        ]);
+        let NormalizeOutcome::Refused(refusals) =
+            normalize(&package, ModelNormalizationLimits::UNLIMITED)
+        else {
+            panic!("a relationship owned by a scalar must be refused");
+        };
+        let members: Vec<_> = refusals
+            .iter()
+            .filter_map(|refusal| match &refusal.cause {
+                ModelRefusalCause::IntakeMalformedDeclaration { node, member, .. }
+                    if member.root() == MemberRoot::TypeDefinition =>
+                {
+                    Some((node.as_str(), member.to_string()))
+                }
+                _ => None,
+            })
+            .collect();
+        assert!(members.contains(&(
+            "model.Number/first",
+            "TypeDefinition.relationships[4]".to_owned()
+        )));
+        assert!(members.contains(&(
+            "model.Number/second",
+            "TypeDefinition.relationships[7]".to_owned()
+        )));
+    }
+
+    /// A refused quire clause on a namespace names its own position among
+    /// the owner's clauses, not the first.
+    #[test]
+    fn a_refused_clause_names_its_position_among_the_owners_clauses() {
+        let scope = DeclarationKey::fixture("model/Scope");
+        let package = package(vec![
+            object_type("model.Order", &[]),
+            DomainPackageRecord::Namespace(NamespaceRecord {
+                key: scope.clone(),
+                members: vec![DeclarationKey::fixture("model.Order")],
+                vocabulary: Vec::new(),
+            }),
+            DomainPackageRecord::Clause(ClauseRecord {
+                key: DeclarationKey::fixture("model/Scope/First"),
+                owner: scope.clone(),
+                language: "ocl".to_owned(),
+                text: "true".to_owned(),
+            }),
+            DomainPackageRecord::Clause(ClauseRecord {
+                key: DeclarationKey::fixture("model/Scope/Second"),
+                owner: scope,
+                language: "quire".to_owned(),
+                text: "true".to_owned(),
+            }),
+        ]);
+        let NormalizeOutcome::Refused(refusals) =
+            normalize(&package, ModelNormalizationLimits::UNLIMITED)
+        else {
+            panic!("a quire clause on a namespace must be refused");
+        };
+        let members: Vec<_> = refusals
+            .iter()
+            .filter_map(|refusal| match &refusal.cause {
+                ModelRefusalCause::UnsupportedDeclarationForm { node, member, .. } => {
+                    Some((node.as_str(), member.to_string()))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            members,
+            [("model/Scope/Second", "TypeDefinition.clauses[1]".to_owned())]
+        );
     }
 
     /// The model-complete Invariant row permits an operation owner.
@@ -4253,7 +4486,7 @@ mod tests {
             assert!(refusals.iter().any(|refusal| {
                 refusal.code == Code::UnsupportedConstruct
                     && matches!(&refusal.cause,
-                    ModelRefusalCause::UnsupportedDeclarationForm { node, what }
+                    ModelRefusalCause::UnsupportedDeclarationForm { node, what, .. }
                     if node == &clause_key.node && what == &format!("{meaning}:clauses"))
             }));
         }
@@ -4307,6 +4540,7 @@ mod tests {
                 }),
                 DomainPackageRecord::Relationship(RelationshipRecord {
                     key: DeclarationKey::fixture("model.Related"),
+                    declared_at: None,
                     source: end.clone(),
                     target: end,
                     direction: RelationshipDirection::SourceToTarget,
@@ -4400,7 +4634,7 @@ mod tests {
                 };
                 assert!(refusals.iter().any(|refusal| {
                     refusal.code == Code::UnsupportedConstruct && matches!(&refusal.cause,
-                        ModelRefusalCause::UnsupportedDeclarationForm { node, what }
+                        ModelRefusalCause::UnsupportedDeclarationForm { node, what, .. }
                         if node == &clause_key.node && what == &format!("{}:clauses", crate::model::intake::meaning::PERSISTENCE_INTERFACE))
                 }));
             } else {

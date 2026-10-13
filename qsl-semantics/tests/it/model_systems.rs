@@ -126,6 +126,7 @@ fn relationship(
 ) -> DomainPackageRecord {
     DomainPackageRecord::Relationship(RelationshipRecord {
         key: DeclarationKey::fixture(identity),
+        declared_at: None,
         source: RelationshipEnd {
             type_identity: DeclarationKey::fixture(source),
             role: None,
@@ -1052,6 +1053,7 @@ fn two_components_sharing_one_declaration_key_refuse_conflicting_binding() {
                 refusal.cause,
                 ModelRefusalCause::ConflictingBinding {
                     key: DeclarationKey::fixture("model.Sys.pump"),
+                    member: None,
                 }
             );
         }

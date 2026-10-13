@@ -1033,7 +1033,8 @@ fn record_identity_operation_and_wrong_meaning_parent_remain_refused() {
         assert_eq!(refusals.len(), 1, "one restriction refusal for form {form}");
         if form == 1 {
             assert_eq!(refusals[0].code, Code::UnsupportedConstruct);
-            let ModelRefusalCause::UnsupportedDeclarationForm { node, what } = &refusals[0].cause
+            let ModelRefusalCause::UnsupportedDeclarationForm { node, what, .. } =
+                &refusals[0].cause
             else {
                 panic!("expected operation declaration-form refusal");
             };
@@ -1153,7 +1154,8 @@ fn namespace_field_operation_quire_clause_and_supertypes_remain_refused() {
                 "form {form}: {:?}",
                 refusals[0]
             );
-            let ModelRefusalCause::UnsupportedDeclarationForm { node, what } = &refusals[0].cause
+            let ModelRefusalCause::UnsupportedDeclarationForm { node, what, .. } =
+                &refusals[0].cause
             else {
                 panic!("expected namespace declaration-form refusal");
             };
