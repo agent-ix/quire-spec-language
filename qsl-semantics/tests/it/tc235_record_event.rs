@@ -896,7 +896,11 @@ fn tc235_m22_flags_parameter_is_assembled_as_a_record() {
 /// two Money values. This crate checks the exact field and clause bindings;
 /// the downstream evaluation vector distinguishes matching from differing
 /// currency fields.
-#[test]
+///
+/// Mutation used (derived by reading `read_clauses` in `model/intake.rs`, not
+/// executed): recording the wrong clause `owner` flips `clause.owner ==
+/// Order`; dropping the field's `typeRef` flips the `ValueTypeRef::Package`
+/// assertion; the 23-charge count fails if either record is not read.
 fn tc235_m02_record_value_field_and_clause_bind_to_order() {
     let document = mutate_k2(|document| {
         let order = type_named_mut(document, "Order");
@@ -928,7 +932,15 @@ fn tc235_m02_record_value_field_and_clause_bind_to_order() {
 /// TC-235 M13 preserves all six Money-valued access paths used by the runtime
 /// vector: two direct fields, a bounded sequence, a present optional, and an
 /// invocation parameter, plus the Money invariant itself.
-#[test]
+///
+/// The runtime half (four violation paths, run 2's `forbidden-pre-read`) is
+/// deferred to the state-clause work in QSL-723.
+///
+/// Mutation used (derived by reading `multiplicity` and `read_clauses` in
+/// `model/intake.rs`, not executed): ignoring `upper` flips
+/// `history.multiplicity.upper == Some(3)`; reading `presence` as required
+/// flips the `discount` optional assertion; dropping the operation parameter
+/// flips `operation.parameters.len() == 1`.
 fn tc235_m13_record_invariant_binds_all_reachable_value_sources() {
     let document = mutate_k2(|document| {
         type_named_mut(document, "Money")["clauses"] =
@@ -1061,7 +1073,14 @@ fn tc235_m13_record_invariant_binds_all_reachable_value_sources() {
 /// TC-235 M14 binds an invariant on an event type without inventing an event
 /// value from the unrelated Order observation. The pre-read rejection is a
 /// downstream evaluation result; this layer retains the exact clause text.
-#[test]
+///
+/// The evaluation half (no result for `Occurred`; run 2's
+/// `wrong_snapshot`/`forbidden-pre-read`) is deferred to QSL-723.
+///
+/// Mutation used (derived by reading `model/event.rs`, not executed):
+/// dropping the event's `occurrence_field` flips the
+/// `event.occurrence_field == Some(..)` assertion; dropping the clause record
+/// flips `clause_for(.., "OrderPlaced/Occurred")`.
 fn tc235_m14_event_invariant_is_bound_without_an_event_value() {
     for (text, expected) in [
         (
@@ -1098,6 +1117,20 @@ fn tc235_m14_event_invariant_is_bound_without_an_event_value() {
 /// TC-235 M17 keeps the record subtype's inherited fields and invariant under
 /// its own effective identity, and reports wrong-meaning ancestry and a
 /// specialization cycle with the specified typed outcomes.
+///
+/// Deviations from the TC-235 M17 row. Run 3: the row lists one
+/// specialization-cycle refusal over `[Money, TaxedMoney]`; the engine reports
+/// one refusal per declaration on the cycle (`Money` then `TaxedMoney`), as
+/// FR-082 requires ("refuse specialization for every declaration on the
+/// cycle"), and this test asserts both. Run 2: the wrong-meaning supertype is
+/// refused by the reader (`read_refusals`), before `normalize.record` runs, so
+/// no 24-charge count is asserted; the row states 24.
+///
+/// Mutation used (derived by reading `model/intake.rs`, not executed): run 1,
+/// removing the supertype inheritance flips the `effective_members` equality;
+/// run 2, accepting a non-record supertype flips `read_refusals` to empty;
+/// run 3, bypassing the cycle mapping in `intake.rs` flips
+/// `cycle_refusals.len() == 2` and the `SpecializationCycle` cause match.
 #[test]
 fn tc235_m17_record_value_specialization_vectors() {
     let positive_document = mutate_k2(|document| {
@@ -1315,4 +1348,86 @@ fn qsl_732_event_subtype_conforms_to_its_parent_event() {
     assert!(!types.composite_conforms(placed, express));
     let money = assembled_composite(&declarations, "M::Money").key();
     assert!(!types.composite_conforms(express, money));
+}
+
+/// TC-235 M17 run 1, value half: `TaxedMoney` value `t` is accepted where
+/// `Order/total` (typed `Money`) is read, keeps its own `TaxedMoney` identity
+/// and is not equal to a `Money` value.
+///
+/// Mutation used (derived by reading `TypeEnvironment::admits`, not executed):
+/// removing the composite supertype edge from `TaxedMoney` to `Money` flips
+/// the `admits(Money, child)` assertion from true to false. Making record
+/// equality ignore the declaration identity flips the `child != parent`
+/// assertion.
+#[trace("FR-056-AC-18", "TC-235")]
+#[test]
+fn tc235_m17_run1_taxed_money_is_accepted_at_order_total_and_unequal_to_money() {
+    use quire_exact::{Value, ValueType};
+    let document = k2_record_event_subtype_slice(true);
+    let declarations = assemble_k2_unit(
+        &document,
+        "function noop using v(money: M::Money): Integer pure { 0 }",
+    );
+    let money = assembled_composite(&declarations, "M::Money").key();
+    let taxed = assembled_composite(&declarations, "M::TaxedMoney").key();
+    let child = money_value(&declarations, "M::TaxedMoney", true);
+    let parent = money_value(&declarations, "M::Money", false);
+
+    assert!(declarations
+        .types
+        .admits(&ValueType::Composite(money), &child));
+    let Value::Composite(record) = &child else {
+        panic!("t is a composite value");
+    };
+    assert_eq!(record.declaration(), taxed, "t keeps its TaxedMoney type");
+    let unlimited = quire_exact::ScalarLimits {
+        integer_bits: u64::MAX,
+        decimal_digits: u64::MAX,
+        scale_expansion: u64::MAX,
+        text_input_bytes: u64::MAX,
+        text_scalars: u64::MAX,
+        normalized_scalars: u64::MAX,
+        unit_edges: u64::MAX,
+        value_occurrences: u64::MAX,
+        work_units: u64::MAX,
+        result_units: u64::MAX,
+    };
+    let mut meter = quire_exact::Meter::new(unlimited);
+    let equal = quire_exact::planned_equality(&child, &parent, &mut meter)
+        .completed()
+        .expect("equality of two admitted records completes");
+    assert!(!equal, "t is not equal to a Money value");
+}
+
+/// TC-235 M18 run 1, consumption half: `ExpressOrderPlaced` is accepted
+/// wherever `Fulfilment` step `receive_order` consumes `OrderPlaced`.
+///
+/// Mutation used (derived by reading `TypeEnvironment::composite_conforms`,
+/// not executed): removing the event supertype edge flips the
+/// `composite_conforms(express, consumed)` assertion to false.
+#[trace("FR-056-AC-18", "TC-235")]
+#[test]
+fn tc235_m18_run1_express_event_conforms_to_the_event_receive_order_consumes() {
+    let document = k2_record_event_subtype_slice(true);
+    let package = read_k2(&document).expect("M18 slice reads");
+    let steps = package
+        .records
+        .iter()
+        .find_map(|record| match record {
+            DomainPackageRecord::Process(process) if process.key == key("Fulfilment") => {
+                Some(&process.steps)
+            }
+            _ => None,
+        })
+        .expect("Fulfilment retains its steps");
+    assert_eq!(steps[0].name, "receive_order");
+    assert_eq!(steps[0].consumes, [key("OrderPlaced")]);
+
+    let declarations = assemble_k2_unit(
+        &document,
+        "function noop using v(money: M::Money): Integer pure { 0 }",
+    );
+    let consumed = assembled_composite(&declarations, "M::OrderPlaced").key();
+    let express = assembled_composite(&declarations, "M::ExpressOrderPlaced").key();
+    assert!(declarations.types.composite_conforms(express, consumed));
 }
