@@ -392,6 +392,12 @@ pub enum ModelRefusalCause {
         /// The `typeRef` the operation names it at:
         /// `Operation.params[i].typeRef` or `Operation.returns.typeRef`.
         member: MemberPath,
+        /// The operation's source artifact, as
+        /// [`Self::IntakeMalformedDeclaration`]'s own field.
+        artifact: Option<String>,
+        /// The operation's source position, as
+        /// [`Self::IntakeMalformedDeclaration`]'s own field.
+        span: Option<LocatedSpan>,
     },
     /// An operation effect writes a field that is not a declared member.
     UnknownFieldWrite {
@@ -1506,6 +1512,8 @@ pub mod fixtures {
             parameter: Some(key("p")),
             value_type: ValueTypeRef::Package(key("p")),
             member: crate::model::refusal::MemberPath::new(crate::model::refusal::MemberRoot::Operation),
+            artifact: None,
+            span: None,
         },
         UnknownFieldWrite => ModelRefusalCause::UnknownFieldWrite {
             operation: key("p"),

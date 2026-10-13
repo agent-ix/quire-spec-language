@@ -1861,6 +1861,26 @@ fn is_ordinary_object_type(package: &DomainPackage, key: &DeclarationKey) -> boo
     })
 }
 
+/// A `malformed-declaration` cause at `key`'s node and `member`, retaining the
+/// node's FCD origin when the package kept one (FR-154: every declaration
+/// refusal keeps the node identity and its origin). A package built without
+/// the reader has no origin, so artifact and span are then `None`.
+pub(crate) fn malformed_at(
+    package: &DomainPackage,
+    key: &DeclarationKey,
+    member: MemberPath,
+) -> ModelRefusalCause {
+    let (artifact, span) = package.original(key).map_or((None, None), |original| {
+        crate::model::intake::origin_locus(&original.origin)
+    });
+    ModelRefusalCause::IntakeMalformedDeclaration {
+        node: key.node.clone(),
+        artifact,
+        span,
+        member,
+    }
+}
+
 fn signature_type_refusal(
     package: &DomainPackage,
     operation: &DeclarationKey,
@@ -1904,15 +1924,15 @@ fn signature_type_refusal(
     let (code, cause, reason) = if forbidden_meaning {
         (
             Code::InvalidModelBinding,
-            ModelRefusalCause::IntakeMalformedDeclaration {
-                node: operation.node.clone(),
-                artifact: None,
-                span: None,
-                member,
-            },
+            malformed_at(package, operation, member),
             "has a meaning forbidden as a signature value type",
         )
     } else {
+        let (artifact, span) = package
+            .original(operation)
+            .map_or((None, None), |original| {
+                crate::model::intake::origin_locus(&original.origin)
+            });
         (
             Code::DanglingReference,
             ModelRefusalCause::UnknownValueType {
@@ -1920,6 +1940,8 @@ fn signature_type_refusal(
                 parameter: parameter.map(|(_, key)| key.clone()),
                 value_type: value_type.clone(),
                 member,
+                artifact,
+                span,
             },
             "is not a declared type",
         )
@@ -2218,11 +2240,17 @@ fn check_node<'a>(
             }
         }
         DomainPackageRecord::Namespace(namespace) => {
-            for member in &namespace.members {
+            for (position, member) in namespace.members.iter().enumerate() {
                 if index.is_namespace(member) {
                     refusals.push(ModelRefusal {
                         code: Code::InvalidModelBinding,
-                        cause: ModelRefusalCause::MalformedDeclaration,
+                        cause: malformed_at(
+                            domain_package,
+                            &namespace.key,
+                            MemberPath::type_definition()
+                                .name("members")
+                                .index(position),
+                        ),
                         detail: format!(
                             "namespace {} contains namespace {}",
                             namespace.key.node, member.node
@@ -2407,13 +2435,19 @@ fn check_node<'a>(
         // a declared object type; a missing one refuses
         // `missing_declaration`/`missing-name`.
         DomainPackageRecord::Population(population) => {
-            for type_name in &population.member_types {
+            for (position, type_name) in population.member_types.iter().enumerate() {
                 // FR-208-AC-9: a record value type is a declared type of
                 // another meaning, not a missing one.
                 if index.is_record_value_type(type_name) {
                     refusals.push(ModelRefusal {
                         code: Code::InvalidModelBinding,
-                        cause: ModelRefusalCause::MalformedDeclaration,
+                        cause: malformed_at(
+                            domain_package,
+                            &population.key,
+                            MemberPath::new(MemberRoot::PopulationDefinition)
+                                .name("members")
+                                .index(position),
+                        ),
                         detail: format!(
                             "population {} names member type {}, a record value type, not an object type",
                             population.key.node, type_name.node
@@ -4358,10 +4392,13 @@ mod tests {
         };
         assert!(namespace_refusals.iter().any(|refusal| {
             refusal.code == Code::InvalidModelBinding
-                && refusal.cause == ModelRefusalCause::MalformedDeclaration
-                && refusal
-                    .detail
-                    .contains("namespace model/Outer contains namespace model/Inner")
+                && refusal.cause
+                    == (ModelRefusalCause::IntakeMalformedDeclaration {
+                        node: outer.node.clone(),
+                        artifact: None,
+                        span: None,
+                        member: MemberPath::type_definition().name("members").index(0),
+                    })
         }));
     }
 

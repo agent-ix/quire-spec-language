@@ -325,13 +325,22 @@ fn a_relationship_end_naming_a_record_value_type_refuses_malformed() {
     let refusals: Vec<_> = classification
         .refusals
         .iter()
-        .filter(|refusal| refusal.detail.contains("model.Sys.owes"))
+        .filter(|refusal| {
+            matches!(&refusal.cause, ModelRefusalCause::IntakeMalformedDeclaration { node, .. }
+                if node == "model.Sys.owes")
+        })
         .collect();
     assert_eq!(refusals.len(), 1, "{:?}", classification.refusals);
     assert_eq!(refusals[0].code, Code::InvalidModelBinding);
-    assert_eq!(refusals[0].cause, ModelRefusalCause::MalformedDeclaration);
-    assert!(refusals[0].detail.contains("target end"));
-    assert!(refusals[0].detail.contains("model.Money"));
+    assert_eq!(
+        refusals[0].cause,
+        ModelRefusalCause::IntakeMalformedDeclaration {
+            node: "model.Sys.owes".to_owned(),
+            artifact: None,
+            span: None,
+            member: "Relationship.target".parse().unwrap(),
+        }
+    );
 }
 
 #[trace("TC-235", "FR-086-AC-3")]

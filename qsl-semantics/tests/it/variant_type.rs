@@ -621,9 +621,22 @@ fn a_field_typed_by_a_variant_type_refuses_at_the_field() {
     assert_malformed(&found[0], "Account/tier", "Field.typeRef");
 }
 
+/// The origin the signature refusals retain: the operation's own FCD
+/// `origin.source` (the `operation` helper writes `spec`, line 1, column 1).
+fn assert_operation_origin(refusal: &ModelRefusal) {
+    let ModelRefusalCause::IntakeMalformedDeclaration { artifact, span, .. } = &refusal.cause
+    else {
+        panic!("expected a malformed declaration: {refusal:?}");
+    };
+    assert_eq!(artifact.as_deref(), Some(id("spec").as_str()));
+    let span = span.expect("the operation's source position is retained");
+    assert_eq!((span.start.line, span.start.column), (1, 1));
+}
+
 /// FR-056 "Variant types": a signature typeRef naming a variant type is a
 /// reference to a node of a meaning it may not name, `malformed-declaration`
-/// at the operation node, parameter and result alike.
+/// at the operation node, parameter and result alike, keeping the operation's
+/// origin.
 #[trace("TC-997", "FR-056-AC-32")]
 #[test]
 fn an_operation_signature_naming_a_variant_type_refuses_as_malformed() {
@@ -643,6 +656,35 @@ fn an_operation_signature_naming_a_variant_type_refuses_as_malformed() {
     assert_eq!(found.len(), 2, "parameter and result: {found:?}");
     let operation = "ConfigVersion/setTier";
     assert_malformed(&found[0], operation, "Operation.params[0].typeRef");
+    assert_malformed(&found[1], operation, "Operation.returns.typeRef");
+    found.iter().for_each(assert_operation_origin);
+}
+
+/// FR-056 "Variant types": the parameter position is the declared position,
+/// not a constant. Only the second parameter (and the result) name `Tier`.
+#[trace("TC-997", "FR-056-AC-32")]
+#[test]
+fn a_later_parameter_naming_a_variant_type_keeps_its_own_position() {
+    let tier = variant_type(
+        "Tier",
+        vec![case("Tier", "Gold", 10), case("Tier", "Standard", 11)],
+    );
+    let setter = operation(
+        "setTier",
+        json!([
+            operation_parameter("setTier", "n", "ix://quire/native/Integer"),
+            operation_parameter("setTier", "t", &id("Tier")),
+            operation_parameter("setTier", "m", "ix://quire/native/Integer"),
+        ]),
+        Some(&id("Tier")),
+        empty_frame(),
+    );
+    let bytes = config_version_document(setter, vec![variant_construct()], vec![tier], json!([]));
+    let document: Value = serde_json::from_slice(&bytes).unwrap();
+    let found = refusals(&document);
+    assert_eq!(found.len(), 2, "parameter and result: {found:?}");
+    let operation = "ConfigVersion/setTier";
+    assert_malformed(&found[0], operation, "Operation.params[1].typeRef");
     assert_malformed(&found[1], operation, "Operation.returns.typeRef");
 }
 
