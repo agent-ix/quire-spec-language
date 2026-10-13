@@ -4109,8 +4109,9 @@ fn phase3_specialization_cycle_refusal_wins_over_phase4_derivation_conflict() {
 ///
 /// Revert probe: hand-reverting `build()` to return the phase-4 refusal
 /// directly makes every case below fail -- `derivation_facts = 19` reports
-/// `Refused` instead of `Incomplete`, and every `work_units` case below 51
-/// reports `Refused` instead of `Incomplete`.
+/// `Refused` instead of `Incomplete`, and the 40 and 50 work-unit cases,
+/// which reach phase 4, report `Refused` instead of `Incomplete`. The
+/// 24-unit case stops inside phase 3 and stays `Incomplete`.
 #[trace("QSpec-TC-195", "QSpec-FR-150-AC-3", "QSpec-FR-150-AC-8")]
 #[test]
 fn n06_conflict_refusal_waits_for_every_phase4_charge_to_admit() {

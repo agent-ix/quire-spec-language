@@ -41,3 +41,20 @@ CONDITIONAL. The fix is correct and spec-derived. One medium test-oracle defect 
 | FND-003 | low | The doc comment of `systems_members_inherit_with_ordered_duplicate_end_facts` still says that keeping only one connection end makes the assertion fail. After this change the inherited `pipe` derivation is the same whether the owner has one end or two, so that mutation now passes this test. Only `systems_members_have_effective_owner_entries` (pipe = 2 qualify facts) catches it. | qsl-semantics/tests/it/model_systems.rs:492-497 |
 | FND-004 | low | The rewritten N02 charge doc still says "ten ten `(normalize.declaration, normalize.hash)` pairs, the universe and view". TC-195 N02 has eight declarations and ten hashes in total (eight declaration hashes plus the universe and the view). | qsl-semantics/tests/it/model_normalization.rs:2398-2399 |
 | FND-005 | low | The explicit `match member_preimages.entry(key)` with `Occupied`/`Vacant` arms existed only to charge qualify facts on the vacant arm. Its vacant arm now has no side effect, so it is `.entry(key).or_insert_with(...)`, the form the direct-member loop a few lines above already uses. | qsl-semantics/src/model/normalize.rs:2840-2851 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | low | The rewritten revert-probe doc says every `work_units` case below 51 reports `Refused` once `build()` returns the phase-4 refusal directly. The `work_units = 24` case is denied at a phase-2/3 fact; phase 4 never runs, so that revert cannot change it, and it stays `Incomplete`. The claim holds only for the cases that reach phase 4 (`derivation_facts = 19`, `work_units` 40 and 50). | qsl-semantics/tests/it/model_normalization.rs:4110-4113 |
+| FND-007 | low | The rewritten systems doc says dropping the ancestor-member grouping makes "the inherit facts and the fact-boundary assertion below" fail. The boundary case stops at the 21st fact, before any inherited member fact. Dropping the grouping only adds duplicate inherit facts after that point, so the 22nd charge is still a `normalize.fact` and `consumed == 21` still holds. Only the inherit-fact assertions catch the grouping mutation. The boundary catches the ancestor members being dropped entirely, as its own comment says. | qsl-semantics/tests/it/model_systems.rs:492-497 |
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 4108116476401c3043e4325b24d7f4c3f46cedb6 |
+| FND-002 | fixed | 4108116476401c3043e4325b24d7f4c3f46cedb6 |
+| FND-003 | fixed | 4108116476401c3043e4325b24d7f4c3f46cedb6 |
+| FND-004 | fixed | 4108116476401c3043e4325b24d7f4c3f46cedb6 |
+| FND-005 | fixed | 4108116476401c3043e4325b24d7f4c3f46cedb6 |

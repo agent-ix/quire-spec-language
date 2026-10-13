@@ -37,3 +37,10 @@ CONDITIONAL. Every ticket AC is backed. One medium coverage gap and one low spec
 - Reverse gaps: none. The change removes behaviour and adds none.
 - Stubs: none.
 - Plan completion: not assessed
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 4108116476401c3043e4325b24d7f4c3f46cedb6 |
+| FND-002 | fixed | 4108116476401c3043e4325b24d7f4c3f46cedb6 |
