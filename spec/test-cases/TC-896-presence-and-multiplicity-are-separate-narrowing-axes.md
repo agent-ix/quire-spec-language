@@ -35,7 +35,3 @@ Object type `Sub` specializes `Base`. `Base` declares a Boolean field `f`;
 - Step 2: the redefinition is admitted.
 - Steps 3 and 4: the redefinition is admitted, and no refinement obligation
   is recorded for `Sub.f`.
-
-## Status
-
-🚧 Planned.

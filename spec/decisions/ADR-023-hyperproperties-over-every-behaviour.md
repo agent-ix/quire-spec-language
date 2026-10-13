@@ -38,30 +38,6 @@ relationships:
 ---
 # ADR-023: Hyperproperties over every behaviour of a model
 
-## Status
-
-Proposed, 2026-10-01. The QSL compiler requirements that implement it are
-US-021, FR-163 and FR-171 to FR-184, with TC-596 to TC-611, TC-615, TC-616,
-TC-645 and TC-646. It builds on
-ADR-018, itself a draft, and follows the owner's rulings recorded there
-(ADR-018 RU-1 to RU-4): the explicit-state engine comes first; the unmarked
-fairness granularity is `whole` (ADR-018 FA-6); reachable deadlocks are
-reported by a derived deadlock-freedom item (ADR-018 DL-1 to DL-7); and
-infinite-trace formulas admit interval operators nested under unbounded ones
-(ADR-018 IV-1 to IV-7). It reads the strong-fairness (ADR-019), refinement
-(ADR-020), state-space reduction (ADR-021) and possible-properties (ADR-022)
-drafts for their interactions only. §12 records the owner's rulings on the
-draft's four questions; §13 to §16 carry the design they add. The owning
-ticket and related work are listed under References.
-
-"QSpec FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
-requirement. Item ids `HS-`, `HM-`, `HP-`, `HC-`, `HV-`, `HX-`, `PH-`,
-`RU-`, `PA-`, `CS-`, `XC-`, `SE-` and `QS-` are local to this record. Other artifacts cite them as `ADR-023 HM-3`.
-ADR-018 ids (`SM-`, `EN-`, `V-`, `FA-`, `CX-`, `DL-`, `IV-`) keep their
-meaning and are cited with their record.
-
-All state counts in §8 are hand enumeration; no QSL engine produced them.
-
 ## Context
 
 **What QSpec specifies.** QSpec FR-191 defines relational properties and
@@ -115,6 +91,14 @@ bounded model checking unrolls to depth `k` and solves a QBF (HyperQube, by
 Hsu, Sánchez and Bonakdarpour). Safety properties have a safety closure
 automaton in which every run of a trimmed Büchi automaton is accepting
 (Kupferman and Vardi).
+
+"QSpec FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
+requirement. Item ids `HS-`, `HM-`, `HP-`, `HC-`, `HV-`, `HX-`, `PH-`,
+`RU-`, `PA-`, `CS-`, `XC-`, `SE-` and `QS-` are local to this record. Other artifacts cite them as `ADR-023 HM-3`.
+ADR-018 ids (`SM-`, `EN-`, `V-`, `FA-`, `CX-`, `DL-`, `IV-`) keep their
+meaning and are cited with their record.
+
+All state counts in §8 are hand enumeration; no QSL engine produced them.
 
 ## Decision
 

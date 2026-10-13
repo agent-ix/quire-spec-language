@@ -202,7 +202,12 @@ impl Unit {
         );
         wire.declared_domains = domains;
         let decoded = ReplayRequest::decode(wire.clone(), ReplayLimits::default()).unwrap();
-        let limits = request_limits(decoded.stage_limits(), ReplayLimits::default()).unwrap();
+        let limits = request_limits(
+            decoded.stage_limits(),
+            decoded.accounting_limits(),
+            ReplayLimits::default(),
+        )
+        .unwrap();
         let compiled = recompile(&decoded, &limits).unwrap();
         let site = locate(
             &compiled,
@@ -645,7 +650,10 @@ fn tc_907_a_covering_harness_proves() {
         );
         assert_eq!(
             report.terminal_value(),
-            TerminalValue::Proved { success_checks: 4 }
+            TerminalValue::Proved {
+                basis: crate::ProofBasis::Checks { success_checks: 4 },
+                certification: crate::Certification::Certified,
+            }
         );
         assert_eq!(report.terminal_value().category(), Category::Success);
     };
@@ -833,7 +841,13 @@ fn tc_907_refinement_and_a_vacuous_run_settle_before_coverage() {
     );
     assert!(matches!(report.result(), VerifiedShadowResult::Vacuous));
     let terminal = report.terminal_value();
-    assert_eq!(terminal, TerminalValue::Proved { success_checks: 0 });
+    assert_eq!(
+        terminal,
+        TerminalValue::Proved {
+            basis: crate::ProofBasis::Checks { success_checks: 0 },
+            certification: crate::Certification::Certified,
+        }
+    );
     assert_eq!(terminal.category(), Category::Inconclusive);
     assert_eq!(
         terminal.vacuous_proof_cause(),
@@ -1077,7 +1091,12 @@ fn prepared(
 ) {
     let wire = unit.wire(function, claim, vec![]);
     let request = ReplayRequest::decode(wire, ReplayLimits::default()).unwrap();
-    let limits = request_limits(request.stage_limits(), ReplayLimits::default()).unwrap();
+    let limits = request_limits(
+        request.stage_limits(),
+        request.accounting_limits(),
+        ReplayLimits::default(),
+    )
+    .unwrap();
     let compiled = recompile(&request, &limits).unwrap();
     let site = locate(
         &compiled,

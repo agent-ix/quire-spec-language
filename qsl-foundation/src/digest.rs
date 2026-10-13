@@ -499,12 +499,10 @@ impl InvalidDigestRecord {
 
 /// A backend's own FR-331 provider-manifest digest (ADR-013 O-19), always in
 /// FR-201 domain `quire.tool-manifest.jcs/v1`. Relocated here from
-/// `qsl_route`, whose own module doc named it as the O-19 `backend` member's
-/// digest half: `qsl_route::Candidate` (layer R) and `qsl_replay::Backend`
-/// (layer 6) cannot depend on each other (ADR-011 §6.1), but both depend on
-/// this F crate, so the one domain-checked type lives here and both readers
-/// share it -- exactly the reasoning that already relocated [`WireNodeId`]
-/// from `replay` to this module.
+/// `qsl_route` and `qsl_replay` both depend on this F crate, so the one
+/// domain-checked type lives here and both readers share it -- exactly the
+/// reasoning that already relocated [`WireNodeId`] from `replay` to this
+/// module.
 ///
 /// The domain is fixed by construction: [`ManifestDigest::from_digest`]
 /// mints in that domain, and [`ManifestDigest::from_wire`] refuses any

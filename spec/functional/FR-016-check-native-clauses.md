@@ -116,15 +116,6 @@ and contains no healthy/violating assessment of an unsupplied population.
 - [NFR-005](../non-functional/NFR-005-rust-verification-paths.md) requires Rust verification paths.
 - [IT-005](../integration/IT-005-qualify-native-model-consumption.md) supplies real, separately qualified rule-model inputs.
 
-## Status
-
-Implemented and qualified by 24 native checker tests covering TC-025–029 and
-TC-046–053. The original reference/operation judgments execute through actual
-IR proofs. All caller budgets, deep expansion and independent guard
-assignments are exercised; nested and skipped runtime input requirements are
-retained. Task-010 owns final review/handoff. Population validation and execution
-remain downstream requirements, not results of this static qualification.
-
 ## References
 
 - Linear QSL-254 (AC-10: a field's presence, not its multiplicity, decides optionality).

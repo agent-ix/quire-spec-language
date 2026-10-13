@@ -45,6 +45,10 @@ pub mod standalone_setup;
 pub mod temporal;
 pub mod workspace;
 
+#[path = "admitted_charge.rs"]
+mod admitted_charge;
+pub(crate) use admitted_charge::admitted_charge_points;
+
 // See this module's own doc above: both are re-exports of copies nested
 // inside `standalone_setup`, not fresh `mod` declarations.
 pub(crate) use runtime_setup::native_rule_model;

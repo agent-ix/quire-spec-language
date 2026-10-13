@@ -54,6 +54,30 @@ clause under test.
 - A `ClauseRunReport` (FR-109): the frame run's disposition, the compiled
   package's `package_id`, and usage.
 
+## Frame witness
+
+An evaluated frame violation carries one `FrameWitness` with exactly these
+typed members:
+
+| Member | Value |
+| --- | --- |
+| `code` | `frame_violation` |
+| `cause` | `unauthorized-change` |
+| `invocation` | FR-106 `DocumentRef` of the checked invocation |
+| `pre` | FR-106 `DocumentRef` of its pre snapshot |
+| `post` | FR-106 `DocumentRef` of its post snapshot |
+| `population` | Declaration identity of the changed population |
+| `change` | One change variant below |
+
+`change` is exactly one of `FieldWrite { object, field, modifies }`,
+`Created { object, type_name, creates }`,
+`Deleted { object, type_name, deletes }`, or
+`Retyped { object, pre_type, post_type }`. `object` is the changed key;
+`field` is the declared field name; each type or permission entry is a
+`DeclarationKey` of the compiled package. `modifies`, `creates` and
+`deletes` retain their checked permission entries in declared order.
+`Retyped` has no authorizing permission.
+
 ## Behavior
 
 - The entry SHALL resolve `operation` as FR-104's Resolution resolves a
@@ -100,12 +124,13 @@ clause under test.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-115-AC-1 | Over the ConfigVersion unit and package (FR-108 fixtures), `Frame { operation: Config::ConfigVersion::attemptUpdate, invocation: changed-version }`, whose post changes only `child.versionNumber`, reports `evaluate`, `success`, `truth: true`, exit 0, with the compiled package's `package_id`. | Test (TC-514) |
-| FR-115-AC-2 | The forbidden-parent-change invocation (post sets `child.parent` absent) reports `evaluate`, `violation`, `truth: false`, exit 10, with a frame witness naming `child`, `parent` and the frame's `modifies` (`versionNumber`), cause `frame_violation`/`unauthorized-change`. A post that adds an object to `config_history` reports `violation` with a witness naming its creation. An invocation declaring `created: [child]` reports `evaluate`, `refusal`, `population_delta_mismatch`/`delta-disagreement`, exit 20. | Test (TC-514) |
-| FR-115-AC-3 | Stale identity: an expected `package_id` from another unit reports stage `compile`, `stale_dependency`, naming both; invocation bytes edited under their selected digest report stage `admit`, `stale_dependency`/`content-mismatch`; an invocation whose `model` digest differs reports `invalid_model_binding`/`wrong-model-selection`; an invocation of operation `probe` reports `wrong_snapshot`/`wrong-invocation`. None reaches `evaluate`. | Test (TC-514) |
-| FR-115-AC-4 | `Frame { operation: Config::ConfigVersion::missing }`, `Frame` on an operation no clause or attempt names, `Frame` on `Nope::ConfigVersion::attemptUpdate` (an alias no `model` declaration binds) and `Frame` on `Config::Missing::attemptUpdate` (a type the selected package does not declare) each report stage `select`, `missing_declaration`/`missing-name`. An invocation whose pre snapshot is absent from the provision reports `admit`, `incomplete`, `unavailable_observation`, not a violation. | Test (TC-514) |
-| FR-115-AC-5 | Running one `Frame` request twice gives equal reports, including usage. | Test (TC-514) |
-| FR-115-AC-6 | The entry resolves `M::T::op` once, to the object type's `DeclarationKey` in the package `M` selects and the operation's identifier, and selects by that resolution. Over a package where `Sub` specializes `ConfigVersion` and declares no operation, `Config::Sub::attemptUpdate` resolves to `Sub`'s key and selects `ConfigVersion`'s frame with `Sub` as context. In a unit selecting two packages that both declare `ConfigVersion`, as `Config` and `Copy`, each alias resolves `ConfigVersion` to its own package's key and selects that package's frame. | Test (TC-514) |
+| FR-115-AC-1 | Over the ConfigVersion unit and package (FR-108 fixtures), `Frame { operation: Config::ConfigVersion::attemptUpdate, invocation: changed-version }`, whose post changes only `child.versionNumber`, reports `evaluate`, `success`, `truth: true`, exit 0, with the compiled package's `package_id`. | Test |
+| FR-115-AC-2 | The forbidden-parent-change invocation (post sets `child.parent` absent) reports `evaluate`, `violation`, `truth: false`, exit 10, with a frame witness naming `child`, `parent` and the frame's `modifies` (`versionNumber`), cause `frame_violation`/`unauthorized-change`. A post that adds an object to `config_history` reports `violation` with a witness naming its creation. An invocation declaring `created: [child]` reports `evaluate`, `refusal`, `population_delta_mismatch`/`delta-disagreement`, exit 20. | Test |
+| FR-115-AC-3 | Stale identity: an expected `package_id` from another unit reports stage `compile`, `stale_dependency`, naming both; invocation bytes edited under their selected digest report stage `admit`, `stale_dependency`/`content-mismatch`; an invocation whose `model` digest differs reports `invalid_model_binding`/`wrong-model-selection`; an invocation of operation `probe` reports `wrong_snapshot`/`wrong-invocation`. None reaches `evaluate`. | Test |
+| FR-115-AC-4 | `Frame { operation: Config::ConfigVersion::missing }`, `Frame` on an operation no clause or attempt names, `Frame` on `Nope::ConfigVersion::attemptUpdate` (an alias no `model` declaration binds) and `Frame` on `Config::Missing::attemptUpdate` (a type the selected package does not declare) each report stage `select`, `missing_declaration`/`missing-name`. An invocation whose pre snapshot is absent from the provision reports `admit`, `incomplete`, `unavailable_observation`, not a violation. | Test |
+| FR-115-AC-5 | Running one `Frame` request twice gives equal reports, including usage. | Test |
+| FR-115-AC-6 | The entry resolves `M::T::op` once, to the object type's `DeclarationKey` in the package `M` selects and the operation's identifier, and selects by that resolution. Over a package where `Sub` specializes `ConfigVersion` and declares no operation, `Config::Sub::attemptUpdate` resolves to `Sub`'s key and selects `ConfigVersion`'s frame with `Sub` as context. In a unit selecting two packages that both declare `ConfigVersion`, as `Config` and `Copy`, each alias resolves `ConfigVersion` to its own package's key and selects that package's frame. | Test |
+| FR-115-AC-7 | The evaluated field write, creation, deletion and retype frame violations each carry exactly the FrameWitness members and the applicable change variant above, retaining the checked declaration keys and selected document references. | Test |
 
 ## Dependencies
 
@@ -116,15 +141,6 @@ clause under test.
 - QSpec FR-013 (frame enforcement), `native-diagnostics.md`
   (`frame_violation`, `population_delta_mismatch`).
 
-## Status
+## References
 
-Specified and implemented. The
-checked graph records each operation a clause or attempt names with its frame
-node (`CheckedGraph::operation_frame`, resolved by `TypeEnvironment::operation`
-as FR-104 resolves a clause's operation). `admit_frame_invocation` runs
-FR-106's checks 1 and 3 to 10, and the `ProtocolClause` S6a `evaluate` arm
-(`CheckedPackageEvaluation::evaluate_frame`) runs check 11 through the same
-`decide_frame` a clause run's admission uses. `run_clause`'s `Frame`
-selection reports a change outside the frame as
-`ClauseDisposition::FrameViolation` with its `FrameWitness`. AC-1 to AC-5 are
-tested (TC-514).
+- TC-514 exercises the Frame selection and its typed witness.

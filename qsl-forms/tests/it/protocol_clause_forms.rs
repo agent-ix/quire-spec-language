@@ -372,6 +372,61 @@ fn s2_captures_an_attempts_operation_name_and_contracts_list() {
     assert_eq!(declaration.name.name, "Tried");
 }
 
+/// QSL-667 reserves `absent` for lookup's absence mode, but the CST grammar
+/// still admits it as an operation member after `::`. S2 must read that
+/// structural member without requiring the ordinary identifier token class.
+#[trace("FR-102-AC-2")]
+#[test]
+fn s2_preserves_reserved_operation_member_names() {
+    for (source, kind) in [
+        (
+            "pre P using v on Config::ConfigVersion::absent { true }",
+            StateClauseKind::Precondition,
+        ),
+        (
+            "post P using v on Config::ConfigVersion::absent { true }",
+            StateClauseKind::Postcondition,
+        ),
+    ] {
+        let (text, unit) = build(source);
+        let form = state_clause(unit.forms()[0].form());
+        assert_eq!(form.kind, kind);
+        let operation = form.operation.as_ref().expect("the operation member");
+        assert_eq!(operation.name, "absent");
+        assert_eq!(
+            &text[form.context.span.start..form.context.span.end],
+            "Config::ConfigVersion"
+        );
+        assert_eq!(&text[operation.span.start..operation.span.end], "absent");
+    }
+}
+
+/// The same reserved member spelling is legal in an attempt operation name;
+/// retain its context and exact source span while the ordinary-name control
+/// remains covered by `s2_captures_an_attempts_operation_name_and_contracts_list`.
+#[trace("FR-114-AC-1", "TC-513")]
+#[test]
+fn s2_preserves_reserved_attempt_operation_members() {
+    let source = recovery_flow("Main::Committed", true, "").replacen(
+        "attempt Tried by R on Config::ConfigVersion::attemptUpdate",
+        "attempt Tried by R on Config::ConfigVersion::absent",
+        1,
+    );
+    let (text, unit) = build(&source);
+    let form = protocol_form(unit.forms()[0].form());
+    let attempt = &form.attempts[0];
+    assert_eq!(attempt.context.name, "Config::ConfigVersion");
+    assert_eq!(attempt.operation.name, "absent");
+    assert_eq!(
+        &text[attempt.context.span.start..attempt.context.span.end],
+        "Config::ConfigVersion"
+    );
+    assert_eq!(
+        &text[attempt.operation.span.start..attempt.operation.span.end],
+        "absent"
+    );
+}
+
 /// SR-770 FND-001/FND-008: S2 records what S3 needs to decide
 /// whether it checks a protocol in full -- the `using` alias, each role,
 /// each binder's declared type, each body block (whether it is a bare

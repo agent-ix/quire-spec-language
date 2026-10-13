@@ -43,10 +43,3 @@ Tag the tests `#[trace("TC-431", "FR-018-AC-8")]` and
 - Step 4: each refuses at the envelope stage with `invalid_runtime_input`,
   whose retained JSON error names that member, and the schema rejects the
   bytes.
-
-## Status
-
-Partial. The four-label form passed locally under ADR-013 §7 slice S-4b,
-with step 2's `blank-label` cause and `label` field (FR-001) asserted. The
-two-label form stated here waits on the artifact identity change (FR-018 and
-FR-024 Status).

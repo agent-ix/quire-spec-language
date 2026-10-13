@@ -1,78 +1,255 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! TC-177 (FR-069-AC-1): a client outside the crate, the code generator,
-//! builds terminal records and reads them into envelopes through
-//! `qsl_replay`'s root re-exports alone. As an integration test it reaches
-//! only the crate's public API, so a re-export that is not `pub` (such as
-//! `RequestIndex`, `Code` or `Std001Code`) fails to compile here.
+//! TC-773 / FR-289-AC-3: a client outside the crate builds a terminal record
+//! only from a replay result and a producing backend identity, then reads it
+//! through `qsl_replay`'s root re-exports alone.
 
 use ix_trace_rs::trace;
+use qsl_foundation::BackendId;
 use qsl_replay::{
-    read_backend_provider_envelope, std001_code, BackendProviderSource, CallSiteRefusal, Category,
-    Code, DeclineCode, InconclusiveCause, InternalFault, ProofRefusalCause, ReplayRefusal,
-    ReportedInconclusiveCause, RequestIndex, Std001Code, TerminalRecord, TerminalValue,
+    read_backend_provider_envelope, BackendProviderSource, CallSiteRefusal, Category, DeclineCode,
+    EvaluatedValue, InconclusiveCause, InputArmResult, InternalFault, ProofRefusalCause,
+    ReplayRefusal, ReplayResult, ReportedInconclusiveCause, RequestIndex, TerminalRecord,
+    TerminalValue, Verdict, WitnessArmResult, WitnessCheck,
 };
 
-/// Each record is keyed by the `RequestIndex` it was built with, a declined
-/// record carries its code (a QSL catalog code or a STD-001 registry code,
-/// each kept in its own registry), and an inconclusive record's envelope
-/// reports its own cause.
+fn violating_replay() -> ReplayResult {
+    ReplayResult::Witness(WitnessArmResult::settle_range_violation(
+        None,
+        Vec::new(),
+        qsl_replay::spine::default_accounting(0),
+    ))
+}
+
+/// A violation replay is the only public source of a refuted terminal record;
+/// the backend identity is carried through the envelope and its round trip.
+#[trace("TC-773", "FR-289-AC-3")]
+#[test]
+fn refuted_record_requires_replay_and_backend_evidence() {
+    let replay = violating_replay();
+    let record = TerminalRecord::new(
+        RequestIndex::new(7),
+        BackendId::new("replay-backend"),
+        &replay,
+    )
+    .unwrap();
+    let source = BackendProviderSource {
+        backend_identity: "replay-backend".to_owned(),
+        items: vec![record],
+    };
+    let first =
+        read_backend_provider_envelope(&source, qsl_replay::ReplayLimits::default()).unwrap();
+    assert_eq!(first[0].record().value(), &TerminalValue::Refuted);
+    assert_eq!(first[0].backend().as_str(), "replay-backend");
+    assert_eq!(
+        first[0].record().backend().unwrap().as_str(),
+        "replay-backend"
+    );
+    assert_eq!(first[0].record().replay_result(), Some(&replay));
+
+    let serialized = qsl_replay::ProofResultEnvelope::to_source(&first).unwrap();
+    let second =
+        read_backend_provider_envelope(&serialized, qsl_replay::ReplayLimits::default()).unwrap();
+    assert_eq!(second[0].record().value(), &TerminalValue::Refuted);
+    assert_eq!(second[0].backend().as_str(), "replay-backend");
+    assert_eq!(second[0].record().replay_result(), Some(&replay));
+}
+
+/// FR-289-AC-3 / TC-773 step 3: a replay that did not reproduce a violation
+/// cannot be relabelled as `refuted`.
+#[trace("TC-773", "FR-289-AC-3")]
+#[test]
+fn non_violating_replay_is_refused() {
+    let replay = ReplayResult::Witness(WitnessArmResult::settle(
+        qsl_replay::Verdict::from_category(Category::Success),
+        qsl_replay::Verdict::from_category(Category::Success),
+        Category::Success,
+        Some(EvaluatedValue::Boolean(true)),
+        qsl_replay::WitnessCheck::Agrees(None),
+        Vec::new(),
+        qsl_replay::spine::default_accounting(0),
+    ));
+
+    assert_eq!(
+        TerminalRecord::new(
+            RequestIndex::new(9),
+            BackendId::new("replay-backend"),
+            &replay,
+        ),
+        Err(qsl_replay::TerminalRecordRefusal::ReplayDidNotRefute(
+            Category::Success
+        ))
+    );
+}
+
+/// A violation category alone cannot turn an unsettled witness replay into
+/// refutation, whether parity failed or the replay completed no value.
+#[trace("TC-773", "FR-289-AC-3")]
+#[test]
+fn inconclusive_witness_replay_cannot_refute() {
+    let violation = Verdict::from_category(Category::Violation);
+    let success = Verdict::from_category(Category::Success);
+    for (replayed, value) in [
+        (success, Some(EvaluatedValue::Boolean(false))),
+        (violation, None),
+    ] {
+        let replay = ReplayResult::Witness(WitnessArmResult::settle(
+            violation,
+            replayed,
+            Category::Violation,
+            value,
+            WitnessCheck::Agrees(None),
+            Vec::new(),
+            qsl_replay::spine::default_accounting(0),
+        ));
+        assert_eq!(
+            TerminalRecord::new(RequestIndex::new(0), BackendId::new("backend"), &replay),
+            Err(qsl_replay::TerminalRecordRefusal::ReplayDidNotRefute(
+                Category::Inconclusive
+            ))
+        );
+    }
+}
+
+/// An input arm can report a violation, but it cannot supply the witness
+/// settlement needed for a refuted backend record.
+#[trace("TC-773", "FR-289-AC-3")]
+#[test]
+fn violating_input_arm_cannot_refute() {
+    let violation = Verdict::from_category(Category::Violation);
+    let replay = ReplayResult::Input(InputArmResult::settle(
+        violation,
+        violation,
+        Category::Violation,
+        Some(EvaluatedValue::Boolean(false)),
+        &WitnessCheck::Agrees(None),
+        Vec::new(),
+        qsl_replay::spine::default_accounting(0),
+    ));
+    assert_eq!(
+        TerminalRecord::new(RequestIndex::new(0), BackendId::new("backend"), &replay),
+        Err(qsl_replay::TerminalRecordRefusal::ReplayLacksWitness)
+    );
+}
+
+/// FR-289-AC-3 / TC-773: a provider envelope cannot claim a record
+/// produced by a different backend.
+#[trace("TC-773", "FR-289-AC-3")]
+#[test]
+fn record_backend_must_match_provider_identity() {
+    let record = TerminalRecord::new(
+        RequestIndex::new(4),
+        BackendId::new("record-backend"),
+        &violating_replay(),
+    )
+    .unwrap();
+    let result = read_backend_provider_envelope(
+        &BackendProviderSource {
+            backend_identity: "manifest-backend".to_owned(),
+            items: vec![record],
+        },
+        qsl_replay::ReplayLimits::default(),
+    );
+    assert!(matches!(
+        result,
+        Err(qsl_replay::ProofResultRefusal::BackendIdentityMismatch { .. })
+    ));
+}
+
+/// TC-177 / FR-069-AC-1: public constructors for non-refuted values remain
+/// available to an external facade client.
 #[trace("TC-177", "FR-069-AC-1")]
 #[test]
-fn terminal_records_are_built_and_read_through_the_facade_alone() {
+fn non_refuted_records_are_constructible_through_the_facade() {
+    let backend = BackendId::new("provider-backend");
+    let records = vec![
+        TerminalRecord::declined(
+            RequestIndex::new(0),
+            backend.clone(),
+            ProofRefusalCause::InvalidInput,
+            DeclineCode::Qsl(qsl_replay::Code::MissingDeclaration),
+        ),
+        TerminalRecord::inconclusive(
+            RequestIndex::new(1),
+            backend.clone(),
+            InconclusiveCause::ReplayRefused(qsl_replay::Code::StaleDependency),
+        ),
+        TerminalRecord::proved(RequestIndex::new(2), backend.clone(), 1),
+        TerminalRecord::failed(RequestIndex::new(3), backend.clone()),
+    ];
+    let envelopes = read_backend_provider_envelope(
+        &BackendProviderSource {
+            backend_identity: backend.as_str().to_owned(),
+            items: records,
+        },
+        qsl_replay::ReplayLimits::default(),
+    )
+    .unwrap();
+    assert_eq!(envelopes[0].record().value().category(), Category::Refusal);
+    assert_eq!(
+        envelopes[1].record().value().category(),
+        Category::Inconclusive
+    );
+    assert_eq!(
+        envelopes[2].record().value(),
+        &TerminalValue::Proved {
+            basis: qsl_replay::ProofBasis::Checks { success_checks: 1 },
+            certification: qsl_replay::Certification::Certified,
+        }
+    );
+    assert_eq!(envelopes[3].record().value(), &TerminalValue::Failed);
+}
+
+/// FR-127-AC-2 / AC-9: the certificate rejection labels and typed query/proof-step loci
+/// remain constructible and observable through the public facade.
+#[trace("TC-522", "FR-127-AC-2", "FR-127-AC-9")]
+#[test]
+fn certificate_rejection_vocabulary_is_constructible_through_the_public_facade() {
+    use qsl_replay::{CertificateLocus, CertificateRule, QueryPart};
+
+    let backend = BackendId::new("certificate-provider");
     let values = [
-        TerminalValue::Declined {
-            cause: ProofRefusalCause::InvalidInput,
-            code: DeclineCode::Qsl(Code::MissingDeclaration),
+        InconclusiveCause::CertificateRejected {
+            rule: CertificateRule::QueryMismatch,
+            at: CertificateLocus::Query {
+                part: QueryPart::Unrolling,
+            },
         },
-        TerminalValue::Declined {
-            cause: ProofRefusalCause::Refused,
-            code: DeclineCode::Std001(std001_code!("kani_corpus_identity_collision")),
+        InconclusiveCause::CertificateRejected {
+            rule: CertificateRule::ProofStepInvalid,
+            at: CertificateLocus::ProofStep {
+                part: QueryPart::Step,
+                index: u64::MAX,
+            },
         },
-        TerminalValue::Declined {
-            cause: ProofRefusalCause::Refused,
-            code: DeclineCode::Std001(Std001Code::new("kani_proved_vacuously").unwrap()),
-        },
-        TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(Code::StaleDependency)),
-        TerminalValue::Proved { success_checks: 0 },
     ];
     let source = BackendProviderSource {
-        backend_identity: "kani-backend-1".to_owned(),
+        backend_identity: backend.as_str().to_owned(),
         items: values
             .iter()
             .enumerate()
-            .map(|(index, value)| TerminalRecord::new(RequestIndex::new(index), value.clone()))
+            .map(|(index, cause)| {
+                TerminalRecord::inconclusive(
+                    RequestIndex::new(index),
+                    backend.clone(),
+                    cause.clone(),
+                )
+            })
             .collect(),
     };
-    let envelopes =
+    let read =
         read_backend_provider_envelope(&source, qsl_replay::ReplayLimits::default()).unwrap();
-
-    let categories: Vec<Category> = envelopes.iter().map(|e| e.category()).collect();
-    assert_eq!(
-        categories,
-        [
-            Category::Refusal,
-            Category::Refusal,
-            Category::Refusal,
-            Category::Inconclusive,
-            Category::Inconclusive
-        ]
-    );
-    for (index, envelope) in envelopes.iter().enumerate() {
-        assert_eq!(envelope.record().request_index().get(), index);
-        assert_eq!(envelope.record().value(), &values[index]);
+    assert_eq!(read.len(), values.len());
+    for (envelope, cause) in read.iter().zip(&values) {
+        assert_eq!(envelope.category(), Category::Inconclusive);
+        assert_eq!(
+            envelope.record().value(),
+            &TerminalValue::Inconclusive(cause.clone())
+        );
+        assert_eq!(
+            envelope.inconclusive_cause(),
+            Some(&ReportedInconclusiveCause::Cause(cause.clone()))
+        );
     }
-    assert_ne!(envelopes[0].record().value(), envelopes[1].record().value());
-    assert_eq!(envelopes[0].inconclusive_cause(), None);
-    assert_eq!(
-        envelopes[3].inconclusive_cause(),
-        Some(&ReportedInconclusiveCause::Cause(
-            InconclusiveCause::ReplayRefused(Code::StaleDependency)
-        ))
-    );
-    assert_eq!(
-        envelopes[4].inconclusive_cause(),
-        Some(&ReportedInconclusiveCause::KaniVacuousProof)
-    );
 }
 
 /// FR-121-AC-16: an `InternalFault` built through `qsl_replay::InternalFault`

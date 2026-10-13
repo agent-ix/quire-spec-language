@@ -137,7 +137,7 @@ pub fn replay_value_parity(
         package_id: wire.package_id.clone(),
         function: wire.selected_function.clone(),
         source: wire.source.clone(),
-        limits: wire.accounting_limits,
+        limits: wire.effective_accounting_limits(),
         generated,
     };
     let result = match settle(wire, &claim, replay_limits) {
@@ -155,7 +155,11 @@ fn settle(
     replay_limits: ReplayLimits,
 ) -> Result<ValueParityResult, ReplayRefusal> {
     let request = ReplayRequest::decode(wire, replay_limits)?;
-    let limits = request_limits(request.stage_limits(), replay_limits)?;
+    let limits = request_limits(
+        request.stage_limits(),
+        request.accounting_limits(),
+        replay_limits,
+    )?;
     let compiled = recompile(&request, &limits)?;
     let package = compiled.checked.package();
     let call = select(&compiled, request.selected_function(), Claim::ValueParity)?;

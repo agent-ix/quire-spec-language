@@ -43,9 +43,3 @@ bound succeeds with the final newline included. The raised value from the
 settings operation is the `FormatLimits.output_bytes` value consumed by the
 formatter, and a value above the default is honored. Formatting the successful
 output again is idempotent and preserves the checked package identity.
-
-## Status
-
-Planned. This case is the QSL-673 integration contract for QSL-605; the
-`format.output_bytes` row and FormatLimits/settings mapping remain pending
-until that implementation lands.

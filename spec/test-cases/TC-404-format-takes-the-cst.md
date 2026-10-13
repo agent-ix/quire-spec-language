@@ -11,15 +11,15 @@ relationships:
 ## Description
 
 Verify that `format` and `format_with_limit` take the S1 output
-`qsl_cst::ParsedSource` (ADR-011 §6.1 tool layer, §7.3 M-6a), that
-`src/format.rs` does not depend on the arena parse, and that inadmissible
+`qsl_cst::ParsedSource` (ADR-011 §6.1 layer 1, §7.3 M-6a), that
+`qsl-cst/src/format.rs` does not depend on the arena parse, and that inadmissible
 input is refused with a typed cause and no panic.
 
 Scope: FR-003-AC-7, FR-003-AC-8.
 
 ## Test Procedure
 
-1. Resolve every `use` edge and inline path in `src/format.rs`.
+1. Resolve every `use` edge and inline path in `qsl-cst/src/format.rs`.
 2. Parse, with `qsl_cst::parse`, complete-V1 source that holds a comment and
    a nested block. Confirm that the native arena parser refuses the same
    bytes.
@@ -37,10 +37,3 @@ Tag the test `#[trace("FR-003-AC-7", "FR-003-AC-8", "TC-404")]`.
   second pass gives identical bytes.
 - Every step-4 call returns a refusal with a typed cause and no string, and
   none panics.
-
-## Status
-
-Backed by `tests/it/native_boundaries.rs`:
-`format_takes_the_cst_and_depends_on_layer_1_and_f_only` (step 1),
-`format_formats_complete_v1_source_the_arena_parser_refuses` (steps 2 and 3)
-and `format_refuses_a_recovering_or_diagnosed_parse_without_output` (step 4).

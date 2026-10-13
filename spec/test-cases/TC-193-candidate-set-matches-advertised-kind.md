@@ -12,9 +12,10 @@ relationships:
 
 Verify that the registry's candidate-set computation for an unnamed request
 returns exactly the registered backends that advertise the item's capability
-kind, and none that do not; that an advertised mode does not filter
-candidacy; and that the registry module defines no second capability-kind
-enum. Scope: FR-075-AC-1, FR-075-AC-5.
+kind for ordinary items and, for `probabilistic-satisfaction`, only those that
+advertise the item's exact evidence kind; that an advertised mode does not
+filter candidacy; and that the registry module defines no second
+capability-kind enum. Scope: FR-075-AC-1, FR-075-AC-5.
 
 Catches an implementation that matches candidates by backend registration
 presence alone (any registered backend is a candidate for any item,
@@ -42,7 +43,11 @@ still violating FR-075-AC-5.
 5. Build a third registry with one backend, Backend D, advertising
    `finite-replay` in `bounded` mode only. Compute the candidate set for an
    item requiring `finite-replay` whose declared extent is `unbounded`.
-6. Run a source scan over the registry module (FR-075's implementation) for
+6. Build a registry with backend E advertising `probabilistic-satisfaction`
+   with `{statistical}` and backend F advertising it with `{exact}`. Compute
+   unnamed candidates for probabilistic items naming `statistical` and
+   `exact`.
+7. Run a source scan over the registry module (FR-075's implementation) for
    any enum or struct definition whose variants or fields name an FR-290
    capability-kind label, distinct from an import of the canonical
    `Capability` type.
@@ -54,6 +59,8 @@ a candidate set containing exactly Backend B. Step 4 returns an empty
 candidate set (Backend C does not advertise `value-validity`). Step 5
 returns a candidate set containing exactly Backend D: the item's unbounded
 extent does not exclude a bounded-only registrant from candidacy, because
-mode is not compared at this stage. Step 6 finds no locally defined
-capability-kind type; every capability-kind match in the registry module
-resolves to the one canonical `Capability` type.
+mode is not compared at this stage. Step 6 returns E only for the
+`statistical` item and F only for the `exact` item; neither evidence kind
+substitutes for the other. Step 7 finds no locally defined capability-kind
+type; every capability-kind match in the registry module resolves to the one
+canonical `Capability` type.

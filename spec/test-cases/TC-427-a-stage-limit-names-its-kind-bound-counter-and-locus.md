@@ -45,17 +45,3 @@ Tag the tests `#[trace("TC-427", "FR-096-AC-n")]` with the AC each backs.
   declaration's region; the synthesized function's limit has no locus.
 - Step 4: kind work budget, bound `W`, actual the spend the denied charge
   would have reached, the declaration's region.
-
-## Status
-
-Partly backed. Step 1:
-`limit_exceeded_reports_stage_limit_exceeded_per_kind`
-(`qsl-foundation/src/diagnostic/stage.rs`), for eight kinds; the
-seven-kind form and the setting are planned. Step 2 is planned; the present
-`the_s2_depth_limit_is_located_at_the_first_node_past_the_bound`
-(`qsl-forms/tests/it/value_forms.rs`) drives the S2 depth limit ADR-030
-deletes. Steps 3 and 4:
-`a_declaration_input_bytes_limit_is_located_at_the_declaration` and
-`a_denied_work_charge_is_located_at_the_declaration`
-(`qsl-semantics/src/check/family.rs`, `locus_tests`), over declarations
-read from real source through S1, S2 and the assembler.

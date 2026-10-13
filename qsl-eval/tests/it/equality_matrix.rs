@@ -362,7 +362,7 @@ fn real_public_enum_comparator_fault_retains_its_nested_ill_typed_cause() {
                 };
                 assert_eq!(cause, IllTypedCause::DistinctEnumDeclarations);
                 assert_eq!(fault.category(), qsl_foundation::Category::InternalFailure);
-                assert_eq!(meter.admitted_charges(), prefix);
+                assert_eq!(crate::support::admitted_charge_points(&meter), prefix);
                 if call {
                     let mut denied = Meter::new(UNLIMITED).with_injected_denial(InjectedDenial {
                         point: ChargePoint::FunctionCall,
@@ -394,7 +394,7 @@ fn real_public_enum_comparator_fault_retains_its_nested_ill_typed_cause() {
                     ChargePoint::EnumIdentityRead,
                     ChargePoint::EnumResultRetain,
                 ]);
-                assert_eq!(meter.admitted_charges(), prefix);
+                assert_eq!(crate::support::admitted_charge_points(&meter), prefix);
             }
         }
     }
@@ -610,7 +610,10 @@ fn e02_integers_and_admitted_rational_conversion() {
         converted.evaluate(&source, &rational(1, 1), &mut meter),
         Outcome::Completed(true)
     );
-    assert_eq!(meter.admitted_charges(), PLAN_SCHEDULE);
+    assert_eq!(
+        crate::support::admitted_charge_points(&meter),
+        PLAN_SCHEDULE
+    );
     assert!(matches!(&source, Value::Integer(value) if *value == integer(1)));
     assert_eq!(
         equal(&env, (&small, &source), (&ratio, &rational(1, 1))),
@@ -699,9 +702,7 @@ fn e05_quantities_after_explicit_canonical_unit_conversion() {
         converted.evaluate(&Value::Quantity(source.clone()), &one_metre, &mut meter),
         Outcome::Completed(true)
     );
-    assert!(!meter
-        .admitted_charges()
-        .contains(&ChargePoint::EqualityPlan));
+    assert!(!crate::support::admitted_charge_points(&meter).contains(&ChargePoint::EqualityPlan));
     assert_eq!(source, snapshot);
     assert_eq!(
         equal(
@@ -735,9 +736,9 @@ fn e06_text_under_one_pinned_profile() {
         ),
         Outcome::Completed(true)
     );
-    assert!(!meter
-        .admitted_charges()
-        .contains(&ChargePoint::EqualityPlanForm));
+    assert!(
+        !crate::support::admitted_charge_points(&meter).contains(&ChargePoint::EqualityPlanForm)
+    );
     assert_eq!(
         equal(
             &env,
@@ -1159,7 +1160,10 @@ fn e16_references_compare_identity_triple_only() {
         .code(),
         Some("foreign_reference")
     );
-    assert_eq!(meter.admitted_charges(), [ChargePoint::EqualityPlanForm]);
+    assert_eq!(
+        crate::support::admitted_charge_points(&meter),
+        [ChargePoint::EqualityPlanForm]
+    );
     assert_eq!(meter.consumed(LimitKind::WorkUnits), 2);
     assert_disjoint(&env, &r);
 }
@@ -1501,7 +1505,10 @@ fn e21_duplicated_and_shared_lists_charge_seventeen_pairs() {
             checked.evaluate(&left, &right, &mut meter),
             Outcome::Completed(true)
         );
-        assert_eq!(meter.admitted_charges(), expected_points.as_slice());
+        assert_eq!(
+            crate::support::admitted_charge_points(&meter),
+            expected_points
+        );
         assert_eq!(meter.consumed(LimitKind::WorkUnits), 51);
         assert_eq!(meter.consumed(LimitKind::ResultUnits), 1);
         assert_eq!(meter.consumed(LimitKind::ValueOccurrences), 17);
@@ -1623,7 +1630,10 @@ fn e23_plan_reservation_is_unavailable_after_plan_formation() {
             .evaluate(&left, &right, &mut meter),
         incomplete(LimitKind::WorkUnits, 50, 32, 19, ChargePoint::EqualityPlan)
     );
-    assert_eq!(meter.admitted_charges(), [ChargePoint::EqualityPlanForm]);
+    assert_eq!(
+        crate::support::admitted_charge_points(&meter),
+        [ChargePoint::EqualityPlanForm]
+    );
     assert_eq!(meter.consumed(LimitKind::ResultUnits), 0);
 }
 
@@ -1667,7 +1677,7 @@ fn e24_quantity_leaf_charges_only_its_pair() {
         Outcome::Completed(true)
     );
     assert_eq!(
-        meter.admitted_charges(),
+        crate::support::admitted_charge_points(&meter),
         [
             ChargePoint::EqualityPlanForm,
             ChargePoint::EqualityPlan,
@@ -1748,7 +1758,10 @@ fn e25_top_level_scalar_and_reference_equality_is_a_one_pair_plan() {
             checked.evaluate(&left, &right, &mut meter),
             Outcome::Completed(expected)
         );
-        assert_eq!(meter.admitted_charges(), PLAN_SCHEDULE);
+        assert_eq!(
+            crate::support::admitted_charge_points(&meter),
+            PLAN_SCHEDULE
+        );
         assert_eq!(meter.consumed(LimitKind::WorkUnits), 5);
     }
     let boolean = check(&env, &ValueType::Boolean, &ValueType::Boolean).unwrap();
@@ -2003,7 +2016,7 @@ fn e29_integer_to_decimal_conversion_charges_its_decimal_schedule() {
         ChargePoint::DecimalResultRetain,
     ];
     expected.extend(PLAN_SCHEDULE);
-    assert_eq!(meter.admitted_charges(), expected.as_slice());
+    assert_eq!(crate::support::admitted_charge_points(&meter), expected);
     assert_eq!(meter.consumed(LimitKind::WorkUnits), 9);
     assert_eq!(meter.consumed(LimitKind::ResultUnits), 2);
     // `sbits(1,2) = bits(1) + bits(100) = 8`, `sdigits(1,2) = 3`.
@@ -2184,7 +2197,7 @@ fn x01_rational_arithmetic_evaluates_and_its_range_and_divisor_are_obligations()
         );
         completed_as(&evaluation, expected);
         assert_eq!(
-            meter.admitted_charges().first(),
+            crate::support::admitted_charge_points(&meter).first(),
             Some(&ChargePoint::RationalArithmeticOperands)
         );
         check_in(&package, &parameters, expression, None, CheckMode::Linked).unwrap();

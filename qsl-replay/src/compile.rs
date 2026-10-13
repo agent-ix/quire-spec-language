@@ -56,7 +56,11 @@ pub fn compile_package<'a>(
     limits: StageLimits,
     replay_limits: ReplayLimits,
 ) -> Result<CompiledPackage, ReplayRefusal> {
-    let limits = request_limits(&limits, replay_limits)?;
+    let limits = request_limits(
+        &limits,
+        crate::limits::AccountingLimits::default().0,
+        replay_limits,
+    )?;
     dependencies
         .check_unit_owner(&source)
         .map_err(ReplayRefusal::DependencyInput)?;

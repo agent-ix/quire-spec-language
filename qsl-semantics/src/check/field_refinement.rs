@@ -48,7 +48,7 @@ use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
 use qsl_foundation::diagnostic::Code;
 use quire_exact::OrderingOperator;
 use quire_exact::{Integer, IntegerInterval};
-use quire_exact::{Value, ValueType};
+use quire_exact::{Presence, Value, ValueType};
 use quire_semantic_value::location::{Location, Origin};
 
 /// `self`, bound as local slot 0, for every synthetic guard tree
@@ -229,9 +229,10 @@ pub fn check_field_refinement_obligation(
 
     let same_type = redefining.value_type == redefined.value_type;
     let raises_lower = redefining.multiplicity.lower > redefined.multiplicity.lower;
-    let single_valued = redefining.multiplicity.upper.is_some_and(|u| u <= 1);
+    let narrows_presence =
+        redefined.presence == Presence::Optional && redefining.presence == Presence::Required;
 
-    if same_type && !raises_lower {
+    if same_type && !raises_lower && !narrows_presence {
         // No narrowing at all (or a narrower upper bound only, which this
         // rung treats under `no-proof-form` below, matching FR-151's
         // "an upper bound on a collection" example).
@@ -288,32 +289,32 @@ pub fn check_field_refinement_obligation(
         .collect();
     let established = established_facts(&field_clauses, domain)?;
 
-    if raises_lower && single_valued {
-        return if established.presence {
-            Ok(ConformanceOutcome::Compatible)
-        } else {
-            Ok(ConformanceOutcome::Refused(vec![AxisFailure {
-                axis: "refinement",
-                code: Code::UndefinedExpression,
-                cause: ModelRefusalCause::UnprovedRefinement,
-                detail: format!(
-                    "{} narrows the multiplicity of {} with no establishing presence fact (obligation field-presence)",
-                    redefining_key.node, redefined_key.node
-                ),
-            }]))
-        };
-    }
-
-    if raises_lower && !single_valued {
+    if narrows_presence && !established.presence {
         return Ok(ConformanceOutcome::Refused(vec![AxisFailure {
             axis: "refinement",
             code: Code::UndefinedExpression,
             cause: ModelRefusalCause::UnprovedRefinement,
             detail: format!(
-                "{} narrows a collection upper bound, which no FR-146 fact form expresses (obligation no-proof-form)",
-                redefining_key.node
+                "{} narrows the presence of {} with no establishing presence fact (obligation field-presence)",
+                redefining_key.node, redefined_key.node
             ),
         }]));
+    }
+
+    if raises_lower {
+        return Ok(ConformanceOutcome::Refused(vec![AxisFailure {
+            axis: "refinement",
+            code: Code::UndefinedExpression,
+            cause: ModelRefusalCause::UnprovedRefinement,
+            detail: format!(
+                "{} raises the lower multiplicity bound of {}, which no FR-146 fact form proves (obligation no-proof-form)",
+                redefining_key.node, redefined_key.node
+            ),
+        }]));
+    }
+
+    if narrows_presence && same_type {
+        return Ok(ConformanceOutcome::Compatible);
     }
 
     // Value type changed: field-domain via scalar interval containment, or

@@ -101,13 +101,6 @@ for checking; this requirement carries that rule through QSL's checker.
   defines arena order, the walker toolkit and the deep tests on every
   public core entry point.
 
-## Status
-
-- FR-258-AC-1, AC-2, AC-3, AC-5 and AC-6: backed (TC-725, TC-726, TC-727).
-- FR-258-AC-4: backed (TC-727): the node stop and the work stop through
-  package checking and the library builder, with their setting names, the
-  replay request's `stage_limits` entry and FR-255's settings operation.
-
 ## References
 
 - QSpec FR-146 (no checking depth limit; no host stack outcome) and FR-322

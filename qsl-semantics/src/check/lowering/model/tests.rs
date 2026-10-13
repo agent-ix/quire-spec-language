@@ -16,11 +16,13 @@ use quire_exact::{Integer, IntegerInterval, Presence};
 use serde_json::{json, Value as Json};
 use sha2::{Digest, Sha256};
 
-use super::super::{generated_location, LockEvidence, Lowering, SemanticGraph, SemanticNode};
+use super::super::{
+    generated_location, type_declaration, LockEvidence, Lowering, SemanticGraph, SemanticNode,
+};
 use super::*;
 use crate::check::checked_dispatch::{checked_dispatch_operation, DispatchRoot, OperationClauses};
 use crate::check::family::fixtures::{empty_scope, fixture_source};
-use crate::check::family::OccurrenceMap;
+use crate::check::family::{OccurrenceMap, OccurrenceRole};
 use crate::check::{CheckedGraph, PackageDeclarations};
 use crate::model::accounting::{Meter, ModelNormalizationLimits};
 use crate::model::dispatch::GeneralizationClosure;
@@ -32,6 +34,7 @@ use crate::model::domain_package::{
 use crate::model::normalize::{normalize, NormalizeOutcome};
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::{FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment};
+use quire_semantic_value::location::Location;
 
 mod expression_depth;
 
@@ -443,6 +446,16 @@ fn lower<T>(
     units: quire_semantic_value::quantity::UnitTable,
     build: impl FnOnce(&mut Lowering<'_>) -> T,
 ) -> (T, SemanticGraph) {
+    let (built, graph, _) = lower_with_occurrences(models, units, build);
+    (built, graph)
+}
+
+/// Shared lowering setup for tests that need to inspect occurrences.
+fn lower_with_occurrences<T>(
+    models: &[AdmittedModel],
+    units: quire_semantic_value::quantity::UnitTable,
+    build: impl FnOnce(&mut Lowering<'_>) -> T,
+) -> (T, SemanticGraph, OccurrenceMap<Location>) {
     let scope = empty_scope();
     let lock = LockEvidence::default();
     let mut occurrences = OccurrenceMap::default();
@@ -460,7 +473,8 @@ fn lower<T>(
         qsl_foundation::IdentityLimits::default(),
     );
     let built = build(&mut lowering);
-    (built, lowering.finish(&generated_location()).graph)
+    let graph = lowering.finish(&generated_location()).graph;
+    (built, graph, occurrences)
 }
 
 // ---------------------------------------------------------------------
@@ -586,6 +600,34 @@ fn a_relationship_keys_to_its_relation_node() {
         |lowering| lowering.model_node(&key("billedTo"), &generated_location()),
     );
     assert_vector(&graph, billed_to.expect("billedTo keys"), "M4");
+}
+
+/// A selected relationship is a model graph root even when no checked value
+/// or frame names it yet.
+#[trace("FR-093-AC-27", "FR-094-AC-9", "TC-417")]
+#[test]
+fn selected_relationships_are_rooted_in_the_checked_graph() {
+    let acme = admitted("1.0.0");
+    let model = acme.model.clone().with_alias("M");
+    let declaration = type_declaration("M");
+    let (result, graph, occurrences) = lower_with_occurrences(
+        std::slice::from_ref(&model),
+        Default::default(),
+        |lowering| {
+            lowering.relationship_nodes(&BTreeMap::from([("M".to_owned(), declaration.clone())]))
+        },
+    );
+    result.expect("the selected relationship keys");
+    let relations: Vec<_> = graph
+        .nodes()
+        .filter(|node| node.node_tag() == NodeTag::Relation)
+        .collect();
+    assert_eq!(relations.len(), 1, "billedTo is one relation node");
+    assert_eq!(relations[0].semantic_form(), "relationship");
+    let generated: Vec<_> = occurrences.iter_role(OccurrenceRole::Generated).collect();
+    assert_eq!(generated.len(), 1, "the unreferenced relation has one root");
+    assert_eq!(generated[0].0, relations[0].key());
+    assert_eq!(generated[0].2, &declaration);
 }
 
 /// TC-417 steps 4-5 (FR-094-AC-3, AC-4): the population and reference

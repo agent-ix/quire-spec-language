@@ -19,10 +19,9 @@
 //! `check_declaration_body`'s own `Typer` pass (a call nested anywhere in a
 //! checked body reaches the typer's `Call` arm, which resolves it through
 //! [`Application::resolve`] and builds it through [`Application::finish`]),
-//! not through a second, separate `CheckContext`-driven entry -- see
-//! [`Application`]'s own doc for why threading `CheckContext` into every
-//! nesting step of the general `Typer` engine (not just `Call`) is out of
-//! this ticket's scope.
+//! through the same enclosing check. The typer also carries that check's
+//! shared context for nested model questions, which it forwards to
+//! `check::state_model` without constructing another context per node.
 //!
 //! **Amended, PR #282 review F4:** FR-068's move surface names `family.rs`
 //! explicitly, alongside `check`, `evaluate`, `facts`, `ir`, `refusal`,
@@ -167,6 +166,9 @@ fn binary_operator_tag(operator: BinaryOperator) -> &'static str {
         BinaryOperator::Subtract => "subtract",
         BinaryOperator::Multiply => "multiply",
         BinaryOperator::Divide => "divide",
+        BinaryOperator::IntegerDiv => "integer-div",
+        BinaryOperator::IntegerRem => "integer-rem",
+        BinaryOperator::IntegerMod => "integer-mod",
         BinaryOperator::Equal => "equal",
         BinaryOperator::NotEqual => "not-equal",
         BinaryOperator::Less => "less",
@@ -563,7 +565,7 @@ fn encode_expression(
             }
             ExprNode::AllInstances { target, population } => {
                 out.write_str("all-instances");
-                encode_value_type(out, &targets.resolve(target)?);
+                measure_model_target(out, target);
                 pending.push(expr.at(*population));
             }
             ExprNode::Lookup {
@@ -573,7 +575,7 @@ fn encode_expression(
                 absence,
             } => {
                 out.write_str("lookup");
-                encode_value_type(out, &targets.resolve(target)?);
+                measure_model_target(out, target);
                 out.write_str(absence_mode_tag(*absence));
                 pending.extend([expr.at(*population), expr.at(*reference)]);
             }
@@ -618,6 +620,37 @@ fn encode_expression(
         pending[first..].reverse();
     }
     Ok(())
+}
+
+/// Measure authored model targets without resolving their S3 question.
+fn measure_model_target(out: &mut DeclarationMeter, root: &qsl_forms::TypeForm) {
+    use qsl_forms::{BuiltinType, TypeFormHead};
+    let mut pending = vec![root];
+    while let Some(form) = pending.pop() {
+        out.write_str(match &form.head {
+            TypeFormHead::Name(name) => name,
+            TypeFormHead::Collection(kind) => collection_kind_tag(*kind),
+            TypeFormHead::Population => "Population",
+            TypeFormHead::Builtin(builtin) => match builtin {
+                BuiltinType::Boolean => "Boolean",
+                BuiltinType::Integer => "Integer",
+                BuiltinType::Int => "Int",
+                BuiltinType::Rational => "Rational",
+                BuiltinType::Decimal => "Decimal",
+                BuiltinType::Float32 => "Float32",
+                BuiltinType::Float64 => "Float64",
+                BuiltinType::Text => "Text",
+                BuiltinType::Option => "Option",
+                BuiltinType::Reference => "Reference",
+            },
+        });
+        out.write_u64(quire_exact::length_amount(form.arguments.len()));
+        out.write_u64(quire_exact::length_amount(form.bounds.len()));
+        for bound in &form.bounds {
+            out.write_str(bound);
+        }
+        pending.extend(form.arguments.iter().rev());
+    }
 }
 
 /// Measure one function declaration's parsed size: its name,
@@ -670,8 +703,8 @@ pub struct DeclarationMetrics {
     pub(crate) work_budget: u64,
 }
 
-/// Resolves the `Convert`/`AllInstances`/`Lookup` target type forms
-/// [`measure_declaration`] measures, against the package's [`Scope`].
+/// Resolves conversion targets measured against the package's [`Scope`].
+/// Model targets are measured as authored syntax and resolved by their hook.
 pub(crate) struct TargetTypes<'a> {
     scope: &'a Scope,
     location: &'a CheckLocation,
@@ -735,7 +768,7 @@ impl<'a> TargetTypes<'a> {
 /// `CheckedGraph::check_clause_expression` (`check/mod.rs`) -- the entry
 /// every precondition, postcondition and operation body clause checks
 /// through -- builds its own `Typer` directly, with its own declaration-local
-/// `nodes` counter, and never constructs a `CheckContext` at all; it is a
+/// `nodes` counter and one enclosing shared `CheckContext`; it is a
 /// standalone public entry point on `CheckedGraph`, not something
 /// `ValueFunctionFamily::check` (or anything else reached from it) calls. An
 /// `Expression::Call` inside such a clause still reaches this same
@@ -745,16 +778,11 @@ impl<'a> TargetTypes<'a> {
 /// only the `CheckedGraph` caller that invoked `check_clause_expression`
 /// knows it happened at all.
 ///
-/// What this check does *not* do, on either path, is charge the
-/// contract's own `CheckContext` per node: that would mean threading `&mut
-/// CheckContext` through every form the typer checks, not just `Call`
-/// (`Let`'s body, `If`'s three arms, `Binary`'s operands, and so on all
-/// nest too) -- reworking the general engine for every form it checks,
-/// which is the reimplementation-scale change FR-065-CON-1 rules out here,
-/// not a small addition to this one check. That is real, reported `Typer`
-/// entanglement, not a gap this check papers over: `Typer`'s own
-/// [`super::CheckingLimits`] node charge, made at every node it enters, is
-/// what bounds a call's own nesting.
+/// The shared context reaches nested model checks through the typer.
+/// The enclosing declaration charges its work once; the typer's
+/// [`super::CheckingLimits`] node charge at every entered node bounds
+/// nesting on both paths. Application traversal remains on the same
+/// explicit stack and does not create another per-node context or meter.
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Application<'a> {
     /// A call of the declared function at index `function`.
@@ -1095,6 +1123,7 @@ pub(crate) struct CheckedDeclarationBody {
 pub(crate) fn check_declaration_body(
     input: &ValueDeclarations<'_>,
     form: &FunctionDeclaration,
+    cx: &mut crate::family::CheckContext<'_, Scope>,
 ) -> Result<CheckedDeclarationBody, CheckRefusal> {
     let mut nodes = input.nodes_used;
     // The declaration's resolved parameter and result types; `form`'s own
@@ -1108,7 +1137,9 @@ pub(crate) fn check_declaration_body(
         &mut nodes,
         form.clause_kind(),
     )
-    .with_cancel(input.cancel);
+    .with_cancel(input.cancel)
+    .with_complete_value(input.complete_value)
+    .with_context(cx.reborrow(input.scope));
     bind_parameters(&mut typer, parameters, input.location)?;
     typer.check_declared_type(result, input.location)?;
     let body = typer.check_as(&form.body, result, input.location)?;
@@ -1131,7 +1162,9 @@ pub(crate) fn check_declaration_body(
                 &mut nodes,
                 ClauseKind::Body,
             )
-            .with_cancel(input.cancel);
+            .with_cancel(input.cancel)
+            .with_complete_value(input.complete_value)
+            .with_context(cx.reborrow(input.scope));
             bind_parameters(&mut measure_typer, parameters, input.measure_location)?;
             let measure = measure_typer.infer(measure, None, input.measure_location)?;
             measure_slot_names = measure_typer.slot_names().to_vec();
@@ -1355,6 +1388,7 @@ pub struct ValueDeclarations<'a> {
     pub(crate) own_signature: &'a Signature,
     pub(crate) dispatch_tables: &'a [DispatchTable],
     pub(crate) checking_limits: CheckingLimits,
+    pub(crate) complete_value: bool,
     pub(crate) location: &'a CheckLocation,
     pub(crate) measure_location: &'a CheckLocation,
     /// See this struct's own doc.
@@ -1538,7 +1572,8 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
         // entry point (`Self::Checked` itself carries it -- PR #303 review,
         // finding N3 -- not a side-channel `Cell` `cx.declarations()`
         // would otherwise have to expose).
-        let checked_body = check_declaration_body(declarations, form);
+        let checked_body =
+            check_declaration_body(declarations, form, &mut cx.reborrow(declarations.scope));
         // PR #303 review, finding 11: this diagnostic is recorded only once
         // `check_declaration_body` has actually succeeded, not beforehand --
         // an earlier version logged "checked function declaration" right
@@ -1982,6 +2017,7 @@ pub mod fixtures {
             own_signature,
             dispatch_tables,
             checking_limits,
+            complete_value: false,
             location,
             measure_location: location,
             nodes_used: 0,
@@ -2025,6 +2061,23 @@ pub(crate) mod checking_tests {
     use crate::family::{CheckContext, DiagnosticSink, FamilyContract, ScopeStack, StageLimits};
     use ix_trace_rs::trace;
     use quire_exact::Meter;
+
+    fn check_declaration_body(
+        input: &ValueDeclarations<'_>,
+        form: &FunctionDeclaration,
+    ) -> Result<CheckedDeclarationBody, CheckRefusal> {
+        let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+        let mut diagnostics = DiagnosticSink::default();
+        let mut scopes = ScopeStack::default();
+        let mut cx = CheckContext::new(
+            input.scope,
+            limits(),
+            &mut meter,
+            &mut diagnostics,
+            &mut scopes,
+        );
+        super::check_declaration_body(input, form, &mut cx)
+    }
 
     /// A call of `name` over `arguments`, typed through the typer's `Call`
     /// arm: [`Application::resolve`], each argument's check, then

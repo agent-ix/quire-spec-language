@@ -39,11 +39,3 @@ Tag the tests `#[trace("TC-500", "FR-096-AC-14")]`.
 - Step 2: completes with `3`.
 - Step 3: `FamilyOutcome::Evaluated(Outcome::Undefined(Undefined::SumOutOfDomain))`,
   `Evaluation.location` the summand node, with no addition charged.
-
-## Status
-
-Passing locally. S6a's `sum` returns
-`Undefined::SumOutOfDomain` for a seed or running total outside `N`'s
-domain: located at the summand node for a seed and at the `sum` node for an
-addition, with no charge after the failed decision and no final-total
-refusal.

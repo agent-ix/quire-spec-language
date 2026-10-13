@@ -51,6 +51,10 @@ QSL's roots and edge rules.
 
 ## Behavior
 
+Detector scope: a comparison is branch-gating when it feeds an
+`if`/`while` condition or `match` scrutinee/guard, is a term of a `&&`/`||`
+chain, is a match arm's own value, or is a `strip_prefix` call.
+
 ### The marker attribute
 
 `#[string_edge]` SHALL be a tool attribute applicable to a function. It
@@ -225,98 +229,3 @@ comparisons, external constants or indirect branch dataflow.
   the same scan in their own repositories, over the same rule; this
   requirement builds the attribute and the scan tool that #141 and #86
   invoke, not their own edge inventories.
-
-## Status
-
-The consumer interface and acceptance criteria FR-064-AC-7 through
-FR-064-AC-11 are specified for implementation. The existing QSL-only
-evidence below does not establish consumer installation or adoption.
-
-**Implemented, with a stated residual.** `#[string_edge]` and `xtask
-string-edge` are built, `string-edge` is a prerequisite of `make ci` (the
-lint gate), and `cargo xtask string-edge` reports no unmarked, unlisted
-occurrence over the whole workspace. The detector resolves both a string
-literal and a comparison, method call or `match` arm against a named
-same-crate `const NAME: &str` (the string-value clause): `const
-NAME: &str` at module, `impl` and trait scope, matched by its last path
-segment. Every occurrence the scan finds is either a `#[string_edge]`-marked
-edge (an intake reader, a typed wire reader, CLI argument parsing, or a
-source scanner doing its one total conversion) or was converted onto a
-closed enum or typed identity. The allow-list is empty.
-
-Residual: the Behavior clause asks for a report on any comparison between a
-`&str`/`String` value and *any other* such value, and any `match` whose
-scrutinee is a string. The detector covers a literal and a same-crate named
-constant on one side; it does not resolve a comparison between two bindings
-(for example `adapter.observation_contract_revision != offered
-.observation_contract_revision`, neither side a literal or a named
-constant) or a constant defined in another crate. Both shapes are
-undetected today, not merely unmarked -- the scan cannot see them to report
-them. Extending the detector to those shapes is unticketed follow-up work,
-not scope this requirement claims to close.
-
-A re-measurement against a clean scan found 53 named-constant
-occurrences across roughly 35 functions the literal-only scan could not see.
-Wire, contract-version and format checks (the large majority) are marked
-`#[string_edge]`, each a genuine one-shot admission edge. Two sites got a
-real typed conversion rather than a mark, because a wire enum already
-existed to decode into instead of comparing forms directly:
-`qsl-semantics/src/check/lowering.rs`'s `name == FUNCTION_PARAMETERS` reads
-the parameters binding positionally (it is always the function node's first
-member, by construction, not merely by name); and `qsl-package/src/emit.rs`'s
-`semantic_form() == ENUM_VALUE_FORM` decodes through IR's existing
-`CheckedNodeKind::decode`/`ValueForm::EnumValue`, the same closed vocabulary
-`form_is_supported` already uses one line above it, rather than comparing
-the wire form string a second time.
-
-`qsl-semantics/src/check/claims.rs`'s `identity == NARROW`/`SCALAR_FAMILIES`
-compares (SR-758 FND-005) are marked `#[string_edge]`
-through one `operation_role` classifier, corrected here from an earlier
-claim that this was a typed conversion: `operation_role` re-derives the
-classification from the identity string on every call; nothing resolves it
-once and threads a stored value. Mutation-testing the two checks that read
-it (`claims.rs`'s narrow lookup and `emit.rs`'s `forced_absent` `EnumValue`
-arm, SR-758 FND-006) found neither is distinguished by any fixture in the
-tree today; both are kept as defensive checks against a future shape that
-would make the distinction load-bearing, documented at each site rather
-than removed, since FR-322 states the underlying rule as a property of the
-node kind, not as a fact this tree's current inputs happen to make trivial.
-
-Detector scope: a comparison is branch-gating when it feeds an
-`if`/`while` condition or `match` scrutinee/guard, is a term of a `&&`/`||`
-chain, is a match arm's own value, or is a `strip_prefix` call.
-
-**By Acceptance Criterion, with the tracking tags in
-`xtask/src/string_edge.rs` (all `TC-162`):**
-- FR-064-AC-1: backed.
-- FR-064-AC-2: backed
-  (`allow_listed_occurrence_is_silent_removing_the_entry_reports_it_again`).
-- FR-064-AC-3: backed (`cfg_test_module_is_not_scanned`,
-  `file_level_test_modules_are_skipped_only_when_declared_cfg_test`).
-- FR-064-AC-4: backed
-  (`a_non_empty_report_exits_non_zero_a_clean_scan_exits_zero`).
-- FR-064-AC-5: backed for the sites in the tree. The two-entry and
-  five-site-shape halves are synthetic fixtures tagged `FR-064-AC-5`, and
-  `named_string_consts_are_resolved_like_literals` covers the string-value
-  clause's own synthetic shapes (a module const, an assoc const, a method
-  call and a match arm). The real-site half is
-  `real_adr010_sites_are_flagged_branch_gating_by_the_structural_detector`,
-  which scans the real files with marks ignored and asserts the ADR-010 §4.3
-  dispatch strings still compared in the tree are branch-gating and rejected
-  as allow-list entries: `CanonicalizationDomain::from_str`
-  (`"filament-canonical-json-1"`), `AdapterArtifact::try_from`
-  (`"quire.state.authority-adapter"`) and `clock_binding_name` (`"clock:"`);
-  the same test also covers a real named-constant site the
-  re-measurement found (`operation_role`'s `identity == NARROW`,
-  `qsl-semantics/src/check/claims.rs`), proving the const-resolving detector,
-  not only the literal one, finds it. The `"quire.protocol.finite-global/v1"`
-  profile is registry data matched by the registry table, and the
-  `"allocation"` site is gone from the tree.
-  `combinator_terms_arm_values_and_prefix_gates_are_branch_gating` covers the
-  widened shapes.
-- FR-064-AC-6: backed (`the_real_makefile_wires_string_edge_into_ci`,
-  `a_failed_prerequisite_fails_the_aggregate_target`; the gate itself is
-  `make ci`).
-
-The original six acceptance criteria have the evidence listed above;
-consumer acceptance remains separate, as do the detector residuals above.

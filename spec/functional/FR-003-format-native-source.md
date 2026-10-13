@@ -77,7 +77,7 @@ checked package identity as checking the original source.
 | FR-003-AC-4 | Output beyond its selected ceiling receives `resource_exhausted`/`input-bytes-exceeded`; its rendered diagnostic calls this a format output-byte limit, reports the configured bound and emitted UTF-8 byte count, names `format.output_bytes`, and does not present the emitted count as input or source bytes. | Test (TC-931) |
 | FR-003-AC-5 | Exactly-at-ceiling output succeeds, including the final newline; zero or one-byte-short ceilings refuse without returning a partial string. | Test |
 | FR-003-AC-6 | format(source) and format_with_limit(source, 1048576) return identical bytes. Source whose formatted output exceeds 1 MiB refuses under format(source) naming the limit, its value and format_with_limit, and formats in full under format_with_limit with a limit raised to fit it. | Test |
-| FR-003-AC-7 | format and format_with_limit take a `qsl_cst::ParsedSource`. `src/format.rs` names no type from the arena `syntax` or native `parser` modules, and formatting complete-V1 source that the arena parser does not accept succeeds under AC-1 to AC-3. | Test (TC-404) |
+| FR-003-AC-7 | format and format_with_limit take a `qsl_cst::ParsedSource`. `qsl-cst/src/format.rs` names no type from the arena `syntax` or native `parser` modules, and formatting complete-V1 source that the arena parser does not accept succeeds under AC-1 to AC-3. | Test (TC-404) |
 | FR-003-AC-8 | format and format_with_limit refuse a `ParsedSource` whose CST carries a recovery, and one that carries a diagnostic and no recovery, each with a typed cause and no output string; neither call panics. | Test (TC-404) |
 | FR-003-AC-9 | For each complete-V1 fixture unit in the repository's tests that checks, checking its formatted source through the S1 to S4 spine yields a checked package identity equal to the original's, and formatting the formatted source again yields identical bytes. | Test (TC-885) |
 | FR-003-AC-10 | `FormatLimits` maps its only field, `output_bytes`, to FR-255's `format.output_bytes` through `SettingLimits`; `with_output_bytes` changes only that field, and the settings operation's `format.output_bytes=<n>` operand supplies the resulting value to `format_with_limits`. | Test (TC-931) |
@@ -88,19 +88,7 @@ checked package identity as checking the original source.
 - [ADR-011](../decisions/ADR-011-stage-dag-and-dependency-architecture.md)
   §6.1 (layer 1), §6.2 (`format` row) and §7.3 (M-6a row) set the input
   to the CST.
-- [Detailed contract or implementation evidence](../../src/format.rs) supplies the scoped context.
-
-## Status
-
-Draft. Specification review and prerequisite acceptance remain distinct from existing code/tests. No acceptance criterion is claimed satisfied solely because this artifact has been authored.
-
-The input is the CST (ADR-011 §7.3 M-6a). `src/format.rs` takes
-`qsl_cst::ParsedSource` and owns the one CST token walk, which
-`complete::editor::format_document` also calls. AC-1 to AC-3 are backed by
-TC-013, AC-4 to AC-6 by TC-016, AC-7 and AC-8 by TC-404, and AC-9 by
-TC-885. AC-6 states a caller-raisable ceiling; `src/format.rs` clamps
-every selected ceiling to 1 MiB today, so AC-6 is not met until that
-clamp goes.
+- [Detailed contract or implementation evidence](../../qsl-cst/src/format.rs) supplies the scoped context.
 
 ## References
 

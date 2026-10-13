@@ -3,13 +3,19 @@
 //! actual native compiler. The native compile join lives here (the SEAM-1 native arm),
 //! not in the `qsl-source` crate (ADR-011 §2.1 I3 row; §6.2 `qsl-source` row).
 
-use super::{wire, Result, RunCause};
+use super::RunCause;
 use crate::checking::ClauseBinding;
-use crate::formal_source::{FormalSource, SourceIdentities};
-use crate::mapped::{self, CompileError, CompileLimits, MappedPackage};
+#[cfg(test)]
+use crate::formal_source::SourceIdentities;
+#[cfg(test)]
+use crate::mapped;
+use crate::mapped::{CompileError, CompileLimits, MappedPackage};
+#[cfg(test)]
 use crate::native_model::NativeModel;
 use qsl_foundation::{Code, Diagnostic, Source};
-use qsl_source::{ClausesOutcome, SemanticContext, SemanticFailure};
+#[cfg(test)]
+use qsl_source::SemanticContext;
+use qsl_source::{ClausesOutcome, SemanticFailure};
 
 /// Unsupported combinations at the extracted-command boundary.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error, serde::Serialize)]
@@ -171,6 +177,7 @@ impl<'model> ExtractedPackage<'model> {
 }
 
 /// The I3 selection for an authored binding and its caller-assigned native body identity.
+#[cfg(test)]
 fn selection(binding: &ClauseBinding, body: &SourceIdentities) -> qsl_source::Selection {
     qsl_source::Selection {
         clause_id: binding.clause.as_str().to_owned(),
@@ -183,6 +190,7 @@ fn selection(binding: &ClauseBinding, body: &SourceIdentities) -> qsl_source::Se
 ///
 /// The native join lives here (SEAM-1), not in `qsl-source` (ADR-011 §2.1 I3 row;
 /// §6.2 `qsl-source` row).
+#[cfg(test)]
 fn extract_and_compile<'model>(
     original: Source,
     context: &SemanticContext,
@@ -231,63 +239,6 @@ fn extract_and_compile<'model>(
             extraction: Some(extraction),
             cause: JoinCause::Compile(error),
         })),
-    }
-}
-
-/// The one selected binding is retained here after preflight; no second count guard.
-pub(super) struct Selected<'a> {
-    binding: &'a wire::Binding,
-    body: &'a wire::Identity,
-}
-
-pub(super) fn select<'a>(
-    program: &'a wire::Program,
-    extraction: &'a wire::Extraction,
-) -> Result<Selected<'a>> {
-    let clauses = program.clauses.as_deref().unwrap_or_default();
-    let [binding] = clauses else {
-        return Err(ExtractionMode::WrongClauseCount {
-            actual: clauses.len(),
-        }
-        .into());
-    };
-    Ok(Selected {
-        binding,
-        body: &extraction.body,
-    })
-}
-
-pub(super) struct ExtractedRun<'model> {
-    pub package: ExtractedPackage<'model>,
-    pub original: FormalSource,
-}
-
-impl Selected<'_> {
-    /// `original` is the program source, already read by the caller
-    /// (FND-014: this no longer re-reads `program.source` a second time
-    /// through `intake`, mirroring FND-011's fix for a selected package).
-    pub(super) fn compile<'model>(
-        self,
-        models: &'model [NativeModel],
-        original: FormalSource,
-    ) -> Result<ExtractedRun<'model>> {
-        let binding = self.binding.bind()?;
-        let body = self.body.bind()?;
-        let context =
-            qsl_source::clause_context(binding.requirement.package().as_str(), original.source())
-                .map_err(|failures| {
-                RunCause::Extraction(Box::new(ExtractionError::Context(failures)))
-            })?;
-        let package = extract_and_compile(
-            original.source().clone(),
-            &context,
-            binding,
-            body,
-            models,
-            Limits::default(),
-        )
-        .map_err(|error| RunCause::Extraction(Box::new(ExtractionError::Compile(error))))?;
-        Ok(ExtractedRun { package, original })
     }
 }
 

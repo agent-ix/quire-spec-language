@@ -40,9 +40,12 @@ disposition, the compiled `package_id` and the usage. It is the spine replacemen
 for native-run/1 clause execution (ADR-011 §5, the paragraph that says it has
 no spine equivalent before M-6c) and for FR-023's in-process `execute`.
 
-FR-100 already owns the spine run's argument binding and its S6a outcome
-mapping. This requirement reuses both by reference and adds only object
-arguments, observations and the claim reading of a Boolean result.
+FR-100 owns the spine run's typed public argument binding and S6a outcome
+mapping. This requirement reuses their applicable rules and adds observations
+and the claim reading of a Boolean result. Its `Function` selection remains
+a Boolean claim. A Reference-valued Value function is called through
+FR-100's existing `spine::run` entry, including TC-792 step 1; it is not
+selected as a claim to work around the Value-call boundary.
 
 ## Inputs
 
@@ -57,13 +60,14 @@ A `ClauseRunRequest`:
 - a selection: `Clause(ClauseSelection)` (FR-106), `Frame { operation,
   invocation }` (FR-115), or `Function { name,
   arguments, snapshot }`. `name` follows FR-100's `function` rule.
-  `arguments` are FR-100's `{parameter, value}` pairs, one per parameter, in
-  any order, whose `value` is FR-100's canonical integer, or
+  `arguments` are this claim runner's `{parameter, value}` pairs, one per
+  parameter, in any order, whose `value` is the file-assignment form of
+  FR-100's canonical integer, or
   `{"reference": {"population": ..., "key": ...}}` for a parameter of a
   model object type, resolved in the current snapshot `snapshot` names;
 - an optional expected `package_id`;
 - `SpineLimits`, `ObservationLimits` and the evaluation meter budget
-  (FR-100's `work_units`).
+  (FR-100's `accounting`).
 
 ## Outputs
 
@@ -82,7 +86,10 @@ selection, admission or evaluation result is a report.
   undefined `reason` spelling, and, for every other category, the one
   record: for `compile`, `select` and `admit` a `RefusalRecord` (code,
   cause, locus); for an `evaluate` refusal, unsupported or incomplete, FR-100's
-  `outcome` member for that S6a outcome; for `evaluate` `internal-failure`, the `InternalFault`'s stage
+  `outcome` member for that S6a outcome; for an evaluated `Frame` violation,
+  `truth: false` and a `refusal` record carrying
+  `frame_violation`/`unauthorized-change` and the complete FR-115
+  `FrameWitness` as `frame_witness`, with no `outcome` member; for `evaluate` `internal-failure`, the `InternalFault`'s stage
   and invariant, as FR-100's internal-failure section gives them;
 - `package_id`: the compiled package's identity, when compile completed;
 - usage: the admission work and the evaluation meter charges, separately.
@@ -130,6 +137,12 @@ binding receipt when CG consumes the serialized result.
   snapshot, refusing an unresolved one `invalid_runtime_input`/
   `wrong-role-mapping`; evaluation SHALL be `CheckedPackage::call` with that
   snapshot's `ObjectEnvironment`.
+- Sharing FR-100's argument/result helpers SHALL NOT widen a `Function`
+  claim's Boolean guard, require its object argument to be a member of a
+  separate query population, or replace its actual snapshot admission.
+  Its existing `wrong-role-mapping` unresolved-object oracle remains this
+  claim selection's rule; the typed Value call retains FR-100's distinct
+  call-admission and lookup outcomes.
 - The entry SHALL map `Completed(true)` to `success` (exit 0) and
   `Completed(false)` to `violation` (exit 10), as QSpec FR-301 does for a
   claim, with `truth` set.
@@ -181,9 +194,16 @@ binding receipt when CG consumes the serialized result.
 | FR-109-AC-6 | The healthy-parent request whose unit is an I3 extracted source reports `success`, exit 0, with the `package_id` its extracted body compiles to; violating-parent over the same source reports `violation`, exit 10; missing-model over the same source reports stage `compile`, `refusal`, `missing_import`/`missing-selection`, exit 20; the same unit in an `ix:formal` fence reports stage `compile`, `refusal`, `unknown_language`, exit 20, with no `package_id`. | Test |
 | FR-109-AC-7 | The step 1 unit with the clause `invariant Ratio using v on Config::ConfigVersion at current { 6 / (self.versionNumber - self.versionNumber) >= 0 }` added, run over healthy-parent selecting `Ratio`, reports stage `evaluate`, category `undefined`, `UndefinedEvaluation{cause: division-by-zero}`, no `truth`, exit 10. | Test |
 | FR-109-AC-8 | Given a successful clause run with the expected compiled `package_id`, CG consumption of its serialized result still refuses campaign binding when its external receipt is missing or its generated-source or source-map association is mismatched, as FR-267-AC-4 and FR-267-AC-6 require; the QSL report retains its original success disposition and package identity. | Test |
+| FR-109-AC-9 | FR-115's forbidden-parent-change `Frame` run reports stage `evaluate`, category `violation`, `truth: false`, and a `refusal` record with `frame_violation`/`unauthorized-change` and its complete `FrameWitness` as `frame_witness`; it carries no `outcome` or FR-351 separating `witness`. The same frame's changed-version run reports `success` with no `refusal` or `frame_witness`. | Test |
 
 ## Dependencies
 
+- [FR-100](FR-100-run-a-named-function-through-the-spine.md)'s proposed
+  typed-public-call amendment supplies the Value-call boundary only;
+  [TC-792](../test-cases/TC-792-state-model-causes-render-with-their-own-prefix.md)
+  retains this claim runner for its separate dispatched-clause step 2.
+  QSL-656 owns the accounting setting member; this amendment does not take
+  ownership of TC-951.
 - FR-100 (the spine run's argument binding, outcome mapping, internal-failure
   handling and exit statuses), FR-106, FR-107 (admission and evaluation), FR-099 and FR-027
   (the spine compile), FR-098 (the stale `package_id` rule), FR-060 (the CG
@@ -198,14 +218,3 @@ binding receipt when CG consumes the serialized result.
   driver read it with `read_clause_run_request` and call `run_clause`. It
   lands in the change that lands FR-100's clause runner (FR-312's reader plus `run_clause`), with the deletion of native `run`
   ([FR-026](FR-026-run-standalone-native-workflow.md), ADR-031 R-1).
-
-## Status
-
-AC-1 through AC-6 are implemented. AC-7's `UndefinedEvaluation{cause}` record remains
-unimplemented (the undefined evaluation's
-category `undefined` and exit 10 are implemented). The I3 extracted-source input is
-`ClauseRunSource::Extracted`, behind `qsl-replay`'s `quire-extraction`
-feature.
-
-AC-8 specifies the CG consumer boundary owned by Linear QSL-688 and IR-514;
-it does not claim implementation of CG's external receipt verification.

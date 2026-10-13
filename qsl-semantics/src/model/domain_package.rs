@@ -9,7 +9,10 @@
 //! 2.0.0 document bytes against a selection and reads an admitted
 //! document's IR nodes into these records.
 
+use std::collections::BTreeMap;
+
 use crate::model::key::DeclarationKey;
+use crate::model::origin::JsonValue;
 use quire_canonical::FixedShape;
 use quire_exact::{OrderingOperator, Presence};
 
@@ -61,11 +64,12 @@ pub struct RecordValueTypeRecord {
     pub key: DeclarationKey,
 }
 
-/// QSL's own closed native value-type vocabulary (shared-grammar.md's
-/// `type-ref` production): the unparameterized value-type keywords a
-/// `typeRef` may name directly, under `ix://quire/native/<Name>`, without
-/// naming a node of any package. `Boolean`, `Integer`, `Float32` and
-/// `Float64` take no parameters. `Integer`'s own optional inline bound
+/// QSL's own closed native value-type vocabulary: the unparameterized
+/// value-type keywords a `typeRef` may name directly, under
+/// `ix://quire/native/<Name>`, without naming a node of any package. It
+/// includes shared-grammar.md's keywords plus `Timestamp`, required by
+/// FR-056-AC-17/19. `Boolean`, `Integer`, `Float32`, `Float64` and
+/// `Timestamp` take no parameters. `Integer`'s own optional inline bound
 /// (`Int[lo,hi]`) is a constraint fact about the field, not a distinct
 /// value-type reference. `Rational`, `Decimal` and `Text` are parameterized
 /// in the grammar (`Rational[lo,hi;dmin,dmax]`, `Decimal[lo,hi;dmin,dmax]`,
@@ -87,6 +91,8 @@ pub enum NativeValueType {
     Float64,
     /// `Text`.
     Text,
+    /// `Timestamp`.
+    Timestamp,
 }
 
 impl NativeValueType {
@@ -100,6 +106,7 @@ impl NativeValueType {
             Self::Float32 => "Float32",
             Self::Float64 => "Float64",
             Self::Text => "Text",
+            Self::Timestamp => "Timestamp",
         }
     }
 
@@ -108,16 +115,16 @@ impl NativeValueType {
     /// `profile`) that `agent-ix-semantic-ir`'s own constraint vocabulary
     /// (`constraint_schema`'s closed `keyword` set: `min`, `max`,
     /// `exclusiveMin`, `exclusiveMax`, `minLength`, `maxLength`, `pattern`,
-    /// `enumValues`, `nonEmpty`, `unique`, `format`) has no keyword for at
-    /// all -- so a `typeRef` naming this native type can never resolve, no
+    /// `enumValues`, `nonEmpty`, `unique`, `format`) has no keyword for these
+    /// parameter sets, so `Rational`, `Decimal` and `Text` cannot resolve no
     /// matter what a producer's own document supplies. `Rational`/`Decimal`
     /// also require `lo`/`hi`, which the vocabulary's `min`/`max` do carry;
     /// only the decimal-scale bound is unexpressable. `Boolean`, `Integer`,
-    /// `Float32` and `Float64` take no required parameter, so this is empty
-    /// for them.
+    /// `Float32`, `Float64` and `Timestamp` take no required parameter, so this
+    /// is empty for them.
     pub fn unsupported_parameters(&self) -> &'static [&'static str] {
         match self {
-            Self::Boolean | Self::Integer | Self::Float32 | Self::Float64 => &[],
+            Self::Boolean | Self::Integer | Self::Float32 | Self::Float64 | Self::Timestamp => &[],
             Self::Rational | Self::Decimal => &["dmin", "dmax"],
             Self::Text => &["profile"],
         }
@@ -137,6 +144,7 @@ impl std::str::FromStr for NativeValueType {
             "Float32" => Ok(Self::Float32),
             "Float64" => Ok(Self::Float64),
             "Text" => Ok(Self::Text),
+            "Timestamp" => Ok(Self::Timestamp),
             _ => Err(()),
         }
     }
@@ -208,19 +216,29 @@ pub struct FieldMemberRecord {
     pub redefines: Option<DeclarationKey>,
 }
 
-/// A scalar type export bound to a closed `Int[lower,upper]` domain
-/// (FR-151's `model.Count`/`model.Small` fixtures). QSL V1 does not carry the
-/// FR-149 equality-conversion table; this is the narrow slice this rung
-/// needs to decide value-type conformance and FR-146 interval containment
-/// for a scalar redefinition, not a general scalar type system.
+/// The value domain carried by a scalar type declaration.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ScalarValueDomain {
+    /// A closed integer interval (FR-151's `model.Count`/`model.Small`
+    /// fixtures).
+    Integer {
+        /// Inclusive lower bound.
+        lower: i128,
+        /// Inclusive upper bound.
+        upper: i128,
+    },
+    /// An alias for a native value type.
+    Native(NativeValueType),
+}
+
+/// A scalar type export. Integer bounds support FR-146 interval containment;
+/// native aliases preserve the target's distinct value-type identity.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ScalarTypeRecord {
     /// This type's own original declaration key.
     pub key: DeclarationKey,
-    /// Inclusive lower bound.
-    pub lower: i128,
-    /// Inclusive upper bound.
-    pub upper: i128,
+    /// This type's value domain.
+    pub domain: ScalarValueDomain,
 }
 
 /// One operation parameter: `{key, value_type, multiplicity}`.
@@ -552,23 +570,20 @@ impl std::fmt::Debug for DomainPackageRef {
     }
 }
 
-/// A [`DomainPackageRef`]'s preimage form inside the model identities
-/// (`quire.model.*`, `quire.population-id/v1`).
+/// A [`DomainPackageRef`]'s preimage form inside the `quire.model.*` identities.
 #[derive(serde::Serialize, FixedShape)]
 pub(super) struct DomainPackageRefWire<'a> {
     identity: &'a str,
-    version: &'a str,
     digest_domain: &'static str,
     digest: String,
 }
 
 impl DomainPackageRef {
-    /// This selection's FR-321 preimage form: `{identity, version,
-    /// digest_domain, digest}`, the digest lowercase hex.
+    /// This selection's FR-321 preimage form: `{identity, digest_domain,
+    /// digest}`, the digest lowercase hex.
     pub(super) fn wire(&self) -> DomainPackageRefWire<'_> {
         DomainPackageRefWire {
             identity: &self.identity,
-            version: &self.version,
             digest_domain: super::key::SHA256_JCS_DIGEST_DOMAIN,
             digest: super::key::hex(&self.digest),
         }
@@ -612,14 +627,40 @@ pub struct DomainPackage {
     pub model_selection: DomainPackageRef,
     /// The domain package's records, in the producer's declared order.
     pub records: Vec<DomainPackageRecord>,
+    /// Original intake provenance, separate from normalized identities.
+    pub(crate) originals: BTreeMap<DeclarationKey, OriginalDeclaration>,
+}
+
+/// An original declaration's authored provenance. The FCD origin is
+/// retained whole: generated origins have no source span, and source
+/// origins retain their path and optional end coordinates unchanged.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OriginalDeclaration {
+    /// The exact construct meaning for a type or population. Members carry
+    /// no meaning id under QSpec FR-208.
+    pub meaning: Option<String>,
+    /// The original FCD origin object, without fabricated byte positions.
+    pub origin: JsonValue,
+    /// A member's declared name. Type and population nodes have none.
+    pub member_name: Option<String>,
 }
 
 impl DomainPackage {
-    /// A domain package over `records`, selected under `model_selection`.
+    /// A synthetic domain package over `records`, selected under
+    /// `model_selection`. This constructor receives no source document and
+    /// supplies no authored provenance. Intake callers use
+    /// [`crate::model::intake::read_domain_package`] to retain it.
     pub fn new(model_selection: DomainPackageRef, records: Vec<DomainPackageRecord>) -> Self {
         Self {
             model_selection,
             records,
+            originals: BTreeMap::new(),
         }
+    }
+
+    /// The original intake provenance of `key`, or none for a synthetic
+    /// record that was constructed without a source document.
+    pub fn original(&self, key: &DeclarationKey) -> Option<&OriginalDeclaration> {
+        self.originals.get(key)
     }
 }

@@ -55,6 +55,8 @@ const SCALAR_UNLIMITED: ScalarLimits = ScalarLimits {
     result_units: u64::MAX,
 };
 
+use crate::admitted_charge_points;
+
 fn object_type(identity: &str, supertypes: Vec<&str>) -> DomainPackageRecord {
     DomainPackageRecord::ObjectType(ObjectTypeRecord {
         key: DeclarationKey::fixture(identity),
@@ -348,6 +350,52 @@ fn lookup_key(
     }
 }
 
+/// V1-TYPE-021: the declared closed population admits finite object members
+/// even though none has a value-containment field. Without closure authority
+/// the same offered members cannot become a complete universe.
+#[test]
+#[trace("QSpec-V1-TYPE-021", "QSpec-FR-011-AC-3")]
+fn finite_object_population_requires_explicit_closure() {
+    let document = p1("test/orders");
+    assert!(document
+        .members
+        .iter()
+        .all(|member| member.field_values.is_empty()));
+    let closed = fixture_f1();
+    let view = view_of(&closed);
+    let binding = admitted_binding(&view, &document);
+    let a = type_id(&view, "model.A");
+    let b = type_id(&view, "model.B");
+    let universe = view.object_universe().identity();
+    let expected: BTreeSet<_> = [
+        reference_key(&universe, &a, "a1"),
+        reference_key(&universe, &a, "a2"),
+        reference_key(&universe, &b, "b1"),
+    ]
+    .into_iter()
+    .collect();
+    assert_eq!(
+        binding.members().keys().cloned().collect::<BTreeSet<_>>(),
+        expected
+    );
+
+    let open = fixture_f1_with_extent(Extent::Open);
+    let mut meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    match admit_binding(
+        &view_of(&open),
+        &document,
+        &p1_population_key(),
+        GeneralizationClosure::Closed,
+        Some(3),
+        &mut meter,
+    ) {
+        AdmissionOutcome::UnknownClosure(refusal) => {
+            assert_eq!(refusal.code, Code::IncompletePopulation);
+        }
+        other => panic!("an open universe cannot be admitted as complete: {other:?}"),
+    }
+}
+
 /// TC-198 L01: closed all-instances over P1 returns every and only member of
 /// the selected typed population, once, in canonical reference-key order,
 /// including the subtype `B` population under `M::A` — and `b1`'s reference
@@ -438,8 +486,7 @@ fn l01_all_instances_selects_subtype_population_once() {
     assert_eq!(meter_a.consumed(LimitKind::ResultUnits), 4);
     assert_eq!(meter_a.consumed(LimitKind::ValueOccurrences), 4);
     assert_eq!(
-        meter_a
-            .admitted_charges()
+        admitted_charge_points(&meter_a)
             .iter()
             .filter(|point| **point == ChargePoint::PopulationVisit)
             .count(),
@@ -475,6 +522,320 @@ fn l01_all_instances_selects_subtype_population_once() {
         .find(|key| key.object == "b1")
         .expect("b1 selected under M::A");
     assert_eq!(*b1_via_a, b1_via_b);
+}
+
+/// FR-084-AC-2 / TC-227: object closure can hold while the declared member
+/// types omit the queried type itself. Such a query must not publish the
+/// members it happened to gather; complete coverage remains deterministic
+/// under member order changes.
+#[test]
+#[trace("TC-227", "FR-084-AC-2")]
+fn all_instances_requires_declared_subtype_closure() {
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("tc-227"),
+        vec![
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
+            population_record("model.pop", &["model.B"], Extent::Closed),
+            population_record(
+                "model.pop.complete",
+                &["model.A", "model.B"],
+                Extent::Closed,
+            ),
+        ],
+    );
+    let view = view_of(&domain_package);
+    let document = PopulationDocument {
+        model_identity: "test/orders".to_owned(),
+        members: vec![member("b1", "model.B")],
+    };
+    let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let binding = match admit_binding(
+        &view,
+        &document,
+        &DeclarationKey::fixture("model.pop"),
+        GeneralizationClosure::Closed,
+        Some(3),
+        &mut admission,
+    ) {
+        AdmissionOutcome::Admitted(binding) => binding,
+        other => panic!("expected object-closed binding, got {other:?}"),
+    };
+
+    let mut meter = Meter::new(SCALAR_UNLIMITED);
+    let outcome = all_instances(&binding, &DeclarationKey::fixture("model.A"), &mut meter);
+    match outcome {
+        AllInstancesOutcome::IncompleteSubtypeClosure(incomplete) => {
+            assert_eq!(incomplete.queried_type, DeclarationKey::fixture("model.A"));
+            assert_eq!(
+                incomplete.missing_types,
+                [DeclarationKey::fixture("model.A")]
+            );
+        }
+        other => {
+            panic!("expected typed subtype-closure incompleteness without a set, got {other:?}")
+        }
+    }
+
+    // Closure is decided before the member walk: even when the first
+    // population.visit would be denied, the result remains typed closure
+    // incompleteness and consumes no work.
+    let mut no_work = Meter::new(ScalarLimits {
+        work_units: 0,
+        ..SCALAR_UNLIMITED
+    });
+    match all_instances(&binding, &DeclarationKey::fixture("model.A"), &mut no_work) {
+        AllInstancesOutcome::IncompleteSubtypeClosure(incomplete) => {
+            assert_eq!(incomplete.queried_type, DeclarationKey::fixture("model.A"));
+            assert_eq!(
+                incomplete.missing_types,
+                [DeclarationKey::fixture("model.A")]
+            );
+        }
+        other => panic!("closure incompleteness must precede charging: {other:?}"),
+    }
+    assert_eq!(no_work.consumed(LimitKind::WorkUnits), 0);
+    assert!(admitted_charge_points(&no_work).is_empty());
+
+    let complete_document = PopulationDocument {
+        model_identity: document.model_identity.clone(),
+        members: vec![
+            member("b1", "model.B"),
+            member("a2", "model.A"),
+            member("a1", "model.A"),
+        ],
+    };
+    let reordered = PopulationDocument {
+        model_identity: complete_document.model_identity.clone(),
+        members: complete_document.members.iter().rev().cloned().collect(),
+    };
+    let complete_binding = |document: &PopulationDocument| match admit_binding(
+        &view,
+        document,
+        &DeclarationKey::fixture("model.pop.complete"),
+        GeneralizationClosure::Closed,
+        Some(3),
+        &mut AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED),
+    ) {
+        AdmissionOutcome::Admitted(binding) => binding,
+        other => panic!("expected subtype-closed binding, got {other:?}"),
+    };
+    let first = complete_binding(&complete_document);
+    let second = complete_binding(&reordered);
+    let mut first_meter = Meter::new(SCALAR_UNLIMITED);
+    let mut second_meter = Meter::new(SCALAR_UNLIMITED);
+    let select = |binding: &PopulationBinding, meter: &mut Meter| match all_instances(
+        binding,
+        &DeclarationKey::fixture("model.A"),
+        meter,
+    ) {
+        AllInstancesOutcome::Completed(set) => set,
+        other => panic!("expected complete allInstances<A>, got {other:?}"),
+    };
+    let first_set = select(&first, &mut first_meter);
+    let second_set = select(&second, &mut second_meter);
+    assert_eq!(first_set, second_set);
+    let canonical: Vec<_> = first_set.members().iter().collect();
+    assert!(canonical.windows(2).all(|pair| pair[0] < pair[1]));
+}
+
+/// FR-084-AC-2 / TC-227: subtype coverage checks the query against its
+/// declared member types. A deep, unrelated catalog chain must not be walked
+/// as part of the query: with a zero ancestor-step ceiling, the reflexive
+/// query succeeds while any attempt to inspect that chain would be refused.
+#[test]
+#[trace("TC-227", "FR-084-AC-2")]
+fn all_instances_does_not_walk_unrelated_type_catalog() {
+    let mut records = vec![object_type("model.T", vec![])];
+    let mut previous = "model.U0".to_owned();
+    records.push(object_type(&previous, vec![]));
+    for index in 1..=4 {
+        let current = format!("model.U{index}");
+        records.push(object_type(&current, vec![previous.as_str()]));
+        previous = current;
+    }
+    records.push(population_record("model.pop", &["model.T"], Extent::Closed));
+
+    let domain_package =
+        DomainPackage::new(DomainPackageRef::fixture("tc-227-no-catalog-walk"), records);
+    let view = view_of(&domain_package);
+    let document = PopulationDocument {
+        model_identity: "test/orders".to_owned(),
+        members: vec![member("t1", "model.T")],
+    };
+    let limits = PopulationAdmissionLimits {
+        ancestor_steps: 0,
+        ..PopulationAdmissionLimits::UNLIMITED
+    };
+    let binding = match admit_binding(
+        &view,
+        &document,
+        &DeclarationKey::fixture("model.pop"),
+        GeneralizationClosure::Closed,
+        Some(3),
+        &mut AdmissionMeter::new(limits),
+    ) {
+        AdmissionOutcome::Admitted(binding) => binding,
+        other => panic!("expected an admitted reflexive population, got {other:?}"),
+    };
+
+    match all_instances(
+        &binding,
+        &DeclarationKey::fixture("model.T"),
+        &mut Meter::new(SCALAR_UNLIMITED),
+    ) {
+        AllInstancesOutcome::Completed(set) => assert_eq!(set.members().len(), 1),
+        other => panic!("unrelated catalog ancestry must not affect the query: {other:?}"),
+    }
+}
+
+/// Runs one admitted `allInstances` query over a small explicitly declared
+/// type tree. The population's declared types describe coverage; the member
+/// rows independently provide a nonempty result when the queried closure is
+/// covered.
+fn all_instances_for_declared_type_tree(
+    types: &[(&str, &[&str])],
+    declared: &[&str],
+    queried: &str,
+    members: Vec<PopulationMember>,
+) -> AllInstancesOutcome {
+    let mut records: Vec<_> = types
+        .iter()
+        .map(|(identity, supertypes)| object_type(identity, supertypes.to_vec()))
+        .collect();
+    records.push(population_record("model.pop", declared, Extent::Closed));
+    let domain_package = DomainPackage::new(DomainPackageRef::fixture("tc-227"), records);
+    let view = view_of(&domain_package);
+    let document = PopulationDocument {
+        model_identity: "test/orders".to_owned(),
+        members,
+    };
+    let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let binding = match admit_binding(
+        &view,
+        &document,
+        &DeclarationKey::fixture("model.pop"),
+        GeneralizationClosure::Closed,
+        Some(3),
+        &mut admission,
+    ) {
+        AdmissionOutcome::Admitted(binding) => binding,
+        other => panic!("expected an admitted binding, got {other:?}"),
+    };
+    all_instances(
+        &binding,
+        &DeclarationKey::fixture(queried),
+        &mut Meter::new(SCALAR_UNLIMITED),
+    )
+}
+
+/// FR-153 coverage is reflexive conformance from queried T to a declared
+/// member type: a declared parent covers its queried child.
+#[trace("TC-227", "FR-084-AC-2")]
+#[test]
+fn all_instances_declared_parent_covers_queried_child() {
+    let outcome = all_instances_for_declared_type_tree(
+        &[("model.A", &[]), ("model.B", &["model.A"])],
+        &["model.A"],
+        "model.B",
+        vec![member("b1", "model.B")],
+    );
+
+    let AllInstancesOutcome::Completed(result) = outcome else {
+        panic!("a declared parent covers its queried child, got {outcome:?}");
+    };
+    assert_eq!(result.element_type(), &DeclarationKey::fixture("model.B"));
+    assert_eq!(result.len(), 1);
+    assert_eq!(result.members().first().unwrap().object, "b1");
+}
+
+/// A declared child does not conform upward to its parent query.
+#[trace("TC-227", "FR-084-AC-2")]
+#[test]
+fn all_instances_declared_child_does_not_cover_parent_query() {
+    let outcome = all_instances_for_declared_type_tree(
+        &[("model.T", &[]), ("model.C", &["model.T"])],
+        &["model.C"],
+        "model.T",
+        vec![member("c1", "model.C")],
+    );
+
+    let AllInstancesOutcome::IncompleteSubtypeClosure(incomplete) = outcome else {
+        panic!("a declared child does not cover its parent query, got {outcome:?}");
+    };
+    assert_eq!(incomplete.queried_type, DeclarationKey::fixture("model.T"));
+    assert_eq!(
+        incomplete.missing_types,
+        [DeclarationKey::fixture("model.T")]
+    );
+}
+
+/// A declared grandparent covers the queried type by conformance.
+#[trace("TC-227", "FR-084-AC-2")]
+#[test]
+fn all_instances_declared_grandparent_covers_query_by_conformance() {
+    let outcome = all_instances_for_declared_type_tree(
+        &[
+            ("model.G", &[]),
+            ("model.P", &["model.G"]),
+            ("model.T", &["model.P"]),
+            ("model.C", &["model.T"]),
+        ],
+        &["model.G"],
+        "model.T",
+        vec![member("c1", "model.C")],
+    );
+
+    let AllInstancesOutcome::Completed(result) = outcome else {
+        panic!("a declared grandparent covers the query closure, got {outcome:?}");
+    };
+    assert_eq!(result.element_type(), &DeclarationKey::fixture("model.T"));
+    assert_eq!(result.len(), 1);
+    assert_eq!(result.members().first().unwrap().object, "c1");
+}
+
+/// FR-153 conformance is reflexive: declaring T covers query T.
+#[trace("TC-227", "FR-084-AC-2")]
+#[test]
+fn all_instances_declared_query_type_covers_itself() {
+    let outcome = all_instances_for_declared_type_tree(
+        &[("model.T", &[])],
+        &["model.T"],
+        "model.T",
+        vec![member("t1", "model.T")],
+    );
+
+    let AllInstancesOutcome::Completed(result) = outcome else {
+        panic!("the declared query type covers itself, got {outcome:?}");
+    };
+    assert_eq!(result.element_type(), &DeclarationKey::fixture("model.T"));
+    assert_eq!(result.len(), 1);
+    assert_eq!(result.members().first().unwrap().object, "t1");
+}
+
+/// A declared child does not cover a sibling query type.
+#[trace("TC-227", "FR-084-AC-2")]
+#[test]
+fn all_instances_declared_sibling_does_not_cover_query() {
+    let outcome = all_instances_for_declared_type_tree(
+        &[
+            ("model.T", &[]),
+            ("model.C1", &["model.T"]),
+            ("model.C2", &["model.T"]),
+        ],
+        &["model.C1"],
+        "model.C2",
+        vec![member("c1", "model.C1")],
+    );
+
+    let AllInstancesOutcome::IncompleteSubtypeClosure(incomplete) = outcome else {
+        panic!("a sibling does not cover the queried type, got {outcome:?}");
+    };
+    assert_eq!(incomplete.queried_type, DeclarationKey::fixture("model.C2"));
+    assert_eq!(
+        incomplete.missing_types,
+        [DeclarationKey::fixture("model.C2")]
+    );
 }
 
 /// TC-198 L01's boundary: with `work_units: 4`, `allInstances<M::A>(p)`
@@ -1151,7 +1512,11 @@ fn l05_duplicate_collapses_and_recovers_l01() {
         "the exact duplicate collapses, not a fourth member"
     );
     assert_eq!(admission.consumed(AdmissionLimitKind::PopulationMembers), 4);
-    assert_eq!(admission.consumed(AdmissionLimitKind::WorkUnits), 4);
+    assert_eq!(
+        admission.consumed(AdmissionLimitKind::WorkUnits),
+        16_318,
+        "duplicate input is member-priced once; identity work includes worst-case sort comparisons"
+    );
 
     let mut meter = Meter::new(SCALAR_UNLIMITED);
     let selected = match all_instances(&binding, &DeclarationKey::fixture("model.A"), &mut meter) {
@@ -1463,8 +1828,8 @@ fn admission_admits_when_the_population_key_resolves_in_the_domain_package() {
     assert_eq!(binding.members().len(), 3);
     assert_eq!(
         admission.admitted_charges().len(),
-        3,
-        "one binding.member charge per P1 member"
+        4,
+        "three binding.member charges plus the pre-encoding identity-work charge"
     );
 }
 
@@ -1683,7 +2048,7 @@ fn l02_work_units_limit_denies_the_third_member_charge() {
     );
     // Raised, the same input admits.
     let raised = PopulationAdmissionLimits {
-        work_units: 1_000,
+        work_units: 20_000,
         ..PopulationAdmissionLimits::UNLIMITED
     };
     assert!(matches!(
@@ -1863,7 +2228,8 @@ fn r06_subsetting_violation_refuses_after_the_charged_subset_value() {
 
 /// R06's satisfying counterpart: `a1.some = [a2]`, and `a2` is among
 /// `a1.all`'s one value, so the same one `binding.subset-value` charge
-/// (`n = 1`) discharges instead of refusing, and admission completes.
+/// (`n = 1`) discharges instead of refusing. The work total also includes
+/// each member and the bounded identity preimage/member encoding passes.
 #[test]
 #[trace("QSpec-TC-196", "QSpec-FR-151-AC-10")]
 fn r06_subsetting_satisfied_admits_with_the_charged_subset_value() {
@@ -1902,7 +2268,11 @@ fn r06_subsetting_satisfied_admits_with_the_charged_subset_value() {
             .count(),
         1
     );
-    assert_eq!(admission.consumed(AdmissionLimitKind::WorkUnits), 3);
+    assert_eq!(
+        admission.consumed(AdmissionLimitKind::WorkUnits),
+        5_963,
+        "admission prices member work, subsetting, identity encoding, and worst-case sort comparisons"
+    );
 }
 
 /// A member declaring the same field twice in its own `field_values` must
@@ -3120,6 +3490,191 @@ fn tc_296_standalone_direct_admission_distinct_from_invocation_post() {
     );
     assert_ne!(id_direct, id_pre);
     assert_ne!(id_pre, id_post);
+}
+
+fn identity_binding(
+    view: &EffectiveView,
+    document: &PopulationDocument,
+    maximum: Option<u64>,
+) -> PopulationBinding {
+    match admit_binding(
+        view,
+        document,
+        &p1_population_key(),
+        GeneralizationClosure::Closed,
+        maximum,
+        &mut AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED),
+    ) {
+        AdmissionOutcome::Admitted(binding) => binding,
+        other => panic!("expected admitted binding, got {other:?}"),
+    }
+}
+
+/// Independently constructs the FR-089 object from an admitted binding.
+fn expected_population_id(binding: &PopulationBinding, role: &str) -> String {
+    use qsl_semantics::model::key::hex;
+    use sha2::{Digest, Sha256};
+
+    let mut members: Vec<_> = binding
+        .members()
+        .iter()
+        .map(|(key, declaration)| {
+            serde_json::json!({
+                "universe": hex(key.universe.as_bytes()),
+                "type": hex(key.type_identity.as_bytes()),
+                "object": key.object,
+                "declaration": {
+                    "package": declaration.package,
+                    "node": declaration.node,
+                    "digest_domain": "sha256-jcs"
+                }
+            })
+        })
+        .collect();
+    members.sort_by_cached_key(|member| serde_json::to_vec(member).unwrap());
+    let selection = binding.model_selection();
+    let preimage = serde_json::json!({
+        "version": "quire.population/v1",
+        "domain_package_selection": {
+            "identity": selection.identity,
+            "version": selection.version,
+            "digest_domain": "sha256-jcs",
+            "digest": hex(&selection.digest)
+        },
+        "population_key": {
+            "package": "test/orders",
+            "node": P1_POPULATION,
+            "digest_domain": "sha256-jcs"
+        },
+        "admission_role": role,
+        "declared_maximum": binding.declared_maximum().map(|n| n.to_string()),
+        "members": members,
+        "pre": binding.pre_anchor().map(|pre| pre.population_id().to_string())
+    });
+    hex(&Sha256::digest(serde_json::to_vec(&preimage).unwrap()))
+}
+
+#[test]
+#[trace("TC-291", "FR-089-AC-7")]
+fn population_identity_binds_maximum_and_canonical_members() {
+    let view = view_of(&fixture_f1());
+    let document = PopulationDocument {
+        model_identity: "test/orders".into(),
+        // Object-byte order differs from reference-key order.
+        members: vec![member("a", "model.B"), member("z", "model.A")],
+    };
+    let binding = identity_binding(&view, &document, Some(3));
+    assert_eq!(
+        binding.population_id().to_string(),
+        expected_population_id(&binding, "direct")
+    );
+
+    let mut reversed = document.clone();
+    reversed.members.reverse();
+    assert_eq!(
+        binding.population_id(),
+        identity_binding(&view, &reversed, Some(3)).population_id(),
+        "member order in the input document does not change identity"
+    );
+    assert_ne!(
+        binding.population_id(),
+        identity_binding(&view, &document, Some(7)).population_id(),
+        "declared maximum is part of identity"
+    );
+    let mut changed_member = document.clone();
+    changed_member.members[0].object = "another".into();
+    assert_ne!(
+        binding.population_id(),
+        identity_binding(&view, &changed_member, Some(3)).population_id(),
+        "changing one member changes identity"
+    );
+}
+
+#[test]
+#[trace("TC-291", "FR-089-AC-7")]
+fn population_identity_golden_vector_contains_all_seven_fields() {
+    use qsl_semantics::model::key::hex;
+    use sha2::{Digest, Sha256};
+
+    const TEXT: &str = r#"{"admission_role":"direct","declared_maximum":null,"domain_package_selection":{"digest":"1111111111111111111111111111111111111111111111111111111111111111","digest_domain":"sha256-jcs","identity":"test/orders","version":"1"},"members":[],"population_key":{"digest_domain":"sha256-jcs","node":"model.pop.p1","package":"test/orders"},"pre":null,"version":"quire.population/v1"}"#;
+    let mut package = fixture_f1();
+    package.model_selection.digest = [0x11; 32];
+    let binding = identity_binding(
+        &view_of(&package),
+        &PopulationDocument {
+            model_identity: "test/orders".into(),
+            members: Vec::new(),
+        },
+        None,
+    );
+    assert_eq!(
+        binding.population_id().to_string(),
+        hex(&Sha256::digest(TEXT.as_bytes()))
+    );
+}
+
+#[test]
+#[trace("TC-291", "FR-089-AC-7")]
+fn population_post_identity_binds_its_pre_population_id() {
+    let view = view_of(&fixture_f1());
+    let post_document = p1_minus_a2("test/orders");
+    let admit = |pre_document: &PopulationDocument, deleted: &[String]| {
+        let effect = deletes_a_effect();
+        match admit_invocation(
+            invocation_context(&view, &p1_population_key()),
+            pre_document,
+            &post_document,
+            &InvocationDelta {
+                effect: &effect,
+                declared_created: &[],
+                declared_deleted: deleted,
+            },
+            &mut AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED),
+            &mut AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED),
+        ) {
+            AdmissionOutcome::Admitted(binding) => binding,
+            other => panic!("expected admitted invocation, got {other:?}"),
+        }
+    };
+    let removed = admit(&p1("test/orders"), &["a2".into()]);
+    let unchanged = admit(&post_document, &[]);
+    assert_eq!(removed.members(), unchanged.members());
+    assert_ne!(removed.population_id(), unchanged.population_id());
+    for binding in [&removed, &unchanged] {
+        assert_eq!(
+            binding.population_id().to_string(),
+            expected_population_id(binding, "post")
+        );
+        let pre = binding.pre_anchor().expect("invocation has pre binding");
+        assert_eq!(
+            pre.population_id().to_string(),
+            expected_population_id(pre, "pre")
+        );
+    }
+}
+
+#[test]
+#[trace("TC-291", "FR-084-AC-1")]
+fn invalid_population_member_is_refused_before_identity_is_minted() {
+    let view = view_of(&fixture_f1());
+    let mut document = p1("test/orders");
+    document.members[0].type_identity = DeclarationKey::fixture("foreign.Type");
+    let outcome = admit_binding(
+        &view,
+        &document,
+        &p1_population_key(),
+        GeneralizationClosure::Closed,
+        Some(3),
+        &mut AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED),
+    );
+    assert!(matches!(
+        outcome,
+        AdmissionOutcome::Refused(ModelRefusal {
+            code: Code::ForeignReference,
+            cause: ModelRefusalCause::ForeignType { member, type_name },
+            ..
+        }) if member == "a1" && type_name == DeclarationKey::fixture("foreign.Type")
+    ));
 }
 
 /// Binding admission's member-type conformance walk uses the

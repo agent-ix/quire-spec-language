@@ -1326,7 +1326,7 @@ fn run_three_sum(source: ValueType, values: &[i64]) -> SumRun {
         location: evaluation.location,
         sum: checked.root().location().clone(),
         summand: checked.root().children()[1].location().clone(),
-        charges: meter.admitted_charges().to_vec(),
+        charges: crate::support::admitted_charge_points(&meter),
     }
 }
 
@@ -1495,10 +1495,8 @@ fn tc_500_an_empty_sum_whose_domain_excludes_zero_is_undefined_at_the_sum_node()
         evaluation.location.as_ref(),
         Some(checked.root().location())
     );
-    assert!(!meter
-        .admitted_charges()
+    assert!(!crate::support::admitted_charge_points(&meter)
         .contains(&ChargePoint::CollectionResultRetain));
-    assert!(!meter
-        .admitted_charges()
+    assert!(!crate::support::admitted_charge_points(&meter)
         .contains(&ChargePoint::IntegerArithmeticArithmetic));
 }

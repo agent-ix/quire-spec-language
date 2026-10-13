@@ -522,55 +522,6 @@ FR-068-AC-8, retired).
   disposition, and "do not amend ADR-011 from this ticket" — PR #271 owns
   that amendment).
 
-## Status
-
-Specified (ADR-011 §7.3 M-5), split out of #214 by
-owner ruling, 2026-09-20, the same pattern FR-067's Status section records
-for M-3a's split from the same parent ticket. Both prerequisites — X-1 and
-M-3a — have landed.
-
-**Amended by PR #282 review (2026-09-20).** `family.rs` was missing from
-the move surface despite `check.rs`'s pre-existing dependency on it
-(Description, Inputs, Outputs; see F4). PR #282 also wrote `check`'s
-`value` imports in crate-absolute, submodule-qualified form, per F2.
-
-**FR-068-AC-6 is implemented as a module-level layer rule** (Description,
-"Amendment (layer-rule ruling, 2026-09-22)"; Behavior, "`check`'s import
-rule: modules by layer"). `xtask::import_graph::check_layer_edges` parses
-every file under `qsl-semantics/src/check/` with `syn` and classifies, outside
-`#[cfg(test)]` items: every `use` item at any depth, including a function
-body's; every `crate::`/`super::`/`self::`-rooted inline path, including
-one inside a macro invocation's arguments; and every later path through a
-module a `use` binds. The test `real_check_layer_edges_have_no_violation`
-(TC-175) runs it over the real tree in `make ci` and finds no violation.
-
-**Amended by FR-087, owner ruling on QSL-158 (2026-09-21): `CheckedPackage`
-relocates from `check` to layer-4 `package`.** This requirement's own
-Behavior section ("`CheckedPackage`, `CheckedExpression` and
-`CheckedFunction` move with their checking methods") recorded a real
-disagreement between ADR-011 §4 (which names `package` as the S4 type's
-owner) and §6.1 (whose layer ordering the placement in `check` was chosen
-to avoid violating), and recorded it as an ADR-011 defect. The owner ruling on
-QSL-158 (2026-09-21) settled that disagreement in §4's favor: the `check` →
-`package` reverse edge this requirement avoided was an artifact of
-`CheckedGraph` — `check`'s own S3 output type — not existing yet at the
-time of this requirement's implementation, not a property the architecture
-requires. FR-087 builds `CheckedGraph`, retargets `PackageDeclarations::check`
-and its three checking methods to it, and relocates `CheckedPackage` to
-`package` (FR-087 Description, item 2; Behavior, "`check` produces
-`CheckedGraph`; `package` constructs `CheckedPackage`"). This supersedes
-FR-068-AC-2 for `CheckedPackage` only (unchanged for `CheckedExpression`
-and `CheckedFunction`), narrows FR-068-AC-10 to `CheckedExpression`'s
-re-export alone (FR-087-AC-9 covers `CheckedPackage`'s new re-export from
-`package`), and takes `library` (FR-087's own new layer-3 module, ordered
-before `check` core) off FR-068-AC-6's forbidden list. This closes the
-`CheckedPackage`-placement half of that defect;
-the separate §6.2 refusal-row finding is untouched and stays open. TC-171,
-TC-172 and TC-175 (this requirement's own tests) are amended in place by
-FR-087's corresponding criteria rather than superseded wholesale, since
-each test's claim about `CheckedExpression`/`CheckedFunction` and the K/M-2
-boundaries continues to hold unchanged.
-
 ## Open Questions
 
 - **Resolved (2026-09-23): `value::outcome.rs` is deleted, so

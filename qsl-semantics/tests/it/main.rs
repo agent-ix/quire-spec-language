@@ -10,6 +10,7 @@
 //! keeps a default-feature build from compiling them at all.
 
 mod complete_value_lock;
+mod field_presence;
 mod identity_golden_vectors;
 mod ieee_profiles;
 mod import_view_names;
@@ -32,3 +33,7 @@ mod quantities;
 mod state_clauses;
 #[cfg(feature = "test-support")]
 mod type_environment_model;
+
+#[path = "../../../tests/support/admitted_charge.rs"]
+mod admitted_charge;
+pub(crate) use admitted_charge::admitted_charge_points;

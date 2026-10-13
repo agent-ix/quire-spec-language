@@ -34,27 +34,6 @@ relationships:
 ---
 # ADR-028: Exact probabilistic checking: the native engine EN-5
 
-## Status
-
-Proposed, 2026-10-01. §18 records the owner's and the plan lead's rulings
-on the draft's six questions, folded into the decision. The QSL compiler
-requirements that implement it are FR-195 to FR-204, under US-023. The
-owner ruled that exact
-probabilistic checking is a native quire engine, EN-5, specified now with
-the rest of the QSL language work and built after EN-1 (ADR-018) and EN-4
-(ADR-024). The ruling scopes it to claims over every scheduler, exact and
-sound-interval bounds with certificates, counterexamples whose witness
-scheduler replays exactly, and probabilistic timed automata through digital
-clocks; it admits no uncertified floating-point result. A later ruling adds
-claims over fair schedulers (§3a). The owning ticket and
-the research are listed under References.
-
-"QSpec FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
-requirement. Item ids `SP-`, `PR-`, `SCH-`, `XF-`, `AR-`, `FH-`, `UR-`, `LR-`,
-`FS-`, `XV-`, `WS-`, `CE-`, `LM-`, `TA-`, `RX-`, `DS-`, `QS-` and `RU-` are local to this
-record. Other artifacts cite them as `ADR-028 CE-3`. Items of other records
-are cited as `ADR-024 PM-8`.
-
 ## Context
 
 ADR-024 makes a model probabilistic with random parameters (PM-1) and a
@@ -98,6 +77,12 @@ What EN-5 builds on:
 - **Certified proofs.** ADR-026 CF-1 to CF-6 give EN-6 zone certificates that
   leave S6c over E11 and settle only after a layer-6 checker accepts them;
   EN-5 follows the same path.
+
+"QSpec FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
+requirement. Item ids `SP-`, `PR-`, `SCH-`, `XF-`, `AR-`, `FH-`, `UR-`, `LR-`,
+`FS-`, `XV-`, `WS-`, `CE-`, `LM-`, `TA-`, `RX-`, `DS-`, `QS-` and `RU-` are local to this
+record. Other artifacts cite them as `ADR-028 CE-3`. Items of other records
+are cited as `ADR-024 PM-8`.
 
 ## Decision
 

@@ -100,6 +100,8 @@ mod refusal;
 mod region;
 mod settings;
 mod state_clause;
+mod state_model;
+pub use state_model::StateModelRefusal;
 #[cfg(any(test, feature = "test-support"))]
 pub mod stratum;
 mod termination;
@@ -163,8 +165,8 @@ pub use family::fixtures::{
     root_location, scope_with, SCALAR_LIMITS_UNLIMITED,
 };
 pub use ir::{
-    Arithmetic, CheckedBody, CheckedLiteral, CheckedNode, Connective, Node, NodeId, NodeKind,
-    Observation, OrderedKind, RecordSlot, Slot, Visit,
+    Arithmetic, CheckedBody, CheckedLiteral, CheckedNode, Connective, IntegerDivisionOperator,
+    Node, NodeId, NodeKind, Observation, OrderedKind, RecordSlot, Slot, Visit,
 };
 
 pub use assemble::{
@@ -322,6 +324,7 @@ pub struct CheckedGraph {
     /// declaration and function-application occurrence this package
     /// checked.
     occurrences: family::OccurrenceMap<Location>,
+    parameter_spans: BTreeMap<(quire_exact::NodeKey, quire_exact::Origin), qsl_foundation::Span>,
     /// ADR-012 §13.5, ADR-011 E7: this package's requirement records, one
     /// per claim site, keyed by the site's occurrence key. Read through
     /// [`Self::requirements`], the candidate step's own input
@@ -709,6 +712,21 @@ impl PackageDeclarations {
         }
         // Every declared signature is resolved against the package `Scope`
         // before dispatch validation, which compares resolved types.
+        let complete_identity = crate::value::definition::DefinitionLock::pinned()
+            .entry(crate::value::definition::CatalogRole::Root)
+            .identity;
+        let complete_value = self
+            .function_selections
+            .values()
+            .any(|selection| selection.identity == complete_identity)
+            || self
+                .state_clauses
+                .iter()
+                .any(|clause| clause.selection.identity == complete_identity);
+        // Model intake currently admits only `quire.model.complete/v1`.
+        // Carry that selection into S3 so the inherited-edge rule is
+        // confined to a package with an admitted model.
+        let complete_model = !self.models.is_empty();
         let scope = Scope::new(
             self.types,
             self.operations,
@@ -718,7 +736,10 @@ impl PackageDeclarations {
             self.ieee_profile,
             self.dispatch_operations,
         )
-        .with_imports(self.imports);
+        .with_imports(self.imports)
+        .with_integer_division(self.integer_division)
+        .with_complete_value(complete_value)
+        .with_complete_model(complete_model);
         let dispatch_tables = self.dispatch_tables;
         if let Some(index) = self
             .resolved_signatures
@@ -823,6 +844,11 @@ impl PackageDeclarations {
             .functions
             .iter()
             .map(|function| function.spans().cloned())
+            .collect();
+        let function_parameter_spans: Vec<_> = self
+            .functions
+            .iter()
+            .map(|function| function.parameter_spans().map(<[_]>::to_vec))
             .collect();
         let owner = node_key::SourceOwner::from(&source);
         let lock_evidence = self.lock_evidence;
@@ -1001,6 +1027,10 @@ impl PackageDeclarations {
                 own_signature: &signatures.as_slice()[index],
                 dispatch_tables: &dispatch_tables,
                 checking_limits: limits,
+                complete_value: self
+                    .function_selections
+                    .get(&index)
+                    .is_some_and(|selection| selection.identity == complete_identity),
                 location: &location,
                 measure_location: &measure_location,
                 nodes_used,
@@ -1234,6 +1264,20 @@ impl PackageDeclarations {
             self.identity,
         )
         .with_node_limit(limits.nodes(), nodes_used);
+        // Relationship declarations are model graph roots. No existing
+        // checked value type names one, so root them before lowering the
+        // unit's functions; otherwise the relation family disappears from
+        // the package even though the selected model declares it.
+        let relationship_locations: BTreeMap<String, Location> = models
+            .iter()
+            .filter_map(|model| {
+                let alias = model.alias()?.to_owned();
+                Some((alias.clone(), root(Origin::TypeDeclaration { name: alias })))
+            })
+            .collect();
+        if let Err(refusal) = lowering.relationship_nodes(&relationship_locations) {
+            refusals.push(refusal);
+        }
         for group in &order {
             let inputs: Vec<lowering::FunctionInput<'_>> = group
                 .members
@@ -1245,6 +1289,9 @@ impl PackageDeclarations {
                         kind: *kind,
                         location: &locations[index],
                         parameters: &signature.parameters,
+                        parameter_spans: function_parameter_spans
+                            .get(index)
+                            .and_then(|spans| spans.as_deref()),
                         result: &signature.result,
                         body: body.body.root(),
                         body_slots: &body.slot_names,
@@ -1440,6 +1487,7 @@ impl PackageDeclarations {
             }
         }
         let lowered = lowering.finish(&lowering::generated_location());
+        let parameter_spans = lowered.parameter_spans;
         if !refusals.is_empty() {
             return Err(refusals);
         }
@@ -1658,6 +1706,7 @@ impl PackageDeclarations {
             functions,
             dispatch_tables,
             occurrences,
+            parameter_spans,
             requirements,
             model_correspondence,
             type_nodes,
@@ -1853,13 +1902,28 @@ impl CheckedGraph {
     ) -> Result<CheckedExpression, CheckRefusal> {
         let location = root(Origin::Expression);
         let mut nodes = 0_u64;
-        let mut typer = Typer::new(
+        let typer = Typer::new(
             &self.scope,
             &self.functions.signatures,
             limits,
             &mut nodes,
             clause_kind,
         );
+        let mut meter = quire_exact::Meter::new(family::SCALAR_LIMITS_UNLIMITED);
+        let mut diagnostics = crate::family::DiagnosticSink::default();
+        let mut scopes = crate::family::ScopeStack::default();
+        let stage_limits = crate::family::StageLimits {
+            input_bytes: limits.input_bytes(),
+            node_count: limits.nodes(),
+        };
+        let mut cx = crate::family::CheckContext::new(
+            &self.scope,
+            stage_limits,
+            &mut meter,
+            &mut diagnostics,
+            &mut scopes,
+        );
+        let mut typer = typer.with_context(cx.reborrow(&self.scope));
         bind_parameters(&mut typer, &parameters, &location)?;
         let root = match expected {
             Some(expected) => {

@@ -221,6 +221,7 @@ fn int(lower: i64, upper: i64) -> ValueType {
 }
 
 const ADD: &str = "quire.op.integer.add";
+const NARROW: &str = "quire.op.numeric.narrow";
 const MUL: &str = "quire.op.integer.mul";
 
 /// FR-062's fixtures RR-1 to RR-13 and RR-15 to RR-17, each with exactly
@@ -534,6 +535,169 @@ fn tc_160_each_fixture_unit_holds_exactly_its_requirement_records() {
     for (unit, expected) in fixtures() {
         check(unit).assert_records(unit, &expected);
     }
+}
+
+/// FR-062 RR-16: the two requirements share the canonical `+` node but each
+/// occurrence retains the directly enclosing narrow that supplies its own
+/// result bound. An application with its own result type has no such context.
+#[trace("TC-160", "FR-062-AC-13")]
+#[test]
+fn tc_160_rr_16_keeps_conversion_context_per_occurrence() {
+    let checked = check(
+        "function g using v(p: Int[0, 10]): Boolean pure { true }\n\
+         function h using v(q: Int[0, 20]): Boolean pure { true }\n\
+         function f using v(x: Int[0, 9]): Boolean pure { g(x + 1) and h(x + 1) }",
+    );
+    let first = checked.record("x + 1", 0, ADD);
+    let second = checked.record("x + 1", 1, ADD);
+    assert_eq!(first.result_bound().value_type(), &int(0, 10));
+    assert_eq!(second.result_bound().value_type(), &int(0, 20));
+    assert_eq!(
+        first.conversion_context(),
+        Some(&checked.occurrence("x + 1", 0, Some(NARROW)))
+    );
+    assert_eq!(
+        second.conversion_context(),
+        Some(&checked.occurrence("x + 1", 1, Some(NARROW)))
+    );
+    assert_ne!(first.conversion_context(), second.conversion_context());
+
+    let own_bound = check("function own using v(x: Int[0, 9]): Integer pure { x + 1 }");
+    assert_eq!(own_bound.record("x + 1", 0, ADD).conversion_context(), None);
+}
+
+fn expression_map(checked: &Checked, omit: Option<&OccurrenceKey>) -> OccurrenceMap<Location> {
+    let mut map = OccurrenceMap::default();
+    for (node, origin, location) in checked.graph.occurrences() {
+        if origin.role() != &Role::new("expression") {
+            continue;
+        }
+        let occurrence = OccurrenceKey::new(wire(node), origin);
+        if omit == Some(&occurrence) {
+            continue;
+        }
+        map.record(node, OccurrenceRole::Expression, location.clone());
+    }
+    map
+}
+
+fn narrowed_claim(location: Location, bound: IntegerInterval) -> ValueClaim {
+    ValueClaim {
+        site: ClaimSite {
+            location,
+            bound: SiteBound::Narrowed(bound),
+            path_condition: Vec::new(),
+        },
+        domains: BTreeMap::new(),
+    }
+}
+
+fn node_key(fill: u8) -> NodeKey {
+    NodeKey::from_digest([fill; 32])
+}
+
+/// TC-160 step 12: absence of a direct narrow occurrence refuses keying.
+#[trace("TC-160", "FR-062-AC-13")]
+#[test]
+fn tc_160_narrowed_claim_with_zero_direct_narrows_faults() {
+    let checked = check(
+        "function g using v(p: Int[0, 10]): Boolean pure { true }\n\
+         function f using v(x: Int[0, 9]): Boolean pure { g(x + 1) }",
+    );
+    let add = checked.occurrence("x + 1", 0, Some(ADD));
+    let narrow = checked.occurrence("x + 1", 0, Some(NARROW));
+    let location = checked
+        .graph
+        .occurrence(NodeKey::from_digest(*add.node().as_bytes()), add.origin())
+        .expect("the add occurrence has a location")
+        .clone();
+    let expressions = expression_map(&checked, Some(&narrow));
+    assert_eq!(
+        key_claims(
+            vec![narrowed_claim(location, interval(0, 10))],
+            &expressions,
+            checked.graph.semantic_graph(),
+            &BTreeMap::new(),
+        ),
+        Err(KeyFault::UnkeyableRequirements)
+    );
+}
+
+/// TC-160 step 12: two direct narrow occurrences are ambiguous and refuse.
+#[trace("TC-160", "FR-062-AC-13")]
+#[test]
+fn tc_160_narrowed_claim_with_two_direct_narrows_faults() {
+    let checked = check(
+        "function g using v(p: Int[0, 10]): Boolean pure { true }\n\
+         function f using v(x: Int[0, 9]): Boolean pure { g(x + 1) }",
+    );
+    let add = checked.occurrence("x + 1", 0, Some(ADD));
+    let narrow = checked.occurrence("x + 1", 0, Some(NARROW));
+    let add_location = checked
+        .graph
+        .occurrence(NodeKey::from_digest(*add.node().as_bytes()), add.origin())
+        .expect("the add occurrence has a location")
+        .clone();
+    let narrow_node = NodeKey::from_digest(*narrow.node().as_bytes());
+    let narrow_location = checked
+        .graph
+        .occurrence(narrow_node, narrow.origin())
+        .expect("the narrow occurrence has a location")
+        .clone();
+    let mut expressions = expression_map(&checked, None);
+    expressions.record(narrow_node, OccurrenceRole::Expression, narrow_location);
+    assert_eq!(
+        key_claims(
+            vec![narrowed_claim(add_location, interval(0, 10))],
+            &expressions,
+            checked.graph.semantic_graph(),
+            &BTreeMap::new(),
+        ),
+        Err(KeyFault::UnkeyableRequirements)
+    );
+}
+
+/// TC-160 step 12: an enclosing narrow at the scalar site's location does
+/// not replace the direct narrow occurrence that supplies its context.
+#[trace("TC-160", "FR-062-AC-13")]
+#[test]
+fn tc_160_direct_context_excludes_outer_narrow() {
+    let checked = check(
+        "function g using v(p: Int[0, 10]): Boolean pure { true }\n\
+         function f using v(x: Int[0, 9]): Boolean pure { g(x + 1) }",
+    );
+    let add = checked.occurrence("x + 1", 0, Some(ADD));
+    let direct = checked.occurrence("x + 1", 0, Some(NARROW));
+    let direct_node = NodeKey::from_digest(*direct.node().as_bytes());
+    let outer_node = node_key(12);
+    let add_node = NodeKey::from_digest(*add.node().as_bytes());
+    let location = checked
+        .graph
+        .occurrence(add_node, add.origin())
+        .expect("the checked add occurrence has a location")
+        .clone();
+
+    // This is a real graph application cloned from the checked narrow, with
+    // its operand changed to the checked direct narrow. Its source occurrence
+    // is deliberately co-located with the scalar claim so the selector must
+    // inspect production operation identity and operand references.
+    let graph = checked
+        .graph
+        .semantic_graph()
+        .with_test_narrow_over(outer_node, direct_node);
+    let mut expressions = expression_map(&checked, None);
+    expressions.record(outer_node, OccurrenceRole::Expression, location.clone());
+    let records = key_claims(
+        vec![narrowed_claim(location, interval(0, 10))],
+        &expressions,
+        &graph,
+        &BTreeMap::new(),
+    )
+    .expect("the direct narrow supplies the claim context");
+    let record = records
+        .get(&add)
+        .expect("the scalar site's requirement record is keyed");
+    assert_eq!(record.conversion_context(), Some(&direct));
 }
 
 /// TC-160 step 10 (FR-062-AC-13): RR-15 with its two `let` operands

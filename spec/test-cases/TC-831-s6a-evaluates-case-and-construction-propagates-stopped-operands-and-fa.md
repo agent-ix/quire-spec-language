@@ -37,7 +37,3 @@ Tag each test `#[trace("TC-831", "<AC id>")]`.
 - Step 4: completes; then `incomplete` naming `work_units` and its configured
   value; no host stack overflow.
 - Step 5: TC-265's outcomes.
-
-## Status
-
-Planned.

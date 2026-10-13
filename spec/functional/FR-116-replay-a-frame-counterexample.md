@@ -133,11 +133,6 @@ payload.
 - agent-ix/quire-contract-ir#109 and agent-ix/quire-contract-codegen#49 for
   the end-to-end path from a Kani frame counterexample.
 
-## Status
-
-Specified, and implemented by
-`qsl_replay::replay_frame` over FR-098's request and a
-`WitnessEnvelope<FrameCounterexample>`, running FR-115's frame run through
-the same path as FR-109's `Frame` selection, verified by TC-515. The decode
+The decode
 from IR's witness waits on agent-ix/quire-contract-ir#109 and
 agent-ix/quire-contract-codegen#49.

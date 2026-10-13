@@ -62,6 +62,17 @@ pub use clause::{
     ClauseRunReport, ClauseRunRequest, ClauseRunSelection, ClauseRunSource, ClauseRunStage,
     OperationName,
 };
+mod native_result;
+pub use native_result::{
+    read_native_run_result, write_clause_run_result, CallLocationRead, CallLocusRead,
+    CallOriginRead, ClauseRunRecord, CommandErrorRecord, NativeRunOutcome, NativeRunReadError,
+    NativeRunResult, NativeRunResultError, PositionRead, RefusalLocusRead, SourceRefRead, SpanRead,
+};
+mod request;
+pub use request::{
+    read_clause_run_request, ClauseRequestParts, ClauseRequestReadError, ClauseSelectionParts,
+    ClauseSelectionPartsKind, SuppliedObservation,
+};
 // FR-116: FR-115's frame run, shared with the frame replay (`crate::execute`).
 pub(crate) use clause::{
     check_clause_admitted, check_frame, resolve_frame, ClauseCheck, CompiledRun, FrameCheck,
@@ -224,6 +235,10 @@ impl CompileRefusal {
             Self::Check { .. } => SpineStage::Check,
             Self::Link(_) | Self::Emit(_) | Self::Omitted(_) => SpineStage::Emit,
             Self::Limit(limit) => match limit.setting() {
+                // Formatting returns FormatRefusal and is never a compile stage.
+                Setting::FormatOutputBytes => {
+                    unreachable!("format limits are not compile refusals")
+                }
                 Setting::S1InputBytes
                 | Setting::S1Tokens
                 | Setting::S1Nodes
@@ -257,8 +272,8 @@ impl CompileRefusal {
                 | Setting::I2Occurrences
                 | Setting::I2Diagnostics
                 | Setting::I2WorkUnits => SpineStage::Intake,
-                // Limits of operations after the compile: no front-end
-                // refusal carries one, so they name no stage of it.
+                // Limits of operations outside the front-end compile: no
+                // front-end refusal carries one, so they name no stage of it.
                 Setting::AdmissionPopulationMembers
                 | Setting::AdmissionWorkUnits
                 | Setting::AdmissionAncestorSteps

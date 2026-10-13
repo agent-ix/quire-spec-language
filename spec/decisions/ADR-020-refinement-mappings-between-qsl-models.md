@@ -54,21 +54,6 @@ relationships:
 ---
 # ADR-020: Refinement mappings between QSL models
 
-## Status
-
-Proposed, 2026-10-01. §11 records the rulings on every question; the
-QSL compiler requirements that implement it are FR-135 to FR-149 and FR-310, exercised
-by US-018. It builds on ADR-018, itself a draft. ADR-027 (the protocol
-transition system) amends RM-5, RM-6, CO-4, MC-1, RC-1 and RC-2 for
-protocol subjects; each amended item says so. The plan lead's rulings on the draft's open questions
-are folded in and recorded in §11. The owning ticket and related work are
-listed under References.
-
-"QSpec FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
-requirement. Item ids `RM-`, `RS-`, `CO-`, `AX-`, `RE-`, `RC-`, `MC-`, `DS-`,
-`QS-` and `RU-` are local to this record. Other artifacts cite them as
-`ADR-020 RS-2`. Items of ADR-018 are cited as `ADR-018 SM-3`.
-
 ## Context
 
 A layered design proves properties of an abstract model once, then shows
@@ -122,6 +107,11 @@ FR-092 admits the unbounded past operators previous, historically, once and
 since, with previous false at position zero, and ADR-018 §11 admits interval
 operators nested under unbounded ones. ADR-018 IV-7 records that an interval
 operator counts positions.
+
+"QSpec FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
+requirement. Item ids `RM-`, `RS-`, `CO-`, `AX-`, `RE-`, `RC-`, `MC-`, `DS-`,
+`QS-` and `RU-` are local to this record. Other artifacts cite them as
+`ADR-020 RS-2`. Items of ADR-018 are cited as `ADR-018 SM-3`.
 
 ## Decision
 

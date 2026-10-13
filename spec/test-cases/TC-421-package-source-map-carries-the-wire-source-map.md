@@ -53,9 +53,3 @@ Tag the tests `#[trace("TC-421", "FR-095-AC-n")]` with the AC each backs.
   count.
 - Step 5: the regions, `UnknownNode` and `UnknownOccurrence`.
 - Step 6: refused as `invalid_source_map`.
-
-## Status
-
-Passed locally. `qsl-package/src/checked_v2/tests.rs` backs steps 1, 3, 4
-and 6, and `qsl-foundation/src/source/provenance.rs` steps 1, 2 and 5. Step
-4 runs under `make conformance`, through the whole I2 read.

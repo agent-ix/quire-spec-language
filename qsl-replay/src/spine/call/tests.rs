@@ -4,9 +4,11 @@ use crate::spine::{compose, DependencyInput};
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::{CatalogCoded, UndefinedCoded, UndefinedReason, UndefinedRecord};
 use qsl_foundation::SourceIdentity;
-use qsl_semantics::model::key::DeclarationKey;
+use qsl_semantics::model::key::{hex, DeclarationKey};
 use qsl_semantics::model::refusal::ModelRefusalCause;
-use quire_exact::{BoundViolation, CardinalityBound, CollectionKind, Incomplete, UniverseId};
+use quire_exact::{
+    BoundViolation, CardinalityBound, CollectionKind, Incomplete, Integer, UniverseId, Value,
+};
 use quire_semantic_value::location::Origin;
 use std::collections::BTreeMap;
 
@@ -43,16 +45,992 @@ fn run_fixture(bytes: &str, call: &Call) -> Result<CallOutcome, Box<RunRefusal>>
         &DependencyInput::default(),
         SpineLimits::default(),
         call,
+        &qsl_semantics::model::object_environment::ObjectEnvironment::default(),
         &Cancel::new(),
     )
     .map(|(_, outcome)| outcome)
 }
 
+struct LookupDriverFixture {
+    source: String,
+    packages: BTreeMap<[u8; 32], Vec<u8>>,
+}
+
+fn lookup_driver_fixture(functions: &str) -> LookupDriverFixture {
+    let mut document: serde_json::Value = serde_json::from_slice(include_bytes!(
+        "../../../../tests/fixtures/spine-model.semantic-ir.json"
+    ))
+    .expect("the lookup driver model fixture is JSON");
+    document["constructs"]
+        .as_array_mut()
+        .expect("the model fixture has constructs")
+        .push(serde_json::json!({
+            "kind": {"module": "acme/orders", "name": "population"},
+            "moduleVersion": "1.0.0",
+            "manifestDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+            "construct": {
+                "identity": "none",
+                "shape": "record",
+                "members": {},
+                "meaning": "quire.meaning.model.population/v1"
+            }
+        }));
+    document["populations"] = serde_json::json!([{
+        "identity": "ix://acme/orders/Fleet",
+        "displayName": "Fleet",
+        "kind": {"module": "acme/orders", "name": "population"},
+        "members": ["ix://acme/orders/Gadget"],
+        "extent": "closed",
+        "origin": {"generated": {
+            "generatorIdentity": "ix://acme/orders/Fleet",
+            "generatorVersion": "1.0.0",
+            "inputIdentities": ["ix://acme/orders/Fleet"]
+        }}
+    }]);
+    let bytes = serde_json::to_vec(&document).expect("the lookup driver model serializes");
+    let digest = qsl_semantics::model::intake::PackageDocument::parse(
+        &bytes,
+        qsl_foundation::IntakeLimits::default(),
+    )
+    .expect("the lookup driver model admits")
+    .jcs_digest();
+    let source = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.value.complete/v1\";\n\
+         model M = \"acme/orders\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         {}\n",
+        hex(&digest),
+        functions
+    );
+    let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()]);
+    LookupDriverFixture { source, packages }
+}
+
+fn lookup_driver_context(
+    fixture: &LookupDriverFixture,
+) -> (
+    qsl_semantics::model::object_environment::ObjectEnvironment,
+    quire_exact::PopulationId,
+    quire_exact::ObjectReference,
+    quire_exact::ObjectReference,
+) {
+    use qsl_semantics::model::dispatch::GeneralizationClosure;
+    use qsl_semantics::model::population::{
+        admit_binding, AdmissionMeter, AdmissionOutcome, PopulationAdmissionLimits,
+        PopulationDocument, PopulationMember,
+    };
+    use quire_semantic_value::object_closure::ObjectClosure;
+
+    let cancel = Cancel::new();
+    let source_identity = source();
+    let parsed = crate::spine::parse(
+        &crate::spine::ParseRequest {
+            source: &source_identity,
+            path: "tc-792-lookup.native",
+            bytes: fixture.source.as_bytes(),
+        },
+        SpineLimits::default().source,
+        &cancel,
+    )
+    .expect("the lookup driver source parses")
+    .into_value();
+    let models = crate::spine::select(
+        &parsed,
+        &fixture.packages,
+        SpineLimits::default().model,
+        &cancel,
+    )
+    .expect("the lookup driver model selects")
+    .into_value();
+    let checked = crate::spine::check(
+        &parsed,
+        &models,
+        &DependencyInput::default(),
+        &crate::spine::LockEvidence::default(),
+        SpineLimits::default(),
+        &cancel,
+    )
+    .expect("the lookup driver source checks")
+    .into_value();
+    let view = &models.models()[0].view;
+    let (type_key, type_identity) = view
+        .type_identities()
+        .iter()
+        .find(|(key, _)| key.node.rsplit('/').next() == Some("Gadget"))
+        .map(|(key, identity)| (key.clone(), *identity))
+        .expect("Gadget is declared");
+    let population_key = view
+        .domain_package()
+        .records
+        .iter()
+        .find_map(|record| match record {
+            qsl_semantics::model::domain_package::DomainPackageRecord::Population(population)
+                if population.key.node.rsplit('/').next() == Some("Fleet") =>
+            {
+                Some(population.key.clone())
+            }
+            _ => None,
+        })
+        .expect("Fleet is declared");
+    let document = PopulationDocument {
+        model_identity: view.model_selection().identity.clone(),
+        members: vec![PopulationMember {
+            object: "g1".to_owned(),
+            type_identity: type_key.clone(),
+            field_values: Vec::new(),
+        }],
+    };
+    let mut meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let AdmissionOutcome::Admitted(binding) = admit_binding(
+        view,
+        &document,
+        &population_key,
+        GeneralizationClosure::Closed,
+        Some(1),
+        &mut meter,
+    ) else {
+        panic!("the lookup driver population admits");
+    };
+    let universe = view
+        .object_universe_of(&type_key)
+        .expect("Gadget has a universe")
+        .identity();
+    let present = quire_exact::ObjectReference::new(
+        universe,
+        type_identity,
+        quire_exact::ObjectId::new("g1").unwrap(),
+    );
+    let absent = quire_exact::ObjectReference::new(
+        universe,
+        type_identity,
+        quire_exact::ObjectId::new("missing").unwrap(),
+    );
+    let world = ObjectClosure::new(
+        checked.package().graph().scope().types(),
+        [
+            (
+                present.clone(),
+                vec![(
+                    "code",
+                    quire_exact::FieldValue::Present(Value::Integer(Integer::from(7_i64))),
+                )],
+            ),
+            (
+                absent.clone(),
+                vec![(
+                    "code",
+                    quire_exact::FieldValue::Present(Value::Integer(Integer::from(8_i64))),
+                )],
+            ),
+        ],
+        &[],
+    )
+    .expect("the lookup driver object closure admits");
+    let population_id = binding.population_id();
+    let objects = qsl_semantics::model::object_environment::ObjectEnvironment::new(world)
+        .with_population(binding)
+        .expect("the lookup driver population binds");
+    (objects, population_id, present, absent)
+}
+
+#[test]
+#[trace("TC-792", "FR-100-AC-14", "FR-100-AC-16", "FR-100-AC-17")]
+fn tc_792_source_compiled_lookup_driver_preserves_present_and_absent_paths() {
+    let fixture = lookup_driver_fixture(
+        "function query using v(p: Population<M::Gadget>[1], r: M::Gadget): M::Gadget pure { lookup<M::Gadget>(p, r) absent refused }",
+    );
+    let (objects, population, present, absent) = lookup_driver_context(&fixture);
+    let invoke = |reference| {
+        run(
+            source(),
+            "tc-792-lookup.native",
+            fixture.source.as_bytes(),
+            &fixture.packages,
+            &DependencyInput::default(),
+            SpineLimits::default(),
+            &Call {
+                function: "query".to_owned(),
+                arguments: vec![
+                    CallArgument {
+                        parameter: "p".to_owned(),
+                        value: Value::Population(population),
+                    },
+                    CallArgument {
+                        parameter: "r".to_owned(),
+                        value: Value::Reference(reference),
+                    },
+                ],
+                accounting: default_accounting(1_000_000),
+            },
+            &objects,
+            &Cancel::new(),
+        )
+        .map(|(_, outcome)| outcome)
+    };
+    let present_outcome = invoke(present.clone()).expect("present lookup runs");
+    assert!(matches!(
+        present_outcome,
+        CallOutcome::Completed(CallValue::Reference(reference)) if reference == present
+    ));
+    let absent_outcome = invoke(absent).expect("absent lookup returns a refusal outcome");
+    assert!(matches!(
+        absent_outcome,
+        CallOutcome::Refused(CallRefusal::Record { code, .. })
+            if code.code() == "invalid_runtime_input" && code.cause() == "absent-key"
+    ));
+}
+
+#[test]
+#[trace("TC-792", "FR-100-AC-14", "FR-100-AC-16")]
+fn tc_792_source_driver_admits_unused_parameters_before_body_evaluation() {
+    let fixture = lookup_driver_fixture(
+        "function unused using v(p: Population<M::Gadget>[1], r: M::Gadget): Boolean pure { true }",
+    );
+    let (objects, population, _, present) = lookup_driver_context(&fixture);
+    let foreign_universe = quire_exact::ObjectReference::new(
+        UniverseId::from_digest([0xa5; 32]),
+        present.object_type(),
+        present.object().clone(),
+    );
+    let refusal = run(
+        source(),
+        "tc-792-lookup.native",
+        fixture.source.as_bytes(),
+        &fixture.packages,
+        &DependencyInput::default(),
+        SpineLimits::default(),
+        &Call {
+            function: "unused".to_owned(),
+            arguments: vec![
+                CallArgument {
+                    parameter: "p".to_owned(),
+                    value: Value::Population(population),
+                },
+                CallArgument {
+                    parameter: "r".to_owned(),
+                    value: Value::Reference(foreign_universe),
+                },
+            ],
+            accounting: default_accounting(1_000_000),
+        },
+        &objects,
+        &Cancel::new(),
+    )
+    .expect_err("unused reference parameters still undergo admission");
+    assert!(matches!(
+        *refusal,
+        RunRefusal::Admission { position: 1, refusal }
+            if matches!(refusal.cause, ModelRefusalCause::ForeignUniverse { .. })
+    ));
+}
+
+#[test]
+#[trace("TC-792", "FR-100-AC-14", "FR-100-AC-16")]
+fn tc_792_source_driver_binding_precedence_precedes_value_admission() {
+    let fixture = lookup_driver_fixture(
+        "function query using v(p: Population<M::Gadget>[1], r: M::Gadget): M::Gadget pure { lookup<M::Gadget>(p, r) absent refused }",
+    );
+    let (objects, _, _, _) = lookup_driver_context(&fixture);
+    let refusal = run(
+        source(),
+        "tc-792-lookup.native",
+        fixture.source.as_bytes(),
+        &fixture.packages,
+        &DependencyInput::default(),
+        SpineLimits::default(),
+        &Call {
+            function: "query".to_owned(),
+            arguments: vec![CallArgument {
+                parameter: "p".to_owned(),
+                value: Value::Boolean(true),
+            }],
+            accounting: default_accounting(1_000_000),
+        },
+        &objects,
+        &Cancel::new(),
+    )
+    .expect_err("unbound r precedes p's wrong value kind");
+    assert!(matches!(
+        *refusal,
+        RunRefusal::UnboundParameter { parameter } if parameter == "r"
+    ));
+}
+
+#[test]
+#[trace("TC-792", "FR-100-AC-14", "FR-100-AC-16")]
+fn tc_792_source_driver_cancellation_returns_no_lookup_result() {
+    let fixture = lookup_driver_fixture(
+        "function query using v(p: Population<M::Gadget>[1], r: M::Gadget): M::Gadget pure { lookup<M::Gadget>(p, r) absent refused }",
+    );
+    let (objects, population, _, _) = lookup_driver_context(&fixture);
+    let cancel = Cancel::new();
+    cancel.cancel(quire_exact::CancelCause::Requested);
+    let refusal = run(
+        source(),
+        "tc-792-lookup.native",
+        fixture.source.as_bytes(),
+        &fixture.packages,
+        &DependencyInput::default(),
+        SpineLimits::default(),
+        &Call {
+            function: "query".to_owned(),
+            arguments: vec![
+                CallArgument {
+                    parameter: "p".to_owned(),
+                    value: Value::Population(population),
+                },
+                CallArgument {
+                    parameter: "r".to_owned(),
+                    value: Value::Boolean(true),
+                },
+            ],
+            accounting: default_accounting(1_000_000),
+        },
+        &objects,
+        &cancel,
+    )
+    .expect_err("a cancelled driver has no lookup result");
+    assert!(matches!(*refusal, RunRefusal::Cancelled(_)));
+}
+
 fn arg(parameter: &str, value: i64) -> CallArgument {
     CallArgument {
         parameter: parameter.to_owned(),
-        value,
+        value: Value::Integer(Integer::from(value)),
     }
+}
+
+/// TC-792 / FR-100-AC-14..19 red contract: the reviewed spine boundary takes
+/// shared typed values and the admitted object context, then preserves the
+/// existing scalar/accounting/cancel inputs around that call.
+#[test]
+#[trace("TC-792", "FR-100-AC-16")]
+fn tc_792_typed_call_contract_is_not_an_integer_only_facade() {
+    let call = Call {
+        function: "held".to_owned(),
+        arguments: vec![CallArgument {
+            parameter: "w".to_owned(),
+            value: Value::Boolean(true),
+        }],
+        accounting: default_accounting(1_000_000),
+    };
+    let result = run(
+        source(),
+        "spine-model.native",
+        include_bytes!("../../../../tests/fixtures/spine-model.native"),
+        &qsl_semantics::model::intake::package_input([include_bytes!(
+            "../../../../tests/fixtures/spine-model.semantic-ir.json"
+        )
+        .as_slice()]),
+        &DependencyInput::default(),
+        SpineLimits::default(),
+        &call,
+        &qsl_semantics::model::object_environment::ObjectEnvironment::default(),
+        &Cancel::new(),
+    );
+    assert!(matches!(
+        result,
+        Err(ref refusal) if matches!(**refusal, RunRefusal::WrongValueKind { position: 0 })
+    ));
+}
+
+#[test]
+fn typed_model_values_bind_without_integer_coercion() {
+    let reference = quire_exact::ObjectReference::new(
+        UniverseId::from_digest([1; 32]),
+        quire_exact::EffectiveId::from_digest([2; 32]),
+        quire_exact::ObjectId::new("g1").unwrap(),
+    );
+    let population = quire_exact::PopulationId::from_digest([3; 32]);
+    let bound = bind_arguments(
+        &[
+            (
+                "reference".to_owned(),
+                ValueType::Reference(reference.object_type()),
+            ),
+            ("population".to_owned(), ValueType::Population(Some(1))),
+        ],
+        &[
+            CallArgument {
+                parameter: "population".to_owned(),
+                value: Value::Population(population),
+            },
+            CallArgument {
+                parameter: "reference".to_owned(),
+                value: Value::Reference(reference.clone()),
+            },
+        ],
+    )
+    .unwrap();
+    assert_eq!(bound.len(), 2);
+    assert!(matches!(&bound[0], Value::Reference(value) if value == &reference));
+    assert!(matches!(&bound[1], Value::Population(value) if value == &population));
+}
+
+#[test]
+#[trace("TC-792", "FR-100-AC-14", "FR-100-AC-16")]
+fn tc_792_driver_returns_the_admitted_reference_identity() {
+    let bytes = include_bytes!("../../../../tests/fixtures/spine-model.native");
+    let document = include_bytes!("../../../../tests/fixtures/spine-model.semantic-ir.json");
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
+    let cancel = Cancel::new();
+    let identity = source();
+    let parsed = crate::spine::parse(
+        &crate::spine::ParseRequest {
+            source: &identity,
+            path: "spine-model.native",
+            bytes,
+        },
+        SpineLimits::default().source,
+        &cancel,
+    )
+    .unwrap()
+    .into_value();
+    let models = crate::spine::select(&parsed, &packages, SpineLimits::default().model, &cancel)
+        .unwrap()
+        .into_value();
+    let checked = crate::spine::check(
+        &parsed,
+        &models,
+        &DependencyInput::default(),
+        &crate::spine::LockEvidence::default(),
+        SpineLimits::default(),
+        &cancel,
+    )
+    .unwrap()
+    .into_value();
+    let model = &models.models()[0].view;
+    let (type_key, object_type) = model
+        .type_identities()
+        .iter()
+        .find_map(|(key, identity)| {
+            key.node
+                .rsplit('/')
+                .next()
+                .is_some_and(|name| name == "Gadget")
+                .then_some((key, *identity))
+        })
+        .expect("Gadget is in the model fixture");
+    let reference = quire_exact::ObjectReference::new(
+        model.object_universe_of(type_key).unwrap().identity(),
+        object_type,
+        quire_exact::ObjectId::new("g1").unwrap(),
+    );
+    let world = quire_semantic_value::object_closure::ObjectClosure::new(
+        checked.package().graph().scope().types(),
+        [(
+            reference.clone(),
+            vec![(
+                "code",
+                quire_exact::FieldValue::Present(Value::Integer(Integer::from(7_i64))),
+            )],
+        )],
+        &[],
+    )
+    .unwrap();
+    let objects = qsl_semantics::model::object_environment::ObjectEnvironment::new(world);
+    let outcome = run(
+        source(),
+        "spine-model.native",
+        bytes,
+        &packages,
+        &DependencyInput::default(),
+        SpineLimits::default(),
+        &call(
+            "keep",
+            vec![CallArgument {
+                parameter: "g".to_owned(),
+                value: Value::Reference(reference.clone()),
+            }],
+        ),
+        &objects,
+        &Cancel::new(),
+    )
+    .unwrap()
+    .1;
+    assert!(matches!(
+        outcome,
+        CallOutcome::Completed(CallValue::Reference(value)) if value == reference
+    ));
+}
+
+fn synthetic_model(
+    placeholder: &str,
+) -> (
+    qsl_semantics::model::normalize::EffectiveView,
+    DeclarationKey,
+    DeclarationKey,
+) {
+    use qsl_semantics::model::accounting::ModelNormalizationLimits;
+    use qsl_semantics::model::domain_package::{
+        DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, ObjectTypeRecord,
+        PopulationRecord,
+    };
+    use qsl_semantics::model::normalize::{normalize, NormalizeOutcome};
+
+    let object = DeclarationKey::fixture(format!("{placeholder}/A"));
+    let population = DeclarationKey::fixture(format!("{placeholder}/P"));
+    let domain = DomainPackage::new(
+        DomainPackageRef::fixture(placeholder),
+        vec![
+            DomainPackageRecord::ObjectType(ObjectTypeRecord {
+                key: object.clone(),
+                interface_features: None,
+                abstract_type: false,
+                supertypes: Vec::new(),
+            }),
+            DomainPackageRecord::Population(PopulationRecord {
+                key: population.clone(),
+                member_types: vec![object.clone()],
+                extent: Extent::Closed,
+            }),
+        ],
+    );
+    let NormalizeOutcome::Completed(view) = normalize(&domain, ModelNormalizationLimits::UNLIMITED)
+    else {
+        panic!("synthetic model normalizes");
+    };
+    (view, object, population)
+}
+
+fn synthetic_reference_hierarchy(
+    placeholder: &str,
+) -> (
+    qsl_semantics::model::normalize::EffectiveView,
+    DeclarationKey,
+    DeclarationKey,
+    DeclarationKey,
+    DeclarationKey,
+) {
+    use qsl_semantics::model::accounting::ModelNormalizationLimits;
+    use qsl_semantics::model::domain_package::{
+        DomainPackage, DomainPackageRecord, DomainPackageRef, ObjectTypeRecord,
+    };
+    use qsl_semantics::model::normalize::{normalize, NormalizeOutcome};
+
+    let root = DeclarationKey::fixture(format!("{placeholder}/Root"));
+    let target = DeclarationKey::fixture(format!("{placeholder}/T"));
+    let subtype = DeclarationKey::fixture(format!("{placeholder}/S"));
+    let unrelated = DeclarationKey::fixture(format!("{placeholder}/U"));
+    let domain = DomainPackage::new(
+        DomainPackageRef::fixture(placeholder),
+        vec![
+            DomainPackageRecord::ObjectType(ObjectTypeRecord {
+                key: root.clone(),
+                interface_features: None,
+                abstract_type: false,
+                supertypes: Vec::new(),
+            }),
+            DomainPackageRecord::ObjectType(ObjectTypeRecord {
+                key: target.clone(),
+                interface_features: None,
+                abstract_type: false,
+                supertypes: vec![root.clone()],
+            }),
+            DomainPackageRecord::ObjectType(ObjectTypeRecord {
+                key: subtype.clone(),
+                interface_features: None,
+                abstract_type: false,
+                supertypes: vec![target.clone()],
+            }),
+            DomainPackageRecord::ObjectType(ObjectTypeRecord {
+                key: unrelated.clone(),
+                interface_features: None,
+                abstract_type: false,
+                supertypes: vec![root.clone()],
+            }),
+        ],
+    );
+    let NormalizeOutcome::Completed(view) = normalize(&domain, ModelNormalizationLimits::UNLIMITED)
+    else {
+        panic!("synthetic reference hierarchy normalizes");
+    };
+    (view, target, subtype, unrelated, root)
+}
+
+#[test]
+#[trace("TC-792", "FR-100-AC-16")]
+fn tc_792_population_and_foreign_model_admission_keep_typed_causes() {
+    use qsl_semantics::model::dispatch::GeneralizationClosure;
+    use qsl_semantics::model::intake::SelectedModel;
+    use qsl_semantics::model::object_environment::ObjectEnvironment;
+    use qsl_semantics::model::population::{
+        admit_binding, AdmissionMeter, AdmissionOutcome, PopulationAdmissionLimits,
+        PopulationDocument, PopulationMember,
+    };
+    use quire_semantic_value::declaration::TypeEnvironment;
+
+    let types = TypeEnvironment::new([], []).unwrap();
+    let unknown = Value::Population(quire_exact::PopulationId::from_digest([9; 32]));
+    let unregistered = admit_model_arguments(
+        &[],
+        &types,
+        &[("population".to_owned(), ValueType::Population(Some(1)))],
+        &[unknown],
+        &ObjectEnvironment::default(),
+    );
+    assert!(matches!(
+        unregistered,
+        Err(ref refusal) if matches!(**refusal, RunRefusal::WrongValueKind { position: 0 })
+    ));
+
+    let (selected_view, _, _) = synthetic_model("selected");
+    let (foreign_view, foreign_type, foreign_population) = synthetic_model("foreign");
+    let document = PopulationDocument {
+        model_identity: foreign_view.model_selection().identity.clone(),
+        members: vec![PopulationMember {
+            object: "a1".to_owned(),
+            type_identity: foreign_type,
+            field_values: Vec::new(),
+        }],
+    };
+    let mut meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let AdmissionOutcome::Admitted(binding) = admit_binding(
+        &foreign_view,
+        &document,
+        &foreign_population,
+        GeneralizationClosure::Closed,
+        Some(1),
+        &mut meter,
+    ) else {
+        panic!("foreign population admits");
+    };
+    let population = Value::Population(binding.population_id());
+    let objects = ObjectEnvironment::default()
+        .with_population(binding)
+        .unwrap();
+    let maximum_mismatch = admit_model_arguments(
+        &[],
+        &types,
+        &[("population".to_owned(), ValueType::Population(Some(2)))],
+        std::slice::from_ref(&population),
+        &objects,
+    )
+    .expect_err("a declared maximum mismatch refuses before evaluation");
+    assert!(matches!(
+        *maximum_mismatch,
+        RunRefusal::WrongValueKind { position: 0 }
+    ));
+    let selected = SelectedModel {
+        alias: "M".to_owned(),
+        span: qsl_foundation::Span { start: 0, end: 0 },
+        view: selected_view,
+    };
+    let refusal = admit_model_arguments(
+        &[selected],
+        &types,
+        &[("population".to_owned(), ValueType::Population(Some(1)))],
+        &[population],
+        &objects,
+    )
+    .expect_err("a population from another selected model refuses");
+    assert!(matches!(
+        *refusal,
+        RunRefusal::Admission { position: 0, refusal }
+            if matches!(refusal.cause, ModelRefusalCause::ForeignModelSelection { .. })
+    ));
+}
+
+#[test]
+#[trace("TC-792", "FR-100-AC-16")]
+fn tc_792_reference_foreign_model_precedes_universe_and_type_checks() {
+    use qsl_semantics::model::intake::SelectedModel;
+    use quire_semantic_value::declaration::TypeEnvironment;
+
+    let (selected_view, selected_type, _) = synthetic_model("selected-reference");
+    let (foreign_view, foreign_type, _) = synthetic_model("foreign-reference");
+    let selected_model = SelectedModel {
+        alias: "M".to_owned(),
+        span: qsl_foundation::Span { start: 0, end: 0 },
+        view: selected_view.clone(),
+    };
+    let foreign_model = SelectedModel {
+        alias: "M2".to_owned(),
+        span: qsl_foundation::Span { start: 0, end: 0 },
+        view: foreign_view.clone(),
+    };
+    let declared = selected_view.type_identities()[&selected_type];
+    let supplied = foreign_view.type_identities()[&foreign_type];
+    let reference = Value::Reference(quire_exact::ObjectReference::new(
+        foreign_view
+            .object_universe_of(&foreign_type)
+            .unwrap()
+            .identity(),
+        supplied,
+        quire_exact::ObjectId::new("f1").unwrap(),
+    ));
+    let types = TypeEnvironment::new([], []).unwrap();
+    let refusal = admit_model_arguments(
+        &[selected_model, foreign_model],
+        &types,
+        &[("reference".to_owned(), ValueType::Reference(declared))],
+        &[reference],
+        &qsl_semantics::model::object_environment::ObjectEnvironment::default(),
+    )
+    .expect_err("a reference from another selected model refuses");
+    assert!(matches!(
+        *refusal,
+        RunRefusal::Admission { position: 0, refusal }
+            if matches!(refusal.cause, ModelRefusalCause::ForeignModelSelection { .. })
+    ));
+}
+
+#[test]
+#[trace("TC-792", "FR-100-AC-16")]
+fn tc_792_foreign_type_maximum_and_dangling_controls_keep_admission_causes() {
+    use qsl_semantics::model::intake::SelectedModel;
+    use quire_semantic_value::declaration::{ObjectTypeDeclaration, TypeEnvironment};
+
+    let (selected_view, selected_type, _) = synthetic_model("selected-controls");
+    let (foreign_view, foreign_type, _) = synthetic_model("foreign-controls");
+    let models = vec![
+        SelectedModel {
+            alias: "M".to_owned(),
+            span: qsl_foundation::Span { start: 0, end: 0 },
+            view: selected_view.clone(),
+        },
+        SelectedModel {
+            alias: "M2".to_owned(),
+            span: qsl_foundation::Span { start: 0, end: 0 },
+            view: foreign_view.clone(),
+        },
+    ];
+    let foreign_reference = Value::Reference(quire_exact::ObjectReference::new(
+        foreign_view
+            .object_universe_of(&foreign_type)
+            .unwrap()
+            .identity(),
+        foreign_view.type_identities()[&foreign_type],
+        quire_exact::ObjectId::new("foreign").unwrap(),
+    ));
+    let unknown_type = quire_exact::EffectiveId::from_digest([7; 32]);
+    let foreign_type_refusal = admit_model_arguments(
+        &models,
+        &TypeEnvironment::new([], []).unwrap(),
+        &[("reference".to_owned(), ValueType::Reference(unknown_type))],
+        &[foreign_reference],
+        &ObjectEnvironment::default(),
+    )
+    .expect_err("an uncovered supplied type retains foreign-type admission");
+    assert!(matches!(
+        *foreign_type_refusal,
+        RunRefusal::Admission { position: 0, refusal }
+            if matches!(refusal.cause, ModelRefusalCause::ForeignType { .. })
+    ));
+
+    let selected_identity = selected_view.type_identities()[&selected_type];
+    let selected_reference = Value::Reference(quire_exact::ObjectReference::new(
+        selected_view
+            .object_universe_of(&selected_type)
+            .unwrap()
+            .identity(),
+        selected_identity,
+        quire_exact::ObjectId::new("dangling").unwrap(),
+    ));
+    let types = TypeEnvironment::new(
+        [],
+        [ObjectTypeDeclaration::new(
+            selected_identity,
+            "A",
+            Vec::new(),
+        )],
+    )
+    .unwrap();
+    let dangling = admit_model_arguments(
+        &models[..1],
+        &types,
+        &[(
+            "reference".to_owned(),
+            ValueType::Reference(selected_identity),
+        )],
+        &[selected_reference],
+        &ObjectEnvironment::default(),
+    )
+    .expect_err("an admitted type with no object retains dangling-reference admission");
+    assert!(matches!(
+        *dangling,
+        RunRefusal::DanglingReference { position: 0 }
+    ));
+
+    let malformed = quire_exact::ObjectId::new("");
+    assert!(
+        malformed.is_err(),
+        "raw malformed object identity is refused"
+    );
+}
+
+#[test]
+#[trace("TC-792", "FR-100-AC-14", "FR-100-AC-16")]
+fn tc_792_reference_exact_subtype_and_unrelated_vectors_use_model_conformance() {
+    use qsl_semantics::model::intake::SelectedModel;
+    use qsl_semantics::model::object_environment::ObjectEnvironment;
+    use quire_semantic_value::declaration::{ObjectTypeDeclaration, TypeEnvironment};
+    use quire_semantic_value::object_closure::ObjectClosure;
+
+    let (view, target, subtype, unrelated, root) = synthetic_reference_hierarchy("tc-792-vectors");
+    let target_id = view.type_identities()[&target];
+    let subtype_id = view.type_identities()[&subtype];
+    let unrelated_id = view.type_identities()[&unrelated];
+    let root_id = view.type_identities()[&root];
+    let types = TypeEnvironment::new(
+        [],
+        [
+            ObjectTypeDeclaration::new(root_id, "Root", Vec::new()),
+            ObjectTypeDeclaration::new(target_id, "T", Vec::new()).with_supertypes(vec![root_id]),
+            ObjectTypeDeclaration::new(subtype_id, "S", Vec::new())
+                .with_supertypes(vec![target_id]),
+            ObjectTypeDeclaration::new(unrelated_id, "U", Vec::new())
+                .with_supertypes(vec![root_id]),
+        ],
+    )
+    .unwrap();
+    let universe = view.object_universe_of(&target).unwrap().identity();
+    let target_ref = quire_exact::ObjectReference::new(
+        universe,
+        target_id,
+        quire_exact::ObjectId::new("t").unwrap(),
+    );
+    let subtype_ref = quire_exact::ObjectReference::new(
+        universe,
+        subtype_id,
+        quire_exact::ObjectId::new("s").unwrap(),
+    );
+    let unrelated_ref = quire_exact::ObjectReference::new(
+        universe,
+        unrelated_id,
+        quire_exact::ObjectId::new("u").unwrap(),
+    );
+    let world = ObjectEnvironment::new(
+        ObjectClosure::new(
+            &types,
+            [
+                (target_ref.clone(), Vec::new()),
+                (subtype_ref.clone(), Vec::new()),
+                (unrelated_ref.clone(), Vec::new()),
+            ],
+            &[],
+        )
+        .unwrap(),
+    );
+    let model = SelectedModel {
+        alias: "M".to_owned(),
+        span: qsl_foundation::Span { start: 0, end: 0 },
+        view,
+    };
+    let parameter = [("key".to_owned(), ValueType::Reference(target_id))];
+    for reference in [target_ref, subtype_ref] {
+        admit_model_arguments(
+            std::slice::from_ref(&model),
+            &types,
+            &parameter,
+            &[Value::Reference(reference)],
+            &world,
+        )
+        .expect("exact and proper subtype references admit");
+    }
+    let unrelated = admit_model_arguments(
+        std::slice::from_ref(&model),
+        &types,
+        &parameter,
+        &[Value::Reference(unrelated_ref)],
+        &world,
+    )
+    .expect_err("an in-model unrelated type refuses");
+    assert!(matches!(
+        *unrelated,
+        RunRefusal::WrongValueKind { position: 0 }
+    ));
+}
+
+#[test]
+#[trace("TC-792", "FR-100-AC-14", "FR-100-AC-16", "FR-100-AC-17")]
+fn tc_792_lookup_present_absent_malformed_and_accounting_vectors_preserve_owners() {
+    use qsl_foundation::absence::AbsenceMode;
+    use qsl_semantics::model::dispatch::GeneralizationClosure;
+    use qsl_semantics::model::population::{
+        admit_binding, lookup, AdmissionMeter, AdmissionOutcome, LookupKey, LookupOutcome,
+        PopulationAdmissionLimits, PopulationDocument, PopulationMember,
+    };
+    use quire_exact::{LimitKind, Meter};
+
+    let (view, object_type, population_key) = synthetic_model("tc-792-lookup");
+    let document = PopulationDocument {
+        model_identity: view.model_selection().identity.clone(),
+        members: vec![PopulationMember {
+            object: "present".to_owned(),
+            type_identity: object_type.clone(),
+            field_values: Vec::new(),
+        }],
+    };
+    let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let AdmissionOutcome::Admitted(binding) = admit_binding(
+        &view,
+        &document,
+        &population_key,
+        GeneralizationClosure::Closed,
+        Some(1),
+        &mut admission,
+    ) else {
+        panic!("the lookup population admits");
+    };
+    let universe = *binding.universe();
+    let type_identity = view.type_identities()[&object_type];
+    let key = |object: &[u8]| LookupKey {
+        static_type: object_type.clone(),
+        universe: universe.as_bytes().to_vec(),
+        type_identity,
+        object: object.to_vec(),
+    };
+    let mut present_meter = Meter::new(default_accounting(1_000_000));
+    let present = lookup(
+        &binding,
+        &object_type,
+        &key(b"present"),
+        AbsenceMode::Refused,
+        &mut present_meter,
+    );
+    assert!(matches!(
+        present,
+        LookupOutcome::Completed(Some(reference))
+            if reference.key().object == "present"
+    ));
+    assert!(present_meter.consumed(LimitKind::WorkUnits) > 0);
+
+    let mut absent_meter = Meter::new(default_accounting(1_000_000));
+    let absent = lookup(
+        &binding,
+        &object_type,
+        &key(b"absent"),
+        AbsenceMode::Refused,
+        &mut absent_meter,
+    );
+    assert!(matches!(
+        absent,
+        LookupOutcome::Refused(refusal)
+            if matches!(refusal.cause, ModelRefusalCause::AbsentKey { .. })
+    ));
+
+    let malformed = lookup(
+        &binding,
+        &object_type,
+        &key(&[0xff, 0xfe]),
+        AbsenceMode::Refused,
+        &mut Meter::new(default_accounting(1_000_000)),
+    );
+    assert!(matches!(
+        malformed,
+        LookupOutcome::Refused(refusal)
+            if matches!(refusal.cause, ModelRefusalCause::AbsentKey { ref key, .. } if key == &vec![0xff, 0xfe])
+    ));
+
+    let exhausted = lookup(
+        &binding,
+        &object_type,
+        &key(b"present"),
+        AbsenceMode::Refused,
+        &mut Meter::new(default_accounting(0)),
+    );
+    assert!(matches!(exhausted, LookupOutcome::Incomplete(_)));
 }
 
 /// FR-100-AC-1/AC-7 (TC-450 step 1, TC-452 step 1): `seven()` completes
@@ -77,6 +1055,7 @@ fn tc_452_seven_completes_and_agrees_with_compile() {
         &DependencyInput::default(),
         SpineLimits::default(),
         &call("seven", Vec::new()),
+        &qsl_semantics::model::object_environment::ObjectEnvironment::default(),
         &Cancel::new(),
     )
     .unwrap();
@@ -106,6 +1085,7 @@ fn tc_450_step_6_libraries_and_models_both_present_runs() {
         &DependencyInput::default(),
         SpineLimits::default(),
         &call("seven", Vec::new()),
+        &qsl_semantics::model::object_environment::ObjectEnvironment::default(),
         &Cancel::new(),
     )
     .unwrap()
@@ -268,6 +1248,7 @@ fn run_limited(limits: SpineLimits, call: &Call) -> Result<CallOutcome, Box<RunR
         &DependencyInput::default(),
         limits,
         call,
+        &qsl_semantics::model::object_environment::ObjectEnvironment::default(),
         &Cancel::new(),
     )
     .map(|(_, outcome)| outcome)
@@ -465,6 +1446,19 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
         CallOutcome::Completed(CallValue::Integer(rendered)) => {
             assert_eq!(rendered.to_string(), "1180591620717411303424");
         }
+        other => panic!("{other:?}"),
+    }
+    let reference = quire_exact::ObjectReference::new(
+        UniverseId::from_digest([4; 32]),
+        quire_exact::EffectiveId::from_digest([5; 32]),
+        quire_exact::ObjectId::new("g1").unwrap(),
+    );
+    match convert(FamilyOutcome::Evaluated(Outcome::Completed(
+        Value::Reference(reference.clone()),
+    )))
+    .unwrap()
+    {
+        CallOutcome::Completed(CallValue::Reference(rendered)) => assert_eq!(rendered, reference),
         other => panic!("{other:?}"),
     }
 
@@ -845,6 +1839,7 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
     for reason in [
         UndefinedReason::PreconditionFalse,
         UndefinedReason::AbsentKey,
+        UndefinedReason::IncompleteClosure,
     ] {
         let undefined = FamilyResult::Undefined(Box::new(StubUndefined(reason)));
         match convert(FamilyOutcome::FamilyEvaluated(undefined)).unwrap() {

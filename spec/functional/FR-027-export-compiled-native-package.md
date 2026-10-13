@@ -34,6 +34,8 @@ request is the command encoding of the `parse`, `select`, `check` and
 `package` operations composed (FR-278). Every exit status this requirement
 states is FR-285's exit code of the outcome's ADR-013 O-16 category.
 
+The code still applies fixed file-count and aggregate-byte ceilings; they become the configurable `request_bytes` and `dependent_bytes` limits FR-026 states.
+
 ## Inputs
 
 A closed format/request JSON envelope. The request contains only models,
@@ -77,9 +79,12 @@ command-error envelope, with the refusing spine stage (`source`, `forms`,
 code. A consumer selects
 those bytes by their SHA-256 digest and may reread them using the existing
 NativePackage::read_verified API with explicit source/model bindings.
-Intake and static failures emit no package bytes and use FR-026's existing native-run-result/1
-command-error envelope on stderr, including the original request digest and
-stage/code when available. On FR-301's six-code contract, refusal, malformed
+Intake and static failures emit no package bytes and use the artifact-command
+refusal envelope on stderr: `format` is `native-run-result/2`, `status` is
+`refused` or `incomplete`, and `request_digest` retains the original request
+digest when available, alongside the stage and code. This artifact envelope
+is outside FR-267's closed `run` command-error reader. On FR-301's six-code
+contract, refusal, malformed
 requests, I/O failures and invalid command usage all exit 20; a selected model
 naming a real, profile-gated capability this build does not admit — a later
 native model profile or a rational scalar/value declared outside its admitting
@@ -104,6 +109,8 @@ The command's compilation module shall own model admission and parse/link/check/
 The compiler command shall finish package construction before writing its bytes.
 If a static stage fails, then the compiler command shall return its existing
 typed failure without a successful artifact.
+
+Library source files count toward `dependent_bytes`.
 
 ## Acceptance Criteria
 
@@ -132,11 +139,3 @@ typed failure without a successful artifact.
 - [FR-278](FR-278-parse-select-check-and-package-as-library-operations.md): the library operations the command encodes.
 - [FR-285](FR-285-map-every-outcome-category-to-one-exit-code.md): the exit function.
 - [FR-287](FR-287-reach-qsl-through-the-driver-cli.md): the driver CLI.
-
-## Status
-
-FR-027-AC-4 is implemented for the four-label identity (ADR-013 §7 slice S-4b) and backed by TC-430. Remaining work (implementation, Linear QSL-381): the request identity and the package `source` drop `revision_namespace` and `revision` (QSpec STD-150).
-FR-027-AC-5 to FR-027-AC-8 are implemented (ADR-011 §7.3 M-6a) and backed by TC-435.
-FR-027-AC-10 (the `libraries` member) is implemented and backed by TC-446 step 7. Library source files count toward `dependent_bytes`.
-Remaining work (implementation): the code still applies fixed file-count and aggregate-byte ceilings; they become the configurable `request_bytes` and `dependent_bytes` limits FR-026 states.
-FR-027-AC-11 (the command as the composition of FR-278's operations) is specified and not yet implemented -- TC-785 planned.

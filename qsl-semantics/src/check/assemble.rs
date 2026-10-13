@@ -60,7 +60,7 @@ mod units;
 use super::CheckedGraph;
 use crate::model::domain_package::{
     DomainPackageRecord, FieldMemberRecord, Multiplicity, NativeValueType, OperationMemberRecord,
-    ValueTypeRef,
+    ScalarValueDomain, ValueTypeRef,
 };
 use crate::model::intake::{member_identity_name, type_identity_segment, SelectedModel};
 use crate::model::key::DeclarationKey;
@@ -784,6 +784,7 @@ fn model_value_type(
         ValueTypeRef::Native(native) => match native {
             NativeValueType::Boolean => ValueType::Boolean,
             NativeValueType::Integer => ValueType::Integer,
+            NativeValueType::Timestamp => ValueType::Timestamp,
             NativeValueType::Float32 => return Err(Unmapped::Float(IeeeWidth::Binary32)),
             NativeValueType::Float64 => return Err(Unmapped::Float(IeeeWidth::Binary64)),
             // Intake refuses these: their domain parameters have no Semantic
@@ -796,10 +797,14 @@ fn model_value_type(
             Some(DomainPackageRecord::ObjectType(_)) => {
                 ValueType::Reference(*identities.get(key).ok_or(Unmapped::Broken)?)
             }
-            Some(DomainPackageRecord::ScalarType(scalar)) => ValueType::Int(
-                IntegerInterval::new(Integer::from(scalar.lower), Integer::from(scalar.upper))
-                    .map_err(|_| Unmapped::Unsupported)?,
-            ),
+            Some(DomainPackageRecord::ScalarType(scalar)) => match &scalar.domain {
+                ScalarValueDomain::Integer { lower, upper } => ValueType::Int(
+                    IntegerInterval::new(Integer::from(*lower), Integer::from(*upper))
+                        .map_err(|_| Unmapped::Unsupported)?,
+                ),
+                ScalarValueDomain::Native(NativeValueType::Timestamp) => ValueType::Timestamp,
+                ScalarValueDomain::Native(_) => return Err(Unmapped::Unsupported),
+            },
             Some(_) => return Err(Unmapped::Unsupported),
             None => return Err(Unmapped::Broken),
         },
@@ -1588,6 +1593,17 @@ impl PackageDeclarations {
             .iter()
             .map(|enumeration| (enumeration.name.name.clone(), enumeration.name.span))
             .collect();
+        // A selected model's alias is the declaration-site locus for model
+        // graph roots that have no value or function occurrence of their own.
+        // `Origin::TypeDeclaration` resolves this same span table, so such a
+        // generated occurrence remains source-located rather than becoming an
+        // `UnlocatedOccurrence` at emission.
+        declared_type_spans.extend(
+            selections
+                .models
+                .iter()
+                .map(|selection| (selection.alias.clone(), selection.span)),
+        );
         for (composite, handle) in unit.composites.iter().zip(&handles) {
             let shape = match &composite.members {
                 Members::Record(fields) => {

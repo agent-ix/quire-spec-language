@@ -237,7 +237,9 @@ impl From<ModelRefusal> for ModelQueryRefusal {
 
 impl CatalogCoded for ModelQueryRefusal {
     fn catalog_code(&self) -> CatalogCode {
-        self.cause.catalog_code()
+        self.cause
+            .catalog_code()
+            .with_prefix(qsl_semantics::family::FamilyKind::StateModel.catalog_code_prefix())
     }
 
     /// FR-096's key table rows for this cause (`absent-key` and
@@ -261,7 +263,7 @@ pub(crate) fn identity_string(identity: &[u8]) -> String {
 /// ADR-013 O-16: the `StateModel` family's evaluation-time undefined cause
 /// (FR-090-AC-11, AC-12). ADR-012 assigns dispatch, dispatch preconditions
 /// and population lookup to `StateModel` (§1, §3, §4.3).
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub(crate) enum StateModelUndefined {
     /// FR-151 (TC-196 D06): a dispatched `receiver.member(args)` call's
     /// selected method's effective precondition evaluated to `false`.
@@ -276,9 +278,31 @@ pub(crate) enum StateModelUndefined {
         /// [`identity_string`].
         key: String,
     },
+    /// FR-090-AC-21: an `allInstances<T>` query cannot produce a complete
+    /// result because no declared population member type covers the queried
+    /// type by reflexive conformance.
+    IncompleteClosure {
+        /// The queried effective type's canonical node name.
+        queried_type: String,
+        /// The queried type as the minimal uncovered-subtype witness.
+        uncovered_subtypes: Vec<String>,
+    },
+}
+
+impl std::fmt::Debug for StateModelUndefined {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("StateModelUndefined")
+            .field("catalog_code", &self.catalog_code())
+            .field("record", &self.undefined_record())
+            .finish()
+    }
 }
 
 impl UndefinedCoded for StateModelUndefined {
+    fn catalog_prefix(&self) -> Option<&'static str> {
+        Some(qsl_semantics::family::FamilyKind::StateModel.catalog_code_prefix())
+    }
     fn undefined_record(&self) -> UndefinedRecord {
         match self {
             Self::PreconditionFalse(failure) => UndefinedRecord {
@@ -295,6 +319,17 @@ impl UndefinedCoded for StateModelUndefined {
             Self::AbsentKey { binding, key } => UndefinedRecord {
                 reason: UndefinedReason::AbsentKey,
                 fields: BTreeMap::from([("binding", binding.clone()), ("key", key.clone())]),
+            },
+            Self::IncompleteClosure {
+                queried_type,
+                uncovered_subtypes,
+            } => UndefinedRecord {
+                reason: UndefinedReason::IncompleteClosure,
+                fields: BTreeMap::from([
+                    ("closure", "subtype".to_owned()),
+                    ("queried_type", queried_type.clone()),
+                    ("uncovered_subtypes", uncovered_subtypes.join(", ")),
+                ]),
             },
         }
     }
@@ -442,6 +477,7 @@ mod tests {
         let expected = refusal.catalog_code();
         let carried = ModelQueryRefusal::from(refusal);
         assert_eq!(carried.catalog_code(), expected);
+        assert_eq!(carried.catalog_code().prefix(), Some("state-model"));
         assert_eq!(
             expected,
             CatalogCode::new("cardinality_out_of_bound", "above-maximum")
