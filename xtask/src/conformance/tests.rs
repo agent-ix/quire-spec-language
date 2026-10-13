@@ -317,6 +317,8 @@ fn ordinary_ci_cargo_lane_inherits_canonical_checkout() {
         "-o",
         "cargo-deny-bans",
         "-o",
+        "test-deep-format",
+        "-o",
         "ci-docs",
         "-o",
         "arch-lint-canonical-encoder",
