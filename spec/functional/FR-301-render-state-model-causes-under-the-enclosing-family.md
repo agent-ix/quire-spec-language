@@ -52,7 +52,7 @@ carries the `StateModel` cause unchanged.
 
 The evaluator SHALL carry each model cause ADR-013 O-16 assigns to
 `StateModel` (for example `PreconditionFalse`, the `absent refused` `lookup`
-refusal, and the `ancestor-steps` resource refusal of ADR-016 SC-6) in the
+refusal, and the `insufficient-next-charge` resource refusal of ADR-016 SC-6) in the
 enclosing family's result as a `StateModel` cause. Its typed cause-family
 attribution SHALL be `StateModel`, never the enclosing family; its catalog
 code and cause SHALL retain their owning spellings unchanged, without an

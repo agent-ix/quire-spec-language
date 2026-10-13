@@ -30,7 +30,7 @@ use std::collections::BTreeMap;
 
 use qsl_forms::StateClauseKind;
 use qsl_foundation::diagnostic::{
-    CatalogCoded, Code, InternalFault, LimitExceeded, ALLOCATION_FAILED,
+    BudgetDenial, CatalogCoded, Code, InternalFault, LimitExceeded, ALLOCATION_FAILED,
 };
 use qsl_foundation::Setting;
 use quire_exact::{EffectiveId, Identifier, ObjectId, ObjectReference, UniverseId, Value};
@@ -867,29 +867,18 @@ fn model_views(
             // normalized at compile time.
             NormalizeOutcome::Incomplete(incomplete) => {
                 return Err(caller_budget_refusal(
-                    &incomplete.limit_exceeded(),
+                    &incomplete.denial(),
                     INSUFFICIENT_NEXT_CHARGE,
-                    &[
-                        ("stage", "model-normalization".to_owned()),
-                        (
-                            "accounting_contract",
-                            "ModelNormalizationLimitsV1".to_owned(),
-                        ),
-                        ("consumed", incomplete.consumed.to_string()),
-                        ("next_charge", incomplete.next_charge.to_string()),
-                        ("charge_point", incomplete.charge_point.as_str().to_owned()),
-                    ],
                 ))
             }
             NormalizeOutcome::Refused(refusals) => {
                 return Err(refusals
                     .iter()
                     .find_map(|refusal| {
-                        let limit = refusal.cause.limit_exceeded()?;
+                        let denial = refusal.cause.denial()?;
                         Some(caller_budget_refusal(
-                            &limit,
+                            &denial,
                             refusal.cause.catalog_code().cause(),
-                            &[],
                         ))
                     })
                     .unwrap_or_else(|| fault("model-reconsistent-normalize")))
@@ -1056,24 +1045,13 @@ fn input_bytes_exceeded(bound: u64, actual: u128) -> AdmissionFailure {
     ))
 }
 
-/// A reached ceiling of the caller's model-normalization budget
-/// (`ModelNormalizationLimits`, ADR-014 B-2) as an admission refusal: the
-/// compile path's `resource_exhausted` with its `cause` (for example
-/// `ancestor-steps`, or `insufficient-next-charge` for a denied charge),
-/// carrying the `setting`, `bound` and `actual` of FR-255, the `retained`
-/// fields of a denied charge, and no limit `kind`, which only a stage limit
-/// has.
-fn caller_budget_refusal(
-    limit: &LimitExceeded,
-    cause: &'static str,
-    retained: &[(&'static str, String)],
-) -> AdmissionFailure {
+/// A reached ceiling of a caller's budget (`ModelNormalizationLimitsV1` or
+/// `PopulationAdmissionLimitsV1`, ADR-014 B-2) as an admission refusal: the compile path's
+/// `resource_exhausted` with its `cause`, carrying FR-255 Behavior 1's
+/// record from [`BudgetDenial::catalog_fields`].
+fn caller_budget_refusal(denial: &BudgetDenial, cause: &'static str) -> AdmissionFailure {
     let mut record = AdmissionRecord::new(Code::ResourceExhausted, cause);
-    record.fields.extend(retained.iter().cloned());
-    if let Some(mut fields) = limit.catalog_fields() {
-        fields.remove("kind");
-        record.fields.extend(fields);
-    }
+    record.fields.extend(denial.catalog_fields());
     refuse(record)
 }
 

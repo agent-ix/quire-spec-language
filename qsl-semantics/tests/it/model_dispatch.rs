@@ -262,7 +262,7 @@ fn d01_the_eighth_dispatch_candidate_charge_is_incomplete_at_the_named_limit() {
     };
     assert_eq!(incomplete.limit_kind, LimitKind::DispatchCandidates);
     assert_eq!(
-        incomplete.limit_exceeded().setting(),
+        incomplete.denial().setting(),
         qsl_foundation::Setting::ModelDispatchCandidates
     );
     assert_eq!(incomplete.limit, 7);
@@ -839,8 +839,8 @@ fn a_family_at_the_configured_bound_links_and_one_step_more_refuses() {
             );
             let exceeded = refusal
                 .cause
-                .limit_exceeded()
-                .expect("a step ceiling is a stage limit");
+                .denial()
+                .expect("a step ceiling is a denied charge");
             assert_eq!(
                 exceeded.setting(),
                 qsl_foundation::Setting::ModelFamilySteps
