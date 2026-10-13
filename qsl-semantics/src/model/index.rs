@@ -605,6 +605,7 @@ impl RecordIndex {
             .filter(|(_, flags)| {
                 flags.object_type
                     || flags.record_value_type
+                    || flags.variant_type
                     || flags.event_type
                     || flags.state_machine
                     || flags.persistence_interface

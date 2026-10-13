@@ -19,11 +19,15 @@ use qsl_semantics::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, EnumRecord, VariantRecord,
 };
 use qsl_semantics::model::intake::{admit, meaning, package_input, read_domain_package};
-use qsl_semantics::model::key::{hex, DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
+use qsl_semantics::model::key::{
+    hex, DeclarationKey, EffectiveDeclarationPreimage, RULE_QUALIFY, SHA256_JCS_DIGEST_DOMAIN,
+};
 use qsl_semantics::model::normalize::{
-    normalize_with_meter, ModelRefusal, ModelRefusalCause, NormalizeOutcome,
+    normalize_with_meter, EffectiveView, ModelRefusal, ModelRefusalCause, NormalizeOutcome,
 };
 use qsl_semantics::model::refusal::MemberPath;
+use quire_exact::EffectiveId;
+use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value};
 
 use qsl_semantics::model::intake::admit_unit;
@@ -523,7 +527,7 @@ fn a_unit_with_no_clause_naming_the_variant_type_assembles() {
 /// TC-997 step 2: a clause naming `Tier` refuses `unsupported_construct`/
 /// `declaration-form` at the clause, while the declaration and its exports
 /// stay admitted and equal to step 1's.
-#[trace("TC-997", "FR-056-AC-27")]
+#[trace("TC-997", "FR-056-AC-27", "FR-056-AC-31")]
 #[test]
 fn a_clause_naming_a_variant_type_refuses_while_the_declaration_is_admitted() {
     let document = tiers(&["Gold", "Standard"]);
@@ -757,4 +761,225 @@ fn enumeration_rows_that_slug_alike_are_refused_by_the_lift() {
             .any(|d| d.code.to_string() == "agent-ix.extraction-frontend.UNSLUGGABLE_NAME"),
         "{diagnostics:?}"
     );
+}
+
+/// The effective view normalization completes for `document`.
+fn view_of(document: &Value) -> EffectiveView {
+    let package = read(document).expect("the variant types are read");
+    match normalize_with_meter(&package, ModelNormalizationLimits::default()).0 {
+        NormalizeOutcome::Completed(view) => view,
+        other => panic!("normalization must complete, got {other:?}"),
+    }
+}
+
+/// The effective declaration whose original is `original`.
+fn entry_of<'a>(
+    view: &'a EffectiveView,
+    original: &DeclarationKey,
+) -> &'a qsl_semantics::model::normalize::ViewEntry {
+    let mut found = view
+        .declarations()
+        .iter()
+        .filter(|entry| &entry.preimage.original == original);
+    let entry = found
+        .next()
+        .unwrap_or_else(|| panic!("no effective declaration for {original:?}"));
+    assert!(found.next().is_none(), "one effective entry per original");
+    entry
+}
+
+/// The single phase-2 qualify fact `[original]` and nothing else.
+fn assert_only_qualify(preimage: &EffectiveDeclarationPreimage) {
+    assert_eq!(preimage.derivation.len(), 1, "{preimage:?}");
+    let fact = &preimage.derivation[0];
+    assert_eq!(fact.ordinal, 0);
+    assert_eq!(fact.rule, RULE_QUALIFY);
+    assert_eq!(
+        fact.inputs.iter().collect::<Vec<_>>(),
+        [&preimage.original],
+        "the qualify fact names the original alone"
+    );
+}
+
+/// TC-1003 step 1: a variant type is one effective type and each case one
+/// effective member of it, derived from the case node's own key.
+#[trace("TC-1003", "FR-056-AC-29", "FR-081-AC-16")]
+#[test]
+fn a_variant_type_and_its_cases_have_effective_identities() {
+    let view = view_of(&tiers(&["Gold", "Standard"]));
+    assert_eq!(view.declarations().len(), 5, "two types and three cases");
+
+    let identities = view.type_identities();
+    for node in ["Tier", "Level"] {
+        let entry = entry_of(&view, &key(node));
+        assert_eq!(entry.preimage.owner_effective_type, None);
+        assert_only_qualify(&entry.preimage);
+        assert_eq!(identities.get(&key(node)), Some(&entry.effective_id));
+    }
+    assert_eq!(identities.len(), 2, "only the variant types are types");
+
+    let tier = identities[&key("Tier")];
+    let level = identities[&key("Level")];
+    for (owner, node) in [
+        (tier, "variant/Tier-Gold"),
+        (tier, "variant/Tier-Standard"),
+        (level, "variant/Level-Gold"),
+    ] {
+        let entry = entry_of(&view, &key(node));
+        assert_eq!(entry.preimage.owner_effective_type, Some(owner));
+        assert!(entry.visible);
+        assert_only_qualify(&entry.preimage);
+    }
+
+    // `Tier`'s `Gold` and `Level`'s `Gold` are different effective members.
+    assert_ne!(
+        entry_of(&view, &key("variant/Tier-Gold")).effective_id,
+        entry_of(&view, &key("variant/Level-Gold")).effective_id
+    );
+}
+
+/// TC-1003 step 2: the order the document lists the cases in changes no
+/// effective identity, entry or position.
+#[trace("TC-1003", "FR-056-AC-29", "FR-081-AC-16")]
+#[test]
+fn reordering_the_cases_changes_no_effective_identity() {
+    let gold_first = view_of(&tiers(&["Gold", "Standard"]));
+    let standard_first = view_of(&tiers(&["Standard", "Gold"]));
+    // The packages differ in their bytes (case origins), so the views'
+    // package digests differ; every effective entry and its position match.
+    assert_eq!(gold_first.declarations(), standard_first.declarations());
+    assert_eq!(
+        gold_first.type_identities(),
+        standard_first.type_identities()
+    );
+}
+
+/// TC-1003 step 3: cases that differ only in letter case are distinct
+/// effective members, and no case shares an identity with its owner.
+#[trace("TC-1003", "FR-056-AC-29")]
+#[test]
+fn cases_differing_in_letter_case_have_distinct_effective_identities() {
+    let view = view_of(&tiers(&["Gold", "gold"]));
+    let upper = entry_of(&view, &key("variant/Tier-Gold")).effective_id;
+    let lower = entry_of(&view, &key("variant/Tier-gold")).effective_id;
+    assert_ne!(upper, lower);
+    let ids: std::collections::BTreeSet<EffectiveId> = view
+        .declarations()
+        .iter()
+        .map(|entry| entry.effective_id)
+        .collect();
+    assert_eq!(ids.len(), view.declarations().len());
+}
+
+/// TC-1003 step 4: two same-name cases with distinct identities refuse and
+/// leave no effective view, even beside a valid variant type.
+#[trace("TC-1003", "FR-056-AC-30")]
+#[test]
+fn a_same_name_case_conflict_yields_no_effective_view() {
+    let mut second = case("Tier", "Gold", 11);
+    second["identity"] = json!(id("variant/Tier-Gold2"));
+    let found = refusals(&single_type(|d| {
+        d["types"][0]["variants"] = json!([case("Tier", "Gold", 10), second]);
+        d["types"]
+            .as_array_mut()
+            .unwrap()
+            .push(variant_type("Level", vec![case("Level", "Gold", 20)]));
+    }));
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert_eq!(found[0].code, Code::InvalidModelBinding);
+    assert_eq!(
+        found[0].cause,
+        ModelRefusalCause::ConflictingBinding {
+            key: key("Tier"),
+            member: Some(path("TypeDefinition.variants[1]")),
+        }
+    );
+}
+
+/// TC-1003 step 5: two cases that share one identity are refused at the second
+/// case of the `variants` list, whichever of them is minted correctly:
+/// `invalid_model_binding`/`malformed-declaration` at path
+/// `TypeDefinition.variants[1].identity`, located at that case's span (the
+/// correctly minted `Gold` when `Silver` is listed first), with
+/// the reader's `DUPLICATE_IDENTITY` diagnostic retained.
+#[trace("TC-1003", "FR-056-AC-30")]
+#[test]
+fn two_cases_sharing_an_identity_are_refused_at_the_second_listed() {
+    for (gold_line, silver_line) in [(10_u64, 11_u64), (11, 10)] {
+        let gold = case("Tier", "Gold", gold_line);
+        let mut silver = case("Tier", "Silver", silver_line);
+        silver["identity"] = json!(id("variant/Tier-Gold"));
+        let (list, later_line) = if gold_line < silver_line {
+            (json!([gold, silver]), silver_line)
+        } else {
+            (json!([silver, gold]), gold_line)
+        };
+        let found = refusals(&single_type(|d| d["types"][0]["variants"] = list));
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].code, Code::InvalidModelBinding);
+        let ModelRefusalCause::IntakeMalformedDeclaration {
+            node, member, span, ..
+        } = &found[0].cause
+        else {
+            panic!("{found:?}");
+        };
+        assert_eq!(node, &id("variant/Tier-Gold"));
+        assert_eq!(member, &path("TypeDefinition.variants[1].identity"));
+        assert_eq!(
+            span.as_ref().map(|span| span.start.line),
+            Some(later_line as usize)
+        );
+        assert!(
+            found[0].detail.contains("DUPLICATE_IDENTITY"),
+            "{:?}",
+            found[0].detail
+        );
+    }
+}
+
+/// TC-1004: the assembler declares each variant type in the type environment
+/// under its effective identity, with every case keyed by its own effective
+/// identity in ascending name order, while no source name resolves to it.
+#[trace("TC-1004", "FR-056-AC-31")]
+#[test]
+fn the_assembler_declares_variant_types_in_the_type_environment() {
+    let document = tiers(&["Standard", "Gold"]);
+    let bytes = serde_json::to_vec(&document).unwrap();
+    let declarations =
+        admit_and_assemble_with_body(&bytes, "function noop using v(): Boolean pure { true }")
+            .expect("a unit naming no variant type assembles");
+    let view = view_of(&document);
+
+    assert_eq!(declarations.variant_types.len(), 2);
+    for (node, name, cases) in [
+        ("Tier", "Config::Tier", vec!["Gold", "Standard"]),
+        ("Level", "Config::Level", vec!["Gold"]),
+    ] {
+        let declared = declarations
+            .variant_types
+            .iter()
+            .find(|declared| declared.name() == name)
+            .unwrap_or_else(|| panic!("{name} is declared"));
+        assert_eq!(declared.key(), view.type_identities()[&key(node)]);
+        let declared_cases: Vec<_> = declared.cases().iter().map(|c| c.name()).collect();
+        assert_eq!(declared_cases, cases);
+        for case in declared.cases() {
+            let entry = entry_of(&view, &key(&format!("variant/{node}-{}", case.name())));
+            assert_eq!(case.key(), entry.effective_id);
+            assert_eq!(entry.preimage.owner_effective_type, Some(declared.key()));
+        }
+    }
+    let keys: Vec<_> = declarations.variant_types.iter().map(|v| v.key()).collect();
+    assert!(keys.windows(2).all(|pair| pair[0] < pair[1]));
+
+    // The checked scope holds them too, found by effective identity.
+    let expected = declarations.variant_types.clone();
+    let graph = declarations
+        .check(CheckingLimits::default())
+        .expect("the unit checks");
+    let scope = graph.scope();
+    assert_eq!(scope.variant_types(), expected.as_slice());
+    for declared in &expected {
+        assert_eq!(scope.variant_type(declared.key()), Some(declared));
+    }
 }
