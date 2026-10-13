@@ -4321,6 +4321,7 @@ fn a_deep_hierarchy_is_judged_by_the_callers_ancestor_steps_not_a_fixed_ceiling(
         field("accounting_contract"),
         Some("ModelNormalizationLimitsV1")
     );
+    assert_eq!(field("limit_kind"), Some("ancestor_steps"));
     assert_eq!(field("consumed"), Some("60"));
     assert_eq!(field("next_charge"), Some("1"));
     assert_eq!(field("charge_point"), Some("model.ancestor-edge"));

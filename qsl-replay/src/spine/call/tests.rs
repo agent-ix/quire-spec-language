@@ -1851,6 +1851,7 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
                         "accounting_contract",
                         "ModelNormalizationLimitsV1".to_owned()
                     ),
+                    ("limit_kind", "ancestor_steps".to_owned()),
                     ("consumed", "5".to_owned()),
                     ("next_charge", "1".to_owned()),
                     ("charge_point", "model.ancestor-edge".to_owned()),
@@ -1888,6 +1889,7 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
                         "accounting_contract",
                         "ModelNormalizationLimitsV1".to_owned()
                     ),
+                    ("limit_kind", "family_steps".to_owned()),
                     ("consumed", "3".to_owned()),
                     ("next_charge", "1".to_owned()),
                     ("charge_point", "model.family-edge".to_owned()),

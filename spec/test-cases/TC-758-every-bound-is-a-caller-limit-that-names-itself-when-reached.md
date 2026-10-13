@@ -28,7 +28,7 @@ Tag the tests `#[trace("TC-758", "<AC id>")]`.
 ## Expected Results
 
 - Step 1: each run succeeds.
-- Step 2: each run returns `LimitExceeded` whose limit kind, configured value and limits-field name are that field's, except `format.output_bytes`, which returns `resource_exhausted`; each model-normalization field of `select`, which refuses `resource_exhausted`/`insufficient-next-charge` with the denied-charge fields (`setting`, `limit`, `actual`, `stage`, `accounting_contract`, `consumed`, `next_charge`, `charge_point`); and `intake.input_bytes`, which refuses `resource_exhausted`/`intake-limit-exceeded` with `kind`, `bound`, `actual` and `setting`; `execute` returns the outcome `Incomplete` naming the counter; `analyze` settles each open item `incomplete` with that limit as its cause.
+- Step 2: each run returns `LimitExceeded` whose limit kind, configured value and limits-field name are that field's, except `format.output_bytes`, which returns `resource_exhausted`; each model-normalization field of `select`, which refuses `resource_exhausted`/`insufficient-next-charge` with the denied-charge fields (`setting`, `limit`, `actual`, `stage`, `accounting_contract`, `limit_kind`, `consumed`, `next_charge`, `charge_point`); and `intake.input_bytes`, which refuses `resource_exhausted`/`intake-limit-exceeded` with `kind`, `bound`, `actual` and `setting`; `execute` returns the outcome `Incomplete` naming the counter; `analyze` settles each open item `incomplete` with that limit as its cause.
 - Step 3: each run succeeds.
 - Step 4: `check` succeeds, and the thread does not overflow its stack.
 - Step 5: `check` returns `LimitExceeded` naming `s3.nodes`; no outcome names a depth.

@@ -140,7 +140,7 @@ rule and a row in this table.
    because it is a size ceiling. A denied charge, `resource_exhausted`/
    `insufficient-next-charge`, carries `setting`, `limit` (QSpec FR-272's
    canonical name for the effective limit), `actual` (the prior usage plus the
-   denied amount), `stage`, `accounting_contract`, `consumed`, `next_charge`
+   denied amount), `stage`, `accounting_contract`, `limit_kind`, `consumed`, `next_charge`
    and `charge_point`, wherever the budget is read: the compile path, replay
    `select`, observation admission's re-run walks and the S6a family
    refusals. A `model.*` or `admission.*` walk ceiling is a denied one-edge

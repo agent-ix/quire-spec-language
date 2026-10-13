@@ -1182,7 +1182,14 @@ impl ModelRefusalCause {
                     )
                 };
                 Some(BudgetDenial::charge(
-                    *setting, *limit, *limit, 1, stage, contract, point,
+                    *setting,
+                    *limit,
+                    *limit,
+                    1,
+                    stage,
+                    contract,
+                    "ancestor_steps",
+                    point,
                 ))
             }
             Self::FamilySteps { limit, setting, .. } => Some(BudgetDenial::charge(
@@ -1192,6 +1199,7 @@ impl ModelRefusalCause {
                 1,
                 "model-normalization",
                 "ModelNormalizationLimitsV1",
+                "family_steps",
                 "model.family-edge",
             )),
             Self::IntakeLimitExceeded {
@@ -2186,6 +2194,7 @@ pub(crate) mod tests {
                 ("actual", "8"),
                 ("stage", "model-normalization"),
                 ("accounting_contract", "ModelNormalizationLimitsV1"),
+                ("limit_kind", "ancestor_steps"),
                 ("consumed", "7"),
                 ("next_charge", "1"),
                 ("charge_point", "model.ancestor-edge"),
@@ -2204,6 +2213,7 @@ pub(crate) mod tests {
                 ("actual", "8"),
                 ("stage", "population-admission"),
                 ("accounting_contract", "PopulationAdmissionLimitsV1"),
+                ("limit_kind", "ancestor_steps"),
                 ("consumed", "7"),
                 ("next_charge", "1"),
                 ("charge_point", "admission.ancestor-edge"),
@@ -2217,6 +2227,7 @@ pub(crate) mod tests {
                 ("actual", "10"),
                 ("stage", "model-normalization"),
                 ("accounting_contract", "ModelNormalizationLimitsV1"),
+                ("limit_kind", "family_steps"),
                 ("consumed", "9"),
                 ("next_charge", "1"),
                 ("charge_point", "model.family-edge"),

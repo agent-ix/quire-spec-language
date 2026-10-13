@@ -1267,6 +1267,7 @@ fn run_clause_writes_the_caller_budget_fields_of_a_compile_ceiling() {
     assert_eq!(fields["limit"], "1");
     assert_eq!(fields["stage"], "model-normalization");
     assert_eq!(fields["accounting_contract"], "ModelNormalizationLimitsV1");
+    assert_eq!(fields["limit_kind"], "work_units");
     for name in ["actual", "consumed", "next_charge", "charge_point"] {
         assert!(fields.get(name).is_some(), "`{name}` is retained");
     }

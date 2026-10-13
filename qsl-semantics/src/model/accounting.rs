@@ -401,6 +401,7 @@ impl Incomplete {
             self.next_charge,
             "model-normalization",
             "ModelNormalizationLimitsV1",
+            self.limit_kind.as_str(),
             self.charge_point.as_str(),
         )
     }

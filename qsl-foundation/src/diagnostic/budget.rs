@@ -17,6 +17,7 @@ use crate::Setting;
 struct DeniedCharge {
     stage: &'static str,
     accounting_contract: &'static str,
+    limit_kind: &'static str,
     consumed: u64,
     next_charge: u64,
     charge_point: &'static str,
@@ -47,7 +48,9 @@ impl BudgetDenial {
 
     /// A denied meter charge: `next_charge` more on top of `consumed` would
     /// pass `limit`. `stage` and `accounting_contract` name the budget's
-    /// owner, and `charge_point` the point that asked.
+    /// owner, `limit_kind` the counter (`work_units`, `ancestor_steps`) and
+    /// `charge_point` the point that asked.
+    #[allow(clippy::too_many_arguments)]
     pub fn charge(
         setting: Setting,
         limit: u64,
@@ -55,6 +58,7 @@ impl BudgetDenial {
         next_charge: u64,
         stage: &'static str,
         accounting_contract: &'static str,
+        limit_kind: &'static str,
         charge_point: &'static str,
     ) -> Self {
         Self {
@@ -64,6 +68,7 @@ impl BudgetDenial {
             charge: Some(DeniedCharge {
                 stage,
                 accounting_contract,
+                limit_kind,
                 consumed,
                 next_charge,
                 charge_point,
@@ -90,7 +95,7 @@ impl BudgetDenial {
     /// `kind`, `bound`, `actual` and `setting`. A denied charge
     /// (`insufficient-next-charge`) carries `setting`, `limit` (FR-272's
     /// canonical name for the effective limit), `actual`, `stage`,
-    /// `accounting_contract`, `consumed`, `next_charge` and `charge_point`.
+    /// `accounting_contract`, `limit_kind`, `consumed`, `next_charge` and `charge_point`.
     pub fn catalog_fields(&self) -> BTreeMap<&'static str, String> {
         let Some(charge) = &self.charge else {
             return LimitExceeded::new(self.setting, self.limit, self.actual)
@@ -105,6 +110,7 @@ impl BudgetDenial {
         fields.extend([
             ("stage", charge.stage.to_owned()),
             ("accounting_contract", charge.accounting_contract.to_owned()),
+            ("limit_kind", charge.limit_kind.to_owned()),
             ("consumed", charge.consumed.to_string()),
             ("next_charge", charge.next_charge.to_string()),
             ("charge_point", charge.charge_point.to_owned()),

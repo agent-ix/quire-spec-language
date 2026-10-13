@@ -1339,6 +1339,7 @@ fn select_retains_the_denied_charge_of_a_normalization_ceiling() {
             "charge_point",
             "consumed",
             "limit",
+            "limit_kind",
             "next_charge",
             "setting",
             "stage"
@@ -1348,6 +1349,7 @@ fn select_retains_the_denied_charge_of_a_normalization_ceiling() {
     assert_eq!(fields["limit"], "1");
     assert_eq!(fields["stage"], "model-normalization");
     assert_eq!(fields["accounting_contract"], "ModelNormalizationLimitsV1");
+    assert_eq!(fields["limit_kind"], "work_units");
     let consumed: u64 = fields["consumed"].parse().expect("a count");
     let next_charge: u64 = fields["next_charge"].parse().expect("a count");
     assert!(next_charge > 0);

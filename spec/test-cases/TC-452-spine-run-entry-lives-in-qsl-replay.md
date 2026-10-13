@@ -162,7 +162,7 @@ Tag the tests `#[trace("TC-452", "FR-100-AC-7")]` (steps 1 and 2),
   - `TypeMismatch`: `code` `ill_typed`, `cause` `type-mismatch`, no `fields`
     member; exit 20. `AncestorSteps`: `code` `resource_exhausted`, `cause`
     `insufficient-next-charge`, `fields` exactly `setting`, `limit`, `actual`,
-    `stage`, `accounting_contract`, `consumed`, `next_charge` and `charge_point`;
+    `stage`, `accounting_contract`, `limit_kind`, `consumed`, `next_charge` and `charge_point`;
     exit 22.
   - `undefined` with `reason` `precondition-false` and `absent-key`, exit 10.
   - `CallFailure::Fault`: a `runtime_invariant` command error at stage
