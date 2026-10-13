@@ -1334,7 +1334,13 @@ fn node_identity_label(value: &Value, at: &str) -> String {
 /// when the node's origin is `generated`, or is itself absent or not the
 /// expected shape.
 fn node_span(value: &Value) -> (Option<String>, Option<LocatedSpan>) {
-    let Some(source) = value.get("origin").and_then(|origin| origin.get("source")) else {
+    value.get("origin").map_or((None, None), origin_locus)
+}
+
+/// [`node_span`] over the `origin` object itself, as
+/// [`crate::model::domain_package::OriginalDeclaration::origin`] retains it.
+pub(crate) fn origin_locus(origin: &Value) -> (Option<String>, Option<LocatedSpan>) {
+    let Some(source) = origin.get("source") else {
         return (None, None);
     };
     let artifact = source
