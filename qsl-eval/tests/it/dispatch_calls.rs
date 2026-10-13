@@ -1695,8 +1695,8 @@ fn bridge_view(domain_package: &DomainPackage) -> EffectiveView {
     }
 }
 
-/// QSpec TC-196 D01's G/S2 diamond, evaluated at the invariant's A-static
-/// call site. Effective identities come from the normalized declarations.
+/// QSpec TC-196 D01: evaluates the diamond at the invariant's A-static call
+/// site, taking effective identities from the normalized declarations.
 #[trace("QSpec-TC-196", "QSpec-FR-151-AC-8")]
 #[test]
 fn d01_runtime_diamond_at_a_static_site_obeys_exact_work_boundaries() {
@@ -2238,10 +2238,10 @@ fn expression_spans(expression: &Expression) -> DeclarationSpans {
     }
 }
 
-/// TC-196 D01's runtime half: the real linked diamond dispatches a `D`
-/// receiver through `B.size` and a `C` receiver through `A.size`. The
-/// evaluator charges the full family at selection, then runs the chosen body
-/// and the invariant comparison.
+/// QSpec TC-196 D01: on the linked diamond, a `D` receiver dispatches to
+/// `B.size` and a `C` receiver to `A.size`. The evaluator charges the full
+/// family at selection, then runs the chosen body and the invariant
+/// comparison.
 #[trace("QSpec-TC-196", "QSpec-FR-151-AC-8")]
 #[test]
 fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
@@ -2357,7 +2357,7 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
     let package = CheckedPackage::link(graph_a);
 
     // These values are explicitly pre-admitted inputs to the state-clause
-    // evaluator. This test covers TC-196 D01's runtime dispatch half, not
+    // evaluator. This test covers QSpec TC-196 D01 runtime dispatch, not
     // FR-106's document-admission path.
     let current = Observation {
         identity: DocumentRef {
