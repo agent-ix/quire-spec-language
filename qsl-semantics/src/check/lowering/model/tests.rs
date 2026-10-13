@@ -188,6 +188,8 @@ fn query_over(
             multiplicity: one(),
         }),
         effect: OperationEffect::default(),
+        requires: Vec::new(),
+        ensures: Vec::new(),
         own_postcondition_clauses: Vec::new(),
         has_body: true,
         redefines: redefines.map(key),
@@ -1350,5 +1352,51 @@ mod quantities {
             }) if *fault == KeyFault::UnheldNominal(node_key(METRE))
         ));
         assert_eq!(graph.nodes().count(), 0);
+    }
+
+    /// FR-359-AC-3: a record value type is a `model`/`record_value_type`
+    /// node and an event type a `model`/`event_type` node, each keyed by its
+    /// `ModelOwner` alone, so one declaration identity keys the two forms
+    /// differently and equal declarations key equally.
+    #[trace("FR-359-AC-3", "TC-998")]
+    #[test]
+    fn a_record_and_an_event_type_are_model_nodes_keyed_by_their_owner() {
+        use crate::model::domain_package::{EventTypeRecord, RecordValueTypeRecord};
+        let key = DeclarationKey {
+            package: "acme/orders".to_owned(),
+            node: "ix://acme/orders/Money".to_owned(),
+        };
+        let record = DomainPackageRecord::RecordValueType(RecordValueTypeRecord {
+            key: key.clone(),
+            identity_fields: Vec::new(),
+            supertypes: Vec::new(),
+        });
+        let event = DomainPackageRecord::EventType(EventTypeRecord {
+            key: key.clone(),
+            identity_fields: Vec::new(),
+            occurrence_field: None,
+            supertypes: vec![DeclarationKey {
+                package: "acme/orders".to_owned(),
+                node: "ix://acme/orders/Base".to_owned(),
+            }],
+        });
+        assert_eq!(
+            record_form(&record),
+            Some((NodeTag::Model, "record_value_type"))
+        );
+        assert_eq!(record_form(&event), Some((NodeTag::Model, "event_type")));
+        let limits = qsl_foundation::IdentityLimits::default();
+        let record_key = record_node_key(&record, limits).unwrap().unwrap();
+        let event_key = record_node_key(&event, limits).unwrap().unwrap();
+        assert_ne!(record_key, event_key);
+        // The supertypes are not part of the key: it is a function of the
+        // owner and the form alone.
+        let bare = DomainPackageRecord::EventType(EventTypeRecord {
+            key,
+            identity_fields: Vec::new(),
+            occurrence_field: None,
+            supertypes: Vec::new(),
+        });
+        assert_eq!(record_node_key(&bare, limits).unwrap().unwrap(), event_key);
     }
 }

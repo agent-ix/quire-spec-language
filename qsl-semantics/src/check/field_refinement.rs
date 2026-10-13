@@ -38,7 +38,9 @@
 )]
 
 use super::facts::{established_field_fact, Established};
-use super::ir::{BodyBuilder, CheckedLiteral, Connective, Node, NodeId, NodeKind, OrderedKind};
+use super::ir::{
+    BodyBuilder, CheckedLiteral, Connective, Node, NodeId, NodeKind, OrderedKind, RecordField,
+};
 use super::refusal::ProvedInterval;
 use crate::model::conformance::{missing_member, AxisFailure, ConformanceOutcome};
 use crate::model::domain_package::PostconditionClause;
@@ -55,6 +57,12 @@ use quire_semantic_value::location::{Location, Origin};
 /// [`self_field_node`] builds — the one variable a [`PostconditionClause`]
 /// ever names.
 const CLAUSE_SELF_SLOT: usize = 0;
+
+/// The identity of the one field a [`PostconditionClause`] ever names: the
+/// stable path step every such guard projects at.
+pub(super) fn self_field() -> RecordField {
+    RecordField::new(quire_exact::NodeKey::from_digest([0; 32]), "self_field")
+}
 
 fn clause_location() -> Location {
     Location::root(Origin::Expression)
@@ -73,7 +81,7 @@ fn self_field_node(body: &mut BodyBuilder, value_type: ValueType) -> NodeId {
     body.push(Node {
         kind: NodeKind::Field {
             operand: self_node,
-            index: 0,
+            field: self_field(),
             optional: false,
         },
         value_type,

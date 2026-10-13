@@ -11,6 +11,7 @@
 
 #[cfg(feature = "test-support")]
 mod business_meanings;
+mod child_composite;
 mod complete_value_lock;
 mod field_presence;
 mod identity_golden_vectors;
@@ -30,6 +31,7 @@ mod model_operations;
 mod model_population;
 #[cfg(feature = "test-support")]
 mod model_systems;
+mod operation_clauses;
 mod quantities;
 mod state_clauses;
 #[cfg(feature = "test-support")]

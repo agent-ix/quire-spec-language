@@ -133,6 +133,10 @@ pub struct OutOfRange {
     pub range: quire_exact::IntegerInterval,
     /// The value observed.
     pub observed: quire_exact::Integer,
+    /// For an integer inside a record value, the record field names from the
+    /// field (or sequence element) down to it, outermost first; empty
+    /// otherwise.
+    pub steps: Vec<PathStep>,
 }
 
 impl Default for ObservationLimits {
@@ -339,6 +343,23 @@ pub struct AdmissionRecord {
     /// The named input path components this record carries, keyed by name
     /// (`document`, `population`, `object`, `field`, `label`, ...).
     pub fields: BTreeMap<&'static str, String>,
+    /// For a defect inside a nested value, the typed steps from the checked
+    /// field, parameter or result down to it, outermost first (QSpec FR-207);
+    /// empty when the defect is at the checked value itself.
+    pub path: Vec<PathStep>,
+}
+
+/// One typed step of a nested value path (QSpec FR-207): never a rendered
+/// string, so a record field named `0` cannot be taken for the first
+/// element of a sequence.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PathStep {
+    /// A record field, by its exact name.
+    Field(String),
+    /// The payload of a present optional value.
+    OptionValue,
+    /// A sequence element, by its position.
+    Index(usize),
 }
 
 impl AdmissionRecord {
@@ -347,12 +368,21 @@ impl AdmissionRecord {
             code,
             cause,
             fields: BTreeMap::new(),
+            path: Vec::new(),
         }
     }
 
     #[must_use]
     fn with(mut self, key: &'static str, value: impl Into<String>) -> Self {
         self.fields.insert(key, value.into());
+        self
+    }
+
+    /// This record naming the nested value `path`: the typed steps from the
+    /// checked field, parameter or result down to it (FR-106 check 6.5).
+    #[must_use]
+    fn at(mut self, path: Vec<PathStep>) -> Self {
+        self.path = path;
         self
     }
 }
@@ -508,6 +538,13 @@ enum RawNode {
     Present(usize),
     Reference(SelectedObject),
     Sequence(Vec<usize>),
+    /// `{"record": {"type": .., "fields": {..}}}`: the record's `type`
+    /// identity and its fields in document order, each the index of its
+    /// value's node.
+    Record {
+        type_identity: String,
+        fields: Vec<(String, usize)>,
+    },
 }
 
 /// The form of one value of a [`SnapshotValue`], with nested values as
@@ -526,6 +563,8 @@ pub enum RawForm<'v> {
     Reference(&'v SelectedObject),
     /// `{"sequence": [<value>, ...]}`, its items in order.
     Sequence(RawItems<'v>),
+    /// `{"record": {"type": <declaration identity>, "fields": {..}}}`.
+    Record(RawRecord<'v>),
 }
 
 /// One value inside a [`SnapshotValue`].
@@ -533,6 +572,39 @@ pub enum RawForm<'v> {
 pub struct RawValue<'v> {
     arena: &'v SnapshotValue,
     index: usize,
+}
+
+/// A `record` value: the identity of its most-specific record type and its
+/// fields in document order.
+#[derive(Clone, Copy, Debug)]
+pub struct RawRecord<'v> {
+    arena: &'v SnapshotValue,
+    type_identity: &'v str,
+    fields: &'v [(String, usize)],
+}
+
+impl<'v> RawRecord<'v> {
+    /// The `type` member: the IR node identity of the value's most-specific
+    /// record value type.
+    #[must_use]
+    pub fn type_identity(self) -> &'v str {
+        self.type_identity
+    }
+
+    /// The `fields` members, in document order.
+    pub fn fields(
+        self,
+    ) -> impl DoubleEndedIterator<Item = (&'v str, RawValue<'v>)> + ExactSizeIterator {
+        self.fields.iter().map(move |(name, index)| {
+            (
+                name.as_str(),
+                RawValue {
+                    arena: self.arena,
+                    index: *index,
+                },
+            )
+        })
+    }
 }
 
 /// The items of a `sequence` value, in order.
@@ -604,6 +676,25 @@ impl SnapshotValue {
         Self { nodes, root: at }
     }
 
+    /// `{"record": {"type": type_identity, "fields": {..}}}`, its fields in
+    /// the given order.
+    #[must_use]
+    pub fn record(type_identity: impl Into<String>, fields: Vec<(String, Self)>) -> Self {
+        let mut nodes = Vec::new();
+        let mut members = Vec::with_capacity(fields.len());
+        for (name, value) in fields {
+            let offset = nodes.len();
+            nodes.extend(value.nodes.into_iter().map(|node| node.shifted(offset)));
+            members.push((name, value.root + offset));
+        }
+        let at = nodes.len();
+        nodes.push(RawNode::Record {
+            type_identity: type_identity.into(),
+            fields: members,
+        });
+        Self { nodes, root: at }
+    }
+
     /// The root value's form.
     #[must_use]
     pub fn form(&self) -> RawForm<'_> {
@@ -621,6 +712,14 @@ impl SnapshotValue {
             }),
             RawNode::Reference(reference) => RawForm::Reference(reference),
             RawNode::Sequence(items) => RawForm::Sequence(RawItems { arena: self, items }),
+            RawNode::Record {
+                type_identity,
+                fields,
+            } => RawForm::Record(RawRecord {
+                arena: self,
+                type_identity,
+                fields,
+            }),
         }
     }
 }
@@ -649,6 +748,19 @@ impl PartialEq for SnapshotValue {
                             .map(|(left, right)| (left.form(), right.form())),
                     );
                 }
+                (RawForm::Record(left), RawForm::Record(right))
+                    if left.type_identity() == right.type_identity()
+                        && left.fields().len() == right.fields().len() =>
+                {
+                    for ((left_name, left), (right_name, right)) in
+                        left.fields().zip(right.fields())
+                    {
+                        if left_name != right_name {
+                            return false;
+                        }
+                        work.push((left.form(), right.form()));
+                    }
+                }
                 _ => return false,
             }
         }
@@ -666,6 +778,16 @@ impl RawNode {
             Self::Sequence(items) => {
                 Self::Sequence(items.into_iter().map(|item| item + offset).collect())
             }
+            Self::Record {
+                type_identity,
+                fields,
+            } => Self::Record {
+                type_identity,
+                fields: fields
+                    .into_iter()
+                    .map(|(name, index)| (name, index + offset))
+                    .collect(),
+            },
             other @ (Self::Boolean(_) | Self::Integer(_) | Self::Absent | Self::Reference(_)) => {
                 other
             }
@@ -738,20 +860,39 @@ fn model_views(
             .map_err(|_| fault("model-reconsistent-records"))?;
         let view = match normalize(&DomainPackage::new(package_ref, records), limits) {
             NormalizeOutcome::Completed(view) => view,
-            // A reached ceiling is the stage's limit outcome naming its
-            // setting; any other refusal is a broken invariant, since the
-            // same packages already normalized at compile time.
+            // A reached ceiling of `ModelNormalizationLimits` is the caller's
+            // budget wherever it is read (ADR-014 section 1), so it refuses
+            // as the compile path does, naming its setting; any other
+            // refusal is a broken invariant, since the same packages already
+            // normalized at compile time.
             NormalizeOutcome::Incomplete(incomplete) => {
-                return Err(limit_refusal(&incomplete.limit_exceeded()))
+                return Err(caller_budget_refusal(
+                    &incomplete.limit_exceeded(),
+                    INSUFFICIENT_NEXT_CHARGE,
+                    &[
+                        ("stage", "model-normalization".to_owned()),
+                        (
+                            "accounting_contract",
+                            "ModelNormalizationLimitsV1".to_owned(),
+                        ),
+                        ("consumed", incomplete.consumed.to_string()),
+                        ("next_charge", incomplete.next_charge.to_string()),
+                        ("charge_point", incomplete.charge_point.as_str().to_owned()),
+                    ],
+                ))
             }
             NormalizeOutcome::Refused(refusals) => {
                 return Err(refusals
                     .iter()
-                    .find_map(|refusal| refusal.cause.limit_exceeded())
-                    .map_or_else(
-                        || fault("model-reconsistent-normalize"),
-                        |limit| limit_refusal(&limit),
-                    ))
+                    .find_map(|refusal| {
+                        let limit = refusal.cause.limit_exceeded()?;
+                        Some(caller_budget_refusal(
+                            &limit,
+                            refusal.cause.catalog_code().cause(),
+                            &[],
+                        ))
+                    })
+                    .unwrap_or_else(|| fault("model-reconsistent-normalize")))
             }
         };
         let by_effective_id = view
@@ -915,6 +1056,27 @@ fn input_bytes_exceeded(bound: u64, actual: u128) -> AdmissionFailure {
     ))
 }
 
+/// A reached ceiling of the caller's model-normalization budget
+/// (`ModelNormalizationLimits`, ADR-014 B-2) as an admission refusal: the
+/// compile path's `resource_exhausted` with its `cause` (for example
+/// `ancestor-steps`, or `insufficient-next-charge` for a denied charge),
+/// carrying the `setting`, `bound` and `actual` of FR-255, the `retained`
+/// fields of a denied charge, and no limit `kind`, which only a stage limit
+/// has.
+fn caller_budget_refusal(
+    limit: &LimitExceeded,
+    cause: &'static str,
+    retained: &[(&'static str, String)],
+) -> AdmissionFailure {
+    let mut record = AdmissionRecord::new(Code::ResourceExhausted, cause);
+    record.fields.extend(retained.iter().cloned());
+    if let Some(mut fields) = limit.catalog_fields() {
+        fields.remove("kind");
+        record.fields.extend(fields);
+    }
+    refuse(record)
+}
+
 /// `limit` as an admission refusal: `stage_limit_exceeded` with the limit's
 /// cause and its `kind`, `bound`, `actual` and `setting` fields (FR-255
 /// Behavior 1).
@@ -970,6 +1132,9 @@ impl ReadMeter {
         Ok(())
     }
 }
+
+/// The catalog cause of a denied accounting charge.
+const INSUFFICIENT_NEXT_CHARGE: &str = "insufficient-next-charge";
 
 /// FR-259 B6: reading or encoding the document could not reserve
 /// `requested` bytes of memory.

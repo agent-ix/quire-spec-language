@@ -24,7 +24,7 @@
 use std::collections::BTreeMap;
 
 use qsl_cst::{CompleteDiagnostic, HostCause};
-use qsl_forms::{FormsCause, FormsRefusal};
+use qsl_forms::{ClauseTextRefusal, FormsCause, FormsRefusal};
 use qsl_foundation::diagnostic::{LimitExceeded, Locus};
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
 use qsl_foundation::Setting;
@@ -38,6 +38,8 @@ use qsl_semantics::check::{
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{UnitIntakeCause, UnitIntakeRefusal};
+use qsl_semantics::model::key::DeclarationKey;
+use qsl_semantics::model::refusal::MemberPath;
 pub use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::StorageUnit;
 
@@ -106,6 +108,18 @@ pub enum CompileRefusal {
         refusal: UnitIntakeRefusal,
         /// The region of the `model` declaration.
         region: Option<SourceRegion>,
+    },
+    /// FR-103: a kept operation `requires`/`ensures` clause text did not
+    /// parse as an expression.
+    #[error("the {member} clause of `{}` does not parse: {}", .operation.node, clause_text_message(.failure))]
+    OperationClause {
+        /// The operation whose clause it is.
+        operation: DeclarationKey,
+        /// The member the clause is at: `Operation.pre[k]` or
+        /// `Operation.post[k]`.
+        member: MemberPath,
+        /// The S1 or S2 cause.
+        failure: ClauseTextRefusal,
     },
     /// E3 (FR-110): a header profile selection does not resolve against the
     /// `DefinitionLock` catalog.
@@ -182,6 +196,11 @@ impl CompileRefusal {
             Self::Source(diagnostic) => diagnostic.code,
             Self::Forms { failure, .. } => failure.catalog_code(),
             Self::Intake { refusal, .. } => refusal.cause.code(),
+            Self::OperationClause { failure, .. } => match failure {
+                ClauseTextRefusal::Source(diagnostic) => diagnostic.code,
+                ClauseTextRefusal::Forms(failure) => failure.catalog_code(),
+                ClauseTextRefusal::NotOneExpression => Code::InvalidSyntax,
+            },
             Self::Profile { refusals, .. } => refusals
                 .first()
                 .map_or(Code::RuntimeInvariant, ProfileRefusal::code),
@@ -217,6 +236,7 @@ impl CompileRefusal {
             Self::Source(_)
             | Self::Forms { .. }
             | Self::Intake { .. }
+            | Self::OperationClause { .. }
             | Self::Assembly { .. }
             | Self::Emit(_)
             | Self::Omitted(_) => None,
@@ -228,9 +248,10 @@ impl CompileRefusal {
         match self {
             Self::Source(_) => SpineStage::Source,
             Self::Forms { .. } => SpineStage::Forms,
-            Self::Intake { .. } | Self::DependencyInput(_) | Self::Import { .. } => {
-                SpineStage::Intake
-            }
+            Self::Intake { .. }
+            | Self::OperationClause { .. }
+            | Self::DependencyInput(_)
+            | Self::Import { .. } => SpineStage::Intake,
             Self::Dependency { refusal, .. } => refusal.stage(),
             Self::Assembly { .. } | Self::Profile { .. } => SpineStage::Assembly,
             Self::Check { .. } => SpineStage::Check,
@@ -304,7 +325,11 @@ impl CompileRefusal {
                 Some(Locus::Region(region)) => Some(region),
                 Some(_) | None => None,
             },
-            Self::DependencyInput(_) | Self::Link(_) | Self::Emit(_) | Self::Omitted(_) => None,
+            Self::OperationClause { .. }
+            | Self::DependencyInput(_)
+            | Self::Link(_)
+            | Self::Emit(_)
+            | Self::Omitted(_) => None,
         }
     }
 
@@ -350,6 +375,15 @@ impl SpineStage {
             Self::Check => "check",
             Self::Emit => "emit",
         }
+    }
+}
+
+/// A readable account of a kept operation clause's parse failure.
+fn clause_text_message(failure: &ClauseTextRefusal) -> String {
+    match failure {
+        ClauseTextRefusal::Source(diagnostic) => diagnostic.message.clone(),
+        ClauseTextRefusal::Forms(refusal) => forms_message(refusal),
+        ClauseTextRefusal::NotOneExpression => "the text is not one expression".to_owned(),
     }
 }
 

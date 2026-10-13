@@ -33,6 +33,7 @@ use super::*;
 use crate::checked_v2::{read_v2, Read, V2ReadLimits};
 
 mod admission_corpus;
+mod child_composite;
 mod deep_bodies;
 mod golden;
 mod identity_depth;
@@ -2955,6 +2956,8 @@ fn config_version_model(with_sub: bool) -> qsl_semantics::model::intake::Selecte
                 creates: Vec::new(),
                 deletes: Vec::new(),
             },
+            requires: Vec::new(),
+            ensures: Vec::new(),
             own_postcondition_clauses: Vec::new(),
             has_body: false,
             redefines: None,
@@ -2985,6 +2988,7 @@ fn config_version_model(with_sub: bool) -> qsl_semantics::model::intake::Selecte
         alias: "Config".to_owned(),
         span: SPAN,
         view,
+        operation_clauses: Vec::new(),
     }
 }
 

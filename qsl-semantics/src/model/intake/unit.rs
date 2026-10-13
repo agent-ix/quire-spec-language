@@ -17,9 +17,13 @@ use quire_exact::Cancel;
 
 use super::{admit_located, read_domain_package, PackageDocument};
 use crate::model::accounting::{Incomplete, ModelNormalizationLimits};
-use crate::model::domain_package::DomainPackageRef;
+use crate::model::domain_package::{DomainPackageRecord, DomainPackageRef, ParsedOperationClause};
+use crate::model::key::DeclarationKey;
 use crate::model::key::{raw_bytes_digest, SHA256_JCS_DIGEST_DOMAIN};
 use crate::model::normalize::{normalize_with_cancel, EffectiveView, NormalizeOutcome, Refusals};
+use crate::model::refusal::{MemberPath, MemberRoot};
+use qsl_forms::Expression;
+use quire_semantic_value::location::OperationClauseKind;
 
 /// One `model` declaration of a unit, admitted at I1: its alias, the span
 /// of its declaration and its domain package's effective view.
@@ -31,6 +35,66 @@ pub struct SelectedModel {
     pub span: Span,
     /// The admitted domain package's effective view.
     pub view: EffectiveView,
+    /// Each kept `requires`/`ensures` clause of the package's operations,
+    /// parsed by the compile driver (FR-103). I1 parses none, so admission
+    /// leaves this empty.
+    pub operation_clauses: Vec<ParsedOperationClause>,
+}
+
+/// A kept clause the caller's parser refused: which clause, and the parser's
+/// own refusal.
+#[derive(Clone, Debug)]
+pub struct OperationClauseFailure<E> {
+    /// The operation whose clause it is.
+    pub operation: DeclarationKey,
+    /// The `Operation.pre[k]` or `Operation.post[k]` member the clause is at.
+    pub member: MemberPath,
+    /// The parser's refusal.
+    pub cause: E,
+}
+
+impl SelectedModel {
+    /// FR-103: this model with each kept `quire`-language `requires` and
+    /// `ensures` clause of its operations parsed by `parse`, the caller's
+    /// FR-146 expression production. Intake keeps the text and parses none
+    /// of it, so the semantics layer takes no dependency on S1: the compile
+    /// driver passes its parser here. A clause in another language is kept
+    /// verbatim and not parsed. The first clause `parse` refuses stops the
+    /// walk.
+    pub fn with_parsed_operation_clauses<E>(
+        mut self,
+        mut parse: impl FnMut(&str) -> Result<Expression, E>,
+    ) -> Result<Self, OperationClauseFailure<E>> {
+        let mut parsed = Vec::new();
+        for record in &self.view.domain_package().records {
+            let DomainPackageRecord::OperationMember(operation) = record else {
+                continue;
+            };
+            for (kind, member, clauses) in [
+                (OperationClauseKind::Requires, "pre", &operation.requires),
+                (OperationClauseKind::Ensures, "post", &operation.ensures),
+            ] {
+                for clause in clauses.iter().filter(|clause| clause.language == "quire") {
+                    let expression =
+                        parse(&clause.text).map_err(|cause| OperationClauseFailure {
+                            operation: operation.key.clone(),
+                            member: MemberPath::new(MemberRoot::Operation)
+                                .name(member)
+                                .index(clause.position),
+                            cause,
+                        })?;
+                    parsed.push(ParsedOperationClause {
+                        operation: operation.key.clone(),
+                        kind,
+                        position: clause.position,
+                        expression,
+                    });
+                }
+            }
+        }
+        self.operation_clauses = parsed;
+        Ok(self)
+    }
 }
 
 /// Why I1 admitted no domain package for one `model` declaration.
@@ -172,6 +236,7 @@ pub fn admit_unit_with_cancel(
                 alias: selection.alias.clone(),
                 span: selection.span,
                 view,
+                operation_clauses: Vec::new(),
             })
         })
         .collect()

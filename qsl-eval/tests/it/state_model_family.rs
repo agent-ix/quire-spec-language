@@ -132,6 +132,7 @@ fn declarations(body: &str, guard: bool) -> (PackageDeclarations, EffectiveView,
             alias: "M".to_owned(),
             span: model_span,
             view: view.clone(),
+            operation_clauses: Vec::new(),
         }],
         vec![],
     )
@@ -471,6 +472,7 @@ fn tc790_all_instances_missing_target_type_refuses_during_assembly() {
             alias: "M".to_owned(),
             span: model_span,
             view,
+            operation_clauses: Vec::new(),
         }],
         vec![],
     )

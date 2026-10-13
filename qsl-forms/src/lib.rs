@@ -27,12 +27,14 @@
 //! [`TypeForm`], resolved to the kernel `ValueType` only at check (E3,
 //! ADR-013 O-14/C-26). See `syntax::TypeForm`'s own doc.
 
+mod clause_text;
 mod dispatch;
 mod protocol_clause;
 mod spans;
 mod syntax;
 mod value;
 
+pub use clause_text::{parse_clause_text, ClauseTextRefusal};
 pub use dispatch::{
     build_unit, FormsCause, FormsRefusal, LeadingTokenKind, ParsedForm, ParsedUnit,
 };

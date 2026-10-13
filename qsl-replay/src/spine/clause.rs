@@ -1053,6 +1053,7 @@ fn run_function(
                             code: qsl_foundation::diagnostic::Code::InvalidRuntimeInput,
                             cause: "wrong-role-mapping",
                             fields,
+                            path: Vec::new(),
                         },
                     ))));
                 };

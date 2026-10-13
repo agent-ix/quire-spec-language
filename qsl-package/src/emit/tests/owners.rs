@@ -38,8 +38,10 @@ fn required_kind(node: &Value) -> Option<&'static str> {
         Some("source")
     } else if matches!(
         (node["node_tag"].as_str(), node["semantic_form"].as_str()),
-        (Some("model"), Some("object_type" | "systems_interface"))
-            | (Some("relation"), Some("relationship"))
+        (
+            Some("model"),
+            Some("object_type" | "systems_interface" | "record_value_type" | "event_type")
+        ) | (Some("relation"), Some("relationship"))
             | (Some("function"), _)
     ) {
         Some("model")
@@ -125,7 +127,7 @@ fn owner_json(authority: &str, identity: &str) -> Value {
     json!({"kind": "source", "authority": authority, "identity": identity})
 }
 
-fn node_where<'w>(wire: &'w Value, tag: &str, form: &str) -> Vec<&'w Value> {
+pub(super) fn node_where<'w>(wire: &'w Value, tag: &str, form: &str) -> Vec<&'w Value> {
     nodes(wire)
         .iter()
         .filter(|node| node["node_tag"] == tag && node["semantic_form"] == form)
@@ -252,6 +254,8 @@ fn query(name: &str, owner: &str, redefines: Option<&str>) -> DomainPackageRecor
             multiplicity: one(),
         }),
         effect: OperationEffect::default(),
+        requires: Vec::new(),
+        ensures: Vec::new(),
         own_postcondition_clauses: Vec::new(),
         has_body: true,
         redefines: redefines.map(model_key),

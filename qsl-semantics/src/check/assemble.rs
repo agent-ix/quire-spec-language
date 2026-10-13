@@ -42,9 +42,13 @@ use quire_exact::{
     IntegerInterval, NodeKey, Presence, RoundingMode, ValueType,
 };
 
-use super::check::{EnumBinding, PackageDeclarations, ResolvedSignature};
-use super::lowering::{strongly_connected, AdmittedModel};
+use super::check::{
+    EnumBinding, ModelRecords, PackageDeclarations, ResolvedSignature, VariantCaseDeclaration,
+    VariantTypeDeclaration,
+};
+use super::lowering::{record_node_key, strongly_connected, AdmittedModel, RecordKeyError};
 use super::node_key::{declared_type_handle, nominal_key, NodeKeyRefusal, SourceOwner};
+use super::operation_clause::OperationClauseDeclaration;
 use super::refusal::AliasKind;
 use super::state_clause::{
     population_of, AttemptDeclaration, ClauseOperation, StateClauseDeclaration,
@@ -661,6 +665,16 @@ impl TypeNames for Names {
     }
 }
 
+/// What a selected model declares in the type environment: its object types,
+/// its record value types and event types as composites, and where those keep
+/// the fields their ancestors name.
+struct ModelTypes {
+    objects: Vec<ObjectTypeDeclaration>,
+    composites: Vec<CompositeDeclaration>,
+    variant_types: Vec<VariantTypeDeclaration>,
+    model_records: ModelRecords,
+}
+
 /// The object types of the domain package admitted for the `model`
 /// declaration `alias`, each named `alias::T` with `T` its artifact id, and
 /// declaring its supertypes by their effective identities and its fields
@@ -678,9 +692,8 @@ fn model_object_types(
     model: &SelectedModel,
     span: Span,
     table: &mut OperationTable,
-    owner: &SourceOwner,
     identity_limits: IdentityLimits,
-) -> Result<(Vec<ObjectTypeDeclaration>, Vec<CompositeDeclaration>), Vec<AssemblyError>> {
+) -> Result<ModelTypes, Vec<AssemblyError>> {
     let package = model.view.domain_package();
     let identities = model.view.type_identities();
     let error = |cause| AssemblyError { cause, span };
@@ -711,15 +724,21 @@ fn model_object_types(
             DomainPackageRecord::RecordValueType(_) | DomainPackageRecord::EventType(_)
         ) {
             let key = record.key();
-            let Some(artifact) = type_identity_segment(&key.package, &key.node) else {
+            if type_identity_segment(&key.package, &key.node).is_none() {
                 errors.push(broken(&key.node));
                 continue;
-            };
-            match declared_type_handle(owner, &format!("{alias}::{artifact}"), identity_limits) {
-                Ok(handle) => {
+            }
+            // FR-359 item 9: the declaration key of a model record is its
+            // model node's key, a function of the declaring package and the
+            // node alone, so no alias or source owner enters it.
+            match record_node_key(record, identity_limits) {
+                Ok(Some(handle)) => {
                     meaning_handles.insert(key.clone(), handle);
                 }
-                Err(refusal) => errors.push(error(AssemblyCause::handle(refusal))),
+                Ok(None) | Err(RecordKeyError::EmptyOwner) => errors.push(broken(&key.node)),
+                Err(RecordKeyError::Preimage(refusal)) => {
+                    errors.push(error(AssemblyCause::handle(refusal)))
+                }
             }
         }
     }
@@ -774,9 +793,9 @@ fn model_object_types(
             | DomainPackageRecord::Allocation(_) => errors.push(unsupported(&record.key().node)),
             // Record and event declarations are emitted as composites below;
             // their effective fields are collected from the normalized view.
-            // A variant type's `enum` and `variant` exports are admitted
-            // (FR-056 "Variant types") but not assembled into the type
-            // environment: source naming one refuses before this point
+            // A variant type and its cases are collected from the normalized
+            // view below (FR-056 "Effective identity of a variant type");
+            // source naming one still refuses before this point
             // (`AssemblyCause::UnsupportedVariantType`).
             DomainPackageRecord::Enum(_)
             | DomainPackageRecord::Variant(_)
@@ -876,7 +895,15 @@ fn model_object_types(
         effective_fields.sort_by(|left, right| left.key.cmp(&right.key));
         for field in effective_fields {
             match model_field(field, &records, identities, &meaning_handles) {
-                Ok(field) => declared_fields.push(field),
+                // A record's declaration holds its effective fields; the
+                // field a redefinition replaces is hidden in the view, so the
+                // declaration carries no `redefines` link of its own (the
+                // kernel admits one only on an object type's field).
+                Ok(field) => declared_fields.push(FieldDeclaration::new(
+                    field.name(),
+                    field.value_type().clone(),
+                    field.presence(),
+                )),
                 Err(Unmapped::Unsupported) => errors.push(unsupported(&field.key.node)),
                 Err(Unmapped::Broken) => errors.push(broken(&field.key.node)),
                 Err(Unmapped::Float(width)) => errors.push(error(AssemblyCause::FloatingType {
@@ -907,11 +934,152 @@ fn model_object_types(
             .with_supertypes(composite_supertypes),
         );
     }
+    // Each variant type is declared by its effective identity with the
+    // effective identity of every case, read from the normalized view
+    // (FR-056 "Effective identity of a variant type"). Nothing binds a
+    // source name to it.
+    let mut variant_types = Vec::new();
+    for record in &package.records {
+        let DomainPackageRecord::Enum(variant_type) = record else {
+            continue;
+        };
+        let Some(identity) = identities.get(&variant_type.key) else {
+            errors.push(broken(&variant_type.key.node));
+            continue;
+        };
+        let mut cases = Vec::with_capacity(variant_type.members.len());
+        for entry in
+            model.view.declarations().iter().filter(|entry| {
+                entry.visible && entry.preimage.owner_effective_type == Some(*identity)
+            })
+        {
+            match records.get(&entry.preimage.original) {
+                Some(DomainPackageRecord::Variant(case)) => cases.push(
+                    VariantCaseDeclaration::new(entry.effective_id, case.case.clone()),
+                ),
+                Some(_) | None => errors.push(broken(&entry.preimage.original.node)),
+            }
+        }
+        if cases.len() != variant_type.members.len() {
+            errors.push(broken(&variant_type.key.node));
+            continue;
+        }
+        variant_types.push(VariantTypeDeclaration::new(
+            *identity,
+            format!("{alias}::{}", variant_type.name),
+            cases,
+        ));
+    }
+    let mut model_records = record_renames(model, &records, &meaning_handles);
+    for (key, handle) in &meaning_handles {
+        if matches!(records.get(key), Some(DomainPackageRecord::EventType(_))) {
+            model_records.declare_event(*handle);
+        }
+    }
     if errors.is_empty() {
-        Ok((declarations, composites))
+        Ok(ModelTypes {
+            objects: declarations,
+            composites,
+            variant_types,
+            model_records,
+        })
     } else {
         Err(errors)
     }
+}
+
+/// Where each record keeps the fields its ancestors name (FR-359 item 2).
+///
+/// A record's declaration holds its effective fields. The one that redefines
+/// an inherited field (FR-082) takes its slot, possibly under another name,
+/// and the redefined field is hidden. A read typed at an ancestor names the
+/// ancestor's field, so each record lists, for every ancestor field one of
+/// its own fields redefines (transitively) under a different name, that own
+/// name. An unrenamed field needs no entry: it is found by its name.
+fn record_renames(
+    model: &SelectedModel,
+    records: &BTreeMap<&DeclarationKey, &DomainPackageRecord>,
+    handles: &BTreeMap<DeclarationKey, NodeKey>,
+) -> ModelRecords {
+    let identities = model.view.type_identities();
+    let effective_fields = |declaration: &DeclarationKey| -> Vec<&FieldMemberRecord> {
+        let Some(effective_type) = identities.get(declaration) else {
+            return Vec::new();
+        };
+        model
+            .view
+            .declarations()
+            .iter()
+            .filter(|entry| {
+                entry.visible && entry.preimage.owner_effective_type == Some(*effective_type)
+            })
+            .filter_map(|entry| match records.get(&entry.preimage.original) {
+                Some(DomainPackageRecord::FieldMember(field)) => Some(field),
+                Some(_) | None => None,
+            })
+            .collect()
+    };
+    let supertypes = |declaration: &DeclarationKey| -> &[DeclarationKey] {
+        match records.get(declaration) {
+            Some(DomainPackageRecord::RecordValueType(record)) => &record.supertypes,
+            Some(DomainPackageRecord::EventType(event)) => &event.supertypes,
+            _ => &[],
+        }
+    };
+    fn name_of(field: &FieldMemberRecord) -> Option<&str> {
+        member_identity_name(&field.owner.node, &field.key.node)
+    }
+    let mut slots = ModelRecords::default();
+    for (declaration, handle) in handles {
+        let own: Vec<&FieldMemberRecord> = effective_fields(declaration)
+            .into_iter()
+            .filter(|field| field.redefines.is_some())
+            .collect();
+        if own.is_empty() {
+            continue;
+        }
+        let mut ancestors = Vec::new();
+        let mut pending: Vec<&DeclarationKey> = supertypes(declaration).iter().collect();
+        while let Some(ancestor) = pending.pop() {
+            if !ancestors.contains(&ancestor) {
+                ancestors.push(ancestor);
+                pending.extend(supertypes(ancestor));
+            }
+        }
+        for field in own {
+            let Some(own_name) = name_of(field) else {
+                continue;
+            };
+            let mut chain = vec![&field.key];
+            let mut next = field.redefines.as_ref();
+            while let Some(target) = next {
+                if chain.contains(&target) {
+                    break;
+                }
+                chain.push(target);
+                next = match records.get(target) {
+                    Some(DomainPackageRecord::FieldMember(redefined)) => {
+                        redefined.redefines.as_ref()
+                    }
+                    _ => None,
+                };
+            }
+            for ancestor in &ancestors {
+                let Some(read_at) = handles.get(*ancestor) else {
+                    continue;
+                };
+                for inherited in effective_fields(ancestor) {
+                    let Some(name) = name_of(inherited) else {
+                        continue;
+                    };
+                    if chain.contains(&&inherited.key) && name != own_name {
+                        slots.rename(*handle, *read_at, name, own_name);
+                    }
+                }
+            }
+        }
+    }
+    slots
 }
 
 /// Why a domain package field has no type environment field.
@@ -1098,6 +1266,57 @@ fn model_operation(
         result,
         operation.effect.clone(),
     ))
+}
+
+/// FR-103: each kept `requires`/`ensures` clause the driver parsed for
+/// `model`'s operations, with its operation resolved in its owner's own
+/// declarations. A clause naming no operation of the package, or one whose
+/// owner is no object type, is a broken invariant of the driver's input.
+fn operation_clause_declarations(
+    alias: &str,
+    model: &SelectedModel,
+    table: &OperationTable,
+) -> Result<Vec<OperationClauseDeclaration>, AssemblyCause> {
+    let package = model.view.domain_package();
+    let identities = model.view.type_identities();
+    model
+        .operation_clauses
+        .iter()
+        .map(|clause| {
+            let broken = || AssemblyCause::ModelType {
+                alias: alias.to_owned(),
+                node: clause.operation.node.clone(),
+            };
+            let operation = package
+                .records
+                .iter()
+                .find_map(|record| match record {
+                    DomainPackageRecord::OperationMember(operation)
+                        if operation.key == clause.operation =>
+                    {
+                        Some(operation)
+                    }
+                    _ => None,
+                })
+                .ok_or_else(broken)?;
+            let owner = *identities.get(&operation.owner).ok_or_else(broken)?;
+            let name = member_identity_name(&operation.owner.node, &operation.key.node)
+                .ok_or_else(broken)?;
+            let declaration = table
+                .declared_by(owner)
+                .iter()
+                .find(|declared| declared.name() == name)
+                .ok_or_else(broken)?;
+            Ok(OperationClauseDeclaration {
+                clause: clause.clone(),
+                context: owner,
+                operation: ClauseOperation {
+                    declaring: owner,
+                    declaration: declaration.clone(),
+                },
+            })
+        })
+        .collect()
 }
 
 /// A function signature's type forms: its parameters' and its result's,
@@ -1558,9 +1777,12 @@ impl PackageDeclarations {
         let mut admitted = Vec::with_capacity(selections.models.len());
         let mut object_types = Vec::new();
         let mut model_composites = Vec::new();
+        let mut model_variant_types = Vec::new();
+        let mut model_records = ModelRecords::default();
         let mut admitted_variant_types = Vec::new();
         let mut operations = OperationTable::default();
         let mut object_spans = BTreeMap::new();
+        let mut operation_clauses = Vec::new();
         for selection in &selections.models {
             let Some(model) = models.iter().find(|model| model.alias == selection.alias) else {
                 errors.push(AssemblyError {
@@ -1584,15 +1806,23 @@ impl PackageDeclarations {
                 model,
                 selection.span,
                 &mut operations,
-                &owner,
                 limits.identity,
             ) {
-                Ok((declarations, composites)) => {
-                    for declaration in &declarations {
+                Ok(types) => {
+                    for declaration in &types.objects {
                         object_spans.insert(declaration.name().to_owned(), selection.span);
                     }
-                    object_types.extend(declarations);
-                    model_composites.extend(composites);
+                    object_types.extend(types.objects);
+                    model_composites.extend(types.composites);
+                    model_variant_types.extend(types.variant_types);
+                    model_records.extend(types.model_records);
+                    match operation_clause_declarations(&selection.alias, model, &operations) {
+                        Ok(resolved) => operation_clauses.extend(resolved),
+                        Err(cause) => errors.push(AssemblyError {
+                            cause,
+                            span: selection.span,
+                        }),
+                    }
                 }
                 Err(refused) => errors.extend(refused),
             }
@@ -2065,6 +2295,7 @@ impl PackageDeclarations {
         let mut package = PackageDeclarations::new(source, limits.identity);
         package.types = types;
         package.operations = operations;
+        package.operation_clauses = operation_clauses;
         package.models = admitted;
         package.aliases = unit
             .aliases
@@ -2093,6 +2324,8 @@ impl PackageDeclarations {
             package.resolved_signatures.insert(index, signature);
         }
         package.enums = enums;
+        model_variant_types.sort_by_key(VariantTypeDeclaration::key);
+        package.variant_types = model_variant_types;
         if let Some(quantities) = quantities {
             package.units = quantities.graph;
             package.nominal_spans = quantities.spans;
@@ -2103,6 +2336,7 @@ impl PackageDeclarations {
         package.protocols = unit.protocols;
         package.protocol_attempts = protocol_attempts;
         package.declared_type_spans = declared_type_spans;
+        package.model_records = model_records;
         package.imports = qualified;
         Ok(package)
     }

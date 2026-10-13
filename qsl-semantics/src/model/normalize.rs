@@ -1861,10 +1861,39 @@ fn is_ordinary_object_type(package: &DomainPackage, key: &DeclarationKey) -> boo
     })
 }
 
+/// A `malformed-declaration` cause at `key`'s node and `member`, retaining the
+/// node's FCD origin when the package kept one (FR-154: every declaration
+/// refusal keeps the node identity and its origin). A package built without
+/// the reader has no origin, so artifact and span are then `None`.
+pub(crate) fn malformed_at(
+    package: &DomainPackage,
+    key: &DeclarationKey,
+    member: MemberPath,
+) -> ModelRefusalCause {
+    let (artifact, span) = origin_of(package, key);
+    ModelRefusalCause::IntakeMalformedDeclaration {
+        node: key.node.clone(),
+        artifact,
+        span,
+        member,
+    }
+}
+
+/// `key`'s retained FCD source artifact and position; both `None` for a node
+/// the package holds no origin for.
+fn origin_of(
+    package: &DomainPackage,
+    key: &DeclarationKey,
+) -> (Option<String>, Option<qsl_foundation::source::LocatedSpan>) {
+    package.original(key).map_or((None, None), |original| {
+        crate::model::intake::origin_locus(&original.origin)
+    })
+}
+
 fn signature_type_refusal(
     package: &DomainPackage,
     operation: &DeclarationKey,
-    parameter: Option<&DeclarationKey>,
+    parameter: Option<(usize, &DeclarationKey)>,
     value_type: &ValueTypeRef,
 ) -> ModelRefusal {
     let forbidden_meaning = value_type.as_package().is_some_and(|key| {
@@ -1884,21 +1913,42 @@ fn signature_type_refusal(
     });
     let position = parameter.map_or_else(
         || "result".to_owned(),
-        |key| format!("parameter {}", key.node),
+        |(_, key)| format!("parameter {}", key.node),
+    );
+    // FR-056 "Variant types": every signature type refusal sits at the
+    // operation node, at the `typeRef` of the parameter or the result.
+    let member = parameter.map_or_else(
+        || {
+            MemberPath::new(MemberRoot::Operation)
+                .name("returns")
+                .name("typeRef")
+        },
+        |(index, _)| {
+            MemberPath::new(MemberRoot::Operation)
+                .name("params")
+                .index(index)
+                .name("typeRef")
+        },
     );
     let (code, cause, reason) = if forbidden_meaning {
         (
             Code::InvalidModelBinding,
-            ModelRefusalCause::MalformedDeclaration,
+            malformed_at(package, operation, member),
             "has a meaning forbidden as a signature value type",
         )
     } else {
+        let (artifact, span) = origin_of(package, operation);
         (
             Code::DanglingReference,
             ModelRefusalCause::UnknownValueType {
                 operation: operation.clone(),
-                parameter: parameter.cloned(),
+                parameter: parameter.map(|(_, key)| key.clone()),
                 value_type: value_type.clone(),
+                site: Box::new(crate::model::refusal::SignatureSite {
+                    member,
+                    artifact,
+                    span,
+                }),
             },
             "is not a declared type",
         )
@@ -2197,11 +2247,17 @@ fn check_node<'a>(
             }
         }
         DomainPackageRecord::Namespace(namespace) => {
-            for member in &namespace.members {
+            for (position, member) in namespace.members.iter().enumerate() {
                 if index.is_namespace(member) {
                     refusals.push(ModelRefusal {
                         code: Code::InvalidModelBinding,
-                        cause: ModelRefusalCause::MalformedDeclaration,
+                        cause: malformed_at(
+                            domain_package,
+                            &namespace.key,
+                            MemberPath::type_definition()
+                                .name("members")
+                                .index(position),
+                        ),
                         detail: format!(
                             "namespace {} contains namespace {}",
                             namespace.key.node, member.node
@@ -2250,7 +2306,7 @@ fn check_node<'a>(
             // A native value type ([`ValueTypeRef::Native`]) names no
             // node of any package, so it has nothing to dangle against
             // here; only a package value type is checked.
-            for parameter in &op.parameters {
+            for (position, parameter) in op.parameters.iter().enumerate() {
                 if let Some(value_type) = parameter.value_type.as_package() {
                     if !is_ordinary_object_type(domain_package, value_type)
                         && !index.is_scalar_type(value_type)
@@ -2259,7 +2315,7 @@ fn check_node<'a>(
                         refusals.push(signature_type_refusal(
                             domain_package,
                             &op.key,
-                            Some(&parameter.key),
+                            Some((position, &parameter.key)),
                             &parameter.value_type,
                         ));
                     }
@@ -2386,13 +2442,19 @@ fn check_node<'a>(
         // a declared object type; a missing one refuses
         // `missing_declaration`/`missing-name`.
         DomainPackageRecord::Population(population) => {
-            for type_name in &population.member_types {
+            for (position, type_name) in population.member_types.iter().enumerate() {
                 // FR-208-AC-9: a record value type is a declared type of
                 // another meaning, not a missing one.
                 if index.is_record_value_type(type_name) {
                     refusals.push(ModelRefusal {
                         code: Code::InvalidModelBinding,
-                        cause: ModelRefusalCause::MalformedDeclaration,
+                        cause: malformed_at(
+                            domain_package,
+                            &population.key,
+                            MemberPath::new(MemberRoot::PopulationDefinition)
+                                .name("members")
+                                .index(position),
+                        ),
                         detail: format!(
                             "population {} names member type {}, a record value type, not an object type",
                             population.key.node, type_name.node
@@ -2530,9 +2592,10 @@ fn element_owner<'a>(
     }
 }
 
-/// Phase-2 member owners in source-end order. A connection or allocation has
+/// Phase-2 member owners of the records that are not fields, clauses or
+/// operations: a variant case's type, and systems members in source-end order. A connection or allocation has
 /// a qualify fact at each end, even when both ends resolve to the same type.
-fn systems_member_owners<'a>(
+fn record_member_owners<'a>(
     record: &'a DomainPackageRecord,
     records: &HashMap<&DeclarationKey, &'a DomainPackageRecord>,
 ) -> Vec<&'a DeclarationKey> {
@@ -2563,6 +2626,8 @@ fn systems_member_owners<'a>(
                 .chain(element_owner(&allocation.target_element, records))
                 .collect()
         }
+        // A variant case is a member of its variant type (FR-081).
+        DomainPackageRecord::Variant(case) => vec![&case.owner],
         _ => Vec::new(),
     }
 }
@@ -2623,8 +2688,9 @@ fn build(
     let type_keys: Vec<DeclarationKey> = index.normalizable_types().cloned().collect();
 
     // Phase 2: owner-less type facts first, then each owner's member facts
-    // in key order. Systems end owners are resolved through the admitted
-    // declarations, before any effective identity is minted.
+    // in key order. The owners of systems members (resolved through the
+    // admitted declarations) and of variant cases are found before any
+    // effective identity is minted.
     let records_by_key: HashMap<_, _> = domain_package
         .records
         .iter()
@@ -2632,7 +2698,7 @@ fn build(
         .collect();
     let mut systems_by_owner: HashMap<DeclarationKey, Vec<DeclarationKey>> = HashMap::new();
     for record in &domain_package.records {
-        for owner in systems_member_owners(record, &records_by_key) {
+        for owner in record_member_owners(record, &records_by_key) {
             systems_by_owner
                 .entry(owner.clone())
                 .or_default()
@@ -4321,7 +4387,7 @@ mod tests {
         let nested_namespaces = package(vec![
             DomainPackageRecord::Namespace(NamespaceRecord {
                 key: outer.clone(),
-                members: vec![inner.clone()],
+                members: vec![DeclarationKey::fixture("model/Leaf"), inner.clone()],
                 vocabulary: Vec::new(),
             }),
             DomainPackageRecord::Namespace(NamespaceRecord {
@@ -4337,10 +4403,13 @@ mod tests {
         };
         assert!(namespace_refusals.iter().any(|refusal| {
             refusal.code == Code::InvalidModelBinding
-                && refusal.cause == ModelRefusalCause::MalformedDeclaration
-                && refusal
-                    .detail
-                    .contains("namespace model/Outer contains namespace model/Inner")
+                && refusal.cause
+                    == (ModelRefusalCause::IntakeMalformedDeclaration {
+                        node: outer.node.clone(),
+                        artifact: None,
+                        span: None,
+                        member: MemberPath::type_definition().name("members").index(1),
+                    })
         }));
     }
 
@@ -4468,6 +4537,8 @@ mod tests {
                 parameters: Vec::new(),
                 result: None,
                 effect: OperationEffect::default(),
+                requires: Vec::new(),
+                ensures: Vec::new(),
                 own_postcondition_clauses: Vec::new(),
                 has_body: false,
                 redefines: None,
@@ -4603,6 +4674,8 @@ mod tests {
                         multiplicity,
                     }),
                     effect: OperationEffect::default(),
+                    requires: Vec::new(),
+                    ensures: Vec::new(),
                     own_postcondition_clauses: Vec::new(),
                     has_body: false,
                     redefines: None,
@@ -4621,7 +4694,7 @@ mod tests {
                 for parameter in [Some(parameter_key.clone()), None] {
                     assert!(refusals.iter().any(|refusal| {
                         refusal.code == Code::DanglingReference && matches!(&refusal.cause,
-                            ModelRefusalCause::UnknownValueType { operation, parameter: actual_parameter, value_type: actual_type }
+                            ModelRefusalCause::UnknownValueType { operation, parameter: actual_parameter, value_type: actual_type, .. }
                             if operation == &operation_key && actual_parameter == &parameter && actual_type == &value_type)
                     }));
                 }
@@ -4645,6 +4718,8 @@ mod tests {
                 parameters: Vec::new(),
                 result: None,
                 effect: OperationEffect::default(),
+                requires: Vec::new(),
+                ensures: Vec::new(),
                 own_postcondition_clauses: Vec::new(),
                 has_body: false,
                 redefines: None,

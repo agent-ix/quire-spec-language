@@ -217,12 +217,14 @@ names different artifacts in each.
 | TC-994 | A variant type is admitted as one enum and one variant per case | Unit | P1 | FR-056-AC-24 | 🚧 |
 | TC-995 | A variant case carrying a payload refuses as an unsupported declaration form | Unit | P1 | FR-056-AC-25 | 🚧 |
 | TC-996 | Empty, spanless, mis-shaped and duplicate variant cases refuse with their causes | Unit | P1 | FR-056-AC-26 | 🚧 |
-| TC-997 | A clause or field naming a variant type refuses while the declaration is admitted | Unit | P1 | FR-056-AC-27, FR-056-AC-28 | 🚧 |
+| TC-997 | A clause, field or operation signature naming a variant type refuses while the declaration is admitted | Unit | P1 | FR-056-AC-27, FR-056-AC-28, FR-056-AC-32 | 🚧 |
 | TC-998 | A field read at a parent-typed slot reads the field by identity and the checked IR carries no conversion | Integration | P1 | FR-359-AC-1, FR-359-AC-2, FR-359-AC-3 | 🚧 |
 | TC-999 | Equality of a child at a parent-typed slot is false, never a fault | Integration | P1 | FR-359-AC-4, FR-359-AC-5 | 🚧 |
 | TC-1000 | An optional field, a collection element and a payload accept a child and refuse a parent or an unrelated record | Integration | P1 | FR-359-AC-6, FR-359-AC-7, FR-359-AC-11 | 🚧 |
 | TC-1001 | A model-operation argument and a function argument admit a child at a parent-typed parameter | Integration | P1 | FR-359-AC-8 | 🚧 |
 | TC-1002 | Replay decodes a child at an ancestor slot and no kernel check refuses a conforming value | Integration | P1 | FR-359-AC-9, FR-359-AC-10 | 🚧 |
+| TC-1003 | A variant type and its cases have effective identities independent of case order, and conflicting cases leave no view | Unit | P1 | FR-056-AC-29, FR-056-AC-30, FR-081-AC-16 | 🚧 |
+| TC-1004 | The assembler declares each variant type in the type environment by effective identity | Unit | P1 | FR-056-AC-31 | 🚧 |
 | TC-444 | The replay executor recompiles, selects, calls, and refuses each O-26 case | Unit | P1 | FR-098-AC-1, FR-098-AC-2, FR-098-AC-3, FR-098-AC-4, FR-098-AC-5, FR-098-AC-6, FR-098-AC-7 | ✅ |
 | TC-446 | Spine compile resolves imports against supplied libraries | Integration | P1 | FR-099-AC-1, FR-099-AC-2, FR-099-AC-3, FR-099-AC-4, FR-099-AC-5, FR-099-AC-6, FR-099-AC-7, FR-027-AC-10 | ✅ |
 | TC-490 | E3 resolves header profile selections against the DefinitionLock catalog | Integration | P1 | FR-110-AC-1, FR-110-AC-2, FR-110-AC-3, FR-110-AC-5, FR-110-AC-6, FR-110-AC-7, FR-110-AC-8, FR-110-AC-9 | 🚧 |

@@ -163,6 +163,8 @@ fn operation_redefining(
             creates: creates.into_iter().map(DeclarationKey::fixture).collect(),
             deletes: deletes.into_iter().map(DeclarationKey::fixture).collect(),
         },
+        requires: Vec::new(),
+        ensures: Vec::new(),
         own_postcondition_clauses,
         has_body: true,
         redefines: redefines.map(DeclarationKey::fixture),
@@ -1455,6 +1457,8 @@ fn r10_operation_redefinition_effect_axis_refuses_a_write_at_a_package_the_grant
                     creates: Vec::new(),
                     deletes: Vec::new(),
                 },
+                requires: Vec::new(),
+                ensures: Vec::new(),
                 own_postcondition_clauses: vec![],
                 has_body: true,
                 redefines: Some(DeclarationKey::fixture("model.A.op")),
@@ -1776,6 +1780,8 @@ fn r14a_field_refinement_writer_search_does_not_confuse_a_decoy_matching_the_red
                     creates: Vec::new(),
                     deletes: Vec::new(),
                 },
+                requires: Vec::new(),
+                ensures: Vec::new(),
                 own_postcondition_clauses: vec![PostconditionClause::Presence {
                     field: DeclarationKey::fixture("model.B.xb"),
                 }],
@@ -1863,6 +1869,8 @@ fn r14b_field_refinement_writer_search_does_not_confuse_a_decoy_matching_the_red
                     creates: Vec::new(),
                     deletes: Vec::new(),
                 },
+                requires: Vec::new(),
+                ensures: Vec::new(),
                 own_postcondition_clauses: vec![PostconditionClause::Presence {
                     field: DeclarationKey::fixture("model.B.xb"),
                 }],
@@ -1944,6 +1952,8 @@ fn r15a_field_refinement_chain_extension_does_not_confuse_a_decoy_matching_the_w
                 parameters: vec![],
                 result: None,
                 effect: OperationEffect::default(),
+                requires: Vec::new(),
+                ensures: Vec::new(),
                 own_postcondition_clauses: vec![PostconditionClause::Presence {
                     field: DeclarationKey::fixture("model.B.xb"),
                 }],
@@ -2026,6 +2036,8 @@ fn r15b_field_refinement_chain_extension_does_not_confuse_a_decoy_matching_the_o
                 parameters: vec![],
                 result: None,
                 effect: OperationEffect::default(),
+                requires: Vec::new(),
+                ensures: Vec::new(),
                 own_postcondition_clauses: vec![PostconditionClause::Presence {
                     field: DeclarationKey::fixture("model.B.xb"),
                 }],
@@ -2093,6 +2105,8 @@ fn r16a_field_refinement_names_field_filter_does_not_confuse_a_clause_matching_t
                     creates: Vec::new(),
                     deletes: Vec::new(),
                 },
+                requires: Vec::new(),
+                ensures: Vec::new(),
                 own_postcondition_clauses: vec![PostconditionClause::Presence {
                     field: DeclarationKey {
                         package: "other/pkg".to_owned(),
@@ -2167,6 +2181,8 @@ fn r16b_field_refinement_names_field_filter_does_not_confuse_a_clause_matching_t
                     creates: Vec::new(),
                     deletes: Vec::new(),
                 },
+                requires: Vec::new(),
+                ensures: Vec::new(),
                 own_postcondition_clauses: vec![PostconditionClause::Presence {
                     field: DeclarationKey {
                         package: "other/pkg".to_owned(),
