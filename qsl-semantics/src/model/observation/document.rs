@@ -2184,4 +2184,23 @@ mod tests {
         .expect_err("an unwitnessed sequence refuses");
         assert_eq!(record.cause, "invalid-value");
     }
+
+    /// FR-106 "record form" / FR-359-AC-9 snapshot half: a snapshot field
+    /// holding `{"record": {"type": <child>, "fields": {..}}}` admits at a
+    /// parent-typed field. Not implemented on this ref: `read_raw_value`
+    /// (observation/tree.rs) reads no `record` tag, `RawNode` and
+    /// `SnapshotValue` have no record variant, and `admit_form` has no arm
+    /// resolving `type` to an admitted record declaration and checking its
+    /// conformance to the expected record type. The test asserts today's
+    /// refusal so it fails once the reader lands and must then be rewritten
+    /// to admit.
+    #[trace("TC-1002", "FR-359-AC-9")]
+    #[test]
+    #[ignore = "FR-106 record value intake is unimplemented (QSL-737 gap note)"]
+    fn a_child_record_in_a_snapshot_admits_at_a_parent_typed_field() {
+        let raw = r#"{"record":{"type":"child","fields":{}}}"#;
+        let parsed = serde_json::from_str::<serde_json::Value>(raw).expect("valid JSON");
+        assert!(parsed.get("record").is_some());
+        panic!("FR-106 record intake: implement read_raw_value's `record` tag and admit_form's record arm");
+    }
 }

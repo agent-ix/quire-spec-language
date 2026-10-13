@@ -16,6 +16,10 @@ use serde_json::{json, Value};
 
 #[path = "tc235_k2.rs"]
 #[allow(dead_code, reason = "this fixture uses part of the shared K2 builder")]
+#[allow(
+    clippy::duplicate_mod,
+    reason = "a test binary also loads the K2 builder directly"
+)]
 mod base;
 pub(crate) use base::{id, PACKAGE};
 
