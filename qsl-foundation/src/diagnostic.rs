@@ -875,11 +875,12 @@ pub const RESERVATION_SIZE_OVERFLOW: CatalogCode =
 /// (`runtime_invariant`/`established-invariant-broken`, confirmed by the
 /// catalog's revision `1-draft.6` note) and exactly one category
 /// (`Category::InternalFailure`), and is never a `Refusal` (ADR-013 T-4).
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct InternalFault {
     stage: &'static str,
     invariant: &'static str,
     kernel_cause: Option<quire_exact::CheckedInvariantCause>,
+    named: Vec<(&'static str, String)>,
 }
 
 impl InternalFault {
@@ -890,7 +891,23 @@ impl InternalFault {
             stage,
             invariant,
             kernel_cause: None,
+            named: Vec::new(),
         }
+    }
+
+    /// This fault with the values it concerns, each under a stable field
+    /// name (for example the node and declarations of a rebound
+    /// correspondence entry).
+    #[must_use]
+    pub fn with_named(mut self, named: Vec<(&'static str, String)>) -> Self {
+        self.named = named;
+        self
+    }
+
+    /// The values this fault concerns, by stable field name; empty when the
+    /// invariant names none.
+    pub fn named(&self) -> &[(&'static str, String)] {
+        &self.named
     }
 
     /// A received kernel invariant, retaining its original typed provenance.
@@ -903,6 +920,7 @@ impl InternalFault {
             stage,
             invariant,
             kernel_cause: Some(cause),
+            named: Vec::new(),
         }
     }
 
