@@ -1870,15 +1870,24 @@ pub(crate) fn malformed_at(
     key: &DeclarationKey,
     member: MemberPath,
 ) -> ModelRefusalCause {
-    let (artifact, span) = package.original(key).map_or((None, None), |original| {
-        crate::model::intake::origin_locus(&original.origin)
-    });
+    let (artifact, span) = origin_of(package, key);
     ModelRefusalCause::IntakeMalformedDeclaration {
         node: key.node.clone(),
         artifact,
         span,
         member,
     }
+}
+
+/// `key`'s retained FCD source artifact and position; both `None` for a node
+/// the package holds no origin for.
+fn origin_of(
+    package: &DomainPackage,
+    key: &DeclarationKey,
+) -> (Option<String>, Option<qsl_foundation::source::LocatedSpan>) {
+    package.original(key).map_or((None, None), |original| {
+        crate::model::intake::origin_locus(&original.origin)
+    })
 }
 
 fn signature_type_refusal(
@@ -1928,11 +1937,7 @@ fn signature_type_refusal(
             "has a meaning forbidden as a signature value type",
         )
     } else {
-        let (artifact, span) = package
-            .original(operation)
-            .map_or((None, None), |original| {
-                crate::model::intake::origin_locus(&original.origin)
-            });
+        let (artifact, span) = origin_of(package, operation);
         (
             Code::DanglingReference,
             ModelRefusalCause::UnknownValueType {
@@ -4382,7 +4387,7 @@ mod tests {
         let nested_namespaces = package(vec![
             DomainPackageRecord::Namespace(NamespaceRecord {
                 key: outer.clone(),
-                members: vec![inner.clone()],
+                members: vec![DeclarationKey::fixture("model/Leaf"), inner.clone()],
                 vocabulary: Vec::new(),
             }),
             DomainPackageRecord::Namespace(NamespaceRecord {
@@ -4403,7 +4408,7 @@ mod tests {
                         node: outer.node.clone(),
                         artifact: None,
                         span: None,
-                        member: MemberPath::type_definition().name("members").index(0),
+                        member: MemberPath::type_definition().name("members").index(1),
                     })
         }));
     }

@@ -43,3 +43,18 @@ Merge interplay:
 Public-repo check: the hunks cite only QSL ticket ids and no QSpec internals.
 
 No finding blocks merge. FND-001 should be settled together with SR-8709 FND-002.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | medium | FR-056 and FR-056-AC-32 now fix the population path as `PopulationDefinition.members[i]`. QSpec TC-235 M10 run 10, the target-design row for this refusal family (a population member type of the wrong meaning), spells it `Population.members[0].type`. QSL's existing reader mapping already writes `PopulationDefinition.members[i]` (intake.rs `a_semantic_ir_pointer_maps_to_its_member_path`), and an IR population `members` entry is a bare identity string with no `.type`. So either the QSpec row is wrong for the IR shape, or QSL should change both the root and the suffix. The relationship and namespace spellings do match QSpec (M21 run 3 `Relationship.target`, M09 runs 3-4 `TypeDefinition.members[0]`). Separately, M10 run 10 itself (a namespace as a population member, which QSpec refuses as `malformed-declaration`) has no QSL test, and QSL's `check_node` would report it as `missing_declaration`/`unknown-population-member-type`; that belongs with the TC-235 measurement work. Fix: get a ruling on the spelling and record it in FR-056 (or file a QSpec correction), and open a ticket for M10 run 10. | spec/functional/FR-056-admit-domain-package-model-declarations.md:545-551,789; qsl-semantics/src/model/normalize.rs:2440-2470 |
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | fb56a8756: FR-056 paragraph and FR-056-AC-32 require the operation's FCD origin (artifact and position, when the node has a source origin) |
+| FND-002 | fixed | fb56a8756: "enum" dropped from the paragraph and AC-32; the AC lists event type, state machine, process, persistence interface, namespace and interface-featured object type |
+| FND-003 | fixed | fb56a8756: "The refusal of a variant type is a placeholder that QSL-738 replaces, as for fields; the refusal of the other meanings is permanent." |
+| FND-004 | fixed | fb56a8756: TC-997 title updated in the TC file and spec/tests.md |

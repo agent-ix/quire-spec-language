@@ -34,3 +34,18 @@ Examined:
 The core of the ticket is delivered. `signature_type_refusal` keeps the operation node and the typed member path for both causes and both positions, and the result path and the index-0 parameter path are asserted on typed fields. The reader-unreachable dangling case is justified: through the reader, an undeclared `typeRef` is refused earlier, by the semantic-IR `UNRESOLVED_TYPE_REF` mapping to `missing_declaration` (intake.rs:1736-1739), so `unknown-value-type` is reached only by a package built without the reader. That is what FR-056 now says.
 
 The ticket ACs are only partly met: index 1 (FND-001) and the sibling sites (FND-002). FND-003 is a trace and coverage gap against FR-056-AC-32.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | low | Three of the new typed paths have no test. (1) `Relationship.source`: only `Relationship.target` is asserted, and TC-997's expected results also list only `Relationship.target`, although FR-056-AC-32 names both. (2) A namespace member at a position other than 0: the unit test has one member. (3) The `UnknownValueType` site's artifact/span with a reader origin: the `Missing` row runs without the reader, so it is only ever `None`. The population test (position 1) and the variant test (origin) cover the shared mechanism, so the risk is low. Fix: add a source-end row and a second namespace member, and list `Relationship.source` in TC-997. | qsl-semantics/tests/it/model_systems.rs:325-344; qsl-semantics/src/model/normalize.rs (namespace unit test); spec/test-cases/TC-997-clause-or-field-naming-a-variant-type.md:28 |
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | fb56a8756: index-1 vector added (`a_later_parameter_naming_a_variant_type_keeps_its_own_position`) |
+| FND-002 | fixed | fb56a8756: systems.rs relationship end, normalize.rs namespace member and population member type now build `malformed_at(package, key, member)` with `Relationship.<label>`, `TypeDefinition.members[i]`, `PopulationDefinition.members[i]`; the two nodeless sites (empty selection, empty key) remain, correctly |
+| FND-003 | fixed | fb56a8756: matrix test tagged `TC-997`, `FR-056-AC-32`; `Gateway` (interface-featured object type) and `Missing` rows added |
+| FND-004 | fixed | fb56a8756: the matrix loop asserts code, cause, node and member only; all `detail.contains` checks removed |

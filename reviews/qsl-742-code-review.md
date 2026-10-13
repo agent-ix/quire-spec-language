@@ -43,3 +43,17 @@ The mechanism is correct:
 Test oracles: on the old code, the variant test fails `assert_malformed`'s `IntakeMalformedDeclaration` match (old cause was the unit `MalformedDeclaration`). For the forbidden meanings, the matrix test panics with "unexpected cause". The new `Missing` row would not compile against the old `UnknownValueType` (no `member` field). Each test would therefore have failed on the old code. The weak point is the index (FND-001).
 
 **Mergeable once FND-001 is fixed.** FND-002 can be deferred to its own ticket, since it is systemic. FND-003 is a cleanup.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | The undeclared-type branch of `signature_type_refusal` repeats `package.original(operation).map_or((None, None), \|original\| origin_locus(&original.origin))` rather than sharing it with `malformed_at`. Two copies of the origin lookup can drift, and QSL-744 will add more sites. Fix: one `fn origin_of(package, key) -> (Option<String>, Option<LocatedSpan>)` used by `malformed_at` and the `SignatureSite` construction. | qsl-semantics/src/model/normalize.rs:1868-1882, 1931-1946 |
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | fb56a8756: `a_later_parameter_naming_a_variant_type_keeps_its_own_position` declares Integer, Tier, Integer and asserts `Operation.params[1].typeRef`; a constant `.index(0)` or 1-based index now fails |
+| FND-002 | fixed | fb56a8756: `malformed_at` and the `SignatureSite` fill artifact/span from `DomainPackage::original(operation).origin` via `intake::origin_locus`; the variant test asserts artifact `spec` and span 1:1. The other ten normalize-stage sites are deferred to QSL-744 (exists, Specced) |
+| FND-003 | fixed | fb56a8756: the unreachable `UnknownValueType` arm is removed from `refusal_node` |
