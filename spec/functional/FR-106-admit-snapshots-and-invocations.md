@@ -399,8 +399,9 @@ required; check 10 settles it.
   elements by ascending index. It SHALL count the record, each option
   wrapper, each sequence and each contained value against the
   declared values-per-document setting, and stop at that limit before the next
-  value with `resource_exhausted`/`insufficient-next-charge`, naming the
-  bound, prior count and next value's path; finite recursive record
+  value with `stage_limit_exceeded`/`node-count-exceeded`, naming the
+  setting `observation.values`, the bound and the count the next value would
+  have reached (FR-255); finite recursive record
   declarations therefore admit only finite
   supplied values within the byte and value limits, with no call-stack or
   schema-depth limit. A nested refusal SHALL carry its exact FR-207 `field`,
@@ -408,6 +409,9 @@ required; check 10 settles it.
   Invariant evaluation follows QSpec FR-208-AC-10 after admission, once for
   each reachable record value, with the same path; admission does not turn a
   false invariant into an input refusal.
+- Admission re-runs the model walks of the selected domain packages. A
+  ceiling of `ModelNormalizationLimitsV1` reached there refuses
+  `resource_exhausted` with the compile path's cause (FR-255 Behavior 1).
 - Every code and cause above is in QSpec `native-diagnostics.md`.
 
 ## Acceptance Criteria
@@ -428,7 +432,7 @@ required; check 10 settles it.
 | FR-106-AC-13 | The default is `Refuse`. The wrapping debit (`child.versionNumber` 0 to -1) refuses `invalid_runtime_input`/`invalid-value` naming `child` and `versionNumber` under `admit_observations` with default limits, through `run_clause`'s `Clause` selection of `VersionUnchanged`, and through `run_clause`'s `Frame` selection of `attemptUpdate`. | Test |
 | FR-106-AC-14 | A current snapshot of `Account` whose required `address: Address` field is `{"record":{"type":"ix://example/model/PostalAddress","fields":{"street":{"present":{"record":{"type":"ix://example/model/Street","fields":{"name":{"integer":"7"}}}}},"zip":{"integer":"42"}}}}` admits when `PostalAddress` specializes `Address`, its effective `street` field is optional `Street`, its `zip` field is `Integer`, and `Street.name` is `Integer`. Reordering JSON object members yields the same typed observation and selected digest. The two nested records retain their most-specific types and are reached by distinct FR-207 field and option-value paths. | Test |
 | FR-106-AC-15 | A record payload with a missing effective field refuses `invalid_runtime_input`/`missing-member`; one with an extra field refuses `unknown-member`; a `type` naming an object type, an unrelated record subtype, or no selected record refuses `wrong-value-kind`; and an object reference in place of a record refuses `wrong-value-kind`. Each refusal names the first nested path reached in field order, including an index for a sequence element. The same cases in a parameter or result use the invocation binding as the path root. | Test |
-| FR-106-AC-16 | A finite `Node { next?: Node }` value nested through 10,000 present `next` fields admits when byte and value limits allow it, with no reader or validator stack-depth refusal. At the exact values-per-document bound the document admits; one more nested value returns `resource_exhausted`/`insufficient-next-charge` with the bound, prior count and next value's path before that value is admitted. A false invariant on one nested `Node` is reported as a logical violation at its FR-207 runtime value path after admission, not as an input refusal. | Test |
+| FR-106-AC-16 | A finite `Node { next?: Node }` value nested through 10,000 present `next` fields admits when byte and value limits allow it, with no reader or validator stack-depth refusal. At the exact values-per-document bound the document admits; one more nested value returns `stage_limit_exceeded`/`node-count-exceeded` naming `observation.values`, the bound and the count reached, before that value is admitted. A false invariant on one nested `Node` is reported as a logical violation at its FR-207 runtime value path after admission, not as an input refusal. | Test |
 | FR-106-AC-17 | An invocation changing `Account.address` from one admitted record value to another admits its frame when the selected `modifies` grant covers that declared object field. Without that grant it refuses `frame_violation`/`unauthorized-change` naming `Account.address`, whether the change is to a record member or its most-specific type. The existing QSpec FR-013 and FR-340 receiver and grant semantics apply. | Test |
 
 ## Dependencies

@@ -1344,7 +1344,8 @@ that produce one. None adds a category.
 | compile (S1 to S4, I1) | refusal or limit | refusal, incomplete | the stage's own code, such as `missing_import` |
 | selection (FR-109) | a name that is no clause or function, a function whose result is not `Boolean` | refusal | `missing_declaration`, `ill_typed` |
 | admission (FR-106) | an absent selected document | incomplete | `unavailable_observation` |
-| admission (FR-106) | a document over a reader limit | refusal | `stage_limit_exceeded` |
+| admission (FR-106) | a document over a reader limit | incomplete | `stage_limit_exceeded` |
+| admission (FR-106) | a re-run `model.*` walk past its `ModelNormalizationLimitsV1` ceiling | incomplete | `resource_exhausted` |
 | admission (FR-106) | a wrong format | refusal | `unknown_wire` |
 | admission (FR-106) | a digest or label mismatch | refusal | `stale_dependency` |
 | admission (FR-106) | a bad document, selection or value | refusal | `invalid_runtime_input`, `wrong_snapshot`, `invalid_model_binding` |
