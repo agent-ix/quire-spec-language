@@ -834,7 +834,7 @@ fn a_mixed_pair_with_equal_text_leaves_is_unequal() {
 
 use qsl_semantics::model::observation::{
     admit_observations, AdmissionFailure, AdmittedObservations, ClauseFacts, ClauseSelection,
-    ClauseSelectionInput, DocumentRef, ObservationLimits, OperationFacts, Provisions,
+    ClauseSelectionInput, DocumentRef, ObservationLimits, OperationFacts, PathStep, Provisions,
 };
 use serde_json::json;
 
@@ -1084,13 +1084,13 @@ fn an_operation_record_defect_names_the_binding_and_the_nested_field() {
         Err(AdmissionFailure::Refused(record)) => (
             record.cause.to_owned(),
             record.fields.get("field").cloned().unwrap_or_default(),
-            record.fields.get("path").cloned().unwrap_or_default(),
+            record.path,
         ),
         other => panic!("a refusal, not {other:?}"),
     };
-    let expected = |cause: &str, field: &str, path: &str| {
-        (cause.to_owned(), field.to_owned(), path.to_owned())
-    };
+    let tax = || vec![PathStep::Field("tax_minor".to_owned())];
+    let expected =
+        |cause: &str, field: &str, path: Vec<PathStep>| (cause.to_owned(), field.to_owned(), path);
     assert_eq!(
         refusal(admit_invocation(
             &package,
@@ -1099,7 +1099,7 @@ fn an_operation_record_defect_names_the_binding_and_the_nested_field() {
             without_tax.clone(),
             Some(money_json(1))
         )),
-        expected("missing-member", "m", "tax_minor")
+        expected("missing-member", "m", tax())
     );
     assert_eq!(
         refusal(admit_invocation(
@@ -1109,7 +1109,7 @@ fn an_operation_record_defect_names_the_binding_and_the_nested_field() {
             money_json(1),
             Some(without_tax)
         )),
-        expected("missing-member", "result", "tax_minor")
+        expected("missing-member", "result", tax())
     );
     assert_eq!(
         refusal(admit_invocation(
@@ -1119,6 +1119,6 @@ fn an_operation_record_defect_names_the_binding_and_the_nested_field() {
             money_json(1),
             Some(record_json("Fee", &[("fee_minor", 1)]))
         )),
-        expected("wrong-value-kind", "result", "")
+        expected("wrong-value-kind", "result", Vec::new())
     );
 }

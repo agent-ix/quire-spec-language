@@ -136,7 +136,7 @@ pub struct OutOfRange {
     /// For an integer inside a record value, the record field names from the
     /// field (or sequence element) down to it, outermost first; empty
     /// otherwise.
-    pub steps: Vec<String>,
+    pub steps: Vec<PathStep>,
 }
 
 impl Default for ObservationLimits {
@@ -343,6 +343,23 @@ pub struct AdmissionRecord {
     /// The named input path components this record carries, keyed by name
     /// (`document`, `population`, `object`, `field`, `label`, ...).
     pub fields: BTreeMap<&'static str, String>,
+    /// For a defect inside a nested value, the typed steps from the checked
+    /// field, parameter or result down to it, outermost first (QSpec FR-207);
+    /// empty when the defect is at the checked value itself.
+    pub path: Vec<PathStep>,
+}
+
+/// One typed step of a nested value path (QSpec FR-207): never a rendered
+/// string, so a record field named `0` cannot be taken for the first
+/// element of a sequence.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PathStep {
+    /// A record field, by its exact name.
+    Field(String),
+    /// The payload of a present optional value.
+    OptionValue,
+    /// A sequence element, by its position.
+    Index(usize),
 }
 
 impl AdmissionRecord {
@@ -351,6 +368,7 @@ impl AdmissionRecord {
             code,
             cause,
             fields: BTreeMap::new(),
+            path: Vec::new(),
         }
     }
 
@@ -360,17 +378,11 @@ impl AdmissionRecord {
         self
     }
 
-    /// This record under one more step of a nested value path: a record
-    /// field name or a sequence position, prepended to the `path` it
-    /// already names (FR-106 check 6.5: a refusal names the nested value
-    /// path from the checked field down).
+    /// This record naming the nested value `path`: the typed steps from the
+    /// checked field, parameter or result down to it (FR-106 check 6.5).
     #[must_use]
-    fn within(mut self, step: String) -> Self {
-        let path = match self.fields.remove("path") {
-            Some(inner) => format!("{step}.{inner}"),
-            None => step,
-        };
-        self.fields.insert("path", path);
+    fn at(mut self, path: Vec<PathStep>) -> Self {
+        self.path = path;
         self
     }
 }

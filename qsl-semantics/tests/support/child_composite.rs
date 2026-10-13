@@ -170,6 +170,14 @@ pub(crate) fn document() -> Value {
             vec![plain("GiftTaxedMoney", "wrap_minor", &native("Integer"))],
         ),
         record(
+            "Node",
+            &[],
+            vec![
+                plain("Node", "level", &native("Integer")),
+                optional("Node", "next", &id("Node")),
+            ],
+        ),
+        record(
             "Fee",
             &[],
             vec![plain("Fee", "fee_minor", &native("Integer"))],
@@ -275,6 +283,7 @@ pub(crate) fn document() -> Value {
                         plain("Order", "total", &money),
                         optional("Order", "discount", &money),
                         optional("Order", "taxed", &id("TaxedMoney")),
+                        optional("Order", "chain", &id("Node")),
                         many("Order", "items", &money, true, false),
                     ],
                 }),

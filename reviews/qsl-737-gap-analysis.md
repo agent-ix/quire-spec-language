@@ -108,3 +108,22 @@ tests goes red if the behaviour is reverted:
   mechanism traces to FR-359 items 1-9 or to FR-094.
 - Stubs: one test stub (above). There are no production stubs and no
   `todo!`.
+
+## Dispositions
+
+Round 1, reviewed at `eb90798d0e`.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 5f1fdc74a, plus 0045fc336 for parameters and results. The reader adds a `record` tag on the explicit heap stack (exactly `type` and `fields`), and `RawNode`/`RawForm`/`SnapshotValue` gain a record variant. `admit_record` resolves `type`, checks `composite_conforms` against the slot and requires exactly the effective fields (`missing-member`, `unknown-member`). Snapshot tests cover the TaxedMoney and GiftTaxedMoney admissions, the `discount?` payload, the `Sequence<Money>` field, ancestor, unrelated, object and unknown `type`, a reference in place of a record, a missing `tax_minor`, an extra field, a malformed scalar, and first-path-in-field-order. Each test fails if `admit_record` is reverted, because a `record` value would then refuse `wrong-value-kind` at the field. The path encoding and the depth bound are new findings in SR-8693. |
+| FND-002 | fixed | 0045fc336: `a_model_operation_takes_and_returns_a_child_record` admits a `Ledger.pay` invocation whose argument and result are both `TaxedMoney`, checks that both keep their declaration, and evaluates the pre and post clauses. A `Money` or `Fee` at `payTaxed(m: TaxedMoney)` refuses `wrong-value-kind` with `field=m`. `an_operation_over_a_record_parameter_emits_and_reads_back` reads back `Verified`. `dispatch_argument_admits_a_conforming_record_and_refuses_the_rest` covers dispatch arguments at check level. The run-level dispatch and Upcast remainder is FND-007. |
+| FND-003 | fixed | c764dff09: `an_event_type_is_one_model_owned_event_type_node_in_a_package` asserts exactly one `event_type` node owned by `(model, PACKAGE, Shipped)`, beside an `OrderPlaced` record node, with no `composite_type` and no `supertypes`. |
+| FND-004 | deferred | Blocked by PR #789 (QSL-723), which is open: String leaves do not lower yet. `a_mixed_pair_with_equal_text_leaves_is_unequal` is `#[ignore]`d with that citation and asserts a `StampedTicket` and a `Ticket` with an equal `label` are unequal. Un-ignore it when #789 merges. |
+| FND-005 | fixed | 3a3f6e00c: `equality_over_event_operands_stays_refused` covers `=` and `!=` over two events, a record holding an event, `Option<Shipped>` and `Sequence<Shipped>`. Each case asserts `operator-ineligible` and the comparing function's body. |
+| FND-006 | fixed | c764dff09: the oracles use `quire_exact::compare_keys(..) == Some(Equal)` (`same_value`), which compares declaration and fields. The AC-11 test adds negative controls (`!same_value(taxed, money)` within and across units), so the oracle can fail. The wire round-trip compares `compare_keys`. |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | low | Part of FR-359-AC-8 still has no test: a run through an `Upcast` of the operation, and a dispatch guard or body binding that binds a child argument, are not exercised at run level. Dispatch argument admission is tested at check level only, and the Upcast not at all. The production path (the `Form::Argument` conformance arm, then evaluation by `record_slot`) is the one already exercised for functions and operation clauses, so the risk is low. AC-8 stays partly unbacked until a run-level test is written with the TC-196 dispatch harness. The PR body declares this gap. | qsl-eval/tests/it/dispatch_calls.rs; qsl-semantics/src/check/state_model.rs |

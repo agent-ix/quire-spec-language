@@ -482,6 +482,17 @@ fn record_dispatch_package() -> (
     qsl_semantics::check::PackageDeclarations,
     [quire_exact::NodeKey; 3],
 ) {
+    record_dispatch_package_guarded(None)
+}
+
+/// [`record_dispatch_package`] whose candidate carries the effective
+/// `precondition` over `(self, arg)` when given.
+fn record_dispatch_package_guarded(
+    precondition: Option<Expression>,
+) -> (
+    qsl_semantics::check::PackageDeclarations,
+    [quire_exact::NodeKey; 3],
+) {
     use quire_exact::{NodeKey, Presence};
     use quire_semantic_value::declaration::{
         CompositeDeclaration, CompositeShape, FieldDeclaration,
@@ -500,11 +511,13 @@ fn record_dispatch_package() -> (
         )
         .with_supertypes(supertypes)
     };
-    let mut package = one_candidate_package(receiver_type, None, ValueType::Integer);
-    package.functions[0].parameters.push((
-        "arg".to_owned(),
-        crate::support::type_form::named_type_form("Money"),
-    ));
+    let mut package = one_candidate_package(receiver_type, precondition, ValueType::Integer);
+    for function in &mut package.functions {
+        function.parameters.push((
+            "arg".to_owned(),
+            crate::support::type_form::named_type_form("Money"),
+        ));
+    }
     package.dispatch_operations[0].parameters = vec![ValueType::Composite(money)];
     package.types = TypeEnvironment::new(
         [
@@ -580,6 +593,79 @@ fn dispatch_argument_admits_a_conforming_record_and_refuses_the_rest() {
         )
         .expect_err("a parent at a child-typed parameter is refused");
     assert_state_model_ill_typed(&refusal, IllTypedCause::TypeMismatch, "type-mismatch");
+}
+
+/// FR-359-AC-8 (TC-1001 step 2), run level: a dispatched call with a
+/// `TaxedMoney` argument at the `Money` parameter evaluates through the
+/// linked candidate's body, and through its effective precondition when it
+/// holds; a false guard is `Undefined::PreconditionFalse` and never runs the
+/// body. The candidate receives the argument with its own type.
+#[trace("FR-359-AC-8", "TC-1001")]
+#[test]
+fn a_dispatched_call_with_a_child_argument_runs_through_guard_and_body() {
+    let receiver_type = object_type("model.dispatch-calls.Receiver");
+    let call = Expression::dispatch(
+        Expression::name("self".to_owned()),
+        "size".to_owned(),
+        vec![Expression::name("arg".to_owned())],
+    );
+    for (guard, expected) in [
+        (None, Some(1_i64)),
+        (Some(true), Some(1)),
+        (Some(false), None),
+    ] {
+        let precondition = guard.map(Expression::boolean);
+        let (declarations, [_, taxed, _]) = record_dispatch_package_guarded(precondition);
+        let types = declarations.types.clone();
+        let checked_package = declarations.check(CheckingLimits::default()).unwrap();
+        let checked = checked_package
+            .check_clause_expression(
+                vec![
+                    ("self".to_owned(), ValueType::Reference(receiver_type)),
+                    ("arg".to_owned(), ValueType::Composite(taxed)),
+                ],
+                &call,
+                None,
+                ClauseKind::Invariant,
+                CheckMode::Kernel,
+                CheckingLimits::default(),
+            )
+            .expect("a TaxedMoney checks at the Money parameter");
+        let package = CheckedPackage::link(checked_package);
+        let argument = types
+            .record(
+                taxed,
+                vec![(
+                    "amount",
+                    quire_exact::FieldValue::Present(Value::Integer(Integer::from(5_i64))),
+                )],
+            )
+            .unwrap();
+        let evaluation = package
+            .evaluate(
+                &checked,
+                vec![
+                    Value::Reference(receiver_reference(receiver_type, "r1")),
+                    argument,
+                ],
+                &objects(receiver_type, "r1"),
+                &mut Meter::new(SCALAR_UNLIMITED),
+            )
+            .unwrap();
+        match (expected, evaluation.outcome) {
+            (Some(value), FamilyOutcome::Evaluated(Outcome::Completed(Value::Integer(found)))) => {
+                assert_eq!(found, Integer::from(value), "guard {guard:?}");
+            }
+            (None, FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause))) => {
+                assert_eq!(
+                    cause.undefined_record().reason,
+                    UndefinedReason::PreconditionFalse,
+                    "guard {guard:?}"
+                );
+            }
+            (_, other) => panic!("guard {guard:?}: unexpected {other:?}"),
+        }
+    }
 }
 
 /// H1 (#204 round 1), FR-151: the upcast admission is one-directional --

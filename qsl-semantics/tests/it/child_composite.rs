@@ -535,6 +535,7 @@ use std::collections::BTreeMap;
 
 use qsl_semantics::model::observation::{
     admit_current_snapshot, AdmissionFailure, AdmissionRecord, DocumentRef, ObservationLimits,
+    PathStep,
 };
 use serde_json::json;
 
@@ -582,12 +583,31 @@ fn order_fields(total: Value, items: Vec<Value>) -> serde_json::Map<String, Valu
     fields.insert("total".to_owned(), total);
     fields.insert("discount".to_owned(), json!({"absent": {}}));
     fields.insert("taxed".to_owned(), json!({"absent": {}}));
+    fields.insert("chain".to_owned(), json!({"absent": {}}));
     fields.insert("items".to_owned(), json!({"sequence": items}));
     fields
 }
 
 /// Admit a current snapshot holding one `Order` named `o1` with `fields`.
 fn admit_order(fields: serde_json::Map<String, Value>) -> Result<(), AdmissionFailure> {
+    admit_order_within(fields, ObservationLimits::default())
+}
+
+/// [`admit_order`] under the given observation limits.
+fn admit_order_within(
+    fields: serde_json::Map<String, Value>,
+    limits: ObservationLimits,
+) -> Result<(), AdmissionFailure> {
+    admit_order_text(fields, limits, |text| text)
+}
+
+/// [`admit_order_within`] over the snapshot text `edit` rewrites, which may
+/// nest deeper than `serde_json::Value` can hold.
+fn admit_order_text(
+    fields: serde_json::Map<String, Value>,
+    limits: ObservationLimits,
+    edit: impl FnOnce(String) -> String,
+) -> Result<(), AdmissionFailure> {
     let document = serde_json::to_vec(&fixture::document()).expect("the fixture serializes");
     let packages = package_input([document.as_slice()]);
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
@@ -602,7 +622,7 @@ fn admit_order(fields: serde_json::Map<String, Value>) -> Result<(), AdmissionFa
         revision: "1".to_owned(),
         digest: [0; 32],
     };
-    let bytes = serde_json::to_vec(&json!({
+    let text = serde_json::to_string(&json!({
         "format": "quire.state.snapshot/v1",
         "identity": {
             "authority": label.authority, "identity": label.identity,
@@ -621,6 +641,7 @@ fn admit_order(fields: serde_json::Map<String, Value>) -> Result<(), AdmissionFa
         }],
     }))
     .expect("the snapshot serializes");
+    let bytes = edit(text).into_bytes();
     let parsed = quire_canonical::read(&bytes, u64::MAX).expect("the snapshot is JSON");
     let digest = *quire_canonical::sha256(&parsed, quire_canonical::Limits::new(u64::MAX))
         .expect("the snapshot is canonical")
@@ -634,18 +655,19 @@ fn admit_order(fields: serde_json::Map<String, Value>) -> Result<(), AdmissionFa
         ModelNormalizationLimits::default(),
         &snapshots,
         &selected,
-        ObservationLimits::default(),
+        limits,
     )
     .map(|_| ())
 }
 
 /// The refusal of `result`: its cause and its object, field and nested-path
 /// components.
-fn refusal_of(result: Result<(), AdmissionFailure>) -> (String, String, String, String) {
+fn refusal_of(result: Result<(), AdmissionFailure>) -> Refusal {
     let Err(AdmissionFailure::Refused(AdmissionRecord {
         code,
         cause,
         fields,
+        path,
     })) = result
     else {
         panic!("a refusal, not {result:?}");
@@ -656,17 +678,19 @@ fn refusal_of(result: Result<(), AdmissionFailure>) -> (String, String, String, 
         cause.to_owned(),
         component("object"),
         component("field"),
-        component("path"),
+        path,
     )
 }
 
-fn refusal(cause: &str, field: &str, path: &str) -> (String, String, String, String) {
-    (
-        cause.to_owned(),
-        "o1".to_owned(),
-        field.to_owned(),
-        path.to_owned(),
-    )
+/// A refusal's cause, object, field and typed path.
+type Refusal = (String, String, String, Vec<PathStep>);
+
+fn refusal(cause: &str, field: &str, path: Vec<PathStep>) -> Refusal {
+    (cause.to_owned(), "o1".to_owned(), field.to_owned(), path)
+}
+
+fn field_step(name: &str) -> PathStep {
+    PathStep::Field(name.to_owned())
 }
 
 /// FR-359-AC-9: a snapshot whose `Order.total: Money` holds a `TaxedMoney`
@@ -704,27 +728,27 @@ fn a_snapshot_refuses_a_record_that_does_not_conform_to_its_slot() {
     ancestor_at_child.insert("taxed".to_owned(), json!({"present": money("1")}));
     assert_eq!(
         refusal_of(admit_order(ancestor_at_child)),
-        refusal("wrong-value-kind", "taxed", "")
+        refusal("wrong-value-kind", "taxed", vec![PathStep::OptionValue])
     );
     assert_eq!(
         refusal_of(admit_order(order_fields(
             record_value("Fee", &[("fee_minor", "1")]),
             vec![]
         ))),
-        refusal("wrong-value-kind", "total", "")
+        refusal("wrong-value-kind", "total", vec![])
     );
     for ty in [fixture::id("Order"), fixture::id("NoSuchRecord")] {
         let value = json!({"record": {"type": ty, "fields": {}}});
         assert_eq!(
             refusal_of(admit_order(order_fields(value, vec![]))),
-            refusal("wrong-value-kind", "total", ""),
+            refusal("wrong-value-kind", "total", vec![]),
             "{ty}"
         );
     }
     let reference = json!({"reference": {"population": fixture::id("orders"), "key": "o1"}});
     assert_eq!(
         refusal_of(admit_order(order_fields(reference, vec![]))),
-        refusal("wrong-value-kind", "total", "")
+        refusal("wrong-value-kind", "total", vec![])
     );
 }
 
@@ -741,14 +765,18 @@ fn a_snapshot_record_is_checked_for_its_own_effective_fields() {
     );
     assert_eq!(
         refusal_of(admit_order(order_fields(without_tax.clone(), vec![]))),
-        refusal("missing-member", "total", "tax_minor")
+        refusal("missing-member", "total", vec![field_step("tax_minor")])
     );
     assert_eq!(
         refusal_of(admit_order(order_fields(
             money("1"),
             vec![money("1"), without_tax]
         ))),
-        refusal("missing-member", "items", "1.tax_minor")
+        refusal(
+            "missing-member",
+            "items",
+            vec![PathStep::Index(1), field_step("tax_minor")]
+        )
     );
     let extra = record_value(
         "Money",
@@ -760,7 +788,7 @@ fn a_snapshot_record_is_checked_for_its_own_effective_fields() {
     );
     assert_eq!(
         refusal_of(admit_order(order_fields(extra, vec![]))),
-        refusal("unknown-member", "total", "tax_minor")
+        refusal("unknown-member", "total", vec![field_step("tax_minor")])
     );
     let bad_integer = record_value(
         "Money",
@@ -768,7 +796,7 @@ fn a_snapshot_record_is_checked_for_its_own_effective_fields() {
     );
     assert_eq!(
         refusal_of(admit_order(order_fields(bad_integer, vec![]))),
-        refusal("invalid-value", "total", "amount_minor")
+        refusal("invalid-value", "total", vec![field_step("amount_minor")])
     );
 }
 
@@ -785,7 +813,7 @@ fn a_snapshot_refusal_names_the_first_path_in_field_order() {
     }}});
     assert_eq!(
         refusal_of(admit_order(order_fields(two_bad.clone(), vec![]))),
-        refusal("invalid-value", "total", "amount_minor")
+        refusal("invalid-value", "total", vec![field_step("amount_minor")])
     );
     // `total` is declared before `items`, so its defect is the first reached
     // even though `items` also holds one.
@@ -794,7 +822,7 @@ fn a_snapshot_refusal_names_the_first_path_in_field_order() {
             two_bad,
             vec![record_value("Fee", &[("fee_minor", "1")])]
         ))),
-        refusal("invalid-value", "total", "amount_minor")
+        refusal("invalid-value", "total", vec![field_step("amount_minor")])
     );
     // Within a sequence the first defective element is reached first.
     let fee = || record_value("Fee", &[("fee_minor", "1")]);
@@ -803,6 +831,116 @@ fn a_snapshot_refusal_names_the_first_path_in_field_order() {
             money("1"),
             vec![money("1"), fee(), fee()]
         ))),
-        refusal("wrong-value-kind", "items", "1")
+        refusal("wrong-value-kind", "items", vec![PathStep::Index(1)])
     );
+}
+
+/// The text of a chain of `depth` `Node { level, next: Node? }` records,
+/// each holding the next as a `present` value; `serde_json::Value` cannot
+/// hold it, so it is spliced into the snapshot text.
+fn node_chain(depth: usize) -> String {
+    let node = fixture::id("Node");
+    let mut text = String::new();
+    for level in 0..depth {
+        text.push_str(&format!(
+            r#"{{"record":{{"type":"{node}","fields":{{"level":{{"integer":"{level}"}},"next":"#
+        ));
+        text.push_str(if level + 1 < depth {
+            r#"{"present":"#
+        } else {
+            r#"{"absent":{}}"#
+        });
+    }
+    for level in (0..depth).rev() {
+        if level + 1 < depth {
+            text.push('}');
+        }
+        text.push_str("}}}");
+    }
+    text
+}
+
+/// The `Order` fields with `chain` holding the chain text's placeholder.
+fn chain_fields() -> serde_json::Map<String, Value> {
+    let mut fields = order_fields(money("1"), vec![]);
+    fields.insert("chain".to_owned(), json!({"present": "CHAIN"}));
+    fields
+}
+
+/// FR-106-AC-16: a recursive `Node { next?: Node }` nested 1,000 levels deep,
+/// well past any fixed bound, within the byte and value limits, admits with
+/// no depth refusal, on an explicit work stack.
+#[trace("FR-106-AC-16", "FR-359-AC-9", "TC-1002")]
+#[test]
+fn a_recursive_record_nested_far_beyond_256_levels_admits() {
+    let limits = ObservationLimits::default().with_values_per_document(1_000_000);
+    for depth in [1_000, 10_000] {
+        let limits = limits.with_document_bytes(4_000_000);
+        admit_order_text(chain_fields(), limits, |text| {
+            text.replacen("\"CHAIN\"", &node_chain(depth), 1)
+        })
+        .unwrap_or_else(|failure| panic!("a {depth}-deep chain admits: {failure:?}"));
+    }
+}
+
+/// FR-106-AC-16: the same chain past the values-per-document bound refuses
+/// with the observation-values limit cause, and a defect at the bottom names
+/// its whole typed path: a field, an option-value step, a field, and so on.
+#[trace("FR-106-AC-16", "FR-359-AC-9", "TC-1002")]
+#[test]
+fn a_deep_chain_is_bounded_by_the_value_limit_and_names_its_path() {
+    let limits = ObservationLimits::default().with_values_per_document(100);
+    let Err(AdmissionFailure::Refused(record)) = admit_order_text(chain_fields(), limits, |text| {
+        text.replacen("\"CHAIN\"", &node_chain(300), 1)
+    }) else {
+        panic!("a chain past the value bound refuses");
+    };
+    assert_eq!(record.code.as_str(), "stage_limit_exceeded");
+    assert_eq!(
+        record.fields.get("setting").map(String::as_str),
+        Some("observation.values")
+    );
+    // A defect two levels down: Order.chain -> Node.next -> Node.level.
+    let bad = json!({"record": {"type": fixture::id("Node"), "fields": {
+        "level": {"integer": "0"},
+        "next": {"present": {"record": {"type": fixture::id("Node"), "fields": {
+            "level": {"boolean": true}, "next": {"absent": {}}}}}},
+    }}});
+    let mut fields = order_fields(money("1"), vec![]);
+    fields.insert("chain".to_owned(), json!({"present": bad}));
+    assert_eq!(
+        refusal_of(admit_order(fields)),
+        refusal(
+            "wrong-value-kind",
+            "chain",
+            vec![
+                PathStep::OptionValue,
+                field_step("next"),
+                PathStep::OptionValue,
+                field_step("level")
+            ]
+        )
+    );
+}
+
+/// FR-106-AC-15: a `present` wrapper adds an option-value step, and a
+/// scalar element defect inside a record's sequence field has its index.
+#[trace("FR-106-AC-15", "FR-359-AC-9", "TC-1002")]
+#[test]
+fn a_nested_path_carries_option_value_and_index_steps() {
+    let mut fields = order_fields(money("1"), vec![]);
+    fields.insert(
+        "discount".to_owned(),
+        json!({"present": record_value("TaxedMoney", &[("amount_minor", "1"), ("currency", "978")])}),
+    );
+    assert_eq!(
+        refusal_of(admit_order(fields)),
+        refusal(
+            "missing-member",
+            "discount",
+            vec![PathStep::OptionValue, field_step("tax_minor")]
+        )
+    );
+    // A record field named "0" is a field step, never the first element.
+    assert_ne!(field_step("0"), PathStep::Index(0));
 }
