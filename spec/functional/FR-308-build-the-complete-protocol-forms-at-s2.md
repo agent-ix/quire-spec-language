@@ -80,9 +80,10 @@ In `forms::protocol_clause` (crate `qsl-forms`):
 - A well-formed CST adds no S2 refusal. A CST that carries an error or
   recovery node SHALL refuse as `FormsCause::RecoveringCst`, with no
   partial form.
-- Under a profile that does not select `quire.model.complete/v1`, S2 SHALL
-  build no complete form, and S3 refuses each such construct
-  `unsupported_construct` (QSpec shared grammar).
+- S2 builds each complete form whether or not the unit selects
+  `quire.model.complete/v1`; under a unit that does not select it, S3 refuses
+  each such construct `unsupported_construct` (QSpec shared grammar), as
+  FR-361 states.
 
 ## Acceptance Criteria
 

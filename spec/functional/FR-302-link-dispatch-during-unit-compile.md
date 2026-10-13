@@ -73,7 +73,7 @@ QSpec requires an `operation-body` to refuse `unsupported_construct` unless
 the package selects `quire.model.complete/v1`. QSL does not enforce that yet,
 because it has no model-profile selection: `resolve_profiles` accepts only
 `quire.value.complete/v1`, and FR-304-AC-8 and FR-308 state the same rule
-without code behind it. The follow-up is model-profile selection and gating.
+without code behind it. The follow-up is model-profile selection and gating (FR-361).
 
 A body's parameter count and types against the operation's signature, and its
 body type against the operation's declared result, are checked when dispatch

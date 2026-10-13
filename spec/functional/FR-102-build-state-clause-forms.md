@@ -85,7 +85,7 @@ parses all of them (`qsl-cst/src/grammar.rs:566-591`, `:864-865`,
   yet, because it has no model-profile selection: `resolve_profiles` accepts
   only `quire.value.complete/v1`, and FR-304-AC-8 and FR-308 state the same
   rule without code behind it. The follow-up is model-profile selection and
-  gating.
+  gating (FR-361).
 - An `operation-body` supplies an operation candidate's body under QSpec
   FR-151. It is distinct from `StateClauseForm`: it supplies one operation
   body, while a unit `pre` or `post` `StateClauseForm` supplies a contract
