@@ -2349,8 +2349,8 @@ fn an_ancestor_chain_at_the_configured_bound_is_admitted_and_one_longer_refuses(
             );
             let exceeded = refusal
                 .cause
-                .limit_exceeded()
-                .expect("a step ceiling is a stage limit");
+                .denial()
+                .expect("a step ceiling is a denied charge");
             assert_eq!(
                 exceeded.setting(),
                 qsl_foundation::Setting::ModelAncestorSteps
@@ -2424,8 +2424,8 @@ fn normalization_admits_an_ancestor_path_at_the_bound_and_refuses_one_longer() {
             );
             let exceeded = refusal
                 .cause
-                .limit_exceeded()
-                .expect("a step ceiling is a stage limit");
+                .denial()
+                .expect("a step ceiling is a denied charge");
             assert_eq!(
                 exceeded.setting(),
                 qsl_foundation::Setting::ModelAncestorSteps

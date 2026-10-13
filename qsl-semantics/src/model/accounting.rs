@@ -376,19 +376,6 @@ pub struct Incomplete {
 }
 
 impl Incomplete {
-    /// This stop as the stage limit outcome FR-255 Behavior 1 describes: the
-    /// counter's setting, its bound and the total the denied charge would
-    /// have reached.
-    pub fn limit_exceeded(&self) -> qsl_foundation::diagnostic::LimitExceeded {
-        qsl_foundation::diagnostic::LimitExceeded::new(
-            self.limit_kind.setting(),
-            self.limit,
-            u128::from(self.consumed) + u128::from(self.next_charge),
-        )
-    }
-}
-
-impl Incomplete {
     /// This stop as the caller-budget denial FR-255 Behavior 1 describes
     /// (`resource_exhausted`/`insufficient-next-charge`): the counter's
     /// setting, effective limit, prior usage, the denied amount and the
@@ -397,15 +384,24 @@ impl Incomplete {
         qsl_foundation::diagnostic::BudgetDenial::charge(
             self.limit_kind.setting(),
             self.limit,
-            self.consumed,
-            self.next_charge,
-            "model-normalization",
-            "ModelNormalizationLimitsV1",
-            self.limit_kind.as_str(),
-            self.charge_point.as_str(),
+            qsl_foundation::diagnostic::DeniedCharge {
+                owner: MODEL_NORMALIZATION_OWNER,
+                limit_kind: self.limit_kind.as_str(),
+                charge_point: self.charge_point.as_str(),
+                consumed: self.consumed,
+                next_charge: self.next_charge,
+            },
         )
     }
 }
+
+/// The owner of a `ModelNormalizationLimitsV1` charge: model normalization,
+/// and the conformance and dispatch walks that share its meter.
+pub const MODEL_NORMALIZATION_OWNER: qsl_foundation::diagnostic::BudgetOwner =
+    qsl_foundation::diagnostic::BudgetOwner {
+        stage: "model-normalization",
+        accounting_contract: "ModelNormalizationLimitsV1",
+    };
 
 /// One exact `{ counter: amount }` charge vector: `work_units` plus at most
 /// one sized counter, since no model charge point sizes more than one.

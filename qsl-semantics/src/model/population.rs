@@ -346,17 +346,29 @@ pub struct AdmissionIncomplete {
 }
 
 impl AdmissionIncomplete {
-    /// This stop as the stage limit outcome FR-255 Behavior 1 describes: the
-    /// counter's setting, its bound and the total the denied charge would
-    /// have reached.
-    pub fn limit_exceeded(&self) -> qsl_foundation::diagnostic::LimitExceeded {
-        qsl_foundation::diagnostic::LimitExceeded::new(
+    /// This stop as the caller-budget denial FR-255 Behavior 1 describes
+    /// (`resource_exhausted`/`insufficient-next-charge`).
+    pub fn denial(&self) -> qsl_foundation::diagnostic::BudgetDenial {
+        qsl_foundation::diagnostic::BudgetDenial::charge(
             self.limit_kind.setting(),
             self.limit,
-            u128::from(self.consumed) + u128::from(self.next_charge),
+            qsl_foundation::diagnostic::DeniedCharge {
+                owner: ADMISSION_OWNER,
+                limit_kind: self.limit_kind.as_str(),
+                charge_point: self.charge_point.as_str(),
+                consumed: self.consumed,
+                next_charge: self.next_charge,
+            },
         )
     }
 }
+
+/// The owner of a `PopulationAdmissionLimitsV1` charge.
+pub const ADMISSION_OWNER: qsl_foundation::diagnostic::BudgetOwner =
+    qsl_foundation::diagnostic::BudgetOwner {
+        stage: "population-admission",
+        accounting_contract: "PopulationAdmissionLimitsV1",
+    };
 
 struct AdmissionCharge {
     point: AdmissionChargePoint,

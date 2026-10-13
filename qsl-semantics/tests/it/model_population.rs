@@ -1638,7 +1638,7 @@ fn l02_population_members_limit_denies_the_third_member_charge() {
         AdmissionOutcome::Incomplete(incomplete) => {
             assert_eq!(incomplete.limit_kind, AdmissionLimitKind::PopulationMembers);
             assert_eq!(
-                incomplete.limit_exceeded().setting(),
+                incomplete.denial().setting(),
                 qsl_foundation::Setting::AdmissionPopulationMembers
             );
             assert_eq!(incomplete.limit, 2);
@@ -1712,7 +1712,7 @@ fn l02_work_units_limit_denies_the_third_member_charge() {
         AdmissionOutcome::Incomplete(incomplete) => {
             assert_eq!(incomplete.limit_kind, AdmissionLimitKind::WorkUnits);
             assert_eq!(
-                incomplete.limit_exceeded().setting(),
+                incomplete.denial().setting(),
                 qsl_foundation::Setting::AdmissionWorkUnits
             );
             assert_eq!(incomplete.limit, 2);
@@ -3413,8 +3413,8 @@ fn binding_admission_walks_member_types_under_the_callers_ancestor_steps() {
             );
             let exceeded = refusal
                 .cause
-                .limit_exceeded()
-                .expect("a step ceiling is a stage limit");
+                .denial()
+                .expect("a step ceiling is a denied charge");
             assert_eq!(
                 exceeded.setting(),
                 qsl_foundation::Setting::AdmissionAncestorSteps
@@ -3566,8 +3566,8 @@ fn qsl204_a_diamond_over_ancestor_steps_refuses_admission_naming_the_limit() {
             );
             let exceeded = refusal
                 .cause
-                .limit_exceeded()
-                .expect("a step ceiling is a stage limit");
+                .denial()
+                .expect("a step ceiling is a denied charge");
             assert_eq!(
                 exceeded.setting(),
                 qsl_foundation::Setting::ModelAncestorSteps

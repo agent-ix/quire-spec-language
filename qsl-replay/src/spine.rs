@@ -245,7 +245,8 @@ impl CompileRefusal {
 
     /// The typed fields of a reached limit this refusal reports: a stage
     /// limit's `kind`, `bound`, `actual` and `setting`, or a caller-budget
-    /// ceiling's `setting`, `bound` and `actual` (FR-255 Behavior 1). `None`
+    /// ceiling's record: the intake size record, or a denied charge's `setting`,
+    /// `limit`, `actual` and retained charge (FR-255 Behavior 1). `None`
     /// for a refusal that is no limit.
     pub fn fields(&self) -> Option<std::collections::BTreeMap<&'static str, String>> {
         match self {

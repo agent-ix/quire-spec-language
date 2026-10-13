@@ -152,8 +152,10 @@ have reached (ADR-013 O-21, ADR-030 D-1), and SHALL NOT report a conformance
 or non-conformance verdict for that walk. The denied charge refuses
 `resource_exhausted`/`insufficient-next-charge`, the shape QSpec FR-150-AC-11
 gives it (`incomplete(ancestor_steps, limit, consumed, 1,
-model.ancestor-edge)`), carrying `setting`, `limit` (the effective limit), `actual`, `stage`, `accounting_contract`, `limit_kind`, `consumed`, `next_charge` and `charge_point`. Its `charge_point` is `model.ancestor-edge`, or `admission.ancestor-edge` in
-population admission. The catalog has no `ancestor-steps` cause.
+model.ancestor-edge)`), carrying `setting`, `limit` (the effective limit), `actual`, `stage`, `accounting_contract`, `limit_kind`, `consumed`, `next_charge` and `charge_point`. Its `charge_point` is `admission.ancestor-edge` (stage `population-admission`,
+contract `PopulationAdmissionLimitsV1`) when the setting is `admission.ancestor_steps`, and
+`model.ancestor-edge` for `model.ancestor_steps`, including the model walks that
+observation admission re-runs. The catalog has no `ancestor-steps` cause.
 
 The walks above charge B-2 limits, carried by the accounting-contract limits
 types `ModelNormalizationLimitsV1` and `PopulationAdmissionLimitsV1`, so a

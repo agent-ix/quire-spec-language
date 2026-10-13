@@ -1045,8 +1045,8 @@ fn input_bytes_exceeded(bound: u64, actual: u128) -> AdmissionFailure {
     ))
 }
 
-/// A reached ceiling of a caller's budget (`ModelNormalizationLimitsV1`,
-/// ADR-014 B-2) as an admission refusal: the compile path's
+/// A reached ceiling of a caller's budget (`ModelNormalizationLimitsV1` or
+/// `PopulationAdmissionLimitsV1`, ADR-014 B-2) as an admission refusal: the compile path's
 /// `resource_exhausted` with its `cause`, carrying FR-255 Behavior 1's
 /// record from [`BudgetDenial::catalog_fields`].
 fn caller_budget_refusal(denial: &BudgetDenial, cause: &'static str) -> AdmissionFailure {

@@ -878,11 +878,9 @@ pub enum ModelRefusalCause {
     },
     /// ADR-011 Limits: a domain package document reached one of intake's
     /// parse limits, so it has no parsed form to digest or read. Names the
-    /// limit and its bound. ADR-013 T-4's `LimitExceeded` is the eventual
-    /// shared type for this; whether I1 intake is a stage is an open
-    /// catalog question (STD-98), so this stays `resource_exhausted` rather
-    /// than moving to `stage_limit_exceeded` with the other stage-limit
-    /// producers.
+    /// limit and its bound. The limit is a caller-set setting carried by
+    /// the intake limits type (ADR-014 section 1), so it refuses
+    /// `resource_exhausted`.
     IntakeLimitExceeded {
         /// The limit the document reached.
         limit: IntakeLimit,
@@ -1114,38 +1112,6 @@ impl ModelRefusalCause {
         }
     }
 
-    /// This refusal as the stage limit outcome FR-255 Behavior 1 describes,
-    /// when it is a reached step ceiling or intake's byte limit: the setting
-    /// that raises it, its bound and the count the refused step would have
-    /// reached.
-    pub fn limit_exceeded(&self) -> Option<qsl_foundation::diagnostic::LimitExceeded> {
-        let (setting, limit, reached) = match self {
-            Self::AncestorSteps {
-                setting,
-                limit,
-                reached,
-                ..
-            }
-            | Self::FamilySteps {
-                setting,
-                limit,
-                reached,
-                ..
-            } => (*setting, *limit, *reached),
-            Self::IntakeLimitExceeded {
-                limit,
-                bound,
-                actual,
-            } => (limit.setting(), *bound, *actual),
-            _ => return None,
-        };
-        Some(qsl_foundation::diagnostic::LimitExceeded::new(
-            setting,
-            limit,
-            u128::from(reached),
-        ))
-    }
-
     /// This refusal as the caller-budget denial FR-255 Behavior 1 describes,
     /// when it is a reached walk ceiling or intake's byte limit. A walk
     /// ceiling is a denied meter charge of one edge past the bound
@@ -1154,41 +1120,48 @@ impl ModelRefusalCause {
     /// `resource_exhausted`/`insufficient-next-charge`; intake's byte limit
     /// is a size ceiling and keeps `intake-limit-exceeded`.
     pub fn denial(&self) -> Option<qsl_foundation::diagnostic::BudgetDenial> {
-        use qsl_foundation::diagnostic::BudgetDenial;
+        use crate::model::accounting::MODEL_NORMALIZATION_OWNER;
+        use crate::model::population::ADMISSION_OWNER;
+        use qsl_foundation::diagnostic::{BudgetDenial, DeniedCharge};
         use qsl_foundation::Setting;
+        // A walk ceiling is a denied one-edge charge past the limit.
+        let walk = |setting, limit, owner, limit_kind, charge_point| {
+            BudgetDenial::charge(
+                setting,
+                limit,
+                DeniedCharge {
+                    owner,
+                    limit_kind,
+                    charge_point,
+                    consumed: limit,
+                    next_charge: 1,
+                },
+            )
+        };
         match self {
             Self::AncestorSteps { limit, setting, .. } => {
-                let (stage, contract, point) = if *setting == Setting::AdmissionAncestorSteps {
-                    (
-                        "population-admission",
-                        "PopulationAdmissionLimitsV1",
+                Some(if *setting == Setting::AdmissionAncestorSteps {
+                    walk(
+                        *setting,
+                        *limit,
+                        ADMISSION_OWNER,
+                        "ancestor_steps",
                         "admission.ancestor-edge",
                     )
                 } else {
-                    (
-                        "model-normalization",
-                        "ModelNormalizationLimitsV1",
+                    walk(
+                        *setting,
+                        *limit,
+                        MODEL_NORMALIZATION_OWNER,
+                        "ancestor_steps",
                         "model.ancestor-edge",
                     )
-                };
-                Some(BudgetDenial::charge(
-                    *setting,
-                    *limit,
-                    *limit,
-                    1,
-                    stage,
-                    contract,
-                    "ancestor_steps",
-                    point,
-                ))
+                })
             }
-            Self::FamilySteps { limit, setting, .. } => Some(BudgetDenial::charge(
+            Self::FamilySteps { limit, setting, .. } => Some(walk(
                 *setting,
                 *limit,
-                *limit,
-                1,
-                "model-normalization",
-                "ModelNormalizationLimitsV1",
+                MODEL_NORMALIZATION_OWNER,
                 "family_steps",
                 "model.family-edge",
             )),

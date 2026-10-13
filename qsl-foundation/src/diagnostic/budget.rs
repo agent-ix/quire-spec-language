@@ -10,17 +10,28 @@ use std::collections::BTreeMap;
 use super::{CatalogCoded, LimitExceeded};
 use crate::Setting;
 
-/// The denied charge a meter ceiling retains: the stage and accounting
-/// contract that owns the budget, what was consumed before it, the amount
-/// denied and the named point that asked.
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct DeniedCharge {
-    stage: &'static str,
-    accounting_contract: &'static str,
-    limit_kind: &'static str,
-    consumed: u64,
-    next_charge: u64,
-    charge_point: &'static str,
+/// The stage and accounting contract that own a budget.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BudgetOwner {
+    /// The stage whose meter was charged.
+    pub stage: &'static str,
+    /// The accounting contract that defines the limits.
+    pub accounting_contract: &'static str,
+}
+
+/// The denied charge a meter ceiling retains.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DeniedCharge {
+    /// The budget's owner.
+    pub owner: BudgetOwner,
+    /// The counter whose limit was reached (`work_units`, `ancestor_steps`).
+    pub limit_kind: &'static str,
+    /// The named point that asked for the charge.
+    pub charge_point: &'static str,
+    /// The counter's value before the denied charge.
+    pub consumed: u64,
+    /// The denied amount.
+    pub next_charge: u64,
 }
 
 /// A caller-budget ceiling that was reached: the setting that raises it, the
@@ -46,33 +57,14 @@ impl BudgetDenial {
         }
     }
 
-    /// A denied meter charge: `next_charge` more on top of `consumed` would
-    /// pass `limit`. `stage` and `accounting_contract` name the budget's
-    /// owner, `limit_kind` the counter (`work_units`, `ancestor_steps`) and
-    /// `charge_point` the point that asked.
-    #[allow(clippy::too_many_arguments)]
-    pub fn charge(
-        setting: Setting,
-        limit: u64,
-        consumed: u64,
-        next_charge: u64,
-        stage: &'static str,
-        accounting_contract: &'static str,
-        limit_kind: &'static str,
-        charge_point: &'static str,
-    ) -> Self {
+    /// A denied meter charge: `charge.next_charge` more on top of
+    /// `charge.consumed` would pass `limit`.
+    pub fn charge(setting: Setting, limit: u64, charge: DeniedCharge) -> Self {
         Self {
             setting,
             limit,
-            actual: u128::from(consumed) + u128::from(next_charge),
-            charge: Some(DeniedCharge {
-                stage,
-                accounting_contract,
-                limit_kind,
-                consumed,
-                next_charge,
-                charge_point,
-            }),
+            actual: u128::from(charge.consumed) + u128::from(charge.next_charge),
+            charge: Some(charge),
         }
     }
 
@@ -108,8 +100,11 @@ impl BudgetDenial {
             ("actual", self.actual.to_string()),
         ]);
         fields.extend([
-            ("stage", charge.stage.to_owned()),
-            ("accounting_contract", charge.accounting_contract.to_owned()),
+            ("stage", charge.owner.stage.to_owned()),
+            (
+                "accounting_contract",
+                charge.owner.accounting_contract.to_owned(),
+            ),
             ("limit_kind", charge.limit_kind.to_owned()),
             ("consumed", charge.consumed.to_string()),
             ("next_charge", charge.next_charge.to_string()),
