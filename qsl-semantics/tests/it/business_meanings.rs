@@ -969,23 +969,20 @@ fn record_specialization_cycle_refuses_before_effective_view() {
         2,
         "each declaration on the specialization cycle refuses: {refusals:?}"
     );
-    for (refusal, (ancestor, via)) in refusals
-        .iter()
-        .zip([("Amount", "TaxedAmount"), ("TaxedAmount", "Amount")])
-    {
+    for (refusal, declaration) in refusals.iter().zip(["Amount", "TaxedAmount"]) {
         assert_eq!(
             refusal.code,
             qsl_foundation::diagnostic::Code::InvalidModelBinding
         );
         let qsl_semantics::model::normalize::ModelRefusalCause::SpecializationCycle {
-            ancestor: actual,
-            via: actual_via,
+            declaration: actual,
+            cycle,
         } = &refusal.cause
         else {
             panic!("expected typed intake cycle cause: {refusal:?}");
         };
-        assert_eq!(actual, &key(p, ancestor));
-        assert_eq!(actual_via, &key(p, via));
+        assert_eq!(actual, &key(p, declaration));
+        assert_eq!(cycle, &[key(p, "Amount"), key(p, "TaxedAmount")]);
     }
 }
 

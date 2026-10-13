@@ -105,6 +105,17 @@ SHALL refuse specialization for every declaration on the cycle with a
 specialization-cycle cause, and SHALL derive no conformance edge across the
 cycle.
 
+A cycle is identified by the set of its supertype edges, so two directed
+cycles over the same nodes with different edges are two cycles. A declaration
+is refused once per cycle it lies on, at its own declaration: a declaration on
+two cycles is refused twice, once listing each. A cycle is reported at the
+first extension, in `normalize.cycle-check` charge order, that closes it; a
+later extension that closes a cycle with the same edge set is charged and not
+reported again. The refusals follow cycle detection order and, within one
+cycle, declaration-key order. Each refusal's typed cause carries the
+declaration it is raised at and the cycle's type declaration keys in path
+order, rotated to start at the least key.
+
 ### The refinement obligation admits no partial pass
 
 A narrowing field redefinition SHALL be admitted only when an established
@@ -295,6 +306,7 @@ be presented as canonical `IdentityRefusal::Allocation`.
 | FR-082-AC-11 | A production reservation-size arithmetic or representation overflow reaches QSL as `resource_exhausted`/`reservation-size-overflow`, preserving the upstream amount and native unit, never `allocation-failed` or a fabricated measured allocator-denied request. A genuine allocator denial with representable request remains the AC-10 case. | Test |
 | FR-082-AC-12 | Denial after earlier descriptors or member links have been staged exposes no admitted prefix, index, key join, environment or checked package; evaluation invocation count and evaluation charge are both zero. Removing the denial and retrying identical declarations gives the same complete environment and member links as fresh admission. | Test |
 | FR-082-AC-13 | For the same valid declaration fixture with allocation enabled, exact N-1/N controls for `environment.work_units` and `environment.ancestor_steps` retain their original stage-limit kind, configured bound and actual denied counter, and admit at sufficient limits. Malformed input, cancellation, FR-259's 4096-byte canonical allocation control and released checked-invariant causes retain their existing classifications and payloads. Budget denial and capacity overflow do not stand in for AC-10's measured reservation failure. | Test |
+| FR-082-AC-15 | Types `A` (`supertypes: [B, C]`), `B` (`supertypes: [A]`) and `C` (`supertypes: [A]`) are refused as four `invalid_model_binding`/`specialization-cycle` refusals: `A` and `B` each listing `[A, B]`, then `A` and `C` each listing `[A, C]`, so `A` is refused once per cycle. Types `A` (`supertypes: [C]`), `B` (`supertypes: [C]`), `C` (`supertypes: [D]`) and `D` (`supertypes: [B]`) are refused as three refusals, at `B`, `C` and `D`, each listing `[B, C, D]`; `A` only leads into the cycle and is neither refused nor listed. Types `A` and `B` of two-node cycle `A -> B -> A` are refused at `A`, then at `B`, each listing `[A, B]`. | Test (TC-1020) |
 
 ## Dependencies
 

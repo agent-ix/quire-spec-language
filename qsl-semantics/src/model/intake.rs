@@ -2093,18 +2093,31 @@ fn business_generalization_refusal(
             let parent = parent.as_str()?;
             if parent == owner {
                 // Each participating declaration retains its own refusal,
-                // with the closing edge reached from that declaration.
+                // listing the cycle in path order rotated to the least key.
                 let package = document.tree.get("package")?.get("identity")?.as_str()?;
+                let mut cycle: Vec<DeclarationKey> = path
+                    .iter()
+                    .map(|node| declaration_key(package, node))
+                    .collect();
+                if let Some(least) = cycle
+                    .iter()
+                    .enumerate()
+                    .min_by_key(|(_, key)| *key)
+                    .map(|(index, _)| index)
+                {
+                    cycle.rotate_left(least);
+                }
+                let listing: Vec<&str> = cycle.iter().map(|key| key.node.as_str()).collect();
                 return Some(ModelRefusal {
                     code: Code::InvalidModelBinding,
                     cause: ModelRefusalCause::SpecializationCycle {
-                        ancestor: declaration_key(package, owner),
-                        via: declaration_key(package, current),
+                        declaration: declaration_key(package, owner),
+                        cycle: cycle.clone(),
                     },
                     detail: format!(
-                        "{}: record generalization returns to {owner} through {current}, through the cycle [{}]",
+                        "{}: {owner} lies on the specialization cycle [{}]",
                         located.pointer,
-                        path.join(", "),
+                        listing.join(", "),
                     ),
                 });
             }

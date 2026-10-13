@@ -360,14 +360,10 @@ fn tc235_m20_process_subtype_inherits_identity_and_steps() {
     let NormalizeOutcome::Refused(refusals) = outcome else {
         panic!("cycle must be refused, got {outcome:?}");
     };
-    assert_eq!(refusals.len(), 1);
-    assert_eq!(refusals[0].code, Code::InvalidModelBinding);
-    assert_eq!(refusals[0].cause.as_str(), "specialization-cycle");
-    assert!(
-        refusals[0]
-            .detail
-            .contains("[ix://test/orders/ExpressFulfilment, ix://test/orders/Fulfilment]"),
-        "{refusals:#?}"
+    assert_specialization_cycle_refusals(
+        refusals.iter(),
+        &["ExpressFulfilment", "Fulfilment"],
+        &["ExpressFulfilment", "Fulfilment"],
     );
 }
 
@@ -566,13 +562,11 @@ fn tc235_m20_json_acceptance_reports_specialization_cycle() {
         }]);
     });
     let refusals = normalized_refusals(&document, 23);
-    assert_eq!(refusals.len(), 1);
-    assert_eq!(refusals[0].code, Code::InvalidModelBinding);
-    assert_eq!(refusals[0].cause.as_str(), "specialization-cycle");
-    assert!(refusals[0].detail.contains("ix://test/orders/Fulfilment"));
-    assert!(refusals[0]
-        .detail
-        .contains("ix://test/orders/ExpressFulfilment"));
+    assert_specialization_cycle_refusals(
+        refusals.iter(),
+        &["ExpressFulfilment", "Fulfilment"],
+        &["ExpressFulfilment", "Fulfilment"],
+    );
 }
 
 /// TC-235 M21's semantic-model half: relationship ends remain attached to
@@ -1185,21 +1179,36 @@ fn tc235_m17_record_value_specialization_vectors() {
         ));
     });
     let cycle_refusals = normalized_refusals(&cycle, 24);
-    assert_eq!(cycle_refusals.len(), 2, "{cycle_refusals:#?}");
-    for (refusal, (ancestor, via)) in cycle_refusals
-        .iter()
-        .zip([("Money", "TaxedMoney"), ("TaxedMoney", "Money")])
-    {
+    assert_specialization_cycle_refusals(
+        cycle_refusals.iter(),
+        &["Money", "TaxedMoney"],
+        &["Money", "TaxedMoney"],
+    );
+}
+
+/// TC-235 M17 run 3 / M20 run 4: one `invalid_model_binding`/
+/// `specialization-cycle` refusal per declaration on the cycle, in
+/// declaration-key order, each listing the cycle's keys rotated to start at
+/// the least key. Typed fields only.
+fn assert_specialization_cycle_refusals<'a>(
+    refusals: impl Iterator<Item = &'a qsl_semantics::model::normalize::ModelRefusal>,
+    declarations: &[&str],
+    cycle: &[&str],
+) {
+    let refusals: Vec<_> = refusals.collect();
+    assert_eq!(refusals.len(), declarations.len(), "{refusals:#?}");
+    for (refusal, declaration) in refusals.into_iter().zip(declarations) {
         assert_eq!(refusal.code, Code::InvalidModelBinding);
         let ModelRefusalCause::SpecializationCycle {
-            ancestor: actual,
-            via: actual_via,
+            declaration: actual,
+            cycle: actual_cycle,
         } = &refusal.cause
         else {
             panic!("expected typed specialization cycle cause: {refusal:?}");
         };
-        assert_eq!(actual, &key(ancestor));
-        assert_eq!(actual_via, &key(via));
+        assert_eq!(actual, &key(declaration));
+        let expected: Vec<_> = cycle.iter().map(|name| key(name)).collect();
+        assert_eq!(actual_cycle, &expected);
     }
 }
 
