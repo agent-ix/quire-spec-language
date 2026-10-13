@@ -52,7 +52,7 @@ mod typing;
 
 use super::ir::{
     Arithmetic, BodyBuilder, CheckedLiteral, Connective, DispatchTable, Node, NodeId, NodeKind,
-    OrderedKind, RecordSlot, Slot, Visit,
+    OrderedKind, RecordField, RecordSlot, Slot, Visit,
 };
 use super::refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, Obligation, StageLimitCause,
@@ -899,9 +899,10 @@ fn contextual(expression: ExprRef<'_>) -> bool {
 }
 
 impl Typer<'_> {
-    /// Admit `node` where `required` is expected: identical types, an integer into
-    /// `Integer` or a containing `Int[..]`, or an integer into another `Int[..]`
-    /// through a range-obligated [`NodeKind::Coerce`].
+    /// Admit `node` where `required` is expected: identical types, a record
+    /// into a record type it conforms to (FR-359), an integer into `Integer` or
+    /// a containing `Int[..]`, or an integer into another `Int[..]` through a
+    /// range-obligated [`NodeKind::Coerce`].
     pub(crate) fn coerce(
         &mut self,
         node: Node,
@@ -911,6 +912,16 @@ impl Typer<'_> {
             return Ok(node);
         }
         match (&node.value_type, required) {
+            // FR-359 items 1 and 6: a record whose most-specific type
+            // conforms to the slot's record type is admitted as it is, with
+            // no conversion node; its own type stays on the node. A type
+            // constructor over a record is not covariant, so only the slot's
+            // own record type reaches this arm.
+            (ValueType::Composite(sub), ValueType::Composite(sup))
+                if self.scope.types.composite_conforms(*sub, *sup) =>
+            {
+                Ok(node)
+            }
             (ValueType::Integer | ValueType::Int(_), ValueType::Integer) => Ok(node),
             (ValueType::Int(source), ValueType::Int(target))
                 if target.lower() <= source.lower() && source.upper() <= target.upper() =>
@@ -1931,10 +1942,9 @@ impl<'a> Typer<'a> {
         else {
             return Err(mismatch(location));
         };
-        let (index, declared) = fields
+        let declared = fields
             .iter()
-            .enumerate()
-            .find(|(_, declared)| declared.name() == field)
+            .find(|declared| declared.name() == field)
             .ok_or_else(|| mismatch(location))?;
         let optional = declared.presence() == Presence::Optional;
         let value_type = if optional {
@@ -1945,7 +1955,7 @@ impl<'a> Typer<'a> {
         Ok(node(
             NodeKind::Field {
                 operand: self.push(operand),
-                index,
+                field: RecordField::new(key, field),
                 optional,
             },
             value_type,

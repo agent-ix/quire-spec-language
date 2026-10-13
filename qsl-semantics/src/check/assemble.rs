@@ -43,7 +43,7 @@ use quire_exact::{
 };
 
 use super::check::{EnumBinding, PackageDeclarations, ResolvedSignature};
-use super::lowering::{strongly_connected, AdmittedModel};
+use super::lowering::{record_node_key, strongly_connected, AdmittedModel, RecordKeyError};
 use super::node_key::{declared_type_handle, nominal_key, NodeKeyRefusal, SourceOwner};
 use super::refusal::AliasKind;
 use super::state_clause::{
@@ -678,7 +678,6 @@ fn model_object_types(
     model: &SelectedModel,
     span: Span,
     table: &mut OperationTable,
-    owner: &SourceOwner,
     identity_limits: IdentityLimits,
 ) -> Result<(Vec<ObjectTypeDeclaration>, Vec<CompositeDeclaration>), Vec<AssemblyError>> {
     let package = model.view.domain_package();
@@ -711,15 +710,21 @@ fn model_object_types(
             DomainPackageRecord::RecordValueType(_) | DomainPackageRecord::EventType(_)
         ) {
             let key = record.key();
-            let Some(artifact) = type_identity_segment(&key.package, &key.node) else {
+            if type_identity_segment(&key.package, &key.node).is_none() {
                 errors.push(broken(&key.node));
                 continue;
-            };
-            match declared_type_handle(owner, &format!("{alias}::{artifact}"), identity_limits) {
-                Ok(handle) => {
+            }
+            // FR-359 item 9: the declaration key of a model record is its
+            // model node's key, a function of the declaring package and the
+            // node alone, so no alias or source owner enters it.
+            match record_node_key(record, identity_limits) {
+                Ok(Some(handle)) => {
                     meaning_handles.insert(key.clone(), handle);
                 }
-                Err(refusal) => errors.push(error(AssemblyCause::handle(refusal))),
+                Ok(None) | Err(RecordKeyError::EmptyOwner) => errors.push(broken(&key.node)),
+                Err(RecordKeyError::Preimage(refusal)) => {
+                    errors.push(error(AssemblyCause::handle(refusal)))
+                }
             }
         }
     }
@@ -876,7 +881,15 @@ fn model_object_types(
         effective_fields.sort_by(|left, right| left.key.cmp(&right.key));
         for field in effective_fields {
             match model_field(field, &records, identities, &meaning_handles) {
-                Ok(field) => declared_fields.push(field),
+                // A record's declaration holds its effective fields; the
+                // field a redefinition replaces is hidden in the view, so the
+                // declaration carries no `redefines` link of its own (the
+                // kernel admits one only on an object type's field).
+                Ok(field) => declared_fields.push(FieldDeclaration::new(
+                    field.name(),
+                    field.value_type().clone(),
+                    field.presence(),
+                )),
                 Err(Unmapped::Unsupported) => errors.push(unsupported(&field.key.node)),
                 Err(Unmapped::Broken) => errors.push(broken(&field.key.node)),
                 Err(Unmapped::Float(width)) => errors.push(error(AssemblyCause::FloatingType {
@@ -1584,7 +1597,6 @@ impl PackageDeclarations {
                 model,
                 selection.span,
                 &mut operations,
-                &owner,
                 limits.identity,
             ) {
                 Ok((declarations, composites)) => {

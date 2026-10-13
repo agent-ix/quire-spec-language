@@ -166,7 +166,7 @@ pub use family::fixtures::{
 };
 pub use ir::{
     Arithmetic, CheckedBody, CheckedLiteral, CheckedNode, Connective, IntegerDivisionOperator,
-    Node, NodeId, NodeKind, Observation, OrderedKind, RecordSlot, Slot, Visit,
+    Node, NodeId, NodeKind, Observation, OrderedKind, RecordField, RecordSlot, Slot, Visit,
 };
 
 pub use assemble::{

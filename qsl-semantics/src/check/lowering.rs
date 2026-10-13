@@ -61,7 +61,7 @@ use super::family::{OccurrenceMap, OccurrenceRole};
 use super::identity::ModelCorrespondence;
 use super::ir::{
     Arithmetic, CheckedLiteral, CheckedNode, Connective, IntegerDivisionOperator, NodeId, NodeKind,
-    OrderedKind, RecordSlot, Slot, Visit,
+    OrderedKind, RecordField, RecordSlot, Slot, Visit,
 };
 use super::node_key::{
     group_keys, node_key, LawRole, LeafSegment, LiteralValue, NodeInput, NodeKeyRefusal, NodeTag,
@@ -78,6 +78,7 @@ use crate::value::definition::{CatalogRole, DefinitionLock, DefinitionReference}
 use crate::value::enumeration::{member_preimage_bytes, EnumDeclarationPreimage};
 use crate::value::member::Member;
 use crate::value::unit::{DimensionPreimage, UnitPreimage};
+use crate::model::key::DeclarationKey;
 use quire_semantic_value::declaration::{
     CompositeShape, EqualityOperator, FieldDeclaration, TypeEnvironment,
 };
@@ -89,6 +90,7 @@ mod state;
 mod wire;
 
 pub use model::{AdmittedModel, ForeignView, ModelClause};
+pub(crate) use model::{record_node_key, RecordKeyError};
 pub(crate) use state::{
     AnchorInput, AttemptInput, LoweredAttempt, LoweredClause, OperationBinding, StateClauseInput,
 };
@@ -519,6 +521,9 @@ pub(crate) struct Lowering<'a> {
     functions: Vec<Option<NodeKey>>,
     /// Each declared composite's node key, by its declaration key.
     composites: BTreeMap<NodeKey, NodeKey>,
+    /// The model record value type or event type each model-owned composite
+    /// declaration key stands for (FR-359 item 9), built on first use.
+    model_records: Option<BTreeMap<NodeKey, DeclarationKey>>,
     /// The `functions` slots and `composites` entries written since the
     /// last settle, the only keys that settle can still resolve
     /// (a settle per function group resolves its own keys, not every key
@@ -1389,6 +1394,7 @@ impl<'a> Lowering<'a> {
             occurrences,
             functions: vec![None; function_count],
             composites: BTreeMap::new(),
+            model_records: None,
             unsettled_functions: Vec::new(),
             unsettled_composites: Vec::new(),
             composites_in_progress: Vec::new(),
@@ -1982,6 +1988,13 @@ impl<'a> Lowering<'a> {
     {
         if let Some(key) = self.composites.get(&declaration) {
             return Ok(OpenComposite::Built(*key));
+        }
+        // FR-359 item 3: a model record value type or event type is a
+        // model-owned node, never a `composite_type`.
+        if let Some(model_record) = self.model_record_declaration(declaration, location)? {
+            let key = self.model_node(&model_record, location)?;
+            self.composites.insert(declaration, key);
+            return Ok(OpenComposite::Built(key));
         }
         let scope: &'a Scope = self.scope;
         let Some(composite) = scope.types().composite(declaration) else {
@@ -3155,9 +3168,8 @@ impl<'a> Lowering<'a> {
                 Keyed::Application(Operator::Unary, plain("quire.op.boolean.not")),
                 Operands::One(operand),
             ),
-            NodeKind::Field { operand, index, .. } => {
-                let member =
-                    self.field_member(node.at(*operand).value_type(), *index, node.location())?;
+            NodeKind::Field { operand, field, .. } => {
+                let member = self.field_member(field, node.location())?;
                 (
                     Keyed::Application(
                         Operator::Query,
@@ -3931,42 +3943,21 @@ impl<'a> Lowering<'a> {
         )
     }
 
-    /// The `record.project` member naming field `index` of `record`.
+    /// The `record.project` member naming `field` (FR-359 item 2): the node
+    /// of the record the read is typed at, and the field's name there.
     fn field_member(
         &mut self,
-        record: &ValueType,
-        index: usize,
+        field: &RecordField,
         location: &Location,
     ) -> Result<Member, CheckRefusal> {
-        let mismatch = || {
-            refuse(
-                location,
-                CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch),
-            )
-        };
-        let ValueType::Composite(declaration) = record else {
-            return Err(mismatch());
-        };
-        let name = match self
-            .scope
-            .types()
-            .composite(*declaration)
-            .map(|c| c.shape())
-        {
-            Some(CompositeShape::Record(fields)) => fields
-                .get(index)
-                .map(|field| field.name().to_owned())
-                .ok_or_else(mismatch)?,
-            _ => return Err(mismatch()),
-        };
-        let name = Identifier::new(name).map_err(|_| {
+        let name = Identifier::new(field.name()).map_err(|_| {
             refuse(
                 location,
                 CheckCause::NodePreimage(NodeKeyRefusal::EmptyBindingName),
             )
         })?;
         Ok(Member::Field {
-            declaration: self.composite(*declaration, location)?,
+            declaration: self.composite(field.declaration(), location)?,
             name,
         })
     }

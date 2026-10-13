@@ -219,7 +219,14 @@ impl FamilyContract for StateModelFamily {
                     make(NodeKind::Dispatch { receiver: *receiver, table: operation_decl.table, operation: *operation, arguments: arguments.clone() }, operation_decl.result.clone())
                 }
                 Form::Argument { actual, required } => {
-                    if actual != required && !matches!((actual, required), (ValueType::Reference(s), ValueType::Reference(t)) if scope.types().conforms(*s, *t)) { return Err(mismatch(location)); }
+                    // A reference upcast, or (FR-359 item 6) a record whose most-specific type conforms to the parameter's record type.
+                    let admitted = actual == required
+                        || match (actual, required) {
+                            (ValueType::Reference(s), ValueType::Reference(t)) => scope.types().conforms(*s, *t),
+                            (ValueType::Composite(s), ValueType::Composite(t)) => scope.types().composite_conforms(*s, *t),
+                            _ => false,
+                        };
+                    if !admitted { return Err(mismatch(location)); }
                     Checked::Type(required.clone())
                 }
             })
