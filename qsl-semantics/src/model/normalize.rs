@@ -2371,7 +2371,12 @@ fn check_node<'a>(
                     }
                 }
             }
-            for field in &op.effect.modifies {
+            for field in op
+                .effect
+                .modifies
+                .iter()
+                .chain(&op.effect.receiver_modifies)
+            {
                 if !index.is_field_member(field) {
                     refusals.push(ModelRefusal {
                         code: Code::DanglingReference,
@@ -2382,6 +2387,27 @@ fn check_node<'a>(
                         detail: format!(
                             "operation {} effect writes {}, which is not a declared field member",
                             op.key.node, field.node
+                        ),
+                    });
+                }
+            }
+            // FR-013: an every-object entry and a receiver-scoped entry for
+            // one field cannot both be authored; the frame is refused, never
+            // merged.
+            for field in &op.effect.receiver_modifies {
+                if op.effect.modifies.contains(field) {
+                    refusals.push(ModelRefusal {
+                        code: Code::InvalidModelBinding,
+                        cause: ModelRefusalCause::ConflictingBinding {
+                            key: field.clone(),
+                            member: None,
+                        },
+                        detail: format!(
+                            "operation {} frame holds both `modifies {name}` and `modifies \
+                             self.{name}` for {}",
+                            op.key.node,
+                            field.node,
+                            name = field.node.rsplit('/').next().unwrap_or(&field.node),
                         ),
                     });
                 }

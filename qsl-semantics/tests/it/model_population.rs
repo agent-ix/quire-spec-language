@@ -28,10 +28,11 @@ use qsl_semantics::model::normalize::{
     normalize, EffectiveView, ModelRefusal, ModelRefusalCause, NormalizeOutcome, OfferedSelection,
 };
 use qsl_semantics::model::population::{
-    admit_binding, admit_invocation, all_instances, lookup, AdmissionChargePoint,
-    AdmissionLimitKind, AdmissionMeter, AdmissionOutcome, AllInstancesOutcome, InvocationContext,
-    InvocationDelta, LookupKey, LookupOutcome, MemberFieldValues, PopulationAdmissionLimits,
-    PopulationBinding, PopulationDocument, PopulationMember, ReferenceKey, TypedReference,
+    admit_binding, admit_invocation, admit_invocation_bound, all_instances, lookup,
+    AdmissionChargePoint, AdmissionIncomplete, AdmissionLimitKind, AdmissionMeter,
+    AdmissionOutcome, AllInstancesOutcome, InvocationBinding, InvocationContext, InvocationDelta,
+    LookupKey, LookupOutcome, MemberFieldValues, PopulationAdmissionLimits, PopulationBinding,
+    PopulationDocument, PopulationMember, ReferenceKey, TypedReference,
 };
 use quire_exact::{ChargePoint, Integer, LimitKind, Meter, ScalarLimits, UniverseId};
 
@@ -2037,6 +2038,7 @@ fn deletes_a_effect() -> OperationEffect {
         modifies: Vec::new(),
         creates: Vec::new(),
         deletes: vec![DeclarationKey::fixture("model.A")],
+        ..Default::default()
     }
 }
 
@@ -2047,6 +2049,7 @@ fn empty_effect() -> OperationEffect {
         modifies: Vec::new(),
         creates: Vec::new(),
         deletes: Vec::new(),
+        ..Default::default()
     }
 }
 
@@ -2274,6 +2277,7 @@ fn invocation_field_write_outside_the_declared_frame_refuses_and_inside_it_admit
         modifies: vec![DeclarationKey::fixture("model.A.x")],
         creates: Vec::new(),
         deletes: Vec::new(),
+        ..Default::default()
     };
     let declared = InvocationDelta {
         effect: &declared_effect,
@@ -2537,6 +2541,7 @@ fn enforce_frame_admits_a_field_write_that_reaches_a_declared_grant_through_rede
         modifies: vec![DeclarationKey::fixture("model.A.x")],
         creates: Vec::new(),
         deletes: Vec::new(),
+        ..Default::default()
     };
     let declared = InvocationDelta {
         effect: &effect,
@@ -2600,6 +2605,7 @@ fn enforce_frame_admits_a_field_write_that_reaches_a_declared_grant_through_a_re
         modifies: vec![DeclarationKey::fixture("model.A.x")],
         creates: Vec::new(),
         deletes: Vec::new(),
+        ..Default::default()
     };
     let declared = InvocationDelta {
         effect: &effect,
@@ -2687,6 +2693,7 @@ fn enforce_frame_refuses_a_field_write_at_a_package_the_declared_grant_does_not_
         modifies: vec![DeclarationKey::fixture("model.A.x")], // package "test/orders"
         creates: Vec::new(),
         deletes: Vec::new(),
+        ..Default::default()
     };
     let declared = InvocationDelta {
         effect: &effect,
@@ -2755,6 +2762,7 @@ fn enforce_frame_refuses_an_object_that_changes_type_between_pre_and_post() {
             DeclarationKey::fixture("model.A"),
             DeclarationKey::fixture("model.B"),
         ],
+        ..Default::default()
     };
     let declared = InvocationDelta {
         effect: &effect,
@@ -2819,6 +2827,7 @@ fn invocation_admits_a_subtype_created_and_deleted_under_a_supertype_grant() {
         modifies: Vec::new(),
         creates: vec![DeclarationKey::fixture("model.A")],
         deletes: vec![DeclarationKey::fixture("model.A")],
+        ..Default::default()
     };
     let declared = InvocationDelta {
         effect: &effect,
@@ -2869,6 +2878,7 @@ fn invocation_refuses_a_declared_delta_that_declares_the_same_identity_twice() {
         modifies: Vec::new(),
         creates: vec![DeclarationKey::fixture("model.A")],
         deletes: Vec::new(),
+        ..Default::default()
     };
     let post_document = PopulationDocument {
         model_identity: "test/orders".to_owned(),
@@ -2990,6 +3000,7 @@ fn invocation_refuses_a_declared_delta_that_declares_the_same_identity_created_a
         modifies: Vec::new(),
         creates: vec![DeclarationKey::fixture("model.A")],
         deletes: vec![DeclarationKey::fixture("model.A")],
+        ..Default::default()
     };
     let declared = InvocationDelta {
         effect: &effect,
@@ -3092,6 +3103,7 @@ fn tc_291_population_id_is_deterministic_over_its_admission_preimage() {
         modifies: Vec::new(),
         creates: Vec::new(),
         deletes: Vec::new(),
+        ..Default::default()
     };
     let declared = InvocationDelta {
         effect: &effect,
@@ -3150,6 +3162,7 @@ fn tc_296_standalone_direct_admission_distinct_from_invocation_post() {
         modifies: Vec::new(),
         creates: Vec::new(),
         deletes: Vec::new(),
+        ..Default::default()
     };
     let declared = InvocationDelta {
         effect: &effect,
@@ -3879,4 +3892,448 @@ fn tc_410_each_connected_component_has_its_own_object_universe() {
         3,
         "three components, three distinct universes"
     );
+}
+
+// ---------------------------------------------------------------------------
+// QSpec FR-013-AC-7, AC-8 and AC-9: frame accounting and receiver-scoped
+// entries, decided over a population invocation.
+// ---------------------------------------------------------------------------
+
+/// `model.A`, `model.B <= A`, `model.C <= B`, `model.D <= C`, with `A.x`
+/// redefined by `B.x`, `B.x` by `C.x` and `C.x` by `D.x`: a write of `D.x`
+/// follows three `redefines` links to reach `A.x`. `model.Plain` is an
+/// unrelated type with its own field `model.Plain.x`.
+fn four_link_chain_bundle() -> DomainPackage {
+    DomainPackage::new(
+        DomainPackageRef::fixture("bundle.redef.four"),
+        vec![
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
+            object_type("model.C", vec!["model.B"]),
+            object_type("model.D", vec!["model.C"]),
+            object_type("model.Plain", vec![]),
+            field_member("model.A.x", "model.A", "model.A"),
+            field_member_redefining("model.B.x", "model.B", "model.A", Some("model.A.x"), vec![]),
+            field_member_redefining("model.C.x", "model.C", "model.A", Some("model.B.x"), vec![]),
+            field_member_redefining("model.D.x", "model.D", "model.A", Some("model.C.x"), vec![]),
+            field_member("model.Plain.x", "model.Plain", "model.A"),
+            population_record(
+                P1_POPULATION,
+                &["model.A", "model.B", "model.C", "model.D", "model.Plain"],
+                Extent::Closed,
+            ),
+        ],
+    )
+}
+
+fn document_of(members: Vec<PopulationMember>) -> PopulationDocument {
+    PopulationDocument {
+        model_identity: "test/orders".to_owned(),
+        members,
+    }
+}
+
+/// One invocation of `effect` over `pre` and `post` with the given binding
+/// and declared deletions, its frame check under `work_units`.
+fn run_frame(
+    domain_package: &DomainPackage,
+    effect: &OperationEffect,
+    binding: &InvocationBinding<'_>,
+    pre: Vec<PopulationMember>,
+    post: Vec<PopulationMember>,
+    deleted: &[&str],
+    work_units: u64,
+) -> AdmissionOutcome {
+    let view = view_of(domain_package);
+    let declared_deleted: Vec<String> = deleted.iter().map(|object| (*object).to_owned()).collect();
+    let declared = InvocationDelta {
+        effect,
+        declared_created: &[],
+        declared_deleted: &declared_deleted,
+    };
+    let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let mut frame_meter = AdmissionMeter::new(PopulationAdmissionLimits {
+        work_units,
+        ..PopulationAdmissionLimits::UNLIMITED
+    });
+    admit_invocation_bound(
+        invocation_context(&view, &p1_population_key()),
+        &document_of(pre),
+        &document_of(post),
+        &declared,
+        binding,
+        &mut pre_meter,
+        &mut post_meter,
+        &mut frame_meter,
+    )
+}
+
+fn assert_frame_violation(outcome: AdmissionOutcome, object: &str, field: Option<&str>) {
+    match outcome {
+        AdmissionOutcome::Refused(refusal) => {
+            assert_eq!(refusal.code, Code::FrameViolation);
+            assert_eq!(refusal.cause.as_str(), "unauthorized-change");
+            match (&refusal.cause, field) {
+                (
+                    ModelRefusalCause::FrameFieldWriteOutsideGrant {
+                        object: at,
+                        field: key,
+                    },
+                    Some(name),
+                ) => {
+                    assert_eq!((at.as_str(), key.node.as_str()), (object, name));
+                }
+                (ModelRefusalCause::FrameDeleteOutsideGrant { object: at, .. }, None) => {
+                    assert_eq!(at.as_str(), object);
+                }
+                (other, _) => panic!("unexpected cause {other:?}"),
+            }
+        }
+        other => panic!("expected Refused(frame_violation), got {other:?}"),
+    }
+}
+
+/// QSpec FR-013-AC-7: a write of `model.D.x`, which reaches the granted
+/// `model.A.x` through `k = 3` `redefines` links, consumes exactly `1 + k`
+/// work units: one `frame.write` then one `frame.redefines-link` per link.
+/// With `work_units` at 4 it is permitted. At `k` or fewer, the check ends
+/// `Incomplete` at the denied charge with no frame verdict: at 3 on the
+/// third link, with `consumed = 3` and `next_charge = 1`, and at 1 and 2 on
+/// the first and second link, which fixes the one `frame.write` before them.
+#[test]
+#[trace("QSpec-V1-EXPR-022", "QSpec-FR-013-AC-7")]
+fn a_write_through_k_redefines_links_consumes_one_write_and_k_link_charges() {
+    let domain_package = four_link_chain_bundle();
+    let effect = OperationEffect {
+        modifies: vec![DeclarationKey::fixture("model.A.x")],
+        ..Default::default()
+    };
+    let pre = || {
+        vec![member_with_fields(
+            "d1",
+            "model.D",
+            vec![("model.D.x", vec!["a1"])],
+        )]
+    };
+    let post = || {
+        vec![member_with_fields(
+            "d1",
+            "model.D",
+            vec![("model.D.x", vec!["a9"])],
+        )]
+    };
+
+    let admitted = run_frame(
+        &domain_package,
+        &effect,
+        &InvocationBinding::default(),
+        pre(),
+        post(),
+        &[],
+        4,
+    );
+    assert!(
+        matches!(admitted, AdmissionOutcome::Admitted(_)),
+        "1 + 3 work units admit the write, got {admitted:?}"
+    );
+
+    for limit in [1_u64, 2, 3] {
+        let outcome = run_frame(
+            &domain_package,
+            &effect,
+            &InvocationBinding::default(),
+            pre(),
+            post(),
+            &[],
+            limit,
+        );
+        let AdmissionOutcome::Incomplete(incomplete) = outcome else {
+            panic!("work_units {limit} must end Incomplete, got {outcome:?}");
+        };
+        assert_eq!(
+            incomplete,
+            AdmissionIncomplete {
+                limit_kind: AdmissionLimitKind::WorkUnits,
+                limit,
+                consumed: limit,
+                next_charge: 1,
+                charge_point: AdmissionChargePoint::FrameRedefinesLink,
+            },
+            "work_units {limit}"
+        );
+    }
+
+    // The denial record names the stage, the counter and the charge point.
+    let outcome = run_frame(
+        &domain_package,
+        &effect,
+        &InvocationBinding::default(),
+        pre(),
+        post(),
+        &[],
+        3,
+    );
+    let AdmissionOutcome::Incomplete(incomplete) = outcome else {
+        panic!("expected Incomplete");
+    };
+    let fields = incomplete.denial().catalog_fields();
+    assert_eq!(fields["limit_kind"], "work_units");
+    assert_eq!(fields["charge_point"], "frame.redefines-link");
+    assert_eq!(fields["consumed"], "3");
+    assert_eq!(fields["next_charge"], "1");
+    assert_eq!(fields["limit"], "3");
+    assert_eq!(fields["stage"], "population-admission");
+
+    // A write that reaches no grant still charges its links and is then a
+    // violation: the walk stops only at a granted member or at the end of
+    // the chain.
+    let unrelated = run_frame(
+        &domain_package,
+        &OperationEffect::default(),
+        &InvocationBinding::default(),
+        pre(),
+        post(),
+        &[],
+        4,
+    );
+    assert_frame_violation(unrelated, "d1", Some("model.D.x"));
+}
+
+/// QSpec FR-013-AC-7: a write to the granted member itself follows no link,
+/// so it consumes one work unit: it is permitted under `work_units = 1`.
+#[test]
+#[trace("QSpec-V1-EXPR-022", "QSpec-FR-013-AC-7")]
+fn a_write_to_the_granted_member_charges_one_write_and_no_link() {
+    let domain_package = four_link_chain_bundle();
+    let effect = OperationEffect {
+        modifies: vec![DeclarationKey::fixture("model.A.x")],
+        ..Default::default()
+    };
+    let outcome = run_frame(
+        &domain_package,
+        &effect,
+        &InvocationBinding::default(),
+        vec![member_with_fields(
+            "a1",
+            "model.A",
+            vec![("model.A.x", vec!["a1"])],
+        )],
+        vec![member_with_fields(
+            "a1",
+            "model.A",
+            vec![("model.A.x", vec!["a9"])],
+        )],
+        &[],
+        1,
+    );
+    assert!(
+        matches!(outcome, AdmissionOutcome::Admitted(_)),
+        "a granted member costs the one frame.write, got {outcome:?}"
+    );
+}
+
+/// QSpec FR-013-AC-8: under the receiver-scoped entry `self.x`, a write to
+/// `model.A.x` on the receiver is permitted and the same write on another
+/// object of the same type is `frame_violation`; under the every-object
+/// entry `x`, both writes are permitted.
+#[test]
+#[trace("QSpec-V1-EXPR-022", "QSpec-FR-013-AC-8")]
+fn a_receiver_scoped_modifies_entry_grants_the_receiver_only() {
+    let domain_package = four_link_chain_bundle();
+    let write = |object: &str, value: &str| {
+        member_with_fields(object, "model.A", vec![("model.A.x", vec![value])])
+    };
+    let receiver_only = OperationEffect {
+        receiver_modifies: vec![DeclarationKey::fixture("model.A.x")],
+        ..Default::default()
+    };
+    let every_object = OperationEffect {
+        modifies: vec![DeclarationKey::fixture("model.A.x")],
+        ..Default::default()
+    };
+    let run = |effect: &OperationEffect, receiver: &str, changed: &[&str]| {
+        let objects = ["r1", "o1"];
+        let pre = objects.iter().map(|object| write(object, "a1")).collect();
+        let post = objects
+            .iter()
+            .map(|object| write(object, if changed.contains(object) { "a9" } else { "a1" }))
+            .collect();
+        run_frame(
+            &domain_package,
+            effect,
+            &InvocationBinding {
+                receiver: Some(receiver),
+                arguments: &[],
+            },
+            pre,
+            post,
+            &[],
+            u64::MAX,
+        )
+    };
+
+    assert!(matches!(
+        run(&receiver_only, "r1", &["r1"]),
+        AdmissionOutcome::Admitted(_)
+    ));
+    assert_frame_violation(run(&receiver_only, "r1", &["o1"]), "o1", Some("model.A.x"));
+    // Both writes at once: the other object's write is the violation.
+    assert_frame_violation(
+        run(&receiver_only, "r1", &["r1", "o1"]),
+        "o1",
+        Some("model.A.x"),
+    );
+    for changed in [&["r1"][..], &["o1"], &["r1", "o1"]] {
+        assert!(
+            matches!(
+                run(&every_object, "r1", changed),
+                AdmissionOutcome::Admitted(_)
+            ),
+            "an every-object entry grants {changed:?}"
+        );
+    }
+    // With no receiver at all, a receiver-scoped entry grants nothing.
+    let no_receiver = run_frame(
+        &domain_package,
+        &receiver_only,
+        &InvocationBinding::default(),
+        vec![write("r1", "a1")],
+        vec![write("r1", "a9")],
+        &[],
+        u64::MAX,
+    );
+    assert_frame_violation(no_receiver, "r1", Some("model.A.x"));
+}
+
+/// QSpec FR-013-AC-8: a receiver-scoped entry reaches the receiver's
+/// `redefines` chain too: the receiver's `model.D.x` write is covered by
+/// `self.x` on `model.A.x`, another object's is not, and the receiver-scoped
+/// entry for another type's same-named field grants neither.
+#[test]
+#[trace("QSpec-V1-EXPR-022", "QSpec-FR-013-AC-8")]
+fn a_receiver_scoped_entry_reaches_through_redefines_and_by_declaration_not_name() {
+    let domain_package = four_link_chain_bundle();
+    let effect = OperationEffect {
+        receiver_modifies: vec![DeclarationKey::fixture("model.A.x")],
+        ..Default::default()
+    };
+    let d = |object: &str, value: &str| {
+        member_with_fields(object, "model.D", vec![("model.D.x", vec![value])])
+    };
+    let binding = InvocationBinding {
+        receiver: Some("r1"),
+        arguments: &[],
+    };
+    let receiver_write = run_frame(
+        &domain_package,
+        &effect,
+        &binding,
+        vec![d("r1", "a1"), d("o1", "a1")],
+        vec![d("r1", "a9"), d("o1", "a1")],
+        &[],
+        u64::MAX,
+    );
+    assert!(matches!(receiver_write, AdmissionOutcome::Admitted(_)));
+    let other_write = run_frame(
+        &domain_package,
+        &effect,
+        &binding,
+        vec![d("r1", "a1"), d("o1", "a1")],
+        vec![d("r1", "a1"), d("o1", "a9")],
+        &[],
+        u64::MAX,
+    );
+    assert_frame_violation(other_write, "o1", Some("model.D.x"));
+    let same_name_other_type = run_frame(
+        &domain_package,
+        &effect,
+        &binding,
+        vec![member_with_fields(
+            "r1",
+            "model.Plain",
+            vec![("model.Plain.x", vec!["a1"])],
+        )],
+        vec![member_with_fields(
+            "r1",
+            "model.Plain",
+            vec![("model.Plain.x", vec!["a9"])],
+        )],
+        &[],
+        u64::MAX,
+    );
+    assert_frame_violation(same_name_other_type, "r1", Some("model.Plain.x"));
+}
+
+/// QSpec FR-013-AC-9: under `deletes self` the receiver's deletion is
+/// permitted and any other object's is `frame_violation`; under `deletes p`
+/// the argument bound to `p` is permitted and any other is `frame_violation`;
+/// under the type-wide `deletes model.A`, any subset of the conforming
+/// objects is permitted.
+#[test]
+#[trace("QSpec-V1-EXPR-022", "QSpec-FR-013-AC-9")]
+fn a_scoped_deletes_entry_grants_the_receiver_or_the_argument_only() {
+    let domain_package = four_link_chain_bundle();
+    let objects = || {
+        vec![
+            member("r1", "model.A"),
+            member("p1", "model.A"),
+            member("o1", "model.A"),
+        ]
+    };
+    let without = |gone: &[&str]| -> Vec<PopulationMember> {
+        objects()
+            .into_iter()
+            .filter(|object| !gone.contains(&object.object.as_str()))
+            .collect()
+    };
+    let arguments = [("p".to_owned(), "p1".to_owned())];
+    let binding = InvocationBinding {
+        receiver: Some("r1"),
+        arguments: &arguments,
+    };
+    let run = |effect: &OperationEffect, gone: &[&str]| {
+        run_frame(
+            &domain_package,
+            effect,
+            &binding,
+            objects(),
+            without(gone),
+            gone,
+            u64::MAX,
+        )
+    };
+
+    let receiver = OperationEffect {
+        deletes_receiver: true,
+        ..Default::default()
+    };
+    assert!(matches!(
+        run(&receiver, &["r1"]),
+        AdmissionOutcome::Admitted(_)
+    ));
+    assert_frame_violation(run(&receiver, &["o1"]), "o1", None);
+    assert_frame_violation(run(&receiver, &["p1"]), "p1", None);
+
+    let argument = OperationEffect {
+        deletes_arguments: vec!["p".to_owned()],
+        ..Default::default()
+    };
+    assert!(matches!(
+        run(&argument, &["p1"]),
+        AdmissionOutcome::Admitted(_)
+    ));
+    assert_frame_violation(run(&argument, &["o1"]), "o1", None);
+    assert_frame_violation(run(&argument, &["r1"]), "r1", None);
+
+    let type_wide = OperationEffect {
+        deletes: vec![DeclarationKey::fixture("model.A")],
+        ..Default::default()
+    };
+    for gone in [&["r1"][..], &["o1"], &["r1", "o1"], &["r1", "p1", "o1"]] {
+        assert!(
+            matches!(run(&type_wide, gone), AdmissionOutcome::Admitted(_)),
+            "a type-wide entry grants any subset: {gone:?}"
+        );
+    }
 }

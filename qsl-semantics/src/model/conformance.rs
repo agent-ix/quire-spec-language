@@ -502,9 +502,25 @@ pub fn check_operation_redefinition(
     if let Err(incomplete) = charge_axis(meter) {
         return ConformanceCheckOutcome::Incomplete(incomplete);
     }
-    for write in &redefining.effect.modifies {
+    // An every-object write must be granted to every object by the redefined
+    // effect; a receiver-scoped write is also covered by a receiver-scoped
+    // grant.
+    let writes = redefining
+        .effect
+        .modifies
+        .iter()
+        .map(|write| (write, false))
+        .chain(
+            redefining
+                .effect
+                .receiver_modifies
+                .iter()
+                .map(|write| (write, true)),
+        );
+    for (write, receiver_only) in writes {
         let covered = index.redefinition_reaches(write, |candidate| {
             redefined.effect.modifies.contains(candidate)
+                || (receiver_only && redefined.effect.receiver_modifies.contains(candidate))
         });
         if !covered {
             failures.push(AxisFailure {

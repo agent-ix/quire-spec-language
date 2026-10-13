@@ -2871,17 +2871,23 @@ fn run_tc465_invocation(
     )
 }
 
-/// [`run_tc465_invocation`] under the given observation limits.
-fn run_tc465_invocation_limited(
+/// The changed-version invocation's selection and the snapshot and
+/// invocation provisions holding its three documents.
+struct Tc465Documents {
+    invocation: qsl_semantics::model::observation::DocumentRef,
+    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    invocations: BTreeMap<[u8; 32], Vec<u8>>,
+}
+
+/// The changed-version invocation's documents, with `mutate_pre`/
+/// `mutate_post`/`mutate_invocation` applied to each document's JSON before
+/// it is digested.
+fn tc465_invocation_documents(
     document: &[u8],
     mutate_pre: impl FnOnce(&mut serde_json::Value),
     mutate_post: impl FnOnce(&mut serde_json::Value),
     mutate_invocation: impl FnOnce(&mut serde_json::Value),
-    limits: qsl_semantics::model::observation::ObservationLimits,
-) -> Result<
-    qsl_semantics::model::observation::AdmittedObservations,
-    qsl_semantics::model::observation::AdmissionFailure,
-> {
+) -> Tc465Documents {
     let model_digest_hex = tc465_model_digest_hex(document);
     let pre_label = frame_label("pre-snap");
     let mut pre_value = tc465_pre_snapshot(&pre_label, &model_digest_hex);
@@ -2915,13 +2921,59 @@ fn run_tc465_invocation_limited(
     snapshots.insert(post.digest, post_bytes);
     let mut invocations = BTreeMap::new();
     invocations.insert(invocation.digest, invocation_bytes);
-    run_tc465_with_limits(
-        document,
-        "VersionUnchanged",
-        qsl_semantics::model::observation::ClauseSelectionInput::Invocation { invocation },
+    Tc465Documents {
+        invocation,
         snapshots,
         invocations,
+    }
+}
+
+/// [`run_tc465_invocation`] under the given observation limits.
+fn run_tc465_invocation_limited(
+    document: &[u8],
+    mutate_pre: impl FnOnce(&mut serde_json::Value),
+    mutate_post: impl FnOnce(&mut serde_json::Value),
+    mutate_invocation: impl FnOnce(&mut serde_json::Value),
+    limits: qsl_semantics::model::observation::ObservationLimits,
+) -> Result<
+    qsl_semantics::model::observation::AdmittedObservations,
+    qsl_semantics::model::observation::AdmissionFailure,
+> {
+    run_tc465_invocation_under(
+        document,
+        mutate_pre,
+        mutate_post,
+        mutate_invocation,
         limits,
+        qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+    )
+}
+
+/// [`run_tc465_invocation_limited`] under the model limits `model_limits`.
+fn run_tc465_invocation_under(
+    document: &[u8],
+    mutate_pre: impl FnOnce(&mut serde_json::Value),
+    mutate_post: impl FnOnce(&mut serde_json::Value),
+    mutate_invocation: impl FnOnce(&mut serde_json::Value),
+    limits: qsl_semantics::model::observation::ObservationLimits,
+    model_limits: qsl_semantics::model::accounting::ModelNormalizationLimits,
+) -> Result<
+    qsl_semantics::model::observation::AdmittedObservations,
+    qsl_semantics::model::observation::AdmissionFailure,
+> {
+    let documents =
+        tc465_invocation_documents(document, mutate_pre, mutate_post, mutate_invocation);
+    run_tc465_with_clauses_under(
+        document,
+        TC465_CLAUSES,
+        "VersionUnchanged",
+        qsl_semantics::model::observation::ClauseSelectionInput::Invocation {
+            invocation: documents.invocation,
+        },
+        documents.snapshots,
+        documents.invocations,
+        limits,
+        model_limits,
     )
 }
 
@@ -5074,4 +5126,290 @@ fn an_out_of_range_argument_refuses_whatever_the_limits() {
         );
         assert!(run("1000", limits).is_ok());
     }
+}
+
+// ---------------------------------------------------------------------------
+// QSpec FR-013-AC-7, AC-8 and AC-9 over FR-106 check 11 and the FR-115
+// frame check: frame accounting, and receiver- and argument-scoped entries.
+// ---------------------------------------------------------------------------
+
+const CONFIG_VERSION_NODE: &str = "ix://example/config-version/ConfigVersion";
+
+/// The field `ConfigVersion::<name>`'s declaration key in the TC-465 package.
+fn tc465_field_key(name: &str) -> qsl_semantics::model::key::DeclarationKey {
+    qsl_semantics::model::key::DeclarationKey {
+        package: "example/config-version".to_owned(),
+        node: format!("{CONFIG_VERSION_NODE}/{name}"),
+    }
+}
+
+/// The `config_history` object `key` at `version`, no parent.
+fn tc465_object(key: &str, version: i64) -> serde_json::Value {
+    json!({
+        "key": key, "type": CONFIG_VERSION_NODE,
+        "fields": {"versionNumber": {"integer": version.to_string()}, "parent": {"absent": {}}},
+    })
+}
+
+fn tc465_push_objects(objects: Vec<serde_json::Value>) -> impl FnOnce(&mut serde_json::Value) {
+    move |value| {
+        value["populations"][0]["objects"]
+            .as_array_mut()
+            .unwrap()
+            .extend(objects);
+    }
+}
+
+/// FR-115's check 11 over the changed-version invocation of `operation`
+/// (`attemptUpdate` or `probe`), `effect` the frame it is checked against.
+fn tc465_check_frame(
+    document: &[u8],
+    operation: &str,
+    mutate_pre: impl FnOnce(&mut serde_json::Value),
+    mutate_post: impl FnOnce(&mut serde_json::Value),
+    mutate_invocation: impl FnOnce(&mut serde_json::Value),
+    effect: &qsl_semantics::model::domain_package::OperationEffect,
+) -> qsl_semantics::model::observation::FrameVerdict {
+    use qsl_semantics::model::observation::{
+        admit_frame_invocation, FrameFacts, ObservationLimits, OperationFacts, Provisions,
+    };
+    let identifier = |text: &str| quire_exact::Identifier::new(text).expect("an identifier");
+    let documents = tc465_invocation_documents(
+        document,
+        mutate_pre,
+        mutate_post,
+        |value: &mut serde_json::Value| {
+            value["operation"] = json!(operation);
+            mutate_invocation(value);
+        },
+    );
+    let packages = qsl_semantics::model::intake::package_input([document]);
+    let declarations = admit_and_assemble_with_body(document, TC465_CLAUSES)
+        .unwrap_or_else(|refusal| panic!("assembly refused: {refusal:?}"));
+    let graph = declarations
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("check refused: {refusals:?}"));
+    let selection = graph
+        .resolve_operation(
+            &identifier("Config"),
+            &identifier("ConfigVersion"),
+            &identifier(operation),
+        )
+        .expect("the operation resolves");
+    let (context, operation_frame) = graph
+        .operation_frame(&selection)
+        .expect("a clause names the operation, so the package holds its frame");
+    let facts = FrameFacts {
+        context,
+        frame: operation_frame.frame(),
+        operation: OperationFacts {
+            declaring: operation_frame.operation().declaring,
+            declaration: operation_frame.operation().declaration.clone(),
+        },
+    };
+    let provisions = Provisions {
+        snapshots: &documents.snapshots,
+        invocations: &documents.invocations,
+    };
+    let admitted = admit_frame_invocation(
+        graph.model_selections(),
+        graph.scope().types(),
+        &facts,
+        &packages,
+        qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+        &provisions,
+        &documents.invocation,
+        ObservationLimits::default(),
+    )
+    .unwrap_or_else(|failure| panic!("expected admission, got {failure:?}"));
+    admitted
+        .check_frame(effect)
+        .expect("check 11 does not fault")
+}
+
+fn assert_field_violation(
+    verdict: qsl_semantics::model::observation::FrameVerdict,
+    object: &str,
+    field: &str,
+) {
+    use qsl_semantics::model::observation::{FrameChange, FrameVerdict};
+    let FrameVerdict::Violation(witness) = verdict else {
+        panic!("expected a violation of {object}.{field}, got {verdict:?}");
+    };
+    assert_eq!(witness.code, Code::FrameViolation);
+    assert_eq!(witness.cause, "unauthorized-change");
+    let FrameChange::FieldWrite {
+        object: at,
+        field: written,
+        ..
+    } = &witness.change
+    else {
+        panic!("expected a field write, got {:?}", witness.change);
+    };
+    assert_eq!((at.as_str(), written.as_str()), (object, field));
+}
+
+/// QSpec FR-013-AC-8 over the FR-115 frame check: with the invocation's
+/// `self` the receiver `child`, the receiver-scoped entry `self.versionNumber`
+/// permits the write to `child.versionNumber` and `frame_violation`s the same
+/// write to `other`, and the every-object entry `versionNumber` permits both.
+#[trace("QSpec-V1-EXPR-022", "QSpec-FR-013-AC-8")]
+#[test]
+fn the_frame_check_scopes_a_receiver_entry_to_the_invocations_self() {
+    use qsl_semantics::model::domain_package::OperationEffect;
+    use qsl_semantics::model::observation::FrameVerdict;
+    let document = tc465_document();
+    let check = |effect: &OperationEffect, other_after: i64| {
+        tc465_check_frame(
+            &document,
+            "attemptUpdate",
+            tc465_push_objects(vec![tc465_object("other", 1)]),
+            tc465_push_objects(vec![tc465_object("other", other_after)]),
+            |_| {},
+            effect,
+        )
+    };
+    let receiver_only = OperationEffect {
+        receiver_modifies: vec![tc465_field_key("versionNumber")],
+        ..Default::default()
+    };
+    let every_object = OperationEffect {
+        modifies: vec![tc465_field_key("versionNumber")],
+        ..Default::default()
+    };
+
+    // `child` moves 2 -> 3 in every case; `other` stays at 1 or moves to 2.
+    assert_eq!(check(&receiver_only, 1), FrameVerdict::Holds);
+    assert_field_violation(check(&receiver_only, 2), "other", "versionNumber");
+    assert_eq!(check(&every_object, 1), FrameVerdict::Holds);
+    assert_eq!(check(&every_object, 2), FrameVerdict::Holds);
+}
+
+/// QSpec FR-013-AC-9 over the FR-115 frame check: `deletes self` permits
+/// deleting the receiver `child` and `frame_violation`s deleting `other`;
+/// `deletes p` for `probe(target)` bound to `other` permits deleting `other`
+/// and `frame_violation`s deleting `child`.
+#[trace("QSpec-V1-EXPR-022", "QSpec-FR-013-AC-9")]
+#[test]
+fn the_frame_check_scopes_a_deletion_to_the_receiver_or_the_argument() {
+    use qsl_semantics::model::domain_package::OperationEffect;
+    use qsl_semantics::model::observation::{FrameChange, FrameVerdict};
+    let document = tc465_document();
+    let population = "ix://example/config-version/config_history";
+    let without = |gone: &'static str| {
+        move |value: &mut serde_json::Value| {
+            value["populations"][0]["objects"]
+                .as_array_mut()
+                .unwrap()
+                .retain(|object| object["key"] != gone);
+        }
+    };
+    let pre = || tc465_push_objects(vec![tc465_object("other", 1)]);
+    let check = |operation: &str, effect: &OperationEffect, gone: &'static str| {
+        let target = json!({"target": {"reference": {"population": population, "key": "other"}}});
+        tc465_check_frame(
+            &document,
+            operation,
+            pre(),
+            // The post snapshot is the pre one, less the deleted object and
+            // with `child` at its pre version so only the deletion differs.
+            move |value| {
+                tc465_push_objects(vec![tc465_object("other", 1)])(value);
+                value["populations"][0]["objects"][0] = tc465_object("child", 2);
+                without(gone)(value);
+            },
+            move |invocation| {
+                if operation == "probe" {
+                    invocation["parameters"] = target;
+                    invocation["result"] = serde_json::Value::Null;
+                }
+                invocation["deleted"] = json!([{"population": population, "key": gone}]);
+            },
+            effect,
+        )
+    };
+    let assert_deleted = |verdict: FrameVerdict, object: &str| {
+        let FrameVerdict::Violation(witness) = verdict else {
+            panic!("expected a violation deleting {object}, got {verdict:?}");
+        };
+        assert_eq!(witness.code, Code::FrameViolation);
+        let FrameChange::Deleted { object: at, .. } = &witness.change else {
+            panic!("expected a deletion, got {:?}", witness.change);
+        };
+        assert_eq!(at, object);
+    };
+
+    let receiver = OperationEffect {
+        deletes_receiver: true,
+        ..Default::default()
+    };
+    assert_eq!(
+        check("attemptUpdate", &receiver, "child"),
+        FrameVerdict::Holds
+    );
+    assert_deleted(check("attemptUpdate", &receiver, "other"), "other");
+
+    let argument = OperationEffect {
+        deletes_arguments: vec!["target".to_owned()],
+        ..Default::default()
+    };
+    assert_eq!(check("probe", &argument, "other"), FrameVerdict::Holds);
+    assert_deleted(check("probe", &argument, "child"), "child");
+}
+
+/// QSpec FR-013-AC-7 over FR-106 check 11: each changed field charges one
+/// `frame.write` and one `frame.redefines-link` per `redefines` link, against
+/// the model `work_units` limit, and the first denied charge ends the check
+/// with the caller-budget record and no frame verdict.
+///
+/// `child.versionNumber` (granted outright) costs 1; each `Sub` object's
+/// `version` (one link to the granted `versionNumber`) costs 2. With
+/// `work_units = 60`, `child` and 29 `Sub` objects consume 59 and the 30th
+/// `Sub` write takes the 60th unit, so its link is the denied charge; at 59
+/// its `frame.write` is.
+#[trace("QSpec-V1-EXPR-022", "QSpec-FR-013-AC-7")]
+#[test]
+fn a_denied_frame_charge_ends_check_eleven_with_the_budget_record() {
+    let document = tc465_document_with_sub_redefining_version_number();
+    let sub = "ix://example/config-version/Sub";
+    let sub_objects = |version: &str| -> Vec<serde_json::Value> {
+        (0..40)
+            .map(|index| {
+                json!({
+                    "key": format!("s{index:02}"), "type": sub,
+                    "fields": {"version": {"integer": version}, "parent": {"absent": {}}},
+                })
+            })
+            .collect()
+    };
+    let run = |work_units: u64| {
+        run_tc465_invocation_under(
+            &document,
+            tc465_push_objects(sub_objects("1")),
+            tc465_push_objects(sub_objects("2")),
+            |_| {},
+            qsl_semantics::model::observation::ObservationLimits::default(),
+            qsl_semantics::model::accounting::ModelNormalizationLimits::default()
+                .with_work_units(work_units),
+        )
+    };
+    for (work_units, charge_point) in [(60, "frame.redefines-link"), (59, "frame.write")] {
+        let record = assert_tc465_refused(
+            run(work_units),
+            "resource_exhausted",
+            "insufficient-next-charge",
+        );
+        let field = |name: &str| record.fields.get(name).map(String::as_str);
+        assert_eq!(field("limit_kind"), Some("work_units"), "{work_units}");
+        assert_eq!(field("charge_point"), Some(charge_point), "{work_units}");
+        assert_eq!(field("limit"), Some(work_units.to_string().as_str()));
+        assert_eq!(field("consumed"), Some(work_units.to_string().as_str()));
+        assert_eq!(field("next_charge"), Some("1"), "{work_units}");
+        assert_eq!(field("stage"), Some("model-normalization"), "{work_units}");
+    }
+    // Control: the default limit admits the same invocation, so the denial
+    // above is the frame's charge and not a defect of the documents.
+    let admitted =
+        run(qsl_semantics::model::accounting::ModelNormalizationLimits::default().work_units);
+    assert!(admitted.is_ok(), "expected admission, got {admitted:?}");
 }
