@@ -549,22 +549,20 @@ fn integer(value: i64) -> Expression {
     Expression::integer(Integer::from(value))
 }
 
-fn order_function(name_: &str, body: Expression) -> FunctionDeclaration {
-    let order = ValueType::Composite(key("Order"));
-    FunctionDeclaration::new(
-        name_,
-        vec![("self".to_owned(), type_form(&order, "Order"))],
-        crate::support::type_form::type_form(&ValueType::Boolean),
-        None,
-        body,
-    )
-}
-
+/// TC-235 M02: the K2 package with `Order` given `quoted` typed `Money` and the
+/// invariant `QuotedIsTotal` is admitted after 23 charges, and the admitted
+/// clause is `true` on an `Order` whose `quoted` and `total` match in every
+/// field and `false` when only the currency differs.
+///
+/// Mutation used (derived by reading the record equality in the evaluator, not
+/// executed): comparing only the first field of a record flips run 2 to `true`;
+/// binding `self` to a different object flips both runs.
 #[trace("QSpec-TC-235", "QSpec-FR-208-AC-4")]
 #[test]
 fn tc235_m02_record_values_compare_every_field_at_runtime() {
     let fixture = k2_order_with(
         serde_json::json!([
+            crate::tc235_k2::field("Order", "order_id", "ix://quire/native/UUID"),
             crate::tc235_k2::field("Order", "total", &crate::tc235_k2::id("Money")),
             crate::tc235_k2::field("Order", "quoted", &crate::tc235_k2::id("Money")),
         ]),
@@ -574,63 +572,96 @@ fn tc235_m02_record_values_compare_every_field_at_runtime() {
             "self.quoted = self.total"
         )]),
     );
-    assert!(fixture["types"][0]["fields"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|field| field["name"] == "quoted"));
-    assert_eq!(
-        fixture["types"][0]["clauses"][0]["clauseId"],
-        "QuotedIsTotal"
-    );
-    let order = order_type(vec![
-        field("total", ValueType::Composite(key("Money"))),
-        field("quoted", ValueType::Composite(key("Money"))),
-    ]);
-    let package = package_with_types(
-        TypeEnvironment::new([money_type(), order], []).unwrap(),
-        vec![order_function(
-            "quoted_is_total",
-            Expression::binary(
-                BinaryOperator::Equal,
-                Expression::field(name("self"), "quoted"),
-                Expression::field(name("self"), "total"),
-            ),
-        )],
-    );
-    let call = |quoted: Value, total: Value| {
-        let values = [
-            ("total", FieldValue::Present(total)),
-            ("quoted", FieldValue::Present(quoted)),
-        ];
-        let value = order_value(
-            values.to_vec(),
-            &[
-                money_type(),
-                order_type(vec![
-                    field("total", ValueType::Composite(key("Money"))),
-                    field("quoted", ValueType::Composite(key("Money"))),
-                ]),
-            ],
-        );
-        package
-            .call(
-                &QualifiedName::unqualified("quoted_is_total").unwrap(),
-                vec![value],
-                &ObjectEnvironment::default(),
-                &mut Meter::new(UNLIMITED),
-            )
-            .unwrap()
-            .outcome
+    let (package, view, _) = model_package(
+        &fixture,
+        "invariant QuotedIsTotal using v on M::Order at current { self.quoted = self.total }",
+        23,
+    )
+    .expect("M02 checks");
+
+    let types = package.graph().scope().types();
+    let declaration = |node: &str| qsl_semantics::model::key::DeclarationKey {
+        package: crate::tc235_k2::PACKAGE.to_owned(),
+        node: crate::tc235_k2::id(node),
     };
-    assert!(matches!(
-        call(money(100, "EUR"), money(100, "EUR")),
-        qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
-    ));
-    assert!(matches!(
-        call(money(100, "USD"), money(100, "EUR")),
-        qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(false)))
-    ));
+    let money_declaration = types
+        .composites()
+        .find(|composite| composite.name().ends_with("Money"))
+        .expect("the admitted package declares Money");
+    let money_value = |amount: i64, currency: &str| {
+        let CompositeShape::Record(declared) = money_declaration.shape() else {
+            panic!("Money is a record");
+        };
+        let fields = declared
+            .iter()
+            .map(|declared| {
+                let value = match declared.value_type() {
+                    ValueType::Integer => Value::Integer(Integer::from(amount)),
+                    ValueType::String => Value::String(currency.to_owned()),
+                    other => panic!("unexpected Money field type {other:?}"),
+                };
+                (declared.name(), FieldValue::Present(value))
+            })
+            .collect();
+        types
+            .record(money_declaration.key(), fields)
+            .expect("Money value constructs")
+    };
+    let order_type = view.type_identities()[&declaration("Order")];
+    let universe = view
+        .object_universe_of(&declaration("Order"))
+        .expect("Order has an object universe")
+        .identity();
+    let o1 = ObjectReference::new(universe, order_type, ObjectId::new("o1").unwrap());
+
+    let truth_for = |quoted: Value| {
+        let closure = ObjectClosure::new(
+            types,
+            [(
+                o1.clone(),
+                vec![
+                    (
+                        "order_id",
+                        FieldValue::Present(Value::Uuid(
+                            quire_exact::Uuid::from_canonical_text(
+                                "00000000-0000-4000-8000-000000000001",
+                            )
+                            .expect("a canonical UUID"),
+                        )),
+                    ),
+                    ("total", FieldValue::Present(money_value(100, "EUR"))),
+                    ("quoted", FieldValue::Present(quoted)),
+                ],
+            )],
+            &[],
+        )
+        .expect("the Order closes over its type");
+        let s1 = qsl_semantics::model::observation::Observation {
+            identity: DocumentRef {
+                authority: "test".to_owned(),
+                identity: "s1".to_owned(),
+                revision_namespace: "tc235".to_owned(),
+                revision: "1".to_owned(),
+                digest: [0; 32],
+            },
+            environment: ObjectEnvironment::new(closure),
+            populations: BTreeMap::new(),
+            out_of_range: Vec::new(),
+        };
+        truth(
+            &package,
+            "QuotedIsTotal",
+            &process_observations(&package, "QuotedIsTotal", Some(s1), None, None, o1.clone()),
+        )
+    };
+    assert!(
+        truth_for(money_value(100, "EUR")),
+        "run 1: equal in every field"
+    );
+    assert!(
+        !truth_for(money_value(100, "USD")),
+        "run 2: the currency differs"
+    );
 }
 
 #[trace("QSpec-TC-235", "QSpec-FR-208-AC-10")]

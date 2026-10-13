@@ -504,7 +504,12 @@ fn assert_express_effective_machine(package: &DomainPackage, own_guard: bool) {
     )));
 }
 
-fn assert_derivation_conflict(refusal: &ModelRefusal, type_: &str, member: &str, redefiner: &str) {
+pub(super) fn assert_derivation_conflict(
+    refusal: &ModelRefusal,
+    type_: &str,
+    member: &str,
+    redefiner: &str,
+) {
     assert_eq!(refusal.code, Code::InvalidModelBinding);
     let ModelRefusalCause::DerivationConflict {
         type_: actual_type,
@@ -568,7 +573,34 @@ fn tc235_m19_state_machine_specialization_vectors() {
             ));
     });
     let package = read_k2(&positive).expect("same-meaning state-machine subtype is valid");
-    record_charges(&package, 23);
+    let view = record_charges(&package, 23);
+    let express = view.type_identities()[&DeclarationKey {
+        package: PACKAGE.to_owned(),
+        node: id("ExpressLifecycle"),
+    }];
+    let mut effective: Vec<_> = view
+        .declarations()
+        .iter()
+        .filter(|entry| entry.visible && entry.preimage.owner_effective_type == Some(express))
+        .map(|entry| entry.preimage.original.node.clone())
+        .collect();
+    effective.sort();
+    // The effective view carries operations, fields and clauses; states and
+    // transitions have no effective-view entry, so `assert_express_effective_machine`
+    // reads them (and the supertype edge) from the source records.
+    let mut expected: Vec<_> = [
+        // Operations place, cancel, expedite; field placed; the guard clause.
+        "OrderLifecycle/place",
+        "OrderLifecycle/cancel",
+        "ExpressLifecycle/expedite",
+        "OrderLifecycle/placed",
+        "OrderLifecycle/NotYetPlaced",
+    ]
+    .into_iter()
+    .map(id)
+    .collect();
+    expected.sort();
+    assert_eq!(effective, expected);
     assert_express_effective_machine(&package, false);
 
     // Run 7: `NotYetPlaced` guards the subtype's transition too.
