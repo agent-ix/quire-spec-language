@@ -76,3 +76,9 @@ Still unexercised: FND-001.
   It has no stub and no ignored test.
 - Semantic review: run by hand on this scope.
 - Plan completion: not assessed
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 0c14fc514: `dispatch_selects_the_redeclared_body_for_a_subtype_receiver_over_a_child_argument` covers the FR-151 case. It uses a `Reference<A>` call site, the `A`-rooted family with both candidates, a runtime `B` receiver bound through `TypeEnvironment::admits`, and a `TaxedMoney` argument. Results: amount 5 gives 105, amount 1000 gives 1100, amount 4 gives `PreconditionFalse` with `selected = model.B.size`, and a `Fee` refuses `type-mismatch`. `dispatch_selects_the_ancestor_body_for_an_ancestor_receiver_over_a_child_argument` covers an `A` receiver at the same site: it selects `A.size` (1000 gives 1000, a `Money` of 2000 gives 2000, and 9 gives `PreconditionFalse` with `selected = model.A.size`). The stale "cannot bind" doc is corrected. Both tests pass in `qsl737u-fix-gate.log`. Residual: the `A` disjunct of the guard is not decided (SR-9018 FND-004) |

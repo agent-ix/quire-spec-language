@@ -62,3 +62,19 @@ FND-003 are documentation and oracle nits.
 | FND-001 | medium | The sem+eval+replay+xtask gate log is not evidence for the PR head. `qsl737u-gate.log` compiled every qsl crate from `/home/peter/dev/quire-spec-language`, the main checkout on `main`. It is not the PR worktree. It resolved quire-exact 1d178c9c and QSV 010dca02 from main's lock; the head's lock pins 4c27c08 and ce9a0f1. None of the dispatch_calls child-argument tests appear in it, whether new or base. Its "0 failed, 1 ignored" therefore describes `main`, and the full gate has not been run on c7e80a9d1 | /home/peter/dev/worktrees/logs/qsl737u-gate.log:4-18,1983 |
 | FND-002 | low | The doc of `the_ancestor_body_runs_with_a_child_argument_through_the_original_root` calls the `A`-rooted call "the upcast of `B`'s redeclaration", and the PR title says "operation upcast". In this checker and in FR-151 ("reference upcasts only"), the Upcast is the typing of a dispatch argument at its parameter. That step runs `Frame::Upcast`, then `upcast`, then `Form::Argument`. Every dispatched call with a `TaxedMoney` argument goes through it, including both new tests and the earlier 14fda4097 test. A reader of the gap analysis would infer a distinct Upcast path that does not exist | qsl-eval/tests/it/dispatch_calls.rs:2956-2959; qsl-semantics/src/check/check/typing.rs:545; qsl-semantics/src/check/check.rs:2280-2294 |
 | FND-003 | low | The claim "reads the child's `amount`" cannot be falsified by a positional field read. `amount` is field 0 of both `Money` and `TaxedMoney`, so a read that takes field 0 instead of reading by key passes every vector. This is the defect class of QSL-737 AC-1 | qsl-eval/tests/it/dispatch_calls.rs:2760-2761 |
+
+## New findings (disposition pass 1)
+
+Reviewed at 0c14fc5142bf6da39a415bcd5e045c39d884b469.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | The doc of `dispatch_selects_the_redeclared_body_for_a_subtype_receiver_over_a_child_argument` says "B's body runs when either guard holds", but no vector has `A`'s guard true while `B`'s is false. `A`'s guard is `>= 1000`, which implies `B`'s `>= 5`, so the amount-1000 vector ("A's guard holds too") has both guards true. An effective guard of `B`'s own clause alone, without the FR-151 disjunction with `A`, passes every vector. Only "OR, not AND" is decided, by amount 5. To decide the `A` disjunct, `A`'s guard must not imply `B`'s (for example `m.amount == 3`, so amount 3 gives 103) | qsl-eval/tests/it/dispatch_calls.rs:2813-2814,2960-2961,2971 |
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 0c14fc514: `qsl737u-fix-gate.log` reran the sem+eval+replay+xtask gate in the PR worktree (`/home/peter/dev/worktrees/qsl-737-upcast-runlevel`, HEAD 0c14fc514, clean). It compiled qsl-eval and xtask from the worktree, with quire-exact 4c27c08e and QSV ce9a0f11 matching the head's lock. All four dispatch_calls child-argument tests pass, with 0 failures. The 4 ignores all name their reason: three are PR #789 (QSL-723) and one is the timing lane, and none is added by this PR. Clippy (`qsl737u-fix-clippy.log`, worktree) exits 0 |
+| FND-002 | fixed | 0c14fc514: the "upcast of `B`'s redeclaration" doc is gone. The test is replaced by the `Reference<A>`-site tests, and the PR title is now "run-level vectors for dispatch with child arguments and redeclared subtype bodies" |
+| FND-003 | fixed | 0c14fc514: `TaxedMoney` declares `tax` before `amount`. QSV `fill_slots` stores slots in declared order, so slot 0 of a `TaxedMoney` is `tax` (2). A positional read would give 102, not 105 |

@@ -2760,7 +2760,8 @@ fn money_family() -> (
 }
 
 /// The `model.A`/`model.B` bridge fixture whose `size` takes `m: Money`:
-/// `A.size` returns `m.amount` under the own precondition `m.amount >= 1000`;
+/// `A.size` returns `m.amount` under the own precondition `m.amount == 3`
+/// (which does not imply B's);
 /// `B.size`, which redeclares it, returns `m.amount + 100` under the own
 /// precondition `m.amount >= 5`, so its effective guard is `B OR A`. Rooted at
 /// `B` when `root_at_b` (one candidate), else at `A` (both candidates).
@@ -2779,9 +2780,9 @@ fn money_bridge(root_at_b: bool) -> MoneyBridge {
     let b_type = view_type(&view, "model.B");
     let (keys, composites) = money_family();
     let amount = || Expression::field(Expression::name("m".to_owned()), "amount");
-    let at_least = |bound: i64| {
+    let compare = |operator: BinaryOperator, bound: i64| {
         Expression::binary(
-            BinaryOperator::GreaterOrEqual,
+            operator,
             amount(),
             Expression::integer(Integer::from(bound)),
         )
@@ -2810,8 +2811,12 @@ fn money_bridge(root_at_b: bool) -> MoneyBridge {
             Expression::integer(Integer::from(100_i64)),
         ),
     );
-    clauses.own_precondition.insert(a.clone(), at_least(1000));
-    clauses.own_precondition.insert(b.clone(), at_least(5));
+    clauses
+        .own_precondition
+        .insert(a.clone(), compare(BinaryOperator::Equal, 3));
+    clauses
+        .own_precondition
+        .insert(b.clone(), compare(BinaryOperator::GreaterOrEqual, 5));
     let root = DispatchRoot {
         key: if root_at_b { b } else { a },
         closure: GeneralizationClosure::Closed,
@@ -2958,20 +2963,21 @@ fn a_redeclared_subtype_body_runs_with_a_child_argument() {
 /// site is typed `Reference<A>` (the family has candidates `A.size` and
 /// `B.size`), the runtime receiver is a `B`, and `dispatch.select` picks
 /// `B.size` with the effective guard `B OR A` over a `TaxedMoney` argument:
-/// B's body runs when either guard holds over the child's `amount`, and
+/// B's body runs when either guard holds over the child's `amount` (5 by B's
+/// own, 3 by A's alone), and
 /// `PreconditionFalse` names `model.B.size` when neither does.
 #[trace("FR-359-AC-8", "TC-1001")]
 #[test]
 fn dispatch_selects_the_redeclared_body_for_a_subtype_receiver_over_a_child_argument() {
-    // B's own guard (>= 5) holds, A's (>= 1000) does not.
+    // B's own guard (>= 5) holds, A's (== 3) does not.
     assert_eq!(
         completed_integer(run_money_call(false, true, taxed_money(5)).unwrap()),
         Integer::from(105_i64)
     );
-    // A's guard holds too.
+    // Only A's guard holds (3 < 5): the OR admits it, B's body runs.
     assert_eq!(
-        completed_integer(run_money_call(false, true, taxed_money(1000)).unwrap()),
-        Integer::from(1100_i64)
+        completed_integer(run_money_call(false, true, taxed_money(3)).unwrap()),
+        Integer::from(103_i64)
     );
     let record = undefined_record(run_money_call(false, true, taxed_money(4)).unwrap());
     assert_eq!(record.reason, UndefinedReason::PreconditionFalse);
@@ -2982,21 +2988,22 @@ fn dispatch_selects_the_redeclared_body_for_a_subtype_receiver_over_a_child_argu
 }
 
 /// FR-359-AC-8 (TC-1001 step 2), run level: through the same `Reference<A>`
-/// call site an `A` receiver selects `A.size`, whose own guard (>= 1000)
+/// call site an `A` receiver selects `A.size`, whose own guard (== 3)
 /// decides over the child, and A's body reads the child's `amount` by name.
 #[trace("FR-359-AC-8", "TC-1001")]
 #[test]
 fn dispatch_selects_the_ancestor_body_for_an_ancestor_receiver_over_a_child_argument() {
     assert_eq!(
-        completed_integer(run_money_call(false, false, taxed_money(1000)).unwrap()),
-        Integer::from(1000_i64)
+        completed_integer(run_money_call(false, false, taxed_money(3)).unwrap()),
+        Integer::from(3_i64)
     );
     assert_eq!(
         completed_integer(
-            run_money_call(false, false, |keys| (keys[0], vec![("amount", 2000)])).unwrap()
+            run_money_call(false, false, |keys| (keys[0], vec![("amount", 3)])).unwrap()
         ),
-        Integer::from(2000_i64)
+        Integer::from(3_i64)
     );
+    // 9 satisfies B's guard but A's is the one in force for an A receiver.
     let record = undefined_record(run_money_call(false, false, taxed_money(9)).unwrap());
     assert_eq!(record.reason, UndefinedReason::PreconditionFalse);
     assert_eq!(record.fields["selected"], "model.A.size");
