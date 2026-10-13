@@ -3,7 +3,7 @@ id: SR-9050
 title: "QSL-755 quire-spec-language PR 818 gap analysis: clause and operation collision"
 type: SpecReview
 analysis: gap-analysis
-scope: "agent-ix/quire-spec-language@7665c03365a107fc52bd7b0e741e61a4fee68a24; QSL-755 AC-1..3; QSpec FR-154-AC-12; QSpec TC-235 M32; qsl-semantics/src/model/intake.rs; qsl-semantics/tests/it/tc235_state_machine.rs"
+scope: "agent-ix/quire-spec-language@7665c03365a107fc52bd7b0e741e61a4fee68a24; QSL-755 AC-1..3; QSpec TC-235 / FR-154-AC-12 (cited by id); qsl-semantics/src/model/intake.rs; qsl-semantics/tests/it/tc235_state_machine.rs"
 review_set: subset
 ---
 
@@ -16,15 +16,14 @@ are cited by id only. `quoin matrix` was not run: QSL tags QSpec criteria
 with a `QSpec-` prefix and its own spec tree does not own FR-154. The check
 below is a manual mapping of the ticket ACs to the test and code.
 
-- QSL-755 AC-1 (tests-first vector for TC-235 M32 run 2): met. The coder's
-  red log shows the new test fails on the base with `malformed-declaration`
-  against `conflicting-binding` (exit 101). The green log shows it pass
-  (exit 0). The fixture adds clause `cancel` to K2's `OrderLifecycle`, whose
-  operations are `place` and `cancel` and whose only clause is
-  `NotYetPlaced`. The appended clause is therefore `clauses[1]`, so the
-  asserted member path `TypeDefinition.clauses[1]` is right. 22 charges
-  matches the spec row. Assertions are typed (`Code`, cause string,
-  `ConflictingBinding.member`). None reads prose.
+- QSL-755 AC-1 (tests-first vector): met. The red log shows the new test
+  fails on the base with `malformed-declaration` against
+  `conflicting-binding` (exit 101). The green log shows it pass (exit 0). The
+  fixture adds a clause named like an operation to K2's `OrderLifecycle`,
+  whose only existing clause is `NotYetPlaced`, so the appended clause is
+  `clauses[1]` and the asserted member path `TypeDefinition.clauses[1]` is
+  right. The charge count is derived from the fixture. Assertions are typed
+  (`Code`, cause string, `ConflictingBinding.member`). None reads prose.
 - QSL-755 AC-2 (the mapping handles `/clauses/j/identity`; no change to
   state, transition and step behaviour): met. The three existing arms keep
   their meaning check, key and member path.
@@ -34,8 +33,8 @@ below is a manual mapping of the ticket ACs to the test and code.
 
 Test-oracle strength: the test fails if the src change is reverted. It
 asserts exactly one refusal, so a duplicate `malformed-declaration` next to
-the new refusal would fail it. It does not assert the refusal key. The spec
-row asks for code and cause only, so that is acceptable.
+the new refusal would fail it. It does not assert the refusal key; code, cause and member are the
+contract, so that is acceptable.
 
 Checked for regressions from the wider arm, which also maps a clause that
 repeats a field or another clause: no QSL test builds a clause that
@@ -55,5 +54,5 @@ ticket in the QSL code lane.
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | medium | FR-154's refusal table makes "two nodes share one identity" `invalid_model_binding`/`conflicting-binding`. A field and an operation of one owner with one name, or two fields or two operations with one name, are reported by the reader at `/fields/j/identity`, `/operations/k/identity` or `/operations/k/params/s/identity`. `duplicate_process_step_refusal` still returns `None` for those positions, so they fall through to the generic `malformed-declaration`. No TC-235 row enumerates these cases: M32 covers clause, state, transition and step only. This is an existing gap, not a regression. Recommend deferring it to a new QSL ticket that either maps these positions to `conflicting-binding` with a vector, or has QSpec narrow the FR-154 row. | qsl-semantics/src/model/intake.rs:1666-1672 |
-| FND-002 | low | The new test cites FR-154-AC-12 only in its doc comment and has no `#[trace("QSpec-TC-235", "QSpec-FR-154-AC-12")]` tag, which neighbouring M19 tests carry. No QSL test is tagged with FR-154-AC-12, so the computed matrix will not count this binding. | qsl-semantics/tests/it/tc235_state_machine.rs:895-899 |
+| FND-001 | medium | Under QSpec TC-235 / FR-154-AC-12 (cited by id) QSL maps duplicate identities to `conflicting-binding`, but a field and an operation of one owner with one name, or two fields or two operations with one name, are reported by the reader at `/fields/j/identity`, `/operations/k/identity` or `/operations/k/params/s/identity`. `duplicate_process_step_refusal` still returns `None` for those positions, so they fall through to the generic `malformed-declaration`. This is an existing gap, not a regression. Recommend a new QSL ticket that maps these positions with a vector, or settles the intended cause with the spec owner. | qsl-semantics/src/model/intake.rs:1666-1672 |
+| FND-002 | low | The new test has no `#[trace("QSpec-TC-235", "QSpec-FR-154-AC-12")]` tag, which neighbouring M19 tests carry. No QSL test is tagged with FR-154-AC-12, so the computed matrix will not count this binding. | qsl-semantics/tests/it/tc235_state_machine.rs:895-899 |

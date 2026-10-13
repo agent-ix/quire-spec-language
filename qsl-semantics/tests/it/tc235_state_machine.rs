@@ -892,9 +892,9 @@ fn tc235_m19_derivation_conflict_member_paths() {
     );
 }
 
-/// M32 run 2 (FR-154-AC-12): a `quire` clause named like an operation of the
-/// same owner is a conflicting binding. Code and cause only; the position is
-/// asserted only as a typed member path into the owner's clauses.
+/// A clause named like an operation of its owner refuses `conflicting-binding`
+/// (QSpec TC-235 / FR-154-AC-12, cited by id). Typed code, cause and member
+/// path only.
 #[trace("QSpec-TC-235", "QSpec-FR-154-AC-12")]
 #[test]
 fn tc235_m32_run2_clause_named_like_an_operation_is_conflicting_binding() {

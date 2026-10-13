@@ -27,9 +27,8 @@ constraints, fields, variants, relationships, operations with their params,
 then clauses, states, transitions, steps. The later declaration is flagged.
 A clause therefore always reports at `/clauses/j/identity` when it collides
 with an operation or field of its owner, whichever the author wrote first.
-A collision between two clauses also reports there. FR-154's
-conflicting-binding row covers both cases: two nodes share one identity, or
-a clause's member name is also a field or operation of its owner. The wider
+A collision between two clauses also reports there. QSL maps all of these to
+`conflicting-binding` (QSpec TC-235 / FR-154-AC-12, cited by id). The wider
 arm is correct.
 
 Rust lane: no new `unwrap`, `expect`, `panic` or indexing in src. The
