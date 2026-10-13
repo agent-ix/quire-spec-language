@@ -53,3 +53,10 @@ Round 1, reviewed at 8aac7cf6ba714f11ee9bc35f2d4f83f807040f78.
 | FND-001 | deferred | QSL-750 (model-profile selection and gating) owns it. The planner accepted the deferral. The FR-102 and FR-302 sentences are accurate: `resolve_profiles` accepts only the root row (`quire.value.complete/v1`) and refuses every other identity `unknown_profile`, so no package can select `quire.model.complete/v1` today, and FR-304-AC-8 and FR-308 likewise have no enforcing code |
 | FND-002 | fixed | 8aac7cf6b: FR-102-AC-7 is added, bound to TC-457 and to the spec/tests.md row. The id is unique across remote branches and open PRs |
 | FND-003 | fixed | 8aac7cf6b: FR-302 now cites QSpec FR-151 as the source of the code and cause. Rewording the same sentence introduced FND-004 |
+
+Round 2, reviewed at 9db5e2659fd810f3a1af984f2b94f777bc43d804.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-004 | fixed | 9db5e2659: the FR-302 note states QSpec FR-151's rule as on QSpec main: across all source units linked into one package, at most one `operation-body` resolves to an operation identity, and a second refuses `conflicting_declaration`/`duplicate-declaration`. The stale "pending QSL-727" text is deleted |
+| FND-005 | fixed | 9db5e2659: FR-102-AC-7 now names `Config::ConfigVersion::resize` and segments `Config`, `ConfigVersion`, `resize`, matching the bound test |

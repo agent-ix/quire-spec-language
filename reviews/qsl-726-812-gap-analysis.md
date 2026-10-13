@@ -55,6 +55,12 @@ TC-986 and TC-987 stay 🚧. That is correct: their dispatch-table and evaluatio
 | --- | --- | --- | --- |
 | FND-003 | low | The deferred parameter-count, parameter-type and body-type check now has a stated home ("when dispatch linking first reads a body"). It has no acceptance criterion in FR-302 and no TC row, and QSL-726 AC-3's text does not name it, so AC-3 could land green without it. It needs an FR-302 AC (arity mismatch and wrong body type refuse, with code and cause) bound to a TC. | spec/functional/FR-302-link-dispatch-during-unit-compile.md:78-81; spec/functional/FR-103-admit-model-operations-and-frames-on-the-spine.md:102-105 |
 
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | FR-302-AC-8 and TC-1011 say only "refuse at S3", with no code or cause for either case, and defer the choice to the AC-3 slice. The criterion can still fail, but its oracle is weak. QSpec FR-151 already gives the precedent: its operation-redefinition arity row refuses `ill_typed`/`type-mismatch`, as a wrong body type would under FR-103's typing. Pinning `ill_typed`/`type-mismatch` at the body now would close it. | spec/functional/FR-302-link-dispatch-during-unit-compile.md:128; spec/test-cases/TC-1011-unit-compile-checks-body-arity-and-type-against-the-operation.md:27-31 |
+
 ## Dispositions
 
 Round 1, reviewed at 8aac7cf6ba714f11ee9bc35f2d4f83f807040f78.
@@ -63,3 +69,9 @@ Round 1, reviewed at 8aac7cf6ba714f11ee9bc35f2d4f83f807040f78.
 | --- | --- | --- |
 | FND-001 | deferred | AC-3 owns it. FR-103 and FR-302 (8aac7cf6b) now say the check runs when dispatch linking first reads a body, before any consumer uses one, and nothing reads bodies yet. The missing AC is tracked as FND-003 |
 | FND-002 | fixed | 8aac7cf6b: new tests cover a 2- and a 4-segment target, an undeclared `using` alias, an unknown target type, a variant-type target (variant_type.rs) and an ambiguous diamond-inherited operation. Each pins the exact cause |
+
+Round 2, reviewed at 9db5e2659fd810f3a1af984f2b94f777bc43d804.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-003 | fixed | 9db5e2659: FR-302-AC-8 (arity mismatch and wrong body type each refuse at S3, with no package or partial table) is bound to the new TC-1011 and its spec/tests.md row. FR-302-AC-8 and TC-1011 are unique across remote branches and open PRs |

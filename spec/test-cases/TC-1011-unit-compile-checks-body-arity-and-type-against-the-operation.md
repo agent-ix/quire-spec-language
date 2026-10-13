@@ -26,6 +26,6 @@ refuses when dispatch linking first reads the body. Scope: FR-302-AC-8.
 
 ## Expected Results
 
-Each compile refuses at S3 and produces no checked package and no partial
-dispatch table. With the body `body ok using V on M::A::add(amount) { amount }`
+Each compile refuses at S3 as `ill_typed`/`type-mismatch` located at the
+body, and produces no checked package and no partial dispatch table. With the body `body ok using V on M::A::add(amount) { amount }`
 the compile succeeds.

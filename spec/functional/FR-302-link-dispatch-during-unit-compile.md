@@ -77,7 +77,9 @@ without code behind it. The follow-up is model-profile selection and gating.
 
 A body's parameter count and types against the operation's signature, and its
 body type against the operation's declared result, are checked when dispatch
-linking first reads a body, before any consumer uses it. Resolving a body to
+linking first reads a body, before any consumer uses it; a mismatch refuses
+`ill_typed`/`type-mismatch` at the body (QSpec FR-151's arity row gives the
+same code and cause). Resolving a body to
 its `DeclarationKey` and setting `has_body` do not depend on that check.
 
 Exactly one executable unit `operation-body` SHALL resolve to each
@@ -125,7 +127,7 @@ caller's value, with the published default of
 | FR-302-AC-5 | A unit whose called family has `n` `redefines` edges compiles with `family_steps = n` and, with `family_steps = n - 1`, refuses at S3 with the resource-exhaustion cause `family-steps` naming `family_steps`, the value `n - 1` and the limits field that raises it. | Test (TC-795) |
 | FR-302-AC-6 | A unit whose precondition makes a dispatched call on an operation redefined at `A` and at `B` (`B` a subtype of `A`) compiles; evaluating the precondition with a receiver whose most-specific type is `B` runs `B`'s body, and with a receiver of type `A` runs `A`'s body. | Test (TC-809) |
 | FR-302-AC-7 | A single body for each of `A.size` and `B.size` joins with retained expressions and unit pre/post clauses to admitted operations by resolved `DeclarationKey`, independent of body labels and declaration order; `has_body` is true for those resolved operations and false for an operation without a body, whose called family is not applicable under FR-151. Two body forms resolving to the same `DeclarationKey` refuse as `conflicting_declaration`/`duplicate-declaration`, naming both forms and producing no checked package or partial table. TC-986 is the single-body control; TC-987 covers the duplicate. | Test |
-| FR-302-AC-8 | A body whose parameter count differs from its operation's signature, and a body whose type does not match its operation's declared result, each refuse at S3 when dispatch linking first reads the body, with no checked package or partial dispatch table. FR-103 names no code or cause for the count mismatch; the AC-3 slice settles it in this spec before implementing the check. | Test (TC-1011) |
+| FR-302-AC-8 | A body whose parameter count differs from its operation's signature, and a body whose type does not match its operation's declared result, each refuse at S3 as `ill_typed`/`type-mismatch`, located at the body, when dispatch linking first reads the body, with no checked package or partial dispatch table. QSpec FR-151 refuses an operation-redefinition parameter-count mismatch with the same code and cause. | Test (TC-1011) |
 
 ## Dependencies
 
