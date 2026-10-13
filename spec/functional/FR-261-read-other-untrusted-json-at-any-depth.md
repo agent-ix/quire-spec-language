@@ -52,10 +52,9 @@ content whatever its nesting (ADR-030 D-4.10). The sites are:
    defines.
 4. **Observation counts.** The observation document reader SHALL bound a
    document by `observation.objects` and `observation.values`, each charged
-   as the reader's tree is walked over an explicit heap stack. Each has a
-   row in FR-255's setting table, so a count past its bound refuses
-   `stage_limit_exceeded`/`node-count-exceeded` naming the setting, as FR-106
-   states.
+   as the reader's tree is walked over an explicit heap stack. Each is a
+   stage limit under FR-255 Behavior 1: a count past its bound refuses
+   `stage_limit_exceeded`/`node-count-exceeded` naming the setting.
 
 ## Acceptance Criteria
 

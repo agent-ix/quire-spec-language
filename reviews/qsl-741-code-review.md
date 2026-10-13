@@ -46,3 +46,22 @@ Test oracles: on the old code every new or changed assertion fails at its `code`
 `observation.objects` and `observation.input_bytes` stay `stage_limit_exceeded`. That matches the ticket ("leave those alone"), FR-106 check 1.2 for input bytes, and FR-255's table.
 
 No overlap with PR #804 or the QSL-726 stack. **Not mergeable until FND-001 is fixed.** FND-002 and FND-003 depend on the spec ruling in SR-8708 FND-001 and FND-004.
+
+## New findings (disposition pass 1)
+
+Reviewed at `08dcb08376af112b261ef7196049eeef6cd5d1e2`. The PR was redirected: `observation.values` keeps `stage_limit_exceeded`/`node-count-exceeded` through `limit_refusal`. `git diff origin/impl/business-model-meanings HEAD -- qsl-semantics/src` is empty (merge base equals the base tip `ffaefa335`).
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | low | The two new invocation tests carry `#[trace("TC-465", "FR-106-AC-16")]`. TC-465's table has no values-per-document row, and FR-106-AC-16 names no TC. The tag binds TC-465 to a case it does not list, which inflates TC-465 coverage. Fix: tag them `#[trace("FR-106-AC-16")]` only, as the exact-bound test is. | qsl-semantics/tests/it/state_clauses.rs:3137,3160; spec/test-cases/TC-465-admission-refuses-each-input-defect.md |
+| FND-007 | low | The PR body's limit-cause audit misstates the `replay.input_bytes` row. It says the current cause is `resource_exhausted`/`input-bytes-exceeded` and that "FR-255 B1 names this form". The code refuses `stage_limit_exceeded`/`input-bytes-exceeded`: `BoundExceeded::catalog_code` is `self.limit().catalog_code()` (qsl-replay/src/bounds.rs:107-110), and `ReplayRequestRefusal::BoundExceeded` maps to `Code::StageLimitExceeded` (qsl-replay/src/request.rs:532). FR-255 Behavior 1 names format, intake and library as the exceptions, not replay. So the row agrees with the rule. The audit's closing argument ("FR-255 B1 itself keeps `resource_exhausted` for library, intake, format and replay rows") goes to the planner's pending ruling with one wrong member. Fix: correct the row to "stage_limit_exceeded \| same \| agrees", and drop "replay" from the closing sentence. | PR #805 body; qsl-replay/src/bounds.rs:66-110; qsl-replay/src/request.rs:532; spec/functional/FR-255-name-the-setting-that-raises-a-reached-limit.md:121-131 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 08dcb08376af112b261ef7196049eeef6cd5d1e2: `values_exhausted` is gone. `ReadMeter::value` refuses through `limit_refusal`, which copies `LimitExceeded::catalog_fields()` (`kind`, `bound`, `actual`, `setting`). The FR-255-AC-1 test now asserts `kind` = `node-count-exceeded`. |
+| FND-002 | rejected | mooted by redirect: the record no longer carries `accounting_contract`. `qsl-semantics/src` is byte-identical to the base, which has no such field. |
+| FND-003 | rejected | mooted by redirect: `prior`, `work_item` and `accounting_contract` are no longer written. The record is the FR-255 `stage_limit_exceeded` record, whose field names FR-255 Behavior 1 defines. |
+| FND-004 | fixed | 08dcb08376af112b261ef7196049eeef6cd5d1e2: `an_invocation_parameter_past_the_values_bound_refuses_stage_limit_exceeded` and `an_invocation_result_past_the_values_bound_refuses_stage_limit_exceeded` refuse at bound 20, actual 21. Each snapshot holds about 5 value forms and the invocation is metered per document, so only the oversized parameter or result can cross 20. Without the charge at that site, the outcome would be a different code. The `field`/path half of the fix no longer applies: QSpec's `stage_limit_exceeded` record has no path field. |
+| FND-005 | fixed | 08dcb08376af112b261ef7196049eeef6cd5d1e2: the exact-bound test is now tagged `#[trace("FR-106-AC-16")]` only. |

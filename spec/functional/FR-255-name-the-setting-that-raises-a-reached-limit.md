@@ -124,11 +124,20 @@ rule and a row in this table.
    outcome carrying the limit kind, the configured bound, the count the
    refused charge would have reached, the setting name of that limit, and
    the locus FR-096 defines for the producer. For a stage limit the outcome
-   is `LimitExceeded`. A stage whose requirement gives its limits another
-   code (format's `resource_exhausted`/`input-bytes-exceeded`, intake's
-   `resource_exhausted`/`intake-limit-exceeded`, library resolution's
-   `resource_exhausted`/`insufficient-next-charge`) keeps that code and carries
-   the same four values. The catalog record of each such outcome SHALL carry
+   is `LimitExceeded`. The stage that refuses decides the code:
+
+   | Stage that refuses | Code | Settings |
+   | --- | --- | --- |
+   | model normalization, population admission (the compile-time walks) | `resource_exhausted`, with the cause NFR-012 L57, FR-082-AC-3 and QSpec FR-150 name | `model.*`, `admission.*` |
+   | format | `resource_exhausted`/`input-bytes-exceeded` | `format.output_bytes` |
+   | intake | `resource_exhausted`/`intake-limit-exceeded` | `intake.input_bytes` |
+   | library resolution | `resource_exhausted`/`insufficient-next-charge` | `library.*` |
+   | every other stage: S1, S3 and its environment admission, the I2 reader, replay, exploration, observation admission | `stage_limit_exceeded` | `s1.*`, `s3.*`, `environment.*`, `i2.*`, `replay.input_bytes`, `explore.*`, `observation.*` |
+
+   Observation admission refuses `stage_limit_exceeded` even for the
+   `model.*` walks it re-runs on a domain package: the stage that refuses is
+   admission. Every outcome keeps its code and carries the same four values.
+   The catalog record of each such outcome SHALL carry
    the setting name as its `setting` field, beside `kind`, `bound` and
    `actual`.
 2. **One mapping per limits type.** Each stage's limits type SHALL map each

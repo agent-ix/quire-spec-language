@@ -54,3 +54,21 @@ The defects are about consistency:
 - one ADR row is stale (FND-003)
 
 Only `base` was run. EARS, integrity and failure-domain were not run, because the hunks are clause-level rewordings of existing requirements and add no requirement, object or relationship. **Fix FND-001 and FND-002 before merge.** They decide the code's FND-001 and FND-002 in SR-8706.
+
+## New findings (disposition pass 1)
+
+Reviewed at `08dcb08376af112b261ef7196049eeef6cd5d1e2`. The PR now states `stage_limit_exceeded`/`node-count-exceeded` in FR-106 Behavior and AC-16, FR-261 Behavior 4 and AC-3, and TC-733 step 3. FR-255 and ADR-012 are unchanged from the base.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | low | FR-261 Behavior 4's new sentence is wrong in two ways. It says `observation.objects` and `observation.values` each "has a row in FR-255's setting table, so a count past its bound refuses `stage_limit_exceeded`/`node-count-exceeded` naming the setting, as FR-106 states". (1) Having a row does not decide the code. FR-255 Behavior 1 keeps `resource_exhausted` for the format, intake and library rows. What decides it is that observation admission is a stage whose requirement gives its limits no other code. (2) FR-106 states the code for `observation.values` only. It says nothing about `observation.objects`. Fix: "Each is a stage limit under FR-255 Behavior 1, so a count past its bound refuses `stage_limit_exceeded`/`node-count-exceeded` naming the setting", and drop "as FR-106 states", or add the objects case to FR-106. | spec/functional/FR-261-read-other-untrusted-json-at-any-depth.md:53-58; spec/functional/FR-255-name-the-setting-that-raises-a-reached-limit.md:121-131 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | rejected | mooted by redirect: the "`observation.values` is an accounting counter" sentence is gone. FR-261 Behavior 4 now gives the FR-255 row as the reason (see FND-006 for its wording), and no accounting contract is named anywhere. |
+| FND-002 | fixed | 08dcb08376af112b261ef7196049eeef6cd5d1e2: FR-106 no longer lists a competing field set. It names the cause `node-count-exceeded` (the kind), the setting, the bound and the count reached, with a reference to FR-255, which matches FR-255 Behavior 1's four fields and the table's "node count" kind. |
+| FND-003 | still-open | The code half is mooted: the ADR-012 §15.6 row's `stage_limit_exceeded` is right again. The category half of the finding stands, and the PR body's "ADR-012 section 15.6 is already right" misstates it. The row "admission (FR-106) \| a document over a reader limit \| refusal \| `stage_limit_exceeded`" gives O-16 category refusal. But `Code::is_incomplete` includes `StageLimitExceeded` (qsl-foundation/src/diagnostic.rs:300-309). ADR-013 O-16 puts bound exhaustion under incomplete, and the compile row of the same table says "refusal or limit \| refusal, incomplete". Fix: the row's category cell becomes `incomplete`. |
+| FND-004 | rejected | mooted by redirect: the record has no fields beyond FR-255's `kind`, `bound`, `actual` and `setting`, which FR-255 Behavior 1 names. |
+| FND-005 | fixed | 08dcb08376af112b261ef7196049eeef6cd5d1e2: the ungrounded "`observation.objects` is a stage limit" clause is replaced. Its replacement has its own wording defect, recorded as FND-006. |

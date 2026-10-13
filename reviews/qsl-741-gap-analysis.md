@@ -52,3 +52,12 @@ Sibling counters: `observation.input_bytes` is specified as `stage_limit_exceede
 - Stubs: none.
 - Semantic review: done inline for the three criteria, with no subagent fan-out.
 - Plan completion: not assessed
+
+## Dispositions
+
+Reviewed at `08dcb08376af112b261ef7196049eeef6cd5d1e2` (redirected PR: `observation.values` keeps `stage_limit_exceeded`/`node-count-exceeded`; `qsl-semantics/src` identical to the base).
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 08dcb08376af112b261ef7196049eeef6cd5d1e2: the refusal goes through `limit_refusal`, so `kind` is present. `values_per_document_limit_refuses_naming_observation_values` (`TC-720`, `FR-255-AC-1`) asserts `kind` = `node-count-exceeded`, `setting`, `bound` 0 and `actual` 1. The tag now stands behind a criterion the code meets. |
+| FND-002 | fixed | 08dcb08376af112b261ef7196049eeef6cd5d1e2: two new tests refuse at the invocation parameter (document.rs:679) and result (document.rs:707) sites, asserting code, cause, setting, bound 20 and actual 21. Locus/path is not part of the `stage_limit_exceeded` record. |

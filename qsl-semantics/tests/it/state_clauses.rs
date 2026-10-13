@@ -3134,7 +3134,7 @@ fn tc465_long_sequence(count: usize) -> serde_json::Value {
 /// FR-106-AC-16: the invocation's `parameters` count against
 /// `observation.values` too. At a bound of 20, a 30-element sequence at
 /// `target` is refused at the 21st form, naming the setting, bound and count.
-#[trace("TC-465", "FR-106-AC-16")]
+#[trace("FR-106-AC-16")]
 #[test]
 fn an_invocation_parameter_past_the_values_bound_refuses_stage_limit_exceeded() {
     let document = tc465_document();
@@ -3157,7 +3157,7 @@ fn an_invocation_parameter_past_the_values_bound_refuses_stage_limit_exceeded() 
 
 /// FR-106-AC-16: the invocation's `result` counts against
 /// `observation.values`: refused at the 21st form under a bound of 20.
-#[trace("TC-465", "FR-106-AC-16")]
+#[trace("FR-106-AC-16")]
 #[test]
 fn an_invocation_result_past_the_values_bound_refuses_stage_limit_exceeded() {
     let document = tc465_document();
