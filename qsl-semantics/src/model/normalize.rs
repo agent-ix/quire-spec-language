@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-150 model normalization: phases 1 (decode), 2 (qualify), 3 (inherit),
-//! 4 (`quire.model.normalize.redefine/v1`, explicit member redefinition) and
+//! 4 (`quire.model.normalize.subset/v1` and `quire.model.normalize.redefine/v1`,
+//! explicit subsetting and member redefinition) and
 //! 5 (canonicalize).
 //!
 //! Phase 4 covers TC-195 N06's field members' and operation members' own
@@ -8,15 +9,15 @@
 //! the same proper-descendant dominance FR-151 dispatch later reuses (a
 //! redefining owner that is a proper descendant of every other contesting owner wins
 //! outright; two or more undominated owners refuse `derivation-conflict`).
-//! `quire.model.normalize.subset/v1` (explicit subsetting) derives no
-//! replacement member — FR-150 says so explicitly ("subsetting never
-//! conflicts with redefinition because it derives no replacement") — so a
-//! field member's own `subsets` property (`model-complete.md`:159) carries
-//! no normalization derivation at all; it is checked directly by
-//! `crate::model::conformance` (the static `subsetting-type` axis) and, at
-//! runtime, by FR-153's `binding.subset-value` check (`subsetting-violation`)
-//! — FR-153 territory, not yet implemented anywhere in this crate (see
-//! `crate::model::conformance`'s own module doc).
+//! `quire.model.normalize.subset/v1` (explicit subsetting) derives one fact
+//! on `(T, s)` per `subsets` entry of each field `s` whose owner is `T` or a
+//! supertype of `T`, with inputs `[path types..., s, t]`. Subsetting derives
+//! no replacement member, so it never conflicts with redefinition and hides
+//! nothing. Subset facts and redefine facts form one phase-4 sequence: they
+//! are charged together as `normalize.fact`, and each member's derivation
+//! takes them sorted by inputs. The subsetting type axis is checked by
+//! `crate::model::conformance` and the runtime `binding.subset-value` check
+//! (`subsetting-violation`) by FR-153, not here.
 //! Operation members enter [`EffectiveView`] with qualify (direct) or inherit (inherited) facts,
 //! then receive both redefine facts for each reachable redefinition. The
 //! `m + r` redefinition check counts field and operation members alike.
@@ -203,8 +204,8 @@ use crate::model::domain_package::{
 use crate::model::index::{ModelIndex, RecordIndex, Redefiner};
 use crate::model::key::{
     canonical_len, sha256_and_len, DeclarationKey, EffectiveDeclarationPreimage,
-    EffectiveDeclarationWire, EffectiveId, EffectiveIdWire, Fact, FactInputs, KeyPath, RuleRefWire,
-    RULE_INHERIT, RULE_QUALIFY, RULE_REDEFINE,
+    EffectiveDeclarationWire, EffectiveId, EffectiveIdWire, Fact, FactInputs, KeyPath, RuleRef,
+    RuleRefWire, RULE_INHERIT, RULE_QUALIFY, RULE_REDEFINE, RULE_SUBSET,
 };
 use qsl_foundation::diagnostic::{Code, JsonPointer};
 use quire_exact::{length_amount, Cancel};
@@ -3195,6 +3196,14 @@ struct RedefinitionEdge {
     path: KeyPath,
 }
 
+/// One subsetting field's `subsets` entry, reachable at `type_key` along
+/// `path` (empty when the field's owner is `type_key` itself).
+struct SubsetEdge {
+    subsetting: DeclarationKey,
+    target: DeclarationKey,
+    path: KeyPath,
+}
+
 /// Every cross-type input and output `plan_redefinitions` needs beyond its
 /// own `type_key`'s local bookkeeping, grouped into one `&mut` borrow
 /// (rather than five separate parameters) so the function stays within
@@ -3348,6 +3357,21 @@ fn plan_redefinitions(
         })
         .collect();
     reaching.sort_unstable_by_key(|(_, _, redefiner)| redefiner.record);
+    // `model-complete.md` phase 4: one subset fact on `(T, s)` per `subsets[]`
+    // entry of each field `s` whose owner is `T` or a supertype of `T`.
+    // Subsetting derives no replacement, so it is never contested and is
+    // priced whether or not the subsetted feature is reachable at `T`.
+    let mut subset_edges: Vec<SubsetEdge> = Vec::new();
+    for (owner, path) in &owner_paths {
+        for subsetter in index.subsetters_of_owner(owner) {
+            subset_edges.push(SubsetEdge {
+                subsetting: index.key(subsetter.member).clone(),
+                target: index.key(subsetter.target).clone(),
+                path: path.clone(),
+            });
+        }
+    }
+    *accounting.phase4_fact_count += length_amount(subset_edges.len());
     let mut all_edges: Vec<RedefinitionEdge> = Vec::new();
     let mut operation_edges: Vec<RedefinitionEdge> = Vec::new();
     for (owner, path, redefiner) in reaching {
@@ -3457,6 +3481,7 @@ fn plan_redefinitions(
         owner_effective_id,
         field_groups,
         operation_groups,
+        subset_edges,
     }
 }
 
@@ -3505,6 +3530,29 @@ struct TypeRedefinitions {
     field_groups: Vec<TargetGroup>,
     /// Operation target groups, ascending by target key.
     operation_groups: Vec<TargetGroup>,
+    /// Subsetting edges reaching the type, priced with the redefine facts.
+    subset_edges: Vec<SubsetEdge>,
+}
+
+/// One phase-4 derivation fact awaiting its position in the type's single
+/// phase-4 sequence.
+struct PendingFact {
+    member: DeclarationKey,
+    rule: RuleRef,
+    inputs: FactInputs,
+}
+
+impl PendingFact {
+    /// `value-accounting.md` phase-4 order: the effective member, then
+    /// the fact's inputs, then the rule in `model-complete.md` table order
+    /// (subset before redefine).
+    fn order(&self, other: &Self) -> std::cmp::Ordering {
+        let rank = |fact: &Self| u8::from(fact.rule == RULE_REDEFINE);
+        self.member
+            .cmp(&other.member)
+            .then_with(|| self.inputs.iter().cmp(other.inputs.iter()))
+            .then_with(|| rank(self).cmp(&rank(other)))
+    }
 }
 
 /// Resolves one type's planned phase-4 work, once every phase-4 charge is
@@ -3523,7 +3571,9 @@ fn resolve_redefinitions(
         owner_effective_id,
         field_groups,
         operation_groups,
+        subset_edges,
     } = plan;
+    let mut pending: Vec<PendingFact> = Vec::new();
     'targets: for group in field_groups {
         let TargetGroup {
             target: target_key,
@@ -3676,33 +3726,16 @@ fn resolve_redefinitions(
             );
 
             let redefining_key = (type_key.clone(), edge.redefining.clone());
-            // Always present: `owner_paths.get(owner)` above already
-            // restricted every edge in this group to an `owner` that is
-            // either `type_key` itself or one of its ancestors in `paths`,
-            // and phase 3's own per-type loop inserts a `member_preimages`
-            // entry for every direct member of `type_key` and of every
-            // ancestor along `paths` -- `edge.redefining` is one such direct
-            // member of `edge.owner`, so `(type_key, edge.redefining)` was
-            // already inserted before this phase-4 pass ever runs.
-            let entry = member_preimages.get_mut(&redefining_key).expect(
-                "a redefining member whose owner reaches type_key is always one of type_key's own effective members, inserted by phase 3 above",
-            );
-            let ordinal = entry.derivation.len();
-            entry.derivation.push(Fact {
-                ordinal,
+            pending.push(PendingFact {
+                member: edge.redefining.clone(),
                 rule: RULE_REDEFINE,
                 inputs: inputs.clone(),
             });
             if winner_index != Some(i) {
                 hidden.insert(redefining_key);
             }
-
-            let target_entry = member_preimages
-                .get_mut(&member_key)
-                .expect("checked reachable above");
-            let ordinal = target_entry.derivation.len();
-            target_entry.derivation.push(Fact {
-                ordinal,
+            pending.push(PendingFact {
+                member: target_key.clone(),
                 rule: RULE_REDEFINE,
                 inputs,
             });
@@ -3745,29 +3778,45 @@ fn resolve_redefinitions(
                 vec![edge.redefining.clone(), edge.target.clone()],
             );
             let redefining_key = (type_key.clone(), edge.redefining.clone());
-            let redefining_entry = member_preimages
-                .get_mut(&redefining_key)
-                .expect("reachable operation redefiner is an effective member");
-            let ordinal = redefining_entry.derivation.len();
-            redefining_entry.derivation.push(Fact {
-                ordinal,
+            pending.push(PendingFact {
+                member: edge.redefining.clone(),
                 rule: RULE_REDEFINE,
                 inputs: inputs.clone(),
             });
             if winner_index != Some(index) {
                 hidden.insert(redefining_key);
             }
-            let target_entry = member_preimages
-                .get_mut(&(type_key.clone(), target_key.clone()))
-                .expect("reachable operation target is an effective member");
-            let ordinal = target_entry.derivation.len();
-            target_entry.derivation.push(Fact {
-                ordinal,
+            pending.push(PendingFact {
+                member: target_key.clone(),
                 rule: RULE_REDEFINE,
                 inputs,
             });
         }
         hidden.insert((type_key.clone(), target_key));
+    }
+
+    for edge in subset_edges {
+        pending.push(PendingFact {
+            member: edge.subsetting.clone(),
+            rule: RULE_SUBSET,
+            inputs: FactInputs::new(edge.path, vec![edge.subsetting, edge.target]),
+        });
+    }
+    // One phase-4 sequence for the type: subset and redefine facts sorted
+    // together, so each member's derivation takes them in that order.
+    pending.sort_by(PendingFact::order);
+    for fact in pending {
+        let entry = member_preimages
+            .get_mut(&(type_key.clone(), fact.member))
+            .expect(
+                "a phase-4 fact member is an effective member of the type, inserted by phase 3",
+            );
+        let ordinal = entry.derivation.len();
+        entry.derivation.push(Fact {
+            ordinal,
+            rule: fact.rule,
+            inputs: fact.inputs,
+        });
     }
 }
 

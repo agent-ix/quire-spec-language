@@ -95,6 +95,15 @@ pub(crate) struct Redefiner {
     pub(crate) is_field: bool,
 }
 
+/// One field member's own `subsets` edge, as normalization's phase 4 reads it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct Subsetter {
+    /// The subsetting field member.
+    pub(crate) member: DeclIdx,
+    /// The subsetted feature.
+    pub(crate) target: DeclIdx,
+}
+
 /// One type's ancestry: the walk [`RecordIndex::conforms`] specifies, run to
 /// completion from that type once.
 #[derive(Clone, Debug, Default)]
@@ -151,6 +160,9 @@ pub(crate) struct RecordIndex {
     clauses_by_owner: HashMap<DeclIdx, Vec<usize>>,
     /// Each owner's redefining members, in record order.
     redefiners_by_owner: HashMap<DeclIdx, Vec<Redefiner>>,
+    /// Each owner's subsetting edges: one per `subsets[]` entry of each
+    /// of its field members, in record order.
+    subsetters_by_owner: HashMap<DeclIdx, Vec<Subsetter>>,
     /// Each member's `redefines` target, from the first member record under
     /// its key that declares one.
     redefines: HashMap<DeclIdx, DeclIdx>,
@@ -174,6 +186,7 @@ impl PartialEq for RecordIndex {
             && self.operations_by_owner == other.operations_by_owner
             && self.clauses_by_owner == other.clauses_by_owner
             && self.redefiners_by_owner == other.redefiners_by_owner
+            && self.subsetters_by_owner == other.subsetters_by_owner
             && self.redefines == other.redefines
             && self.record_count == other.record_count
     }
@@ -190,6 +203,7 @@ fn referenced_keys(record: &DomainPackageRecord) -> Vec<&DeclarationKey> {
         DomainPackageRecord::FieldMember(field) => std::iter::once(&field.key)
             .chain([&field.owner])
             .chain(&field.redefines)
+            .chain(&field.subsets)
             .collect(),
         DomainPackageRecord::OperationMember(operation) => std::iter::once(&operation.key)
             .chain([&operation.owner])
@@ -389,6 +403,7 @@ impl RecordIndex {
             operations_by_owner: HashMap::new(),
             clauses_by_owner: HashMap::new(),
             redefiners_by_owner: HashMap::new(),
+            subsetters_by_owner: HashMap::new(),
             redefines: HashMap::new(),
             record_count: domain_package.records.len(),
             keys: Vec::new(),
@@ -411,6 +426,16 @@ impl RecordIndex {
                     index.fields_by_owner.entry(owner).or_default().push(own);
                     if let Some(target) = &field.redefines {
                         index.note_redefiner(owner, record_position, own, at(target), true);
+                    }
+                    for target in &field.subsets {
+                        index
+                            .subsetters_by_owner
+                            .entry(owner)
+                            .or_default()
+                            .push(Subsetter {
+                                member: own,
+                                target: at(target),
+                            });
                     }
                     index.fields.insert(own, record_position);
                 }
@@ -741,6 +766,13 @@ impl RecordIndex {
     pub(crate) fn redefiners_of_owner(&self, owner: &DeclarationKey) -> &[Redefiner] {
         self.position(owner)
             .and_then(|owner| self.redefiners_by_owner.get(&owner))
+            .map_or(&[], Vec::as_slice)
+    }
+
+    /// `owner`'s own subsetting edges, in record order.
+    pub(crate) fn subsetters_of_owner(&self, owner: &DeclarationKey) -> &[Subsetter] {
+        self.position(owner)
+            .and_then(|owner| self.subsetters_by_owner.get(&owner))
             .map_or(&[], Vec::as_slice)
     }
 
