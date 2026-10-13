@@ -647,7 +647,7 @@ pub enum CheckCause {
 
 /// FR-302: why one called operation's dispatch family did not link. An
 /// ambiguous family has one value for each subtype that did not link, as the
-/// FR-272 `ambiguous_dispatch` record names one closed subtype; any other
+/// QSpec FR-272 `ambiguous_dispatch` record names one closed subtype; any other
 /// failure has one value for the family. A compile that fails several
 /// families holds all of them in its one refusal.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]

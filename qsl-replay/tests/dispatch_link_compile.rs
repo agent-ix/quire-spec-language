@@ -963,8 +963,10 @@ fn failures(refusal: &CompileRefusal) -> Vec<(String, &'static str, String)> {
 /// dominates the other, so the unit refuses `ambiguous_dispatch`/
 /// `multiple-undominated` naming `D`, both candidates and the dominance
 /// pairs. A unit whose second call is `area`, with bodies only at `Sub`, adds
-/// `no-applicable` for `C` and `ConfigVersion` (the enumeration order): one refusal names all
-/// three failures, the same on a second compile, with no checked package.
+/// `no-applicable` for `C` and `ConfigVersion`: one refusal names all three
+/// failures in charge order (`area` before `size`, though the `size` call is
+/// written first; subtypes by ascending effective identity), the same on a
+/// second compile, with no checked package.
 #[trace("TC-794", "FR-302-AC-2", "FR-302-AC-4")]
 #[test]
 fn a_unit_with_several_ambiguous_families_is_refused_once_naming_each() {
@@ -1023,11 +1025,6 @@ fn a_unit_with_several_ambiguous_families_is_refused_once_naming_each() {
     let refusal = compile(&document, &both, SpineLimits::default()).expect_err("two families fail");
     let expected = [
         (
-            operation_name("ConfigVersion", "size"),
-            "multiple-undominated",
-            operation_name_of_type("D"),
-        ),
-        (
             operation_name("ConfigVersion", "area"),
             "no-applicable",
             operation_name_of_type("C"),
@@ -1036,6 +1033,11 @@ fn a_unit_with_several_ambiguous_families_is_refused_once_naming_each() {
             operation_name("ConfigVersion", "area"),
             "no-applicable",
             operation_name_of_type("ConfigVersion"),
+        ),
+        (
+            operation_name("ConfigVersion", "size"),
+            "multiple-undominated",
+            operation_name_of_type("D"),
         ),
     ];
     assert_eq!(failures(&refusal), expected);
