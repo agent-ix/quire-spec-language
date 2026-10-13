@@ -43,3 +43,12 @@ statement about the reader.
 | --- | --- | --- | --- |
 | FND-001 | medium | FR-081-AC-16 has no tagged test. The matrix reports it `untagged`, although its evidence cell says `Test (TC-1003)` and tests.md lists it under TC-1003. The behaviour is exercised by `a_variant_type_and_its_cases_have_effective_identities` and `reordering_the_cases_changes_no_effective_identity`, but both carry `#[trace("TC-1003", "FR-056-AC-29")]` only. Add `FR-081-AC-16` to those two tags. | spec/functional/FR-081-preserve-model-correspondence-and-declaration-identity.md:170; qsl-semantics/tests/it/variant_type.rs:805; qsl-semantics/tests/it/variant_type.rs:842 |
 | FND-002 | low | The last sentence of FR-056-AC-31 and TC-1004 step 3 ("one that names one still refuses `unsupported_construct`/`declaration-form`") are not asserted by the TC-1004 test. The behaviour is tested by `a_clause_naming_a_variant_type_refuses_while_the_declaration_is_admitted`, but that test is tagged TC-997/FR-056-AC-27 only. Add `FR-056-AC-31` to that tag, or assert the refusal in the TC-1004 test. | spec/test-cases/TC-1004-variant-type-in-the-type-environment.md:21; qsl-semantics/tests/it/variant_type.rs:531; qsl-semantics/tests/it/variant_type.rs:943 |
+
+## Dispositions
+
+Round 1, reviewed at `f9d73c0b22`.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | f9d73c0b2: `a_variant_type_and_its_cases_have_effective_identities` and `reordering_the_cases_changes_no_effective_identity` carry `#[trace("TC-1003", "FR-056-AC-29", "FR-081-AC-16")]`. The multi-id tag form is already used in model_intake.rs. |
+| FND-002 | fixed | f9d73c0b2: `a_clause_naming_a_variant_type_refuses_while_the_declaration_is_admitted` is tagged `FR-056-AC-31`. It does assert the source-naming refusal: one error, `AssemblyCause::UnsupportedVariantType { name: "Config::Tier" }`, and `catalog_code() == "unsupported_construct/declaration-form"`. |

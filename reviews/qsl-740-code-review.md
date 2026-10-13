@@ -77,3 +77,14 @@ Checked and clean:
 | --- | --- | --- | --- |
 | FND-001 | low | `systems_member_owners` now also returns a variant case's owner. Its name and the phase-2 comment ("Systems end owners are resolved through the admitted declarations") still describe only systems records, so a reader looking for where variant cases become members will not find it. Rename the function to something like `record_member_owners`, or give variant cases their own member source next to `sorted_direct_fields`. | qsl-semantics/src/model/normalize.rs:2535; qsl-semantics/src/model/normalize.rs:2567; qsl-semantics/src/model/normalize.rs:2628 |
 | FND-002 | low | No test reaches the `Scope` half of the type environment. The TC-1004 test reads `PackageDeclarations.variant_types` only. Deleting `.with_variant_types(self.variant_types)` from `into_scope` fails no test, and `Scope::variant_types`/`Scope::variant_type(key)` (the by-identity lookup FR-056 says QSL-738 will use) have no caller and no test. The list is also sorted twice, once in assemble.rs and again in `with_variant_types`. Assert `scope.variant_type(view_identity)` in the TC-1004 test. | qsl-semantics/src/check/mod.rs:743; qsl-semantics/src/check/check.rs:647-713; qsl-semantics/tests/it/variant_type.rs:943 |
+
+## Dispositions
+
+Round 1, reviewed at `f9d73c0b22` (fix commit f9d73c0b2 on top of 2dff29e41).
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | f9d73c0b2: `systems_member_owners` is renamed `record_member_owners` at its one caller. Its doc says it covers "a variant case's type, and systems members", and the phase-2 comment names variant cases. The local `systems_by_owner` keeps its old name, which is a nit and not a defect. |
+| FND-002 | fixed | f9d73c0b2: the TC-1004 test now runs `declarations.check(..)`, which goes through `into_scope`. It asserts `scope.variant_types() == declarations.variant_types` and `scope.variant_type(key) == Some(declared)` for every type, so deleting `.with_variant_types(..)` now fails it. The second sort is gone. `Scope::variant_type` is a linear `find`, and the order comes from the assembler's `sort_by_key`. |
+
+Fix-round diff reviewed as new: no new findings.
