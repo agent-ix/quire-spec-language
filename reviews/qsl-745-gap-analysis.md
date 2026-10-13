@@ -35,6 +35,12 @@ CONDITIONAL. Parts (a) and (b) are backed with strong oracles for code, cause, `
 | --- | --- | --- | --- |
 | FND-003 | medium | The PR rewrites FR-302-AC-5 and TC-795 step 2 to say a compile past `family_steps` refuses at S3 with `resource_exhausted`/`insufficient-next-charge`, naming `model.family_steps` and the limit `n - 1`. No test is tagged TC-795 or FR-302-AC-5. The nearest test, `a_family_at_the_configured_bound_links_and_one_step_more_refuses`, runs `link_chain` directly. It asserts the native label `family-steps` and the setting through `limit_exceeded()`, never the catalog code, cause or charge record on the S3 compile path. The edited criterion is unverified. Add a compile-path test tagged `TC-795`/`FR-302-AC-5`. | spec/functional/FR-302-link-dispatch-during-unit-compile.md:114; spec/test-cases/TC-795-dispatch-family-walk-refuses-at-the-caller-limit.md:24-26; qsl-semantics/tests/it/model_dispatch.rs:798-860 |
 
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | `ancestor_closure_admits_the_bound_and_refuses_one_past_it`, now tagged `TC-795`/`FR-302-AC-5`, checks the S3 dispatch bridge's `ancestor_closure` over a test-built chain. TC-795's procedure compiles a unit under `SpineLimits` and expects "no checked package". No unit compile reaches `checked_dispatch_operation` today: ADR-016 SC-3 says "once G-7 wires it". So the tag claims a procedure the test does not run, and FR-302-AC-5's compile-and-no-package half stays unverified. Fix: say in TC-795 that the bridge test backs the refusal record until G-7 wires dispatch into compile, or move the compile half to G-7's ticket. | spec/test-cases/TC-795-dispatch-family-walk-refuses-at-the-caller-limit.md:15-26; qsl-semantics/src/check/checked_dispatch.rs:1336-1361; spec/decisions/ADR-016-state-model-finite-execution-mapping.md:183 |
+
 ## Dispositions
 
 Round 1, reviewed at a7be05cb81cb87eab1b83eee676595771d16b494.
@@ -43,3 +49,9 @@ Round 1, reviewed at a7be05cb81cb87eab1b83eee676595771d16b494.
 | --- | --- | --- |
 | FND-001 | fixed | d060eb068: `select_retains_the_denied_charge_of_a_normalization_ceiling` asserts the exact key set and values of a select denied charge. `run_clause_writes_the_caller_budget_fields_of_a_compile_ceiling` asserts the native-run-result fields of a compile denied charge and of the intake size ceiling. Reverting `record.fields = source.fields()` to the Limit-only arm leaves Intake `fields` null, so `fields["setting"] == "model.work_units"` fails. Deleting the retained entries from `BudgetDenial::catalog_fields` fails the exact key assertion |
 | FND-002 | rejected | `select` never charges `model.dispatch_candidates` or `model.family_steps`: dispatch families are linked at `check` (FR-302), so `select` reaches neither counter on any input, and FR-277-AC-1's "one below the counter the input reaches" is empty for them. The test now says so (lifecycle/tests.rs:1302-1305). The `family_steps` code path is tracked separately as new FND-003 |
+
+Round 2, reviewed at bd42e758db3cd9f61c71f56bbcaff02d8551f8d2.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-003 | fixed | bd42e758d: `assert_family_steps_refusal_with` asserts `resource_exhausted`/`insufficient-next-charge` and the full charge record (`setting` `model.family_steps`, `limit`, `actual` limit+1, `limit_kind` `family_steps`, `consumed` limit, `next_charge` 1, `charge_point` `model.family-edge`, `stage`, `accounting_contract`) for the S3 family-walk refusal. `ancestor_closure_admits_the_bound_and_refuses_one_past_it` is tagged `TC-795`/`FR-302-AC-5` and checks both admission at n and refusal at n+1 edges. The unit-compile wording that remains is new FND-004 |

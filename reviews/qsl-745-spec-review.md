@@ -43,3 +43,9 @@ Round 1, reviewed at a7be05cb81cb87eab1b83eee676595771d16b494.
 | FND-003 | fixed | d060eb068: TC-758 step 2 adds `intake.input_bytes`, with `resource_exhausted`/`intake-limit-exceeded` and `kind`, `bound`, `actual`, `setting` |
 | FND-004 | fixed | d060eb068: FR-277 cites FR-255 Behavior 1 and FR-260-AC-4 for intake, and adds FR-255, FR-260 and ADR-014 `references` edges |
 | FND-005 | fixed | d060eb068: FR-255 Behavior 1 states the code, cause and field set for each case: the intake size ceiling, and the denied charge with its walk-ceiling values |
+
+Round 2, reviewed at bd42e758db3cd9f61c71f56bbcaff02d8551f8d2.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-006 | fixed | bd42e758d: FR-082 keys the charge point on the setting. `admission.ancestor-edge` (stage `population-admission`, contract `PopulationAdmissionLimitsV1`) applies to `admission.ancestor_steps`; `model.ancestor-edge` applies to `model.ancestor_steps`, including the model walks observation admission re-runs |

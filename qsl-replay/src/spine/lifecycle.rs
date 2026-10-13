@@ -22,7 +22,7 @@
 //! A stage refusal is the refusing stage's [`CompileRefusal`], boxed. A
 //! reached stage limit is [`StageFailure::Limit`] naming its setting
 //! (FR-255), a reached ceiling of the caller's budget (model normalization,
-//! intake) is that stage's `resource_exhausted` refusal (ADR-014 section 1),
+//! intake) is that stage's `resource_exhausted` refusal (FR-255 Behavior 1),
 //! and a broken invariant is [`StageFailure::Fault`] (FR-275). Each
 //! output carries the work each stage did ([`Staged::work`], FR-275-AC-5). The
 //! composition `parse`, `select`, `check`, `package` over a source returns

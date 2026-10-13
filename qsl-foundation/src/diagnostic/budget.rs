@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! A reached ceiling of a caller's budget: the `resource_exhausted` record
 //! FR-255 Behavior 1 gives `ModelNormalizationLimitsV1`,
-//! `PopulationAdmissionLimitsV1` and the intake byte limit (ADR-014
-//! section 1). One builder serves every producer, so the field set is
+//! `PopulationAdmissionLimitsV1` (ADR-014 section 1) and the intake byte
+//! limit (FR-255 Behavior 1, FR-260 item 5). One builder serves every producer, so the field set is
 //! written once.
 
 use std::collections::BTreeMap;

@@ -879,7 +879,7 @@ pub enum ModelRefusalCause {
     /// ADR-011 Limits: a domain package document reached one of intake's
     /// parse limits, so it has no parsed form to digest or read. Names the
     /// limit and its bound. The limit is a caller-set setting carried by
-    /// the intake limits type (ADR-014 section 1), so it refuses
+    /// the intake limits type (FR-255 Behavior 1, FR-260 item 5), so it refuses
     /// `resource_exhausted`.
     IntakeLimitExceeded {
         /// The limit the document reached.

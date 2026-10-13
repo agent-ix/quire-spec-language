@@ -59,6 +59,12 @@ The cause of every Intake refusal is now non-null, through `CompileRefusal::caus
 | FND-006 | low | Two doc comments are stale. `CompileRefusal::fields` still says a caller-budget ceiling carries "`setting`, `bound` and `actual`". It now carries `limit` and the retained charge, or for intake the size record `kind`/`bound`/`actual`/`setting`. `caller_budget_refusal`'s doc names only `ModelNormalizationLimitsV1`, but document.rs also calls it for `admission.ancestor_steps` walks (`PopulationAdmissionLimitsV1`). | qsl-replay/src/spine.rs:246-249; qsl-semantics/src/model/observation.rs:1047-1052 |
 | FND-007 | low | `BudgetDenial::charge` takes four adjacent `&'static str` parameters by position (`stage`, `accounting_contract`, `limit_kind`, `charge_point`) under `#[allow(clippy::too_many_arguments)]`, so a swap compiles. The owner pair `"model-normalization"`/`"ModelNormalizationLimitsV1"` is spelled at three call sites. `setting()`, `limit()` and `actual()` have no caller. Fix: a typed budget owner (one const per accounting contract holding stage and contract), and delete the unused accessors. | qsl-foundation/src/diagnostic/budget.rs:53-93; qsl-semantics/src/model/accounting.rs:396-406; qsl-semantics/src/model/refusal.rs:1166-1196 |
 
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | low | The rewritten `IntakeLimitExceeded` doc cites "ADR-014 section 1" for intake's byte limit being a caller budget that refuses `resource_exhausted`. ADR-014 never mentions intake limits: section 1 lists accounting-contract types under B-2 and reader limits under B-3. SR-8732 FND-004 removed the same citation from FR-277. The classification comes from FR-255 Behavior 1's intake row and FR-260 item 5 (FR-260-AC-4). Cite those. | qsl-semantics/src/model/refusal.rs:879-883 |
+
 ## Dispositions
 
 Round 1, reviewed at a7be05cb81cb87eab1b83eee676595771d16b494.
@@ -69,3 +75,11 @@ Round 1, reviewed at a7be05cb81cb87eab1b83eee676595771d16b494.
 | FND-002 | fixed | d060eb068: `smallest_admitted` is the one bisection. `assert_field_with` and `assert_budget_field` keep only their own final-step oracles |
 | FND-003 | fixed | d060eb068: `UnitIntakeCause::catalog_code()` reads `refusals[0].catalog_code()`, which reads the cause alone (ADR-013 R-09). `code()` and `cause()` both derive from it |
 | FND-004 | fixed | d060eb068: the call/tests.rs comment now names only `TypeMismatch` as recordless. The `catalog_fields` doc points the walk ceilings and intake at the FR-096 rows the PR adds |
+
+Round 2, reviewed at bd42e758db3cd9f61c71f56bbcaff02d8551f8d2.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-005 | fixed | bd42e758d: `limit_exceeded()` is deleted from `ModelRefusalCause`, `Incomplete` and `AdmissionIncomplete`; no `limit_exceeded()` call remains in the workspace. `AdmissionIncomplete` gains `denial()` with the `ADMISSION_OWNER` charge record. The nine test call sites use `denial()` and now expect "a step ceiling is a denied charge" |
+| FND-006 | fixed | bd42e758d: the `CompileRefusal::fields` doc names the intake size record and the denied charge's `setting`, `limit`, `actual` and retained charge. The `caller_budget_refusal` doc names both `ModelNormalizationLimitsV1` and `PopulationAdmissionLimitsV1` |
+| FND-007 | fixed | bd42e758d: `BudgetDenial::charge(setting, limit, DeniedCharge)` takes a struct with named fields, so a swap no longer compiles. `BudgetOwner` is spelled once per contract, as `MODEL_NORMALIZATION_OWNER` (accounting.rs) and `ADMISSION_OWNER` (population.rs). The accessors `setting()`, `limit()` and `actual()` are now read by six tests; they are the public read API of a public type, so keeping them is legitimate |

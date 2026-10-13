@@ -651,8 +651,8 @@ fn a_cancel_inside_select_stops_within_one_charge() {
 
 /// FR-260-AC-4 (FR-056-AC-2): a model document one byte over the caller's
 /// `intake.input_bytes` refuses `resource_exhausted`/`intake-limit-exceeded`
-/// through `select` (ADR-014 section 1: `IntakeLimits` is a caller budget,
-/// not a stage's own limits type, FR-255 Behavior 1), naming that setting,
+/// through `select` (FR-255 Behavior 1 and FR-260 item 5: `IntakeLimits` is a
+/// caller budget, not a stage's own limits type), naming that setting,
 /// its bound and the document's size, never a missing package.
 #[trace("TC-732", "FR-260-AC-4", "FR-255-AC-1")]
 #[test]
