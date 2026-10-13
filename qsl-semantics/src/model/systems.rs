@@ -207,6 +207,11 @@ pub fn classify(
     let mut interface_types: HashSet<DeclarationKey> = HashSet::new();
     let mut record_value_types: HashSet<DeclarationKey> = HashSet::new();
 
+    let declared: HashSet<&DeclarationKey> = domain_package
+        .records
+        .iter()
+        .map(DomainPackageRecord::key)
+        .collect();
     for record in &domain_package.records {
         match record {
             DomainPackageRecord::Component(component) => components.push(component),
@@ -264,6 +269,10 @@ pub fn classify(
                 Kind::None
             }
             Some(_) => match component_kinds.get(&endpoint.owning_component) {
+                None if declared.contains(&endpoint.owning_component) => {
+                    refusals.push(wrong_export(Kind::Part, Kind::None, &endpoint.key.node));
+                    Kind::None
+                }
                 None => {
                     refusals.push(dangling(
                         ModelRefusalCause::UnknownComponent {
@@ -324,6 +333,14 @@ pub fn classify(
                 (&relationship.target, "target"),
             ] {
                 match endpoint_kinds.get(&end.type_identity) {
+                    None if declared.contains(&end.type_identity) => {
+                        refusals.push(wrong_export(
+                            Kind::Port,
+                            Kind::None,
+                            &format!("{} end of {}", label, relationship.key.node),
+                        ));
+                        ends_ok = false;
+                    }
                     None => {
                         refusals.push(dangling(
                             ModelRefusalCause::UnknownEndpoint {
@@ -404,8 +421,8 @@ pub struct ResolvedElement {
     pub kind: Kind,
 }
 
-/// Resolves `key` as `required`, refusing `wrong-export` (a different real
-/// kind) or `unsupplied-producer-record` (no kind at all) otherwise. Equal
+/// Resolves `key` as `required`, refusing `wrong-export` otherwise, whether
+/// the actual kind is a different real kind or `none` (FR-152-AC-8). Equal
 /// names never substitute for a kind match — this module never inspects a
 /// display name at all, only the full key and the classification.
 pub fn resolve_kind(
@@ -422,22 +439,8 @@ pub fn resolve_kind(
             key: resolved_key,
             kind: actual,
         })
-    } else if actual == Kind::None {
-        Err(unsupplied_or_wrong(required, key))
     } else {
         Err(wrong_export(required, actual, &key.node))
-    }
-}
-
-fn unsupplied_or_wrong(required: Kind, key: &DeclarationKey) -> ModelRefusal {
-    ModelRefusal {
-        code: Code::InvalidModelBinding,
-        cause: ModelRefusalCause::UnsuppliedProducerRecord,
-        detail: format!(
-            "{} does not resolve to the required kind {}",
-            key.node,
-            required.as_str()
-        ),
     }
 }
 

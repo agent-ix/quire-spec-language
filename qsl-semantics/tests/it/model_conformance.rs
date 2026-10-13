@@ -477,6 +477,69 @@ fn r03_an_incompatible_operation_redefinition_reports_every_failing_axis() {
     }
 }
 
+/// TC-196 R02, R03 and R04: the number of `conformance.axis` charges. A
+/// compatible or fully failing operation redefinition charges all eight axes
+/// (arity, parameter type and multiplicity once each for the one parameter,
+/// result type and multiplicity, effect, precondition, postcondition); an
+/// arity mismatch skips the two parameter axes and charges six. The per-axis
+/// work-unit costs of the vectors (10, 8 and 8) are not asserted: the engine
+/// charges one flat work unit per axis (see `src/model/conformance.rs`).
+///
+/// Mutation used (derived by reading, not executed): checking the parameter
+/// axes after an arity mismatch, or skipping an axis charge on failure, moves
+/// the R04 or R03 count off six or eight.
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-4")]
+#[test]
+fn r02_r03_r04_charge_the_spec_number_of_conformance_axes() {
+    let axes_charged = |redefinition: DomainPackageRecord| {
+        let domain_package = bundle_h(vec![redefinition]);
+        let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
+        let _ = check_operation_redefinition(
+            &ModelIndex::build(domain_package),
+            &DeclarationKey::fixture("model.B.op"),
+            &DeclarationKey::fixture("model.A.op"),
+            &mut meter,
+        );
+        meter.admission_count()
+    };
+    let r02 = operation_redefining(
+        "model.B.op",
+        "model.B",
+        vec![("model.B.op.p1", "model.A", mult(0, Some(2)))],
+        Some(("model.B", mult(1, Some(1)))),
+        vec![],
+        vec!["model.B"],
+        vec![],
+        vec![],
+        Some("model.A.op"),
+    );
+    let r03 = operation_redefining(
+        "model.B.op",
+        "model.B",
+        vec![("model.B.op.p1", "model.B", mult(1, Some(1)))],
+        Some(("model.A", mult(0, Some(1)))),
+        vec!["model.B.y"],
+        vec![],
+        vec![],
+        vec![],
+        Some("model.A.op"),
+    );
+    let r04 = operation_redefining(
+        "model.B.op",
+        "model.B",
+        vec![],
+        Some(("model.B", mult(1, Some(1)))),
+        vec![],
+        vec!["model.B"],
+        vec![],
+        vec![],
+        Some("model.A.op"),
+    );
+    assert_eq!(axes_charged(r02), 8, "R02");
+    assert_eq!(axes_charged(r03), 8, "R03");
+    assert_eq!(axes_charged(r04), 6, "R04");
+}
+
 #[trace("TC-239", "FR-082-AC-5")]
 #[test]
 fn r04_an_arity_mismatch_refuses_without_checking_parameter_axes() {
@@ -570,7 +633,7 @@ fn r05_field_multiplicity_narrowing_refuses_and_the_boundary_admits() {
     }
 }
 
-#[trace("QSpec-TC-196", "QSpec-FR-151-AC-2")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-2", "QSpec-FR-151-AC-9")]
 #[test]
 fn r06_subsetting_type_and_multiplicity_axes() {
     let bundle_of = |some_type: &str, some_mult: Multiplicity| {
@@ -2370,6 +2433,81 @@ fn an_ancestor_chain_at_the_configured_bound_is_admitted_and_one_longer_refuses(
             );
         }
         other => panic!("expected Refused(AncestorSteps), got {other:?}"),
+    }
+}
+
+/// TC-196 C08, zero limit: on a nonempty walk, `ancestor_steps: 0` denies the
+/// first followed edge. The record is exactly
+/// `incomplete(ancestor_steps, 0, 0, 1, model.ancestor-edge)` at stage
+/// `model-normalization`: consumed 0 and next charge 1, so no edge was
+/// followed, and the refusal is neither a verdict of either polarity nor a
+/// partial walk.
+///
+/// Mutation used (derived by reading, not executed): comparing the edge count
+/// with `>` against the limit instead of `>=` lets the first edge through at
+/// limit 0, so the check completes and the refusal match fails.
+#[trace("QSpec-TC-196", "QSpec-FR-150-AC-11")]
+#[test]
+fn c08_a_zero_ancestor_steps_limit_denies_the_first_followed_edge() {
+    let limits = ModelNormalizationLimits {
+        ancestor_steps: 0,
+        ..ModelNormalizationLimits::UNLIMITED
+    };
+    let ConformanceCheckOutcome::Refused(refusal) = check_chain(3, limits) else {
+        panic!("a nonempty walk at ancestor_steps 0 must be denied at its first edge");
+    };
+    assert_eq!(refusal.code, Code::ResourceExhausted);
+    let fields = refusal
+        .cause
+        .catalog_fields()
+        .expect("a walk ceiling carries its denied-charge record");
+    for (name, expected) in [
+        ("stage", "model-normalization"),
+        ("limit_kind", "ancestor_steps"),
+        ("limit", "0"),
+        ("consumed", "0"),
+        ("next_charge", "1"),
+        ("charge_point", "model.ancestor-edge"),
+    ] {
+        assert_eq!(
+            fields.get(name).map(String::as_str),
+            Some(expected),
+            "{name} in {fields:?}"
+        );
+    }
+}
+
+/// TC-196 C09: when the owning axis work charge and the first ancestor edge
+/// are both unavailable, the ordered work-unit denial wins. The result is
+/// `incomplete(work_units, 0, 0, 1, conformance.axis)`, not the edge denial,
+/// and no edge is followed.
+///
+/// Mutation used (derived by reading, not executed): walking the supertypes
+/// before charging the axis turns this outcome into the `ancestor_steps`
+/// refusal and fails the `Incomplete` match.
+#[trace("QSpec-TC-196", "QSpec-FR-150-AC-11")]
+#[test]
+fn c09_an_unavailable_axis_work_charge_wins_before_a_simultaneous_edge_denial() {
+    let limits = ModelNormalizationLimits {
+        work_units: 0,
+        ancestor_steps: 0,
+        ..ModelNormalizationLimits::UNLIMITED
+    };
+    match check_chain(3, limits) {
+        ConformanceCheckOutcome::Incomplete(incomplete) => {
+            assert_eq!(
+                incomplete.limit_kind,
+                qsl_semantics::model::accounting::LimitKind::WorkUnits
+            );
+            assert_eq!(incomplete.limit, 0);
+            assert_eq!(incomplete.consumed, 0);
+            assert_eq!(incomplete.next_charge, 1);
+            assert_eq!(
+                incomplete.charge_point,
+                qsl_semantics::model::accounting::ChargePoint::ConformanceAxis
+            );
+        }
+        other => panic!("expected Incomplete(work_units) at conformance.axis, got {other:?}"),
     }
 }
 

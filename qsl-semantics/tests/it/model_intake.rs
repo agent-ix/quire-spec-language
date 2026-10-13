@@ -945,6 +945,161 @@ fn a_qspec_conformant_document_admits_reads_and_classifies() {
     );
 }
 
+/// TC-197 Y10 (FR-152-AC-8): a node's systems kind comes from its construct
+/// meaning, never from its kind name. `Probe` has the kind name `port` under
+/// another module but the object-type meaning, so it has no systems kind and
+/// no `systems.kind` charge, and a binder request for a Port naming it refuses
+/// `invalid_model_binding`/`wrong-export` with required kind `Port` and actual
+/// kind `none`. `PumpOut` has the kind name `socket` but the Port meaning, so
+/// it maps to Port.
+///
+/// Mutation used (derived by reading, not executed): classifying by kind name
+/// makes `Probe` a Port and `PumpOut` kindless, so the `Probe` refusal is
+/// lost and `PumpOut` fails to resolve.
+#[trace("QSpec-TC-197", "QSpec-FR-152-AC-8")]
+#[test]
+fn y10_a_systems_kind_comes_from_the_construct_meaning_not_the_kind_name() {
+    use qsl_semantics::model::systems::{resolve_kind, Kind};
+
+    let package_identity = "test/plant";
+    let other = "test/other";
+    let node = |name: &str| format!("ix://{package_identity}/{name}");
+    let object_kind = serde_json::json!({"module": package_identity, "name": "object_type"});
+
+    let document = wire_envelope(
+        package_identity,
+        serde_json::json!([
+            wire_construct(
+                package_identity,
+                "object_type",
+                meaning::OBJECT_TYPE,
+                serde_json::json!({}),
+            ),
+            wire_construct(
+                package_identity,
+                "part",
+                meaning::SYSTEMS_PART,
+                serde_json::json!({
+                    "declaredType": "required",
+                    "fields": "forbidden",
+                    "multiplicity": "required",
+                    "operations": "forbidden",
+                    "owner": "required",
+                }),
+            ),
+            wire_construct(other, "port", meaning::OBJECT_TYPE, serde_json::json!({})),
+            wire_construct(
+                other,
+                "socket",
+                meaning::SYSTEMS_PORT,
+                serde_json::json!({
+                    "direction": "required",
+                    "fields": "forbidden",
+                    "interfaceType": "required",
+                    "multiplicity": "required",
+                    "operations": "forbidden",
+                    "owner": "required",
+                }),
+            ),
+        ]),
+        serde_json::json!([
+            wire_type(
+                &node("Flow"),
+                object_kind.clone(),
+                serde_json::json!({"supertypes": [], "fields": [], "operations": []}),
+            ),
+            wire_type(
+                &node("Sys"),
+                object_kind.clone(),
+                serde_json::json!({"supertypes": [], "fields": [], "operations": []}),
+            ),
+            wire_type(
+                &node("Pump"),
+                object_kind,
+                serde_json::json!({"supertypes": [], "fields": [], "operations": []}),
+            ),
+            wire_type(
+                &node("Probe"),
+                serde_json::json!({"module": other, "name": "port"}),
+                serde_json::json!({"supertypes": [], "fields": [], "operations": []}),
+            ),
+            wire_type(
+                &node("SysPump"),
+                serde_json::json!({"module": package_identity, "name": "part"}),
+                serde_json::json!({
+                    "owner": node("Sys"),
+                    "declaredType": node("Pump"),
+                    "multiplicity": multiplicity_one(1, Some(1)),
+                }),
+            ),
+            wire_type(
+                &node("PumpOut"),
+                serde_json::json!({"module": other, "name": "socket"}),
+                serde_json::json!({
+                    "owner": node("SysPump"),
+                    "interfaceType": node("Flow"),
+                    "direction": "out",
+                    "multiplicity": multiplicity_one(1, Some(1)),
+                }),
+            ),
+        ]),
+    )
+    .to_string()
+    .into_bytes();
+
+    let digest = parse_document(&document).jcs_digest();
+    let mut bytes_by_digest = BTreeMap::new();
+    bytes_by_digest.insert(digest, document);
+    let offered = DomainPackageRef {
+        identity: package_identity.to_owned(),
+        version: "1.0.0".to_owned(),
+        digest,
+    };
+    let (package_ref, admitted_document) = admit(
+        &offered,
+        SHA256_JCS_DIGEST_DOMAIN,
+        &bytes_by_digest,
+        qsl_foundation::IntakeLimits::default(),
+    )
+    .expect("a matching selection admits");
+    let records = read_records(package_identity, &admitted_document)
+        .expect("the document reads with no refusals");
+    let domain_package = DomainPackage::new(package_ref, records);
+
+    let mut meter = default_meter();
+    let classification =
+        classify(&domain_package, &mut meter).expect("an unlimited meter never runs out");
+    assert_eq!(classification.refusals, Vec::new());
+    assert_eq!(
+        meter
+            .admitted_charges()
+            .iter()
+            .filter(|point| **point == ChargePoint::SystemsKind)
+            .count(),
+        2,
+        "SysPump and PumpOut are charged; Probe has no systems kind"
+    );
+
+    let refusal = resolve_kind(
+        &classification,
+        Kind::Port,
+        &key(package_identity, &node("Probe")),
+    )
+    .expect_err("a port-named object type is not a Port");
+    assert_eq!(refusal.code, qsl_foundation::Code::InvalidModelBinding);
+    assert_eq!(refusal.cause.as_str(), "wrong-export");
+    assert!(refusal.detail.contains("required kind Port"), "{refusal:?}");
+    assert!(refusal.detail.contains("actual kind none"), "{refusal:?}");
+
+    let resolved = resolve_kind(
+        &classification,
+        Kind::Port,
+        &key(package_identity, &node("PumpOut")),
+    )
+    .expect("the Port meaning maps the renamed node to Port");
+    assert_eq!(resolved.kind, Kind::Port);
+}
+
 /// FR-056-AC-6 (TC-147): `normalize.record` charging under
 /// `ModelNormalizationLimitsV1`, decided after all admission checks.
 ///

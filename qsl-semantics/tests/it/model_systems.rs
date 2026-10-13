@@ -994,7 +994,157 @@ fn y06_removing_the_part_capability_cascades_three_refusals_in_rule_order() {
         &DeclarationKey::fixture("model.Sys.pump"),
     )
     .expect_err("model.Sys.pump no longer resolves to any kind");
-    assert_eq!(refusal.cause, ModelRefusalCause::UnsuppliedProducerRecord);
+    assert_eq!(refusal.cause, ModelRefusalCause::WrongExport);
+    assert!(refusal.detail.contains("required kind Part"));
+    assert!(refusal.detail.contains("actual kind none"));
+}
+
+/// TC-197 Y06 as written: `pump_out`'s owner changed to the declared object
+/// type `Pump`. Exactly two `invalid_model_binding`/`wrong-export` refusals
+/// follow, both with actual kind `none`: the port (required `Part`) and the
+/// source end of `pipe` (required `Port`). Neither is a dangling reference,
+/// because `Pump` is declared; `pipe` gets no kind and no connection check.
+///
+/// Mutation used (derived by reading, not executed): treating an owner absent
+/// from the component map as an absent package key yields
+/// `dangling_reference`/`unknown-component` and fails the code assertions.
+#[trace("QSpec-TC-197", "QSpec-FR-152-AC-8")]
+#[test]
+fn y06_as_written_an_object_type_owner_refuses_wrong_export_with_actual_kind_none() {
+    let domain_package = fixture_y(|records| {
+        find_endpoint(records, "model.Sys.pump.out").owning_component =
+            DeclarationKey::fixture("model.Pump");
+    });
+    let classification =
+        classify(&domain_package, &mut unlimited_meter()).expect("classify admitted");
+    assert_eq!(
+        classification.refusals.len(),
+        2,
+        "{:?}",
+        classification.refusals
+    );
+    for refusal in &classification.refusals {
+        assert_eq!(refusal.code, Code::InvalidModelBinding);
+        assert_eq!(refusal.cause, ModelRefusalCause::WrongExport);
+        assert!(refusal.detail.contains("actual kind none"), "{refusal:?}");
+    }
+    assert!(classification.refusals[0]
+        .detail
+        .contains("model.Sys.pump.out"));
+    assert!(classification.refusals[0]
+        .detail
+        .contains("required kind Part"));
+    assert!(classification.refusals[1].detail.contains("model.Sys.pipe"));
+    assert!(classification.refusals[1]
+        .detail
+        .contains("required kind Port"));
+    assert!(matches!(
+        check_connection(
+            &ModelIndex::build(domain_package.clone()),
+            &classification,
+            &DeclarationKey::fixture("model.Sys.pipe"),
+            &mut unlimited_meter(),
+        ),
+        ConnectionCheckOutcome::Refused(_)
+    ));
+}
+
+/// TC-197 Y10 clause 2: `pipe`'s target end replaced by a declared node that
+/// has no systems kind (here the object type `Pump`) refuses
+/// `invalid_model_binding`/`wrong-export` with required `Port` and actual
+/// `none`, never `dangling_reference`, and `pipe` gets no kind.
+///
+/// Mutation used (derived by reading, not executed): looking the end up only
+/// in the endpoint map reports `unknown-endpoint` and fails the code check.
+#[trace("QSpec-TC-197", "QSpec-FR-152-AC-8")]
+#[test]
+fn y10_clause_2_a_kindless_declared_end_refuses_wrong_export_not_dangling() {
+    let domain_package = fixture_y(|records| {
+        find_relationship(records, "model.Sys.pipe")
+            .target
+            .type_identity = DeclarationKey::fixture("model.Pump");
+    });
+    let classification =
+        classify(&domain_package, &mut unlimited_meter()).expect("classify admitted");
+    let [refusal] = classification.refusals.as_slice() else {
+        panic!("one refusal: {:?}", classification.refusals);
+    };
+    assert_eq!(refusal.code, Code::InvalidModelBinding);
+    assert_eq!(refusal.cause, ModelRefusalCause::WrongExport);
+    assert!(refusal.detail.contains("required kind Port"), "{refusal:?}");
+    assert!(refusal.detail.contains("actual kind none"), "{refusal:?}");
+    assert_eq!(
+        classification.actual_kind(&DeclarationKey::fixture("model.Sys.pipe")),
+        Kind::None
+    );
+}
+
+/// FR-152-AC-3, dangling end reference: an endpoint whose owning component is
+/// absent refuses `dangling_reference`/`unknown-component` and a relationship
+/// end naming an absent endpoint refuses `unknown-endpoint`, both naming the
+/// absent key. Neither is substituted by a same-named declaration: the
+/// affected nodes resolve to no kind, and no connection is exposed. The
+/// ambiguous-effective-target half of AC-3 needs the checker's member
+/// resolution and is not exercised here.
+///
+/// Mutation used (derived by reading, not executed): resolving the absent key
+/// through a name match or a default component classifies the endpoint as a
+/// Port and drops the dangling refusal, failing the first assertion.
+#[trace("QSpec-TC-197", "QSpec-FR-152-AC-3")]
+#[test]
+fn a_dangling_end_reference_refuses_without_substituting_a_declaration() {
+    let domain_package = fixture_y(|records| {
+        find_endpoint(records, "model.Sys.pump.out").owning_component =
+            DeclarationKey::fixture("model.Sys.nowhere");
+    });
+    let classification =
+        classify(&domain_package, &mut unlimited_meter()).expect("classify admitted");
+    let dangling = &classification.refusals[0];
+    assert_eq!(dangling.code, Code::DanglingReference);
+    assert_eq!(
+        dangling.cause,
+        ModelRefusalCause::UnknownComponent {
+            item: DeclarationKey::fixture("model.Sys.pump.out"),
+            missing: DeclarationKey::fixture("model.Sys.nowhere"),
+        }
+    );
+    let refusal = resolve_kind(
+        &classification,
+        Kind::Port,
+        &DeclarationKey::fixture("model.Sys.pump.out"),
+    )
+    .expect_err("the endpoint with a dangling owner has no kind");
+    assert_eq!(refusal.cause, ModelRefusalCause::WrongExport);
+    assert!(matches!(
+        check_connection(
+            &ModelIndex::build(domain_package.clone()),
+            &classification,
+            &DeclarationKey::fixture("model.Sys.pipe"),
+            &mut unlimited_meter(),
+        ),
+        ConnectionCheckOutcome::Refused(_)
+    ));
+
+    let domain_package = fixture_y(|records| {
+        find_relationship(records, "model.Sys.pipe")
+            .target
+            .type_identity = DeclarationKey::fixture("model.Sys.nowhere");
+    });
+    let classification =
+        classify(&domain_package, &mut unlimited_meter()).expect("classify admitted");
+    let dangling = classification
+        .refusals
+        .iter()
+        .find(|refusal| refusal.code == Code::DanglingReference)
+        .expect("the absent target endpoint is a dangling reference");
+    assert_eq!(
+        dangling.cause,
+        ModelRefusalCause::UnknownEndpoint {
+            end: "target",
+            relationship: DeclarationKey::fixture("model.Sys.pipe"),
+            missing: DeclarationKey::fixture("model.Sys.nowhere"),
+        }
+    );
 }
 
 /// The bidirectional interface-type condition compares `flow_source` and
