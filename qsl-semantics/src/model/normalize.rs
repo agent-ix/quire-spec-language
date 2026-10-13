@@ -313,6 +313,12 @@ impl Refusals {
     }
 }
 
+impl From<ModelRefusal> for Refusals {
+    fn from(refusal: ModelRefusal) -> Self {
+        Self::new(refusal, Vec::new())
+    }
+}
+
 /// [`Refusals::new`]'s own empty-collection counterpart: `TryFrom<Vec<_>>`
 /// fails, rather than panics, on an empty `Vec` (M2 finding, PR #228 round 2
 /// review) -- for a caller that already holds a `Vec` and does not know,
