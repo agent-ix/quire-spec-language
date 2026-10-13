@@ -11,7 +11,7 @@ use super::{CatalogCoded, LimitExceeded};
 use crate::Setting;
 
 /// The stage and accounting contract that own a budget.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct BudgetOwner {
     /// The stage whose meter was charged.
     pub stage: &'static str,
@@ -20,7 +20,7 @@ pub struct BudgetOwner {
 }
 
 /// The denied charge a meter ceiling retains.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct DeniedCharge {
     /// The budget's owner.
     pub owner: BudgetOwner,
@@ -36,7 +36,7 @@ pub struct DeniedCharge {
 
 /// A caller-budget ceiling that was reached: the setting that raises it, the
 /// effective limit, and the count the refused step would have reached.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct BudgetDenial {
     setting: Setting,
     limit: u64,

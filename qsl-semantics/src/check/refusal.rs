@@ -654,27 +654,17 @@ pub struct DispatchLinkCause {
     pub operation: crate::model::key::DeclarationKey,
     /// The refusal's code.
     pub code: Code,
-    /// The refusal's catalog pair; its cause is FR-083's, such as
-    /// `family-steps`, `no-applicable` or `multiple-undominated`.
+    /// The refusal's catalog pair: `resource_exhausted`/
+    /// `insufficient-next-charge` for a ceiling, `ambiguous_dispatch`/
+    /// `no-applicable` or `multiple-undominated` for an ambiguous family.
     pub catalog: qsl_foundation::diagnostic::CatalogCode,
-    /// The limit reached, when the family stopped on one: the setting that
-    /// raises it, its configured value and the count the refused step would
-    /// have reached.
-    pub limit: Option<DispatchLinkLimit>,
+    /// The caller-budget ceiling the family stopped on, when it did: the
+    /// setting that raises it, the limit, the count the refused step would
+    /// have reached and the retained charge (FR-255 Behavior 1).
+    pub denial: Option<qsl_foundation::diagnostic::BudgetDenial>,
     /// Every subtype that did not link, in enumeration order; empty unless
     /// the family was ambiguous.
     pub subtypes: Vec<DispatchSubtypeFailure>,
-}
-
-/// The limit a [`DispatchLinkCause`] stopped on.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct DispatchLinkLimit {
-    /// The setting that raises the limit (FR-255).
-    pub setting: Setting,
-    /// The configured value.
-    pub bound: u64,
-    /// The count the refused step would have reached.
-    pub reached: u128,
 }
 
 /// One subtype that did not link in an ambiguous family (FR-083): its

@@ -1,84 +1,29 @@
 ---
-id: SR-7819
-title: "Base spec review — QSL-726 dispatch input contract"
+id: SR-9032
+title: "QSL-726 spec review of PR #816 FR-302 and tests.md edits"
 type: SpecReview
 analysis: base
-scope: "agent-ix/quire-spec-language@44c01d7a546fa237cbb5a0038c69ad0ce0f37cc3; PR #760 diff against origin/main: FR-102, FR-103, FR-302 and their relevant acceptance criteria; QSL-726; QSpec FR-151"
+scope: "agent-ix/quire-spec-language@3e004e2039af35d8fa340899aca3ed4852748fda; base impl/business-model-meanings (now includes #811, #813); spec/functional/FR-302-link-dispatch-during-unit-compile.md; spec/tests.md; context: spec/functional/FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md; spec/test-cases/TC-793, TC-795, TC-1011"
 review_set: subset
 relationships:
-  - target: ix://agent-ix/quire-spec-language/FR-102
-    type: reviews
-  - target: ix://agent-ix/quire-spec-language/FR-103
-    type: reviews
   - target: ix://agent-ix/quire-spec-language/FR-302
     type: reviews
 ---
-
 ## Summary
 
-Base review of the edited contracts, their ACs and ticket coverage. The retained input join is specified clearly and preserves the domain-package discard rule, but a duplicate-body refusal is newly imposed without an upstream requirement and AC-7 is not test-traceable.
+Ticket: QSL-726, AC-3. This is a base spec review of the PR's two spec edits: the new sentences in FR-302's "Every called family links at S3" section, and three 🚧→✅ flips in `spec/tests.md` (TC-793, TC-795 and TC-1011). FR-096 was read as context because the PR's E4 fix changes how regions resolve.
+
+The coder's report says both "FR-302 gets one sentence" and "the E4 fix changed nothing in the spec". The first is a minor miscount: the PR adds two sentences. The second is wrong (FND-002).
 
 ## Verdict
 
-**FAIL** — one unsupported semantic refusal and one unverified acceptance criterion remain.
+**FAIL.** The new FR-302 sentence makes the over-broad linking in SR-9030 FND-002 part of the spec. FR-096 is contradicted and the PR does not amend it.
 
 ## Findings
 
-| ID | Severity | Summary | Refs | Escape Cause |
-| --- | --- | --- | --- | --- |
-| FND-001 | medium | Neither FR-151 nor QSL-726 establishes uniqueness of unit operation-body declarations by resolved operation identity. The new refusal is an unapproved semantic decision. | FR-302:65-68; QSpec FR-151:122-147; QSL-726 | wrong-requirement |
-| FND-002 | medium | AC-7 names only generic `Test`, is absent from the TC index, and has no tests.md binding. Its new producer-join behaviors have no declared verification method. | FR-302-AC-7; spec/tests.md:266-282; QSL-726 AC-3/AC-4 | correct-requirement-no-evidence |
-
-## Coverage and consistency
-
-Examined the changed FR-102/FR-103/FR-302 statements and all their acceptance criteria, the QSL-726 acceptance criteria, QSpec FR-151 dispatch rule, FR-104 operation resolution, and current test-index rows. FR-103's domain-package `pre`/`post` discard is expressly scoped to those texts; it preserves unit clauses and operation bodies separately, so the requested provenance distinction is consistent. TC-793/794/795 and TC-809 remain linked to AC-1 through AC-6, but no test/index entry covers new AC-7.
-
-## New findings (disposition pass 1)
-
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-003 | medium | The join keys body expressions by DeclarationKey but leaves duplicate unit bodies resolving to that key without a defined selection or refusal; the resulting dispatch candidate body is ambiguous. | FR-302:56-67; FR-103:49-52 |
-
-## Dispositions
-
-Round 1, reviewed at 42e78b9d51f926db514368b4d2042091f06d5a99.
-
-| FND | outcome | sha/reason |
-| --- | --- | --- |
-| FND-001 | fixed | 42e78b9; after_excerpt: "A body declaration with no matching operation SHALL refuse under FR-104's missing-operation resolution rule at S3 without a checked package or partial dispatch table." |
-| FND-002 | fixed | 42e78b9; after_excerpt: "Given `operation-body` declarations for `A.size` and `B.size`, retained expressions and unit pre/post clauses join to admitted operations by resolved `DeclarationKey` even when body labels and declaration order differ; `has_body` is true when an operation has a resolved body and false when it has none. A called operation with no body is not a candidate and its failed family refuses under FR-151 with no checked package or partial table." |
-| FND-003 | still-open | FR-103 sets `has_body` true when a retained form resolves, while FR-302 keys the body by DeclarationKey and supplies “the body”; neither defines selection or refusal when multiple unit bodies resolve to the same key. |
-
-Round 2, reviewed at a2ce1566aac862e715e976252e6735a4619b3e4f.
-
-| FND | outcome | sha/reason |
-| --- | --- | --- |
-| FND-003 | fixed | a2ce1566; canonical QSL-727 explicitly authorizes duplicate-body outcome; TC-986/987 cover the single-body control and duplicate case. |
-
-<!-- reviewer-dispositions repo=agent-ix/quire-spec-language visibility=public quoin=0.28.3 module=spec-artifacts-process@b82e42e893612b4b4ee94127714b4577ee893502 id=SR-7819 round=2 reviewed=a2ce1566aac862e715e976252e6735a4619b3e4f model=gpt-6 run=911ea91d-376b-446f-bcea-45e412c4c9bf -->
-
-| FND | Outcome | sha/reason |
-| --- | --- | --- |
-| FND-003 | fixed | a2ce1566aac862e715e976252e6735a4619b3e4f; after_excerpt: "Exactly one executable unit `operation-body` SHALL resolve to each `DeclarationKey`. If a second body form resolves to a key already targeted by another body form, S3 SHALL refuse the compile as `conflicting_declaration`/`duplicate-declaration`, naming both body declarations, and SHALL produce no checked package or partial dispatch table." |
-
-+++ [reviewer data]
-
-```yaml
-reviewed_findings:
-  - fnd: FND-003
-    artifact_id: FR-302
-    path: spec/functional/FR-302-link-dispatch-during-unit-compile.md
-    lines: "69-74"
-    excerpt: |-
-      Exactly one executable unit `operation-body` SHALL resolve to each `DeclarationKey`. If a second body form resolves to a key already targeted by another body form, S3 SHALL refuse the compile as `conflicting_declaration`/`duplicate-declaration`, naming both body declarations, and SHALL produce no checked package or partial dispatch table.
-    finding: "The join keys body expressions by DeclarationKey but previously left duplicate unit bodies resolving to that key without a defined selection or refusal."
-dispositions:
-  - fnd: FND-003
-    outcome: fixed
-    fix_sha: a2ce1566aac862e715e976252e6735a4619b3e4f
-    after_excerpt: |-
-      Exactly one executable unit `operation-body` SHALL resolve to each `DeclarationKey`. If a second body form resolves to a key already targeted by another body form, S3 SHALL refuse the compile as `conflicting_declaration`/`duplicate-declaration`, naming both body declarations, and SHALL produce no checked package or partial dispatch table.
-    reason: "QSL-727 is the canonical alignment authority and expressly approves the one-body rule and duplicate-declaration refusal; TC-986/987 verify both sides."
-```
-
-+++
+| FND-001 | medium | The new sentence "A called member name selects the family root of that name in each selected model" defines the called family by name alone. It contradicts the requirement's opening: S3 SHALL produce a checked package "only when every called family links", for "each distinct operation a dispatched call in the unit names". Under the new sentence, an unrelated same-named family that no call reaches counts as called, and its link failure refuses the compile. State the rule by the call: the family whose table the call's receiver static type names. Leave the name-based pre-pass to the implementation. | spec/functional/FR-302-link-dispatch-during-unit-compile.md:54-58 |
+| FND-002 | medium | FR-096's list of the "exactly four cases" with no region has a first case: "a position in a function that the `model` bridge synthesized for FR-151 dispatch ... built from a domain-package declaration". The PR breaks this case. Bridge functions are now built from unit declarations. A body function carries its `operation-body` spans. A precondition function resolves to its unit `pre` clauses through `synthesized_spans`. Every clause function gets a `generated` occurrence. The case is now false for the production path, and nothing states where a synthesized precondition function is located. Amend FR-096: narrow case 1 to functions built from domain-package declarations, state the placement rule for body functions and precondition functions, and add an AC and TC for it. | spec/functional/FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md:113-127 |
+| FND-003 | low | The PR flips TC-795 to ✅. On the merged ref, TC-795 still ends with an interim paragraph: "Until unit compile links dispatch ... the bridge's own test backs the charge record ... The unit-level steps become the test once compile links dispatch." After this PR that condition is met, so the paragraph is stale, and it contradicts the ✅. Delete it in the same change that rewrites the test to the `insufficient-next-charge` record (SR-9031 FND-001). | spec/test-cases/TC-795-dispatch-family-walk-refuses-at-the-caller-limit.md; spec/tests.md:286 |
+| FND-004 | low | The new sentence "A call whose receiver's static type is the root's declaring type or any type conforming to it ... names that root's table" has no criterion for an abstract conforming type. TC-793 covers one concrete subtype that redefines `size` and one that inherits `area`. The case the code currently misses (SR-9030 FND-003) has no AC to fail. Add it to FR-302-AC-1, or add a new AC. | spec/functional/FR-302-link-dispatch-during-unit-compile.md:56-58 |

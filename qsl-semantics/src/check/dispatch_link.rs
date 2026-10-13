@@ -32,76 +32,136 @@ use super::checked_dispatch::{
     checked_dispatch_operation, rename_names, DispatchBridgeRefusal, DispatchRoot, OperationClauses,
 };
 use super::ir::{DispatchCandidate, DispatchTable};
-use super::refusal::{DispatchLinkCause, DispatchLinkLimit, DispatchSubtypeFailure};
+use super::refusal::{DispatchLinkCause, DispatchSubtypeFailure};
 use super::{CheckCause, CheckRefusal, PackageDeclarations};
 use crate::model::accounting::{Meter, ModelNormalizationLimits};
 use crate::model::dispatch::{DispatchLinkOutcome, GeneralizationClosure, LinkCheckOutcome};
-use crate::model::domain_package::{DomainPackageRecord, OperationMemberRecord};
+use crate::model::domain_package::DomainPackageRecord;
 use crate::model::intake::member_identity_name;
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::{EffectiveView, ModelRefusal};
 
-/// One called family: the alias of the selected model that declares it and
-/// the key of its root operation, an operation that redefines none.
+/// One family a called member name may name: the alias of the selected model
+/// that declares it, the key of its root operation (an operation that
+/// redefines none) and the member name.
 struct CalledFamily {
     alias: String,
     root: DeclarationKey,
+    member: String,
+}
+
+/// The families that did not link, held until the unit is checked: a family
+/// matched by member name alone may be one no call reaches, and that must not
+/// refuse the unit (FR-302).
+#[derive(Debug, Default)]
+pub struct PendingLinks(Vec<(String, CheckRefusal)>);
+
+impl PendingLinks {
+    /// The refusals of a unit whose check refused with `refusals`. A failed
+    /// family is reported when a call found no dispatch operation for its
+    /// member, in place of that call's own refusal; a failed family no call
+    /// needed is dropped.
+    pub fn report(self, refusals: Vec<CheckRefusal>) -> Vec<CheckRefusal> {
+        let unresolved: BTreeSet<&str> = refusals.iter().filter_map(unresolved_member).collect();
+        let (named, _): (Vec<_>, Vec<_>) = self
+            .0
+            .into_iter()
+            .partition(|(member, _)| unresolved.contains(member.as_str()));
+        if named.is_empty() {
+            return refusals;
+        }
+        let members: BTreeSet<String> = named.iter().map(|(member, _)| member.clone()).collect();
+        let mut reported: Vec<CheckRefusal> =
+            named.into_iter().map(|(_, refusal)| refusal).collect();
+        reported.extend(refusals.into_iter().filter(|refusal| {
+            unresolved_member(refusal).is_none_or(|name| !members.contains(name))
+        }));
+        reported
+    }
+
+    /// Whether every family linked.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+/// The member a refusal says no dispatch operation was found for.
+fn unresolved_member(refusal: &CheckRefusal) -> Option<&str> {
+    match &refusal.cause {
+        CheckCause::StateModel(model) => match &model.cause {
+            CheckCause::MissingName(name) => Some(name),
+            _ => None,
+        },
+        _ => None,
+    }
 }
 
 impl PackageDeclarations {
-    /// FR-302: links the dispatch table of each operation the unit's
-    /// dispatched calls name, under `limits`' `family_steps` ceiling and the
-    /// other model normalization counters, one meter for the whole unit.
+    /// FR-302: links the dispatch table of each family a dispatched call's
+    /// member name may name, under `limits`' `family_steps` ceiling and the
+    /// other model normalization counters, one meter for the whole unit, and
+    /// merges the linked tables into the package.
     ///
-    /// Every called family is attempted, so the returned refusals name every
-    /// family that failed; none leaves a partial table behind, because the
-    /// caller refuses the compile on any. A body whose parameter count
+    /// A family that does not link is returned as [`PendingLinks`] rather
+    /// than refused, because the member name alone does not say that a call
+    /// reaches it; the caller reports it through [`PendingLinks::report`] if
+    /// the check refuses a call for want of it. A body whose parameter count
     /// differs from its operation's refuses `ill_typed`/`type-mismatch`
-    /// located at the body, when linking first reads it.
+    /// located at the body, when linking first reads it, and a failure to
+    /// build or merge what the bridge needs refuses as a broken invariant.
     pub fn link_dispatch(
         &mut self,
         limits: ModelNormalizationLimits,
-    ) -> Result<(), Vec<CheckRefusal>> {
+    ) -> Result<PendingLinks, Vec<CheckRefusal>> {
         let called = self.called_members();
         if called.is_empty() {
-            return Ok(());
+            return Ok(PendingLinks::default());
         }
         let mut meter = Meter::new(limits);
-        let mut refusals = Vec::new();
+        let mut pending = PendingLinks::default();
         let mut linked = Vec::new();
+        let mut clauses: BTreeMap<String, Option<OperationClauses>> = BTreeMap::new();
         for family in self.called_families(&called) {
             let Some(view) = self.selected_views.get(&family.alias) else {
                 continue;
             };
-            let clauses = self.family_clauses(view, &family.root);
-            let root = DispatchRoot {
-                key: family.root.clone(),
-                closure: GeneralizationClosure::Closed,
-            };
-            match checked_dispatch_operation(
-                view,
-                &root,
-                &clauses,
-                self.source.clone(),
-                &mut meter,
-                self.identity,
-            ) {
-                Ok(declarations) => {
-                    linked.push((declarations, CallSite::of(&family.root, &clauses)))
+            let clauses = clauses
+                .entry(family.alias.clone())
+                .or_insert_with(|| self.view_clauses(view));
+            let cause = match clauses {
+                None => Err(invariant(family.root.clone())),
+                Some(clauses) => {
+                    let root = DispatchRoot {
+                        key: family.root.clone(),
+                        closure: GeneralizationClosure::Closed,
+                    };
+                    checked_dispatch_operation(
+                        view,
+                        &root,
+                        clauses,
+                        self.source.clone(),
+                        &mut meter,
+                        self.identity,
+                    )
+                    .map(|declarations| (declarations, CallSite::of(&family.root, clauses)))
+                    .map_err(|refusal| link_cause(family.root.clone(), &refusal))
                 }
-                Err(refusal) => refusals.push(CheckRefusal {
-                    location: Location::root(Origin::Expression),
-                    cause: CheckCause::DispatchLink(Box::new(link_cause(family.root, &refusal))),
-                }),
+            };
+            match cause {
+                Ok((declarations, call)) => linked.push((family.alias, declarations, call)),
+                Err(cause) => pending.0.push((family.member, dispatch_link(cause))),
             }
         }
         let first_new = self.functions.len();
-        for (declarations, call) in linked {
-            self.merge_linked(declarations, call);
+        let mut refusals = Vec::new();
+        for (alias, declarations, call) in linked {
+            if let Err(cause) = self.merge_linked(&alias, declarations, call) {
+                refusals.push(dispatch_link(*cause));
+            }
         }
         refusals.extend(self.body_arity_refusals(first_new));
         if refusals.is_empty() {
-            Ok(())
+            Ok(pending)
         } else {
             Err(refusals)
         }
@@ -109,7 +169,8 @@ impl PackageDeclarations {
 
     /// The member names of the dispatched calls in the unit's state clauses
     /// and in the kept operation clauses: the only places a dispatched call
-    /// checks (FR-151).
+    /// checks (FR-151, TC-196 D07). A call in an operation body refuses
+    /// `ill_typed`/`operator-ineligible` and links nothing.
     fn called_members(&self) -> BTreeSet<String> {
         let expressions = self.state_clauses.iter().map(|clause| &clause.body).chain(
             self.operation_clauses
@@ -132,65 +193,43 @@ impl PackageDeclarations {
     fn called_families(&self, called: &BTreeSet<String>) -> Vec<CalledFamily> {
         let mut families = Vec::new();
         for (alias, view) in &self.selected_views {
-            let mut roots: Vec<&DeclarationKey> = view
+            let mut roots: Vec<(&DeclarationKey, &str)> = view
                 .domain_package()
                 .records
                 .iter()
                 .filter_map(|record| match record {
                     DomainPackageRecord::OperationMember(operation)
-                        if operation.redefines.is_none()
-                            && member_identity_name(&operation.owner.node, &operation.key.node)
-                                .is_some_and(|name| called.contains(name)) =>
+                        if operation.redefines.is_none() =>
                     {
-                        Some(&operation.key)
+                        member_identity_name(&operation.owner.node, &operation.key.node)
+                            .filter(|name| called.contains(*name))
+                            .map(|name| (&operation.key, name))
                     }
                     _ => None,
                 })
                 .collect();
             roots.sort();
-            families.extend(roots.into_iter().map(|root| CalledFamily {
+            families.extend(roots.into_iter().map(|(root, member)| CalledFamily {
                 alias: alias.clone(),
                 root: root.clone(),
+                member: member.to_owned(),
             }));
         }
         families
     }
 
-    /// What the bridge reads of every operation in the family of `root`: the
-    /// signature from the operation table, the body from the unit's
-    /// `operation-body` declaration and the precondition from the unit's
-    /// `pre` clauses, each keyed by the operation's `DeclarationKey`.
-    fn family_clauses(&self, view: &EffectiveView, root: &DeclarationKey) -> OperationClauses {
-        let operations: Vec<&OperationMemberRecord> = view
-            .domain_package()
-            .records
-            .iter()
-            .filter_map(|record| match record {
-                DomainPackageRecord::OperationMember(operation) => Some(operation),
-                _ => None,
-            })
-            .collect();
-        let mut family: BTreeSet<&DeclarationKey> = BTreeSet::from([root]);
-        loop {
-            let before = family.len();
-            for operation in &operations {
-                if operation
-                    .redefines
-                    .as_ref()
-                    .is_some_and(|redefined| family.contains(redefined))
-                {
-                    family.insert(&operation.key);
-                }
-            }
-            if family.len() == before {
-                break;
-            }
-        }
+    /// What the bridge reads of the operations of `view`: each one's
+    /// signature from the operation table, body from the unit's
+    /// `operation-body` declaration and precondition from the unit's `pre`
+    /// clauses, keyed by its `DeclarationKey`. The bridge reads only the
+    /// entries of the family it walks, under `family_steps`. `None` when a
+    /// retained expression cannot be rewritten.
+    fn view_clauses(&self, view: &EffectiveView) -> Option<OperationClauses> {
         let mut clauses = OperationClauses::default();
-        for operation in operations
-            .into_iter()
-            .filter(|operation| family.contains(&operation.key))
-        {
+        for record in &view.domain_package().records {
+            let DomainPackageRecord::OperationMember(operation) = record else {
+                continue;
+            };
             let key = &operation.key;
             let Some(owner) = view.type_identities().get(&operation.owner).copied() else {
                 continue;
@@ -206,9 +245,7 @@ impl PackageDeclarations {
             else {
                 continue;
             };
-            if key == root {
-                clauses.member.insert(key.clone(), name.to_owned());
-            }
+            clauses.member.insert(key.clone(), name.to_owned());
             let signature: Vec<(String, ValueType)> =
                 std::iter::once(("self".to_owned(), ValueType::Reference(owner)))
                     .chain(declaration.parameters().iter().cloned())
@@ -229,30 +266,44 @@ impl PackageDeclarations {
                     .collect();
                 clauses.own_body.insert(
                     key.clone(),
-                    rename_names(&receiver_as_parameter(&body.body), &rename),
+                    rename_names(&receiver_as_parameter(&body.body)?, &rename),
                 );
             }
-            let precondition = self
+            let mut precondition: Option<Expression> = None;
+            for clause in self
                 .unit_clauses_for(key)
                 .into_iter()
                 .filter(|clause| clause.kind == StateClauseKind::Precondition)
-                .map(|clause| receiver_as_parameter(&clause.body))
-                .reduce(|left, right| Expression::binary(BinaryOperator::And, left, right));
+            {
+                let term = receiver_as_parameter(&clause.body)?;
+                precondition = Some(match precondition {
+                    None => term,
+                    Some(before) => Expression::binary(BinaryOperator::And, before, term),
+                });
+            }
             if let Some(precondition) = precondition {
                 clauses.own_precondition.insert(key.clone(), precondition);
             }
             clauses.parameters.insert(key.clone(), signature);
         }
-        clauses
+        Some(clauses)
     }
 
-    /// Appends what the bridge built for one family: its functions after the
-    /// package's own (a source function keeps its index), its call sites and
-    /// its table, with every function index and table index the bridge
-    /// numbered from zero moved to its place in the package. A body function
-    /// carries the spans of the `operation-body` it came from, so a
-    /// refusal at the body resolves to its source region (FR-096).
-    fn merge_linked(&mut self, linked: PackageDeclarations, call: Option<CallSite>) {
+    /// Appends what the bridge built for one family of the model `alias`: its
+    /// functions after the package's own (a source function keeps its index),
+    /// its call sites and its table, with every function index and table
+    /// index the bridge numbered from zero moved to its place in the
+    /// package. A body function carries the spans of the `operation-body` it
+    /// came from, so a refusal at the body resolves to its source region
+    /// (FR-096). A call through any object type that conforms to the root's
+    /// declaring type, abstract or not, names the family's table, not only a
+    /// type whose own member is the root.
+    fn merge_linked(
+        &mut self,
+        alias: &str,
+        linked: PackageDeclarations,
+        call: Option<CallSite>,
+    ) -> Result<(), Box<DispatchLinkCause>> {
         let function_base = self.functions.len();
         let table_base = self.dispatch_tables.len();
         let PackageDeclarations {
@@ -269,24 +320,30 @@ impl PackageDeclarations {
                 self.resolved_signatures.insert(index, signature.clone());
             }
             let clause = model_clauses.get(&offset);
-            let spans = clause
+            let body = clause
                 .filter(|clause| clause.kind == DeclaredClauseKind::Body)
-                .and_then(|clause| self.operation_body(&clause.declaration))
-                .map(|body| body.spans.clone());
+                .and_then(|clause| {
+                    self.operation_body(&clause.declaration)
+                        .map(|body| (clause, body))
+                });
+            let function = match body {
+                Some((clause, body)) => function
+                    .with_spans(body.spans.clone())
+                    .map_err(|_| Box::new(invariant(clause.declaration.clone())))?,
+                None => function,
+            };
             // A precondition function the bridge synthesized from the unit's
             // `pre` clauses (one clause, their conjunction, or the
             // disjunction with a redefined operation's) has no tree of spans
-            // to match its shape: it is located at those clauses.
+            // to match its shape: it is located at the first of those
+            // clauses.
             if let Some(span) = clause
                 .filter(|clause| clause.kind == DeclaredClauseKind::Precondition)
                 .and_then(|clause| self.precondition_span(&clause.declaration))
             {
                 self.synthesized_spans.insert(index, span);
             }
-            self.functions.push(match spans {
-                Some(spans) => function.clone().with_spans(spans).unwrap_or(function),
-                None => function,
-            });
+            self.functions.push(function);
         }
         for (offset, clause) in model_clauses {
             self.model_clauses.insert(function_base + offset, clause);
@@ -306,26 +363,29 @@ impl PackageDeclarations {
             .filter(|operation| operation.table == table_base)
             .map(|operation| operation.receiver_type)
             .collect();
-        for table in dispatch_tables {
-            // A call through any type the family's table links resolves to
-            // that table, not only through a type whose own member is the
-            // root: a subtype that redefines the operation is reached by the
-            // same name, and no other call exposes it.
-            if let Some(call) = &call {
-                let receivers = std::iter::once(call.owner)
-                    .chain(table.entries().iter().map(|(subtype, _)| *subtype));
-                for receiver_type in receivers {
-                    if exposed.insert(receiver_type) {
-                        self.dispatch_operations.push(DispatchOperation {
-                            receiver_type,
-                            member: call.member.clone(),
-                            parameters: call.parameters.clone(),
-                            result: call.result.clone(),
-                            table: table_base,
-                        });
-                    }
+        if let (Some(call), Some(view)) = (&call, self.selected_views.get(alias)) {
+            let receivers: Vec<EffectiveId> = view
+                .type_identities()
+                .values()
+                .copied()
+                .filter(|candidate| {
+                    self.types.object_type(*candidate).is_some()
+                        && self.types.conforms(*candidate, call.owner)
+                })
+                .collect();
+            for receiver_type in receivers {
+                if exposed.insert(receiver_type) {
+                    self.dispatch_operations.push(DispatchOperation {
+                        receiver_type,
+                        member: call.member.clone(),
+                        parameters: call.parameters.clone(),
+                        result: call.result.clone(),
+                        table: table_base,
+                    });
                 }
             }
+        }
+        for table in dispatch_tables {
             let entries = table
                 .entries()
                 .iter()
@@ -347,18 +407,15 @@ impl PackageDeclarations {
             self.dispatch_tables
                 .push(DispatchTable::new(entries, table.candidate_count()));
         }
+        Ok(())
     }
 
-    /// The span covering the unit `pre` clauses that resolved to `key`.
+    /// The span of the first unit `pre` clause that resolved to `key`.
     fn precondition_span(&self, key: &DeclarationKey) -> Option<Span> {
         self.unit_clauses_for(key)
             .into_iter()
-            .filter(|clause| clause.kind == StateClauseKind::Precondition)
+            .find(|clause| clause.kind == StateClauseKind::Precondition)
             .map(|clause| clause.spans.declaration)
-            .reduce(|left, right| Span {
-                start: left.start.min(right.start),
-                end: left.end.max(right.end),
-            })
     }
 
     /// FR-302-AC-8: a body function from `first` on whose `operation-body`
@@ -388,6 +445,13 @@ impl PackageDeclarations {
             }
         }
         refusals
+    }
+}
+
+fn dispatch_link(cause: DispatchLinkCause) -> CheckRefusal {
+    CheckRefusal {
+        location: Location::root(Origin::Expression),
+        cause: CheckCause::DispatchLink(Box::new(cause)),
     }
 }
 
@@ -424,17 +488,16 @@ impl CallSite {
 }
 
 /// `expression` with `self` spelled as the receiver parameter the bridge's
-/// functions bind it as; no other node changes.
-fn receiver_as_parameter(expression: &Expression) -> Expression {
+/// functions bind it as; no other node changes. `None` if the rewrite
+/// changed the tree's shape, which it cannot: it changes a leaf's payload.
+fn receiver_as_parameter(expression: &Expression) -> Option<Expression> {
     expression
         .respelled(|_, node| {
             if matches!(node, ExprNode::SelfRef) {
                 *node = ExprNode::Name("self".to_owned());
             }
         })
-        // `respelled` refuses only a rewrite that changes the tree's shape;
-        // this one changes a leaf's payload alone.
-        .unwrap_or_else(|_| expression.clone())
+        .ok()
 }
 
 /// The cause for a family the bridge refused.
@@ -464,31 +527,24 @@ fn link_cause(operation: DeclarationKey, refusal: &DispatchBridgeRefusal) -> Dis
                             .first()
                             .map_or("no-applicable", |failure| failure.cause),
                     ),
-                    limit: None,
+                    denial: None,
                     subtypes,
                 }
             }
             LinkCheckOutcome::Completed(DispatchLinkOutcome::Linked(_)) => invariant(operation),
             LinkCheckOutcome::Refused(model) => model_cause(operation, model),
-            LinkCheckOutcome::Incomplete(incomplete) => {
-                let limit = incomplete.limit_exceeded();
-                DispatchLinkCause {
-                    operation,
-                    code: Code::StageLimitExceeded,
-                    catalog: CatalogCode::new("stage_limit_exceeded", limit.kind().catalog_cause()),
-                    limit: Some(DispatchLinkLimit {
-                        setting: limit.setting(),
-                        bound: limit.configured_bound(),
-                        reached: limit.actual(),
-                    }),
-                    subtypes: Vec::new(),
-                }
-            }
+            LinkCheckOutcome::Incomplete(incomplete) => DispatchLinkCause {
+                operation,
+                code: Code::ResourceExhausted,
+                catalog: CatalogCode::new("resource_exhausted", "insufficient-next-charge"),
+                denial: Some(incomplete.denial()),
+                subtypes: Vec::new(),
+            },
             LinkCheckOutcome::OpenClosure(open) => DispatchLinkCause {
                 operation,
                 code: open.code,
                 catalog: open.cause.catalog_code(),
-                limit: None,
+                denial: None,
                 subtypes: Vec::new(),
             },
         },
@@ -506,11 +562,7 @@ fn model_cause(operation: DeclarationKey, model: &ModelRefusal) -> DispatchLinkC
         operation,
         code: model.code,
         catalog: model.catalog_code(),
-        limit: model.cause.limit_exceeded().map(|limit| DispatchLinkLimit {
-            setting: limit.setting(),
-            bound: limit.configured_bound(),
-            reached: limit.actual(),
-        }),
+        denial: model.cause.denial(),
         subtypes: Vec::new(),
     }
 }
@@ -522,7 +574,7 @@ fn invariant(operation: DeclarationKey) -> DispatchLinkCause {
         operation,
         code: Code::RuntimeInvariant,
         catalog: CatalogCode::new("runtime_invariant", "established-invariant-broken"),
-        limit: None,
+        denial: None,
         subtypes: Vec::new(),
     }
 }

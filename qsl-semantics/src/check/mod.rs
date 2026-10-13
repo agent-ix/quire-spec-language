@@ -76,6 +76,7 @@ mod check;
 mod checked_dispatch;
 mod claims;
 mod dispatch_link;
+pub use dispatch_link::PendingLinks;
 mod facts;
 mod family;
 mod field_refinement;
@@ -216,9 +217,9 @@ pub use ir::{CollectionLoss, CollectionProperty, DispatchCandidate, DispatchTabl
 pub use protocol_clause::{CheckedAttempt, CheckedProtocol, ProtocolNodeId};
 pub use refusal::{
     AliasKind, CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, DispatchFunctionRole,
-    DispatchLinkCause, DispatchLinkLimit, DispatchSubtypeFailure, InvalidDispatchDeclaration,
-    KeyFault, MeasureObligation, Obligation, ProtocolAnchorCause, ProvedInterval,
-    ShadowedDeclaration, StageLimitCause, WrongSnapshotCause,
+    DispatchLinkCause, DispatchSubtypeFailure, InvalidDispatchDeclaration, KeyFault,
+    MeasureObligation, Obligation, ProtocolAnchorCause, ProvedInterval, ShadowedDeclaration,
+    StageLimitCause, WrongSnapshotCause,
 };
 
 /// A checked function.

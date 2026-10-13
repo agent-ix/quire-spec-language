@@ -111,7 +111,7 @@ pub(super) fn operation_record(
 /// FR-103: intake reads an operation's inline `redefines` property, the edge
 /// dispatch linking walks to build a family. An operation without the
 /// property redefines nothing.
-#[trace("TC-793", "FR-302-AC-1")]
+#[trace("FR-103-AC-10")]
 #[test]
 fn intake_reads_an_operations_redefines_property() {
     let document = document(

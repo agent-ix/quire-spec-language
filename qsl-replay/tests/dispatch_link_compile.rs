@@ -9,17 +9,16 @@
 //! (`A`) declaring the operations under test and subtypes `Sub` (`B`), `C`
 //! and `D` each redefining `size`.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
-use qsl_foundation::Setting;
 use qsl_replay::spine::{self, CheckedUnit, CompileRefusal, ParseRequest, SpineLimits};
 use qsl_replay::{Code, DependencyInput, SourceIdentity};
 use qsl_semantics::check::{CheckCause, CheckedNode, NodeKind};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::package_input;
 use quire_exact::Cancel;
-use quire_semantic_value::location::Origin;
+use quire_semantic_value::location::{Location, Origin};
 use serde_json::{json, Value};
 
 const PACKAGE: &str = "example/config-version";
@@ -98,7 +97,11 @@ fn package(operations: Vec<Value>, subtypes: &[(&str, &str, Vec<Value>)]) -> Vec
             "constraints": [],
             "extensions": [],
             "unknownPolicy": "reject",
-            "supertypes": [format!("ix://{PACKAGE}/{supertype}")],
+            "supertypes": if supertype.is_empty() {
+                json!([])
+            } else {
+                json!([format!("ix://{PACKAGE}/{supertype}")])
+            },
             "fields": [],
             "operations": operations,
         }));
@@ -256,8 +259,14 @@ fn unit_compile_carries_one_linked_table_per_called_operation() {
         ]
     );
 
-    // Every call names its operation's table: both `size` calls through A
-    // and the one through B name one table; the `area` calls name the other.
+    // Every call names the table of its own operation: the table a `size`
+    // call names links the `size` candidates, the table an `area` call names
+    // the `area` candidate, whichever table index each has.
+    let linked_pair = |table: usize| {
+        let table = &graph.dispatch_tables()[table];
+        let linked = |subtype| named(table.linked_for(&subtype).expect("linked").body);
+        (linked(a), linked(b))
+    };
     let mut found = Vec::new();
     for clause in ["c1", "c2", "c3"] {
         calls(
@@ -266,18 +275,24 @@ fn unit_compile_carries_one_linked_table_per_called_operation() {
             &mut found,
         );
     }
-    let by_member = |member: &str| -> Vec<usize> {
-        found
-            .iter()
-            .filter(|(name, _)| name == member)
-            .map(|(_, table)| *table)
-            .collect()
-    };
-    let (sizes, areas) = (by_member("size"), by_member("area"));
-    assert_eq!((sizes.len(), areas.len()), (3, 3));
-    assert_eq!(sizes.iter().collect::<BTreeSet<_>>().len(), 1);
-    assert_eq!(areas.iter().collect::<BTreeSet<_>>().len(), 1);
-    assert_ne!(sizes[0], areas[0]);
+    let sizes = (
+        operation_name("ConfigVersion", "size"),
+        operation_name("Sub", "size"),
+    );
+    let areas = (
+        operation_name("ConfigVersion", "area"),
+        operation_name("ConfigVersion", "area"),
+    );
+    let mut counts = BTreeMap::new();
+    for (member, table) in &found {
+        let expected = if member == "size" { &sizes } else { &areas };
+        assert_eq!(&linked_pair(*table), expected, "a `{member}` call");
+        *counts.entry(member.clone()).or_insert(0_usize) += 1;
+    }
+    assert_eq!(
+        counts,
+        BTreeMap::from([("area".to_owned(), 3), ("size".to_owned(), 3)])
+    );
 }
 
 /// The chain `ConfigVersion <- Sub <- C <- D`, each declaring `size`, with a
@@ -316,8 +331,8 @@ fn limits_with_family_steps(family_steps: u64) -> SpineLimits {
 
 /// FR-302-AC-5 (TC-795): a called family with `n = 3` `redefines` edges
 /// compiles at `family_steps = 3`, and at `family_steps = 2` refuses at S3
-/// with `resource_exhausted`/`family-steps`, naming the setting that raises
-/// the limit, its value 2 and the count the refused step would reach, with no
+/// with `resource_exhausted`/`insufficient-next-charge` and the retained
+/// charge, naming the setting that raises the limit and its value 2, with no
 /// checked package.
 #[trace("TC-795", "FR-302-AC-5")]
 #[test]
@@ -331,22 +346,37 @@ fn unit_compile_refuses_a_family_past_the_callers_family_steps() {
     let CompileRefusal::Check { refusals, .. } = refusal.as_ref() else {
         panic!("an S3 refusal, got {refusal:?}");
     };
-    let [refusal] = refusals.as_slice() else {
+    let [failed] = refusals.as_slice() else {
         panic!("one failed family, got {refusals:?}");
     };
-    let CheckCause::DispatchLink(cause) = &refusal.cause else {
-        panic!("a dispatch link refusal, got {:?}", refusal.cause);
+    let CheckCause::DispatchLink(cause) = &failed.cause else {
+        panic!("a dispatch link refusal, got {:?}", failed.cause);
     };
     assert_eq!(cause.code, Code::ResourceExhausted);
     assert_eq!(cause.catalog.code(), "resource_exhausted");
-    assert_eq!(cause.catalog.cause(), "family-steps");
+    assert_eq!(cause.catalog.cause(), "insufficient-next-charge");
     assert_eq!(
         cause.operation.node,
         operation_name("ConfigVersion", "size")
     );
-    let limit = cause.limit.expect("the limit reached");
-    assert_eq!(limit.setting, Setting::ModelFamilySteps);
-    assert_eq!((limit.bound, limit.reached), (2, 3));
+    // The charge record reaches the report through the refusal's fields.
+    assert_eq!(
+        refusal.fields().expect("the retained charge"),
+        BTreeMap::from([
+            ("setting", "model.family_steps".to_owned()),
+            ("limit", "2".to_owned()),
+            ("actual", "3".to_owned()),
+            ("stage", "model-normalization".to_owned()),
+            (
+                "accounting_contract",
+                "ModelNormalizationLimitsV1".to_owned()
+            ),
+            ("limit_kind", "family_steps".to_owned()),
+            ("consumed", "2".to_owned()),
+            ("next_charge", "1".to_owned()),
+            ("charge_point", "model.family-edge".to_owned()),
+        ])
+    );
 }
 
 /// A model with `A.add(amount: Integer): Integer` and the probe the call is
@@ -412,7 +442,7 @@ fn unit_compile_checks_a_bodys_arity_and_type_against_its_operation() {
 /// has none, so its effective precondition is `true` (FR-151: an absent own
 /// precondition absorbs). Every domain `requires` is `false` and reaches
 /// neither.
-#[trace("TC-793", "FR-302-AC-1")]
+#[trace("TC-986", "FR-302-AC-7", "FR-103-AC-9")]
 #[test]
 fn a_candidates_precondition_is_the_units_pre_clauses_not_the_domain_requires() {
     let mut size = query("ConfigVersion", "size", &[], None);
@@ -524,7 +554,7 @@ fn operation_name_of_type(name: &str) -> String {
 
 /// FR-302: a body reads its receiver as `self` and its parameters under the
 /// names it wrote, which need not be the operation's.
-#[trace("TC-1011", "FR-302-AC-8")]
+#[trace("TC-986", "FR-302-AC-7")]
 #[test]
 fn a_body_reads_its_receiver_and_its_renamed_parameter() {
     let checked = compiled(
@@ -542,7 +572,7 @@ fn a_body_reads_its_receiver_and_its_renamed_parameter() {
 /// for each candidate and the disjunction `B.size` takes with the `A.size`
 /// it redefines. E4 places every occurrence of those functions at the unit
 /// declaration they came from, so the emission is whole and deterministic.
-#[trace("TC-793", "FR-302-AC-1")]
+#[trace("TC-1018", "FR-096-AC-20")]
 #[test]
 fn a_unit_with_linked_dispatch_emits_a_package() {
     let document = package(
@@ -580,4 +610,211 @@ fn a_unit_with_linked_dispatch_emits_a_package() {
     assert!(!first.bytes().is_empty());
     assert_eq!(first.bytes(), second.bytes());
     assert_eq!(first.package_id(), second.package_id());
+}
+
+/// `document` with the object type `name` declared abstract.
+fn abstract_type(document: &[u8], name: &str) -> Vec<u8> {
+    let mut envelope: Value = serde_json::from_slice(document).expect("valid JSON");
+    envelope["types"]
+        .as_array_mut()
+        .expect("types")
+        .iter_mut()
+        .find(|node| node["identity"] == format!("ix://{PACKAGE}/{name}"))
+        .expect("the type")["abstract"] = json!(true);
+    serde_json::to_vec(&envelope).expect("valid JSON")
+}
+
+fn refused_family(refusal: &CompileRefusal) -> &qsl_semantics::check::DispatchLinkCause {
+    let CompileRefusal::Check { refusals, .. } = refusal else {
+        panic!("an S3 refusal, got {refusal:?}");
+    };
+    let [failed] = refusals.as_slice() else {
+        panic!("one failed family, got {refusals:?}");
+    };
+    let CheckCause::DispatchLink(cause) = &failed.cause else {
+        panic!("a dispatch link refusal, got {:?}", failed.cause);
+    };
+    cause
+}
+
+/// FR-302-AC-9 (TC-1019): a family is called by the call that reaches it,
+/// not by its member name. `Other` is unrelated to `ConfigVersion` and
+/// declares a `size` of its own with no body. A unit whose only `size` call
+/// is on a `ConfigVersion` receiver compiles; a unit with a `size` call on an
+/// `Other` receiver refuses `ambiguous_dispatch`/`no-applicable`, naming
+/// `Other.size`.
+#[trace("TC-1019", "FR-302-AC-9")]
+#[test]
+fn an_unrelated_family_of_the_same_name_refuses_only_when_a_call_reaches_it() {
+    let document = package(
+        vec![
+            query("ConfigVersion", "size", &[], None),
+            query("ConfigVersion", "probe", &[], None),
+        ],
+        &[(
+            "Other",
+            "",
+            vec![
+                query("Other", "size", &[], None),
+                query("Other", "probe", &[], None),
+            ],
+        )],
+    );
+    let declarations = "body sizeA using v on Config::ConfigVersion::size() { 1 }\n\
+         pre c1 using v on Config::ConfigVersion::probe { self.size() > 0 }\n";
+    let checked = compiled(&document, declarations, SpineLimits::default());
+    assert!(!checked.package().graph().dispatch_tables().is_empty());
+
+    let refusal = compile(
+        &document,
+        &format!("{declarations}pre c2 using v on Config::Other::probe {{ self.size() > 0 }}\n"),
+        SpineLimits::default(),
+    )
+    .expect_err("the call on an Other receiver finds a family with no body");
+    assert_eq!(refusal.code(), Code::AmbiguousDispatch);
+    let cause = refused_family(&refusal);
+    assert_eq!(cause.catalog.cause(), "no-applicable");
+    assert_eq!(cause.operation.node, operation_name("Other", "size"));
+}
+
+/// FR-302-AC-1 (TC-793): a call whose receiver's static type is an abstract
+/// type conforming to the root's declaring type names the root's table.
+/// `Mid` is abstract, between `ConfigVersion` and `Sub`, and a clause on
+/// `Mid` calls `size`.
+#[trace("TC-793", "FR-302-AC-1")]
+#[test]
+fn a_call_on_an_abstract_conforming_type_names_the_roots_table() {
+    let document = abstract_type(
+        &package(
+            vec![
+                query("ConfigVersion", "size", &[], None),
+                query("ConfigVersion", "probe", &[], None),
+            ],
+            &[
+                ("Mid", "ConfigVersion", vec![]),
+                (
+                    "Sub",
+                    "Mid",
+                    vec![query("Sub", "size", &[], Some("ConfigVersion"))],
+                ),
+            ],
+        ),
+        "Mid",
+    );
+    let checked = compiled(
+        &document,
+        "body sizeA using v on Config::ConfigVersion::size() { 1 }\n\
+         body sizeB using v on Config::Sub::size() { 2 }\n\
+         pre cm using v on Config::Mid::probe { self.size() > 0 }\n",
+        SpineLimits::default(),
+    );
+    let graph = checked.package().graph();
+    let mut found = Vec::new();
+    calls(
+        graph.state_clause("cm").expect("cm").body(),
+        graph.scope().dispatch_operations(),
+        &mut found,
+    );
+    assert_eq!(found.len(), 1);
+    assert_eq!(graph.dispatch_tables().len(), 1);
+}
+
+/// FR-302 Inputs, TC-196 D07: a dispatched call in an operation body is no
+/// input to linking. It refuses `ill_typed`/`operator-ineligible`, where the
+/// body is checked.
+#[trace("TC-1019", "FR-302-AC-9")]
+#[test]
+fn a_dispatched_call_in_an_operation_body_refuses_ill_typed() {
+    let document = package(
+        vec![
+            query("ConfigVersion", "size", &[], None),
+            query("ConfigVersion", "other", &[], None),
+            query("ConfigVersion", "probe", &[], None),
+        ],
+        &[],
+    );
+    let refusal = compile(
+        &document,
+        "body sizeA using v on Config::ConfigVersion::size() { 1 }\n\
+         body otherA using v on Config::ConfigVersion::other() { self.size() }\n\
+         pre c using v on Config::ConfigVersion::probe { self.other() > 0 }\n",
+        SpineLimits::default(),
+    )
+    .expect_err("a body cannot dispatch");
+    assert_eq!(refusal.code(), Code::IllTyped);
+    let CompileRefusal::Check { refusals, .. } = refusal.as_ref() else {
+        panic!("an S3 refusal, got {refusal:?}");
+    };
+    assert_eq!(refusals[0].cause.cause(), Some("operator-ineligible"));
+}
+
+/// FR-096-AC-20 (TC-1018): a function synthesized for dispatch from the
+/// unit's declarations is located at them. The body function of `A.size`
+/// resolves to the body expression of its `operation-body`, the precondition
+/// function to the first unit `pre` clause of its operation (the
+/// disjunction `B.size` takes with `A.size` too), and each clause function's
+/// one `generated` occurrence to its body.
+#[trace("TC-1018", "FR-096-AC-20")]
+#[test]
+fn a_function_synthesized_for_dispatch_is_located_at_the_declarations_it_came_from() {
+    let document = package(
+        vec![
+            query("ConfigVersion", "size", &[], None),
+            query("ConfigVersion", "probe", &[], None),
+        ],
+        &[(
+            "Sub",
+            "ConfigVersion",
+            vec![query("Sub", "size", &[], Some("ConfigVersion"))],
+        )],
+    );
+    let pre_a = "pre preA using v on Config::ConfigVersion::size { true }";
+    let pre_b = "pre preB using v on Config::Sub::size { false }";
+    let declarations = format!(
+        "body sizeA using v on Config::ConfigVersion::size() {{ 11 }}\n\
+         body sizeB using v on Config::Sub::size() {{ 22 }}\n\
+         {pre_a}\n{pre_b}\n\
+         pre c using v on Config::ConfigVersion::probe {{ self.size() > 0 }}\n"
+    );
+    let (text, _) = unit(&document, &declarations);
+    let checked = compiled(&document, &declarations, SpineLimits::default());
+    let graph = checked.package().graph();
+    let region_text = |name: &str| -> (String, String) {
+        let index = (0..)
+            .map_while(|index| graph.function_state(index).map(|state| (index, state.name)))
+            .find_map(|(index, found)| (found == name).then_some(index))
+            .unwrap_or_else(|| panic!("a function named {name}"));
+        let location = Location::root(Origin::Body {
+            function: name.to_owned(),
+            index,
+        });
+        let region = graph
+            .region(&location)
+            .unwrap_or_else(|| panic!("{name} resolves to a region"));
+        let text_of = |region: &qsl_foundation::source::provenance::SourceRegion| {
+            let (start, end) = (region.start() as usize, region.end() as usize);
+            text[start..end].to_owned()
+        };
+        // Its one occurrence is `generated`, at the same location.
+        let key = graph.function_identity(name).expect("an identity");
+        let occurrences: Vec<_> = graph
+            .occurrences()
+            .filter(|(node, origin, _)| *node == key && origin.role().as_str() == "generated")
+            .collect();
+        let [(_, _, found)] = occurrences.as_slice() else {
+            panic!("one generated occurrence of {name}, got {occurrences:?}");
+        };
+        assert_eq!(graph.region(found).as_ref(), Some(&region), "{name}");
+        (text_of(&region), name.to_owned())
+    };
+    let size_a = operation_name("ConfigVersion", "size");
+    let size_b = operation_name("Sub", "size");
+    assert_eq!(region_text(&size_a).0, "11");
+    assert_eq!(region_text(&size_b).0, "22");
+    assert_eq!(region_text(&format!("{size_a}.precondition")).0, pre_a);
+    assert_eq!(region_text(&format!("{size_b}.precondition")).0, pre_b);
+    assert_eq!(
+        region_text(&format!("{size_b}.precondition.effective")).0,
+        pre_b
+    );
 }
