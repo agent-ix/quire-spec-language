@@ -127,8 +127,10 @@ rule and a row in this table.
    is `LimitExceeded`. A stage whose requirement gives its limits another
    code (format's `resource_exhausted`/`input-bytes-exceeded`, intake's
    `resource_exhausted`/`intake-limit-exceeded`, library resolution's
-   `resource_exhausted`/`insufficient-next-charge`) keeps that code and carries
-   the same four values. The catalog record of each such outcome SHALL carry
+   `resource_exhausted`/`insufficient-next-charge`, and observation admission's
+   values-per-document counter `observation.values`, which refuses
+   `resource_exhausted`/`insufficient-next-charge` per FR-106) keeps that code
+   and carries the same four values. The catalog record of each such outcome SHALL carry
    the setting name as its `setting` field, beside `kind`, `bound` and
    `actual`.
 2. **One mapping per limits type.** Each stage's limits type SHALL map each

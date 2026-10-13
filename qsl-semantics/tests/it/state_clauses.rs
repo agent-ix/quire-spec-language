@@ -3060,9 +3060,10 @@ fn objects_per_document_limit_refuses_naming_observation_objects() {
     assert!(run_tc465_current_with_limits(&document, |_| {}, raised).is_ok());
 }
 
-/// FR-261 B4, FR-255: `values_per_document` counts every value form of the
-/// document as the reader walks it: a ceiling of 0 refuses at the first,
-/// naming `observation.values`.
+/// FR-261 B4, FR-255, FR-106-AC-16: `values_per_document` counts every value
+/// form of the document as the reader walks it: a ceiling of 0 refuses at the
+/// first, `resource_exhausted`/`insufficient-next-charge` naming
+/// `observation.values`.
 #[trace("TC-465", "FR-106-AC-3")]
 #[trace("TC-720", "FR-255-AC-1")]
 #[test]
@@ -3071,12 +3072,13 @@ fn values_per_document_limit_refuses_naming_observation_values() {
     let limits =
         qsl_semantics::model::observation::ObservationLimits::default().with_values_per_document(0);
     let result = run_tc465_current_with_limits(&document, |_| {}, limits);
-    let record = assert_tc465_refused(result, "stage_limit_exceeded", "node-count-exceeded");
+    let record = assert_tc465_refused(result, "resource_exhausted", "insufficient-next-charge");
     assert_eq!(
         record.fields.get("setting").map(String::as_str),
         Some("observation.values")
     );
     assert_eq!(record.fields.get("bound").map(String::as_str), Some("0"));
+    assert_eq!(record.fields.get("prior").map(String::as_str), Some("0"));
     assert_eq!(record.fields.get("actual").map(String::as_str), Some("1"));
 }
 
@@ -3164,8 +3166,9 @@ fn a_snapshot_nested_100_000_deep_is_digested_on_content() {
 /// `observation.values` as it is walked and judged on its content. With the
 /// limits raised the field's declared type refuses it as `wrong-value-kind`
 /// at that field. With `observation.values` at 50,000, which the nested
-/// value alone crosses, it refuses naming `observation.values`, bound 50,000
-/// and the count reached, 50,001.
+/// value alone crosses, it refuses `resource_exhausted`/
+/// `insufficient-next-charge` naming `observation.values`, bound 50,000, the
+/// prior count 50,000 and the count reached, 50,001.
 #[trace("TC-733", "FR-261-AC-3")]
 #[test]
 fn a_value_nested_100_000_deep_is_counted_as_observation_values() {
@@ -3178,13 +3181,17 @@ fn a_value_nested_100_000_deep_is_counted_as_observation_values() {
     };
     // A bound of 50,000 is crossed by the nested value alone, at count 50,001.
     let refused = counted(raised.with_values_per_document(50_000));
-    let record = assert_tc465_refused(refused, "stage_limit_exceeded", "node-count-exceeded");
+    let record = assert_tc465_refused(refused, "resource_exhausted", "insufficient-next-charge");
     assert_eq!(
         record.fields.get("setting").map(String::as_str),
         Some("observation.values")
     );
     assert_eq!(
         record.fields.get("bound").map(String::as_str),
+        Some("50000")
+    );
+    assert_eq!(
+        record.fields.get("prior").map(String::as_str),
         Some("50000")
     );
     assert_eq!(

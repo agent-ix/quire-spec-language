@@ -400,7 +400,10 @@ required; check 10 settles it.
   wrapper, each sequence and each contained value against the
   declared values-per-document setting, and stop at that limit before the next
   value with `resource_exhausted`/`insufficient-next-charge`, naming the
-  bound, prior count and next value's path; finite recursive record
+  bound, prior count and next value's path (the refusal retains the stage,
+  the accounting contract, the effective limit, the prior usage and that
+  value as the work item, and, per FR-255, the setting `observation.values`
+  and the count the charge would have reached); finite recursive record
   declarations therefore admit only finite
   supplied values within the byte and value limits, with no call-stack or
   schema-depth limit. A nested refusal SHALL carry its exact FR-207 `field`,

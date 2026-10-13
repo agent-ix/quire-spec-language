@@ -1050,7 +1050,8 @@ fn limit_refusal(limit: &LimitExceeded) -> AdmissionFailure {
 
 /// FR-261 Behavior 4: the object and value counts of one document, charged
 /// as the reader's tree is walked. `values` counts every value form of the
-/// document, nested ones included.
+/// document, nested ones included; `objects` is a stage limit and `values` an
+/// accounting counter (FR-106-AC-16).
 struct ReadMeter {
     limits: ObservationLimits,
     objects: u64,
@@ -1079,19 +1080,68 @@ impl ReadMeter {
         Ok(())
     }
 
-    /// Charge one value form: `observation.values`.
-    fn value(&mut self) -> Result<(), AdmissionFailure> {
-        self.values = self.values.saturating_add(1);
-        if self.values > self.limits.values_per_document {
-            return Err(limit_refusal(&LimitExceeded::new(
-                Setting::ObservationValues,
-                self.limits.values_per_document,
-                u128::from(self.values),
-            )));
-        }
-        Ok(())
+    /// Read the value at `json` into its value form, charging each form
+    /// read to `observation.values`. `locus` names the document position of
+    /// `json` (its `field`, and for an object's field its `population` and
+    /// `object`), which a refusal carries.
+    ///
+    /// # Errors
+    ///
+    /// The counter's exhaustion, as FR-106-AC-16's refusal.
+    fn read_value(
+        &mut self,
+        json: tree::Json<'_>,
+        locus: &[(&'static str, &str)],
+    ) -> Result<Option<SnapshotValue>, AdmissionFailure> {
+        let limit = self.limits.values_per_document;
+        let values = &mut self.values;
+        tree::read_raw_value(json, &mut || {
+            if *values >= limit {
+                return Err(*values);
+            }
+            *values += 1;
+            Ok(())
+        })
+        .map_err(|(prior, path)| values_exhausted(limit, prior, locus, path))
     }
 }
+
+/// FR-106-AC-16: the values-per-document counter cannot take the next value.
+/// `observation.values` is an accounting counter, so its exhaustion is
+/// `resource_exhausted`/`insufficient-next-charge` (not a
+/// `stage_limit_exceeded` kind, which names none such). It retains the
+/// stage, the accounting contract, the effective limit (`bound`), the prior
+/// usage (`prior`) and the work item that could not proceed (`work_item` and
+/// the typed `path` of that value), beside FR-255's `setting` and `actual`
+/// (the count the charge would have reached).
+fn values_exhausted(
+    limit: u64,
+    prior: u64,
+    locus: &[(&'static str, &str)],
+    path: Vec<PathStep>,
+) -> AdmissionFailure {
+    let setting = Setting::ObservationValues;
+    let mut record = AdmissionRecord::new(Code::ResourceExhausted, INSUFFICIENT_NEXT_CHARGE)
+        .with("stage", setting.stage())
+        .with("accounting_contract", ACCOUNTING_CONTRACT)
+        .with("setting", setting.name())
+        .with("bound", limit.to_string())
+        .with("prior", prior.to_string())
+        .with("actual", u128::from(prior).saturating_add(1).to_string())
+        .with("work_item", "value")
+        .at(path);
+    for (name, value) in locus {
+        record = record.with(name, *value);
+    }
+    refuse(record)
+}
+
+/// The catalog cause of a denied accounting charge.
+const INSUFFICIENT_NEXT_CHARGE: &str = "insufficient-next-charge";
+
+/// The accounting contract whose counters refuse with
+/// [`INSUFFICIENT_NEXT_CHARGE`] (FR-255).
+const ACCOUNTING_CONTRACT: &str = "quire.value.accounting/v1";
 
 /// FR-259 B6: reading or encoding the document could not reserve
 /// `requested` bytes of memory.
