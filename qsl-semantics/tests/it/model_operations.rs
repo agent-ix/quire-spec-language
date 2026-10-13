@@ -942,7 +942,16 @@ pub(super) fn admit_and_assemble_with_body(
         &packages,
         ModelNormalizationLimits::default(),
     )
-    .unwrap_or_else(|refusal| panic!("I1 refused: {refusal:?}"));
+    .unwrap_or_else(|refusal| panic!("I1 refused: {refusal:?}"))
+    .into_iter()
+    .map(|model| {
+        model
+            .with_parsed_operation_clauses(|text| {
+                qsl_forms::parse_clause_text(text, qsl_cst::Limits::default())
+            })
+            .unwrap_or_else(|failure| panic!("a kept operation clause does not parse: {failure:?}"))
+    })
+    .collect();
     let raw = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("test", "tc-459", "fixture", "fixture:1"),
         "unit.native",

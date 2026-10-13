@@ -94,6 +94,7 @@ mod ir;
 mod lowering;
 mod node_key;
 mod observation;
+mod operation_clause;
 mod profile;
 mod protocol_clause;
 mod refusal;
@@ -180,6 +181,7 @@ pub use checked_dispatch::{
     MissingClauseField, OperationClauses,
 };
 pub use field_refinement::check_field_refinement_obligation;
+pub use operation_clause::OperationClauseDeclaration;
 use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 use quire_semantic_value::location::{Location, Origin};
 pub use region::DeclarationRegions;
@@ -1144,6 +1146,40 @@ impl PackageDeclarations {
                     let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
                     refusals.push(refusal);
                     if exhausted {
+                        return Err(refusals);
+                    }
+                }
+            }
+        }
+        // FR-103: each kept operation `requires`/`ensures`, checked as a
+        // Boolean under the clause kind its position gives. A kept clause
+        // adds no checked state clause, claim or requirement record: it
+        // yields a refusal or nothing.
+        for clause in &self.operation_clauses {
+            let location = clause.location();
+            let declarations = state_clause::ClauseDeclarations {
+                scope: &scope,
+                signatures: &signatures,
+                dispatch_tables: &dispatch_tables,
+                models: &models,
+                checking_limits: limits,
+                location: &location,
+                nodes_used,
+                cancel: Some(cancel),
+            };
+            let mut contract_cx = crate::family::CheckContext::new(
+                &declarations,
+                contract_limits,
+                &mut contract_meter,
+                &mut contract_diagnostics,
+                &mut contract_scopes,
+            );
+            match state_clause::check_operation_clause(clause, &declarations, &mut contract_cx) {
+                Ok(used) => nodes_used = used,
+                Err(refusal) => {
+                    let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
+                    refusals.push(refusal);
+                    if exhausted || cancel.tripped().is_some() {
                         return Err(refusals);
                     }
                 }

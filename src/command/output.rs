@@ -438,6 +438,18 @@ fn spine_origin(origin: &quire_semantic_value::location::Origin) -> types::Spine
                 attempt: *attempt,
             }
         }
+        quire_semantic_value::location::Origin::ModelOperationClause {
+            operation,
+            kind,
+            position,
+        } => types::SpineOrigin::ModelOperationClause {
+            operation: operation.clone(),
+            clause: match kind {
+                quire_semantic_value::location::OperationClauseKind::Requires => "requires",
+                quire_semantic_value::location::OperationClauseKind::Ensures => "ensures",
+            },
+            position: *position,
+        },
     }
 }
 

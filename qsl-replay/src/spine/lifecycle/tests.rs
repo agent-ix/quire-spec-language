@@ -1702,3 +1702,96 @@ fn check_takes_the_lock_evidence_the_text_law_comes_from() {
     run(&LockEvidence::default().with_text_profile(text_profile))
         .expect("the lock evidence selects the text law");
 }
+
+/// The model fixture with an operation `touch` on `Widget` whose `pre`
+/// holds `clauses` (`language`, `text`), and the unit selecting it.
+fn widget_with_touch(clauses: &[(&str, &str)]) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
+    let mut document: serde_json::Value =
+        serde_json::from_str(MODEL_DOCUMENT).expect("the model fixture is JSON");
+    let generated = |identity: &str| {
+        serde_json::json!({"generated": {
+            "generatorIdentity": identity,
+            "generatorVersion": "1.0.0",
+            "inputIdentities": [identity],
+        }})
+    };
+    let identity = "ix://acme/orders/Widget/touch";
+    let widget = document["types"]
+        .as_array_mut()
+        .expect("types")
+        .iter_mut()
+        .find(|ty| ty["identity"] == "ix://acme/orders/Widget")
+        .expect("the fixture declares Widget");
+    widget["operations"] = serde_json::json!([{
+        "identity": identity,
+        "name": "touch",
+        "params": [],
+        "pre": clauses
+            .iter()
+            .map(|(language, text)| serde_json::json!({
+                "language": language,
+                "text": text,
+                "origin": generated(identity),
+            }))
+            .collect::<Vec<_>>(),
+        "post": [],
+        "origin": generated(identity),
+        "frame": {"modifies": [], "creates": [], "deletes": []},
+    }]);
+    let bytes = serde_json::to_vec(&document).expect("the document serializes");
+    let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()]);
+    let digest = packages.keys().next().expect("one package");
+    let original = MODEL_FIXTURE
+        .split("sha256-jcs:")
+        .nth(1)
+        .and_then(|rest| rest.get(..64))
+        .expect("the fixture names its digest");
+    let unit = MODEL_FIXTURE.replace(original, &qsl_semantics::model::key::hex(digest));
+    (unit, packages)
+}
+
+/// FR-103-AC-8: the driver parses each kept `quire` clause of a selected
+/// model's operations and leaves a clause in another language unparsed; a
+/// kept clause whose text does not parse refuses at I1 with the operation and
+/// its `Operation.pre[k]` member, never as a checked package.
+#[trace("FR-103-AC-8", "TC-993")]
+#[test]
+fn select_parses_kept_operation_clauses_and_refuses_text_that_does_not_parse() {
+    let limits = SpineLimits::default();
+    let live = Cancel::new();
+    let select_unit = |clauses: &[(&str, &str)]| {
+        let (unit, packages) = widget_with_touch(clauses);
+        let parsed = parse(&request(unit.as_bytes()), limits.source, &live)
+            .expect("the unit parses")
+            .into_value();
+        select(&parsed, &packages, limits.model, &live)
+    };
+    let models = select_unit(&[("quire", "true"), ("acme:rules", "not an expression (((")])
+        .expect("a quire clause parses and another language is kept verbatim")
+        .into_value();
+    let [model] = models.models() else {
+        panic!("one model");
+    };
+    assert_eq!(model.operation_clauses.len(), 1);
+    assert_eq!(model.operation_clauses[0].position, 0);
+
+    let failure = select_unit(&[("quire", "true"), ("quire", "true and")])
+        .expect_err("the second clause does not parse");
+    let refusal = refusal(failure);
+    let CompileRefusal::OperationClause {
+        operation, member, ..
+    } = &*refusal
+    else {
+        panic!("expected an operation clause refusal, got {refusal:?}");
+    };
+    assert_eq!(operation.node, "ix://acme/orders/Widget/touch");
+    assert_eq!(
+        *member,
+        qsl_semantics::model::refusal::MemberPath::new(
+            qsl_semantics::model::refusal::MemberRoot::Operation
+        )
+        .name("pre")
+        .index(1)
+    );
+    assert_eq!(refusal.code(), qsl_foundation::Code::InvalidSyntax);
+}

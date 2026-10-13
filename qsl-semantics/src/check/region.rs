@@ -101,9 +101,12 @@ fn resolve<'s>(
         Origin::ProtocolAttempt { protocol, attempt } if location.depth() == 0 => {
             attempt_span(*protocol, *attempt)?
         }
-        Origin::TypeDeclaration { .. } | Origin::ProtocolAttempt { .. } | Origin::Expression => {
-            return None
-        }
+        // A kept operation clause is read from a domain package, not from
+        // this unit, so it names no region of the unit (FR-103).
+        Origin::TypeDeclaration { .. }
+        | Origin::ProtocolAttempt { .. }
+        | Origin::ModelOperationClause { .. }
+        | Origin::Expression => return None,
     };
     region(document.source, document.embedding, span)
 }

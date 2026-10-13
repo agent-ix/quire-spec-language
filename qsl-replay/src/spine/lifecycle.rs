@@ -84,7 +84,7 @@ use std::sync::Arc;
 
 use qsl_cst::Limits as SourceLimits;
 use qsl_eval::value::{CallFailure, CheckedPackageEvaluation, Evaluation};
-use qsl_forms::{build_unit, ParsedUnit};
+use qsl_forms::{build_unit, parse_clause_text, ParsedUnit};
 use qsl_foundation::diagnostic::{
     InternalFault, LimitExceeded, Locus, StageFailure, StageWork, Staged,
 };
@@ -265,6 +265,7 @@ fn limit_of(
         },
         CompileRefusal::Limit(limit) => Some(limit.clone()),
         CompileRefusal::Forms { .. }
+        | CompileRefusal::OperationClause { .. }
         | CompileRefusal::Profile { .. }
         | CompileRefusal::DependencyInput(_)
         | CompileRefusal::Import { .. }
@@ -617,14 +618,38 @@ fn select_models(
     cancel: &Cancel,
 ) -> Result<Vec<SelectedModel>, Box<CompileRefusal>> {
     let raw = parsed.source().reference();
-    admit_unit_with_cancel(&parsed.unit.selections().models, packages, limits, cancel).map_err(
-        |refusal| {
+    let models = admit_unit_with_cancel(&parsed.unit.selections().models, packages, limits, cancel)
+        .map_err(|refusal| {
             Box::new(CompileRefusal::Intake {
                 region: region(raw, refusal.span),
                 refusal,
             })
-        },
-    )
+        })?;
+    let source_limits = parsed.syntax.effective_limits();
+    models
+        .into_iter()
+        .map(|model| parse_operation_clauses(model, source_limits))
+        .collect()
+}
+
+/// FR-103: parses each kept `quire`-language `requires` and `ensures` clause
+/// of `model`'s operations with the unit clause production, and hands the
+/// parsed expressions to the assembler on the model. The first clause that
+/// does not parse refuses, located at the operation's `Operation.pre[k]` or
+/// `Operation.post[k]` member.
+fn parse_operation_clauses(
+    model: SelectedModel,
+    limits: SourceLimits,
+) -> Result<SelectedModel, Box<CompileRefusal>> {
+    model
+        .with_parsed_operation_clauses(|text| parse_clause_text(text, limits))
+        .map_err(|failure| {
+            Box::new(CompileRefusal::OperationClause {
+                operation: failure.operation,
+                member: failure.member,
+                failure: failure.cause,
+            })
+        })
 }
 
 /// E4 over one checked package, refusing a wire that would omit nodes: a

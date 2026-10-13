@@ -67,8 +67,8 @@ use quire_exact::Presence;
 
 mod unit;
 pub use unit::{
-    admit_unit, admit_unit_with_cancel, package_input, SelectedModel, UnitIntakeCause,
-    UnitIntakeRefusal,
+    admit_unit, admit_unit_with_cancel, package_input, OperationClauseFailure, SelectedModel,
+    UnitIntakeCause, UnitIntakeRefusal,
 };
 
 /// A Quire meaning id (FR-208): the sole legitimate way to determine what a

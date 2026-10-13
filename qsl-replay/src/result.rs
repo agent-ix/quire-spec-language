@@ -200,7 +200,10 @@ fn origin_bytes(origin: &Origin) -> usize {
         Origin::Body { function: name, .. }
         | Origin::Measure { function: name, .. }
         | Origin::TypeDeclaration { name }
-        | Origin::StateClause { clause: name, .. } => name.len(),
+        | Origin::StateClause { clause: name, .. }
+        | Origin::ModelOperationClause {
+            operation: name, ..
+        } => name.len(),
         Origin::Expression | Origin::ProtocolAttempt { .. } => 0,
     }
 }

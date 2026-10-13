@@ -88,6 +88,7 @@ pub fn m_actor_model() -> SelectedModel {
         alias: "M".to_owned(),
         span: qsl_foundation::Span { start: 0, end: 0 },
         view,
+        operation_clauses: Vec::new(),
     }
 }
 

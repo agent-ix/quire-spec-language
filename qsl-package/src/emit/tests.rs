@@ -2987,6 +2987,7 @@ fn config_version_model(with_sub: bool) -> qsl_semantics::model::intake::Selecte
         alias: "Config".to_owned(),
         span: SPAN,
         view,
+        operation_clauses: Vec::new(),
     }
 }
 

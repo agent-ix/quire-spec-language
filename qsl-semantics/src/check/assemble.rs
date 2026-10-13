@@ -45,6 +45,7 @@ use quire_exact::{
 use super::check::{EnumBinding, PackageDeclarations, ResolvedSignature};
 use super::lowering::{strongly_connected, AdmittedModel};
 use super::node_key::{declared_type_handle, nominal_key, NodeKeyRefusal, SourceOwner};
+use super::operation_clause::OperationClauseDeclaration;
 use super::refusal::AliasKind;
 use super::state_clause::{
     population_of, AttemptDeclaration, ClauseOperation, StateClauseDeclaration,
@@ -1100,6 +1101,57 @@ fn model_operation(
     ))
 }
 
+/// FR-103: each kept `requires`/`ensures` clause the driver parsed for
+/// `model`'s operations, with its operation resolved in its owner's own
+/// declarations. A clause naming no operation of the package, or one whose
+/// owner is no object type, is a broken invariant of the driver's input.
+fn operation_clause_declarations(
+    alias: &str,
+    model: &SelectedModel,
+    table: &OperationTable,
+) -> Result<Vec<OperationClauseDeclaration>, AssemblyCause> {
+    let package = model.view.domain_package();
+    let identities = model.view.type_identities();
+    model
+        .operation_clauses
+        .iter()
+        .map(|clause| {
+            let broken = || AssemblyCause::ModelType {
+                alias: alias.to_owned(),
+                node: clause.operation.node.clone(),
+            };
+            let operation = package
+                .records
+                .iter()
+                .find_map(|record| match record {
+                    DomainPackageRecord::OperationMember(operation)
+                        if operation.key == clause.operation =>
+                    {
+                        Some(operation)
+                    }
+                    _ => None,
+                })
+                .ok_or_else(broken)?;
+            let owner = *identities.get(&operation.owner).ok_or_else(broken)?;
+            let name = member_identity_name(&operation.owner.node, &operation.key.node)
+                .ok_or_else(broken)?;
+            let declaration = table
+                .declared_by(owner)
+                .iter()
+                .find(|declared| declared.name() == name)
+                .ok_or_else(broken)?;
+            Ok(OperationClauseDeclaration {
+                clause: clause.clone(),
+                context: owner,
+                operation: ClauseOperation {
+                    declaring: owner,
+                    declaration: declaration.clone(),
+                },
+            })
+        })
+        .collect()
+}
+
 /// A function signature's type forms: its parameters' and its result's,
 /// in source order.
 fn signature_type_forms(function: &FunctionDeclaration) -> Vec<&TypeForm> {
@@ -1561,6 +1613,7 @@ impl PackageDeclarations {
         let mut admitted_variant_types = Vec::new();
         let mut operations = OperationTable::default();
         let mut object_spans = BTreeMap::new();
+        let mut operation_clauses = Vec::new();
         for selection in &selections.models {
             let Some(model) = models.iter().find(|model| model.alias == selection.alias) else {
                 errors.push(AssemblyError {
@@ -1593,6 +1646,13 @@ impl PackageDeclarations {
                     }
                     object_types.extend(declarations);
                     model_composites.extend(composites);
+                    match operation_clause_declarations(&selection.alias, model, &operations) {
+                        Ok(resolved) => operation_clauses.extend(resolved),
+                        Err(cause) => errors.push(AssemblyError {
+                            cause,
+                            span: selection.span,
+                        }),
+                    }
                 }
                 Err(refused) => errors.extend(refused),
             }
@@ -2065,6 +2125,7 @@ impl PackageDeclarations {
         let mut package = PackageDeclarations::new(source, limits.identity);
         package.types = types;
         package.operations = operations;
+        package.operation_clauses = operation_clauses;
         package.models = admitted;
         package.aliases = unit
             .aliases

@@ -1694,17 +1694,36 @@ struct CallLocationWire {
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 enum CallOriginWire {
-    Body { function: String, index: usize },
-    Measure { function: String, index: usize },
+    Body {
+        function: String,
+        index: usize,
+    },
+    Measure {
+        function: String,
+        index: usize,
+    },
     Expression,
-    TypeDeclaration { name: String },
-    StateClause { clause: String, index: usize },
-    ProtocolAttempt { protocol: usize, attempt: usize },
+    TypeDeclaration {
+        name: String,
+    },
+    StateClause {
+        clause: String,
+        index: usize,
+    },
+    ProtocolAttempt {
+        protocol: usize,
+        attempt: usize,
+    },
+    ModelOperationClause {
+        operation: String,
+        clause: &'static str,
+        position: usize,
+    },
 }
 
 impl From<&quire_semantic_value::location::Location> for CallLocationWire {
     fn from(location: &quire_semantic_value::location::Location) -> Self {
-        use quire_semantic_value::location::Origin;
+        use quire_semantic_value::location::{OperationClauseKind, Origin};
         let origin = match &location.origin {
             Origin::Body { function, index } => CallOriginWire::Body {
                 function: function.clone(),
@@ -1725,6 +1744,18 @@ impl From<&quire_semantic_value::location::Location> for CallLocationWire {
             Origin::ProtocolAttempt { protocol, attempt } => CallOriginWire::ProtocolAttempt {
                 protocol: *protocol,
                 attempt: *attempt,
+            },
+            Origin::ModelOperationClause {
+                operation,
+                kind,
+                position,
+            } => CallOriginWire::ModelOperationClause {
+                operation: operation.clone(),
+                clause: match kind {
+                    OperationClauseKind::Requires => "requires",
+                    OperationClauseKind::Ensures => "ensures",
+                },
+                position: *position,
             },
         };
         Self {
