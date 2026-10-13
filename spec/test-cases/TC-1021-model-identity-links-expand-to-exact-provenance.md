@@ -25,9 +25,11 @@ Implement as the Rust integration test
    normalization boundary.
 2. Enumerate the expected path-form facts independently from the original
    declaration graph, in phase, input and rule order: every distinct supertype
-   path, every member inherit fact `[path, member]`, the subset and redefine
-   facts for each path, and the equal-input redefine and subset overlap, with
-   exact zero-based decimal ordinals and multiplicity.
+   path, every member inherit fact `[path, member]`, and the subset and
+   redefine facts with FR-081's rule: one fact per redefiner or subsets target
+   carrying the least path to the owner (so the diamond's phase-4 facts carry
+   one path though its inherit facts list both), and the equal-input redefine
+   and subset overlap, with exact zero-based decimal ordinals and multiplicity.
 3. Expand each declaration's retained facts through the parent identities in
    the test oracle, without calling the production expansion routine, and
    compare every fact.

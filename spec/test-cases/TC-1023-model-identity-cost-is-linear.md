@@ -30,7 +30,10 @@ Implement as the Rust integration test
    preimage lengths, plus the view header, plus 154 bytes of frame per entry
    and one separator between entries; a preimage is 106 bytes plus its key, a
    qualify fact of 96 bytes plus its key, and per parent a separator, 217
-   bytes and the parent key, one more byte per ordinal digit past the first.
+   bytes and the parent key, one more byte per ordinal digit past the first;
+   plus each object universe's preimage, the length the encoder counts for its
+   header plus 125 bytes and a separator per root type (about 335 bytes for a
+   universe with one root type, the chain's single universe).
 4. Compare facts (types plus edges) and work units (records, facts, declarations,
    hashes, one cycle-check per edge) with the counters.
 

@@ -21,7 +21,7 @@ Implement as the Rust integration test
 1. Normalize a five-type chain with a field on the root and a redefining field
    on the leaf. Record every effective identity.
 2. Rebuild the fixture four times, each with one change: the root's original
-   key, one middle supertype edge replaced by an edge to a sibling, the
+   key, one middle supertype edge replaced by an edge to a sibling type the fixture adds beside it, the
    redefinition target, and one subset target.
 3. For each rebuild, compare every effective identity with the baseline.
 4. Across the baseline and all rebuilds, collect every effective declaration's

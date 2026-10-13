@@ -45,10 +45,17 @@ it.
   sha256-jcs)`.
 - The declared `supertypes`, `subsets` and `redefines` edges each original
   declaration carries as an inline property (never a second producer record).
-- The selected `quire.model.complete/v2` definition and its rule manifest
-  `quire.model.complete.rules/v2`.
-- `ModelNormalizationLimitsV1` of `quire.value.accounting/v2`, with unchanged
-  public object and member names.
+- The selected `quire.model.complete/v1` definition and its rule manifest
+  `quire.model.complete.rules/v1`.
+- `ModelNormalizationLimitsV1` of `quire.value.accounting/v1`.
+
+The selection identities above stay as they are: no consumer's selection
+changes, so FR-056 and every requirement or test that selects them keep their
+text. The identity domains `quire.model.effective-declaration`,
+`quire.model.effective-view` and `quire.model.object-universe` move to `/v2`,
+and the inherit, subset and redefine rule identities move to `/v2`; the
+definition, manifest and accounting definition are edited in place to carry
+them.
 
 ## Outputs
 
@@ -115,7 +122,16 @@ the deterministic expansion of the retained facts through the parent
 identities the view holds. A reader expands it on demand under its own limits;
 the binder SHALL NOT encode or hash an expanded path. The expansion of a
 declaration equals the path-form facts in phase, input and rule order, with
-multiplicity retained. Because each preimage binds its parents' identities,
+multiplicity retained, where a fact's path is as follows. An inherit fact
+expands to one fact per distinct path from the declaration's type to the
+owner, in ascending-key depth-first order. A redefine fact on `(T, r)` or
+`(T, t)` expands to exactly one fact per redefiner `r` reaching `T`, carrying
+the least path from `T` to `r`'s owner (the first in that order), whether one
+or several paths reach the owner; a subset fact on `(T, s)` expands to one
+fact per subsets target, carrying the least path from `T` to `s`'s owner. So
+the expansion reproduces the path-form fact array exactly where one path
+reaches each owner, and for a diamond it lists every path in the inherit facts
+and the least path in the phase-4 facts. Because each preimage binds its parents' identities,
 equal preimages have equal expansions, so two effective declarations that
 differ in owner, original key or expanded facts have different preimages; and
 one effective declaration has exactly one preimage.
@@ -124,9 +140,8 @@ The binder SHALL compute every effective identity eagerly, hidden declarations
 included, then every universe identity and the complete digest-ordered view
 identity, hashing parents before children. A parent link of the wrong kind, or
 naming a declaration whose original or owner does not match the fact's inputs,
-SHALL be refused by the strict reader. For a selected
-`quire.model.complete/v2` package every published identity vector is replaced;
-a `/v1` digest is not an identity of the replacement, and the binder SHALL NOT
+SHALL be refused by the strict reader. Every published identity vector is
+replaced; a `/v1` identity digest is not an identity of the replacement, and the binder SHALL NOT
 add a dual reader, digest relabelling, compatibility shim or public API alias.
 The exact preimage grammar belongs to
 [FR-150](ix://agent-ix/quire-specification/FR-150) and the selected
@@ -193,7 +208,12 @@ binder SHALL NOT charge an ancestor path's length for an acyclic package.
 `derivation_facts` counts the retained facts, not the path-form facts of their
 expansion. A preimage's length is counted from its parts, a parent digest
 being fixed width, and is charged to `hashed_bytes` before the preimage is
-encoded or hashed.
+encoded or hashed, with one exception: an effective type's identity is hashed
+in phase 3, before its phase-5 `normalize.hash`, because phase 4's charge order
+uses it. That preimage holds only the type's own key and its direct edges,
+each already admitted by a `normalize.fact` and a `normalize.cycle-check`
+charge. Every member, universe and view preimage is charged before it is
+encoded.
 
 ## Constraints
 

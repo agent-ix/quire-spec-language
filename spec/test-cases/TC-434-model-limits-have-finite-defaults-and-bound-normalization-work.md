@@ -33,14 +33,13 @@ Verify NFR-012:
    - at `effective_declarations` 6, counting member identity hashes;
    - at `derivation_facts` `2 + n + 3`, counting inherited members.
 4. Normalize a lattice of two types per level, each generalizing both types
-   of the level above, 10 and 18 levels deep, at `derivation_facts` 200,
-   counting ancestor-walk steps.
+   of the level above, 10 and 18 levels deep, at `derivation_facts` 200, and
+   the 18-level lattice again at `derivation_facts` 103.
 5. Without `test-support`, charge a model `Meter` and an `AdmissionMeter`
    100000 times, and check that neither they nor their charges have drop
    glue.
 6. Normalize a 120-deep chain whose root declares 20 fields at the defaults,
-   and compare each inherited member fact's path allocation with its type's
-   own inherit fact's.
+   and read the retained facts and each inherited member's inherit fact.
 7. Normalize a 10-deep chain at `ancestor_steps` 5, first with
    `declaration_records` 10, then with it unlimited.
 
@@ -53,12 +52,15 @@ Verify NFR-012:
 3. Both sizes are incomplete at the same charge point and counter. The
    declaration run hashes 4 member identities and the fact run takes 4
    steps, for either `n`.
-4. Both lattices are incomplete on `derivation_facts` after at most 200
-   walk steps, although the deeper one has 2^18 paths.
+4. Both lattices complete at 200 with one fact per edge, 56 and 104
+   retained facts (two qualify facts per level, four edges per level
+   boundary), although the deeper one has 2^18 paths. At 103 the 18-level
+   lattice is incomplete on `derivation_facts`.
 5. The admission count equals the number of charges, and no meter or charge
    type owns heap memory.
-6. The chain normalizes, and every inherited member fact shares its type's
-   path allocation.
+6. The chain normalizes with 5,061 retained facts (241 for the types, 4,820
+   for the members), and every inherited member holds exactly one inherit
+   fact whose parent is the same member's identity in the preceding type.
 7. The first run is incomplete on `declaration_records` at
    `normalize.record`; the second is incomplete on `ancestor_steps` naming
    bound 5.
