@@ -901,6 +901,7 @@ fn tc235_m22_flags_parameter_is_assembled_as_a_record() {
 /// executed): recording the wrong clause `owner` flips `clause.owner ==
 /// Order`; dropping the field's `typeRef` flips the `ValueTypeRef::Package`
 /// assertion; the 23-charge count fails if either record is not read.
+#[test]
 fn tc235_m02_record_value_field_and_clause_bind_to_order() {
     let document = mutate_k2(|document| {
         let order = type_named_mut(document, "Order");
@@ -941,6 +942,7 @@ fn tc235_m02_record_value_field_and_clause_bind_to_order() {
 /// `history.multiplicity.upper == Some(3)`; reading `presence` as required
 /// flips the `discount` optional assertion; dropping the operation parameter
 /// flips `operation.parameters.len() == 1`.
+#[test]
 fn tc235_m13_record_invariant_binds_all_reachable_value_sources() {
     let document = mutate_k2(|document| {
         type_named_mut(document, "Money")["clauses"] =
@@ -1081,6 +1083,7 @@ fn tc235_m13_record_invariant_binds_all_reachable_value_sources() {
 /// dropping the event's `occurrence_field` flips the
 /// `event.occurrence_field == Some(..)` assertion; dropping the clause record
 /// flips `clause_for(.., "OrderPlaced/Occurred")`.
+#[test]
 fn tc235_m14_event_invariant_is_bound_without_an_event_value() {
     for (text, expected) in [
         (
