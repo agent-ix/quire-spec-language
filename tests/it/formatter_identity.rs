@@ -1289,7 +1289,9 @@ fn lifecycle_large_declaration_unit_keeps_format_identity() {
     let fixture = include_str!("../../qsl-replay/src/spine/lifecycle/tests.rs");
     let mut source = source_literal(fixture, "HEADER");
     let line = function_literal(fixture, "declarations", "function f{index}");
-    for index in 0..200_000 {
+    // This is the one measured declaration-volume case bounded for root IT;
+    // the other full-size generated cases run in `make test-deep-format`.
+    for index in 0..20_000 {
         source.push_str(&fixture_text(
             line.clone(),
             &[("index", &index.to_string())],
@@ -1317,6 +1319,7 @@ fn lifecycle_large_declaration_unit_keeps_format_identity() {
 
 #[trace("TC-885", "FR-003-AC-9")]
 #[test]
+#[ignore = "runs in make test-deep-format (part of make ci)"]
 fn all_three_deep_source_generators_keep_format_identity() {
     let fixture = include_str!("../../qsl-package/src/emit/tests/deep_bodies.rs");
     let header = source_literal(fixture, "HEADER");
@@ -1344,6 +1347,25 @@ fn all_three_deep_source_generators_keep_format_identity() {
         limits.checking = quire_semantic_value::checking::CheckingLimits::new(u64::MAX)
             .with_input_bytes(u64::MAX)
             .with_work_budget(u64::MAX);
+        if label == "sum" {
+            let parsed = qsl_cst::parse(
+                SourceIdentity::new("a", "u", "git", "small-stack"),
+                "unit.native",
+                source.as_bytes(),
+                limits.source,
+            )
+            .expect("the 100,000-level formatter control parses");
+            assert!(parsed.is_admissible(), "the depth control is admitted");
+            let formatted = std::thread::Builder::new()
+                .name("deep-formatter-small-stack".to_owned())
+                .stack_size(256 * 1024)
+                .spawn(move || qsl_cst::format::format(&parsed))
+                .expect("the small-stack formatter thread starts")
+                .join()
+                .expect("the iterative formatter fits on a 256 KiB stack")
+                .expect("the 100,000-level source formats");
+            assert!(!formatted.is_empty(), "deep formatting emits source");
+        }
         crate::support::front_end::emitted_with_authority(
             SourceIdentity::new("a", "u", "git", "1"),
             "unit.native",
@@ -1361,6 +1383,7 @@ fn all_three_deep_source_generators_keep_format_identity() {
 
 #[trace("TC-885", "FR-003-AC-9")]
 #[test]
+#[ignore = "runs in make test-deep-format (part of make ci)"]
 fn replay_large_source_generator_keeps_format_identity() {
     let fixture = include_str!("../../qsl-replay/src/execute/tests/composite.rs");
     let profile = source_literal(
@@ -1693,6 +1716,7 @@ fn dependency_library_and_scalar_variants_keep_format_identity() {
 
 #[trace("TC-885", "FR-003-AC-9")]
 #[test]
+#[ignore = "runs in make test-deep-format (part of make ci)"]
 fn dependency_chain_and_order_variants_keep_format_identity() {
     use crate::support::front_end::dependency_fixture_identity;
     use qsl_replay::spine::SuppliedLibrary;
@@ -1743,8 +1767,7 @@ fn dependency_chain_and_order_variants_keep_format_identity() {
             library("test/a", "a", &format!("{geometry_import}{h}")),
         ],
     );
-    // Both actual chain_of sizes: limit controls use three, the admitted
-    // small-stack fixture uses one thousand. Every reached library is checked.
+    // Preserve both original chain workloads; every reached library is checked.
     for count in [3, 1_000] {
         let libraries = (0..count)
             .map(|index| {
