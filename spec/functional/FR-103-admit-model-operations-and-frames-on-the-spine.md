@@ -130,15 +130,30 @@ evaluates it; it is not discarded and it is not shape-checked only.
   `DeclarationKey`, the artifact id and the span of the clause's `origin`.
   Intake SHALL NOT parse the text. A package whose operation declares no `pre`
   or `post` entry keeps an empty list for it, as it does today.
-- The S3 assembler SHALL parse each kept `quire`-language clause text with
-  the FR-146 expression parser that the unit `pre`/`post` clause path uses
-  (FR-102, FR-104), and the `ProtocolClause` family SHALL check it as a
-  Boolean under the clause kind FR-104 gives that position: a `requires`
-  clause is checked as a precondition and an `ensures` clause as a
+- The spine `compile` driver SHALL parse each kept `quire`-language clause
+  text at S1/S2 with the FR-146 expression parser that the unit `pre`/`post`
+  clause path uses (FR-102), and SHALL hand the parsed `Expression`s to the S3
+  assembler with each clause's kept source identity. The assembler consumes
+  parsed expressions and does not parse text, so the semantics layer takes no
+  dependency on the S1 parser (ADR-011 §6.1, TC-390). The `ProtocolClause`
+  family SHALL check each as a Boolean under the clause kind FR-104 gives that
+  position: a `requires` clause as a precondition and an `ensures` clause as a
   postcondition. The operation's receiver (`self`), its parameters by name
   and, for `ensures`, `result` bind as FR-104's state contract states. A
   clause in a language other than `quire` is kept verbatim and is not
   parsed or checked.
+- A kept clause names no `using` profile, so none is selected for it. The
+  existing path for a domain-package invariant written `language: quire`
+  (TC-235 M13 and M14) has no profile concept either: it retains the clause
+  text and evaluates nothing (`read_clauses`,
+  `qsl-semantics/src/model/intake.rs:2926`; `sorted_direct_clauses`,
+  `qsl-semantics/src/model/index.rs:602`; `qsl-semantics/src/model/normalize.rs:2473`).
+  A kept operation clause is therefore checked under the typer's
+  profile-independent defaults, with the unit's profile selections playing no
+  part. In particular `complete_value` is off, so integer `div`, `rem`, `mod`
+  and Integer `/` in a kept clause refuse `profile_prohibited_operator`.
+  Checking a kept clause yields a refusal or nothing; it adds no checked state
+  clause, claim or requirement record.
 - A `requires` clause is a precondition: it reads only the state before the
   invocation. If its text uses `pre(e)`, then the checker SHALL refuse
   `wrong_snapshot`/`forbidden-pre-read`, the cause FR-104 gives a unit `pre`
