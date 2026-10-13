@@ -58,7 +58,7 @@ use super::refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, Obligation, StageLimitCause,
 };
 use crate::model::operation::OperationTable;
-use crate::value::definition::AdmittedIeeeProfile;
+use crate::value::definition::{AdmittedIeeeProfile, AdmittedIntegerDivision};
 use crate::value::enumeration::{mint_variant_id, AdmittedEnumDeclaration};
 use qsl_forms::{
     Accumulation, BinaryOperator, BinderQuery, ClauseKind, ExprId, ExprNode, ExprRef,
@@ -190,6 +190,8 @@ pub struct PackageDeclarations {
     pub functions: Vec<FunctionDeclaration>,
     /// The admitted FR-148 IEEE profile, if the package selects one.
     pub ieee_profile: Option<AdmittedIeeeProfile>,
+    /// The package's admitted `div`/`rem` law, when one was selected.
+    pub integer_division: Option<AdmittedIntegerDivision>,
     /// FR-151 dispatch-eligible operations a `receiver.member(args)` call may
     /// resolve to, keyed by the receiver's static type and the member name.
     /// Built by the caller (the `crate::model` bridge); the checker only
@@ -213,10 +215,10 @@ pub struct PackageDeclarations {
     /// Resolved signatures standing in for some `functions` entries' own
     /// type forms; see [`ResolvedSignatures`].
     pub resolved_signatures: ResolvedSignatures,
-    /// FR-096: the span of each declared record's and tuple's name, by its
-    /// declared name, for the types read from the unit (the FR-091
-    /// assembler fills it). A type declared by hand has none, and its
-    /// `declaration` occurrence then names no region.
+    /// FR-096: the span of each declared record, tuple, enum, or selected
+    /// model alias, by its declared name, for declarations read from the
+    /// unit (the FR-091 assembler fills it). A declaration built by hand has
+    /// none, and its `declaration` occurrence then names no region.
     pub declared_type_spans: BTreeMap<String, qsl_foundation::Span>,
     /// FR-096-AC-1, ADR-013 C-21: the map of a body embedded in a document.
     /// The spans above are body offsets; with a map, each region resolves
@@ -277,6 +279,7 @@ impl PackageDeclarations {
             model_operations: Vec::new(),
             functions: Vec::new(),
             ieee_profile: None,
+            integer_division: None,
             dispatch_operations: Vec::new(),
             dispatch_tables: Vec::new(),
             models: Vec::new(),
@@ -332,6 +335,11 @@ pub struct Scope {
     /// The model object types' own declared operations (FR-103).
     operations: OperationTable,
     pub(crate) ieee_profile: Option<AdmittedIeeeProfile>,
+    pub(crate) integer_division: Option<AdmittedIntegerDivision>,
+    pub(crate) complete_value: bool,
+    /// Every admitted model currently uses `quire.model.complete/v1`; an
+    /// absent model keeps the historical exact-edge typing rule.
+    pub(crate) complete_model: bool,
     pub(crate) dispatch_operations: Vec<DispatchOperation>,
     /// The by-name lookups over the declared types, enums, aliases and
     /// model operations, built once by [`Self::new`]. Aliases and
@@ -460,6 +468,9 @@ impl Scope {
             enums,
             operations,
             ieee_profile,
+            integer_division: None,
+            complete_value: false,
+            complete_model: false,
             dispatch_operations,
             index,
             imports: BTreeMap::new(),
@@ -469,6 +480,24 @@ impl Scope {
     /// This scope with `imports`, each admitted import by its qualifier.
     pub(crate) fn with_imports(mut self, imports: BTreeMap<String, super::AdmittedImport>) -> Self {
         self.imports = imports;
+        self
+    }
+
+    pub(crate) fn with_integer_division(
+        mut self,
+        division: Option<AdmittedIntegerDivision>,
+    ) -> Self {
+        self.integer_division = division;
+        self
+    }
+
+    pub(crate) fn with_complete_value(mut self, complete_value: bool) -> Self {
+        self.complete_value = complete_value;
+        self
+    }
+
+    pub(crate) fn with_complete_model(mut self, complete_model: bool) -> Self {
+        self.complete_model = complete_model;
         self
     }
 
@@ -678,7 +707,9 @@ struct Local {
 /// One typing pass over a function or standalone expression.
 pub(crate) struct Typer<'a> {
     scope: &'a Scope,
+    complete_value: bool,
     signatures: &'a Signatures,
+    context: Option<crate::family::CheckContext<'a, Scope>>,
     limits: CheckingLimits,
     nodes: &'a mut u64,
     /// The caller's cancellation handle, polled at every node charge
@@ -918,7 +949,9 @@ impl<'a> Typer<'a> {
     ) -> Self {
         Self {
             scope,
+            complete_value: scope.complete_value,
             signatures,
+            context: None,
             limits,
             nodes,
             cancel: None,
@@ -940,6 +973,74 @@ impl<'a> Typer<'a> {
     pub(crate) fn with_cancel(mut self, cancel: Option<&'a Cancel>) -> Self {
         self.cancel = cancel;
         self
+    }
+
+    pub(crate) fn with_complete_value(mut self, complete_value: bool) -> Self {
+        self.complete_value = complete_value;
+        self
+    }
+
+    /// Borrow the enclosing family's stage state for nested model checks.
+    pub(crate) fn with_context(mut self, cx: crate::family::CheckContext<'a, Scope>) -> Self {
+        self.context = Some(cx);
+        self
+    }
+
+    fn model_check(
+        &mut self,
+        form: super::state_model::Form,
+        location: &Location,
+    ) -> Result<super::state_model::Checked, CheckRefusal> {
+        use crate::family::FamilyContract;
+        use qsl_foundation::diagnostic::StageFailure;
+        let cx = self
+            .context
+            .as_mut()
+            .ok_or_else(|| super::state_model::fault(location))?;
+        super::state_model::StateModelFamily::check(
+            &super::state_model::Request {
+                form,
+                location: location.clone(),
+            },
+            cx,
+        )
+        .map(|staged| staged.into_value())
+        .map_err(|failure| match failure {
+            StageFailure::Refused(refusal) => refusal,
+            StageFailure::Limit(limit) => CheckRefusal {
+                location: location.clone(),
+                cause: super::limit_cause(&limit),
+            },
+            StageFailure::Fault(fault) => CheckRefusal {
+                location: location.clone(),
+                cause: CheckCause::InternalFault(Box::new(super::refusal::KeyFault::StageFault(
+                    fault,
+                ))),
+            },
+            StageFailure::Cancelled(_) => super::state_model::fault(location),
+        })
+    }
+
+    fn model_node(
+        &mut self,
+        form: super::state_model::Form,
+        location: &Location,
+    ) -> Result<Node, CheckRefusal> {
+        match self.model_check(form, location)? {
+            super::state_model::Checked::Node(node) => Ok(*node),
+            _ => Err(super::state_model::fault(location)),
+        }
+    }
+
+    fn model_type(
+        &mut self,
+        form: super::state_model::Form,
+        location: &Location,
+    ) -> Result<ValueType, CheckRefusal> {
+        match self.model_check(form, location)? {
+            super::state_model::Checked::Type(value_type) => Ok(value_type),
+            _ => Err(super::state_model::fault(location)),
+        }
     }
 
     /// Store `node` as an operand of the node being built, and name it.
@@ -1477,23 +1578,31 @@ impl<'a> Typer<'a> {
         let (left_type, right_type) = (left.value_type.clone(), right.value_type.clone());
         let (left_box, right_box) = (self.push(left), self.push(right));
         let (kind, value_type) = match (&left_type, &right_type, operator) {
-            (l, r, ArithmeticOperator::Divide) if is_integer(l) && is_integer(r) => match hint {
-                Some(ValueType::Rational(domain)) => (
-                    NodeKind::Divide {
-                        left: left_box,
-                        right: right_box,
-                        domain: domain.clone(),
-                    },
-                    ValueType::Rational(domain.clone()),
-                ),
-                Some(_) => return Err(mismatch(location)),
-                None => {
-                    return Err(CheckRefusal::ill_typed(
+            (l, r, ArithmeticOperator::Divide) if is_integer(l) && is_integer(r) => {
+                if !self.complete_value {
+                    return Err(refuse(
                         location,
-                        IllTypedCause::AmbiguousLiteral,
-                    ))
+                        CheckCause::ProfileProhibitedOperator(BinaryOperator::Divide),
+                    ));
                 }
-            },
+                match hint {
+                    Some(ValueType::Rational(domain)) => (
+                        NodeKind::Divide {
+                            left: left_box,
+                            right: right_box,
+                            domain: domain.clone(),
+                        },
+                        ValueType::Rational(domain.clone()),
+                    ),
+                    Some(_) => return Err(mismatch(location)),
+                    None => {
+                        return Err(CheckRefusal::ill_typed(
+                            location,
+                            IllTypedCause::AmbiguousLiteral,
+                        ))
+                    }
+                }
+            }
             (l, r, _) if is_integer(l) && is_integer(r) => {
                 // `Divide` is taken by the preceding arm; naming it here keeps
                 // a later change from silently lowering `/` as `*`.
@@ -1649,33 +1758,18 @@ impl<'a> Typer<'a> {
         location: &Location,
         derefed: bool,
     ) -> Result<Node, CheckRefusal> {
-        let ValueType::Reference(key) = reference.value_type else {
-            return Err(mismatch(operand_location));
-        };
-        // `f` resolves in the static type's effective attribute set,
-        // so a field `T` inherits (or redefines) resolves like its own.
-        let attribute = self
-            .scope
-            .types
-            .attribute(key, field)
-            .ok_or_else(|| mismatch(location))?;
-        let declared = attribute.field();
-        let optional = declared.presence() == Presence::Optional;
-        let value_type = if optional {
-            ValueType::option(declared.value_type().clone())
-        } else {
-            declared.value_type().clone()
-        };
-        Ok(node(
-            NodeKind::Attribute {
-                field: attribute.identity(),
-                reference: self.push(reference),
-                optional,
+        let value_type = reference.value_type.clone();
+        let reference = self.push(reference);
+        self.model_node(
+            super::state_model::Form::Attribute {
+                reference,
+                value_type,
+                field: field.to_owned(),
+                operand_location: operand_location.clone(),
                 derefed,
             },
-            value_type,
             location,
-        ))
+        )
     }
 
     /// `self` (FR-104): in a state clause, the context object,
@@ -1726,10 +1820,10 @@ impl<'a> Typer<'a> {
     }
 
     /// `reaches(source, target, edge)` over the typed `source` and `target`
-    /// (FR-104): both `Reference<T>` of one object type `T`, and `edge` a
-    /// field of `T`'s effective attribute set typed `Reference<T>`,
-    /// `Option<Reference<T>>` or a sequence of `Reference<T>` (QSpec
-    /// `state-contract.md`, "Finite graph extension"). Anything else,
+    /// (FR-104): for a complete model, each endpoint conforms to the
+    /// inherited edge's declaring type `T`, and the edge targets
+    /// `Reference<T>`. An absent model retains exact `Reference<T>` endpoint
+    /// typing. Anything else,
     /// a set, bag or ordered set of references included, refuses
     /// `ill_typed`/`operator-ineligible` at the `reaches`.
     fn reaches(
@@ -1739,41 +1833,20 @@ impl<'a> Typer<'a> {
         edge: &str,
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
-        let (ValueType::Reference(object), ValueType::Reference(other)) =
-            (&source.value_type, &target.value_type)
-        else {
-            return Err(ineligible(location));
-        };
-        if object != other {
-            return Err(ineligible(location));
-        }
-        let object = *object;
-        let attribute = self
-            .scope
-            .types
-            .attribute(object, edge)
-            .ok_or_else(|| ineligible(location))?;
-        let declared = attribute.field();
-        let names_object = |value_type: &ValueType| value_type == &ValueType::Reference(object);
-        let admitted = match (declared.presence(), declared.value_type()) {
-            (_, ValueType::Reference(_)) => names_object(declared.value_type()),
-            (Presence::Required, ValueType::Collection(collection)) => {
-                collection.kind() == CollectionKind::Sequence && names_object(collection.element())
-            }
-            _ => false,
-        };
-        if !admitted {
-            return Err(ineligible(location));
-        }
-        Ok(node(
-            NodeKind::Reaches {
-                source: self.push(source),
-                target: self.push(target),
-                edge: attribute.identity(),
+        let source_type = source.value_type.clone();
+        let target_type = target.value_type.clone();
+        let source = self.push(source);
+        let target = self.push(target);
+        self.model_node(
+            super::state_model::Form::Reaches {
+                source,
+                source_type,
+                target,
+                target_type,
+                edge: edge.to_owned(),
             },
-            ValueType::Boolean,
             location,
-        ))
+        )
     }
 
     /// Whether a state clause's `pre(e)` operand contains, in its own
@@ -1881,15 +1954,12 @@ impl<'a> Typer<'a> {
     /// `receiver.member(args)` (FR-151, `quire.model.dispatch.single/v1`):
     /// whether a dispatch call checks in this clause at all. It checks only
     /// inside an invariant, precondition or postcondition (TC-196 D07).
-    fn dispatch_admitted(&self, location: &Location) -> Result<(), CheckRefusal> {
-        if matches!(
-            self.clause_kind,
-            ClauseKind::Invariant | ClauseKind::Precondition | ClauseKind::Postcondition
-        ) {
-            Ok(())
-        } else {
-            Err(ineligible(location))
-        }
+    fn dispatch_admitted(&mut self, location: &Location) -> Result<(), CheckRefusal> {
+        self.model_check(
+            super::state_model::Form::DispatchContext(self.clause_kind),
+            location,
+        )
+        .map(|_| ())
     }
 
     /// The dispatch-eligible operation `member` a call with `arity`
@@ -1898,31 +1968,28 @@ impl<'a> Typer<'a> {
     /// resolves statically against `T`'s exposed dispatch-eligible
     /// operations. Returns the operation's index and declaration.
     fn dispatch_operation(
-        &self,
+        &mut self,
         receiver: &Node,
         member: &str,
         arity: usize,
         location: &Location,
     ) -> Result<(usize, &'a DispatchOperation), CheckRefusal> {
-        let scope: &'a Scope = self.scope;
-        let ValueType::Reference(receiver_type) = receiver.value_type else {
-            return Err(ineligible(location));
+        let index = match self.model_check(
+            super::state_model::Form::DispatchOperation {
+                receiver_type: receiver.value_type.clone(),
+                member: member.to_owned(),
+                arity,
+            },
+            location,
+        )? {
+            super::state_model::Checked::Operation(index) => index,
+            _ => return Err(super::state_model::fault(location)),
         };
-        let Some((operation_index, operation)) =
-            scope
-                .dispatch_operations
-                .iter()
-                .enumerate()
-                .find(|(_, operation)| {
-                    operation.receiver_type == receiver_type && operation.member == member
-                })
-        else {
-            return Err(ineligible(location));
-        };
-        if operation.parameters.len() != arity {
-            return Err(mismatch(location));
-        }
-        Ok((operation_index, operation))
+        self.scope
+            .dispatch_operations
+            .get(index)
+            .map(|operation| (index, operation))
+            .ok_or_else(|| super::state_model::fault(location))
     }
 
     /// A dispatch call argument typed against its declared parameter type
@@ -1941,25 +2008,19 @@ impl<'a> Typer<'a> {
     /// `let` passes the parameter type into its branches or body, so only
     /// the value an argument's branches yield reaches this.
     fn upcast(
-        &self,
+        &mut self,
         mut typed: Node,
         required: &ValueType,
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
-        if &typed.value_type == required {
-            Ok(typed)
-        } else if let (ValueType::Reference(actual), ValueType::Reference(expected)) =
-            (&typed.value_type, required)
-        {
-            if self.scope.types.conforms(*actual, *expected) {
-                typed.value_type = required.clone();
-                Ok(typed)
-            } else {
-                Err(mismatch(location))
-            }
-        } else {
-            Err(mismatch(location))
-        }
+        typed.value_type = self.model_type(
+            super::state_model::Form::Argument {
+                actual: typed.value_type.clone(),
+                required: required.clone(),
+            },
+            location,
+        )?;
+        Ok(typed)
     }
 
     /// The record declaration `name` a record literal builds, and its
@@ -2135,15 +2196,11 @@ impl<'a> Typer<'a> {
     /// The queried type `T` of `allInstances<T>(p)` or `lookup<T>(p, r)`
     /// (FR-153), resolved and checked: an object reference type.
     fn population_target(
-        &self,
+        &mut self,
         target: &qsl_forms::TypeForm,
         location: &Location,
     ) -> Result<ValueType, CheckRefusal> {
-        let target = self.declared_target(target, location)?;
-        if !matches!(target, ValueType::Reference(_)) {
-            return Err(mismatch(location));
-        }
-        Ok(target)
+        self.model_type(super::state_model::Form::Target(target.clone()), location)
     }
 
     /// `allInstances<T>(p)` (FR-153) over the typed population `p`: `p`'s
@@ -2156,38 +2213,32 @@ impl<'a> Typer<'a> {
         population: Node,
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
-        // FR-153 requires `p` to be a population binding with a declared
-        // maximum, otherwise `ill_typed`/`operator-ineligible` (TC-198 L06):
-        // the operand is the wrong kind, not merely the wrong type name.
-        let ValueType::Population(maximum) = population.value_type else {
-            return Err(ineligible(&population.location));
-        };
-        // A population with no declared maximum is unbounded (QSpec
-        // FR-153-AC-9), so its instance set is too (ADR-014 §2).
-        let result_bound = maximum
-            .map(|maximum| bound(0, maximum, location))
-            .transpose()?;
-        let collection_type =
-            CollectionType::new(CollectionKind::Set, target.clone(), result_bound);
-        Ok(node(
-            NodeKind::AllInstances {
-                population: self.push(population),
+        let population_type = population.value_type.clone();
+        let operand_location = population.location.clone();
+        let population = self.push(population);
+        self.model_node(
+            super::state_model::Form::AllInstances {
+                target: target.clone(),
+                population,
+                population_type,
+                operand_location,
             },
-            ValueType::collection(collection_type),
             location,
-        ))
+        )
     }
 
     /// `lookup<T>(p, r)`'s typed population operand `p`: FR-153 requires a
     /// population binding with a declared maximum, otherwise
     /// `ill_typed`/`operator-ineligible` (TC-198 L06): the operand is the
     /// wrong kind, not merely the wrong type name.
-    fn lookup_population(population: &Node) -> Result<(), CheckRefusal> {
-        if matches!(population.value_type, ValueType::Population(_)) {
-            Ok(())
-        } else {
-            Err(ineligible(&population.location))
-        }
+    fn lookup_population(&mut self, population: &Node) -> Result<(), CheckRefusal> {
+        self.model_check(
+            super::state_model::Form::Population {
+                value_type: population.value_type.clone(),
+            },
+            &population.location,
+        )
+        .map(|_| ())
     }
 
     /// `lookup<T>(p, r) absent m` (FR-153) over its typed operands. `r`'s own
@@ -2209,26 +2260,21 @@ impl<'a> Typer<'a> {
         absence: AbsenceMode,
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
-        let (ValueType::Reference(s), ValueType::Reference(t)) = (&reference.value_type, target)
-        else {
-            return Err(mismatch(&reference.location));
-        };
-        if !self.scope.types.conforms(*s, *t) {
-            return Err(mismatch(&reference.location));
-        }
-        let value_type = match absence {
-            AbsenceMode::Undefined | AbsenceMode::Refused => target.clone(),
-            AbsenceMode::Empty => ValueType::option(target.clone()),
-        };
-        Ok(node(
-            NodeKind::Lookup {
-                population: self.push(population),
-                reference: self.push(reference),
+        let reference_type = reference.value_type.clone();
+        let reference_location = reference.location.clone();
+        let population = self.push(population);
+        let reference = self.push(reference);
+        self.model_node(
+            super::state_model::Form::Lookup {
+                target: target.clone(),
+                population,
+                reference,
+                reference_type,
+                reference_location,
                 absence,
             },
-            value_type,
             location,
-        ))
+        )
     }
 
     /// Bind a one-binder form's binder to the element type of its typed

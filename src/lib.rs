@@ -14,7 +14,6 @@ pub mod checking;
 pub mod command;
 pub mod complete;
 pub mod formal_source;
-pub mod format;
 pub mod linking;
 pub mod located_json;
 pub mod lowering;

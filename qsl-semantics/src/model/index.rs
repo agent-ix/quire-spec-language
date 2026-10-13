@@ -51,7 +51,8 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, OnceLock};
 
 use crate::model::domain_package::{
-    DomainPackage, DomainPackageRecord, FieldMemberRecord, OperationMemberRecord, ValueTypeRef,
+    DomainPackage, DomainPackageRecord, FieldMemberRecord, OperationMemberRecord,
+    ScalarValueDomain, ValueTypeRef,
 };
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
@@ -384,7 +385,9 @@ impl RecordIndex {
                 }
                 DomainPackageRecord::ScalarType(scalar) => {
                     index.flags[own.0].scalar_type = true;
-                    index.scalars.insert(own, (scalar.lower, scalar.upper));
+                    if let ScalarValueDomain::Integer { lower, upper } = &scalar.domain {
+                        index.scalars.insert(own, (*lower, *upper));
+                    }
                 }
                 // FR-152 systems-model records and FR-153 population
                 // declarations are read by `crate::model::systems` and

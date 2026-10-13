@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-026: typed native result views; upstream identities retain their serializers.
 
-use super::super::wire;
-use crate::runtime::{EvaluationUsage, InvocationRef, QualifiedName, SnapshotRef, ValidationUsage};
+use crate::runtime::{InvocationRef, SnapshotRef};
 use qsl_foundation::{LocatedSpan, SourceIdentity, Span};
 use quire_contract_model as ir;
 use serde::Serialize;
@@ -54,13 +53,6 @@ impl Serialize for Stage {
 }
 
 #[derive(Serialize)]
-#[serde(rename_all = "snake_case")]
-pub(super) enum FailureStatus {
-    Refused,
-    Incomplete,
-}
-
-#[derive(Serialize)]
 pub(super) struct Source<'a> {
     #[serde(flatten)]
     pub identity: &'a SourceIdentity,
@@ -77,31 +69,6 @@ pub(super) enum Reference<'a> {
 }
 
 #[derive(Serialize)]
-#[serde(rename_all = "snake_case")]
-pub(super) enum RuntimePath<'a> {
-    Model(&'a ir::RequirementRef),
-    Population {
-        record: &'a ir::SymbolName,
-        universe: &'a ir::SymbolName,
-    },
-    Object(&'a str),
-    State(&'a QualifiedName),
-    Parameter(&'a QualifiedName),
-    Result(bool),
-    Field(&'a ir::SymbolName),
-    Index(usize),
-}
-
-#[derive(Serialize)]
-pub(super) struct RuntimeLocation<'a> {
-    pub artifact: Reference<'a>,
-    pub observation: Option<ir::StateObservation>,
-    pub requirement: &'a ir::RequirementRef,
-    pub clause: &'a ir::ClauseId,
-    pub path: Vec<RuntimePath<'a>>,
-}
-
-#[derive(Serialize)]
 pub(super) struct Diagnostic<'a> {
     pub phase: &'static str,
     pub code: &'static str,
@@ -110,7 +77,6 @@ pub(super) struct Diagnostic<'a> {
     pub path: &'a str,
     pub span: LocatedSpan,
     pub upstream: Option<&'a ir::Diagnostic>,
-    pub runtime: Option<RuntimeLocation<'a>>,
     /// FR-001: `cause` and `label`, on an `invalid_source_identity`
     /// refusal only.
     #[serde(flatten)]
@@ -133,6 +99,11 @@ pub(super) enum Details<'a> {
     },
     FileBytes {
         limit: &'static str,
+    },
+    ConfiguredBytes {
+        limit: &'static str,
+        maximum: usize,
+        option: &'static str,
     },
     FileCount {
         limit: &'static str,
@@ -189,12 +160,51 @@ pub(super) enum Details<'a> {
     Position {
         position: usize,
     },
+    /// FR-100 typed model admission's foreign-universe payload.
+    AdmissionForeignUniverse {
+        position: usize,
+        required: String,
+        supplied: String,
+    },
+    /// FR-100 typed model-selection admission details for a document offer.
+    AdmissionForeignModelDocument {
+        position: usize,
+        model_identity: String,
+        expected: AdmissionModelSelection,
+    },
+    /// FR-100 typed model-selection admission details for a population offer.
+    AdmissionForeignModelPopulation {
+        position: usize,
+        population: AdmissionDeclarationKey,
+        expected: AdmissionModelSelection,
+    },
+    /// FR-100 typed foreign-type admission details.
+    AdmissionForeignType {
+        position: usize,
+        member: String,
+        #[serde(rename = "type")]
+        type_name: AdmissionDeclarationKey,
+    },
     /// FR-100 "Internal failure at S6a": the `InternalFault`'s own stable
     /// stage and invariant identifiers (`runtime_invariant`, exit 30).
     Invariant {
         stage: &'static str,
         invariant: &'static str,
     },
+}
+
+#[derive(Serialize)]
+pub(super) struct AdmissionModelSelection {
+    pub identity: String,
+    pub version: String,
+    pub digest_domain: &'static str,
+    pub digest: String,
+}
+
+#[derive(Serialize)]
+pub(super) struct AdmissionDeclarationKey {
+    pub package: String,
+    pub node: String,
 }
 
 /// FR-100: the program source as `spine-run-result/1` renders one -- its
@@ -212,8 +222,18 @@ pub(super) struct RunSource<'a> {
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(super) enum SpineValue {
-    Boolean { value: bool },
-    Integer { decimal: String },
+    Boolean {
+        value: bool,
+    },
+    Integer {
+        decimal: String,
+    },
+    Reference {
+        universe: String,
+        #[serde(rename = "type")]
+        object_type: String,
+        object_identity: String,
+    },
 }
 
 /// FR-096/FR-100: a `refused` record's or cause's resolved locus -- the
@@ -330,88 +350,28 @@ pub(super) enum PackageCause<'a> {
 #[derive(Serialize)]
 pub(super) struct Failure<'a> {
     pub format: Format,
-    pub request_digest: Option<String>,
-    pub status: FailureStatus,
     pub stage: Stage,
     pub code: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cause: Option<&'static str>,
     pub message: String,
     pub details: Details<'a>,
+    pub basis: &'static str,
 }
 
+/// Artifact commands retain their request identity and completion status on
+/// stderr. The `run` command uses the closed command-error shape above.
 #[derive(Serialize)]
-pub(super) struct Package {
-    pub digest: String,
-    pub canonical_identity: String,
-}
-
-#[derive(Serialize)]
-pub(super) struct Model<'a> {
-    pub owner: &'a ir::RequirementRef,
-    pub digest: String,
-    pub source: Source<'a>,
-}
-
-#[derive(Serialize)]
-pub(super) struct Inputs {
-    pub snapshots: Vec<SnapshotRef>,
-    pub invocations: Vec<InvocationRef>,
-}
-
-#[derive(Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub(super) enum EventKind {
-    AntecedentEntered,
-    AntecedentCompleted { truth: bool },
-    ConsequentEntered,
-}
-
-#[derive(Serialize)]
-pub(super) struct Event {
-    pub implication: usize,
-    pub operand: usize,
-    pub span: Span,
+pub(super) struct ArtifactFailure<'a> {
     #[serde(flatten)]
-    pub kind: EventKind,
+    pub failure: Failure<'a>,
+    pub request_digest: Option<String>,
+    pub status: ArtifactFailureStatus,
 }
 
 #[derive(Serialize)]
-#[serde(tag = "status", rename_all = "snake_case")]
-pub(super) enum Evaluation<'a> {
-    Completed { truth: bool },
-    Refused { diagnostic: Diagnostic<'a> },
-    Incomplete { diagnostic: Diagnostic<'a> },
-}
-
-#[derive(Serialize)]
-#[serde(tag = "stage", rename_all = "snake_case")]
-pub(super) enum Outcome<'a> {
-    Validate {
-        status: FailureStatus,
-        diagnostics: Vec<Diagnostic<'a>>,
-        terminal: Option<Diagnostic<'a>>,
-    },
-    Evaluate {
-        cost_model: &'static str,
-        evaluation_usage: &'a EvaluationUsage,
-        events: Vec<Event>,
-        #[serde(flatten)]
-        result: Evaluation<'a>,
-    },
-}
-
-#[derive(Serialize)]
-pub(super) struct Report<'a> {
-    #[cfg(feature = "quire-extraction")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub extraction: Option<super::extraction::Extracted<'a>>,
-    pub format: Format,
-    pub request_digest: String,
-    pub package: Package,
-    pub source: Source<'a>,
-    pub models: Vec<Model<'a>>,
-    pub inputs: Inputs,
-    pub selection: &'a wire::Selection,
-    pub validation_usage: ValidationUsage,
-    #[serde(flatten)]
-    pub outcome: Outcome<'a>,
+#[serde(rename_all = "snake_case")]
+pub(super) enum ArtifactFailureStatus {
+    Refused,
+    Incomplete,
 }

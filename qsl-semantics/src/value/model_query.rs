@@ -107,6 +107,14 @@ pub enum ModelQueryHalt {
         /// `r`'s object identity bytes, exactly as supplied.
         key: Vec<u8>,
     },
+    /// No declared member type covers the query by conformance; this is an
+    /// evaluation-time undefined result, not an admission refusal.
+    IncompleteClosure {
+        /// The queried effective type's canonical node name.
+        queried_type: String,
+        /// The queried type as the minimal uncovered-subtype witness.
+        uncovered_subtypes: Vec<String>,
+    },
 }
 
 impl From<Incomplete> for ModelQueryHalt {
@@ -201,6 +209,16 @@ pub fn evaluate_all_instances(
         }
         AllInstancesOutcome::Refused(refusal) => Err(ModelQueryHalt::Refused(Box::new(refusal))),
         AllInstancesOutcome::Incomplete(incomplete) => Err(incomplete.into()),
+        AllInstancesOutcome::IncompleteSubtypeClosure(incomplete) => {
+            Err(ModelQueryHalt::IncompleteClosure {
+                queried_type: incomplete.queried_type.node,
+                uncovered_subtypes: incomplete
+                    .missing_types
+                    .into_iter()
+                    .map(|missing| missing.node)
+                    .collect(),
+            })
+        }
     }
 }
 

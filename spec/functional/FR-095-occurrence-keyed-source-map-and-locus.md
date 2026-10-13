@@ -108,18 +108,3 @@ RFC 6901 JSON pointer.
   and `WireNodeId` this requirement's package source map is read through.
 - [US-005](../usecase/US-005-trust-checked-identity-across-packaging.md).
 - QSpec FR-322 (`ix://agent-ix/quire-specification/FR-322`).
-
-## Status
-
-Specified and implemented. TC-420, TC-421 and TC-422 pass
-locally; TC-421's QSpec-fixture step runs under `make conformance`.
-
-ADR-013 §7 slice S-4b built the `RawSourceRef` of a source QSL
-reads itself ([FR-001](FR-001-read-exact-source.md)), the `SourceRegion`
-that replaces `LocatedSpan` in the canonical S0 and S1 diagnostics
-(`SourceReadError`, `CompleteDiagnostic`; S2's forms refusal carries no
-span), and C-21's embedded-body span to document region
-(`SourceMap::map_regions`). The remaining part, check-stage
-regions, is [FR-096](FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md)'s
-`quire_semantic_value::location::Location` resolution in slice S-5b. It also needs the parsed forms'
-expression spans (FR-091-AC-10).

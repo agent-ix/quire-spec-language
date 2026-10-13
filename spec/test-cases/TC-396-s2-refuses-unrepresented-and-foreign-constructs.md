@@ -20,7 +20,7 @@ This catches a production that refuses another family's construct at S2
 with `unsupported_construct`. That would discard the `forbidden-pre-read`
 distinction that FR-090 assigns to `ProtocolClause`.
 
-Scope: FR-091-AC-7, FR-091-AC-8.
+Scope: FR-091-AC-7, FR-091-AC-8, FR-091-AC-39.
 
 ## Test Procedure
 
@@ -29,9 +29,11 @@ Every fixture unit below starts with the complete-V1 header
 alias is `v`.
 
 1. For each body below, build an admissible unit whose one function body is
-   that construct, and run S2: `"text"`; `decimal(1, 2)`; `a mod b`;
+   that construct, and run S2: `"text"`; `decimal(1, 2)`;
    `xs[0]`; `none`; `reaches(a, b, M::R)`.
-2. Run S2 on the body `if a then b else a mod b`.
+2. Run S2 on `a div b`, `a rem b`, `a mod b` and
+   `if true then 1 else a mod b`, each under a state-only declaration
+   without `quire.value.complete/v1`; pass the resulting forms to check.
 3. For each body `B` of `deref(x)`, `allInstances<M::T>(x)` and `pre(x)`,
    build an admissible unit, with no admitted domain package, whose one
    declaration is `function f using v(x: Int[0, 9]): Boolean pure { B }`.
@@ -40,14 +42,15 @@ alias is `v`.
    Run S2, then the assembler, then `PackageDeclarations::check` on
    whatever the assembler returns.
 
-Tag the test `#[trace("FR-091-AC-7", "FR-091-AC-8", "TC-396")]`.
+Tag the test `#[trace("FR-091-AC-7", "FR-091-AC-8", "FR-091-AC-39")]`.
 
 ## Expected Results
 
 - Every step-1 case refuses with cause `UnrepresentedConstruct`, names the
   construct's CST production and exact span, and returns no parsed unit.
-- Step 2's span is the `a mod b` sub-construct, not the whole body, and it
-  returns no parsed unit.
+- Step 2 returns parsed forms with distinct operators and original spans.
+  Check then refuses each with located `unsupported_construct`, including
+  the dead branch's `mod`; it never returns `UnrepresentedConstruct` at S2.
 - In step 3, S2 returns a parsed unit holding `Deref`, `AllInstances` or
   `Pre` where the construct is written.
 - `pre(x)`, in `f`'s body and in `g`'s measure, refuses at check with
@@ -57,7 +60,3 @@ Tag the test `#[trace("FR-091-AC-7", "FR-091-AC-8", "TC-396")]`.
   unresolved-type-name error naming `M::T`, code
   `missing_declaration`/`missing-name`.
 - No step-3 refusal has code `unsupported_construct`.
-
-## Status
-
-Backed by `qsl-forms/tests/it/value_forms.rs` (`a_construct_no_variant_represents_refuses_the_unit`, `nested_constructs_of_other_families_are_built_where_written`) and `qsl-semantics` `check::assemble` tests (`nested_constructs_of_other_families_refuse_with_their_own_causes`).

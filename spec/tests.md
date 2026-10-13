@@ -33,6 +33,7 @@ names different artifacts in each.
 
 | Test ID | Title | Type | Priority | Traces To | Status |
 | --- | --- | --- | --- | --- | --- |
+| TC-950 | Native CI accepts only declared genuine empty suites | Integration | P1 | NFR-014-AC-1, NFR-014-AC-2, NFR-014-AC-3, NFR-014-AC-4, NFR-014-AC-5, NFR-014-AC-6, NFR-014-AC-7, NFR-014-AC-8, NFR-014-AC-9, NFR-014-AC-10 | 🚧 Planned; validation and execution pending |
 | TC-156 | Report FB-05 and FB-11 violations over the four-repository backend dependency graph | Integration | P1 | FR-059-AC-1..FR-059-AC-6, FR-059-AC-8, FR-059-AC-9 | ✅ |
 | TC-157 | Report pending, passing and failing T-12 API-surface rules | Integration | P1 | FR-060-AC-1..FR-060-AC-4 | ✅ |
 | TC-160 | Every family implements the six-part checked contract with no bypass | Unit | P1 | FR-062-AC-1..FR-062-AC-7, FR-062-AC-9, FR-062-AC-13, FR-057-AC-10 | ✅ |
@@ -58,7 +59,8 @@ names different artifacts in each.
 | TC-433 | A backend member is its identity, kept verbatim | Unit | P1 | FR-075-AC-6 | ✅ |
 | TC-447 | Duplicate backend identity registration matches quire-specification TC-282 under every order | Unit | P1 | FR-075-AC-4, FR-075-AC-7 | 🚧 |
 | TC-448 | An identical repeat registration is idempotent | Unit | P1 | FR-075-AC-7 | ✅ |
-| TC-449 | The request builder writes one item per requirement record | Unit | P1 | FR-075-AC-8 | ✅ |
+| TC-449 | The request builder writes one item per requirement record | Unit | P1 | FR-075-AC-8, FR-075-AC-15, FR-075-AC-16 | ✅ |
+| TC-984 | Request items preserve each occurrence's path condition | Unit | P1 | FR-075-AC-9 | 🚧 |
 | TC-197 | Empty candidate set carries the data an unsupported warning needs | Unit | P1 | FR-076-AC-1, FR-076-AC-2 | ✅ |
 | TC-198 | Backend absence never settles as a refusal or a hold at the registry | Unit | P1 | FR-076-AC-3 | ✅ |
 | TC-199 | requests::report takes no Backend parameter and has no capability/family disposition | Unit | P1 | FR-077-AC-1, FR-077-AC-2 | ✅ |
@@ -101,7 +103,7 @@ names different artifacts in each.
 | TC-224 | An ambiguous family produces no dispatch table, not even for subtypes that resolved cleanly | Unit | P1 | FR-083-AC-3 | ✅ |
 | TC-225 | A dispatch family walk that exhausts its edge limit stops incomplete instead of reporting a false unique winner | Unit | P1 | FR-083-AC-4 | ✅ |
 | TC-226 | Population admission distinguishes unknown closure from a genuine refusal | Unit | P1 | FR-084-AC-1 | ✅ |
-| TC-227 | allInstances requires both object and subtype closure, never a partial set | Unit | P1 | FR-084-AC-2 | 🚧 |
+| TC-227 | allInstances requires subtype closure, never a partial set | Integration | P1 | FR-084-AC-2, FR-090-AC-21 | 🚧 |
 | TC-228 | lookup returns the declared absence mode for a genuinely unmatched key | Unit | P1 | FR-084-AC-3 | ✅ |
 | TC-229 | Two members sharing universe and object identity but differing type refuse admission outright | Unit | P1 | FR-084-AC-4 | ✅ |
 | TC-230 | A relationship end naming an undeclared type refuses the whole relationship record | Unit | P1 | FR-085-AC-1 | 🚧 |
@@ -222,8 +224,10 @@ names different artifacts in each.
 | TC-456 | S2 builds state clause forms and the self, result and reaches expressions | Unit | P1 | FR-102-AC-1, FR-102-AC-2, FR-102-AC-3 | 🚧 |
 | TC-457 | S2 state clause dispatch is thin, bounded and seam-probed | Unit | P1 | FR-102-AC-4, FR-102-AC-5, FR-102-AC-6 | 🚧 |
 | TC-458 | Spine intake and assembly admit operations and frames | Integration | P1 | FR-103-AC-1, FR-103-AC-2, FR-103-AC-3, FR-103-AC-4, FR-103-AC-5 | 🚧 |
-| TC-459 | S3 checks the ConfigVersion state clauses and types self, result and pre | Unit | P1 | FR-104-AC-1, FR-104-AC-2, FR-104-AC-7, FR-104-AC-8 | ✅ |
-| TC-460 | S3 refuses ill-formed state clauses with their catalog codes | Unit | P1 | FR-104-AC-3, FR-104-AC-4 | ✅ |
+| TC-985 | Record-valued model fields and observations | Integration | P1 | FR-056-AC-21, FR-056-AC-22, FR-103-AC-4, FR-103-AC-6, FR-106-AC-14..FR-106-AC-17 | 🚧 |
+| TC-992 | Native String and UUID remain distinct checked value leaves | Integration | P1 | FR-056-AC-23 | 🚧 |
+| TC-459 | S3 checks the ConfigVersion state clauses and types self, result and pre | Unit | P1 | FR-104-AC-1, FR-104-AC-2, FR-104-AC-7, FR-104-AC-8, FR-104-AC-9 | 🚧 |
+| TC-460 | S3 refuses ill-formed state clauses with their catalog codes | Unit | P1 | FR-104-AC-3, FR-104-AC-4, FR-104-AC-9 | 🚧 |
 | TC-461 | S3 records one operation-contract requirement per state clause and frame | Unit | P1 | FR-104-AC-5, FR-104-AC-6 | ✅ |
 | TC-462 | S4 emits state clause, operation anchor and frame nodes with their bodies | Integration | P1 | FR-105-AC-1, FR-105-AC-2, FR-105-AC-5 | ✅ |
 | TC-463 | The state package reads back through I2, keeps its identity rules and emits all or nothing | Integration | P1 | FR-105-AC-3, FR-105-AC-4, FR-105-AC-6 | ✅ |
@@ -276,6 +280,8 @@ names different artifacts in each.
 | TC-806 | The export refuses each item with an unbound element and returns the others | Integration | P1 | FR-307-AC-1, FR-307-AC-2, FR-307-AC-3 | 🚧 |
 | TC-807 | The export references the receiver's static type and the operation key | Integration | P1 | FR-307-AC-4, FR-307-AC-5 | 🚧 |
 | TC-809 | Evaluation selects the dispatched body from the linked table by the receiver's most-specific type | Integration | P1 | FR-302-AC-6 | 🚧 |
+| TC-986 | Unit compile joins operation bodies and clauses by resolved operation identity | Integration | P1 | FR-302-AC-7 | 🚧 |
+| TC-987 | Unit compile refuses duplicate operation bodies resolving to one key | Integration | P1 | FR-302-AC-7 | 🚧 |
 | TC-810 | Abstraction binding keys are unique across all of a unit's declarations | Integration | P1 | FR-304-AC-7 | 🚧 |
 | TC-811 | Abstraction declarations parse from source and refuse unsupported or malformed forms | Integration | P1 | FR-304-AC-8 | 🚧 |
 | TC-518 | S3 checks fairness constraints and interval operators of infinite-trace clauses | Unit | P1 | FR-123-AC-1, FR-123-AC-2, FR-123-AC-3, FR-123-AC-4 | 🚧 |
@@ -545,10 +551,13 @@ names different artifacts in each.
 | TC-912 | The IR wire round-trips integer bounds and literals up to i128 | Integration | P1 | FR-033-AC-6 | 🚧 |
 | TC-913 | A wide-range source recompiles to its package_id and replays | Integration | P1 | FR-098-AC-11 | ✅ |
 | TC-914 | Registry allocation failure preserves its native measurement through QSL admission | Integration | P1 | FR-082-AC-10, FR-082-AC-11, FR-082-AC-12, FR-082-AC-13 | 🚧 |
+| TC-915 | Native CI preserves feature lane paths and complete Cargo argv | Integration | P1 | NFR-013-AC-1, NFR-013-AC-2, NFR-013-AC-3 | 🚧 |
+| TC-920 | Native specification validation precedes aggregate Cargo execution | Integration | P1 | NFR-002-AC-1, NFR-002-AC-2, NFR-002-AC-3, NFR-002-AC-4 | 🚧 |
 | TC-919 | An empty model-query object identity is an internal fault | Unit | P1 | FR-090-AC-13, FR-090-AC-16, FR-090-AC-17 | 🚧 |
 | TC-916 | Model-query shape breaks have QSL-owned fault routes | Unit | P1 | FR-090-AC-14, FR-090-AC-16 | 🚧 |
-| TC-917 | Evaluator invariant producers have explicit QSL classifications | Unit | P1 | FR-090-AC-15, FR-090-AC-16, FR-090-AC-17, FR-090-AC-18, FR-096-AC-15 | 🚧 |
+| TC-917 | Evaluator invariant producers have explicit QSL classifications | Unit | P1 | FR-090-AC-15, FR-090-AC-16, FR-090-AC-17, FR-090-AC-18, FR-090-AC-20, FR-096-AC-15 | 🚧 |
 | TC-918 | Received typed kernel invariant provenance survives fault mapping | Unit | P1 | FR-096-AC-19, FR-090-AC-17 | 🚧 |
+| TC-921 | Accounting budgets are settable by counter name and a reached budget names its setting | Integration | P1 | FR-255-AC-7, FR-255-AC-8, FR-255-AC-9, FR-255-AC-10, FR-255-AC-11, FR-100-AC-13 | 🚧 |
 | TC-894 | An imported call discharges its preconditions as a local call does | Integration | P1 | FR-099-AC-8 | 🚧 |
 | TC-895 | The native checker reads a field's optionality from its presence | Unit | P1 | FR-016-AC-10 | 🚧 |
 | TC-896 | A field redefinition narrows presence and multiplicity on separate axes | Unit | P1 | FR-082-AC-8 | 🚧 |
@@ -556,7 +565,7 @@ names different artifacts in each.
 | TC-742 | native-run-result/2 carries basis and witness, and its strict reader refuses malformed and /1 documents | Integration | P1 | FR-267-AC-1, FR-267-AC-2, FR-267-AC-3 | 🚧 |
 | TC-743 | Replay re-derives a state-clause witness and checks that the element separates the clause | Integration | P1 | FR-268-AC-1, FR-268-AC-2, FR-268-AC-3, FR-268-AC-4 | 🚧 |
 | TC-744 | A witness disagreement settles inconclusive with a typed Witness cause that round-trips | Unit | P1 | FR-269-AC-1, FR-269-AC-2, FR-269-AC-3 | 🚧 |
-| TC-891 | A clause-run request file runs through run_clause and writes a /2 document | Integration | P1 | FR-312-AC-1, FR-312-AC-2, FR-312-AC-3, FR-312-AC-4 | 🚧 |
+| TC-891 | A clause-run request file runs through run_clause and writes a /2 document | Integration | P1 | FR-312-AC-1, FR-312-AC-2, FR-312-AC-3, FR-312-AC-4, FR-312-AC-5, FR-312-AC-6 | 🚧 |
 | TC-779 | Each non-interpreter backend matches the interpreter over the conformance corpus and generated programs | Integration | P1 | FR-295-AC-1 | 🚧 |
 | TC-780 | Backends match the interpreter on budgets, limits and internal errors, and the outcome names no backend | Integration | P1 | FR-295-AC-2, FR-295-AC-3, FR-295-AC-4 | 🚧 |
 | TC-781 | The request selects the execution backend and no other backend runs in its place | Integration | P1 | FR-296-AC-1, FR-296-AC-2, FR-296-AC-3 | 🚧 |
@@ -588,4 +597,18 @@ names different artifacts in each.
 | TC-784 | One Value-family source runs through check, package and execute with documents and exit codes | Integration | P1 | FR-299-AC-1, FR-299-AC-2, FR-299-AC-3, FR-299-AC-4 | 🚧 |
 | TC-762 | analyze settles proved, refuted and unsupported items with one record each | Integration | P1 | FR-281-AC-1, FR-281-AC-2, FR-281-AC-3 | 🚧 |
 | TC-763 | analyze settles rejected certificates, unreproduced counterexamples and budgets without a false verdict | Integration | P1 | FR-281-AC-4, FR-281-AC-5, FR-281-AC-6, FR-281-AC-7 | 🚧 |
-| TC-931 | The formatter output budget is a named caller setting | Integration | P1 | FR-003-AC-10, FR-255-AC-1, FR-255-AC-4, FR-255-AC-6, FR-277-AC-1 | 🚧 |
+| TC-931 | The formatter output budget is a named caller setting | Integration | P1 | FR-003-AC-10, FR-255-AC-1, FR-255-AC-3, FR-255-AC-4, FR-255-AC-6, FR-277-AC-1 | 🚧 |
+| TC-970 | Capability admits exactly the twelve FR-290 labels | Unit | P1 | FR-057-AC-1 | 🚧 |
+| TC-971 | Capability family projection matches FR-290 | Unit | P1 | FR-057-AC-11, FR-057-AC-13 | 🚧 |
+| TC-972 | same_kind compares all capability labels exactly | Unit | P1 | FR-057-AC-4 | 🚧 |
+| TC-973 | Composed admission stage projection preserves stage ownership | Integration | P1 | FR-057-AC-14 | 🚧 |
+| TC-974 | Statistical evidence kind is admitted for probabilistic backends | Unit | P1 | FR-075-AC-10 | 🚧 |
+| TC-975 | Exact evidence kind is admitted for probabilistic backends | Unit | P1 | FR-075-AC-10 | 🚧 |
+| TC-976 | Absent or empty probabilistic evidence kinds refuse at admission | Unit | P1 | FR-075-AC-11 | 🚧 |
+| TC-977 | Unknown probabilistic evidence labels refuse at admission | Unit | P1 | FR-075-AC-11 | 🚧 |
+| TC-978 | Other capability kinds do not require evidence labels | Unit | P1 | FR-075-AC-12 | 🚧 |
+| TC-979 | Every capability match is exhaustive under the seam probe | Integration | P1 | FR-080-AC-6 | 🚧 |
+| TC-980 | Probabilistic candidates require the exact requested evidence kind | Unit | P1 | FR-075-AC-1, FR-075-AC-13 | 🚧 |
+| TC-981 | An evidence-kind difference conflicts a repeated backend identity | Unit | P1 | FR-075-AC-7, FR-075-AC-14 | 🚧 |
+| TC-982 | Backend descriptor field differences have isolated registration outcomes | Unit | P1 | FR-075-AC-4, FR-075-AC-7 | 🚧 |
+| TC-983 | Named probabilistic backends require the exact requested evidence kind | Unit | P1 | FR-075-AC-1, FR-075-AC-3, FR-075-AC-13, FR-075-AC-14 | 🚧 |

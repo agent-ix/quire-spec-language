@@ -14,8 +14,8 @@
 //!   built from fuzzer bytes and compiled through S1 to S4, for the
 //!   `fuzz/` deep-input target (FR-356-AC-7).
 //! - [`model`]: a Semantic IR 2.0.0 document with N object types and a
-//!   population, carried through model intake (`admit` -> `read_records` ->
-//!   `DomainPackage::new`), then normalization and population admission.
+//!   population, carried through model intake (`admit` ->
+//!   `read_domain_package`), then normalization and population admission.
 //! - [`recursion`]: N self-recursive functions, N recursive components.
 //! - [`rss`]: the process's peak resident set size, for the probe.
 //! - [`text_cluster`]: N mutually referencing, Text-reachable records and

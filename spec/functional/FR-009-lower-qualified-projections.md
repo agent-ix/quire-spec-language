@@ -80,9 +80,3 @@ applies its own node limit as an additional guard over already checked packages.
 
 - [US-004](../usecase/US-004-reuse-existing-toolchain.md) supplies the user need.
 - [Detailed contract or implementation evidence](../../README.md) supplies the scoped context.
-
-## Status
-
-FR-009-AC-5 is qualified for the named `boolean-oracle/v1` domain by
-quire-integration's [TC-094](ix://agent-ix/quire-integration/TC-094), which
-composes this compiler's lowering with the code generator's generated Rust.

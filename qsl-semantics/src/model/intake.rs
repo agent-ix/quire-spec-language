@@ -12,12 +12,14 @@
 //! intake parses package bytes. [`read_records`] is the per-node reader:
 //! it dispatches every `types[]`/`populations[]` entry purely by the
 //! `meaning` its `kind` resolves to in the document's own `constructs[]`
-//! table (FR-208), never by `kind.name`/`kind.module` directly.
+//! table (FR-208), never by `kind.name`/`kind.module` directly; the exact
+//! native Timestamp alias is the one value-type exception.
 //!
 //! **This reader binds only what QSpec admits and refuses everything else.**
 //! It never invents a value and never drops data. Two shapes FCD emits
-//! today are still FCD gaps: bare-string core kinds (`"scalar"`/`"alias"`/...)
-//! declared directly in `types[]`, and FCD's own identity form
+//! today are still FCD gaps: bare-string core kinds other than the native
+//! Timestamp alias (`"scalar"`/`"record"`/...) declared directly in
+//! `types[]`, and FCD's own identity form
 //! (`ix://<pkg>/type/<id>`, `ix://<pkg>/field/<Owner>-<name>`) rather than
 //! QSpec's (`ix://<pkg>/<id>`, `<owner>/<name>`). This reader refuses both
 //! rather than working around them. A type's inline `relationships[]`
@@ -46,11 +48,12 @@ use agent_ix_extraction_frontend::{Diagnostic, Refusal};
 use serde_json::Value;
 
 use crate::model::domain_package::{
-    AllocationRecord, ComponentRecord, DomainPackageRecord, DomainPackageRef, EndpointRecord,
-    Extent, FieldMemberRecord, Multiplicity, NativeValueType, ObjectTypeRecord, OperationEffect,
-    OperationMemberRecord, OperationParameterRecord, OperationResult, PopulationRecord,
-    PortDirection, RecordValueTypeRecord, RelationshipDirection, RelationshipEnd,
-    RelationshipRecord, ScalarTypeRecord, ValueTypeRef,
+    AllocationRecord, ComponentRecord, DomainPackage, DomainPackageRecord, DomainPackageRef,
+    EndpointRecord, Extent, FieldMemberRecord, Multiplicity, NativeValueType, ObjectTypeRecord,
+    OperationEffect, OperationMemberRecord, OperationParameterRecord, OperationResult,
+    OriginalDeclaration, PopulationRecord, PortDirection, RecordValueTypeRecord,
+    RelationshipDirection, RelationshipEnd, RelationshipRecord, ScalarTypeRecord,
+    ScalarValueDomain, ValueTypeRef,
 };
 use crate::model::key::{hex, raw_bytes_digest, DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
@@ -1368,7 +1371,7 @@ fn node_span(value: &Value) -> (Option<String>, Option<LocatedSpan>) {
 /// just its first defect -- rather than being read as a default or having
 /// every diagnostic but the first silently dropped (PR #200 review R2-2).
 ///
-/// `agent-ix-semantic-ir` at the pinned rev (`Cargo.toml`, FCD PR #200)
+/// `agent-ix-semantic-ir` at the pinned rev (`Cargo.toml`)
 /// resolves `ix://quire/native/<Name>` at the validator layer
 /// (`crates/semantic-ir/src/rules.rs`), against FCD's own closed
 /// native-scalar set (`UUID`, `Boolean`, `Integer`, `Decimal`, `String`,
@@ -1403,6 +1406,9 @@ fn validate_with_semantic_ir(document: &PackageDocument) -> Result<(), Vec<Model
         // this reader's own per-node classification.
         .filter(|located| located.code != agent_ix_semantic_ir::constructs::UNRESOLVED_FRAME_PATH)
         .map(|located| {
+            if let Some(refusal) = missing_reader_reference(document, located) {
+                return refusal;
+            }
             let node = if located.owner.is_empty() {
                 "$".to_owned()
             } else {
@@ -1425,6 +1431,45 @@ fn validate_with_semantic_ir(document: &PackageDocument) -> Result<(), Vec<Model
     } else {
         Err(refusals)
     }
+}
+
+/// Translate only the reader's typed unresolved-reference codes, using its
+/// actual pointer and the selected document. Diagnostic prose never selects
+/// a cause or supplies a declaration identity.
+#[qsl_attrs::string_edge]
+fn missing_reader_reference(
+    document: &PackageDocument,
+    located: &agent_ix_semantic_ir::diag::Located,
+) -> Option<ModelRefusal> {
+    if located.code != agent_ix_semantic_ir::rules::UNRESOLVED_RELATIONSHIP_TARGET
+        && located.code != agent_ix_semantic_ir::rules::UNRESOLVED_TYPE_REF
+    {
+        return None;
+    }
+    let pointer = located.pointer.strip_prefix("/ir")?;
+    let reference = document.tree.pointer(pointer)?.as_str()?;
+    let package = document.tree.get("package")?.get("identity")?.as_str()?;
+    // A malformed native or foreign identity is not a missing declaration
+    // of this selected package.
+    type_identity_segment(package, reference)?;
+    let mut owner_pointer = pointer;
+    let origin = loop {
+        let owner = document.tree.pointer(owner_pointer)?;
+        if owner.get("identity").and_then(Value::as_str) == Some(located.owner.as_str()) {
+            break owner.get("origin")?.clone();
+        }
+        owner_pointer = owner_pointer.rsplit_once('/')?.0;
+    };
+    Some(ModelRefusal {
+        code: Code::MissingDeclaration,
+        cause: ModelRefusalCause::IntakeMissingDeclaration {
+            node: located.owner.clone(),
+            reference: reference.to_owned(),
+            origin,
+            path: pointer.parse().ok()?,
+        },
+        detail: format!("{pointer}: {reference:?} names no declaration of this domain package"),
+    })
 }
 
 /// The artifact id and span one `agent-ix-semantic-ir` diagnostic's own
@@ -2332,8 +2377,7 @@ fn read_value_type(
     }
     Ok(ScalarTypeRecord {
         key: declaration_key(package, node),
-        lower,
-        upper,
+        domain: ScalarValueDomain::Integer { lower, upper },
     })
 }
 
@@ -2527,20 +2571,21 @@ fn read_relationship(
 ) -> Result<RelationshipRecord, ModelRefusal> {
     let ctx = NodeCtx::new(relationship, at.to_owned());
     let node = ctx.str_field("identity")?;
-    // FR-056 Declarations: "a member's identity is its owner's identity,
-    // `/` and the member name" -- exactly [`member_identity_name`]'s rule,
-    // the same one [`read_field_member`]/[`read_operation_member`] apply to
-    // their own owned members. A relationship member is no exception: FCD's
-    // own `ix://<pkg>/relationship/<Owner>-<verb>-<Other>` identity form
-    // (FCD #199 gap 2's sibling for relationships) does not parse as
-    // `owner_identity/<name>`, so it refuses here rather than being taken
-    // verbatim as this record's key (FR-056-AC-5: "a relationship member
-    // with no declared name ... refuses `malformed-declaration`" -- this
-    // reader derives a member's declared name from its identity's own
-    // suffix, the same mechanism field/operation members use, so an
-    // identity with no such suffix IS "no declared name").
-    if member_identity_name(owner_identity, node).is_none() {
-        return Err(ctx.malformed(format!("identity: {node:?} is not {owner_identity}/<name>")));
+    // FR-154's relationship slot uses the published Semantic IR identity
+    // `ix://<package>/relationship/<Name>-<verb>-<TargetName>`. This member
+    // form is distinct from the owner/name identity used by fields and
+    // operations; accept only the package-owned relationship slot here.
+    let package_identity = owner_identity
+        .rsplit_once('/')
+        .map_or(owner_identity, |(package, _)| package);
+    let canonical_prefix = format!("{package_identity}/relationship/");
+    let valid_identity = node
+        .strip_prefix(&canonical_prefix)
+        .is_some_and(|name| !name.is_empty() && !name.contains('/'));
+    if !valid_identity {
+        return Err(ctx.malformed(format!(
+            "identity: {node:?} is not {package_identity}/relationship/<Name>-<verb>-<TargetName>"
+        )));
     }
     // FR-056-AC-5's other half: "a relationship member with no ... source
     // span refuses `malformed-declaration`".
@@ -2730,17 +2775,28 @@ fn read_type_node(
     let ctx = NodeCtx::new(type_value, at);
     let (_, key) = read_type_identity(package, &ctx)?;
     let node = key.node.as_str();
+    if type_value.get("kind").and_then(Value::as_str) == Some("alias")
+        && type_value.get("target").and_then(Value::as_str) == Some("ix://quire/native/Timestamp")
+    {
+        if !ctx.array_field("fields")?.is_empty()
+            || !ctx.array_field("operations")?.is_empty()
+            || !ctx.array_field("relationships")?.is_empty()
+            || !ctx.array_field("supertypes")?.is_empty()
+            || !ctx.array_field("constraints")?.is_empty()
+        {
+            return Err(ctx.malformed(
+                "a native Timestamp alias declares no fields, operations, relationships, supertypes, or constraints",
+            ));
+        }
+        return Ok(vec![DomainPackageRecord::ScalarType(ScalarTypeRecord {
+            key,
+            domain: ScalarValueDomain::Native(NativeValueType::Timestamp),
+        })]);
+    }
     if !type_value.get("kind").is_some_and(Value::is_object) {
-        // A bare-string kind (`"scalar"`, `"alias"`, `"record"`, ...) is a
-        // core kind FCD's own schema admits, but QSpec's declaration-kinds
-        // table has no row for a package declaring one of these directly in
-        // `types[]` -- every declared type resolves via a `constructs[]`
-        // entry to a real FR-208 meaning instead. A field's own `typeRef`
-        // never names a node like this one anyway: [`read_value_type_ref`]
-        // resolves a native value type through the dedicated
-        // `ix://quire/native/<Name>` form, not through a bare-string-kind
-        // `types[]` declaration, so this node being refused as a top-level
-        // declaration never stops a field resolving its own type reference.
+        // Other bare-string core kinds remain outside this reader's declared
+        // FR-208 meanings. The Timestamp alias above is the explicit native
+        // value-type exception required by FR-056-AC-17.
         return Err(ctx.malformed("kind: a bare-string core kind is not a declared FR-208 meaning"));
     }
     let (module, name) = ctx.kind_key()?;
@@ -3006,6 +3062,116 @@ pub fn read_records(
 ) -> Result<Vec<DomainPackageRecord>, Vec<ModelRefusal>> {
     validate_with_semantic_ir(document)?;
     read_nodes(package_identity, &document.tree)
+}
+
+/// Read an admitted document with every declaration's original construct
+/// meaning and FCD origin. No origin is inferred from a key or another
+/// declaration, and no metadata enters a normalization preimage.
+pub fn read_domain_package(
+    selection: DomainPackageRef,
+    document: &PackageDocument,
+) -> Result<DomainPackage, Vec<ModelRefusal>> {
+    let records = read_records(&selection.identity, document)?;
+    let meanings = meaning_index(&document.tree).map_err(|refusal| vec![refusal])?;
+    let mut originals = BTreeMap::new();
+    let mut refusals = Vec::new();
+    for array in ["types", "populations"] {
+        for (position, node) in document
+            .tree
+            .get(array)
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            let at = format!("$.{array}[{position}]");
+            let ctx = NodeCtx::new(node, &at);
+            let result = (|| {
+                let identity = ctx.str_field("identity")?;
+                let meaning = match node.get("kind") {
+                    Some(kind) if kind.is_object() => {
+                        let kind = ctx.kind_key()?;
+                        Some(
+                            meanings
+                                .get(&(kind.0.to_owned(), kind.1.to_owned()))
+                                .ok_or_else(|| ctx.malformed("kind: names no constructs[] entry"))?
+                                .clone(),
+                        )
+                    }
+                    Some(kind)
+                        if kind.as_str() == Some("alias")
+                            && node.get("target").and_then(Value::as_str)
+                                == Some("ix://quire/native/Timestamp") =>
+                    {
+                        // This one FCD core alias has a reader admission but
+                        // no FR-208 construct meaning. `read_records` already
+                        // validates its exact native Timestamp shape.
+                        None
+                    }
+                    _ => {
+                        return Err(ctx.malformed(
+                            "kind: a bare-string core kind is not a declared FR-208 meaning",
+                        ));
+                    }
+                };
+                let origin = node
+                    .get("origin")
+                    .ok_or_else(|| ctx.malformed("origin: missing"))?;
+                originals.insert(
+                    declaration_key(&selection.identity, identity),
+                    OriginalDeclaration {
+                        meaning,
+                        origin: origin.clone(),
+                        member_name: None,
+                    },
+                );
+                for members in ["fields", "operations", "relationships", "clauses"] {
+                    for (member_position, member) in node
+                        .get(members)
+                        .and_then(Value::as_array)
+                        .into_iter()
+                        .flatten()
+                        .enumerate()
+                    {
+                        let member_at = format!("{at}.{members}[{member_position}]");
+                        let member_ctx = NodeCtx::new(member, &member_at);
+                        let member_identity = member_ctx.str_field("identity")?;
+                        let name = member
+                            .get("sourceEnd")
+                            .and_then(|end| end.get("role"))
+                            .and_then(Value::as_str)
+                            .or_else(|| member_identity_name(identity, member_identity))
+                            .ok_or_else(|| {
+                                member_ctx.malformed("identity: has no declared member name")
+                            })?;
+                        let origin = member
+                            .get("origin")
+                            .ok_or_else(|| member_ctx.malformed("origin: missing"))?;
+                        originals.insert(
+                            declaration_key(&selection.identity, member_identity),
+                            OriginalDeclaration {
+                                meaning: None,
+                                origin: origin.clone(),
+                                member_name: Some(name.to_owned()),
+                            },
+                        );
+                    }
+                }
+                Ok::<_, ModelRefusal>(())
+            })();
+            if let Err(refusal) = result {
+                refusals.push(refusal);
+            }
+        }
+    }
+    if !refusals.is_empty() {
+        return Err(refusals);
+    }
+    Ok(DomainPackage {
+        model_selection: selection,
+        records,
+        originals,
+    })
 }
 
 /// [`read_records`]'s per-node reader over a document
@@ -3487,6 +3653,7 @@ mod tests {
     fn wire_envelope(package_identity: &str, constructs: Value, types: Value) -> Value {
         serde_json::json!({
             "contractVersion": "2.0.0",
+            "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
             "source": {
                 "identity": format!("ix://{package_identity}/spec"),
                 "version": "1.0.0",
@@ -3598,6 +3765,90 @@ mod tests {
                           FR-208 meaning"
                     .to_owned(),
             }]
+        );
+    }
+
+    #[trace("TC-897", "FR-056-AC-17")]
+    #[test]
+    fn admits_the_native_timestamp_alias_and_keeps_other_aliases_refused() {
+        let alias = || {
+            wire_type(
+                "ix://acme/orders/Instant",
+                serde_json::json!("alias"),
+                serde_json::json!({"target": "ix://quire/native/Timestamp"}),
+            )
+        };
+        let document = wire_envelope(
+            "acme/orders",
+            serde_json::json!([]),
+            serde_json::json!([alias()]),
+        )
+        .to_string();
+        assert_eq!(
+            read_records("acme/orders", &parse_document(document.as_bytes()))
+                .expect("FCD admits the native Timestamp alias"),
+            vec![DomainPackageRecord::ScalarType(ScalarTypeRecord {
+                key: declaration_key("acme/orders", "ix://acme/orders/Instant"),
+                domain: ScalarValueDomain::Native(NativeValueType::Timestamp),
+            })]
+        );
+
+        let mut unsupported_alias = alias();
+        unsupported_alias["target"] = serde_json::json!("ix://quire/native/Integer");
+        let unsupported = wire_envelope(
+            "acme/orders",
+            serde_json::json!([]),
+            serde_json::json!([unsupported_alias]),
+        )
+        .to_string();
+        let refusals = read_records("acme/orders", &parse_document(unsupported.as_bytes()))
+            .expect_err("this reader admits only the native Timestamp alias");
+        assert_eq!(refusals[0].code, Code::InvalidModelBinding);
+        assert_eq!(refusals[0].cause.as_str(), "malformed-declaration");
+    }
+
+    #[trace("TC-897", "FR-056-AC-17")]
+    #[test]
+    fn reads_native_timestamp_alias_through_domain_package_intake() {
+        let alias = wire_type(
+            "ix://acme/orders/Instant",
+            serde_json::json!("alias"),
+            serde_json::json!({"target": "ix://quire/native/Timestamp"}),
+        );
+        let bytes = wire_envelope(
+            "acme/orders",
+            serde_json::json!([]),
+            serde_json::json!([alias]),
+        )
+        .to_string()
+        .into_bytes();
+        let document = PackageDocument::parse(&bytes, IntakeLimits::default())
+            .expect("the current FCD reader admits the Timestamp alias");
+        let package = read_domain_package(
+            DomainPackageRef {
+                identity: "acme/orders".to_owned(),
+                version: "1.0.0".to_owned(),
+                digest: [0; 32],
+            },
+            &document,
+        )
+        .expect("the QSL domain-package reader admits the native Timestamp alias");
+        let instant = declaration_key("acme/orders", "ix://acme/orders/Instant");
+        assert_eq!(
+            package.records,
+            vec![DomainPackageRecord::ScalarType(ScalarTypeRecord {
+                key: instant.clone(),
+                domain: ScalarValueDomain::Native(NativeValueType::Timestamp),
+            })]
+        );
+        let original = package
+            .original(&instant)
+            .expect("the alias origin is retained");
+        assert_eq!(original.meaning, None);
+        assert_eq!(original.member_name, None);
+        assert_eq!(
+            original.origin["generated"]["generatorIdentity"],
+            "ix://acme/orders/Instant"
         );
     }
 
@@ -3955,7 +4206,7 @@ mod tests {
     // and why it still does not widen what this reader accepts), and
     // end-to-end native-typeRef resolution is exercised via
     // `tests/model_intake.rs`'s
-    // `reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_4_of_its_12_types`.
+    // `reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_3_of_its_12_types`.
     // These tests instead drive [`read_value_type_ref`] directly, the same
     // resolver every field/parameter/`returns` typeRef site calls, so each
     // one's own refusal/success shape is pinned independently of any one
@@ -3983,6 +4234,17 @@ mod tests {
         let value_type = read_value_type_ref("acme/orders", &ctx, "ix://quire/native/Boolean")
             .expect("a known, unparameterized native typeRef resolves");
         assert_eq!(value_type, ValueTypeRef::Native(NativeValueType::Boolean));
+    }
+
+    #[trace("TC-897", "FR-056-AC-17")]
+    #[test]
+    fn resolves_timestamp_as_a_distinct_native_type_ref() {
+        let node = serde_json::json!({"identity": "ix://acme/orders/Widget/instant"});
+        let ctx = NodeCtx::new(&node, "$.types[0].fields[0]");
+        let value_type = read_value_type_ref("acme/orders", &ctx, "ix://quire/native/Timestamp")
+            .expect("Timestamp is a native value type");
+        assert_eq!(value_type, ValueTypeRef::Native(NativeValueType::Timestamp));
+        assert_eq!(value_type.to_string(), "ix://quire/native/Timestamp");
     }
 
     /// PR #200 review R2-4/R3-3: untagged, not re-traced -- see
@@ -4013,20 +4275,14 @@ mod tests {
         );
     }
 
-    /// R5 (the PR owner's ruling, authorized by the repo owner): QSpec's
-    /// `type-ref` production (`shared-grammar.md:285-296`) is
-    /// `{Boolean, Integer, Rational, Decimal, Float32, Float64, Text}`, and
-    /// that is the closed set [`NativeValueType`] declares -- FCD's own
-    /// native-scalar set is wider (adds `UUID`, `String`, `Timestamp`,
-    /// `Duration`, `Bytes`, `JsonObject`), and QSL does not widen its own
-    /// vocabulary, add a mapping, or otherwise translate a name outside its
-    /// grammar. `ix://quire/native/UUID` -- the exact typeRef FCD #199's new
-    /// golden gives `Pump.id`/`Sys.id`/`Tank.id` -- is this ruling's
-    /// concrete case: it refuses today, and it keeps refusing after the FCD
-    /// pin bumps (FCD's own validator resolving the prefix, F7's fix to
-    /// `validate_with_semantic_ir`'s doc comment, does not change what this
-    /// reader itself accepts). PLAT-836 (filed separately, lands after FCD
-    /// #200) narrows FCD's own emission so `UUID` stops being a native
+    /// The native vocabulary includes the types selected by QSL's grammar and
+    /// the `Timestamp` required by FR-056-AC-17/19. FCD also emits `UUID`,
+    /// `String`, `Duration`, `Bytes` and `JsonObject`; QSL does not infer
+    /// additional native types from FCD's wider reader contract.
+    /// `ix://quire/native/UUID` -- the typeRef FCD emits for fields such as
+    /// `Pump.id`, `Sys.id` and `Tank.id` -- remains outside this vocabulary
+    /// and refuses here, even though FCD's validator recognizes it. PLAT-836
+    /// narrows FCD's own emission so `UUID` stops being a native
     /// reference there at all -- a field like `Pump.id` becomes a reference
     /// to a model-declared type instead, at which point this exact refusal
     /// stops occurring, but as a consequence of what the *document* emits,
@@ -4039,14 +4295,11 @@ mod tests {
     /// Also a direct `read_value_type_ref` test, not AC-3's kind/meaning
     /// subject.
     #[test]
-    fn refuses_uuid_as_malformed_declaration_r5_holds_until_plat_836() {
+    fn refuses_uuid_as_malformed_declaration() {
         let node = serde_json::json!({"identity": "ix://agent-ix/architecture/Pump/id"});
         let ctx = NodeCtx::new(&node, "$.types[0].fields[0]");
         let refusal = read_value_type_ref("agent-ix/architecture", &ctx, "ix://quire/native/UUID")
-            .expect_err(
-                "R5: FCD's native-scalar set is wider than QSpec's type-ref; QSL does not widen \
-                 to match it, so ix://quire/native/UUID refuses",
-            );
+            .expect_err("QSL's native value-type vocabulary does not include UUID");
         assert_eq!(
             refusal,
             ModelRefusal {
@@ -4207,7 +4460,7 @@ mod tests {
     /// [`read_records`]: at this crate's now-pinned `agent-ix-semantic-ir`
     /// rev the schema for this shape admits `sourceEnd`/`targetEnd`, so the
     /// full pipeline would work too (confirmed by
-    /// `reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_4_of_its_12_types`
+    /// `reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_3_of_its_12_types`
     /// in `tests/model_intake.rs`, whose `Flow2` type reads clean this same
     /// way); this unit test still drives `read_object_type` directly so its
     /// own hand-rolled `sourceEnd`/`targetEnd` shape is pinned independently
@@ -4224,7 +4477,7 @@ mod tests {
             "operations": [],
             "featureOrder": [],
             "relationships": [{
-                "identity": "ix://acme/orders/Flow2/specializes",
+                "identity": "ix://acme/orders/relationship/Flow2-specializes-Flow",
                 "category": "structural",
                 "composite": false,
                 "direction": "source-to-target",
@@ -4262,7 +4515,10 @@ mod tests {
 
         assert_eq!(
             relationship.key,
-            declaration_key("acme/orders", "ix://acme/orders/Flow2/specializes")
+            declaration_key(
+                "acme/orders",
+                "ix://acme/orders/relationship/Flow2-specializes-Flow",
+            )
         );
         assert_eq!(
             relationship.direction,
@@ -4300,7 +4556,7 @@ mod tests {
             "fields": [],
             "operations": [],
             "relationships": [{
-                "identity": "ix://acme/orders/Widget/peer_link",
+                "identity": "ix://acme/orders/relationship/Widget-peer-Widget",
                 "category": "structural",
                 "composite": false,
                 "direction": "undirected",
@@ -4339,17 +4595,12 @@ mod tests {
         assert_eq!(relationship.direction, RelationshipDirection::Undirected);
     }
 
-    /// H1 (PR #200 review): FCD's own identity form for a relationship
-    /// member -- `ix://<pkg>/relationship/<Owner>-<verb>-<Other>`, an extra
-    /// `relationship` segment and `-` separators, never QSpec's
-    /// `<owner>/<name>` -- must refuse like any other member, exactly the
-    /// same rule [`read_field_member`]/[`read_operation_member`] apply
-    /// through [`member_identity_name`]. Before this test, `read_relationship`
-    /// applied no identity check at all and took this form verbatim as the
-    /// record's key; this is the regression test for that gap.
+    /// The published Semantic IR identity form for a relationship member is
+    /// `ix://<pkg>/relationship/<Owner>-<verb>-<Other>`, distinct from the
+    /// owner/name form used by fields and operations.
     #[trace("TC-145", "FR-056-AC-5")]
     #[test]
-    fn refuses_a_relationship_member_whose_identity_is_not_owner_slash_name() {
+    fn reads_a_relationship_member_with_the_canonical_identity_form() {
         let type_value = serde_json::json!({
             "identity": "ix://acme/orders/Flow2",
             "supertypes": [],
@@ -4357,6 +4608,61 @@ mod tests {
             "operations": [],
             "relationships": [{
                 "identity": "ix://acme/orders/relationship/Flow2-specializes-Flow",
+                "category": "structural",
+                "composite": false,
+                "direction": "source-to-target",
+                "origin": {"source": {"sourceIdentity": "ix://acme/orders/spec", "startLine": 1, "startColumn": 1}},
+                "sourceEnd": {
+                    "role": "specializes",
+                    "type": "ix://acme/orders/Flow2",
+                    "multiplicity": {"lower": 0, "ordered": false, "unique": false},
+                },
+                "targetEnd": {
+                    "type": "ix://acme/orders/Flow",
+                    "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": false},
+                },
+            }],
+        });
+        let mut records = Vec::new();
+        read_object_type(
+            "acme/orders",
+            &type_value,
+            "ix://acme/orders/Flow2",
+            "$.types[0]",
+            false,
+            &mut records,
+            &mut Vec::new(),
+        )
+        .expect("the canonical relationship identity is admitted");
+        let relationship = records
+            .iter()
+            .find_map(|record| match record {
+                DomainPackageRecord::Relationship(relationship) => Some(relationship),
+                _ => None,
+            })
+            .expect("the relationship is appended to the record list");
+        assert_eq!(
+            relationship.key,
+            declaration_key(
+                "acme/orders",
+                "ix://acme/orders/relationship/Flow2-specializes-Flow"
+            )
+        );
+    }
+
+    /// FR-154's owner/name member identity remains valid for fields and
+    /// operations, but a relationship uses the package-rooted relationship
+    /// slot and refuses an owner/name identity.
+    #[trace("TC-145", "FR-056-AC-5")]
+    #[test]
+    fn refuses_a_relationship_member_with_an_owner_name_identity() {
+        let type_value = serde_json::json!({
+            "identity": "ix://acme/orders/Flow2",
+            "supertypes": [],
+            "fields": [],
+            "operations": [],
+            "relationships": [{
+                "identity": "ix://acme/orders/Flow2/specializes",
                 "category": "structural",
                 "composite": false,
                 "direction": "source-to-target",
@@ -4382,19 +4688,11 @@ mod tests {
             &mut records,
             &mut Vec::new(),
         )
-        .expect_err(
-            "FCD's own relationship identity form does not parse as owner/<name> and refuses",
-        );
-        match &refusal.cause {
-            ModelRefusalCause::IntakeMalformedDeclaration { node, .. } => {
-                assert_eq!(node, "ix://acme/orders/relationship/Flow2-specializes-Flow");
-            }
-            other => panic!("expected IntakeMalformedDeclaration, got {other:?}"),
-        }
+        .expect_err("owner/name is not the relationship slot identity");
         assert!(
             refusal
                 .detail
-                .contains("is not ix://acme/orders/Flow2/<name>"),
+                .contains("is not ix://acme/orders/relationship/<Name>-<verb>-<TargetName>"),
             "{}",
             refusal.detail
         );
@@ -4411,7 +4709,7 @@ mod tests {
             "fields": [],
             "operations": [],
             "relationships": [{
-                "identity": "ix://acme/orders/Flow2/specializes",
+                "identity": "ix://acme/orders/relationship/Flow2-specializes-Flow",
                 "category": "structural",
                 "composite": false,
                 "direction": "source-to-target",
@@ -4457,7 +4755,7 @@ mod tests {
             "fields": [],
             "operations": [],
             "relationships": [{
-                "identity": "ix://acme/orders/Flow2/specializes",
+                "identity": "ix://acme/orders/relationship/Flow2-specializes-Flow",
                 "category": "structural",
                 "composite": false,
                 "direction": "sideways",
@@ -4554,6 +4852,7 @@ mod tests {
             "fields": [
                 money_field("amount_minor", "ix://quire/native/Integer"),
                 money_field("paid", "ix://quire/native/Boolean"),
+                money_field("created_at", "ix://quire/native/Timestamp"),
             ],
         });
         if let (Some(node), Some(extra)) = (node.as_object_mut(), extra.as_object()) {
@@ -4590,7 +4889,7 @@ mod tests {
     fn reads_a_record_value_type_and_its_fields() {
         let key = |node: &str| declaration_key("acme/orders", node);
         let records = read_money(serde_json::json!({})).expect("Money reads");
-        assert_eq!(records.len(), 3);
+        assert_eq!(records.len(), 4);
         assert_eq!(
             records[0],
             DomainPackageRecord::RecordValueType(RecordValueTypeRecord {
@@ -4600,6 +4899,7 @@ mod tests {
         for (record, (name, native)) in records[1..].iter().zip([
             ("amount_minor", NativeValueType::Integer),
             ("paid", NativeValueType::Boolean),
+            ("created_at", NativeValueType::Timestamp),
         ]) {
             let DomainPackageRecord::FieldMember(field) = record else {
                 panic!("a field member follows its record value type")
@@ -4666,7 +4966,7 @@ mod tests {
                 "$.types[0].supertypes[0]:",
             ),
             (
-                serde_json::json!({"relationships": [{"identity": "ix://acme/orders/Money/owner"}]}),
+                serde_json::json!({"relationships": [{"identity": "ix://acme/orders/relationship/Money-owner-Owner"}]}),
                 Code::InvalidModelBinding,
                 "ix://acme/orders/Money",
                 "$.types[0].relationships[0]:",
@@ -4723,6 +5023,15 @@ mod tests {
         )
     }
 
+    fn integer_bounds(record: &ScalarTypeRecord) -> (i128, i128) {
+        match &record.domain {
+            ScalarValueDomain::Integer { lower, upper } => (*lower, *upper),
+            ScalarValueDomain::Native(native) => {
+                panic!("expected integer scalar domain, got {native:?}")
+            }
+        }
+    }
+
     /// FR-056's `value-type/v1` scalar reader admits a bound
     /// integer value type, reading its `min`/`max` constraints structurally
     /// into a [`ScalarTypeRecord`] -- never by parsing a rendered
@@ -4735,8 +5044,10 @@ mod tests {
             record,
             ScalarTypeRecord {
                 key: declaration_key("acme/orders", "ix://acme/orders/VersionNumber"),
-                lower: 0,
-                upper: 1000,
+                domain: ScalarValueDomain::Integer {
+                    lower: 0,
+                    upper: 1000,
+                },
             }
         );
     }
@@ -4767,14 +5078,14 @@ mod tests {
                 {"keyword": "max", "operands": {"value": upper}},
             ]}))
             .unwrap_or_else(|refusal| panic!("{upper}: {refusal:?}"));
-            assert_eq!(record.upper, expected, "{upper}");
+            assert_eq!(integer_bounds(&record).1, expected, "{upper}");
         }
         let record = read_version_number(serde_json::json!({"constraints": [
             {"keyword": "min", "operands": {"value": "-170141183460469231731687303715884105728"}},
             {"keyword": "max", "operands": {"value": "0"}},
         ]}))
         .expect("i128::MIN reads");
-        assert_eq!(record.lower, i128::MIN);
+        assert_eq!(integer_bounds(&record).0, i128::MIN);
     }
 
     /// Local FR-056 integer intake, with FCD FR-144's effective-range rules,
@@ -4789,8 +5100,8 @@ mod tests {
             "constraints": []
         }))
         .expect("an unbounded integer uses the safe effective range");
-        assert_eq!(unbounded.lower, -9_007_199_254_740_991);
-        assert_eq!(unbounded.upper, 9_007_199_254_740_991);
+        assert_eq!(integer_bounds(&unbounded).0, -9_007_199_254_740_991);
+        assert_eq!(integer_bounds(&unbounded).1, 9_007_199_254_740_991);
 
         let explicit_wide = read_version_number(serde_json::json!({
             "constraints": [
@@ -4799,8 +5110,8 @@ mod tests {
             ]
         }))
         .expect("explicit bounds replace the safe defaults");
-        assert_eq!(explicit_wide.lower, -9_007_199_254_740_992);
-        assert_eq!(explicit_wide.upper, 9_007_199_254_740_992);
+        assert_eq!(integer_bounds(&explicit_wide).0, -9_007_199_254_740_992);
+        assert_eq!(integer_bounds(&explicit_wide).1, 9_007_199_254_740_992);
 
         let narrowed = read_version_number(serde_json::json!({
             "constraints": [
@@ -4809,8 +5120,8 @@ mod tests {
             ]
         }))
         .expect("exclusive integer bounds read");
-        assert_eq!(narrowed.lower, 0);
-        assert_eq!(narrowed.upper, 99);
+        assert_eq!(integer_bounds(&narrowed).0, 0);
+        assert_eq!(integer_bounds(&narrowed).1, 99);
     }
 
     /// Competing inclusive/exclusive bounds tighten each side independent of
@@ -4835,7 +5146,7 @@ mod tests {
                 }
                 let record = read_version_number(serde_json::json!({"constraints": ordered}))
                     .expect("mixed bounds intersect without last-wins behavior");
-                assert_eq!((record.lower, record.upper), expected, "reverse={reverse}");
+                assert_eq!(integer_bounds(&record), expected, "reverse={reverse}");
             }
         }
         for (keyword, value, expected) in [
@@ -4854,7 +5165,7 @@ mod tests {
                 {"keyword": keyword, "operands": {"value": value}},
             ]}))
             .expect("one explicit wide side replaces only its own default");
-            assert_eq!((record.lower, record.upper), expected, "{keyword}");
+            assert_eq!(integer_bounds(&record), expected, "{keyword}");
         }
     }
 
@@ -4879,7 +5190,7 @@ mod tests {
                 {"keyword": keyword, "operands": {"value": value.to_string()}},
             ]}))
             .expect("an exclusive endpoint with a representable neighbor admits");
-            assert_eq!((record.lower, record.upper), expected, "{keyword}");
+            assert_eq!(integer_bounds(&record), expected, "{keyword}");
         }
         for (keyword, value, reason) in [
             (
@@ -4990,7 +5301,7 @@ mod tests {
                  \"quire.meaning.model.value-type/v1:operations\" has no reader yet",
             ),
             (
-                serde_json::json!({"relationships": [{"identity": "ix://acme/orders/VersionNumber/rel"}]}),
+                serde_json::json!({"relationships": [{"identity": "ix://acme/orders/relationship/VersionNumber-rel-Other"}]}),
                 Code::InvalidModelBinding,
                 "$.types[0].relationships[0]: a value type owns no relationship",
             ),
@@ -5126,8 +5437,10 @@ mod tests {
             records,
             vec![DomainPackageRecord::ScalarType(ScalarTypeRecord {
                 key: declaration_key("acme/orders", "ix://acme/orders/VersionNumber"),
-                lower: 0,
-                upper: 1000,
+                domain: ScalarValueDomain::Integer {
+                    lower: 0,
+                    upper: 1000,
+                },
             })]
         );
     }
@@ -5203,8 +5516,7 @@ mod tests {
                 records,
                 vec![DomainPackageRecord::ScalarType(ScalarTypeRecord {
                     key: declaration_key("acme/orders", "ix://acme/orders/Wide"),
-                    lower: 0,
-                    upper,
+                    domain: ScalarValueDomain::Integer { lower: 0, upper },
                 })],
                 "{max_json}"
             );
@@ -6146,10 +6458,10 @@ mod tests {
     /// Was `read_records`'s re-parse `expect("validate_with_semantic_ir
     /// already confirmed these bytes parse as JSON ...")`. The two parsers
     /// disagreed on a number serde_json cannot represent: the validator's
-    /// reader accepted `1e400`, and the re-parse panicked on it. Intake now
-    /// reads once, through the shared reader, which refuses the number with
-    /// its pointer and lexeme; intake refuses it `noncanonical_wire`, not as
-    /// a malformed document.
+    /// former reader accepted `1e400`, and the re-parse panicked on it. The
+    /// current FCD reader rejects its non-finite binary64 value; QSL still
+    /// refuses it at its own boundary with `noncanonical_wire`, pointer and
+    /// lexeme.
     #[trace("TC-145", "FR-056-AC-2")]
     #[test]
     fn refuses_a_number_serde_json_cannot_represent_at_the_one_parse() {
@@ -6163,8 +6475,8 @@ mod tests {
             "the out-of-range number is in the document"
         );
         assert!(
-            agent_ix_semantic_ir::json::parse(&text).is_ok(),
-            "the validator's own reader accepts it, which is what made the re-parse panic"
+            agent_ix_semantic_ir::json::parse(&text).is_err(),
+            "FCD refuses a number outside the finite binary64 domain"
         );
         let refusal =
             PackageDocument::parse(text.as_bytes(), qsl_foundation::IntakeLimits::default())
@@ -6545,6 +6857,9 @@ mod tests {
         let operand = format!("intake.input_bytes={}", bound + 1);
         for (setting, value) in qsl_foundation::setting::parse_operands([operand.as_str()]).unwrap()
         {
+            let qsl_foundation::SettingName::Stage(setting) = setting else {
+                panic!("intake.input_bytes is a stage setting");
+            };
             assert!(operated.set_bound(setting, value));
         }
         assert_eq!(operated, raised);

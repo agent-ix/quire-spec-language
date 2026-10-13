@@ -63,9 +63,9 @@ mod deep_sources;
 mod domain_protocol_emission;
 mod evaluate_reads_no_display_strings;
 mod exact_decimals;
-mod extracted_command;
 mod family_outcome_layering;
 mod formal_source;
+mod formatter_identity;
 // The handoff writer is behind its feature; the all-features lane runs this.
 #[cfg(feature = "handoff-writer")]
 mod handoff_writer;
@@ -118,7 +118,6 @@ mod runtime_workflow;
 mod seam5_retired;
 mod source_map;
 mod spine_run;
-mod standalone;
 mod state_scalar_lowering;
 mod text_enum_identity;
 mod verified_binding_witness;

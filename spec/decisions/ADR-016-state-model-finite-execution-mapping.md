@@ -60,35 +60,6 @@ relationships:
 ---
 # ADR-016: State, model and finite execution on the shared foundation (ARCH-40)
 
-## Status
-
-Proposed, 2026-09-29. Owning ticket: GitHub #220 (ARCH-40),
-epic QSL-34 (#205), Layer 4 architecture and conformance mapping. It owns no
-feature implementation. The implementation owners are QSL-68 (#120, V1-A04,
-model graph and binding), QSL-67 (#121, V1-A05, native execution and finite
-simulation) and #164 (the static type/model conformance boundary,
-Done). Its `/spec-review all` is SR-786 to SR-793 in
-[`spec/reviews/state-model-mapping/`](../reviews/state-model-mapping/integrity.md).
-
-ADR-012 §15 is the state-clause share of this mapping: families,
-stages, identity, wire, observations, outcomes, requirements and deletion
-order for `invariant`, `pre` and `post`. This record does not restate it. It
-adds the model graph, the static/runtime boundary, identity across all four
-phases (check, execute, proof handoff, replay), finite exploration, and the
-owner and oracle of every remaining piece.
-
-It amends these cells of earlier records, each listed under "Amendments made
-with this record": ADR-011 M-6c and §8 (lane D); ADR-012 §2, §3, §5.1 S1 and
-§13.5 Q210-3 (`StateModel` has no S6a hook, FP-3); ADR-013 O-13 Population
-row, T-6, QC-21 (the `PopulationId` preimage, ID-5), and O-16 and §6
-(simulation outcome, FP-4). It reopens no other cell.
-
-"QSpec FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
-requirement. `StateModel` alone names the family (`FamilyKind::StateModel`);
-FR-120's layer-3 seam type is written `model::state::StateModel`. Item ids
-`SC-`, `ID-`, `EX-`, `FE-`, `ND-`, `FP-`, `G-`, `OR-` and `PI-` are local to
-this record. Other artifacts cite them as `ADR-016 G-3`.
-
 ## Context
 
 Linear ticket states quoted below are
@@ -183,6 +154,19 @@ TC-463 step 1 (`s4_state_package_reads_back_through_i2`) and TC-469 step 6
 (`tc_469_step_6_the_emitted_package_admits_via_i04`) run and pass. IR `lower`
 returns no form for a `state` node. Gate QSL-20 (#219, ARCH-G3) is Backlog.
 
+"QSpec FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
+requirement. `StateModel` alone names the family (`FamilyKind::StateModel`);
+FR-120's layer-3 seam type is written `model::state::StateModel`. Item ids
+`SC-`, `ID-`, `EX-`, `FE-`, `ND-`, `FP-`, `G-`, `OR-` and `PI-` are local to
+this record. Other artifacts cite them as `ADR-016 G-3`.
+
+ADR-012 §15 is the state-clause share of this mapping: families,
+stages, identity, wire, observations, outcomes, requirements and deletion
+order for `invariant`, `pre` and `post`. This record does not restate it. It
+adds the model graph, the static/runtime boundary, identity across all four
+phases (check, execute, proof handoff, replay), finite exploration, and the
+owner and oracle of every remaining piece.
+
 ## Decision
 
 ### 1. Static conformance versus runtime population data
@@ -197,7 +181,7 @@ about static types. S6a decides every question about population data.
 | SC-1 | Does a field, operation or relationship end exist on a static object type, including inherited members? | S3 | the `model` effective view through `TypeEnvironment::attribute`/`operation`; relationship ends after G-5 | `missing_declaration`; an ambiguous operation `ambiguous_declaration` |
 | SC-2 | Does static type `S` conform to `T` (upcast equality, `lookup` key type, argument passing, clause context type)? | S3 | `TypeEnvironment::conforms`, total over a closure computed once under `TypeEnvironmentLimits.ancestor_steps` (B-3, ADR-014 §1) | `ill_typed`/`type-mismatch`; a chain past the ceiling refuses `stage_limit_exceeded` |
 | SC-3 | Which operation a dispatched call selects (unique most-specific) | S3 | `link_dispatch` through `check::checked_dispatch_operation`, once G-7 wires it | ambiguity or ineligibility refuses at S3 with no partial table (FR-083) |
-| SC-4 | The declared maximum of a population and the element type of `allInstances` | S3 | `ValueType::Population(Some(n))` gives `Set<T>[0,n]`; `Population(None)` gives an unbounded set (ADR-014 §2) | a type fact |
+| SC-4 | The declared maximum of a population and the element type of `allInstances` | S3 | For queried model object type `T`, `ValueType::Population(Some(n))` gives `Set<Reference<T>>[0,n]`; `Population(None)` gives the unbounded `Set<Reference<T>>`, with no inferred finite maximum (QSpec FR-153; ADR-014 §2) | a type fact |
 | SC-5 | Which objects exist, their most-specific type, field values, closure and dangling references | S6a admission | `admit_binding`, `admit_invocation`, FR-106 `admit_observations` | `dangling_reference`, `incomplete_population` (incomplete), `invalid_runtime_input` |
 | SC-6 | Does a runtime object's dynamic type conform to `T` (`lookup` narrowing)? | S6a | `model::population::lookup` through `ModelIndex::conforms` under the binding's read-only `ancestor_steps` ceiling | `absent undefined` → `FamilyResult::Undefined` `absent-key`; `absent refused` → `ModelRefusal`; the ceiling reached → `Refused`, `resource_exhausted`/`ancestor-steps` (ADR-014 §7) |
 | SC-7 | Does a dispatched call's precondition hold for its receiver? | S6a | `StateModel` undefined cause `PreconditionFalse` (ADR-013 O-16) | `FamilyResult::Undefined` `precondition-false` |

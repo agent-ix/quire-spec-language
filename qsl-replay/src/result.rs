@@ -24,6 +24,7 @@ use crate::identity::TracePosition;
 use qsl_foundation::diagnostic::Category;
 use qsl_foundation::source::provenance::SourceRegion;
 pub use wire::CauseCodecError;
+pub(crate) use wire::{validate_state_element, RecordWire};
 
 /// The verdict a proved or replayed outcome settles to, taken from the
 /// QSpec outcome-to-verdict map fixed per ADR-013 O-16 category (QC-8). A
@@ -764,19 +765,32 @@ fn common_measured_bytes(resolved_regions: &[SourceRegion]) -> usize {
 
 /// [`read_bounded`]'s own measurement of `result`'s encoded size
 /// (FR-072-AC-5): every variable-length member's own byte length -- the
-/// nested FR-351 record's value-path segments among them -- never a
-/// caller-declared number a result could understate to launder oversized
-/// content past the bound (B3).
-fn measured_encoded_bytes(result: &ReplayResult) -> usize {
-    match result {
+/// nested FR-351 record's value-path segments and an incomplete record's
+/// arbitrary-precision `next_charge` among them -- never a caller-declared
+/// number a result could understate to launder oversized content past the
+/// bound (B3).
+pub(crate) fn measured_encoded_bytes(result: &ReplayResult) -> usize {
+    let arm_bytes = match result {
         ReplayResult::Witness(arm) => {
             common_measured_bytes(arm.resolved_regions())
                 + arm
                     .record()
                     .map_or(0, SeparatingWitnessRecord::measured_bytes)
+                + arm
+                    .disagreement()
+                    .map_or(0, DisagreementCause::measured_bytes)
         }
-        ReplayResult::Input(arm) => common_measured_bytes(arm.resolved_regions()),
-    }
+        ReplayResult::Input(arm) => {
+            common_measured_bytes(arm.resolved_regions())
+                + arm
+                    .disagreement()
+                    .map_or(0, DisagreementCause::measured_bytes)
+        }
+    };
+    arm_bytes
+        + result
+            .limit()
+            .map_or(0, |limit| limit.next_charge.to_string().len())
 }
 
 /// [`ReplayResult`]'s bound-checked reader (FR-072-AC-5): refuses an
@@ -951,6 +965,75 @@ mod tests {
     #[test]
     fn common_measured_bytes_counts_each_source_member() {
         assert_eq!(common_measured_bytes(&regions()), 13);
+    }
+
+    /// A disagreement's retained failure text is part of the replay result
+    /// whose reader limit is checked.
+    #[trace("TC-191", "FR-072-AC-5")]
+    #[test]
+    fn bounded_replay_counts_disagreement_evidence() {
+        let verdict = Verdict::from_category(Category::Violation);
+        let replay = ReplayResult::Witness(WitnessArmResult::settle(
+            verdict,
+            verdict,
+            Category::Violation,
+            Some(EvaluatedValue::Boolean(false)),
+            WitnessCheck::Disagrees {
+                given: None,
+                derived: None,
+                failure: WitnessFailure::Separation {
+                    step: SeparationStep::Body,
+                    reason: SeparationReason::Refused(SeparationRefusal {
+                        code: "invalid_runtime_input".to_owned(),
+                        cause: "x".repeat(DEFAULT_INPUT_BYTES + 1),
+                        fields: BTreeMap::new(),
+                    }),
+                },
+            },
+            Vec::new(),
+            charges(),
+        ));
+        assert!(read_bounded(replay, ReplayLimits::default()).is_err());
+    }
+
+    fn limit_with_next_charge(digits: &str) -> Incomplete {
+        Incomplete {
+            limit_kind: quire_exact::LimitKind::WorkUnits,
+            limit: 1,
+            consumed: 1,
+            next_charge: digits.parse().unwrap(),
+            charge_point: quire_exact::ChargePoint::TextInputBytes,
+        }
+    }
+
+    /// Both replay arms measure the mathematical integer retained in their
+    /// optional incomplete record, including the exact one-byte boundary.
+    #[trace("TC-191", "FR-072-AC-5")]
+    #[test]
+    fn bounded_replay_counts_next_charge_on_both_arms() {
+        for arm in ["witness", "input"] {
+            let make = |digits| match arm {
+                "witness" => ReplayResult::Witness(
+                    WitnessArmResult::settle_range_violation(None, Vec::new(), charges())
+                        .with_limit(limit_with_next_charge(digits)),
+                ),
+                "input" => ReplayResult::Input(
+                    InputArmResult::settle_range_violation(None, Vec::new(), charges())
+                        .with_limit(limit_with_next_charge(digits)),
+                ),
+                _ => unreachable!(),
+            };
+            let limits = ReplayLimits::default().with_input_bytes(1);
+            assert!(read_bounded(make("9"), limits).is_ok(), "{arm}");
+            assert_eq!(
+                read_bounded(make("99"), limits),
+                Err(BoundExceeded {
+                    bound: 1,
+                    actual: 2
+                }),
+                "{arm}"
+            );
+        }
     }
 
     #[trace("TC-189", "FR-072-AC-1")]
@@ -1191,7 +1274,7 @@ mod tests {
         // FR-069: a proof-result envelope for a `Counterexample` Kani run.
         let proof_source = BackendProviderSource {
             backend_identity: "kani-backend-1".to_owned(),
-            items: vec![TerminalRecord::new(
+            items: vec![TerminalRecord::from_value(
                 qsl_foundation::RequestIndex::new(0),
                 TerminalValue::Refuted,
             )],

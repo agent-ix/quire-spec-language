@@ -213,11 +213,10 @@ fn c03_bound_violations_refuse_after_the_bound_charge() {
         &Outcome::Refused(out_of_bound(BoundViolation::AboveMaximum, &set, 3)),
     );
     assert_eq!(
-        meter.admitted_charges().last(),
+        crate::support::admitted_charge_points(&meter).last(),
         Some(&ChargePoint::CollectionBound)
     );
-    assert!(!meter
-        .admitted_charges()
+    assert!(!crate::support::admitted_charge_points(&meter)
         .contains(&ChargePoint::CollectionResultRetain));
     assert_eq!(meter.consumed(LimitKind::ResultUnits), 0);
 
@@ -412,7 +411,7 @@ fn c07_set_construction_charges_membership_comparisons_in_retention_order() {
         format!("{:?}", values(&[1, 2]))
     );
     assert_eq!(
-        meter.admitted_charges(),
+        crate::support::admitted_charge_points(&meter),
         [
             ChargePoint::CollectionElement,
             ChargePoint::CollectionElement,
@@ -549,8 +548,7 @@ fn c10_reference_holder_sets_charge_pairs_and_refuse_foreign_universes() {
         }),
     );
     assert_eq!(meter.consumed(LimitKind::WorkUnits), 6);
-    assert!(!meter
-        .admitted_charges()
+    assert!(!crate::support::admitted_charge_points(&meter)
         .contains(&ChargePoint::CollectionMemberTest));
 }
 
@@ -681,7 +679,7 @@ mod checked {
             .unwrap();
         match evaluation.outcome {
             FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(value)) => {
-                (value, meter.admitted_charges().to_vec())
+                (value, crate::support::admitted_charge_points(&meter))
             }
             other => panic!("a completed value, not {other:?}"),
         }

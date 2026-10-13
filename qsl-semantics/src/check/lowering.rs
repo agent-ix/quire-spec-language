@@ -60,8 +60,8 @@ use super::claims::BinderSite;
 use super::family::{OccurrenceMap, OccurrenceRole};
 use super::identity::ModelCorrespondence;
 use super::ir::{
-    Arithmetic, CheckedLiteral, CheckedNode, Connective, NodeId, NodeKind, OrderedKind, RecordSlot,
-    Slot, Visit,
+    Arithmetic, CheckedLiteral, CheckedNode, Connective, IntegerDivisionOperator, NodeId, NodeKind,
+    OrderedKind, RecordSlot, Slot, Visit,
 };
 use super::node_key::{
     group_keys, node_key, LawRole, LeafSegment, LiteralValue, NodeInput, NodeKeyRefusal, NodeTag,
@@ -74,7 +74,7 @@ use super::node_key::{
 use super::refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, KeyFault, StageLimitCause,
 };
-use crate::value::definition::DefinitionReference;
+use crate::value::definition::{CatalogRole, DefinitionLock, DefinitionReference};
 use crate::value::enumeration::{member_preimage_bytes, EnumDeclarationPreimage};
 use crate::value::member::Member;
 use crate::value::unit::{DimensionPreimage, UnitPreimage};
@@ -188,7 +188,7 @@ pub enum NominalNode {
     Dimension(Option<DimensionPreimage>),
     /// `quire.unit-node/v1` (FR-094), `None` for a unit another owner than
     /// the checked unit's own source declares, as for [`Self::Dimension`].
-    Unit(Option<UnitPreimage>),
+    Unit(Option<Box<UnitPreimage>>),
 }
 
 impl SemanticNode {
@@ -311,6 +311,39 @@ impl SemanticGraph {
             .copied()
             .find(|key| key.as_bytes() == id.as_bytes())
     }
+
+    /// Add an enclosing narrow node for a claims-keying fixture. The cloned
+    /// checked narrow is changed to reference `operand`, so the fixture can
+    /// distinguish it from the direct conversion without supplying a
+    /// test-authored operation predicate.
+    #[cfg(test)]
+    pub(crate) fn with_test_narrow_over(&self, key: NodeKey, operand: NodeKey) -> Self {
+        let mut graph = self.clone();
+        let mut enclosing = self
+            .nodes
+            .values()
+            .find(|node| {
+                matches!(
+                    &node.content.body,
+                    super::node_key::BodyTerm::Application(application)
+                        if application.operation.identity() == "quire.op.numeric.narrow"
+                )
+            })
+            .expect("the checked fixture contains a narrow node")
+            .clone();
+        enclosing.key = key;
+        let super::node_key::BodyTerm::Application(application) = &mut enclosing.content.body
+        else {
+            unreachable!("the selected template is a narrow application")
+        };
+        application.arguments = vec![super::node_key::MemberTerm::Leaf(
+            super::node_key::LeafTerm::Reference {
+                target: super::node_key::NodeRef(operand),
+            },
+        )];
+        graph.nodes.insert(key, enclosing);
+        graph
+    }
 }
 
 /// One checked function, as the lowering reads it.
@@ -326,6 +359,8 @@ pub(crate) struct FunctionInput<'a> {
     pub(crate) location: &'a Location,
     /// The parameters in order.
     pub(crate) parameters: &'a [(String, ValueType)],
+    /// Source parameter declaration spans, separate from the body location.
+    pub(crate) parameter_spans: Option<&'a [qsl_foundation::Span]>,
     /// The declared result type.
     pub(crate) result: &'a ValueType,
     /// The checked body.
@@ -457,6 +492,7 @@ pub(crate) struct Lowered {
     /// Each binder's parameter node, by the binding node's location and
     /// the slot it binds: the roots a claim's extent is keyed by.
     pub(crate) binders: BTreeMap<BinderSite, NodeKey>,
+    pub(crate) parameter_spans: BTreeMap<(NodeKey, OccurrenceOrigin), qsl_foundation::Span>,
 }
 
 /// Builds and keys the nodes of one package.
@@ -519,6 +555,9 @@ pub(crate) struct Lowering<'a> {
     binders: BTreeMap<BinderSite, NodeKey>,
     /// Binders whose parameter node is a draft, recorded once it is keyed.
     draft_binders: Vec<(BinderSite, NodeKey)>,
+    /// Authored function parameters, located by the same binder site whose
+    /// node is resolved when a recursion group settles.
+    parameter_spans: BTreeMap<BinderSite, qsl_foundation::Span>,
     /// Each keyed recursion-group member by the key its content would have
     /// outside the group (its body naming the members' keys, `recursion`
     /// `null`): a node built later with that content is the member (FR-092,
@@ -1360,6 +1399,7 @@ impl<'a> Lowering<'a> {
             draft_occurrences: Vec::new(),
             binders: BTreeMap::new(),
             draft_binders: Vec::new(),
+            parameter_spans: BTreeMap::new(),
             rebuilt_members: BTreeMap::new(),
             group_of: BTreeMap::new(),
             group_regions: BTreeMap::new(),
@@ -1406,11 +1446,32 @@ impl<'a> Lowering<'a> {
                     .record(*key, OccurrenceRole::Generated, at.clone());
             }
         }
+        let mut parameter_sites: BTreeMap<(NodeKey, Location), qsl_foundation::Span> = self
+            .parameter_spans
+            .iter()
+            .filter_map(|(site, span)| {
+                self.binders
+                    .get(site)
+                    .map(|key| ((*key, site.binder.clone()), *span))
+            })
+            .collect();
+        let parameter_spans = self
+            .occurrences
+            .iter()
+            .filter_map(|(key, origin, location)| {
+                // The declaration occurrence precedes reads of its parameter;
+                // removing the site assigns its span to that one occurrence only.
+                parameter_sites
+                    .remove(&(key, location.clone()))
+                    .map(|span| ((key, origin), span))
+            })
+            .collect();
         Lowered {
             graph: self.graph,
             correspondence: self.correspondence,
             functions: self.functions,
             binders: self.binders,
+            parameter_spans,
         }
     }
 
@@ -2143,19 +2204,28 @@ impl<'a> Lowering<'a> {
     /// The law of `role` the lock evidence selects, or the FR-093 refusal.
     fn law(&self, role: LawRole, location: &Location) -> Result<OperationLaw, CheckRefusal> {
         let definition = match role {
-            LawRole::TextProfile => self.lock.text_profile(),
+            LawRole::TextProfile => self.lock.text_profile().cloned(),
             LawRole::IeeeProfile => self
                 .scope
                 .ieee_profile
                 .as_ref()
-                .map(|profile| profile.definition()),
-            LawRole::IntegerDivision | LawRole::TemporalProfile | LawRole::ProtocolProfile => None,
+                .map(|profile| profile.definition().clone()),
+            LawRole::IntegerDivision => self.scope.integer_division.map(|selection| {
+                let role = match selection.profile() {
+                    quire_exact::DivisionProfile::Euclidean => {
+                        CatalogRole::IntegerDivisionEuclidean
+                    }
+                    quire_exact::DivisionProfile::Floor => CatalogRole::IntegerDivisionFloor,
+                    quire_exact::DivisionProfile::Truncating => {
+                        CatalogRole::IntegerDivisionTruncating
+                    }
+                };
+                DefinitionLock::pinned().entry(role).reference()
+            }),
+            LawRole::TemporalProfile | LawRole::ProtocolProfile => None,
         };
         definition
-            .map(|definition| OperationLaw {
-                role,
-                definition: definition.clone(),
-            })
+            .map(|definition| OperationLaw { role, definition })
             .ok_or_else(|| refuse(location, CheckCause::MissingSelection { role }))
     }
 
@@ -2584,6 +2654,15 @@ impl<'a> Lowering<'a> {
             let target = function.population_targets.get(level).copied().flatten();
             let type_key = self.binder_type(value_type, target, function.location)?;
             let key = self.parameter(name, level, type_key, function.location)?;
+            if let Some(span) = function.parameter_spans.and_then(|spans| spans.get(level)) {
+                self.parameter_spans.insert(
+                    BinderSite {
+                        binder: function.location.clone(),
+                        slot: level,
+                    },
+                    *span,
+                );
+            }
             self.record(type_key, OccurrenceRole::Type, function.location.clone());
             self.record_binder(
                 BinderSite {
@@ -2890,6 +2969,34 @@ impl<'a> Lowering<'a> {
                 };
                 (
                     Keyed::Application(Operator::Binary, plain(identity)),
+                    Operands::Two(left, right),
+                )
+            }
+            NodeKind::IntegerDivision {
+                operator,
+                left,
+                right,
+                ..
+            } => {
+                let (identity, laws) = match operator {
+                    IntegerDivisionOperator::Div => (
+                        "quire.op.integer.div",
+                        vec![self.law(LawRole::IntegerDivision, node.location())?],
+                    ),
+                    IntegerDivisionOperator::Rem => (
+                        "quire.op.integer.rem",
+                        vec![self.law(LawRole::IntegerDivision, node.location())?],
+                    ),
+                    IntegerDivisionOperator::Mod => ("quire.op.integer.mod", Vec::new()),
+                };
+                (
+                    Keyed::Application(
+                        Operator::Binary,
+                        Operation {
+                            laws,
+                            ..plain(identity)
+                        },
+                    ),
                     Operands::Two(left, right),
                 )
             }

@@ -30,27 +30,6 @@ relationships:
 ---
 # ADR-022: Possible properties and state-graph queries over a model
 
-## Status
-
-Proposed, 2026-10-01. The QSL compiler requirements that implement it are
-US-020 and FR-165 to FR-170, with TC-590 to TC-595, TC-612 to TC-614, TC-618, TC-619, TC-643 and TC-644. It builds on
-ADR-018, itself a draft, and follows the owner's rulings recorded there
-(ADR-018 RU-1 to RU-4): the explicit-state engine comes first; the unmarked
-fairness granularity is `whole`; reachable deadlocks are reported by a
-derived deadlock-freedom item; and the infinite-trace profile admits interval
-operators nested under unbounded ones. It reads the strong-fairness record
-(ADR-019), the refinement record (ADR-020) and the state-space reduction
-record (ADR-021), all drafts, for their interactions (§6). §10 records the
-owner's rulings on the draft's four questions, on well-definedness
-(RU-5) and on proofs without a core certificate checker (RU-6). The owning ticket and related
-work are listed under References.
-
-"QSpec FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
-requirement. "QSpec FR-360" is the infinite-trace result disposition
-vocabulary, as in ADR-018. Item ids `SG-`, `GM-`, `GE-`, `GV-`,
-`GX-`, `GR-`, `DS-`, `QS-` and `RU-` are local to this record. Other artifacts cite
-them as `ADR-022 GM-3`. Items of ADR-018 are cited as `ADR-018 SM-3`.
-
 ## Context
 
 ADR-018 gives a temporal claim over a model subject a verdict over every
@@ -95,6 +74,12 @@ What QSL already has that bears on them:
   of typed relationships inside one state. It reads one state's object graph,
   never the model's state graph, and the names this record adds are distinct
   from it.
+
+"QSpec FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
+requirement. "QSpec FR-360" is the infinite-trace result disposition
+vocabulary, as in ADR-018. Item ids `SG-`, `GM-`, `GE-`, `GV-`,
+`GX-`, `GR-`, `DS-`, `QS-` and `RU-` are local to this record. Other artifacts cite
+them as `ADR-022 GM-3`. Items of ADR-018 are cited as `ADR-018 SM-3`.
 
 ## Decision
 

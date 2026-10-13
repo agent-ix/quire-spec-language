@@ -39,7 +39,84 @@ use super::{
     admit_clause_observations, run_clause, ClauseArgument, ClauseArgumentValue, ClauseDisposition,
     ClauseRunRefusal, ClauseRunRequest, ClauseRunSelection, ClauseRunSource, ClauseRunStage,
 };
-use crate::spine::{compose, default_accounting, ComposedUnit, DependencyInput, SpineLimits};
+use crate::spine::{default_accounting, ComposedUnit, DependencyInput, SpineLimits};
+
+// Keep the oracle where the private fixture's actual package input is owned.
+// Original refusals remain typed refusals; only a successful public S4 emission
+// reaches the strict formatted-package comparison.
+fn compose(
+    identity: qsl_foundation::SourceIdentity,
+    path: &str,
+    bytes: &[u8],
+    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    dependencies: &DependencyInput,
+    limits: SpineLimits,
+) -> Result<ComposedUnit, Box<crate::spine::CompileRefusal>> {
+    let original = crate::spine::compose(
+        identity.clone(),
+        path,
+        bytes,
+        packages,
+        dependencies,
+        limits,
+    )?;
+    let parsed = qsl_cst::parse(identity.clone(), path, bytes, limits.source)
+        .expect("the original fixture passed S1");
+    let formatted = qsl_cst::format::format_with_limit(&parsed, usize::MAX)
+        .expect("the admitted private fixture formats");
+    let mut formatted_limits = limits;
+    formatted_limits.source.source_bytes = limits.source.source_bytes.max(formatted.len());
+    let mut formatted_identity = identity;
+    formatted_identity.revision.push_str("-formatted");
+    let reparsed = qsl_cst::parse(
+        formatted_identity.clone(),
+        path,
+        formatted.as_bytes(),
+        formatted_limits.source,
+    )
+    .expect("formatted S1 retains the owning limits");
+    assert_eq!(
+        qsl_cst::format::format_with_limit(&reparsed, usize::MAX).unwrap(),
+        formatted,
+        "{path}: private fixture second-pass bytes",
+    );
+    let checked = crate::spine::compose(
+        formatted_identity,
+        path,
+        formatted.as_bytes(),
+        packages,
+        dependencies,
+        formatted_limits,
+    )
+    .unwrap_or_else(|refusal| panic!("{path}: formatted private fixture refuses: {refusal:?}"));
+    assert_eq!(
+        checked.emitted.package_id(),
+        original.emitted.package_id(),
+        "{path}: private fixture formatting changed checked package identity",
+    );
+    Ok(original)
+}
+
+#[trace("FR-003-AC-9")]
+#[test]
+fn private_clause_source_generators_keep_format_identity() {
+    for (path, (unit, packages)) in [
+        ("nodes.native", unit_and_packages()),
+        ("config.native", config_version_unit_and_packages()),
+        ("step2.native", config_version_step2_unit_and_packages()),
+        ("step3.native", config_version_step3_unit_and_packages()),
+    ] {
+        compose(
+            source(),
+            path,
+            unit.as_bytes(),
+            &packages,
+            &DependencyInput::default(),
+            SpineLimits::default(),
+        )
+        .unwrap_or_else(|refusal| panic!("{path}: original fixture refuses: {refusal:?}"));
+    }
+}
 
 const PACKAGE_IDENTITY: &str = "test/nodes";
 const PLACEHOLDER_DIGEST: &str =
@@ -61,6 +138,7 @@ fn domain_document() -> Vec<u8> {
     let population = population_identity();
     let envelope = json!({
         "contractVersion": "2.0.0",
+        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
         "source": {
             "identity": format!("ix://{PACKAGE_IDENTITY}/spec"),
             "version": "1.0.0",
@@ -401,7 +479,7 @@ fn no_cycle_completes_true_with_the_expected_reaches_charge_log() {
     let graph_charges: Vec<_> = meter
         .admitted_charges()
         .iter()
-        .copied()
+        .map(|charge| charge.point)
         .filter(|point| {
             matches!(
                 point,
@@ -697,6 +775,7 @@ fn request(selection: ClauseRunSelection) -> ClauseRunRequest {
         invocations: BTreeMap::new(),
         selection,
         expected_package_id: None,
+        expected_package_id_claim: None,
         limits: SpineLimits::default(),
         observation_limits: ObservationLimits::default(),
         accounting: default_accounting(1_000_000),
@@ -768,6 +847,36 @@ fn run_clause_evaluates_a_clause_selection() {
     assert!(
         report.usage.evaluation_admissions > 0,
         "the evaluation meter's charges are reported"
+    );
+}
+
+#[test]
+#[trace("TC-792", "FR-100-AC-16")]
+fn tc_792_native_argument_refusal_preserves_typed_fields() {
+    let (request, _) = no_cycle_request(&[("a", Some("b")), ("b", None)]);
+    let mut report = run_clause(request).expect("the fixture compiles");
+    report.basis = crate::proof_result::SettlementBasis::Unavailable;
+    report.disposition =
+        ClauseDisposition::ArgumentRefusal(Box::new(crate::spine::RunRefusal::Admission {
+            position: 2,
+            refusal: qsl_semantics::model::normalize::ModelRefusal {
+                code: qsl_foundation::diagnostic::Code::ForeignReference,
+                cause: qsl_semantics::model::normalize::ModelRefusalCause::ForeignType {
+                    member: "w".to_owned(),
+                    type_name: qsl_semantics::model::key::DeclarationKey::fixture("foreign/W"),
+                },
+                detail: "foreign type".to_owned(),
+            },
+        }));
+    let bytes = crate::spine::write_clause_run_result(&report).unwrap();
+    let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(
+        value["disposition"]["refusal"]["fields"],
+        serde_json::json!({
+            "position": "2",
+            "member": "w",
+            "type": "test/orders/foreign/W"
+        })
     );
 }
 
@@ -1455,6 +1564,7 @@ fn config_version_domain_document_with_operations(
     operations.extend(extra_operations);
     let envelope = json!({
         "contractVersion": "2.0.0",
+        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
         "source": {
             "identity": format!("ix://{CONFIG_VERSION_PACKAGE_IDENTITY}/spec"),
             "version": "1.0.0",
@@ -1672,6 +1782,7 @@ fn config_version_request_for(
         invocations: BTreeMap::new(),
         selection,
         expected_package_id: None,
+        expected_package_id_claim: None,
         limits: SpineLimits::default(),
         observation_limits: ObservationLimits::default(),
         accounting: default_accounting(1_000_000),
@@ -1897,7 +2008,7 @@ fn run_clause_reports_a_stale_package_naming_another_units_package_id() {
         ClauseDisposition::StalePackage {
             expected, actual, ..
         } => {
-            assert_eq!(*expected, other_id);
+            assert_eq!(expected, &other_id.hex());
             assert_ne!(*actual, other_id, "the config-version package differs");
         }
         other => panic!("expected StalePackage {{ .. }}, got {other:?}"),
@@ -3301,7 +3412,7 @@ fn step3_graph_charges(meter: &Meter) -> Vec<ChargePoint> {
     meter
         .admitted_charges()
         .iter()
-        .copied()
+        .map(|charge| charge.point)
         .filter(|point| {
             matches!(
                 point,
@@ -4663,7 +4774,7 @@ fn clause_anchor_target(clause: &qsl_semantics::check::SemanticNode) -> NodeKey 
 /// TC-463 (FR-105-AC-4): renaming `ParentOrder` changes no node id -- the
 /// declared name enters no key (FR-088) -- and the renamed clause's
 /// identity is `ParentOrder`'s.
-#[trace("TC-463", "FR-105-AC-4")]
+#[trace("TC-463", "FR-105-AC-4", "FR-003-AC-9")]
 #[test]
 fn s4_renaming_parent_order_changes_no_node_id() {
     let (unit, packages) = config_version_unit_and_packages();
@@ -4703,7 +4814,7 @@ fn s4_renaming_parent_order_changes_no_node_id() {
 /// TC-463 (FR-105-AC-4): changing `ParentOrder`'s `<` to `<=` changes its
 /// `state_clause` node id and the `package_id`, and leaves the other two
 /// clauses' node ids unchanged.
-#[trace("TC-463", "FR-105-AC-4")]
+#[trace("TC-463", "FR-105-AC-4", "FR-003-AC-9")]
 #[test]
 fn s4_changing_parent_orders_comparison_changes_its_node_id_and_the_package_id() {
     let (unit, packages) = config_version_unit_and_packages();
@@ -4745,7 +4856,7 @@ fn s4_changing_parent_orders_comparison_changes_its_node_id_and_the_package_id()
 /// TC-463 (FR-105-AC-4, FR-104-AC-6): adding `ParentOrder2` with
 /// `ParentOrder`'s body adds no node and a second `claim` occurrence
 /// (ordinal 1) to `ParentOrder`'s node.
-#[trace("TC-463", "FR-105-AC-4")]
+#[trace("TC-463", "FR-105-AC-4", "FR-003-AC-9")]
 #[test]
 fn s4_parent_order2_with_parent_orders_body_adds_no_node_and_a_second_claim() {
     let (unit, packages) = config_version_unit_and_packages();
@@ -4793,7 +4904,7 @@ fn s4_parent_order2_with_parent_orders_body_adds_no_node_and_a_second_claim() {
 /// adds one `state_clause` node and no second anchor or frame: the new
 /// clause anchors at the existing `operation_anchor`, which gains a second
 /// `anchor` occurrence.
-#[trace("TC-463", "FR-105-AC-4")]
+#[trace("TC-463", "FR-105-AC-4", "FR-003-AC-9")]
 #[test]
 fn s4_a_second_post_on_attempt_update_adds_one_clause_node_and_no_anchor_or_frame() {
     let (unit, packages) = config_version_unit_and_packages();
@@ -4879,7 +4990,7 @@ fn config_version_domain_document_with_sub() -> Vec<u8> {
 /// `ConfigVersion`, `pre A ... on Config::ConfigVersion::attemptUpdate` and
 /// `pre B ... on Config::Sub::attemptUpdate` share one `operation_anchor`,
 /// whose context is ConfigVersion (the declaring type), never `Sub`.
-#[trace("TC-463", "FR-105-AC-4")]
+#[trace("TC-463", "FR-105-AC-4", "FR-003-AC-9")]
 #[test]
 fn s4_pre_clauses_via_config_version_and_sub_share_one_anchor_at_config_version() {
     let (unit, packages) =

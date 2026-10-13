@@ -149,6 +149,15 @@ impl AdmittedModel {
             .map(|(id, key)| (key, *id))
     }
 
+    /// Every relationship declaration in this model package. Relationship
+    /// nodes are model-owned graph roots even when no checked expression has
+    /// a relationship-typed operand to name them.
+    pub(crate) fn relationship_declarations(&self) -> impl Iterator<Item = &DeclarationKey> {
+        self.records.iter().filter_map(|(key, record)| {
+            matches!(record, DomainPackageRecord::Relationship(_)).then_some(key)
+        })
+    }
+
     /// The key of `declaration`'s model node, keyed from the same content
     /// [`Lowering::model_node`] keys, without adding a node to any graph:
     /// a model node's key depends on its declaration alone, so this names
@@ -348,6 +357,39 @@ impl<'a> Lowering<'a> {
         Ok(key)
     }
 
+    /// Key every relationship declaration selected by this unit. Unlike an
+    /// object type, a relationship is not named by a value type or operation
+    /// frame yet, so it must be rooted explicitly for the checked package to
+    /// carry the model graph's relation nodes into emission.
+    pub(crate) fn relationship_nodes(
+        &mut self,
+        locations: &BTreeMap<String, Location>,
+    ) -> Result<(), CheckRefusal> {
+        let declarations: Vec<(DeclarationKey, Location)> = self
+            .models
+            .iter()
+            .filter_map(|model| {
+                let alias = model.alias.as_ref()?;
+                let location = locations.get(alias)?.clone();
+                Some(
+                    model
+                        .relationship_declarations()
+                        .map(move |declaration| (declaration.clone(), location.clone()))
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .flatten()
+            .collect();
+        for (declaration, location) in declarations {
+            let key = self.model_node(&declaration, &location)?;
+            // A relationship has no checked value or frame occurrence to
+            // anchor it. Record its generated model root at the selected
+            // model declaration span so emission can resolve provenance.
+            self.record(key, OccurrenceRole::Generated, location);
+        }
+        Ok(())
+    }
+
     /// The model node of the object type `T` a `Reference<T>` names.
     pub(super) fn object_node(
         &mut self,
@@ -534,7 +576,11 @@ impl<'a> Lowering<'a> {
                     )
                     .ok()
                     .filter(|preimage| own(preimage.preimage_bytes(self.identity)));
-                    ("unit", Some(dimension), NominalNode::Unit(preimage))
+                    (
+                        "unit",
+                        Some(dimension),
+                        NominalNode::Unit(preimage.map(Box::new)),
+                    )
                 }
                 NominalUnitForm::Dimension { terms } => {
                     pending.extend(terms.iter().map(|(base, _)| *base));

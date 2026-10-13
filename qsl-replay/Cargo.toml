@@ -44,6 +44,7 @@ quire-canonical = { workspace = true }
 # FR-269: the `DisagreementCause` wire codec and its strict reader.
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = { version = "1.0.151", features = ["raw_value"] }
+serde_path_to_error = "0.1.20"
 
 [dev-dependencies]
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }

@@ -21,6 +21,7 @@ use qsl_foundation::diagnostic::InternalFault;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_exact::{FieldValue, Meter, NodeKey, Value, ValueType};
 use quire_semantic_value::call::InputRefusal;
+use quire_semantic_value::declaration::TypeEnvironment;
 use s6a::{ReferenceEvaluation, S6aFamilyKind};
 
 pub use evaluate::Evaluation;
@@ -162,6 +163,7 @@ fn validate(
     parameters: &[(String, ValueType)],
     arguments: &[Value],
     objects: &ObjectEnvironment,
+    types: &TypeEnvironment,
 ) -> Result<(), InputRefusal> {
     if parameters.len() != arguments.len() {
         return Err(InputRefusal::Arity {
@@ -186,7 +188,7 @@ fn validate(
             if !resolved {
                 return Err(InputRefusal::WrongValueKind { parameter });
             }
-        } else if !value_type.admits(argument) {
+        } else if !types.admits(value_type, argument) {
             return Err(InputRefusal::WrongValueKind { parameter });
         }
         let mut pending = vec![argument];
@@ -594,7 +596,12 @@ impl CheckedPackageEvaluation for CheckedPackage {
             .graph()
             .callable(name)
             .ok_or_else(|| InputRefusal::UnknownFunction(function.to_string()))?;
-        validate(callable.parameters, &arguments, objects)?;
+        validate(
+            callable.parameters,
+            &arguments,
+            objects,
+            self.graph().scope().types(),
+        )?;
         // FR-062/FR-065: this family's own `evaluate` hook
         // (`s6a::ReferenceEvaluation`) is the one path that runs
         // checked function-application code, not a second, parallel
@@ -622,7 +629,12 @@ impl CheckedPackageEvaluation for CheckedPackage {
         objects: &ObjectEnvironment,
         meter: &mut Meter,
     ) -> Result<Evaluation, CallFailure> {
-        validate(expression.parameters(), &arguments, objects)?;
+        validate(
+            expression.parameters(),
+            &arguments,
+            objects,
+            self.graph().scope().types(),
+        )?;
         Machine::new(
             self.graph().scope(),
             self.graph(),
@@ -966,7 +978,11 @@ mod tests {
         assert_eq!(fault.invariant(), "boolean-value-expected");
         assert_eq!(fault.kernel_cause(), None);
         assert_eq!(
-            meter.admitted_charges(),
+            meter
+                .admitted_charges()
+                .iter()
+                .map(|charge| charge.point)
+                .collect::<Vec<_>>(),
             [quire_exact::ChargePoint::FunctionCall]
         );
         assert_eq!(

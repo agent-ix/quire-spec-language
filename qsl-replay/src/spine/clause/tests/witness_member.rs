@@ -81,6 +81,20 @@ fn unit_text() -> String {
     )
 }
 
+#[trace("FR-003-AC-9")]
+#[test]
+fn private_history_and_maybe_history_source_keeps_format_identity() {
+    compose(
+        source(),
+        "history.native",
+        unit_text().as_bytes(),
+        &packages(),
+        &DependencyInput::default(),
+        SpineLimits::default(),
+    )
+    .expect("the original history member fixture emits");
+}
+
 /// `self` (`mid`, version 1, parent absent) holding `history`, and holding
 /// it in `maybeHistory` too.
 fn snapshot(label: &DocumentRef, observation: &str, history: &[i64]) -> Vec<u8> {

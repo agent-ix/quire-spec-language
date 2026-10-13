@@ -16,17 +16,6 @@ relationships:
 ---
 # ADR-013: Canonical type, package and conversion ownership (ARCH-12)
 
-## Status
-
-Proposed, 2026-09-19. Owning ticket: agent-ix/quire-spec-language#211
-(ARCH-12), epic #205, Layer 1. Acceptance is decided at the architecture
-change-scenario gate #212. Supersedes nothing. A #209, #210, #222 or #229
-decision that contradicts a §3 cell reopens that cell and no other. Owner
-rulings of 2026-09-19, made by the #205 coordinator under the owner's
-delegation, the QSL lead's kernel-convergence rulings of 2026-09-22, the
-replay-type consolidation ruling of 2026-09-28 (OQ-H) and the SC-Q1
-union-kernel-shape ruling of 2026-09-29 (OQ-I) are recorded in §8.
-
 ## Context
 
 [ADR-010](ADR-010-observed-architecture-baseline.md) records the architecture as
@@ -78,6 +67,9 @@ selection. #222 decides boundedness. agent-ix/quire-specification#134 decides
 the capability vocabulary and wire spelling, and #229 aligns QSL's specification
 to it. Where this record needs one of their decisions it writes "decided in
 #NNN" and lists the question in §8.
+
+A #209, #210, #222 or #229
+decision that contradicts a §3 cell reopens that cell and no other.
 
 ## Decision
 
@@ -780,7 +772,8 @@ The `backend` member is the identity string alone, in every proof-result envelop
 `BackendId` uniqueness within the `#185` registry is the identity alone (agent-ix/quire-specification#134,
 FR-290 "Candidate set and negotiation": "a backend identity is unique within
 a registry"). Two admitted registrations of one identity that carry an equal
-descriptor -- same identity and advertised pairs -- are one
+complete descriptor -- same identity, provider origin, advertised pairs,
+retained `domains`, and evidence-kind set -- are one
 registration, and a repeat is not refused. Two admitted registrations of one
 identity that disagree in any member conflict: the identity is refused once
 `invalid_capability`/`duplicate-backend`, keyed by the identity; any
@@ -1029,7 +1022,7 @@ mutant is allow-listed (ADR-012 §5.3).
 | C-26 | Checked type node → kernel `ValueType` | QSL checker | Total over the checked type nodes; a sum keeps each variant's `VariantId`, and an enum's `VariantId` preimage names the enum's node id; an enum shape carries each variant's rank (O-14) | #213 S-3 test per type-node form, including a sum; #213 S-1b for the enum member key and rank (FR-088-AC-11) |
 | C-30 | Enum member node key → `VariantId`; unit node key → declared-arm `UnitId` | QSL checker for the enum member key; QSL `semantic_value` for the unit key (`value::unit::UnitGraph::declared_unit_id`, which admits only an admitted unit's key), called by the stage that resolves a quantity unit (T-6) | The same `quire.checked-semantic-node/v1` bytes, typed for the kernel. Admitted only for a node key minted over the `quire.enum-member-node/v1` or `quire.unit-node/v1` preimage respectively; any other node key refuses. No reverse conversion | #213 S-1b test that an enum-declaration or dimension node key is refused (FR-088-AC-11, AC-12) |
 | C-27 | `BackendId` ↔ `backend` wire member | #185 registry type, each reader | Identity kept verbatim; the member is the identity alone | FR-075-AC-6 (TC-433, planned): the identity round trip, the verbatim identity and the empty-identity refusal in `qsl-route/src/lib.rs` |
-| C-28 | FR-331 provider manifest → QSL `BackendDescriptor` | The driver reads the manifest; QSL `route` (#185) admits what it read | QSL reads no manifest bytes. The driver passes the backend identity, the advertised (kind, mode) labels and the manifest's `domains` to `BackendDescriptor::admit`, which admits the labels under the requested-pair rules and refuses, keyed by backend identity, `invalid_capability`/`absent-kind`, `unknown-kind`, `unknown-mode` and `invalid-domains`. `duplicate-backend` is the registry's refusal at `Registry::register`, and `unknown-evidence-kind` waits on `Capability` gaining `probabilistic-satisfaction`. It keeps the admitted `domains` on the descriptor and refuses a defective `domains` (absent while a `bounded` pair is advertised, empty, a kind other than `collection`, `population`, `integer` or `recursive`, or a repeated kind) as `invalid_capability`/`invalid-domains` (QSpec FR-290) | FR-057-AC-8 (TC-155 step 3) and FR-057-AC-12 (TC-155 step 7), `qsl-route/tests/it/routing.rs` |
+| C-28 | FR-331 provider manifest → QSL `BackendDescriptor` | The driver reads the manifest; QSL `route` (#185) admits what it read | QSL reads no manifest bytes. The driver passes the backend identity, the advertised (kind, mode) labels, the manifest's `domains`, and its `evidence_kinds` to `BackendDescriptor::admit`. Admission checks the requested-pair rules, requires nonempty exact evidence kinds `statistical` or `exact` when `probabilistic-satisfaction` is advertised, and refuses defects keyed by backend identity with `invalid_capability` and the applicable cause, including `absent-kind`, `unknown-kind`, `unknown-mode`, `invalid-domains` or `unknown-evidence-kind`. `duplicate-backend` is the registry's refusal at `Registry::register`. It keeps admitted domains and evidence kinds on the descriptor. A defective `domains` (absent while a `bounded` pair is advertised, empty, a kind other than `collection`, `population`, `integer` or `recursive`, or a repeated kind) is refused as `invalid_capability`/`invalid-domains` (QSpec FR-290) | FR-057-AC-8 (TC-155 step 3) and FR-057-AC-12 (TC-155 step 7), `qsl-route/tests/it/routing.rs` |
 | C-29 | Candidate set → FR-331 `candidates` (QC-12) | QSL `route` returns the typed value; the FR-331 envelope writer serializes it; CG reads | One value per request item: the candidate list ordered by identity, or the unknown-backend mark. The registry holds at most one descriptor per identity, and a conflicted identity holds none, so a list never carries two candidates of the same identity. QSL defines no candidate-set wire; the member layout is agent-ix/quire-specification#134's | FR-057-AC-8 and FR-075-AC-1 to AC-4 and AC-7 over `CandidateOutcome`; the wire round trip and CG's duplicate-member adverse test follow agent-ix/quire-specification#134 |
 
 Conversions that do not exist: `EffectiveId` ↔ `NodeKey`; any lane-private type
@@ -1192,7 +1185,7 @@ Questions for #210, answered in ADR-012 §13.5:
 | ID | Question | Answer |
 | --- | --- | --- |
 | Q210-1 | Does a selected capability travel in the counterexample packet or replay request, or only in FR-331 negotiation? | Only in FR-331 negotiation. The packet and request carry the `backend` member, not a capability. |
-| Q210-2 | Do the ADR-012 §1.1 selection mechanics need a representation beyond O-20 once #222 fixes the mode vocabulary (Q222-3)? | No. |
+| Q210-2 | Do the ADR-012 §1.1 selection mechanics need a representation beyond O-20 once #222 fixes the mode vocabulary (Q222-3) and probabilistic evidence-kind matching? | Yes. Requirement records and backend descriptors carry the evidence kind(s), and candidates match the exact item evidence kind; no other selection rule changes. |
 | Q210-3 | How does each family result (including the simulation lane) map to the eight O-16 categories? | By O-16's columns; `Relation` has no S6a result, because S6a's input type admits no `Relation` (O-16, owner ruling on FR-090-OQ-2). No family adds a category. |
 | Q210-4 | Do family witness payloads use the QSpec FR-351 record unchanged? | Yes; a family adds only its witness binding schema, so O-25 needs no family-specific envelope. |
 

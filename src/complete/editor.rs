@@ -217,8 +217,8 @@ pub fn format_document(
             "formatting requires an unrecovered complete-V1 source",
         ));
     }
-    let formatted = crate::format::format_with_limit(parsed, limits.source_bytes)
-        .map_err(crate::format::FormatRefusal::into_diagnostic)?;
+    let formatted = qsl_cst::format::format_with_limit(parsed, limits.source_bytes)
+        .map_err(qsl_cst::format::FormatRefusal::into_diagnostic)?;
     let candidate = super::parse_with_catalog(
         SourceIdentity {
             revision: format!("{}:format-candidate", binding.source.revision),

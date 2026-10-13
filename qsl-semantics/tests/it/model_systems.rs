@@ -16,6 +16,7 @@ use qsl_semantics::model::domain_package::{
     AllocationRecord, ComponentRecord, DomainPackage, DomainPackageRecord, DomainPackageRef,
     EndpointRecord, Multiplicity, ObjectTypeRecord, OperationEffect, OperationMemberRecord,
     PortDirection, RelationshipDirection, RelationshipEnd, RelationshipRecord, ScalarTypeRecord,
+    ScalarValueDomain,
 };
 use qsl_semantics::model::index::ModelIndex;
 use qsl_semantics::model::key::DeclarationKey;
@@ -60,8 +61,7 @@ fn object_type(
 fn scalar_type(identity: &str, lower: i128, upper: i128) -> DomainPackageRecord {
     DomainPackageRecord::ScalarType(ScalarTypeRecord {
         key: DeclarationKey::fixture(identity),
-        lower,
-        upper,
+        domain: ScalarValueDomain::Integer { lower, upper },
     })
 }
 

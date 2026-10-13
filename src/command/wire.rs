@@ -2,10 +2,9 @@
 //! FR-026–028, FR-031: closed records; existing constructors own identifier validity.
 
 use crate::checking::ClauseBinding;
-use crate::runtime::{
-    ExecutionSelection, InvocationRef, ObjectIdentity, ObservationSelection, SnapshotRef,
-};
+use crate::runtime::{InvocationRef, ObjectIdentity, SnapshotRef};
 use qsl_foundation::serde_object::{deserialize_objects, from_object};
+use qsl_foundation::AccountingSetting;
 use quire_contract_model as ir;
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
@@ -81,10 +80,103 @@ pub(super) struct Request {
     /// program.
     #[serde(default, deserialize_with = "from_object_opt")]
     pub call: Option<Call>,
+    /// FR-312: a clause run, mutually exclusive with `call` for 1-draft.
+    #[serde(default, deserialize_with = "from_object_opt")]
+    pub clause: Option<ClauseRun>,
     /// FR-100/ADR-015 D-1: a `1-draft` program's supplied libraries; none
     /// when absent. A `0-draft` program admits none (FR-026).
     #[serde(default, deserialize_with = "deserialize_objects")]
     pub libraries: Vec<Library>,
+}
+
+/// FR-312's closed clause-run selection and observation file table.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct ClauseRun {
+    #[serde(deserialize_with = "from_object")]
+    pub selection: ClauseRunSelection,
+    #[serde(deserialize_with = "from_object")]
+    pub observations: std::collections::BTreeMap<String, String>,
+    /// FR-312: optional clause-run accounting limits, using FR-100's closed
+    /// counter object and defaults.
+    #[serde(default, deserialize_with = "from_object")]
+    pub accounting: Accounting,
+    #[serde(default)]
+    pub package_id: Option<String>,
+    #[serde(default, deserialize_with = "from_object_opt")]
+    pub observation_limits: Option<ObservationLimitOverrides>,
+}
+
+/// Exactly one of these members is selected by the reader.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct ClauseRunSelection {
+    #[serde(default, deserialize_with = "from_object_opt")]
+    pub clause: Option<ClauseSelection>,
+    #[serde(default, deserialize_with = "from_object_opt")]
+    pub frame: Option<FrameSelection>,
+    #[serde(default, deserialize_with = "from_object_opt")]
+    pub function: Option<FunctionSelection>,
+}
+
+/// Role-specific members are checked against the selected document.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct ClauseSelection {
+    pub name: String,
+    pub observation: String,
+    #[serde(default, rename = "self", deserialize_with = "from_object_opt")]
+    pub self_object: Option<ObjectReference>,
+    #[serde(default, deserialize_with = "from_object_opt")]
+    pub anchor: Option<Anchor>,
+    #[serde(default, deserialize_with = "from_object_opt")]
+    pub parameters: Option<std::collections::BTreeMap<String, Box<RawValue>>>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct ObjectReference {
+    pub population: String,
+    pub key: String,
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub(super) enum Anchor {
+    Initialization { name: String },
+    Handler { name: String },
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct FrameSelection {
+    pub operation: String,
+    pub invocation: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct FunctionSelection {
+    pub name: String,
+    #[serde(deserialize_with = "deserialize_objects")]
+    pub arguments: Vec<ClauseArgument>,
+    pub snapshot: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct ClauseArgument {
+    pub parameter: String,
+    pub value: Box<RawValue>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct ObservationLimitOverrides {
+    pub document_bytes: Option<u64>,
+    pub objects_per_document: Option<u64>,
+    pub values_per_document: Option<u64>,
+    pub post_state: Option<String>,
 }
 
 // Present only when the field itself is present; `#[serde(default)]` alone
@@ -103,24 +195,76 @@ fn deserialize_objects_opt<'de, D: serde::Deserializer<'de>, T: serde::Deseriali
 }
 
 /// The `call` member of a `1-draft` native-run/1 request (FR-100): which
-/// function to call, its arguments, and an optional `work_units` limit.
+/// function to call, its arguments, and an optional closed `accounting`
+/// object. A top-level `work_units` is no member: `deny_unknown_fields`
+/// refuses it.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Call {
     pub function: String,
     #[serde(deserialize_with = "deserialize_objects")]
     pub arguments: Vec<Argument>,
-    /// FR-100: a JSON integer from 0 to `u64::MAX` when present. A present
-    /// `null` is not admitted: unlike `from_object_opt`/
-    /// `deserialize_objects_opt` (wrapped so `#[serde(default)]` alone
-    /// covers absence), this deserializes `u64` directly -- so serde only
-    /// ever calls it for a present key, and a present `null` fails `u64`'s
-    /// own visitor rather than silently becoming the default.
-    #[serde(default, deserialize_with = "work_units")]
-    pub work_units: Option<u64>,
+    /// FR-100: the call's accounting limits by counter name; absent is `{}`.
+    #[serde(default, deserialize_with = "from_object")]
+    pub accounting: Accounting,
 }
 
-fn work_units<'de, D: serde::Deserializer<'de>>(decoder: D) -> Result<Option<u64>, D::Error> {
+/// The `accounting` member of a [`Call`] (FR-100): any subset of the ten
+/// `quire.value.accounting/v1` counters, each a JSON integer from 0 to
+/// `u64::MAX`. A member that names no counter, or is named twice, refuses at
+/// decode (serde's derive rejects both).
+#[derive(Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct Accounting {
+    #[serde(default, deserialize_with = "counter")]
+    integer_bits: Option<u64>,
+    #[serde(default, deserialize_with = "counter")]
+    decimal_digits: Option<u64>,
+    #[serde(default, deserialize_with = "counter")]
+    scale_expansion: Option<u64>,
+    #[serde(default, deserialize_with = "counter")]
+    text_input_bytes: Option<u64>,
+    #[serde(default, deserialize_with = "counter")]
+    text_scalars: Option<u64>,
+    #[serde(default, deserialize_with = "counter")]
+    normalized_scalars: Option<u64>,
+    #[serde(default, deserialize_with = "counter")]
+    unit_edges: Option<u64>,
+    #[serde(default, deserialize_with = "counter")]
+    value_occurrences: Option<u64>,
+    #[serde(default, deserialize_with = "counter")]
+    work_units: Option<u64>,
+    #[serde(default, deserialize_with = "counter")]
+    result_units: Option<u64>,
+}
+
+impl Accounting {
+    /// The counters the object names, as their settings with their bounds.
+    pub fn entries(&self) -> impl Iterator<Item = (AccountingSetting, u64)> {
+        [
+            (AccountingSetting::IntegerBits, self.integer_bits),
+            (AccountingSetting::DecimalDigits, self.decimal_digits),
+            (AccountingSetting::ScaleExpansion, self.scale_expansion),
+            (AccountingSetting::TextInputBytes, self.text_input_bytes),
+            (AccountingSetting::TextScalars, self.text_scalars),
+            (
+                AccountingSetting::NormalizedScalars,
+                self.normalized_scalars,
+            ),
+            (AccountingSetting::UnitEdges, self.unit_edges),
+            (AccountingSetting::ValueOccurrences, self.value_occurrences),
+            (AccountingSetting::WorkUnits, self.work_units),
+            (AccountingSetting::ResultUnits, self.result_units),
+        ]
+        .into_iter()
+        .filter_map(|(setting, bound)| bound.map(|bound| (setting, bound)))
+    }
+}
+
+/// A present counter is a JSON integer from 0 to `u64::MAX`. This
+/// deserializes `u64` directly, so serde calls it only for a present key and
+/// a present `null` fails `u64`'s own visitor rather than becoming absent.
+fn counter<'de, D: serde::Deserializer<'de>>(decoder: D) -> Result<Option<u64>, D::Error> {
     u64::deserialize(decoder).map(Some)
 }
 
@@ -137,6 +281,10 @@ pub(super) struct Argument {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    dead_code,
+    reason = "decoded only to reject retired native run selection"
+)]
 pub(super) struct SelectedPackage {
     pub file: String,
     pub digest: String,
@@ -227,6 +375,10 @@ impl Identity {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 #[serde(bound(deserialize = "T: Deserialize<'de>"))]
+#[allow(
+    dead_code,
+    reason = "decoded only to reject retired native run artifacts"
+)]
 pub(super) struct FileSelection<T> {
     pub file: String,
     #[serde(deserialize_with = "from_object")]
@@ -320,27 +472,6 @@ pub(super) struct Selection {
     pub clause: String,
     #[serde(deserialize_with = "from_object")]
     pub observation: Observation,
-}
-
-impl Selection {
-    pub fn bind(&self) -> Result<ExecutionSelection, ir::Diagnostic> {
-        Ok(ExecutionSelection {
-            requirement: self.owner.bind()?,
-            clause: ir::ClauseId::new(&self.clause)?,
-            observation: match &self.observation {
-                Observation::Current {
-                    snapshot,
-                    self_object,
-                } => ObservationSelection::Current {
-                    snapshot: snapshot.clone(),
-                    self_object: self_object.clone(),
-                },
-                Observation::Invocation { invocation } => ObservationSelection::Invocation {
-                    invocation: invocation.clone(),
-                },
-            },
-        })
-    }
 }
 
 #[derive(Deserialize, Default)]

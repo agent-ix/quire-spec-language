@@ -3,9 +3,10 @@
 //! document through `qsl_replay`'s root alone, with no serializer of its own.
 
 use ix_trace_rs::trace;
+use qsl_foundation::BackendId;
 use qsl_replay::{
     Category, ItemLabel, Operation, OutcomeDocument, OutcomeItem, OutcomeStage, RequestIndex,
-    TerminalRecord, TerminalValue,
+    TerminalRecord,
 };
 
 /// FR-286-AC-3: a `prove` document built and written through the facade
@@ -13,16 +14,15 @@ use qsl_replay::{
 #[trace("TC-770", "FR-286-AC-3")]
 #[test]
 fn a_driver_writes_a_prove_document_through_the_facade() {
-    let items = [
-        TerminalRecord::new(
+    let backend = BackendId::new("outcome-backend");
+    let items = vec![
+        OutcomeItem::from_terminal(&TerminalRecord::proved(
             RequestIndex::new(0),
-            TerminalValue::Proved { success_checks: 2 },
-        ),
-        TerminalRecord::new(RequestIndex::new(1), TerminalValue::Failed),
-    ]
-    .iter()
-    .map(OutcomeItem::from_terminal)
-    .collect();
+            backend.clone(),
+            2,
+        )),
+        OutcomeItem::from_terminal(&TerminalRecord::failed(RequestIndex::new(1), backend)),
+    ];
     let document = OutcomeDocument::settled(Operation::Prove, Some(OutcomeStage::S8), items);
     let written: serde_json::Value =
         serde_json::from_slice(&document.to_bytes().expect("encodes")).expect("is JSON");
@@ -31,6 +31,11 @@ fn a_driver_writes_a_prove_document_through_the_facade() {
     assert_eq!(written["last_stage"], "S8");
     assert_eq!(written["category"], "internal-failure");
     assert_eq!(written["items"][0]["result"], "proved");
+    assert_eq!(written["items"][0]["certification"], "certified");
+    assert_eq!(
+        written["items"][0]["basis"],
+        serde_json::json!({"type": "bounded-proof", "checks": 2})
+    );
     assert_eq!(written["items"][1]["result"], "failed");
     assert_eq!(document.category(), Category::InternalFailure);
     assert_eq!(document.items()[1].category(), Category::InternalFailure);

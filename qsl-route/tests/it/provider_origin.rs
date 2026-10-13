@@ -7,8 +7,9 @@ use std::collections::BTreeSet;
 
 use ix_trace_rs::trace;
 use qsl_foundation::bound::DomainKind;
+use qsl_foundation::BackendId;
 use qsl_route::{
-    BackendDescriptor, BackendId, Candidate, CandidateOutcome, ManifestDigest, Mode,
+    descriptor_from_manifest, BackendDescriptor, Candidate, CandidateOutcome, ManifestDigest, Mode,
     ProviderOrigin, RegistrationCause, Registry,
 };
 use qsl_semantics::check::Capability;
@@ -40,7 +41,7 @@ fn descriptor_holds_the_origin_it_was_built_with() {
     assert_eq!(linked.id(), process.id());
     assert_ne!(linked, process);
 
-    let admitted = BackendDescriptor::admit(
+    let admitted = descriptor_from_manifest(
         Candidate::new(BackendId::new("plug")),
         ProviderOrigin::Process,
         manifest_digest(),

@@ -47,8 +47,3 @@ Tag the test `#[trace("FR-091-AC-31", "TC-482")]`.
   `27315` and `2`, each with its span.
 - Step 4: a unit form with scale `rational` `1`, `1`, no target and no
   offset.
-
-## Status
-
-Backed by `qsl-forms/tests/it/value_forms.rs`:
-`s2_builds_dimension_and_unit_forms_as_written` (FR-091-AC-31).

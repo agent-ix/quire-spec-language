@@ -15,7 +15,8 @@ use quire_exact::{
 use super::{model_field, AssemblyCause, AssemblyError, AssemblyRefusal, TopologyFault, Unmapped};
 use crate::check::{CheckCause, PackageDeclarations, TypeFormFault};
 use crate::model::domain_package::{
-    DomainPackageRecord, FieldMemberRecord, Multiplicity, NativeValueType, ValueTypeRef,
+    DomainPackageRecord, FieldMemberRecord, Multiplicity, NativeValueType, ScalarTypeRecord,
+    ScalarValueDomain, ValueTypeRef,
 };
 use crate::model::key::DeclarationKey;
 use quire_semantic_value::checking::CheckingLimits;
@@ -980,6 +981,26 @@ fn one_one_required_gives_the_element_type() {
     let declaration = model_field_of(mult(1, Some(1), false, true), Presence::Required).unwrap();
     assert_eq!(declaration.value_type(), &ValueType::Integer);
     assert_eq!(declaration.presence(), Presence::Required);
+}
+
+#[trace("TC-897", "FR-056-AC-17")]
+#[test]
+fn timestamp_alias_field_assembles_with_its_distinct_kernel_type() {
+    let mut field = presence_field(mult(1, Some(1), false, true), Presence::Required);
+    let alias_key = DeclarationKey::fixture("ix://test/orders/Instant");
+    field.value_type = ValueTypeRef::Package(alias_key.clone());
+    let alias = DomainPackageRecord::ScalarType(ScalarTypeRecord {
+        key: alias_key.clone(),
+        domain: ScalarValueDomain::Native(NativeValueType::Timestamp),
+    });
+    let records: BTreeMap<&DeclarationKey, &DomainPackageRecord> =
+        BTreeMap::from([(&alias_key, &alias)]);
+    let identities: BTreeMap<DeclarationKey, EffectiveId> = BTreeMap::new();
+
+    let declaration = model_field(&field, &records, &identities)
+        .expect("native Timestamp is supported by the shared value kernel");
+
+    assert_eq!(*declaration.value_type(), ValueType::Timestamp);
 }
 
 /// A lower bound of `0` makes an empty collection legal; it never makes a

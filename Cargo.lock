@@ -5,7 +5,7 @@ version = 4
 [[package]]
 name = "agent-ix-extraction-frontend"
 version = "0.2.1"
-source = "git+https://github.com/agent-ix/filament-core-data?rev=c620d6be99654a7a77f0ecc2f97d3c7136402651#c620d6be99654a7a77f0ecc2f97d3c7136402651"
+source = "git+https://github.com/agent-ix/filament-core-data?rev=d8cb065179a423f9c92d3ffd9cdae3c7e2ba2e4d#d8cb065179a423f9c92d3ffd9cdae3c7e2ba2e4d"
 dependencies = [
  "agent-ix-semantic-ir",
  "clap",
@@ -18,7 +18,7 @@ dependencies = [
 [[package]]
 name = "agent-ix-semantic-ir"
 version = "0.1.1"
-source = "git+https://github.com/agent-ix/filament-core-data?rev=c620d6be99654a7a77f0ecc2f97d3c7136402651#c620d6be99654a7a77f0ecc2f97d3c7136402651"
+source = "git+https://github.com/agent-ix/filament-core-data?rev=d8cb065179a423f9c92d3ffd9cdae3c7e2ba2e4d#d8cb065179a423f9c92d3ffd9cdae3c7e2ba2e4d"
 
 [[package]]
 name = "agent-ix-semantic-schema"
@@ -1493,6 +1493,7 @@ dependencies = [
  "quire-semantic-value",
  "serde",
  "serde_json",
+ "serde_path_to_error",
  "thiserror",
 ]
 
@@ -1593,7 +1594,7 @@ dependencies = [
 [[package]]
 name = "quire-contract-model"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#3ed1f7ceeb682745629d2b99fd517d30689e87fb"
+source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#eb007b2fbb3abe501169a70a089fcc95b76a3829"
 dependencies = [
  "jsonschema 0.17.1",
  "num-bigint",
@@ -1616,11 +1617,13 @@ dependencies = [
 [[package]]
 name = "quire-exact"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-exact?branch=main#762b5fcce139980db259dde908d2b66214c852e3"
+source = "git+https://github.com/agent-ix/quire-exact?branch=main#1d178c9cc6aa36b424913347d4541f80b16323f1"
 dependencies = [
+ "allocator-api2",
  "num-bigint",
  "num-integer",
  "num-traits",
+ "once_cell",
  "thiserror",
  "unicode-normalization",
 ]

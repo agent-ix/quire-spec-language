@@ -409,6 +409,7 @@ impl TryFrom<Setting> for CheckingLimitKind {
             | Setting::IdentityInputBytes
             | Setting::IntakeInputBytes
             | Setting::ReplayInputBytes
+            | Setting::FormatOutputBytes
             | Setting::I2InputBytes
             | Setting::I2Nodes
             | Setting::I2Edges
@@ -512,6 +513,10 @@ pub struct StageLimitCause {
 /// The typed cause of a checking refusal.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum CheckCause {
+    /// A value operator prohibited by the declaration's selected profile.
+    ProfileProhibitedOperator(qsl_forms::BinaryOperator),
+    /// FR-300: a nested model form retains StateModel ownership.
+    StateModel(Box<super::state_model::StateModelRefusal>),
     /// `refused { code: ill_typed }` with its FR-272 cause.
     IllTyped(IllTypedCause),
     /// `refused { code: wrong_snapshot }` with its FR-272 cause: `pre(...)`
@@ -832,6 +837,22 @@ pub enum InvalidDispatchDeclaration {
 }
 
 impl CheckCause {
+    /// The attributed catalog pair for model causes, preserving raw code().
+    pub fn catalog_code(&self) -> Option<qsl_foundation::diagnostic::CatalogCode> {
+        match self {
+            Self::StateModel(cause) => cause.catalog_code(),
+            _ => Some(qsl_foundation::diagnostic::CatalogCode::new(
+                self.code().as_str(),
+                self.cause()?,
+            )),
+        }
+    }
+
+    fn rendered_code(&self) -> String {
+        self.catalog_code()
+            .map(|code| code.to_string())
+            .unwrap_or_else(|| self.code().as_str().to_owned())
+    }
     /// The refusal code.
     ///
     /// FR-062-AC-8/TC-161/FR-063 seam: adding a `CheckCause` variant with no arm
@@ -843,6 +864,8 @@ impl CheckCause {
     #[deny(clippy::match_wildcard_for_single_variants)]
     pub fn code(&self) -> Code {
         match self {
+            Self::ProfileProhibitedOperator(_) => Code::UnsupportedConstruct,
+            Self::StateModel(cause) => cause.cause.code(),
             Self::IllTyped(_) | Self::NonBooleanRoot | Self::IntegerOutsideI128(_) => {
                 Code::IllTyped
             }
@@ -881,6 +904,7 @@ impl CheckCause {
     /// The closed cause tag, where the code has one.
     pub fn cause(&self) -> Option<&'static str> {
         match self {
+            Self::StateModel(cause) => cause.cause.cause(),
             Self::IllTyped(cause) => cause.tag(),
             Self::WrongSnapshot(cause) => Some(cause.as_str()),
             Self::NonBooleanRoot => Some("non-boolean-root"),
@@ -901,6 +925,7 @@ impl CheckCause {
             Self::InvalidDispatchDeclaration(_) => Some("invalid-value"),
             Self::MissingSelection { .. } => Some("missing-selection"),
             Self::UnsupportedFeature { .. } => Some("unsupported-feature"),
+            Self::ProfileProhibitedOperator(_) => Some("expression-form"),
             Self::InternalFault(_) | Self::Identity(IdentityRefusal::NonCanonical) => {
                 Some("established-invariant-broken")
             }
@@ -927,7 +952,7 @@ impl CheckCause {
 ///
 /// quire:canonical
 #[derive(Clone, Debug, Eq, Hash, PartialEq, thiserror::Error)]
-#[error("{} at {location:?}: {cause:?}", cause.code().as_str())]
+#[error("{} at {location:?}: {cause:?}", cause.rendered_code())]
 pub struct CheckRefusal {
     /// Where the refusal originates.
     pub location: Location,

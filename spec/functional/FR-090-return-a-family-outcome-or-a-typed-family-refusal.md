@@ -57,6 +57,19 @@ S6a caller in `FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(_))`,
 carrying the undefined reasons `precondition-false` and `absent-key`. None of
 the four is a variant of the kernel `Refusal` or `Undefined`.
 
+An `allInstances<T>` result that is incomplete because its admitted
+population has no declared member type to which `T` conforms SHALL reach
+the S6a caller as
+`FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(_))`, with undefined
+reason `incomplete-closure`. Its structured fields SHALL name queried type
+`T` and `uncovered_subtypes` equal to `[T]`, the minimal witness that no
+declared member type covers the query. Declaring `T` itself or any supertype
+of `T` as a member type resolves this subtype-closure incompleteness. This is
+a family-owned undefined result, not a third `FamilyResult` or `FamilyOutcome`
+variant, and it carries no partial collection. Object closure is established
+at admission under FR-084; an object-closure failure admits no binding and
+is not an S6a query result.
+
 This requirement carries testable criteria for decisions already taken:
 
 - ADR-013 O-16: the three outcome families, the S6a result type, the
@@ -135,7 +148,10 @@ This requirement carries testable criteria for decisions already taken:
   `WrongSnapshotCause` cause tag, or `ModelRefusal::catalog_code()`, for the
   `wrong_snapshot` and model-query paths above; `FamilyResult::Undefined`
   carrying reason `precondition-false` or `absent-key` for the
-  `precondition-false` and `absent-key` paths.
+  `precondition-false` and `absent-key` paths, or `incomplete-closure` for
+  an `allInstances<T>` query whose admitted population does not cover every
+  effective subtype of `T` (including queried type `T` and every uncovered
+  effective subtype).
 
 ## Behavior
 
@@ -481,7 +497,6 @@ unreachability, a fabricated identity, or a successful partial collection.
 | Evaluator Record: a Present slot has no corresponding argument value | `record-present-value-missing` |
 | Evaluator Record: typed record constructor rejects its declaration or fields | `record-construction-rejected` |
 | Evaluator IEEE-to-rational conversion: operand is not Float | `ieee-conversion-float-value-expected` |
-| Evaluator IEEE-to-rational conversion: typed conversion construction returns an error rather than a kernel outcome | `ieee-conversion-rejected` |
 | Evaluator Flatten: checked result type is not Collection | `flatten-collection-result-expected` |
 | Evaluator Flatten: outer collection contains a non-Collection element | `flatten-inner-collection-expected` |
 | Evaluator AllInstances or Lookup: population operand value is not Population | `query-population-value-expected` |
@@ -523,6 +538,16 @@ identifiers. A downstream compile-only seam probe is not a production
 producer. Operation-construction errors in the table are distinct from
 ordinary `Completed`, `Undefined`, `Refused` and `Incomplete` outcomes returned
 by a successfully constructed kernel operation.
+
+The IEEE-to-rational caller SHALL use the kernel's Rational-only
+`ieee_to_exact(&RationalDomain, Meter) -> Outcome<IeeeExact>` API. Because
+conversion directly returns a kernel outcome, it has no outer construction
+error to map to an S6a fault. The obsolete `ieee-conversion-rejected`
+producer classification and its temporary Inspection exception are retired.
+Float operand checks, IEEE profile checks, ordinary IEEE
+Completed/Undefined/Refused/Incomplete outcomes and exact charge prefixes
+remain executable obligations. Cancellation remains QSL-owned; the kernel
+Outcome has no cancellation variant.
 
 QSL SHALL preserve the charges already performed before the detected break
 and SHALL perform no fault-specific charge, retry, query rerun or result
@@ -581,12 +606,14 @@ undefined cause type.
 | FR-090-AC-10 | Given a checked `Value` function with a `Population<T>[N]` parameter, `CheckedPackage::call` with an argument whose `PopulationId` names no recorded binding, or whose resolved binding's declared maximum differs from `N`, returns `Err(CallFailure::Input(_))` before S6a runs. Given the same argument passed directly to the S6a seam, bypassing admission, S6a returns `Err(InternalFault)`, not a kernel or family refusal. | Test |
 | FR-090-AC-11 | Given an FR-151 dispatched call `receiver.member(args)` whose selected method's effective precondition evaluates to `false` (QSpec TC-196 D06), evaluated through `CheckedPackage::evaluate`, the result is `Ok(e)` with `e.outcome` equal to `FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause))`, where `cause.undefined_record()` has `reason` `precondition-false` and `fields` naming the called effective operation, the selected method's effective identity and the receiver reference, and `e.location` is the location of the dispatched call node, not of the evaluated expression's root. The result is not `FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(_))`, not `FamilyOutcome::Evaluated(Outcome::Undefined(_))` and not a panic. | Test |
 | FR-090-AC-12 | Given a `lookup<T>(p, r) absent undefined` query whose reference `r` names no member of the population bound to `p`, evaluated through `CheckedPackage::evaluate`, the result is `Ok(e)` with `e.outcome` equal to `FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause))`, where `cause.undefined_record()` has `reason` `absent-key` and `fields` naming the population binding and the requested reference key. The result is not `FamilyOutcome::Evaluated(Outcome::Undefined(_))`, not `FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(_))` and not a panic. The same query with `absent refused` returns `Ok(e)` with `e.outcome` equal to `FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause))` and `cause.catalog_code()` equal to `invalid_runtime_input`/`absent-key`. | Test |
+| FR-090-AC-21 | Given an admitted population with no declared member type to which queried type `T` conforms, an `allInstances<T>` query evaluated through `CheckedPackage::evaluate` returns `Ok(e)` with `e.outcome` exactly `FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause))`; `cause.undefined_record()` has reason `incomplete-closure`, names queried type `T`, and has `uncovered_subtypes` equal to `[T]` as the minimal witness, with no member collection. Declaring `T` itself or any supertype of `T` as a member type resolves this subtype-closure incompleteness. `FamilyResult` and `FamilyOutcome` retain exactly their two variants. | Test (TC-227) |
 | FR-090-AC-13 | For an admitted population binding containing a selected member with empty object identity, public `allInstances` evaluation returns `CallFailure::Fault` with stage `S6a` and invariant `model-query-object-identity-empty`. The fault has no synthetic kernel cause. | Test |
 | FR-090-AC-14 | Each model-query shape producer in the table returns the table's `S6a` fault when its stated condition is supplied through a private seam, including option wrapping after a successful query. | Test |
 | FR-090-AC-15 | Each production evaluator producer in the table other than `record-present-value-missing`, exercised at the detecting site with its stated malformed state, returns the table's `S6a` fault rather than a manufactured kernel CheckedInvariant. | Test |
 | FR-090-AC-16 | A metered run reaching a table producer records precisely its ordinary charge prefix through that producer; a run stopped by an earlier denied charge or cancellation records its existing Incomplete outcome instead. | Test |
 | FR-090-AC-17 | A QSL-owned table fault propagated through public call, public evaluate or replay retains its stage and invariant identifier in the existing fault channel. | Test |
 | FR-090-AC-18 | Inspection of the Record producer establishes that `record-present-value-missing` is locally unreachable: `pop_many(present)` either stops earlier or supplies exactly the number of Present slots counted, and `zip(slots, declared)` consumes at most that many values. | Inspection |
+| FR-090-AC-20 | The production IEEE-to-rational caller uses `ieee_to_exact(&RationalDomain, Meter) -> Outcome<IeeeExact>` directly. The evaluator contains no outer construction-error arm or `ieee-conversion-rejected` producer row, and the producer inventory retains verification obligations for every remaining producer. | Inspection |
 
 ## Dependencies
 
@@ -613,42 +640,3 @@ undefined cause type.
 - ADR-012 §14.1 lists `Relation`'s non-native evaluability
   (FR-062-AC-6). FR-090-AC-4 specifies it as a property of S6a's input type;
   which ticket builds that type is a ticketing question, not a design one.
-
-## Status
-
-Implemented (ADR-013 O-16, O-17, T-4, T-6), all open
-questions ruled.
-
-`FamilyOutcome<T>` has two arms, `Evaluated(quire_exact::Outcome<T>)` and
-`FamilyEvaluated(FamilyResult)`: S6a admits no `Relation`
-(`qsl-semantics/src/family/evaluation.rs`). `EvalOutcome<T> { Kernel(Outcome<T>),
-Family(FamilyResult) }` is the `evaluate` hook's return shape.
-`Evaluation { outcome: FamilyOutcome<Value>, location, losses }` is
-`CheckedPackage::call`'s and `CheckedPackage::evaluate`'s result
-(`qsl-eval/src/value/expression/{evaluate,mod}.rs`). `ValueFunctionFamily::evaluate`
-records `location` and `losses` as owned fields of its `EvaluationEnv` on
-every `Ok` return, and the S6a seam builds the `Evaluation` from them.
-
-The family cause types are defined in `value::expression`
-(`qsl-eval/src/value/expression/causes.rs`): `ProtocolClauseSnapshot`,
-`StateModelUndefined { PreconditionFalse, AbsentKey { binding, key } }` and
-`ModelQueryRefusal { cause, detail }`, the model-query refusal S6a carries,
-which holds no native-v1 `Code`. `value::model_query` returns a
-model-layer `ModelQueryHalt`, and the evaluator turns it into a
-`FamilyResult`. `ModelRefusalCause::catalog_code()` is one exhaustive match
-with no `_` arm (`qsl-semantics/src/model/refusal.rs`), and `ModelRefusal::catalog_code()`
-delegates to it. F `diagnostic`'s `category_of` maps a `CatalogCode` to its
-O-16 category. The kernel `Undefined` and `Refusal` variant set is
-`ix://agent-ix/quire-exact/FR-090`'s. Every caller is repointed onto
-`quire_exact::{Outcome, Refusal, Undefined}` directly.
-
-The S6a family kind is `S6aFamilyKind { Value }`
-(`qsl-eval/src/value/expression/s6a/mod.rs`, layer 5, beside the `ReferenceEvaluation`
-trait): `Value` is the family that implements
-`ReferenceEvaluation`. The S6a seam
-`evaluate_declaration` (`qsl-eval/src/value/expression/mod.rs`) matches it with one
-arm per variant and no `_` arm, and `CheckedPackage::call` evaluates
-through it.
-
-FR-090-AC-1 and AC-3 to AC-12 (TC-382, TC-384 to TC-391, TC-407, TC-408)
-are `✅ Passed locally`.

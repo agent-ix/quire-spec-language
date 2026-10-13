@@ -531,7 +531,7 @@ fn r10_record_construction_charges_one_result_retain() {
     };
     assert_eq!(value.occ(), Integer::from(2_i64));
     assert_eq!(
-        meter.admitted_charges(),
+        crate::support::admitted_charge_points(&meter),
         [ChargePoint::CompositeResultRetain]
     );
     assert_eq!(meter.consumed(LimitKind::WorkUnits), 1);
@@ -1085,7 +1085,7 @@ mod checked {
             )
         );
         assert_eq!(
-            meter.admitted_charges(),
+            crate::support::admitted_charge_points(&meter),
             [
                 ChargePoint::CollectionVisit,
                 ChargePoint::CollectionVisit,

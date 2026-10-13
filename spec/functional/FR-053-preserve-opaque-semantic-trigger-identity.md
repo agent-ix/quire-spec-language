@@ -12,7 +12,7 @@ relationships:
 
 ## Description
 
-**RETIRED (M-6d), which deletes `protocol_artifact::native_temporal` (FR-052) and its only test, `tests/it/native_temporal_owner.rs` (see Status below).**
+**RETIRED (M-6d), which deletes `protocol_artifact::native_temporal` (FR-052) and its only test, `tests/it/native_temporal_owner.rs`.**
 
 When a downstream integration submits an event-triggered native-temporal
 evaluation, the compiler SHALL retain the semantic trigger-event identity as
@@ -90,12 +90,3 @@ facts into the FR-300 binding.
 - QSpec FR-093 and FR-230 establish semantic-trigger and obligation identity.
 - QSpec FR-300 establishes the wider activation-binding contract consumed by
   QProtocol.
-
-## Status
-
-**Retired (M-6d).** `protocol_artifact::native_temporal` (FR-052)
-and its only test, `tests/it/native_temporal_owner.rs`, are deleted: with
-the spine `ProtocolClause` frame slices landed, the spine `ProtocolClause` path no
-longer needs this producer/consumer round trip, and nothing outside the
-deleted module's own tests called it. All acceptance criteria above are
-retired for the reason given at FR-053-AC-1.

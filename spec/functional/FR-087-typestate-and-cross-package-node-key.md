@@ -603,6 +603,29 @@ that change each scenario of `tests/it/complete_package.rs` and
 | FR-087-AC-13 | The importing package's checker resolves imported names as Behavior, "E3 resolves an imported name in the importing package's checker", states. Given package `P` importing library `L@1` (which exports `R`) with no `as` qualifier, and declaring no `R` of its own, `P`'s checker refuses both `R` and `L::R` with `missing_declaration` / `missing-name`. Given `P` importing `A@1` and `B@1` both `as a`, the assembler refuses the second alias `a` with `ambiguous_declaration` / `ambiguous-name`, naming both import spans, and E3 does not run. Given `P` importing `L@1` `as l`, `l::R` resolves to `PackageNodeKey{package: <L@1's package_id>, node: <R's WireNodeId>}`, and `l::Q`, which `L@1` does not export, is refused `missing_declaration` / `missing-name`. Given `P` importing `L@1` `as l` with no library supplied as `L`, the import is refused `missing_import` / `missing-selection` at stage `intake`, and E3 does not run. | Test (TC-379) |
 | FR-087-AC-14 | The E4 link step with dependencies (`CheckedPackage::link_with`) recomputes each imported package's `package_id` by emitting it and records it as the library's selection (an import names its library by identity alone, so no recorded digest exists to differ from it); it records one selection per library identity over the direct imports and every dependency's own closure, and refuses two selections of one identity whose `package_id`s differ with `invalid_package`/`conflicting-definition` (FR-307's diamond rule), naming both selections and both dependency paths. Two paths reaching one selection unify. A refusal yields no package. Binding an `Import`'s identity to the source's resolved import declarations is FR-099's (ADR-015 D-1). `CheckedPackage::dependencies` holds each direct import's checked package by `package_id`, and `CheckedPackage::dependency_selections` the closure in ascending UTF-8 byte order of identity. | Test (TC-253) |
 
+The `library`/`ImportView` name-resolution scan does not see a node
+id returned as raw digest bytes, a hex `String` or a `usize` position; a
+name passed as `&[u8]`; a closure without type annotations, including one
+held in a `fn(&str) -> Option<WireNodeId>` variable; or a local variable's
+type inside a function body.
+
+For `VerifiedPackage` and `ImportView`, crate-external construction
+is shown by `compile_fail` doctests: a struct literal of either type, and a
+call to `verify_binding` with a hand-built candidate. The doctests show only
+that a crate-external caller fails to compile; stable rustdoc does not check
+a `compile_fail` block's error code.
+
+`xtask::typestate_scan` scans shipped code, excluding `#[cfg(test)]`
+items and every file a `#[cfg(test)] mod` declares. The scan sees through
+`use … as` renames and `type` aliases. The module doc lists what it does
+not see: macro bodies other than for mints, out-parameters, and call graphs.
+
+Accessor-only reads are not
+backed, because a private field stays readable by its module's child
+modules. A wire value that reaches a mint through another function's call
+is not traced (TC-255 steps 3 and 6). Methods and trait impls are not
+compared for AC-8 and AC-10.
+
 ## Dependencies
 
 - [ADR-013](../decisions/ADR-013-canonical-type-package-conversion-ownership.md)
@@ -631,195 +654,6 @@ that change each scenario of `tests/it/complete_package.rs` and
 - The owner ruling on QSL-158 (2026-09-21) on `CheckedPackage`'s placement,
   which closes the `CheckedPackage`-placement half of the ADR-011
   §4-versus-§6.1 defect; its separate §6.2 refusal-row finding stays open.
-
-## Status
-
-Specified (ADR-013 §7 S-3, split into S-3a/S-3b by the
-2026-09-21 comment on that ticket). Partly implemented. Gate (ADR-013 §7:
-"S-2, QC-10") is clear: S-2 landed as PR #260; QC-10 landed
-under STD-2 (Done).
-
-Landed: PR #304 added `CheckedGraph` (`check`), which
-`PackageDeclarations::check` returns, and `CheckedPackage` and
-`EmittedPackage` (layer-4 `package`). PR #299 relocated `value::library` and
-`value::package_identity` into the top-level `library` module, where
-`PackageNodeKey{package, node: WireNodeId}` is defined and wire-fed node
-references are `WireNodeId`s, and added `LibraryRefusal::class()`. M-4
-slice A1 (PR #340) added `VerifiedPackage`, `ImportView`
-(`VerifiedPackage::into_import_view`, its only constructor) and the §4
-verified binding, `library::verify_binding`. The binding
-takes a condition-1 witness (`SupportedV2Wire`) that only the layer-4 v2
-reader mints, in IR's `AdmittedV2` arm (since the X-6 extraction the minter and
-`verify_binding` are `pub` for the crate boundary, and arch-lint rule T12-E
-confines the minter's callers to that reader); it applies condition 2 through
-`verify_package`, and condition 3 against a `PinnedRequest` (one selection
-per identity, built from a `LibraryLock` or refused on a conflicting pin),
-comparing the `package_id` (ruling (e)). The I2 reader
-(`qsl-package`'s `checked_v2::read_checked_package_v2`) returns
-`VerifiedPackage`. A binding refusal names the pinned selection and the one
-the candidate presented, so `LibraryRefusal::StaleDependency` carries
-`pin: Box<PinMismatch>` (a pinned entry) in place of
-`import: ImportDeclaration`; AC-11 lists this payload change.
-
-Backed: FR-087-AC-3 (TC-253), FR-087-AC-4 (TC-254), FR-087-AC-5 (TC-245)
-and FR-087-AC-12 (TC-282), and, below, AC-2 in full and AC-1, AC-6, AC-8,
-AC-10 and AC-11 in part. TC-253's steps are backed as follows. Steps 1, 2, 4 and 8 run on
-the wire path (`checked_v2` tests). Step 3 runs at the `library` level
-(`library::binding_tests`), because on the wire path IR refuses a
-non-recomputing `package_id` first and names it `stale_dependency`
-(IR-238 item 3); `library` refuses it as `PackageIdMismatch`. Steps 5-7 also
-run at the `library` level. Any wrong `package_id` refuses, so each of those
-cases makes the substitute digest the value the candidate claims *and* the
-pin selects; an implementation that trusted an agreeing claim and pin
-instead of recomputing would admit it. A `syn` scan
-(`tests/it/verified_binding_witness.rs`) fails if the condition-1 witness's
-constructor is referenced anywhere but one call in the v2 reader's
-`AdmittedV2` arm, including inside a macro; the witness's private field in
-`library::witness` makes the compiler refuse any other construction.
-
-FR-087-AC-4 (TC-254) is backed. `ImportView` holds its exports keyed by
-`WireNodeId` and exposes them only as `(name, PackageNodeKey)` entries, in
-node-id order; it has no method that takes a name. `library`'s admission
-checks a package's export list against its declared names, and keeps only
-the listed declarations, by membership alone
-(`ProjectedDeclarations::undeclared`, which returns a name, and
-`retain_exported`); neither maps a name to a node id. The checker builds
-its own name index from the view's entries (`check::imports`) and resolves
-a name there, refusing an unexported name `missing_declaration` /
-`missing-name`. Steps 1-2 and 5 run on the wire path (`checked_v2` tests:
-two exports whose node-id order is the reverse of their name order, and
-the checker's index over them) and at the `library` level (two exports of
-different node kinds, and a view holding only the listed export). Steps 3-4
-are `qsl-semantics/tests/it/import_view_names.rs`, a `syn` scan of every `library` file.
-It fails on any function taking a name and returning a `WireNodeId`,
-`NodeKey`, `PackageNodeKey`, `ImportView`, a `library` type carrying one,
-`Self::X` bound to one, or a generic built from one; on any name → node id
-map (`BTreeMap`, `HashMap`, `IndexMap`, a reference to or an iterator over
-one) as a return type, field or type alias; and on any `ImportView` method
-taking a name. It covers trait default and required methods, traits
-implemented for `ImportView`, generics bounded by `AsRef<str>`-like
-traits, `str` aliases and renames, newtypes over a name, and signatures
-inside macro tokens, each with a synthetic positive. It does not see a node
-id returned as raw digest bytes, a hex `String` or a `usize` position; a
-name passed as `&[u8]`; a closure without type annotations, including one
-held in a `fn(&str) -> Option<WireNodeId>` variable; or a local variable's
-type inside a function body.
-
-For `VerifiedPackage` and `ImportView`, crate-external construction
-is shown by `compile_fail` doctests: a struct literal of either type, and a
-call to `verify_binding` with a hand-built candidate. The doctests show only
-that a crate-external caller fails to compile; stable rustdoc does not check
-a `compile_fail` block's error code.
-
-`xtask::typestate_scan` backs AC-2 (TC-244) in full, and AC-1 (TC-243), AC-6 (TC-255),
-AC-8 and AC-10 (TC-247) and AC-11 (TC-281) in part. It is a `syn` scan of the shipped code of every
-QSL crate, and `make ci` runs it. Shipped code excludes `#[cfg(test)]`
-items and every file a `#[cfg(test)] mod` declares. The scan sees through
-`use … as` renames and `type` aliases. Its own tests plant each evasion
-it covers. The module doc lists what it does not see: macro bodies other
-than for mints, out-parameters, and call graphs. Each tests.md row names
-the steps its test backs.
-
-- AC-1: each of the five stage-output types has one definition in the
-  layer crates, in its owning file, with every field private and no type
-  or const generic parameter. The only other namesakes are the two
-  lane-private types AC-8 and AC-10 name. Accessor-only reads are not
-  backed, because a private field stays readable by its module's child
-  modules.
-- AC-2, and AC-1's constructor half: only named constructors return an
-  owned `CheckedGraph`, `CheckedPackage`, `EmittedPackage`,
-  `VerifiedPackage` or `ImportView`. The named constructors are
-  `PackageDeclarations::check`, `CheckedPackage::link`,
-  `CheckedPackage::link_with`,
-  `EmittedPackage::new`, `verify_binding` and
-  `VerifiedPackage::into_import_view`, the two composing them
-  (`qsl_package::read_import_view`, the I2 read of a library's own
-  emission, and the spine's per-unit chain `Resolution::compile_unit`,
-  ADR-015 D-1), `CheckedPackage::shared_graph` (a shared handle to the
-  linked graph, ADR-015 D-5), plus the two lane-private producers. `compile_fail` doctests cover TC-244 rows 1 to 5. Rows 3 to 5
-  (`VerifiedPackage`, `ImportView` and `protocol_artifact::AdmittedPackage`
-  into checked typestate) fail with E0277. Stable rustdoc does not check
-  that code, so each block is paired with one that must compile over the
-  same names, and a renamed or moved item breaks the build.
-- AC-6: no item in `library`, `qsl-package` or `qsl-replay` mints a
-  `NodeKey`. Every mint is in `check`; T12-B's debt list is empty. No
-  minting item names `WireNodeId`,
-  `PackageNodeKey`, `ImportView` or `VerifiedPackage`. A wire value that
-  reaches a mint through another function's call is not traced (TC-255
-  steps 3 and 6).
-- AC-8 and AC-10: the two `EmittedPackage`s are defined at their two
-  paths with no field name in common. `src/package/features.rs` and
-  `view.rs` import `crate::checking::CheckedPackage`. No root-crate file
-  imports a canonical and a lane-private namesake together. Methods and
-  trait impls are not compared.
-- AC-11: `value::library` and `value::package_identity` are gone, no
-  `ExportIdentity` exists, and `library` defines no `resolve_name` and no
-  field or variant holding a `NodeKey`.
-
-AC-7 (TC-246) is delivered, and AC-13 (TC-379) is partly delivered:
-
-- **AC-7 and CON-4.** Amended by the ruling on QSL-229 (2026-09-24) to
-  follow ADR-011. They used to require every caller of
-  `ResolvedSourcePackage` to move to `VerifiedPackage`/`ImportView`, but
-  neither type resolves a definition or a compiled model. They now split
-  `complete::resolve_source_package` into its two halves (Behavior,
-  "`ResolvedSourcePackage` retires when both successors exist"). The
-  dependency half exists: spine `compile`'s S4 source resolution binds each
-  import against a library compiled from source and read into its
-  `ImportView` (FR-099, ADR-015 D-1). The header-selection half is FR-110
-  (amended 2026-09-26): E3 resolves header profiles against the
-  `DefinitionLock` catalog, which reads QSpec's `complete-value-lock.json`
-  by reference, and model declarations through I1 (ADR-011 §2.4 amended
-  2026-09-24). FR-110 is implemented (TC-490).
-  One change retired `ResolvedSourcePackage`, `resolve_source_package`,
-  `SourceAuthority`, `ModelCatalog`, `ModelArtifact`, the complete-package `ModelConflict` and
-  `command::resolve_parsed_source`, and moved the closure,
-  bundle, limits and identity to `library::bundle` (FR-111), with no old name
-  reachable: `qsl_semantics::complete`, `src/command/source_package.rs` and
-  `tests/it/complete_package.rs` no longer exist. Each former scenario now
-  has a test against its row's successor: the unknown, stale-revision,
-  stale-digest and conflicting profile selections against TC-490
-  (`a_header_profile_resolves_only_against_the_root_row`); the duplicate
-  alias against FR-091-AC-22's assembler test; an inadmissible parse against
-  the spine's S1 refusal (`tests/it/spine_run.rs`, `tests/it/compile_command.rs`);
-  model selection against I1 (TC-442 step 4); the parse-time stale profile
-  against `tests/it/complete_editor.rs`; and the closure, bundle, limits and
-  identity against TC-491 (`library::bundle_tests`), keeping their QSpec
-  FR-131/FR-339 tags (written with the `QSpec-` prefix since QSL-241). The source-authority and span refusal checks are
-  deleted with `SourceAuthority` (Behavior's disposition table). The
-  absence scan of TC-246 is a search, not an automated test.
-
-- **AC-13.** E3's resolution rule is specified, and the QSpec schema defect
-  that blocked it is fixed (QSpec STD-105, IR-287). E4 fills the dependency
-  closure (`CheckedPackage::link_with`, AC-14), the emitter writes
-  `dependency_selections`, and the I2 reader admits a non-empty one. The
-  resolution against an `ImportView` (`check::imports::ImportedNames`)
-  exists. Spine `compile`'s dependency input and the S4 source resolution
-  (ADR-015 D-1, FR-099) and the typing of an imported name at E3
-  (ADR-015 D-5) are implemented; TC-379 passes steps 1 and 3, and its steps
-  2 and 4, which assert the assembler and intake refusals, are planned.
-
-AC-14 (TC-253) is backed by `qsl-package`'s
-`e4_refuses_a_conflicting_diamond`,
-`a_diamond_selecting_one_package_unifies` and
-`the_dependency_closure_is_written_in_the_lock_and_the_preimage`. Binding an
-`Import`'s identity to the source's resolved import
-declarations is FR-099's (ADR-015 D-1).
-
-**Owner ruling on QSL-158 (2026-09-21): ADR-013 T-1 stands unamended.**
-`CheckedPackage` is canonically layer-4 `package`; `check`'s S3 output is
-`CheckedGraph`. The `check` → `package` reverse edge FR-068 avoided by
-keeping `CheckedPackage` in `check` was an artifact of `CheckedGraph` not
-yet existing, not a property the architecture requires: once this
-requirement builds `CheckedGraph`, `check` produces it and names no
-`CheckedPackage`, `package` constructs `CheckedPackage` from it (a
-permitted 4-depends-on-3 edge), and `value::expression` names it through
-one `pub use` (a permitted 5-depends-on-4 edge) — no reverse edge remains
-(Description; Behavior, "`check` produces `CheckedGraph`; `package`
-constructs `CheckedPackage`"; FR-087-AC-9). This closes the
-`CheckedPackage`-placement half of that ADR-011 defect. Its other, unrelated
-finding (a §6.2 refusal-row defect) is untouched by this requirement and
-stays open.
 
 ## References
 

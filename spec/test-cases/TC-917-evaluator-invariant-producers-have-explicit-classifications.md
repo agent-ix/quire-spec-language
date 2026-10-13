@@ -14,12 +14,14 @@ relationships:
 ## Description
 
 Verify every production evaluator detecting site in FR-090's producer
-table. Scope: FR-090-AC-15, FR-090-AC-16, FR-090-AC-17, FR-090-AC-18 and FR-096-AC-15.
+table. Scope: FR-090-AC-15, FR-090-AC-16, FR-090-AC-17, FR-090-AC-18,
+FR-090-AC-20 and FR-096-AC-15.
 Fixtures are private malformed checked-state probes, not public unchecked
 authority. A test of `InternalFault::new` alone does not exercise a producer.
-Only `record-present-value-missing` uses the local source-inspection proof
-below instead of an execution fixture; all other rows require real detecting
-sites and malformed-state controls.
+`record-present-value-missing` uses its existing local source-inspection
+proof. Every other table row requires a real detecting site and malformed-state
+controls; the locally unreachable Record condition is the sole inspection-only
+producer proof.
 
 ## Test Procedure
 
@@ -34,7 +36,7 @@ sites and malformed-state controls.
    accumulator checks, and iteration start/resume/finish). For every fixture,
    mutate only the prerequisite needed to reach the stated condition and
    assert the table's exact identifier at the actual producer, except for
-   `record-present-value-missing`. For that row only, inspect the Record path
+   `record-present-value-missing`. For the Record row, inspect the Record path
    and `pop_many` in `qsl-eval/src/value/expression/evaluate.rs`: `present`
    counts all Present slots; `pop_many(present)` either stops with stack
    underflow or returns exactly `present` values; the zip with declared
@@ -60,6 +62,16 @@ sites and malformed-state controls.
    retains ReferenceUnresolved; witnessed reads keep their existing behavior.
    Include independently named quantity-unit, population-resolution and
    occurrence-provenance faults, and ordinary kernel operation outcomes.
+   Execute actual IEEE-to-rational finite in-domain, negative-zero loss,
+   NaN/infinity undefined, out-of-domain refusal and denied-charge controls;
+   retain their ordinary Outcome discriminants and precise charge prefixes.
+   Exercise request cancellation through QSL's own polling/stop boundary,
+   not an invented kernel Outcome cancellation variant.
+6. Inspect that the production caller uses the Rational-only
+   `ieee_to_exact(&RationalDomain, Meter) -> Outcome<IeeeExact>` API directly,
+   with no outer-error arm or `ieee-conversion-rejected` producer row.
+   Reconcile the inventory with actual remaining producers; retain the Record
+   proof and every other detecting-site fixture under FR-090-AC-20.
 
 ## Expected Results
 
@@ -68,10 +80,12 @@ FR-090 identifier, category internal failure and code `runtime_invariant`,
 with no manufactured CheckedInvariantCause, kernel refusal, family refusal or
 Evaluation. The inventory exposes missing sites rather than treating a shared
 helper test as coverage for its callers. Compile-only seam probes are excluded.
-The one inspection-only row establishes the count/iterator proof and retains
+The Record inspection-only row establishes the count/iterator proof and retains
 the specified `record-present-value-missing` classification without claiming
-an executed fault. This local proof grants no unreachability exception to any
-other row, especially the publicly admission-reachable empty object identity.
+an executed fault. The Rational-only API inspection establishes that the
+retired outer-error producer no longer exists. The Record proof grants no
+exception to any other row, especially the publicly admission-reachable empty
+object identity.
 
 Step 2 returns `boolean-value-expected` directly, completes for Boolean, and
 returns `CallFailure::Input` at public admission for Integer. Step 3 retains
@@ -80,4 +94,6 @@ retention. Earlier budget/cancellation stops remain Incomplete. Step 4 retains
 stage and invariant as `CallFailure::Fault` or a replay Failed terminal with
 internal-failure diagnostic and unavailable basis, not Input or Inconclusive.
 Step 5 keeps each existing outcome or independently named fault and does not
-route it through a default table classification.
+route it through a default table classification. Ordinary IEEE outcomes and
+QSL-owned cancellation retain their actual channels, meter prefixes and loss
+provenance; this inspection exception does not weaken their execution tests.

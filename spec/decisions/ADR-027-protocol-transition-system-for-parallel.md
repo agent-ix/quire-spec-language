@@ -64,21 +64,6 @@ relationships:
 ---
 # ADR-027: The protocol transition system for parallel
 
-## Status
-
-Proposed, 2026-10-01. §10 records the owner's rulings on the five questions
-the draft left open. The QSL compiler requirements that implement it are
-FR-205 to FR-218, traced to US-024; QSpec's half is listed under References.
-The owner ruled that this record comes before the refinement, state-space
-reduction and weak-memory records, which build on it. The owning ticket and
-those records are listed under References.
-
-"QSpec FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
-requirement. Item ids `PS-`, `FO-`, `ST-`, `AT-`, `CI-`, `SE-`, `PB-`, `PD-`,
-`PA-`, `TS-`, `PX-`, `FT-`, `PR-`, `QS-` and `DS-` are local to this record.
-Other artifacts cite them as `ADR-027 ST-6`. Items of ADR-018 are cited as
-`ADR-018 SM-3`.
-
 ## Context
 
 **What `parallel` means today.** QSpec FR-052: "Parallel branches SHALL admit
@@ -133,6 +118,12 @@ component to the state, internal memory steps such as `flush(b)`, and
 enabledness conditions on fork, join and `send` (its SC-1, MS-1, TSO-7).
 Each of those needs one definition of the protocol state, its steps and their
 identities.
+
+"QSpec FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
+requirement. Item ids `PS-`, `FO-`, `ST-`, `AT-`, `CI-`, `SE-`, `PB-`, `PD-`,
+`PA-`, `TS-`, `PX-`, `FT-`, `PR-`, `QS-` and `DS-` are local to this record.
+Other artifacts cite them as `ADR-027 ST-6`. Items of ADR-018 are cited as
+`ADR-018 SM-3`.
 
 ## Decision
 

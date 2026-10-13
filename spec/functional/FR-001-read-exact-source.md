@@ -17,6 +17,13 @@ relationships:
 When source is admitted, the compiler shall retain its exact bytes and the
 source reference that names them.
 
+`SourceIdentity` and the
+label check still carry the revision namespace and revision labels (four
+labels in all); they drop to the authority and identity as AC-6, AC-7,
+AC-8, AC-10 and AC-11 state. The `RequestRevision` and
+`EditPredecessor` checks compare revisions and become digest comparisons
+(AC-12).
+
 ## Inputs
 
 The source's authority and identity, a path, UTF-8 bytes and caller
@@ -195,6 +202,18 @@ caller names it with the same two labels and the artifact's content digest
 | FR-001-AC-10 | Admission with an empty identity, admission of five bytes under a four-byte ceiling, and verified intake of bytes whose digest differs from the selected one each refuse with no region, not a region at byte 0. | Test (TC-424) |
 | FR-001-AC-9 | A renderer given the region `[4, 7)` of admitted source `ab\ncdéf` reports start line 2, column 2 and end line 2, column 4, derived from the admitted bytes; the region itself holds only its `RawSourceRef`, 4 and 7. | Test (TC-424) |
 
+The cause and `label` reach the native `Diagnostic`,
+the `parse`/`format` refusal line, the native-run output, the
+native-state-input construction error and the replay recompile refusal, each
+tested for `blank-label` with its label. `empty-path` is tested at the reader
+and the native `Diagnostic`; the other outputs cannot reach it: `parse` and
+`format` and the run request open the file before any source is admitted (an
+empty file operand is a file error), a native-state-input artifact has no
+path, and the replay path is the reference's identity, which a non-blank
+label set makes non-empty. `EditPredecessor`, `ForeignNode` and
+`RequestRevision` refuse with `invalid_source_map` and no region
+(`qsl-cst/src/diagnostic.rs` `HostCause::code`, `error_without_region`).
+
 ## Dependencies
 
 - [US-001](../usecase/US-001-author-native-source.md) supplies the user need.
@@ -212,48 +231,3 @@ caller names it with the same two labels and the artifact's content digest
   reference): the `invalid_source_identity` row, its causes `blank-label`
   and `empty-path`, and the `label` payload spelling; QSpec FR-272-AC-12.
 - [Detailed contract or implementation evidence](../../qsl-foundation/src/source.rs) supplies the scoped context.
-
-## Status
-
-Draft. AC-1 to AC-4 describe the existing reader. AC-5 to AC-10 are
-implemented (ADR-013 §7 slice S-4b) and backed by TC-424:
-`SourceIdentity` (`qsl-foundation/src/source.rs`) carries the labels,
-admission mints the source's `RawSourceRef`, S0 refusals carry a
-`SourceRegion` or none, `Source::render` and `render_offered` derive line and
-column, and `PackageDeclarations::new` takes the unit's `RawSourceRef`. The
-native-v1 `Diagnostic` still renders a region-less refusal at byte 0 (the
-debt recorded above). The replay executor's recompilation under the
-reference's labels is ADR-013 TK-01's.
-
-QSL emits the catalog causes:
-`SourceReadCause` carries `BlankLabel { label }` and `EmptyPath`, and
-`Source::read_typed` checks the labels in order before the path
-(`qsl-foundation/src/source.rs`).
-
-The `RawSourceRef` admission mints carries the authority, the identity and
-the digest and no revision, as AC-5 states
-(`admission_mints_the_caller_named_source_reference`).
-
-Remaining work (implementation, Linear QSL-381): `SourceIdentity` and the
-label check still carry the revision namespace and revision labels (four
-labels in all); they drop to the authority and identity as AC-6, AC-7,
-AC-8, AC-10 and AC-11 state. The `RequestRevision` and
-`EditPredecessor` checks compare revisions and become digest comparisons
-(AC-12).
-The cause and `label` reach the native `Diagnostic`,
-the `parse`/`format` refusal line, the native-run output, the
-native-state-input construction error and the replay recompile refusal, each
-tested for `blank-label` with its label. `empty-path` is tested at the reader
-and the native `Diagnostic`; the other outputs cannot reach it: `parse` and
-`format` and the run request open the file before any source is admitted (an
-empty file operand is a file error), a native-state-input artifact has no
-path, and the replay path is the reference's identity, which a non-blank
-label set makes non-empty. `EditPredecessor`, `ForeignNode` and
-`RequestRevision` refuse with `invalid_source_map` and no region
-(`qsl-cst/src/diagnostic.rs` `HostCause::code`, `error_without_region`).
-AC-6, AC-11 and AC-12 are backed by TC-424.
-
-The native-run output and the `parse`/`format` refusal line render the span
-of a region-less refusal as byte 0 only where the lane-private native
-`Diagnostic` does (the debt recorded in "Where an S0 refusal is located");
-that byte 0 is not this requirement's behaviour.

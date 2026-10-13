@@ -263,6 +263,42 @@ fn scenario() -> Scenario {
     }
 }
 
+/// TC-227's S6a case: population admission is valid (closed extent and every
+/// actual member is declared), but its declaration omits effective subtypes
+/// of the queried `model.A`.
+fn subtype_incomplete_scenario() -> Scenario {
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.tc-227"),
+        vec![
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
+            object_type("model.C", vec!["model.A"]),
+            DomainPackageRecord::Population(PopulationRecord {
+                key: p1_population_key(),
+                member_types: vec![DeclarationKey::fixture("model.B")],
+                extent: Extent::Closed,
+            }),
+        ],
+    );
+    let view = view_of(&domain_package);
+    let universe = view.object_universe().identity();
+    let a = type_id(&view, "model.A");
+    let b = type_id(&view, "model.B");
+    let document = PopulationDocument {
+        model_identity: "test/orders".to_owned(),
+        members: vec![member("b1", "model.B")],
+    };
+    let binding = admitted_binding(&view, &document);
+    let model = AdmittedModel::new(&domain_package, &view).unwrap();
+    Scenario {
+        universe,
+        a,
+        b,
+        binding,
+        model,
+    }
+}
+
 /// TC-198 P1 (see [`p1`]) after `model.A.remove` deletes `a2`: `a1`/`b1`
 /// survive unchanged.
 fn p1_minus_a2(model_identity: &str) -> PopulationDocument {
@@ -840,6 +876,112 @@ fn l12_all_instances_expression_selects_subtype_population_once() {
     assert_eq!(*reference_elements(&value).last().unwrap(), b1_via_b);
 }
 
+/// FR-084-AC-2 / FR-090-AC-21 / TC-227: successful object admission does not
+/// let an incomplete subtype set become a partial collection at S6a.
+#[test]
+#[trace("TC-227", "FR-084-AC-2", "FR-090-AC-21")]
+fn tc_227_incomplete_subtype_closure_is_undefined_through_checked_evaluate() {
+    let scenario = subtype_incomplete_scenario();
+    let package = package(&scenario);
+    let parameters = [("p", ValueType::Population(Some(3)))];
+    let expression = all_instances(ValueType::Reference(scenario.a));
+    let checked = check(&package, &parameters, &expression);
+    let mut meter = Meter::new(SCALAR_UNLIMITED);
+    let evaluation = package
+        .evaluate(
+            &checked,
+            vec![population_argument(&scenario)],
+            &population_environment(&scenario),
+            &mut meter,
+        )
+        .expect("an admitted population's incomplete subtype closure is an evaluation result");
+
+    let cause = match evaluation.outcome {
+        FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause)) => cause,
+        other => panic!(
+            "expected S6a FamilyResult::Undefined for incomplete subtype closure, got {other:?}"
+        ),
+    };
+    let record = cause.undefined_record();
+    assert_eq!(record.reason, UndefinedReason::IncompleteClosure);
+    assert_eq!(record.fields.get("closure"), Some(&"subtype".to_owned()));
+    assert_eq!(
+        record.fields.get("queried_type"),
+        Some(&"model.A".to_owned())
+    );
+    assert_eq!(
+        record.fields.get("uncovered_subtypes"),
+        Some(&"model.A".to_owned())
+    );
+}
+
+/// TC-227: checked evaluation uses reflexive conformance for coverage before
+/// member walking. With a zero-step bound, querying the declared type itself
+/// completes without an ancestor walk, including for an empty population.
+#[test]
+#[trace("TC-227", "FR-084-AC-2", "FR-090-AC-21")]
+fn tc_227_checked_evaluate_uses_reflexive_coverage_without_query_walk() {
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.tc-227-reflexive-coverage"),
+        vec![
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
+            DomainPackageRecord::Population(PopulationRecord {
+                key: p1_population_key(),
+                member_types: vec![DeclarationKey::fixture("model.B")],
+                extent: Extent::Closed,
+            }),
+        ],
+    );
+    let view = view_of(&domain_package);
+    let document = PopulationDocument {
+        model_identity: "test/orders".to_owned(),
+        members: Vec::new(),
+    };
+    let mut admission =
+        AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED.with_ancestor_steps(0));
+    let binding = match admit_binding(
+        &view,
+        &document,
+        &p1_population_key(),
+        GeneralizationClosure::Closed,
+        Some(3),
+        &mut admission,
+    ) {
+        AdmissionOutcome::Admitted(binding) => binding,
+        other => panic!("expected an admitted empty population, got {other:?}"),
+    };
+    let scenario = Scenario {
+        universe: view.object_universe().identity(),
+        a: type_id(&view, "model.A"),
+        b: type_id(&view, "model.B"),
+        binding,
+        model: AdmittedModel::new(&domain_package, &view).unwrap(),
+    };
+    let package = package(&scenario);
+    let parameters = [("p", ValueType::Population(Some(3)))];
+    let expression = all_instances(ValueType::Reference(scenario.b));
+    let checked = check(&package, &parameters, &expression);
+    let mut meter = Meter::new(SCALAR_UNLIMITED);
+    let evaluation = package
+        .evaluate(
+            &checked,
+            vec![population_argument(&scenario)],
+            &population_environment(&scenario),
+            &mut meter,
+        )
+        .expect("reflexive coverage completes without an ancestor walk");
+
+    let outcome = match evaluation.outcome {
+        FamilyOutcome::Evaluated(outcome) => outcome,
+        other => panic!("a declared type covers itself without an ancestor walk, got {other:?}"),
+    };
+    let Outcome::Completed(value) = outcome else {
+        panic!("reflexive coverage should complete the empty selection, got {outcome:?}");
+    };
+    assert!(reference_elements(&value).is_empty());
+}
+
 /// TC-198 L13: `allInstances<M::A>(p)` still charges `population.visit` per
 /// candidate and `collection.bound`/`collection.result-retain` for the
 /// materialized result through the real evaluator, so a low `work_units`
@@ -1113,6 +1255,101 @@ fn package_with_unrelated_type(scenario: &Scenario) -> CheckedPackage {
 
 fn equal(left: Expression, right: Expression) -> Expression {
     Expression::binary(BinaryOperator::Equal, left, right)
+}
+
+/// V1-TYPE-022: equal empty object payloads do not replace explicit object
+/// identity, and a matching label from another universe cannot name a
+/// member of the selected population.
+#[test]
+#[trace("QSpec-V1-TYPE-022", "QSpec-FR-009-AC-1", "QSpec-FR-009-AC-3")]
+fn explicit_object_references_use_identity_and_refuse_foreign_universes() {
+    let scenario = scenario();
+    let package = package(&scenario);
+    let left = object_reference(&scenario.universe, &scenario.a, "a1");
+    let right = object_reference(&scenario.universe, &scenario.a, "a2");
+    let world = ObjectEnvironment::new(
+        ObjectClosure::new(
+            &types(&scenario),
+            [(left.clone(), vec![]), (right.clone(), vec![])],
+            &[],
+        )
+        .unwrap(),
+    );
+    let parameters = [
+        ("left", ValueType::Reference(scenario.a)),
+        ("right", ValueType::Reference(scenario.a)),
+    ];
+    let expression = equal(Expression::name("left"), Expression::name("right"));
+    for (candidate, expected) in [(left.clone(), true), (right, false)] {
+        let (outcome, _) = run(
+            &package,
+            &parameters,
+            &expression,
+            vec![Value::Reference(left.clone()), Value::Reference(candidate)],
+            SCALAR_UNLIMITED,
+            &world,
+        );
+        match outcome {
+            Outcome::Completed(Value::Boolean(equal)) => assert_eq!(equal, expected),
+            other => panic!("expected identity equality, got {other:?}"),
+        }
+    }
+
+    let foreign = object_reference(&foreign_universe_id(), &scenario.a, "a1");
+    let foreign_world = ObjectEnvironment::new(
+        ObjectClosure::new(&types(&scenario), [(foreign.clone(), vec![])], &[]).unwrap(),
+    )
+    .with_population(scenario.binding.clone())
+    .unwrap();
+    let (outcome, _) = run_family(
+        &package,
+        &[
+            ("p", ValueType::Population(Some(3))),
+            ("r", ValueType::Reference(scenario.a)),
+        ],
+        &lookup(ValueType::Reference(scenario.a), AbsenceMode::Refused),
+        vec![population_argument(&scenario), Value::Reference(foreign)],
+        SCALAR_UNLIMITED,
+        &foreign_world,
+    );
+    let code = refused_catalog_code(outcome);
+    assert_eq!(code.code(), "foreign_reference");
+    assert_eq!(code.cause(), "foreign-universe");
+}
+
+/// V1-TYPE-022: a surviving object keeps its identity when the same
+/// population is read through pre and post observations.
+#[test]
+#[trace("QSpec-V1-TYPE-022", "QSpec-FR-009-AC-2")]
+fn a_surviving_object_compares_equal_across_pre_and_post() {
+    let scenario = l07_scenario();
+    let package = package(&scenario);
+    let target = ValueType::Reference(scenario.a);
+    let expression = equal(
+        pre(lookup(target.clone(), AbsenceMode::Refused)),
+        lookup(target, AbsenceMode::Refused),
+    );
+    let reference = object_reference(&scenario.universe, &scenario.a, "a1");
+    let world = ObjectEnvironment::new(
+        ObjectClosure::new(&types(&scenario), [(reference.clone(), vec![])], &[]).unwrap(),
+    )
+    .with_population(scenario.binding.clone())
+    .unwrap();
+    let (outcome, _) = run_postcondition(
+        &package,
+        &[
+            ("p", ValueType::Population(Some(3))),
+            ("r", ValueType::Reference(scenario.a)),
+        ],
+        &expression,
+        vec![population_argument(&scenario), Value::Reference(reference)],
+        SCALAR_UNLIMITED,
+        &world,
+    );
+    match outcome {
+        Outcome::Completed(Value::Boolean(equal)) => assert!(equal),
+        other => panic!("expected identity equality across observations, got {other:?}"),
+    }
 }
 
 /// TC-198 L08: `(lookup<M::A>(p, r) absent refused) = r`
@@ -1497,10 +1734,7 @@ fn lookup_expression_refuses_a_non_conforming_reference_type_at_check_time() {
         &parameters,
         &lookup(ValueType::Reference(scenario.a), AbsenceMode::Undefined),
     );
-    assert_eq!(
-        refusal.cause,
-        CheckCause::IllTyped(IllTypedCause::TypeMismatch)
-    );
+    assert_state_model_ill_typed(&refusal, IllTypedCause::TypeMismatch, "type-mismatch");
     assert_eq!(refusal.location, Location::at(Origin::Expression, &[1]));
 
     let parameters = [
@@ -1512,9 +1746,24 @@ fn lookup_expression_refuses_a_non_conforming_reference_type_at_check_time() {
         &parameters,
         &lookup(ValueType::Reference(scenario.b), AbsenceMode::Undefined),
     );
+    assert_state_model_ill_typed(&refusal, IllTypedCause::TypeMismatch, "type-mismatch");
+}
+
+fn assert_state_model_ill_typed(refusal: &CheckRefusal, expected: IllTypedCause, raw: &str) {
+    let CheckCause::StateModel(owner) = &refusal.cause else {
+        panic!("StateModel ownership: {refusal:?}");
+    };
     assert_eq!(
-        refusal.cause,
-        CheckCause::IllTyped(IllTypedCause::TypeMismatch)
+        owner.family(),
+        qsl_semantics::family::FamilyKind::StateModel
+    );
+    assert_eq!(owner.cause, CheckCause::IllTyped(expected));
+    let code = owner.catalog_code().unwrap();
+    assert_eq!((code.code(), code.cause()), ("ill_typed", raw));
+    assert_eq!(code.prefix(), Some("state-model"));
+    assert_eq!(
+        qsl_foundation::diagnostic::category_of(&code),
+        Some(qsl_foundation::diagnostic::Category::Refusal)
     );
 }
 
@@ -1652,9 +1901,10 @@ fn all_instances_refuses_non_population_operand_as_ineligible() {
     let parameters = [("p", ValueType::Integer)];
     let expression = all_instances(ValueType::Reference(scenario.a));
     let refusal = check_refusal(&package, &parameters, &expression);
-    assert_eq!(
-        refusal.cause,
-        CheckCause::IllTyped(IllTypedCause::OperatorIneligible)
+    assert_state_model_ill_typed(
+        &refusal,
+        IllTypedCause::OperatorIneligible,
+        "operator-ineligible",
     );
 }
 
@@ -1668,9 +1918,10 @@ fn lookup_refuses_non_population_operand_as_ineligible() {
     ];
     let expression = lookup(ValueType::Reference(scenario.a), AbsenceMode::Undefined);
     let refusal = check_refusal(&package, &parameters, &expression);
-    assert_eq!(
-        refusal.cause,
-        CheckCause::IllTyped(IllTypedCause::OperatorIneligible)
+    assert_state_model_ill_typed(
+        &refusal,
+        IllTypedCause::OperatorIneligible,
+        "operator-ineligible",
     );
 }
 
@@ -2838,18 +3089,12 @@ fn tc_293_evaluator_resolves_population_id_through_recorded_correspondence() {
     }
 }
 
-/// PR #326 review finding F2: two admissions that collide on one
-/// `PopulationId` (same domain package, `population_key` and admission
-/// role -- FR-089's own preimage, with the open question over
-/// whether declared maximum and document content should also distinguish
-/// two bindings) but carry different declared maxima refuse loudly when
-/// the second is recorded under the first's id, rather than the first
-/// silently being overwritten. `ObjectEnvironment::with_population` is
-/// keyed by the binding's own id, so recording an *equal* binding under an
-/// id already bound is `Ok` (idempotent), but a *different* one is
-/// `Err(PopulationConflict)`.
+/// FR-089-AC-7: admissions that differ only in declared maximum mint
+/// different population identities, so both bindings can be recorded and
+/// resolved independently in one object environment.
 #[test]
-fn with_population_refuses_a_conflicting_binding_under_a_shared_id() {
+#[trace("TC-291", "FR-089-AC-7")]
+fn population_bindings_with_different_maxima_have_distinct_ids() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
 
@@ -2877,33 +3122,30 @@ fn with_population_refuses_a_conflicting_binding_under_a_shared_id() {
         AdmissionOutcome::Admitted(binding) => binding,
         other => panic!("expected an admitted binding, got {other:?}"),
     };
-    assert_eq!(
+    assert_ne!(
         binding_3.population_id(),
         binding_7.population_id(),
-        "same domain package/population_key/role must mint the same id, \
-         even though the two bindings' declared maxima differ"
+        "declared maximum is part of the population identity"
     );
-    let id = binding_3.population_id();
+    let id_3 = binding_3.population_id();
+    let id_7 = binding_7.population_id();
 
     let environment = ObjectEnvironment::default()
         .with_population(binding_3.clone())
         .unwrap();
-
-    // Re-recording the identical binding under its own id is idempotent.
-    let environment = environment.with_population(binding_3).unwrap();
+    let environment = environment.with_population(binding_7).unwrap();
     assert_eq!(
         environment
-            .resolve_population(id)
+            .resolve_population(id_3)
             .and_then(PopulationBinding::declared_maximum),
         Some(3)
     );
-
-    // Recording a *different* binding (declared maximum 7) under the same
-    // id refuses, rather than silently overwriting binding_3's own entry.
-    match environment.with_population(binding_7) {
-        Err(conflict) => assert_eq!(conflict.population_id, id),
-        Ok(_) => panic!("expected Err(PopulationConflict), got Ok -- the conflicting binding overwrote the first silently"),
-    }
+    assert_eq!(
+        environment
+            .resolve_population(id_7)
+            .and_then(PopulationBinding::declared_maximum),
+        Some(7)
+    );
 }
 
 /// TC-294 (FR-089-AC-4): a `Value::Population(population_id)` whose
@@ -3920,7 +4162,10 @@ fn empty_admitted_member_faults_through_public_call_and_evaluate_with_exact_pref
                         panic!("later cancellation must stay Incomplete");
                     };
                     assert_eq!(record.charge_point, prefix[stopped]);
-                    assert_eq!(meter.admitted_charges(), &prefix[..stopped]);
+                    assert_eq!(
+                        crate::support::admitted_charge_points(&meter),
+                        prefix[..stopped]
+                    );
                     assert_eq!(cancel.tripped(), Some(cause));
                 }
             }
@@ -3951,9 +4196,12 @@ fn empty_admitted_member_faults_through_public_call_and_evaluate_with_exact_pref
                         panic!("denied query charge must remain Incomplete");
                     };
                     assert_eq!(record.charge_point, prefix[denied]);
-                    assert_eq!(meter.admitted_charges(), &prefix[..denied]);
+                    assert_eq!(
+                        crate::support::admitted_charge_points(&meter),
+                        prefix[..denied]
+                    );
                 } else {
-                    assert_eq!(meter.admitted_charges(), prefix);
+                    assert_eq!(crate::support::admitted_charge_points(&meter), prefix);
                     assert_eq!(meter.consumed(LimitKind::ResultUnits), 2);
                     if object.is_empty() {
                         let CallFailure::Fault(fault) =
@@ -4033,7 +4281,7 @@ fn model_query_shapes_fault_at_the_real_producers_without_added_query_charges() 
                 &mut meter,
             );
             assert_eq!(
-                meter.admitted_charges(),
+                crate::support::admitted_charge_points(&meter),
                 [ChargePoint::LookupKey, ChargePoint::LookupResultRetain]
             );
             assert_eq!(
@@ -4076,7 +4324,7 @@ fn model_query_shapes_fault_at_the_real_producers_without_added_query_charges() 
                 };
                 assert_eq!(record.charge_point, point);
                 assert_eq!(
-                    denied.admitted_charges(),
+                    crate::support::admitted_charge_points(&denied),
                     if point == ChargePoint::LookupKey {
                         &[][..]
                     } else {

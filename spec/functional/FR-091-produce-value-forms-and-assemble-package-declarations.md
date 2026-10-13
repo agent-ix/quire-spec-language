@@ -17,6 +17,10 @@ relationships:
     type: traces_to
   - target: ix://agent-ix/quire-spec-language/FR-068
     type: traces_to
+  - target: ix://agent-ix/quire-specification/FR-147
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-149
+    type: references
 ---
 # FR-091: Produce Value-family parsed forms from the CST and assemble them into package declarations
 
@@ -93,6 +97,12 @@ The requirement carries testable criteria for decisions already taken:
   one source unit are unique
   (`shared-grammar.md`).
   `proposals/quire-v1/definitions/native-diagnostics.md`: the catalog codes and causes this requirement names.
+  `spec/functional/expressions/FR-147-evaluate-integer-division-domains.md`:
+  `div` and `rem` use exactly one selected integer-division law under
+  `quire.value.complete/v1`; `mod` is independently Euclidean; absent facet
+  and an integer-division reading of `/` remain refused; FR-149 permits exact
+  integer-to-rational promotion for rational `/` with an expected rational type
+  only under `quire.value.complete/v1`.
   `spec/functional/type-model/FR-141-evaluate-text-and-enumerations.md`:
   an enum declaration's key hashes
   `{version: "quire.enum-declaration-node/v1", owner, qualified_declaration,
@@ -119,6 +129,10 @@ The requirement carries testable criteria for decisions already taken:
 The complete-V1 grammar is QSpec's `proposals/quire-v1/shared-grammar.md`,
 which `qsl-cst` transcribes (`qsl-cst/src/grammar.rs`). It is the authority
 for the syntax this requirement maps.
+
+A domain package's native `Float32`/`Float64` model field is still refused
+with the floating-type error (`Unmapped::Float`); floating types are admitted
+as function parameter, result and body types only.
 
 ## Inputs
 
@@ -288,6 +302,7 @@ The `Value` production maps each CST expression construct to one
 | `or`, `and` | `Binary{Or}`, `Binary{And}`, left-associative |
 | `=`, `!=`, `<`, `<=`, `>`, `>=` | `Binary{Equal, NotEqual, Less, LessOrEqual, Greater, GreaterOrEqual}` |
 | `+`, `-`, `*`, `/` | `Binary{Add, Subtract, Multiply, Divide}`, left-associative |
+| integer `div`, `rem`, `mod` | `Binary{IntegerDiv, IntegerRem, IntegerMod}` respectively, left-associative at product precedence |
 | `not e` | `Not` |
 | unary `-e` | `Negate` |
 | `e.f` | `Field` |
@@ -314,6 +329,17 @@ never re-derives them from token order.
 `map` and `collect` are one operation (QSpec FR-145), so both spellings map
 to `BinderQuery::Map`.
 
+S2 preserves `div`, `rem` and `mod` as distinct operator forms with their CST
+spans even if the containing expression is unreachable. It does not decide
+whether the declaration's profile admits them. At check, the declaration's
+resolved `using` selection admits them only with `quire.value.complete/v1`;
+otherwise each receives a located `unsupported_construct`. The checked
+package's exactly-one integer-division definition selects the `div`/`rem`
+law, while `mod` uses the independent Euclidean remainder. `/` never denotes
+integer division; rational `/` follows QSpec FR-044, with FR-149's integer-operand
+promotion only under `quire.value.complete/v1`. Evaluation follows QSpec
+FR-147 and cannot infer the division law from the spelling or a backend.
+
 `Deref` and `AllInstances` belong to `StateModel`, and `Pre` to
 `ProtocolClause` (ADR-012 §1, §3, §4.3). The variants are defined in the
 `forms` core, so the `Value` production builds them where they are nested in
@@ -333,7 +359,7 @@ A construct that no family's variant represents refuses the whole unit with
 cause `UnrepresentedConstruct`, naming the construct's CST production and
 span. These constructs are text literals, `decimal(..)`, `float32(bits: ..)`
 and `float64(bits: ..)`, `null` outside a record field value, `none`,
-`self`, `result`, `div`, `rem`, `mod`, indexing `e[i]`, `size<T>(e)` and
+`self`, `result`, indexing `e[i]`, `size<T>(e)` and
 `reaches(..)`. S2 returns no form for any declaration of that unit.
 `reaches(..)` is a `StateModel` construct (model-graph reachability), and
 its variant is `StateModel`'s to add (ADR-012 §4.3).
@@ -795,7 +821,7 @@ STD-112 publishes the causes and replaces it (FR-091-OQ-12).
 | FR-091-AC-4 | S2 refuses a `ParsedSource` whose CST carries a recovery with cause `RecoveringCst`. It refuses an admissible parse, to which `prepend_diagnostic` has added one diagnostic, with the diagnosed-source cause holding that diagnostic's code. Neither refusal returns a parsed unit. | Test (TC-395) |
 | FR-091-AC-5 | S2 refuses the whole unit with cause `NoDispatchEntry` for an admissible unit holding a valid `function` declaration followed by `invariant Positive using v on M::T at current { true }`. The refusal names the spelling `invariant` and that declaration's span, and S2 returns no form for the `function` declaration. | Test (TC-395) |
 | FR-091-AC-6 | S2 builds a parsed unit with one form for an admissible unit whose only declaration is `enum Color { RED }`, `ordered enum Level { LOW }`, `predicate P using v(x: Boolean): Boolean { x }`, `dimension Length;` or, after `dimension Length;`, `unit m : Length = rational(1, 1);`. None of these refuses with `NoDispatchEntry`. No module under `forms` other than the `Value` family form builder names the `EnumDeclaration`, `EnumMember`, `Predicate`, `DimensionDeclaration` or `UnitDeclaration` CST production. | Test (TC-395) |
-| FR-091-AC-7 | S2 refuses the whole unit with cause `UnrepresentedConstruct`, naming the construct's CST production and span and returning no form, for a function body that holds exactly one of: a text literal, `decimal(1, 2)`, `a mod b`, `xs[0]`, `none`, `reaches(a, b, M::R)`. | Test (TC-396) |
+| FR-091-AC-7 | S2 refuses the whole unit with cause `UnrepresentedConstruct`, naming the construct's CST production and span and returning no form, for a function body that holds exactly one of: a text literal, `decimal(1, 2)`, `xs[0]`, `none`, `reaches(a, b, M::R)`. | Test |
 | FR-091-AC-8 | For each of `function f using v(x: Int[0, 9]): Boolean pure { B }` with body `B` equal to `deref(x)`, `allInstances<M::T>(x)` or `pre(x)`, and `function g using v(x: Int[0, 9]): Boolean pure decreases(pre(x)) { true }`, each in a unit with no admitted domain package, S2 returns a parsed unit that holds `Deref`, `AllInstances` or `Pre` where the construct is written. Check refuses `pre(x)`, in the body and in the measure, with `wrong_snapshot`/`forbidden-pre-read`, the `ProtocolClause` cause, and `deref(x)` with `ill_typed`/`type-mismatch`. The assembler refuses `allInstances<M::T>(x)` with an unresolved-type-name error naming `M::T` (`missing_declaration`/`missing-name`). None of these refusals has code `unsupported_construct`. | Test (TC-396) |
 | FR-091-AC-9 | S2 builds a form for each of the function bodies `not`×8 `a`, `not`×20 `a` and `not`×129 `a`, each admitted by S1 at its default limits, and each form's expression tree is as deep as its body. S2 takes no limit set, and no S2 outcome names a depth. | Test (TC-397) |
 | FR-091-AC-10 | Every `Expression` node in a `Value` form carries the span of the CST node it maps from. For the body `if a then b else c + d`, the `If` node's span covers the whole body, the `Add` node's span covers `c + d`, and the `Name("d")` node's span covers `d`. For `(a + b) * c`, the `Add` node's span covers `a + b`, without the parentheses. | Test (TC-403) |
@@ -827,6 +853,7 @@ STD-112 publishes the causes and replaces it (FR-091-OQ-12).
 | FR-091-AC-36 | Check admits `function u using v(x: Int[0, 18446744073709551615]): Boolean pure { x >= 0 }` and the same function with `x: Int[0, 9223372036854775808]` and with `x: Int[0, 18446744073709551616]` (2^64, inside i128); each parameter's resolved type is `ValueType::Int` with exactly those bounds. The 2^64 unit also keys, lowers and replays like the others (FR-092-AC-14, FR-098-AC-11). Check admits a parameter typed `Int[-170141183460469231731687303715884105728, 170141183460469231731687303715884105727]`, whose bounds are `i128::MIN` and `i128::MAX` exactly, and the body `x <= 170141183460469231731687303715884105727` over it. | Test (TC-909) |
 | FR-091-AC-37 | Check refuses `Int[0, 170141183460469231731687303715884105728]` (`i128::MAX + 1`) with `IntegerOutsideI128` naming site `upper`, value `170141183460469231731687303715884105728`, limit `i128::MAX` and the type form's span, and `Int[-170141183460469231731687303715884105729, 0]` naming site `lower` and limit `i128::MIN`. Each refusal's catalog code is `ill_typed`/`type-mismatch`, and the compile returns no checked package, so nothing is keyed or lowered. | Test (TC-909) |
 | FR-091-AC-38 | Over `x: Int[-170141183460469231731687303715884105728, 0]`: the body `x >= -170141183460469231731687303715884105728` checks, its right operand is one `Integer` literal of value `i128::MIN` with no `Negate` node, that literal node keys to FR-092 vector L7, and lowering writes it as one literal. The body `x >= -170141183460469231731687303715884105727` checks with its right operand a `Negate` of the literal 170141183460469231731687303715884105727, as before. The bodies `x < 170141183460469231731687303715884105728`, `x >= -(170141183460469231731687303715884105728)` and `x >= -170141183460469231731687303715884105729` refuse `IntegerOutsideI128` at the literal's span, with site `literal`, the literal's value as written, limit `i128::MAX` and code `ill_typed`/`type-mismatch`, and return no checked package. | Test (TC-909) |
+| FR-091-AC-39 | S2 maps `a div b`, `a rem b` and `a mod b` to distinct `IntegerDiv`, `IntegerRem` and `IntegerMod` binary forms with operand order and original spans, including in an unreachable branch. Check admits each well-typed operator under a resolved `quire.value.complete/v1` selection, using the checked package's exactly-one law for `div`/`rem` and Euclidean meaning for `mod`; without that facet, each receives a located `unsupported_construct` rather than `UnrepresentedConstruct`. `/` never becomes integer division; only under complete value does a rational `/` with integer operands and an expected rational type follow QSpec FR-149. | Test |
 
 ## Dependencies
 
@@ -877,55 +904,6 @@ STD-112 publishes the causes and replaces it (FR-091-OQ-12).
 - **Downstream:** the ADR-011 §5 stage driver calls S1, S2, the assembler
   and `check` in that order.
 
-## Status
-
-The `Value` slice is implemented, with the `dimension` and `unit`
-declarations (FR-091-AC-31 to AC-34, AC-6's other half): S2 builds
-the dimension and unit forms as written, and the assembler normalizes
-terms, reduces exact numbers, mints keys with `nominal_key` and admits a
-`UnitGraph` (`PackageDeclarations::units`, `nominal_spans`;
-`assemble_with_limits` takes the decimal-scale bound). AC-35's errors are
-raised with their declarations; only their catalog code is open. It also has the `enum`, `ordered enum`
-and `predicate` declarations (FR-091-AC-25 to AC-30; the enum and
-predicate half of AC-6). `enum` and `ordered` build the enum form, and
-`predicate` builds the `forms` `FunctionDeclaration` of kind `Predicate`.
-The assembler admits each enum form as an `EnumBinding` over keys that
-`check::node_key::nominal_key` mints, records its name span in
-`declared_type_spans`, and resolves an enum name in a type form to
-`ValueType::Enum`. `nominal_key` returns a `Result`, because encoding a
-preimage can refuse, and the refusal is the nominal-admission fault. `qsl_forms::build_unit` walks a
-unit's declarations and dispatches `function`, `type`, `record` and `tuple`
-to the `Value` builder (`qsl-forms/src/value.rs`), which maps every row of
-the expression table with each node's span, refuses the listed
-unrepresented constructs, and builds every depth S1 admits. The forms
-`FunctionDeclaration` carries its `using` alias. The assembler records each
-resolved selection in `PackageDeclarations::function_selections`
-(FR-091-AC-22). A bare `Float32` or `Float64` is admitted by S1 and builds a
-type form with no rounding mode (FR-091-AC-23). No `match` over `Production`
-in `qsl-forms` has a `_` arm (FR-091-AC-11). The assembler is
-`PackageDeclarations::assemble` (`qsl-semantics/src/check/assemble.rs`). It
-resolves aliases, records, tuples and function signatures, mints each
-record's and tuple's handle over the unit's `SourceOwner`, records the span
-of each declared type's name for FR-096, and reports every error it finds.
-
-Remaining work:
-
-- QSL-642's i128 ceiling and the `i128::MIN` fold (FR-091-AC-36 to AC-38)
-  are implemented: S2 builds the folded literal, the assembler refuses a
-  bound and `Typer` a literal with `IntegerOutsideI128`. The IR wire still
-  carries `i64` until IR-662 (FR-033-AC-6, TC-912).
-- AC-35's catalog code waits on STD-112 (FR-091-OQ-12). Until QSpec
-  publishes the topology causes the topology cause reports
-  `invalid_package` with the informational cause `unit-graph-topology`.
-  The hand-off to FR-094's lowering of the unit and dimension nodes is
-  under Dependencies.
-- The other families' parsed-form types are not built: the state family's
-  under QSL-67, and the others under QSL-45, QSL-44, QSL-43, QSL-42,
-  QSL-40, QSL-39 and QSL-36.
-- A domain package's native `Float32`/`Float64` model field is still refused
-  with the floating-type error (`Unmapped::Float`); floating types are admitted
-  as function parameter, result and body types only.
-
 ## Rulings
 
 Lead rulings of 2026-09-22 on the open questions below. Each row is
@@ -938,7 +916,8 @@ decided; the last column names the fact that reopens it.
 | FR-091-OQ-2 | S2 carries each unit's profile, import and model selections, and each form keeps its `using` alias. E3 resolves every alias to a declared profile selection, or refuses with `missing_declaration`/`missing-selection`. ADR-011 §2.2's E2 Version cell reads "Edition and the unit's profile, import and model selections carried". Resolution against the library lock is the M-4 lock evidence. The forms `FunctionDeclaration` has a `using` field. | ADR-011 OBS-007 makes S2 the only source of check-stage input from source. QSpec requires `using` to name a declared alias, with no default. | QSpec makes the compile request's input inventory, not each unit, the source of selections. S2 still carries each unit's selections for the driver to compare, and only the lock assembly moves. |
 | FR-091-OQ-3 | Record, tuple and function node keys are minted over `SourceOwner{authority, identity}`. ADR-013 O-04 and ADR-012 §2 state the owner reading of QC-18. `check` has no `DEFAULT_PACKAGE_IDENTITY`. | Neither the source grammar nor the v2 wire carries a package name, so replay could not rebuild a `name@version` key. QSpec's `proposals/checked-package-v2/README.md` publishes the owner reading for nominal enum, dimension and unit nodes; for `composite_type` and `function` nodes QSL keys by its proposed `quire.structural-node/v1` preimage, which carries the owner (FR-092). | QSpec adds a package name to source or to the v2 wire, or a declaration must keep its key when it moves between the units of one package. |
 | FR-091-OQ-4 | `ValueType::Float` carries the rounding mode, in `quire-exact` (`FloatType`) and in QSL, and the evaluator applies it (done). The floating-type error (now only for a domain package model field) has code `unknown_required_feature`/`unsupported-feature`: no catalog code names a well-formed type the producer does not represent, and `unsupported_construct` is reserved for profile-prohibited forms. A bare `Float32` or `Float64` is strict `exact`, and `qsl-cst` accepts it. | QSpec FR-322 makes the rounding mode part of the type, and FR-148 requires the evaluator to use it. | QSpec FR-322 moves float rounding off `type_pinned_modes`. |
-| FR-091-OQ-5 | `collect` maps to `Query{Map}`. `reaches` is a `StateModel` construct with no variant; it and the other listed constructs are refused with `UnrepresentedConstruct`. A variant for one of them comes with its checker and evaluator arms. `div`/`rem` depend on the unit's div/rem selection (FR-091-OQ-2), float literals on a mode-carrying `ValueType::Float` (FR-091-OQ-4), and `e[i]` on QSpec semantics. | QSpec FR-145 makes `map` and `collect` one operation. QSL FR-008-AC-20's duplicate-output `collect` refusal belongs to the native lane, not to complete-V1; QSpec FR-008-AC-5 refuses `collect` only where `quire.state.queries/v1` is selected without `quire.value.complete/v1`. | M-6a must compile existing native programs that use the refused constructs. |
+| FR-091-OQ-5, integer operators | Resolved: S2 maps `div`, `rem` and `mod` to distinct forms regardless of reachability. Check uses the declaration's resolved `using` selection: absent `quire.value.complete/v1` refuses each at its operator locus; selected complete value admits well-typed forms. The checked package's exactly-one integer-division law governs `div`/`rem`; `mod` stays Euclidean. Their checker and evaluator arms are required by FR-091-AC-39 and QSpec FR-147. `/` has no integer-division meaning; QSpec FR-149 owns exact integer-to-rational promotion only under complete value. | QSpec FR-147 and its shared grammar admit these operators only under the complete-value facet, while QSpec FR-039 preserves the state-only refusal. S2 must not discard the distinction before profile admission. | QSpec changes the facet, operator law or slash rule. |
+| FR-091-OQ-5, other constructs | `collect` maps to `Query{Map}`. `reaches` is a `StateModel` construct with no variant; it and the other listed unrepresented constructs are refused with `UnrepresentedConstruct`. A variant for one of them comes with its checker and evaluator arms. Float literals depend on a mode-carrying `ValueType::Float` (FR-091-OQ-4), and `e[i]` on QSpec semantics. | QSpec FR-145 makes `map` and `collect` one operation. QSL FR-008-AC-20's duplicate-output `collect` refusal belongs to the native lane, not to complete-V1; QSpec FR-008-AC-5 refuses `collect` only where `quire.state.queries/v1` is selected without `quire.value.complete/v1`. | M-6a must compile existing native programs that use the refused constructs. |
 | FR-091-OQ-7 | An alias cycle is `invalid_package`/`definition-cycle` at the check stage. | The check stage uses the same code for an FR-151 dispatch call-graph cycle (`qsl-semantics/src/check/refusal.rs`, `CheckCause::DefinitionCycle`), and the cause's payload is dependency edges. | QSpec declines the catalog extension and keeps `definition-cycle` to `DefinitionRef` closures. |
 | FR-091-OQ-11 | Source dimensions and units (team lead ruling, 2026-09-26). (a) Dimension terms are normalized: derived terms expand to base terms, repeated exponents add, zeros drop, terms sort by key, and a derived dimension that cancels to no terms refuses. (b) `rational`/`decimal` numbers are reduced, not refused; a zero denominator refuses as `undefined_expression`/`unproved-nonzero`. (c) A dimension or unit cycle is `invalid_package`/`definition-cycle` and an unresolved name `missing_declaration`/`missing-name`; the topology errors take the STD-112 causes (FR-091-OQ-12). (d) Units are admitted with no source use until STD-113 settles a quantity type reference. | (a) matches FR-142's normalized base-dimension map, and a derived term is how acceleration is written from speed. (b) the reduced rational is the value written (ADR-013 R-07). (c) follows FR-091-OQ-7 and the catalog's `missing-name`; no existing cause fits the topology errors. (d) the complete-V1 `type-ref` has no quantity form, and reading a unit's name as a type would invent syntax meaning. | QSpec publishes STD-112's causes or STD-113's quantity type reference. |
 

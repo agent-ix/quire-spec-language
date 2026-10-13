@@ -4,3 +4,7 @@
 
 pub mod model;
 pub mod type_form;
+
+#[path = "../../../../tests/support/admitted_charge.rs"]
+mod admitted_charge;
+pub(crate) use admitted_charge::admitted_charge_points;
