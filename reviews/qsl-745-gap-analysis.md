@@ -28,3 +28,18 @@ CONDITIONAL. Parts (a) and (b) are backed with strong oracles for code, cause, `
 | --- | --- | --- | --- |
 | FND-001 | medium | No test asserts the retained denied-charge fields (`stage`, `accounting_contract`, `consumed`, `next_charge`, `charge_point`) that `UnitIntakeCause::limit_fields` adds on the compile and select path. FR-255 Behavior 1 now says this path gives "the same ... fields" as observation admission. `assert_budget_field` reads only `setting`, `bound` and `actual`, and the emit test reads only code and cause. Deleting those five entries, or the new `record.fields = source.fields()` routing for Intake in native_result, leaves every test green. Add an exact-map assertion for one `insufficient-next-charge` select refusal and one native-run-result compile refusal. | qsl-semantics/src/model/intake/unit.rs:156-170; qsl-replay/src/spine/native_result.rs:1984; qsl-replay/src/spine/lifecycle/tests.rs:1144-1186 |
 | FND-002 | low | Pre-existing gap: FR-277-AC-1 covers every field of `select`'s limits, but the select test drives only six of the eight `model.*` fields. `model.dispatch_candidates` and `model.family_steps` are never reached through `select`, although the test doc says "each field ... that a charge reaches". The `family-steps` cause is checked only through S6a conversion. | qsl-replay/src/spine/lifecycle/tests.rs:1252-1308 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | medium | The PR rewrites FR-302-AC-5 and TC-795 step 2 to say a compile past `family_steps` refuses at S3 with `resource_exhausted`/`insufficient-next-charge`, naming `model.family_steps` and the limit `n - 1`. No test is tagged TC-795 or FR-302-AC-5. The nearest test, `a_family_at_the_configured_bound_links_and_one_step_more_refuses`, runs `link_chain` directly. It asserts the native label `family-steps` and the setting through `limit_exceeded()`, never the catalog code, cause or charge record on the S3 compile path. The edited criterion is unverified. Add a compile-path test tagged `TC-795`/`FR-302-AC-5`. | spec/functional/FR-302-link-dispatch-during-unit-compile.md:114; spec/test-cases/TC-795-dispatch-family-walk-refuses-at-the-caller-limit.md:24-26; qsl-semantics/tests/it/model_dispatch.rs:798-860 |
+
+## Dispositions
+
+Round 1, reviewed at a7be05cb81cb87eab1b83eee676595771d16b494.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | d060eb068: `select_retains_the_denied_charge_of_a_normalization_ceiling` asserts the exact key set and values of a select denied charge. `run_clause_writes_the_caller_budget_fields_of_a_compile_ceiling` asserts the native-run-result fields of a compile denied charge and of the intake size ceiling. Reverting `record.fields = source.fields()` to the Limit-only arm leaves Intake `fields` null, so `fields["setting"] == "model.work_units"` fails. Deleting the retained entries from `BudgetDenial::catalog_fields` fails the exact key assertion |
+| FND-002 | rejected | `select` never charges `model.dispatch_candidates` or `model.family_steps`: dispatch families are linked at `check` (FR-302), so `select` reaches neither counter on any input, and FR-277-AC-1's "one below the counter the input reaches" is empty for them. The test now says so (lifecycle/tests.rs:1302-1305). The `family_steps` code path is tracked separately as new FND-003 |

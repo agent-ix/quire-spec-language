@@ -25,3 +25,21 @@ FAIL. The PR gives three model causes catalog fields and records. It does not am
 | FND-003 | medium | TC-758 step 2's exception covers `format.output_bytes` and the `select` model-normalization fields, but not `intake.input_bytes`. The amended FR-277-AC-1 makes `intake.input_bytes` refuse `resource_exhausted`/`intake-limit-exceeded`, so as written the TC still expects `LimitExceeded` for that field. | spec/test-cases/TC-758-every-bound-is-a-caller-limit-that-names-itself-when-reached.md:31 |
 | FND-004 | low | FR-277 cites "ADR-014 section 1" for `intake.input_bytes` being a caller budget. ADR-014 section 1 lists only accounting-contract types under B-2, and lists "the reader limits" under B-3. The intake classification comes from FR-255's table and FR-260. FR-277's relationships add neither ADR-014 nor FR-255. Cite FR-255 and FR-260 for intake, and add the edges. | spec/functional/FR-277-bound-every-lifecycle-operation-by-caller-limits.md:29-32; spec/decisions/ADR-014-temporal-trace-and-boundedness-architecture.md:118-122 |
 | FND-005 | low | FR-255 Behavior 1's new sentence says `select` and the compile path give these limits "the same `resource_exhausted` code, cause and fields", with an unclear referent. The preceding sentence covers only observation admission's re-run of `model.*` walks, not `intake.input_bytes`. State the code, cause and field set for each case directly. | spec/functional/FR-255-name-the-setting-that-raises-a-reached-limit.md:141-144 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | low | FR-082 says the walk's `charge_point` is "`model.ancestor-edge`, or `admission.ancestor-edge` in population admission". Observation admission's re-run of `model.*` walks also runs in population admission. There the code, keyed on the setting, gives `model.ancestor-edge` with stage `model-normalization`, and `a_deep_hierarchy_is_judged_by_the_callers_ancestor_steps_not_a_fixed_ceiling` asserts that. Key the sentence on the limit: under `admission.ancestor_steps` (`PopulationAdmissionLimitsV1`, stage `population-admission`) the point is `admission.ancestor-edge`, otherwise `model.ancestor-edge`. | spec/functional/FR-082-resolve-conformance-subsetting-and-redefinition.md:152-156; qsl-semantics/src/model/refusal.rs:1166-1184 |
+
+## Dispositions
+
+Round 1, reviewed at a7be05cb81cb87eab1b83eee676595771d16b494.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | d060eb068: FR-096's key table adds a `ModelQueryRefusal` row for the walk-ceiling denied charge and one for `intake-limit-exceeded`, and its "no record" sentence excludes them. FR-100-AC-9's no-record example is now `TypeMismatch`, `ill_typed`, exit 20 (`refused_family_with_no_record_renders_code_and_cause_only`) |
+| FND-002 | fixed | d060eb068: FR-277's Description, Outputs and Behavior classify by carrying type. A stage's or reader's own limits type gives `LimitExceeded`. A caller-budget ceiling gives `resource_exhausted` wherever it is read, including observation admission's re-run walks and `admission.*` |
+| FND-003 | fixed | d060eb068: TC-758 step 2 adds `intake.input_bytes`, with `resource_exhausted`/`intake-limit-exceeded` and `kind`, `bound`, `actual`, `setting` |
+| FND-004 | fixed | d060eb068: FR-277 cites FR-255 Behavior 1 and FR-260-AC-4 for intake, and adds FR-255, FR-260 and ADR-014 `references` edges |
+| FND-005 | fixed | d060eb068: FR-255 Behavior 1 states the code, cause and field set for each case: the intake size ceiling, and the denied charge with its walk-ceiling values |
