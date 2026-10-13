@@ -3776,6 +3776,124 @@ fn an_unbounded_binding_selects_every_member_with_no_bound() {
     assert_eq!(selected.bound(), None);
 }
 
+/// TC-410 (FR-084-AC-7): object types `A <- B`, `C, D <- E` and `X` form
+/// three supertype components; a member admitted in each component's own
+/// population carries that component's universe, the
+/// `quire.model.object-universe/v1` digest over the model selection and the
+/// component's root types, and its object component is the authored identity.
+///
+/// Mutation used (derived by reading, not executed): one universe over every
+/// root type makes the three universes equal; one universe per root type
+/// splits `{C, D}` into two and changes `e1`'s universe; digesting the
+/// object component changes the asserted `object` bytes.
+#[test]
+#[trace("TC-410", "FR-084-AC-7")]
+fn tc_410_each_connected_component_has_its_own_object_universe() {
+    use qsl_semantics::model::key::hex;
+    use sha2::{Digest, Sha256};
+
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.tc410"),
+        vec![
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
+            object_type("model.C", vec![]),
+            object_type("model.D", vec![]),
+            object_type("model.E", vec!["model.C", "model.D"]),
+            object_type("model.X", vec![]),
+            population_record("model.pop.p1", &["model.B"], Extent::Closed),
+            population_record("model.pop.p2", &["model.E"], Extent::Closed),
+            population_record("model.pop.p3", &["model.X"], Extent::Closed),
+        ],
+    );
+    let view = view_of(&domain_package);
+    let selection = view.model_selection();
+
+    let expected_universe = |roots: &[&str]| -> Vec<u8> {
+        let mut ids: Vec<String> = roots
+            .iter()
+            .map(|root| type_id(&view, root).to_string())
+            .collect();
+        ids.sort();
+        let preimage = serde_json::json!({
+            "version": "quire.model.object-universe/v1",
+            "model_selection": {
+                "identity": selection.identity,
+                "digest_domain": "sha256-jcs",
+                "digest": hex(&selection.digest)
+            },
+            "root_types": ids
+                .iter()
+                .map(|digest| serde_json::json!({
+                    "domain": "quire.model.effective-declaration/v1",
+                    "digest": digest
+                }))
+                .collect::<Vec<_>>()
+        });
+        Sha256::digest(serde_json::to_vec(&preimage).unwrap()).to_vec()
+    };
+
+    let mut observed = Vec::new();
+    for (population, member_type, object, queried, roots) in [
+        ("model.pop.p1", "model.B", "b1", "model.A", vec!["model.A"]),
+        (
+            "model.pop.p2",
+            "model.E",
+            "e1",
+            "model.C",
+            vec!["model.C", "model.D"],
+        ),
+        ("model.pop.p3", "model.X", "x1", "model.X", vec!["model.X"]),
+    ] {
+        let document = PopulationDocument {
+            model_identity: "test/orders".to_owned(),
+            members: vec![member(object, member_type)],
+        };
+        let binding = match admit_binding(
+            &view,
+            &document,
+            &DeclarationKey::fixture(population),
+            GeneralizationClosure::Closed,
+            Some(1),
+            &mut AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED),
+        ) {
+            AdmissionOutcome::Admitted(binding) => binding,
+            other => panic!("{population}: expected an admitted binding, got {other:?}"),
+        };
+        let selected = match all_instances(
+            &binding,
+            &DeclarationKey::fixture(queried),
+            &mut Meter::new(SCALAR_UNLIMITED),
+        ) {
+            AllInstancesOutcome::Completed(set) => set,
+            other => panic!("{population}: expected a completed selection, got {other:?}"),
+        };
+        let [key] = selected.members().iter().collect::<Vec<_>>()[..] else {
+            panic!(
+                "{population}: one selected member: {:?}",
+                selected.members()
+            );
+        };
+        assert_eq!(
+            key.universe.as_bytes().to_vec(),
+            expected_universe(&roots),
+            "{population}"
+        );
+        assert_eq!(key.object, object, "{population}");
+        assert_eq!(
+            key.type_identity,
+            type_id(&view, member_type),
+            "{population}"
+        );
+        observed.push(key.universe);
+    }
+    assert_eq!(
+        observed.iter().collect::<BTreeSet<_>>().len(),
+        3,
+        "three components, three distinct universes"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // QSpec FR-013-AC-7, AC-8 and AC-9: frame accounting and receiver-scoped
 // entries, decided over a population invocation.

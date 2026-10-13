@@ -1151,7 +1151,7 @@ fn a_dangling_end_reference_refuses_without_substituting_a_declaration() {
 /// `flow_target` by their full `DeclarationKey`: two ports whose value
 /// types share a display node but declare it in different packages are not
 /// the same interface type. `model.Sys.pump.out` and `model.Sys.tank.in`
-/// both name a value type with node `model.Count`, one in `test/orders`
+/// both name an interface type with node `model.Flow`, one in `test/orders`
 /// and one in `other/pkg`.
 #[trace("QSpec-TC-197", "QSpec-FR-152-AC-4", "QSpec-FR-152-AC-6")]
 #[test]
@@ -1161,12 +1161,17 @@ fn y07_bidirectional_interface_type_does_not_confuse_two_packages_sharing_a_node
             RelationshipDirection::Bidirectional;
         find_endpoint(records, "model.Sys.pump.out").direction = Some(PortDirection::InOut);
         find_endpoint(records, "model.Sys.tank.in").direction = Some(PortDirection::InOut);
-        find_endpoint(records, "model.Sys.pump.out").value_type =
-            DeclarationKey::fixture("model.Count");
-        find_endpoint(records, "model.Sys.tank.in").value_type = DeclarationKey {
+        let other_flow = DeclarationKey {
             package: "other/pkg".to_owned(),
-            node: "model.Count".to_owned(),
+            node: "model.Flow".to_owned(),
         };
+        records.push(DomainPackageRecord::ObjectType(ObjectTypeRecord {
+            key: other_flow.clone(),
+            interface_features: Some(vec![]),
+            abstract_type: false,
+            supertypes: vec![],
+        }));
+        find_endpoint(records, "model.Sys.tank.in").value_type = other_flow;
     });
     let mut meter = unlimited_meter();
     let classification = classify(&domain_package, &mut meter).expect("classify admitted");
@@ -1183,7 +1188,7 @@ fn y07_bidirectional_interface_type_does_not_confuse_two_packages_sharing_a_node
                     condition: "interface-type",
                     code: Code::IllTyped,
                     cause: ModelRefusalCause::TypeMismatch,
-                    detail: "model.Count does not conform to model.Count".to_owned(),
+                    detail: "model.Flow does not conform to model.Flow".to_owned(),
                 }]
             );
         }
@@ -1242,5 +1247,282 @@ fn two_components_sharing_one_declaration_key_refuse_conflicting_binding() {
         other => {
             panic!("expected Refused(invalid_model_binding/conflicting-binding), got {other:?}")
         }
+    }
+}
+
+fn refusal_codes(
+    classification: &qsl_semantics::model::systems::SystemsClassification,
+) -> Vec<(Code, &'static str)> {
+    classification
+        .refusals
+        .iter()
+        .map(|refusal| (refusal.code, refusal.cause.as_str()))
+        .collect()
+}
+
+/// TC-233 (FR-086-AC-1): an endpoint with no direction and an endpoint whose
+/// owner names no declared node both cascade to no kind, and the
+/// interface-qualified object type classifies `Interface`; both cascades are
+/// reported, in declaration-key order, and each record is charged once.
+///
+/// Mutation used (derived by reading, not executed): returning from
+/// `classify` at the first pushed refusal leaves one entry and fails the
+/// length assertion; dropping the interface charge fails the charge count.
+#[trace("TC-233", "FR-086-AC-1")]
+#[test]
+fn tc_233_every_no_kind_cascade_is_reported_not_only_the_first() {
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.tc233"),
+        vec![
+            object_type("model.Sys", None, vec![]),
+            object_type("model.I1", Some(vec![]), vec![]),
+            component("model.C2", "model.Sys", "model.Sys", one()),
+            endpoint("model.E1", "model.C2", "model.I1", None, one()),
+            endpoint(
+                "model.E2",
+                "model.C3",
+                "model.I1",
+                Some(PortDirection::Out),
+                one(),
+            ),
+        ],
+    );
+    let mut meter = unlimited_meter();
+    let classification = classify(&domain_package, &mut meter).expect("classify admitted");
+
+    assert_eq!(
+        refusal_codes(&classification),
+        vec![
+            (Code::InvalidModelBinding, "unsupplied-producer-record"),
+            (Code::DanglingReference, "unknown-component"),
+        ]
+    );
+    assert!(classification.refusals[0].detail.contains("model.E1"));
+    assert!(classification.refusals[0].detail.contains("port-direction"));
+    assert_eq!(
+        classification.refusals[1].cause,
+        ModelRefusalCause::UnknownComponent {
+            item: DeclarationKey::fixture("model.E2"),
+            missing: DeclarationKey::fixture("model.C3"),
+        }
+    );
+    for (identity, kind) in [
+        ("model.C2", Kind::Part),
+        ("model.E1", Kind::None),
+        ("model.E2", Kind::None),
+        ("model.I1", Kind::Interface),
+    ] {
+        assert_eq!(
+            classification.actual_kind(&DeclarationKey::fixture(identity)),
+            kind,
+            "{identity}"
+        );
+    }
+    assert_eq!(
+        meter.admission_count(),
+        4,
+        "one systems.kind charge each for I1, C2, E1 and E2"
+    );
+}
+
+/// TC-234 (FR-086-AC-2): a port-direction failure and an end-multiplicity
+/// failure are both reported while the interface-type condition holds, and
+/// the unmodified connection admits.
+///
+/// Mutation used (derived by reading, not executed): returning after the
+/// first failed condition yields one failure and fails the length assertion;
+/// pushing `interface-type` unconditionally fails the absence assertion.
+#[trace("TC-234", "FR-086-AC-2")]
+#[test]
+fn tc_234_a_connection_reports_every_failing_condition() {
+    let pipe = DeclarationKey::fixture("model.Sys.pipe");
+    let domain_package = fixture_y(|records| {
+        find_endpoint(records, "model.Sys.pump.out").direction = Some(PortDirection::In);
+        find_relationship(records, "model.Sys.pipe")
+            .source
+            .multiplicity = mult(0, Some(2));
+    });
+    let mut meter = unlimited_meter();
+    let classification = classify(&domain_package, &mut meter).expect("classify admitted");
+    match check_connection(
+        &ModelIndex::build(domain_package.clone()),
+        &classification,
+        &pipe,
+        &mut meter,
+    ) {
+        ConnectionCheckOutcome::Completed(ConnectionOutcome::Refused(failures)) => {
+            let conditions: Vec<_> = failures.iter().map(|failure| failure.condition).collect();
+            assert_eq!(conditions, vec!["port-direction", "multiplicity"]);
+            assert_eq!(
+                failures[0].cause,
+                ModelRefusalCause::PortDirection {
+                    source: DeclarationKey::fixture("model.Sys.pump.out"),
+                    target: DeclarationKey::fixture("model.Sys.tank.in"),
+                }
+            );
+            assert_eq!(
+                failures[1].cause,
+                ModelRefusalCause::MultiplicityNarrowing {
+                    from: mult(0, Some(2)),
+                    to: one(),
+                }
+            );
+        }
+        other => panic!("expected two failures, got {other:?}"),
+    }
+
+    let admitted = fixture_y(|_| {});
+    let mut meter = unlimited_meter();
+    let classification = classify(&admitted, &mut meter).expect("classify admitted");
+    assert_eq!(
+        check_connection(
+            &ModelIndex::build(admitted.clone()),
+            &classification,
+            &pipe,
+            &mut meter,
+        ),
+        ConnectionCheckOutcome::Completed(ConnectionOutcome::Admitted)
+    );
+}
+
+/// TC-236 (FR-086-AC-4): a component and an endpoint that share a display
+/// node but differ in declaration key classify and resolve independently.
+///
+/// Mutation used (derived by reading, not executed): indexing the kind maps
+/// by `key.node` lets the endpoint overwrite or borrow the component's kind
+/// and resolves the endpoint as `Part`, failing the refusal assertion.
+#[trace("TC-236", "FR-086-AC-4")]
+#[test]
+fn tc_236_equal_display_nodes_resolve_independently_by_key() {
+    let part_key = DeclarationKey::fixture("model.Pump");
+    let port_key = DeclarationKey {
+        package: "other/pkg".to_owned(),
+        node: "model.Pump".to_owned(),
+    };
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.tc236"),
+        vec![
+            object_type("model.Sys", None, vec![]),
+            object_type("model.Flow", Some(vec![]), vec![]),
+            component("model.Pump", "model.Sys", "model.Sys", one()),
+            DomainPackageRecord::Endpoint(EndpointRecord {
+                key: port_key.clone(),
+                owning_component: part_key.clone(),
+                value_type: DeclarationKey::fixture("model.Flow"),
+                direction: Some(PortDirection::Out),
+                multiplicity: one(),
+            }),
+        ],
+    );
+    let classification =
+        classify(&domain_package, &mut unlimited_meter()).expect("classify admitted");
+    assert_eq!(classification.refusals, Vec::new());
+
+    let resolved = resolve_kind(&classification, Kind::Part, &part_key).expect("the Part resolves");
+    assert_eq!(resolved.key, part_key);
+    assert_eq!(resolved.kind, Kind::Part);
+
+    let refusal = resolve_kind(&classification, Kind::Part, &port_key)
+        .expect_err("the endpoint is a Port, not a Part");
+    assert_eq!(refusal.code, Code::InvalidModelBinding);
+    assert_eq!(refusal.cause, ModelRefusalCause::WrongExport);
+    assert!(refusal.detail.contains("required kind Part"), "{refusal:?}");
+    assert!(refusal.detail.contains("actual kind Port"), "{refusal:?}");
+    assert_eq!(classification.actual_kind(&part_key), Kind::Part);
+    assert_eq!(classification.actual_kind(&port_key), Kind::Port);
+}
+
+/// TC-241 step 2 (FR-086-AC-5): the Part's key sorts before the Interface's
+/// key, yet the Interface is charged and resolved first, so the Port that
+/// names it classifies `Port`. Each of the three records is charged once.
+///
+/// Mutation used (derived by reading, not executed): collecting interfaces
+/// inline during the record scan, or running the interface pass after the
+/// endpoint pass, leaves the Port's interface type unresolved and refuses it,
+/// and dropping the interface charge leaves the count at two.
+#[trace("TC-241", "FR-086-AC-5")]
+#[test]
+fn tc_241_interfaces_classify_and_charge_before_the_port_that_names_them() {
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.tc241-order"),
+        vec![
+            object_type("model.Sys", None, vec![]),
+            component("model.A.part", "model.Sys", "model.Sys", one()),
+            object_type("model.Z.iface", Some(vec![]), vec![]),
+            endpoint(
+                "model.M.port",
+                "model.A.part",
+                "model.Z.iface",
+                Some(PortDirection::Out),
+                one(),
+            ),
+        ],
+    );
+    let mut meter = unlimited_meter();
+    let classification = classify(&domain_package, &mut meter).expect("classify admitted");
+    assert_eq!(classification.refusals, Vec::new());
+    assert_eq!(
+        classification.actual_kind(&DeclarationKey::fixture("model.M.port")),
+        Kind::Port
+    );
+    assert_eq!(
+        classification.actual_kind(&DeclarationKey::fixture("model.Z.iface")),
+        Kind::Interface
+    );
+    assert_eq!(meter.admission_count(), 3);
+}
+
+/// TC-241 step 4 (FR-086-AC-5): a Port whose interface-type reference is an
+/// ordinary object type, a Part, or a key no record declares records one
+/// wrong-export cascade naming required `Interface` and the reference's
+/// actual kind, and gets no kind.
+///
+/// Mutation used (derived by reading, not executed): never checking the
+/// reference classifies the Port and leaves no refusal.
+#[trace("TC-241", "FR-086-AC-5")]
+#[test]
+fn tc_241_a_port_whose_interface_type_is_not_an_interface_refuses_wrong_export() {
+    for (interface_type, actual) in [
+        ("model.Pump", "none"),
+        ("model.Sys.pump", "Part"),
+        ("model.Nowhere", "none"),
+    ] {
+        let domain_package = fixture_y(|records| {
+            find_endpoint(records, "model.Sys.pump.out").value_type =
+                DeclarationKey::fixture(interface_type);
+        });
+        let classification =
+            classify(&domain_package, &mut unlimited_meter()).expect("classify admitted");
+        let port = DeclarationKey::fixture("model.Sys.pump.out");
+        let port_refusals: Vec<_> = classification
+            .refusals
+            .iter()
+            .filter(|refusal| refusal.detail.contains("model.Sys.pump.out"))
+            .collect();
+        let [refusal] = port_refusals.as_slice() else {
+            panic!(
+                "{interface_type}: one port refusal: {:?}",
+                classification.refusals
+            );
+        };
+        assert_eq!(refusal.code, Code::InvalidModelBinding, "{interface_type}");
+        assert_eq!(
+            refusal.cause,
+            ModelRefusalCause::WrongExport,
+            "{interface_type}"
+        );
+        assert!(
+            refusal.detail.contains("required kind Interface"),
+            "{interface_type}: {refusal:?}"
+        );
+        assert!(
+            refusal.detail.contains(&format!("actual kind {actual}")),
+            "{interface_type}: {refusal:?}"
+        );
+        assert_eq!(
+            classification.actual_kind(&port),
+            Kind::None,
+            "{interface_type}"
+        );
     }
 }

@@ -755,6 +755,17 @@ fn a_qspec_conformant_document_admits_reads_and_classifies() {
             ),
             wire_construct(
                 package_identity,
+                "interface",
+                meaning::SYSTEMS_INTERFACE,
+                serde_json::json!({
+                    "featureOrder": "required",
+                    "fields": "optional",
+                    "operations": "optional",
+                    "supertypes": "optional",
+                }),
+            ),
+            wire_construct(
+                package_identity,
                 "part",
                 meaning::SYSTEMS_PART,
                 serde_json::json!({
@@ -805,7 +816,7 @@ fn a_qspec_conformant_document_admits_reads_and_classifies() {
         serde_json::json!([
             wire_type(
                 &flow_type,
-                serde_json::json!({"module": package_identity, "name": "object_type"}),
+                serde_json::json!({"module": package_identity, "name": "interface"}),
                 serde_json::json!({
                     "supertypes": [],
                     "fields": [wire_field(
@@ -814,6 +825,7 @@ fn a_qspec_conformant_document_admits_reads_and_classifies() {
                         &sys,
                     )],
                     "operations": [],
+                    "featureOrder": [format!("{flow_type}/rate")],
                 }),
             ),
             wire_type(
@@ -977,6 +989,17 @@ fn y10_a_systems_kind_comes_from_the_construct_meaning_not_the_kind_name() {
             ),
             wire_construct(
                 package_identity,
+                "interface",
+                meaning::SYSTEMS_INTERFACE,
+                serde_json::json!({
+                    "featureOrder": "required",
+                    "fields": "optional",
+                    "operations": "optional",
+                    "supertypes": "optional",
+                }),
+            ),
+            wire_construct(
+                package_identity,
                 "part",
                 meaning::SYSTEMS_PART,
                 serde_json::json!({
@@ -1005,8 +1028,17 @@ fn y10_a_systems_kind_comes_from_the_construct_meaning_not_the_kind_name() {
         serde_json::json!([
             wire_type(
                 &node("Flow"),
-                object_kind.clone(),
-                serde_json::json!({"supertypes": [], "fields": [], "operations": []}),
+                serde_json::json!({"module": package_identity, "name": "interface"}),
+                serde_json::json!({
+                    "supertypes": [],
+                    "fields": [wire_field(
+                        &format!("{}/rate", node("Flow")),
+                        "rate",
+                        &node("Sys"),
+                    )],
+                    "operations": [],
+                    "featureOrder": [format!("{}/rate", node("Flow"))],
+                }),
             ),
             wire_type(
                 &node("Sys"),
@@ -1076,8 +1108,8 @@ fn y10_a_systems_kind_comes_from_the_construct_meaning_not_the_kind_name() {
             .iter()
             .filter(|point| **point == ChargePoint::SystemsKind)
             .count(),
-        2,
-        "SysPump and PumpOut are charged; Probe has no systems kind"
+        3,
+        "Flow, SysPump and PumpOut are charged; Probe has no systems kind"
     );
 
     let refusal = resolve_kind(
