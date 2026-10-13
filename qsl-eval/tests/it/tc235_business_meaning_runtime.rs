@@ -115,11 +115,10 @@ fn lifecycle_document(requires: &str) -> serde_json::Value {
         "text": "self.placed and not self.cancelled",
         "origin": crate::tc235_k2::origin("OrderLifecycle/place"),
     }]);
-    // TC-235 M15 states `modifies [OrderLifecycle/placed]`, but its run 3 post
-    // observation also sets `cancelled`, which FR-106 check 11 refuses as
+    // FR-106 check 11 refuses a change outside `modifies` as
     // `frame_violation`/`unauthorized-change` (FR-106-AC-5) before any clause
-    // is evaluated. `cancelled` is added to the frame so run 3 reaches the
-    // postcondition the row asserts; the row and FR-106 disagree.
+    // is evaluated. `cancelled` is added to the frame so the run reaches its
+    // postcondition (QSpec TC-235 M15 differs; details in the private record).
     place["frame"]["modifies"] = serde_json::json!([
         crate::tc235_k2::id("OrderLifecycle/placed"),
         crate::tc235_k2::id("OrderLifecycle/cancelled"),
