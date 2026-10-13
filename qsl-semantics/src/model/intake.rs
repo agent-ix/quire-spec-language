@@ -1403,6 +1403,12 @@ fn validate_with_semantic_ir(document: &PackageDocument) -> Result<(), Vec<Model
         // entry it also flags, so it is filtered out and left entirely to
         // this reader's own per-node classification.
         .filter(|located| located.code != agent_ix_semantic_ir::constructs::UNRESOLVED_FRAME_PATH)
+        // FR-208: a transition's `from`, `to`, `trigger` or `guard` naming a
+        // state, operation or clause that another machine of the package
+        // declares is a phase-3 malformed declaration, not an intake refusal.
+        // The validator flags any reference its own type cannot see; the
+        // normalizer classifies it against the effective machine.
+        .filter(|located| !transition_names_another_machines_member(document, located))
         // Process subtypes may explicitly inherit identityFields from their
         // process supertype. The pinned semantic-IR schema still applies the
         // root-process min-items rule to that wire shape; preserve this one
@@ -1802,6 +1808,55 @@ fn missing_reader_reference(
             "{source_member} ({pointer}) on {node}: {reference:?} names no declaration of this domain package"
         ),
     })
+}
+
+/// Whether a validator diagnostic is a transition `from`/`to`/`trigger`/
+/// `guard` that names a state, operation or clause declared by some type of
+/// the document (FR-208: classified in phase 3, not at intake).
+fn transition_names_another_machines_member(
+    document: &PackageDocument,
+    located: &agent_ix_semantic_ir::diag::Located,
+) -> bool {
+    let Some(pointer) = located.pointer.strip_prefix("/ir") else {
+        return false;
+    };
+    let Some((owner, member)) = pointer.rsplit_once('/') else {
+        return false;
+    };
+    if !owner.contains("/transitions/") {
+        return false;
+    }
+    let Some(reference) = document.tree.pointer(pointer).and_then(Value::as_str) else {
+        return false;
+    };
+    let declared_by_a_type = |collection: &str, field: &str| {
+        document
+            .tree
+            .get("types")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            // FR-208: only a state machine's own members count; a machine
+            // declares `transitions`, an object type does not.
+            .filter(|declaration| declaration.get("transitions").is_some_and(Value::is_array))
+            .filter_map(|declaration| declaration.get(collection)?.as_array())
+            .flatten()
+            .any(|entry| entry.get(field).and_then(Value::as_str) == Some(reference))
+    };
+    match (member, located.code) {
+        ("from" | "to", code)
+            if code == agent_ix_semantic_ir::constructs::UNRESOLVED_CONSTRUCT_REF =>
+        {
+            declared_by_a_type("states", "identity")
+        }
+        ("trigger", code) if code == agent_ix_semantic_ir::constructs::UNRESOLVED_CONSTRUCT_REF => {
+            declared_by_a_type("operations", "identity")
+        }
+        ("guard", code) if code == agent_ix_semantic_ir::rules::DANGLING_CLAUSE_REF => {
+            declared_by_a_type("clauses", "clauseId")
+        }
+        _ => false,
+    }
 }
 
 /// Whether any node of the document declares `identity`.
