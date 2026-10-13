@@ -17,7 +17,7 @@ pub(super) struct MeaningBindingContext<'a, 'm> {
     pub(super) type_value: &'a Value,
     pub(super) node: &'a str,
     pub(super) at: &'a str,
-    pub(super) type_meanings: &'a HashMap<&'m str, &'m str>,
+    pub(super) meanings_by_node: &'a HashMap<&'m str, &'m str>,
     pub(super) records: &'a mut Vec<DomainPackageRecord>,
     pub(super) pending: &'a mut Vec<PendingFrame>,
 }

@@ -3658,7 +3658,7 @@ fn read_type_node(
             type_value,
             node,
             at,
-            type_meanings,
+            meanings_by_node: type_meanings,
             records: &mut records,
             pending,
         };
