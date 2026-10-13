@@ -106,7 +106,9 @@ use qsl_semantics::check::{
 };
 use qsl_semantics::library::{ImportView, LibraryName};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
-use qsl_semantics::model::intake::{admit_unit_with_cancel, SelectedModel, UnitIntakeCause};
+use qsl_semantics::model::intake::{
+    admit_unit_with_cancel, SelectedModel, SelectedModels, UnitIntakeCause,
+};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::value::identity_limit;
 use quire_exact::{Cancel, Meter, ScalarLimits, Value};
@@ -349,7 +351,7 @@ impl ParsedSource {
 /// I1, with the package documents they were admitted from.
 #[derive(Clone, Debug, Default)]
 pub struct AdmittedModels {
-    models: Vec<SelectedModel>,
+    models: SelectedModels,
     packages: BTreeMap<[u8; 32], Vec<u8>>,
 }
 
@@ -607,7 +609,7 @@ fn select_models(
     packages: &BTreeMap<[u8; 32], Vec<u8>>,
     limits: ModelNormalizationLimits,
     cancel: &Cancel,
-) -> Result<Vec<SelectedModel>, Box<CompileRefusal>> {
+) -> Result<SelectedModels, Box<CompileRefusal>> {
     let raw = parsed.source().reference();
     let models = admit_unit_with_cancel(&parsed.unit.selections().models, packages, limits, cancel)
         .map_err(|refusal| {
@@ -617,10 +619,7 @@ fn select_models(
             })
         })?;
     let source_limits = parsed.syntax.effective_limits();
-    models
-        .into_iter()
-        .map(|model| parse_operation_clauses(model, source_limits))
-        .collect()
+    parse_operation_clauses(models, source_limits)
 }
 
 /// FR-103: parses each kept `quire`-language `requires` and `ensures` clause
@@ -629,10 +628,10 @@ fn select_models(
 /// does not parse refuses, located at the operation's `Operation.pre[k]` or
 /// `Operation.post[k]` member.
 fn parse_operation_clauses(
-    model: SelectedModel,
+    models: SelectedModels,
     limits: SourceLimits,
-) -> Result<SelectedModel, Box<CompileRefusal>> {
-    model
+) -> Result<SelectedModels, Box<CompileRefusal>> {
+    models
         .with_parsed_operation_clauses(|text| parse_clause_text(text, limits))
         .map_err(|failure| {
             Box::new(CompileRefusal::OperationClause {
@@ -768,7 +767,7 @@ struct Resolution<'a> {
 struct Frame {
     raw: RawSourceRef,
     unit: ParsedUnit,
-    models: Vec<SelectedModel>,
+    models: SelectedModels,
     lock: LockEvidence,
     /// The index of the import being resolved.
     next: usize,
@@ -777,7 +776,7 @@ struct Frame {
 }
 
 impl Frame {
-    fn new(parsed: &ParsedSource, models: Vec<SelectedModel>, lock: LockEvidence) -> Self {
+    fn new(parsed: &ParsedSource, models: SelectedModels, lock: LockEvidence) -> Self {
         let imports = parsed.unit.selections().imports.len();
         Self {
             raw: parsed.source().reference().clone(),
@@ -963,7 +962,7 @@ impl<'a> Resolution<'a> {
     fn check_unit(
         &mut self,
         parsed: &ParsedSource,
-        models: Vec<SelectedModel>,
+        models: SelectedModels,
         lock: &LockEvidence,
     ) -> Result<pkg::CheckedPackage, Box<CompileRefusal>> {
         let mut root = Frame::new(parsed, models, lock.clone());

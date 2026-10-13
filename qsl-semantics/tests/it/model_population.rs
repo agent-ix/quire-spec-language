@@ -3553,35 +3553,19 @@ fn qsl204_a_diamond_over_ancestor_steps_refuses_admission_naming_the_limit() {
         ..ModelNormalizationLimits::UNLIMITED
     };
     match admit_p1_under(&domain_package, over).map_err(|outcome| *outcome) {
-        Err(NormalizeOutcome::Refused(refusals)) => {
-            let refusal = refusals.into_first();
-            assert_eq!(refusal.code, Code::ResourceExhausted);
+        Err(NormalizeOutcome::Incomplete(incomplete)) => {
             assert_eq!(
-                refusal.cause,
-                ModelRefusalCause::ancestor_steps(
-                    DeclarationKey::fixture("model.D"),
-                    5,
-                    qsl_foundation::Setting::ModelAncestorSteps,
-                )
-            );
-            let exceeded = refusal
-                .cause
-                .denial()
-                .expect("a step ceiling is a denied charge");
-            assert_eq!(
-                exceeded.setting(),
-                qsl_foundation::Setting::ModelAncestorSteps
-            );
-            assert_eq!(
-                exceeded.actual(),
-                u128::from(match &refusal.cause {
-                    ModelRefusalCause::AncestorSteps { limit, .. }
-                    | ModelRefusalCause::FamilySteps { limit, .. } => *limit,
-                    other => panic!("unexpected {other:?}"),
-                }) + 1
+                incomplete,
+                qsl_semantics::model::accounting::Incomplete {
+                    limit_kind: qsl_semantics::model::accounting::LimitKind::AncestorSteps,
+                    limit: 5,
+                    consumed: 5,
+                    next_charge: 1,
+                    charge_point: qsl_semantics::model::accounting::ChargePoint::ModelAncestorEdge,
+                }
             );
         }
-        other => panic!("expected an ancestor-steps refusal, got {other:?}"),
+        other => panic!("expected an ancestor-steps denial, got {other:?}"),
     }
 }
 

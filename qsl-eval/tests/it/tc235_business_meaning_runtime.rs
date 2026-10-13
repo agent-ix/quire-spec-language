@@ -211,15 +211,10 @@ fn model_package(
         ModelNormalizationLimits::default(),
     )
     .expect("M15 model selection admits")
-    .into_iter()
-    .map(|model| {
-        model
-            .with_parsed_operation_clauses(|text| {
-                qsl_forms::parse_clause_text(text, qsl_cst::Limits::default())
-            })
-            .expect("M15 kept operation clauses parse")
+    .with_parsed_operation_clauses(|text| {
+        qsl_forms::parse_clause_text(text, qsl_cst::Limits::default())
     })
-    .collect();
+    .expect("M15 kept operation clauses parse");
     let declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         built,

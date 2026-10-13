@@ -14,7 +14,6 @@ mod business_meanings;
 mod child_composite;
 mod complete_value_lock;
 mod dispatch_linking;
-mod field_presence;
 mod identity_golden_vectors;
 mod ieee_profiles;
 mod import_view_names;
@@ -22,6 +21,7 @@ mod integer_division;
 mod library_resolution;
 #[cfg(feature = "test-support")]
 mod model_conformance;
+mod model_conformance_boundary;
 #[cfg(feature = "test-support")]
 mod model_dispatch;
 mod model_intake;

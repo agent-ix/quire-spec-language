@@ -28,7 +28,7 @@ use quire_exact::{EffectiveId, Identifier, NodeKey, Origin, ValueType};
 
 use super::check::{bind_parameters, Signatures, StateContext, Typer};
 use super::claims::{wire, RequirementRecord};
-use super::facts::Definedness;
+use super::facts::{CheckedFacts, Definedness};
 use super::ir::{CheckedBody, CheckedNode, DispatchTable, NodeKind, Observation};
 use super::lowering::{AdmittedModel, LoweredClause};
 use super::observation::Observations;
@@ -288,6 +288,10 @@ pub struct ClauseDeclarations<'a> {
     /// The caller's cancellation handle, polled at every node charge of
     /// this clause's check (FR-276).
     pub(crate) cancel: Option<&'a quire_exact::Cancel>,
+    /// The staged model type admission, which the clause reads through its
+    /// immediate parents while the conformance stage has not yet judged them.
+    pub(crate) staged:
+        Option<&'a std::cell::RefCell<quire_semantic_value::declaration::PendingTypeEnvironment>>,
 }
 
 /// One population domain of a requested item (FR-104 "Requirements"): the
@@ -332,6 +336,7 @@ pub struct ClauseClaim {
 /// lowering keys it.
 #[derive(Debug)]
 pub struct TypedStateClause {
+    pub(crate) facts: CheckedFacts,
     pub(crate) parameters: Vec<(String, ValueType)>,
     pub(crate) body: CheckedBody,
     pub(crate) slots: usize,
@@ -437,6 +442,22 @@ impl FamilyContract for ProtocolClauseFamily {
     }
 }
 
+/// A refused parent read of a clause as the refusal that reports it.
+fn parent_slot_refusal(
+    failure: super::lowering::ParentSlotFailure,
+    location: &Location,
+) -> CheckRefusal {
+    use super::lowering::ParentSlotFailure;
+    let cause = match failure {
+        ParentSlotFailure::Incomplete(incomplete) => CheckCause::ModelIncomplete(incomplete),
+        ParentSlotFailure::Pending(failure) => super::pending_refusal(failure),
+    };
+    CheckRefusal {
+        location: location.clone(),
+        cause,
+    }
+}
+
 /// FR-103: checks a kept operation clause as `check_clause` checks a unit
 /// state clause, and returns the package's running node total after it. The
 /// checked body is dropped: a kept clause yields a refusal or nothing.
@@ -475,7 +496,20 @@ pub(crate) fn check_clause(
     .with_complete_value(form.complete_value)
     .with_context(cx.reborrow(input.scope));
     bind_parameters(&mut typer, &parameters, location)?;
+    let mut parent_projections = BTreeMap::new();
+    if let (StateClauseKind::Postcondition, Some(operation), Some(staged)) =
+        (form.kind, form.operation.as_ref(), input.staged)
+    {
+        let mut staged = staged.borrow_mut();
+        for model in input.models {
+            let projected = model
+                .parent_projections(form.context, operation, &mut staged, u64::MAX)
+                .map_err(|failure| parent_slot_refusal(failure, location))?;
+            parent_projections.extend(projected);
+        }
+    }
     typer.enter_state_clause(StateContext {
+        parent_projections,
         kind: form.kind,
         operation: form
             .operation
@@ -494,13 +528,13 @@ pub(crate) fn check_clause(
     let slot_names = typer.slot_names().to_vec();
     let formed_units = typer.into_formed_units();
     let observations = Observations::of(body.root(), form.observation(), parameters.len());
-    Definedness::new(
+    let facts = Definedness::new(
         parameters.len(),
         input.dispatch_tables,
         &input.scope.dispatch_operations,
     )
     .with_observations(&observations)
-    .check(body.root())?;
+    .check_and_retain(body.root())?;
 
     // The populations the clause ranges over: its context's, already
     // resolved by the assembler (FR-104 "Resolution"), then each one a
@@ -536,6 +570,7 @@ pub(crate) fn check_clause(
         .into_iter()
         .collect();
     Ok(TypedStateClause {
+        facts,
         parameters,
         body,
         slots,

@@ -51,7 +51,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, OnceLock};
 
 use crate::model::domain_package::{
-    DomainPackage, DomainPackageRecord, FieldMemberRecord, OperationMemberRecord,
+    DomainPackage, DomainPackageRecord, FieldMemberRecord, NativeValueType, OperationMemberRecord,
     ScalarValueDomain, ValueTypeRef,
 };
 use crate::model::key::DeclarationKey;
@@ -126,6 +126,7 @@ struct Ancestry {
 pub struct ModelIndex {
     package: Arc<DomainPackage>,
     records: RecordIndex,
+    type_fact_counts: BTreeMap<DeclarationKey, u64>,
 }
 
 /// The positional index [`ModelIndex`] keeps over its package's records.
@@ -150,10 +151,16 @@ pub(crate) struct RecordIndex {
     operations: BTreeMap<DeclIdx, usize>,
     /// The last scalar record's `[lower, upper]` under each key.
     scalars: HashMap<DeclIdx, (i128, i128)>,
+    /// Each native-alias scalar's target.
+    scalar_natives: HashMap<DeclIdx, NativeValueType>,
     /// Each member's owning type, from the last member record under its key.
     member_owner: HashMap<DeclIdx, DeclIdx>,
     /// Each owner's field members, in record order.
     fields_by_owner: HashMap<DeclIdx, Vec<DeclIdx>>,
+    /// Each original declaration's position in the admitted records.
+    declarations: HashMap<DeclIdx, usize>,
+    /// Every qualified feature and systems member, keyed by owning type.
+    members_by_owner: HashMap<DeclIdx, Vec<DeclIdx>>,
     /// Each owner's operation members, in record order.
     operations_by_owner: HashMap<DeclIdx, Vec<DeclIdx>>,
     /// Original clause record positions, indexed once under their owner.
@@ -181,8 +188,11 @@ impl PartialEq for RecordIndex {
             && self.fields == other.fields
             && self.operations == other.operations
             && self.scalars == other.scalars
+            && self.scalar_natives == other.scalar_natives
             && self.member_owner == other.member_owner
             && self.fields_by_owner == other.fields_by_owner
+            && self.declarations == other.declarations
+            && self.members_by_owner == other.members_by_owner
             && self.operations_by_owner == other.operations_by_owner
             && self.clauses_by_owner == other.clauses_by_owner
             && self.redefiners_by_owner == other.redefiners_by_owner
@@ -249,12 +259,25 @@ fn referenced_keys(record: &DomainPackageRecord) -> Vec<&DeclarationKey> {
         DomainPackageRecord::PersistenceInterface(interface) => std::iter::once(&interface.key)
             .chain(&interface.persists)
             .collect(),
-        DomainPackageRecord::ScalarType(_)
-        | DomainPackageRecord::Component(_)
-        | DomainPackageRecord::Endpoint(_)
-        | DomainPackageRecord::Relationship(_)
-        | DomainPackageRecord::Allocation(_)
-        | DomainPackageRecord::Population(_) => vec![record.key()],
+        DomainPackageRecord::Component(part) => {
+            vec![&part.key, &part.owning_type, &part.value_type]
+        }
+        DomainPackageRecord::Endpoint(port) => {
+            vec![&port.key, &port.owning_component, &port.value_type]
+        }
+        DomainPackageRecord::Relationship(relationship) => vec![
+            &relationship.key,
+            &relationship.source.type_identity,
+            &relationship.target.type_identity,
+        ],
+        DomainPackageRecord::Allocation(allocation) => vec![
+            &allocation.key,
+            &allocation.source_element,
+            &allocation.target_element,
+        ],
+        DomainPackageRecord::ScalarType(_) | DomainPackageRecord::Population(_) => {
+            vec![record.key()]
+        }
     }
 }
 
@@ -265,18 +288,147 @@ impl ModelIndex {
     pub fn build(domain_package: impl Into<Arc<DomainPackage>>) -> Self {
         let package = domain_package.into();
         let records = RecordIndex::build(&package);
-        Self { package, records }
+        let type_fact_counts = records.type_fact_counts();
+        Self {
+            package,
+            records,
+            type_fact_counts,
+        }
     }
 
     /// `package` with `records`, the index normalization already built over
     /// it.
-    pub(crate) fn from_parts(package: Arc<DomainPackage>, records: RecordIndex) -> Self {
+    pub(crate) fn from_parts(
+        package: Arc<DomainPackage>,
+        records: RecordIndex,
+        type_fact_counts: BTreeMap<DeclarationKey, u64>,
+    ) -> Self {
         debug_assert_eq!(
             records.record_count,
             package.records.len(),
             "the record index was built over this package's records"
         );
-        Self { package, records }
+        Self {
+            package,
+            records,
+            type_fact_counts,
+        }
+    }
+
+    /// Actual qualify/inherit fact count for an object type; non-object
+    /// value-domain conversion is priced as one work unit.
+    pub(crate) fn type_fact_count(&self, value_type: &ValueTypeRef) -> u64 {
+        value_type
+            .as_package()
+            .and_then(|key| self.type_fact_counts.get(key))
+            .copied()
+            .unwrap_or(1)
+    }
+
+    /// FR-151 conformance after its owning axis charge has admitted.
+    /// Every walk has its own edge ceiling; its denial does not refund work.
+    pub(crate) fn conformance_walk(
+        &self,
+        s: &DeclarationKey,
+        t: &DeclarationKey,
+        limit: u64,
+    ) -> Result<bool, crate::model::accounting::Incomplete> {
+        if s == t {
+            return Ok(true);
+        }
+        let Some(start) = self.records.position(s) else {
+            return Ok(false);
+        };
+        let mut stack = vec![start];
+        let mut expanded = std::collections::HashSet::new();
+        let mut consumed = 0;
+        while let Some(current) = stack.pop() {
+            if !expanded.insert(current) {
+                continue;
+            }
+            for general in &self.records.generals[current.0] {
+                if consumed == limit {
+                    return Err(crate::model::accounting::Incomplete {
+                        limit_kind: crate::model::accounting::LimitKind::AncestorSteps,
+                        limit,
+                        consumed,
+                        next_charge: 1,
+                        charge_point: crate::model::accounting::ChargePoint::ModelAncestorEdge,
+                    });
+                }
+                consumed += 1;
+                if self.records.key(*general) == t {
+                    return Ok(true);
+                }
+                stack.push(*general);
+            }
+        }
+        Ok(false)
+    }
+
+    /// `owner`'s direct supertypes, ascending by key: the first edge of every
+    /// lineage that leaves `owner` upward.
+    pub(crate) fn direct_supertypes(&self, owner: &DeclarationKey) -> Vec<&DeclarationKey> {
+        let Some(position) = self.records.position(owner) else {
+            return Vec::new();
+        };
+        let mut generals: Vec<_> = self.records.generals[position.0]
+            .iter()
+            .map(|general| self.records.key(*general))
+            .collect();
+        generals.sort();
+        generals.dedup();
+        generals
+    }
+
+    /// Object reachability or exact native/scalar domain conversion.
+    pub(crate) fn value_conformance_walk(
+        &self,
+        s: &ValueTypeRef,
+        t: &ValueTypeRef,
+        limit: u64,
+    ) -> Result<bool, crate::model::accounting::Incomplete> {
+        match (s, t) {
+            (ValueTypeRef::Native(a), ValueTypeRef::Native(b)) => Ok(a == b),
+            // A bounded integer scalar is an Integer; a native alias is its
+            // own target.
+            (ValueTypeRef::Package(a), ValueTypeRef::Native(b)) => {
+                let alias = self
+                    .records
+                    .position(a)
+                    .and_then(|position| self.records.scalar_natives.get(&position));
+                Ok(alias == Some(b)
+                    || (self.scalar_bounds(a).is_some() && *b == NativeValueType::Integer))
+            }
+            (ValueTypeRef::Package(a), ValueTypeRef::Package(b)) => {
+                match (self.scalar_bounds(a), self.scalar_bounds(b)) {
+                    (Some((lo, hi)), Some((parent_lo, parent_hi))) => {
+                        Ok(parent_lo <= lo && hi <= parent_hi)
+                    }
+                    (Some(_), None) | (None, Some(_)) => Ok(false),
+                    (None, None) => self.conformance_walk(a, b, limit),
+                }
+            }
+            _ => Ok(false),
+        }
+    }
+
+    /// All declared field redefinition links followed by an effect test,
+    /// including the written member itself; cycles remain bounded by records.
+    pub(crate) fn field_lineage(&self, field: &DeclarationKey) -> Vec<&DeclarationKey> {
+        let Some(mut current) = self.records.position(field) else {
+            return Vec::new();
+        };
+        let mut path = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        while seen.insert(current) {
+            path.push(self.records.key(current));
+            let Some(next) = self.records.redefines.get(&current) else {
+                break;
+            };
+            current = *next;
+        }
+        path
     }
 
     /// The indexed package.
@@ -339,17 +491,6 @@ impl ModelIndex {
     ) -> Result<bool, ModelRefusal> {
         self.records.conforms(s, t, max_steps, setting)
     }
-
-    /// See [`RecordIndex::value_type_conforms`].
-    pub(crate) fn value_type_conforms(
-        &self,
-        s: &ValueTypeRef,
-        t: &ValueTypeRef,
-        max_steps: u64,
-        setting: qsl_foundation::Setting,
-    ) -> Result<bool, ModelRefusal> {
-        self.records.value_type_conforms(s, t, max_steps, setting)
-    }
 }
 
 /// The record at `position`, when it is a field member.
@@ -372,6 +513,45 @@ fn operation_at(
 }
 
 impl RecordIndex {
+    /// Count every declared inheritance path using one explicit-stack
+    /// dynamic program. Structural normalization refuses cycles before its
+    /// resulting view is passed to conformance.
+    fn type_fact_counts(&self) -> BTreeMap<DeclarationKey, u64> {
+        let mut counts: HashMap<DeclIdx, u64> = HashMap::new();
+        for key in self.object_types() {
+            let Some(start) = self.position(key) else {
+                continue;
+            };
+            let mut active = std::collections::HashSet::new();
+            let mut stack = vec![(start, false)];
+            while let Some((current, closing)) = stack.pop() {
+                if counts.contains_key(&current) {
+                    continue;
+                }
+                if closing {
+                    let count = self.generals[current.0].iter().fold(1_u64, |sum, general| {
+                        sum.saturating_add(counts.get(general).copied().unwrap_or(u64::MAX))
+                    });
+                    counts.insert(current, count);
+                    active.remove(&current);
+                } else if active.insert(current) {
+                    stack.push((current, true));
+                    for general in self.generals[current.0].iter().rev() {
+                        if !counts.contains_key(general) {
+                            stack.push((*general, false));
+                        }
+                    }
+                } else {
+                    counts.insert(current, u64::MAX);
+                }
+            }
+        }
+        counts
+            .into_iter()
+            .map(|(key, count)| (self.key(key).clone(), count))
+            .collect()
+    }
+
     /// Reads `domain_package`'s records once into the index.
     pub(crate) fn build(domain_package: &DomainPackage) -> Self {
         let mut keys: Vec<DeclarationKey> = domain_package
@@ -398,8 +578,11 @@ impl RecordIndex {
             fields: HashMap::new(),
             operations: BTreeMap::new(),
             scalars: HashMap::new(),
+            scalar_natives: HashMap::new(),
             member_owner: HashMap::new(),
             fields_by_owner: HashMap::new(),
+            declarations: HashMap::new(),
+            members_by_owner: HashMap::new(),
             operations_by_owner: HashMap::new(),
             clauses_by_owner: HashMap::new(),
             redefiners_by_owner: HashMap::new(),
@@ -409,8 +592,12 @@ impl RecordIndex {
             keys: Vec::new(),
             positions: HashMap::new(),
         };
+        let mut element_owners = HashMap::new();
+        let mut ports = BTreeMap::new();
+        let mut end_members = Vec::new();
         for (record_position, record) in domain_package.records.iter().enumerate() {
             let own = at(record.key());
+            index.declarations.insert(own, record_position);
             match record {
                 DomainPackageRecord::ObjectType(object) => {
                     let flags = &mut index.flags[own.0];
@@ -418,11 +605,14 @@ impl RecordIndex {
                     flags.abstract_type |= object.abstract_type;
                     flags.non_root |= !object.supertypes.is_empty();
                     index.generals[own.0].extend(object.supertypes.iter().map(at));
+                    element_owners.insert(own, own);
                 }
                 DomainPackageRecord::FieldMember(field) => {
                     let owner = at(&field.owner);
                     index.flags[own.0].field_member = true;
                     index.member_owner.insert(own, owner);
+                    element_owners.insert(own, owner);
+                    index.members_by_owner.entry(owner).or_default().push(own);
                     index.fields_by_owner.entry(owner).or_default().push(own);
                     if let Some(target) = &field.redefines {
                         index.note_redefiner(owner, record_position, own, at(target), true);
@@ -443,6 +633,8 @@ impl RecordIndex {
                     let owner = at(&operation.owner);
                     index.flags[own.0].operation_member = true;
                     index.member_owner.insert(own, owner);
+                    element_owners.insert(own, owner);
+                    index.members_by_owner.entry(owner).or_default().push(own);
                     index
                         .operations_by_owner
                         .entry(owner)
@@ -487,25 +679,78 @@ impl RecordIndex {
                 }
                 DomainPackageRecord::ScalarType(scalar) => {
                     index.flags[own.0].scalar_type = true;
-                    if let ScalarValueDomain::Integer { lower, upper } = &scalar.domain {
-                        index.scalars.insert(own, (*lower, *upper));
+                    match &scalar.domain {
+                        ScalarValueDomain::Integer { lower, upper } => {
+                            index.scalars.insert(own, (*lower, *upper));
+                        }
+                        ScalarValueDomain::Native(native) => {
+                            index.scalar_natives.insert(own, *native);
+                        }
                     }
                 }
-                // FR-152 systems-model records and FR-153 population
-                // declarations are read by `crate::model::systems` and
+                // FR-153 population declarations are read by
                 // `crate::model::normalize` from the records themselves.
-                DomainPackageRecord::Component(_)
-                | DomainPackageRecord::Endpoint(_)
-                | DomainPackageRecord::Relationship(_)
-                | DomainPackageRecord::Allocation(_)
-                | DomainPackageRecord::Population(_) => {}
                 DomainPackageRecord::Enum(_) => {
                     index.flags[own.0].variant_type = true;
                 }
                 // A case carries no inheritance, field or operation
                 // structure for the index to hold.
                 DomainPackageRecord::Variant(_) => {}
+                DomainPackageRecord::Component(part) => {
+                    let owner = at(&part.owning_type);
+                    element_owners.insert(own, owner);
+                    index.members_by_owner.entry(owner).or_default().push(own);
+                }
+                DomainPackageRecord::Endpoint(port) => {
+                    ports.insert(own, at(&port.owning_component));
+                }
+                DomainPackageRecord::Relationship(relationship) => {
+                    end_members.push((
+                        own,
+                        at(&relationship.source.type_identity),
+                        at(&relationship.target.type_identity),
+                        relationship.declared_at.is_none(),
+                    ));
+                }
+                DomainPackageRecord::Allocation(allocation) => {
+                    end_members.push((
+                        own,
+                        at(&allocation.source_element),
+                        at(&allocation.target_element),
+                        true,
+                    ));
+                }
+                DomainPackageRecord::Population(_) => {}
             }
+        }
+        // Resolve ports from the recorded owning part, then end-owner
+        // members. This reads the one index, not a second record scan or
+        // kind checker. Connection and allocation source ends come first.
+        for (port, part) in &ports {
+            if let Some(owner) = element_owners.get(part).copied() {
+                element_owners.insert(*port, owner);
+                index.members_by_owner.entry(owner).or_default().push(*port);
+            }
+        }
+        for (member, source, target, both_end_owners) in end_members {
+            let ends = if both_end_owners {
+                vec![source, target]
+            } else {
+                vec![source]
+            };
+            for end in ends {
+                if let Some(owner) = element_owners.get(&end).copied() {
+                    index
+                        .members_by_owner
+                        .entry(owner)
+                        .or_default()
+                        .push(member);
+                }
+            }
+        }
+        for members in index.members_by_owner.values_mut() {
+            members.sort();
+            members.dedup();
         }
         index.keys = keys;
         index.positions = positions;
@@ -898,26 +1143,6 @@ impl RecordIndex {
             Some(_) | None => Err(exceeded()),
         }
     }
-
-    /// [`Self::conforms`], lifted to [`ValueTypeRef`]: a native value type
-    /// conforms only to itself (QSL declares no generalization among native
-    /// value types), and a native and a package value type never conform to
-    /// one another.
-    pub(crate) fn value_type_conforms(
-        &self,
-        s: &ValueTypeRef,
-        t: &ValueTypeRef,
-        max_steps: u64,
-        setting: qsl_foundation::Setting,
-    ) -> Result<bool, ModelRefusal> {
-        match (s, t) {
-            (ValueTypeRef::Native(a), ValueTypeRef::Native(b)) => Ok(a == b),
-            (ValueTypeRef::Package(s_key), ValueTypeRef::Package(t_key)) => {
-                self.conforms(s_key, t_key, max_steps, setting)
-            }
-            _ => Ok(false),
-        }
-    }
 }
 
 #[cfg(test)]
@@ -1067,25 +1292,11 @@ mod tests {
         assert_eq!(string.to_string(), "ix://quire/native/String");
 
         let package = DomainPackage::new(DomainPackageRef::fixture("native-leaves"), Vec::new());
-        let index = RecordIndex::build(&package);
+        let index = ModelIndex::build(package);
         for native in [&uuid, &string] {
-            assert!(index
-                .value_type_conforms(
-                    native,
-                    native,
-                    0,
-                    qsl_foundation::Setting::ModelAncestorSteps
-                )
-                .expect("native conformance is not fallible"));
+            assert_eq!(index.value_conformance_walk(native, native, 0), Ok(true));
         }
-        assert!(!index
-            .value_type_conforms(
-                &uuid,
-                &string,
-                0,
-                qsl_foundation::Setting::ModelAncestorSteps
-            )
-            .expect("native conformance is not fallible"));
+        assert_eq!(index.value_conformance_walk(&uuid, &string, 0), Ok(false));
     }
 
     #[test]

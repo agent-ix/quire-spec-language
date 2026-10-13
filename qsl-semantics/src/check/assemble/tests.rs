@@ -60,7 +60,7 @@ fn assemble_as(
     PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         unit,
-        Vec::new(),
+        crate::model::intake::SelectedModels::default(),
         Vec::new(),
     )
 }
@@ -137,7 +137,6 @@ fn a_state_machine_meaning_is_emitted_as_an_object_type() {
                 effect: OperationEffect::default(),
                 requires: Vec::new(),
                 ensures: Vec::new(),
-                own_postcondition_clauses: Vec::new(),
                 has_body: true,
                 redefines: None,
             }),
@@ -583,7 +582,7 @@ fn assembler_allocation_cause_preserves_native_request_unit() {
             &BTreeMap::new(),
             TypeEnvironmentLimits::default(),
             &Cancel::new(),
-            |_, _, _, _| Err(EnvironmentFailure::Allocation(request)),
+            |_, _, _, _| -> Result<(), _> { Err(EnvironmentFailure::Allocation(request)) },
         )
         .expect_err("injected registry allocation failure must refuse admission");
         let [error] = refusal.errors.as_slice() else {
@@ -622,7 +621,7 @@ fn assembler_capacity_cause_preserves_native_request_unit() {
             &BTreeMap::new(),
             TypeEnvironmentLimits::default(),
             &Cancel::new(),
-            |_, _, _, _| Err(EnvironmentFailure::Capacity(request)),
+            |_, _, _, _| -> Result<(), _> { Err(EnvironmentFailure::Capacity(request)) },
         )
         .expect_err("injected reservation overflow must refuse admission");
         let [error] = refusal.errors.as_slice() else {
@@ -1915,7 +1914,7 @@ fn the_decimal_scale_bound_refuses_with_a_work_budget_limit() {
         let assembled = PackageDeclarations::assemble_with_limits(
             parsed.source().reference().clone(),
             unit,
-            Vec::new(),
+            crate::model::intake::SelectedModels::default(),
             Vec::new(),
             crate::check::AssemblyLimits {
                 decimal_scale: 4,
@@ -2148,6 +2147,7 @@ fn admit_composites(
         TypeEnvironmentLimits::default(),
         &Cancel::new(),
     )
+    .map(|admitted| admitted.types)
 }
 
 /// QSL-732: a composite generalization cycle refuses with the typed cause,

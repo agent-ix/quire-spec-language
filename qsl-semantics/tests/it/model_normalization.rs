@@ -125,7 +125,6 @@ fn operation_member_redefining(
         },
         requires: Vec::new(),
         ensures: Vec::new(),
-        own_postcondition_clauses: Vec::new(),
         has_body: true,
         redefines: redefines.map(DeclarationKey::fixture),
     })
@@ -2267,7 +2266,7 @@ fn n10_duplicate_path_refuses_by_the_semantic_check() {
     );
     let duplicate_inputs = mutated.derivation[0].inputs.clone();
     mutated.derivation[1].inputs = duplicate_inputs;
-    let (cause, _detail) = mutated
+    let (cause, detail) = mutated
         .validate_derivation()
         .expect_err("a derivation retaining the same input path twice must be refused");
     assert_eq!(
@@ -2277,6 +2276,55 @@ fn n10_duplicate_path_refuses_by_the_semantic_check() {
             earlier: 0,
             later: 1,
         }
+    );
+    assert_eq!(
+        detail,
+        "ix://test/orders/A/x derivation retains the same input path at positions 0 and 1"
+    );
+}
+
+#[trace("QSpec-TC-195", "QSpec-TC-196")]
+#[test]
+fn derivation_duplicate_comparison_includes_the_rule() {
+    use qsl_semantics::model::key::{Fact, FactInputs, RULE_SUBSET};
+    let view = completed(&fixture_f2(), ModelNormalizationLimits::UNLIMITED);
+    let type_d = find_type(&view, "ix://test/orders/D");
+    let original = find_member(&view, &type_d.effective_id, "ix://test/orders/A/x");
+    let mut preimage = original.preimage.clone();
+    let inputs = FactInputs::from(vec![
+        DeclarationKey::fixture("ix://test/orders/D/child"),
+        DeclarationKey::fixture("ix://test/orders/A/x"),
+    ]);
+    preimage.derivation = vec![
+        Fact {
+            ordinal: 0,
+            rule: RULE_REDEFINE,
+            inputs: inputs.clone(),
+        },
+        Fact {
+            ordinal: 1,
+            rule: RULE_SUBSET,
+            inputs,
+        },
+    ];
+    assert_eq!(
+        preimage.validate_derivation(),
+        Ok(()),
+        "distinct rules may retain identical inputs"
+    );
+    preimage.derivation[1].rule = RULE_REDEFINE;
+    assert_eq!(
+        preimage.validate_derivation(),
+        Err((
+            ModelRefusalCause::DuplicatePath {
+                original: preimage.original.clone(),
+                earlier: 0,
+                later: 1
+            },
+            "ix://test/orders/A/x derivation retains the same input path at positions 0 and 1"
+                .to_owned(),
+        )),
+        "the same rule/path remains refused with its native payload"
     );
 }
 

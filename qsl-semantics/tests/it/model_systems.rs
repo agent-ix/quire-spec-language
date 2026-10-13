@@ -158,7 +158,6 @@ fn operation_run() -> DomainPackageRecord {
         effect: OperationEffect::default(),
         requires: Vec::new(),
         ensures: Vec::new(),
-        own_postcondition_clauses: vec![],
         has_body: true,
         redefines: None,
     })
