@@ -102,18 +102,60 @@ pub struct AdmittedPackage {
     members: BTreeMap<String, BTreeMap<String, usize>>,
 }
 
-/// The declaration's own `identity` member: a population's, an operation's,
-/// or a type-definition's.
-fn identity_member(record: &DomainPackageRecord) -> MemberPath {
-    let root = match record {
-        DomainPackageRecord::Population(_) => MemberRoot::PopulationDefinition,
-        DomainPackageRecord::OperationMember(_) => MemberRoot::Operation,
-        _ => MemberRoot::TypeDefinition,
+/// The declaration's own `identity` member. A field, operation, clause or
+/// relationship is a member of its declaring type, at its position in that
+/// type's array (records keep the reader's order); a population is its own
+/// declaration; every other record is a type definition.
+fn identity_member(records: &[DomainPackageRecord], record: &DomainPackageRecord) -> MemberPath {
+    // Position among the earlier records of the same kind and owner.
+    let position = |same: &dyn Fn(&DomainPackageRecord) -> bool| {
+        records
+            .iter()
+            .take_while(|other| !std::ptr::eq(*other, record))
+            .filter(|other| same(other))
+            .count()
     };
-    MemberPath::new(root).name("identity")
+    let member = |array: &str, index: usize| {
+        MemberPath::type_definition()
+            .name(array)
+            .index(index)
+            .name("identity")
+    };
+    match record {
+        DomainPackageRecord::FieldMember(field) => member(
+            "fields",
+            position(
+                &|other| matches!(other, DomainPackageRecord::FieldMember(o) if o.owner == field.owner),
+            ),
+        ),
+        DomainPackageRecord::OperationMember(operation) => member(
+            "operations",
+            position(
+                &|other| matches!(other, DomainPackageRecord::OperationMember(o) if o.owner == operation.owner),
+            ),
+        ),
+        DomainPackageRecord::Clause(clause) => member(
+            "clauses",
+            position(
+                &|other| matches!(other, DomainPackageRecord::Clause(o) if o.owner == clause.owner),
+            ),
+        ),
+        DomainPackageRecord::Relationship(relationship) => match &relationship.declared_at {
+            Some(slot) => member("relationships", slot.index),
+            None => MemberPath::new(MemberRoot::Relationship).name("identity"),
+        },
+        DomainPackageRecord::Population(_) => {
+            MemberPath::new(MemberRoot::PopulationDefinition).name("identity")
+        }
+        _ => MemberPath::type_definition().name("identity"),
+    }
 }
 
-fn identity_refusal(record: &DomainPackageRecord, detail: String) -> ModelRefusal {
+fn identity_refusal(
+    records: &[DomainPackageRecord],
+    record: &DomainPackageRecord,
+    detail: String,
+) -> ModelRefusal {
     let key = record.key();
     ModelRefusal {
         code: Code::InvalidModelBinding,
@@ -121,7 +163,7 @@ fn identity_refusal(record: &DomainPackageRecord, detail: String) -> ModelRefusa
             node: key.node.clone(),
             artifact: None,
             span: None,
-            member: identity_member(record),
+            member: identity_member(records, record),
         },
         detail,
     }
@@ -155,6 +197,7 @@ impl AdmittedPackage {
                 });
             } else if key.package != identity {
                 refusals.push(identity_refusal(
+                    &package.records,
                     record,
                     format!(
                         "{} is keyed under domain package {:?}, not the selected {identity:?}",
@@ -216,6 +259,7 @@ impl AdmittedPackage {
             };
             let Some((owner, name)) = owner_and_name else {
                 refusals.push(identity_refusal(
+                    &package.records,
                     record,
                     format!(
                         "{} is neither ix://{identity}/<artifact id> nor <owner>/<name>",
@@ -465,6 +509,82 @@ mod tests {
             ]
         );
         assert!(refusals[1].detail.contains("test/other"));
+    }
+
+    /// A malformed member key is reported at the member's own `identity`
+    /// slot in its declaring type's array, not at the owner's identity.
+    #[test]
+    fn a_malformed_member_key_names_its_own_identity_member() {
+        use crate::model::domain_package::{
+            ClauseRecord, DeclaredSlot, RelationshipDirection, RelationshipEnd, RelationshipRecord,
+        };
+        let multiplicity = Multiplicity {
+            lower: 0,
+            upper: None,
+            ordered: false,
+            unique: false,
+        };
+        let end = |role: Option<&str>| RelationshipEnd {
+            type_identity: key("Order"),
+            role: role.map(str::to_owned),
+            multiplicity,
+        };
+        let Err(AdmitFailure::Refused(refusals)) = admit(vec![
+            order(key("Order")),
+            field(key("Order/paid"), key("Order")),
+            field(key("Order-first"), key("Order")),
+            field(key("Order-second"), key("Order")),
+            DomainPackageRecord::Clause(ClauseRecord {
+                key: key("Order-clause"),
+                owner: key("Order"),
+                language: "quire".to_owned(),
+                text: "true".to_owned(),
+            }),
+            DomainPackageRecord::Relationship(RelationshipRecord {
+                key: key("relationship/bad"),
+                declared_at: Some(DeclaredSlot {
+                    owner: key("Order"),
+                    index: 3,
+                }),
+                source: end(None),
+                target: end(None),
+                direction: RelationshipDirection::SourceToTarget,
+            }),
+        ]) else {
+            panic!("the package refuses")
+        };
+        let members: Vec<(String, String)> = refusals
+            .iter()
+            .map(|refusal| {
+                let ModelRefusalCause::IntakeMalformedDeclaration { node, member, .. } =
+                    &refusal.cause
+                else {
+                    panic!("expected a malformed declaration, got {refusal:?}")
+                };
+                (node.clone(), member.to_string())
+            })
+            .collect();
+        assert_eq!(
+            members,
+            [
+                (
+                    key("Order-first").node,
+                    "TypeDefinition.fields[1].identity".to_owned()
+                ),
+                (
+                    key("Order-second").node,
+                    "TypeDefinition.fields[2].identity".to_owned()
+                ),
+                (
+                    key("Order-clause").node,
+                    "TypeDefinition.clauses[0].identity".to_owned()
+                ),
+                (
+                    key("relationship/bad").node,
+                    "TypeDefinition.relationships[3].identity".to_owned()
+                ),
+            ]
+        );
     }
 
     /// A member is indexed under the owner its record names, which must be a

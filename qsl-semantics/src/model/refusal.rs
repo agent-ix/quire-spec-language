@@ -123,6 +123,27 @@ impl MemberPath {
         &self.segments
     }
 
+    /// The TC-235 spelling of an operation's contract: a type's
+    /// `operations[m].pre[k]` or `.post[k]` member is `Operation.pre[k]` /
+    /// `Operation.post[k]` (M08 run 6 spells `Operation.pre`). Any other path
+    /// is returned unchanged.
+    #[must_use]
+    pub fn operation_contract(self) -> Self {
+        match self.segments.as_slice() {
+            [MemberSegment::Name(operations), MemberSegment::Index(_), MemberSegment::Name(contract), ..]
+                if self.root == MemberRoot::TypeDefinition
+                    && operations == "operations"
+                    && (contract == "pre" || contract == "post") =>
+            {
+                Self {
+                    root: MemberRoot::Operation,
+                    segments: self.segments[2..].to_vec(),
+                }
+            }
+            _ => self,
+        }
+    }
+
     /// This path extended by the dotted relative path `relative`
     /// (`kind.module`, `steps[1].emits`). Text that is not such a path
     /// becomes one named segment, so the result always names something.
@@ -156,7 +177,7 @@ impl MemberPath {
             },
             _ => None,
         };
-        match root {
+        let located = match root {
             Some(root) => Self {
                 root,
                 segments: tokens.split_off(2),
@@ -165,7 +186,8 @@ impl MemberPath {
                 root: MemberRoot::Package,
                 segments: tokens,
             },
-        }
+        };
+        located.operation_contract()
     }
 }
 
@@ -578,7 +600,10 @@ pub enum ModelRefusalCause {
     /// silently let the later record replace or shadow the earlier one in
     /// every by-key index this module builds.
     ConflictingBinding {
-        /// The key more than one record declares.
+        /// What repeats. A package-level duplicate carries the key more
+        /// than one record declares; a duplicate state or transition
+        /// carries the repeated member's own key (TC-235 M06); a duplicate
+        /// process step carries the process (TC-235 M07 run 3).
         key: DeclarationKey,
         /// The member the duplicate sits at (`TypeDefinition.states[3]`),
         /// or `None` for a declaration key declared twice at package level.
@@ -1810,6 +1835,10 @@ pub(crate) mod tests {
         assert_eq!(
             super::MemberPath::from_document_location("$.types[3].fields[0]"),
             "TypeDefinition.fields[0]".parse().unwrap()
+        );
+        assert_eq!(
+            super::MemberPath::from_document_location("$.types[3].operations[1].pre[0]"),
+            "Operation.pre[0]".parse().unwrap()
         );
         assert_eq!(
             super::MemberPath::from_document_location("$.constructs[2]"),

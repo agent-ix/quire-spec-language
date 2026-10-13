@@ -48,12 +48,13 @@ use agent_ix_extraction_frontend::{Diagnostic, Refusal};
 use serde_json::Value;
 
 use crate::model::domain_package::{
-    AllocationRecord, ClauseRecord, ComponentRecord, DomainPackage, DomainPackageRecord,
-    DomainPackageRef, EndpointRecord, Extent, FieldMemberRecord, Multiplicity, NamespaceRecord,
-    NamespaceTerm, NativeValueType, ObjectTypeRecord, OperationEffect, OperationMemberRecord,
-    OperationParameterRecord, OperationResult, OriginalDeclaration, PersistenceInterfaceRecord,
-    PopulationRecord, PortDirection, RecordValueTypeRecord, RelationshipDirection, RelationshipEnd,
-    RelationshipRecord, ScalarTypeRecord, ScalarValueDomain, ValueTypeRef,
+    AllocationRecord, ClauseRecord, ComponentRecord, DeclaredSlot, DomainPackage,
+    DomainPackageRecord, DomainPackageRef, EndpointRecord, Extent, FieldMemberRecord, Multiplicity,
+    NamespaceRecord, NamespaceTerm, NativeValueType, ObjectTypeRecord, OperationEffect,
+    OperationMemberRecord, OperationParameterRecord, OperationResult, OriginalDeclaration,
+    PersistenceInterfaceRecord, PopulationRecord, PortDirection, RecordValueTypeRecord,
+    RelationshipDirection, RelationshipEnd, RelationshipRecord, ScalarTypeRecord,
+    ScalarValueDomain, ValueTypeRef,
 };
 use crate::model::key::{hex, raw_bytes_digest, DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
@@ -1889,7 +1890,7 @@ fn document_declares(value: &Value, identity: &str) -> bool {
 /// under the package document (`$.package.identity`), never the bare root.
 fn semantic_member_path(pointer: &str) -> MemberPath {
     let pointer = pointer.strip_prefix("/ir").unwrap_or(pointer);
-    let parts: Vec<&str> = pointer.trim_start_matches('/').split('/').collect();
+    let parts: Vec<&str> = pointer.split('/').filter(|part| !part.is_empty()).collect();
     let extend = |mut path: MemberPath, parts: &[&str]| {
         for part in parts {
             path = match part.parse::<usize>() {
@@ -1901,7 +1902,7 @@ fn semantic_member_path(pointer: &str) -> MemberPath {
         path
     };
     match parts.as_slice() {
-        ["types", _, rest @ ..] => extend(MemberPath::type_definition(), rest),
+        ["types", _, rest @ ..] => extend(MemberPath::type_definition(), rest).operation_contract(),
         ["populations", _, rest @ ..] => {
             extend(MemberPath::new(MemberRoot::PopulationDefinition), rest)
         }
@@ -1910,6 +1911,7 @@ fn semantic_member_path(pointer: &str) -> MemberPath {
             MemberPath::new(MemberRoot::Constructs).name("meaning")
         }
         ["constructs", _, rest @ ..] => extend(MemberPath::new(MemberRoot::Constructs), rest),
+        // The package root itself (`/ir`) is the root member.
         other => extend(MemberPath::new(MemberRoot::Package), other),
     }
 }
@@ -2951,6 +2953,7 @@ pub(super) fn read_object_type(
             node,
             relationship,
             &format!("{relationships_at}[{position}]"),
+            position,
         )?));
     }
     Ok(())
@@ -3044,6 +3047,7 @@ pub(super) fn read_record_value_type(
             node,
             relationship,
             &format!("{relationships_at}[{position}]"),
+            position,
         )?));
     }
     read_clauses(package, node, &ctx, records)?;
@@ -3475,6 +3479,7 @@ fn read_connection(
     };
     Ok(RelationshipRecord {
         key: declaration_key(package, node),
+        declared_at: None,
         source: RelationshipEnd {
             type_identity: declaration_key(package, source_type),
             // `ConnectionEnd` (FCD's wire shape for a Connection node's
@@ -3509,6 +3514,7 @@ fn read_relationship(
     owner_identity: &str,
     relationship: &Value,
     at: &str,
+    position: usize,
 ) -> Result<RelationshipRecord, ModelRefusal> {
     let ctx = NodeCtx::new(relationship, at.to_owned());
     let node = ctx.str_field("identity")?;
@@ -3559,6 +3565,10 @@ fn read_relationship(
     };
     Ok(RelationshipRecord {
         key: declaration_key(package, node),
+        declared_at: Some(DeclaredSlot {
+            owner: declaration_key(package, owner_identity),
+            index: position,
+        }),
         source,
         target,
         direction,
@@ -4162,8 +4172,9 @@ pub fn read_domain_package(
                             None
                         }
                         _ => {
-                            return Err(ctx.malformed(
-                                "kind: a bare-string core kind is not a declared FR-208 meaning",
+                            return Err(ctx.malformed_in(
+                                "kind",
+                                "a bare-string core kind is not a declared FR-208 meaning",
                             ));
                         }
                     };
@@ -7488,6 +7499,17 @@ mod tests {
             ("/ir/constructs/2/construct/meaning", "constructs[].meaning"),
             ("/ir/constructs/2/kind/name", "constructs[].kind.name"),
             ("/ir/package/identity", "$.package.identity"),
+            ("/ir", "$"),
+            ("", "$"),
+            ("/ir/types/3/operations/1/pre/0", "Operation.pre[0]"),
+            (
+                "/ir/types/3/operations/1/post/2/text",
+                "Operation.post[2].text",
+            ),
+            (
+                "/ir/types/3/operations/1/params/0",
+                "TypeDefinition.operations[1].params[0]",
+            ),
             ("/ir/unmapped", "$.unmapped"),
         ] {
             assert_eq!(

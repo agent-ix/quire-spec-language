@@ -1417,6 +1417,19 @@ fn tc235_m08_persistence_interface_binder() {
         "TypeDefinition.clauses[0]",
         22,
     );
+
+    // A refused clause names its own position, not the first.
+    let mut document = k2();
+    let mut foreign = clause("OrderStore", "Foreign", "true");
+    foreign["language"] = json!("ocl");
+    type_named_mut(&mut document, "OrderStore")["clauses"] =
+        json!([foreign, clause("OrderStore", "Healthy", "true")]);
+    assert_unsupported_refusal(
+        &document,
+        "OrderStore/Healthy",
+        "TypeDefinition.clauses[1]",
+        23,
+    );
 }
 
 /// M09: namespaces preserve their ordered payload, never become effective

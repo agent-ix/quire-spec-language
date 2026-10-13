@@ -126,6 +126,7 @@ fn relationship(
 ) -> DomainPackageRecord {
     DomainPackageRecord::Relationship(RelationshipRecord {
         key: DeclarationKey::fixture(identity),
+        declared_at: None,
         source: RelationshipEnd {
             type_identity: DeclarationKey::fixture(source),
             role: None,

@@ -2102,9 +2102,10 @@ fn check_node<'a>(
                                 })
                                 .count();
                             if operation_owner.is_some() {
-                                // An operation's own clauses are its `pre`
-                                // contract (TC-235 M08 run 6).
-                                MemberPath::new(MemberRoot::Operation).name("pre")
+                                // A clause record does not say whether it is
+                                // the operation's `pre` or `post`, so the
+                                // path names the operation only.
+                                MemberPath::new(MemberRoot::Operation)
                             } else {
                                 MemberPath::type_definition()
                                     .name("clauses")
@@ -2290,31 +2291,28 @@ fn check_node<'a>(
             if relationship.source.role.is_some()
                 && !index.is_object_type(&relationship.source.type_identity)
             {
-                // The relationship's position in its owner's `relationships`
-                // array (records keep the reader's order).
-                let position = domain_package
-                    .records
-                    .iter()
-                    .filter(|record| {
-                        matches!(record, DomainPackageRecord::Relationship(other)
-                            if other.source.type_identity == relationship.source.type_identity)
-                    })
-                    .position(|record| record.key() == &relationship.key)
-                    .unwrap_or_default();
+                // The position the reader recorded in the declaring type's
+                // `relationships` array; a relationship with no slot is
+                // named at `Relationship` alone.
+                let member = relationship.declared_at.as_ref().map_or_else(
+                    || MemberPath::new(MemberRoot::Relationship),
+                    |slot| {
+                        MemberPath::type_definition()
+                            .name("relationships")
+                            .index(slot.index)
+                    },
+                );
                 refusals.push(ModelRefusal {
                     code: Code::InvalidModelBinding,
                     cause: ModelRefusalCause::IntakeMalformedDeclaration {
                         node: relationship.key.node.clone(),
                         artifact: None,
                         span: None,
-                        member: MemberPath::type_definition()
-                            .name("relationships")
-                            .index(position),
+                        member: member.clone(),
                     },
                     detail: format!(
-                        "{}: TypeDefinition.relationships[{position}]: relationship source owner {} is not an object type",
-                        relationship.key.node,
-                        relationship.source.type_identity.node
+                        "{}: {member}: relationship source owner {} is not an object type",
+                        relationship.key.node, relationship.source.type_identity.node
                     ),
                 });
             }
@@ -4223,6 +4221,7 @@ mod tests {
                 field("model.Order/id", "model.Order"),
                 DomainPackageRecord::Relationship(RelationshipRecord {
                     key: DeclarationKey::fixture("model.Related"),
+                    declared_at: None,
                     source: RelationshipEnd {
                         type_identity: DeclarationKey::fixture("model.Order"),
                         role: Some("source".to_owned()),
@@ -4298,6 +4297,115 @@ mod tests {
                     .detail
                     .contains("namespace model/Outer contains namespace model/Inner")
         }));
+    }
+
+    /// A refused relationship is named at the position the reader recorded in
+    /// its declaring type's `relationships` array, not at a count of the
+    /// relationships sharing a source end.
+    #[test]
+    fn a_refused_relationship_names_its_declared_slot() {
+        use crate::model::domain_package::{
+            DeclaredSlot, Multiplicity, RelationshipDirection, RelationshipEnd, RelationshipRecord,
+        };
+        let end = |role: Option<&str>| RelationshipEnd {
+            type_identity: DeclarationKey::fixture("model.Number"),
+            role: role.map(str::to_owned),
+            multiplicity: Multiplicity {
+                lower: 0,
+                upper: None,
+                ordered: false,
+                unique: true,
+            },
+        };
+        let relationship = |name: &str, index: usize| {
+            DomainPackageRecord::Relationship(RelationshipRecord {
+                key: DeclarationKey::fixture(name),
+                declared_at: Some(DeclaredSlot {
+                    owner: DeclarationKey::fixture("model.Number"),
+                    index,
+                }),
+                source: end(Some("source")),
+                target: end(None),
+                direction: RelationshipDirection::SourceToTarget,
+            })
+        };
+        let package = package(vec![
+            DomainPackageRecord::ScalarType(crate::model::domain_package::ScalarTypeRecord {
+                key: DeclarationKey::fixture("model.Number"),
+                domain: ScalarValueDomain::Native(NativeValueType::Integer),
+            }),
+            relationship("model.Number/first", 4),
+            relationship("model.Number/second", 7),
+        ]);
+        let NormalizeOutcome::Refused(refusals) =
+            normalize(&package, ModelNormalizationLimits::UNLIMITED)
+        else {
+            panic!("a relationship owned by a scalar must be refused");
+        };
+        let members: Vec<_> = refusals
+            .iter()
+            .filter_map(|refusal| match &refusal.cause {
+                ModelRefusalCause::IntakeMalformedDeclaration { node, member, .. }
+                    if member.root() == MemberRoot::TypeDefinition =>
+                {
+                    Some((node.as_str(), member.to_string()))
+                }
+                _ => None,
+            })
+            .collect();
+        assert!(members.contains(&(
+            "model.Number/first",
+            "TypeDefinition.relationships[4]".to_owned()
+        )));
+        assert!(members.contains(&(
+            "model.Number/second",
+            "TypeDefinition.relationships[7]".to_owned()
+        )));
+    }
+
+    /// A refused quire clause on a namespace names its own position among
+    /// the owner's clauses, not the first.
+    #[test]
+    fn a_refused_clause_names_its_position_among_the_owners_clauses() {
+        let scope = DeclarationKey::fixture("model/Scope");
+        let package = package(vec![
+            object_type("model.Order", &[]),
+            DomainPackageRecord::Namespace(NamespaceRecord {
+                key: scope.clone(),
+                members: vec![DeclarationKey::fixture("model.Order")],
+                vocabulary: Vec::new(),
+            }),
+            DomainPackageRecord::Clause(ClauseRecord {
+                key: DeclarationKey::fixture("model/Scope/First"),
+                owner: scope.clone(),
+                language: "ocl".to_owned(),
+                text: "true".to_owned(),
+            }),
+            DomainPackageRecord::Clause(ClauseRecord {
+                key: DeclarationKey::fixture("model/Scope/Second"),
+                owner: scope,
+                language: "quire".to_owned(),
+                text: "true".to_owned(),
+            }),
+        ]);
+        let NormalizeOutcome::Refused(refusals) =
+            normalize(&package, ModelNormalizationLimits::UNLIMITED)
+        else {
+            panic!("a quire clause on a namespace must be refused");
+        };
+        let members: Vec<_> = refusals
+            .iter()
+            .filter_map(|refusal| match &refusal.cause {
+                ModelRefusalCause::UnsupportedDeclarationForm { node, member, .. } => {
+                    Some((node.as_str(), member.to_string()))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            members,
+            [("model/Scope/Second", "TypeDefinition.clauses[1]".to_owned())]
+        );
     }
 
     /// The model-complete Invariant row permits an operation owner.
@@ -4432,6 +4540,7 @@ mod tests {
                 }),
                 DomainPackageRecord::Relationship(RelationshipRecord {
                     key: DeclarationKey::fixture("model.Related"),
+                    declared_at: None,
                     source: end.clone(),
                     target: end,
                     direction: RelationshipDirection::SourceToTarget,
