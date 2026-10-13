@@ -17,7 +17,7 @@ pub(super) struct MeaningBindingContext<'a, 'm> {
     pub(super) type_value: &'a Value,
     pub(super) node: &'a str,
     pub(super) at: &'a str,
-    pub(super) type_meanings: &'a HashMap<&'m str, &'m str>,
+    pub(super) meanings_by_node: &'a HashMap<&'m str, &'m str>,
     /// The `shape` of the type's own construct, when it declares one.
     pub(super) construct_shape: Option<&'a str>,
     pub(super) records: &'a mut Vec<DomainPackageRecord>,
@@ -27,6 +27,7 @@ pub(super) struct MeaningBindingContext<'a, 'm> {
 /// Route the FR-208 meanings with dedicated binder modules. `None` leaves
 /// other meanings to the existing reader dispatch; every returned refusal
 /// retains the binder's typed intake result.
+#[qsl_attrs::string_edge]
 pub(super) fn bind(
     meaning_id: &str,
     context: &mut MeaningBindingContext<'_, '_>,

@@ -21,13 +21,14 @@ use qsl_foundation::diagnostic::{Code, JsonPointer};
 
 use super::meaning_dispatch::MeaningBindingContext;
 
+#[qsl_attrs::string_edge]
 pub(super) fn bind(context: &mut MeaningBindingContext<'_, '_>) -> Result<(), ModelRefusal> {
     let ctx = NodeCtx::new(context.type_value, context.at);
     let identity_fields = ctx.identity_keys(context.package, "identityFields")?;
     let identity_fields_declared = context.type_value.get("identityFields").is_some();
     let supertypes = ctx.identity_keys(context.package, "supertypes")?;
     for (position, general) in supertypes.iter().enumerate() {
-        match context.type_meanings.get(general.node.as_str()) {
+        match context.meanings_by_node.get(general.node.as_str()) {
             Some(_) => {}
             None => {
                 return Err(ModelRefusal {
@@ -96,7 +97,7 @@ pub(super) fn bind(context: &mut MeaningBindingContext<'_, '_>) -> Result<(), Mo
         let consumes = read_step_events(
             context.package,
             context.node,
-            context.type_meanings,
+            context.meanings_by_node,
             step,
             &step_at,
             "consumes",
@@ -104,7 +105,7 @@ pub(super) fn bind(context: &mut MeaningBindingContext<'_, '_>) -> Result<(), Mo
         let emits = read_step_events(
             context.package,
             context.node,
-            context.type_meanings,
+            context.meanings_by_node,
             step,
             &step_at,
             "emits",
@@ -213,6 +214,7 @@ fn read_step_events(
     Ok(result)
 }
 
+#[qsl_attrs::string_edge]
 fn reader_pointer(step_at: &str, field: &str, position: usize) -> JsonPointer {
     let mut pointer = JsonPointer::root();
     let path = step_at.strip_prefix("$.").unwrap_or(step_at);
