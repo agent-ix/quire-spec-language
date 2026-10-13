@@ -95,6 +95,7 @@ mod lowering;
 pub(crate) use lowering::{record_node_key, variant_type_node_key};
 mod node_key;
 mod observation;
+mod operation_body;
 mod operation_clause;
 mod profile;
 mod protocol_clause;
@@ -185,6 +186,7 @@ pub use checked_dispatch::{
     MissingClauseField, OperationClauses,
 };
 pub use field_refinement::check_field_refinement_obligation;
+pub use operation_body::OperationBodyDeclaration;
 pub use operation_clause::OperationClauseDeclaration;
 use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 use quire_semantic_value::location::{Location, Origin};

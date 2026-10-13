@@ -31,6 +31,7 @@ mod model_operations;
 mod model_population;
 #[cfg(feature = "test-support")]
 mod model_systems;
+mod operation_bodies;
 mod operation_clauses;
 mod quantities;
 mod state_clauses;
