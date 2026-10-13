@@ -1732,10 +1732,11 @@ fn an_internal_invariant_failure_is_a_fault() {
     assert!(refusal_or_fault(failure).is_err());
 }
 
-/// TC-796 step 4 (FR-303-AC-4), at the spine: a checker refusal that names
+/// TC-796 step 4 (FR-303-AC-4), at the spine's failure handling: a checker refusal that names
 /// a node rebound from declaration `d1` to `d2` leaves the front end as
 /// `runtime_invariant`/`established-invariant-broken` in category internal
-/// failure, and no refusal or checked package is returned for the unit.
+/// failure naming the node and both declarations, and no refusal or checked
+/// package is returned for the unit.
 #[trace("TC-796", "FR-303-AC-4")]
 #[test]
 fn a_rebound_model_node_leaves_the_front_end_as_an_internal_failure_with_no_package() {
@@ -1754,8 +1755,8 @@ fn a_rebound_model_node_leaves_the_front_end_as_an_internal_failure_with_no_pack
             cause: CheckCause::InternalFault(Box::new(KeyFault::CorrespondenceConflict(Box::new(
                 CorrespondenceConflict::NodeRebound {
                     node,
-                    recorded: d1,
-                    offered: d2,
+                    recorded: d1.clone(),
+                    offered: d2.clone(),
                 },
             )))),
         }],
@@ -1766,6 +1767,14 @@ fn a_rebound_model_node_leaves_the_front_end_as_an_internal_failure_with_no_pack
         .expect_err("a rebound node is a fault: the unit yields no refusal and no package");
     assert_eq!(fault.stage(), "S3");
     assert_eq!(fault.invariant(), "model-correspondence-one-to-one");
+    assert_eq!(
+        fault.named(),
+        [
+            ("node", format!("{node:?}")),
+            ("recorded", format!("{d1:?}")),
+            ("offered", format!("{d2:?}")),
+        ]
+    );
     assert_eq!(
         fault.catalog_code(),
         qsl_foundation::diagnostic::CatalogCode::new(

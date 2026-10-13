@@ -102,7 +102,8 @@ use qsl_package::{
     ImportViewRefusal,
 };
 use qsl_semantics::check::{
-    resolve_profiles, AdmittedImport, AssemblyCause, CheckCause, LockEvidence, PackageDeclarations,
+    resolve_profiles, AdmittedImport, AssemblyCause, CheckCause, CorrespondenceConflict, KeyFault,
+    LockEvidence, PackageDeclarations,
 };
 use qsl_semantics::library::{ImportView, LibraryName};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -273,7 +274,30 @@ fn fault_of(refusal: &CompileRefusal) -> Option<InternalFault> {
         CompileRefusal::Check { refusals, .. } => {
             refusals.iter().find_map(|refusal| match &refusal.cause {
                 CheckCause::InternalFault(fault) => {
-                    Some(InternalFault::new("S3", fault.invariant()))
+                    let named = match fault.as_ref() {
+                        KeyFault::CorrespondenceConflict(conflict) => match conflict.as_ref() {
+                            CorrespondenceConflict::NodeRebound {
+                                node,
+                                recorded,
+                                offered,
+                            } => vec![
+                                ("node", format!("{node:?}")),
+                                ("recorded", format!("{recorded:?}")),
+                                ("offered", format!("{offered:?}")),
+                            ],
+                            CorrespondenceConflict::DeclarationRebound {
+                                declaration,
+                                recorded,
+                                offered,
+                            } => vec![
+                                ("declaration", format!("{declaration:?}")),
+                                ("recorded", format!("{recorded:?}")),
+                                ("offered", format!("{offered:?}")),
+                            ],
+                        },
+                        _ => Vec::new(),
+                    };
+                    Some(InternalFault::new("S3", fault.invariant()).with_named(named))
                 }
                 _ => None,
             })

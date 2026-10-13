@@ -165,9 +165,9 @@ fn a_resolved_end_retains_its_declared_role_and_multiplicity() {
     );
 }
 
-/// FR-085-AC-3: a relationship between two object types resolves as a plain
+/// TC-232, object-type half of FR-085-AC-3: a relationship between two object types resolves as a plain
 /// relationship; end resolution assigns no systems-model kind.
-#[trace("TC-232", "FR-085-AC-3")]
+#[trace("TC-232")]
 #[test]
 fn a_relationship_between_object_types_carries_no_systems_kind() {
     let admitted = AdmittedPackage::admit(

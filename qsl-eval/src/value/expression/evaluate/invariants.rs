@@ -1548,7 +1548,8 @@ fn every_received_kernel_payload_survives_stop_and_public_fault_conversion() {
             assert_eq!(fault.category(), qsl_foundation::Category::InternalFailure);
             assert_eq!(fault.catalog_code().code(), "runtime_invariant");
             // Both public entries use map_err(CallFailure::Fault) unchanged.
-            let super::super::CallFailure::Fault(carried) = super::super::CallFailure::Fault(fault)
+            let super::super::CallFailure::Fault(carried) =
+                super::super::CallFailure::Fault(fault.clone())
             else {
                 panic!("public call/evaluate fault conversion changed category");
             };
