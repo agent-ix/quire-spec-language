@@ -14,8 +14,8 @@ Verify evaluation and equality of variant values. Scope: FR-360-AC-6 and FR-360-
 
 ## Test Procedure
 
-1. Evaluate `==` and `!=` over two cases, in both operand orders, over a field read and a literal of the same case.
-2. Check `Config::Level::Gold == Config::Tier::Gold`.
+1. Evaluate `=` and `!=` over two cases, in both operand orders, over a field read and a literal of the same case.
+2. Check `Config::Level::Gold = Config::Tier::Gold`.
 3. Compare two `Settings` records, two `Option`, two `Sequence`, two `Set` and two tuples that differ only in the case.
 4. Build a `Set<Config::Tier>` from `Gold, Gold, Standard` and from `Standard, Gold`, and a `Set` over cases `Standard`, `Gold`, `Bronze` in each source order.
 

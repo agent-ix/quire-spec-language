@@ -296,6 +296,39 @@ pub(super) fn read_raw_value<E>(
                     pending.extend(members.into_iter().rev().map(|(_, value)| value));
                 }
             }
+            "variant" => {
+                // FR-360 item 9: the payload is an object; its members are
+                // kept as read so admission judges a missing or extra one
+                // in its own order. A member that is not text is not this
+                // shape.
+                let Some(payload) = payload.as_object() else {
+                    return Ok(None);
+                };
+                let mut type_identity = None;
+                let mut case = None;
+                let mut extra_member = false;
+                for (name, member) in payload.iter() {
+                    match name {
+                        "type" => match member.as_str() {
+                            Some(text) => type_identity = Some(text.to_owned()),
+                            None => return Ok(None),
+                        },
+                        "case" => match member.as_str() {
+                            Some(text) => case = Some(text.to_owned()),
+                            None => return Ok(None),
+                        },
+                        _ => extra_member = true,
+                    }
+                }
+                finished = Some(push(
+                    &mut nodes,
+                    RawNode::Variant {
+                        type_identity,
+                        case,
+                        extra_member,
+                    },
+                ));
+            }
             _ => return Ok(None),
         }
     }

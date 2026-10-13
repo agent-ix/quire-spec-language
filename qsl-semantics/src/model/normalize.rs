@@ -1911,8 +1911,7 @@ fn signature_type_refusal(
         package.records.iter().any(|record| {
             record.key() == key
                 && match record {
-                    DomainPackageRecord::Enum(_)
-                    | DomainPackageRecord::EventType(_)
+                    DomainPackageRecord::EventType(_)
                     | DomainPackageRecord::StateMachine(_)
                     | DomainPackageRecord::Process(_)
                     | DomainPackageRecord::PersistenceInterface(_)
@@ -2054,25 +2053,6 @@ fn check_node<'a>(
             }
         }
         DomainPackageRecord::FieldMember(member) => {
-            // FR-056 "Variant types": a field typed by a variant type is
-            // QSL-738's. Until it lands, the field refuses at its `typeRef`;
-            // the variant type's own declaration is admitted.
-            if let ValueTypeRef::Package(target) = &member.value_type {
-                if index.is_variant_type(target) {
-                    refusals.push(ModelRefusal {
-                        code: Code::InvalidModelBinding,
-                        cause: malformed_at(
-                            domain_package,
-                            &member.key,
-                            MemberPath::new(MemberRoot::Field).name("typeRef"),
-                        ),
-                        detail: format!(
-                            "{}: Field.typeRef: {} is a variant type; fields typed by a variant type are not yet supported",
-                            member.key.node, target.node
-                        ),
-                    });
-                }
-            }
             if !index.is_object_type(&member.owner)
                 && !index.is_record_value_type(&member.owner)
                 && !index.is_event_type(&member.owner)
@@ -2323,6 +2303,7 @@ fn check_node<'a>(
                 if let Some(value_type) = parameter.value_type.as_package() {
                     if !is_ordinary_object_type(domain_package, value_type)
                         && !index.is_scalar_type(value_type)
+                        && !index.is_variant_type(value_type)
                         && !index.is_record_value_type(value_type)
                     {
                         refusals.push(signature_type_refusal(
@@ -2338,6 +2319,7 @@ fn check_node<'a>(
                 if let Some(value_type) = result.value_type.as_package() {
                     if !is_ordinary_object_type(domain_package, value_type)
                         && !index.is_scalar_type(value_type)
+                        && !index.is_variant_type(value_type)
                         && !index.is_record_value_type(value_type)
                     {
                         refusals.push(signature_type_refusal(

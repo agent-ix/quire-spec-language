@@ -323,40 +323,6 @@ fn a_process_without_identity_or_process_supertype_keeps_its_origin() {
     );
 }
 
-/// A field typed by a variant type.
-#[trace("TC-1005", "FR-056-AC-33")]
-#[test]
-fn a_field_typed_by_a_variant_type_keeps_its_origin() {
-    only_refusal(
-        |document| {
-            document["constructs"].as_array_mut().unwrap().push(json!({
-                "kind": {"module": BUSINESS, "name": "variant_type"},
-                "moduleVersion": "1.0.0",
-                "construct": {
-                    "identity": "none", "shape": "enumeration",
-                    "members": {"variants": "required"},
-                    "meaning": meaning::VARIANT_TYPE,
-                },
-            }));
-            document["types"].as_array_mut().unwrap().push(declaration(
-                "Tier",
-                "variant_type",
-                json!({"variants": [{
-                    "identity": id("variant/Tier-Gold"),
-                    "name": "Gold",
-                    "origin": origin("variant/Tier-Gold"),
-                }]}),
-            ));
-            type_named_mut(document, "Order")["fields"]
-                .as_array_mut()
-                .unwrap()
-                .push(field("Order", "tier", &id("Tier")));
-        },
-        "Order/tier",
-        "Field.typeRef",
-    );
-}
-
 fn relationship(owner: &str, name: &str, target: &str) -> Value {
     let node = format!("relationship/{owner}-{name}-{target}");
     json!({

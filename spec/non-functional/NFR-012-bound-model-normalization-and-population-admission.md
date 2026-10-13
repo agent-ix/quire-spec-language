@@ -54,8 +54,9 @@ ceiling therefore bounds the work done, not only the result:
   grows with the number of facts plus the total ancestor-path length, and
   the total path length is bounded by the work the cycle checks admitted.
 - `ancestor_steps` and `family_steps` are charged like every other ceiling:
-  each `supertypes` or `redefines` edge a walk follows is charged before it
-  is followed (FR-082, FR-083), and the first denied charge stops the walk
+  each `supertypes` edge a walk follows is charged before it is followed
+  (FR-082), and each distinct `redefines` edge is charged once, before the
+  first walk follows it, however many walks follow it (FR-083), and the first denied charge stops the walk
   `Incomplete`. They count edges, never a depth, and every walk uses an
   explicit stack.
 
