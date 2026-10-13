@@ -62,3 +62,19 @@ Reviewed at `d0c5332fbbb9586ce0ba8f887d7b276ccd7e5e3f` (fix commit `d0c5332fb` o
 | FND-005 | fixed | d0c5332fb |
 | FND-006 | fixed | d0c5332fb |
 | FND-007 | fixed | d0c5332fb |
+
+### Disposition pass 2
+
+Re-checked at `cc5a236bd7344dac1446d1debe39cb0711d04e66` (fix commit `cc5a236bd`, on merge `b42eac6c1` with #814). No new findings.
+
+The Lone case is discriminating. At `d0c5332fb`, the old name-only `report` replaced c3's `MissingName("size")` with the failed `Other.size` family, so `refusal.code()` would have been `AmbiguousDispatch`, not `MissingDeclaration`. The red run panicked earlier, at the c2 location assertion (dispatch_link_compile.rs:720), so it never reached that line.
+
+Gate `qsl726e-r2-*.log`: clippy, spec, tests and xtask all exit 0, every `test result:` line reports 0 failed, and dispatch_link_compile passes 11/11.
+
+The base has since gained #815. It causes no textual conflict, and its only overlap is a message string in `qsl-replay/src/spine.rs`.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-008 | fixed | cc5a236bd |
+| FND-009 | fixed | cc5a236bd |
+| FND-010 | fixed | cc5a236bd |
