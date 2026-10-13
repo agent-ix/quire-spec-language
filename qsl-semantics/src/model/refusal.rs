@@ -141,10 +141,11 @@ impl MemberPath {
         &self.segments
     }
 
-    /// The TC-235 spelling of an operation's contract: a type's
-    /// `operations[m].pre[k]` or `.post[k]` member is `Operation.pre[k]` /
-    /// `Operation.post[k]` (M08 run 6 spells `Operation.pre`). Any other path
-    /// is returned unchanged.
+    /// The TC-235 spelling of an operation's contract and frame: a type's
+    /// `operations[m].pre[k]`, `.post[k]` or `.frame.creates[k]` member is
+    /// `Operation.pre[k]` / `Operation.post[k]` / `Operation.frame.creates[k]`
+    /// (M08 run 6 spells `Operation.pre`, M10 run 12 `Operation.frame.creates`).
+    /// Any other path is returned unchanged.
     #[must_use]
     #[qsl_attrs::string_edge]
     pub fn operation_contract(self) -> Self {
@@ -152,7 +153,7 @@ impl MemberPath {
             [MemberSegment::Name(operations), MemberSegment::Index(_), MemberSegment::Name(contract), ..]
                 if self.root == MemberRoot::TypeDefinition
                     && operations == "operations"
-                    && (contract == "pre" || contract == "post") =>
+                    && (contract == "pre" || contract == "post" || contract == "frame") =>
             {
                 Self {
                     root: MemberRoot::Operation,
@@ -844,6 +845,8 @@ pub enum ModelRefusalCause {
         /// The frame entry identity string that names a declaration of the
         /// wrong meaning for its member.
         entry: String,
+        /// The frame entry's member (`Operation.frame.creates[0]`).
+        member: MemberPath,
     },
     /// FR-154 Intake check 1 (`model-complete.md:67`): the selection's
     /// digest domain is not the one domain Intake accepts.
@@ -1743,6 +1746,7 @@ pub mod fixtures {
             entry: String::new(),
         },
         FrameEntryMalformed => ModelRefusalCause::FrameEntryMalformed {
+            member: super::MemberPath::type_definition(),
             node: String::new(),
             artifact: Some(String::new()),
             span: Some(LocatedSpan {

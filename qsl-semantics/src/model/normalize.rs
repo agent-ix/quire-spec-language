@@ -1913,13 +1913,11 @@ fn origin_of(
     })
 }
 
-fn signature_type_refusal(
-    package: &DomainPackage,
-    operation: &DeclarationKey,
-    parameter: Option<(usize, &DeclarationKey)>,
-    value_type: &ValueTypeRef,
-) -> ModelRefusal {
-    let forbidden_meaning = value_type.as_package().is_some_and(|key| {
+/// Whether `value_type` names a declaration whose model meaning is no value
+/// type: an event type, state machine, process, persistence interface,
+/// namespace or systems interface (FR-208-AC-9).
+fn names_forbidden_value_meaning(package: &DomainPackage, value_type: &ValueTypeRef) -> bool {
+    value_type.as_package().is_some_and(|key| {
         package.records.iter().any(|record| {
             record.key() == key
                 && match record {
@@ -1932,7 +1930,16 @@ fn signature_type_refusal(
                     _ => false,
                 }
         })
-    });
+    })
+}
+
+fn signature_type_refusal(
+    package: &DomainPackage,
+    operation: &DeclarationKey,
+    parameter: Option<(usize, &DeclarationKey)>,
+    value_type: &ValueTypeRef,
+) -> ModelRefusal {
+    let forbidden_meaning = names_forbidden_value_meaning(package, value_type);
     let position = parameter.map_or_else(
         || "result".to_owned(),
         |(_, key)| format!("parameter {}", key.node),
@@ -2079,6 +2086,20 @@ fn check_node<'a>(
                     detail: format!(
                         "field member {} names owner {}, which is not a declared object, record value, event, or state-machine type",
                         member.key.node, member.owner.node
+                    ),
+                });
+            }
+            if names_forbidden_value_meaning(domain_package, &member.value_type) {
+                refusals.push(ModelRefusal {
+                    code: Code::InvalidModelBinding,
+                    cause: malformed_at(
+                        domain_package,
+                        &member.key,
+                        MemberPath::new(MemberRoot::Field).name("typeRef"),
+                    ),
+                    detail: format!(
+                        "field member {} names value type {}, which has a meaning forbidden as a field type",
+                        member.key.node, member.value_type
                     ),
                 });
             }

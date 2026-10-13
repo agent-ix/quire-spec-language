@@ -2275,6 +2275,7 @@ fn malformed_frame_entry(
             artifact,
             span,
             entry: entry.to_owned(),
+            member: MemberPath::from_document_location(at),
         },
         detail: format!("{at}: {entry:?} names a declaration of a different meaning"),
     }
