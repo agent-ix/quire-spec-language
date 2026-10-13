@@ -32,3 +32,19 @@ M18 run 1: the engine has no step-admission rule. Conformance of `ExpressOrderPl
 | FND-001 | medium | The M01 payload is not the row's full outcome. The row requires `NotYetPlaced` to be bound "as the guard of `[0]` and as no invariant". Only the guard is asserted; nothing checks that `NotYetPlaced` is not an effective invariant of `OrderLifecycle`. Transitions `[1]` and `[2]` are asserted by key only. Their `from`/`to`/`trigger` (`Draft → Cancelled` on `cancel`, `Placed → Cancelled` on `cancel`) and empty `emits` are not checked, and `emits` is checked only for `[0]`. Step kinds (`event`, `command`, `wait`) are not asserted. Fix: add these to M01. | qsl-semantics/tests/it/tc235_business_meanings.rs:821-882 |
 | FND-002 | medium | M17 run 1 does not use the row's input, and the test's "Deviations" note does not say so. The main M17 test retypes `Order/total` to `TaxedMoney`. The row keeps `Order/total` typed `Money` and reads a `TaxedMoney` value there. The new value test uses `k2_record_event_subtype_slice(true)`, which drops `Money/currency`, and it uses `tax_minor` 7 instead of `{amount_minor: 100, currency: "EUR", tax_minor: 20}`. It never involves `Order/total`, despite its name: it checks `admits(Composite(Money), t)`. The slice's reason for dropping currency ("QSL-781 owns native String admission") is stale: `tc235_k2_money_and_order_placed_composites_require_qsl_781` assembles full K2 `Money` with `currency` and passes in the gate. Fix: build `t` and the `Money` value with the row's fields over a slice that keeps currency, and assert admission at the type of `Order/total` as read from the package's field record. Otherwise, record every deviation in the doc. | qsl-semantics/tests/it/tc235_record_event.rs:1139-1151,1356-1403; qsl-semantics/tests/it/tc235_business_meanings.rs:1191-1199 |
 | FND-003 | low | The PR body's first line says the PR "Brings the TC-235 runs M01-M04, M13, M14, M17 and M18 to their stated outcomes". It does not: the M13 and M14 runtime halves are deferred (as the body says further down), M17 runs 1 to 3 and M04 run 3 deviate, and M01 is partial (FND-001). Reword it to say which outcomes are asserted. | PR #817 body |
+
+## Dispositions
+
+Re-checked at `8d5b1e93a98bff82094736ca097beb3d16e3389d`: fix commit `8d5b1e93a`. The fix commit adds no new defect.
+
+M01's "no invariant" check applies FR-208's own definition to the engine's data. A state machine's invariants are its owned `quire` clauses that no transition names as a guard. The check asserts that the guard set is exactly `[NotYetPlaced]` and that no other such clause exists. It is the same derivation M06 run 4 already uses. QSL has no other guard-versus-invariant classification at the model layer; state-machine clause lowering is #789's work. The check fails if `NotYetPlaced` loses its guard binding.
+
+M17 run 1 now reads the type of `Order/total` from the assembled `Order` object type, which is `Composite(Money)`. It builds `t` and the Money value from the assembled record fields, using the row's values, including `currency`.
+
+The PR body now names what is asserted and what remains with #789.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 8d5b1e93a |
+| FND-002 | fixed | 8d5b1e93a |
+| FND-003 | fixed | PR #817 body edit (no commit; body read back at head 8d5b1e93a) |
