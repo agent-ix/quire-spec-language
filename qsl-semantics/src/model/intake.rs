@@ -1640,10 +1640,12 @@ fn process_subtype_generalization_schema_diagnostic(
         .is_some_and(|resolved| resolved == meaning::PROCESS)
 }
 
-/// FR-208 process binding owns duplicate step identities. The semantic-IR
-/// reader reports this as its package-wide `DUPLICATE_IDENTITY` schema
-/// diagnostic before QSL's process binder runs; retain the source pointer but
-/// classify the selected process member using QSL's typed refusal cause.
+/// FR-208 binding owns duplicate step, state, transition and clause
+/// identities. The semantic-IR reader reports each as its package-wide
+/// `DUPLICATE_IDENTITY` schema diagnostic before QSL's binders run; retain the
+/// source pointer but classify the selected member using QSL's typed refusal
+/// cause. Steps require a process owner, states and transitions a state
+/// machine, and a clause is accepted on an owner of any meaning.
 #[qsl_attrs::string_edge]
 fn duplicate_process_step_refusal(
     document: &PackageDocument,
