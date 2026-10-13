@@ -1793,6 +1793,7 @@ fn missing_reader_reference(
             .get("identity")
             .and_then(Value::as_str)
             .unwrap_or(process_identity);
+        let member = semantic_member_path(&located.pointer);
         return Some(ModelRefusal {
             code: Code::MissingDeclaration,
             cause: ModelRefusalCause::IntakeMissingDeclaration {
@@ -1800,11 +1801,10 @@ fn missing_reader_reference(
                 reference: reference.to_owned(),
                 origin: step.get("origin").cloned().unwrap_or(Value::Null),
                 path: pointer.parse().ok()?,
-                member: MemberPath::type_definition(),
+                member: member.clone(),
             },
             detail: format!(
-                "{} ({pointer}) on {step_identity}: {reference:?} names no event type of this domain package",
-                semantic_member_path(&located.pointer)
+                "{member} ({pointer}) on {step_identity}: {reference:?} names no event type of this domain package"
             ),
         });
     }
@@ -1844,7 +1844,7 @@ fn missing_reader_reference(
             reference: reference.clone(),
             origin,
             path: pointer.parse().ok()?,
-            member: MemberPath::type_definition(),
+            member: source_member.clone(),
         },
         detail: format!(
             "{source_member} ({pointer}) on {node}: {reference:?} names no declaration of this domain package"

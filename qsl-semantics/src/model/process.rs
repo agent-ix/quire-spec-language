@@ -203,7 +203,7 @@ fn read_step_events(
                         reference: key.node.clone(),
                         origin: step.get("origin").cloned().unwrap_or(Value::Null),
                         path,
-                        member: MemberPath::type_definition(),
+                        member: MemberPath::from_document_location(&at),
                     },
                     detail: format!(
                         "{at} on {step_identity}: names no event type of this domain package"
