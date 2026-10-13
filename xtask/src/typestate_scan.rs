@@ -1356,7 +1356,10 @@ mod tests {
                 }
                 for bare in ["NodeKey", "String", "str"] {
                     if field.type_names.contains(bare) {
-                        found.push(format!("{}: {}.{name} is a bare {bare}", item.file, item.name));
+                        found.push(format!(
+                            "{}: {}.{name} is a bare {bare}",
+                            item.file, item.name
+                        ));
                     }
                 }
             }
@@ -1370,13 +1373,11 @@ mod tests {
     #[trace("TC-260", "FR-088-AC-8")]
     #[test]
     fn tc_260_scan_rejects_bare_type_fields_beyond_the_raw_wire_allowance() {
-        let items = scan_tree(&[
-            (
-                "src/lib.rs",
-                "pub struct Bad { field_type: String, other_type: NodeKey }\n\
+        let items = scan_tree(&[(
+            "src/lib.rs",
+            "pub struct Bad { field_type: String, other_type: NodeKey }\n\
                  pub struct RawRecord<'v> { type_identity: &'v str }\n",
-            ),
-        ]);
+        )]);
         let found = bare_type_fields(items.structs.iter());
         assert_eq!(found.len(), 3, "{found:?}");
         let root = tempfile::tempdir().expect("a temp dir");
