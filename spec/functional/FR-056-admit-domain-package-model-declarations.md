@@ -384,7 +384,7 @@ table fixes:
 | `quire.meaning.model.object-type/v1` | one `object` |
 | `quire.meaning.model.value-type/v1` | one `scalar` naming the value type and its bound native value type |
 | `quire.meaning.model.record-value-type/v1` | one `record` naming the most-specific record value type and its effective fields; no object identity or reference export |
-| `quire.meaning.model.variant-type/v1` | one `enum`, one `variant` per case |
+| `quire.meaning.model.variant-type/v1` | one `enum` naming the type and its cases, one `variant` per case ("Variant types" below) |
 | `quire.meaning.model.population/v1` | one `population` |
 | `quire.meaning.systems.interface/v1`, `quire.meaning.systems.part/v1`, `quire.meaning.systems.port/v1`, `quire.meaning.systems.connection/v1`, `quire.meaning.systems.allocation/v1` | none; the node binds to its FR-152 kind |
 
@@ -408,7 +408,10 @@ under FR-154 before assembly, retaining that named refusal.
 
 If a clause names a declaration bound to `quire.meaning.model.variant-type/v1`,
 then the compiler SHALL refuse the clause with
-`unsupported_construct`/`declaration-form` (FR-150).
+`unsupported_construct`/`declaration-form` (FR-150). The refusal belongs to the
+clause that names the variant type, never to the variant type's declaration:
+intake admits and exports the declaration under "Variant types" whether or not
+any clause names it.
 
 The compiler SHALL key each `relationship` export by its owner's declaration
 identity and declared `name`, with its `sourceSpan` as the export locus.
@@ -423,6 +426,92 @@ connection and allocation rules to it.
 
 When an IR node binds as a Port, the compiler SHALL retain its owning part,
 direction, interface type and typed multiplicity.
+
+#### Variant types
+
+A variant type is a closed set of named cases (FR-208). In Semantic IR it is a
+type definition whose construct has shape `enumeration`, with a `variants`
+list (filament-core-data `semantic-ir.schema.json`, `$defs.variant`, line 715:
+required `identity`, `name` of at least one character and `origin`, optional
+`payloadType`). The `variants` list is read in the member order the document
+gives it, and that order carries no meaning.
+
+When a type definition binds to `quire.meaning.model.variant-type/v1`, intake
+SHALL admit it as one original declaration and the compiler SHALL derive these
+export records:
+
+- one `enum`, keyed by the type's declaration identity, carrying `name` (the
+  type's artifact id), `sourceSpan`, and `members`, the declared case names in
+  ascending UTF-8 byte order of the name;
+- one `variant` per case, keyed by the owner's declaration identity and the
+  case's declared name (as FR-056 keys a `relationship`), carrying `case` (the
+  case name), the owner `enum` key, and the case's `sourceSpan` as export
+  locus.
+
+The export field names follow QSpec FR-141's enum identity, which calls the
+case list `members` and the case `case`. QSL defines no other export
+vocabulary for these records.
+
+The compiler SHALL compare case names as exact UTF-8 byte sequences; letter
+case is kept, so `Gold` and `gold` are distinct cases. The declaration identity
+of a case node is FR-154's variant slot,
+`ix://<package identity>/variant/<Name>-<value>`, and the compiler SHALL NOT
+use it as the `variant` export key. Two variant types may declare the same case
+name, because their owners differ. A case has no value, ordinal or payload in
+v1. The compiler SHALL derive the order of `members` from the names alone, so
+reordering the `variants` list changes no key, export or ordering.
+
+The next five rules are QSL rules. QSpec FR-154's refusal table and FR-208 do
+not state them yet (QSpec follow-up: add rows to FR-154); each uses the cause
+of the nearest FR-154 precedent.
+
+If a case has a `payloadType`, then intake SHALL refuse the case with
+`unsupported_construct`/`declaration-form`, naming the case node identity and
+the path `Variant.payloadType`. This is the cause FR-056 gives the other
+schema-valid forms v1 does not support (an unsupported `Text` profile, a
+`Rational` `typeRef`), and it is not a malformed node. The lift never emits a
+`payloadType` on an enumeration value (filament-core-data FR-093), so only a
+hand-authored document reaches this refusal, and the reader must already
+resolve the payload type.
+
+If a variant type declares no case, then intake SHALL refuse it with
+`invalid_model_binding`/`malformed-declaration`, naming the type node and the
+path `TypeDefinition.variants`. The reader's schema allows an empty `variants`
+list, so this is a QSL rule. If a case has no source span, then intake SHALL
+refuse it with `invalid_model_binding`/`malformed-declaration`, as for a
+relationship member. A case with no name is refused by the reader's schema
+before intake, and its diagnostic is retained.
+
+If a type definition bound to `quire.meaning.model.variant-type/v1` has a
+construct whose shape is not `enumeration`, then intake SHALL refuse it with
+`invalid_model_binding`/`malformed-declaration` under FR-154's construct
+validity rule.
+
+Two cases of one variant type with equal names share one export key. When they
+also share one case node identity, the lift (filament-core-data FR-095:
+DUPLICATE_IDENTITY, and UNSLUGGABLE_NAME for names that slug alike) or the
+reader (`duplicate_identities`, semantic-ir `rules.rs:1133`) refuses first, and
+FR-056's reader-first rule retains that diagnostic with no declaration. When
+the reader admits the bytes, because the two cases carry distinct identities,
+intake SHALL refuse the second case with
+`invalid_model_binding`/`conflicting-binding`, naming the type node and the
+path `TypeDefinition.variants[i]`: the cases share one `variant` export key
+(owner identity and name), the same collision FR-154 refuses for two nodes
+that share one identity. If a case's identity is not the minted
+`variant/<Name>-<value>` of its owner and name, then intake SHALL refuse the
+case with `invalid_model_binding`/`malformed-declaration`.
+
+If a member's `typeRef` names a declaration bound to
+`quire.meaning.model.variant-type/v1`, then intake SHALL refuse the member with
+`invalid_model_binding`/`malformed-declaration`, naming the field node identity
+and the path `Field.typeRef`. QSpec FR-208 lets a field `typeRef` name a value
+type or a record value type and lists no variant type, and FR-208-AC-9 and
+FR-154's construct validity row give `malformed-declaration` for a reference
+that names a node of a meaning it may not name. FR-150's "referenced by source"
+refusal covers native source, not a model member. This refusal is a named
+placeholder: QSL-738 owns fields typed by a variant type and replaces it. As
+with every declaration refusal, it leaves the package unadmitted; the variant
+type's declaration is not refused because it is a variant type.
 
 ### Declarations
 
@@ -614,6 +703,11 @@ the assembler SHALL refuse it with `missing_declaration` at the name.
 | FR-056-AC-21 | An admitted package containing record value type `Address { street: Text[0, 64; nfc] }`, object field `Account.address: Address` and a record subtype `PostalAddress` retains one `record` export per record, all effective fields and invariants, and subtype conformance. The type environment gives `Account.address` the record value type, an optional `Address` field `Option<Address>`, and an ordered non-unique `[0, 3]` field `Sequence<Address>[0, 3]`, never `Reference<Address>`; an operation parameter or result naming `Address` has the same value type. | Test |
 | FR-056-AC-22 | A record value type with an identity field or an operation refuses with FR-208's named cause before assembly; an object or record field whose `typeRef` names an event type, state machine, process, persistence interface or namespace refuses `invalid_model_binding`/`malformed-declaration` at intake. A valid finite recursive record field, such as `Node { next?: Node }`, retains its record type and optional edge in the type environment; it is not refused solely because the declaration graph is recursive. | Test |
 | FR-056-AC-23 | K2's native String value retains any Unicode scalar sequence exactly, including empty, ASCII, multibyte and UUID-looking text; equality is exact-sequence equality, its key is UTF-8 byte order, and Text normalization does not apply. The closed String object accepts exactly `kind: string` and `text`; an extra member and a lone surrogate refuse, and the typed result wire round trip preserves each value and its UTF-8 byte contribution to result sizing. Existing Text, UUID and Timestamp kind encodings remain unchanged. String gains no arithmetic, concatenation or general relational operator. | Test (TC-992) |
+| FR-056-AC-24 | An admitted package containing variant type `Tier` with cases `Standard` and `Gold`, listed in the document as `Gold` then `Standard`, retains one declaration for `Tier` and one for each case node (`ix://<package identity>/variant/Tier-Gold`, `.../Tier-Standard`), one `enum` keyed by `Tier`'s declaration identity with `name` `Tier` and `members` `[Gold, Standard]`, and one `variant` per case keyed by (`Tier`'s identity, case name) carrying `case`, the owner `enum` key and span. Listing the cases `Standard` then `Gold` changes no key, export or ordering. A second variant type `Level` with a case `Gold` is admitted beside it with a distinct `variant` key, and a case `gold` beside `Gold` is a distinct case. | Test (TC-994) |
+| FR-056-AC-25 | A hand-authored variant type with a case carrying a resolving `payloadType` refuses `unsupported_construct`/`declaration-form` at node `.../variant/Tier-Gold`, path `Variant.payloadType`; it is not `invalid_model_binding`, and no declaration of the package is admitted. A payload-free case beside it raises no refusal of its own. | Test (TC-995) |
+| FR-056-AC-26 | A variant type with no case, a case with no source span, and a type bound to the variant-type meaning whose construct shape is not `enumeration` each refuse `invalid_model_binding`/`malformed-declaration`. Two cases named `Gold` with one identity are refused by the lift or the reader with that diagnostic retained and no declaration; two cases named `Gold` with distinct identities, in a document the reader admits, refuse `invalid_model_binding`/`conflicting-binding` at node `.../Tier`, path `TypeDefinition.variants[1]`. A case with no name is refused by the reader's schema. | Test (TC-996) |
+| FR-056-AC-27 | A clause naming `Tier` refuses `unsupported_construct`/`declaration-form` at the clause, while the package, `Tier`'s declaration and its `enum` and `variant` exports are admitted and equal to those of a package no clause names; with no clause naming `Tier`, no refusal is raised. | Test (TC-997) |
+| FR-056-AC-28 | A field whose `typeRef` names `Tier` refuses `invalid_model_binding`/`malformed-declaration` at the field node, path `Field.typeRef`, and the package is unadmitted as for any declaration refusal. Fields typed by a variant type are owned by QSL-738. | Test (TC-997) |
 | FR-056-AC-8 | End to end, the filament-core-data#173 architecture fixture runs bundle → quire-rs → lift → intake seam; its ports resolve with owning part, direction, interface type and multiplicity, a connection between them is admitted under FR-152, and the model linker binds a native package's references to those declarations. | Test |
 
 ### FR-056-AC-17
