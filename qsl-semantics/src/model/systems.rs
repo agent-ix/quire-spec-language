@@ -47,7 +47,7 @@ use crate::model::accounting::{Charge, ChargePoint, Incomplete, Meter};
 use crate::model::conformance::multiplicity_conforms;
 use crate::model::domain_package::{
     AllocationRecord, ComponentRecord, DomainPackage, DomainPackageRecord, EndpointRecord,
-    PortDirection, RelationshipRecord,
+    ObjectTypeRecord, PortDirection, RelationshipRecord,
 };
 use crate::model::index::ModelIndex;
 use crate::model::key::DeclarationKey;
@@ -190,11 +190,13 @@ fn charge_kind(meter: &mut Meter) -> Result<(), Incomplete> {
     meter.charge(Charge::new(ChargePoint::SystemsKind))
 }
 
-/// Runs `quire.model.systems.kind-mapping/v1` over every component, then
-/// every endpoint, then every relationship in `domain_package`, each ascending by
-/// producer key, charging `systems.kind` once per record before resolving
-/// it. Exhaustive under the limits: every no-kind cascade is reported, in
-/// this same order, never stopping at the first.
+/// Runs `quire.model.systems.kind-mapping/v1` over every interface, then
+/// every component, endpoint, relationship and allocation in
+/// `domain_package`, each ascending by producer key, charging `systems.kind`
+/// once per record before resolving it. A port's interface type resolves
+/// against the interfaces the first phase classified. Exhaustive under the
+/// limits: every no-kind cascade is reported, in this same order, never
+/// stopping at the first.
 pub fn classify(
     domain_package: &DomainPackage,
     meter: &mut Meter,
@@ -204,7 +206,7 @@ pub fn classify(
     let mut relationships: Vec<&RelationshipRecord> = Vec::new();
     let mut allocations: Vec<&AllocationRecord> = Vec::new();
     let mut object_types: HashSet<DeclarationKey> = HashSet::new();
-    let mut interface_types: HashSet<DeclarationKey> = HashSet::new();
+    let mut interfaces: Vec<&ObjectTypeRecord> = Vec::new();
     let mut record_value_types: HashSet<DeclarationKey> = HashSet::new();
 
     let declared: HashSet<&DeclarationKey> = domain_package
@@ -221,7 +223,7 @@ pub fn classify(
             DomainPackageRecord::ObjectType(object_type) => {
                 object_types.insert(object_type.key.clone());
                 if object_type.interface_features.is_some() {
-                    interface_types.insert(object_type.key.clone());
+                    interfaces.push(object_type);
                 }
             }
             DomainPackageRecord::RecordValueType(record) => {
@@ -240,6 +242,7 @@ pub fn classify(
             | DomainPackageRecord::Population(_) => {}
         }
     }
+    interfaces.sort_by_key(|interface| interface.key.clone());
     components.sort_by_key(|component| component.key.clone());
     endpoints.sort_by_key(|endpoint| endpoint.key.clone());
     relationships.sort_by_key(|relationship| relationship.key.clone());
@@ -248,7 +251,13 @@ pub fn classify(
     let mut component_kinds: HashMap<DeclarationKey, Kind> = HashMap::new();
     let mut endpoint_kinds: HashMap<DeclarationKey, Kind> = HashMap::new();
     let mut edge_kinds: HashMap<DeclarationKey, Kind> = HashMap::new();
+    let mut interface_types: HashSet<DeclarationKey> = HashSet::new();
     let mut refusals: Vec<ModelRefusal> = Vec::new();
+
+    for interface in &interfaces {
+        charge_kind(meter)?;
+        interface_types.insert(interface.key.clone());
+    }
 
     for component in &components {
         charge_kind(meter)?;
@@ -284,7 +293,16 @@ pub fn classify(
                     ));
                     Kind::None
                 }
-                Some(&Kind::Part) => Kind::Port,
+                Some(&Kind::Part) if interface_types.contains(&endpoint.value_type) => Kind::Port,
+                Some(&Kind::Part) => {
+                    let actual = component_kinds
+                        .get(&endpoint.value_type)
+                        .or_else(|| endpoint_kinds.get(&endpoint.value_type))
+                        .copied()
+                        .unwrap_or(Kind::None);
+                    refusals.push(wrong_export(Kind::Interface, actual, &endpoint.key.node));
+                    Kind::None
+                }
                 Some(&owner_kind) => {
                     refusals.push(wrong_export(Kind::Part, owner_kind, &endpoint.key.node));
                     Kind::None
