@@ -1083,6 +1083,7 @@ fn tc235_m01_literal_k2_is_admitted_as_declared() {
 /// operation run; run 3, dropping the clause record from `read_clauses` fails
 /// the `package.original(&invariant_key).is_some()` assertion; run 4,
 /// rewriting the clause language fails `assert_eq!(foreign.language, "ocl")`.
+#[trace("QSpec-TC-235", "QSpec-FR-208-AC-4")]
 #[test]
 fn tc235_m03_record_shape_and_clause_meanings() {
     let identity_document = mutate_k2(|document| {
@@ -1143,6 +1144,16 @@ fn tc235_m03_record_shape_and_clause_meanings() {
     let foreign_document = mutate_k2(|document| {
         let mut foreign = clause("Money", "NonNegative", "self.amount_minor >= 0");
         foreign["language"] = json!("ocl");
+        let source = json!({
+            "sourceIdentity": id("spec"),
+            "path": "spec.qspec",
+            "startLine": 7,
+            "startColumn": 3,
+            "endLine": 7,
+            "endColumn": 40,
+        });
+        foreign["sourceSpan"] = source.clone();
+        foreign["origin"] = json!({ "source": source });
         type_named_mut(document, "Money")["clauses"] = json!([foreign]);
     });
     let package = read_k2(&foreign_document).expect("foreign-language clause is retained");
@@ -1160,6 +1171,21 @@ fn tc235_m03_record_shape_and_clause_meanings() {
     };
     assert_eq!(foreign.language, "ocl");
     assert_eq!(foreign.text, "self.amount_minor >= 0");
+    // The clause is kept with its source span, unchanged.
+    assert_eq!(
+        package
+            .original(&foreign_key)
+            .expect("the foreign clause keeps its original provenance")
+            .origin,
+        json!({ "source": {
+            "sourceIdentity": id("spec"),
+            "path": "spec.qspec",
+            "startLine": 7,
+            "startColumn": 3,
+            "endLine": 7,
+            "endColumn": 40,
+        }}),
+    );
     let view = record_charges(&package, 22);
     assert!(!view
         .declarations()
@@ -1951,6 +1977,7 @@ fn tc235_m04_event_type_refusal_vectors() {
 /// loci. Run 1 asserts the
 /// inherited effective members, so dropping event supertype assembly fails
 /// the `effective_members` equality.
+#[trace("QSpec-TC-235", "QSpec-FR-208-AC-12")]
 #[test]
 fn tc235_m18_event_type_specialization_vectors() {
     let positive_document = mutate_k2(|document| {
@@ -2044,6 +2071,12 @@ fn tc235_m18_event_type_specialization_vectors() {
             ("ExpressOrderPlaced", "TypeDefinition.occurrenceField"),
             ("OrderPlaced", "TypeDefinition.occurrenceField"),
         ],
+    );
+    tc235_state_machine::assert_derivation_conflict(
+        &refusals[0],
+        "ExpressOrderPlaced",
+        "OrderPlaced/occurred_at",
+        "ExpressOrderPlaced/promised_by",
     );
 
     let wrong_general_document = mutate_k2(|document| {

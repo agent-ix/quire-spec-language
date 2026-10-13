@@ -678,8 +678,6 @@ fn tc235_m21_relationship_sources_and_owner_rules_are_retained() {
     });
     let refusals = normalized_refusals(&bad_target, 22);
     assert_eq!(refusals.len(), 1);
-    // QSpec row M21 run 3 spells this node `Fulfilment/store`; the FR-154-AC-9
-    // relationship key is asserted instead (see run 4 below).
     assert_malformed_at(
         &refusals[0],
         &id("relationship/Fulfilment-store-OrderStore"),
@@ -695,10 +693,6 @@ fn tc235_m21_relationship_sources_and_owner_rules_are_retained() {
     // QSpec M10 runs 7-8 spell their relationship nodes the same way
     // (`Order/scope`, `OrderLifecycle/next`); the divergence is carried by
     // QSpec PR #240, which this test code does not wait on.
-    // QSpec M21 runs 3-4 spell these nodes `Fulfilment/store` and
-    // `Money/owner`; FR-154-AC-9 gives a relationship the identity
-    // `<package>/relationship/<Name>-<verb>-<TargetName>`, so the FR-154 key is
-    // asserted (the rows diverge from FR-154 and need a QSpec fix).
     assert_malformed_at(
         &refusals[0],
         &id("relationship/Money-owner-Order"),
@@ -897,6 +891,7 @@ fn tc235_m22_flags_parameter_is_assembled_as_a_record() {
 /// assertion. The 23-charge count is taken over the document's declared nodes,
 /// so it does not change when a record goes unread; the clause and field
 /// assertions above are the ones that fail.
+#[trace("QSpec-TC-235", "QSpec-FR-208-AC-4")]
 #[test]
 fn tc235_m02_record_value_field_and_clause_bind_to_order() {
     let document = mutate_k2(|document| {
