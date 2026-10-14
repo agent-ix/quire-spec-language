@@ -171,6 +171,10 @@ impl SelectedModel {
     /// driver passes its parser here. A clause in another language is kept
     /// verbatim and not parsed. The first clause `parse` refuses stops the
     /// walk.
+    ///
+    /// Marked `#[string_edge]`: a clause's `language` is the wire identifier
+    /// of its authored language, compared here to pick the `quire` clauses.
+    #[qsl_attrs::string_edge]
     pub fn with_parsed_operation_clauses<E>(
         mut self,
         mut parse: impl FnMut(&str) -> Result<Expression, E>,
