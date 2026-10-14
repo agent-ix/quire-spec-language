@@ -114,9 +114,7 @@ counts; helper traversal events SHALL NOT redefine converted nodes.
   A replay request carries these two fields in the typed `limits.supplied`
   member of the shared replay request (QSpec FR-323), not in `stage_limits`:
   that closed member carries only recompile stage settings under QSpec
-  FR-460/461. Request-side carriage of the ceilings, and so TC-906's replay A/H
-  controls, are blocked on the paired QSpec change that adds `limits.supplied`
-  to FR-323. QSL SHALL NOT add a private member to the shared request. It
+  FR-460/461. QSL SHALL NOT add a private member to the shared request. It
   SHALL NOT derive either bound from the evaluation allowance, multiply that
   allowance, reset helper spend between arguments, or bypass a phase.
 - Every helper event SHALL have exactly one initiating-phase budget owner.
@@ -396,9 +394,7 @@ implement a copied helper or silently change event units.
   the carrier and context mapping the supplied-phase failure arm extends.
 - [QSpec FR-323](ix://agent-ix/quire-specification/FR-323): the shared
   envelope authority for the replay request's `limits.supplied` member and
-  the phase-aware limit projection. Request-side carriage of the ceilings
-  and TC-906's replay A/H controls are blocked on the paired QSpec change,
-  and result-side projection qualification stays blocked on it too.
+  the phase-aware limit projection.
 - ADR-029 LC-4: caller limits.
 - ADR-030 D-1: depth is not a limit.
 - ADR-013 T-4: `LimitExceeded`.

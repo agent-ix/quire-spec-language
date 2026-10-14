@@ -48,3 +48,18 @@ Recorded, not blocking:
 - FR-277-AC-1 is not amended for the new supplied fields.
 - FR-277 still carries source-premise and process prose ("main SHALL route ...", `compare_shifted`).
 - QSpec FR-323 needs a `limits.supplied` member; that change is the planner's separate item.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | high | The fix round added text saying request-side `limits.supplied` carriage and TC-906's replay A/H controls "are blocked on the paired QSpec change that adds `limits.supplied` to FR-323". That change has merged: QSpec FR-323 at main e76a527 defines `limits.supplied` (AC-10..AC-14). The statement is false as of today and tells the implementation to skip controls that are now specified. Cite FR-323's `limits.supplied` member by id as existing. | spec/functional/FR-277-bound-every-lifecycle-operation-by-caller-limits.md:117-119,399-401; spec/functional/FR-098-execute-a-replay-request.md:111-112 |
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | f36c2510c: the two `supplied.*` rows are removed from the parsed setting table; the coder's `make ci` log at f36c2510c ends `EXIT ci 0` |
+| FND-002 | fixed | quire-specification e76a527 (#205) added FR-323's `limits.supplied` member, so the cited member now exists; the stale blocking text the fix round added is tracked as FND-005 |
+| FND-003 | still-open | FR-255-AC-1 and AC-4 now exempt the supplied ceilings, but FR-255-AC-3 is unamended. It still requires every field of each operation's limits type to map to a setting name in the setting or accounting table, while FR-277 puts the `supplied.*` fields on the replay and checked-call limits and says they are not table rows. AC-3 needs the same exception |
+| FND-004 | fixed | f36c2510c: TC-906 step 5 now expects conversion to admit at C and the evaluator to stop Incomplete at its actual `work_units` charge point; C-1 denies |
