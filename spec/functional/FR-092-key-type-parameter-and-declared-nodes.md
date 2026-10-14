@@ -402,6 +402,33 @@ A clause function that `check` synthesizes from a domain package clause has
 this shape with a `ModelOwner`, a `null` `declaration` and a `clause` binding
 ([FR-094](FR-094-key-model-owned-reference-population-and-quantity-nodes.md)).
 
+### Protocol reference nodes
+
+`check` SHALL build the node of a protocol reference expression
+(FR-308, FR-218) as follows, and S4 SHALL emit it as the one carrier QSpec
+FR-322 specifies (QSpec FR-322-AC-66):
+
+- `node_tag` `protocol`, `semantic_form` `protocol_reference`;
+- body: exactly `{term: "reference", target}`, where `target` is the typed
+  node key of the local `protocol` node the reference bound (FR-218), and no
+  other member;
+- `semantic_type`: the target node's `semantic_type`, as the target node
+  carries it;
+- `dependencies`: exactly the target key, and nothing else;
+- occurrences: exactly one, of role `expression`, at the reference's source
+  region;
+- no `declaration`, `owner`, `nominal_identity_preimage` or recursion group.
+
+A reference emits no separate collection, package selector or dependency
+reference, and a target that is not in the package's own graph is never
+satisfied by a selected dependency. The node is keyed by rule 3 (the
+`quire.structural-node/v1` preimage), so its body, and therefore its target
+key, enters the key. Two references to different targets, or one reference
+whose target protocol was changed and re-keyed, have different keys; a
+reference's key changes exactly when its bound target key changes. The
+emitter SHALL NOT write the node when the bound target key is not the key of
+a node it writes in the same graph (FR-218 stale target).
+
 ### Golden vectors
 
 Each vector below is the exact preimage bytes and the key `check` SHALL mint
@@ -1009,6 +1036,8 @@ G10-G15, group digest `8383f625c29862ff9fe9bc66d7a03140f76a54e39153e9158c4f40cec
 | FR-092-AC-13 | Under (`a`, `u`), `predicate Positive using v(x: Int[0, 9]): Boolean { x > 0 }` gives a node with `node_tag` `function`, `semantic_form` `predicate`, `declaration.qualified_name` `["Positive"]` and the unit's `owner`. `function Positive using v(x: Int[0, 9]): Boolean pure { x > 0 }`, alone in another unit under (`a`, `u`), gives a node with `semantic_form` `pure_function` and a key different from the predicate's. For `ordered enum Status { READY, DONE }` from source, the checked graph holds the declaration node with key FR-091 vector N1 (`scalar_type`, `enum`, `declaration.qualified_name` `["Status"]`) and the member node with key N2 (`value`, `enum_value`). | Test (TC-481) |
 | FR-092-AC-14 | Parameters typed `Int[0, 18446744073709551615]`, `Int[0, 9223372036854775808]` and `Int[-170141183460469231731687303715884105728, 170141183460469231731687303715884105727]` and `Int[0, 18446744073709551616]` give type nodes with the preimage bytes and keys of vectors T13, T14, T15 and T16 exactly, each bound spelled as its decimal string. With those parameters in the same unit, T4's `Int[0, 9]` and every other vector of this requirement key unchanged. | Test (TC-910) |
 | FR-092-AC-15 | Keying writes each counter by the 2^53-1 rule and never refuses one for its magnitude: `NodeKeyRefusal` has no magnitude variant. Encoding QSpec's `integer_encoding_vectors` preimages (`proposals/checked-package-v2/node-identity-vectors.json`, QSpec FR-322) through QSL's key function gives their recorded keys: `recursion-size-safe-maximum` (`recursion` `{size: 9007199254740991, ordinal: 9007199254740990}`, both JSON numbers) keys to `bc6fe35a2c34a7162fe0ed0a20473ffb3284bd70236f96feb75b386c55992874`, and `recursion-size-two-pow-53` (`size` the string `"9007199254740992"`, `ordinal` the number 9007199254740991) keys to `89ec1ac87a8b82a05d5414f0c3b314f363e49328988ff5d8c3fc9a88014839bc`. A `group_reference` `ordinal` and an `operation.member` `position` take the same two spellings at 9007199254740991 and 9007199254740992. | Test (TC-910) |
+| FR-092-AC-16 | A unit that declares `protocol Fill` and holds `protocol Fill` as an expression emits a graph with one `protocol`/`protocol_reference` node whose body is exactly `{term: "reference", target: Fill's node key}`, whose `semantic_type` equals the `Fill` node's, whose `dependencies` are exactly that key, and which has one `expression` occurrence at the reference's region and no `declaration`, `owner`, nominal preimage or recursion group. The graph has one node collection and no protocol-reference collection. The emitted package admits through the IR v2 reader as `ProtocolForm::ProtocolReference`. | Test (TC-1021) |
+| FR-092-AC-17 | Changing the target protocol so its node key changes, and re-emitting, changes the reference node's key and the package identity; a unit with two protocols and the reference written against each gives two different reference keys; the same unit emitted twice gives equal keys. The reference's key equals the SHA-256 of the RFC 8785 bytes of its `quire.structural-node/v1` preimage. | Test (TC-1021) |
 
 ## Dependencies
 
@@ -1030,6 +1059,9 @@ G10-G15, group digest `8383f625c29862ff9fe9bc66d7a03140f76a54e39153e9158c4f40cec
   §5.1: no catch-all arm in a family dispatch.
 - [FR-088](FR-088-clause-name-and-type-identity.md) AC-7: every reference
   to a declared type resolves to its one node id, the FR-092 key.
+- [FR-218](FR-218-check-every-protocol-control-construct-at-s3.md): the
+  protocol reference's binding to its target key, and its refusals.
+- QSpec FR-322-AC-66: the protocol-reference carrier this emission writes.
 - QSpec FR-143 and FR-146: the recursive records and recursive functions
   that form recursion groups.
 - `SourceOwner`'s `authority` and `identity` are those of the unit's

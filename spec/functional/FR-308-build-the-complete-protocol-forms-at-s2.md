@@ -62,6 +62,8 @@ In `forms::protocol_clause` (crate `qsl-forms`):
   Option<{invariant, variant}>, guard, body, exhausted: Option<control>}`.
 - `AwaitForm`, `CompensationForm`, `TerminalForm::{When(block), Any}` and
   `SchedulingForm::Adversarial`, each with its spans.
+- `ExpressionForm::ProtocolReference{target: QualifiedName, span}`, the form
+  of a protocol reference expression (Protocol reference expression).
 
 ## Behavior
 
@@ -84,6 +86,27 @@ In `forms::protocol_clause` (crate `qsl-forms`):
   `unsupported_construct`) applies to it, but QSL has no header layer for that
   profile, so the gate is not enforced (FR-361 item 8).
 
+### Protocol reference expression
+
+- A protocol reference is the `primary` alternative
+  `protocol-reference = 'protocol', qualified-name`. The target is a
+  qualified name that S3 resolves (FR-218); the expression carries no
+  package selector, alias or key. `protocol` leads a reference only in
+  expression position, where no declaration can begin, so it never changes
+  how a `protocol-clause` declaration parses.
+- A protocol reference is admitted wherever the grammar admits a `primary`.
+  Its checked type is its target protocol's semantic type (FR-218). A
+  consumer that accepts no protocol-typed operand refuses it with its own
+  operand-type cause; this requirement adds no consumer.
+- S2 SHALL build one `ExpressionForm::ProtocolReference` per occurrence in
+  source order, with the written target and the span of the whole
+  expression, and SHALL resolve nothing. A target that is not a
+  `qualified-name` is a parse refusal, not an S2 form.
+- QSpec owns the shared grammar. QSpec's shared grammar has no
+  `protocol-reference` production; QSL builds this form under the
+  production above, and its adoption into the shared grammar is requested
+  of QSpec.
+
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
@@ -93,6 +116,7 @@ In `forms::protocol_clause` (crate `qsl-forms`):
 | FR-308-AC-3 | `repeat R by r visible() invariant {…} variant {…} while {…} …` builds a `RepeatForm` with no maximum, both loop-proof blocks and no `exhausted` control; `repeat R by r visible() max 3 while {…} … exhausted …` builds maximum 3, no loop proof and an `exhausted` control. | Test (TC-887) |
 | FR-308-AC-4 | A protocol with `terminal when {k.v = 3};`, then `terminal any;`, then `scheduling adversarial;` builds three members in that order with their spans; a protocol that names an identifier `fork` outside a step-row position builds it as an identifier. | Test (TC-887) |
 | FR-308-AC-5 | A protocol whose CST holds a recovery node refuses `FormsCause::RecoveringCst` with no form. Building the same declaration twice gives equal forms. | Test (TC-887) |
+| FR-308-AC-6 | `protocol Fill` written as an expression builds one `ExpressionForm::ProtocolReference` with target `Fill` and the span of the two tokens; `protocol M::Fill` builds the target `M::Fill`; two references in one unit build two forms in source order. A unit that holds a `protocol-clause` declaration and a reference builds both and the declaration parses as before. | Test (TC-1021) |
 
 ## Dependencies
 
