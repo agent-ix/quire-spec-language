@@ -50,7 +50,8 @@ use quire_exact::{
 use quire_exact::{DivisionMember, IntegerDomain};
 use quire_exact::{Outcome, Refusal, Undefined};
 use quire_semantic_value::declaration::{
-    operand_value, CompositeShape, EnvironmentFailure, EqualityOperator, FieldRef, TypeEnvironment,
+    operand_value, CompositeShape, ConstructionCause, ConstructionRefusal, EnvironmentFailure,
+    EqualityOperator, FieldRef, TypeEnvironment,
 };
 use quire_semantic_value::enumeration::{compare_enum, EnumMemberIndex};
 use quire_semantic_value::location::Location;
@@ -146,6 +147,36 @@ enum Halt {
 struct LocatedStop {
     stop: Stop,
     location: Location,
+}
+
+/// Which composite constructor refused.
+#[derive(Clone, Copy)]
+enum ConstructionSite {
+    Tuple,
+    Record,
+}
+
+/// A refused tuple or record construction as the fault it is: a storage
+/// failure of the admission worklist has its own identifier and is never read
+/// as a rejected construction.
+fn construction_fault(site: ConstructionSite, refusal: &ConstructionRefusal) -> Halt {
+    use ConstructionCause::{StorageCapacity, StorageDenied};
+    invariant(match (site, &refusal.cause) {
+        (ConstructionSite::Tuple, StorageDenied(_)) => {
+            "tuple-construction-admission-allocation-denied"
+        }
+        (ConstructionSite::Tuple, StorageCapacity(_)) => {
+            "tuple-construction-admission-capacity-overflow"
+        }
+        (ConstructionSite::Record, StorageDenied(_)) => {
+            "record-construction-admission-allocation-denied"
+        }
+        (ConstructionSite::Record, StorageCapacity(_)) => {
+            "record-construction-admission-capacity-overflow"
+        }
+        (ConstructionSite::Tuple, _) => "tuple-construction-rejected",
+        (ConstructionSite::Record, _) => "record-construction-rejected",
+    })
 }
 
 /// A quantity whose `UnitId` neither the package's unit table nor this
@@ -1568,7 +1599,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                     .scope
                     .types()
                     .tuple(*declaration, arguments)
-                    .map_err(|_| invariant("tuple-construction-rejected"))?;
+                    .map_err(|refusal| construction_fault(ConstructionSite::Tuple, &refusal))?;
                 outcome_into_stop(retain_composite(value, self.meter))?
             }
             NodeKind::Record { declaration, slots } => {
@@ -1602,7 +1633,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                     .scope
                     .types()
                     .record(*declaration, fields)
-                    .map_err(|_| invariant("record-construction-rejected"))?;
+                    .map_err(|refusal| construction_fault(ConstructionSite::Record, &refusal))?;
                 outcome_into_stop(retain_composite(value, self.meter))?
             }
             NodeKind::Collection {
@@ -2585,6 +2616,61 @@ mod invariants;
 
 #[cfg(test)]
 mod tests {
+    use quire_semantic_value::declaration::{Component, StorageRequest, StorageUnit};
+
+    fn fault_identifier(site: ConstructionSite, cause: ConstructionCause) -> &'static str {
+        let refusal = ConstructionRefusal {
+            component: Component::Value,
+            cause,
+        };
+        match construction_fault(site, &refusal) {
+            Halt::Fault(fault) => fault.invariant(),
+            _ => "not-a-fault",
+        }
+    }
+
+    /// A storage failure of tuple or record construction keeps its own fault
+    /// identifier; every other cause stays `*-construction-rejected`.
+    #[test]
+    fn construction_storage_causes_have_their_own_fault_identifiers() {
+        let request = StorageRequest::new(4, StorageUnit::AdditionalElements);
+        let cases = [
+            (
+                ConstructionSite::Tuple,
+                ConstructionCause::StorageDenied(request),
+                "tuple-construction-admission-allocation-denied",
+            ),
+            (
+                ConstructionSite::Tuple,
+                ConstructionCause::StorageCapacity(request),
+                "tuple-construction-admission-capacity-overflow",
+            ),
+            (
+                ConstructionSite::Record,
+                ConstructionCause::StorageDenied(request),
+                "record-construction-admission-allocation-denied",
+            ),
+            (
+                ConstructionSite::Record,
+                ConstructionCause::StorageCapacity(request),
+                "record-construction-admission-capacity-overflow",
+            ),
+            (
+                ConstructionSite::Tuple,
+                ConstructionCause::TypeMismatch,
+                "tuple-construction-rejected",
+            ),
+            (
+                ConstructionSite::Record,
+                ConstructionCause::MissingField,
+                "record-construction-rejected",
+            ),
+        ];
+        for (site, cause, expected) in cases {
+            assert_eq!(fault_identifier(site, cause), expected);
+        }
+    }
+
     use super::super::s6a::ReferenceEvaluation;
     use super::*;
     use ix_trace_rs::trace;
