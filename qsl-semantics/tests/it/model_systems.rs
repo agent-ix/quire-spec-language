@@ -489,8 +489,8 @@ fn systems_members_have_effective_owner_entries() {
 }
 
 /// A subtype inherits every systems member from its composite ancestor. An
-/// inherited member carries one inherit fact per ancestor path and no qualify
-/// fact (TC-195 N01), even for the role-less connection whose owner holds two
+/// inherited member carries one inherit fact per direct supertype that has it
+/// and no qualify fact (TC-195 N01), even for the role-less connection whose owner holds two
 /// same-owner qualify facts. This also exercises the repeated same-owner
 /// path control: dropping the ancestor member grouping makes the inherit
 /// fact assertions fail. The fact-boundary assertion below stops before any
@@ -514,7 +514,6 @@ fn systems_members_inherit_with_ordered_duplicate_end_facts() {
                 ],
                 vec![
                     DeclarationKey::fixture("model.SysBridge"),
-                    DeclarationKey::fixture("model.Sys"),
                     DeclarationKey::fixture("model.Sys.pump"),
                 ],
             ],
@@ -529,7 +528,6 @@ fn systems_members_inherit_with_ordered_duplicate_end_facts() {
                 ],
                 vec![
                     DeclarationKey::fixture("model.SysBridge"),
-                    DeclarationKey::fixture("model.Sys"),
                     DeclarationKey::fixture("model.Sys.pipe"),
                 ],
             ],
@@ -544,7 +542,6 @@ fn systems_members_inherit_with_ordered_duplicate_end_facts() {
                 ],
                 vec![
                     DeclarationKey::fixture("model.SysBridge"),
-                    DeclarationKey::fixture("model.Sys"),
                     DeclarationKey::fixture("model.Sys.pump.out"),
                 ],
             ],
@@ -559,7 +556,6 @@ fn systems_members_inherit_with_ordered_duplicate_end_facts() {
                 ],
                 vec![
                     DeclarationKey::fixture("model.SysBridge"),
-                    DeclarationKey::fixture("model.Sys"),
                     DeclarationKey::fixture("model.rel.parts"),
                 ],
             ],
@@ -574,7 +570,6 @@ fn systems_members_inherit_with_ordered_duplicate_end_facts() {
                 ],
                 vec![
                     DeclarationKey::fixture("model.SysBridge"),
-                    DeclarationKey::fixture("model.Sys"),
                     DeclarationKey::fixture("model.Pump.alloc"),
                 ],
             ],

@@ -1986,7 +1986,7 @@ fn all_instances_expression_target_declared_but_not_in_model_is_type_mismatch() 
 /// checked static type `S` (`M::B`) must still conform to the queried `T`
 /// (`M::A`) for this probe to reach `crate::model::population::lookup` at
 /// all. The reference names a well-formed but foreign universe (a 32-byte
-/// digest, never equal to this model's own `quire.model.object-universe/v1`
+/// digest, never equal to this model's own `quire.model.object-universe/v2`
 /// digest); a byte-length other than 32 can no longer reach this layer at
 /// all, since `quire_exact::UniverseId` fixes the shape at construction
 /// (ADR-013 §8 OQ-C ruling) -- `qsl-semantics/tests/it/model_population.rs`'s

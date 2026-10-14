@@ -280,7 +280,7 @@ impl LimitKind {
 ///
 /// This rung charges the phase-1/2/3/5 points below, plus
 /// phase 4's `normalize.redefinition-check`/`normalize.conflict-check`
-/// (`quire.model.normalize.redefine/v1`, TC-195 N06); see
+/// (`quire.model.normalize.redefine/v2`, TC-195 N06); see
 /// `crate::model::normalize` module docs for that pass's exact scope. FR-151
 /// adds `conformance.axis` (`crate::model::conformance`) and
 /// `dispatch.subtype`/`dispatch.candidate`/`dispatch.dominance`

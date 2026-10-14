@@ -140,7 +140,8 @@ struct Counters {
 }
 
 fn counters(nodes: &[Node]) -> Counters {
-    let (outcome, meter) = normalize_with_meter(&package(nodes), ModelNormalizationLimits::default());
+    let (outcome, meter) =
+        normalize_with_meter(&package(nodes), ModelNormalizationLimits::default());
     match outcome {
         NormalizeOutcome::Completed(_) => {}
         other => panic!("the shape completes at the defaults, got {other:?}"),

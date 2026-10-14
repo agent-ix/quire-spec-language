@@ -45,7 +45,12 @@ fn object_type(name: &str, supertypes: &[&str]) -> DomainPackageRecord {
     })
 }
 
-fn field(name: &str, owner: &str, redefines: Option<&str>, subsets: &[&str]) -> DomainPackageRecord {
+fn field(
+    name: &str,
+    owner: &str,
+    redefines: Option<&str>,
+    subsets: &[&str],
+) -> DomainPackageRecord {
     DomainPackageRecord::FieldMember(FieldMemberRecord {
         key: key(name),
         owner: key(owner),
@@ -410,7 +415,10 @@ fn n02_the_diamond_stores_one_link_per_direct_edge() {
 fn n02_an_effective_identity_binds_no_selection() {
     let one = completed(&f1("n01"));
     let two = completed(&f2());
-    assert_eq!(type_entry(&one, "A").effective_id, type_entry(&two, "A").effective_id);
+    assert_eq!(
+        type_entry(&one, "A").effective_id,
+        type_entry(&two, "A").effective_id
+    );
     assert_eq!(
         member_entry(&one, "A", "A/x").effective_id,
         member_entry(&two, "A", "A/x").effective_id
@@ -420,7 +428,12 @@ fn n02_an_effective_identity_binds_no_selection() {
 
 /// N06: two undominated redefiners refuse; a most-derived redefiner resolves
 /// the contest and the losers stay hidden.
-#[trace("QSpec-TC-195", "QSpec-FR-150-AC-6", "QSpec-FR-081-AC-3", "QSpec-FR-081-AC-6")]
+#[trace(
+    "QSpec-TC-195",
+    "QSpec-FR-150-AC-6",
+    "QSpec-FR-081-AC-3",
+    "QSpec-FR-081-AC-6"
+)]
 #[test]
 fn n06_conflict_refuses_then_resolves_with_hidden_losers() {
     match normalize(&n06_conflict(), ModelNormalizationLimits::default()) {
@@ -531,7 +544,12 @@ fn n09_a_second_selection_changes_only_the_view_and_the_universe() {
 
 /// N12: the counters of the admitted fixture and the identities that move
 /// when `C/x3` stops redefining.
-#[trace("QSpec-TC-195", "QSpec-FR-150-AC-6", "QSpec-FR-081-AC-10", "QSpec-FR-081-AC-11")]
+#[trace(
+    "QSpec-TC-195",
+    "QSpec-FR-150-AC-6",
+    "QSpec-FR-081-AC-10",
+    "QSpec-FR-081-AC-11"
+)]
 #[test]
 fn n12_counters_and_the_ancestry_each_change_reaches() {
     let package = n12_without_c_redefinition();

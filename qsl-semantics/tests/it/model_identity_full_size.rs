@@ -38,7 +38,11 @@ fn chain() -> DomainPackage {
                     key: key(at),
                     interface_features: None,
                     abstract_type: false,
-                    supertypes: if at == 0 { Vec::new() } else { vec![key(at - 1)] },
+                    supertypes: if at == 0 {
+                        Vec::new()
+                    } else {
+                        vec![key(at - 1)]
+                    },
                 })
             })
             .collect(),
@@ -59,6 +63,7 @@ fn peak_resident_bytes() -> u64 {
 /// The child: normalize on a 512 KiB-stack thread and print the measurements.
 fn child() {
     let package = chain();
+    let baseline = peak_resident_bytes();
     let (elapsed, declarations, facts, hashed, work, outcome) = std::thread::scope(|scope| {
         std::thread::Builder::new()
             .stack_size(STACK_BYTES)
@@ -89,13 +94,18 @@ fn child() {
     println!("HASHED={hashed}");
     println!("WORK={work}");
     println!("WALL_MS={}", elapsed.as_millis());
+    println!("VMHWM_BASELINE_BYTES={baseline}");
     println!("VMHWM_BYTES={}", peak_resident_bytes());
 }
 
+/// The number the child printed after `name=`. The harness may put its own
+/// `test ... ` prefix on the first printed line, so the key is searched for
+/// within each line.
 fn measured(output: &str, name: &str) -> u64 {
+    let key = format!("{name}=");
     output
         .lines()
-        .find_map(|line| line.strip_prefix(&format!("{name}=")))
+        .find_map(|line| line.find(&key).map(|at| &line[at + key.len()..]))
         .unwrap_or_else(|| panic!("the child reports {name}: {output}"))
         .trim()
         .parse()
@@ -126,10 +136,16 @@ fn ten_thousand_edge_chain() {
     assert_eq!(measured(&stdout, "WORK"), 60_006);
     let wall_ms = measured(&stdout, "WALL_MS");
     let resident = measured(&stdout, "VMHWM_BYTES");
-    println!("N19 wall_ms={wall_ms} vmhwm_bytes={resident}");
+    println!(
+        "N19 wall_ms={wall_ms} vmhwm_bytes={resident} vmhwm_before_normalization_bytes={}",
+        measured(&stdout, "VMHWM_BASELINE_BYTES")
+    );
     assert!(
         Duration::from_millis(wall_ms) <= MAX_WALL,
         "wall time {wall_ms} ms"
     );
-    assert!(resident <= MAX_RESIDENT_BYTES, "peak resident {resident} bytes");
+    assert!(
+        resident <= MAX_RESIDENT_BYTES,
+        "peak resident {resident} bytes"
+    );
 }

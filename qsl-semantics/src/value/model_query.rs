@@ -9,7 +9,7 @@
 //! [`ObjectReference`] themselves; this module is the documented canonical
 //! encoding that bridges the two. FR-143 defines a reference's `universe`
 //! and most-specific `type` as literally the model's own
-//! `quire.model.object-universe/v1` and `quire.model.effective-declaration/v1`
+//! `quire.model.object-universe/v2` and `quire.model.effective-declaration/v2`
 //! digests. The type component is the kernel [`EffectiveId`] on both sides
 //! (ADR-013 O-05), so it passes through unchanged: no `EffectiveId` <->
 //! `NodeKey` transfer exists (ADR-010 OBS-018). The universe is the kernel

@@ -300,7 +300,7 @@ fn ancestor_availability_is_per_walk_and_preserves_the_exact_denied_edge_record(
             other => panic!("structural fixture must normalize: {other:?}"),
         };
         let edges = if branching { 3 } else { 2 };
-        let work = if branching { 4 } else { 3 };
+        let work = if branching { 3 } else { 2 };
         for limit in [0, edges - 1, edges] {
             let normalized = normalize(
                 &package,
