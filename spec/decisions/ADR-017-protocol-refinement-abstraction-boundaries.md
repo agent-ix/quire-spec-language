@@ -620,7 +620,7 @@ implementation. Its surface spelling is QSpec FR-450's `abstraction-decl`
   one function.
 - QSpec FR-353's "AD-006 effective-declaration key" is QSL's O-03
   `DeclarationKey`. It is not O-05's `EffectiveId`
-  (`quire.model.effective-declaration/v1`), which keys normalized
+  (`quire.model.effective-declaration/v2`), which keys normalized
   declarations.
 
 **Implementation side.** `RustPath` is a non-empty sequence of Rust
