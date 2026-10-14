@@ -9,15 +9,15 @@
 //! reports the rows and, when QSL's own traversal stopped short, the typed
 //! cause.
 
+use qsl_semantics::check::CheckedGraph;
 use quire_contract_model::source_obligation::{
     SourceDeclarationHandle, SourceExpressionHandle, SourceInventoryEnvelope,
     SourceInventoryIdentity, SourceInventoryIncompleteReason, SourceInventoryOwner,
-    SourceInventoryRow, SourceInventoryScope, SourcePendingObligationId,
-    SourcePendingObligationKind, SourceRequirementOccurrenceId, SourceObligationSite,
-    SourceTypeExhaustion, SourceTypeWorkDimension, SourceUnitHandle,
+    SourceInventoryRow, SourceInventoryScope, SourceObligationSite, SourcePendingObligationId,
+    SourcePendingObligationKind, SourceRequirementOccurrenceId, SourceTypeExhaustion,
+    SourceTypeWorkDimension, SourceUnitHandle,
 };
 use quire_contract_model::SourceIdentity;
-use qsl_semantics::check::CheckedGraph;
 
 use super::composed::work::Dimension;
 use super::composed::{Exhaustion, Obligation, ObligationKind, Site, TypeDisposition, TypeReport};
@@ -99,9 +99,11 @@ fn stop_reason(types: &TypeReport<'_, '_>) -> Option<SourceInventoryIncompleteRe
         .namespace()
         .declaration_ids()
         .find(|id| types.disposition(*id) == Some(TypeDisposition::Unfinished))
-        .map(|id| SourceInventoryIncompleteReason::TypeAdmissionUnfinished {
-            declaration: declaration(id),
-        })
+        .map(
+            |id| SourceInventoryIncompleteReason::TypeAdmissionUnfinished {
+                declaration: declaration(id),
+            },
+        )
 }
 
 /// Report QSL's inventory rows for the selected `source`.

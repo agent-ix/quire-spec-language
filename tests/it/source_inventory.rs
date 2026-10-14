@@ -4,15 +4,15 @@
 
 use crate::support::composed_types as setup;
 
+use qsl_forms::build_unit;
+use qsl_foundation::SourceIdentity;
+use qsl_semantics::check::{CheckedGraph, PackageDeclarations};
 use quire_contract_model as ir;
 use quire_contract_model::source_obligation::{
     SourceDeclarationHandle, SourceInventoryIdentity, SourceInventoryIncompleteReason,
     SourceInventoryOwner, SourceInventoryScope, SourcePendingObligationKind,
     SourceTypeWorkDimension,
 };
-use qsl_forms::build_unit;
-use qsl_foundation::SourceIdentity;
-use qsl_semantics::check::{CheckedGraph, PackageDeclarations};
 use quire_semantic_value::checking::CheckingLimits;
 use quire_spec_language::checking::composed::{self, TypeLimits};
 use quire_spec_language::checking::source_inventory::qsl_inventory;
@@ -78,7 +78,8 @@ fn typed(
     });
 }
 
-const CALLS: &str = "predicate Positive using S (amount: M::Q): Boolean { amount >= rational(0,1) }\n\
+const CALLS: &str =
+    "predicate Positive using S (amount: M::Q): Boolean { amount >= rational(0,1) }\n\
     invariant Healthy using S on M::Node at current { Positive(self.fraction) }";
 
 #[test]
@@ -137,7 +138,10 @@ fn requirement_and_pending_sets_stay_separate_identity_kinds() {
                 .items()
                 .iter()
                 .filter(|row| {
-                    matches!(row.identity(), SourceInventoryIdentity::PendingObligation(_))
+                    matches!(
+                        row.identity(),
+                        SourceInventoryIdentity::PendingObligation(_)
+                    )
                 })
                 .count();
             let expected: Vec<_> = graph

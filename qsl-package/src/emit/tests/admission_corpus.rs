@@ -507,7 +507,9 @@ fn families(package: &CheckedPackage) -> BTreeMap<CheckedNodeKind, Vec<CheckedNo
 fn read(emitted: &Emitted) -> Result<V2Read, StageFailure<V2ReadRefusal>> {
     let mut evidence = read_evidence(&emitted.emission);
     for document in &emitted.documents {
-        evidence.insert_domain_package_document(document_digest(document), document.to_vec());
+        evidence
+            .insert_domain_package_document(document_digest(document), document.to_vec())
+            .expect("a fresh evidence key");
     }
     let pinned: PinnedRequest = qsl_semantics::library::fixtures::single_pin(
         library(),
