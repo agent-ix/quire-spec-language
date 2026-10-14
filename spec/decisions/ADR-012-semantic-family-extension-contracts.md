@@ -20,40 +20,6 @@ relationships:
 ---
 # ADR-012: Semantic-family extension and dispatch contracts (ARCH-11)
 
-## Status
-
-Proposed, 2026-09-19. Owning ticket: agent-ix/quire-spec-language#210
-(ARCH-11), epic #205, Layer 1. Acceptance is decided at the architecture
-change-scenario gate #212. Supersedes nothing.
-
-This record is the `/specify` output for #210. Its `/spec-review` (all
-analyses, SR-474 to SR-481) is in
-[`spec/reviews/family-extension/`](../reviews/family-extension/base.md).
-
-Amended 2026-09-26: §15 maps state clauses, frames,
-operation anchors and observations onto this contract. It is the state share
-of the #220 mapping that §14.1 hands to #120, #121 and #164, and it
-is the design FR-102 to FR-109 implement. The rest of the #220 mapping (the
-model graph, the static/runtime boundary, identity across phases, finite
-exploration and the owner of each gap) is
-[ADR-016](ADR-016-state-model-finite-execution-mapping.md).
-
-Amended 2026-09-29 (ARCH-41, #221). §16 maps sum types and `case`
-onto this contract, following QSpec's merged design (AD-015, FR-143,
-FR-146). It corrects the `SumCase` diagnostics in §3 and §12.1, and the S6a
-sentence in §2. SC-Q1 is ruled: option (a) (ADR-013 OQ-I, 2026-09-29).
-
-Amended 2026-10-01 (sum/case FR pass): §16.5's limit row and §16.8's Limits
-row no longer name a nesting-depth limit for `case`. Nesting of any depth is
-admitted, bounded only by caller-configured checking ceilings (QSpec FR-146;
-owner ruling 2026-10-01 that depth is never a limit kind). FR-313 and FR-316 to FR-324
-implement §16. §16.10 states the QSpec rules SC-G1 to SC-G7 that §16 relies
-on: QSpec FR-440, FR-441, FR-143, FR-144 and FR-146.
-
-Amended 2026-10-01: §15.4 keys a state field's proof-bound domain under its
-declaring object type's node, by the field's name ordinal, and §15.7 keys a
-population by its own `DomainKey::Population` subject (ADR-014 §4).
-
 ## Context
 
 #210 requires QSL semantic families to extend the compiler and the proof
@@ -122,7 +88,8 @@ implementing tickets choose the final spelling within the rules stated here.
    availability are four separate decisions with four owners (§6). None
    implies another.
 6. The #185 registry computes candidate backends from a claim's capability
-   kinds. The registry is an explicit value, independent of registration
+   kind and, for probabilistic claims, its exact evidence kind. The registry
+   is an explicit value, independent of registration
    order and of ambient state. CG `negotiate_*` settles every disposition,
    including `requires-bound` and `unsupported` (§7). Solver absence yields
    the terminal result QSpec defines (ADR-013 QC-9) on the routed backend alone.
@@ -205,8 +172,11 @@ here, and #212 can check them from this record alone.
   advertised modes (AD-016 arrow 4, ADR-013 O-20).
   Whether a backend advertises a mode beside each kind is
   agent-ix/quire-specification#134's (scope item 3).
-- Backends advertise (capability kind, mode) pairs. Candidates are matched on
-  capability kind alone (§7.2). The mode, bounded or unbounded extent, is
+- Backends advertise (capability kind, mode) pairs and, for
+  `probabilistic-satisfaction`, a nonempty set of evidence kinds. Candidates
+  match on capability kind and, for a probabilistic item, only when the
+  backend advertises that item's exact evidence kind (§7.2). Other kinds still
+  match on capability kind alone. The mode, bounded or unbounded extent, is
   compared in CG `negotiate_*`, after matching. `negotiate_*` settles:
   - When the extent is bounded, or the candidate advertises unbounded mode,
     it settles the form's own disposition.
@@ -217,8 +187,9 @@ here, and #212 can check them from this record alone.
   - `supported` for a bounded-only backend requires a bounded extent.
 - A bounded extent is within both modes. An unbounded extent is within
   unbounded mode only.
-- Each requested item has exactly one capability kind (FR-057, FR-290), so
-  `negotiate_*` applies these rules once, to that kind and its extent.
+- Each requested item has exactly one capability kind and, for
+  `probabilistic-satisfaction`, one evidence kind (FR-057, FR-290), so
+  `negotiate_*` applies these rules once, to that kind, evidence and extent.
 - An unbounded claim keeps its extent. A `requires-bound` item runs only after
   the caller supplies a bound, which makes a new bounded request with its own
   identity (AD-016 arrow 5).
@@ -239,7 +210,7 @@ The shared contract is the minimum every family implements. It has six parts.
 | Identity | Every checked node carries a stable identity, minted by QSL at check time. It is content-addressed over the ADR-013 O-04 preimage, whose owner subject is the declaring source's `SourceOwner` or definition's `DefinitionOwner` (`{authority, identity}`), or for a model-owned node the domain package's identity plus the IR node identity, with no version (QSpec FR-322-AC-28); a builtin or anonymous type node has no owner and shares one id across packages. It is therefore independent of counters, display strings and collection positions. Nodes identical in structure, qualified name and owner share one id. Each source occurrence is keyed by (node id, role, ordinal) (ADR-013 O-07). | ADR-013 O-04 (DA-02) and O-07; package identity O-02 |
 | Provenance | Every checked node occurrence maps to its source span through a source map keyed by its occurrence key. QSL is the only minter (AD-016 arrow 1). | ADR-013 O-12 (DA-13) |
 | Typing context | A family's `check` receives `&mut CheckContext`. Resolved declarations, the type environment and limits are read-only through it. The meter, the diagnostic sink and the scope stack are the only mutable parts. Nothing is read from global or thread-local state. | contents: this record; placement: the QSL `check` core (ADR-011, #209) |
-| Requirements | A pure function of a checked item, `requirements()`, returns one claim per claim site the item carries: a clause, or a scalar operation application in a `Value` function body (FR-062 "Requirement records of a value function"). Each claim holds its site, its one capability kind (FR-057, FR-290) and its extent, classified by `check` with each domain keyed by the binder that carries it. A claim form whose FR-057 kind is none yields no claim and requests no backend (§7.2). After lowering, S3 keys each claim by its site's occurrence key, renames each binder to its parameter node, and derives the record's `Requirements`: the kind, the extent and any authored bound (§13.5). | kinds from agent-ix/quire-specification#134 (FR-290); each family records the Requirements of its own claim forms, by the claim form → kind table of FR-057 (QSL PR #237); Rust type in #213; extent and bound decided in #222 |
+| Requirements | A pure function of a checked item, `requirements()`, returns one claim per claim site the item carries: a clause, or a scalar operation application in a `Value` function body (FR-062 "Requirement records of a value function"). Each claim holds its site, its one capability kind (FR-057, FR-290), its evidence kind when it is `probabilistic-satisfaction`, and its extent, classified by `check` with each domain keyed by the binder that carries it. A probabilistic claim names exactly one of `statistical` or `exact`; other claim kinds carry no evidence kind. A claim form whose FR-057 kind is none yields no claim and requests no backend (§7.2). After lowering, S3 keys each claim by its site's occurrence key, renames each binder to its parameter node, and derives the record's `Requirements`: the kind, any evidence kind, the extent and any authored bound (§13.5). | kinds and evidence kinds from agent-ix/quire-specification#134 (FR-290); each family records the Requirements of its own claim forms, by the claim form → kind table of FR-057 (QSL PR #237); Rust type in #213; extent and bound decided in #222 |
 | Structured outcome | A family `check` returns the checked node or a refusal with a family-typed cause. A family `check` that reaches a limit or exhausts the meter returns `StageFailure::Limit(LimitExceeded)` with limit kind work budget (ADR-013 T-4); `Incomplete` is an S6a outcome only. Each cause maps to a stable catalog code through one exhaustive `catalog_code()`. | ADR-013 O-16 (outcomes) and O-17 (refusals): each family has its own `Cause` enum with `catalog_code()`; the shared part is `RefusalRecord` in F `diagnostic` (O-17); the kernel `Refusal` carries kernel causes only |
 | Stage hooks | The family implements a hook for each stage in §8 that it takes part in: `check` and `requirements` at S3, and `evaluate` at S6a for every family whose declarations S6a calls or selects (`Value` and `ProtocolClause` today), and never for `Relation` or `StateModel` (ADR-016 FP-3). `SumCase` has none either, because its `case` and construction nodes evaluate inside the enclosing declaration's evaluation (§16.6). Every hook takes checked input; none takes CST, tokens or display strings. S4 has no family hook ("Packaging" below). | this record |
 
@@ -461,7 +432,7 @@ Each family owns the following. The shared layer owns none of it.
 | Normalization | Any canonical form the family needs, such as sorted variant sets or resolved frame targets. It runs inside the family's `check`, before identity is minted, so identity is taken over the normalized form. |
 | Evaluation and lowering | The `evaluate` hook, the checked-package emission arm, and the family's arms in downstream IR, RT and CG seams (§8). |
 | Diagnostics | A family `Cause` enum. Every variant has a catalog code in the QSpec diagnostic catalog; the catalog version follows ADR-013 O-17 and O-23 (OBS-023). |
-| Tests | Clause-level unit tests, builder ordering tests, the seam probe (§5.3), wire totality tests, and one backend-absence corpus case per capability kind the family's claim forms request (§7). |
+| Tests | Clause-level unit tests, builder ordering tests, the seam probe (§5.3), wire totality tests, and one backend-absence corpus case per capability kind and required evidence kind the family's claim forms request (§7). |
 
 The per-family assignment:
 
@@ -592,7 +563,7 @@ listed seam.
 | S4 | family `Cause` enums | `catalog_code()` | owning family |
 | S5 | clause kind. Canonical: the QSL checked clause kind in the layer-3 `check` core, where ADR-011 M-5 moves `value::expression::check` (ADR-013 O-10, as ruled by the coordinator). The layer-4 `package` emitter converts it to v2 and depends downward. The v2, IR and CG conversions are total; IR → RT is total with refusal. | QSL → IR conversion, IR → RT observation conversion, IR → CG obligation kind (AD-016 scenario 2) | QSL, IR, RT, CG |
 | S6 | IR checked-node tag and semantic-form enums, decoded at v2 intake | IR `lower` arm; CG `negotiate_*` arm; CG harness arm; RT op selection. No vocabulary is re-derived from a wire string after intake. | IR (agent-ix/quire-contract-ir#141), CG, RT |
-| S7 | capability kind enum (agent-ix/quire-specification#134 vocabulary, #213 type) | requirement derivation per family; registry advertisement check; CG `negotiate_*` capability arm | QSL (#213, #185), CG |
+| S7 | capability kind enum and probabilistic evidence-kind labels (agent-ix/quire-specification#134 vocabulary, #213 type) | requirement derivation per family; registry advertisement and evidence-kind check; CG `negotiate_*` capability arm | QSL (#213, #185), CG |
 | S8 | IR `KaniOutcomeKind` and any later backend outcome enum | outcome → FR-331 result map (AD-016 arrow 6) | IR |
 | S9 | CG backend kind enum (closed) | CG `negotiate_*` backend arm; CG artifact generation arm. Every capability is settled inside a `negotiate_*` arm over this enum; a new backend kind is a compile error until it has an arm. | CG (agent-ix/quire-contract-codegen#86) |
 
@@ -629,11 +600,11 @@ the table, independent of registration order.
 
 | Case | Behaviour |
 |---|---|
-| Two registrations with the same `BackendId` | equal descriptors are one registration; unequal descriptors refuse the identity once with `invalid_capability`/`duplicate-backend`, and the identity is unregistered (FR-075-AC-4, AC-7; QSpec FR-290-AC-9/AC-10) |
+| Two registrations with the same `BackendId` | equal complete descriptors, including evidence-kind sets, are one registration; unequal descriptors refuse the identity once with `invalid_capability`/`duplicate-backend`, and the identity is unregistered (FR-075-AC-4, AC-7; QSpec FR-290-AC-9/AC-10) |
 | A registration advertising a capability kind outside the agent-ix/quire-specification#134 vocabulary | handled by the unknown-kind rule of #229's specification, aligned to agent-ix/quire-specification#134; this record adds nothing |
 | A request naming a `BackendId` that is not registered | `negotiate_*` settles `invalid-request`, naming the unknown identity. A CLI argument naming it is refused at the CLI edge with the same identity named (§9), so no request is formed. |
-| A requirement whose capability kind no registrant advertises | empty candidate set; `negotiate_*` settles `unsupported`, warned (§7.3) |
-| More than one registrant matches and the request names none | `negotiate_*` settles `invalid-request`, naming every candidate (§7.2) |
+| A requirement whose capability kind no registrant advertises, or whose probabilistic evidence kind no matching registrant advertises | empty candidate set; `negotiate_*` settles `unsupported`, warned (§7.3) |
+| More than one registrant matches the item's capability and (for probabilistic items) exact evidence kind, and the request names none | `negotiate_*` settles `invalid-request`, naming every candidate (§7.2) |
 
 ### 5.3 Evidence
 
@@ -673,7 +644,7 @@ the table, independent of registration order.
 |---|---|---|---|---|---|
 | Syntax admission | Is this text a well-formed form of an admitted edition? | QSL parser; family productions | source → family `Form` | parse diagnostic; no form | that the form type-checks |
 | Semantic admission | Is this form meaningful in the language? | QSL checker; family `check` | `Form` + `CheckContext` → checked node + `Requirements` | family refusal with catalog code, or `StageFailure::Limit(LimitExceeded)`; no checked node | that any backend supports it |
-| Backend capability | Which registered backends advertise the item's capability kind, and what is settled for the item? | candidates: the #185 registry, in the QSL `route` module (layer R), after ADR-011 S4 and before ADR-011 E7. Disposition: CG `negotiate_*` only (AD-016 arrow 4) | `Requirements` + registry → candidate set; candidate set + IR form → disposition | `unsupported` (warned), `requires-bound` or `invalid-request`, each settled by `negotiate_*` | that the backend's tool is installed |
+| Backend capability | Which registered backends advertise the item's capability kind and, for probabilistic items, its exact evidence kind, and what is settled for the item? | candidates: the #185 registry, in the QSL `route` module (layer R), after ADR-011 S4 and before ADR-011 E7. Disposition: CG `negotiate_*` only (AD-016 arrow 4) | `Requirements` + registry → candidate set; candidate set + IR form → disposition | `unsupported` (warned), `requires-bound` or `invalid-request`, each settled by `negotiate_*` | that the backend's tool is installed |
 | Runtime availability | Is the selected backend's tool present? | the executing adapter, after negotiation and before the run (CG for Kani) | backend descriptor (its FR-331 provider manifest) → tool present, or absence cause | solver-absence outcome (§7.4) | anything about language meaning |
 
 Consequences of the separation:
@@ -695,7 +666,7 @@ Consequences of the separation:
 | Party | Declares | Owner |
 |---|---|---|
 | Family | `Requirements` of each checked node (§2) | each family |
-| Backend | `BackendDescriptor { id: BackendId, advertises: set of (capability kind, mode) }`. `BackendId` is a typed identity. | the backend's repository; registered in #185 |
+| Backend | `BackendDescriptor { id: BackendId, advertises: set of (capability kind, mode), evidence_kinds: set of evidence-kind labels }`. `evidence_kinds` is required and nonempty when `probabilistic-satisfaction` is advertised; it is not required for other kinds. `BackendId` is a typed identity. | the backend's repository; registered in #185 |
 | Registry | a value built from descriptors, read by QSL `route` (ADR-011 layer R): `route` computes each item's candidate set before E7 and, after negotiation, returns the `BackendId` of each item settled `supported` | #185 |
 | Negotiator | the one per-item disposition, over the candidate set | CG `negotiate_*` arms over the closed backend kind S9 (AD-016; QSpec FR-290 and AD-010 as amended by PR #133; agent-ix/quire-contract-codegen#86) |
 
@@ -730,16 +701,22 @@ runs:
 1. **Candidates.** QSL `route` writes one requested item per requirement
    record of the checked package (§13.5), in record key order, and computes
    each item's candidate set from its `Requirements`, matching on capability
-   kind alone (FR-075 "Requested items from a package's requirement
-   records"). A backend
-   matches when it advertises the item's one kind (FR-057). The mode is
-   compared in step 3:
+   kind and, for `probabilistic-satisfaction`, the exact evidence kind
+   (FR-075 "Requested items from a package's requirement records"). A backend
+   matches when it advertises the item's kind and, for a probabilistic item,
+   its exact evidence kind (FR-057, FR-290). Other capability kinds match on
+   kind alone. The mode is compared in step 3:
    - If the request names a registered `BackendId`, the set is that backend
-     when it advertises the item's kind, and empty otherwise.
+     when it advertises the item's kind and (for a probabilistic item) exact
+     evidence kind, and empty otherwise.
    - If the request names an unregistered `BackendId`, the set is marked
      unknown-backend.
    - If the request names none, the set is every registrant that advertises
-     the item's kind.
+     the item's kind and (for a probabilistic item) exact evidence kind.
+   - If a probabilistic item has no evidence kind or names a value other than
+     `statistical` or `exact`, the candidate set is empty and the evidence
+     value is preserved for `negotiate_*` to refuse as
+     `absent-evidence-kind` or `unknown-evidence-kind` (FR-290).
    - An item needs a kind to have candidates. A claim form whose FR-057 kind
      is none requests no backend and gets no candidates: the `case`
      exhaustiveness obligation, discharged at language admission, and the
@@ -758,7 +735,7 @@ runs:
 | Candidate set | Disposition settled by `negotiate_*` |
 |---|---|
 | unknown-backend | `invalid-request`, naming the unknown `BackendId` |
-| empty | `unsupported`, warned, naming the item's unmet capability kind and any backend the request named (backend absence, §7.3) |
+| empty | `unsupported`, warned, naming the item's unmet capability kind, its required evidence kind when probabilistic, and any backend the request named (backend absence, §7.3) |
 | more than one, request names none | `invalid-request`, naming every candidate; the caller resolves it by naming a backend |
 | exactly one | the CG `negotiate_*` arm for that backend's kind (seam S9), over the IR form and the extent rules of §1.1: `supported`, `requires-bound`, `unsupported` (warned) or `invalid-request` |
 
@@ -788,8 +765,9 @@ Backend absence (FR-290, FR-057) is an item whose candidate set is empty. At
 admission, capability absence is a different thing: the `absent-kind` refusal.
 
 - `negotiate_*` settles it `unsupported` with a warning naming the item's unmet
-  capability kind (FR-290 kinds as widened by agent-ix/quire-specification#134)
-  and any backend the request named, per FR-057 and QSpec FR-290-AC-4. The
+  capability kind (FR-290 kinds as widened by agent-ix/quire-specification#134),
+  its required evidence kind when probabilistic, and any backend the request
+  named, per FR-057 and QSpec FR-290-AC-4. The
   outcome constructor comes from #213 and the catalog code from #229.
 - No backend is invoked, and no artifact is emitted for the item at any later
   stage.
@@ -1039,7 +1017,7 @@ a downstream `operation-contract` item settling `unsupported`; the backend-absen
 
 | Stage | Change | Seam forced |
 |---|---|---|
-| Descriptor | the backend's FR-331 provider manifest, which is its `BackendDescriptor` (identity, advertised (capability kind, mode) pairs). It crosses as QSpec data, with no shared crate (ADR-013 T-7, §7.1) | none |
+| Descriptor | the backend's FR-331 provider manifest, which is its `BackendDescriptor` (identity, advertised (capability kind, mode) pairs, and evidence-kind set for probabilistic satisfaction). It crosses as QSpec data, with no shared crate (ADR-013 T-7, §7.1) | none |
 | Registration | the backend registers its provider manifest: the orchestrating driver reads it, QSL `route` converts it into the `BackendDescriptor`, and the driver adds that to the registry value | none (§5.2 failures apply) |
 | CG | one backend kind variant, its `negotiate_*` arm and its generation arm | S9 |
 | Runner | the backend's runner and its availability probe (§7.4) | none |
@@ -1049,13 +1027,18 @@ a downstream `operation-contract` item settling `unsupported`; the backend-absen
 No QSL parser, checker, family or checked-package change. This is #212
 scenario 7.
 
-Registration changes selection for requests that name no backend. Candidates
-match on capability kind alone (§7.2), so a second registrant for a kind makes
-every such request for that kind settle `invalid-request`, naming both. This
-holds when the two differ in mode: an unbounded-mode backend and a bounded-only
-backend for the same kind give `invalid-request` for an unbounded request that
-names neither. agent-ix/quire-specification#134 records `invalid-request` with
-no preference order as the rule. #212 scenario 7 records this effect.
+Registration changes selection for requests that name no backend. For a
+non-probabilistic kind, each registrant advertising that kind is a candidate;
+for `probabilistic-satisfaction`, only registrants advertising the item's
+exact evidence kind are candidates (§7.2). Multiple matching registrants make
+the item settle `invalid-request`, naming each candidate. This holds when
+matching registrations differ in mode: an unbounded-mode backend and a
+bounded-only backend advertising the same matching kind (and, if
+probabilistic, evidence kind) give `invalid-request` for an unbounded request
+that names neither. Registrations advertising different probabilistic evidence
+kinds do not become candidates for each other's items. agent-ix/quire-specification#134
+records `invalid-request` with no preference order as the rule. #212 scenario 7
+records this effect.
 
 ## 13. Questions for siblings and the owner
 
@@ -1109,10 +1092,10 @@ item settles `invalid-request` with no preference order
 | Question | Answer |
 |---|---|
 | ADR-011: per-stage hooks and how a missing hook fails | Hooks per stage (§2, §8): ADR-011 S2 family form builder, ADR-011 S3 `check` (which lowers the family's checked nodes, FR-093) and `requirements`, ADR-011 S6a `evaluate` (`ReferenceEvaluation`). ADR-011 S4 has no family hook: the v2 emitter writes every family's lowered nodes (§2 "Packaging"). A missing hook is a compile error: the S2 and S3 matches that call a family's hooks have one arm per family and no `_` arm, and the S1 stage-participation table has one entry per family (§5.1). At ADR-011 S6a a family that sits out evaluation is absent from the input type (for `Relation`, the S6a family kind has no `Relation` variant), so it has no arm and no refusal (§2). At lowering and proof stages a family that sits out the stage has an explicit, hand-written arm that returns `unsupported` with a catalog code. |
-| ADR-011: what ADR-011 S3 records as per-item requirement records | exactly one record per occurrence of a claim site that has `Requirements`: a clause, or a scalar operation application in a `Value` function body (FR-062). The record is keyed by that site's occurrence key (ADR-013 O-07): for an operation application, the application node's `expression` occurrence recorded at the site's own location, so the key names the node CG generates an obligation for and tells two occurrences of it apart. An operation-application record also holds the application's result bound and path condition (FR-062). `request_index` is the bytewise order of those keys, so two identical claims stay distinct. Each entry holds exactly the item's one capability kind (FR-057; vocabulary per agent-ix/quire-specification#134, FR-290), the declared extent and the authored bound (#222), because ADR-011 S3 negotiates nothing (§2, §6). The v2 `capability_report` member is FR-322's feature-level report, not these records. |
+| ADR-011: what ADR-011 S3 records as per-item requirement records | exactly one record per occurrence of a claim site that has `Requirements`: a clause, or a scalar operation application in a `Value` function body (FR-062). The record is keyed by that site's occurrence key (ADR-013 O-07): for an operation application, the application node's `expression` occurrence recorded at the site's own location, so the key names the node CG generates an obligation for and tells two occurrences of it apart. An operation-application record also holds the application's result bound and path condition (FR-062). `request_index` is the bytewise order of those keys, so two identical claims stay distinct. Each entry holds exactly the item's one capability kind and, for `probabilistic-satisfaction`, its exact evidence kind (FR-057; vocabulary per agent-ix/quire-specification#134, FR-290), the declared extent and the authored bound (#222), because ADR-011 S3 negotiates nothing (§2, §6). The v2 `capability_report` member is FR-322's feature-level report, not these records. |
 | ADR-011: v2 family forms replacing IR's admission of QSL types | predicate admission reads the v2 value and expression nodes `Value`'s `check` lowers; temporal admission reads the v2 temporal nodes `TemporalTrace`'s `check` lowers. The S4 v2 emitter writes both (§2 "Packaging"). QSpec owns their spelling. IR decodes them at v2 intake (agent-ix/quire-contract-ir#141) and admits them there (#218 and #223 with agent-ix/quire-contract-ir#109). |
 | ADR-013 Q210-1: does a selected capability travel in the packet or replay request? | No. Capability values cross only in FR-331 negotiation: the provider manifest, the request with its candidate set, and the dispositions. The counterexample packet and the replay request carry the `backend` member (O-19), which identifies the backend that settled `supported`, and the obligation identity. They do not carry a capability. Replay needs none: it runs the family's `evaluate` hook, which selects no backend. |
-| ADR-013 Q210-2: does §1.1 need anything beyond O-20? | Confirmed: nothing beyond O-20 once #222 fixes the mode and extent vocabulary (Q222-3). QSL records the declared extent and bound as data. Backends advertise (capability kind, mode). CG `negotiate_*` settles the mode. |
+| ADR-013 Q210-2: does §1.1 need anything beyond O-20? | Yes. In addition to the mode and extent vocabulary (Q222-3), QSL records each probabilistic item's evidence kind and each backend's evidence-kind set; candidate matching requires the exact item evidence kind. Other selection rules are unchanged. |
 | ADR-013: how RT obtains `NodeKey`s | RT holds no `NodeKey`. It sees only `WireNodeId`s from the wire (ADR-013 O-04), in the CG-generated harnesses built from IR wire data. Only QSL converts a `WireNodeId` to a `NodeKey`: ADR-011 E4 and the `replay` facade. |
 | ADR-013 Q210-3: family results → the eight O-16 categories | `check`: a refusal is `refusal`, a `StageFailure::Limit(LimitExceeded)` is `incomplete`; a checked node is not an outcome. `evaluate` (every family that implements `ReferenceEvaluation`, per §2 and §16.6, including the simulation lane; a `StateModel` cause travels in the enclosing family's result, ADR-016 FP-3): the kernel `Outcome<T>` maps by O-16's evaluation column: `Completed` → `success` or `violation`, `Undefined` → `undefined`, `Refused` → `refusal`, `Incomplete` → `incomplete`. `Relation` gates: pass → `success`, differential mismatch → `violation`, gate refusal → `refusal`, otherwise as ADR-017 RF-4 (tool failure → `internal failure`, unresolved → `unsupported` or `incomplete`). `Relation` has no S6a result (§2). `FamilyOutcome::Evaluated` carries the kernel `Outcome` unchanged. A family-owned evaluation cause is `FamilyOutcome::FamilyEvaluated`: `FamilyResult::Refused` → `refusal`, `FamilyResult::Undefined` → `undefined` (O-16's refusal and undefined rows). Dispositions and proof results use O-16's own columns. No family adds a category, and no family maps to `internal failure` except through the executor's runtime-invariant rule. |
 | ADR-013 Q210-4: QSpec FR-351 unchanged for family witnesses? | Confirmed. Every family witness, including #186's state `forall`, is the QSpec FR-351 record unchanged. A family contributes only its witness binding schema (§8), so O-25 needs no family-specific envelope. |
@@ -1361,7 +1344,8 @@ that produce one. None adds a category.
 | compile (S1 to S4, I1) | refusal or limit | refusal, incomplete | the stage's own code, such as `missing_import` |
 | selection (FR-109) | a name that is no clause or function, a function whose result is not `Boolean` | refusal | `missing_declaration`, `ill_typed` |
 | admission (FR-106) | an absent selected document | incomplete | `unavailable_observation` |
-| admission (FR-106) | a document over a reader limit | refusal | `stage_limit_exceeded` |
+| admission (FR-106) | a document over a reader limit | incomplete | `stage_limit_exceeded` |
+| admission (FR-106) | a re-run `model.*` walk past its `ModelNormalizationLimitsV1` ceiling | incomplete | `resource_exhausted` |
 | admission (FR-106) | a wrong format | refusal | `unknown_wire` |
 | admission (FR-106) | a digest or label mismatch | refusal | `stale_dependency` |
 | admission (FR-106) | a bad document, selection or value | refusal | `invalid_runtime_input`, `wrong_snapshot`, `invalid_model_binding` |

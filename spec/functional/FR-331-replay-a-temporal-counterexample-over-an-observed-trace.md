@@ -136,10 +136,6 @@ formula is false on it.
   [FR-328](FR-328-evaluate-an-infinite-trace-clause-over-a-finite-prefix.md),
   [FR-329](FR-329-evaluate-an-infinite-trace-clause-exactly-over-a-lasso.md).
 
-## Status
-
-Specified; not yet implemented.
-
 ## References
 
 - Linear QSL-384 (spec ticket); QSL-43 (implementation).

@@ -52,7 +52,3 @@ Tag each test `#[trace("TC-831", "<AC id>")]`.
   Selection/binding/helper work adds no semantic charge. No fabricated
   FunctionCall may stand for a pre-call event.
 - Step 5: TC-265's outcomes.
-
-## Status
-
-Planned. QSL-681 phase controls are proposed, not executed.

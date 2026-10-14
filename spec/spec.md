@@ -60,6 +60,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/NFR-012
     type: contains
+  - target: ix://agent-ix/quire-spec-language/NFR-013
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-043
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-044
@@ -179,6 +181,8 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/ADR-031
     type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-032
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/AD-001
     type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-018
     type: contains
@@ -714,6 +718,12 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-358
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-359
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-360
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-361
+    type: contains
   - target: ix://agent-ix/quire-spec-language/US-027
     type: contains
 ---
@@ -844,29 +854,13 @@ Frontmatter relates StR, US, FR/NFR and IT artifacts. Acceptance-criterion-to-TC
 
 Run Quire over this exact repository scope and execute the serial Rust gates in
 both feature configurations. Use independently authored expected values and real
-existing emitters/consumers at integration boundaries. Historical finite-state
-acceptance covers healthy, violating and refused/incomplete workflows. TC-113–
-121 cover composed parsing, linkage, checking and the `/1` emitter; TC-122–125
-cover L5; TC-126–137 cover the consolidated L3/L4/L6 and state-input contracts;
-TC-138 covers the strict `/2` temporal selection extension. TC-145–148 and IT-012
-cover domain-package model intake through the real quire-rs and FCD crates. TC-135 proves only A's byte-exact compiler-to-
-B intake contribution; D's research #39/#49 owns the later version-locked
-aggregate campaign with accepted B/F revisions. A passed earlier stage cannot
+existing emitters/consumers at integration boundaries. TC-135 proves only A's
+byte-exact compiler-to-B intake contribution. A passed earlier stage cannot
 qualify an unexecuted later one.
 
 ## 13. Change Management
 
 The user requested /specify and /spec-review for all work. Existing implementation is being specified retrospectively and remains subject to findings. Further dependent implementation waits for the required review and accepted shared contracts. Historical fixture and profile bytes remain immutable under their selected bindings.
-
-## 14. Lifecycle Status
-
-Draft requirements. The admitted implementation target and new-code AGPL choice were approved in the task conversation. The owner also adopted specification PR8 for internal implementation. Accepted IR ADR-0054 subsequently supersedes the Filament model-authority assumption and closes IR #54 without a new reader. LC02 proceeds against existing FR-013/019/023 APIs. IT-005/TM-003 remain planned; native implementation, concrete semantic projection qualification, independent consumer adoption and broader FS evidence remain work rather than external #54 prerequisites.
-
-The PR10 model/checker scope is now qualified under Plan-005 and SR-083–087.
-TM-003 contains its 35 qualified cases; the earlier planned status above is
-historical. The LC03 packet adds FR-018, expands FR-007/008, and defines NFR-006,
-IT-006 and TM-004. Its 23 runtime cases are planned. Its input/evaluation API
-specification does not close LC02/FS03 acceptance or replace IT-002.
 
 ## 15. Governance Notes
 
@@ -924,6 +918,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [IT-003](integration/IT-003-opaque-extraction-adapter.md) | IT |
 
 | [NFR-005](non-functional/NFR-005-rust-verification-paths.md) | NFR |
+| [NFR-014](non-functional/NFR-014-check-native-ci-suite-emptiness.md) | NFR |
 | [IT-005](integration/IT-005-qualify-native-model-consumption.md) | IT |
 | [FR-013](functional/FR-013-link-formal-environments.md) | FR |
 | [FR-014](functional/FR-014-bind-native-formal-source.md) | FR |
@@ -1241,13 +1236,18 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-356](functional/FR-356-walk-nested-structures-through-one-iterative-walker-toolkit.md) | FR |
 | [FR-357](functional/FR-357-replay-scalar-parity-claims.md) | FR |
 | [FR-358](functional/FR-358-settle-a-composite-bounded-shadow-item.md) | FR |
+| [FR-359](functional/FR-359-carry-a-child-record-value-at-an-ancestor-typed-slot.md) | FR |
+| [FR-360](functional/FR-360-type-a-field-by-a-variant-type-through-intake-check-evaluation-and-replay.md) | FR |
+| [FR-361](functional/FR-361-gate-model-constructs-on-the-model-profile-selection.md) | FR |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR |
+| [NFR-013](non-functional/NFR-013-isolate-native-ci-feature-artifacts.md) | NFR |
 | [ADR-014](decisions/ADR-014-temporal-trace-and-boundedness-architecture.md) | ADR |
 | [ADR-015](decisions/ADR-015-compile-and-replay-against-dependencies.md) | ADR |
 | [ADR-016](decisions/ADR-016-state-model-finite-execution-mapping.md) | ADR |
 | [ADR-017](decisions/ADR-017-protocol-refinement-abstraction-boundaries.md) | ADR |
 | [ADR-031](decisions/ADR-031-state-forall-separating-witness.md) | ADR |
 | [ADR-032](decisions/ADR-032-checked-input-and-duplicate-canonical-type-gates.md) | ADR |
+| [AD-001](assurance/AD-001-shared-evaluation-core-interface.md) | ArchitectureDescription |
 | [ADR-018](decisions/ADR-018-temporal-properties-over-every-behaviour.md) | ADR |
 | [ADR-019](decisions/ADR-019-strong-fairness.md) | ADR |
 | [ADR-027](decisions/ADR-027-protocol-transition-system-for-parallel.md) | ADR |

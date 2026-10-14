@@ -28,6 +28,24 @@ relationships:
 
 When linking an explicitly inventoried composed package, the compiler SHALL resolve each declaration to its selected definition closure, admitted domain-package model declarations and typed native dependencies before exposing it to a downstream checker.
 
+`linking::composed::subject::StaticSubject` retains the package contract's six
+declared static components — Sources, Language, Profiles, Models, Native
+dependencies and Binding requirements — and compares two subjects component by
+component. No canonical digest, structural hash or JSON fingerprint is derived;
+canonical identity remains unavailable until its exact domain, version and
+algorithm are selected and qualified. `subject::BuildProvenance` retains the full
+compile configuration separately, so a resource-only change is visible there and
+in no static component.
+
+The compiler recognizes a closed registry of the reviewed baseline's exact
+definition and rule bytes; callers explicitly supply those artifacts. The
+registry is implementation support, not a Markdown reader or an implicit source
+of omitted dependencies. Its normative resources preserve the selected standard
+bytes and original licensing. The historical native-state-model/1 rule-model
+source binds through NativeModel. Domain-package model declarations bind by
+declaration key and export kind; a same-shaped record from another domain
+package grants no authority. Domain-package intake belongs to #131.
+
 ## Inputs
 
 The complete native source inventory, parsed units, exact supplied edition/profile
@@ -152,65 +170,3 @@ domain-package model declarations, and
 [IT-012](../integration/IT-012-domain-package-model-intake.md) owns the real
 quire-rs and FCD crate integration. L3 predicate evaluation and the family engines may proceed
 against the same bound identities; this specification does not invent those engines.
-
-## Status
-
-Under [compiler #35](https://github.com/agent-ix/quire-spec-language/issues/35),
-`linking::composed::admit_namespace` implements closed source intake and native
-declaration dependency resolution, including forward references, target kinds,
-cycles, dependent refusals and versioned work limits. Its constructor-private
-syntax namespace retains original units and unfinished dispositions on exhaustion.
-`linking::composed::binding::bind` composes exact definition/rule closure,
-NativeModel imports and nominal exports, lexical/capture environments, protocol
-structural references and dependency-local refusal propagation. Declaration-owned
-binders retain original types and anchors. It accepts no runtime observations.
-
-The compiler recognizes a closed registry of the reviewed baseline's exact
-definition and rule bytes; callers explicitly supply those artifacts. The
-registry is implementation support, not a Markdown reader or an implicit source
-of omitted dependencies. Its normative resources preserve the selected standard
-bytes and original licensing. The historical native-state-model/1 rule-model
-source binds through NativeModel. Domain-package model declarations bind by
-declaration key and export kind; a same-shaped record from another domain
-package grants no authority. Remaining work: #131 for domain-package intake.
-
-`linking::composed::subject::StaticSubject` retains the package contract's six
-declared static components — Sources, Language, Profiles, Models, Native
-dependencies and Binding requirements — and compares two subjects component by
-component. No canonical digest, structural hash or JSON fingerprint is derived;
-canonical identity remains unavailable until its exact domain, version and
-algorithm are selected and qualified. `subject::BuildProvenance` retains the full
-compile configuration separately, so a resource-only change is visible there and
-in no static component.
-
-`linking::composed::requests` records a typed disposition for every requested
-clause/capability pair from the binding report and the supplied assessment
-inputs. A request's capability is the canonical `crate::check::Capability`
-(FR-057's ten FR-290 kinds). Admitted, inapplicable capability, refused
-subject, unfinished subject and unknown subject are distinct outcomes; none is
-dropped or merged, and a required non-admitted request makes complete aggregate
-success unavailable. `report` reads no backend: candidate sets and routing are
-the layer-R `route` registry's (FR-075), and backend-dependent dispositions are
-settled downstream by `negotiate_*` (FR-077). `admitted_bodies` is every
-declaration whose names resolved, independent of the requests, so a refused or
-unfinished subject's body is never represented as checked (FR-057,
-"Family-body admission"). Assessment selections are retained as provenance and
-are never written back into the static subject.
-
-A request is inapplicable when its capability kind does not apply to the
-requested declaration's family under FR-057's "Kind applicability" table,
-which `requests::families` implements.
-
-The requested capability vocabulary, its version, its refusals and the split
-between admission, registration and negotiation are specified in
-[FR-057](FR-057-admit-shared-capability-kinds.md), aligned with
-[quire-specification `FR-290`](https://github.com/agent-ix/quire-specification/blob/main/spec/objects/protocol/FR-290-protocol-claim-kind.md).
-
-`NamesResolved` precedes expression/type/profile checking and complete typed
-runtime requirements. TC-114 exercises common nominal types across state,
-temporal and protocol families and declaration-owned capture and instance
-identities over NativeModel exports; TC-148 and IT-012 bind native model
-references to admitted domain-package declarations (planned under #131); TC-115 keeps an
-`unsupported` `temporal-satisfaction` pair beside an admitted `operation-contract` pair. An admitted request is a
-handoff record, not a checked or executable clause; no result from this stage is
-a checked or executable package. The historical package path remains separate.

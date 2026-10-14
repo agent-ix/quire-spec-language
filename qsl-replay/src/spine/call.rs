@@ -28,7 +28,9 @@ use qsl_package::CheckedPackage;
 use qsl_semantics::check::CheckedGraph;
 use qsl_semantics::family::{FamilyOutcome, FamilyResult};
 use qsl_semantics::library::PackageId;
+use qsl_semantics::model::normalize::{ModelRefusal, ModelRefusalCause};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
+use qsl_semantics::model::refusal::OfferedSelection;
 use quire_exact::{
     Cancel, CancelCause, Incomplete, Integer, Outcome, Refusal, ScalarLimits, Undefined, Value,
     ValueType,
@@ -59,15 +61,15 @@ pub fn default_accounting(work_units: u64) -> ScalarLimits {
     }
 }
 
-/// One `{parameter, value}` argument of a [`Call`]: a canonical integer
-/// assignment (FR-098's rule), keyed by the parameter's declared name.
-#[derive(Clone, Debug, Eq, PartialEq)]
+/// One `{parameter, value}` argument of a [`Call`], keyed by the parameter's
+/// declared name. File request adapters lower their canonical integer
+/// assignments to this shared typed carrier before entering the spine.
+#[derive(Clone, Debug)]
 pub struct CallArgument {
     /// The parameter's declared name.
     pub parameter: String,
-    /// The canonical integer assignment: an integer for an integer
-    /// parameter, `0`/`1` for a `Boolean` one.
-    pub value: i64,
+    /// The shared typed value.
+    pub value: Value,
 }
 
 /// The `call` member of a 1-draft native-run/1 request (FR-100 Inputs):
@@ -84,9 +86,9 @@ pub struct Call {
     pub accounting: ScalarLimits,
 }
 
-/// A value [`run`] completed. Always `Boolean` or `Integer`: [`run`] refuses
-/// `unsupported_construct` before any call for a function whose declared
-/// result is neither.
+/// A value [`run`] completed. [`run`] refuses `unsupported_construct` before
+/// any call for a function whose declared result is not Boolean, integer or
+/// Reference.
 #[derive(Clone, Debug)]
 pub enum CallValue {
     /// `{"kind": "boolean", "value": ...}`.
@@ -94,6 +96,8 @@ pub enum CallValue {
     /// `{"kind": "integer", "decimal": ...}` (FR-038's spelling is
     /// `Integer`'s own `Display`).
     Integer(Integer),
+    /// An admitted model reference, retaining its exact identity triple.
+    Reference(quire_exact::ObjectReference),
 }
 
 /// A refusal's [`Locus::Region`], resolved to the `sha256:` digest of the
@@ -101,6 +105,8 @@ pub enum CallValue {
 /// (FR-096, FR-100).
 #[derive(Clone, Debug)]
 pub struct CallLocus {
+    /// Authored path of the source containing the region (FR-100's wire).
+    pub file: String,
     /// The `sha256:` digest of the source the region belongs to.
     pub source_digest: String,
     /// The region's span, rendered over that source.
@@ -180,9 +186,16 @@ pub struct CallIncomplete {
 
 impl CallIncomplete {
     /// The `Call::accounting` field that raises this bound: the exhausted
-    /// counter's `quire.value.accounting/v1` member name.
+    /// counter's `quire.value.accounting/v1` member name, which is also its
+    /// setting's name.
     pub fn limits_field(&self) -> &'static str {
         self.record.limit_kind.as_str()
+    }
+
+    /// The setting that raises this bound at every entry point (FR-255
+    /// Behavior 9): the exhausted counter's.
+    pub fn setting(&self) -> qsl_foundation::AccountingSetting {
+        crate::limits::AccountingLimits::setting_of(self.record.limit_kind)
     }
 
     /// The counter at the failed charge: what the counter would have
@@ -262,6 +275,20 @@ pub enum RunRefusal {
         /// The parameter's zero-based declared position.
         position: usize,
     },
+    /// A model-aware argument admission refusal retained from the owner API.
+    #[error("the argument at position {position} was refused: {refusal:?}")]
+    Admission {
+        /// The parameter's zero-based declared position.
+        position: usize,
+        /// The owning model refusal.
+        refusal: ModelRefusal,
+    },
+    /// The reference is absent from the complete admitted object world.
+    #[error("the argument at position {position} names no admitted object")]
+    DanglingReference {
+        /// The parameter's zero-based declared position.
+        position: usize,
+    },
     /// An internal failure at S6a (FR-100 "Internal failure at S6a"): the
     /// kernel `CheckedInvariant` refusal, `CallFailure::Fault`, or a
     /// record's locus naming no supplied source. Category internal failure,
@@ -290,6 +317,8 @@ impl RunRefusal {
             | Self::DuplicateArgument { .. }
             | Self::UnboundParameter { .. }
             | Self::WrongValueKind { .. }
+            | Self::Admission { .. }
+            | Self::DanglingReference { .. }
             | Self::Fault(_) => "call",
             Self::Cancelled(_) => return None,
         })
@@ -306,6 +335,8 @@ impl RunRefusal {
             | Self::DuplicateArgument { .. }
             | Self::UnboundParameter { .. }
             | Self::WrongValueKind { .. } => Code::InvalidRuntimeInput,
+            Self::Admission { refusal, .. } => refusal.code,
+            Self::DanglingReference { .. } => Code::DanglingReference,
             Self::Fault(_) => Code::RuntimeInvariant,
             Self::Cancelled(_) => Code::Cancelled,
         }
@@ -327,7 +358,7 @@ impl RunRefusal {
 /// [`RunRefusal::Cancelled`].
 #[allow(
     clippy::too_many_arguments,
-    reason = "the request's fields are the signature FR-100 names; the caller's cancel handle is the eighth"
+    reason = "the request's fields are the signature FR-100 names; the caller's object context and cancel handle are explicit"
 )]
 pub fn run(
     source: SourceIdentity,
@@ -337,6 +368,7 @@ pub fn run(
     dependencies: &DependencyInput,
     limits: SpineLimits,
     call: &Call,
+    objects: &ObjectEnvironment,
     cancel: &Cancel,
 ) -> Result<(PackageId, CallOutcome), Box<RunRefusal>> {
     let refusal = |failure| match failure {
@@ -377,12 +409,19 @@ pub fn run(
     let package = checked.package();
     let selected = select(package, &call.function)?;
     let arguments = bind_arguments(selected.parameters, &call.arguments)?;
+    admit_model_arguments(
+        models.models(),
+        package.graph().scope().types(),
+        selected.parameters,
+        &arguments,
+        objects,
+    )?;
     let evaluation = front_end::execute(
         &checked,
         &front_end::ExecuteRequest {
             function: &selected.name,
             arguments: &arguments,
-            objects: &ObjectEnvironment::default(),
+            objects,
         },
         call.accounting,
         cancel,
@@ -434,7 +473,7 @@ pub(crate) fn select<'a>(
     let callable = package.graph().callable(first).ok_or_else(missing)?;
     if !matches!(
         callable.result,
-        ValueType::Boolean | ValueType::Integer | ValueType::Int(_)
+        ValueType::Boolean | ValueType::Integer | ValueType::Int(_) | ValueType::Reference(_)
     ) {
         return Err(Box::new(RunRefusal::UnsupportedResult {
             function: function.to_owned(),
@@ -466,7 +505,7 @@ pub(crate) fn bind_arguments(
     parameters: &[(String, ValueType)],
     arguments: &[CallArgument],
 ) -> Result<Vec<Value>, Box<RunRefusal>> {
-    let mut slots: Vec<Option<i64>> = vec![None; parameters.len()];
+    let mut slots: Vec<Option<Value>> = vec![None; parameters.len()];
     for argument in arguments {
         let position = parameters
             .iter()
@@ -481,7 +520,7 @@ pub(crate) fn bind_arguments(
                 parameter: argument.parameter.clone(),
             })
         })?;
-        if slot.replace(argument.value).is_some() {
+        if slot.replace(argument.value.clone()).is_some() {
             return Err(Box::new(RunRefusal::DuplicateArgument {
                 parameter: argument.parameter.clone(),
             }));
@@ -490,7 +529,7 @@ pub(crate) fn bind_arguments(
     // Every parameter is bound before any is converted: an unbound
     // parameter at a later position refuses before a wrong-kind value at an
     // earlier one is ever inspected (FND-010).
-    let bound: Vec<i64> = slots
+    let bound: Vec<Value> = slots
         .into_iter()
         .zip(parameters)
         .map(|(value, (name, _))| {
@@ -509,23 +548,39 @@ pub(crate) fn bind_arguments(
         .collect()
 }
 
-/// A canonical integer assignment as a value of its parameter's declared
-/// type (FR-098's rule): an integer for an integer type, `0`/`1` for
-/// `Boolean`. Any other value, or a parameter of a kind neither `Boolean`
-/// nor an integer type, refuses `WrongValueKind` before the call.
+/// Convert an input value to the parameter's declared type. Integer inputs
+/// retain FR-098's `0`/`1` Boolean shorthand; typed model values already
+/// carry their admission identity and are passed to S6a for model-aware
+/// validation.
 pub(crate) fn argument_value(
     position: usize,
-    value: i64,
+    value: Value,
     value_type: &ValueType,
 ) -> Result<Value, Box<RunRefusal>> {
     let wrong = || Box::new(RunRefusal::WrongValueKind { position });
     match value_type {
         ValueType::Boolean => match value {
-            0 => Ok(Value::Boolean(false)),
-            1 => Ok(Value::Boolean(true)),
+            Value::Boolean(value) => Ok(Value::Boolean(value)),
+            Value::Integer(value) if value == Integer::from(0_i64) => Ok(Value::Boolean(false)),
+            Value::Integer(value) if value == Integer::from(1_i64) => Ok(Value::Boolean(true)),
             _ => Err(wrong()),
         },
-        ValueType::Integer | ValueType::Int(_) => Ok(Value::Integer(Integer::from(value))),
+        ValueType::Integer | ValueType::Int(_) => match value {
+            Value::Integer(value) => Ok(Value::Integer(value)),
+            _ => Err(wrong()),
+        },
+        ValueType::String => match value {
+            Value::String(value) => Ok(Value::String(value)),
+            _ => Err(wrong()),
+        },
+        ValueType::Reference(_) => match value {
+            Value::Reference(value) => Ok(Value::Reference(value)),
+            _ => Err(wrong()),
+        },
+        ValueType::Population(_) => match value {
+            Value::Population(value) => Ok(Value::Population(value)),
+            _ => Err(wrong()),
+        },
         ValueType::Rational(_)
         | ValueType::Decimal(_)
         | ValueType::Float(_)
@@ -535,9 +590,163 @@ pub(crate) fn argument_value(
         | ValueType::Option(_)
         | ValueType::Composite(_)
         | ValueType::Collection(_)
-        | ValueType::Reference(_)
-        | ValueType::Population(_) => Err(wrong()),
+        | ValueType::Uuid
+        | ValueType::Timestamp => Err(wrong()),
     }
+}
+
+/// Check the parts of model-reference admission that the public call facade
+/// can verify from the selected model views and the supplied object closure.
+/// S6a repeats the shared type and closure checks at its evaluator boundary;
+/// keeping this guard here also covers unused arguments and preserves the
+/// typed facade refusal arms before evaluation starts.
+fn admit_model_arguments(
+    models: &[qsl_semantics::model::intake::SelectedModel],
+    types: &quire_semantic_value::declaration::TypeEnvironment,
+    parameters: &[(String, ValueType)],
+    arguments: &[Value],
+    objects: &ObjectEnvironment,
+) -> Result<(), Box<RunRefusal>> {
+    for (position, ((parameter, value_type), argument)) in
+        parameters.iter().zip(arguments).enumerate()
+    {
+        if let (ValueType::Population(maximum), Value::Population(population_id)) =
+            (value_type, argument)
+        {
+            let Some(binding) = objects.resolve_population(*population_id) else {
+                return Err(Box::new(RunRefusal::WrongValueKind { position }));
+            };
+            if binding.declared_maximum() != *maximum {
+                return Err(Box::new(RunRefusal::WrongValueKind { position }));
+            }
+            let Some(expected) = models.first().map(|model| model.view.model_selection()) else {
+                return Err(Box::new(RunRefusal::WrongValueKind { position }));
+            };
+            if !models
+                .iter()
+                .any(|model| model.view.model_selection() == binding.model_selection())
+            {
+                return Err(Box::new(RunRefusal::Admission {
+                    position,
+                    refusal: ModelRefusal {
+                        code: Code::ForeignReference,
+                        cause: ModelRefusalCause::ForeignModelSelection {
+                            actual: OfferedSelection::Population(binding.population_key().clone()),
+                            expected: expected.clone(),
+                        },
+                        detail: format!(
+                            "population {}/{} names model {}, expected {}",
+                            binding.population_key().package,
+                            binding.population_key().node,
+                            binding.model_identity(),
+                            expected.identity
+                        ),
+                    },
+                }));
+            }
+            continue;
+        }
+        let (ValueType::Reference(declared), Value::Reference(reference)) = (value_type, argument)
+        else {
+            continue;
+        };
+        let expected_model = models.iter().find_map(|model| {
+            model
+                .view
+                .type_identities()
+                .iter()
+                .find_map(|(key, identity)| {
+                    (identity == declared)
+                        .then(|| {
+                            model
+                                .view
+                                .object_universe_of(key)
+                                .map(|universe| universe.identity())
+                        })
+                        .flatten()
+                })
+                .map(|expected| (model, expected))
+        });
+        let supplied_model = models.iter().find(|model| {
+            model
+                .view
+                .type_identities()
+                .values()
+                .any(|identity| *identity == reference.object_type())
+        });
+        let Some((expected_model, expected)) = expected_model else {
+            let Some(supplied_model) = supplied_model else {
+                return Err(Box::new(RunRefusal::WrongValueKind { position }));
+            };
+            let Some((type_name, _)) = supplied_model
+                .view
+                .type_identities()
+                .iter()
+                .find(|(_, identity)| **identity == reference.object_type())
+            else {
+                return Err(Box::new(RunRefusal::WrongValueKind { position }));
+            };
+            return Err(Box::new(RunRefusal::Admission {
+                position,
+                refusal: ModelRefusal {
+                    code: Code::ForeignReference,
+                    cause: ModelRefusalCause::ForeignType {
+                        member: parameter.clone(),
+                        type_name: type_name.clone(),
+                    },
+                    detail: format!(
+                        "reference parameter {} names undeclared type {}/{}",
+                        parameter, type_name.package, type_name.node
+                    ),
+                },
+            }));
+        };
+        if let Some(supplied_model) = supplied_model {
+            if supplied_model.view.model_selection() != expected_model.view.model_selection() {
+                return Err(Box::new(RunRefusal::Admission {
+                    position,
+                    refusal: ModelRefusal {
+                        code: Code::ForeignReference,
+                        cause: ModelRefusalCause::ForeignModelSelection {
+                            actual: OfferedSelection::Document(
+                                supplied_model.view.model_selection().identity.clone(),
+                            ),
+                            expected: expected_model.view.model_selection().clone(),
+                        },
+                        detail: format!(
+                            "reference names model {}, expected {}",
+                            supplied_model.view.model_selection().identity,
+                            expected_model.view.model_selection().identity
+                        ),
+                    },
+                }));
+            }
+        }
+        if reference.universe() != expected {
+            return Err(Box::new(RunRefusal::Admission {
+                position,
+                refusal: ModelRefusal {
+                    code: Code::ForeignReference,
+                    cause: ModelRefusalCause::ForeignUniverse {
+                        actual: reference.universe().as_bytes().to_vec(),
+                        expected,
+                    },
+                    detail: format!(
+                        "reference names universe {}, expected {}",
+                        reference.universe(),
+                        expected
+                    ),
+                },
+            }));
+        }
+        if !types.admits(value_type, argument) {
+            return Err(Box::new(RunRefusal::WrongValueKind { position }));
+        }
+        if objects.references_are_unresolved() || !objects.objects().contains(reference) {
+            return Err(Box::new(RunRefusal::DanglingReference { position }));
+        }
+    }
+    Ok(())
 }
 
 /// `CheckedPackage::call`'s admission failure, converted with no `qsl_eval`
@@ -548,6 +757,11 @@ pub(crate) fn convert_call_failure(failure: qsl_eval::value::CallFailure) -> Box
     match failure {
         CallFailure::Input(InputRefusal::WrongValueKind { parameter }) => {
             Box::new(RunRefusal::WrongValueKind {
+                position: parameter,
+            })
+        }
+        CallFailure::Input(InputRefusal::DanglingReference { parameter }) => {
+            Box::new(RunRefusal::DanglingReference {
                 position: parameter,
             })
         }
@@ -605,6 +819,7 @@ pub(crate) fn resolve_locus(
         .ok_or_else(unresolved)?;
     let span = source.render(region).ok_or_else(unresolved)?;
     Ok(CallLocus {
+        file: source.path().to_owned(),
         source_digest: format!("sha256:{}", region.source().digest().hex()),
         span,
     })
@@ -671,14 +886,21 @@ pub(crate) fn convert_outcome(
         FamilyOutcome::Evaluated(Outcome::Completed(Value::Integer(value))) => {
             Ok(CallOutcome::Completed(CallValue::Integer(value)))
         }
+        FamilyOutcome::Evaluated(Outcome::Completed(Value::Reference(reference))) => {
+            Ok(CallOutcome::Completed(CallValue::Reference(reference)))
+        }
         // `select` admits only a function declared `Boolean` or an integer
         // type.
         FamilyOutcome::Evaluated(Outcome::Completed(_)) => Err(Box::new(RunRefusal::Fault(
             InternalFault::new("call", "boolean-or-integer-function-completes-that-kind"),
         ))),
-        FamilyOutcome::Evaluated(Outcome::Refused(Refusal::CheckedInvariant)) => Err(Box::new(
-            RunRefusal::Fault(InternalFault::new("S6a", "checked-program-invariant")),
-        )),
+        FamilyOutcome::Evaluated(Outcome::Refused(Refusal::CheckedInvariant { cause })) => {
+            Err(Box::new(RunRefusal::Fault(InternalFault::from_kernel(
+                "S6a",
+                "checked-program-invariant",
+                cause,
+            ))))
+        }
         FamilyOutcome::Evaluated(Outcome::Refused(_)) => Ok(CallOutcome::Refused(convert_refusal(
             record, None, location, sources,
         )?)),

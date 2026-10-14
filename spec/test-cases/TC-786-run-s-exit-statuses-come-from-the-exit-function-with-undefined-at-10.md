@@ -17,7 +17,7 @@ Scope: FR-100-AC-10, FR-100-AC-11.
 ## Test Procedure
 
 1. With `type Pos = Int[1, 9]` checked under `CheckMode::Kernel`, evaluate `sum<Pos>(x in q: x)` through S6a for `q` of `Sequence<Int[1, 9]>[0, 2]`, once empty and once holding `4`, and convert each outcome with the outcome mapping; convert a `FamilyResult::Undefined` with reason `precondition-false` the same way.
-2. Run FR-100-AC-4's `invalid_runtime_input` cases, FR-100-AC-5's record-result function, FR-100-AC-6's `work_units` 0 call, and a call that returns `CallFailure::Fault`.
+2. Run FR-100-AC-4's `invalid_runtime_input` cases, FR-100-AC-5's record-result function, FR-100-AC-6's `call.accounting` `{"work_units": 0}` call, and a call that returns `CallFailure::Fault`.
 3. Call `execute` over each step 1 and 2 input and map its outcome through FR-285.
 
 Tag the tests `#[trace("TC-786", "<AC id>")]`.

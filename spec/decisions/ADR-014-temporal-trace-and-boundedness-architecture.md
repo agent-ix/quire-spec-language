@@ -42,19 +42,6 @@ relationships:
 ---
 # ADR-014: Temporal, trace and boundedness architecture (ARCH-42)
 
-## Status
-
-Accepted, 2026-09-24. Owning ticket: GitHub #222 (ARCH-42),
-epic QSL-34 (#205), Layer 2. It answers ADR-013 Q222-1, Q222-2 and Q222-3,
-the ADR-013 O-20 owner row, and the "available finite bound" predicate that
-ADR-012 §1.1 defers. It is the prerequisite of ADR-013 §7 S-6,
-QSL-42 (#189, V1-A12), QSL-43 (#188, V1-A11) and their gate. Supersedes
-nothing. Its `/spec-review all` is SR-624 to SR-630 in
-[`spec/reviews/boundedness/`](../reviews/boundedness/integrity.md).
-
-QSpec ids below are written "QSpec FR-nnn". A bare FR id is a QSL
-requirement.
-
 ## Context
 
 - **QSpec, unbounded declarations** (QSpec#113). QSpec
@@ -80,7 +67,7 @@ requirement.
   backend an unbounded formula settles `unsupported` with a warning. QSpec
   FR-360 maps `proved`, `refuted`, `inconclusive`, `unsupported` and `failed`
   onto the QSpec FR-241 to FR-243 axes.
-- **QSpec, capabilities.** QSpec FR-290 has ten kinds and two modes. It has no
+- **QSpec, capabilities.** QSpec FR-290 has twelve kinds and two modes. It has no
   liveness kind and no quantifier kind: a temporal claim under either profile
   is `temporal-satisfaction`, and quantification, induction and composition
   are obligation forms inside a claim that the selected backend's arm
@@ -92,7 +79,7 @@ requirement.
 - **QSpec, diagnostics** (`quire.native.diagnostics/v1`).
   `stage_limit_exceeded` covers the limits of S1 to S4, the I2 reader, a
   family `check`, `replay` and `route`. `resource_exhausted` is the caller's
-  work-budget meter, and "a semantic maximum is not a caller work budget".
+  work-budget meter, and "a maximum fixed by the language is not a caller work budget".
   There is no timeout, solver-absent or bound-exhausted code: those are QSpec
   FR-331 results.
 - **QSpec, kernel.** AD-016's Shared-type row lists the kernel types exactly,
@@ -114,6 +101,9 @@ requirement.
   The bounded temporal evaluator (`src/temporal`) and the native-v1 ceilings
   are SEAM code that retires in ADR-011 M-6c. No infinite-trace code exists.
 
+QSpec ids below are written "QSpec FR-nnn". A bare FR id is a QSL
+requirement.
+
 ## Decision
 
 Item ids `B-`, `A-`, `TR-` and `N-` are local to this record. Other artifacts
@@ -127,7 +117,7 @@ converts into another kind.
 | ID | Kind | Meaning | Type and owner | Supplied by | When reached |
 | --- | --- | --- | --- | --- | --- |
 | B-1 | Authored semantic bound | Part of the meaning of a declaration: which values the type admits | Kernel `CollectionType.bound: Option<CardinalityBound>` and `ValueType::Population(Option<u64>)`, where `None` is unbounded; the `BoundedInteger` range of a `bounded_domain`; the TemporalTrace `TemporalInterval` (§3). The S3 checker builds them from forms | the source author | A value outside the bound refuses `cardinality_out_of_bound` or `BoundViolation` (QSpec FR-144). Never a resource outcome |
-| B-2 | Execution resource bound | How much work one evaluation, normalization or admission may spend | A ceiling of an accounting-contract limits type: kernel `ScalarLimits`/`Meter` (`quire.value.accounting/v1`, QSpec FR-323 `limits`), `ModelNormalizationLimitsV1`, `PopulationAdmissionLimitsV1` | the caller, per run | A denied charge yields `Incomplete` with its charge point, including FR-082 and NFR-012 `ancestor_steps` and `family_steps`, carrying `resource_exhausted` (or `cancelled`) |
+| B-2 | Execution resource bound | How much work one evaluation, normalization or admission may spend | A ceiling of an accounting-contract limits type: kernel `ScalarLimits`/`Meter` (`quire.value.accounting/v1`, QSpec FR-323 `limits`), `ModelNormalizationLimitsV1`, `PopulationAdmissionLimitsV1`, the supplied-value limits type (FR-277) | the caller, per run | A denied charge yields `Incomplete` with its charge point, including FR-082 and NFR-012 `ancestor_steps` and `family_steps`, carrying `resource_exhausted` (or `cancelled`). A denied supplied-value phase event happens before any evaluation, so it yields FR-277's phase-marked pre-call limit record with no charge point |
 | B-3 | Stage limit | How much input and work a compiler stage or reader may take | A ceiling of a stage's own limits type (`CheckingLimits`, `TypeEnvironmentLimits`, the reader limits), reported as F `diagnostic::LimitExceeded` (ADR-013 T-4, FR-096) | the caller of the stage, or that type's published default | `StageFailure::Limit(LimitExceeded)`, `stage_limit_exceeded`. A stage failure, not an outcome category |
 | B-4 | Proof bound | A finite domain the caller substitutes for one unbounded domain of an item, to ask a bounded-mode backend | F `bound::ProofBound{domain: DomainKey, bound: FiniteBound}` (§4), built. On the wire: the item's `extent.bounds` (and, for a temporal subject, `temporal.subject.proof_bounds`) in the FR-331 request; the request has no request-level `domains`. In replay: `DeclaredDomain` holds a `ProofBound` | the caller of the request, explicitly | Not reached. It is part of the obligation identity (O-09), and a result qualifies only over it |
 | B-5 | Backend tool budget | How long and how deep a backend tool runs (Kani unwind, solver time) | IR `ResourceBounds`. Not a QSL type | the backend provider | QSpec FR-331 `incomplete` with `IncompleteCause::{TimedOut, ResourceExhausted}`. Amended by ADR-018 §1: a run that completes its search horizon `k` (an unrolling or exploration depth; EN-1's `max_depth`) settles `inconclusive`, `BoundReached{depth: k}`; a run stopped before it completes the horizon settles `incomplete`. For QSL's own explicit-state provider (ADR-018 EN-1) the budget type is QSL's `ModelCheckLimits`: FR-101's `Limits` and `max_automaton_states` Amended by ADR-025 MB-2: the model-check request also holds `max_store_buffer` and `max_messages` beside `max_depth`, method bounds on the explored state space like the `max_depth` horizon rather than resource limits, set by the request and 4 when unset; the result states the bound used and whether it was reached, and a run that completes with a store limited by either settles `inconclusive`, `MemoryBoundReached`, unless it finds a counterexample. Amended by ADR-028 LM-1, LM-2: for QSL's exact probabilistic provider (EN-5) the budget type is `ExactProbLimits`: the `ModelCheckLimits` members plus iteration, precision, rational-size, policy-iteration and witness-path budgets; a precision budget reached with the interval still straddling the threshold settles `incomplete`, `PrecisionBudget{lower, upper}`. |
@@ -312,8 +302,13 @@ driver uses the record's extent for it.
 
 No new capability kind, flag or mode is added. QSL records; CG settles.
 
-1. QSL S3 records `Requirements{kind, extent, bounds}` per item (§4).
-2. `qsl_route::Registry::candidates` matches on kind alone (FR-075).
+1. QSL S3 records `Requirements{kind, evidence_kind, extent, bounds}` per
+   item (§4); `evidence_kind` carries the item's unmodified label when present
+   for `probabilistic-satisfaction` and remains absent when the item omits it,
+   so negotiation can distinguish valid, absent and unknown evidence.
+2. `qsl_route::Registry::candidates` matches on capability kind and, for
+   `probabilistic-satisfaction`, the item's exact evidence kind (FR-075);
+   other capability kinds match on kind alone.
 3. The O-20 request writer writes the item's extent classification,
    including `finite_bound_available` (§4).
 4. CG `negotiate_*` applies the QSpec FR-290 advertised-mode table, then the
@@ -348,7 +343,7 @@ No new capability kind, flag or mode is added. QSL records; CG settles.
 | Solver or tool absence at the probe | the routed backend's probe (ADR-012 §7.4) | QSpec FR-331 result `unsupported`, `UnavailabilityCause::SolverAbsent` | `unsupported_projection`/`tool-unavailable`; unsupported |
 | Tool changed after a passing probe | the run | QSpec FR-331 result `failed` | `unsupported_projection`/`tool-unavailable`; internal failure |
 | Bound exhaustion, S6a charge | S6a meter | `Outcome::Incomplete` | `resource_exhausted`/`insufficient-next-charge`; incomplete |
-| Bound exhaustion, read-only B-2 ceiling | S3 model normalization and S6a population admission | `Refused` with the `ancestor-steps` cause (FR-082) | `resource_exhausted`; refusal |
+| Bound exhaustion, read-only B-2 ceiling | S3 model normalization and S6a population admission | `Refused` with the `insufficient-next-charge` cause (FR-082) | `resource_exhausted`; refusal |
 | Bound exhaustion, finite exploration | `qsl_eval::simulation::explore` | `Outcome::Bounded{stats, frontier, limit}`, `limit` `max_states` or `max_transitions` | incomplete; never success, never violation |
 | Completed search horizon, finite exploration | `qsl_eval::simulation::explore` | `Outcome::BoundReached{stats, depth, frontier}` (FR-101; ADR-018 §1: `max_depth` is the search horizon, not a limit) | inconclusive; never success, never violation |
 | Bound exhaustion, backend | backend | `IncompleteCause::ResourceExhausted` | QSpec FR-331 `incomplete`; incomplete |

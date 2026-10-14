@@ -1,0 +1,32 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//! Records actual Cargo argv and target selection at the Make process seam.
+#![forbid(unsafe_code)]
+
+use std::io::Write;
+
+fn main() {
+    let mut log = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(std::env::var_os("FEATURE_LANE_CALL_LOG").expect("call log"))
+        .expect("open call log");
+    let target = std::env::var("CARGO_TARGET_DIR").unwrap_or_default();
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    writeln!(log, "{target}\t{}", args.join("\t")).expect("record invocation");
+
+    if args.iter().any(|argument| argument == "--list") {
+        let test = args
+            .windows(2)
+            .find(|pair| pair[0] == "--test")
+            .and_then(|pair| args.iter().position(|argument| argument == &pair[1]))
+            .and_then(|index| args.get(index + 1))
+            .expect("test filter after --test");
+        let count = std::env::var("FEATURE_LANE_LIST_COUNT")
+            .ok()
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(1);
+        for _ in 0..count {
+            println!("{test}: test");
+        }
+    }
+}

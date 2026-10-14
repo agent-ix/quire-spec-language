@@ -13,7 +13,7 @@ relationships:
 Verify that I1 reads operation frames and that the E3 assembler declares
 operations, over the ConfigVersion domain package and its mutations.
 
-Scope: FR-103-AC-1 to FR-103-AC-5.
+Scope: FR-103-AC-1 to FR-103-AC-6.
 
 ## Test Procedure
 
@@ -51,7 +51,10 @@ declares `model Config = ...` over it.
    in turn has no variant for -- so a `Text` typeRef cannot reach even I1
    through the real pipeline; that cross-repo vocabulary gap is QSL-290, not
    this ticket's.)
-4. Add a record value type beside the operation.
+4. Add record value type `Address` with required `street: VersionNumber`,
+   add `address: Address` to `ConfigVersion`, and add a `modifies` entry for
+   `ConfigVersion/address`. Check a field read through `address` and emit
+   the checked package.
 5. Admit the fixture twice; then admit it with its operation and population
    records moved to the end of the document.
 
@@ -78,9 +81,9 @@ Tag the tests `#[trace("TC-458", "FR-103-AC-n")]`.
   FR-103's own Behavior ("as a field of that type does"); then
   `delta: Int[0, 1000]`, over the same shared `ConfigVersion` fixture's
   `VersionNumber` declaration.
-- Step 4: `UnsupportedModelMember` naming the record value type's node.
+- Step 4: both types assemble beside `attemptUpdate`; `address` has the
+  record value type, its nested `street` read checks, and the emitted field
+  type names the self-typed `model`/`record_value_type` node owned by
+  `Address`. No `UnsupportedModelMember` names it and no
+  `Reference<Address>` is emitted.
 - Step 5: equal `PackageDeclarations` and effect key lists in all three.
-
-## Status
-
-Planned.

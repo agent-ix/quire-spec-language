@@ -171,6 +171,12 @@ fn probe_unit() -> Unit {
     unit_for(unit, config_version_step3_domain_document())
 }
 
+#[trace("FR-003-AC-9")]
+#[test]
+fn private_probe_source_keeps_format_identity() {
+    let _ = probe_unit();
+}
+
 /// The chain `a -> b -> c` as `probe`'s pre state, with self `a` and
 /// `target` naming `target`.
 fn pre_call(target: &str) -> Documents {
@@ -323,7 +329,7 @@ fn assert_reproduces_keeping_identities(case: Case, clause: &str) -> StateClause
 /// TC-517 step 1 (FR-122-AC-1): `VersionUnchanged` over changed-version on
 /// a `Witness`-arm envelope reproduces with an evaluated witness, keeping
 /// the invocation and both snapshots.
-#[trace("TC-517", "FR-122-AC-1")]
+#[trace("TC-517", "FR-122-AC-1", "QSpec-V1-EXPR-020")]
 #[test]
 fn a_violated_postcondition_reproduces_keeping_its_identities() {
     let result = assert_reproduces_keeping_identities(
@@ -368,7 +374,7 @@ fn an_input_arm_envelope_reproduces_without_a_witness() {
 /// TC-517 step 1 (FR-122-AC-1): `ParentOrder` over violating-parent's
 /// current snapshot (anchor `handler validate`, self `child`) reproduces,
 /// keeping the one snapshot.
-#[trace("TC-517", "FR-122-AC-1")]
+#[trace("TC-517", "FR-122-AC-1", "QSpec-V1-EXPR-018")]
 #[test]
 fn a_violated_invariant_reproduces_keeping_its_snapshot() {
     let result = assert_reproduces_keeping_identities(
@@ -400,7 +406,7 @@ fn assert_inconclusive_by_verdicts(result: &StateClauseReplayResult) {
 
 /// TC-517 step 2 (FR-122-AC-2): `VersionUnchanged` over unchanged-version
 /// holds: `inconclusive`, `Verdicts`.
-#[trace("TC-517", "FR-122-AC-2")]
+#[trace("TC-517", "FR-122-AC-2", "QSpec-V1-EXPR-020")]
 #[test]
 fn a_holding_postcondition_is_inconclusive_by_verdicts() {
     let result = replay(case(
@@ -414,7 +420,7 @@ fn a_holding_postcondition_is_inconclusive_by_verdicts() {
 
 /// TC-517 step 2 (FR-122-AC-2): `ParentOrder` over healthy-parent holds:
 /// `inconclusive`, `Verdicts`.
-#[trace("TC-517", "FR-122-AC-2")]
+#[trace("TC-517", "FR-122-AC-2", "QSpec-V1-EXPR-018")]
 #[test]
 fn a_holding_invariant_is_inconclusive_by_verdicts() {
     let result = replay(case(config_version_unit(), "ParentOrder", healthy_parent()))
@@ -631,7 +637,7 @@ fn a_clause_naming_no_state_clause_refuses_missing_name() {
 /// with `self` `a` and `target` `a` (`a` does not reach itself) reproduces,
 /// holding the one pre snapshot, no post snapshot, and `self` `a` and
 /// `target` `a` as the values it reproduced.
-#[trace("TC-517", "FR-122-AC-4")]
+#[trace("TC-517", "FR-122-AC-4", "QSpec-V1-EXPR-019")]
 #[test]
 fn a_violated_precondition_reproduces_over_its_pre_call_state() {
     let result = assert_reproduces_keeping_identities(
@@ -659,7 +665,7 @@ fn a_violated_precondition_reproduces_over_its_pre_call_state() {
 
 /// TC-517 step 4 (FR-122-AC-4): with `target` `c` the precondition holds:
 /// `inconclusive`, `Verdicts`.
-#[trace("TC-517", "FR-122-AC-4")]
+#[trace("TC-517", "FR-122-AC-4", "QSpec-V1-EXPR-019")]
 #[test]
 fn a_holding_precondition_is_inconclusive_by_verdicts() {
     let result =

@@ -22,18 +22,19 @@
 //! `Expression` and signature. `DomainPackage` carries no `Expression` payload —
 //! adding one would perturb the
 //! `model-effective-declaration.schema.json`/`model-complete.md`
-//! correspondence every other rung of this crate keys against — so this is where a real
-//! intake (`agent-ix/quire-specification#131`) will eventually plug in its
-//! own clause source in place of a test-built side table; nothing else here
-//! needs to change when it does.
+//! correspondence every other rung of this crate keys against — so the clause
+//! source is the unit's own: the production caller,
+//! [`PackageDeclarations::link_dispatch`], builds the side table from the
+//! unit's `operation-body` declarations and `pre` clauses (FR-302).
 //!
 //! Scope, kept to exactly what TC-196 D06-D08 need (re-read this note before
 //! extending it):
 //!
 //! - One dispatch-eligible operation at a time, mirroring `link_dispatch`'s
-//!   own per-operation signature. A package with several dispatch call sites
-//!   calls this once per distinct receiver-type/member pair and merges the
-//!   resulting `functions`/`dispatch_operations`/`dispatch_tables`.
+//!   own per-operation signature. A package with several dispatched calls
+//!   calls this once per distinct called family root and merges the
+//!   resulting `functions`/`dispatch_operations`/`dispatch_tables`
+//!   (`PackageDeclarations::link_dispatch`).
 //! - The receiver's admitted static types are derived from
 //!   `table.entries()` and the model's effective view, not supplied by the
 //!   caller: each subtype's [`DeclarationKey`] resolves to its
@@ -553,6 +554,19 @@ fn rename_parameters(
         return expression.clone();
     }
     substitute_names(expression, &rename)
+}
+
+/// `expression` with every free name in `rename`'s keys spelled as its value,
+/// under [`rename_parameters`]' capture-avoiding rule. A plain clone when
+/// `rename` is empty.
+pub(super) fn rename_names(
+    expression: &Expression,
+    rename: &BTreeMap<String, String>,
+) -> Expression {
+    if rename.is_empty() {
+        return expression.clone();
+    }
+    substitute_names(expression, rename)
 }
 
 /// The spelling [`Scope::bind`] gives the `suffix`-th alpha-name of a binder
@@ -1167,6 +1181,42 @@ pub fn checked_dispatch_operation(
     })
 }
 
+/// Test fixtures retain the genuine selection admission owner while the
+/// existing bridge links its dispatch root on the same operation meter.
+#[cfg(any(test, feature = "test-support"))]
+pub fn checked_dispatch_selected_operation(
+    selected: crate::model::intake::SelectedModels,
+    root: &DispatchRoot,
+    clauses: &OperationClauses,
+    source: qsl_foundation::source::provenance::RawSourceRef,
+    identity: qsl_foundation::IdentityLimits,
+) -> Result<PackageDeclarations, DispatchBridgeRefusal> {
+    let (entries, mut meter) = selected.into_parts();
+    let Some(ordinal) = entries
+        .iter()
+        .position(|entry| entry.view.model_selection().identity == root.key.package)
+    else {
+        return Err(unknown_candidate(&root.key));
+    };
+    let mut declarations = checked_dispatch_operation(
+        &entries[ordinal].view,
+        root,
+        clauses,
+        source,
+        &mut meter,
+        identity,
+    )?;
+    for (position, entry) in entries.iter().enumerate() {
+        if position != ordinal {
+            declarations
+                .models
+                .push(AdmittedModel::from_view(&entry.view));
+        }
+    }
+    declarations.model_inputs = Some((entries, meter));
+    Ok(declarations)
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
@@ -1304,16 +1354,39 @@ mod tests {
         limit: u64,
     ) {
         match refusal {
-            DispatchBridgeRefusal::FamilyStepsExceeded(model_refusal) => assert_eq!(
-                model_refusal.cause,
-                ModelRefusalCause::family_steps(original.clone(), limit)
-            ),
+            DispatchBridgeRefusal::FamilyStepsExceeded(model_refusal) => {
+                assert_eq!(
+                    model_refusal.cause,
+                    ModelRefusalCause::family_steps(original.clone(), limit)
+                );
+                // FR-302-AC-5 and QSpec FR-150-AC-11: the S3 refusal is a
+                // denied one-edge charge, `resource_exhausted`/
+                // `insufficient-next-charge`, with the charge record.
+                let code = model_refusal.catalog_code();
+                assert_eq!(code.code(), "resource_exhausted");
+                assert_eq!(code.cause(), "insufficient-next-charge");
+                let fields = model_refusal
+                    .cause
+                    .catalog_fields()
+                    .expect("a denied charge carries its record");
+                let field = |name: &str| fields[name].clone();
+                assert_eq!(field("setting"), "model.family_steps");
+                assert_eq!(field("limit"), limit.to_string());
+                assert_eq!(field("actual"), (limit + 1).to_string());
+                assert_eq!(field("limit_kind"), "family_steps");
+                assert_eq!(field("consumed"), limit.to_string());
+                assert_eq!(field("next_charge"), "1");
+                assert_eq!(field("charge_point"), "model.family-edge");
+                assert_eq!(field("stage"), "model-normalization");
+                assert_eq!(field("accounting_contract"), "ModelNormalizationLimitsV1");
+            }
             other => panic!("expected FamilyStepsExceeded, got {other:?}"),
         }
     }
 
     /// `ancestor_closure` admits a chain of exactly `family_steps` edges with
     /// its full closure, and refuses one edge more instead of truncating.
+    #[trace("TC-795", "FR-302-AC-5")]
     #[test]
     fn ancestor_closure_admits_the_bound_and_refuses_one_past_it() {
         let (keys, redefinitions) = chain("at", FAMILY_STEPS);

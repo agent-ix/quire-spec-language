@@ -1,6 +1,6 @@
 ---
 id: TC-914
-title: "Registry allocation failure preserves its native measurement through QSL admission"
+title: "Registry storage failures preserve their native measurements through QSL admission"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-082
@@ -8,7 +8,7 @@ relationships:
   - target: ix://agent-ix/quire-semantic-value/FR-108
     type: references
 ---
-# TC-914: Registry allocation failure preserves its native measurement through QSL admission
+# TC-914: Registry storage failures preserve their native measurements through QSL admission
 
 ## Description
 
@@ -29,8 +29,11 @@ the production reservation boundary delivered under
    deny a registry, index and traversal reservation in separate attempts.
    Capture the actual amount passed and whether its unit is bytes or
    additional elements. Assert the QSL public failure carries the identical
-   amount and unit in a type-environment registry payload, catalog
-   `resource_exhausted`/`allocation-failed`, through `StageFailure::Refused`.
+   amount and unit in exactly one `requested` catalog field rendered as
+   `<unit>:<amount>`, catalog `resource_exhausted`/`allocation-failed`, through
+   `StageFailure::Refused`; assert the registry cause preserves the exact
+   amount and unit. For example, requests of 6 bytes and 3 additional elements
+   render as `requested: bytes:6` and `requested: additional-elements:3`.
    Assert absence of bound and setting, no work-counter interpretation, and
    no replacement limit, input/type refusal, Boolean, cancellation or fault.
    Exercise every native unit used by delivered production storage; a
@@ -44,8 +47,11 @@ the production reservation boundary delivered under
    and member links with step 1.
 4. Trigger a reservation-size arithmetic or representation overflow through
    the production admission path without allocator denial. Assert the public
-   failure preserves the upstream capacity/size reason and is distinct from
-   `allocation-failed`; it invents no allocator-denied request measurement.
+   failure is `resource_exhausted`/`reservation-size-overflow` and its
+   exactly one `upstream` payload preserves the exact `StorageRequest` as
+   `<unit>:<amount>` (`bytes` or `additional-elements`, then the unpadded
+   base-10 amount); it is distinct from `allocation-failed` and does not claim
+   an allocator-denied request.
 5. With allocation enabled, run the same fixture with work and ancestor
    limits at each required counter N-1 and N. Assert N-1 reports its existing
    `StageFailure::Limit`, kind, configured bound, actual denied counter and
@@ -61,15 +67,11 @@ Tag the implemented consumer tests with `TC-914` and the corresponding
 ## Expected Results
 
 A genuine allocator denial preserves the measured native request and unit in
-QSL's registry resource refusal. Capacity/size overflow remains distinct, and
-configured limits retain their bounds and counters. Denied admission exposes
+QSL's `resource_exhausted`/`allocation-failed` registry refusal as exactly one
+`requested: <unit>:<amount>` field. Capacity/size overflow is
+`resource_exhausted`/`reservation-size-overflow` with exactly one
+`upstream: <unit>:<amount>` field, and configured limits retain their bounds
+and counters. Denied admission exposes
 no partial result and starts no evaluation; a retry succeeds with the complete
 environment. Canonical allocation, malformed input, cancellation and invariant
 failures retain their established contracts.
-
-## Status
-
-Planned consumer verification after the reviewed QSL and QSV contracts are
-merged and IR-713 delivers its fallible production storage and carrier. This
-test case specifies the required evidence; it does not claim an allocator
-failure has already been executed or the QSL-500 allocation path delivered.

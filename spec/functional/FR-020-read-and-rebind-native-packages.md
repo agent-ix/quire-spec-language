@@ -16,6 +16,10 @@ relationships:
 
 When a native package is read, the compiler shall reconstruct its checked meaning from the explicitly supplied source, authored bindings and admitted models before accepting its serialized claims.
 
+The reader decodes and compares all four labels. Remaining work
+(implementation, Linear QSL-381): the reader decodes and compares the two
+labels (QSpec STD-150).
+
 ## Inputs
 
 Bounded raw package bytes, an exact expected NativePackageRef, externally
@@ -69,10 +73,3 @@ digest cannot bypass derivation checks.
 - [FR-004](FR-004-verify-source-maps.md) and [FR-014](FR-014-bind-native-formal-source.md) retain explicit source correspondence.
 - [NFR-007](../non-functional/NFR-007-bound-native-packages.md) bounds intake.
 - [IT-007](../integration/IT-007-native-package-reconstruction.md) qualifies reconstruction through actual runtime observations.
-
-## Status
-
-The source bindings this reader checks carry the two source labels of FR-001 and the source digest. Implemented for the four-label identity (ADR-013 §7 S-4b): the reader decodes and compares all four labels. Remaining work (implementation, Linear QSL-381): the reader decodes and compares the two labels (QSpec STD-150).
-
-Draft. This is compiler payload intake, not B's shared-reference reader, an
-independent consumer qualification or a general formal-model decoder.

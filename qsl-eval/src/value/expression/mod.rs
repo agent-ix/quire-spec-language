@@ -21,13 +21,14 @@ use qsl_foundation::diagnostic::InternalFault;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_exact::{FieldValue, Meter, NodeKey, Value, ValueType};
 use quire_semantic_value::call::InputRefusal;
+use quire_semantic_value::declaration::TypeEnvironment;
 use s6a::{ReferenceEvaluation, S6aFamilyKind};
 
 pub use evaluate::Evaluation;
 pub use family::{InvalidQualifiedName, QualifiedName};
 pub use s6a::separation::{
-    ClauseEvaluation, ObservationIdentity, RuntimeValuePath, Separation, SeparationStep,
-    StopReport, ValuePathStep, ValuePathSubject, WitnessClaim,
+    ClauseEvaluation, InvocationBinding, ObservationIdentity, RuntimeValuePath, Separation,
+    SeparationStep, StopReport, ValuePathStep, ValuePathSubject, WitnessClaim,
 };
 
 // `CheckedExpression` is `check`'s own checked-output type; this module
@@ -162,6 +163,7 @@ fn validate(
     parameters: &[(String, ValueType)],
     arguments: &[Value],
     objects: &ObjectEnvironment,
+    types: &TypeEnvironment,
 ) -> Result<(), InputRefusal> {
     if parameters.len() != arguments.len() {
         return Err(InputRefusal::Arity {
@@ -186,7 +188,7 @@ fn validate(
             if !resolved {
                 return Err(InputRefusal::WrongValueKind { parameter });
             }
-        } else if !value_type.admits(argument) {
+        } else if !types.admits(value_type, argument) {
             return Err(InputRefusal::WrongValueKind { parameter });
         }
         let mut pending = vec![argument];
@@ -207,15 +209,19 @@ fn validate(
                     }));
                 }
                 Value::Collection(collection) => pending.extend(collection.elements()),
+                Value::Union(union) => pending.extend(union.payload()),
                 Value::Boolean(_)
                 | Value::Integer(_)
                 | Value::Rational(_)
                 | Value::Decimal(_)
                 | Value::Float(_)
                 | Value::Quantity(_)
+                | Value::String(_)
                 | Value::Text(_)
                 | Value::Enum(_)
-                | Value::Population(_) => {}
+                | Value::Population(_)
+                | Value::Uuid(_)
+                | Value::Timestamp(_) => {}
             }
         }
     }
@@ -434,6 +440,7 @@ struct ClauseSetup<'a> {
     pre: Option<&'a ObjectEnvironment>,
     bindings: Vec<Value>,
     trail: s6a::separation::Trail,
+    receiver_path: Option<s6a::separation::RuntimeValuePath>,
 }
 
 impl<'a> ClauseSetup<'a> {
@@ -500,7 +507,23 @@ impl<'a> ClauseSetup<'a> {
         // The clause's own observation names its value paths: the pre
         // snapshot for a precondition (FR-104).
         let own = s6a::separation::observation_identity(&current.identity);
-        let trail = s6a::separation::Trail::new(own, pre);
+        let mut trail = s6a::separation::Trail::new(own, pre);
+        trail.receiver = Some(observations.self_object.clone());
+        trail.receiver_pre = observations.receiver_pre.clone();
+        trail.receiver_invocation = observations
+            .receiver_invocation
+            .as_ref()
+            .map(s6a::separation::observation_identity);
+        let receiver_path = observations.receiver_invocation.as_ref().map(|invocation| {
+            s6a::separation::RuntimeValuePath {
+                observation: s6a::separation::observation_identity(&current.identity),
+                subject: s6a::separation::ValuePathSubject::Invocation {
+                    invocation: s6a::separation::observation_identity(invocation),
+                    binding: s6a::separation::InvocationBinding::Receiver,
+                },
+                steps: Vec::new(),
+            }
+        });
         Ok(Self {
             declaration,
             current: &current.environment,
@@ -510,6 +533,7 @@ impl<'a> ClauseSetup<'a> {
                 .map(|observation| &observation.environment),
             bindings,
             trail,
+            receiver_path,
         })
     }
 }
@@ -592,7 +616,12 @@ impl CheckedPackageEvaluation for CheckedPackage {
             .graph()
             .callable(name)
             .ok_or_else(|| InputRefusal::UnknownFunction(function.to_string()))?;
-        validate(callable.parameters, &arguments, objects)?;
+        validate(
+            callable.parameters,
+            &arguments,
+            objects,
+            self.graph().scope().types(),
+        )?;
         // FR-062/FR-065: this family's own `evaluate` hook
         // (`s6a::ReferenceEvaluation`) is the one path that runs
         // checked function-application code, not a second, parallel
@@ -620,7 +649,12 @@ impl CheckedPackageEvaluation for CheckedPackage {
         objects: &ObjectEnvironment,
         meter: &mut Meter,
     ) -> Result<Evaluation, CallFailure> {
-        validate(expression.parameters(), &arguments, objects)?;
+        validate(
+            expression.parameters(),
+            &arguments,
+            objects,
+            self.graph().scope().types(),
+        )?;
         Machine::new(
             self.graph().scope(),
             self.graph(),
@@ -660,7 +694,11 @@ impl CheckedPackageEvaluation for CheckedPackage {
                 "clause-evaluation-environment-carries-a-trail",
             ))
         })?;
-        Ok(ClauseEvaluation::new(evaluation, trail))
+        Ok(ClauseEvaluation::new(
+            evaluation,
+            trail,
+            setup.receiver_path,
+        ))
     }
 
     fn check_separation(
@@ -961,7 +999,16 @@ mod tests {
                 .expect_err("a checked-program invariant break is an internal fault");
         assert_eq!(fault.stage(), "S6a");
         assert_eq!(fault.category(), Category::InternalFailure);
-        assert_eq!(fault.invariant(), "checked-program-invariant");
+        assert_eq!(fault.invariant(), "boolean-value-expected");
+        assert_eq!(fault.kernel_cause(), None);
+        assert_eq!(
+            meter
+                .admitted_charges()
+                .iter()
+                .map(|charge| charge.point)
+                .collect::<Vec<_>>(),
+            [quire_exact::ChargePoint::FunctionCall]
+        );
         assert_eq!(
             fault.catalog_code(),
             qsl_foundation::diagnostic::CatalogCode::new(
@@ -970,6 +1017,48 @@ mod tests {
             ),
             "FR-096-AC-15 names the code runtime_invariant"
         );
+        let expression = package
+            .graph()
+            .check_expression(
+                vec![("x".to_owned(), ValueType::Boolean)],
+                &Expression::logical_not(Expression::name("x".to_owned())),
+                None,
+                quire_semantic_value::checking::CheckMode::Linked,
+                CheckingLimits::default(),
+            )
+            .unwrap();
+        for call in [false, true] {
+            for argument in [Value::Integer(Integer::from(3_i64)), Value::Boolean(true)] {
+                let invalid = matches!(argument, Value::Integer(_));
+                let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+                let result = if call {
+                    package.call(
+                        &QualifiedName::unqualified("flip").unwrap(),
+                        vec![argument],
+                        &objects,
+                        &mut meter,
+                    )
+                } else {
+                    package.evaluate(&expression, vec![argument], &objects, &mut meter)
+                };
+                if invalid {
+                    assert!(matches!(
+                        result,
+                        Err(CallFailure::Input(InputRefusal::WrongValueKind {
+                            parameter: 0
+                        }))
+                    ));
+                    assert!(meter.admitted_charges().is_empty());
+                } else {
+                    assert!(matches!(
+                        result.unwrap().outcome,
+                        FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(
+                            false
+                        )))
+                    ));
+                }
+            }
+        }
     }
 
     /// TC-385 step 2: an exhaustive `match` with no `_` arm over a

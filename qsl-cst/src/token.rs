@@ -174,9 +174,10 @@ vocabulary! {
     DecimalType => "Decimal", Float32Type => "Float32", Float64Type => "Float64",
     TextType => "Text", OptionType => "Option", SequenceType => "Sequence",
     SetType => "Set", BagType => "Bag", OrderedSetType => "OrderedSet",
-    ReferenceType => "Reference", Null => "null", NoneValue => "none",
+    ReferenceType => "Reference", PopulationType => "Population", Null => "null", NoneValue => "none",
     Decimal => "decimal", Float32 => "float32", Float64 => "float64", Bits => "bits",
-    Convert => "convert", AllInstances => "allInstances", Collect => "collect",
+    Convert => "convert", AllInstances => "allInstances", Lookup => "lookup",
+    Absent => "absent", Collect => "collect",
     FlatMap => "flatMap", Flatten => "flatten", Fold => "fold", Reduce => "reduce",
     Identity => "identity", Exact => "exact",
     Nfc => "nfc", Nfd => "nfd", Nfkc => "nfkc", Nfkd => "nfkd",
@@ -191,6 +192,7 @@ vocabulary! {
     Transition => "transition", Reset => "reset", Synthesis => "synthesis",
     Grammar => "grammar", Satisfies => "satisfies", Verify => "verify", Claim => "claim",
     Method => "method", Domain => "domain", Depends => "depends", Bound => "bound",
+    Body => "body",
     Caret => "^", Question => "?", Apostrophe => "'"
 }
 

@@ -28,10 +28,11 @@ use qsl_semantics::model::normalize::{
     normalize, EffectiveView, ModelRefusal, ModelRefusalCause, NormalizeOutcome, OfferedSelection,
 };
 use qsl_semantics::model::population::{
-    admit_binding, admit_invocation, all_instances, lookup, AdmissionChargePoint,
-    AdmissionLimitKind, AdmissionMeter, AdmissionOutcome, AllInstancesOutcome, InvocationContext,
-    InvocationDelta, LookupKey, LookupOutcome, MemberFieldValues, PopulationAdmissionLimits,
-    PopulationBinding, PopulationDocument, PopulationMember, ReferenceKey, TypedReference,
+    admit_binding, admit_invocation, admit_invocation_bound, all_instances, lookup,
+    AdmissionChargePoint, AdmissionIncomplete, AdmissionLimitKind, AdmissionMeter,
+    AdmissionOutcome, AllInstancesOutcome, InvocationBinding, InvocationContext, InvocationDelta,
+    LookupKey, LookupOutcome, MemberFieldValues, PopulationAdmissionLimits, PopulationBinding,
+    PopulationDocument, PopulationMember, ReferenceKey, TypedReference,
 };
 use quire_exact::{ChargePoint, Integer, LimitKind, Meter, ScalarLimits, UniverseId};
 
@@ -54,6 +55,8 @@ const SCALAR_UNLIMITED: ScalarLimits = ScalarLimits {
     work_units: u64::MAX,
     result_units: u64::MAX,
 };
+
+use crate::admitted_charge_points;
 
 fn object_type(identity: &str, supertypes: Vec<&str>) -> DomainPackageRecord {
     DomainPackageRecord::ObjectType(ObjectTypeRecord {
@@ -348,6 +351,52 @@ fn lookup_key(
     }
 }
 
+/// V1-TYPE-021: the declared closed population admits finite object members
+/// even though none has a value-containment field. Without closure authority
+/// the same offered members cannot become a complete universe.
+#[test]
+#[trace("QSpec-V1-TYPE-021", "QSpec-FR-011-AC-3")]
+fn finite_object_population_requires_explicit_closure() {
+    let document = p1("test/orders");
+    assert!(document
+        .members
+        .iter()
+        .all(|member| member.field_values.is_empty()));
+    let closed = fixture_f1();
+    let view = view_of(&closed);
+    let binding = admitted_binding(&view, &document);
+    let a = type_id(&view, "model.A");
+    let b = type_id(&view, "model.B");
+    let universe = view.object_universe().identity();
+    let expected: BTreeSet<_> = [
+        reference_key(&universe, &a, "a1"),
+        reference_key(&universe, &a, "a2"),
+        reference_key(&universe, &b, "b1"),
+    ]
+    .into_iter()
+    .collect();
+    assert_eq!(
+        binding.members().keys().cloned().collect::<BTreeSet<_>>(),
+        expected
+    );
+
+    let open = fixture_f1_with_extent(Extent::Open);
+    let mut meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    match admit_binding(
+        &view_of(&open),
+        &document,
+        &p1_population_key(),
+        GeneralizationClosure::Closed,
+        Some(3),
+        &mut meter,
+    ) {
+        AdmissionOutcome::UnknownClosure(refusal) => {
+            assert_eq!(refusal.code, Code::IncompletePopulation);
+        }
+        other => panic!("an open universe cannot be admitted as complete: {other:?}"),
+    }
+}
+
 /// TC-198 L01: closed all-instances over P1 returns every and only member of
 /// the selected typed population, once, in canonical reference-key order,
 /// including the subtype `B` population under `M::A` — and `b1`'s reference
@@ -438,8 +487,7 @@ fn l01_all_instances_selects_subtype_population_once() {
     assert_eq!(meter_a.consumed(LimitKind::ResultUnits), 4);
     assert_eq!(meter_a.consumed(LimitKind::ValueOccurrences), 4);
     assert_eq!(
-        meter_a
-            .admitted_charges()
+        admitted_charge_points(&meter_a)
             .iter()
             .filter(|point| **point == ChargePoint::PopulationVisit)
             .count(),
@@ -475,6 +523,320 @@ fn l01_all_instances_selects_subtype_population_once() {
         .find(|key| key.object == "b1")
         .expect("b1 selected under M::A");
     assert_eq!(*b1_via_a, b1_via_b);
+}
+
+/// FR-084-AC-2 / TC-227: object closure can hold while the declared member
+/// types omit the queried type itself. Such a query must not publish the
+/// members it happened to gather; complete coverage remains deterministic
+/// under member order changes.
+#[test]
+#[trace("TC-227", "FR-084-AC-2")]
+fn all_instances_requires_declared_subtype_closure() {
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("tc-227"),
+        vec![
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
+            population_record("model.pop", &["model.B"], Extent::Closed),
+            population_record(
+                "model.pop.complete",
+                &["model.A", "model.B"],
+                Extent::Closed,
+            ),
+        ],
+    );
+    let view = view_of(&domain_package);
+    let document = PopulationDocument {
+        model_identity: "test/orders".to_owned(),
+        members: vec![member("b1", "model.B")],
+    };
+    let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let binding = match admit_binding(
+        &view,
+        &document,
+        &DeclarationKey::fixture("model.pop"),
+        GeneralizationClosure::Closed,
+        Some(3),
+        &mut admission,
+    ) {
+        AdmissionOutcome::Admitted(binding) => binding,
+        other => panic!("expected object-closed binding, got {other:?}"),
+    };
+
+    let mut meter = Meter::new(SCALAR_UNLIMITED);
+    let outcome = all_instances(&binding, &DeclarationKey::fixture("model.A"), &mut meter);
+    match outcome {
+        AllInstancesOutcome::IncompleteSubtypeClosure(incomplete) => {
+            assert_eq!(incomplete.queried_type, DeclarationKey::fixture("model.A"));
+            assert_eq!(
+                incomplete.missing_types,
+                [DeclarationKey::fixture("model.A")]
+            );
+        }
+        other => {
+            panic!("expected typed subtype-closure incompleteness without a set, got {other:?}")
+        }
+    }
+
+    // Closure is decided before the member walk: even when the first
+    // population.visit would be denied, the result remains typed closure
+    // incompleteness and consumes no work.
+    let mut no_work = Meter::new(ScalarLimits {
+        work_units: 0,
+        ..SCALAR_UNLIMITED
+    });
+    match all_instances(&binding, &DeclarationKey::fixture("model.A"), &mut no_work) {
+        AllInstancesOutcome::IncompleteSubtypeClosure(incomplete) => {
+            assert_eq!(incomplete.queried_type, DeclarationKey::fixture("model.A"));
+            assert_eq!(
+                incomplete.missing_types,
+                [DeclarationKey::fixture("model.A")]
+            );
+        }
+        other => panic!("closure incompleteness must precede charging: {other:?}"),
+    }
+    assert_eq!(no_work.consumed(LimitKind::WorkUnits), 0);
+    assert!(admitted_charge_points(&no_work).is_empty());
+
+    let complete_document = PopulationDocument {
+        model_identity: document.model_identity.clone(),
+        members: vec![
+            member("b1", "model.B"),
+            member("a2", "model.A"),
+            member("a1", "model.A"),
+        ],
+    };
+    let reordered = PopulationDocument {
+        model_identity: complete_document.model_identity.clone(),
+        members: complete_document.members.iter().rev().cloned().collect(),
+    };
+    let complete_binding = |document: &PopulationDocument| match admit_binding(
+        &view,
+        document,
+        &DeclarationKey::fixture("model.pop.complete"),
+        GeneralizationClosure::Closed,
+        Some(3),
+        &mut AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED),
+    ) {
+        AdmissionOutcome::Admitted(binding) => binding,
+        other => panic!("expected subtype-closed binding, got {other:?}"),
+    };
+    let first = complete_binding(&complete_document);
+    let second = complete_binding(&reordered);
+    let mut first_meter = Meter::new(SCALAR_UNLIMITED);
+    let mut second_meter = Meter::new(SCALAR_UNLIMITED);
+    let select = |binding: &PopulationBinding, meter: &mut Meter| match all_instances(
+        binding,
+        &DeclarationKey::fixture("model.A"),
+        meter,
+    ) {
+        AllInstancesOutcome::Completed(set) => set,
+        other => panic!("expected complete allInstances<A>, got {other:?}"),
+    };
+    let first_set = select(&first, &mut first_meter);
+    let second_set = select(&second, &mut second_meter);
+    assert_eq!(first_set, second_set);
+    let canonical: Vec<_> = first_set.members().iter().collect();
+    assert!(canonical.windows(2).all(|pair| pair[0] < pair[1]));
+}
+
+/// FR-084-AC-2 / TC-227: subtype coverage checks the query against its
+/// declared member types. A deep, unrelated catalog chain must not be walked
+/// as part of the query: with a zero ancestor-step ceiling, the reflexive
+/// query succeeds while any attempt to inspect that chain would be refused.
+#[test]
+#[trace("TC-227", "FR-084-AC-2")]
+fn all_instances_does_not_walk_unrelated_type_catalog() {
+    let mut records = vec![object_type("model.T", vec![])];
+    let mut previous = "model.U0".to_owned();
+    records.push(object_type(&previous, vec![]));
+    for index in 1..=4 {
+        let current = format!("model.U{index}");
+        records.push(object_type(&current, vec![previous.as_str()]));
+        previous = current;
+    }
+    records.push(population_record("model.pop", &["model.T"], Extent::Closed));
+
+    let domain_package =
+        DomainPackage::new(DomainPackageRef::fixture("tc-227-no-catalog-walk"), records);
+    let view = view_of(&domain_package);
+    let document = PopulationDocument {
+        model_identity: "test/orders".to_owned(),
+        members: vec![member("t1", "model.T")],
+    };
+    let limits = PopulationAdmissionLimits {
+        ancestor_steps: 0,
+        ..PopulationAdmissionLimits::UNLIMITED
+    };
+    let binding = match admit_binding(
+        &view,
+        &document,
+        &DeclarationKey::fixture("model.pop"),
+        GeneralizationClosure::Closed,
+        Some(3),
+        &mut AdmissionMeter::new(limits),
+    ) {
+        AdmissionOutcome::Admitted(binding) => binding,
+        other => panic!("expected an admitted reflexive population, got {other:?}"),
+    };
+
+    match all_instances(
+        &binding,
+        &DeclarationKey::fixture("model.T"),
+        &mut Meter::new(SCALAR_UNLIMITED),
+    ) {
+        AllInstancesOutcome::Completed(set) => assert_eq!(set.members().len(), 1),
+        other => panic!("unrelated catalog ancestry must not affect the query: {other:?}"),
+    }
+}
+
+/// Runs one admitted `allInstances` query over a small explicitly declared
+/// type tree. The population's declared types describe coverage; the member
+/// rows independently provide a nonempty result when the queried closure is
+/// covered.
+fn all_instances_for_declared_type_tree(
+    types: &[(&str, &[&str])],
+    declared: &[&str],
+    queried: &str,
+    members: Vec<PopulationMember>,
+) -> AllInstancesOutcome {
+    let mut records: Vec<_> = types
+        .iter()
+        .map(|(identity, supertypes)| object_type(identity, supertypes.to_vec()))
+        .collect();
+    records.push(population_record("model.pop", declared, Extent::Closed));
+    let domain_package = DomainPackage::new(DomainPackageRef::fixture("tc-227"), records);
+    let view = view_of(&domain_package);
+    let document = PopulationDocument {
+        model_identity: "test/orders".to_owned(),
+        members,
+    };
+    let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let binding = match admit_binding(
+        &view,
+        &document,
+        &DeclarationKey::fixture("model.pop"),
+        GeneralizationClosure::Closed,
+        Some(3),
+        &mut admission,
+    ) {
+        AdmissionOutcome::Admitted(binding) => binding,
+        other => panic!("expected an admitted binding, got {other:?}"),
+    };
+    all_instances(
+        &binding,
+        &DeclarationKey::fixture(queried),
+        &mut Meter::new(SCALAR_UNLIMITED),
+    )
+}
+
+/// FR-153 coverage is reflexive conformance from queried T to a declared
+/// member type: a declared parent covers its queried child.
+#[trace("TC-227", "FR-084-AC-2")]
+#[test]
+fn all_instances_declared_parent_covers_queried_child() {
+    let outcome = all_instances_for_declared_type_tree(
+        &[("model.A", &[]), ("model.B", &["model.A"])],
+        &["model.A"],
+        "model.B",
+        vec![member("b1", "model.B")],
+    );
+
+    let AllInstancesOutcome::Completed(result) = outcome else {
+        panic!("a declared parent covers its queried child, got {outcome:?}");
+    };
+    assert_eq!(result.element_type(), &DeclarationKey::fixture("model.B"));
+    assert_eq!(result.len(), 1);
+    assert_eq!(result.members().first().unwrap().object, "b1");
+}
+
+/// A declared child does not conform upward to its parent query.
+#[trace("TC-227", "FR-084-AC-2")]
+#[test]
+fn all_instances_declared_child_does_not_cover_parent_query() {
+    let outcome = all_instances_for_declared_type_tree(
+        &[("model.T", &[]), ("model.C", &["model.T"])],
+        &["model.C"],
+        "model.T",
+        vec![member("c1", "model.C")],
+    );
+
+    let AllInstancesOutcome::IncompleteSubtypeClosure(incomplete) = outcome else {
+        panic!("a declared child does not cover its parent query, got {outcome:?}");
+    };
+    assert_eq!(incomplete.queried_type, DeclarationKey::fixture("model.T"));
+    assert_eq!(
+        incomplete.missing_types,
+        [DeclarationKey::fixture("model.T")]
+    );
+}
+
+/// A declared grandparent covers the queried type by conformance.
+#[trace("TC-227", "FR-084-AC-2")]
+#[test]
+fn all_instances_declared_grandparent_covers_query_by_conformance() {
+    let outcome = all_instances_for_declared_type_tree(
+        &[
+            ("model.G", &[]),
+            ("model.P", &["model.G"]),
+            ("model.T", &["model.P"]),
+            ("model.C", &["model.T"]),
+        ],
+        &["model.G"],
+        "model.T",
+        vec![member("c1", "model.C")],
+    );
+
+    let AllInstancesOutcome::Completed(result) = outcome else {
+        panic!("a declared grandparent covers the query closure, got {outcome:?}");
+    };
+    assert_eq!(result.element_type(), &DeclarationKey::fixture("model.T"));
+    assert_eq!(result.len(), 1);
+    assert_eq!(result.members().first().unwrap().object, "c1");
+}
+
+/// FR-153 conformance is reflexive: declaring T covers query T.
+#[trace("TC-227", "FR-084-AC-2")]
+#[test]
+fn all_instances_declared_query_type_covers_itself() {
+    let outcome = all_instances_for_declared_type_tree(
+        &[("model.T", &[])],
+        &["model.T"],
+        "model.T",
+        vec![member("t1", "model.T")],
+    );
+
+    let AllInstancesOutcome::Completed(result) = outcome else {
+        panic!("the declared query type covers itself, got {outcome:?}");
+    };
+    assert_eq!(result.element_type(), &DeclarationKey::fixture("model.T"));
+    assert_eq!(result.len(), 1);
+    assert_eq!(result.members().first().unwrap().object, "t1");
+}
+
+/// A declared child does not cover a sibling query type.
+#[trace("TC-227", "FR-084-AC-2")]
+#[test]
+fn all_instances_declared_sibling_does_not_cover_query() {
+    let outcome = all_instances_for_declared_type_tree(
+        &[
+            ("model.T", &[]),
+            ("model.C1", &["model.T"]),
+            ("model.C2", &["model.T"]),
+        ],
+        &["model.C1"],
+        "model.C2",
+        vec![member("c1", "model.C1")],
+    );
+
+    let AllInstancesOutcome::IncompleteSubtypeClosure(incomplete) = outcome else {
+        panic!("a sibling does not cover the queried type, got {outcome:?}");
+    };
+    assert_eq!(incomplete.queried_type, DeclarationKey::fixture("model.C2"));
+    assert_eq!(
+        incomplete.missing_types,
+        [DeclarationKey::fixture("model.C2")]
+    );
 }
 
 /// TC-198 L01's boundary: with `work_units: 4`, `allInstances<M::A>(p)`
@@ -1151,7 +1513,11 @@ fn l05_duplicate_collapses_and_recovers_l01() {
         "the exact duplicate collapses, not a fourth member"
     );
     assert_eq!(admission.consumed(AdmissionLimitKind::PopulationMembers), 4);
-    assert_eq!(admission.consumed(AdmissionLimitKind::WorkUnits), 4);
+    assert_eq!(
+        admission.consumed(AdmissionLimitKind::WorkUnits),
+        16_318,
+        "duplicate input is member-priced once; identity work includes worst-case sort comparisons"
+    );
 
     let mut meter = Meter::new(SCALAR_UNLIMITED);
     let selected = match all_instances(&binding, &DeclarationKey::fixture("model.A"), &mut meter) {
@@ -1463,8 +1829,8 @@ fn admission_admits_when_the_population_key_resolves_in_the_domain_package() {
     assert_eq!(binding.members().len(), 3);
     assert_eq!(
         admission.admitted_charges().len(),
-        3,
-        "one binding.member charge per P1 member"
+        4,
+        "three binding.member charges plus the pre-encoding identity-work charge"
     );
 }
 
@@ -1587,7 +1953,7 @@ fn l02_population_members_limit_denies_the_third_member_charge() {
         AdmissionOutcome::Incomplete(incomplete) => {
             assert_eq!(incomplete.limit_kind, AdmissionLimitKind::PopulationMembers);
             assert_eq!(
-                incomplete.limit_exceeded().setting(),
+                incomplete.denial().setting(),
                 qsl_foundation::Setting::AdmissionPopulationMembers
             );
             assert_eq!(incomplete.limit, 2);
@@ -1661,7 +2027,7 @@ fn l02_work_units_limit_denies_the_third_member_charge() {
         AdmissionOutcome::Incomplete(incomplete) => {
             assert_eq!(incomplete.limit_kind, AdmissionLimitKind::WorkUnits);
             assert_eq!(
-                incomplete.limit_exceeded().setting(),
+                incomplete.denial().setting(),
                 qsl_foundation::Setting::AdmissionWorkUnits
             );
             assert_eq!(incomplete.limit, 2);
@@ -1683,7 +2049,7 @@ fn l02_work_units_limit_denies_the_third_member_charge() {
     );
     // Raised, the same input admits.
     let raised = PopulationAdmissionLimits {
-        work_units: 1_000,
+        work_units: 20_000,
         ..PopulationAdmissionLimits::UNLIMITED
     };
     assert!(matches!(
@@ -1863,7 +2229,8 @@ fn r06_subsetting_violation_refuses_after_the_charged_subset_value() {
 
 /// R06's satisfying counterpart: `a1.some = [a2]`, and `a2` is among
 /// `a1.all`'s one value, so the same one `binding.subset-value` charge
-/// (`n = 1`) discharges instead of refusing, and admission completes.
+/// (`n = 1`) discharges instead of refusing. The work total also includes
+/// each member and the bounded identity preimage/member encoding passes.
 #[test]
 #[trace("QSpec-TC-196", "QSpec-FR-151-AC-10")]
 fn r06_subsetting_satisfied_admits_with_the_charged_subset_value() {
@@ -1902,7 +2269,11 @@ fn r06_subsetting_satisfied_admits_with_the_charged_subset_value() {
             .count(),
         1
     );
-    assert_eq!(admission.consumed(AdmissionLimitKind::WorkUnits), 3);
+    assert_eq!(
+        admission.consumed(AdmissionLimitKind::WorkUnits),
+        5_963,
+        "admission prices member work, subsetting, identity encoding, and worst-case sort comparisons"
+    );
 }
 
 /// A member declaring the same field twice in its own `field_values` must
@@ -1981,6 +2352,7 @@ fn deletes_a_effect() -> OperationEffect {
         modifies: Vec::new(),
         creates: Vec::new(),
         deletes: vec![DeclarationKey::fixture("model.A")],
+        ..Default::default()
     }
 }
 
@@ -1991,6 +2363,7 @@ fn empty_effect() -> OperationEffect {
         modifies: Vec::new(),
         creates: Vec::new(),
         deletes: Vec::new(),
+        ..Default::default()
     }
 }
 
@@ -2218,6 +2591,7 @@ fn invocation_field_write_outside_the_declared_frame_refuses_and_inside_it_admit
         modifies: vec![DeclarationKey::fixture("model.A.x")],
         creates: Vec::new(),
         deletes: Vec::new(),
+        ..Default::default()
     };
     let declared = InvocationDelta {
         effect: &declared_effect,
@@ -2481,6 +2855,7 @@ fn enforce_frame_admits_a_field_write_that_reaches_a_declared_grant_through_rede
         modifies: vec![DeclarationKey::fixture("model.A.x")],
         creates: Vec::new(),
         deletes: Vec::new(),
+        ..Default::default()
     };
     let declared = InvocationDelta {
         effect: &effect,
@@ -2544,6 +2919,7 @@ fn enforce_frame_admits_a_field_write_that_reaches_a_declared_grant_through_a_re
         modifies: vec![DeclarationKey::fixture("model.A.x")],
         creates: Vec::new(),
         deletes: Vec::new(),
+        ..Default::default()
     };
     let declared = InvocationDelta {
         effect: &effect,
@@ -2631,6 +3007,7 @@ fn enforce_frame_refuses_a_field_write_at_a_package_the_declared_grant_does_not_
         modifies: vec![DeclarationKey::fixture("model.A.x")], // package "test/orders"
         creates: Vec::new(),
         deletes: Vec::new(),
+        ..Default::default()
     };
     let declared = InvocationDelta {
         effect: &effect,
@@ -2699,6 +3076,7 @@ fn enforce_frame_refuses_an_object_that_changes_type_between_pre_and_post() {
             DeclarationKey::fixture("model.A"),
             DeclarationKey::fixture("model.B"),
         ],
+        ..Default::default()
     };
     let declared = InvocationDelta {
         effect: &effect,
@@ -2741,7 +3119,12 @@ fn enforce_frame_refuses_an_object_that_changes_type_between_pre_and_post() {
 /// not exact type equality, exactly like `all_instances`'s own subtype
 /// selection (`tests/model_population.rs`'s `l01_*` test).
 #[test]
-#[trace("QSpec-TC-198", "QSpec-FR-046-AC-3")]
+#[trace(
+    "QSpec-TC-198",
+    "QSpec-FR-046-AC-3",
+    "QSpec-V1-EXPR-022",
+    "QSpec-FR-013-AC-6"
+)]
 fn invocation_admits_a_subtype_created_and_deleted_under_a_supertype_grant() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
@@ -2758,6 +3141,7 @@ fn invocation_admits_a_subtype_created_and_deleted_under_a_supertype_grant() {
         modifies: Vec::new(),
         creates: vec![DeclarationKey::fixture("model.A")],
         deletes: vec![DeclarationKey::fixture("model.A")],
+        ..Default::default()
     };
     let declared = InvocationDelta {
         effect: &effect,
@@ -2808,6 +3192,7 @@ fn invocation_refuses_a_declared_delta_that_declares_the_same_identity_twice() {
         modifies: Vec::new(),
         creates: vec![DeclarationKey::fixture("model.A")],
         deletes: Vec::new(),
+        ..Default::default()
     };
     let post_document = PopulationDocument {
         model_identity: "test/orders".to_owned(),
@@ -2929,6 +3314,7 @@ fn invocation_refuses_a_declared_delta_that_declares_the_same_identity_created_a
         modifies: Vec::new(),
         creates: vec![DeclarationKey::fixture("model.A")],
         deletes: vec![DeclarationKey::fixture("model.A")],
+        ..Default::default()
     };
     let declared = InvocationDelta {
         effect: &effect,
@@ -3031,6 +3417,7 @@ fn tc_291_population_id_is_deterministic_over_its_admission_preimage() {
         modifies: Vec::new(),
         creates: Vec::new(),
         deletes: Vec::new(),
+        ..Default::default()
     };
     let declared = InvocationDelta {
         effect: &effect,
@@ -3089,6 +3476,7 @@ fn tc_296_standalone_direct_admission_distinct_from_invocation_post() {
         modifies: Vec::new(),
         creates: Vec::new(),
         deletes: Vec::new(),
+        ..Default::default()
     };
     let declared = InvocationDelta {
         effect: &effect,
@@ -3120,6 +3508,191 @@ fn tc_296_standalone_direct_admission_distinct_from_invocation_post() {
     );
     assert_ne!(id_direct, id_pre);
     assert_ne!(id_pre, id_post);
+}
+
+fn identity_binding(
+    view: &EffectiveView,
+    document: &PopulationDocument,
+    maximum: Option<u64>,
+) -> PopulationBinding {
+    match admit_binding(
+        view,
+        document,
+        &p1_population_key(),
+        GeneralizationClosure::Closed,
+        maximum,
+        &mut AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED),
+    ) {
+        AdmissionOutcome::Admitted(binding) => binding,
+        other => panic!("expected admitted binding, got {other:?}"),
+    }
+}
+
+/// Independently constructs the FR-089 object from an admitted binding.
+fn expected_population_id(binding: &PopulationBinding, role: &str) -> String {
+    use qsl_semantics::model::key::hex;
+    use sha2::{Digest, Sha256};
+
+    let mut members: Vec<_> = binding
+        .members()
+        .iter()
+        .map(|(key, declaration)| {
+            serde_json::json!({
+                "universe": hex(key.universe.as_bytes()),
+                "type": hex(key.type_identity.as_bytes()),
+                "object": key.object,
+                "declaration": {
+                    "package": declaration.package,
+                    "node": declaration.node,
+                    "digest_domain": "sha256-jcs"
+                }
+            })
+        })
+        .collect();
+    members.sort_by_cached_key(|member| serde_json::to_vec(member).unwrap());
+    let selection = binding.model_selection();
+    let preimage = serde_json::json!({
+        "version": "quire.population/v1",
+        "domain_package_selection": {
+            "identity": selection.identity,
+            "version": selection.version,
+            "digest_domain": "sha256-jcs",
+            "digest": hex(&selection.digest)
+        },
+        "population_key": {
+            "package": "test/orders",
+            "node": P1_POPULATION,
+            "digest_domain": "sha256-jcs"
+        },
+        "admission_role": role,
+        "declared_maximum": binding.declared_maximum().map(|n| n.to_string()),
+        "members": members,
+        "pre": binding.pre_anchor().map(|pre| pre.population_id().to_string())
+    });
+    hex(&Sha256::digest(serde_json::to_vec(&preimage).unwrap()))
+}
+
+#[test]
+#[trace("TC-291", "FR-089-AC-7")]
+fn population_identity_binds_maximum_and_canonical_members() {
+    let view = view_of(&fixture_f1());
+    let document = PopulationDocument {
+        model_identity: "test/orders".into(),
+        // Object-byte order differs from reference-key order.
+        members: vec![member("a", "model.B"), member("z", "model.A")],
+    };
+    let binding = identity_binding(&view, &document, Some(3));
+    assert_eq!(
+        binding.population_id().to_string(),
+        expected_population_id(&binding, "direct")
+    );
+
+    let mut reversed = document.clone();
+    reversed.members.reverse();
+    assert_eq!(
+        binding.population_id(),
+        identity_binding(&view, &reversed, Some(3)).population_id(),
+        "member order in the input document does not change identity"
+    );
+    assert_ne!(
+        binding.population_id(),
+        identity_binding(&view, &document, Some(7)).population_id(),
+        "declared maximum is part of identity"
+    );
+    let mut changed_member = document.clone();
+    changed_member.members[0].object = "another".into();
+    assert_ne!(
+        binding.population_id(),
+        identity_binding(&view, &changed_member, Some(3)).population_id(),
+        "changing one member changes identity"
+    );
+}
+
+#[test]
+#[trace("TC-291", "FR-089-AC-7")]
+fn population_identity_golden_vector_contains_all_seven_fields() {
+    use qsl_semantics::model::key::hex;
+    use sha2::{Digest, Sha256};
+
+    const TEXT: &str = r#"{"admission_role":"direct","declared_maximum":null,"domain_package_selection":{"digest":"1111111111111111111111111111111111111111111111111111111111111111","digest_domain":"sha256-jcs","identity":"test/orders","version":"1"},"members":[],"population_key":{"digest_domain":"sha256-jcs","node":"model.pop.p1","package":"test/orders"},"pre":null,"version":"quire.population/v1"}"#;
+    let mut package = fixture_f1();
+    package.model_selection.digest = [0x11; 32];
+    let binding = identity_binding(
+        &view_of(&package),
+        &PopulationDocument {
+            model_identity: "test/orders".into(),
+            members: Vec::new(),
+        },
+        None,
+    );
+    assert_eq!(
+        binding.population_id().to_string(),
+        hex(&Sha256::digest(TEXT.as_bytes()))
+    );
+}
+
+#[test]
+#[trace("TC-291", "FR-089-AC-7")]
+fn population_post_identity_binds_its_pre_population_id() {
+    let view = view_of(&fixture_f1());
+    let post_document = p1_minus_a2("test/orders");
+    let admit = |pre_document: &PopulationDocument, deleted: &[String]| {
+        let effect = deletes_a_effect();
+        match admit_invocation(
+            invocation_context(&view, &p1_population_key()),
+            pre_document,
+            &post_document,
+            &InvocationDelta {
+                effect: &effect,
+                declared_created: &[],
+                declared_deleted: deleted,
+            },
+            &mut AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED),
+            &mut AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED),
+        ) {
+            AdmissionOutcome::Admitted(binding) => binding,
+            other => panic!("expected admitted invocation, got {other:?}"),
+        }
+    };
+    let removed = admit(&p1("test/orders"), &["a2".into()]);
+    let unchanged = admit(&post_document, &[]);
+    assert_eq!(removed.members(), unchanged.members());
+    assert_ne!(removed.population_id(), unchanged.population_id());
+    for binding in [&removed, &unchanged] {
+        assert_eq!(
+            binding.population_id().to_string(),
+            expected_population_id(binding, "post")
+        );
+        let pre = binding.pre_anchor().expect("invocation has pre binding");
+        assert_eq!(
+            pre.population_id().to_string(),
+            expected_population_id(pre, "pre")
+        );
+    }
+}
+
+#[test]
+#[trace("TC-291", "FR-084-AC-1")]
+fn invalid_population_member_is_refused_before_identity_is_minted() {
+    let view = view_of(&fixture_f1());
+    let mut document = p1("test/orders");
+    document.members[0].type_identity = DeclarationKey::fixture("foreign.Type");
+    let outcome = admit_binding(
+        &view,
+        &document,
+        &p1_population_key(),
+        GeneralizationClosure::Closed,
+        Some(3),
+        &mut AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED),
+    );
+    assert!(matches!(
+        outcome,
+        AdmissionOutcome::Refused(ModelRefusal {
+            code: Code::ForeignReference,
+            cause: ModelRefusalCause::ForeignType { member, type_name },
+            ..
+        }) if member == "a1" && type_name == DeclarationKey::fixture("foreign.Type")
+    ));
 }
 
 /// Binding admission's member-type conformance walk uses the
@@ -3172,8 +3745,8 @@ fn binding_admission_walks_member_types_under_the_callers_ancestor_steps() {
             );
             let exceeded = refusal
                 .cause
-                .limit_exceeded()
-                .expect("a step ceiling is a stage limit");
+                .denial()
+                .expect("a step ceiling is a denied charge");
             assert_eq!(
                 exceeded.setting(),
                 qsl_foundation::Setting::AdmissionAncestorSteps
@@ -3188,6 +3761,95 @@ fn binding_admission_walks_member_types_under_the_callers_ancestor_steps() {
             );
         }
         other => panic!("expected Refused(AncestorSteps, limit 0), got {other:?}"),
+    }
+}
+
+/// TC-198 L12: PA2 declares member types `[A]` only, over P1 where `b1` is a
+/// direct subtype `B` of `A`. The identity check covers `a1` and `a2` before
+/// any edge, so only `b1`'s coverage walk follows an edge, exactly one.
+/// `ancestor_steps: 1` admits. `ancestor_steps: 0` is exactly
+/// `incomplete(ancestor_steps, 0, 0, 1, admission.ancestor-edge)` at stage
+/// `population-admission` with no binding. With `population_members: 3`,
+/// `work_units: 2` and `ancestor_steps: 0`, the `binding.member` charge of
+/// `b1` is denied first, so no edge is followed and the result is
+/// `incomplete(work_units, 2, 2, 1, binding.member)`.
+///
+/// Mutation used (derived by reading, not executed): charging the edge
+/// before the member's `binding.member` charge turns the third run into an
+/// `ancestor_steps` denial; reporting the walk ceiling with a different
+/// `consumed`, `next_charge` or charge point fails the field assertions.
+#[test]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-10")]
+fn l12_admission_ancestor_edge_denial_is_the_exact_record_and_the_member_charge_wins_first() {
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.n01"),
+        vec![
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
+            population_record(P1_POPULATION, &["model.A"], Extent::Closed),
+        ],
+    );
+    let view = view_of(&domain_package);
+    let admit = |limits: PopulationAdmissionLimits| {
+        admit_binding(
+            &view,
+            &p1("test/orders"),
+            &p1_population_key(),
+            GeneralizationClosure::Closed,
+            Some(3),
+            &mut AdmissionMeter::new(limits),
+        )
+    };
+
+    assert!(matches!(
+        admit(PopulationAdmissionLimits {
+            ancestor_steps: 1,
+            ..PopulationAdmissionLimits::UNLIMITED
+        }),
+        AdmissionOutcome::Admitted(_)
+    ));
+
+    let AdmissionOutcome::Refused(refusal) = admit(PopulationAdmissionLimits {
+        ancestor_steps: 0,
+        ..PopulationAdmissionLimits::UNLIMITED
+    }) else {
+        panic!("a zero ancestor_steps limit must deny the first followed edge");
+    };
+    assert_eq!(refusal.code, Code::ResourceExhausted);
+    let fields = refusal
+        .cause
+        .catalog_fields()
+        .expect("a walk ceiling carries its denied-charge record");
+    for (name, expected) in [
+        ("stage", "population-admission"),
+        ("limit_kind", "ancestor_steps"),
+        ("limit", "0"),
+        ("consumed", "0"),
+        ("next_charge", "1"),
+        ("charge_point", "admission.ancestor-edge"),
+    ] {
+        assert_eq!(
+            fields.get(name).map(String::as_str),
+            Some(expected),
+            "{name} in {fields:?}"
+        );
+    }
+
+    match admit(PopulationAdmissionLimits {
+        population_members: 3,
+        work_units: 2,
+        ancestor_steps: 0,
+    }) {
+        AdmissionOutcome::Incomplete(incomplete) => {
+            assert_eq!(incomplete.limit_kind, AdmissionLimitKind::WorkUnits);
+            assert_eq!(incomplete.limit, 2);
+            assert_eq!(incomplete.consumed, 2);
+            assert_eq!(incomplete.next_charge, 1);
+            assert_eq!(incomplete.charge_point, AdmissionChargePoint::BindingMember);
+        }
+        other => {
+            panic!("the binding.member charge of b1 must be denied before its edge, got {other:?}")
+        }
     }
 }
 
@@ -3312,35 +3974,19 @@ fn qsl204_a_diamond_over_ancestor_steps_refuses_admission_naming_the_limit() {
         ..ModelNormalizationLimits::UNLIMITED
     };
     match admit_p1_under(&domain_package, over).map_err(|outcome| *outcome) {
-        Err(NormalizeOutcome::Refused(refusals)) => {
-            let refusal = refusals.into_first();
-            assert_eq!(refusal.code, Code::ResourceExhausted);
+        Err(NormalizeOutcome::Incomplete(incomplete)) => {
             assert_eq!(
-                refusal.cause,
-                ModelRefusalCause::ancestor_steps(
-                    DeclarationKey::fixture("model.D"),
-                    5,
-                    qsl_foundation::Setting::ModelAncestorSteps,
-                )
-            );
-            let exceeded = refusal
-                .cause
-                .limit_exceeded()
-                .expect("a step ceiling is a stage limit");
-            assert_eq!(
-                exceeded.setting(),
-                qsl_foundation::Setting::ModelAncestorSteps
-            );
-            assert_eq!(
-                exceeded.actual(),
-                u128::from(match &refusal.cause {
-                    ModelRefusalCause::AncestorSteps { limit, .. }
-                    | ModelRefusalCause::FamilySteps { limit, .. } => *limit,
-                    other => panic!("unexpected {other:?}"),
-                }) + 1
+                incomplete,
+                qsl_semantics::model::accounting::Incomplete {
+                    limit_kind: qsl_semantics::model::accounting::LimitKind::AncestorSteps,
+                    limit: 5,
+                    consumed: 5,
+                    next_charge: 1,
+                    charge_point: qsl_semantics::model::accounting::ChargePoint::ModelAncestorEdge,
+                }
             );
         }
-        other => panic!("expected an ancestor-steps refusal, got {other:?}"),
+        other => panic!("expected an ancestor-steps denial, got {other:?}"),
     }
 }
 
@@ -3426,4 +4072,566 @@ fn an_unbounded_binding_selects_every_member_with_no_bound() {
     };
     assert_eq!(selected.len(), 3);
     assert_eq!(selected.bound(), None);
+}
+
+/// TC-410 (FR-084-AC-7): object types `A <- B`, `C, D <- E` and `X` form
+/// three supertype components; a member admitted in each component's own
+/// population carries that component's universe, the
+/// `quire.model.object-universe/v1` digest over the model selection and the
+/// component's root types, and its object component is the authored identity.
+///
+/// Mutation used (derived by reading, not executed): one universe over every
+/// root type makes the three universes equal; one universe per root type
+/// splits `{C, D}` into two and changes `e1`'s universe; digesting the
+/// object component changes the asserted `object` bytes.
+#[test]
+#[trace("TC-410", "FR-084-AC-7")]
+fn tc_410_each_connected_component_has_its_own_object_universe() {
+    use qsl_semantics::model::key::hex;
+    use sha2::{Digest, Sha256};
+
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.tc410"),
+        vec![
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
+            object_type("model.C", vec![]),
+            object_type("model.D", vec![]),
+            object_type("model.E", vec!["model.C", "model.D"]),
+            object_type("model.X", vec![]),
+            population_record("model.pop.p1", &["model.A", "model.B"], Extent::Closed),
+            population_record("model.pop.p2", &["model.C", "model.E"], Extent::Closed),
+            population_record("model.pop.p3", &["model.X"], Extent::Closed),
+        ],
+    );
+    let view = view_of(&domain_package);
+    let selection = view.model_selection();
+
+    let expected_universe = |roots: &[&str]| -> Vec<u8> {
+        let mut ids: Vec<String> = roots
+            .iter()
+            .map(|root| type_id(&view, root).to_string())
+            .collect();
+        ids.sort();
+        let preimage = serde_json::json!({
+            "version": "quire.model.object-universe/v1",
+            "model_selection": {
+                "identity": selection.identity,
+                "digest_domain": "sha256-jcs",
+                "digest": hex(&selection.digest)
+            },
+            "root_types": ids
+                .iter()
+                .map(|digest| serde_json::json!({
+                    "domain": "quire.model.effective-declaration/v1",
+                    "digest": digest
+                }))
+                .collect::<Vec<_>>()
+        });
+        Sha256::digest(serde_json::to_vec(&preimage).unwrap()).to_vec()
+    };
+
+    let mut observed = Vec::new();
+    for (population, member_type, object, queried, roots) in [
+        ("model.pop.p1", "model.B", "b1", "model.A", vec!["model.A"]),
+        (
+            "model.pop.p2",
+            "model.E",
+            "e1",
+            "model.C",
+            vec!["model.C", "model.D"],
+        ),
+        ("model.pop.p3", "model.X", "x1", "model.X", vec!["model.X"]),
+    ] {
+        let document = PopulationDocument {
+            model_identity: "test/orders".to_owned(),
+            members: vec![member(object, member_type)],
+        };
+        let binding = match admit_binding(
+            &view,
+            &document,
+            &DeclarationKey::fixture(population),
+            GeneralizationClosure::Closed,
+            Some(1),
+            &mut AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED),
+        ) {
+            AdmissionOutcome::Admitted(binding) => binding,
+            other => panic!("{population}: expected an admitted binding, got {other:?}"),
+        };
+        let selected = match all_instances(
+            &binding,
+            &DeclarationKey::fixture(queried),
+            &mut Meter::new(SCALAR_UNLIMITED),
+        ) {
+            AllInstancesOutcome::Completed(set) => set,
+            other => panic!("{population}: expected a completed selection, got {other:?}"),
+        };
+        let [key] = selected.members().iter().collect::<Vec<_>>()[..] else {
+            panic!(
+                "{population}: one selected member: {:?}",
+                selected.members()
+            );
+        };
+        assert_eq!(
+            key.universe.as_bytes().to_vec(),
+            expected_universe(&roots),
+            "{population}"
+        );
+        assert_eq!(key.object, object, "{population}");
+        assert_eq!(
+            key.type_identity,
+            type_id(&view, member_type),
+            "{population}"
+        );
+        observed.push(key.universe);
+    }
+    assert_eq!(
+        observed.iter().collect::<BTreeSet<_>>().len(),
+        3,
+        "three components, three distinct universes"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// QSpec FR-013-AC-7, AC-8 and AC-9: frame accounting and receiver-scoped
+// entries, decided over a population invocation.
+// ---------------------------------------------------------------------------
+
+/// `model.A`, `model.B <= A`, `model.C <= B`, `model.D <= C`, with `A.x`
+/// redefined by `B.x`, `B.x` by `C.x` and `C.x` by `D.x`: a write of `D.x`
+/// follows three `redefines` links to reach `A.x`. `model.Plain` is an
+/// unrelated type with its own field `model.Plain.x`.
+fn four_link_chain_bundle() -> DomainPackage {
+    DomainPackage::new(
+        DomainPackageRef::fixture("bundle.redef.four"),
+        vec![
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
+            object_type("model.C", vec!["model.B"]),
+            object_type("model.D", vec!["model.C"]),
+            object_type("model.Plain", vec![]),
+            field_member("model.A.x", "model.A", "model.A"),
+            field_member_redefining("model.B.x", "model.B", "model.A", Some("model.A.x"), vec![]),
+            field_member_redefining("model.C.x", "model.C", "model.A", Some("model.B.x"), vec![]),
+            field_member_redefining("model.D.x", "model.D", "model.A", Some("model.C.x"), vec![]),
+            field_member("model.Plain.x", "model.Plain", "model.A"),
+            population_record(
+                P1_POPULATION,
+                &["model.A", "model.B", "model.C", "model.D", "model.Plain"],
+                Extent::Closed,
+            ),
+        ],
+    )
+}
+
+fn document_of(members: Vec<PopulationMember>) -> PopulationDocument {
+    PopulationDocument {
+        model_identity: "test/orders".to_owned(),
+        members,
+    }
+}
+
+/// One invocation of `effect` over `pre` and `post` with the given binding
+/// and declared deletions, its frame check under `work_units`.
+fn run_frame(
+    domain_package: &DomainPackage,
+    effect: &OperationEffect,
+    binding: &InvocationBinding<'_>,
+    pre: Vec<PopulationMember>,
+    post: Vec<PopulationMember>,
+    deleted: &[&str],
+    work_units: u64,
+) -> AdmissionOutcome {
+    let view = view_of(domain_package);
+    let declared_deleted: Vec<String> = deleted.iter().map(|object| (*object).to_owned()).collect();
+    let declared = InvocationDelta {
+        effect,
+        declared_created: &[],
+        declared_deleted: &declared_deleted,
+    };
+    let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let mut frame_meter = AdmissionMeter::new(PopulationAdmissionLimits {
+        work_units,
+        ..PopulationAdmissionLimits::UNLIMITED
+    });
+    admit_invocation_bound(
+        invocation_context(&view, &p1_population_key()),
+        &document_of(pre),
+        &document_of(post),
+        &declared,
+        binding,
+        &mut pre_meter,
+        &mut post_meter,
+        &mut frame_meter,
+    )
+}
+
+fn assert_frame_violation(outcome: AdmissionOutcome, object: &str, field: Option<&str>) {
+    match outcome {
+        AdmissionOutcome::Refused(refusal) => {
+            assert_eq!(refusal.code, Code::FrameViolation);
+            assert_eq!(refusal.cause.as_str(), "unauthorized-change");
+            match (&refusal.cause, field) {
+                (
+                    ModelRefusalCause::FrameFieldWriteOutsideGrant {
+                        object: at,
+                        field: key,
+                    },
+                    Some(name),
+                ) => {
+                    assert_eq!((at.as_str(), key.node.as_str()), (object, name));
+                }
+                (ModelRefusalCause::FrameDeleteOutsideGrant { object: at, .. }, None) => {
+                    assert_eq!(at.as_str(), object);
+                }
+                (other, _) => panic!("unexpected cause {other:?}"),
+            }
+        }
+        other => panic!("expected Refused(frame_violation), got {other:?}"),
+    }
+}
+
+/// QSpec FR-013-AC-7: a write of `model.D.x`, which reaches the granted
+/// `model.A.x` through `k = 3` `redefines` links, consumes exactly `1 + k`
+/// work units: one `frame.write` then one `frame.redefines-link` per link.
+/// With `work_units` at 4 it is permitted. At `k` or fewer, the check ends
+/// `Incomplete` at the denied charge with no frame verdict: at 3 on the
+/// third link, with `consumed = 3` and `next_charge = 1`, and at 1 and 2 on
+/// the first and second link, which fixes the one `frame.write` before them.
+#[test]
+#[trace("QSpec-V1-EXPR-022", "QSpec-FR-013-AC-7")]
+fn a_write_through_k_redefines_links_consumes_one_write_and_k_link_charges() {
+    let domain_package = four_link_chain_bundle();
+    let effect = OperationEffect {
+        modifies: vec![DeclarationKey::fixture("model.A.x")],
+        ..Default::default()
+    };
+    let pre = || {
+        vec![member_with_fields(
+            "d1",
+            "model.D",
+            vec![("model.D.x", vec!["a1"])],
+        )]
+    };
+    let post = || {
+        vec![member_with_fields(
+            "d1",
+            "model.D",
+            vec![("model.D.x", vec!["a9"])],
+        )]
+    };
+
+    let admitted = run_frame(
+        &domain_package,
+        &effect,
+        &InvocationBinding::default(),
+        pre(),
+        post(),
+        &[],
+        4,
+    );
+    assert!(
+        matches!(admitted, AdmissionOutcome::Admitted(_)),
+        "1 + 3 work units admit the write, got {admitted:?}"
+    );
+
+    for limit in [1_u64, 2, 3] {
+        let outcome = run_frame(
+            &domain_package,
+            &effect,
+            &InvocationBinding::default(),
+            pre(),
+            post(),
+            &[],
+            limit,
+        );
+        let AdmissionOutcome::Incomplete(incomplete) = outcome else {
+            panic!("work_units {limit} must end Incomplete, got {outcome:?}");
+        };
+        assert_eq!(
+            incomplete,
+            AdmissionIncomplete {
+                limit_kind: AdmissionLimitKind::WorkUnits,
+                limit,
+                consumed: limit,
+                next_charge: 1,
+                charge_point: AdmissionChargePoint::FrameRedefinesLink,
+            },
+            "work_units {limit}"
+        );
+    }
+
+    // The denial record names the stage, the counter and the charge point.
+    let outcome = run_frame(
+        &domain_package,
+        &effect,
+        &InvocationBinding::default(),
+        pre(),
+        post(),
+        &[],
+        3,
+    );
+    let AdmissionOutcome::Incomplete(incomplete) = outcome else {
+        panic!("expected Incomplete");
+    };
+    let fields = incomplete.denial().catalog_fields();
+    assert_eq!(fields["limit_kind"], "work_units");
+    assert_eq!(fields["charge_point"], "frame.redefines-link");
+    assert_eq!(fields["consumed"], "3");
+    assert_eq!(fields["next_charge"], "1");
+    assert_eq!(fields["limit"], "3");
+    assert_eq!(fields["stage"], "population-admission");
+
+    // A write that reaches no grant still charges its links and is then a
+    // violation: the walk stops only at a granted member or at the end of
+    // the chain.
+    let unrelated = run_frame(
+        &domain_package,
+        &OperationEffect::default(),
+        &InvocationBinding::default(),
+        pre(),
+        post(),
+        &[],
+        4,
+    );
+    assert_frame_violation(unrelated, "d1", Some("model.D.x"));
+}
+
+/// QSpec FR-013-AC-7: a write to the granted member itself follows no link,
+/// so it consumes one work unit: it is permitted under `work_units = 1`.
+#[test]
+#[trace("QSpec-V1-EXPR-022", "QSpec-FR-013-AC-7")]
+fn a_write_to_the_granted_member_charges_one_write_and_no_link() {
+    let domain_package = four_link_chain_bundle();
+    let effect = OperationEffect {
+        modifies: vec![DeclarationKey::fixture("model.A.x")],
+        ..Default::default()
+    };
+    let outcome = run_frame(
+        &domain_package,
+        &effect,
+        &InvocationBinding::default(),
+        vec![member_with_fields(
+            "a1",
+            "model.A",
+            vec![("model.A.x", vec!["a1"])],
+        )],
+        vec![member_with_fields(
+            "a1",
+            "model.A",
+            vec![("model.A.x", vec!["a9"])],
+        )],
+        &[],
+        1,
+    );
+    assert!(
+        matches!(outcome, AdmissionOutcome::Admitted(_)),
+        "a granted member costs the one frame.write, got {outcome:?}"
+    );
+}
+
+/// QSpec FR-013-AC-8: under the receiver-scoped entry `self.x`, a write to
+/// `model.A.x` on the receiver is permitted and the same write on another
+/// object of the same type is `frame_violation`; under the every-object
+/// entry `x`, both writes are permitted.
+#[test]
+#[trace("QSpec-V1-EXPR-022", "QSpec-FR-013-AC-8")]
+fn a_receiver_scoped_modifies_entry_grants_the_receiver_only() {
+    let domain_package = four_link_chain_bundle();
+    let write = |object: &str, value: &str| {
+        member_with_fields(object, "model.A", vec![("model.A.x", vec![value])])
+    };
+    let receiver_only = OperationEffect {
+        receiver_modifies: vec![DeclarationKey::fixture("model.A.x")],
+        ..Default::default()
+    };
+    let every_object = OperationEffect {
+        modifies: vec![DeclarationKey::fixture("model.A.x")],
+        ..Default::default()
+    };
+    let run = |effect: &OperationEffect, receiver: &str, changed: &[&str]| {
+        let objects = ["r1", "o1"];
+        let pre = objects.iter().map(|object| write(object, "a1")).collect();
+        let post = objects
+            .iter()
+            .map(|object| write(object, if changed.contains(object) { "a9" } else { "a1" }))
+            .collect();
+        run_frame(
+            &domain_package,
+            effect,
+            &InvocationBinding {
+                receiver: Some(receiver),
+                arguments: &[],
+            },
+            pre,
+            post,
+            &[],
+            u64::MAX,
+        )
+    };
+
+    assert!(matches!(
+        run(&receiver_only, "r1", &["r1"]),
+        AdmissionOutcome::Admitted(_)
+    ));
+    assert_frame_violation(run(&receiver_only, "r1", &["o1"]), "o1", Some("model.A.x"));
+    // Both writes at once: the other object's write is the violation.
+    assert_frame_violation(
+        run(&receiver_only, "r1", &["r1", "o1"]),
+        "o1",
+        Some("model.A.x"),
+    );
+    for changed in [&["r1"][..], &["o1"], &["r1", "o1"]] {
+        assert!(
+            matches!(
+                run(&every_object, "r1", changed),
+                AdmissionOutcome::Admitted(_)
+            ),
+            "an every-object entry grants {changed:?}"
+        );
+    }
+    // With no receiver at all, a receiver-scoped entry grants nothing.
+    let no_receiver = run_frame(
+        &domain_package,
+        &receiver_only,
+        &InvocationBinding::default(),
+        vec![write("r1", "a1")],
+        vec![write("r1", "a9")],
+        &[],
+        u64::MAX,
+    );
+    assert_frame_violation(no_receiver, "r1", Some("model.A.x"));
+}
+
+/// QSpec FR-013-AC-8: a receiver-scoped entry reaches the receiver's
+/// `redefines` chain too: the receiver's `model.D.x` write is covered by
+/// `self.x` on `model.A.x`, another object's is not, and the receiver-scoped
+/// entry for another type's same-named field grants neither.
+#[test]
+#[trace("QSpec-V1-EXPR-022", "QSpec-FR-013-AC-8")]
+fn a_receiver_scoped_entry_reaches_through_redefines_and_by_declaration_not_name() {
+    let domain_package = four_link_chain_bundle();
+    let effect = OperationEffect {
+        receiver_modifies: vec![DeclarationKey::fixture("model.A.x")],
+        ..Default::default()
+    };
+    let d = |object: &str, value: &str| {
+        member_with_fields(object, "model.D", vec![("model.D.x", vec![value])])
+    };
+    let binding = InvocationBinding {
+        receiver: Some("r1"),
+        arguments: &[],
+    };
+    let receiver_write = run_frame(
+        &domain_package,
+        &effect,
+        &binding,
+        vec![d("r1", "a1"), d("o1", "a1")],
+        vec![d("r1", "a9"), d("o1", "a1")],
+        &[],
+        u64::MAX,
+    );
+    assert!(matches!(receiver_write, AdmissionOutcome::Admitted(_)));
+    let other_write = run_frame(
+        &domain_package,
+        &effect,
+        &binding,
+        vec![d("r1", "a1"), d("o1", "a1")],
+        vec![d("r1", "a1"), d("o1", "a9")],
+        &[],
+        u64::MAX,
+    );
+    assert_frame_violation(other_write, "o1", Some("model.D.x"));
+    let same_name_other_type = run_frame(
+        &domain_package,
+        &effect,
+        &binding,
+        vec![member_with_fields(
+            "r1",
+            "model.Plain",
+            vec![("model.Plain.x", vec!["a1"])],
+        )],
+        vec![member_with_fields(
+            "r1",
+            "model.Plain",
+            vec![("model.Plain.x", vec!["a9"])],
+        )],
+        &[],
+        u64::MAX,
+    );
+    assert_frame_violation(same_name_other_type, "r1", Some("model.Plain.x"));
+}
+
+/// QSpec FR-013-AC-9: under `deletes self` the receiver's deletion is
+/// permitted and any other object's is `frame_violation`; under `deletes p`
+/// the argument bound to `p` is permitted and any other is `frame_violation`;
+/// under the type-wide `deletes model.A`, any subset of the conforming
+/// objects is permitted.
+#[test]
+#[trace("QSpec-V1-EXPR-022", "QSpec-FR-013-AC-9")]
+fn a_scoped_deletes_entry_grants_the_receiver_or_the_argument_only() {
+    let domain_package = four_link_chain_bundle();
+    let objects = || {
+        vec![
+            member("r1", "model.A"),
+            member("p1", "model.A"),
+            member("o1", "model.A"),
+        ]
+    };
+    let without = |gone: &[&str]| -> Vec<PopulationMember> {
+        objects()
+            .into_iter()
+            .filter(|object| !gone.contains(&object.object.as_str()))
+            .collect()
+    };
+    let arguments = [("p".to_owned(), "p1".to_owned())];
+    let binding = InvocationBinding {
+        receiver: Some("r1"),
+        arguments: &arguments,
+    };
+    let run = |effect: &OperationEffect, gone: &[&str]| {
+        run_frame(
+            &domain_package,
+            effect,
+            &binding,
+            objects(),
+            without(gone),
+            gone,
+            u64::MAX,
+        )
+    };
+
+    let receiver = OperationEffect {
+        deletes_receiver: true,
+        ..Default::default()
+    };
+    assert!(matches!(
+        run(&receiver, &["r1"]),
+        AdmissionOutcome::Admitted(_)
+    ));
+    assert_frame_violation(run(&receiver, &["o1"]), "o1", None);
+    assert_frame_violation(run(&receiver, &["p1"]), "p1", None);
+
+    let argument = OperationEffect {
+        deletes_arguments: vec!["p".to_owned()],
+        ..Default::default()
+    };
+    assert!(matches!(
+        run(&argument, &["p1"]),
+        AdmissionOutcome::Admitted(_)
+    ));
+    assert_frame_violation(run(&argument, &["o1"]), "o1", None);
+    assert_frame_violation(run(&argument, &["r1"]), "r1", None);
+
+    let type_wide = OperationEffect {
+        deletes: vec![DeclarationKey::fixture("model.A")],
+        ..Default::default()
+    };
+    for gone in [&["r1"][..], &["o1"], &["r1", "o1"], &["r1", "p1", "o1"]] {
+        assert!(
+            matches!(run(&type_wide, gone), AdmissionOutcome::Admitted(_)),
+            "a type-wide entry grants any subset: {gone:?}"
+        );
+    }
 }

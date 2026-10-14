@@ -144,6 +144,9 @@ Steps 8-9 bind `FR-277-AC-6` as Analysis evidence, including the
 missing-premise negative control; no runnable trace or execution is
 claimed for that source-proof analysis.
 
+The union cases depend on QSL-503; a quantity-typed parameter in source
+depends on STD-113.
+
 ## Expected Results
 
 - Step 1: each replay evaluates `x.i.a` to `7` and settles as FR-098-AC-2
@@ -192,8 +195,7 @@ claimed for that source-proof analysis.
   establishes bounded work only when the owner's source proof is available.
   No unbounded numeric leaf, type-link cycle, registry key or member scan
   may hide behind a logical event. If the proof fails, record the exact
-  owning IR helper-contract gap and preserve QSL-503's blocking edge; the
-  draft and its review remain a proposal. No copied helper or fake outer
+  owning IR helper-contract gap and preserve QSL-503's blocking edge. No copied helper or fake outer
   work/cancellation claim is accepted.
 - Step 9: no blanket admission safety or decimal temporary-storage/Cancel
   claim follows from numeric bounds. Missing proof is an implementation
@@ -204,11 +206,4 @@ claimed for that source-proof analysis.
   once the owning reviewed capability and typed integration are enabled.
   No default bypass,
   partial admitted value or evaluation consumption is accepted. The IR
-  source gap remains routed while this draft's review proceeds.
-
-## Status
-
-Passed locally, `qsl-replay/src/execute/tests/composite.rs`, except the union cases
-(pending QSL-503) and a quantity-typed parameter in source (pending STD-113).
-This historical status does not cover QSL-681 steps 5-9: those controls are
-proposed and unexecuted, pending shared event, union and wire alignment.
+  source gap stays routed to its owner.

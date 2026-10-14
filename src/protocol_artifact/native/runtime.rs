@@ -291,9 +291,11 @@ pub(super) fn nominal(
             work,
         ),
         NativeType::Domain(domain) => builder.domain_type_export(domain, work),
-        NativeType::Boolean | NativeType::Option(_) | NativeType::Sequence { .. } => {
-            Err(Error::Unsupported(Unsupported::Export))
-        }
+        NativeType::Boolean
+        | NativeType::Uuid
+        | NativeType::String
+        | NativeType::Option(_)
+        | NativeType::Sequence { .. } => Err(Error::Unsupported(Unsupported::Export)),
     }
 }
 pub(super) fn binder_type<'a, 'm>(

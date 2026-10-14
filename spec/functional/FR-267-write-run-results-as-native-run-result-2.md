@@ -63,6 +63,13 @@ change `WireFormat` names `native-run-result/2` and no `native-run-result/1`
 
 ## Behavior
 
+- FR-100's typed Value-call result SHALL retain a completed Reference's
+  shared identity triple and every enclosing StateModel refusal's typed
+  attribution before serialization. This amendment leaves `/2` a clause
+  report or command-error wire; it SHALL NOT encode a Reference completion
+  as a Boolean claim's truth, add a Population binding to `/2`, or derive
+  admission from successful result decoding. Function outcomes use
+  FR-100's Reference form and the existing FR-286 outcome route.
 - The library serializer of an FR-109 `ClauseRunReport` SHALL write every
   clause-run result document with `format` `native-run-result/2`.
 - From the change that lands FR-100's clause runner (FR-312's reader plus `run_clause`), the `run` command SHALL write every command-error envelope
@@ -75,6 +82,16 @@ change `WireFormat` names `native-run-result/2` and no `native-run-result/1`
   the members QSpec FR-352 defines for them, `basis` on every
   document, and `witness` exactly when `basis` is
   `decisive-counterexample` or `decisive-witness`.
+- For FR-115's evaluated `Frame` violation, the writer SHALL encode
+  `disposition.refusal.frame_witness` as the complete FR-115 `FrameWitness`
+  under the closed form below. The enclosing `refusal` retains
+  `frame_violation`/`unauthorized-change`, while `disposition.category` is
+  `violation`, `truth` is `false`, `basis` is `closed-scope`, and neither
+  `disposition.outcome` nor the top-level FR-351 `witness` is present. The
+  reader SHALL restore that complete typed frame witness, refuse a missing
+  or extra member in it, and refuse a `frame_witness` on any other
+  disposition. Its nested `code` and `cause` SHALL equal those of the
+  enclosing `refusal`.
 - A command-error envelope SHALL be one closed JSON object with exactly
   these members:
   - `format`: `native-run-result/2`;
@@ -115,6 +132,119 @@ change `WireFormat` names `native-run-result/2` and no `native-run-result/1`
 - Writing a report and reading the document back SHALL give a `basis` and
   `witness` equal to the report's, under QSpec FR-351 componentwise
   identity.
+
+### Frame witness wire
+
+`frame_witness` is a closed object with exactly `code`, `cause`,
+`invocation`, `pre`, `post`, `population` and `change`. `code` is
+`frame_violation`; `cause` is `unauthorized-change`; `population` is the
+changed population's declaration identity. Each of `invocation`, `pre`
+and `post` is an FR-106 `DocumentRef`, encoded as a closed object with
+the four FR-001 labels `authority`, `identity`, `revision_namespace` and
+`revision`, and its `sha256-jcs` `digest`. A declaration key in `change`
+is a closed `{package, node}` object. The reader reconstructs the FR-115
+value from these members; no document bytes, path or caller-supplied
+permission is inferred from the witness.
+
+`change` is exactly one closed tagged object:
+
+| `kind` | Required members beside `kind` | Frame permission |
+| --- | --- | --- |
+| `field_write` | `object` (key), `field` (declared name), `modifies` (ordered array of declaration keys) | FR-115's checked `modifies` |
+| `created` | `object` (key), `type_name` (most-specific declaration key), `creates` (ordered array of declaration keys) | FR-115's checked `creates` |
+| `deleted` | `object` (key), `type_name` (most-specific declaration key), `deletes` (ordered array of declaration keys) | FR-115's checked `deletes` |
+| `retyped` | `object` (key), `pre_type` and `post_type` (most-specific declaration keys) | No frame permission authorizes retype |
+
+The reader SHALL reject an unknown `kind`, an absent required member, an
+extra member, `null` in place of a member, or a declaration key that is
+not the declared `{package, node}` form.
+
+### Wire member cross-check
+
+This table checks the full clause-run and command-error member inventory
+against its owning contract. A conditional member is omitted when its
+condition is false; the reader refuses `null` or a default in its place.
+
+| Class | Member | Owner FR | Encoding | Decoding |
+| --- | --- | --- | --- | --- |
+| Clause run | `format` | QSpec FR-352 | Exact `native-run-result/2` | Check before variant selection |
+| Clause run | `package_id` | FR-109 | Compiled package's hex identity when compile completed | Restore identity or absence |
+| Clause run | `disposition` | FR-109 | Closed report disposition below | Restore typed disposition |
+| Clause run | `usage` | FR-109, QSpec FR-352 | Closed accounting object below | Restore all counters |
+| Clause run | `basis` | QSpec FR-352, FR-266 | FR-243 label on every report | Validate label and verdict relation |
+| Clause run | `witness` | QSpec FR-352, FR-266 | FR-351 record only for decisive basis | Restore record or absence |
+| Disposition | `stage` | FR-109 | Compile, select, admit or evaluate label | Restore stage |
+| Disposition | `category` | FR-109 | Report category label | Restore category |
+| Disposition | `truth` | FR-109 | Boolean when the report assigns it | Restore Boolean or absence |
+| Disposition | `refusal` | FR-109 | FR-096 record or FR-115 frame finding below, when assigned | Restore complete record |
+| Disposition | `outcome` | FR-100, FR-109 | FR-100 outcome when evaluation assigns one | Restore complete outcome |
+| Disposition | `internal_fault` | FR-100, FR-109 | Fault object only for internal failure | Restore stable fault identifiers |
+| Refusal | `code` | FR-096, FR-115 | Catalog code | Validate catalog code |
+| Refusal | `cause` | FR-096, FR-115 | Catalog cause when assigned | Restore cause or absence |
+| Refusal | `fields` | FR-096, FR-115 | Catalog field-name to rendered-string map when assigned | Restore all fields or absence |
+| Refusal | `locus` | FR-096, FR-109 | FR-096 located source region when assigned | Restore locus or absence |
+| Refusal | `frame_witness` | FR-115, FR-267 | Complete frame witness only for evaluated Frame violation | Restore typed witness; reject other placements |
+| Outcome | `kind` | FR-100 | Exact completed, refused, undefined or incomplete tag | Select FR-100 variant |
+| Outcome | `value` | FR-100 | Completed value's tagged form | Restore exact value |
+| Outcome | `code` | FR-100 | Refused catalog code | Restore code |
+| Outcome | `cause` | FR-100 | Refused catalog cause | Restore cause |
+| Outcome | `fields` | FR-100 | Refused catalog fields when assigned | Restore all fields or absence |
+| Outcome | `locus` | FR-100 | Refused source region when assigned | Restore locus or absence |
+| Outcome | `location` | FR-100 | Refused semantic location when assigned | Restore location or absence |
+| Outcome | `reason` | FR-100 | Undefined reason when assigned | Restore reason |
+| Outcome | `limit` | FR-100 | Incomplete accounting counter when assigned | Restore counter |
+| Completed value | `kind` | FR-100 | Boolean or integer tag | Select value kind |
+| Completed value | `value` | FR-100 | Boolean for Boolean kind | Restore Boolean |
+| Completed value | `decimal` | FR-100 | Exact decimal string for integer kind | Restore integer |
+| Outcome locus | `file` | FR-100 | Authored source path | Restore source |
+| Outcome locus | `span` | FR-100 | Start and end byte, line and column | Restore exact span |
+| Outcome location | `origin` | FR-100 | Semantic origin variant | Restore origin |
+| Outcome location | `path` | FR-100 | Child-index array | Restore path |
+| Internal fault | `stage` | FR-100 | Stable fault stage | Restore stage |
+| Internal fault | `invariant` | FR-100 | Stable invariant identifier | Restore invariant |
+| Usage | `admission` | FR-109, QSpec FR-352 | Closed admission counters | Restore counters |
+| Usage | `evaluation_admissions` | FR-109, QSpec FR-352 | Unsigned count | Restore count |
+| Usage | `evaluation_consumed` | FR-109, QSpec FR-352 | Ordered counter array | Restore array |
+| Admission | `document_bytes` | QSpec FR-352 | Unsigned count | Restore count |
+| Admission | `objects` | QSpec FR-352 | Unsigned count | Restore count |
+| Admission | `values` | QSpec FR-352 | Unsigned count | Restore count |
+| Evaluation counter | `kind` | QSpec FR-352 | Counter name | Restore name |
+| Evaluation counter | `consumed` | QSpec FR-352 | Unsigned count | Restore count |
+| Frame witness | `code` | FR-115 | `frame_violation` | Match enclosing refusal |
+| Frame witness | `cause` | FR-115 | `unauthorized-change` | Match enclosing refusal |
+| Frame witness | `invocation` | FR-115 | FR-106 document reference | Restore invocation selection |
+| Frame witness | `pre` | FR-115 | FR-106 document reference | Restore pre selection |
+| Frame witness | `post` | FR-115 | FR-106 document reference | Restore post selection |
+| Frame witness | `population` | FR-115 | Declaration identity | Restore population |
+| Frame witness | `change` | FR-115 | One tagged change from table above | Restore exact change and permission |
+| Document reference | `authority` | FR-106 | FR-001 label | Restore label |
+| Document reference | `identity` | FR-106 | FR-001 label | Restore label |
+| Document reference | `revision_namespace` | FR-106 | FR-001 label | Restore label |
+| Document reference | `revision` | FR-106 | FR-001 label | Restore label |
+| Document reference | `digest` | FR-106 | `sha256-jcs` digest | Restore digest |
+| Change | `kind` | FR-115 | One of four tags above | Select typed variant |
+| Change | `object` | FR-115 | Object key | Restore key |
+| Change | `field` | FR-115 | Declared field name on field write | Restore field |
+| Change | `type_name` | FR-115 | Declaration key on create or delete | Restore type |
+| Change | `pre_type` | FR-115 | Declaration key on retype | Restore pre type |
+| Change | `post_type` | FR-115 | Declaration key on retype | Restore post type |
+| Change | `modifies` | FR-115 | Ordered declaration-key array on field write | Restore checked grant |
+| Change | `creates` | FR-115 | Ordered declaration-key array on creation | Restore checked grant |
+| Change | `deletes` | FR-115 | Ordered declaration-key array on deletion | Restore checked grant |
+| Declaration key | `package` | FR-056, FR-115 | Package identity | Restore key package |
+| Declaration key | `node` | FR-056, FR-115 | IR node identity | Restore key node |
+| Separating witness | `quantifier` | QSpec FR-352 | FR-351 occurrence key when assigned | Restore component |
+| Separating witness | `deciding_element` | QSpec FR-352 | Canonical typed value | Restore component |
+| Separating witness | `index` | QSpec FR-352 | Unsigned position when assigned | Restore component |
+| Separating witness | `value_path` | QSpec FR-352 | FR-207 runtime value path | Restore component |
+| Separating witness | `trace_position` | QSpec FR-352 | Unsigned position when assigned | Restore component |
+| Command error | `format` | FR-267 | Exact `native-run-result/2` | Check before variant selection |
+| Command error | `stage` | FR-100, FR-267 | Command stage | Restore stage |
+| Command error | `code` | FR-100, FR-267 | Catalog code | Restore code |
+| Command error | `cause` | FR-100, FR-267 | Catalog cause when assigned | Restore cause or absence |
+| Command error | `message` | FR-100, FR-267 | Human-readable diagnostic | Restore message |
+| Command error | `details` | FR-100, FR-267 | Code-specific closed object | Restore details |
+| Command error | `basis` | FR-267 | `unavailable` | Require unavailable |
 
 ### CG source-identity boundary
 
@@ -173,6 +303,7 @@ change `WireFormat` names `native-run-result/2` and no `native-run-result/1`
 | FR-267-AC-8 | The QSL producer emits no added generated-source, source-map or coverage-producer members; the strict reader rejects an injected member outside the declared `/2` shape, and an otherwise matching external receipt cannot make `/1`, an unsupported identifier or an invalid `/2` document readable. | Test |
 | FR-267-AC-9 | The same QSL strict reader returns the clause-run variant for AC-1's document and the command-error variant for AC-3's envelope. CG consumes both typed variants without its own JSON parser and retains AC-3's envelope as non-success with no campaign qualification, measured coverage classification or coverage discharge, including when the binding receipt authenticates and matches. | Test |
 | FR-267-AC-10 | Independently removing a required command-error member, adding a clause-run-only member, replacing the unavailable basis with a decisive basis, adding a witness, or violating FR-100's code-specific cause/details rules makes the strict reader refuse with a located diagnostic. Changing an otherwise valid command-error envelope to `/1` or another unsupported format refuses before variant selection. | Test |
+| FR-267-AC-11 | FR-115's forbidden-parent-change Frame report writes `disposition.refusal.frame_witness` with its invocation, pre, post, population and `field_write` change naming `child`, `parent` and the checked `modifies` grant; reading the `/2` document restores an equal FR-115 `FrameWitness`. A creation, deletion and retype each round-trip their tagged change. The document has `violation`, `truth: false`, `basis: closed-scope`, no `disposition.outcome` and no top-level `witness`. Independently dropping a frame-witness member or change member, adding an unknown member, mismatching its code or cause with the enclosing refusal, or adding `frame_witness` to a non-Frame disposition refuses with a located wire diagnostic. | Test |
 
 ## Dependencies
 
@@ -190,6 +321,11 @@ change `WireFormat` names `native-run-result/2` and no `native-run-result/1`
 
 ## References
 
+- The QSL-665 amendment is a source-only proposed contract. No Reference
+  result codec, native-runtime strict-reader support or TC-792 execution is
+  qualified by the prose. Existing accounting and Requested/Deadline
+  provenance retain their owners; QSL-656's reviewed source amendment is
+  reconciled independently of this result clarification.
 - Owning ticket: Linear QSL-389. Implementation: Linear QSL-45.
 - CG source-identity ownership: Linear QSL-688, choosing a CG-owned separate
   producer/artifact binding receipt; CG consumer specification: Linear IR-514.

@@ -346,10 +346,13 @@ pub(super) fn derive(
             ValueType::Rational(_)
             | ValueType::Decimal(_)
             | ValueType::Float(_)
+            | ValueType::String
             | ValueType::Text(_)
             | ValueType::Quantity(_)
             | ValueType::Reference(_)
-            | ValueType::Population(_) => {
+            | ValueType::Population(_)
+            | ValueType::Uuid
+            | ValueType::Timestamp => {
                 found.insert(key(), Authored::Whole);
             }
         }

@@ -17,10 +17,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::model::accounting::{Incomplete, Meter};
-use crate::model::domain_package::{DomainPackage, DomainPackageRecord, DomainPackageRef};
+use crate::model::domain_package::{
+    DomainPackage, DomainPackageRecord, DomainPackageRef, OriginalDeclaration,
+};
 use crate::model::intake::{member_identity_name, type_identity_segment};
 use crate::model::key::DeclarationKey;
-use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
+use crate::model::normalize::{MemberPath, MemberRoot, ModelRefusal, ModelRefusalCause};
 use crate::model::systems::{classify, Kind, SystemsClassification};
 use qsl_foundation::diagnostic::Code;
 
@@ -36,6 +38,22 @@ pub enum DeclarationKind {
     ValueType,
     /// A record value type: named fields and no identity (FR-208).
     RecordValueType,
+    /// A variant type: a closed set of named cases (FR-208).
+    VariantType,
+    /// One case of a variant type.
+    VariantCase,
+    /// An event type with a Timestamp occurrence field (FR-208).
+    EventType,
+    /// A state machine with states and transitions (FR-208).
+    StateMachine,
+    /// A process type with an object universe (FR-208).
+    Process,
+    /// An authored clause member.
+    Clause,
+    /// An original namespace.
+    Namespace,
+    /// An original persistence interface.
+    PersistenceInterface,
     /// A field member of an object type.
     Field,
     /// An operation member of an object type.
@@ -73,6 +91,8 @@ pub struct Declaration<'a> {
     pub record: &'a DomainPackageRecord,
     /// The declaration's kind.
     pub kind: DeclarationKind,
+    /// Authored intake provenance; absent only for source-less synthetic records.
+    pub original: Option<&'a OriginalDeclaration>,
 }
 
 /// A classified domain package, indexed by FR-154 identity form.
@@ -86,14 +106,78 @@ pub struct AdmittedPackage {
     members: BTreeMap<String, BTreeMap<String, usize>>,
 }
 
-fn identity_refusal(key: &DeclarationKey, detail: String) -> ModelRefusal {
+/// The declaration's own `identity` member. A field, operation, clause or
+/// relationship is a member of its declaring type, at its position in that
+/// type's array (records keep the reader's order); a population is its own
+/// declaration; every other record is a type definition.
+fn identity_member(records: &[DomainPackageRecord], record: &DomainPackageRecord) -> MemberPath {
+    // Position among the earlier records of the same kind and owner.
+    let position = |same: &dyn Fn(&DomainPackageRecord) -> bool| {
+        records
+            .iter()
+            .take_while(|other| !std::ptr::eq(*other, record))
+            .filter(|other| same(other))
+            .count()
+    };
+    let member = |array: &str, index: usize| {
+        MemberPath::type_definition()
+            .name(array)
+            .index(index)
+            .name("identity")
+    };
+    match record {
+        DomainPackageRecord::FieldMember(field) => member(
+            "fields",
+            position(
+                &|other| matches!(other, DomainPackageRecord::FieldMember(o) if o.owner == field.owner),
+            ),
+        ),
+        DomainPackageRecord::OperationMember(operation) => member(
+            "operations",
+            position(
+                &|other| matches!(other, DomainPackageRecord::OperationMember(o) if o.owner == operation.owner),
+            ),
+        ),
+        // A clause owned by an operation is named at the operation, as
+        // normalize names it: the record does not say pre or post.
+        DomainPackageRecord::Clause(clause)
+            if records.iter().any(|other| {
+                matches!(other, DomainPackageRecord::OperationMember(o) if o.key == clause.owner)
+            }) =>
+        {
+            MemberPath::new(MemberRoot::Operation)
+        }
+        DomainPackageRecord::Clause(clause) => member(
+            "clauses",
+            position(
+                &|other| matches!(other, DomainPackageRecord::Clause(o) if o.owner == clause.owner),
+            ),
+        ),
+        DomainPackageRecord::Relationship(relationship) => match &relationship.declared_at {
+            Some(slot) => member("relationships", slot.index),
+            // A relationship without a slot is a systems connection, a
+            // top-level type node.
+            None => MemberPath::type_definition().name("identity"),
+        },
+        DomainPackageRecord::Population(_) => {
+            MemberPath::new(MemberRoot::PopulationDefinition).name("identity")
+        }
+        _ => MemberPath::type_definition().name("identity"),
+    }
+}
+
+fn identity_refusal(
+    package: &DomainPackage,
+    record: &DomainPackageRecord,
+    detail: String,
+) -> ModelRefusal {
     ModelRefusal {
         code: Code::InvalidModelBinding,
-        cause: ModelRefusalCause::IntakeMalformedDeclaration {
-            node: key.node.clone(),
-            artifact: None,
-            span: None,
-        },
+        cause: crate::model::normalize::malformed_at(
+            package,
+            record.key(),
+            identity_member(&package.records, record),
+        ),
         detail,
     }
 }
@@ -118,12 +202,16 @@ impl AdmittedPackage {
             if !seen.insert(key) {
                 refusals.push(ModelRefusal {
                     code: Code::InvalidModelBinding,
-                    cause: ModelRefusalCause::ConflictingBinding { key: key.clone() },
+                    cause: ModelRefusalCause::ConflictingBinding {
+                        key: key.clone(),
+                        member: None,
+                    },
                     detail: format!("{} is declared more than once", key.node),
                 });
             } else if key.package != identity {
                 refusals.push(identity_refusal(
-                    key,
+                    &package,
+                    record,
                     format!(
                         "{} is keyed under domain package {:?}, not the selected {identity:?}",
                         key.node, key.package
@@ -147,25 +235,52 @@ impl AdmittedPackage {
         for index in member_records {
             let record = &package.records[index];
             let key = record.key();
-            let owner = match record {
-                DomainPackageRecord::FieldMember(member) => Some(member.owner.node.as_str()),
-                DomainPackageRecord::OperationMember(member) => Some(member.owner.node.as_str()),
-                DomainPackageRecord::ObjectType(_)
+            let owner_and_name = match record {
+                DomainPackageRecord::FieldMember(member) => {
+                    member_identity_name(&member.owner.node, &key.node)
+                        .map(|name| (member.owner.node.as_str(), name))
+                }
+                DomainPackageRecord::OperationMember(member) => {
+                    member_identity_name(&member.owner.node, &key.node)
+                        .map(|name| (member.owner.node.as_str(), name))
+                }
+                DomainPackageRecord::Relationship(relationship) => relationship
+                    .source
+                    .role
+                    .as_deref()
+                    .map(|name| (relationship.source.type_identity.node.as_str(), name)),
+                DomainPackageRecord::Clause(member) => {
+                    member_identity_name(&member.owner.node, &key.node)
+                        .map(|name| (member.owner.node.as_str(), name))
+                }
+                // A case is a member of its variant type, named by its
+                // declared case name; its own node identity is the
+                // `variant` slot, not `<owner>/<name>`.
+                DomainPackageRecord::Variant(case) => {
+                    Some((case.owner.node.as_str(), case.case.as_str()))
+                }
+                DomainPackageRecord::Enum(_)
+                | DomainPackageRecord::ObjectType(_)
                 | DomainPackageRecord::RecordValueType(_)
+                | DomainPackageRecord::EventType(_)
+                | DomainPackageRecord::StateMachine(_)
+                | DomainPackageRecord::Process(_)
+                | DomainPackageRecord::Namespace(_)
+                | DomainPackageRecord::PersistenceInterface(_)
                 | DomainPackageRecord::ScalarType(_)
                 | DomainPackageRecord::Component(_)
                 | DomainPackageRecord::Endpoint(_)
-                | DomainPackageRecord::Relationship(_)
                 | DomainPackageRecord::Allocation(_)
                 | DomainPackageRecord::Population(_) => {
-                    key.node.rsplit_once('/').map(|(owner, _)| owner)
+                    key.node.rsplit_once('/').and_then(|(owner, _)| {
+                        member_identity_name(owner, &key.node).map(|name| (owner, name))
+                    })
                 }
             };
-            let Some((owner, name)) = owner
-                .and_then(|owner| member_identity_name(owner, &key.node).map(|name| (owner, name)))
-            else {
+            let Some((owner, name)) = owner_and_name else {
                 refusals.push(identity_refusal(
-                    key,
+                    &package,
+                    record,
                     format!(
                         "{} is neither ix://{identity}/<artifact id> nor <owner>/<name>",
                         key.node
@@ -268,6 +383,7 @@ impl AdmittedPackage {
             key: record.key(),
             record,
             kind: self.kind(record),
+            original: self.package.original(record.key()),
         }
     }
 
@@ -279,6 +395,14 @@ impl AdmittedPackage {
             DomainPackageRecord::ObjectType(_) => DeclarationKind::ObjectType,
             DomainPackageRecord::FieldMember(_) => DeclarationKind::Field,
             DomainPackageRecord::RecordValueType(_) => DeclarationKind::RecordValueType,
+            DomainPackageRecord::Enum(_) => DeclarationKind::VariantType,
+            DomainPackageRecord::Variant(_) => DeclarationKind::VariantCase,
+            DomainPackageRecord::EventType(_) => DeclarationKind::EventType,
+            DomainPackageRecord::StateMachine(_) => DeclarationKind::StateMachine,
+            DomainPackageRecord::Process(_) => DeclarationKind::Process,
+            DomainPackageRecord::Clause(_) => DeclarationKind::Clause,
+            DomainPackageRecord::Namespace(_) => DeclarationKind::Namespace,
+            DomainPackageRecord::PersistenceInterface(_) => DeclarationKind::PersistenceInterface,
             DomainPackageRecord::ScalarType(_) => DeclarationKind::ValueType,
             DomainPackageRecord::OperationMember(_) => DeclarationKind::Operation,
             // `admit` refuses every kind-mapping refusal, so an admitted
@@ -409,6 +533,157 @@ mod tests {
         assert!(refusals[1].detail.contains("test/other"));
     }
 
+    /// A malformed member key is reported at the member's own `identity`
+    /// slot in its declaring type's array, not at the owner's identity.
+    #[test]
+    fn a_malformed_member_key_names_its_own_identity_member() {
+        use crate::model::domain_package::{
+            ClauseRecord, DeclaredSlot, RelationshipDirection, RelationshipEnd, RelationshipRecord,
+        };
+        let multiplicity = Multiplicity {
+            lower: 0,
+            upper: None,
+            ordered: false,
+            unique: false,
+        };
+        let end = |role: Option<&str>| RelationshipEnd {
+            type_identity: key("Order"),
+            role: role.map(str::to_owned),
+            multiplicity,
+        };
+        let Err(AdmitFailure::Refused(refusals)) = admit(vec![
+            order(key("Order")),
+            field(key("Order/paid"), key("Order")),
+            field(key("Order-first"), key("Order")),
+            field(key("Order-second"), key("Order")),
+            DomainPackageRecord::Clause(ClauseRecord {
+                key: key("Order-clause"),
+                owner: key("Order"),
+                language: "quire".to_owned(),
+                text: "true".to_owned(),
+            }),
+            DomainPackageRecord::Relationship(RelationshipRecord {
+                key: key("relationship/bad"),
+                declared_at: Some(DeclaredSlot {
+                    owner: key("Order"),
+                    index: 3,
+                }),
+                source: end(None),
+                target: end(None),
+                direction: RelationshipDirection::SourceToTarget,
+            }),
+        ]) else {
+            panic!("the package refuses")
+        };
+        let members: Vec<(String, String)> = refusals
+            .iter()
+            .map(|refusal| {
+                let ModelRefusalCause::IntakeMalformedDeclaration { node, member, .. } =
+                    &refusal.cause
+                else {
+                    panic!("expected a malformed declaration, got {refusal:?}")
+                };
+                (node.clone(), member.to_string())
+            })
+            .collect();
+        assert_eq!(
+            members,
+            [
+                (
+                    key("Order-first").node,
+                    "TypeDefinition.fields[1].identity".to_owned()
+                ),
+                (
+                    key("Order-second").node,
+                    "TypeDefinition.fields[2].identity".to_owned()
+                ),
+                (
+                    key("Order-clause").node,
+                    "TypeDefinition.clauses[0].identity".to_owned()
+                ),
+                (
+                    key("relationship/bad").node,
+                    "TypeDefinition.relationships[3].identity".to_owned()
+                ),
+            ]
+        );
+    }
+
+    /// A record with no array slot is named at the node the refusal is
+    /// about: a systems connection at its type node and an operation-owned
+    /// clause at its operation (as normalize names it).
+    #[test]
+    fn slotless_records_name_the_node_they_are_about() {
+        use crate::model::domain_package::{
+            ClauseRecord, OperationEffect, OperationMemberRecord, RelationshipDirection,
+            RelationshipEnd, RelationshipRecord,
+        };
+        let multiplicity = Multiplicity {
+            lower: 0,
+            upper: None,
+            ordered: false,
+            unique: false,
+        };
+        let end = |role: Option<&str>| RelationshipEnd {
+            type_identity: key("Order"),
+            role: role.map(str::to_owned),
+            multiplicity,
+        };
+        let relationship = |name: &str, role: Option<&str>| {
+            DomainPackageRecord::Relationship(RelationshipRecord {
+                key: key(name),
+                declared_at: None,
+                source: end(role),
+                target: end(None),
+                direction: RelationshipDirection::SourceToTarget,
+            })
+        };
+        let Err(AdmitFailure::Refused(refusals)) = admit(vec![
+            order(key("Order")),
+            DomainPackageRecord::OperationMember(OperationMemberRecord {
+                key: key("Order/open"),
+                owner: key("Order"),
+                parameters: Vec::new(),
+                result: None,
+                requires: Vec::new(),
+                ensures: Vec::new(),
+                effect: OperationEffect::default(),
+                has_body: false,
+                redefines: None,
+            }),
+            DomainPackageRecord::Clause(ClauseRecord {
+                key: key("Order/open-clause"),
+                owner: key("Order/open"),
+                language: "quire".to_owned(),
+                text: "true".to_owned(),
+            }),
+            relationship("connection/bad", None),
+        ]) else {
+            panic!("the package refuses")
+        };
+        let members: Vec<(String, String)> = refusals
+            .iter()
+            .map(|refusal| {
+                let ModelRefusalCause::IntakeMalformedDeclaration { node, member, .. } =
+                    &refusal.cause
+                else {
+                    panic!("expected a malformed declaration, got {refusal:?}")
+                };
+                (node.clone(), member.to_string())
+            })
+            .collect();
+        assert_eq!(
+            members,
+            [
+                (key("Order/open-clause").node, "Operation".to_owned()),
+                (
+                    key("connection/bad").node,
+                    "TypeDefinition.identity".to_owned()
+                ),
+            ]
+        );
+    }
+
     /// A member is indexed under the owner its record names, which must be a
     /// type node of the package: a field naming an undeclared owner refuses
     /// `unknown-owner`, and a field whose key is not `<named owner>/<name>`
@@ -438,5 +713,49 @@ mod tests {
         ])
         .expect("admits");
         assert!(package.member(&key("Order"), "paid").is_some());
+    }
+
+    /// An identity refusal keeps the origin the package retains for the
+    /// record's key (FR-154). The reader keys every record under the
+    /// selection's identity, so only a package assembled by hand reaches
+    /// these refusals; the origin is placed on it to test the plumbing.
+    #[test]
+    fn an_identity_refusal_keeps_the_records_origin() {
+        let foreign = DeclarationKey {
+            package: "test/other".to_owned(),
+            node: "ix://test/orders/Shipment".to_owned(),
+        };
+        let mut package = DomainPackage::new(
+            DomainPackageRef::fixture("n01"),
+            vec![order(foreign.clone())],
+        );
+        package.originals.insert(
+            foreign,
+            crate::model::domain_package::OriginalDeclaration {
+                meaning: None,
+                origin: serde_json::json!({"source": {
+                    "sourceIdentity": "ix://test/orders/spec",
+                    "path": "spec.qspec",
+                    "startLine": 7,
+                    "startColumn": 3,
+                }}),
+                member_name: None,
+            },
+        );
+        let Err(AdmitFailure::Refused(refusals)) = AdmittedPackage::admit(
+            package,
+            &mut Meter::new(ModelNormalizationLimits::default()),
+        ) else {
+            panic!("the foreign key refuses")
+        };
+        assert_eq!(refusals.len(), 1, "{refusals:?}");
+        let ModelRefusalCause::IntakeMalformedDeclaration { artifact, span, .. } =
+            &refusals[0].cause
+        else {
+            panic!("expected a malformed declaration: {refusals:?}");
+        };
+        assert_eq!(artifact.as_deref(), Some("ix://test/orders/spec"));
+        let span = span.expect("the retained position");
+        assert_eq!((span.start.line, span.start.column), (7, 3));
     }
 }

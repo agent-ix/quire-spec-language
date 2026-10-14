@@ -5,7 +5,8 @@
 //! Each form holds the kind's own payload exactly: integers as canonical
 //! decimal strings, a rational in lowest terms, a decimal as coefficient and
 //! scale, a float as its bit pattern in decimal, text as its admitted
-//! payload. Every number that can exceed 2^53 is a decimal string, since the
+//! payload, and native String as its exact Unicode scalar sequence. Every
+//! number that can exceed 2^53 is a decimal string, since the
 //! one encoder, `quire-canonical`'s, refuses a larger JSON number. The reader
 //! mints no declaration identity (ADR-013 O-04, O-05): a record or tuple
 //! declaration, a declared unit and an object type each resolve by lookup
@@ -24,18 +25,204 @@ use std::cell::Cell;
 use qsl_package::CheckedPackage;
 use quire_canonical::{FixedShape, Limits, Node, NodeRef, Sink, Writer};
 use quire_exact::{
-    admit_text, form_collection, from_admitted_slots, CardinalityBound, CollectionKind,
-    CollectionType, Decimal, DecimalType, EffectiveId, EnumMember, EnumShape, FieldValue,
-    FloatType, IeeeValue, IeeeWidth, Integer, IntegerInterval, Meter, ObjectId, ObjectReference,
-    OptionValue, Outcome, Presence, Quantity, Rational, RationalDomain, RoundingMode, ScalarLimits,
-    TextPayload, TextProfile, TextType, UnitDomain, UnitId, UniverseId, Value, ValueType,
-    VariantId,
+    admit_text, form, from_admitted_slots, CardinalityBound, CollectionKind, CollectionType,
+    Decimal, DecimalType, EffectiveId, EnumMember, EnumShape, FieldValue, FloatType, IeeeValue,
+    IeeeWidth, Integer, IntegerInterval, Meter, ObjectId, ObjectReference, OptionValue, Outcome,
+    Presence, Quantity, Rational, RationalDomain, RoundingMode, ScalarLimits, TextPayload,
+    TextProfile, TextType, UnitDomain, UnitId, UniverseId, Value, ValueType, VariantId,
 };
 use quire_semantic_value::declaration::{CompositeDeclaration, CompositeShape, TypeEnvironment};
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 
 use super::{digest, hex, malformed, present, CauseCodecError};
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ix_trace_rs::trace;
+
+    fn package() -> CheckedPackage {
+        let declarations = qsl_semantics::check::PackageDeclarations::new(
+            qsl_semantics::check::fixture_source(),
+            qsl_foundation::IdentityLimits::default(),
+        );
+        CheckedPackage::link(
+            declarations
+                .check(quire_semantic_value::checking::CheckingLimits::default())
+                .expect("the empty fixture package checks"),
+        )
+    }
+
+    #[trace("FR-056-AC-23")]
+    #[test]
+    fn native_string_values_round_trip_in_the_closed_canonical_form() {
+        let package = package();
+        for text in ["ascii", "λ雪", "", "550e8400-e29b-41d4-a716-446655440000"] {
+            let encoded = encode_element(&Value::String(text.to_owned())).unwrap();
+            let expected = String::from_utf8(
+                quire_canonical::to_vec(
+                    &serde_json::json!({"kind": "string", "text": text}),
+                    Limits::new(u64::MAX),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            assert_eq!(encoded.get(), expected);
+            let document = quire_canonical::read(encoded.get().as_bytes(), u64::MAX).unwrap();
+            validate_element_shape(document.root()).unwrap();
+            match decode_element(document.root(), Keys::new(&package)).unwrap() {
+                Value::String(decoded) => assert_eq!(decoded, text),
+                other => panic!("decoded native String as {other:?}"),
+            }
+        }
+    }
+
+    #[trace("FR-056-AC-23")]
+    #[test]
+    fn native_string_wire_refuses_extra_members_and_lone_surrogates() {
+        let extra =
+            quire_canonical::read(br#"{"kind":"string","text":"x","extra":true}"#, u64::MAX)
+                .unwrap();
+        assert!(validate_element_shape(extra.root()).is_err());
+
+        assert!(quire_canonical::read(br#"{"kind":"string","text":"\ud800"}"#, u64::MAX,).is_err());
+    }
+
+    #[trace("FR-056-AC-23")]
+    #[test]
+    fn native_string_type_uses_a_string_leaf_tag() {
+        let package = package();
+        let value = OptionValue::none(ValueType::String);
+        let encoded = encode_element(&value).unwrap();
+        assert!(encoded
+            .get()
+            .contains(r#""payload_type":{"kind":"string"}"#));
+        let document = quire_canonical::read(encoded.get().as_bytes(), u64::MAX).unwrap();
+        match decode_element(document.root(), Keys::new(&package)).unwrap() {
+            Value::Option(option) => assert_eq!(option.payload_type(), &ValueType::String),
+            other => panic!("decoded String type leaf in {other:?}"),
+        }
+    }
+
+    /// `Money <- TaxedMoney`, each with an `amount` and the child's `tax`, and
+    /// a `Pair` of two `Money`, in a checked package.
+    fn money_package() -> (CheckedPackage, [quire_exact::NodeKey; 3]) {
+        use quire_semantic_value::declaration::FieldDeclaration;
+        let [money, taxed, pair] =
+            [1, 2, 3].map(|byte| quire_exact::NodeKey::from_digest([byte; 32]));
+        let field =
+            |name: &str, value_type| FieldDeclaration::new(name, value_type, Presence::Required);
+        let types = TypeEnvironment::new(
+            [
+                CompositeDeclaration::new(
+                    money,
+                    "Money",
+                    CompositeShape::Record(vec![field("amount", ValueType::Integer)]),
+                ),
+                CompositeDeclaration::new(
+                    taxed,
+                    "TaxedMoney",
+                    CompositeShape::Record(vec![
+                        field("amount", ValueType::Integer),
+                        field("tax", ValueType::Integer),
+                    ]),
+                )
+                .with_supertypes(vec![money]),
+                CompositeDeclaration::new(
+                    pair,
+                    "Pair",
+                    CompositeShape::Record(vec![
+                        field("first", ValueType::Composite(money)),
+                        field("second", ValueType::Composite(money)),
+                    ]),
+                ),
+            ],
+            [],
+        )
+        .expect("the records admit");
+        let package = CheckedPackage::link(
+            qsl_semantics::check::PackageDeclarations {
+                types,
+                ..qsl_semantics::check::PackageDeclarations::new(
+                    qsl_semantics::check::fixture_source(),
+                    qsl_foundation::IdentityLimits::default(),
+                )
+            }
+            .check(quire_semantic_value::checking::CheckingLimits::default())
+            .expect("the package checks"),
+        );
+        (package, [money, taxed, pair])
+    }
+
+    /// FR-359-AC-9 (TC-1002): a deciding element holding a child record at
+    /// an ancestor-typed record field, `Option` payload or collection element
+    /// decodes to the same typed value, keeping its own declaration, and
+    /// encodes to the same bytes. An unrelated record at the slot refuses.
+    #[trace("FR-359-AC-9", "TC-1002")]
+    #[test]
+    fn a_child_record_at_an_ancestor_slot_round_trips() {
+        let (package, [money, taxed, pair]) = money_package();
+        let types = package.graph().scope().types();
+        let int = |value: i64| Value::Integer(Integer::from(value));
+        let plain = types
+            .record(money, vec![("amount", FieldValue::Present(int(1)))])
+            .unwrap();
+        let child = types
+            .record(
+                taxed,
+                vec![
+                    ("amount", FieldValue::Present(int(1))),
+                    ("tax", FieldValue::Present(int(2))),
+                ],
+            )
+            .unwrap();
+        let holder = types
+            .record(
+                pair,
+                vec![
+                    ("first", FieldValue::Present(child.clone())),
+                    ("second", FieldValue::Present(plain.clone())),
+                ],
+            )
+            .unwrap();
+        let option = OptionValue::from_admitted(ValueType::Composite(money), Some(child.clone()));
+        let collection = quire_exact::from_admitted(
+            CollectionType::new(
+                CollectionKind::Sequence,
+                ValueType::Composite(money),
+                Some(CardinalityBound::new(0, 4).unwrap()),
+            ),
+            vec![child.clone(), plain],
+        );
+        for value in [holder, option, collection] {
+            let encoded = encode_element(&value).unwrap();
+            let document = quire_canonical::read(encoded.get().as_bytes(), u64::MAX).unwrap();
+            let decoded = decode_element(document.root(), Keys::new(&package)).unwrap();
+            assert_eq!(
+                quire_exact::compare_keys(&decoded, &value),
+                Some(std::cmp::Ordering::Equal),
+                "the decoded value is the encoded one"
+            );
+            let again = encode_element(&decoded).unwrap();
+            assert_eq!(
+                again.get(),
+                encoded.get(),
+                "a decode then an encode is stable"
+            );
+        }
+        // The child's own declaration is what the document names.
+        let encoded = encode_element(&child).unwrap();
+        assert!(encoded.get().contains(&hex(taxed.as_bytes())));
+    }
+
+    #[trace("FR-056-AC-23")]
+    #[test]
+    fn existing_wire_kind_strings_remain_unchanged() {
+        let encoded = encode_element(&Value::Boolean(true)).unwrap();
+        assert_eq!(encoded.get(), r#"{"kind":"boolean","value":true}"#);
+    }
+}
 
 /// The limits a text payload is re-admitted and a collection re-formed
 /// under. Both are already bounded by the size of the document they were
@@ -411,6 +598,7 @@ pub(super) enum TypeLeafWire {
         #[serde(rename = "type")]
         text_type: TextTypeWire,
     },
+    String,
     Enum {
         ordered: bool,
         variants: Vec<String>,
@@ -432,6 +620,71 @@ pub(super) enum TypeLeafWire {
 }
 
 impl TypeLeafWire {
+    /// Check all leaf payloads that do not need a checked package.
+    fn validate_shape(self) -> Result<(), CauseCodecError> {
+        match self {
+            Self::Boolean | Self::Integer => {}
+            Self::Int { interval } => {
+                interval.read()?;
+            }
+            Self::Rational {
+                numerator,
+                denominator,
+            } => {
+                RationalDomain::new(numerator.read()?, denominator.read()?)
+                    .map_err(|_| CauseCodecError::Value("rational domain"))?;
+            }
+            Self::Decimal {
+                lower,
+                upper,
+                min_scale,
+                max_scale,
+                rounding: mode,
+            } => {
+                DecimalType::new(
+                    integer(&lower, "lower")?,
+                    integer(&upper, "upper")?,
+                    unsigned(&min_scale, "min_scale")?,
+                    unsigned(&max_scale, "max_scale")?,
+                    rounding(&mode)?,
+                )
+                .map_err(|_| CauseCodecError::Value("decimal type"))?;
+            }
+            Self::Float { rounding: mode, .. } => {
+                rounding(&mode)?;
+            }
+            Self::Quantity { unit } => {
+                digest(&unit.digest, "unit")?;
+            }
+            Self::Text { text_type } => {
+                text_type.read()?;
+            }
+            Self::String => {}
+            Self::Enum { ordered, variants } => {
+                let variants = variants
+                    .iter()
+                    .map(|variant| digest(variant, "variant").map(VariantId::from_digest))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let shape = EnumShape::new(ordered, variants.iter().copied());
+                if shape.variants().count() != variants.len() {
+                    return Err(CauseCodecError::Value("variants"));
+                }
+            }
+            Self::Composite { declaration } => {
+                digest(&declaration, "declaration")?;
+            }
+            Self::Reference { object_type } => {
+                digest(&object_type, "type")?;
+            }
+            Self::Population { maximum } => {
+                if let Some(maximum) = maximum {
+                    unsigned(&maximum, "maximum")?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn of(value_type: &ValueType) -> Option<Self> {
         Some(match value_type {
             ValueType::Boolean => Self::Boolean,
@@ -460,6 +713,7 @@ impl TypeLeafWire {
             ValueType::Text(text_type) => Self::Text {
                 text_type: TextTypeWire::of(text_type),
             },
+            ValueType::String => Self::String,
             ValueType::Enum(shape) => Self::Enum {
                 ordered: shape.is_ordered(),
                 variants: shape
@@ -476,7 +730,10 @@ impl TypeLeafWire {
             ValueType::Population(maximum) => Self::Population {
                 maximum: maximum.map(|maximum| maximum.to_string()),
             },
-            ValueType::Option(_) | ValueType::Collection(_) => return None,
+            ValueType::Option(_)
+            | ValueType::Collection(_)
+            | ValueType::Uuid
+            | ValueType::Timestamp => return None,
         })
     }
 
@@ -514,6 +771,7 @@ impl TypeLeafWire {
             } => ValueType::Float(FloatType::new(width.read(), rounding(&mode)?)),
             Self::Quantity { unit } => ValueType::Quantity(keys.unit(&unit)?),
             Self::Text { text_type } => ValueType::Text(text_type.read()?),
+            Self::String => ValueType::String,
             Self::Enum { ordered, variants } => {
                 let variants = variants
                     .iter()
@@ -574,6 +832,9 @@ pub(super) enum ScalarWire {
         text_type: TextTypeWire,
         payload: String,
     },
+    String {
+        text: String,
+    },
     Enum {
         variant: String,
         rank: u32,
@@ -587,6 +848,60 @@ pub(super) enum ScalarWire {
 }
 
 impl ScalarWire {
+    /// Check every package-independent payload invariant before a public
+    /// reader returns a witness whose package may never be supplied.
+    fn validate_shape(self) -> Result<(), CauseCodecError> {
+        match self {
+            Self::Boolean { .. } => {}
+            Self::Integer { decimal } => {
+                integer(&decimal, "decimal")?;
+            }
+            Self::Rational { value } => {
+                value.read()?;
+            }
+            Self::Decimal { coefficient, .. } => {
+                integer(&coefficient, "coefficient")?;
+            }
+            Self::Float { width, bits } => {
+                let bits = unsigned(&bits, "bits")?;
+                if matches!(width, WidthWire::Binary32) {
+                    u32::try_from(bits).map_err(|_| CauseCodecError::Value("bits"))?;
+                }
+            }
+            Self::Quantity { magnitude, unit } => {
+                magnitude.read()?;
+                digest(&unit.digest, "unit")?;
+            }
+            Self::Text { text_type, payload } => {
+                let text_type = text_type.read()?;
+                let payload = TextPayload::from_utf8(payload.as_bytes())
+                    .map_err(|_| CauseCodecError::Value("payload"))?;
+                let mut meter = Meter::new(READER_LIMITS);
+                if !matches!(
+                    admit_text(&payload, &text_type, &mut meter),
+                    Outcome::Completed(_)
+                ) {
+                    return Err(CauseCodecError::Value("payload"));
+                }
+            }
+            Self::String { .. } => {}
+            Self::Enum { variant, .. } => {
+                digest(&variant, "variant")?;
+            }
+            Self::Reference {
+                universe,
+                object_type,
+                object_identity,
+            } => {
+                digest(&universe, "universe")?;
+                digest(&object_type, "type")?;
+                ObjectId::new(object_identity)
+                    .map_err(|_| CauseCodecError::Empty("object_identity"))?;
+            }
+        }
+        Ok(())
+    }
+
     fn of(value: &Value) -> Option<Self> {
         Some(match value {
             Value::Boolean(value) => Self::Boolean { value: *value },
@@ -612,6 +927,7 @@ impl ScalarWire {
                 text_type: TextTypeWire::of(text.text_type()),
                 payload: text.payload().as_str().to_owned(),
             },
+            Value::String(text) => Self::String { text: text.clone() },
             Value::Enum(member) => Self::Enum {
                 variant: hex(member.variant().as_bytes()),
                 rank: member.rank(),
@@ -624,7 +940,10 @@ impl ScalarWire {
             Value::Option(_)
             | Value::Composite(_)
             | Value::Collection(_)
-            | Value::Population(_) => return None,
+            | Value::Population(_)
+            | Value::Union(_)
+            | Value::Uuid(_)
+            | Value::Timestamp(_) => return None,
         })
     }
 
@@ -658,6 +977,7 @@ impl ScalarWire {
                     _ => return Err(CauseCodecError::Value("payload")),
                 }
             }
+            Self::String { text } => Value::String(text),
             Self::Enum { variant, rank } => Value::Enum(EnumMember::new(
                 VariantId::from_digest(digest(&variant, "variant")?),
                 rank,
@@ -811,11 +1131,15 @@ impl quire_canonical::Encode for ElementEncode<'_> {
                         Self::open_kind(writer, "collection", next, &mut pending)?;
                     }
                     // A state clause cannot name a population (ADR-016 FE-4),
-                    // so no claim's domain holds one.
-                    Value::Population(_) => {
+                    // so no claim's domain holds one, and no source form
+                    // builds a union.
+                    Value::Population(_)
+                    | Value::Uuid(_)
+                    | Value::Timestamp(_)
+                    | Value::Union(_) => {
                         self.unsupported.set(true);
                         return Err(quire_canonical::Error::Serialize(
-                            "a population has no deciding-element encoding".to_owned(),
+                            "this value kind has no deciding-element encoding".to_owned(),
                         ));
                     }
                     scalar => match ScalarWire::of(scalar) {
@@ -828,6 +1152,12 @@ impl quire_canonical::Encode for ElementEncode<'_> {
                     },
                 },
                 Emit::Type(value_type) => match value_type {
+                    ValueType::Uuid | ValueType::Timestamp => {
+                        self.unsupported.set(true);
+                        return Err(quire_canonical::Error::Serialize(
+                            "the selected type has no deciding-element encoding".to_owned(),
+                        ));
+                    }
                     ValueType::Option(payload) => Self::open_kind(
                         writer,
                         "option",
@@ -925,6 +1255,79 @@ fn kind_of<'d>(node: NodeRef<'d>) -> Option<&'d str> {
 fn fixed<T: serde::de::DeserializeOwned>(node: NodeRef<'_>) -> Result<T, CauseCodecError> {
     let bytes = quire_canonical::to_vec(&node, Limits::new(u64::MAX))?;
     Ok(serde_json::from_slice(&bytes)?)
+}
+
+/// Validate the package-independent typed shape of one deciding element.
+/// Declaration resolution remains a consumer's responsibility because a
+/// `/2` document does not carry the checked package.
+pub(super) fn validate_element_shape(node: NodeRef<'_>) -> Result<(), CauseCodecError> {
+    enum Check<'a> {
+        Value(NodeRef<'a>),
+        Type(NodeRef<'a>),
+        Collection(NodeRef<'a>),
+    }
+    let mut work = vec![Check::Value(node)];
+    while let Some(check) = work.pop() {
+        match check {
+            Check::Value(node) => match kind_of(node) {
+                Some("option") => {
+                    let fields = Fields::of(node, &["kind", "payload_type", "payload"])?;
+                    if let Some(payload) = fields.get("payload") {
+                        work.push(Check::Value(payload));
+                    }
+                    work.push(Check::Type(fields.require("payload_type")?));
+                }
+                Some("composite") => {
+                    let fields = Fields::of(node, &["kind", "declaration", "slots"])?;
+                    string_of(fields.require("declaration")?)?;
+                    let Node::Array(slots) = fields.require("slots")?.node() else {
+                        return Err(malformed("a composite's slots are not an array"));
+                    };
+                    for slot in slots {
+                        let slot = Fields::of(slot, &["slot", "value"])?;
+                        match (string_of(slot.require("slot")?)?, slot.get("value")) {
+                            ("present", Some(value)) => work.push(Check::Value(value)),
+                            ("absent" | "null", None) => {}
+                            _ => return Err(malformed("a composite slot has the wrong shape")),
+                        }
+                    }
+                }
+                Some("collection") => {
+                    let fields = Fields::of(node, &["kind", "type", "elements"])?;
+                    let Node::Array(elements) = fields.require("elements")?.node() else {
+                        return Err(malformed("a collection's elements are not an array"));
+                    };
+                    work.extend(elements.map(Check::Value));
+                    work.push(Check::Collection(fields.require("type")?));
+                }
+                _ => {
+                    fixed::<ScalarWire>(node)?.validate_shape()?;
+                }
+            },
+            Check::Type(node) => match kind_of(node) {
+                Some("option") => {
+                    let fields = Fields::of(node, &["kind", "payload"])?;
+                    work.push(Check::Type(fields.require("payload")?));
+                }
+                Some("collection") => {
+                    let fields = Fields::of(node, &["kind", "type"])?;
+                    work.push(Check::Collection(fields.require("type")?));
+                }
+                _ => {
+                    fixed::<TypeLeafWire>(node)?.validate_shape()?;
+                }
+            },
+            Check::Collection(node) => {
+                let fields = Fields::of(node, &["collection", "element", "bound"])?;
+                let _: KindWire = fixed(fields.require("collection")?)?;
+                if let Some(bound) = fields.get("bound") {
+                    fixed::<BoundWire>(bound)?.read()?;
+                }
+                work.push(Check::Type(fields.require("element")?));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// One pending step of [`decode_element`].
@@ -1077,8 +1480,15 @@ pub(super) fn decode_element(node: NodeRef<'_>, keys: Keys<'_>) -> Result<Value,
                 let payload_type = types.pop().ok_or_else(underflow)?;
                 values.push(match payload {
                     None => OptionValue::none(payload_type),
-                    Some(payload) => OptionValue::present(payload_type, payload)
-                        .map_err(|_| CauseCodecError::Value("payload"))?,
+                    // FR-359 item 5: admitted by conformance under the
+                    // package's environment, so a child of the payload's
+                    // record keeps its own declaration.
+                    Some(payload) => {
+                        if !keys.types().admits(&payload_type, &payload) {
+                            return Err(CauseCodecError::Value("payload"));
+                        }
+                        OptionValue::from_admitted(payload_type, Some(payload))
+                    }
                 });
             }
             Decode::CompositeValue { declaration, slots } => {
@@ -1105,10 +1515,17 @@ pub(super) fn decode_element(node: NodeRef<'_>, keys: Keys<'_>) -> Result<Value,
                 let elements =
                     values.split_off(values.len().checked_sub(count).ok_or_else(underflow)?);
                 let mut meter = Meter::new(READER_LIMITS);
-                // Forming checks each element's type and the bound; a
-                // collapsed duplicate means the document listed one twice.
-                match form_collection(&collection_type, elements, &mut meter) {
-                    Ok(Outcome::Completed(Value::Collection(formed)))
+                // Each element is admitted by conformance (FR-359 item 5);
+                // forming checks the bound, and a collapsed duplicate means
+                // the document listed one twice.
+                if !elements
+                    .iter()
+                    .all(|element| keys.types().admits(collection_type.element(), element))
+                {
+                    return Err(CauseCodecError::Value("elements"));
+                }
+                match form(&collection_type, elements, &mut meter) {
+                    Outcome::Completed(Value::Collection(formed))
                         if formed.elements().len() == count =>
                     {
                         values.push(Value::Collection(formed));

@@ -58,13 +58,3 @@ Tag the tests with the AC ids they back and `TC-483`.
 - Step 4: each unit refuses with exactly one unit-graph topology error naming the
   declarations it concerns, and no `PackageDeclarations`. Its catalog code
   is the STD-112 cause.
-
-## Status
-
-Steps 1 to 3 and step 4's errors are backed by `check::assemble` tests in
-`qsl-semantics` (`dimensions_and_units_are_admitted_with_the_vector_keys`,
-`the_decimal_scale_bound_refuses_with_a_work_budget_limit`,
-`a_unit_name_is_not_a_type`,
-`every_dimension_and_unit_source_error_is_reported`,
-`each_unit_graph_topology_error_refuses_alone`). Step 4's catalog code
-waits on STD-112 (FR-091-OQ-12).

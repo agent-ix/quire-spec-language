@@ -22,6 +22,37 @@ use std::ops::ControlFlow;
 /// A local slot of one function frame or checked expression.
 pub type Slot = usize;
 
+/// The identity of a record field a checked read names (FR-359 item 2): the
+/// declaration key of the record the read is typed at, and the field's name
+/// there. It carries no position: the value read may be a child of that
+/// record, whose own fields are not a positional prefix of the record's, so
+/// the slot is found in the value's own declaration by this identity.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RecordField {
+    declaration: NodeKey,
+    name: String,
+}
+
+impl RecordField {
+    /// The field `name` of the record declared as `declaration`.
+    pub fn new(declaration: NodeKey, name: impl Into<String>) -> Self {
+        Self {
+            declaration,
+            name: name.into(),
+        }
+    }
+
+    /// The record the read is typed at.
+    pub fn declaration(&self) -> NodeKey {
+        self.declaration
+    }
+
+    /// The field's name in that record.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+}
+
 /// The state a model read in a state clause observes (FR-104
 /// "Observations of reads"): `current` in an invariant, `pre` in a
 /// precondition and `post` in a postcondition, except inside `pre(e)`,
@@ -119,6 +150,30 @@ pub struct CheckedBody {
 }
 
 impl CheckedBody {
+    /// A malformed checked-state fixture for producer tests, never shipped.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn fixture(
+        operands: Vec<ValueType>,
+        kind: impl FnOnce(&[NodeId]) -> NodeKind,
+        result: ValueType,
+    ) -> Self {
+        let ids: Vec<_> = (0..operands.len()).map(NodeId).collect();
+        let mut nodes: Vec<_> = operands
+            .into_iter()
+            .map(|value_type| Node {
+                kind: NodeKind::Literal(CheckedLiteral(Value::Boolean(true))),
+                value_type,
+                location: Location::root(quire_semantic_value::location::Origin::Expression),
+            })
+            .collect();
+        nodes.push(Node {
+            kind: kind(&ids),
+            value_type: result,
+            location: Location::root(quire_semantic_value::location::Origin::Expression),
+        });
+        Self { nodes }
+    }
+
     /// The root node.
     pub fn root(&self) -> CheckedNode<'_> {
         CheckedNode {
@@ -335,6 +390,18 @@ pub enum Arithmetic {
     Subtract,
     /// `*`.
     Multiply,
+}
+
+/// Integer operations whose result uses the selected division law or the
+/// independent Euclidean modulus law.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IntegerDivisionOperator {
+    /// Quotient under the selected law.
+    Div,
+    /// Remainder under the selected law.
+    Rem,
+    /// Euclidean remainder, independent of the selected law.
+    Mod,
 }
 
 /// Which values an ordering compares.
@@ -642,6 +709,17 @@ pub enum NodeKind {
     },
     /// Integer arithmetic.
     Arithmetic(Arithmetic, NodeId, NodeId),
+    /// An integer division member, with its admitted law for `div`/`rem`.
+    IntegerDivision {
+        /// The source operator.
+        operator: IntegerDivisionOperator,
+        /// The package's admitted law, absent only for `mod`.
+        selection: Option<crate::value::definition::AdmittedIntegerDivision>,
+        /// The dividend.
+        left: NodeId,
+        /// The divisor.
+        right: NodeId,
+    },
     /// Unary integer `-`.
     Negate(NodeId),
     /// Integer `/` producing `Rational[..]`.
@@ -699,8 +777,8 @@ pub enum NodeKind {
     Field {
         /// The record.
         operand: NodeId,
-        /// The field's declaration-order slot.
-        index: usize,
+        /// The field read, by identity (FR-359 item 2).
+        field: RecordField,
         /// Whether the field is optional.
         optional: bool,
     },
@@ -918,6 +996,7 @@ impl NodeKind {
                 otherwise,
             } => vec![*condition, *then, *otherwise],
             NodeKind::Arithmetic(_, left, right)
+            | NodeKind::IntegerDivision { left, right, .. }
             | NodeKind::Divide { left, right, .. }
             | NodeKind::Rational { left, right, .. }
             | NodeKind::Decimal { left, right, .. }

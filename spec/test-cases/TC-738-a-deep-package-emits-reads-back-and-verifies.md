@@ -33,7 +33,3 @@ Tag the tests `#[trace("TC-738", "FR-264-AC-1")]`, `#[trace("TC-738", "FR-264-AC
 - Step 1: the read verifies at the emitted `package_id`; the clone compares
   equal; formatting and drops complete.
 - Step 2: every body is in FR-322's stratified grammar.
-
-## Status
-
-Planned.

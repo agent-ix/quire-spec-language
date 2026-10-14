@@ -264,6 +264,7 @@ impl PathGuard {
 pub struct RequirementRecord {
     requirements: Requirements,
     result_bound: ResultBound,
+    conversion_context: Option<OccurrenceKey>,
     path_condition: Vec<PathGuard>,
 }
 
@@ -279,6 +280,7 @@ impl RequirementRecord {
         Self {
             requirements,
             result_bound: ResultBound { value_type, node },
+            conversion_context: None,
             path_condition: Vec::new(),
         }
     }
@@ -294,6 +296,14 @@ impl RequirementRecord {
         &self.result_bound
     }
 
+    /// The direct narrow occurrence that supplies this scalar application's
+    /// result bound, or `None` when the bound is the application's own type.
+    /// This context belongs to this requirement occurrence, not only to its
+    /// shared scalar node.
+    pub fn conversion_context(&self) -> Option<&OccurrenceKey> {
+        self.conversion_context.as_ref()
+    }
+
     /// The path condition, outermost guard first.
     pub fn path_condition(&self) -> &[PathGuard] {
         &self.path_condition
@@ -305,6 +315,7 @@ impl RequirementRecord {
 fn is_scalar_application(node: CheckedNode<'_>) -> bool {
     match node.kind() {
         NodeKind::Arithmetic(..)
+        | NodeKind::IntegerDivision { .. }
         | NodeKind::Negate(_)
         | NodeKind::Divide { .. }
         | NodeKind::Rational { .. }
@@ -362,6 +373,7 @@ fn scalar_equality(compared: &ValueType) -> bool {
         | ValueType::Rational(_)
         | ValueType::Decimal(_)
         | ValueType::Text(_)
+        | ValueType::String
         | ValueType::Enum(_)
         | ValueType::Quantity(_) => true,
         ValueType::Boolean
@@ -370,7 +382,9 @@ fn scalar_equality(compared: &ValueType) -> bool {
         | ValueType::Composite(_)
         | ValueType::Collection(_)
         | ValueType::Float(_)
-        | ValueType::Population(_) => false,
+        | ValueType::Population(_)
+        | ValueType::Uuid
+        | ValueType::Timestamp => false,
     }
 }
 
@@ -763,6 +777,29 @@ pub(crate) fn wire(key: NodeKey) -> WireNodeId {
     WireNodeId::from_digest(*key.as_bytes())
 }
 
+/// Select the sole candidate narrow that directly references `scalar`.
+/// The predicate examines the candidate's lowered operation and operand;
+/// enclosing narrows are excluded because they reference another narrow.
+fn unique_direct_narrow(
+    candidates: &[(NodeKey, Origin)],
+    scalar: NodeKey,
+    graph: &SemanticGraph,
+) -> Result<(NodeKey, Origin), KeyFault> {
+    let mut matches = candidates.iter().filter(|(candidate, _)| {
+        matches!(
+            graph.node(*candidate).map(|node| node.body()),
+            Some(BodyTerm::Application(ApplicationTerm { operation, arguments, .. }))
+                if operation_role(operation.identity()) == OperationRole::Narrow
+                    && matches!(arguments.as_slice(), [MemberTerm::Leaf(LeafTerm::Reference { target })] if target.0 == scalar)
+        )
+    });
+    let (node, origin) = matches.next().ok_or(KeyFault::UnkeyableRequirements)?;
+    if matches.next().is_some() {
+        return Err(KeyFault::UnkeyableRequirements);
+    }
+    Ok((*node, origin.clone()))
+}
+
 /// Key each claim of `claims` by the `expression` occurrence of its scalar
 /// application recorded at its site's own location, and write its record
 /// (ADR-012 §13.5, ADR-013 O-07): its extent's roots named by the parameter
@@ -820,32 +857,24 @@ pub(crate) fn key_claims(
         let (Some((key, origin)), None) = (applications.next(), applications.next()) else {
             return Err(unkeyable());
         };
-        let bound_type = if matches!(site.bound, SiteBound::Narrowed(_)) {
-            here.iter()
-                .find(|(narrow, _)| {
-                    // The `operation_role(..) == Narrow` compare is not
-                    // distinguished by any fixture today: every application
-                    // at a shared location whose sole argument is a
-                    // `Reference` to `key` is, in fact, the narrow lowering
-                    // inserted over that key (SR-758 FND-006 mutation-tested
-                    // this and found no fixture that depends on it). It is
-                    // kept because the `Reference`-shape match alone is not
-                    // selective — a future scalar-family member taking one
-                    // `Reference` argument (for example a unary identity or
-                    // cast op) would match that shape too, and without this
-                    // compare `find` would take whichever one is ordered
-                    // first in `here`, silently reporting the wrong result
-                    // bound instead of failing closed.
-                    application(*narrow).is_some_and(|(identity, arguments)| {
-                        operation_role(identity) == OperationRole::Narrow
-                            && matches!(arguments, [MemberTerm::Leaf(LeafTerm::Reference { target })] if target.0 == *key)
-                    })
-                })
-                .and_then(|(narrow, _)| graph.node(*narrow)?.semantic_type())
+        let (bound_type, conversion_context) = if matches!(site.bound, SiteBound::Narrowed(_)) {
+            let (narrow, narrow_origin) = unique_direct_narrow(here, *key, graph)?;
+            (
+                graph
+                    .node(narrow)
+                    .and_then(|node| node.semantic_type())
+                    .ok_or_else(unkeyable)?,
+                Some(OccurrenceKey::new(wire(narrow), narrow_origin)),
+            )
         } else {
-            graph.node(*key).and_then(|node| node.semantic_type())
-        }
-        .ok_or_else(unkeyable)?;
+            (
+                graph
+                    .node(*key)
+                    .and_then(|node| node.semantic_type())
+                    .ok_or_else(unkeyable)?,
+                None,
+            )
+        };
         let mut path_condition = Vec::with_capacity(site.path_condition.len());
         for guard in &site.path_condition {
             let here = at.get(&guard.location).map_or(&[][..], Vec::as_slice);
@@ -875,6 +904,7 @@ pub(crate) fn key_claims(
                 value_type: site.result_bound(),
                 node: wire(bound_type),
             },
+            conversion_context,
             path_condition,
         };
         if records

@@ -13,10 +13,10 @@ FR-030 and FR-011 rows using TC-108 require `--features quire-extraction` (or
 local test and lint lanes; the hosted workflow remains manual-dispatch only.
 FR-031 / TC-109 extraction behavior also requires that feature; its disabled-build
 request-refusal control runs in the minimal suite.
-FR-032-AC-4 / TC-110 package replay runs in both configurations; its Markdown
-outcome and original/body mapping checks require quire-extraction. Every runtime
-case requires report provenance. Missing-model compilation instead requires the
-appropriate error provenance, explicitly rather than through a presence guard.
+FR-032-AC-4 / TC-469 package-id replay runs in both configurations; its
+Markdown outcome and body-identity checks require quire-extraction. The
+FR-267 native-run-result/2 reader verifies the boundary refusal's object and
+field. TC-110 verifies the concrete model and repeatable fixture generation.
 
 ## Requirements Traceability
 
@@ -75,10 +75,10 @@ appropriate error provenance, explicitly rather than through a presence guard.
 | FR-031 | FR-031-AC-2 | TC-109 |  |
 | FR-031 | FR-031-AC-3 | TC-109 |  |
 | FR-031 | FR-031-AC-4 | TC-109 |  |
-| FR-032 | FR-032-AC-1 | TC-110 |  |
-| FR-032 | FR-032-AC-2 | TC-110 |  |
-| FR-032 | FR-032-AC-3 | TC-110 |  |
-| FR-032 | FR-032-AC-4 | TC-110 |  |
+| FR-032 | FR-032-AC-1 | TC-110, TC-469 |  |
+| FR-032 | FR-032-AC-2 | TC-469 |  |
+| FR-032 | FR-032-AC-3 | TC-469 |  |
+| FR-032 | FR-032-AC-4 | TC-469 |  |
 
 ## Test Case Summary
 
@@ -100,4 +100,4 @@ appropriate error provenance, explicitly rather than through a presence guard.
 | TC-107 | Standalone projection export | Integration | P1 | FR-029 | ✅ |
 | TC-108 | Actual Quire/native workflow | Integration | P1 | FR-030, FR-011 | ✅ |
 | TC-109 | Standalone Markdown execution | Integration | P1 | FR-031 | ✅ |
-| TC-110 | Concrete ConfigVersion workflow | Integration | P1 | FR-032 | ✅ |
+| TC-110 | Generate concrete ConfigVersion cases | Integration | P1 | FR-032 | ✅ |

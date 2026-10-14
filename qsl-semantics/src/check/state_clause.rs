@@ -28,7 +28,7 @@ use quire_exact::{EffectiveId, Identifier, NodeKey, Origin, ValueType};
 
 use super::check::{bind_parameters, Signatures, StateContext, Typer};
 use super::claims::{wire, RequirementRecord};
-use super::facts::Definedness;
+use super::facts::{CheckedFacts, Definedness};
 use super::ir::{CheckedBody, CheckedNode, DispatchTable, NodeKind, Observation};
 use super::lowering::{AdmittedModel, LoweredClause};
 use super::observation::Observations;
@@ -178,6 +178,10 @@ pub struct StateClauseDeclaration {
     /// The operation a `pre` or `post` clause names; `None` for an
     /// invariant.
     pub operation: Option<ClauseOperation>,
+    /// The `DeclarationKey` of the resolved operation a `pre` or `post`
+    /// clause names, the key the unit's operation bodies and clauses join on
+    /// (FR-103, FR-302); `None` for an invariant.
+    pub operation_key: Option<crate::model::key::DeclarationKey>,
     /// The context's population domain, the assembler's own resolution
     /// (FR-104 "Resolution", "Requirements"): the one population with no
     /// maximum whose member types cover `context`, by conformance
@@ -194,6 +198,39 @@ pub struct StateClauseDeclaration {
 }
 
 impl StateClauseDeclaration {
+    /// What the `ProtocolClause` family's check reads of this clause.
+    fn view(&self) -> ClauseView<'_> {
+        ClauseView {
+            kind: self.kind,
+            complete_value: self.selection.identity
+                == crate::value::definition::DefinitionLock::pinned()
+                    .entry(crate::value::definition::CatalogRole::Root)
+                    .identity,
+            context: self.context,
+            operation: self.operation.as_ref(),
+            context_population: self.context_population,
+            frame_population: self.frame_population,
+            body: &self.body,
+        }
+    }
+}
+
+/// What [`check_clause`] reads of a clause: a unit's state clause
+/// ([`StateClauseDeclaration::view`]) or a domain package operation's kept
+/// `requires`/`ensures` (FR-103), which names no profile and so checks under
+/// the typer's profile-independent defaults.
+pub(crate) struct ClauseView<'a> {
+    pub(crate) kind: StateClauseKind,
+    /// Whether the selected profile is the complete-value one.
+    pub(crate) complete_value: bool,
+    pub(crate) context: EffectiveId,
+    pub(crate) operation: Option<&'a ClauseOperation>,
+    pub(crate) context_population: Option<PopulationDomain>,
+    pub(crate) frame_population: Option<PopulationDomain>,
+    pub(crate) body: &'a Expression,
+}
+
+impl ClauseView<'_> {
     /// The clause kind as the typer reads it: `pre(e)` is legal only in a
     /// postcondition.
     fn clause_kind(&self) -> ClauseKind {
@@ -215,7 +252,7 @@ impl StateClauseDeclaration {
     /// typed over, in order. An invariant binds `self` alone.
     fn parameters(&self) -> (Vec<(String, ValueType)>, bool) {
         let mut parameters = vec![("self".to_owned(), ValueType::Reference(self.context))];
-        let Some(operation) = &self.operation else {
+        let Some(operation) = self.operation else {
             return (parameters, false);
         };
         let result = match (self.kind, operation.declaration.result()) {
@@ -251,6 +288,10 @@ pub struct ClauseDeclarations<'a> {
     /// The caller's cancellation handle, polled at every node charge of
     /// this clause's check (FR-276).
     pub(crate) cancel: Option<&'a quire_exact::Cancel>,
+    /// The staged model type admission, which the clause reads through its
+    /// immediate parents while the conformance stage has not yet judged them.
+    pub(crate) staged:
+        Option<&'a std::cell::RefCell<quire_semantic_value::declaration::PendingTypeEnvironment>>,
 }
 
 /// One population domain of a requested item (FR-104 "Requirements"): the
@@ -295,6 +336,7 @@ pub struct ClauseClaim {
 /// lowering keys it.
 #[derive(Debug)]
 pub struct TypedStateClause {
+    pub(crate) facts: CheckedFacts,
     pub(crate) parameters: Vec<(String, ValueType)>,
     pub(crate) body: CheckedBody,
     pub(crate) slots: usize,
@@ -386,9 +428,13 @@ impl FamilyContract for ProtocolClauseFamily {
         cx: &mut CheckContext<'a, ClauseDeclarations<'a>>,
     ) -> CheckOutcome<TypedStateClause, CheckRefusal> {
         let declarations = cx.declarations();
-        check_clause(form, declarations)
-            .map(Staged::new)
-            .map_err(StageFailure::Refused)
+        check_clause(
+            &form.view(),
+            declarations,
+            &mut cx.reborrow(declarations.scope),
+        )
+        .map(Staged::new)
+        .map_err(StageFailure::Refused)
     }
 
     fn requirements(checked: &TypedStateClause) -> Vec<ClauseClaim> {
@@ -396,12 +442,45 @@ impl FamilyContract for ProtocolClauseFamily {
     }
 }
 
+/// A refused parent read of a clause as the refusal that reports it.
+fn parent_slot_refusal(
+    failure: super::lowering::ParentSlotFailure,
+    location: &Location,
+) -> CheckRefusal {
+    use super::lowering::ParentSlotFailure;
+    let cause = match failure {
+        ParentSlotFailure::Incomplete(incomplete) => CheckCause::ModelIncomplete(incomplete),
+        ParentSlotFailure::Pending(failure) => super::pending_refusal(failure),
+    };
+    CheckRefusal {
+        location: location.clone(),
+        cause,
+    }
+}
+
+/// FR-103: checks a kept operation clause as `check_clause` checks a unit
+/// state clause, and returns the package's running node total after it. The
+/// checked body is dropped: a kept clause yields a refusal or nothing.
+pub(crate) fn check_operation_clause<'a>(
+    clause: &super::operation_clause::OperationClauseDeclaration,
+    declarations: &ClauseDeclarations<'a>,
+    cx: &mut CheckContext<'a, ClauseDeclarations<'a>>,
+) -> Result<u64, CheckRefusal> {
+    check_clause(
+        &clause.view(),
+        declarations,
+        &mut cx.reborrow(declarations.scope),
+    )
+    .map(|checked| checked.nodes_used)
+}
+
 /// Type `form`'s body as a Boolean under its clause kind, give each model
 /// read its observation, and check its definedness (FR-104 "Typing",
 /// "Observations of reads", "Definedness facts").
-fn check_clause(
-    form: &StateClauseDeclaration,
+pub(crate) fn check_clause(
+    form: &ClauseView<'_>,
     input: &ClauseDeclarations<'_>,
+    cx: &mut CheckContext<'_, Scope>,
 ) -> Result<TypedStateClause, CheckRefusal> {
     let location = input.location;
     let mut nodes = input.nodes_used;
@@ -413,18 +492,32 @@ fn check_clause(
         &mut nodes,
         form.clause_kind(),
     )
-    .with_cancel(input.cancel);
+    .with_cancel(input.cancel)
+    .with_complete_value(form.complete_value)
+    .with_context(cx.reborrow(input.scope));
     bind_parameters(&mut typer, &parameters, location)?;
+    let mut parent_projections = BTreeMap::new();
+    if let (StateClauseKind::Postcondition, Some(operation), Some(staged)) =
+        (form.kind, form.operation.as_ref(), input.staged)
+    {
+        let mut staged = staged.borrow_mut();
+        for model in input.models {
+            let projected = model
+                .parent_projections(form.context, operation, &mut staged, u64::MAX)
+                .map_err(|failure| parent_slot_refusal(failure, location))?;
+            parent_projections.extend(projected);
+        }
+    }
     typer.enter_state_clause(StateContext {
+        parent_projections,
         kind: form.kind,
         operation: form
             .operation
-            .as_ref()
             .map(|operation| operation.declaration.name().to_owned()),
         self_slot: 0,
         result_slot: has_result.then_some(1),
     });
-    let body = typer.infer(&form.body, Some(&ValueType::Boolean), location)?;
+    let body = typer.infer(form.body, Some(&ValueType::Boolean), location)?;
     if body.root().value_type() != &ValueType::Boolean {
         return Err(CheckRefusal {
             location: location.clone(),
@@ -435,13 +528,13 @@ fn check_clause(
     let slot_names = typer.slot_names().to_vec();
     let formed_units = typer.into_formed_units();
     let observations = Observations::of(body.root(), form.observation(), parameters.len());
-    Definedness::new(
+    let facts = Definedness::new(
         parameters.len(),
         input.dispatch_tables,
         &input.scope.dispatch_operations,
     )
     .with_observations(&observations)
-    .check(body.root())?;
+    .check_and_retain(body.root())?;
 
     // The populations the clause ranges over: its context's, already
     // resolved by the assembler (FR-104 "Resolution"), then each one a
@@ -477,6 +570,7 @@ fn check_clause(
         .into_iter()
         .collect();
     Ok(TypedStateClause {
+        facts,
         parameters,
         body,
         slots,
@@ -868,6 +962,7 @@ mod tests {
             modifies: vec![modifies_decl.clone()],
             creates: vec![creates_decl.clone()],
             deletes: Vec::new(),
+            ..Default::default()
         };
         let operation = ClauseOperation {
             declaring: EffectiveId::from_digest([9_u8; 32]),

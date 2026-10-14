@@ -196,11 +196,14 @@ pub struct ClauseRunRequest {
     pub selection: ClauseRunSelection,
     /// An optional expected `package_id` (FR-098's stale package rule).
     pub expected_package_id: Option<PackageId>,
+    /// A wire caller's lowercase hex claim, kept separate from a minted
+    /// `PackageId` until it is compared with the compiled package.
+    pub expected_package_id_claim: Option<String>,
     /// The spine's stage limits.
     pub limits: SpineLimits,
     /// FR-106's observation limits.
     pub observation_limits: ObservationLimits,
-    /// The evaluation meter's accounting limits (FR-100's `work_units`).
+    /// The evaluation meter's accounting limits (FR-100's `accounting` object).
     pub accounting: ScalarLimits,
 }
 
@@ -246,7 +249,7 @@ pub enum ClauseDisposition {
     /// recompiled `package_id` differs from the request's expected one.
     StalePackage {
         /// The expected `package_id`.
-        expected: PackageId,
+        expected: String,
         /// The recompiled `package_id`.
         actual: PackageId,
     },
@@ -321,6 +324,9 @@ impl ClauseDisposition {
             Self::FrameViolation(_) => Category::Violation,
             Self::Evaluate(CallOutcome::Completed(CallValue::Boolean(false))) => {
                 Category::Violation
+            }
+            Self::Evaluate(CallOutcome::Completed(CallValue::Reference(_))) => {
+                Category::InternalFailure
             }
             Self::Evaluate(outcome) => outcome.category(),
         }
@@ -555,8 +561,12 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
     };
     let package_id = emitted.package().package_id();
     let package = checked.package();
-    if let Some(expected) = request.expected_package_id {
-        if package_id != expected {
+    if let Some(expected) = request
+        .expected_package_id
+        .map(|id| id.hex())
+        .or_else(|| request.expected_package_id_claim.clone())
+    {
+        if package_id.hex() != expected {
             return Ok(report(
                 Some(package_id),
                 ClauseDisposition::StalePackage {
@@ -1043,6 +1053,7 @@ fn run_function(
                             code: qsl_foundation::diagnostic::Code::InvalidRuntimeInput,
                             cause: "wrong-role-mapping",
                             fields,
+                            path: Vec::new(),
                         },
                     ))));
                 };

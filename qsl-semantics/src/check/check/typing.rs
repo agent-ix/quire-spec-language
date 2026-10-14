@@ -25,7 +25,8 @@ use super::{
 };
 use crate::check::family::Application;
 use crate::check::ir::{
-    CheckedBody, CheckedLiteral, Connective, Node, NodeId, NodeKind, RecordSlot, Slot, Visit,
+    CheckedBody, CheckedLiteral, Connective, IntegerDivisionOperator, Node, NodeId, NodeKind,
+    RecordSlot, Slot, Visit,
 };
 use crate::check::refusal::{CheckCause, CheckRefusal, WrongSnapshotCause};
 use crate::check::type_form::{IntegerOutsideI128, IntegerSite};
@@ -206,6 +207,7 @@ struct PeerFrame<'e, 'r> {
 /// A binary operator typed as an operand pair.
 enum PeerOperator {
     Arithmetic(ArithmeticOperator),
+    IntegerDivision(IntegerDivisionOperator),
     Ordering(OrderingOperator),
     Equality(EqualityOperator),
 }
@@ -218,6 +220,10 @@ enum PeerForm<'e, 'r> {
     Arithmetic {
         operator: ArithmeticOperator,
         hint: Option<Want<'r>>,
+        pair: Pair<'e, Node>,
+    },
+    IntegerDivision {
+        operator: IntegerDivisionOperator,
         pair: Pair<'e, Node>,
     },
     Ordering {
@@ -651,7 +657,7 @@ impl<'a> Typer<'a> {
             ExprNode::Rational(numerator, denominator) => {
                 self.rational_literal(numerator, denominator, hint.as_deref(), &location)?
             }
-            ExprNode::Name(name) => self.name(name, &location)?,
+            ExprNode::Name(name) => self.name(name, hint.as_deref(), &location)?,
             ExprNode::Let { name, value, body } => {
                 return Ok(Self::binding(
                     Branches::Inferred(hint),
@@ -805,9 +811,10 @@ impl<'a> Typer<'a> {
                 let (source, target) = (expression.at(*source), expression.at(*target));
                 // FR-104 (ADR-012 §15.2): only a state clause has an
                 // observation to traverse.
-                if !self.in_state_clause() {
-                    return Err(ineligible(&location));
-                }
+                self.model_check(
+                    super::super::state_model::Form::ReachesContext(self.in_state_clause()),
+                    &location,
+                )?;
                 let source_location = location.child(0);
                 frames.push(Frame::Reaches(Box::new(ReachesFrame {
                     edge,
@@ -1053,6 +1060,22 @@ impl<'a> Typer<'a> {
     {
         let (left_location, right_location) = (location.child(0), location.child(1));
         let peer = match operator {
+            BinaryOperator::IntegerDiv
+            | BinaryOperator::IntegerRem
+            | BinaryOperator::IntegerMod => {
+                if !self.complete_value {
+                    return Err(refuse(
+                        &location,
+                        CheckCause::ProfileProhibitedOperator(operator),
+                    ));
+                }
+                PeerOperator::IntegerDivision(match operator {
+                    BinaryOperator::IntegerDiv => IntegerDivisionOperator::Div,
+                    BinaryOperator::IntegerRem => IntegerDivisionOperator::Rem,
+                    BinaryOperator::IntegerMod => IntegerDivisionOperator::Mod,
+                    _ => return Err(ineligible(&location)),
+                })
+            }
             BinaryOperator::Add
             | BinaryOperator::Subtract
             | BinaryOperator::Multiply
@@ -1103,6 +1126,13 @@ impl<'a> Typer<'a> {
         let ((first, first_location), (second, second_location)) =
             ordered(right_first, (left, left_location), (right, right_location));
         let (form, goal) = match peer {
+            PeerOperator::IntegerDivision(operator) => (
+                PeerForm::IntegerDivision {
+                    operator,
+                    pair: Pair::First(second, second_location),
+                },
+                Goal::Infer(first, None, first_location),
+            ),
             PeerOperator::Arithmetic(operator) => (
                 PeerForm::Arithmetic {
                     operator,
@@ -1350,7 +1380,7 @@ impl<'a> Typer<'a> {
         &mut self,
         frame: Box<DispatchArgumentsFrame<'e, 'r>>,
         frames: &mut Vec<Frame<'e, 'r>>,
-    ) -> Step<'e, 'r> {
+    ) -> Result<Step<'e, 'r>, CheckRefusal> {
         let index = frame.typed.len();
         let operation = frame.operation;
         match (
@@ -1360,11 +1390,11 @@ impl<'a> Typer<'a> {
             (Some(argument), Some(parameter)) => {
                 let location = frame.location.child(index + 1);
                 frames.push(Frame::DispatchArguments(frame));
-                Step::Descend(Goal::Expect(
+                Ok(Step::Descend(Goal::Expect(
                     argument,
                     Expected::Argument(Cow::Borrowed(parameter)),
                     location,
-                ))
+                )))
             }
             _ => {
                 let DispatchArgumentsFrame {
@@ -1374,16 +1404,16 @@ impl<'a> Typer<'a> {
                     typed,
                     ..
                 } = *frame;
-                Step::Typed(node(
-                    NodeKind::Dispatch {
-                        receiver: self.push(receiver),
-                        table: operation.table,
+                let receiver = self.push(receiver);
+                self.model_node(
+                    super::super::state_model::Form::Dispatch {
+                        receiver,
                         operation: operation_index,
                         arguments: typed,
                     },
-                    operation.result.clone(),
                     &location,
-                ))
+                )
+                .map(Step::Typed)
             }
         }
     }
@@ -1471,7 +1501,7 @@ impl<'a> Typer<'a> {
             Frame::Contains(frame) => self.accept_contains(frame, typed, frames),
             Frame::Lookup(mut frame) => match frame.population.take() {
                 None => {
-                    Self::lookup_population(&typed)?;
+                    self.lookup_population(&typed)?;
                     let reference_location = frame.location.child(1);
                     let reference = frame.reference;
                     frame.population = Some(typed);
@@ -1501,7 +1531,7 @@ impl<'a> Typer<'a> {
                 let (operation_index, operation) =
                     self.dispatch_operation(&typed, member, arguments.len(), &location)?;
                 let count = arguments.len();
-                Ok(self.dispatch_arguments(
+                self.dispatch_arguments(
                     Box::new(DispatchArgumentsFrame {
                         receiver: typed,
                         operation_index,
@@ -1511,11 +1541,11 @@ impl<'a> Typer<'a> {
                         typed: Vec::with_capacity(count),
                     }),
                     frames,
-                ))
+                )
             }
             Frame::DispatchArguments(mut frame) => {
                 frame.typed.push(self.push(typed));
-                Ok(self.dispatch_arguments(frame, frames))
+                self.dispatch_arguments(frame, frames)
             }
         }
     }
@@ -1673,6 +1703,55 @@ impl<'a> Typer<'a> {
             location,
         } = *frame;
         match form {
+            PeerForm::IntegerDivision { operator, pair } => match pair {
+                Pair::First(second, second_location) => {
+                    let peer = typed.value_type.clone();
+                    frames.push(Frame::Peer(Box::new(PeerFrame {
+                        form: PeerForm::IntegerDivision {
+                            operator,
+                            pair: Pair::Second(typed),
+                        },
+                        right_first,
+                        location,
+                    })));
+                    Ok(Step::Descend(Goal::Infer(
+                        second,
+                        Some(Cow::Owned(peer)),
+                        second_location,
+                    )))
+                }
+                Pair::Second(first) => {
+                    let (left, right) = ordered(right_first, first, typed);
+                    if !is_integer(&left.value_type) || !is_integer(&right.value_type) {
+                        return Err(mismatch(&location));
+                    }
+                    let selection = match operator {
+                        IntegerDivisionOperator::Div | IntegerDivisionOperator::Rem => {
+                            Some(self.scope.integer_division.ok_or_else(|| {
+                                refuse(
+                                    &location,
+                                    CheckCause::MissingSelection {
+                                        role: crate::check::node_key::LawRole::IntegerDivision,
+                                    },
+                                )
+                            })?)
+                        }
+                        IntegerDivisionOperator::Mod => None,
+                    };
+                    let left = self.push(left);
+                    let right = self.push(right);
+                    Ok(Step::Typed(node(
+                        NodeKind::IntegerDivision {
+                            operator,
+                            selection,
+                            left,
+                            right,
+                        },
+                        ValueType::Integer,
+                        &location,
+                    )))
+                }
+            },
             PeerForm::Arithmetic {
                 operator,
                 hint,

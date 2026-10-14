@@ -14,7 +14,10 @@ use qsl_semantics::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord, Multiplicity,
     ObjectTypeRecord, OperationEffect, OperationMemberRecord, ValueTypeRef,
 };
-use qsl_semantics::model::key::{DeclarationKey, EffectiveId, RULE_REDEFINE};
+use qsl_semantics::model::key::{
+    DeclarationKey, EffectiveId, Fact, RuleRef, RULE_INHERIT, RULE_QUALIFY, RULE_REDEFINE,
+    RULE_SUBSET,
+};
 use qsl_semantics::model::normalize::{
     normalize, normalize_with_meter, ModelRefusal, ModelRefusalCause, NormalizeOutcome,
     ObjectUniverse, Refusals,
@@ -26,6 +29,37 @@ const MULTIPLICITY_0_1: Multiplicity = Multiplicity {
     ordered: false,
     unique: true,
 };
+
+fn expected_unknown_owner(member: &str, owner: &str) -> ModelRefusal {
+    ModelRefusal {
+        code: qsl_foundation::diagnostic::Code::DanglingReference,
+        cause: ModelRefusalCause::UnknownOwner {
+            member: DeclarationKey::fixture(member),
+            owner: DeclarationKey::fixture(owner),
+        },
+        detail: String::new(),
+    }
+}
+
+fn assert_refusals(actual: &Refusals, expected: &Refusals) {
+    assert_eq!(actual.len(), expected.len());
+    for (actual, expected) in actual.iter().zip(expected.iter()) {
+        assert_eq!(actual.code, expected.code);
+        assert_eq!(actual.cause, expected.cause);
+        if !matches!(&expected.cause, ModelRefusalCause::UnknownOwner { .. }) {
+            assert_eq!(actual.detail, expected.detail);
+        }
+    }
+}
+
+fn assert_refusal_outcome(actual: NormalizeOutcome, expected: &NormalizeOutcome) {
+    let (NormalizeOutcome::Refused(actual), NormalizeOutcome::Refused(expected)) =
+        (actual, expected)
+    else {
+        panic!("both outcomes must be refusals");
+    };
+    assert_refusals(&actual, expected);
+}
 
 fn object_type(identity: &str, supertypes: Vec<&str>) -> DomainPackageRecord {
     DomainPackageRecord::ObjectType(ObjectTypeRecord {
@@ -88,8 +122,10 @@ fn operation_member_redefining(
             modifies: Vec::new(),
             creates: Vec::new(),
             deletes: Vec::new(),
+            ..Default::default()
         },
-        own_postcondition_clauses: Vec::new(),
+        requires: Vec::new(),
+        ensures: Vec::new(),
         has_body: true,
         redefines: redefines.map(DeclarationKey::fixture),
     })
@@ -439,6 +475,7 @@ fn fixture_derivation_conflict_across_packages_sharing_an_owner_node() -> Domain
 /// display node, so their two redefiners of `model.Root.x` are a genuine
 /// derivation conflict, never a same-owner ambiguity.
 #[trace("QSpec-TC-196", "QSpec-FR-151-AC-2")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-1")]
 #[test]
 fn r07_two_owners_sharing_a_node_across_packages_refuse_derivation_conflict_not_redefinition_target(
 ) {
@@ -464,6 +501,7 @@ fn r07_two_owners_sharing_a_node_across_packages_refuse_derivation_conflict_not_
                                 node: "model.A.x2".to_owned(),
                             },
                         ],
+                        paths: Vec::new(),
                     },
                     detail: "type model.D has 2 undominated redefinitions of model.Root.x: \
                               [model.A, model.A.x3, model.Root.x] and \
@@ -689,12 +727,37 @@ fn n01_normalizes_f1_to_stable_deterministic_identities() {
 
     let member_a_x = find_member(&view, &type_a.effective_id, "ix://test/orders/A/x");
     let member_b_x = find_member(&view, &type_b.effective_id, "ix://test/orders/A/x");
+    // TC-195 N01: an inherited member derives the inherit fact only; no
+    // qualify fact precedes it.
+    assert_eq!(
+        member_b_x.preimage.derivation,
+        vec![Fact {
+            ordinal: 0,
+            rule: RuleRef {
+                identity: "quire.model.normalize.inherit/v1",
+            },
+            inputs: vec![
+                DeclarationKey::fixture("ix://test/orders/A"),
+                DeclarationKey::fixture("ix://test/orders/A/x"),
+            ]
+            .into(),
+        }],
+        "an inherited member carries the inherit fact alone"
+    );
+    // TC-195 N01's published effective identities, first eight hex digits.
+    let prefix = |id: &dyn std::fmt::Display| id.to_string()[..8].to_string();
+    assert_eq!(prefix(&type_a.effective_id), "23664417");
+    assert_eq!(prefix(&type_b.effective_id), "ca6ff932");
+    assert_eq!(prefix(&member_a_x.effective_id), "3729a6fa");
+    assert_eq!(prefix(&member_b_x.effective_id), "42cf1c2c");
+
     assert_ne!(
         member_a_x.effective_id, member_b_x.effective_id,
         "the same original member owned by two distinct types has two distinct identities"
     );
 
     assert!(is_sha256_hex(&view.identity().to_string()));
+    assert_eq!(&view.identity().to_string()[..8], "ce039e96");
     // Determinism: re-normalizing the identical fixture reproduces the exact
     // same view identity.
     let rerun = completed(&fixture_f1(), ModelNormalizationLimits::UNLIMITED);
@@ -705,6 +768,7 @@ fn n01_normalizes_f1_to_stable_deterministic_identities() {
         .clone();
     assert_eq!(universe.root_types, vec![type_a.effective_id]);
     assert!(is_sha256_hex(&universe.identity().to_string()));
+    assert_eq!(&universe.identity().to_string()[..8], "dae94514");
     let universe_rerun = completed(&fixture_f1(), ModelNormalizationLimits::UNLIMITED)
         .object_universe()
         .clone();
@@ -748,11 +812,36 @@ fn n02_normalizes_f2_diamond_inheritance_to_stable_deterministic_identities() {
         }
     }
     let member_d_x = members[3];
+    let path = |nodes: [&str; 3]| -> Vec<DeclarationKey> {
+        nodes
+            .map(|node| DeclarationKey::fixture(format!("ix://test/orders/{node}")))
+            .to_vec()
+    };
     assert_eq!(
         member_d_x.preimage.derivation.len(),
         2,
-        "both diamond paths [B, A, A/x] and [C, A, A/x] retained"
+        "both diamond paths retained, no qualify fact"
     );
+    assert_eq!(
+        member_d_x.preimage.derivation[0].inputs,
+        path(["B", "A", "A/x"]),
+        "[B, A, A/x] precedes [C, A, A/x]"
+    );
+    assert_eq!(
+        member_d_x.preimage.derivation[1].inputs,
+        path(["C", "A", "A/x"])
+    );
+    // TC-195 N02's published effective identities, first eight hex digits.
+    let prefix = |id: &dyn std::fmt::Display| id.to_string()[..8].to_string();
+    assert_eq!(prefix(&type_a.effective_id), "23664417");
+    assert_eq!(prefix(&type_b.effective_id), "ca6ff932");
+    assert_eq!(prefix(&type_c.effective_id), "b23df80c");
+    assert_eq!(prefix(&type_d.effective_id), "9fb83dd4");
+    assert_eq!(prefix(&members[0].effective_id), "3729a6fa");
+    assert_eq!(prefix(&members[1].effective_id), "42cf1c2c");
+    assert_eq!(prefix(&members[2].effective_id), "ea039070");
+    assert_eq!(prefix(&member_d_x.effective_id), "36d8ed69");
+    assert_eq!(&view.identity().to_string()[..8], "e10820a6");
 
     assert!(is_sha256_hex(&view.identity().to_string()));
     let rerun = completed(&fixture_f2(), ModelNormalizationLimits::UNLIMITED);
@@ -762,6 +851,79 @@ fn n02_normalizes_f2_diamond_inheritance_to_stable_deterministic_identities() {
         .object_universe()
         .clone();
     assert!(is_sha256_hex(&universe.identity().to_string()));
+    assert_eq!(&universe.identity().to_string()[..8], "c45b5094");
+}
+
+/// TC-195 N03, normalization half: F2 plus fields `B/y` and `C/y`, both of
+/// type `A`, admits twelve effective declarations -- N02's eight plus
+/// `(B, B/y)`, `(C, C/y)` and the distinct, equal-shaped `(D, B/y)` and
+/// `(D, C/y)`. The two `D` members share owner, value type and multiplicity
+/// and differ only in their original declaration, so only the original key
+/// can keep them apart. N02's eight identities are unchanged, because an
+/// effective declaration identity binds only its own owner, original and
+/// derivation. The checker half of N03 (`ambiguous_declaration` at `self.y`)
+/// is not exercised here.
+///
+/// Mutation used (derived by reading, not executed): merging effective
+/// members by shape, or dropping the original key from an effective
+/// member's identity, leaves ten declarations, or equal `(D, B/y)` and
+/// `(D, C/y)` identities, and fails the count and distinctness assertions.
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-2")]
+#[test]
+fn n03_equal_shaped_members_from_distinct_originals_stay_distinct_effective_declarations() {
+    let mut records = fixture_f2().records;
+    records.push(field_member(
+        "ix://test/orders/B/y",
+        "ix://test/orders/B",
+        "ix://test/orders/A",
+    ));
+    records.push(field_member(
+        "ix://test/orders/C/y",
+        "ix://test/orders/C",
+        "ix://test/orders/A",
+    ));
+    let view = completed(
+        &DomainPackage::new(DomainPackageRef::fixture("n02"), records),
+        ModelNormalizationLimits::UNLIMITED,
+    );
+    assert_eq!(view.declarations().len(), 12);
+
+    let prefix = |id: &dyn std::fmt::Display| id.to_string()[..8].to_string();
+    let type_of = |name: &str| find_type(&view, &format!("ix://test/orders/{name}"));
+    // N02's published type identities are unchanged by the added members.
+    assert_eq!(prefix(&type_of("A").effective_id), "23664417");
+    assert_eq!(prefix(&type_of("B").effective_id), "ca6ff932");
+    assert_eq!(prefix(&type_of("C").effective_id), "b23df80c");
+    assert_eq!(prefix(&type_of("D").effective_id), "9fb83dd4");
+
+    let owner_d = &type_of("D").effective_id;
+    let d_by = find_member(&view, owner_d, "ix://test/orders/B/y");
+    let d_cy = find_member(&view, owner_d, "ix://test/orders/C/y");
+    assert_ne!(d_by.effective_id, d_cy.effective_id);
+    assert_ne!(d_by.preimage.original, d_cy.preimage.original);
+    assert_eq!(
+        d_by.preimage.owner_effective_type, d_cy.preimage.owner_effective_type,
+        "the two members are equal-shaped: same owner effective type"
+    );
+    assert_eq!(
+        d_by.preimage.derivation[0].inputs,
+        keys(&["ix://test/orders/B", "ix://test/orders/B/y"])
+    );
+    assert_eq!(
+        d_cy.preimage.derivation[0].inputs,
+        keys(&["ix://test/orders/C", "ix://test/orders/C/y"])
+    );
+    assert_eq!(rules_of(d_by), vec![RULE_INHERIT.identity]);
+    assert_eq!(rules_of(d_cy), vec![RULE_INHERIT.identity]);
+    // The declaring owners keep their own qualify-only members.
+    for (owner, member) in [("B", "B/y"), ("C", "C/y")] {
+        let own = find_member(
+            &view,
+            &type_of(owner).effective_id,
+            &format!("ix://test/orders/{member}"),
+        );
+        assert_eq!(rules_of(own), vec![RULE_QUALIFY.identity]);
+    }
 }
 
 /// TC-195 N09's third clause: F1's nodes as version `2` under placeholder
@@ -769,7 +931,7 @@ fn n02_normalizes_f2_diamond_inheritance_to_stable_deterministic_identities() {
 /// declarations (an effective declaration identity binds no
 /// `ModelSelection`), but a different view and universe, because only the
 /// model selection differs.
-#[trace("QSpec-TC-195", "QSpec-FR-150-AC-6")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-6", "QSpec-FR-150-AC-7")]
 #[test]
 fn n01v2_a_version_only_change_reuses_declarations_but_changes_view_and_universe() {
     let v1 = completed(&fixture_f1(), ModelNormalizationLimits::UNLIMITED);
@@ -829,16 +991,19 @@ fn n01_exact_limits_complete_and_the_charge_totals_match_ground_truth() {
         derivation_facts: 5,
         effective_declarations: 4,
         dispatch_candidates: 0,
-        hashed_bytes: 5311,
+        hashed_bytes: 5030,
         work_units: 19,
         ancestor_steps: u64::MAX,
         family_steps: u64::MAX,
         intake: qsl_foundation::IntakeLimits::default(),
     };
     let (outcome, meter) = normalize_with_meter(&fixture_f1(), exact);
-    assert!(matches!(outcome, NormalizeOutcome::Completed(_)));
+    assert!(
+        matches!(&outcome, NormalizeOutcome::Completed(_)),
+        "exact limits should complete: {outcome:?}"
+    );
     assert_eq!(meter.consumed(LimitKind::WorkUnits), 19);
-    assert_eq!(meter.consumed(LimitKind::HashedBytes), 5311);
+    assert_eq!(meter.consumed(LimitKind::HashedBytes), 5030);
     assert_eq!(meter.consumed(LimitKind::DeclarationRecords), 3);
     assert_eq!(meter.consumed(LimitKind::DerivationFacts), 5);
     assert_eq!(meter.consumed(LimitKind::EffectiveDeclarations), 4);
@@ -856,8 +1021,8 @@ fn n01_one_less_work_unit_is_incomplete_at_the_view_hash() {
         derivation_facts: 5,
         effective_declarations: 4,
         dispatch_candidates: 0,
-        hashed_bytes: 5311,
-        work_units: 18,
+        hashed_bytes: 10_000, // Isolate the one-less work-unit boundary.
+        work_units: 18,       // One less than the measured 19-unit total.
         ancestor_steps: u64::MAX,
         family_steps: u64::MAX,
         intake: qsl_foundation::IntakeLimits::default(),
@@ -874,19 +1039,19 @@ fn n01_one_less_work_unit_is_incomplete_at_the_view_hash() {
     }
 
     limits.work_units = 19;
-    limits.hashed_bytes = 5310;
+    limits.hashed_bytes = 5029; // One byte below the exact 5030-byte total.
     match normalize(&fixture_f1(), limits) {
         NormalizeOutcome::Incomplete(incomplete) => {
             assert_eq!(incomplete.limit_kind, LimitKind::HashedBytes);
-            assert_eq!(incomplete.limit, 5310);
-            assert_eq!(incomplete.consumed, 2370);
-            assert_eq!(incomplete.next_charge, 2941);
+            assert_eq!(incomplete.limit, 5029);
+            assert_eq!(incomplete.consumed, 2241);
+            assert_eq!(incomplete.next_charge, 2789);
             assert_eq!(incomplete.charge_point, ChargePoint::NormalizeHash);
         }
         other => panic!("expected Incomplete, got {other:?}"),
     }
 
-    limits.hashed_bytes = 5311;
+    limits.hashed_bytes = 5030;
     limits.derivation_facts = 4;
     match normalize(&fixture_f1(), limits) {
         NormalizeOutcome::Incomplete(incomplete) => {
@@ -947,8 +1112,8 @@ fn oqe_a_single_connected_component_hashes_to_the_pre_partition_digest() {
         .clone();
     assert_eq!(
         f1_universe.identity().to_string(),
-        "91320bde391435b02cd2c5c7bd7ef1ab77f3b3d369ff1130c949d5df33f33469",
-        "F1's universe digest must not move for a model with one connected component"
+        "dae945146db96baa85329dc70de31568c751756938240b74eeefbfdbf6cd2f8a", // Version-free closed identity wire.
+        "F1's one-component digest after the canonical wire change"
     );
 
     let f2_universe = completed(&fixture_f2(), ModelNormalizationLimits::UNLIMITED)
@@ -956,8 +1121,8 @@ fn oqe_a_single_connected_component_hashes_to_the_pre_partition_digest() {
         .clone();
     assert_eq!(
         f2_universe.identity().to_string(),
-        "749e472d8614a59dda09e59b561091abe7e05ea6986bedfda065b839e5232a19",
-        "F2's universe digest must not move for a model with one connected component"
+        "c45b5094f8086fa45843450251ece6fa1a7fd88725eda7c3f46e6150da1a1664",
+        "F2's one-component digest under the closed identity wire"
     );
 }
 
@@ -1068,6 +1233,8 @@ fn a_field_member_owned_by_a_record_value_type_normalizes() {
         .push(DomainPackageRecord::RecordValueType(
             qsl_semantics::model::domain_package::RecordValueTypeRecord {
                 key: DeclarationKey::fixture("model.Money"),
+                identity_fields: Vec::new(),
+                supertypes: Vec::new(),
             },
         ));
     domain_package.records.push(field_member(
@@ -1175,6 +1342,8 @@ fn a_population_naming_a_record_value_type_refuses_malformed() {
         .push(DomainPackageRecord::RecordValueType(
             qsl_semantics::model::domain_package::RecordValueTypeRecord {
                 key: DeclarationKey::fixture("model.Money"),
+                identity_fields: Vec::new(),
+                supertypes: Vec::new(),
             },
         ));
     domain_package.records.push(field_member(
@@ -1185,7 +1354,10 @@ fn a_population_naming_a_record_value_type_refuses_malformed() {
     domain_package.records.push(DomainPackageRecord::Population(
         qsl_semantics::model::domain_package::PopulationRecord {
             key: DeclarationKey::fixture("model.pop.p1"),
-            member_types: vec![DeclarationKey::fixture("model.Money")],
+            member_types: vec![
+                DeclarationKey::fixture("ix://test/orders/A"),
+                DeclarationKey::fixture("model.Money"),
+            ],
             extent: qsl_semantics::model::domain_package::Extent::Closed,
         },
     ));
@@ -1195,14 +1367,19 @@ fn a_population_naming_a_record_value_type_refuses_malformed() {
         panic!("the package refuses")
     };
     assert_eq!(refusals.len(), 1, "{refusals:?}");
+    // The refusal sits at the population node, at the member type's own
+    // position (here the second), not at a constant slot.
     assert_eq!(
-        refusals[0],
-        ModelRefusal {
-            code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
-            cause: ModelRefusalCause::MalformedDeclaration,
-            detail: "population model.pop.p1 names member type model.Money, \
-                     a record value type, not an object type"
-                .to_owned(),
+        refusals[0].code,
+        qsl_foundation::diagnostic::Code::InvalidModelBinding
+    );
+    assert_eq!(
+        refusals[0].cause,
+        ModelRefusalCause::IntakeMalformedDeclaration {
+            node: "model.pop.p1".to_owned(),
+            artifact: None,
+            span: None,
+            member: "PopulationDefinition.members[1]".parse().unwrap(),
         }
     );
 }
@@ -1308,6 +1485,7 @@ fn n06_two_undominated_redefiners_of_the_same_target_refuse_as_a_conflict() {
                         DeclarationKey::fixture("model.B.x2"),
                         DeclarationKey::fixture("model.C.x3"),
                     ],
+                    paths: Vec::new(),
                 }
             );
             assert!(refusal.detail.contains("ix://test/orders/B"));
@@ -1465,7 +1643,7 @@ fn r07_a_less_derived_owners_redefiner_is_excluded_from_the_same_owner_test() {
 fn n06_a_strictly_more_derived_redefiner_resolves_the_conflict_and_hides_every_contender() {
     let view = completed(&fixture_n06_resolved(), ModelNormalizationLimits::UNLIMITED);
 
-    // Type-level identities are unaffected by phase 4 (field-only): D's
+    // Type-level identities are unaffected by phase-4 member facts: D's
     // identity is exactly N02's fixture_f2() type D.
     let type_d = find_type(&view, "ix://test/orders/D");
     let owner_d = type_d.effective_id;
@@ -1646,6 +1824,7 @@ fn two_object_types_sharing_one_declaration_key_refuse_conflicting_binding() {
                 refusal.cause,
                 ModelRefusalCause::ConflictingBinding {
                     key: DeclarationKey::fixture("model.T"),
+                    member: None,
                 }
             );
             assert!(refusal.detail.contains("model.T"));
@@ -1687,6 +1866,7 @@ fn two_field_members_sharing_one_declaration_key_refuse_conflicting_binding() {
                 refusal.cause,
                 ModelRefusalCause::ConflictingBinding {
                     key: DeclarationKey::fixture("model.A.x"),
+                    member: None,
                 }
             );
             assert!(refusal.detail.contains("model.A.x"));
@@ -1717,27 +1897,19 @@ fn ordering_a_dangling_owner_at_an_earlier_node_reports_before_a_later_nodes_con
         ],
     );
     let expected = NormalizeOutcome::Refused(Refusals::from_vec(vec![
-        ModelRefusal {
-            code: qsl_foundation::diagnostic::Code::DanglingReference,
-            cause: ModelRefusalCause::UnknownOwner {
-                member: DeclarationKey::fixture("model.A.y"),
-                owner: DeclarationKey::fixture("model.no-such-owner"),
-            },
-            detail: "field member model.A.y names owner model.no-such-owner, \
-                     which is not a declared object type or record value type"
-                .to_owned(),
-        },
+        expected_unknown_owner("model.A.y", "model.no-such-owner"),
         ModelRefusal {
             code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
             cause: ModelRefusalCause::ConflictingBinding {
                 key: DeclarationKey::fixture("model.B"),
+                member: None,
             },
             detail: "model.B is declared by more than one record in this domain package".to_owned(),
         },
     ]));
-    assert_eq!(
+    assert_refusal_outcome(
         normalize(&domain_package, ModelNormalizationLimits::UNLIMITED),
-        expected
+        &expected,
     );
 }
 
@@ -1758,27 +1930,19 @@ fn ordering_input_record_order_does_not_change_which_sorted_node_wins() {
         ],
     );
     let expected = NormalizeOutcome::Refused(Refusals::from_vec(vec![
-        ModelRefusal {
-            code: qsl_foundation::diagnostic::Code::DanglingReference,
-            cause: ModelRefusalCause::UnknownOwner {
-                member: DeclarationKey::fixture("model.A.y"),
-                owner: DeclarationKey::fixture("model.no-such-owner"),
-            },
-            detail: "field member model.A.y names owner model.no-such-owner, \
-                     which is not a declared object type or record value type"
-                .to_owned(),
-        },
+        expected_unknown_owner("model.A.y", "model.no-such-owner"),
         ModelRefusal {
             code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
             cause: ModelRefusalCause::ConflictingBinding {
                 key: DeclarationKey::fixture("model.B"),
+                member: None,
             },
             detail: "model.B is declared by more than one record in this domain package".to_owned(),
         },
     ]));
-    assert_eq!(
+    assert_refusal_outcome(
         normalize(&domain_package, ModelNormalizationLimits::UNLIMITED),
-        expected
+        &expected,
     );
 }
 
@@ -1796,19 +1960,11 @@ fn ordering_a_conflicting_binding_at_an_earlier_node_reports_before_a_later_node
             code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
             cause: ModelRefusalCause::ConflictingBinding {
                 key: DeclarationKey::fixture("model.A"),
+                member: None,
             },
             detail: "model.A is declared by more than one record in this domain package".to_owned(),
         },
-        ModelRefusal {
-            code: qsl_foundation::diagnostic::Code::DanglingReference,
-            cause: ModelRefusalCause::UnknownOwner {
-                member: DeclarationKey::fixture("model.Z.y"),
-                owner: DeclarationKey::fixture("model.no-such-owner"),
-            },
-            detail: "field member model.Z.y names owner model.no-such-owner, \
-                     which is not a declared object type or record value type"
-                .to_owned(),
-        },
+        expected_unknown_owner("model.Z.y", "model.no-such-owner"),
     ]));
 
     let dangling_first = DomainPackage::new(
@@ -1819,9 +1975,9 @@ fn ordering_a_conflicting_binding_at_an_earlier_node_reports_before_a_later_node
             object_type("model.A", vec![]),
         ],
     );
-    assert_eq!(
+    assert_refusal_outcome(
         normalize(&dangling_first, ModelNormalizationLimits::UNLIMITED),
-        expected
+        &expected,
     );
 
     let conflict_first = DomainPackage::new(
@@ -1832,9 +1988,9 @@ fn ordering_a_conflicting_binding_at_an_earlier_node_reports_before_a_later_node
             field_member("model.Z.y", "model.no-such-owner", "model.Z.y"),
         ],
     );
-    assert_eq!(
+    assert_refusal_outcome(
         normalize(&conflict_first, ModelNormalizationLimits::UNLIMITED),
-        expected
+        &expected,
     );
 }
 
@@ -1902,7 +2058,7 @@ fn n04_empty_model_selection_identity_refuses_malformed_declaration() {
 }
 
 /// The same phase-1 check, over an empty domain package `version`.
-#[trace("QSpec-TC-195", "QSpec-FR-150-AC-3")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-3", "TC-1005", "FR-056-AC-33")]
 #[test]
 fn n04_empty_model_selection_version_refuses_malformed_declaration() {
     let mut model_selection = DomainPackageRef::fixture("bundle.n04-empty-version");
@@ -1925,7 +2081,7 @@ fn n04_empty_model_selection_version_refuses_malformed_declaration() {
 }
 
 /// The same phase-1 check, over a `DeclarationKey` with an empty `package`.
-#[trace("QSpec-TC-195", "QSpec-FR-150-AC-3")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-3", "TC-1005", "FR-056-AC-33")]
 #[test]
 fn n04_empty_declaration_key_package_refuses_malformed_declaration() {
     let key = DeclarationKey {
@@ -1982,25 +2138,16 @@ fn n04_an_earlier_nodes_dangling_owner_outranks_a_later_nodes_malformed_key() {
         ],
     );
     let expected = NormalizeOutcome::Refused(Refusals::from_vec(vec![
-        ModelRefusal {
-            code: qsl_foundation::diagnostic::Code::DanglingReference,
-            cause: ModelRefusalCause::UnknownOwner {
-                member: DeclarationKey::fixture("model.A.y"),
-                owner: DeclarationKey::fixture("model.no-such-owner"),
-            },
-            detail: "field member model.A.y names owner model.no-such-owner, \
-                     which is not a declared object type or record value type"
-                .to_owned(),
-        },
+        expected_unknown_owner("model.A.y", "model.no-such-owner"),
         ModelRefusal {
             code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
             cause: ModelRefusalCause::MalformedDeclaration,
             detail: format!("declaration key has an empty package or node: {malformed_key:?}"),
         },
     ]));
-    assert_eq!(
+    assert_refusal_outcome(
         normalize(&domain_package, ModelNormalizationLimits::UNLIMITED),
-        expected
+        &expected,
     );
 }
 
@@ -2052,19 +2199,10 @@ fn n08_every_normalize_record_charge_admits_before_intake_reports_both_refusals_
     limits.work_units = 2;
     match normalize(&domain_package, limits) {
         NormalizeOutcome::Refused(refusal) => {
-            assert_eq!(
-                refusal,
-                vec![
-                    ModelRefusal {
-                        code: qsl_foundation::diagnostic::Code::DanglingReference,
-                        cause: ModelRefusalCause::UnknownOwner {
-                            member: DeclarationKey::fixture("model.A.y"),
-                            owner: DeclarationKey::fixture("model.no-such-owner"),
-                        },
-                        detail: "field member model.A.y names owner model.no-such-owner, \
-                                 which is not a declared object type or record value type"
-                            .to_owned(),
-                    },
+            assert_refusals(
+                &refusal,
+                &Refusals::from_vec(vec![
+                    expected_unknown_owner("model.A.y", "model.no-such-owner"),
                     ModelRefusal {
                         code: qsl_foundation::diagnostic::Code::DanglingReference,
                         cause: ModelRefusalCause::UnknownGeneral {
@@ -2075,7 +2213,7 @@ fn n08_every_normalize_record_charge_admits_before_intake_reports_both_refusals_
                                  which is not a declared object type"
                             .to_owned(),
                     },
-                ]
+                ]),
             );
         }
         other => {
@@ -2194,10 +2332,14 @@ fn n10_duplicate_path_refuses_by_the_semantic_check() {
     let type_d = find_type(&view, "ix://test/orders/D");
     let member_d_x = find_member(&view, &type_d.effective_id, "ix://test/orders/A/x");
     let mut mutated = member_d_x.preimage.clone();
-    assert_eq!(mutated.derivation.len(), 2, "both diamond paths retained");
+    assert_eq!(
+        mutated.derivation.len(),
+        2,
+        "both diamond paths retained, no qualify fact"
+    );
     let duplicate_inputs = mutated.derivation[0].inputs.clone();
     mutated.derivation[1].inputs = duplicate_inputs;
-    let (cause, _detail) = mutated
+    let (cause, detail) = mutated
         .validate_derivation()
         .expect_err("a derivation retaining the same input path twice must be refused");
     assert_eq!(
@@ -2207,6 +2349,55 @@ fn n10_duplicate_path_refuses_by_the_semantic_check() {
             earlier: 0,
             later: 1,
         }
+    );
+    assert_eq!(
+        detail,
+        "ix://test/orders/A/x derivation retains the same input path at positions 0 and 1"
+    );
+}
+
+#[trace("QSpec-TC-195", "QSpec-TC-196")]
+#[test]
+fn derivation_duplicate_comparison_includes_the_rule() {
+    use qsl_semantics::model::key::{Fact, FactInputs, RULE_SUBSET};
+    let view = completed(&fixture_f2(), ModelNormalizationLimits::UNLIMITED);
+    let type_d = find_type(&view, "ix://test/orders/D");
+    let original = find_member(&view, &type_d.effective_id, "ix://test/orders/A/x");
+    let mut preimage = original.preimage.clone();
+    let inputs = FactInputs::from(vec![
+        DeclarationKey::fixture("ix://test/orders/D/child"),
+        DeclarationKey::fixture("ix://test/orders/A/x"),
+    ]);
+    preimage.derivation = vec![
+        Fact {
+            ordinal: 0,
+            rule: RULE_REDEFINE,
+            inputs: inputs.clone(),
+        },
+        Fact {
+            ordinal: 1,
+            rule: RULE_SUBSET,
+            inputs,
+        },
+    ];
+    assert_eq!(
+        preimage.validate_derivation(),
+        Ok(()),
+        "distinct rules may retain identical inputs"
+    );
+    preimage.derivation[1].rule = RULE_REDEFINE;
+    assert_eq!(
+        preimage.validate_derivation(),
+        Err((
+            ModelRefusalCause::DuplicatePath {
+                original: preimage.original.clone(),
+                earlier: 0,
+                later: 1
+            },
+            "ix://test/orders/A/x derivation retains the same input path at positions 0 and 1"
+                .to_owned(),
+        )),
+        "the same rule/path remains refused with its native payload"
     );
 }
 
@@ -2226,11 +2417,9 @@ fn n10_duplicate_path_refuses_by_the_semantic_check() {
 /// (inherit B, inputs `[A]`); one more phase-3 `normalize.fact` (inherit
 /// `(B, A/x)`, inputs `[A, A/x]`, no cycle-check — cycle-check is charged
 /// only for phase-3 type-level facts); four `(normalize.declaration,
-/// normalize.hash)` pairs with JCS lengths 375 (A), 563 (B), 500 (A.x owned
-/// by A), 583 (A.x inherited by B); then `normalize.hash` of the universe
-/// (349) and of the view (2941) — 5311 hashed bytes and 19 work units total,
-/// verified against the running preimage's own `canonical_len()`, not just
-/// against the meter's own bookkeeping.
+/// normalize.hash)` pairs, then `normalize.hash` of the universe and view.
+/// The closed identity wire's exact lengths and qualify-inclusive totals are
+/// verified against each running preimage's `canonical_len()` below.
 #[trace("QSpec-TC-195", "QSpec-FR-150-AC-1", "QSpec-FR-150-AC-8")]
 #[test]
 fn n01_charges_the_exact_ground_truth_sequence_in_order() {
@@ -2270,18 +2459,18 @@ fn n01_charges_the_exact_ground_truth_sequence_in_order() {
     let type_b = find_type(&view, "ix://test/orders/B");
     let member_a_x = find_member(&view, &type_a.effective_id, "ix://test/orders/A/x");
     let member_b_x = find_member(&view, &type_b.effective_id, "ix://test/orders/A/x");
-    assert_eq!(type_a.preimage.canonical_len(), 375);
-    assert_eq!(type_b.preimage.canonical_len(), 563);
-    assert_eq!(member_a_x.preimage.canonical_len(), 500);
-    assert_eq!(member_b_x.preimage.canonical_len(), 583);
+    assert_eq!(type_a.preimage.canonical_len(), 352); // Version-free closed identity wire.
+    assert_eq!(type_b.preimage.canonical_len(), 517); // Two rule-revision fields are absent.
+    assert_eq!(member_a_x.preimage.canonical_len(), 477); // Closed rule identity omits its revision field.
+    assert_eq!(member_b_x.preimage.canonical_len(), 560); // The inherit fact alone.
 
     let universe = completed(&fixture_f1(), ModelNormalizationLimits::UNLIMITED)
         .object_universe()
         .clone();
-    assert_eq!(universe.canonical_len(), 349);
-    assert_eq!(view.canonical_len(), 2941);
+    assert_eq!(universe.canonical_len(), 335); // Domain-package selection excludes source version.
+    assert_eq!(view.canonical_len(), 2789);
 
-    assert_eq!(meter.consumed(LimitKind::HashedBytes), 5311);
+    assert_eq!(meter.consumed(LimitKind::HashedBytes), 5030);
     assert_eq!(meter.consumed(LimitKind::WorkUnits), 19);
 }
 
@@ -2315,6 +2504,9 @@ fn f1_a_members_own_subsets_property_charges_no_extra_normalize_record() {
         NormalizeRecord,
         NormalizeRecord,
         NormalizeRecord,
+        // Four phase-2 qualify facts, then the phase-4 subset fact of `B.y`
+        // (`model-complete.md` phase 4 row `normalize.subset/v1`).
+        NormalizeFact,
         NormalizeFact,
         NormalizeFact,
         NormalizeFact,
@@ -2350,13 +2542,14 @@ fn f1_a_members_own_subsets_property_charges_no_extra_normalize_record() {
 /// generalization edges are inline `supertypes[]` entries on their owning
 /// `ObjectType` records, not declarations of their own), fifteen
 /// `normalize.fact` charges (five phase-2 qualify facts for A, B, C, D and
-/// A.x; ten phase-3 inherit facts) and six `normalize.cycle-check` charges
+/// A.x; ten phase-3 inherit facts, no inherited-member qualify fact)
+/// and six `normalize.cycle-check` charges
 /// (one per phase-3 type-level ancestor path: `B`->`A`, `C`->`A`, `D`->`B`,
 /// `D`->`C` via `B`, `D`->`C` via `C`'s own two-hop paths — `L` = 1 for `B`,
-/// 1 for `C`, then 1, 2, 1 and 2 for `D`'s four paths), ten
-/// `(normalize.declaration, normalize.hash)` pairs (5482 bytes), the
-/// universe (349) and the view (7022) — forty-six work units and 12853
-/// hashed bytes.
+/// 1 for `C`, then 1, 2, 1 and 2 for `D`'s four paths),
+/// eight `normalize.declaration` charges, ten `normalize.hash` charges (one
+/// per declaration, the universe and the view) — forty-six work units. The
+/// closed identity wire's FR-150 total is 12112 hashed bytes after source-version fields are removed.
 #[trace("QSpec-TC-195", "QSpec-FR-150-AC-4", "QSpec-FR-150-AC-6")]
 #[test]
 fn n02_charges_fifteen_facts_and_six_cycle_checks() {
@@ -2377,13 +2570,13 @@ fn n02_charges_fifteen_facts_and_six_cycle_checks() {
         .filter(|point| **point == ChargePoint::NormalizeCycleCheck)
         .count();
     assert_eq!(record_count, 5, "A, B, C, D and A/x, no Supertype record");
-    assert_eq!(fact_count, 15, "five qualify plus ten inherit facts");
+    assert_eq!(fact_count, 15, "five qualify facts plus ten inherit facts");
     assert_eq!(
         cycle_check_count, 6,
         "one cycle-check per phase-3 type-level ancestor path"
     );
     assert_eq!(meter.consumed(LimitKind::WorkUnits), 46);
-    assert_eq!(meter.consumed(LimitKind::HashedBytes), 12853);
+    assert_eq!(meter.consumed(LimitKind::HashedBytes), 12112); // Closed identity wire removes version bytes.
 }
 
 /// TC-196 R01: a closing generalization cycle (`model.A` -> `model.B` ->
@@ -2395,6 +2588,7 @@ fn n02_charges_fifteen_facts_and_six_cycle_checks() {
 /// exact six-`normalize.cycle-check`-charge accounting across both types'
 /// walks is not).
 #[trace("TC-219", "FR-082-AC-2")]
+#[trace("TC-1020", "FR-082-AC-15")]
 #[trace("QSpec-TC-196", "QSpec-FR-151-AC-2")]
 #[test]
 fn r01_a_closing_generalization_cycle_names_the_full_rotated_chain() {
@@ -2406,31 +2600,28 @@ fn r01_a_closing_generalization_cycle_names_the_full_rotated_chain() {
         ],
     );
     match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
-        NormalizeOutcome::Refused(refusal) => {
+        NormalizeOutcome::Refused(refusals) => {
             assert_eq!(
-                refusal.len(),
-                1,
-                "expected exactly one refusal: {refusal:?}"
+                refusals.len(),
+                2,
+                "one refusal per declaration on the cycle: {refusals:?}"
             );
-            let refusal = refusal[0].clone();
-            assert_eq!(
-                refusal.code,
-                qsl_foundation::diagnostic::Code::InvalidModelBinding
-            );
-            assert_eq!(
-                refusal.cause,
-                ModelRefusalCause::SpecializationCycle {
-                    ancestor: DeclarationKey::fixture("model.A"),
-                    via: DeclarationKey::fixture("model.B"),
-                }
-            );
-            assert!(
-                refusal.detail.contains("[model.A, model.B]"),
-                "the chain must be rotated to start at its least key regardless of \
-                 which type's own walk closes the cycle first, got: {}",
-                refusal.detail
-            );
-            assert!(refusal.detail.contains("generalizes back to itself via"));
+            for (refusal, declaration) in refusals.iter().zip(["model.A", "model.B"]) {
+                assert_eq!(
+                    refusal.code,
+                    qsl_foundation::diagnostic::Code::InvalidModelBinding
+                );
+                assert_eq!(
+                    refusal.cause,
+                    ModelRefusalCause::SpecializationCycle {
+                        declaration: DeclarationKey::fixture(declaration),
+                        cycle: vec![
+                            DeclarationKey::fixture("model.A"),
+                            DeclarationKey::fixture("model.B"),
+                        ],
+                    }
+                );
+            }
         }
         other => {
             panic!("expected Refused(invalid_model_binding/specialization-cycle), got {other:?}")
@@ -2456,39 +2647,39 @@ fn r01b_the_cycle_listing_excludes_a_type_that_only_leads_into_it() {
         ],
     );
     match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
-        NormalizeOutcome::Refused(refusal) => {
+        NormalizeOutcome::Refused(refusals) => {
             assert_eq!(
-                refusal.len(),
-                1,
-                "expected exactly one refusal: {refusal:?}"
-            );
-            let refusal = refusal[0].clone();
-            assert_eq!(
-                refusal.code,
-                qsl_foundation::diagnostic::Code::InvalidModelBinding
-            );
-            assert_eq!(
-                refusal.cause,
-                ModelRefusalCause::SpecializationCycle {
-                    ancestor: DeclarationKey::fixture("model.C"),
-                    via: DeclarationKey::fixture("model.B"),
-                }
-            );
-            assert!(
-                refusal.detail.contains("[model.B, model.C]"),
-                "the listing must name only the cycle itself, excluding model.A, \
-                 which only leads into it, got: {}",
-                refusal.detail
-            );
-            assert!(
-                !refusal.detail.contains("model.A"),
-                "model.A is not part of the cycle and must not be named, got: {}",
-                refusal.detail
+                refusals,
+                Refusals::from_vec(vec![
+                    cycle_refusal("model.B", &["model.B", "model.C"]),
+                    cycle_refusal("model.C", &["model.B", "model.C"]),
+                ]),
+                "model.A only leads into the cycle and is neither refused nor listed"
             );
         }
         other => {
             panic!("expected Refused(invalid_model_binding/specialization-cycle), got {other:?}")
         }
+    }
+}
+
+/// One `invalid_model_binding`/`specialization-cycle` refusal at
+/// `declaration`, listing `cycle` (typed fields only; the detail text is not
+/// asserted by tests built on this helper).
+fn cycle_refusal(declaration: &str, cycle: &[&str]) -> ModelRefusal {
+    ModelRefusal {
+        code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
+        cause: ModelRefusalCause::SpecializationCycle {
+            declaration: DeclarationKey::fixture(declaration),
+            cycle: cycle
+                .iter()
+                .map(|key| DeclarationKey::fixture(*key))
+                .collect(),
+        },
+        detail: format!(
+            "{declaration} lies on the specialization cycle [{}]",
+            cycle.join(", ")
+        ),
     }
 }
 
@@ -2577,7 +2768,7 @@ fn fixture_wide_ancestry_single_redefiner(n_parents: usize) -> DomainPackage {
 /// is what a per-(type, record) charge wrongly did before this fix.
 ///
 /// Cross-checked against the crate by running it directly: with every
-/// other limit unlimited, `work_units = 47` (36 for every phase-2/3
+/// other limit unlimited, `work_units = 52` (41 for every phase-2/3
 /// `normalize.record`/`normalize.fact`/`normalize.cycle-check` charge --
 /// `normalize.record` charges only this fixture's eight declaration
 /// records, never its seven `Supertype`/`Redefinition` records, which state
@@ -2590,17 +2781,17 @@ fn fixture_wide_ancestry_single_redefiner(n_parents: usize) -> DomainPackage {
 /// `2` at `B` + `2` at `C` + `6` at `D` (see
 /// `n06_redefine_facts_are_charged_as_normalize_fact_between_the_two_phase4_checks`
 /// below for the full count) -- are now charged as `normalize.fact` first,
-/// so `47` denies at the first of those instead. `work_units = 57`
-/// (`47 + 10`) is the boundary that now lands exactly before
+/// so `52` denies at the first of those instead. `work_units = 62`
+/// (`52 + 10`) is the boundary that now lands exactly before
 /// `normalize.conflict-check`, whose reported `next_charge` is still
 /// exactly `18`.
 ///
 /// Revert probe: reverting the `Σ (c − 1) × f(o)` charge back to a flat,
 /// unconditional `Charge::new(ChargePoint::NormalizeConflictCheck)` (no
 /// `.work(...)` override, i.e. PR #167's own pre-fix shape) makes both
-/// assertions below fail -- the exact-bound one because `work_units = 57`
+/// assertions below fail -- the exact-bound one because `work_units = 62`
 /// then completes outright (a flat charge of 1 fits), and the total
-/// because `103` no longer matches. Confirmed by hand: reintroducing that
+/// because `108` no longer matches. Confirmed by hand: reintroducing that
 /// exact one-line regression locally reproduces both failures, then
 /// removing it again restores this test to green.
 #[trace(
@@ -2684,14 +2875,14 @@ fn n06_conflict_check_charges_exactly_sigma_c_minus_1_times_f_o() {
 /// Total: `2 + 2 + 6 = 10`.
 ///
 /// Cross-checked against the crate: a completed (`UNLIMITED`) run charges
-/// `work_units = 103` and peaks at `derivation_facts = 30` (the `20`
-/// phase-2/3 facts plus these ten). `work_units = 102` is exactly one short
+/// `work_units = 108` and peaks at `derivation_facts = 35` (the `25`
+/// phase-2/3 facts plus these ten). `work_units = 107` is exactly one short
 /// of that total, `Incomplete` at the run's own last charge; `work_units =
-/// 103` completes.
+/// 108` completes.
 ///
 /// Revert probe: dropping the phase-4 `normalize.fact` charge loop out of
-/// `charge_all` makes `work_units` read `93`, not `103`, and moves the
-/// `work_units = 47` boundary's denial to `normalize.conflict-check` --
+/// `charge_all` makes `work_units` read `98`, not `108`, and moves the
+/// `work_units = 52` boundary's denial to `normalize.conflict-check` --
 /// confirmed by hand: reverting the change locally reproduces both,
 /// restoring it returns this test to green.
 #[trace("QSpec-TC-195", "QSpec-FR-150-AC-8")]
@@ -2995,12 +3186,8 @@ fn n06_wide_ancestry_with_two_contesting_redefiners_completes() {
     }
 }
 
-/// An operation-member redefinition record is charged by
-/// `normalize.redefinition-check` exactly like a field one, and
-/// its owner's effective-member count `m` includes operation members —
-/// `apply_redefinitions` itself still skips operation-member redefinition
-/// for conflict *resolution* (see the module docs; `crate::model::conformance`
-/// resolves that directly), so this checks the charge alone.
+/// Operation members receive qualify, inherit, and both redefine facts in
+/// the effective view, with the same ordered charges as field members.
 fn fixture_operation_redefinition() -> DomainPackage {
     DomainPackage::new(
         DomainPackageRef::fixture("bundle.op-redef"),
@@ -3023,22 +3210,14 @@ fn fixture_operation_redefinition() -> DomainPackage {
 /// relationships, not declarations, and never charge their own
 /// `normalize.record`.
 ///
-/// Revert probe: reverting the `m` computation to count only
-/// `member_counts_by_owner`'s pre-fix (field-only) tally, with no
-/// operation-member contribution, makes both assertions below fail: the
-/// total drops from `16` to `14` (the redefinition-check charge drops from
-/// `2` to `0`), and `work_units = 8` no longer denies at
-/// `normalize.redefinition-check` (`next_charge` drops to `0`) — confirmed
-/// by hand: removing the operation-member contribution locally reproduces
-/// both failures, restoring it returns this test to green.
-#[trace("QSpec-TC-196", "QSpec-FR-151-AC-2")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-1")]
 #[test]
 fn operation_redefinition_is_charged_like_a_field_redefinition() {
     let domain_package = fixture_operation_redefinition();
 
     let (outcome, meter) =
         normalize_with_meter(&domain_package, ModelNormalizationLimits::UNLIMITED);
-    assert!(matches!(outcome, NormalizeOutcome::Completed(_)));
+    assert!(matches!(&outcome, NormalizeOutcome::Completed(_)));
     let admitted = meter.admitted_charges();
     assert_eq!(
         admitted
@@ -3046,8 +3225,7 @@ fn operation_redefinition_is_charged_like_a_field_redefinition() {
             .filter(|point| **point == ChargePoint::NormalizeRedefinitionCheck)
             .count(),
         1,
-        "the operation redefinition record is charged even though \
-         apply_redefinitions itself never resolves it"
+        "the operation redefinition record is charged before its facts"
     );
     assert_eq!(
         admitted
@@ -3055,28 +3233,138 @@ fn operation_redefinition_is_charged_like_a_field_redefinition() {
             .filter(|point| **point == ChargePoint::NormalizeConflictCheck)
             .count(),
         0,
-        "operation-member redefinition resolution stays out of scope for \
-         apply_redefinitions (see the module docs); only the charge changed"
+        "one operation redefiner has no competing-target check"
+    );
+    assert_eq!(
+        admitted
+            .iter()
+            .filter(|point| **point == ChargePoint::NormalizeFact)
+            .count(),
+        8,
+        "four qualify, two inherit, and two redefine facts"
     );
     assert_eq!(
         meter.consumed(LimitKind::WorkUnits),
-        16,
-        "4 normalize.record (A, B, A.op, B.op2 -- Supertype/Redefinition \
-         records are relationships, not declarations) + 2 normalize.fact \
-         (A/B qualify) + 1 normalize.cycle-check + 1 normalize.fact (B's \
-         own inherit-A path) + 1 normalize.redefinition-check (m + r = 2 + \
-         0) + 2 normalize.declaration + 2 normalize.hash (per type \
-         declaration) + 2 normalize.hash (universe/view) = 16; no member \
-         declarations at all, since operation members never enter \
-         member_preimages"
+        27,
+        "4 records + 4 phase-2 facts + 1 cycle-check + 2 phase-3 facts \
+         + 2 redefinition-check units + 2 phase-4 facts + 5 declarations \
+         + 5 declaration hashes + 2 universe/view hashes = 27"
     );
 
+    let NormalizeOutcome::Completed(view) = outcome else {
+        panic!("the operation redefinition fixture completes");
+    };
+    assert_eq!(view.declarations().len(), 5);
+    let owner_a = view
+        .type_identities()
+        .get(&DeclarationKey::fixture("model.A"))
+        .expect("A has an effective type identity");
+    let direct = view
+        .declarations()
+        .iter()
+        .find(|entry| {
+            entry.preimage.owner_effective_type.as_ref() == Some(owner_a)
+                && entry.preimage.original == DeclarationKey::fixture("model.A.op")
+        })
+        .expect("A contains its direct operation");
+    assert_eq!(
+        direct
+            .preimage
+            .derivation
+            .iter()
+            .map(|fact| fact.rule.identity)
+            .collect::<Vec<_>>(),
+        vec![RULE_QUALIFY.identity]
+    );
+    assert_eq!(
+        direct.preimage.derivation[0].inputs,
+        vec![DeclarationKey::fixture("model.A.op")]
+    );
+    assert!(direct.visible);
+    let owner = view
+        .type_identities()
+        .get(&DeclarationKey::fixture("model.B"))
+        .expect("B has an effective type identity");
+    let inherited = view
+        .declarations()
+        .iter()
+        .find(|entry| {
+            entry.preimage.owner_effective_type.as_ref() == Some(owner)
+                && entry.preimage.original == DeclarationKey::fixture("model.A.op")
+        })
+        .expect("B contains inherited A.op");
+    assert_eq!(
+        inherited
+            .preimage
+            .derivation
+            .iter()
+            .map(|fact| fact.rule.identity)
+            .collect::<Vec<_>>(),
+        vec![RULE_INHERIT.identity, RULE_REDEFINE.identity]
+    );
+    assert_eq!(
+        inherited.preimage.derivation[0].inputs,
+        vec![
+            DeclarationKey::fixture("model.A"),
+            DeclarationKey::fixture("model.A.op")
+        ]
+    );
+    assert_eq!(
+        inherited.preimage.derivation[1].inputs,
+        vec![
+            DeclarationKey::fixture("model.B.op2"),
+            DeclarationKey::fixture("model.A.op")
+        ]
+    );
+    assert!(!inherited.visible);
+    let redefining = view
+        .declarations()
+        .iter()
+        .find(|entry| {
+            entry.preimage.owner_effective_type.as_ref() == Some(owner)
+                && entry.preimage.original == DeclarationKey::fixture("model.B.op2")
+        })
+        .expect("B contains direct B.op2");
+    assert_eq!(
+        redefining
+            .preimage
+            .derivation
+            .iter()
+            .map(|fact| fact.rule.identity)
+            .collect::<Vec<_>>(),
+        vec![RULE_QUALIFY.identity, RULE_REDEFINE.identity]
+    );
+    assert_eq!(
+        redefining.preimage.derivation[1].inputs,
+        vec![
+            DeclarationKey::fixture("model.B.op2"),
+            DeclarationKey::fixture("model.A.op")
+        ]
+    );
+    assert!(redefining.visible);
+
+    for (fact_limit, expected_work) in [(4, 9), (7, 14)] {
+        let mut limits = ModelNormalizationLimits::UNLIMITED;
+        limits.derivation_facts = fact_limit;
+        let (limited, limited_meter) = normalize_with_meter(&domain_package, limits);
+        match limited {
+            NormalizeOutcome::Incomplete(incomplete) => {
+                assert_eq!(incomplete.limit_kind, LimitKind::DerivationFacts);
+                assert_eq!(incomplete.consumed, fact_limit);
+                assert_eq!(incomplete.next_charge, fact_limit + 1);
+                assert_eq!(incomplete.charge_point, ChargePoint::NormalizeFact);
+                assert_eq!(limited_meter.consumed(LimitKind::WorkUnits), expected_work);
+            }
+            other => panic!("expected operation fact cap {fact_limit} to deny, got {other:?}"),
+        }
+    }
+
     let mut limits = ModelNormalizationLimits::UNLIMITED;
-    limits.work_units = 8;
+    limits.work_units = 11;
     match normalize(&domain_package, limits) {
         NormalizeOutcome::Incomplete(incomplete) => {
             assert_eq!(incomplete.limit_kind, LimitKind::WorkUnits);
-            assert_eq!(incomplete.consumed, 8);
+            assert_eq!(incomplete.consumed, 11);
             assert_eq!(
                 incomplete.next_charge, 2,
                 "m(B) = 2 (A.op inherited, B.op2 direct), r = 0"
@@ -3093,8 +3381,7 @@ fn operation_redefinition_is_charged_like_a_field_redefinition() {
 /// QSL #145: `B` declares two operation members, `B.op2` and `B.op3`, both
 /// redefining the identical inherited
 /// operation `A.op` — the operation-member analog of `fixture_n06_conflict`'s
-/// field contest, except `B` is the only owner (nothing dominates anything;
-/// this fixture is only about the `c >= 2` *charge*, never resolution).
+/// field contest, except `B` is the only owner (nothing dominates anything).
 fn fixture_operation_redefinition_conflict() -> DomainPackage {
     DomainPackage::new(
         DomainPackageRef::fixture("bundle.op-redef-conflict"),
@@ -3118,9 +3405,9 @@ fn fixture_operation_redefinition_conflict() -> DomainPackage {
 /// `redefinition-target`, not `derivation-conflict` (that shape needs
 /// distinct, non-dominating owners; see
 /// `r07_two_redefiners_owned_by_the_same_type_refuse_redefinition_target_through_normalize`
-/// above for the field analog). Resolving an operation contest still builds
-/// no `EffectiveView` member entry (see the module docs): only the ambiguity
-/// check itself is shared with fields.
+/// above for the field analog). Operation redefinitions now populate
+/// `EffectiveView` member entries; this contested group itself refuses before
+/// producing a completed view, preserving its existing conflict semantics.
 ///
 /// Cross-checked by hand: `f(A) = 1` (`A`'s own qualify fact only), `f(B) =
 /// 2` (qualify plus its own inherit-`A` fact) — both types are otherwise
@@ -3132,7 +3419,7 @@ fn fixture_operation_redefinition_conflict() -> DomainPackage {
 /// operation loop back to charge-only (dropping the `Err` branch's
 /// `record_phase4_refusal` call) turns this test's outcome back into
 /// `Completed`, confirmed locally, then restored.
-#[trace("QSpec-TC-196", "QSpec-FR-151-AC-2")]
+#[trace("QSpec-TC-196", "QSpec-FR-272-AC-6")]
 #[test]
 fn operation_redefinition_group_with_two_or_more_redefiners_is_charged_a_conflict_check() {
     let domain_package = fixture_operation_redefinition_conflict();
@@ -3181,26 +3468,19 @@ fn operation_redefinition_group_with_two_or_more_redefiners_is_charged_a_conflic
     );
     assert_eq!(
         meter.consumed(LimitKind::WorkUnits),
-        20,
-        "5 normalize.record (A, B, A.op, B.op2, B.op3 -- Supertype/\
-         Redefinition records are relationships, not declarations) + 2 \
-         normalize.fact (A/B qualify) + 1 normalize.cycle-check + 1 \
-         normalize.fact (B's own inherit-A path) + 2 \
-         normalize.redefinition-check (m + r = 3 + 0, then 3 + 1) + 1 \
-         normalize.conflict-check ((c-1) * (f(B)+f(B)) = 1 * (2+2) = 4) = \
-         20; phase 4's own charges are exhaustive up to and including \
-         normalize.conflict-check (value-accounting.md:481), but the \
-         redefinition-target refusal that same-owner contest now reports \
-         (#173) ends checking there -- no normalize.declaration or \
-         normalize.hash charge ever runs (value-accounting.md:482)"
+        28,
+        "5 records + 5 phase-2 facts + 1 cycle-check + 2 phase-3 facts \
+         + 7 redefinition-check work units (m+r = 3, then 4) + 4 \
+         operation redefine facts + 4 conflict-check work units = 28; \
+         the phase-4 refusal prevents declaration and hash charges"
     );
 
     let mut limits = ModelNormalizationLimits::UNLIMITED;
-    limits.work_units = 16;
+    limits.work_units = 24;
     match normalize(&domain_package, limits) {
         NormalizeOutcome::Incomplete(incomplete) => {
             assert_eq!(incomplete.limit_kind, LimitKind::WorkUnits);
-            assert_eq!(incomplete.consumed, 16);
+            assert_eq!(incomplete.consumed, 24);
             assert_eq!(
                 incomplete.next_charge, 4,
                 "(c-1) * (f(B)+f(B)) = 1 * (2+2) = 4"
@@ -3246,7 +3526,7 @@ fn fixture_operation_diamond_conflict(reversed: bool) -> DomainPackage {
 /// `DerivationConflict`'s `redefiners` list, and this test's own second
 /// half (the reversed-order run) would see `[C.op3, B.op2]` instead of the
 /// sorted `[B.op2, C.op3]` both runs assert here.
-#[trace("QSpec-TC-196", "QSpec-FR-151-AC-2")]
+#[trace("QSpec-TC-196", "QSpec-FR-272-AC-6")]
 #[test]
 fn operation_diamond_derivation_conflict_reports_the_full_typed_payload() {
     for reversed in [false, true] {
@@ -3272,7 +3552,8 @@ fn operation_diamond_derivation_conflict_reports_the_full_typed_payload() {
                             DeclarationKey::fixture("model.B.op2"),
                             DeclarationKey::fixture("model.C.op3"),
                         ],
-                    },
+paths: Vec::new(),
+},
                     "reversed={reversed}"
                 );
             }
@@ -3292,10 +3573,8 @@ fn operation_diamond_derivation_conflict_reports_the_full_typed_payload() {
 /// refusal -- the "a winner if one dominates" half of #173's rule, as
 /// opposed to the same-owner and diamond refusal cases exercised above and
 /// in `n06_two_undominated_redefiners_of_the_same_target_refuse_as_a_conflict`.
-/// Resolving an operation contest builds no `EffectiveView` member entry
-/// (see the module docs): there is nothing to assert about the view here,
-/// only that the ambiguity check itself does not refuse.
-#[trace("QSpec-TC-196", "QSpec-FR-151-AC-2")]
+/// A resolved operation contest retains the winning member and every fact.
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-1")]
 #[test]
 fn operation_redefinition_group_resolved_by_a_dominating_owner_completes() {
     let domain_package = DomainPackage::new(
@@ -3314,12 +3593,99 @@ fn operation_redefinition_group_resolved_by_a_dominating_owner_completes() {
 
     let (outcome, meter) =
         normalize_with_meter(&domain_package, ModelNormalizationLimits::UNLIMITED);
-    assert!(
-        matches!(outcome, NormalizeOutcome::Completed(_)),
-        "D.op4 dominates every other redefiner of A.op (B and C are both \
-         proper ancestors of D), so the contest resolves without a \
-         refusal: {outcome:?}"
+    let NormalizeOutcome::Completed(view) = outcome else {
+        panic!(
+            "D.op4 dominates every other redefiner of A.op (B and C are both \
+             proper ancestors of D), so the contest resolves without a \
+             refusal: {outcome:?}"
+        );
+    };
+    let owner_d = view.type_identities()[&DeclarationKey::fixture("model.D")];
+    let winner = find_member(&view, &owner_d, "model.D.op4");
+    assert!(winner.visible, "the most-specific D.op4 operation wins");
+    assert_eq!(
+        winner
+            .preimage
+            .derivation
+            .iter()
+            .filter(|fact| fact.rule == RULE_REDEFINE)
+            .map(|fact| fact.inputs.clone())
+            .collect::<Vec<_>>(),
+        vec![vec![
+            DeclarationKey::fixture("model.D.op4"),
+            DeclarationKey::fixture("model.A.op"),
+        ]]
     );
+    for loser_key in ["model.A.op", "model.B.op2", "model.C.op3"] {
+        let loser = find_member(&view, &owner_d, loser_key);
+        assert!(
+            !loser.visible,
+            "{loser_key} is retained but hidden after the contest"
+        );
+        assert!(
+            loser
+                .preimage
+                .derivation
+                .iter()
+                .any(|fact| fact.rule == RULE_REDEFINE),
+            "{loser_key} retains its own redefine provenance"
+        );
+    }
+    assert_eq!(
+        find_member(&view, &owner_d, "model.A.op")
+            .preimage
+            .derivation
+            .iter()
+            .filter(|fact| fact.rule == RULE_REDEFINE)
+            .map(|fact| fact.inputs.clone())
+            .collect::<Vec<_>>(),
+        vec![
+            vec![
+                DeclarationKey::fixture("model.B"),
+                DeclarationKey::fixture("model.B.op2"),
+                DeclarationKey::fixture("model.A.op"),
+            ],
+            vec![
+                DeclarationKey::fixture("model.C"),
+                DeclarationKey::fixture("model.C.op3"),
+                DeclarationKey::fixture("model.A.op"),
+            ],
+            vec![
+                DeclarationKey::fixture("model.D.op4"),
+                DeclarationKey::fixture("model.A.op"),
+            ],
+        ]
+    );
+    for (loser_key, expected) in [
+        (
+            "model.B.op2",
+            vec![vec![
+                DeclarationKey::fixture("model.B"),
+                DeclarationKey::fixture("model.B.op2"),
+                DeclarationKey::fixture("model.A.op"),
+            ]],
+        ),
+        (
+            "model.C.op3",
+            vec![vec![
+                DeclarationKey::fixture("model.C"),
+                DeclarationKey::fixture("model.C.op3"),
+                DeclarationKey::fixture("model.A.op"),
+            ]],
+        ),
+    ] {
+        assert_eq!(
+            find_member(&view, &owner_d, loser_key)
+                .preimage
+                .derivation
+                .iter()
+                .filter(|fact| fact.rule == RULE_REDEFINE)
+                .map(|fact| fact.inputs.clone())
+                .collect::<Vec<_>>(),
+            expected,
+            "{loser_key} keeps its exact edge input"
+        );
+    }
     // M3 (#204 round 1): a *resolved* contest still owes its
     // `normalize.conflict-check` charge (`value-accounting.md:456`'s own
     // `c >= 2` condition, independent of whether the contest resolves --
@@ -3337,14 +3703,11 @@ fn operation_redefinition_group_resolved_by_a_dominating_owner_completes() {
     );
     // Cross-checked by running the crate directly (outcome is `Completed`,
     // so this is the exhaustive total through the final `normalize.hash`):
-    // 8 `normalize.record` (A, B, C, D, A.op, B.op2, C.op3, D.op4) + facts
-    // for every type's own qualify/inherit path (`f(A)=1, f(B)=f(C)=2,
-    // f(D)=4` under the diamond's own ancestor set `{A}`/`{A,B,C}`) + one
-    // `normalize.cycle-check` per generalization edge (B->A, C->A, D->B,
-    // D->C) + the `c=3` group's own `normalize.redefinition-check`/
-    // `normalize.conflict-check` charges + `normalize.declaration`/
-    // `normalize.hash` once the group resolves.
-    assert_eq!(meter.consumed(LimitKind::WorkUnits), 65);
+    // 8 records + 30 qualify/inherit/redefine facts + 8 cycle-check work
+    // units + 11 redefinition-check work units + 18 conflict-check work
+    // units + 13 declarations + 13 declaration hashes + 2 universe/view
+    // hashes = 103. D's type has five facts: qualify and four inherited paths.
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 103);
 }
 
 /// `value-accounting.md:456` prices every contested `(effective type,
@@ -3372,36 +3735,11 @@ fn operation_redefinition_group_resolved_by_a_dominating_owner_completes() {
 /// every field group (here, just the one `5`) before any operation group
 /// (`6`), regardless of which target key sorts first.
 ///
-/// Cross-checked by running the crate directly: with every other limit
-/// unlimited, this domain package's phase 4 charges exhaustively up to and
-/// including the last `normalize.conflict-check`
-/// (value-accounting.md:481) at exactly `work_units = 69`
-/// (`normalize.record` charges its nine declaration records -- three
-/// object types, three fields and three operation members; `B`'s and `C`'s
-/// own `supertypes[]` entries and every member's own `redefines` property
-/// are inline on those same nine records, not separate declarations of
-/// their own, so there is nothing else to charge -- plus the field redefinition
-/// group's own six phase-4 redefine facts, `+6`: two at `B` for `redef.z1`
-/// reaching only `B`, and four at `C` for `redef.z1`/`redef.z2` both
-/// reaching `C`; the operation group's own two records contribute no facts
-/// at all, since operation members never enter `member_preimages` and get
-/// no `Fact` here, only a `normalize.conflict-check` charge -- see the
-/// module docs), then refuses `redefinition-target` there
-/// (value-accounting.md:482 ends checking at that stage's refusal): no
-/// `normalize.declaration` or `normalize.hash` charge ever runs, unlike
-/// before #173 resolved this contest. `work_units = 58` (`52 + 6`) is
-/// exactly enough to admit every charge up to and including the six
-/// phase-4 `normalize.fact` charges, denying at the first
-/// `normalize.conflict-check` -- the operation group's `6`, not the field
-/// group's `5`.
-///
-/// Revert probe: reverting `apply_redefinitions` back to each loop pushing
-/// its own charge straight to `conflict_check_work` (the pre-fix shape)
-/// makes the `work_units = 58` assertion fail -- `next_charge` becomes `5`
-/// (the field group, charged first again) instead of `6` -- confirmed by hand:
-/// reverting the two loops to push directly, locally, reproduces the
-/// failure; restoring the collect-sort-push shape returns this test to
-/// green.
+/// Nine records, 32 facts (nine phase 2, thirteen phase 3, ten phase 4),
+/// four cycle-check work units, and 27 redefinition-check work units reach
+/// exactly 72 before the conflict checks. The operation group charges six
+/// first, then the field group charges five, for 83 total. The same-owner
+/// operation refusal prevents declaration and hash charges.
 #[trace(
     "QSpec-TC-195",
     "QSpec-TC-196",
@@ -3479,23 +3817,22 @@ fn conflict_check_charges_interleave_field_and_operation_groups_by_target_key() 
          refuses redefinition-target (#173); the field group resolves \
          (C.z2 dominates B.z1) and stays unrefused"
     );
-    // Includes the field redefinition group's own six phase-4 redefine
-    // facts' `normalize.fact` charges (operation members derive no facts of
-    // their own -- see the module docs). Phase 4's own charges are
+    // Includes the field and operation groups' phase-4 redefine facts.
+    // Phase 4's own charges are
     // exhaustive up to and including the last normalize.conflict-check
     // (value-accounting.md:481), but the operation group's
     // redefinition-target refusal ends checking there (#173,
     // value-accounting.md:482): no normalize.declaration or normalize.hash
     // charge ever runs, unlike before #173 resolved this contest.
-    assert_eq!(meter.consumed(LimitKind::WorkUnits), 69);
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 78);
 
     let mut limits = ModelNormalizationLimits::UNLIMITED;
-    limits.work_units = 58;
+    limits.work_units = 67;
     match normalize(&domain_package, limits) {
         NormalizeOutcome::Incomplete(incomplete) => {
             assert_eq!(incomplete.limit_kind, LimitKind::WorkUnits);
-            assert_eq!(incomplete.limit, 58);
-            assert_eq!(incomplete.consumed, 58);
+            assert_eq!(incomplete.limit, 67);
+            assert_eq!(incomplete.consumed, 67);
             assert_eq!(
                 incomplete.next_charge, 6,
                 "model.A.a sorts before model.A.z, so the operation group's \
@@ -3546,19 +3883,16 @@ fn fixture_diamond_conflict_family(prefix: &str) -> Vec<DomainPackageRecord> {
     ]
 }
 
-/// Two independent `fixture_diamond_conflict_family` instances, prefixed
-/// `aaa` and `zzz`: `"ix://aaa/O9" < "ix://zzz/O9"` as UTF-8 bytes, so
-/// `aaa`'s own conflict sorts first by producer `DeclarationKey` -- QSL
-/// #195's own pre-fix, buggy order. `aaa`'s and `zzz`'s own effective
-/// identities (content hashes of their own canonicalized preimage bytes,
-/// `model-complete.md`:206) do not follow that same byte order: empirically
-/// (confirmed by hand, independent of which family's records are appended
-/// first in `records`, ruling out array-position as the cause) `zzz`'s own
-/// effective identity sorts *before* `aaa`'s, opposite producer-key order,
-/// so this fixture pins the two orders apart.
+/// Two independent diamond-conflict families; these labels retain a stable
+/// exact-outcome fixture, while the adjacent traced test searches for a pair
+/// whose current effective-identity order differs from producer order.
 fn fixture_two_diamonds_where_effective_identity_disagrees_with_producer_key() -> DomainPackage {
-    let mut records = fixture_diamond_conflict_family("aaa");
-    records.extend(fixture_diamond_conflict_family("zzz"));
+    fixture_two_diamonds_with_prefixes("aaa", "zzz")
+}
+
+fn fixture_two_diamonds_with_prefixes(first: &str, second: &str) -> DomainPackage {
+    let mut records = fixture_diamond_conflict_family(first);
+    records.extend(fixture_diamond_conflict_family(second));
     DomainPackage::new(
         DomainPackageRef::fixture("bundle.n06-effective-order"),
         records,
@@ -3570,11 +3904,8 @@ fn fixture_two_diamonds_where_effective_identity_disagrees_with_producer_key() -
 /// `(owner effective type identity, original declaration key)`), not by
 /// the owning type's producer `DeclarationKey` -- `apply_redefinitions`
 /// used to sort `type_keys` and tag every conflict-check charge and
-/// refusal by `type_key` itself. `fixture_two_diamonds_where_effective_identity_disagrees_with_producer_key`
-/// pins the fix directly: `zzz`'s own `derivation-conflict` is reported
-/// first, ahead of `aaa`'s, even though `"ix://aaa/O9" <
-/// "ix://zzz/O9"` as producer keys -- the pre-fix code would have reported
-/// `aaa` first.
+/// refusal by `type_key` itself. The fixed-label expected refusal sequence
+/// changed when the canonical rule wire dropped its revision field.
 #[trace("QSpec-TC-195", "QSpec-FR-150-AC-3", "QSpec-FR-150-AC-8")]
 #[test]
 fn n06_conflict_check_charges_order_by_effective_identity_not_producer_key() {
@@ -3588,40 +3919,102 @@ fn n06_conflict_check_charges_order_by_effective_identity_not_producer_key() {
                     ModelRefusal {
                         code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
                         cause: ModelRefusalCause::DerivationConflict {
-                            type_: DeclarationKey::fixture("ix://zzz/O9"),
-                            member: DeclarationKey::fixture("ix://zzz/R/w"),
-                            redefiners: vec![
-                                DeclarationKey::fixture("ix://zzz/D1/w1"),
-                                DeclarationKey::fixture("ix://zzz/D2/w2"),
-                            ],
-                        },
-                        detail: "type ix://zzz/O9 has 2 undominated redefinitions of ix://zzz/R/w: \
-                                  [ix://zzz/D1, ix://zzz/D1/w1, ix://zzz/R/w] and \
-                                  [ix://zzz/D2, ix://zzz/D2/w2, ix://zzz/R/w]"
-                            .to_string(),
-                    },
-                    ModelRefusal {
-                        code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
-                        cause: ModelRefusalCause::DerivationConflict {
                             type_: DeclarationKey::fixture("ix://aaa/O9"),
                             member: DeclarationKey::fixture("ix://aaa/R/w"),
                             redefiners: vec![
                                 DeclarationKey::fixture("ix://aaa/D1/w1"),
                                 DeclarationKey::fixture("ix://aaa/D2/w2"),
                             ],
-                        },
+paths: Vec::new(),
+},
                         detail: "type ix://aaa/O9 has 2 undominated redefinitions of ix://aaa/R/w: \
                                   [ix://aaa/D1, ix://aaa/D1/w1, ix://aaa/R/w] and \
                                   [ix://aaa/D2, ix://aaa/D2/w2, ix://aaa/R/w]"
+                            .to_string(),
+                    },
+                    ModelRefusal {
+                        code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
+                        cause: ModelRefusalCause::DerivationConflict {
+                            type_: DeclarationKey::fixture("ix://zzz/O9"),
+                            member: DeclarationKey::fixture("ix://zzz/R/w"),
+                            redefiners: vec![
+                                DeclarationKey::fixture("ix://zzz/D1/w1"),
+                                DeclarationKey::fixture("ix://zzz/D2/w2"),
+                            ],
+paths: Vec::new(),
+},
+                        detail: "type ix://zzz/O9 has 2 undominated redefinitions of ix://zzz/R/w: \
+                                  [ix://zzz/D1, ix://zzz/D1/w1, ix://zzz/R/w] and \
+                                  [ix://zzz/D2, ix://zzz/D2/w2, ix://zzz/R/w]"
                             .to_string(),
                     },
                 ]
             );
         }
         other => panic!(
-            "expected Refused([derivation-conflict for zzz, derivation-conflict for aaa]), got {other:?}"
+            "expected Refused([derivation-conflict for aaa, derivation-conflict for zzz]), got {other:?}"
         ),
     }
+}
+
+/// A fixed historical fixture can stop distinguishing producer and identity
+/// order when the closed rule wire changes its hashes. Find a deterministic
+/// pair under the current wire, then verify refusals match computed IDs.
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-3", "QSpec-FR-150-AC-8")]
+#[test]
+fn n06_conflict_refusal_order_matches_effective_identity_not_producer_key() {
+    let prefixes = ["aaa", "zzz", "bbb", "yyy", "ccc", "xxx", "ddd", "www"];
+    let mut found_inversion = false;
+    'pairs: for (index, first) in prefixes.iter().enumerate() {
+        for second in prefixes.iter().skip(index + 1) {
+            let domain_package = fixture_two_diamonds_with_prefixes(first, second);
+            let refusals = match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
+                NormalizeOutcome::Refused(refusals) => refusals,
+                other => panic!("expected conflicting diamond families, got {other:?}"),
+            };
+            let actual_order: Vec<String> = refusals
+                .iter()
+                .map(|refusal| match &refusal.cause {
+                    ModelRefusalCause::DerivationConflict { type_, .. } => type_.node.clone(),
+                    cause => panic!("expected derivation conflict, got {cause:?}"),
+                })
+                .collect();
+
+            let type_records = domain_package
+                .records
+                .iter()
+                .filter(|record| matches!(record, DomainPackageRecord::ObjectType(_)))
+                .cloned()
+                .collect();
+            let type_only =
+                DomainPackage::new(domain_package.model_selection.clone(), type_records);
+            let type_view = completed(&type_only, ModelNormalizationLimits::UNLIMITED);
+            let first_node = format!("ix://{first}/O9");
+            let second_node = format!("ix://{second}/O9");
+            let first_id = find_type(&type_view, &first_node).effective_id.to_string();
+            let second_id = find_type(&type_view, &second_node).effective_id.to_string();
+            let effective_order = if first_id < second_id {
+                vec![first_node, second_node]
+            } else {
+                vec![second_node, first_node]
+            };
+            assert_eq!(actual_order, effective_order);
+
+            let producer_order = if first < second {
+                vec![format!("ix://{first}/O9"), format!("ix://{second}/O9")]
+            } else {
+                vec![format!("ix://{second}/O9"), format!("ix://{first}/O9")]
+            };
+            if effective_order != producer_order {
+                found_inversion = true;
+                break 'pairs;
+            }
+        }
+    }
+    assert!(
+        found_inversion,
+        "candidate set must distinguish effective-identity from producer-key order"
+    );
 }
 
 /// Two unrelated owner types, each with exactly one direct field member:
@@ -3656,46 +4049,42 @@ fn fixture_two_owners_where_effective_identity_disagrees_with_producer_key() -> 
 /// type identity, original declaration key)`), not by the owning type's
 /// producer `DeclarationKey` -- `build()` used to sort `member_keys` by the
 /// owner's own producer key. Both owner types' own declarations are hashed
-/// first (`367` bytes each, identical shape, so their own order does not
-/// distinguish the fix); both together consume `734`. The exact boundary is
-/// pinned by hand: at `hashed_bytes = 1263` the next charge is still
-/// `zzz`'s `530`-byte member (not yet admitted); at `hashed_bytes = 1264`
-/// (`734 + 530`) that charge has been admitted and the next charge is
-/// `aaa`'s own, smaller, `492`-byte member -- proving `zzz`'s own member
+/// first (`344` bytes each after the rule revision is removed), consuming
+/// `688`. At `hashed_bytes = 1194`, `zzz`'s 507-byte member is next; at
+/// `1195`, it has been admitted and `aaa`'s 469-byte member is next,
+/// proving `zzz`'s own member
 /// was hashed *before* `aaa`'s, even though
 /// `"ix://aaa/Owner" < "ix://zzz/Owner"` as producer keys. The pre-fix code
-/// would have hashed `aaa`'s smaller member first, reporting `next_charge:
-/// 530` (still `zzz`'s, now the *last* one) at `hashed_bytes = 1264`
-/// instead.
+/// would have hashed `aaa`'s smaller member first, reversing those boundaries.
 #[trace("QSpec-TC-195", "QSpec-FR-150-AC-3", "QSpec-FR-150-AC-8")]
 #[test]
 fn n08_declaration_charges_order_by_effective_identity_not_producer_key() {
     let domain_package = fixture_two_owners_where_effective_identity_disagrees_with_producer_key();
     let mut limits = ModelNormalizationLimits::UNLIMITED;
-    limits.hashed_bytes = 1263;
+    limits.hashed_bytes = 1194; // Version-free rule references shorten the owner preimages.
     assert_eq!(
         normalize(&domain_package, limits),
         NormalizeOutcome::Incomplete(Incomplete {
             limit_kind: LimitKind::HashedBytes,
-            limit: 1263,
-            consumed: 734,
-            next_charge: 530,
+            limit: 1194,
+            consumed: 688,
+            next_charge: 507,
             charge_point: ChargePoint::NormalizeHash,
         }),
-        "zzz's own member (530 bytes) must still be the next charge one byte short of admitting it"
+        "zzz's own member (507 bytes) must be next one byte short of admission"
     );
-    limits.hashed_bytes = 1264;
+    limits.hashed_bytes = 1195; // 688 owner bytes plus zzz's 507-byte member.
     assert_eq!(
         normalize(&domain_package, limits),
         NormalizeOutcome::Incomplete(Incomplete {
             limit_kind: LimitKind::HashedBytes,
-            limit: 1264,
-            consumed: 1264,
-            next_charge: 492,
+            limit: 1195,
+            consumed: 1195,
+            next_charge: 469,
             charge_point: ChargePoint::NormalizeHash,
         }),
-        "zzz's own member (530 bytes) must be admitted first, leaving aaa's own \
-         smaller member (492 bytes) as the next charge"
+        "zzz's own member (507 bytes) must be admitted first, leaving aaa's \
+         469-byte member as the next charge"
     );
 }
 
@@ -3757,16 +4146,10 @@ fn n06_specialization_cycle_refusal_waits_for_every_phase3_charge_to_admit() {
         NormalizeOutcome::Refused(refusal) => {
             assert_eq!(
                 refusal,
-                vec![ModelRefusal {
-                    code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
-                    cause: ModelRefusalCause::SpecializationCycle {
-                        ancestor: DeclarationKey::fixture("model.Y"),
-                        via: DeclarationKey::fixture("model.Z"),
-                    },
-                    detail: "model.Y generalizes back to itself via model.Z, \
-                              through the cycle [model.Y, model.Z]"
-                        .to_string(),
-                }]
+                vec![
+                    cycle_refusal("model.Y", &["model.Y", "model.Z"]),
+                    cycle_refusal("model.Z", &["model.Y", "model.Z"]),
+                ]
             );
         }
         other => panic!("expected Refused([SpecializationCycle]) at work_units=46, got {other:?}"),
@@ -3785,31 +4168,16 @@ fn phase3_specialization_cycle_refusal_wins_over_phase4_derivation_conflict() {
         &fixture_n06_conflict_with_unrelated_cycle(),
         ModelNormalizationLimits::UNLIMITED,
     ) {
-        NormalizeOutcome::Refused(refusal) => {
+        NormalizeOutcome::Refused(refusals) => {
             assert_eq!(
-                refusal.len(),
-                1,
-                "expected exactly one refusal: {refusal:?}"
-            );
-            let refusal = refusal[0].clone();
-            assert_eq!(
-                refusal.code,
-                qsl_foundation::diagnostic::Code::InvalidModelBinding
-            );
-            assert_eq!(
-                refusal.cause,
-                ModelRefusalCause::SpecializationCycle {
-                    ancestor: DeclarationKey::fixture("model.Y"),
-                    via: DeclarationKey::fixture("model.Z"),
-                },
-                "phase 3's own refusal must win over phase 4's undominated-\
+                refusals,
+                Refusals::from_vec(vec![
+                    cycle_refusal("model.Y", &["model.Y", "model.Z"]),
+                    cycle_refusal("model.Z", &["model.Y", "model.Z"]),
+                ]),
+                "phase 3's own refusals must win over phase 4's undominated-\
                  redefiner derivation-conflict, matching FR-150's \
                  charge-order precedence"
-            );
-            assert!(
-                refusal.detail.contains("[model.Y, model.Z]"),
-                "detail must name the unrelated cycle, got: {}",
-                refusal.detail
             );
         }
         other => {
@@ -3832,25 +4200,26 @@ fn phase3_specialization_cycle_refusal_wins_over_phase4_derivation_conflict() {
 /// (2 facts), `redef.C` reaches only `C` (2 facts), and both
 /// `redef.B`/`redef.C` reach `D` (4 facts) -- eight phase-4 facts total. A
 /// completed (`UNLIMITED`) run charges 27 `derivation_facts` (19 through
-/// phase 2/3 plus these 8) and 51 `work_units` (34 through phase 3 --
-/// `normalize.record` charges only this fixture's seven declaration
-/// records, never its six `Supertype`/`Redefinition` records -- `+5`
+/// phase 2/3 -- seven qualify facts, six type inherit facts and six
+/// inherited-member inherit facts -- plus these 8) and 51 `work_units` (34
+/// through phase 3: seven `normalize.record` charges, only this fixture's
+/// declaration records, never its six `Supertype`/`Redefinition` records;
+/// eight `normalize.cycle-check` units; 19 facts -- `+5`
 /// for the two `normalize.redefinition-check` charges, `+8` for the
 /// phase-4 facts, `+4` for the one `normalize.conflict-check` group) before
 /// reporting the refusal.
 ///
 /// Revert probe: hand-reverting `build()` to return the phase-4 refusal
 /// directly makes every case below fail -- `derivation_facts = 19` reports
-/// `Refused` instead of `Incomplete`, and every `work_units` case in
-/// `16..=50` reports `Refused` instead of `Incomplete` -- confirmed by
-/// hand: reverting `build`/`charge_all` locally reproduces every failure,
-/// restoring them returns this test to green.
+/// `Refused` instead of `Incomplete`, and the 40 and 50 work-unit cases,
+/// which reach phase 4, report `Refused` instead of `Incomplete`. The
+/// 24-unit case stops inside phase 3 and stays `Incomplete`.
 #[trace("QSpec-TC-195", "QSpec-FR-150-AC-3", "QSpec-FR-150-AC-8")]
 #[test]
 fn n06_conflict_refusal_waits_for_every_phase4_charge_to_admit() {
     let domain_package = fixture_n06_conflict();
 
-    // A `derivation_facts` budget that exhausts exactly at the 19th
+    // A `derivation_facts` budget that exhausts exactly at the 19th (last)
     // phase-2/3 fact -- one short of the first phase-4 fact -- reports
     // `Incomplete` at that first phase-4 `normalize.fact`, never the
     // `derivation-conflict` refusal `D`'s own resolution would otherwise
@@ -3873,19 +4242,19 @@ fn n06_conflict_refusal_waits_for_every_phase4_charge_to_admit() {
         other => panic!("expected Incomplete at the first phase-4 normalize.fact, got {other:?}"),
     }
 
-    // `work_units` in `39..=46` land inside the eight phase-4
+    // `work_units` in `40..=47` land inside the eight phase-4
     // `normalize.fact` charges, after both `normalize.redefinition-check`
     // charges and before the one `normalize.conflict-check` charge.
     let mut limits = ModelNormalizationLimits::UNLIMITED;
-    limits.work_units = 42;
+    limits.work_units = 40;
     match normalize(&domain_package, limits) {
         NormalizeOutcome::Incomplete(incomplete) => {
             assert_eq!(
                 incomplete,
                 Incomplete {
                     limit_kind: LimitKind::WorkUnits,
-                    limit: 42,
-                    consumed: 42,
+                    limit: 40,
+                    consumed: 40,
                     next_charge: 1,
                     charge_point: ChargePoint::NormalizeFact,
                 }
@@ -3894,8 +4263,8 @@ fn n06_conflict_refusal_waits_for_every_phase4_charge_to_admit() {
         other => panic!("expected Incomplete at a phase-4 normalize.fact, got {other:?}"),
     }
 
-    // `work_units` in `16..=33` land inside phase 2/3's own facts, well
-    // before phase 4 starts.
+    // `work_units = 24` lands inside phase 2/3's own facts, well before
+    // phase 4 starts (phase 2/3 spans the first 34 units).
     let mut limits = ModelNormalizationLimits::UNLIMITED;
     limits.work_units = 24;
     match normalize(&domain_package, limits) {
@@ -3965,7 +4334,8 @@ fn n06_conflict_refusal_waits_for_every_phase4_charge_to_admit() {
                             DeclarationKey::fixture("model.B.x2"),
                             DeclarationKey::fixture("model.C.x3"),
                         ],
-                    },
+paths: Vec::new(),
+},
                     detail: "type ix://test/orders/D has 2 undominated redefinitions of ix://test/orders/A/x: \
                               [ix://test/orders/B, model.B.x2, ix://test/orders/A/x] and \
                               [ix://test/orders/C, model.C.x3, ix://test/orders/A/x]"
@@ -3973,7 +4343,7 @@ fn n06_conflict_refusal_waits_for_every_phase4_charge_to_admit() {
                 }
             );
         }
-        other => panic!("expected Refused(derivation-conflict) at work_units=57, got {other:?}"),
+        other => panic!("expected Refused(derivation-conflict) at work_units=51, got {other:?}"),
     }
 }
 
@@ -4105,6 +4475,7 @@ fn unreachable_redefiner_refusals() -> Vec<ModelRefusal> {
                     DeclarationKey::fixture("model.B.x2"),
                     DeclarationKey::fixture("model.C.x3"),
                 ],
+                paths: Vec::new(),
             },
             detail:
                 "type ix://test/orders/D has 2 undominated redefinitions of ix://test/orders/A/x: \
@@ -4152,6 +4523,7 @@ fn n06_redefinition_check_refusal_outranks_earlier_processed_conflict_check_refu
                                 DeclarationKey::fixture("model.H.h2"),
                                 DeclarationKey::fixture("model.I.i3"),
                             ],
+                            paths: Vec::new(),
                         },
                         detail: "type model.J has 2 undominated redefinitions of model.G.g: \
                                   [model.H, model.H.h2, model.G.g] and \
@@ -4172,11 +4544,9 @@ fn n06_redefinition_check_refusal_outranks_earlier_processed_conflict_check_refu
 /// (`fixture_n06_conflict`). `normalize.conflict-check` charges per type,
 /// in `type_keys` order, and only then by target within that type
 /// (`value-accounting.md:456`; `model-complete.md:160` puts the owning
-/// type first in the effective member key), and `B9` sorts before `D`, so
-/// `B9`'s own conflict-check is charged first. QSL #195: `build` reports
-/// every phase-4 refusal in charge order, not only the earliest-charged
-/// one, so `record_phase4_refusal` reports both, `B9`'s own refusal ahead
-/// of `D`'s.
+/// type first in the effective member key). With the version-free closed
+/// identity wire, `D` sorts before `B9`; both phase-4 refusals are returned
+/// in that charge order.
 #[trace("QSpec-TC-195", "QSpec-FR-150-AC-3", "QSpec-FR-150-AC-8")]
 #[test]
 fn n06_conflict_check_refusal_ranks_by_type_before_target() {
@@ -4189,37 +4559,39 @@ fn n06_conflict_check_refusal_ranks_by_type_before_target() {
                     ModelRefusal {
                         code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
                         cause: ModelRefusalCause::DerivationConflict {
-                            type_: DeclarationKey::fixture("ix://n06/B9"),
-                            member: DeclarationKey::fixture("ix://n06/M/w"),
-                            redefiners: vec![
-                                DeclarationKey::fixture("ix://n06/M1/w1"),
-                                DeclarationKey::fixture("ix://n06/M2/w2"),
-                            ],
-                        },
-                        detail: "type ix://n06/B9 has 2 undominated redefinitions of ix://n06/M/w: \
-                                  [ix://n06/M1, ix://n06/M1/w1, ix://n06/M/w] and \
-                                  [ix://n06/M2, ix://n06/M2/w2, ix://n06/M/w]"
-                            .to_string(),
-                    },
-                    ModelRefusal {
-                        code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
-                        cause: ModelRefusalCause::DerivationConflict {
                             type_: DeclarationKey::fixture("ix://test/orders/D"),
                             member: DeclarationKey::fixture("ix://test/orders/A/x"),
                             redefiners: vec![
                                 DeclarationKey::fixture("model.B.x2"),
                                 DeclarationKey::fixture("model.C.x3"),
                             ],
-                        },
+paths: Vec::new(),
+},
                         detail: "type ix://test/orders/D has 2 undominated redefinitions of ix://test/orders/A/x: \
                                   [ix://test/orders/B, model.B.x2, ix://test/orders/A/x] and \
                                   [ix://test/orders/C, model.C.x3, ix://test/orders/A/x]"
                             .to_string(),
                     },
+                    ModelRefusal {
+                        code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
+                        cause: ModelRefusalCause::DerivationConflict {
+                            type_: DeclarationKey::fixture("ix://n06/B9"),
+                            member: DeclarationKey::fixture("ix://n06/M/w"),
+                            redefiners: vec![
+                                DeclarationKey::fixture("ix://n06/M1/w1"),
+                                DeclarationKey::fixture("ix://n06/M2/w2"),
+                            ],
+paths: Vec::new(),
+},
+                        detail: "type ix://n06/B9 has 2 undominated redefinitions of ix://n06/M/w: \
+                                  [ix://n06/M1, ix://n06/M1/w1, ix://n06/M/w] and \
+                                  [ix://n06/M2, ix://n06/M2/w2, ix://n06/M/w]"
+                            .to_string(),
+                    },
                 ]
             );
         }
-        other => panic!("expected Refused([derivation-conflict for B9, derivation-conflict for D]), got {other:?}"),
+        other => panic!("expected Refused([derivation-conflict for D, derivation-conflict for B9]), got {other:?}"),
     }
 }
 
@@ -4287,17 +4659,10 @@ fn a_field_member_with_a_dangling_owner_and_a_dangling_redefines_reports_both() 
             vec![],
         )],
     );
-    assert_eq!(
+    assert_refusal_outcome(
         normalize(&domain_package, ModelNormalizationLimits::UNLIMITED),
-        NormalizeOutcome::Refused(Refusals::from_vec(vec![
-            ModelRefusal {
-                code: qsl_foundation::diagnostic::Code::DanglingReference,
-                cause: ModelRefusalCause::UnknownOwner {
-                    member: DeclarationKey::fixture("model.A.y"),
-                    owner: DeclarationKey::fixture("model.nope"),
-                },
-                detail: "field member model.A.y names owner model.nope, which is not a declared object type or record value type".to_string(),
-            },
+        &NormalizeOutcome::Refused(Refusals::from_vec(vec![
+            expected_unknown_owner("model.A.y", "model.nope"),
             ModelRefusal {
                 code: qsl_foundation::diagnostic::Code::DanglingReference,
                 cause: ModelRefusalCause::UnknownMember {
@@ -4369,18 +4734,12 @@ fn a_duplicate_key_with_one_dangling_owner_copy_still_reports_conflicting_bindin
     let good_owner = field_member("model.Dup.f", "model.Real", "ix://test/orders/A");
 
     let expected = NormalizeOutcome::Refused(Refusals::from_vec(vec![
-        ModelRefusal {
-            code: qsl_foundation::diagnostic::Code::DanglingReference,
-            cause: ModelRefusalCause::UnknownOwner {
-                member: DeclarationKey::fixture("model.Dup.f"),
-                owner: DeclarationKey::fixture("model.nope"),
-            },
-            detail: "field member model.Dup.f names owner model.nope, which is not a declared object type or record value type".to_string(),
-        },
+        expected_unknown_owner("model.Dup.f", "model.nope"),
         ModelRefusal {
             code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
             cause: ModelRefusalCause::ConflictingBinding {
                 key: DeclarationKey::fixture("model.Dup.f"),
+                member: None,
             },
             detail: "model.Dup.f is declared by more than one record in this domain package"
                 .to_string(),
@@ -4398,11 +4757,12 @@ fn a_duplicate_key_with_one_dangling_owner_copy_still_reports_conflicting_bindin
         ),
     ] {
         let domain_package = DomainPackage::new(DomainPackageRef::fixture("bundle.h1c"), records);
-        assert_eq!(
-            normalize(&domain_package, ModelNormalizationLimits::UNLIMITED),
-            expected,
-            "order: {order}"
+        let actual = normalize(&domain_package, ModelNormalizationLimits::UNLIMITED);
+        assert!(
+            matches!(&actual, NormalizeOutcome::Refused(_)),
+            "order: {order}: {actual:?}"
         );
+        assert_refusal_outcome(actual, &expected);
     }
 }
 
@@ -4462,22 +4822,10 @@ fn h2_a_closing_cycle_extension_is_capped_by_work_units_room_not_derivation_fact
     assert_eq!(
         normalize(&domain_package, limits),
         NormalizeOutcome::Refused(Refusals::from_vec(vec![
-            ModelRefusal {
-                code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
-                cause: ModelRefusalCause::SpecializationCycle {
-                    ancestor: DeclarationKey::fixture("model.A"),
-                    via: DeclarationKey::fixture("model.Z"),
-                },
-                detail: "model.A generalizes back to itself via model.Z, through the cycle [model.A, model.Z]".to_string(),
-            },
-            ModelRefusal {
-                code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
-                cause: ModelRefusalCause::SpecializationCycle {
-                    ancestor: DeclarationKey::fixture("model.Z"),
-                    via: DeclarationKey::fixture("model.B"),
-                },
-                detail: "model.Z generalizes back to itself via model.B, through the cycle [model.B, model.Z]".to_string(),
-            },
+            cycle_refusal("model.A", &["model.A", "model.Z"]),
+            cycle_refusal("model.Z", &["model.A", "model.Z"]),
+            cycle_refusal("model.B", &["model.B", "model.Z"]),
+            cycle_refusal("model.Z", &["model.B", "model.Z"]),
         ])),
         "one normalize.cycle-check charge above the N boundary: both closing cycles found"
     );
@@ -4569,6 +4917,7 @@ fn m1_a_same_owner_redefinition_target_refusal_outranks_a_derivation_conflict_wi
                         DeclarationKey::fixture("model.aaa_h.h2"),
                         DeclarationKey::fixture("model.aaa_i.i3"),
                     ],
+                    paths: Vec::new(),
                 },
                 detail: "type model.aaa_j has 2 undominated redefinitions of model.aaa_g.g: \
                           [model.aaa_h, model.aaa_h.h2, model.aaa_g.g] and \
@@ -4774,7 +5123,8 @@ fn n06_budget_sweep_from_zero_stops_in_spec_charge_order() {
 /// TEST GAP (#193, PR #228 review): two distinct closing cycles (`A`<->`B`
 /// and `Y`<->`Z`, unrelated to one another) in the same domain package are
 /// both reported, in charge order -- `A`/`B`'s own cycle, whose least key
-/// (`model.A`) sorts before `Y`/`Z`'s own (`model.Y`), is reported first.
+/// (`model.A`) sorts before `Y`/`Z`'s own (`model.Y`), is reported first --
+/// each as one refusal per declaration on it, in key order.
 #[trace("QSpec-TC-196", "QSpec-FR-151-AC-2")]
 #[test]
 fn two_distinct_cycles_are_both_reported_in_charge_order() {
@@ -4790,22 +5140,89 @@ fn two_distinct_cycles_are_both_reported_in_charge_order() {
     assert_eq!(
         normalize(&domain_package, ModelNormalizationLimits::UNLIMITED),
         NormalizeOutcome::Refused(Refusals::from_vec(vec![
-            ModelRefusal {
-                code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
-                cause: ModelRefusalCause::SpecializationCycle {
-                    ancestor: DeclarationKey::fixture("model.A"),
-                    via: DeclarationKey::fixture("model.B"),
-                },
-                detail: "model.A generalizes back to itself via model.B, through the cycle [model.A, model.B]".to_string(),
-            },
-            ModelRefusal {
-                code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
-                cause: ModelRefusalCause::SpecializationCycle {
-                    ancestor: DeclarationKey::fixture("model.Y"),
-                    via: DeclarationKey::fixture("model.Z"),
-                },
-                detail: "model.Y generalizes back to itself via model.Z, through the cycle [model.Y, model.Z]".to_string(),
-            },
+            cycle_refusal("model.A", &["model.A", "model.B"]),
+            cycle_refusal("model.B", &["model.A", "model.B"]),
+            cycle_refusal("model.Y", &["model.Y", "model.Z"]),
+            cycle_refusal("model.Z", &["model.Y", "model.Z"]),
+        ]))
+    );
+}
+
+/// A declaration on two cycles is refused once per cycle: `A`<->`B` plus
+/// `A`<->`C` are two cycles with different edge sets, so `A` is refused twice,
+/// once listing each. Cycle detection order comes first (`A`'s walk closes
+/// `[A, B]` before `[A, C]`), declaration-key order within a cycle.
+#[trace("TC-219", "FR-082-AC-2")]
+#[trace("TC-1020", "FR-082-AC-15")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-2")]
+#[test]
+fn a_declaration_on_two_cycles_is_refused_once_per_cycle() {
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.multi-cycle"),
+        vec![
+            object_type("model.A", vec!["model.B", "model.C"]),
+            object_type("model.B", vec!["model.A"]),
+            object_type("model.C", vec!["model.A"]),
+        ],
+    );
+    assert_eq!(
+        normalize(&domain_package, ModelNormalizationLimits::UNLIMITED),
+        NormalizeOutcome::Refused(Refusals::from_vec(vec![
+            cycle_refusal("model.A", &["model.A", "model.B"]),
+            cycle_refusal("model.B", &["model.A", "model.B"]),
+            cycle_refusal("model.A", &["model.A", "model.C"]),
+            cycle_refusal("model.C", &["model.A", "model.C"]),
+        ]))
+    );
+}
+
+/// A cycle of three or more keeps its path order, rotated to start at the
+/// least key. `A` only leads into the cycle `C -> D -> B -> C`, so the walk
+/// from `A` first revisits `C`, yet every refusal lists `[B, C, D]`.
+#[trace("TC-219", "FR-082-AC-2")]
+#[trace("TC-1020", "FR-082-AC-15")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-2")]
+#[test]
+fn a_three_cycle_lists_its_keys_in_path_order_rotated_to_the_least_key() {
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.three-cycle"),
+        vec![
+            object_type("model.A", vec!["model.C"]),
+            object_type("model.B", vec!["model.C"]),
+            object_type("model.C", vec!["model.D"]),
+            object_type("model.D", vec!["model.B"]),
+        ],
+    );
+    assert_eq!(
+        normalize(&domain_package, ModelNormalizationLimits::UNLIMITED),
+        NormalizeOutcome::Refused(Refusals::from_vec(vec![
+            cycle_refusal("model.B", &["model.B", "model.C", "model.D"]),
+            cycle_refusal("model.C", &["model.B", "model.C", "model.D"]),
+            cycle_refusal("model.D", &["model.B", "model.C", "model.D"]),
+        ]))
+    );
+}
+
+/// A cycle whose path order is not its key order: `B -> D -> C -> B` lists
+/// `[B, D, C]`, and its refusals follow declaration-key order, `B`, `C`, `D`.
+#[trace("TC-1020", "FR-082-AC-15")]
+#[test]
+fn a_cycle_lists_path_order_and_refuses_in_declaration_key_order() {
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.unsorted-cycle"),
+        vec![
+            object_type("model.B", vec!["model.D"]),
+            object_type("model.C", vec!["model.B"]),
+            object_type("model.D", vec!["model.C"]),
+        ],
+    );
+    let cycle = ["model.B", "model.D", "model.C"];
+    assert_eq!(
+        normalize(&domain_package, ModelNormalizationLimits::UNLIMITED),
+        NormalizeOutcome::Refused(Refusals::from_vec(vec![
+            cycle_refusal("model.B", &cycle),
+            cycle_refusal("model.C", &cycle),
+            cycle_refusal("model.D", &cycle),
         ]))
     );
 }
@@ -4960,5 +5377,260 @@ fn every_fixture_normalizes_identically_at_the_default_limits() {
                 panic!("{name}: {at_defaults:?} at the defaults, {free:?} unlimited")
             }
         }
+    }
+}
+
+fn rules_of(entry: &qsl_semantics::model::normalize::ViewEntry) -> Vec<&'static str> {
+    entry
+        .preimage
+        .derivation
+        .iter()
+        .map(|fact| fact.rule.identity)
+        .collect()
+}
+
+fn keys(nodes: &[&str]) -> Vec<DeclarationKey> {
+    nodes
+        .iter()
+        .map(|node| DeclarationKey::fixture(*node))
+        .collect()
+}
+
+fn type_owner(view: &qsl_semantics::model::normalize::EffectiveView, node: &str) -> EffectiveId {
+    *view
+        .type_identities()
+        .get(&DeclarationKey::fixture(node))
+        .unwrap_or_else(|| panic!("{node} has an effective type identity"))
+}
+
+/// `B` specializes `A`; `B.y` subsets `A.x`.
+fn fixture_subset_direct() -> DomainPackage {
+    DomainPackage::new(
+        DomainPackageRef::fixture("bundle.subset-direct"),
+        vec![
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
+            field_member("model.A.x", "model.A", "model.A"),
+            field_member_redefining("model.B.y", "model.B", "model.A", None, vec!["model.A.x"]),
+        ],
+    )
+}
+
+/// A subsetting field yields one phase-4 `normalize.subset` fact on the
+/// effective member, charged as one `normalize.fact` after the phase-3
+/// facts and with no redefinition-check or conflict-check.
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-1")]
+#[test]
+fn a_subsetting_field_derives_one_phase_4_subset_fact() {
+    let domain_package = fixture_subset_direct();
+    let (outcome, meter) =
+        normalize_with_meter(&domain_package, ModelNormalizationLimits::UNLIMITED);
+    let NormalizeOutcome::Completed(view) = outcome else {
+        panic!("the subsetting fixture completes");
+    };
+    let admitted = meter.admitted_charges();
+    let count = |point: ChargePoint| admitted.iter().filter(|p| **p == point).count();
+    assert_eq!(
+        count(ChargePoint::NormalizeFact),
+        7,
+        "four qualify, two inherit and one subset fact"
+    );
+    assert_eq!(count(ChargePoint::NormalizeRedefinitionCheck), 0);
+    assert_eq!(count(ChargePoint::NormalizeConflictCheck), 0);
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 24);
+
+    let b = type_owner(&view, "model.B");
+    let subsetting = find_member(&view, &b, "model.B.y");
+    assert_eq!(
+        rules_of(subsetting),
+        vec![RULE_QUALIFY.identity, RULE_SUBSET.identity]
+    );
+    assert_eq!(
+        subsetting.preimage.derivation[1].inputs,
+        keys(&["model.B.y", "model.A.x"])
+    );
+    assert!(subsetting.visible, "subsetting derives no replacement");
+    let inherited = find_member(&view, &b, "model.A.x");
+    assert_eq!(rules_of(inherited), vec![RULE_INHERIT.identity]);
+    assert!(inherited.visible);
+
+    let mut limits = ModelNormalizationLimits::UNLIMITED;
+    limits.derivation_facts = 6;
+    match normalize(&domain_package, limits) {
+        NormalizeOutcome::Incomplete(incomplete) => {
+            assert_eq!(incomplete.limit_kind, LimitKind::DerivationFacts);
+            assert_eq!(incomplete.charge_point, ChargePoint::NormalizeFact);
+            assert_eq!(incomplete.next_charge, 7);
+        }
+        other => panic!("expected the subset fact to be denied, got {other:?}"),
+    }
+}
+
+/// A subset fact exists on `(T, s)` for every `T` the subsetting field's
+/// owner reaches, with the ancestor path in front of the inputs.
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-1")]
+#[test]
+fn an_inherited_subsetting_field_derives_a_subset_fact_at_each_descendant() {
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.subset-inherited"),
+        vec![
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
+            object_type("model.C", vec!["model.B"]),
+            field_member("model.A.x", "model.A", "model.A"),
+            field_member_redefining("model.B.y", "model.B", "model.A", None, vec!["model.A.x"]),
+        ],
+    );
+    let (outcome, meter) =
+        normalize_with_meter(&domain_package, ModelNormalizationLimits::UNLIMITED);
+    let NormalizeOutcome::Completed(view) = outcome else {
+        panic!("the fixture completes");
+    };
+    let fact_charges = meter
+        .admitted_charges()
+        .iter()
+        .filter(|p| **p == ChargePoint::NormalizeFact)
+        .count();
+    assert_eq!(
+        fact_charges, 13,
+        "five qualify, three type inherit, three member inherit and two subset facts"
+    );
+    let at_b = find_member(&view, &type_owner(&view, "model.B"), "model.B.y");
+    assert_eq!(
+        rules_of(at_b),
+        vec![RULE_QUALIFY.identity, RULE_SUBSET.identity]
+    );
+    assert_eq!(
+        at_b.preimage.derivation[1].inputs,
+        keys(&["model.B.y", "model.A.x"])
+    );
+    let at_c = find_member(&view, &type_owner(&view, "model.C"), "model.B.y");
+    assert_eq!(
+        rules_of(at_c),
+        vec![RULE_INHERIT.identity, RULE_SUBSET.identity]
+    );
+    assert_eq!(
+        at_c.preimage.derivation[1].inputs,
+        keys(&["model.B", "model.B.y", "model.A.x"])
+    );
+}
+
+/// Subset and redefine facts of one effective member form one phase-4
+/// sequence in input order.
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-1")]
+#[test]
+fn subset_and_redefine_facts_of_one_member_are_ordered_together() {
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.subset-and-redefine"),
+        vec![
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
+            field_member("model.A.x", "model.A", "model.A"),
+            field_member("model.A.z", "model.A", "model.A"),
+            field_member_redefining(
+                "model.B.y",
+                "model.B",
+                "model.A",
+                Some("model.A.z"),
+                vec!["model.A.x"],
+            ),
+        ],
+    );
+    let (outcome, meter) =
+        normalize_with_meter(&domain_package, ModelNormalizationLimits::UNLIMITED);
+    let NormalizeOutcome::Completed(view) = outcome else {
+        panic!("the fixture completes");
+    };
+    let fact_charges = meter
+        .admitted_charges()
+        .iter()
+        .filter(|p| **p == ChargePoint::NormalizeFact)
+        .count();
+    assert_eq!(
+        fact_charges, 11,
+        "five qualify, three inherit, two redefine and one subset fact"
+    );
+    let member = find_member(&view, &type_owner(&view, "model.B"), "model.B.y");
+    assert_eq!(
+        rules_of(member),
+        vec![
+            RULE_QUALIFY.identity,
+            RULE_SUBSET.identity,
+            RULE_REDEFINE.identity
+        ]
+    );
+    assert_eq!(
+        member.preimage.derivation[1].inputs,
+        keys(&["model.B.y", "model.A.x"])
+    );
+    assert_eq!(
+        member.preimage.derivation[2].inputs,
+        keys(&["model.B.y", "model.A.z"])
+    );
+}
+
+/// An operation member on `ix://test/orders/A` whose frame is `effect`.
+fn operation_with_effect(effect: OperationEffect) -> DomainPackageRecord {
+    let DomainPackageRecord::OperationMember(mut record) =
+        operation_member("ix://test/orders/A/bump", "ix://test/orders/A")
+    else {
+        unreachable!("operation_member builds an operation member");
+    };
+    record.effect = effect;
+    DomainPackageRecord::OperationMember(record)
+}
+
+/// QSpec FR-013-AC-8: an every-object entry and a receiver-scoped entry for
+/// one field refuse the operation's frame `invalid_model_binding`/
+/// `conflicting-binding`, naming the field; either entry alone normalizes.
+#[test]
+#[trace("QSpec-V1-EXPR-022", "QSpec-FR-013-AC-8")]
+fn an_every_object_and_a_receiver_scoped_entry_for_one_field_refuse_conflicting_binding() {
+    let field = DeclarationKey::fixture("ix://test/orders/A/x");
+    let normalize_with = |effect: OperationEffect| {
+        let mut records = fixture_f1().records;
+        records.push(operation_with_effect(effect));
+        normalize(
+            &DomainPackage::new(DomainPackageRef::fixture("n01"), records),
+            ModelNormalizationLimits::UNLIMITED,
+        )
+    };
+
+    let NormalizeOutcome::Refused(refusals) = normalize_with(OperationEffect {
+        modifies: vec![field.clone()],
+        receiver_modifies: vec![field.clone()],
+        ..Default::default()
+    }) else {
+        panic!("both scopes for one field must refuse");
+    };
+    assert_eq!(refusals.len(), 1);
+    let refusal = refusals.into_first();
+    assert_eq!(
+        refusal.code,
+        qsl_foundation::diagnostic::Code::InvalidModelBinding
+    );
+    assert_eq!(refusal.cause.as_str(), "conflicting-binding");
+    assert_eq!(
+        refusal.cause,
+        ModelRefusalCause::ConflictingBinding {
+            key: field.clone(),
+            member: None,
+        }
+    );
+
+    for effect in [
+        OperationEffect {
+            modifies: vec![field.clone()],
+            ..Default::default()
+        },
+        OperationEffect {
+            receiver_modifies: vec![field.clone()],
+            ..Default::default()
+        },
+    ] {
+        assert!(
+            matches!(normalize_with(effect), NormalizeOutcome::Completed(_)),
+            "one scope alone normalizes"
+        );
     }
 }

@@ -92,7 +92,8 @@
 //!   conform to a declared `creates`/`deletes` grant, and every changed
 //!   field on a surviving object must be a declared `modifies` member
 //!   (directly, or reaching one through a member's own `redefines` property
-//!   — FR-151's own effect-inclusion rule). A field's declared collection kind
+//!   — FR-151's own effect-inclusion rule, each changed field charged as
+//!   `frame.write` and each link followed as `frame.redefines-link`). A field's declared collection kind
 //!   (`Multiplicity::ordered`) decides whether its pre/post values compare
 //!   by exact sequence or by order-insensitive multiset, so re-serializing
 //!   an unordered field in a different order is never itself a write. An
@@ -138,18 +139,19 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 
 use crate::model::dispatch::GeneralizationClosure;
-use crate::model::domain_package::DomainPackageRefWire;
 use crate::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, FieldMemberRecord,
     OperationEffect,
 };
 use crate::model::index::ModelIndex;
-use crate::model::key::{hex, sha256_and_len, DeclarationKey, DeclarationKeyWire, EffectiveId};
+use crate::model::key::{
+    hex, DeclarationKey, DeclarationKeyWire, EffectiveId, SHA256_JCS_DIGEST_DOMAIN,
+};
 use crate::model::normalize::{
     EffectiveView, ModelRefusal, ModelRefusalCause, OfferedSelection, TypeCatalog, ViewPopulation,
 };
 use qsl_foundation::absence::AbsenceMode;
-use qsl_foundation::diagnostic::Code;
+use qsl_foundation::diagnostic::{Code, InternalFault};
 use serde::Serialize;
 
 use quire_exact::{
@@ -184,10 +186,11 @@ pub struct PopulationAdmissionLimits {
     /// Ceiling on the `supertypes` edges one member-type conformance walk
     /// follows, with the same meaning as
     /// [`crate::model::accounting::ModelNormalizationLimits::ancestor_steps`].
-    /// Not charged by admission itself; recorded on the admitted
-    /// [`PopulationBinding`], so the frame check and the
-    /// [`all_instances`]/[`lookup`] queries over that binding walk under the
-    /// same caller-configured bound. Reaching it refuses
+    /// Charged by every walk that follows `supertypes` edges: the coverage
+    /// walk of admission, subsetting applicability, the frame check, and the
+    /// member walk of [`all_instances`] and the key walk of [`lookup`]. It is
+    /// recorded on the admitted [`PopulationBinding`], so the later walks run
+    /// under the same caller-configured bound. Reaching it refuses
     /// `ModelRefusalCause::AncestorSteps` naming this bound.
     pub ancestor_steps: u64,
 }
@@ -313,17 +316,30 @@ pub enum AdmissionChargePoint {
     BindingMember,
     /// `binding.subset-value`; see the module docs.
     BindingSubsetValue,
+    /// `frame.write` (FR-013): one per changed field, before the write is
+    /// tested against the frame's `modifies` entries.
+    FrameWrite,
+    /// `frame.redefines-link` (FR-013): one before each `redefines` link
+    /// followed from a written member.
+    FrameRedefinesLink,
 }
 
 impl AdmissionChargePoint {
     /// Every named point this schedule defines.
-    pub const ALL: [Self; 2] = [Self::BindingMember, Self::BindingSubsetValue];
+    pub const ALL: [Self; 4] = [
+        Self::BindingMember,
+        Self::BindingSubsetValue,
+        Self::FrameWrite,
+        Self::FrameRedefinesLink,
+    ];
 
     /// Normative identifier.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::BindingMember => "binding.member",
             Self::BindingSubsetValue => "binding.subset-value",
+            Self::FrameWrite => "frame.write",
+            Self::FrameRedefinesLink => "frame.redefines-link",
         }
     }
 }
@@ -345,17 +361,29 @@ pub struct AdmissionIncomplete {
 }
 
 impl AdmissionIncomplete {
-    /// This stop as the stage limit outcome FR-255 Behavior 1 describes: the
-    /// counter's setting, its bound and the total the denied charge would
-    /// have reached.
-    pub fn limit_exceeded(&self) -> qsl_foundation::diagnostic::LimitExceeded {
-        qsl_foundation::diagnostic::LimitExceeded::new(
+    /// This stop as the caller-budget denial FR-255 Behavior 1 describes
+    /// (`resource_exhausted`/`insufficient-next-charge`).
+    pub fn denial(&self) -> qsl_foundation::diagnostic::BudgetDenial {
+        qsl_foundation::diagnostic::BudgetDenial::charge(
             self.limit_kind.setting(),
             self.limit,
-            u128::from(self.consumed) + u128::from(self.next_charge),
+            qsl_foundation::diagnostic::DeniedCharge {
+                owner: ADMISSION_OWNER,
+                limit_kind: self.limit_kind.as_str(),
+                charge_point: self.charge_point.as_str(),
+                consumed: self.consumed,
+                next_charge: self.next_charge,
+            },
         )
     }
 }
+
+/// The owner of a `PopulationAdmissionLimitsV1` charge.
+pub const ADMISSION_OWNER: qsl_foundation::diagnostic::BudgetOwner =
+    qsl_foundation::diagnostic::BudgetOwner {
+        stage: "population-admission",
+        accounting_contract: "PopulationAdmissionLimitsV1",
+    };
 
 struct AdmissionCharge {
     point: AdmissionChargePoint,
@@ -611,17 +639,27 @@ fn values_of<'a>(member: &'a PopulationMember, field: &DeclarationKey) -> &'a [S
 ///
 /// Every field is private; [`admit_binding`] is this type's only
 /// constructor, so a caller cannot assemble a binding that was never checked
-/// against a domain package's `modelIdentity`, object closure or subtype closure —
-/// and, because the admitted domain package itself lives here, cannot later evaluate
+/// against a domain package's `modelIdentity` or object closure. The declared
+/// member types are retained so [`all_instances`] can establish subtype
+/// closure for each queried type — and, because the admitted domain package
+/// itself lives here, cannot later evaluate
 /// [`all_instances`]/[`lookup`] against any domain package other than the one that
 /// was checked (see the module docs' "Binding/domain package correspondence").
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PopulationBinding {
+    /// The population declaration this binding was admitted from. Retained
+    /// so callers can report the offered declaration when its model selection
+    /// does not correspond to the selected model.
+    population_key: DeclarationKey,
     /// This binding's own object universe, computed once at admission
     /// (ADR-013 §8 OQ-C ruling: a `UniverseId`, not an `EffectiveId`).
     universe: UniverseId,
     /// Every admitted member, ascending by [`ReferenceKey`].
     members: BTreeMap<ReferenceKey, DeclarationKey>,
+    /// The population declaration's member types, retained to establish
+    /// whether each effective subtype queried by `allInstances<T>` is
+    /// represented in the closed population.
+    declared_member_types: BTreeSet<DeclarationKey>,
     /// The binding's declared maximum, or `None` for a binding with no
     /// declared maximum (`allInstances` is then `operator-ineligible`).
     declared_maximum: Option<u64>,
@@ -659,8 +697,8 @@ pub struct PopulationBinding {
     /// This binding's minted `PopulationId` (FR-089-AC-1, ADR-013 O-13
     /// Population row, QC-21): a digest over the domain package identity
     /// this binding was admitted against, the `population_key` declaring
-    /// it, and the closed three-state admission-role discriminator
-    /// (`Direct`/`Pre`/`Post`) -- see [`mint_population_id`]. The evaluator
+    /// it, its declared maximum, canonical member set, admission role and
+    /// (for `Post`) pre binding identity -- see [`mint_population_id`]. The evaluator
     /// carries this identity alone as `Value::Population`, resolving it
     /// back to this binding through the caller's own recorded
     /// correspondence (`crate::model::object_environment::ObjectEnvironment::resolve_population`).
@@ -690,6 +728,11 @@ impl PopulationBinding {
     /// The `DomainPackageRef` identity this binding was admitted against.
     pub fn model_identity(&self) -> &str {
         &self.index.package().model_selection.identity
+    }
+
+    /// The population declaration this binding was admitted from.
+    pub fn population_key(&self) -> &DeclarationKey {
+        &self.population_key
     }
 
     /// This binding's own object universe.
@@ -747,7 +790,66 @@ enum AdmissionRole {
     /// [`admit_invocation`]'s pre-instant binding.
     Pre,
     /// [`admit_invocation`]'s post-instant binding.
-    Post,
+    Post(PopulationId),
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct PopulationIdentityWorkObservations {
+    member_encodings: usize,
+    member_sort_comparisons: usize,
+    digest_calls: usize,
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Counts real PopulationId encoding, sorting and digest operations so
+    /// tests can verify NFR-012 rejects before any priced identity work runs.
+    static POPULATION_IDENTITY_WORK: std::cell::Cell<PopulationIdentityWorkObservations> =
+        const { std::cell::Cell::new(PopulationIdentityWorkObservations {
+            member_encodings: 0,
+            member_sort_comparisons: 0,
+            digest_calls: 0,
+        }) };
+}
+
+#[cfg(test)]
+fn reset_population_identity_work_observations() {
+    POPULATION_IDENTITY_WORK.with(|counts| {
+        counts.set(PopulationIdentityWorkObservations::default());
+    });
+}
+
+#[cfg(test)]
+fn population_identity_work_observations() -> PopulationIdentityWorkObservations {
+    POPULATION_IDENTITY_WORK.with(std::cell::Cell::get)
+}
+
+#[cfg(test)]
+fn record_population_identity_member_encoding() {
+    POPULATION_IDENTITY_WORK.with(|counts| {
+        let mut current = counts.get();
+        current.member_encodings = current.member_encodings.saturating_add(1);
+        counts.set(current);
+    });
+}
+
+#[cfg(test)]
+fn record_population_identity_sort_comparison() {
+    POPULATION_IDENTITY_WORK.with(|counts| {
+        let mut current = counts.get();
+        current.member_sort_comparisons = current.member_sort_comparisons.saturating_add(1);
+        counts.set(current);
+    });
+}
+
+#[cfg(test)]
+fn record_population_identity_digest() {
+    POPULATION_IDENTITY_WORK.with(|counts| {
+        let mut current = counts.get();
+        current.digest_calls = current.digest_calls.saturating_add(1);
+        counts.set(current);
+    });
 }
 
 impl AdmissionRole {
@@ -755,36 +857,42 @@ impl AdmissionRole {
         match self {
             Self::Direct => "direct",
             Self::Pre => "pre",
-            Self::Post => "post",
+            Self::Post(_) => "post",
         }
     }
 }
 
-/// [`PopulationId`]'s FR-089-AC-1 preimage: `{version,
-/// domain_package_selection, population_key, admission_role}`, where
-/// `domain_package_selection` is the full `DomainPackageRef` header
-/// (identity, version and digest -- see this function's own body comment)
-/// rather than bare identity. Deliberately excludes the admitted document's
-/// own content -- FR-089's Behavior section states the preimage as exactly
-/// these three facts, so two admissions of *different* documents against
-/// the same domain package, `population_key` and role mint the same
-/// identity, and re-admitting the *same* document against the same
-/// package/key/role is idempotent (TC-291).
-///
-/// FR-089's own preimage names no way to distinguish two bindings that
-/// differ only in document content or declared maximum, admitted under the
-/// same package/key/role within one evaluation -- an open spec question
-/// recorded, not resolved, here.
-/// [`ObjectEnvironment::with_population`](crate::model::object_environment::ObjectEnvironment::with_population)
-/// is the interim guard: it refuses a second, unequal binding recorded
-/// under an id already bound to a different one, rather than silently
-/// letting the later admission win.
+/// [`PopulationId`]'s FR-089 seven-field preimage. Members are ordered by
+/// each member object's own RFC 8785 bytes, independently of reference-key
+/// order; field values are not membership identity.
 fn population_id_preimage<'a>(
     domain_package: &'a DomainPackage,
     population_key: &'a DeclarationKey,
     role: AdmissionRole,
-) -> PopulationIdWire<'a> {
-    PopulationIdWire {
+    declared_maximum: Option<u64>,
+    members: &'a BTreeMap<ReferenceKey, DeclarationKey>,
+    member_encoding_limit: u64,
+) -> Result<PopulationIdWire<'a>, quire_canonical::Error> {
+    let mut encoded_members = Vec::with_capacity(members.len());
+    for (key, declaration) in members {
+        let member = PopulationMemberWire {
+            universe: hex(key.universe.as_bytes()),
+            r#type: PopulationMemberTypeIdentityWire(&key.type_identity),
+            object: &key.object,
+            declaration: declaration.wire(),
+        };
+        #[cfg(test)]
+        record_population_identity_member_encoding();
+        let bytes =
+            quire_canonical::to_vec(&member, quire_canonical::Limits::new(member_encoding_limit))?;
+        encoded_members.push((bytes, member));
+    }
+    encoded_members.sort_by(|left, right| {
+        #[cfg(test)]
+        record_population_identity_sort_comparison();
+        left.0.cmp(&right.0)
+    });
+    Ok(PopulationIdWire {
         version: POPULATION_ID_DOMAIN,
         // The full `DomainPackageRef` header (identity, version, digest), not
         // only `identity`: this module's own `admit_binding` doc already
@@ -794,23 +902,84 @@ fn population_id_preimage<'a>(
         // compares the full header for exactly that reason), so "the domain
         // package identity" a binding was admitted against is this header,
         // not its `identity` field alone.
-        domain_package_selection: domain_package.model_selection.wire(),
+        domain_package_selection: PopulationDomainPackageRefWire {
+            identity: &domain_package.model_selection.identity,
+            version: &domain_package.model_selection.version,
+            digest_domain: SHA256_JCS_DIGEST_DOMAIN,
+            digest: hex(&domain_package.model_selection.digest),
+        },
         population_key: population_key.wire(),
         admission_role: role.as_str(),
-    }
+        declared_maximum: declared_maximum.map(|maximum| maximum.to_string()),
+        members: encoded_members
+            .into_iter()
+            .map(|(_, member)| member)
+            .collect(),
+        pre: match role {
+            AdmissionRole::Direct | AdmissionRole::Pre => None,
+            AdmissionRole::Post(id) => Some(hex(id.as_bytes())),
+        },
+    })
 }
 
 /// [`population_id_preimage`]'s typed form.
 #[derive(Serialize, FixedShape)]
 struct PopulationIdWire<'a> {
     version: &'static str,
-    domain_package_selection: DomainPackageRefWire<'a>,
+    domain_package_selection: PopulationDomainPackageRefWire<'a>,
     population_key: DeclarationKeyWire<'a>,
     admission_role: &'static str,
+    declared_maximum: Option<String>,
+    members: Vec<PopulationMemberWire<'a>>,
+    pre: Option<String>,
+}
+
+/// One member in FR-089's PopulationId preimage.
+#[derive(Serialize, FixedShape)]
+struct PopulationMemberWire<'a> {
+    universe: String,
+    r#type: PopulationMemberTypeIdentityWire<'a>,
+    object: &'a str,
+    declaration: DeclarationKeyWire<'a>,
+}
+
+/// FR-089's `PopulationId` selection is explicitly the full domain-package
+/// header, including its source version. Other `quire.model.*` identities use
+/// the closed `DomainPackageRefWire` shape without that non-identity field.
+#[derive(Serialize, FixedShape)]
+struct PopulationDomainPackageRefWire<'a> {
+    identity: &'a str,
+    version: &'a str,
+    digest_domain: &'static str,
+    digest: String,
+}
+
+/// A population member's effective type identity encoded as its wire hex
+/// string, keeping the semantic identity typed until serialization.
+struct PopulationMemberTypeIdentityWire<'a>(&'a EffectiveId);
+
+impl PopulationMemberTypeIdentityWire<'_> {
+    #[qsl_attrs::string_edge]
+    fn wire_value(&self) -> String {
+        hex(self.0.as_bytes())
+    }
+}
+
+impl Serialize for PopulationMemberTypeIdentityWire<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.wire_value())
+    }
+}
+
+impl FixedShape for PopulationMemberTypeIdentityWire<'_> {
+    const DEPTH: usize = 0;
 }
 
 /// Mints the [`PopulationId`] (ADR-013 O-13 Population row, QC-21,
-/// FR-089-AC-1) for a binding admitted against `domain_package`/
+/// FR-089-AC-1/AC-7) for a binding admitted against `domain_package`/
 /// `population_key` under `role`: this module's only call of the kernel's
 /// `PopulationId::from_digest` (T12-D). The preimage is RFC 8785-encoded by
 /// `quire-canonical` (ADR-013 §2, ADR-013:113: one RFC 8785 implementation).
@@ -818,13 +987,186 @@ fn mint_population_id(
     domain_package: &DomainPackage,
     population_key: &DeclarationKey,
     role: AdmissionRole,
-) -> PopulationId {
-    let (digest, _) = sha256_and_len(&population_id_preimage(
+    declared_maximum: Option<u64>,
+    members: &BTreeMap<ReferenceKey, DeclarationKey>,
+    byte_bound: u64,
+) -> Result<PopulationId, PopulationIdentityFailure> {
+    let preimage = population_id_preimage(
         domain_package,
         population_key,
         role,
-    ));
-    PopulationId::from_digest(digest)
+        declared_maximum,
+        members,
+        byte_bound,
+    );
+    let preimage = match preimage {
+        Ok(preimage) => preimage,
+        Err(error) => return Err(population_identity_encoding_failure(error)),
+    };
+    #[cfg(test)]
+    record_population_identity_digest();
+    let digest = quire_canonical::sha256(&preimage, quire_canonical::Limits::new(byte_bound));
+    match digest {
+        Ok(digest) => Ok(PopulationId::from_digest(*digest.as_bytes())),
+        Err(error) => Err(population_identity_encoding_failure(error)),
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum PopulationIdentityFailure {
+    Refusal(ModelRefusal),
+    InternalFault {
+        fault: InternalFault,
+        upstream_error: String,
+        encoder_limit: Option<EncoderLimit>,
+    },
+}
+
+/// The canonical encoder's limit record, retained when the derived identity
+/// byte bound is reached (a broken invariant, not a limit).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EncoderLimit {
+    /// The encoder limit that was reached.
+    pub kind: quire_canonical::LimitKind,
+    /// The derived byte bound.
+    pub bound: u64,
+    /// The bytes the encoder required.
+    pub required: u64,
+}
+
+fn population_identity_encoding_failure(
+    error: quire_canonical::Error,
+) -> PopulationIdentityFailure {
+    let detail = format!("bounded population identity encoding failed: {error}");
+    let cause = match error {
+        // The byte bound is derived from the members (`population_id_byte_bound`),
+        // not configured, so a correct preimage never reaches it.
+        quire_canonical::Error::Limit(limit) => {
+            return PopulationIdentityFailure::InternalFault {
+                fault: InternalFault::new("population.identity", "identity-byte-bound-reached"),
+                upstream_error: error.to_string(),
+                encoder_limit: Some(EncoderLimit {
+                    kind: limit.kind,
+                    bound: limit.bound,
+                    required: limit.required,
+                }),
+            };
+        }
+        quire_canonical::Error::Allocation { requested } => {
+            ModelRefusalCause::AllocationFailed { requested }
+        }
+        other => {
+            return PopulationIdentityFailure::InternalFault {
+                fault: InternalFault::new("population.identity", "canonical-encoding-failed"),
+                upstream_error: other.to_string(),
+                encoder_limit: None,
+            };
+        }
+    };
+    PopulationIdentityFailure::Refusal(ModelRefusal {
+        code: Code::ResourceExhausted,
+        cause,
+        detail,
+    })
+}
+
+fn population_identity_admission_failure(failure: PopulationIdentityFailure) -> AdmissionOutcome {
+    match failure {
+        PopulationIdentityFailure::Refusal(refusal) => AdmissionOutcome::Refused(refusal),
+        PopulationIdentityFailure::InternalFault {
+            fault,
+            upstream_error,
+            encoder_limit,
+        } => AdmissionOutcome::InternalFault {
+            fault,
+            upstream_error,
+            encoder_limit,
+        },
+    }
+}
+
+fn population_id_work_bound(
+    domain_package: &DomainPackage,
+    population_key: &DeclarationKey,
+    members: &BTreeMap<ReferenceKey, DeclarationKey>,
+) -> u64 {
+    let variable = domain_package
+        .model_selection
+        .identity
+        .len()
+        .saturating_add(domain_package.model_selection.version.len())
+        .saturating_add(population_key.package.len())
+        .saturating_add(population_key.node.len())
+        .saturating_add(members.iter().fold(0_usize, |sum, (key, declaration)| {
+            sum.saturating_add(key.object.len())
+                .saturating_add(declaration.package.len())
+                .saturating_add(declaration.node.len())
+        }));
+    let encoded_member_bytes = members
+        .iter()
+        .map(|(key, declaration)| {
+            key.object
+                .len()
+                .saturating_add(declaration.package.len())
+                .saturating_add(declaration.node.len())
+        })
+        .max()
+        .unwrap_or(0);
+    let member_count = length_amount(members.len());
+    let maximum_encoded_member_bytes = u64::try_from(encoded_member_bytes)
+        .unwrap_or(u64::MAX)
+        .saturating_mul(6)
+        .saturating_add(512);
+    let sorting_work = population_id_sort_work_bound(member_count, maximum_encoded_member_bytes);
+    u64::try_from(variable)
+        .unwrap_or(u64::MAX)
+        .saturating_mul(12)
+        .saturating_add(member_count.saturating_mul(2))
+        .saturating_add(sorting_work)
+}
+
+fn population_id_sort_work_bound(member_count: u64, maximum_encoded_member_bytes: u64) -> u64 {
+    let sort_levels = if member_count <= 1 {
+        0
+    } else {
+        u64::BITS - (member_count - 1).leading_zeros()
+    };
+    // Sorting performs O(n log n) bytewise comparisons. Each comparison may
+    // rescan a full common prefix, so price the worst encoded member length
+    // for every comparison, not merely the total input length. The factor of
+    // four conservatively covers the comparison bound of the slice sort.
+    member_count
+        .saturating_mul(u64::from(sort_levels))
+        .saturating_mul(4)
+        .saturating_mul(maximum_encoded_member_bytes)
+}
+
+/// Conservative RFC 8785 byte ceiling for the preimage and each member
+/// sort-key encoding. Every input byte can expand to at most six escaped
+/// bytes; fixed JSON keys, separators, hex IDs and per-member punctuation fit
+/// the additional per-member allowance.
+fn population_id_byte_bound(
+    domain_package: &DomainPackage,
+    population_key: &DeclarationKey,
+    members: &BTreeMap<ReferenceKey, DeclarationKey>,
+) -> u64 {
+    let variable = domain_package
+        .model_selection
+        .identity
+        .len()
+        .saturating_add(domain_package.model_selection.version.len())
+        .saturating_add(population_key.package.len())
+        .saturating_add(population_key.node.len())
+        .saturating_add(members.iter().fold(0_usize, |sum, (key, declaration)| {
+            sum.saturating_add(key.object.len())
+                .saturating_add(declaration.package.len())
+                .saturating_add(declaration.node.len())
+        }));
+    u64::try_from(variable)
+        .unwrap_or(u64::MAX)
+        .saturating_mul(6)
+        .saturating_add(length_amount(members.len()).saturating_mul(512))
+        .saturating_add(4096)
 }
 
 /// The outcome of one [`admit_binding`] attempt.
@@ -832,8 +1174,20 @@ fn mint_population_id(
 pub enum AdmissionOutcome {
     /// Every member was charged and admitted.
     Admitted(PopulationBinding),
-    /// A real defect refused admission outright; no binding.
+    /// A real model defect or canonical identity-work bound refused
+    /// admission outright; no binding.
     Refused(ModelRefusal),
+    /// Canonical population identity work failed internally; this is a
+    /// typed fault, never a model refusal or resource-exhaustion result.
+    InternalFault {
+        /// The stable internal-fault classification.
+        fault: InternalFault,
+        /// The canonical encoder's diagnostic text for investigation.
+        upstream_error: String,
+        /// The encoder's limit record, when the fault is the derived
+        /// identity byte bound being reached.
+        encoder_limit: Option<EncoderLimit>,
+    },
     /// Object or subtype closure is not established. Not a refusal
     /// (`Code::IncompletePopulation`); no charge and no binding.
     UnknownClosure(ModelRefusal),
@@ -1215,15 +1569,35 @@ fn admit_binding_as(
         }
     }
 
+    let identity_byte_bound = population_id_byte_bound(domain_package, population_key, &admitted);
+    let identity_work_bound = population_id_work_bound(domain_package, population_key, &admitted);
+    if let Err(incomplete) = meter
+        .charge(AdmissionCharge::new(AdmissionChargePoint::BindingMember).work(identity_work_bound))
+    {
+        return AdmissionOutcome::Incomplete(incomplete);
+    }
+    let population_id = match mint_population_id(
+        domain_package,
+        population_key,
+        role,
+        declared_maximum,
+        &admitted,
+        identity_byte_bound,
+    ) {
+        Ok(id) => id,
+        Err(failure) => return population_identity_admission_failure(failure),
+    };
     AdmissionOutcome::Admitted(PopulationBinding {
+        population_key: population_key.clone(),
         universe,
         members: admitted,
+        declared_member_types: population.member_types.iter().cloned().collect(),
         declared_maximum,
         index: Arc::clone(view.shared_model_index()),
         ancestor_steps,
         type_catalog: Arc::clone(view.shared_type_catalog()),
         pre_anchor: None,
-        population_id: mint_population_id(domain_package, population_key, role),
+        population_id,
     })
 }
 
@@ -1285,7 +1659,7 @@ pub struct InvocationDelta<'a> {
 /// against `declared.declared_created`/`declared_deleted` (FR-046's
 /// caller-supplied delta).
 ///
-/// Either admission failing (`Refused`/`UnknownClosure`/`Incomplete`) is
+/// Either admission failing (`Refused`/`UnknownClosure`/`Incomplete`/`InternalFault`) is
 /// returned as-is; a frame violation is `Refused` with
 /// `Code::FrameViolation`/cause `unauthorized-change`, and a delta
 /// disagreement (a duplicate or intersecting declared identity, or a
@@ -1308,13 +1682,12 @@ pub struct InvocationDelta<'a> {
 /// against its own meter (rather than inventing an unspecified combined
 /// schedule) is the conservative reading.
 ///
-/// Deciding created/deleted-identity, field-write frame membership and delta
-/// agreement is, like the object/subtype-closure and `modelIdentity` checks
-/// [`admit_binding`] already makes, a structural admission decision over
-/// already-charged data, not itself a new charge point: neither FR-151's nor
-/// FR-153's model module defines one, and the two admitted bindings' own
-/// `binding.member`/`binding.subset-value` charges already measured the data
-/// this check reads.
+/// Deciding created/deleted-identity and delta agreement is, like the
+/// object/subtype-closure and `modelIdentity` checks [`admit_binding`]
+/// already makes, a structural decision over already-charged data. A field
+/// write is not: FR-013 charges one `frame.write` for each changed field and
+/// one `frame.redefines-link` before each `redefines` link followed from it,
+/// to a frame meter of its own (see [`admit_invocation_bound`]).
 ///
 /// # Native duplication
 ///
@@ -1342,17 +1715,78 @@ pub fn admit_invocation(
     pre_meter: &mut AdmissionMeter,
     post_meter: &mut AdmissionMeter,
 ) -> AdmissionOutcome {
+    let mut frame_meter = AdmissionMeter::new(*post_meter.limits());
+    admit_invocation_bound(
+        context,
+        pre_document,
+        post_document,
+        declared,
+        &InvocationBinding::default(),
+        pre_meter,
+        post_meter,
+        &mut frame_meter,
+    )
+}
+
+/// Who the invocation's receiver and reference arguments are, for the
+/// frame's receiver-scoped and argument-scoped entries (FR-013): `self`
+/// and `deletes p` ground in these objects, and a frame that names neither
+/// reads none of it.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct InvocationBinding<'a> {
+    /// The invocation's receiver, by object identity in the admitted
+    /// population.
+    pub receiver: Option<&'a str>,
+    /// Each reference parameter's bound argument, as `(parameter name,
+    /// object identity)`.
+    pub arguments: &'a [(String, String)],
+}
+
+/// [`admit_invocation`] with the invocation's receiver and reference
+/// arguments: a `modifies self.f` entry grants the write to `f` on
+/// `binding.receiver` only, `deletes self` the deletion of the receiver
+/// only, and `deletes p` the deletion of the argument bound to `p` only.
+///
+/// The frame check charges `frame_meter`, a meter of its own beside
+/// `pre_meter` and `post_meter`, so its `frame.write` and
+/// `frame.redefines-link` charges are counted on their own and never against
+/// the members the two admissions charged. A denied charge ends the check
+/// with [`AdmissionOutcome::Incomplete`] and no frame verdict.
+#[allow(clippy::too_many_arguments)]
+pub fn admit_invocation_bound(
+    context: InvocationContext<'_>,
+    pre_document: &PopulationDocument,
+    post_document: &PopulationDocument,
+    declared: &InvocationDelta<'_>,
+    binding: &InvocationBinding<'_>,
+    pre_meter: &mut AdmissionMeter,
+    post_meter: &mut AdmissionMeter,
+    frame_meter: &mut AdmissionMeter,
+) -> AdmissionOutcome {
     let pre = match admit_binding_as(context, pre_document, AdmissionRole::Pre, pre_meter) {
         AdmissionOutcome::Admitted(binding) => binding,
         other => return other,
     };
-    let post = match admit_binding_as(context, post_document, AdmissionRole::Post, post_meter) {
+    let post = match admit_binding_as(
+        context,
+        post_document,
+        AdmissionRole::Post(pre.population_id()),
+        post_meter,
+    ) {
         AdmissionOutcome::Admitted(binding) => binding,
         other => return other,
     };
-    match enforce_frame(&pre, pre_document, post_document, declared) {
+    match enforce_frame(
+        &pre,
+        pre_document,
+        post_document,
+        declared,
+        binding,
+        frame_meter,
+    ) {
         Ok(()) => AdmissionOutcome::Admitted(post.with_pre_anchor(pre)),
-        Err(refusal) => AdmissionOutcome::Refused(refusal),
+        Err(FrameStop::Refused(refusal)) => AdmissionOutcome::Refused(refusal),
+        Err(FrameStop::Denied(incomplete)) => AdmissionOutcome::Incomplete(incomplete),
     }
 }
 
@@ -1414,23 +1848,6 @@ fn field_values_equal(
     pre == post
 }
 
-/// Whether `field` (the field a runtime population document names on some
-/// member) is covered by `effect.modifies`, directly or because it reaches
-/// one through a chain of members' own `redefines` properties -- FR-151's
-/// own effect-inclusion rule (`quire.model.conformance.effect/v1`), applied here to one
-/// operation's own declared writes rather than to a redefining operation's
-/// writes against its redefined ancestor's. Walks the full chain
-/// ([`ModelIndex::redefinition_reaches`]), not just one hop:
-/// `modifies: [model.A.x]` covers a write to `model.C.x` through
-/// `model.C.x -> model.B.x -> model.A.x`.
-fn field_write_covered(
-    index: &ModelIndex,
-    effect: &OperationEffect,
-    field: &DeclarationKey,
-) -> bool {
-    index.redefinition_reaches(field, |candidate| effect.modifies.contains(candidate))
-}
-
 /// One object as [`decide_frame`] reads it: its declared identity, its
 /// most-specific type, and its declared field values keyed by the field's
 /// own [`DeclarationKey`]. `V` is the caller's own field-value form (a
@@ -1460,6 +1877,38 @@ pub(crate) struct FrameDecision<'e> {
     pub(crate) declared_created: &'e [String],
     /// The invocation's own declared deleted identities.
     pub(crate) declared_deleted: &'e [String],
+    /// The identity, in this population, of the invocation's receiver, when
+    /// the receiver is in this population. A receiver-scoped entry grants
+    /// nothing without one.
+    pub(crate) receiver: Option<&'e str>,
+    /// The identity, in this population, of the object each reference
+    /// parameter is bound to, as `(parameter name, object)`.
+    pub(crate) arguments: &'e [(String, String)],
+}
+
+/// One charge FR-013 makes while it decides a field write.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum FrameCharge {
+    /// `frame.write`.
+    Write,
+    /// `frame.redefines-link`.
+    RedefinesLink,
+}
+
+/// Why [`decide_frame`] stopped: a finding about the invocation, or a
+/// denied charge (`E` is the caller's own incomplete record).
+#[derive(Debug)]
+pub(crate) enum FrameStop<E> {
+    /// A refusal or violation.
+    Refused(ModelRefusal),
+    /// The first charge the caller's meter denied.
+    Denied(E),
+}
+
+impl<E> From<ModelRefusal> for FrameStop<E> {
+    fn from(refusal: ModelRefusal) -> Self {
+        Self::Refused(refusal)
+    }
 }
 
 /// [`decide_frame`]'s result: the computed created and deleted identities.
@@ -1490,6 +1939,29 @@ fn granted(
     Ok(false)
 }
 
+/// Whether `frame` permits deleting `object`, of most-specific type
+/// `type_identity`: its type conforms to a type-wide `deletes` entry, or it
+/// is the receiver under `deletes self`, or it is the argument bound to `p`
+/// under `deletes p`.
+fn delete_granted(
+    frame: &FrameDecision<'_>,
+    object: &str,
+    type_identity: &DeclarationKey,
+) -> Result<bool, ModelRefusal> {
+    let effect = frame.effect;
+    if effect.deletes_receiver && frame.receiver == Some(object) {
+        return Ok(true);
+    }
+    if frame
+        .arguments
+        .iter()
+        .any(|(name, bound)| bound == object && effect.deletes_arguments.contains(name))
+    {
+        return Ok(true);
+    }
+    granted(frame, &effect.deletes, type_identity)
+}
+
 /// The one frame and delta decision (FR-046/FR-151, FR-106 check 11) over
 /// one population's `pre` and `post` objects, both in document order. Both
 /// [`enforce_frame`] and FR-106 admission (`model::observation::frame`)
@@ -1505,11 +1977,21 @@ fn granted(
 /// 2. `pre`'s objects absent from `post`, ascending identity order, whose
 ///    type conforms to no `deletes` grant
 ///    ([`ModelRefusalCause::FrameDeleteOutsideGrant`]).
-/// 3. surviving objects in `pre` document order, fields in ascending
+/// 3. surviving objects in ascending identity order, fields in ascending
 ///    [`DeclarationKey`] order: a changed field (`values_equal` false) that
 ///    reaches no `modifies` entry through its `redefines` chain
-///    ([`ModelRefusalCause::FrameFieldWriteOutsideGrant`]).
+///    ([`ModelRefusalCause::FrameFieldWriteOutsideGrant`]). An every-object
+///    entry grants the write on any object, a receiver-scoped entry only on
+///    `frame.receiver`. Each changed field charges `charge(Write)` first,
+///    then `charge(RedefinesLink)` before each `redefines` link followed
+///    from it, stopping at the first member an entry names; the first
+///    charge `charge` denies ends the decision as [`FrameStop::Denied`]
+///    with no verdict.
 /// 4. the declared delta against the computed one ([`check_declared_delta`]).
+///
+/// A deletion (step 2) is granted by a type-wide entry the object's type
+/// conforms to, by `deletes self` for the receiver, or by `deletes p` for
+/// the argument bound to `p`.
 ///
 /// Created/deleted classification is by *object identity* alone, never by
 /// type: an object present under the same identity in both `pre` and `post`
@@ -1517,12 +1999,13 @@ fn granted(
 /// one -- FR-151's effect vocabulary grants `modifies`, `creates` and
 /// `deletes` only, and FR-143 treats the most-specific type as part of a
 /// reference's identity, never a mutable attribute.
-pub(crate) fn decide_frame<V>(
+pub(crate) fn decide_frame<V, E>(
     frame: &FrameDecision<'_>,
     pre: &[FrameObject<'_, V>],
     post: &[FrameObject<'_, V>],
     values_equal: impl Fn(&DeclarationKey, Option<&V>, Option<&V>) -> bool,
-) -> Result<FrameDelta, ModelRefusal> {
+    charge: &mut impl FnMut(FrameCharge) -> Result<(), E>,
+) -> Result<FrameDelta, FrameStop<E>> {
     let pre_by_object: BTreeMap<&str, &FrameObject<'_, V>> =
         pre.iter().map(|object| (object.object, object)).collect();
     let post_by_object: BTreeMap<&str, &FrameObject<'_, V>> =
@@ -1543,7 +2026,8 @@ pub(crate) fn decide_frame<V>(
                          declared creates frame",
                         post_type.node
                     ),
-                ));
+                )
+                .into());
             }
             delta.created.insert((*object).to_owned());
             continue;
@@ -1562,7 +2046,8 @@ pub(crate) fn decide_frame<V>(
                      effect grants cover modifies/creates/deletes only)",
                     pre_type.node, post_type.node
                 ),
-            ));
+            )
+            .into());
         }
     }
 
@@ -1571,7 +2056,7 @@ pub(crate) fn decide_frame<V>(
             continue; // Survivor or retype; already decided above.
         }
         let pre_type = &pre_object.type_identity;
-        if !granted(frame, &frame.effect.deletes, pre_type)? {
+        if !delete_granted(frame, object, pre_type)? {
             return Err(frame_violation(
                 ModelRefusalCause::FrameDeleteOutsideGrant {
                     object: (*object).to_owned(),
@@ -1582,15 +2067,17 @@ pub(crate) fn decide_frame<V>(
                      declared deletes frame",
                     pre_type.node
                 ),
-            ));
+            )
+            .into());
         }
         delta.deleted.insert((*object).to_owned());
     }
 
-    for pre_object in pre {
+    for pre_object in pre_by_object.values() {
         let Some(post_object) = post_by_object.get(pre_object.object) else {
             continue; // Deleted; already decided above.
         };
+        let is_receiver = frame.receiver == Some(pre_object.object);
         let fields: BTreeSet<&DeclarationKey> = pre_object
             .fields
             .keys()
@@ -1604,7 +2091,19 @@ pub(crate) fn decide_frame<V>(
             ) {
                 continue;
             }
-            if field_write_covered(frame.index, frame.effect, field) {
+            charge(FrameCharge::Write).map_err(FrameStop::Denied)?;
+            let covered = frame
+                .index
+                .redefinition_walk(
+                    field,
+                    |candidate| {
+                        frame.effect.modifies.contains(candidate)
+                            || (is_receiver && frame.effect.receiver_modifies.contains(candidate))
+                    },
+                    || charge(FrameCharge::RedefinesLink),
+                )
+                .map_err(FrameStop::Denied)?;
+            if covered {
                 continue;
             }
             return Err(frame_violation(
@@ -1617,7 +2116,8 @@ pub(crate) fn decide_frame<V>(
                      modifies frame",
                     pre_object.object, field.node
                 ),
-            ));
+            )
+            .into());
         }
     }
 
@@ -1634,7 +2134,9 @@ fn enforce_frame(
     pre_document: &PopulationDocument,
     post_document: &PopulationDocument,
     declared: &InvocationDelta<'_>,
-) -> Result<(), ModelRefusal> {
+    binding: &InvocationBinding<'_>,
+    meter: &mut AdmissionMeter,
+) -> Result<(), FrameStop<AdmissionIncomplete>> {
     let index = &*pre.index;
     let frame = FrameDecision {
         index,
@@ -1642,6 +2144,8 @@ fn enforce_frame(
         effect: declared.effect,
         declared_created: declared.declared_created,
         declared_deleted: declared.declared_deleted,
+        receiver: binding.receiver,
+        arguments: binding.arguments,
     };
     decide_frame(
         &frame,
@@ -1654,6 +2158,13 @@ fn enforce_frame(
                 pre_values.copied().unwrap_or(&[]),
                 post_values.copied().unwrap_or(&[]),
             )
+        },
+        &mut |charge| {
+            let point = match charge {
+                FrameCharge::Write => AdmissionChargePoint::FrameWrite,
+                FrameCharge::RedefinesLink => AdmissionChargePoint::FrameRedefinesLink,
+            };
+            meter.charge(AdmissionCharge::new(point))
         },
     )
     .map(|_| ())
@@ -1780,6 +2291,16 @@ impl ReferenceSet {
 
 /// The outcome of one [`all_instances`] evaluation.
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SubtypeClosureIncomplete {
+    /// The type queried by `allInstances<T>`.
+    pub queried_type: DeclarationKey,
+    /// The queried type, which conforms to no declared population member
+    /// type and therefore marks the missing subtype coverage.
+    pub missing_types: Vec<DeclarationKey>,
+}
+
+/// The outcome of one [`all_instances`] evaluation.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AllInstancesOutcome {
     /// Every and only member whose most-specific type conforms to `T`, once
     /// by reference key, in canonical reference-key order.
@@ -1788,6 +2309,9 @@ pub enum AllInstancesOutcome {
     Refused(ModelRefusal),
     /// A `ScalarLimitsV1` counter was exhausted; no collection.
     Incomplete(ScalarIncomplete),
+    /// The binding is object-closed, but no declared member type covers the
+    /// queried type by conformance; no collection exists.
+    IncompleteSubtypeClosure(SubtypeClosureIncomplete),
 }
 
 /// `allInstances<T>(p)`: every member of `binding` whose most-specific type
@@ -1808,6 +2332,29 @@ pub fn all_instances(
             code: Code::IllTyped,
             cause: ModelRefusalCause::TypeMismatch,
             detail: format!("{} is not a model object type", t.node),
+        });
+    }
+
+    let mut covered = false;
+    for declared_member_type in &binding.declared_member_types {
+        match binding.index.conforms(
+            t,
+            declared_member_type,
+            binding.ancestor_steps,
+            qsl_foundation::Setting::AdmissionAncestorSteps,
+        ) {
+            Ok(true) => {
+                covered = true;
+                break;
+            }
+            Ok(false) => {}
+            Err(refusal) => return AllInstancesOutcome::Refused(refusal),
+        }
+    }
+    if !covered {
+        return AllInstancesOutcome::IncompleteSubtypeClosure(SubtypeClosureIncomplete {
+            queried_type: t.clone(),
+            missing_types: vec![t.clone()],
         });
     }
 
@@ -1986,7 +2533,7 @@ pub fn lookup(
                 code: Code::IllTyped,
                 cause: ModelRefusalCause::TypeMismatch,
                 detail: format!("{} does not conform to {}", r.static_type.node, t.node),
-            })
+            });
         }
         Err(refusal) => return LookupOutcome::Refused(refusal),
     }
@@ -2108,6 +2655,169 @@ mod tests {
                 ancestor_steps: 16_777_216,
             }
         );
+    }
+
+    /// Sorting canonical member encodings prices repeated-prefix comparisons,
+    /// not only the bytes emitted once by each member.
+    #[trace("TC-434", "NFR-012")]
+    #[test]
+    fn population_identity_sort_work_bound_covers_repeated_prefixes() {
+        let short_keys = population_id_sort_work_bound(32, 512);
+        let long_repeated_prefix_keys = population_id_sort_work_bound(32, 6 * 4096 + 512);
+        let twice_as_many_keys = population_id_sort_work_bound(64, 512);
+
+        assert_eq!(short_keys, 32 * 5 * 4 * 512);
+        assert!(long_repeated_prefix_keys > short_keys * 8);
+        assert!(twice_as_many_keys > short_keys);
+    }
+
+    /// A denied identity-work charge leaves the actual canonical encoder,
+    /// member comparator and digest untouched; an admitted control proves
+    /// the observation points cover the real producer path.
+    #[trace("TC-434", "NFR-012")]
+    #[test]
+    fn population_identity_encoding_is_charged_before_hashing() {
+        let package = domain_package();
+        let view = match normalize(&package, ModelNormalizationLimits::UNLIMITED) {
+            NormalizeOutcome::Completed(view) => view,
+            other => panic!("expected a completed view, got {other:?}"),
+        };
+        let population_key = DeclarationKey::fixture("model.pop");
+        let mut population = document();
+        population.members[0].object = "x".repeat(4096);
+
+        reset_population_identity_work_observations();
+        let denied = admit_binding(
+            &view,
+            &population,
+            &population_key,
+            GeneralizationClosure::Closed,
+            Some(3),
+            &mut AdmissionMeter::new(PopulationAdmissionLimits {
+                work_units: 128,
+                ..PopulationAdmissionLimits::UNLIMITED
+            }),
+        );
+        assert!(matches!(
+            denied,
+            AdmissionOutcome::Incomplete(AdmissionIncomplete {
+                limit_kind: AdmissionLimitKind::WorkUnits,
+                limit: 128,
+                consumed: 2,
+                charge_point: AdmissionChargePoint::BindingMember,
+                next_charge,
+            }) if next_charge > 126
+        ));
+        assert_eq!(
+            population_identity_work_observations(),
+            PopulationIdentityWorkObservations::default(),
+            "a denied charge must precede member encoding, sorting and hashing"
+        );
+
+        reset_population_identity_work_observations();
+        let admitted = admit_binding(
+            &view,
+            &population,
+            &population_key,
+            GeneralizationClosure::Closed,
+            Some(3),
+            &mut AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED),
+        );
+        assert!(matches!(admitted, AdmissionOutcome::Admitted(_)));
+        let observations = population_identity_work_observations();
+        assert_eq!(observations.member_encodings, population.members.len());
+        assert!(observations.member_sort_comparisons > 0);
+        assert_eq!(observations.digest_calls, 1);
+    }
+
+    /// FND-008 and QSL-745: the identity preimage's byte bound is derived from
+    /// the members, not configured (no setting, limits field or contract), so
+    /// reaching it is a broken invariant, `runtime_invariant`/
+    /// `established-invariant-broken`, never a limit. The fault retains the
+    /// canonical encoder's kind, bound and required-byte count.
+    #[trace("TC-434", "NFR-012")]
+    #[test]
+    fn population_identity_digest_limit_is_a_broken_invariant_retaining_encoder_details() {
+        let members = BTreeMap::new();
+        let failure = mint_population_id(
+            &domain_package(),
+            &DeclarationKey::fixture("model.pop"),
+            AdmissionRole::Direct,
+            None,
+            &members,
+            0,
+        )
+        .expect_err("the nonempty identity preimage exceeds a zero-byte digest bound");
+
+        let AdmissionOutcome::InternalFault {
+            fault,
+            encoder_limit: Some(limit),
+            ..
+        } = population_identity_admission_failure(failure)
+        else {
+            panic!("the derived byte bound is an internal fault, not a refusal");
+        };
+        assert_eq!(fault.catalog_code().code(), "runtime_invariant");
+        assert_eq!(fault.catalog_code().cause(), "established-invariant-broken");
+        assert_eq!(fault.stage(), "population.identity");
+        assert_eq!(fault.invariant(), "identity-byte-bound-reached");
+        assert_eq!(limit.kind, quire_canonical::LimitKind::CanonicalBytes);
+        assert_eq!(limit.bound, 0);
+        assert!(limit.required > 0);
+    }
+
+    /// A reservation failure keeps its actual requested size.
+    #[trace("TC-434", "NFR-012")]
+    #[test]
+    fn population_identity_allocation_refusal_preserves_requested_size() {
+        let failure = population_identity_encoding_failure(quire_canonical::Error::Allocation {
+            requested: 4096,
+        });
+        let AdmissionOutcome::Refused(refusal) = population_identity_admission_failure(failure)
+        else {
+            panic!("allocation failure must remain a refusal");
+        };
+
+        assert_eq!(refusal.code, Code::ResourceExhausted);
+        assert_eq!(
+            refusal.cause,
+            ModelRefusalCause::AllocationFailed { requested: 4096 }
+        );
+        assert!(refusal.detail.contains("allocation of 4096 bytes"));
+    }
+
+    /// The mandatory non-exhaustive fallback is a typed internal fault, not
+    /// a refusal or an exhausted-resource result.
+    #[trace("TC-434", "NFR-012")]
+    #[test]
+    fn population_identity_unexpected_encoder_refusal_is_internal_failure() {
+        let outcome = population_identity_admission_failure(population_identity_encoding_failure(
+            quire_canonical::Error::Serialize("unexpected serializer error".to_owned()),
+        ));
+
+        let AdmissionOutcome::InternalFault {
+            fault,
+            upstream_error,
+            encoder_limit,
+        } = outcome
+        else {
+            panic!("unexpected canonical error must be an internal fault");
+        };
+        assert_eq!(fault.catalog_code().code(), "runtime_invariant");
+        assert_eq!(fault.catalog_code().cause(), "established-invariant-broken");
+        assert_eq!(
+            fault.category(),
+            qsl_foundation::diagnostic::Category::InternalFailure
+        );
+        assert_eq!(
+            qsl_foundation::diagnostic::catalog_category(fault.catalog_code().code()),
+            Some(qsl_foundation::diagnostic::Category::InternalFailure)
+        );
+        assert_ne!(fault.catalog_code().code(), "resource_exhausted");
+        assert_eq!(Code::RuntimeInvariant.category(), fault.category());
+        assert_ne!(Code::RuntimeInvariant, Code::ResourceExhausted);
+        assert_eq!(upstream_error, "unexpected serializer error");
+        assert_eq!(encoder_limit, None);
     }
 
     fn object_type(identity: &str, supertypes: &[&str]) -> DomainPackageRecord {
@@ -2235,15 +2945,13 @@ mod tests {
         );
     }
 
-    /// Golden vector: the `quire.population/v1` preimage's RFC 8785
-    /// text, written out by hand, and its SHA-256. The `serde_json` encoder
-    /// this site used before `quire-canonical` emitted the same text, so the minted
-    /// `PopulationId` is unchanged.
-    #[trace("TC-291", "FR-089-AC-1")]
+    /// Golden vector: the seven-field `quire.population/v1` preimage's RFC
+    /// 8785 text, written out independently, and its SHA-256.
+    #[trace("TC-291", "FR-089-AC-1", "FR-089-AC-7")]
     #[test]
     fn population_id_matches_its_golden_vector() {
-        const TEXT: &str = r#"{"admission_role":"direct","domain_package_selection":{"digest":"1111111111111111111111111111111111111111111111111111111111111111","digest_domain":"sha256-jcs","identity":"test/orders","version":"1"},"population_key":{"digest_domain":"sha256-jcs","node":"ix://test/orders/P1","package":"test/orders"},"version":"quire.population/v1"}"#;
-        const DIGEST: &str = "092fac4438533d9185c17106da06667b4745a3e49b0aacd3fa51ada86e215298";
+        const TEXT: &str = r#"{"admission_role":"direct","declared_maximum":null,"domain_package_selection":{"digest":"1111111111111111111111111111111111111111111111111111111111111111","digest_domain":"sha256-jcs","identity":"test/orders","version":"1"},"members":[],"population_key":{"digest_domain":"sha256-jcs","node":"ix://test/orders/P1","package":"test/orders"},"pre":null,"version":"quire.population/v1"}"#;
+        const DIGEST: &str = "5724db729e0bc5d08cf4cc9d2955346daa313804c50ad49e570d29326b0a3c15";
         let package = DomainPackage::new(
             DomainPackageRef {
                 identity: "test/orders".to_owned(),
@@ -2257,9 +2965,40 @@ mod tests {
             node: "ix://test/orders/P1".to_owned(),
         };
         assert_eq!(hex(&Sha256::digest(TEXT.as_bytes())), DIGEST);
-        let id = mint_population_id(&package, &key, AdmissionRole::Direct);
+        let id = mint_population_id(
+            &package,
+            &key,
+            AdmissionRole::Direct,
+            None,
+            &BTreeMap::new(),
+            population_id_byte_bound(&package, &key, &BTreeMap::new()),
+        )
+        .expect("golden population identity encodes");
         assert_eq!(hex(id.as_bytes()), DIGEST);
         let parsed: serde_json::Value = serde_json::from_str(TEXT).unwrap();
         assert_eq!(serde_json::to_string(&parsed).unwrap(), TEXT);
+    }
+
+    /// The member wire's typed effective identity keeps the existing `type`
+    /// key and lowercase-hex string representation.
+    #[trace("TC-291", "FR-089-AC-7")]
+    #[test]
+    fn population_member_type_identity_wire_keeps_its_hex_string_shape() {
+        let type_identity = EffectiveId::from_digest([0xab; 32]);
+        let declaration = DeclarationKey::fixture("model.A");
+        let member = PopulationMemberWire {
+            universe: "cd".repeat(32),
+            r#type: PopulationMemberTypeIdentityWire(&type_identity),
+            object: "obj-1",
+            declaration: declaration.wire(),
+        };
+        let encoded = quire_canonical::to_vec(&member, quire_canonical::Limits::new(4096))
+            .expect("member wire has a fixed canonical shape");
+        let expected = format!(
+            "{{\"declaration\":{{\"digest_domain\":\"sha256-jcs\",\"node\":\"model.A\",\"package\":\"test/orders\"}},\"object\":\"obj-1\",\"type\":\"{}\",\"universe\":\"{}\"}}",
+            "ab".repeat(32),
+            "cd".repeat(32)
+        );
+        assert_eq!(encoded, expected.as_bytes());
     }
 }

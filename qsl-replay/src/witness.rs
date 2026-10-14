@@ -21,7 +21,7 @@ use quire_exact::ScalarLimits;
 
 use crate::bounds::{BoundExceeded, ReplayLimits};
 use crate::identity::{
-    Backend, DeclaredDomain, ObligationIdentity, ProfileSelection, QualifiedName, RawSourceRef,
+    DeclaredDomain, ObligationIdentity, ProfileSelection, QualifiedName, RawSourceRef,
     SourceDigestWire, TracePosition,
 };
 use qsl_foundation::bound::{DomainKey, FiniteBound};
@@ -29,6 +29,7 @@ use qsl_foundation::digest::{
     ByteDigest, DigestDomain, DigestRecord, InvalidDigestRecord, WireNodeId,
 };
 use qsl_foundation::source::provenance::OccurrenceKey;
+use qsl_foundation::BackendId;
 
 mod value;
 mod value_text;
@@ -514,7 +515,7 @@ pub struct WitnessEnvelope<P: FamilyPayload> {
     profile_selections: Vec<ProfileSelection>,
     run_limits: ScalarLimits,
     declared_domains: Vec<DeclaredDomain>,
-    backend: Backend,
+    backend: BackendId,
     trace_position: Option<TracePosition>,
     source: ReplaySource,
     family_payload: P,
@@ -560,7 +561,7 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
         &self.declared_domains
     }
     /// The backend that produced this counterexample.
-    pub fn backend(&self) -> &Backend {
+    pub fn backend(&self) -> &BackendId {
         &self.backend
     }
     /// The trace position this counterexample was produced at, if the
@@ -995,7 +996,7 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
         if backend_identity.is_empty() {
             return Err(WitnessRefusal::EmptyBackendIdentity);
         }
-        let backend = Backend::new(backend_identity);
+        let backend = BackendId::new(backend_identity);
         let trace_position = packet
             .trace_position
             .ok_or(WitnessRefusal::MissingMember("trace_position"))?;
@@ -1047,7 +1048,7 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
             profile_selections: Some(self.profile_selections.clone()),
             run_limits: Some(self.run_limits),
             declared_domains: Some(self.declared_domains.clone()),
-            backend: Some(self.backend.identity().to_owned()),
+            backend: Some(self.backend.as_str().to_owned()),
             trace_position: Some(self.trace_position.clone()),
             source: Some(self.source.clone()),
             family_payload: Some(self.family_payload.clone()),

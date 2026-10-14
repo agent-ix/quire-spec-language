@@ -58,7 +58,8 @@ fn operation(
         parameters: Vec::new(),
         result: None,
         effect: OperationEffect::default(),
-        own_postcondition_clauses: Vec::new(),
+        requires: Vec::new(),
+        ensures: Vec::new(),
         has_body,
         redefines: redefines.map(DeclarationKey::fixture),
     })
@@ -260,7 +261,7 @@ fn d01_the_eighth_dispatch_candidate_charge_is_incomplete_at_the_named_limit() {
     };
     assert_eq!(incomplete.limit_kind, LimitKind::DispatchCandidates);
     assert_eq!(
-        incomplete.limit_exceeded().setting(),
+        incomplete.denial().setting(),
         qsl_foundation::Setting::ModelDispatchCandidates
     );
     assert_eq!(incomplete.limit, 7);
@@ -430,7 +431,9 @@ fn d03_no_candidate_with_a_body_refuses_every_subtype_as_no_applicable() {
     let subtypes: Vec<&str> = refusals.iter().map(|r| r.subtype.node.as_str()).collect();
     // Subtype order follows the view's own ascending effective-identity
     // order, i.e. each type's computed hash.
-    assert_eq!(subtypes, vec!["model.A", "model.D", "model.C", "model.B"]);
+    // The closed identity wire no longer hashes the removed revision field;
+    // this changes the effective-identity order while preserving the set.
+    assert_eq!(subtypes, vec!["model.A", "model.D", "model.B", "model.C"]);
     assert!(refusals.iter().all(|r| r.code == Code::AmbiguousDispatch));
     assert!(refusals
         .iter()
@@ -554,6 +557,7 @@ fn two_operation_members_sharing_one_declaration_key_refuse_conflicting_binding(
                 refusal.cause,
                 ModelRefusalCause::ConflictingBinding {
                     key: DeclarationKey::fixture("model.A.size"),
+                    member: None,
                 }
             );
         }
@@ -834,8 +838,8 @@ fn a_family_at_the_configured_bound_links_and_one_step_more_refuses() {
             );
             let exceeded = refusal
                 .cause
-                .limit_exceeded()
-                .expect("a step ceiling is a stage limit");
+                .denial()
+                .expect("a step ceiling is a denied charge");
             assert_eq!(
                 exceeded.setting(),
                 qsl_foundation::Setting::ModelFamilySteps
@@ -855,5 +859,45 @@ fn a_family_at_the_configured_bound_links_and_one_step_more_refuses() {
             );
         }
         other => panic!("expected Refused(FamilySteps), got {other:?}"),
+    }
+}
+
+/// TC-196 C10, zero limit: on a nonempty family, `family_steps: 0` denies the
+/// first followed `redefines` edge. The record is exactly
+/// `incomplete(family_steps, 0, 0, 1, model.family-edge)` at stage
+/// `model-normalization`, with consumed 0 and no linked table or ambiguity
+/// result.
+///
+/// Mutation used (derived by reading, not executed): treating a zero limit as
+/// "unlimited", or admitting the first edge before comparing, links the
+/// family and fails the `Refused` match.
+#[trace("QSpec-TC-196", "QSpec-FR-150-AC-18")]
+#[test]
+fn c10_a_zero_family_steps_limit_denies_the_first_followed_edge() {
+    let limits = ModelNormalizationLimits {
+        family_steps: 0,
+        ..ModelNormalizationLimits::UNLIMITED
+    };
+    let LinkCheckOutcome::Refused(refusal) = link_chain(&chain_package(3), limits) else {
+        panic!("a nonempty family at family_steps 0 must be denied at its first edge");
+    };
+    assert_eq!(refusal.code, Code::ResourceExhausted);
+    let fields = refusal
+        .cause
+        .catalog_fields()
+        .expect("a walk ceiling carries its denied-charge record");
+    for (name, expected) in [
+        ("stage", "model-normalization"),
+        ("limit_kind", "family_steps"),
+        ("limit", "0"),
+        ("consumed", "0"),
+        ("next_charge", "1"),
+        ("charge_point", "model.family-edge"),
+    ] {
+        assert_eq!(
+            fields.get(name).map(String::as_str),
+            Some(expected),
+            "{name} in {fields:?}"
+        );
     }
 }

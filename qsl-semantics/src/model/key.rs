@@ -58,30 +58,23 @@ pub const OBJECT_UNIVERSE_DOMAIN: &str = "quire.model.object-universe/v1";
 /// The `quire.model.complete.rules/v1` manifest identity this crate reads.
 pub const RULES_IDENTITY: &str = "quire.model.complete.rules/v1";
 
-/// The pinned rules manifest revision (`complete-model-lock.json`).
-pub const RULES_REVISION: &str = "1-draft.1";
-
 /// Every derivation fact cites one of these four rules
 /// (`model-effective-declaration.schema.json`, `$defs.RuleRef`); `decode` and
 /// `canonicalize` never appear as a fact's rule.
 pub const RULE_QUALIFY: RuleRef = RuleRef {
     identity: "quire.model.normalize.qualify/v1",
-    revision: "1-draft.1",
 };
 /// See [`RULE_QUALIFY`].
 pub const RULE_INHERIT: RuleRef = RuleRef {
     identity: "quire.model.normalize.inherit/v1",
-    revision: "1-draft.1",
 };
 /// See [`RULE_QUALIFY`].
 pub const RULE_SUBSET: RuleRef = RuleRef {
     identity: "quire.model.normalize.subset/v1",
-    revision: "1-draft.1",
 };
 /// See [`RULE_QUALIFY`].
 pub const RULE_REDEFINE: RuleRef = RuleRef {
     identity: "quire.model.normalize.redefine/v1",
-    revision: "1-draft.1",
 };
 
 /// One original declaration key: `{package, node, digest_domain: "sha256-jcs"}`
@@ -137,27 +130,23 @@ pub(super) struct DeclarationKeyWire<'a> {
     digest_domain: &'static str,
 }
 
-/// A rule reference: `{identity, revision}`.
+/// A rule reference: `{identity}`.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct RuleRef {
     /// The normative rule identity, e.g. `quire.model.normalize.qualify/v1`.
     pub identity: &'static str,
-    /// The rule revision; every rule in this rung is `1-draft.1`.
-    pub revision: &'static str,
 }
 
-/// A [`RuleRef`]'s preimage form: `{identity, revision}`.
+/// A [`RuleRef`]'s preimage form: `{identity}`.
 #[derive(Serialize, FixedShape)]
 pub(super) struct RuleRefWire {
     pub(super) identity: &'static str,
-    pub(super) revision: &'static str,
 }
 
 impl RuleRef {
     fn wire(&self) -> RuleRefWire {
         RuleRefWire {
             identity: self.identity,
-            revision: self.revision,
         }
     }
 }
@@ -450,7 +439,7 @@ impl EffectiveDeclarationPreimage {
 
     /// Whether `derivation` is well-formed: every fact's `ordinal` matches
     /// its array position (`unsorted-derivation`), and no two facts retain
-    /// the same input path twice (`duplicate-path`) — TC-195 N10's
+    /// the same rule and input path twice (`duplicate-path`) — TC-195 N10's
     /// `invalid_mutations` named these "refused by the semantic check", i.e.
     /// this engine's own job over an already-constructed preimage (for
     /// example one read back from a checked-package `model_correspondence`
@@ -478,7 +467,9 @@ impl EffectiveDeclarationPreimage {
         }
         for earlier in 0..self.derivation.len() {
             for later in (earlier + 1)..self.derivation.len() {
-                if self.derivation[earlier].inputs == self.derivation[later].inputs {
+                if self.derivation[earlier].rule == self.derivation[later].rule
+                    && self.derivation[earlier].inputs == self.derivation[later].inputs
+                {
                     return Err((
                         ModelRefusalCause::DuplicatePath {
                             original: self.original.clone(),

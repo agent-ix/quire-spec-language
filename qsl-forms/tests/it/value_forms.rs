@@ -53,6 +53,7 @@ fn function(form: &DeclarationForm) -> &FunctionDeclaration {
         | DeclarationForm::Dimension(_)
         | DeclarationForm::Unit(_)
         | DeclarationForm::StateClause(_)
+        | DeclarationForm::OperationBody(_)
         | DeclarationForm::Protocol(_) => panic!("a function form, not {form:?}"),
     }
 }
@@ -185,6 +186,7 @@ fn a_unit_builds_one_form_per_declaration_in_source_order() {
             DeclarationForm::Dimension(_) => "dimension",
             DeclarationForm::Unit(_) => "unit",
             DeclarationForm::StateClause(_) => "state_clause",
+            DeclarationForm::OperationBody(_) => "operation_body",
             DeclarationForm::Protocol(_) => "protocol",
         })
         .collect();
@@ -285,6 +287,9 @@ fn each_expression_construct_maps_to_its_variant() {
         ("a - b", "Subtract(a, b)"),
         ("a * b", "Multiply(a, b)"),
         ("a / b", "Divide(a, b)"),
+        ("a div b", "IntegerDiv(a, b)"),
+        ("a rem b", "IntegerRem(a, b)"),
+        ("a mod b", "IntegerMod(a, b)"),
         ("not a", "Not(a)"),
         ("-a", "Negate(a)"),
         ("a.f", "Field[f](a)"),
@@ -388,12 +393,40 @@ fn grouping_and_associativity_come_from_the_cst() {
         ("a implies b implies c", "Implies(a, Implies(b, c))"),
         ("(a + b) * c", "Multiply(Add(a, b), c)"),
         ("a + b * c - d", "Subtract(Add(a, Multiply(b, c)), d)"),
+        ("1 + a div b * 2", "Add(1, Multiply(IntegerDiv(a, b), 2))"),
+        (
+            "if true then 1 else a mod b",
+            "If(true, 1, IntegerMod(a, b))",
+        ),
         ("a + b + c + d", "Add(Add(Add(a, b), c), d)"),
         ("not not a", "Not(Not(a))"),
     ];
     for (source, expected) in cases {
         let (_, declaration) = body(source);
         assert_eq!(show(declaration.body.root()), expected, "{source}");
+    }
+}
+
+#[trace("FR-091-AC-39", "TC-394")]
+#[test]
+fn integer_operator_forms_retain_operand_spans_in_dead_branches() {
+    for (source, operator) in [
+        ("a div b", BinaryOperator::IntegerDiv),
+        ("a rem b", BinaryOperator::IntegerRem),
+        ("a mod b", BinaryOperator::IntegerMod),
+    ] {
+        let (text, declaration) = body(&format!("if true then 1 else {source}"));
+        let spans = &declaration.spans().unwrap().body;
+        assert_eq!(spans.at(&[2]), Some(span_of(&text, source)));
+        assert_eq!(spans.at(&[2, 0]), Some(span_of(&text, "a")));
+        assert_eq!(spans.at(&[2, 1]), Some(span_of(&text, "b")));
+        let ExprNode::If { otherwise, .. } = declaration.body.root_node() else {
+            panic!("the outer conditional");
+        };
+        assert!(matches!(
+            declaration.body.at(*otherwise).node(),
+            ExprNode::Binary { operator: actual, .. } if *actual == operator
+        ));
     }
 }
 
@@ -449,7 +482,6 @@ fn a_construct_no_variant_represents_refuses_the_unit() {
     let cases = [
         ("\"text\"", Production::Primary, "\"text\""),
         ("decimal(1, 2)", Production::ExactNumber, "decimal(1, 2)"),
-        ("a mod b", Production::Product, "a mod b"),
         ("xs[0]", Production::Postfix, "xs[0]"),
         ("none", Production::Primary, "none"),
         // FR-102: a single-segment `reaches` edge now builds
@@ -457,15 +489,12 @@ fn a_construct_no_variant_represents_refuses_the_unit() {
         // multi-segment edge still refuses, but at the qualified edge
         // itself, not the whole construct (FR-102-AC-3).
         ("reaches(a, b, M::R)", Production::QualifiedName, "M::R"),
-        ("if a then b else a mod b", Production::Product, "a mod b"),
         (
             "size<Int[0, 1]>(c)",
             Production::Primary,
             "size<Int[0, 1]>(c)",
         ),
-        ("a div b", Production::Product, "a div b"),
         ("null", Production::Primary, "null"),
-        ("a rem b", Production::Product, "a rem b"),
         (
             "float32(bits: 0x00000000)",
             Production::FloatValue,

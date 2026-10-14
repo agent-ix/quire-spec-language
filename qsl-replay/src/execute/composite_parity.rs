@@ -59,7 +59,11 @@ fn prepare(
     replay_limits: ReplayLimits,
 ) -> Result<Prepared, ReplayRefusal> {
     let request = ReplayRequest::decode(wire, replay_limits)?;
-    let limits = request_limits(request.stage_limits(), replay_limits)?;
+    let limits = request_limits(
+        request.stage_limits(),
+        request.accounting_limits(),
+        replay_limits,
+    )?;
     let compiled = recompile(&request, &limits)?;
     let site = locate(
         &compiled,
@@ -279,7 +283,7 @@ fn falsified_rows(
         }
     };
     // F-5.
-    let [left, right] = &admitted;
+    let [left, right] = admitted.as_ref();
     let (exact, charges) = match exact_equality(left, right, claim.operator, claim.limits)? {
         Exact::Outcome(exact, charges) => (exact, charges),
         Exact::Stopped(incomplete) => {
@@ -314,7 +318,7 @@ fn falsified_rows(
 
 /// What admitting the two operands found.
 enum Admission {
-    Admitted([Value; 2]),
+    Admitted(Box<[Value; 2]>),
     /// The operand at this position failed admission.
     Refused(usize),
     /// An accounting limit of the request stopped the admission.
@@ -364,7 +368,7 @@ fn admit(prepared: &Prepared, operands: &[WitnessValue; 2]) -> Result<Admission,
         admitted.push(value);
     }
     let [left, right] = <[Value; 2]>::try_from(admitted).map_err(|_| fault("two-operands"))?;
-    Ok(Admission::Admitted([left, right]))
+    Ok(Admission::Admitted(Box::new([left, right])))
 }
 
 fn fault(invariant: &'static str) -> ReplayRefusal {

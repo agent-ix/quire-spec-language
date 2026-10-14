@@ -191,7 +191,11 @@ pub fn replay_frame(
     replay_limits: ReplayLimits,
 ) -> Result<FrameReplayResult, ReplayRefusal> {
     let request = ReplayRequest::decode(wire, replay_limits)?;
-    let limits = super::request_limits(request.stage_limits(), replay_limits)?;
+    let limits = super::request_limits(
+        request.stage_limits(),
+        request.accounting_limits(),
+        replay_limits,
+    )?;
     check_envelope(envelope).map_err(ReplayRefusal::FrameIdentity)?;
     let compiled = recompile(&request, &limits)?;
     let package_id = compiled.emitted.package().package_id();
@@ -253,7 +257,7 @@ pub fn replay_frame(
         // FR-115: a false verdict always carries its witness, and a frame
         // check completes a Boolean.
         ClauseDisposition::Evaluate(CallOutcome::Completed(
-            CallValue::Boolean(false) | CallValue::Integer(_),
+            CallValue::Boolean(false) | CallValue::Integer(_) | CallValue::Reference(_),
         )) => {
             return Err(ReplayRefusal::Fault(InternalFault::new(
                 "replay",

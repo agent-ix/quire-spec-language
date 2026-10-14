@@ -195,7 +195,7 @@ pub(super) fn float_add_of(width: BuiltinType, mode: &str) -> CheckedPackage {
 
 pub(super) fn cases() -> Vec<Case> {
     let integer = || TypeForm::builtin(BuiltinType::Integer, SPAN);
-    let small = || form(BuiltinType::Int, &["1", "9"]);
+    let positive_rational = || form(BuiltinType::Rational, &["1", "9", "1", "9"]);
     let case = |identity, mode, package| Case {
         identity,
         mode,
@@ -234,7 +234,7 @@ pub(super) fn cases() -> Vec<Case> {
             None,
             package(vec![typed(
                 "rdiv",
-                &[("x", small()), ("y", small())],
+                &[("x", positive_rational()), ("y", positive_rational())],
                 form(BuiltinType::Rational, &["-1000", "1000", "1", "1000"]),
                 binary(BinaryOperator::Divide, "x", "y"),
             )]),

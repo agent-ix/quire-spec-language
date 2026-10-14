@@ -16,22 +16,26 @@ use quire_exact::{Integer, IntegerInterval, Presence};
 use serde_json::{json, Value as Json};
 use sha2::{Digest, Sha256};
 
-use super::super::{generated_location, LockEvidence, Lowering, SemanticGraph, SemanticNode};
+use super::super::{
+    generated_location, type_declaration, LockEvidence, Lowering, SemanticGraph, SemanticNode,
+};
 use super::*;
 use crate::check::checked_dispatch::{checked_dispatch_operation, DispatchRoot, OperationClauses};
 use crate::check::family::fixtures::{empty_scope, fixture_source};
-use crate::check::family::OccurrenceMap;
+use crate::check::family::{OccurrenceMap, OccurrenceRole};
 use crate::check::{CheckedGraph, PackageDeclarations};
 use crate::model::accounting::{Meter, ModelNormalizationLimits};
 use crate::model::dispatch::GeneralizationClosure;
 use crate::model::domain_package::{
     FieldMemberRecord, Multiplicity, NativeValueType, ObjectTypeRecord, OperationEffect,
-    OperationMemberRecord, OperationParameterRecord, OperationResult, RelationshipDirection,
-    RelationshipEnd, RelationshipRecord, ValueTypeRef,
+    OperationMemberRecord, OperationParameterRecord, OperationResult, PersistenceInterfaceRecord,
+    RecordValueTypeRecord, RelationshipDirection, RelationshipEnd, RelationshipRecord,
+    StateMachineRecord, StateMachineStateRecord, StateMachineTransitionRecord, ValueTypeRef,
 };
 use crate::model::normalize::{normalize, NormalizeOutcome};
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::{FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment};
+use quire_semantic_value::location::Location;
 
 mod expression_depth;
 
@@ -185,7 +189,8 @@ fn query_over(
             multiplicity: one(),
         }),
         effect: OperationEffect::default(),
-        own_postcondition_clauses: Vec::new(),
+        requires: Vec::new(),
+        ensures: Vec::new(),
         has_body: true,
         redefines: redefines.map(key),
     })
@@ -222,6 +227,7 @@ fn acme(version: &str) -> DomainPackage {
             query_over("Sub/scaled", "Sub", Some("Order/scaled"), &["m"]),
             DomainPackageRecord::Relationship(RelationshipRecord {
                 key: key("billedTo"),
+                declared_at: None,
                 source: RelationshipEnd {
                     type_identity: key("Order"),
                     role: Some("order".to_owned()),
@@ -443,6 +449,16 @@ fn lower<T>(
     units: quire_semantic_value::quantity::UnitTable,
     build: impl FnOnce(&mut Lowering<'_>) -> T,
 ) -> (T, SemanticGraph) {
+    let (built, graph, _) = lower_with_occurrences(models, units, build);
+    (built, graph)
+}
+
+/// Shared lowering setup for tests that need to inspect occurrences.
+fn lower_with_occurrences<T>(
+    models: &[AdmittedModel],
+    units: quire_semantic_value::quantity::UnitTable,
+    build: impl FnOnce(&mut Lowering<'_>) -> T,
+) -> (T, SemanticGraph, OccurrenceMap<Location>) {
     let scope = empty_scope();
     let lock = LockEvidence::default();
     let mut occurrences = OccurrenceMap::default();
@@ -460,7 +476,8 @@ fn lower<T>(
         qsl_foundation::IdentityLimits::default(),
     );
     let built = build(&mut lowering);
-    (built, lowering.finish(&generated_location()).graph)
+    let graph = lowering.finish(&generated_location()).graph;
+    (built, graph, occurrences)
 }
 
 // ---------------------------------------------------------------------
@@ -586,6 +603,34 @@ fn a_relationship_keys_to_its_relation_node() {
         |lowering| lowering.model_node(&key("billedTo"), &generated_location()),
     );
     assert_vector(&graph, billed_to.expect("billedTo keys"), "M4");
+}
+
+/// A selected relationship is a model graph root even when no checked value
+/// or frame names it yet.
+#[trace("FR-093-AC-27", "FR-094-AC-9", "TC-417")]
+#[test]
+fn selected_relationships_are_rooted_in_the_checked_graph() {
+    let acme = admitted("1.0.0");
+    let model = acme.model.clone().with_alias("M");
+    let declaration = type_declaration("M");
+    let (result, graph, occurrences) = lower_with_occurrences(
+        std::slice::from_ref(&model),
+        Default::default(),
+        |lowering| {
+            lowering.relationship_nodes(&BTreeMap::from([("M".to_owned(), declaration.clone())]))
+        },
+    );
+    result.expect("the selected relationship keys");
+    let relations: Vec<_> = graph
+        .nodes()
+        .filter(|node| node.node_tag() == NodeTag::Relation)
+        .collect();
+    assert_eq!(relations.len(), 1, "billedTo is one relation node");
+    assert_eq!(relations[0].semantic_form(), "relationship");
+    let generated: Vec<_> = occurrences.iter_role(OccurrenceRole::Generated).collect();
+    assert_eq!(generated.len(), 1, "the unreferenced relation has one root");
+    assert_eq!(generated[0].0, relations[0].key());
+    assert_eq!(generated[0].2, &declaration);
 }
 
 /// TC-417 steps 4-5 (FR-094-AC-3, AC-4): the population and reference
@@ -1308,4 +1353,202 @@ mod quantities {
         ));
         assert_eq!(graph.nodes().count(), 0);
     }
+
+    /// FR-359-AC-3: a record value type is a `model`/`record_value_type`
+    /// node and an event type a `model`/`event_type` node, each keyed by its
+    /// `ModelOwner` alone, so one declaration identity keys the two forms
+    /// differently and equal declarations key equally.
+    #[trace("FR-359-AC-3", "TC-998")]
+    #[test]
+    fn a_record_and_an_event_type_are_model_nodes_keyed_by_their_owner() {
+        use crate::model::domain_package::{EventTypeRecord, RecordValueTypeRecord};
+        let key = DeclarationKey {
+            package: "acme/orders".to_owned(),
+            node: "ix://acme/orders/Money".to_owned(),
+        };
+        let record = DomainPackageRecord::RecordValueType(RecordValueTypeRecord {
+            key: key.clone(),
+            identity_fields: Vec::new(),
+            supertypes: Vec::new(),
+        });
+        let event = DomainPackageRecord::EventType(EventTypeRecord {
+            key: key.clone(),
+            identity_fields: Vec::new(),
+            occurrence_field: None,
+            supertypes: vec![DeclarationKey {
+                package: "acme/orders".to_owned(),
+                node: "ix://acme/orders/Base".to_owned(),
+            }],
+        });
+        assert_eq!(
+            record_form(&record),
+            Some((NodeTag::Model, "record_value_type"))
+        );
+        assert_eq!(record_form(&event), Some((NodeTag::Model, "event_type")));
+        let limits = qsl_foundation::IdentityLimits::default();
+        let record_key = record_node_key(&record, limits).unwrap().unwrap();
+        let event_key = record_node_key(&event, limits).unwrap().unwrap();
+        assert_ne!(record_key, event_key);
+        // The supertypes are not part of the key: it is a function of the
+        // owner and the form alone.
+        let bare = DomainPackageRecord::EventType(EventTypeRecord {
+            key,
+            identity_fields: Vec::new(),
+            occurrence_field: None,
+            supertypes: Vec::new(),
+        });
+        assert_eq!(record_node_key(&bare, limits).unwrap().unwrap(), event_key);
+    }
+}
+
+/// QSpec FR-322-AC-25: lowering keys a state machine as a `model` node of
+/// semantic form `state_machine`, so a state clause or operation anchor on it
+/// has its node instead of an unnamed-record-kind fault.
+#[trace("QSpec-FR-322-AC-25")]
+#[test]
+fn state_machine_declaration_keys_as_a_state_machine_model_node() {
+    let package = DomainPackage::new(
+        DomainPackageRef {
+            identity: PACKAGE.to_owned(),
+            version: "1.0.0".to_owned(),
+            digest: Sha256::digest(b"acme/orders@machine").into(),
+        },
+        vec![
+            DomainPackageRecord::StateMachine(StateMachineRecord {
+                key: key("Lifecycle"),
+                supertypes: Vec::new(),
+                states: ["Draft", "Placed"]
+                    .map(|name| StateMachineStateRecord {
+                        key: key(&format!("Lifecycle/{name}")),
+                        name: name.to_owned(),
+                    })
+                    .to_vec(),
+                transitions: vec![StateMachineTransitionRecord {
+                    key: key("Lifecycle/transition0"),
+                    from: key("Lifecycle/Draft"),
+                    to: key("Lifecycle/Placed"),
+                    trigger: key("Lifecycle/place"),
+                    guard: None,
+                    emits: Vec::new(),
+                    path: "/types/0/transitions/0".to_owned(),
+                    origin: json!({}),
+                }],
+            }),
+            query("Lifecycle/place", "Lifecycle", None),
+        ],
+    );
+    let NormalizeOutcome::Completed(view) =
+        normalize(&package, ModelNormalizationLimits::UNLIMITED)
+    else {
+        panic!("the state machine normalizes");
+    };
+    let model = AdmittedModel::new(&package, &view).expect("the view is the package's own");
+    let models = std::slice::from_ref(&model);
+    let location = generated_location();
+    let (node, graph) = lower(models, Default::default(), |lowering| {
+        lowering.model_node(&key("Lifecycle"), &location)
+    });
+    let node = node.expect("a state machine has a model node");
+    let node = graph.node(node).expect("the node is in the graph");
+    assert_eq!(node.node_tag(), NodeTag::Model);
+    assert_eq!(node.semantic_form(), "state_machine");
+}
+
+/// FR-056 "K2 canonical native String, UUID and Timestamp payloads": the
+/// three natives a record or event field may carry are distinct scalar type
+/// nodes, so a composite holding one keys instead of refusing the whole
+/// check as `ill_typed`/`type-mismatch`.
+#[test]
+fn native_string_uuid_and_timestamp_key_as_distinct_scalar_nodes() {
+    let location = generated_location();
+    let ((string, uuid, timestamp), graph) = lower(&[], Default::default(), |lowering| {
+        (
+            lowering.type_node(&ValueType::String, &location),
+            lowering.type_node(&ValueType::Uuid, &location),
+            lowering.type_node(&ValueType::Timestamp, &location),
+        )
+    });
+    let forms: Vec<_> = [string, uuid, timestamp]
+        .into_iter()
+        .map(|result| {
+            let node = graph
+                .node(result.expect("a native scalar keys"))
+                .expect("the node is in the graph");
+            (node.node_tag(), node.semantic_form())
+        })
+        .collect();
+    assert_eq!(
+        forms,
+        [
+            (NodeTag::ScalarType, "string"),
+            (NodeTag::ScalarType, "uuid"),
+            (NodeTag::ScalarType, "timestamp"),
+        ]
+    );
+}
+
+/// The node tag and form `name` keys to in a package holding `records`.
+fn keyed_form(records: Vec<DomainPackageRecord>, name: &str) -> (NodeTag, String) {
+    let package = DomainPackage::new(
+        DomainPackageRef {
+            identity: PACKAGE.to_owned(),
+            version: "1.0.0".to_owned(),
+            digest: Sha256::digest(b"acme/orders@forms").into(),
+        },
+        records,
+    );
+    let NormalizeOutcome::Completed(view) =
+        normalize(&package, ModelNormalizationLimits::UNLIMITED)
+    else {
+        panic!("the package normalizes");
+    };
+    let model = AdmittedModel::new(&package, &view).expect("the view is the package's own");
+    let location = generated_location();
+    let (node, graph) = lower(
+        std::slice::from_ref(&model),
+        Default::default(),
+        |lowering| lowering.model_node(&key(name), &location),
+    );
+    let node = graph
+        .node(node.expect("the declaration has a model node"))
+        .expect("the node is in the graph");
+    (node.node_tag(), node.semantic_form().to_owned())
+}
+
+/// QSpec FR-322-AC-25: lowering keys a persistence interface as a `model`
+/// node, so an anchor on one has its node instead of an unnamed-record-kind
+/// fault.
+#[trace("QSpec-FR-322-AC-25")]
+#[test]
+fn persistence_interface_declaration_keys_as_a_model_node() {
+    let form = keyed_form(
+        vec![
+            object("Order", &[]),
+            DomainPackageRecord::PersistenceInterface(PersistenceInterfaceRecord {
+                key: key("Store"),
+                persists: vec![key("Order")],
+            }),
+            query("Store/save", "Store", None),
+        ],
+        "Store",
+    );
+    assert_eq!(form, (NodeTag::Model, "persistence_interface".to_owned()));
+}
+
+/// QSpec FR-340: lowering keys a record value type as a `model` node, so a
+/// frame field entry on one has its owner node instead of an
+/// unnamed-record-kind fault.
+#[test]
+fn record_value_type_declaration_keys_as_a_model_node() {
+    let form = keyed_form(
+        vec![DomainPackageRecord::RecordValueType(
+            RecordValueTypeRecord {
+                key: key("Money"),
+                identity_fields: Vec::new(),
+                supertypes: Vec::new(),
+            },
+        )],
+        "Money",
+    );
+    assert_eq!(form, (NodeTag::Model, "record_value_type".to_owned()));
 }

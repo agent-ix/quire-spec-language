@@ -27,7 +27,3 @@ Tag each test `#[trace("TC-824", "<AC id>")]`.
 - Step 2: the state clause yields exactly one `value-validity` record, its
   own; the `area` unit yields no record for the `case` or its
   exhaustiveness obligation.
-
-## Status
-
-Planned.

@@ -23,6 +23,7 @@ use quire_contract_model::{
 };
 
 use super::super::extent_agreement::{package_declaring, records};
+use super::variant_types::fixture as variant_fixture;
 use super::*;
 use crate::checked_v2::{read_checked_package_v2, V2Read, V2ReadRefusal};
 use qsl_foundation::diagnostic::{StageFailure, Staged};
@@ -54,6 +55,8 @@ enum Fixture {
     /// parameter, the form FR-093-AC-8 lowers (source text spells no
     /// `Population` type, so the function is built as a form).
     ModelPopulation,
+    /// A model selection whose domain package declares an inline relationship.
+    RelationshipModel,
     /// A `Reference` to the systems interface `S::Sensor` of
     /// `tests/fixtures/systems-interface.semantic-ir.json`.
     SystemsInterface,
@@ -77,11 +80,13 @@ enum Fixture {
     FormsUnit,
     /// [`CYCLIC_EQUALITY`].
     CyclicEquality,
+    /// A function over a model variant type, FR-360 item 12.
+    VariantType,
 }
 
 impl Fixture {
     /// Every fixture; each must back at least one row.
-    const ALL: [Self; 16] = [
+    const ALL: [Self; 18] = [
         Self::Tc416Functions,
         Self::RecursiveF,
         Self::Tree,
@@ -89,6 +94,7 @@ impl Fixture {
         Self::SpineCompile,
         Self::SpineModel,
         Self::ModelPopulation,
+        Self::RelationshipModel,
         Self::SystemsInterface,
         Self::ConfigVersion,
         Self::ExtentRecords,
@@ -98,6 +104,7 @@ impl Fixture {
         Self::QuantityAndT,
         Self::FormsUnit,
         Self::CyclicEquality,
+        Self::VariantType,
     ];
 }
 
@@ -122,9 +129,34 @@ const FORMS_UNIT: &str =
 const CYCLIC_EQUALITY: &str = "record Tree { kids: Sequence<Tree>[0, 3]; }\n\
     function same using v(a: Tree, b: Tree): Boolean pure { a = b }\n";
 
+/// The FR-360 domain package, whose variant types the `VariantType` fixture
+/// names.
+static VARIANT_DOCUMENT: std::sync::LazyLock<Vec<u8>> = std::sync::LazyLock::new(|| {
+    serde_json::to_vec(&variant_fixture::document()).expect("the fixture serializes")
+});
+
 /// The domain package declaring the systems interface `Sensor`.
 const SYSTEMS_DOCUMENT: &[u8] =
     include_bytes!("../../../../tests/fixtures/systems-interface.semantic-ir.json");
+
+/// The domain package used to prove relationship model nodes are emitted and
+/// admitted through IR's checked-package/v2 reader.
+const RELATIONSHIP_MODEL_DOCUMENT: &[u8] =
+    include_bytes!("../../../../tests/fixtures/spine-model-relationship.semantic-ir.json");
+
+/// The complete-V1 header shared by every model source unit below.
+const COMPLETE_V1_HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
+     profile v = \"quire.value.complete/v1\";\n";
+
+/// The relationship model source after [`COMPLETE_V1_HEADER`].
+const RELATIONSHIP_MODEL_UNIT: &str =
+    "model M = \"acme/orders\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+     function keep using v(g: M::Widget): M::Widget pure { g }\n";
+
+/// The systems-interface model source after [`COMPLETE_V1_HEADER`].
+const SYSTEMS_INTERFACE_UNIT: &str =
+    "model S = \"acme/systems\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+     function keep using v(s: S::Sensor): S::Sensor pure { s }\n";
 
 /// One package of a fixture, checked, linked and emitted, with the domain
 /// package documents its read needs as evidence.
@@ -192,13 +224,20 @@ impl Fixture {
                     vec![SPINE_MODEL_DOCUMENT],
                 )
             }
+            Self::RelationshipModel => {
+                let document = RELATIONSHIP_MODEL_DOCUMENT;
+                let unit = format!(
+                    "{}{}",
+                    COMPLETE_V1_HEADER,
+                    RELATIONSHIP_MODEL_UNIT.replace("{}", &document_digest(document)),
+                );
+                Emitted::placed(modelled(&unit, document, Vec::new()), vec![document])
+            }
             Self::SystemsInterface => {
                 let unit = format!(
-                    "language \"ix:native\" edition \"1-draft\";\n\
-                     profile v = \"quire.value.complete/v1\";\n\
-                     model S = \"acme/systems\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
-                     function keep using v(s: S::Sensor): S::Sensor pure {{ s }}\n",
-                    document_digest(SYSTEMS_DOCUMENT)
+                    "{}{}",
+                    COMPLETE_V1_HEADER,
+                    SYSTEMS_INTERFACE_UNIT.replace("{}", &document_digest(SYSTEMS_DOCUMENT)),
                 );
                 Emitted::placed(
                     modelled(&unit, SYSTEMS_DOCUMENT, Vec::new()),
@@ -221,6 +260,17 @@ impl Fixture {
             }
             Self::FormsUnit => text(FORMS_UNIT),
             Self::CyclicEquality => text(CYCLIC_EQUALITY),
+            Self::VariantType => {
+                let document = VARIANT_DOCUMENT.as_slice();
+                let unit = format!(
+                    "{COMPLETE_V1_HEADER}model M = {package:?} version \"1\" \
+                     digest \"sha256-jcs:{digest}\";\n\
+                     function keep using v(t: M::Tier): M::Tier pure {{ t }}\n",
+                    package = variant_fixture::PACKAGE,
+                    digest = document_digest(document),
+                );
+                Emitted::placed(modelled(&unit, document, Vec::new()), vec![document])
+            }
         };
         vec![one]
     }
@@ -334,6 +384,12 @@ fn rows() -> Vec<Row> {
         row(K::Function(FunctionForm::RecursiveFunction), F::RecursiveF),
         row(K::Model(ModelForm::ObjectType), F::SpineModel),
         row(K::Model(ModelForm::SystemsInterface), F::SystemsInterface),
+        row(K::Model(ModelForm::VariantType), F::VariantType),
+        row(K::Model(ModelForm::RecordValueType), F::VariantType),
+        row(
+            K::Relation(RelationForm::Relationship),
+            F::RelationshipModel,
+        ),
         row(K::State(StateForm::StateClause), F::ConfigVersion),
         row(K::State(StateForm::Frame), F::ConfigVersion),
         row(K::State(StateForm::OperationAnchor), F::ConfigVersion),
@@ -344,7 +400,7 @@ fn rows() -> Vec<Row> {
 const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
     use CheckedNodeKind as K;
     const NO_RECORD_FORM: &str =
-        "lowering's record_form maps only object types and systems interfaces to model nodes";
+        "lowering's record_form maps only object types, systems interfaces, record value types and variant types to model nodes";
     const NO_TAG: &str = "lowering builds no node of this tag";
     &[
         (
@@ -378,8 +434,6 @@ const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
         ),
         (K::Model(ModelForm::ModelImport), NO_RECORD_FORM),
         (K::Model(ModelForm::ValueType), NO_RECORD_FORM),
-        (K::Model(ModelForm::VariantType), NO_RECORD_FORM),
-        (K::Model(ModelForm::RecordValueType), NO_RECORD_FORM),
         (K::Model(ModelForm::EventType), NO_RECORD_FORM),
         (K::Model(ModelForm::StateMachine), NO_RECORD_FORM),
         (K::Model(ModelForm::Process), NO_RECORD_FORM),
@@ -389,12 +443,6 @@ const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
         (K::Model(ModelForm::SystemsPort), NO_RECORD_FORM),
         (K::Model(ModelForm::SystemsConnection), NO_RECORD_FORM),
         (K::Model(ModelForm::SystemsAllocation), NO_RECORD_FORM),
-        (
-            K::Relation(RelationForm::Relationship),
-            "record_form maps a relationship, but no checked construct names one: model \
-             nodes are built for object types (references, frame owners, creates and \
-             deletes), and intake refuses a relationship in a frame",
-        ),
         (K::Relation(RelationForm::Population), NO_RECORD_FORM),
         (K::Relation(RelationForm::Membership), NO_RECORD_FORM),
         (K::Relation(RelationForm::CausalRelation), NO_RECORD_FORM),

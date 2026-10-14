@@ -31,8 +31,9 @@
 mod bounds;
 mod call_site;
 mod compile;
-// Crate-private until `check_zone_certificate` (FR-245) calls it; until then
-// only its own tests and Kani harnesses reach it.
+// The facade exports the rejection vocabulary. Zone arithmetic stays
+// crate-private until `check_zone_certificate` (FR-245) calls it; its tests
+// and Kani harnesses exercise it directly.
 #[allow(
     dead_code,
     reason = "the zone certificate checker is its first caller and has not landed yet"
@@ -55,6 +56,7 @@ pub use call_site::{
     call_site, CallSite, CallSiteRefusal, CallSiteSelection, ClauseName, ClauseSite, FieldName,
     FieldSite, FunctionSite, OperationSite, PopulationName, PopulationSite,
 };
+pub use certificate::{CertificateLocus, CertificateRule, QueryPart};
 pub use compile::{compile_package, CompiledPackage};
 pub use composite::{
     CompositeEvidence, CompositeIdentity, CompositeParityClaim, CompositeParityReport,
@@ -70,10 +72,10 @@ pub use execute::{
     ValueParityReport, ValueParityResult,
 };
 pub use identity::{
-    Backend, DeclaredDomain, EmptyQualifiedName, ObligationIdentity, ProfileSelection,
-    QualifiedName, RawSourceRef, TracePosition,
+    DeclaredDomain, EmptyQualifiedName, ObligationIdentity, ProfileSelection, QualifiedName,
+    RawSourceRef, TracePosition,
 };
-pub use limits::CallerLimits;
+pub use limits::{AccountingLimits, CallerLimits};
 // The equality operator a composite parity claim names (FR-358).
 pub use quire_semantic_value::declaration::EqualityOperator;
 // The typed identity and catalog code a `TerminalRecord` and a
@@ -85,9 +87,10 @@ pub use outcome::{
     ParityReason, ResultLimit, ResultValue, OUTCOME_FORMAT,
 };
 pub use proof_result::{
-    read_backend_provider_envelope, BackendProviderSource, DeclineCode, EmptyEnvelopeSet,
-    IncompleteCause, InconclusiveCause, ProofRefusalCause, ProofResultEnvelope, ProofResultRefusal,
-    ReportedInconclusiveCause, SettlementBasis, TerminalRecord, TerminalValue, UnavailabilityCause,
+    read_backend_provider_envelope, BackendProviderSource, Certification, DeclineCode,
+    EmptyEnvelopeSet, IncompleteCause, InconclusiveCause, ProofBasis, ProofRefusalCause,
+    ProofResultEnvelope, ProofResultRefusal, ReportedInconclusiveCause, SettlementBasis,
+    TerminalRecord, TerminalRecordRefusal, TerminalValue, UnavailabilityCause,
 };
 pub use qsl_foundation::{Code, InternalFault, RequestIndex};
 pub use quire_contract_model::{std001_code, Std001Code};
@@ -155,7 +158,8 @@ pub use result::{
 // path a separating witness record carries, re-exported so CG names them
 // through this crate (ADR-011 FB-05).
 pub use qsl_foundation::witness::{
-    ObservationIdentity, RuntimeValuePath, SeparationStep, ValuePathStep, ValuePathSubject,
+    InvocationBinding, ObservationIdentity, RuntimeValuePath, SeparationStep, ValuePathStep,
+    ValuePathSubject,
 };
 pub use scalar::{
     GeneratedFault, NativeOutcome, OperandIdentity, OperandRefusal, OperatorClaim,

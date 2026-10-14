@@ -5,14 +5,9 @@
 mod extraction;
 mod types;
 
-use super::{wire, LimitKind, RunCause, RunError, RunResult};
+use super::{LimitKind, RunCause, RunError, RunResult};
 use crate::formal_source::FormalSource;
-use crate::native_model::NativeModel;
-use crate::runtime::{
-    EvaluationOutcome, ExecutionOutcome, ExecutionReport, ImplicationEventKind, RuntimePathSegment,
-    RuntimeReference, ValidationDiagnostic, ValidationStatus,
-};
-use qsl_foundation::diagnostic::Category;
+use crate::runtime::RuntimeReference;
 use qsl_foundation::source::SourceReadCause;
 use qsl_foundation::{ByteDigest, Diagnostic};
 use quire_contract_model as ir;
@@ -53,21 +48,6 @@ fn reference(value: &RuntimeReference) -> types::Reference<'_> {
     }
 }
 
-fn runtime_path(value: &RuntimePathSegment) -> types::RuntimePath<'_> {
-    match value {
-        RuntimePathSegment::Model(value) => types::RuntimePath::Model(value),
-        RuntimePathSegment::Population { record, universe } => {
-            types::RuntimePath::Population { record, universe }
-        }
-        RuntimePathSegment::Object(value) => types::RuntimePath::Object(value),
-        RuntimePathSegment::State(value) => types::RuntimePath::State(value),
-        RuntimePathSegment::Parameter(value) => types::RuntimePath::Parameter(value),
-        RuntimePathSegment::Result => types::RuntimePath::Result(true),
-        RuntimePathSegment::Field(value) => types::RuntimePath::Field(value),
-        RuntimePathSegment::Index(value) => types::RuntimePath::Index(*value),
-    }
-}
-
 fn diagnostic(value: &Diagnostic) -> types::Diagnostic<'_> {
     types::Diagnostic {
         phase: value.phase.as_str(),
@@ -77,7 +57,6 @@ fn diagnostic(value: &Diagnostic) -> types::Diagnostic<'_> {
         path: &value.path,
         span: value.span,
         upstream: None,
-        runtime: None,
         identity: value
             .identity_cause()
             .and_then(SourceReadCause::identity_fields),
@@ -94,19 +73,6 @@ fn diagnostic_with_upstream<'a>(
     types::Diagnostic {
         upstream,
         ..diagnostic(value)
-    }
-}
-
-fn validation_diagnostic(value: &ValidationDiagnostic) -> types::Diagnostic<'_> {
-    types::Diagnostic {
-        runtime: Some(types::RuntimeLocation {
-            artifact: reference(&value.runtime.artifact),
-            observation: value.runtime.observation,
-            requirement: &value.runtime.requirement,
-            clause: &value.runtime.clause,
-            path: value.runtime.path.iter().map(runtime_path).collect(),
-        }),
-        ..diagnostic(&value.diagnostic)
     }
 }
 
@@ -149,7 +115,7 @@ fn projection_location(value: super::ProjectionLocation) -> types::ProjectionLoc
     }
 }
 
-pub(super) fn error(error: &RunError) -> Result<Value, serde_json::Error> {
+pub(super) fn error(error: &RunError, artifact: bool) -> Result<Value, serde_json::Error> {
     let (stage, details) = match &error.cause {
         #[cfg(feature = "quire-extraction")]
         RunCause::Extraction(error) => {
@@ -178,6 +144,23 @@ pub(super) fn error(error: &RunError) -> Result<Value, serde_json::Error> {
                 LimitKind::FileBytes => types::Details::FileBytes {
                     limit: kind.as_str(),
                 },
+                LimitKind::RequestBytes { maximum } => types::Details::ConfiguredBytes {
+                    limit: kind.as_str(),
+                    maximum: *maximum,
+                    option: "--request-bytes",
+                },
+                LimitKind::DependentBytes { maximum } => types::Details::ConfiguredBytes {
+                    limit: kind.as_str(),
+                    maximum: *maximum,
+                    option: "--dependent-bytes",
+                },
+                LimitKind::ObservationDocumentBytes { maximum } => {
+                    types::Details::ConfiguredBytes {
+                        limit: kind.as_str(),
+                        maximum: *maximum,
+                        option: "observation_limits.document_bytes",
+                    }
+                }
                 LimitKind::SelectedFiles {
                     category,
                     requested,
@@ -192,7 +175,10 @@ pub(super) fn error(error: &RunError) -> Result<Value, serde_json::Error> {
                 },
             },
         ),
-        RunCause::Digest(_) => (types::Stage::Request, types::Details::None),
+        RunCause::Digest(_) | RunCause::ClauseRequest { .. } => {
+            (types::Stage::Request, types::Details::None)
+        }
+        RunCause::ClauseOutput(_) => (types::Stage::Output, types::Details::None),
         RunCause::Identifier(error) => (types::Stage::Request, types::Details::Identifier(error)),
         RunCause::Native(error) => (
             types::Stage::Native(error.phase),
@@ -251,7 +237,6 @@ pub(super) fn error(error: &RunError) -> Result<Value, serde_json::Error> {
         RunCause::CompleteSelection(_)
         | RunCause::Libraries(_)
         | RunCause::CompleteRunSelection(_)
-        | RunCause::NativeRunSelection(_)
         | RunCause::MissingClauses => (types::Stage::Request, types::Details::None),
         RunCause::Spine(failure) => (
             types::Stage::Spine(failure.refusal.stage()),
@@ -278,6 +263,67 @@ pub(super) fn error(error: &RunError) -> Result<Value, serde_json::Error> {
                     types::Details::Parameter { parameter }
                 }
                 qsl_replay::spine::RunRefusal::WrongValueKind { position } => {
+                    types::Details::Position {
+                        position: *position,
+                    }
+                }
+                qsl_replay::spine::RunRefusal::Admission { position, refusal } => {
+                    match &refusal.cause {
+                        qsl_semantics::model::normalize::ModelRefusalCause::ForeignUniverse {
+                            actual,
+                            expected,
+                        } => types::Details::AdmissionForeignUniverse {
+                            position: *position,
+                            required: qsl_semantics::model::key::hex(expected.as_bytes()),
+                            supplied: qsl_semantics::model::key::hex(actual),
+                        },
+                        qsl_semantics::model::normalize::ModelRefusalCause::ForeignModelSelection {
+                            actual,
+                            expected,
+                        } => {
+                            let expected = types::AdmissionModelSelection {
+                                identity: expected.identity.clone(),
+                                version: expected.version.clone(),
+                                digest_domain: "sha256-jcs",
+                                digest: qsl_semantics::model::key::hex(&expected.digest),
+                            };
+                            match actual {
+                                qsl_semantics::model::refusal::OfferedSelection::Document(
+                                    model_identity,
+                                ) => types::Details::AdmissionForeignModelDocument {
+                                    position: *position,
+                                    model_identity: model_identity.clone(),
+                                    expected,
+                                },
+                                qsl_semantics::model::refusal::OfferedSelection::Population(
+                                    population,
+                                ) => types::Details::AdmissionForeignModelPopulation {
+                                    position: *position,
+                                    population: types::AdmissionDeclarationKey {
+                                        package: population.package.clone(),
+                                        node: population.node.clone(),
+                                    },
+                                    expected,
+                                },
+                            }
+                        }
+                        qsl_semantics::model::normalize::ModelRefusalCause::ForeignType {
+                            member,
+                            type_name,
+                        } => types::Details::AdmissionForeignType {
+                            position: *position,
+                            member: member.clone(),
+                            type_name: types::AdmissionDeclarationKey {
+                                package: type_name.package.clone(),
+                                node: type_name.node.clone(),
+                            },
+                        },
+                        _ => types::Details::Position {
+                            position: *position,
+                        },
+                    }
+                }
+                qsl_replay::spine::RunRefusal::DanglingReference { position } => {
                     types::Details::Position {
                         position: *position,
                     }
@@ -316,18 +362,48 @@ pub(super) fn error(error: &RunError) -> Result<Value, serde_json::Error> {
             },
         ),
     };
-    serde_json::to_value(types::Failure {
+    let failure = types::Failure {
         format: types::Format::RunResult,
-        request_digest: error.request_digest.map(|value| value.to_string()),
-        status: if error.cause.is_incomplete() {
-            types::FailureStatus::Incomplete
-        } else {
-            types::FailureStatus::Refused
-        },
         stage,
         code: error.cause.code().as_str(),
+        cause: match &error.cause {
+            RunCause::Spine(failure) => failure.refusal.cause(),
+            RunCause::SpineRun(refusal) => match refusal.as_ref() {
+                qsl_replay::spine::RunRefusal::Compile(refusal) => refusal.cause(),
+                qsl_replay::spine::RunRefusal::Fault(_) => Some("established-invariant-broken"),
+                _ => None,
+            },
+            _ => None,
+        },
         message: error.to_string(),
         details,
+        basis: "unavailable",
+    };
+    if artifact {
+        serde_json::to_value(types::ArtifactFailure {
+            failure,
+            request_digest: error.request_digest.map(|digest| digest.to_string()),
+            status: if error.cause.is_incomplete() {
+                types::ArtifactFailureStatus::Incomplete
+            } else {
+                types::ArtifactFailureStatus::Refused
+            },
+        })
+    } else {
+        serde_json::to_value(failure)
+    }
+}
+
+/// FR-267: expose the library's canonical clause report to the CLI adapter.
+pub(super) fn clause_report(
+    report: &qsl_replay::spine::ClauseRunReport,
+) -> super::Result<RunResult> {
+    let bytes =
+        qsl_replay::spine::write_clause_run_result(report).map_err(RunCause::ClauseOutput)?;
+    let value = serde_json::from_slice(&bytes).map_err(RunCause::Output)?;
+    Ok(RunResult {
+        exit_code: report.disposition.category().exit_code(),
+        value: NativeResult(value),
     })
 }
 
@@ -362,6 +438,18 @@ fn spine_origin(origin: &quire_semantic_value::location::Origin) -> types::Spine
                 attempt: *attempt,
             }
         }
+        quire_semantic_value::location::Origin::ModelOperationClause {
+            operation,
+            kind,
+            position,
+        } => types::SpineOrigin::ModelOperationClause {
+            operation: operation.clone(),
+            clause: match kind {
+                quire_semantic_value::location::OperationClauseKind::Requires => "requires",
+                quire_semantic_value::location::OperationClauseKind::Ensures => "ensures",
+            },
+            position: *position,
+        },
     }
 }
 
@@ -400,6 +488,13 @@ pub(super) fn spine_run_result(
         CallOutcome::Completed(CallValue::Integer(value)) => types::SpineOutcome::Completed {
             value: types::SpineValue::Integer {
                 decimal: value.to_string(),
+            },
+        },
+        CallOutcome::Completed(CallValue::Reference(reference)) => types::SpineOutcome::Completed {
+            value: types::SpineValue::Reference {
+                universe: qsl_semantics::model::key::hex(reference.universe().as_bytes()),
+                object_type: qsl_semantics::model::key::hex(reference.object_type().as_bytes()),
+                object_identity: reference.object().as_str().to_owned(),
             },
         },
         CallOutcome::Refused(CallRefusal::Record {
@@ -446,154 +541,12 @@ pub(super) fn spine_run_result(
     })
 }
 
-pub(super) fn report(
-    digest: ByteDigest,
-    selection: &wire::Selection,
-    models: &[NativeModel],
-    _package: &super::compilation::RunPackage<'_>,
-    report: &ExecutionReport<'_, '_>,
-) -> super::Result<RunResult> {
-    let (exit_code, outcome) = match report.outcome() {
-        ExecutionOutcome::ValidationFailed(failure) => {
-            // FR-285: the most severe item code across every retained
-            // diagnostic (including the terminal one). ValidationStatus
-            // only carries the wire-schema's binary refused/incomplete
-            // distinction, and drives the code only when no diagnostic is
-            // retained.
-            let status = match failure.status {
-                ValidationStatus::Refused => types::FailureStatus::Refused,
-                ValidationStatus::Incomplete => types::FailureStatus::Incomplete,
-            };
-            let code = Category::most_severe(
-                failure
-                    .diagnostics
-                    .iter()
-                    .chain(failure.terminal.as_deref())
-                    .map(|diagnostic| diagnostic.diagnostic.code.category().exit_code()),
-            )
-            .unwrap_or(match failure.status {
-                ValidationStatus::Incomplete => Category::Incomplete.exit_code(),
-                ValidationStatus::Refused => Category::Refusal.exit_code(),
-            });
-            (
-                code,
-                types::Outcome::Validate {
-                    status,
-                    diagnostics: failure
-                        .diagnostics
-                        .iter()
-                        .map(validation_diagnostic)
-                        .collect(),
-                    terminal: failure.terminal.as_deref().map(validation_diagnostic),
-                },
-            )
-        }
-        ExecutionOutcome::Evaluated {
-            result,
-            usage,
-            events,
-            cost_model,
-        } => {
-            let (code, result) = match result {
-                EvaluationOutcome::Completed(truth) => (
-                    if *truth {
-                        Category::Success
-                    } else {
-                        Category::Violation
-                    }
-                    .exit_code(),
-                    types::Evaluation::Completed { truth: *truth },
-                ),
-                EvaluationOutcome::Refused(error) => (
-                    error.code.category().exit_code(),
-                    types::Evaluation::Refused {
-                        diagnostic: diagnostic(error),
-                    },
-                ),
-                EvaluationOutcome::Incomplete(error) => (
-                    Category::Incomplete.exit_code(),
-                    types::Evaluation::Incomplete {
-                        diagnostic: diagnostic(error),
-                    },
-                ),
-            };
-            let events = events
-                .iter()
-                .map(|event| types::Event {
-                    implication: event.implication.0,
-                    operand: event.operand.0,
-                    span: event.span,
-                    kind: match event.kind {
-                        ImplicationEventKind::AntecedentEntered => {
-                            types::EventKind::AntecedentEntered
-                        }
-                        ImplicationEventKind::AntecedentCompleted(truth) => {
-                            types::EventKind::AntecedentCompleted { truth }
-                        }
-                        ImplicationEventKind::ConsequentEntered => {
-                            types::EventKind::ConsequentEntered
-                        }
-                    },
-                })
-                .collect();
-            (
-                code,
-                types::Outcome::Evaluate {
-                    result,
-                    evaluation_usage: usage,
-                    events,
-                    cost_model,
-                },
-            )
-        }
-    };
-    let document = types::Report {
-        #[cfg(feature = "quire-extraction")]
-        extraction: extraction::context(_package),
-        format: types::Format::RunResult,
-        request_digest: digest.to_string(),
-        package: types::Package {
-            digest: report.package().digest().to_string(),
-            canonical_identity: report.package().canonical_identity().to_string(),
-        },
-        source: source(&report.package().checked().bindings().source),
-        models: models
-            .iter()
-            .map(|model| types::Model {
-                owner: model.environment().owner(),
-                digest: model.digest().to_string(),
-                source: source(model.source()),
-            })
-            .collect(),
-        inputs: types::Inputs {
-            snapshots: report
-                .input()
-                .snapshots
-                .iter()
-                .map(|value| value.reference())
-                .collect(),
-            invocations: report
-                .input()
-                .invocations
-                .iter()
-                .map(|value| value.reference())
-                .collect(),
-        },
-        selection,
-        validation_usage: report.validation_usage(),
-        outcome,
-    };
-    Ok(RunResult {
-        exit_code,
-        value: NativeResult(serde_json::to_value(document).map_err(RunCause::Output)?),
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::formal_source::FormalSource;
     use ix_trace_rs::trace;
+    use qsl_foundation::diagnostic::Category;
     use qsl_foundation::SourceIdentity;
     use qsl_replay::spine::CallOutcome;
     use qsl_semantics::library::PackageId;
@@ -688,6 +641,16 @@ mod tests {
         }
     }
 
+    /// FR-090-AC-21 (TC-227): incomplete allInstances coverage renders as
+    /// undefined with its exact reason and exits 10. The structured `[T]`
+    /// witness is asserted at the CheckedPackage boundary; CLI output carries
+    /// the undefined reason only.
+    #[test]
+    #[trace("FR-090-AC-21", "TC-227")]
+    fn incomplete_closure_undefined_renders_and_exits_10() {
+        assert_undefined_renders("incomplete-closure");
+    }
+
     fn render(outcome: CallOutcome) -> RunResult {
         spine_run_result(
             ByteDigest::of(b"request"),
@@ -701,20 +664,21 @@ mod tests {
 
     /// FR-100-AC-9 (TC-452 step 4, FND-013): a record refusal renders every
     /// FR-096 member and exits by its catalog code's mapping -- `resource_exhausted`
-    /// (`ancestor-steps`'s own code) is incomplete, so it exits 22, not the
+    /// (`insufficient-next-charge`'s own code) is incomplete, so it exits 22, not the
     /// kernel-refusal row's hardcoded 20.
     #[test]
     #[trace("TC-452", "FR-100-AC-9")]
     fn refused_record_renders_and_exits_by_its_code() {
         use qsl_replay::spine::CallRefusal;
         let fields = std::collections::BTreeMap::from([
-            ("from", "test/orders".to_owned()),
+            ("setting", "model.ancestor_steps".to_owned()),
             ("limit", "5".to_owned()),
+            ("actual", "6".to_owned()),
         ]);
         let result = render(CallOutcome::Refused(CallRefusal::Record {
             code: qsl_foundation::diagnostic::CatalogCode::new(
                 "resource_exhausted",
-                "ancestor-steps",
+                "insufficient-next-charge",
             ),
             fields: fields.clone(),
             locus: None,
@@ -726,7 +690,7 @@ mod tests {
             serde_json::json!({
                 "kind": "refused",
                 "code": "resource_exhausted",
-                "cause": "ancestor-steps",
+                "cause": "insufficient-next-charge",
                 "fields": fields,
             })
         );
@@ -770,6 +734,69 @@ mod tests {
                     "required": "01".repeat(32),
                     "supplied": "02".repeat(32),
                 },
+            })
+        );
+    }
+
+    #[test]
+    fn typed_admission_command_details_preserve_model_and_type_causes() {
+        use qsl_replay::spine::RunRefusal;
+        use qsl_semantics::model::key::DeclarationKey;
+        use qsl_semantics::model::normalize::{ModelRefusal, ModelRefusalCause};
+        use qsl_semantics::model::refusal::OfferedSelection;
+
+        let expected = qsl_semantics::model::domain_package::DomainPackageRef::fixture("expected");
+        let model = RunError {
+            request_digest: None,
+            cause: RunCause::SpineRun(Box::new(RunRefusal::Admission {
+                position: 2,
+                refusal: ModelRefusal {
+                    code: qsl_foundation::diagnostic::Code::ForeignReference,
+                    cause: ModelRefusalCause::ForeignModelSelection {
+                        actual: OfferedSelection::Document("foreign-model".to_owned()),
+                        expected: expected.clone(),
+                    },
+                    detail: "foreign model".to_owned(),
+                },
+            })),
+        };
+        let model_value = error(&model, false).unwrap();
+        assert_eq!(
+            model_value["details"],
+            serde_json::json!({
+                "position": 2,
+                "model_identity": "foreign-model",
+                "expected": {
+                    "identity": expected.identity,
+                    "version": expected.version,
+                    "digest_domain": "sha256-jcs",
+                    "digest": qsl_semantics::model::key::hex(&expected.digest),
+                },
+            })
+        );
+
+        let type_name = DeclarationKey::fixture("foreign/W");
+        let type_refusal = RunError {
+            request_digest: None,
+            cause: RunCause::SpineRun(Box::new(RunRefusal::Admission {
+                position: 3,
+                refusal: ModelRefusal {
+                    code: qsl_foundation::diagnostic::Code::ForeignReference,
+                    cause: ModelRefusalCause::ForeignType {
+                        member: "w".to_owned(),
+                        type_name: type_name.clone(),
+                    },
+                    detail: "foreign type".to_owned(),
+                },
+            })),
+        };
+        let type_value = error(&type_refusal, false).unwrap();
+        assert_eq!(
+            type_value["details"],
+            serde_json::json!({
+                "position": 3,
+                "member": "w",
+                "type": {"package": type_name.package, "node": type_name.node},
             })
         );
     }
@@ -866,6 +893,7 @@ mod tests {
             },
         };
         let locus = CallLocus {
+            file: "fixture.native".to_owned(),
             source_digest:
                 "sha256:5f2742391e3eaef04bc5dd7141fd639b1913dc821d14bb2f2ca618ad8598ca26".to_owned(),
             span,

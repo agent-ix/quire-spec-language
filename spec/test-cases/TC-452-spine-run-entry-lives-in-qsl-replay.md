@@ -74,7 +74,8 @@ Scope: FR-100-AC-7 to FR-100-AC-9, and FR-100-AC-12.
      and `expected` the universe of 32 bytes of `0x02` (each with an FR-096
      key-table row);
    - `FamilyResult::Refused` of `ModelRefusalCause::TypeMismatch` and of
-     `ModelRefusalCause::AncestorSteps` (neither with a row);
+     `ModelRefusalCause::AncestorSteps` (`TypeMismatch` has no row;
+     `AncestorSteps` has the denied-charge record of FR-255 Behavior 1);
    - `FamilyResult::Undefined` with reason `precondition-false` and
      `absent-key`;
    - a `CallFailure::Fault` of `InternalFault::new("S6a",
@@ -160,7 +161,9 @@ Tag the tests `#[trace("TC-452", "FR-100-AC-7")]` (steps 1 and 2),
     (`"0202…02"` and `"0101…01"`, 64 characters each); exit 20.
   - `TypeMismatch`: `code` `ill_typed`, `cause` `type-mismatch`, no `fields`
     member; exit 20. `AncestorSteps`: `code` `resource_exhausted`, `cause`
-    `ancestor-steps`, no `fields` member; exit 22.
+    `insufficient-next-charge`, `fields` exactly `setting`, `limit`, `actual`,
+    `stage`, `accounting_contract`, `limit_kind`, `consumed`, `next_charge` and `charge_point`;
+    exit 22.
   - `undefined` with `reason` `precondition-false` and `absent-key`, exit 10.
   - `CallFailure::Fault`: a `runtime_invariant` command error at stage
     `call` with `details` `{"stage": "S6a", "invariant":
@@ -173,13 +176,3 @@ Tag the tests `#[trace("TC-452", "FR-100-AC-7")]` (steps 1 and 2),
   `from_run` document has `category` incomplete, `last_stage` `null`,
   `result` `null` and one diagnostic with code `cancelled`, whose cause is
   `requested` for (a) and `deadline` for (b).
-
-## Status
-
-Passed locally. Every undefined outcome exits 10 (FR-285):
-`undefined_kernel_reasons_render_and_exit_10` asserts it, and the code test
-for FR-100-AC-10 carries TC-786's tag. Earlier, step 4's `ForeignReference` row updated, now
-that the kernel variant carries both universes. Step 4's ten
-kernel records, asserted by code, cause, exact fields and
-locus, and step 5's `sum-out-of-domain` reason, for both an empty `q` and a
-non-empty out-of-domain running total, passed.

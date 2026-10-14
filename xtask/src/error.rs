@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! One error type for this crate's two gates: `cargo xtask seam-probe` and
-//! `cargo xtask string-edge`.
+//! Typed errors for the workspace xtask gates.
 use std::{fmt, io, path::PathBuf};
 
 /// Stable failure category, independent of message prose.
@@ -29,6 +28,11 @@ pub enum Code {
     CanonicalTypes,
     /// `cargo metadata` could not be run or read.
     Metadata,
+    /// The local QSpec conformance gate failed.
+    Conformance,
+    /// QSL#157: `cargo xtask test-suites` found an undeclared empty suite or
+    /// a wrong declaration, or `cargo` itself failed.
+    TestSuites,
 }
 
 impl Code {
@@ -43,6 +47,8 @@ impl Code {
             Self::CheckedInput => "checked-input",
             Self::CanonicalTypes => "canonical-types",
             Self::Metadata => "metadata",
+            Self::Conformance => "conformance",
+            Self::TestSuites => "test-suites",
         }
     }
 }
@@ -59,6 +65,44 @@ pub enum Error {
     /// A command-line invocation was malformed.
     #[error("usage: {0}")]
     Usage(&'static str),
+    /// The QSpec checkout is absent, missing vectors, or cannot be resolved.
+    #[error("conformance: invalid QSPEC_DIR {path:?}: {reason}")]
+    ConformanceInput {
+        /// The caller's unmodified path.
+        path: PathBuf,
+        /// Why it cannot be used.
+        reason: String,
+    },
+    /// A required conformance cargo invocation could not be spawned.
+    #[error("conformance: cannot spawn cargo for {selection}: {source}")]
+    ConformanceSpawn {
+        /// The exact test selection.
+        selection: &'static str,
+        /// The spawn failure.
+        #[source]
+        source: io::Error,
+    },
+    /// A required conformance test failed or did not produce its evidence.
+    #[error("conformance: {selection}: {reason}")]
+    ConformanceCheck {
+        /// The exact test selection.
+        selection: &'static str,
+        /// The refusal cause.
+        reason: String,
+    },
+    /// The canonicalized local CI graph could not be launched.
+    #[error("conformance: cannot launch the local CI graph: {source}")]
+    ConformanceCiSpawn {
+        /// The process spawn failure.
+        #[source]
+        source: io::Error,
+    },
+    /// A lane in the canonicalized local CI graph failed.
+    #[error("conformance: local CI graph exited with {status}")]
+    ConformanceCiFailed {
+        /// The child Make process status.
+        status: std::process::ExitStatus,
+    },
     /// A filesystem read or write failed.
     #[error("{path}: {source}")]
     Io {
@@ -247,6 +291,67 @@ pub enum Error {
         /// The findings, one per line.
         summary: String,
     },
+    /// `cargo xtask test-suites` named a lane `make ci` does not define.
+    #[error("test-suites: unknown lane {lane:?}; the lanes are: {known}")]
+    TestSuitesUnknownLane {
+        /// The lane named (empty when none was).
+        lane: String,
+        /// The defined lanes, comma separated.
+        known: String,
+    },
+    /// A known lane was given a different package or feature selection from
+    /// the `make ci` invocation whose empty suites it declares.
+    #[error("test-suites: lane {lane:?} requires its declared package and feature selection")]
+    TestSuitesLaneMismatch {
+        /// The named lane.
+        lane: &'static str,
+    },
+    /// `cargo xtask test-suites` could not run or read a `cargo` process.
+    #[error("test-suites: {what}: {source}")]
+    TestSuitesIo {
+        /// What was being done.
+        what: &'static str,
+        /// The underlying failure.
+        #[source]
+        source: io::Error,
+    },
+    /// `cargo test --no-run --message-format=json` printed messages the guard
+    /// cannot take suite identities from.
+    #[error("test-suites: cannot read cargo's build messages: {source}")]
+    TestSuitesArtifacts {
+        /// What was wrong with them.
+        #[source]
+        source: crate::test_suites::ArtifactError,
+    },
+    /// The cargo arguments select a run the guard cannot list the suites of.
+    #[error("test-suites: {argument} is not supported: {reason}")]
+    TestSuitesUnsupportedSelection {
+        /// The refused argument.
+        argument: String,
+        /// Why the guard cannot list that selection's suites.
+        reason: &'static str,
+    },
+    /// A `--package` names no package of the workspace.
+    #[error("test-suites: no workspace package is named {name}")]
+    TestSuitesUnknownPackage {
+        /// The name given.
+        name: String,
+    },
+    /// `cargo` exited unsuccessfully; this error exits with its status.
+    #[error("test-suites: `{step}` failed ({})", .status.map_or_else(|| "killed by a signal".to_owned(), |code| format!("exit status {code}")))]
+    TestSuitesCargoFailed {
+        /// The cargo invocation.
+        step: &'static str,
+        /// Its exit status, when it exited rather than being killed.
+        status: Option<i32>,
+    },
+    /// `cargo xtask test-suites` found one or more suite findings;
+    /// `summary` lists them.
+    #[error("{summary}")]
+    TestSuitesFound {
+        /// The findings, one per line.
+        summary: String,
+    },
 }
 
 impl Error {
@@ -262,6 +367,11 @@ impl Error {
     pub fn code(&self) -> Code {
         match self {
             Self::Usage(_) => Code::Usage,
+            Self::ConformanceInput { .. } => Code::Usage,
+            Self::ConformanceSpawn { .. }
+            | Self::ConformanceCheck { .. }
+            | Self::ConformanceCiSpawn { .. }
+            | Self::ConformanceCiFailed { .. } => Code::Conformance,
             Self::Io { .. } => Code::Io,
             Self::SeamProbeSpawn { .. }
             | Self::SeamProbeReadSource { .. }
@@ -282,19 +392,40 @@ impl Error {
             | Self::CanonicalTypesCargoMetadata { .. }
             | Self::CanonicalTypesMetadataJson { .. }
             | Self::CanonicalTypesMetadata { .. } => Code::Metadata,
+            Self::TestSuitesUnknownLane { .. }
+            | Self::TestSuitesLaneMismatch { .. }
+            | Self::TestSuitesUnsupportedSelection { .. }
+            | Self::TestSuitesUnknownPackage { .. } => Code::Usage,
+            Self::TestSuitesIo { .. } | Self::TestSuitesArtifacts { .. } => Code::Io,
+            Self::TestSuitesCargoFailed { .. } | Self::TestSuitesFound { .. } => Code::TestSuites,
         }
     }
 
     /// Distinguish usage/environment failure (2) from a genuine content
     /// finding (1).
+    ///
+    /// A failed `cargo` exits with its own status, so a failing test run is
+    /// not mistaken for a finding.
     pub fn exit_code(&self) -> u8 {
+        if let Self::TestSuitesCargoFailed {
+            status: Some(status),
+            ..
+        } = self
+        {
+            return u8::try_from(*status)
+                .ok()
+                .filter(|status| *status != 0)
+                .unwrap_or(1);
+        }
         match self.code() {
             Code::SeamProbe
             | Code::StringEdge
             | Code::ImportGraph
             | Code::RouteLint
             | Code::CheckedInput
-            | Code::CanonicalTypes => 1,
+            | Code::CanonicalTypes
+            | Code::Conformance
+            | Code::TestSuites => 1,
             Code::Usage | Code::Io | Code::Metadata => 2,
         }
     }

@@ -13,6 +13,12 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-096
     type: references
+  - target: ix://agent-ix/quire-spec-language/FR-255
+    type: references
+  - target: ix://agent-ix/quire-spec-language/FR-260
+    type: references
+  - target: ix://agent-ix/quire-spec-language/ADR-014
+    type: references
   - target: "ix://agent-ix/quire-specification/FR-300"
     type: depends_on
 ---
@@ -25,8 +31,13 @@ the limits value the caller passes, with a published default the caller can
 replace (ADR-029 LC-4). Reaching a bound SHALL return the operation's specified
 limit outcome naming the limit, its configured value and the limits field that
 raises it, and is never read as success. The formatter's output budget follows
-FR-003's `resource_exhausted` outcome and FR-255's `format.output_bytes` row;
-the other lifecycle limit paths use `LimitExceeded` (ADR-013 T-4).
+FR-003's `resource_exhausted` outcome and FR-255's `format.output_bytes` row.
+A limit is classified by the type that carries it (FR-255 Behavior 1): a
+stage's or reader's own limits type uses `LimitExceeded` (ADR-013 T-4), while
+a caller-budget ceiling refuses `resource_exhausted` wherever it is read. That
+covers `select`'s model-normalization ceilings, `intake.input_bytes`
+(FR-260-AC-4), observation admission's re-run of `model.*` walks and the
+`admission.*` budgets.
 
 Nesting depth is not a limit. Node, byte and work limits bound every stage,
 and no stage recurses on the native stack (ADR-030 D-1). ADR-030 owns the
@@ -41,7 +52,8 @@ as the limits type's `Default` value.
 ## Outputs
 
 On reaching a bound, `StageFailure::Limit(LimitExceeded)`, or for `format`,
-FR-003's typed `resource_exhausted` diagnostic; for `execute`'s
+FR-003's typed `resource_exhausted` diagnostic, or for a caller-budget
+ceiling, the `resource_exhausted` refusal FR-255 Behavior 1 gives it; for `execute`'s
 accounting limits, the evaluation outcome `Incomplete` naming the counter;
 for `analyze`, each open FR-331 item settled `incomplete` with the limit as
 its cause.
@@ -57,7 +69,8 @@ FR-255 setting that sets the bound.
   settings operation shall route `format.output_bytes=<n>` to that field.
 - Each limits type shall give every field a published default that the
   caller replaces field by field.
-- Each non-format lifecycle operation that reaches a bound shall return
+- Each non-format lifecycle operation that reaches a stage's or reader's own
+  bound shall return
   `LimitExceeded` naming the limit kind, configured value, counter reached and
   limits field that raises it.
 - The format operation that reaches its output-byte bound shall return FR-003's
@@ -77,15 +90,6 @@ The following phase contract SHALL govern both public checked-call admission
 and replay argument processing. It preserves FR-098's semantic conversion
 counts; helper traversal events SHALL NOT redefine converted nodes.
 
-QSL-681 review status: the following event tables and numeric defaults are a
-PROPOSED contract and falsifiable planning hypothesis, not a settled norm,
-production default or qualified count. The inspected released QSV has no
-public union membership/type API. The union-specific event order, resource
-contract and full-fixture default qualification require the reviewed QSV
-union stack after IR-713's declared-registry carrier. Earlier hosted
-candidate counts are research predictions, not approved source authority.
-Publishing or freezing this draft's review commit does not settle those gates.
-
 | Phase or counter | Unit and owner | Caller-visible bound | Aggregation |
 | --- | --- | --- | --- |
 | Admission helper work | QSV supplied-membership events, including runtime value visits and iterative type comparison, under the reviewed QSV FR-109 event contract | `supplied.admission_work_units` | One caller-owned cumulative traversal budget across all supplied arguments and admission helpers |
@@ -96,29 +100,22 @@ Publishing or freezing this draft's review commit does not settle those gates.
 
 - QSL SHALL expose a typed supplied-value limits value with independent
   `admission_work_units` and `conversion_work_units` fields on its public
-  checked-call/replay limits where the phase applies. Their units are the
-  supplied-membership and conversion-helper events below, independently of
-  whatever evaluation limit the caller chooses. Numerical hypotheses under
-  review are 262,144 admission units and 524,288 conversion units; neither
-  is selected as a default or qualified ceiling. The count basis
-  and confirmation status below
-  are explicit; neither default is computed from a caller's evaluation
-  allowance, an existing expression/declaration-work default, or a runtime
-  measured count. They SHALL permit the unchanged full TC-830/831/906 Tree
-  under the agreed event contract.
-  Proposed diagnostic/setting names are `supplied.admission_work_units`
-  and `supplied.conversion_work_units`, distinct from population admission's
-  `admission.work_units`. Acceptance by the settings operation requires
-  an explicit coordinated FR-255 table amendment,
-  with bound owner, limits field, taxonomy and justified published default.
-  This requirement SHALL NOT independently register a setting or privately
-  add a closed replay-envelope member. QSpec FR-323's paired proposal carries
-  these fields in typed `limits.supplied` for applicable replay/non-replay
-  requests, not `stage_limits`: that closed member carries only recompile
-  stage settings under QSpec FR-460/461. Missing bounds inherit their own
-  published defaults under ADR-014 section 2; they are never unbounded.
-  It SHALL NOT derive either bound from the evaluation allowance, multiply
-  that allowance, reset helper spend between arguments, or bypass a phase.
+  checked-call and replay limits where the phase applies. Their setting
+  names are `supplied.admission_work_units` and
+  `supplied.conversion_work_units`, distinct from population admission's
+  `admission.work_units`; FR-255 registers both with the published default
+  16777216 units each. Their units are the supplied-membership and
+  conversion-helper events below, independently of whatever evaluation limit
+  the caller chooses. A default is never computed from a caller's evaluation
+  allowance, an existing expression/declaration-work default or a runtime
+  measured count, and neither ceiling is ever unbounded. At its default each
+  ceiling SHALL permit the unchanged full TC-830/831/906 Tree to complete.
+  A replay request carries these two fields in the typed `limits.supplied`
+  member of the shared replay request (QSpec FR-323), not in `stage_limits`:
+  that closed member carries only recompile stage settings under QSpec
+  FR-460/461. QSL SHALL NOT add a private member to the shared request. It
+  SHALL NOT derive either bound from the evaluation allowance, multiply that
+  allowance, reset helper spend between arguments, or bypass a phase.
 - Every helper event SHALL have exactly one initiating-phase budget owner.
   QSL conversion invoking QSV membership SHALL pass its conversion budget;
   direct or final checked-call admission SHALL pass its admission budget.
@@ -185,53 +182,26 @@ QSV's trusted admitted nested-value boundary governs membership only; it
 SHALL NOT suppress a node/entry inspection that NFR-009 or NFR-006 requires
 at their own public boundaries.
 
-The supplied helper limits are proposed execution-resource bounds B-2
-because their carrying type is a supplied-value accounting limits type,
-not a compiler/reader stage-limits type. This classification requires a
-coordinated amendment of ADR-014 B-2 and its outcome projection rule:
-pre-call exhaustion has a phase/event, not a semantic evaluator charge
+The supplied helper limits are execution-resource bounds (ADR-014 B-2)
+because their carrying type is a supplied-value limits type, not a
+compiler/reader stage-limits type. ADR-014 B-2 names this type, and its
+outcome projection rule is the phase/event record below: pre-call
+exhaustion has a phase and an event, not a semantic evaluator charge
 point. Supplied A/H SHALL NOT be stored in replay `stage_limits` or
 reclassified as B-3 (ADR-014 section 1). The retained per-argument node/occurrence
 bounds remain their existing B-2 `ScalarLimits` fields.
 
-### Unselected numerical hypotheses and confirmation
+### Acceptance counts
 
-| Counter | Unselected numerical hypothesis | Planning basis, not measured work | Planned headroom |
-| --- | --- | --- | --- |
-| Supplied admission helper units | 262,144 | Research predicts 69,997 membership events for one A-owned direct/final admission sequence over the unchanged full Tree; conversion-invoked membership belongs to H, not a second A-owned pass | 192,147 above the one-pass prediction is discretionary hypothetical headroom, not required second-pass work or a source-proven bound |
-| Replay conversion helper units | 524,288 | Research predicts 129,994 events for the whole converter; QSV's additional hypothetical 32D+128 schedule at D=10,000 gives 320,128, not a proved event bound | 394,294 above the research prediction; 204,160 above the hypothetical schedule (about 64%) |
-
-These fixed powers of two are chosen from the supplied-fixture research
-scale with explicit room for the still-reviewed helper/event boundary.
-The corresponding hypothetical admission schedule 16D+64 gives 160,064
-at D=10,000, leaving 102,080 units (about 64%) below 262,144. These formulas
-are planning hypotheses, not source-proven upper bounds or default
-recommendations from QSV. The released trusted boundary and original
-QSL-503 fixture must determine the approved schedule; TC-817's different
-Leaf/Node-with-two-Options fixture SHALL NOT substitute for it.
-They are candidates for independent pre-call ceilings, NOT selected
-defaults or an increase to the evaluator's allowance. The 39,997 evaluator
-prediction justifies neither helper default and remains subject to the fixed TC-831 trace
-controls. No predicted total becomes a normative event count, observed
-result, mandatory extra pass or cache bypass. If the reviewed actual event
-contract or qualification fails these defaults, the settlement SHALL be
-reconsidered explicitly; no automatic multiplier/reset is allowed.
-
-Peer confirmation of event definitions, union/helper source baseline and
-default adequacy remains outstanding. Exact/one-less acceptance uses actual
-approved event sequences A and H, not these predictions. The full unchanged
-fixture's default success is required independently of this planning rationale.
-That check is falsifiable: failure of the approved event trace to fit either
-262,144/524,288 hypotheses, failure to reach evaluation at 39,996/39,997, or failure
-of the unchanged fixture under proposed defaults refutes the proposal.
-
-Normative-settlement gates: peer confirmation of the proposed defaults,
-accepted FR-255 registry rows,
-ADR-014's phase-aware B-2 projection and the coordinated carrier/wire
-amendments below remain unresolved proposals. They must be settled and
-independently reviewed before the normative contract is approved. A frozen
-draft PR may be independently reviewed in parallel; it does not accept a
-setting, waive a shared contract or qualify execution.
+Exact and one-less acceptance (A-1 denies, A admits; H-1 denies, H
+permits) uses the actual event sequences A and H that the implementation
+executes under the event tables of this requirement and FR-098, never a
+count predicted from source. The unchanged full fixture's default success
+is required independently of those counts: a default that does not admit
+the fixture fails the contract and is corrected explicitly in FR-255, never
+by a multiplier, reset or bypass. The evaluator's 39,996/39,997 boundary
+stays governed by TC-831's trace, and neither helper default is justified
+by it.
 
 ### Projection into existing QSL carriers
 
@@ -278,8 +248,8 @@ unavailable-mapping runtime error or privately extend QSpec's envelope.
 
 ### Logical events and bounded subordinate work
 
-The selected proposal is logical events plus independently bounded helper
-inputs. Each following actual logical step SHALL cost one unit in the owning
+Helper traversal is counted as logical events plus independently bounded
+helper inputs. Each following actual logical step SHALL cost one unit in the owning
 helper budget; it is not a measurement of internal limb/key comparisons.
 This table assigns QSL integration ownership; QSV's supplied-membership
 event ordering, trusted-value boundary and union baseline remain its
@@ -386,22 +356,22 @@ AC-10 and TC-906; Decimal is not removed or made an optional feature.
 QSV must establish a finite work function for each bounded helper input.
 Then a finite number of admitted logical invocations, each on independently
 bounded inputs, bounds total helper work without pretending to count its
-internal comparisons. This reasoning is a proposal, not an established
-released-source proof or a request for a new kernel API. If QSV's source
+internal comparisons. This reasoning is not an established released-source proof and is not a
+request for a new kernel API. If QSV's source
 proof cannot establish it, main SHALL route the precise bounded-helper API
 gap to the existing owning IR plan (Decimal: IR-718/IR-719) and preserve the QSL-503 blocking edge. It SHALL NOT
-implement a copied helper or silently change event units. Draft publication
-and independent review may proceed while that enabling gap is unresolved.
+implement a copied helper or silently change event units.
+
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-277-AC-1 | For each field of the limits types of all twelve operations (`parse`, `format`, `select`, `check`, `check_fences`, `package`, `execute`, `analyze`, `monitor`, `replay`, `inspect` and `render`), running the operation over its TC-755 step 6 input with that field set to one below the counter the input reaches names that field: `LimitExceeded` with the field's limit kind, configured value and limits-field name, except that `format.output_bytes` returns FR-003's typed `resource_exhausted` diagnostic; for `execute`, the outcome `Incomplete` naming that counter; for `analyze`, each open item `incomplete` with that limit as its cause. Setting the field to the counter reached succeeds. | Test (TC-758, TC-931) |
+| FR-277-AC-1 | For each field of the limits types of all twelve operations (`parse`, `format`, `select`, `check`, `check_fences`, `package`, `execute`, `analyze`, `monitor`, `replay`, `inspect` and `render`), running the operation over its TC-755 step 6 input with that field set to one below the counter the input reaches names that field: `LimitExceeded` with the field's limit kind, configured value and limits-field name, except that `format.output_bytes` returns FR-003's typed `resource_exhausted` diagnostic and each model-normalization field of `select`'s limits refuses `resource_exhausted`/`insufficient-next-charge` with the denied-charge fields of FR-255 Behavior 1, and `intake.input_bytes` refuses `resource_exhausted`/`intake-limit-exceeded` with `kind`, `bound`, `actual` and `setting`; for `execute`, the outcome `Incomplete` naming that counter; for `analyze`, each open item `incomplete` with that limit as its cause. Setting the field to the counter reached succeeds. | Test (TC-758, TC-931) |
 | FR-277-AC-2 | On a thread with the platform's default stack, a source whose body is a 100,000-term sum checks successfully when the caller raises `s3.nodes` to fit it, and with `s3.nodes` one below its node count refuses with `LimitExceeded` naming `s3.nodes`; no outcome names a depth. | Test (TC-758) |
 | FR-277-AC-3 | `execute` over an input whose work, with `work_units` set to one below what it needs, is denied returns the outcome `Incomplete` carrying the limit kind, the configured value, the counter at the failed charge (the consumed value with the denied amount) and the `accounting` field name that raises it. | Test (TC-758) |
-| FR-277-AC-4 | TC-830 and TC-906 distinguish admission/conversion limits, invalid input, caller cancellation, measured storage failure and capacity failure through the typed phase outcome above. Limits preserve the setting, configured ceiling, successful spend and denied event/amount without spending the denied step; all pre-call failures have zero evaluation consumption and no FunctionCall projection. Zero ceilings and checked overflow cannot admit a value. | Test |
-| FR-277-AC-5 | Across multiple arguments and nested helpers, TC-906 retains the same original Cancel and cumulative admission/conversion budgets. No helper event is debited twice or seeded into converted-node counts; cancellation at a later argument remains cancellation, and a failed reservation precedes mutation with no partial success. | Test |
-| FR-277-AC-6 | For each claimed supported supplied-family path, qualification identifies every required indivisible helper and its authoritative operation, actual finite bounds for all operands/inputs, finite work and peak temporary-storage proof, original-Cancel response boundary, actual fallible failure route where storage is required and reviewed typed consumer mapping. Omitting any premise blocks implementation qualification, not a fabricated runtime result. Decimal's tiny [0,100], 1@0, scale-2 allocation falsifier remains blocked until reviewed IR-718/implemented IR-719 capability and typed integration satisfy these premises; once enabled, FR-098 AC-10's positive Decimal replay remains mandatory. TC-906 steps 8-9 inspect this prerequisite and its missing-premise negative control. | Analysis |
+| FR-277-AC-4 | TC-830 and TC-906 distinguish admission/conversion limits, invalid input, caller cancellation, measured storage failure and capacity failure through the typed phase outcome above. Limits preserve the setting, configured ceiling, successful spend and denied event/amount without spending the denied step; all pre-call failures have zero evaluation consumption and no FunctionCall projection. Zero ceilings and checked overflow cannot admit a value. | Test (TC-830, TC-906) |
+| FR-277-AC-5 | Across multiple arguments and nested helpers, TC-906 retains the same original Cancel and cumulative admission/conversion budgets. No helper event is debited twice or seeded into converted-node counts; cancellation at a later argument remains cancellation, and a failed reservation precedes mutation with no partial success. | Test (TC-906) |
+| FR-277-AC-6 | For each claimed supported supplied-family path, qualification identifies every required indivisible helper and its authoritative operation, actual finite bounds for all operands/inputs, finite work and peak temporary-storage proof, original-Cancel response boundary, actual fallible failure route where storage is required and reviewed typed consumer mapping. Omitting any premise blocks implementation qualification, not a fabricated runtime result. Decimal's tiny [0,100], 1@0, scale-2 allocation falsifier remains blocked until reviewed IR-718/implemented IR-719 capability and typed integration satisfy these premises; once enabled, FR-098 AC-10's positive Decimal replay remains mandatory. TC-906 steps 8-9 inspect this prerequisite and its missing-premise negative control. | Analysis (TC-906) |
 
 ## Dependencies
 
@@ -410,19 +380,19 @@ and independent review may proceed while that enabling gap is unresolved.
   reviewed and implemented bounded Decimal membership plus actual typed
   QSV/QSL integration; missing qualification is a blocker, not a new outcome.
 - [FR-255](FR-255-name-the-setting-that-raises-a-reached-limit.md): the
-  accepted setting registry and cross-entry-point mapping; its owner must
-  add the proposed rows before those names are accepted.
+  the setting registry and cross-entry-point mapping, which registers
+  `supplied.admission_work_units` and `supplied.conversion_work_units`.
 - [ADR-014](../decisions/ADR-014-temporal-trace-and-boundedness-architecture.md):
-  B-2 carrying-type classification and the coordinated phase projection.
+  B-2 carrying-type classification of the supplied-value limits type.
 - [NFR-009](../non-functional/NFR-009-bound-composed-evaluation.md) and
   [NFR-006](../non-functional/NFR-006-bound-native-runtime.md): their
   separately scoped validation accounting remains binding.
 - [FR-090](FR-090-return-a-family-outcome-or-a-typed-family-refusal.md) and
   [FR-096](FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md):
-  coordinated carrier/context mapping; the frozen QSL-675 paths remain with
-  their existing author/reviewer.
-- [QSpec FR-323](ix://agent-ix/quire-specification/FR-323): reviewed shared
-  envelope authority for the proposed phase-aware limit projection.
+  the carrier and context mapping the supplied-phase failure arm extends.
+- [QSpec FR-323](ix://agent-ix/quire-specification/FR-323): the shared
+  envelope authority for the replay request's `limits.supplied` member and
+  the phase-aware limit projection.
 - ADR-029 LC-4: caller limits.
 - ADR-030 D-1: depth is not a limit.
 - ADR-013 T-4: `LimitExceeded`.

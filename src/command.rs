@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-026/027: local file orchestration around the existing native compiler and runtime.
 
+mod clause;
 mod compilation;
 #[cfg(feature = "quire-extraction")]
 pub mod extraction;
@@ -16,9 +17,7 @@ use crate::lowering::{self, LoweringError, LoweringLimits, ProjectionTarget};
 use crate::model_source::ModelSourceError;
 use crate::package::{NativePackage, NativePackageRef, PackageError};
 use crate::protocol_artifact::DOMAIN_PACKAGE_PROFILE;
-use crate::runtime::{
-    self, ArtifactLimits, ExecutionLimits, InputReadError, Invocation, RuntimeInput, Snapshot,
-};
+use crate::runtime::InputReadError;
 use qsl_foundation::serde_object::Object;
 use qsl_foundation::{ByteDigest, Code, Diagnostic, Source};
 use quire_contract_model as ir;
@@ -32,6 +31,24 @@ type Result<T> = std::result::Result<T, RunCause>;
 const REQUEST_BYTES: usize = 1_048_576;
 const TOTAL_BYTES: usize = 8_388_608;
 const FILES: usize = 64;
+
+/// Caller byte ceilings for one `run` invocation (FR-026/FR-312).
+#[derive(Clone, Copy, Debug)]
+pub struct RunLimits {
+    /// Maximum bytes in the request file.
+    pub request_bytes: usize,
+    /// Maximum aggregate bytes in selected dependent files.
+    pub dependent_bytes: usize,
+}
+
+impl Default for RunLimits {
+    fn default() -> Self {
+        Self {
+            request_bytes: REQUEST_BYTES,
+            dependent_bytes: TOTAL_BYTES,
+        }
+    }
+}
 
 /// Selected file category charged by command preflight.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -76,6 +93,21 @@ struct FileCounts {
 pub enum LimitKind {
     /// Per-file or remaining aggregate byte ceiling.
     FileBytes,
+    /// A request file exceeded its caller's configured ceiling.
+    RequestBytes {
+        /// The caller's effective request byte ceiling.
+        maximum: usize,
+    },
+    /// Dependent files exceeded their aggregate configured ceiling.
+    DependentBytes {
+        /// The caller's effective aggregate dependent byte ceiling.
+        maximum: usize,
+    },
+    /// One selected observation exceeded its document byte ceiling.
+    ObservationDocumentBytes {
+        /// Effective observation document byte ceiling.
+        maximum: usize,
+    },
     /// Total selected file count.
     SelectedFiles {
         /// Group that could not be charged.
@@ -94,6 +126,9 @@ impl LimitKind {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::FileBytes => "file bytes",
+            Self::RequestBytes { .. } => "request_bytes",
+            Self::DependentBytes { .. } => "dependent_bytes",
+            Self::ObservationDocumentBytes { .. } => "observation.document_bytes",
             Self::SelectedFiles { .. } => "selected files",
         }
     }
@@ -111,7 +146,7 @@ pub struct RunResult {
     /// FR-285's exit code of the outcome's category, or the most severe
     /// item code of a multi-item outcome.
     pub exit_code: u8,
-    /// Structured native-run-result/1 observations.
+    /// Structured `native-run-result/2` or current spine call observations.
     pub value: NativeResult,
 }
 
@@ -131,9 +166,20 @@ pub enum RunCause {
     /// Closed request decoding failed.
     #[error("invalid request: {0}")]
     Json(#[from] serde_json::Error),
+    /// FR-312: a clause request member cannot form a typed selection.
+    #[error("invalid clause request member {member}: {reason}")]
+    ClauseRequest {
+        /// The wire member or observation key at fault.
+        member: String,
+        /// Why this member is invalid.
+        reason: String,
+    },
     /// Typed output serialization failed.
     #[error("cannot serialize native result: {0}")]
     Output(#[source] serde_json::Error),
+    /// A typed clause report failed canonical wire production.
+    #[error("cannot serialize clause-run result: {0}")]
+    ClauseOutput(#[source] qsl_replay::spine::NativeRunResultError),
     /// Request format was not selected.
     #[error("unsupported native command format")]
     Format,
@@ -208,10 +254,6 @@ pub enum RunCause {
     /// command does not admit for it, or carries no `call`.
     #[error("a 1-draft program runs through the spine; the request selects {0}")]
     CompleteRunSelection(CompleteRunSelection),
-    /// FR-100: a `0-draft` native-run/1 request carries a `1-draft`-only
-    /// member, or is missing a native-only member FR-026 requires.
-    #[error("a 0-draft program runs natively; {0}")]
-    NativeRunSelection(NativeRunSelection),
     /// FR-100: the spine run entry refused, at its own stage and cause code.
     #[error("{0}")]
     SpineRun(Box<qsl_replay::spine::RunRefusal>),
@@ -269,35 +311,6 @@ impl std::fmt::Display for CompleteRunSelection {
     }
 }
 
-/// Why a `0-draft` native-run/1 request refuses (FR-100).
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[non_exhaustive]
-pub enum NativeRunSelection {
-    /// The request carries a `call`, which only a `1-draft` program takes.
-    Call,
-    /// The request carries `libraries`, which only a `1-draft` program
-    /// takes.
-    Libraries,
-    /// The request carries no execution selection.
-    MissingSelection,
-    /// The request carries no snapshot selections.
-    MissingSnapshots,
-    /// The request carries no invocation selections.
-    MissingInvocations,
-}
-
-impl std::fmt::Display for NativeRunSelection {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(match self {
-            Self::Call => "the request selects a call",
-            Self::Libraries => "the request selects libraries",
-            Self::MissingSelection => "the request selects no execution selection",
-            Self::MissingSnapshots => "the request selects no snapshots",
-            Self::MissingInvocations => "the request selects no invocations",
-        })
-    }
-}
-
 /// A spine refusal of a `1-draft` program, with the program it concerns.
 #[derive(Debug)]
 pub struct SpineFailure {
@@ -324,7 +337,8 @@ impl RunCause {
         match self {
             Self::Io { .. } => Code::IoError,
             Self::Json(_) => Code::InvalidRequest,
-            Self::Output(_) => Code::OutputFailure,
+            Self::ClauseRequest { .. } => Code::InvalidRequest,
+            Self::Output(_) | Self::ClauseOutput(_) => Code::OutputFailure,
             Self::Format => Code::UnknownWire,
             #[cfg(feature = "quire-extraction")]
             Self::Extraction(error) => error.code(),
@@ -341,7 +355,6 @@ impl RunCause {
             Self::CompleteSelection(_)
             | Self::Libraries(_)
             | Self::CompleteRunSelection(_)
-            | Self::NativeRunSelection(_)
             | Self::MissingClauses => Code::InvalidRequest,
             Self::Spine(failure) => failure.refusal.code(),
             Self::SpineRun(refusal) => refusal.code(),
@@ -360,7 +373,9 @@ impl RunCause {
     /// failure at S6a"); every other cause takes its code's category.
     pub fn category(&self) -> qsl_foundation::diagnostic::Category {
         match self {
-            Self::Output(_) => qsl_foundation::diagnostic::Category::InternalFailure,
+            Self::Output(_) | Self::ClauseOutput(_) => {
+                qsl_foundation::diagnostic::Category::InternalFailure
+            }
             Self::SpineRun(refusal) => refusal.category(),
             _ => self.code().category(),
         }
@@ -386,7 +401,13 @@ impl RunError {
 
     /// JSON error with original stage/code and available source/reference details.
     pub fn value(&self) -> std::result::Result<serde_json::Value, serde_json::Error> {
-        output::error(self)
+        output::error(self, false)
+    }
+
+    /// JSON error for an artifact command, retaining its exact request
+    /// identity and refusal/incomplete status.
+    pub fn artifact_value(&self) -> std::result::Result<serde_json::Value, serde_json::Error> {
+        output::error(self, true)
     }
 }
 
@@ -413,11 +434,35 @@ fn read_file(path: &Path, limit: usize) -> Result<Vec<u8>> {
 struct Intake<'a> {
     directory: &'a Path,
     remaining: usize,
+    maximum: usize,
+    configured: bool,
 }
 
 impl Intake<'_> {
     fn file(&mut self, path: &str, ceiling: usize) -> Result<Vec<u8>> {
-        let bytes = read_file(&self.directory.join(path), ceiling.min(self.remaining))?;
+        self.bounded_file(path, ceiling, false)
+    }
+
+    fn observation_file(&mut self, path: &str, ceiling: usize) -> Result<Vec<u8>> {
+        self.bounded_file(path, ceiling, true)
+    }
+
+    fn bounded_file(&mut self, path: &str, ceiling: usize, observation: bool) -> Result<Vec<u8>> {
+        let bytes = read_file(&self.directory.join(path), ceiling.min(self.remaining)).map_err(
+            |cause| match cause {
+                RunCause::Limit(LimitKind::FileBytes)
+                    if observation && ceiling <= self.remaining =>
+                {
+                    RunCause::Limit(LimitKind::ObservationDocumentBytes { maximum: ceiling })
+                }
+                RunCause::Limit(LimitKind::FileBytes) if self.configured => {
+                    RunCause::Limit(LimitKind::DependentBytes {
+                        maximum: self.maximum,
+                    })
+                }
+                cause => cause,
+            },
+        )?;
         self.remaining -= bytes.len();
         Ok(bytes)
     }
@@ -425,13 +470,13 @@ impl Intake<'_> {
     fn source(&mut self, selected: &wire::SourceFile) -> Result<FormalSource> {
         let identity = selected.identity.bind()?;
         let expected = selected.digest.parse()?;
-        let bytes = self.file(&selected.file, REQUEST_BYTES)?;
+        let bytes = self.file(&selected.file, self.remaining)?;
         let source = Source::read_verified(
             identity.native,
             &selected.file,
             &bytes,
             expected,
-            REQUEST_BYTES,
+            self.maximum,
         )?;
         Ok(FormalSource::new(source, identity.formal))
     }
@@ -439,7 +484,65 @@ impl Intake<'_> {
 
 /// Read a native-run/1 job and execute it locally with fresh, bounded stage state.
 pub fn run(path: &Path) -> std::result::Result<RunResult, Box<RunError>> {
-    with_request(path, run_bytes)
+    run_with_limits(path, RunLimits::default())
+}
+
+/// Run with the caller's explicit request and dependent-file byte ceilings.
+pub fn run_with_limits(
+    path: &Path,
+    limits: RunLimits,
+) -> std::result::Result<RunResult, Box<RunError>> {
+    with_request_limits(path, limits.request_bytes, |directory, bytes, digest| {
+        run_bytes(directory, bytes, digest, limits.dependent_bytes)
+    })
+}
+
+/// FR-312's request reader, returning the exact typed input the spine runs.
+/// A refusal retains the request digest and its located command cause.
+pub type ClauseRunRequestRefusal = Box<RunError>;
+
+/// Read a closed clause-run request and every selected file exactly once.
+pub fn read_clause_run_request(
+    path: &Path,
+) -> std::result::Result<qsl_replay::spine::ClauseRunRequest, ClauseRunRequestRefusal> {
+    with_request(path, |directory, bytes, _digest| {
+        let request: wire::Request = request(bytes)?;
+        let clause = request
+            .clause
+            .as_ref()
+            .ok_or_else(|| RunCause::ClauseRequest {
+                member: "clause".to_owned(),
+                reason: "missing clause run".to_owned(),
+            })?;
+        if request.call.is_some() {
+            return Err(RunCause::ClauseRequest {
+                member: "call".to_owned(),
+                reason: "call and clause are mutually exclusive".to_owned(),
+            });
+        }
+        let mut intake = intake(
+            directory,
+            FileCounts {
+                programs: request.libraries.len().saturating_add(1),
+                models: request.models.len(),
+                snapshots: clause
+                    .observations
+                    .values()
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .len(),
+                invocations: 0,
+                packages: 0,
+            },
+        )?;
+        let source = intake.source(&request.program.source)?;
+        if !matches!(Edition::of(source.source())?, Edition::Complete) {
+            return Err(RunCause::ClauseRequest {
+                member: "edition".to_owned(),
+                reason: "native run is retired".to_owned(),
+            });
+        }
+        clause::read(&mut intake, &request, clause, source)
+    })
 }
 
 /// Compile a native-compile/1 source-only job (FR-027). The program source's
@@ -743,7 +846,26 @@ fn with_request<T>(
     path: &Path,
     action: impl FnOnce(&Path, &[u8], ByteDigest) -> Result<T>,
 ) -> std::result::Result<T, Box<RunError>> {
-    let bytes = read_file(path, REQUEST_BYTES).map_err(|cause| {
+    with_request_limits(path, REQUEST_BYTES, action).map_err(|mut error| {
+        if matches!(error.cause, RunCause::Limit(LimitKind::RequestBytes { .. })) {
+            error.cause = RunCause::Limit(LimitKind::FileBytes);
+        }
+        error
+    })
+}
+
+fn with_request_limits<T>(
+    path: &Path,
+    request_bytes: usize,
+    action: impl FnOnce(&Path, &[u8], ByteDigest) -> Result<T>,
+) -> std::result::Result<T, Box<RunError>> {
+    let bytes = read_file(path, request_bytes).map_err(|cause| {
+        let cause = match cause {
+            RunCause::Limit(LimitKind::FileBytes) => RunCause::Limit(LimitKind::RequestBytes {
+                maximum: request_bytes,
+            }),
+            cause => cause,
+        };
         Box::new(RunError {
             request_digest: None,
             cause,
@@ -793,12 +915,29 @@ fn intake(directory: &Path, counts: FileCounts) -> Result<Intake<'_>> {
     Ok(Intake {
         directory,
         remaining: TOTAL_BYTES,
+        maximum: TOTAL_BYTES,
+        configured: false,
     })
 }
 
-fn run_bytes(directory: &Path, bytes: &[u8], digest: ByteDigest) -> Result<RunResult> {
+fn intake_with_bytes(directory: &Path, counts: FileCounts, maximum: usize) -> Result<Intake<'_>> {
+    check_file_count(counts)?;
+    Ok(Intake {
+        directory,
+        remaining: maximum,
+        maximum,
+        configured: true,
+    })
+}
+
+fn run_bytes(
+    directory: &Path,
+    bytes: &[u8],
+    digest: ByteDigest,
+    dependent_bytes: usize,
+) -> Result<RunResult> {
     let request: wire::Request = request(bytes)?;
-    let mut intake = intake(
+    let mut intake = intake_with_bytes(
         directory,
         FileCounts {
             // A library source is a program source a `1-draft` program
@@ -806,10 +945,18 @@ fn run_bytes(directory: &Path, bytes: &[u8], digest: ByteDigest) -> Result<RunRe
             // mirroring FR-027).
             programs: request.libraries.len().saturating_add(1),
             models: request.models.len(),
-            snapshots: request.snapshots.as_ref().map_or(0, Vec::len),
+            snapshots: request.snapshots.as_ref().map_or(0, Vec::len)
+                + request.clause.as_ref().map_or(0, |clause| {
+                    clause
+                        .observations
+                        .values()
+                        .collect::<std::collections::BTreeSet<_>>()
+                        .len()
+                }),
             invocations: request.invocations.as_ref().map_or(0, Vec::len),
             packages: usize::from(request.package.is_some()),
         },
+        dependent_bytes,
     )?;
     // The program source is read exactly once, regardless of extraction
     // (FND-004/FND-011/FND-014): its declared edition decides the runner
@@ -822,60 +969,12 @@ fn run_bytes(directory: &Path, bytes: &[u8], digest: ByteDigest) -> Result<RunRe
     // `CompleteRunSelection::Extraction`) rather than running natively.
     let source = intake.source(&request.program.source)?;
     match Edition::of(source.source())? {
-        Edition::Native => run_native(&digest, &mut intake, &request, source),
+        Edition::Native => Err(RunCause::ClauseRequest {
+            member: "edition".to_owned(),
+            reason: "native run is retired".to_owned(),
+        }),
         Edition::Complete => run_complete(&digest, &mut intake, &request, source),
     }
-}
-
-/// FR-026: run a `0-draft` (or no-edition) program natively, or (with the
-/// `quire-extraction` feature) an extracted binding. `source` is the
-/// program source `run_bytes` already read.
-fn run_native(
-    digest: &ByteDigest,
-    intake: &mut Intake<'_>,
-    request: &wire::Request,
-    source: FormalSource,
-) -> Result<RunResult> {
-    if request.call.is_some() {
-        return Err(RunCause::NativeRunSelection(NativeRunSelection::Call));
-    }
-    if !request.libraries.is_empty() {
-        return Err(RunCause::NativeRunSelection(NativeRunSelection::Libraries));
-    }
-    let Some(selection) = &request.selection else {
-        return Err(RunCause::NativeRunSelection(
-            NativeRunSelection::MissingSelection,
-        ));
-    };
-    let Some(snapshots) = &request.snapshots else {
-        return Err(RunCause::NativeRunSelection(
-            NativeRunSelection::MissingSnapshots,
-        ));
-    };
-    let Some(invocations) = &request.invocations else {
-        return Err(RunCause::NativeRunSelection(
-            NativeRunSelection::MissingInvocations,
-        ));
-    };
-    let selected = compilation::RunSelection::new(request)?;
-    let models = compilation::models(intake, &request.models)?;
-    // `source` (read once, above, for edition detection) is threaded
-    // through to `RunSelection::compile`, so a selected package's own
-    // `selected_package` does not read `program.source` a second time
-    // (FND-011). The extraction arm ignores it: it reads its own source
-    // through the I3 adapter instead.
-    let package = selected.compile(intake, &models, source)?;
-    let input = runtime_input(intake, snapshots, invocations)?;
-    let bound_selection = selection.bind()?;
-    let mut limits = ExecutionLimits::default();
-    if let Some(value) = request.limits.validation_work {
-        limits.validation.work = value;
-    }
-    if let Some(value) = request.limits.expression_steps {
-        limits.evaluation.expression_steps = value;
-    }
-    let report = runtime::execute(package.native(), input, bound_selection, limits, || false);
-    output::report(*digest, selection, &models, &package, &report)
 }
 
 /// FR-100: run a `1-draft` program's named function through the spine.
@@ -886,6 +985,15 @@ fn run_complete(
     request: &wire::Request,
     source: FormalSource,
 ) -> Result<RunResult> {
+    if let Some(clause) = &request.clause {
+        if request.call.is_some() {
+            return Err(RunCause::ClauseRequest {
+                member: "call".to_owned(),
+                reason: "call and clause are mutually exclusive".to_owned(),
+            });
+        }
+        return clause::run(intake, request, clause, source);
+    }
     if request.selection.is_some() {
         return Err(RunCause::CompleteRunSelection(
             CompleteRunSelection::Selection,
@@ -971,16 +1079,13 @@ fn run_complete(
         .iter()
         .map(|argument| qsl_replay::spine::CallArgument {
             parameter: argument.parameter.clone(),
-            value: argument.value,
+            value: quire_exact::Value::Integer(quire_exact::Integer::from(argument.value)),
         })
         .collect();
     let spine_call = qsl_replay::spine::Call {
         function: call.function.clone(),
         arguments,
-        accounting: qsl_replay::spine::default_accounting(
-            call.work_units
-                .unwrap_or(qsl_replay::spine::DEFAULT_WORK_UNITS),
-        ),
+        accounting: call_accounting(&call.accounting),
     };
     let (package_id, outcome) = qsl_replay::spine::run(
         source.source().identity().clone(),
@@ -990,6 +1095,7 @@ fn run_complete(
         &dependencies,
         qsl_replay::spine::SpineLimits::default(),
         &spine_call,
+        &qsl_semantics::model::object_environment::ObjectEnvironment::default(),
         &quire_exact::Cancel::new(),
     )
     .map_err(|refusal| match *refusal {
@@ -999,6 +1105,16 @@ fn run_complete(
         other => RunCause::SpineRun(Box::new(other)),
     })?;
     output::spine_run_result(*digest, package_id, &source, &call.function, outcome)
+}
+
+/// The call's accounting limits (FR-100): each named counter uses the
+/// supplied bound and every omitted counter retains its accounting default.
+fn call_accounting(accounting: &wire::Accounting) -> quire_exact::ScalarLimits {
+    let mut limits = qsl_replay::AccountingLimits::default();
+    for (setting, bound) in accounting.entries() {
+        limits.set_bound(setting, bound);
+    }
+    limits.0
 }
 
 /// A spine compile refusal from a `1-draft` `run`, located over the source
@@ -1027,33 +1143,6 @@ fn spine_run_failure(
             .and_then(|region| located.source().render(region)),
         refusal,
     }))
-}
-
-fn read_artifacts<T, U>(
-    intake: &mut Intake<'_>,
-    selected: &[wire::FileSelection<T>],
-    limits: ArtifactLimits,
-    read: impl Fn(&T, &[u8], ArtifactLimits) -> std::result::Result<U, Box<InputReadError>>,
-) -> Result<Vec<U>> {
-    selected
-        .iter()
-        .map(|selected| {
-            let bytes = intake.file(&selected.file, limits.artifact_bytes)?;
-            Ok(read(&selected.reference, &bytes, limits)?)
-        })
-        .collect()
-}
-
-fn runtime_input(
-    intake: &mut Intake<'_>,
-    snapshots: &[wire::FileSelection<runtime::SnapshotRef>],
-    invocations: &[wire::FileSelection<runtime::InvocationRef>],
-) -> Result<RuntimeInput> {
-    let limits = ArtifactLimits::default();
-    Ok(RuntimeInput {
-        snapshots: read_artifacts(intake, snapshots, limits, Snapshot::read_verified)?,
-        invocations: read_artifacts(intake, invocations, limits, Invocation::read_verified)?,
-    })
 }
 
 #[cfg(test)]
@@ -1108,5 +1197,45 @@ mod tests {
                 "invariant": "spine-run-supplies-admitted-name-and-arity",
             })
         );
+    }
+
+    /// FR-100-AC-13: `call.accounting` reaches the call as its accounting
+    /// limits, with omitted counters retaining their defaults.
+    #[test]
+    #[trace("TC-921", "FR-100-AC-13")]
+    fn call_accounting_reaches_the_call_as_its_limits() {
+        let limits = |text: &str| {
+            let call: wire::Call = serde_json::from_str(text).expect("a call");
+            call_accounting(&call.accounting)
+        };
+        let all = limits(
+            r#"{"function":"f","arguments":[],"accounting":{"integer_bits":1,
+            "decimal_digits":2,"scale_expansion":3,"text_input_bytes":4,
+            "text_scalars":5,"normalized_scalars":6,"unit_edges":7,
+            "value_occurrences":8,"work_units":9,"result_units":10}}"#,
+        );
+        assert_eq!(
+            all,
+            quire_exact::ScalarLimits {
+                integer_bits: 1,
+                decimal_digits: 2,
+                scale_expansion: 3,
+                text_input_bytes: 4,
+                text_scalars: 5,
+                normalized_scalars: 6,
+                unit_edges: 7,
+                value_occurrences: 8,
+                work_units: 9,
+                result_units: 10,
+            }
+        );
+        let one = limits(r#"{"function":"f","arguments":[],"accounting":{"work_units":7}}"#);
+        assert_eq!(one, qsl_replay::spine::default_accounting(7));
+        let defaults = qsl_replay::spine::default_accounting(qsl_replay::spine::DEFAULT_WORK_UNITS);
+        assert_eq!(
+            limits(r#"{"function":"f","arguments":[],"accounting":{}}"#),
+            defaults
+        );
+        assert_eq!(limits(r#"{"function":"f","arguments":[]}"#), defaults);
     }
 }

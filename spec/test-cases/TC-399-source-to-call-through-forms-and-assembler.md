@@ -45,7 +45,3 @@ Tag the test `#[trace("FR-091-AC-12", "FR-091-AC-13", "TC-399")]`.
   type `Int(0..=9)`, and both results are `Int(0..=10)`.
 - Checking succeeds.
 - The call returns a completed outcome whose value is the integer `2`.
-
-## Status
-
-Backed by `qsl-semantics` `check::assemble` tests (`the_assembler_resolves_aliases_and_signatures`, steps 1 to 3) and `qsl-eval/tests/it/source_call.rs` (`a_function_compiled_from_source_is_called_by_name`, step 4).

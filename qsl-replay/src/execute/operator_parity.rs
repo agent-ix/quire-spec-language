@@ -234,7 +234,11 @@ fn settle(
     claim: &OperatorIdentity,
     replay_limits: ReplayLimits,
 ) -> Result<OperatorParityResult, ReplayRefusal> {
-    let limits = request_limits(request.stage_limits(), replay_limits)?;
+    let limits = request_limits(
+        request.stage_limits(),
+        request.accounting_limits(),
+        replay_limits,
+    )?;
     let compiled = recompile(request, &limits)?;
     let package = compiled.emitted.package().package_id();
     let checked_graph = compiled.checked.package().graph();

@@ -58,8 +58,3 @@ Tag each test `#[trace("TC-830", "<AC id>")]`.
   original refusal. Storage and capacity remain distinct from limits,
   reserve before mutation, and yield no partial success. Wrong next-event
   metadata or a FunctionCall charge is a failure of this test.
-
-## Status
-
-Planned. QSL-681 phase controls are proposed, not executed; shared event
-and union baseline alignment is pending.

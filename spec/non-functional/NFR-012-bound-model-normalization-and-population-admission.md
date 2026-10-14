@@ -54,8 +54,9 @@ ceiling therefore bounds the work done, not only the result:
   grows with the number of facts plus the total ancestor-path length, and
   the total path length is bounded by the work the cycle checks admitted.
 - `ancestor_steps` and `family_steps` are charged like every other ceiling:
-  each `supertypes` or `redefines` edge a walk follows is charged before it
-  is followed (FR-082, FR-083), and the first denied charge stops the walk
+  each `supertypes` edge a walk follows is charged before it is followed
+  (FR-082), and each distinct `redefines` edge is charged once, before the
+  first walk follows it, however many walks follow it (FR-083), and the first denied charge stops the walk
   `Incomplete`. They count edges, never a depth, and every walk uses an
   explicit stack.
 
@@ -85,8 +86,9 @@ per-charge record, so its memory does not grow with the work it bounds.
   member is at least one entry of the package or population document it is
   read from.
 - **Derivation facts, 1600000.** Sixteen facts per record at the record
-  ceiling. An effective declaration's derivation holds one qualify fact and
-  one inherit fact per ancestor path, so this admits a package at the record
+  ceiling. A type's derivation holds one qualify fact and one inherit
+  fact per ancestor path; an inherited member holds one inherit fact per
+  ancestor path and no qualify fact. This admits a package at the record
   ceiling whose declarations average fifteen ancestor paths.
 - **Effective declarations and dispatch candidates, 1600000.** Every
   effective declaration carries at least one derivation fact, so this
