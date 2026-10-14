@@ -27,6 +27,7 @@ mod model_reference_queries;
 mod protocol_reference;
 mod source_call;
 mod state_model_family;
+mod supplied_phases;
 mod tc235_business_meaning_runtime;
 mod total_functions;
 mod variant_fields;

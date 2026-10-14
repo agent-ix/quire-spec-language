@@ -11,15 +11,13 @@ use qsl_package::CheckedPackage;
 use quire_exact::{
     CardinalityBound, CollectionKind, CollectionType, Integer, NodeKey, Presence, Value, ValueType,
 };
-use quire_semantic_value::call::InputRefusal;
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::{
     CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment,
 };
 
-use super::{WitnessValue, UNLIMITED};
-use crate::execute::argument::{convert_arguments, Stopped};
-use crate::execute::ReplayRefusal;
+use super::{default_run, refused_parameter, WitnessValue, UNLIMITED};
+use crate::execute::argument::convert_arguments;
 use crate::witness::{WitnessField, WitnessSlot};
 
 fn key(label: &str) -> NodeKey {
@@ -103,13 +101,16 @@ fn composite(label: &str) -> ValueType {
 
 /// The one argument `value` converted at the parameter type `declared`.
 fn converted(value: WitnessValue, declared: ValueType) -> Result<Value, usize> {
-    match convert_arguments(&package(), &[declared], &[value], &UNLIMITED) {
+    match convert_arguments(
+        &package(),
+        &[declared],
+        &[value],
+        &UNLIMITED,
+        &mut default_run(),
+    ) {
         Ok(mut converted) => Ok(converted.values.remove(0)),
-        Err(Stopped::Refusal(refusal)) => match *refusal {
-            ReplayRefusal::Input(InputRefusal::WrongValueKind { parameter }) => Err(parameter),
-            other => panic!("a wrong-value-kind refusal, not {other:?}"),
-        },
-        Err(Stopped::Limit(limit)) => panic!("no limit applies: {limit:?}"),
+        Err(stopped) => Err(refused_parameter(&stopped)
+            .unwrap_or_else(|| panic!("a wrong-value-kind refusal, not {stopped:?}"))),
     }
 }
 

@@ -19,6 +19,10 @@ mod s6a;
 use evaluate::Machine;
 use qsl_foundation::diagnostic::InternalFault;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
+use qsl_semantics::value::supplied::{
+    SuppliedCause, SuppliedFailure, SuppliedLimits, SuppliedPhase, SuppliedRun, SuppliedStop,
+    UnsupportedHelperStop,
+};
 use quire_exact::{FieldValue, Meter, NodeKey, Value, ValueType};
 use quire_semantic_value::call::InputRefusal;
 use quire_semantic_value::declaration::{EnvironmentFailure, TypeEnvironment};
@@ -84,6 +88,33 @@ pub fn input_refusal_code(refusal: &InputRefusal) -> qsl_foundation::diagnostic:
     }
 }
 
+/// The catalog code of a supplied-phase stop (FR-277), by the cause it
+/// already has elsewhere in QSL: an input refusal its own, a cancellation
+/// `cancelled`, and a ceiling, a denied reservation or an unrepresentable
+/// size `resource_exhausted`.
+pub fn supplied_stop_code(stop: &SuppliedStop) -> qsl_foundation::diagnostic::Code {
+    use qsl_foundation::diagnostic::Code;
+    match &stop.cause {
+        SuppliedCause::Input { refusal, .. } => input_refusal_code(refusal),
+        SuppliedCause::Cancelled(_) => Code::Cancelled,
+        SuppliedCause::Limit(_) | SuppliedCause::Storage(_) | SuppliedCause::Capacity(_) => {
+            Code::ResourceExhausted
+        }
+    }
+}
+
+/// The catalog cause under [`supplied_stop_code`], where the cause names
+/// one.
+pub fn supplied_stop_cause(stop: &SuppliedStop) -> Option<&'static str> {
+    use qsl_foundation::diagnostic::{ALLOCATION_FAILED, RESERVATION_SIZE_OVERFLOW};
+    match &stop.cause {
+        SuppliedCause::Input { refusal, .. } => Some(refusal.cause()),
+        SuppliedCause::Storage(_) => Some(ALLOCATION_FAILED.cause()),
+        SuppliedCause::Capacity(_) => Some(RESERVATION_SIZE_OVERFLOW.cause()),
+        SuppliedCause::Limit(_) | SuppliedCause::Cancelled(_) => None,
+    }
+}
+
 /// FR-090 "Bad arguments are refused at admission; a broken invariant is an
 /// internal fault" (ADR-013 T-4; ADR-011 §2.3 E6 row): [`CheckedPackage::
 /// call`]'s and [`CheckedPackage::evaluate`]'s error, split between an
@@ -116,6 +147,34 @@ pub enum CallFailure {
         /// The kernel's storage failure.
         failure: EnvironmentFailure,
     },
+    /// A supplied-value phase stopped before any call at a helper ceiling,
+    /// a failed reservation or an unrepresentable size (FR-277), with its
+    /// phase context. No evaluation ran and nothing was charged to the
+    /// meter. Invalid input and cancellation keep [`Self::Input`] and
+    /// [`Self::Cancelled`]; their phase context is the run's
+    /// [`SuppliedRun::failure`].
+    #[error("supplied-value {phase} stopped before the call: {cause:?}", phase = .0.context.phase.as_str(), cause = .0.cause)]
+    Supplied(Box<SuppliedStop>),
+    /// A supplied-admission walk reached a helper family QSV has not
+    /// qualified, before that helper ran. Distinct from every other arm.
+    #[error("supplied-value {phase} reached the unqualified {family:?} helper", phase = .0.context.phase.as_str(), family = .0.family)]
+    UnsupportedHelper(Box<UnsupportedHelperStop>),
+}
+
+impl From<SuppliedFailure> for CallFailure {
+    fn from(failure: SuppliedFailure) -> Self {
+        match failure {
+            SuppliedFailure::Stop(stop) => match stop.cause {
+                SuppliedCause::Input { refusal, .. } => Self::Input(refusal),
+                SuppliedCause::Cancelled(cause) => Self::Cancelled(cause),
+                SuppliedCause::Limit(_)
+                | SuppliedCause::Storage(_)
+                | SuppliedCause::Capacity(_) => Self::Supplied(stop),
+            },
+            SuppliedFailure::Unsupported(stop) => Self::UnsupportedHelper(stop),
+            SuppliedFailure::Fault(fault) => Self::Fault(fault),
+        }
+    }
 }
 
 impl CallFailure {
@@ -127,6 +186,14 @@ impl CallFailure {
             Self::Input(_) => Category::Refusal,
             Self::Fault(fault) => fault.category(),
             Self::Cancelled(_) | Self::Storage { .. } => Category::Incomplete,
+            Self::Supplied(stop) => match stop.cause {
+                SuppliedCause::Input { .. } => Category::Refusal,
+                SuppliedCause::Limit(_)
+                | SuppliedCause::Cancelled(_)
+                | SuppliedCause::Storage(_)
+                | SuppliedCause::Capacity(_) => Category::Incomplete,
+            },
+            Self::UnsupportedHelper(_) => Category::Unsupported,
         }
     }
 }
@@ -174,6 +241,7 @@ fn validate(
     arguments: &[Value],
     objects: &ObjectEnvironment,
     types: &TypeEnvironment,
+    run: &mut SuppliedRun,
 ) -> Result<(), CallFailure> {
     if parameters.len() != arguments.len() {
         return Err(InputRefusal::Arity {
@@ -199,14 +267,20 @@ fn validate(
             if !resolved {
                 return Err(InputRefusal::WrongValueKind { parameter }.into());
             }
-        } else if !types
-            .admits(value_type, argument)
-            .map_err(|failure| CallFailure::Storage { parameter, failure })?
-        {
-            return Err(InputRefusal::WrongValueKind { parameter }.into());
+        } else {
+            // FR-277: the final membership walk is the admission phase's,
+            // one QSV event at a time against the run's cumulative A.
+            run.admit(
+                SuppliedPhase::Admission,
+                parameter,
+                types,
+                value_type,
+                argument,
+            )?;
         }
         let mut pending = vec![argument];
         while let Some(value) = pending.pop() {
+            run.check_cancelled(SuppliedPhase::Admission, parameter)?;
             match value {
                 Value::Reference(reference) => {
                     if !objects.references_are_unresolved()
@@ -368,6 +442,23 @@ pub trait CheckedPackageEvaluation: family::sealed::Sealed {
         arguments: Vec<Value>,
         objects: &ObjectEnvironment,
         meter: &mut Meter,
+    ) -> Result<Evaluation, CallFailure>;
+
+    /// [`Self::call`] under the caller's supplied-value `run` (FR-277): the
+    /// final membership of every argument spends the run's cumulative
+    /// admission budget A one event at a time and polls the run's original
+    /// [`quire_exact::Cancel`]. A stop of the admission phase is
+    /// [`CallFailure::Supplied`] (or [`CallFailure::UnsupportedHelper`])
+    /// with zero evaluation consumption: `meter` is untouched and no
+    /// `FunctionCall` charge is made. [`Self::call`] is this method at the
+    /// default [`SuppliedLimits`] over a handle nobody cancels.
+    fn call_supplied(
+        &self,
+        function: &QualifiedName,
+        arguments: Vec<Value>,
+        objects: &ObjectEnvironment,
+        meter: &mut Meter,
+        run: &mut SuppliedRun,
     ) -> Result<Evaluation, CallFailure>;
 
     /// Evaluate a checked expression with `arguments` for its parameters.
@@ -623,6 +714,19 @@ impl CheckedPackageEvaluation for CheckedPackage {
         objects: &ObjectEnvironment,
         meter: &mut Meter,
     ) -> Result<Evaluation, CallFailure> {
+        let mut run = SuppliedRun::new(SuppliedLimits::default(), quire_exact::Cancel::new())
+            .map_err(|stop| CallFailure::from(SuppliedFailure::Stop(stop)))?;
+        self.call_supplied(function, arguments, objects, meter, &mut run)
+    }
+
+    fn call_supplied(
+        &self,
+        function: &QualifiedName,
+        arguments: Vec<Value>,
+        objects: &ObjectEnvironment,
+        meter: &mut Meter,
+        run: &mut SuppliedRun,
+    ) -> Result<Evaluation, CallFailure> {
         let name = function
             .as_unqualified()
             .ok_or_else(|| InputRefusal::UnknownFunction(function.to_string()))?;
@@ -635,6 +739,7 @@ impl CheckedPackageEvaluation for CheckedPackage {
             &arguments,
             objects,
             self.graph().scope().types(),
+            run,
         )?;
         // FR-062/FR-065: this family's own `evaluate` hook
         // (`s6a::ReferenceEvaluation`) is the one path that runs
@@ -663,11 +768,14 @@ impl CheckedPackageEvaluation for CheckedPackage {
         objects: &ObjectEnvironment,
         meter: &mut Meter,
     ) -> Result<Evaluation, CallFailure> {
+        let mut run = SuppliedRun::new(SuppliedLimits::default(), quire_exact::Cancel::new())
+            .map_err(|stop| CallFailure::from(SuppliedFailure::Stop(stop)))?;
         validate(
             expression.parameters(),
             &arguments,
             objects,
             self.graph().scope().types(),
+            &mut run,
         )?;
         Machine::new(
             self.graph().scope(),

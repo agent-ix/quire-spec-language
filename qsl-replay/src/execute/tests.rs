@@ -10,7 +10,7 @@ use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord, WireNodeId}
 use qsl_foundation::{Code, SourceIdentity};
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::intake::{package_input, PackageDocument};
-use quire_exact::{Identifier, ScalarLimits};
+use quire_exact::{Identifier, Integer, ScalarLimits};
 
 use super::*;
 use crate::proof_result::{InconclusiveCause, TerminalValue};
@@ -27,6 +27,7 @@ use admitted_charge::admitted_charge_points;
 mod child_composite;
 mod composite;
 mod composite_parity;
+mod supplied;
 mod variant_fields;
 
 const PROFILE: &str = "profile v = \"quire.value.complete/v1\";\n";
@@ -48,6 +49,33 @@ fn proved() -> String {
          function f using v(x: Int[0, 9]): Integer pure {{ x + 1 }}\n\
          function p using v(x: Int[0, 9]): Boolean pure {{ f(x) > 3 }}\n"
     )
+}
+
+/// A supplied-value run at the default ceilings over a handle nobody cancels.
+fn default_run() -> qsl_semantics::value::supplied::SuppliedRun {
+    qsl_semantics::value::supplied::SuppliedRun::new(
+        qsl_semantics::value::supplied::SuppliedLimits::default(),
+        quire_exact::Cancel::new(),
+    )
+    .expect("a run")
+}
+
+/// The parameter an input refusal of a stopped conversion names, whether it
+/// stopped as a plain refusal or inside the conversion phase.
+fn refused_parameter(stopped: &argument::Stopped) -> Option<usize> {
+    use qsl_semantics::value::supplied::{SuppliedCause, SuppliedFailure};
+    let input = match stopped {
+        argument::Stopped::Refusal(refusal) => refusal.input_refusal(),
+        argument::Stopped::Supplied(SuppliedFailure::Stop(stop)) => match &stop.cause {
+            SuppliedCause::Input { refusal, .. } => Some(refusal),
+            _ => None,
+        },
+        argument::Stopped::Supplied(_) => None,
+    }?;
+    match input {
+        InputRefusal::WrongValueKind { parameter } => Some(*parameter),
+        _ => None,
+    }
 }
 
 const AUTHORITY: &str = "agent-ix";
@@ -141,6 +169,7 @@ fn request(
         state_environment: StateEnvironment::new(vec![]),
         accounting_limits: UNLIMITED,
         stage_limits: BTreeMap::new(),
+        supplied_limits: None,
         declared_domains: Vec::new(),
         byte_provision: vec![(
             Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
@@ -728,7 +757,7 @@ fn tc_444_a_type_or_domain_mismatch_refuses_as_wrong_value_kind() {
         with("small", WitnessValue::Boolean(true)),
         with("small", WitnessValue::Integer(12)),
     ] {
-        let ReplayRefusal::Input(refusal) = &refused else {
+        let Some(refusal) = refused.input_refusal() else {
             panic!("expected an admission refusal, got {refused:?}");
         };
         assert_eq!(refusal, &InputRefusal::WrongValueKind { parameter: 0 });
@@ -2180,7 +2209,10 @@ fn tc_921_a_split_accounting_limit_gives_the_same_claim_settlement_and_charges()
             "work_units {work_units}"
         );
         if work_units == 0 {
-            assert!(matches!(whole.result(), ValueParityResult::Incomplete(_)));
+            assert!(matches!(
+                whole.result(),
+                ValueParityResult::PreCallIncomplete(_)
+            ));
         } else {
             assert!(matches!(whole.result(), ValueParityResult::Agrees { .. }));
         }
@@ -2352,7 +2384,7 @@ fn tc_904_predicate_replay_still_refuses_a_non_boolean_function() {
     assert_eq!(result.value(), Some(EvaluatedValue::Boolean(false)));
 }
 
-/// Starved limits: the function arm's exact evaluation stops at a limit.
+/// Starved limits: the function arm's conversion stops at a pre-call limit.
 #[trace("TC-904", "FR-357-AC-10")]
 #[test]
 fn tc_904_a_starved_function_evaluation_is_incomplete() {
@@ -2363,7 +2395,7 @@ fn tc_904_a_starved_function_evaluation_is_incomplete() {
     };
     let report = replay_value_parity(starved, integer(4), ReplayLimits::default());
     assert!(
-        matches!(report.result(), ValueParityResult::Incomplete(_)),
+        matches!(report.result(), ValueParityResult::PreCallIncomplete(_)),
         "{report:?}"
     );
     assert_eq!(
@@ -2385,7 +2417,7 @@ fn value_kind(result: &ValueParityResult) -> &'static str {
         ValueParityResult::Diverged { .. } => "diverged",
         ValueParityResult::Agrees { .. } => "agrees",
         ValueParityResult::RefusedInput(_) => "refused input",
-        ValueParityResult::Incomplete(_) => "incomplete",
+        ValueParityResult::Incomplete(_) | ValueParityResult::PreCallIncomplete(_) => "incomplete",
         ValueParityResult::Refused(_) => "refused",
     }
 }

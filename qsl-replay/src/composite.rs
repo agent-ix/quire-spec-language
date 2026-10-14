@@ -238,10 +238,11 @@ impl CompositeIdentity {
 /// both.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum IncompleteStage {
-    /// Admitting an operand reached one of the request's accounting limits:
-    /// the counter, its configured value and the count reached. No exact
-    /// evaluation ran.
-    Admission(Box<Incomplete>),
+    /// Admitting an operand reached a pre-call limit of the request: the
+    /// phase, the parameter, the actual event, the counter, its configured
+    /// value, the successful spend and the denied amount (FR-277). No exact
+    /// evaluation ran and no charge point is named.
+    Admission(Box<qsl_semantics::value::supplied::SuppliedStop>),
     /// QSL's exact evaluation reached a limit: QSL's counter, its configured
     /// value and the count reached.
     ExactEvaluation(Box<Incomplete>),

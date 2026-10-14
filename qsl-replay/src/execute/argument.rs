@@ -13,16 +13,32 @@
 //! scale expansion is checked against `scale_expansion`, and the caller
 //! checks the converted occurrence and node counts against
 //! `value_occurrences` and `work_units`.
+//!
+//! FR-277/FR-098: every helper event is charged to the run's conversion
+//! budget H *before* its work, and the original `Cancel` is polled at each.
+//! The conversion events, one unit each, are: `witness-preflight` per witness
+//! node (preorder, before its local shape is read); `descriptor-query` per
+//! declaration header (a record's, tuple's or enum's, with its conformance
+//! to the slot) and per field, position or enum member then read; and
+//! `witness-materialization` per converted kernel node (a leaf before it is
+//! built, an option, record or collection after its children). Membership of
+//! an option payload or collection element is QSV's, spending H event by
+//! event. The semantic counters stay per argument and separate: converted
+//! nodes against `work_units` and occurrences against `value_occurrences`.
 
 use qsl_foundation::diagnostic::InternalFault;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::NominalNode;
 use qsl_semantics::value::enumeration::mint_variant_id;
+use qsl_semantics::value::supplied::{
+    AttemptedCount, SuppliedCause, SuppliedContext, SuppliedEvent, SuppliedFailure, SuppliedLimit,
+    SuppliedLimitKind, SuppliedLocus, SuppliedPhase, SuppliedRun, SuppliedStop,
+};
 use quire_exact::{
-    admit_text, form, from_admitted_slots, ChargePoint, CollectionKind, CollectionType, Decimal,
-    EnumMember, FieldValue, IeeeValue, IeeeWidth, Incomplete, Integer, LimitKind, Meter, NodeKey,
-    ObjectId, ObjectReference, OptionValue, Outcome, Presence, Quantity, Rational, ScalarLimits,
-    TextPayload, UniverseId, Value, ValueType,
+    admit_text, form, from_admitted_slots, CollectionKind, CollectionType, Decimal, EnumMember,
+    FieldValue, IeeeValue, IeeeWidth, Integer, Meter, NodeKey, ObjectId, ObjectReference,
+    OptionValue, Outcome, Presence, Quantity, Rational, ScalarLimits, TextPayload, UniverseId,
+    Value, ValueType,
 };
 use quire_semantic_value::call::InputRefusal;
 use quire_semantic_value::declaration::{CompositeDeclaration, CompositeShape, TypeEnvironment};
@@ -46,11 +62,12 @@ pub(super) const UNLIMITED: ScalarLimits = ScalarLimits {
 };
 
 /// Why a conversion stopped.
+#[derive(Debug)]
 pub(super) enum Stopped {
     /// The value is refused input, or a broken invariant.
     Refusal(Box<ReplayRefusal>),
-    /// An accounting limit of the request stopped it.
-    Limit(Box<Incomplete>),
+    /// A supplied-value conversion phase stopped before any call (FR-277).
+    Supplied(SuppliedFailure),
 }
 
 impl From<ReplayRefusal> for Stopped {
@@ -59,12 +76,23 @@ impl From<ReplayRefusal> for Stopped {
     }
 }
 
-/// The converted arguments and the count of nodes converted.
+impl From<SuppliedFailure> for Stopped {
+    fn from(failure: SuppliedFailure) -> Self {
+        Self::Supplied(failure)
+    }
+}
+
+impl From<Box<SuppliedStop>> for Stopped {
+    fn from(stop: Box<SuppliedStop>) -> Self {
+        Self::Supplied(SuppliedFailure::Stop(stop))
+    }
+}
+
+/// The converted arguments.
+#[derive(Debug)]
 pub(super) struct Converted {
     /// One kernel value per argument, in parameter order.
     pub(super) values: Vec<Value>,
-    /// The nodes converted over every argument.
-    pub(super) nodes: u64,
 }
 
 /// An enum declaration of the checked graph: its node key and its members.
@@ -113,19 +141,33 @@ pub(super) fn enum_declarations(package: &CheckedPackage) -> Vec<EnumDeclaration
     declared.chain(variant_types).collect()
 }
 
+/// Whether `candidate`'s members are exactly `shape`'s variants.
+fn declares_shape(candidate: &EnumDeclaration, shape: &quire_exact::EnumShape) -> bool {
+    candidate.members.len() == shape.variants().count()
+        && candidate
+            .members
+            .iter()
+            .map(|case| mint_variant_id(candidate.key, case))
+            .eq(shape.variants())
+}
+
 /// The declaration whose members are exactly `shape`'s variants.
 pub(super) fn declaration_of<'e>(
     enums: &'e [EnumDeclaration],
     shape: &quire_exact::EnumShape,
 ) -> Option<&'e EnumDeclaration> {
-    enums.iter().find(|candidate| {
-        candidate.members.len() == shape.variants().count()
-            && candidate
-                .members
-                .iter()
-                .map(|case| mint_variant_id(candidate.key, case))
-                .eq(shape.variants())
-    })
+    enums
+        .iter()
+        .find(|candidate| declares_shape(candidate, shape))
+}
+
+/// Whether a node of `declared` converts to its value at once, with no
+/// children to assemble after.
+fn is_leaf(declared: &ValueType) -> bool {
+    !matches!(
+        declared,
+        ValueType::Option(_) | ValueType::Composite(_) | ValueType::Collection(_)
+    )
 }
 
 /// One slot's state while a record is assembled.
@@ -145,61 +187,71 @@ enum Step<'a> {
     Option {
         payload_type: &'a ValueType,
         present: bool,
+        position: u64,
     },
     Composite {
         key: NodeKey,
         slots: Vec<Slot>,
+        position: u64,
     },
     Collection {
         declared: &'a CollectionType,
         count: usize,
+        position: u64,
     },
 }
 
 /// The conversion of one package's arguments.
-struct Converter<'a> {
+struct Converter<'a, 'r> {
     types: &'a TypeEnvironment,
+    /// The run's budgets and original handle: one for every argument.
+    run: &'r mut SuppliedRun,
+    /// The preorder position of the witness node being converted.
+    position: u64,
+    /// The latest event charged, which names an input refusal's event.
+    last_event: SuppliedEvent,
+    /// Nodes converted in the current argument (FR-098's C).
+    argument_nodes: u64,
     /// The checked composites by key bytes, built once: a record's wire
     /// declaration digest is resolved against it, never minted into a key.
     composites: HashMap<[u8; 32], &'a CompositeDeclaration>,
     enums: Vec<EnumDeclaration>,
     limits: &'a ScalarLimits,
-    nodes: u64,
 }
 
-/// `values[i]` as a kernel value of `declared[i]`, for every parameter.
+/// `values[i]` as a kernel value of `declared[i]`, for every parameter, under
+/// the run's cumulative conversion budget H and its original handle.
 pub(super) fn convert_arguments(
     package: &CheckedPackage,
     declared: &[ValueType],
     values: &[WitnessValue],
     limits: &ScalarLimits,
+    run: &mut SuppliedRun,
 ) -> Result<Converted, Stopped> {
     let enums = enum_declarations(package);
     let types = package.graph().scope().types();
     let mut converter = Converter {
         types,
+        run,
+        position: 0,
+        last_event: SuppliedEvent::WitnessPreflight,
+        argument_nodes: 0,
         composites: types
             .composites()
             .map(|composite| (*composite.key().as_bytes(), composite))
             .collect(),
         enums,
         limits,
-        nodes: 0,
     };
-    let converted = values
-        .iter()
-        .zip(declared)
-        .enumerate()
-        .map(|(parameter, (value, declared))| converter.convert(parameter, value, declared))
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(Converted {
-        values: converted,
-        nodes: converter.nodes,
-    })
-}
-
-fn wrong_kind(parameter: usize) -> Stopped {
-    ReplayRefusal::Input(InputRefusal::WrongValueKind { parameter }).into()
+    let mut converted = Vec::with_capacity(values.len());
+    for (parameter, (value, declared)) in values.iter().zip(declared).enumerate() {
+        converter.position = 0;
+        converter.argument_nodes = 0;
+        let value = converter.convert(parameter, value, declared)?;
+        converter.check_occurrences(parameter, &value)?;
+        converted.push(value);
+    }
+    Ok(Converted { values: converted })
 }
 
 fn invariant(what: &'static str) -> Stopped {
@@ -220,23 +272,120 @@ fn scale_of(scale: &Integer) -> Option<u32> {
     scale.to_u64().and_then(|scale| u32::try_from(scale).ok())
 }
 
-impl<'a> Converter<'a> {
-    /// Whether `value` is a member of `value_type` under the environment. A
-    /// storage failure of the query refuses the argument as undecided, never
-    /// as a wrong value kind.
-    fn admits(
-        &self,
+impl<'a> Converter<'a, '_> {
+    /// An input refusal of the current node, with the conversion phase's
+    /// context: the argument, the latest event, the node's preorder position
+    /// and the successful cumulative spend of H.
+    fn wrong(&self, parameter: usize) -> Stopped {
+        Box::new(SuppliedStop {
+            context: SuppliedContext {
+                phase: SuppliedPhase::Conversion,
+                parameter: Some(parameter),
+                event: Some(self.last_event),
+                locus: Some(SuppliedLocus::Witness {
+                    argument: parameter,
+                    position: self.position,
+                }),
+                consumed: self.run.conversion_spent(),
+            },
+            cause: SuppliedCause::Input {
+                refusal: InputRefusal::WrongValueKind { parameter },
+                membership: None,
+            },
+        })
+        .into()
+    }
+
+    /// Charge one conversion event to H before its work.
+    fn charge(&mut self, parameter: usize, event: SuppliedEvent) -> Result<(), Stopped> {
+        self.last_event = event;
+        self.run.charge_conversion(
+            parameter,
+            event,
+            SuppliedLocus::Witness {
+                argument: parameter,
+                position: self.position,
+            },
+        )?;
+        Ok(())
+    }
+
+    /// Whether `value` is a member of `value_type` under the environment,
+    /// one QSV event at a time against H and the run's original handle. A
+    /// value that is not a member stops as the input refusal, a failed
+    /// reservation as a storage stop, never as an undecided answer.
+    fn admit(
+        &mut self,
         parameter: usize,
         value_type: &ValueType,
         value: &Value,
-    ) -> Result<bool, Stopped> {
-        self.types.admits(value_type, value).map_err(|failure| {
-            ReplayRefusal::Storage {
-                position: parameter,
-                failure,
+    ) -> Result<(), Stopped> {
+        self.run.admit(
+            SuppliedPhase::Conversion,
+            parameter,
+            self.types,
+            value_type,
+            value,
+        )?;
+        Ok(())
+    }
+
+    /// Count one converted node against the argument's C bound
+    /// (`work_units`) before converting it.
+    fn count_node(&mut self, parameter: usize) -> Result<(), Stopped> {
+        let consumed = self.argument_nodes;
+        let attempted = consumed.checked_add(1);
+        match attempted {
+            Some(next) if next <= self.limits.work_units => {
+                self.argument_nodes = next;
+                Ok(())
             }
-            .into()
+            Some(_) | None => Err(Box::new(SuppliedStop {
+                context: SuppliedContext {
+                    phase: SuppliedPhase::Conversion,
+                    parameter: Some(parameter),
+                    event: Some(SuppliedEvent::ConvertedNode),
+                    locus: Some(SuppliedLocus::Witness {
+                        argument: parameter,
+                        position: self.position,
+                    }),
+                    consumed,
+                },
+                cause: SuppliedCause::Limit(SuppliedLimit {
+                    limit_kind: SuppliedLimitKind::WorkUnits,
+                    limit: self.limits.work_units,
+                    next_charge: 1,
+                    counter: attempted.map_or(AttemptedCount::Overflow, AttemptedCount::Count),
+                }),
+            })
+            .into()),
+        }
+    }
+
+    /// The converted argument's semantic occurrence count against
+    /// `value_occurrences` (FR-098): the denied amount is the count reached.
+    fn check_occurrences(&self, parameter: usize, value: &Value) -> Result<(), Stopped> {
+        let occurrences = value.occ();
+        if occurrences <= Integer::from(self.limits.value_occurrences) {
+            return Ok(());
+        }
+        let reached = occurrences.to_u64();
+        Err(Box::new(SuppliedStop {
+            context: SuppliedContext {
+                phase: SuppliedPhase::Conversion,
+                parameter: Some(parameter),
+                event: Some(SuppliedEvent::ValueOccurrence),
+                locus: None,
+                consumed: 0,
+            },
+            cause: SuppliedCause::Limit(SuppliedLimit {
+                limit_kind: SuppliedLimitKind::ValueOccurrences,
+                limit: self.limits.value_occurrences,
+                next_charge: reached.unwrap_or(u64::MAX),
+                counter: reached.map_or(AttemptedCount::Overflow, AttemptedCount::Count),
+            }),
         })
+        .into())
     }
 
     /// Convert argument `parameter`.
@@ -254,13 +403,21 @@ impl<'a> Converter<'a> {
         while let Some(step) = pending.pop() {
             match step {
                 Step::Convert { value, declared } => {
-                    self.nodes = self.nodes.saturating_add(1);
+                    self.position = self.argument_nodes;
+                    self.charge(parameter, SuppliedEvent::WitnessPreflight)?;
+                    self.count_node(parameter)?;
+                    if is_leaf(declared) {
+                        self.charge(parameter, SuppliedEvent::WitnessMaterialization)?;
+                    }
                     self.node(parameter, value, declared, &mut pending, &mut values)?;
                 }
                 Step::Option {
                     payload_type,
                     present,
+                    position,
                 } => {
+                    self.position = position;
+                    self.charge(parameter, SuppliedEvent::WitnessMaterialization)?;
                     let payload = if present {
                         Some(values.pop().ok_or_else(|| invariant("converted-payload"))?)
                     } else {
@@ -273,14 +430,18 @@ impl<'a> Converter<'a> {
                         // record keeps its own type. `OptionValue::present`
                         // is the exact test.
                         Some(payload) => {
-                            if !self.admits(parameter, payload_type, &payload)? {
-                                return Err(wrong_kind(parameter));
-                            }
+                            self.admit(parameter, payload_type, &payload)?;
                             OptionValue::from_admitted(payload_type.clone(), Some(payload))
                         }
                     });
                 }
-                Step::Composite { key, slots } => {
+                Step::Composite {
+                    key,
+                    slots,
+                    position,
+                } => {
+                    self.position = position;
+                    self.charge(parameter, SuppliedEvent::WitnessMaterialization)?;
                     let present = slots
                         .iter()
                         .filter(|slot| matches!(slot, Slot::Present))
@@ -301,7 +462,13 @@ impl<'a> Converter<'a> {
                         .ok_or_else(|| invariant("converted-slots"))?;
                     values.push(from_admitted_slots(key, slots));
                 }
-                Step::Collection { declared, count } => {
+                Step::Collection {
+                    declared,
+                    count,
+                    position,
+                } => {
+                    self.position = position;
+                    self.charge(parameter, SuppliedEvent::WitnessMaterialization)?;
                     let start = values
                         .len()
                         .checked_sub(count)
@@ -314,9 +481,7 @@ impl<'a> Converter<'a> {
                     // duplicate the kernel's equality relates, which a set or
                     // ordered set refuses.
                     for element in &elements {
-                        if !self.admits(parameter, declared.element(), element)? {
-                            return Err(wrong_kind(parameter));
-                        }
+                        self.admit(parameter, declared.element(), element)?;
                     }
                     match form(declared, elements, &mut meter) {
                         Outcome::Completed(Value::Collection(formed)) => {
@@ -325,11 +490,11 @@ impl<'a> Converter<'a> {
                                 CollectionKind::Set | CollectionKind::OrderedSet
                             );
                             if unique && formed.elements().len() != count {
-                                return Err(wrong_kind(parameter));
+                                return Err(self.wrong(parameter));
                             }
                             values.push(Value::Collection(formed));
                         }
-                        _ => return Err(wrong_kind(parameter)),
+                        _ => return Err(self.wrong(parameter)),
                     }
                 }
             }
@@ -350,18 +515,19 @@ impl<'a> Converter<'a> {
         pending: &mut Vec<Step<'a>>,
         values: &mut Vec<Value>,
     ) -> Result<(), Stopped> {
-        let refuse = || wrong_kind(parameter);
         match (declared, value) {
             (ValueType::Boolean, WitnessValue::Boolean(flag)) => {
                 values.push(Value::Boolean(*flag));
             }
             (ValueType::Integer, _) => {
-                values.push(Value::Integer(integer_of(value).ok_or_else(refuse)?));
+                values.push(Value::Integer(
+                    integer_of(value).ok_or_else(|| self.wrong(parameter))?,
+                ));
             }
             (ValueType::Int(interval), _) => {
-                let number = integer_of(value).ok_or_else(refuse)?;
+                let number = integer_of(value).ok_or_else(|| self.wrong(parameter))?;
                 if !interval.contains(&number) {
-                    return Err(refuse());
+                    return Err(self.wrong(parameter));
                 }
                 values.push(Value::Integer(number));
             }
@@ -372,30 +538,32 @@ impl<'a> Converter<'a> {
                     denominator,
                 },
             ) => {
-                let rational =
-                    Rational::new(numerator.clone(), denominator.clone()).map_err(|_| refuse())?;
+                let rational = Rational::new(numerator.clone(), denominator.clone())
+                    .map_err(|_| self.wrong(parameter))?;
                 if !domain.contains(&rational) {
-                    return Err(refuse());
+                    return Err(self.wrong(parameter));
                 }
                 values.push(Value::Rational(rational));
             }
             (ValueType::Decimal(decimal_type), WitnessValue::Decimal { coefficient, scale }) => {
-                let decimal =
-                    Decimal::new(coefficient.clone(), scale_of(scale).ok_or_else(refuse)?);
+                let decimal = Decimal::new(
+                    coefficient.clone(),
+                    scale_of(scale).ok_or_else(|| self.wrong(parameter))?,
+                );
                 if !decimal_type.contains(&decimal) {
-                    return Err(refuse());
+                    return Err(self.wrong(parameter));
                 }
                 values.push(Value::Decimal(decimal));
             }
             (ValueType::Float(float_type), WitnessValue::Float32(bits)) => {
                 if float_type.width() != IeeeWidth::Binary32 {
-                    return Err(refuse());
+                    return Err(self.wrong(parameter));
                 }
                 values.push(Value::Float(IeeeValue::binary32(*bits)));
             }
             (ValueType::Float(float_type), WitnessValue::Float64(bits)) => {
                 if float_type.width() != IeeeWidth::Binary64 {
-                    return Err(refuse());
+                    return Err(self.wrong(parameter));
                 }
                 values.push(Value::Float(IeeeValue::binary64(*bits)));
             }
@@ -407,17 +575,18 @@ impl<'a> Converter<'a> {
                 },
             ) => {
                 if wire != unit.as_bytes() {
-                    return Err(refuse());
+                    return Err(self.wrong(parameter));
                 }
                 let magnitude = self.magnitude(parameter, magnitude)?;
                 values.push(Value::Quantity(Quantity::new(magnitude, *unit)));
             }
             (ValueType::Text(text_type), WitnessValue::Text(text)) => {
-                let payload = TextPayload::from_utf8(text.as_bytes()).map_err(|_| refuse())?;
+                let payload =
+                    TextPayload::from_utf8(text.as_bytes()).map_err(|_| self.wrong(parameter))?;
                 let mut meter = Meter::new(UNLIMITED);
                 match admit_text(&payload, text_type, &mut meter) {
                     Outcome::Completed(admitted) => values.push(Value::Text(admitted)),
-                    _ => return Err(refuse()),
+                    _ => return Err(self.wrong(parameter)),
                 }
             }
             (
@@ -428,14 +597,22 @@ impl<'a> Converter<'a> {
                 },
             ) => {
                 let declaration_key = declaration.as_bytes();
-                let owner = declaration_of(&self.enums, shape)
-                    .filter(|owner| owner.key.as_bytes() == declaration_key)
-                    .ok_or_else(refuse)?;
+                self.charge(parameter, SuppliedEvent::DescriptorQuery)?;
+                let index = self
+                    .enums
+                    .iter()
+                    .position(|candidate| {
+                        declares_shape(candidate, shape)
+                            && candidate.key.as_bytes() == declaration_key
+                    })
+                    .ok_or_else(|| self.wrong(parameter))?;
+                self.charge(parameter, SuppliedEvent::DescriptorQuery)?;
+                let owner = self.enums.get(index).ok_or_else(|| self.wrong(parameter))?;
                 if !owner.members.contains(member) {
-                    return Err(refuse());
+                    return Err(self.wrong(parameter));
                 }
                 let variant = mint_variant_id(owner.key, member);
-                let rank = shape.rank(variant).ok_or_else(refuse)?;
+                let rank = shape.rank(variant).ok_or_else(|| self.wrong(parameter))?;
                 values.push(Value::Enum(EnumMember::new(variant, rank)));
             }
             (
@@ -447,10 +624,11 @@ impl<'a> Converter<'a> {
                 },
             ) => {
                 if wire_type != object_type.as_bytes() {
-                    return Err(refuse());
+                    return Err(self.wrong(parameter));
                 }
-                let identity = String::from_utf8(identity.clone()).map_err(|_| refuse())?;
-                let object = ObjectId::new(identity).map_err(|_| refuse())?;
+                let identity =
+                    String::from_utf8(identity.clone()).map_err(|_| self.wrong(parameter))?;
+                let object = ObjectId::new(identity).map_err(|_| self.wrong(parameter))?;
                 values.push(Value::Reference(ObjectReference::new(
                     UniverseId::from_digest(*universe),
                     *object_type,
@@ -461,6 +639,7 @@ impl<'a> Converter<'a> {
                 pending.push(Step::Option {
                     payload_type,
                     present: inner.is_some(),
+                    position: self.position,
                 });
                 if let Some(inner) = inner {
                     pending.push(Step::Convert {
@@ -483,25 +662,27 @@ impl<'a> Converter<'a> {
                 // admitted at the slot by conformance.
                 // The wire digest is resolved by lookup against the already
                 // checked composites (FR-087-AC-6), never minted into a key.
+                self.charge(parameter, SuppliedEvent::DescriptorQuery)?;
                 let record = *self
                     .composites
                     .get(declaration.as_bytes())
-                    .ok_or_else(refuse)?;
+                    .ok_or_else(|| self.wrong(parameter))?;
                 let key = record.key();
                 if !types.composite_conforms(key, *slot_key) {
-                    return Err(refuse());
+                    return Err(self.wrong(parameter));
                 }
                 let CompositeShape::Record(declared_fields) = record.shape() else {
-                    return Err(refuse());
+                    return Err(self.wrong(parameter));
                 };
                 if fields.len() != declared_fields.len() {
-                    return Err(refuse());
+                    return Err(self.wrong(parameter));
                 }
                 let mut slots = Vec::with_capacity(fields.len());
                 let mut present = Vec::new();
                 for (field, declared_field) in fields.iter().zip(declared_fields) {
+                    self.charge(parameter, SuppliedEvent::DescriptorQuery)?;
                     if field.name != declared_field.name() {
-                        return Err(refuse());
+                        return Err(self.wrong(parameter));
                     }
                     let optional = declared_field.presence() == Presence::Optional;
                     match &field.slot {
@@ -514,10 +695,16 @@ impl<'a> Converter<'a> {
                         }
                         WitnessSlot::Absent if optional => slots.push(Slot::Absent),
                         WitnessSlot::Null if optional => slots.push(Slot::Null),
-                        WitnessSlot::Absent | WitnessSlot::Null => return Err(refuse()),
+                        WitnessSlot::Absent | WitnessSlot::Null => {
+                            return Err(self.wrong(parameter))
+                        }
                     }
                 }
-                pending.push(Step::Composite { key, slots });
+                pending.push(Step::Composite {
+                    key,
+                    slots,
+                    position: self.position,
+                });
                 pending.extend(present.into_iter().rev());
             }
             (
@@ -528,16 +715,21 @@ impl<'a> Converter<'a> {
                 },
             ) => {
                 let types: &'a TypeEnvironment = self.types;
-                let tuple = types.composite(*key).ok_or_else(refuse)?;
+                self.charge(parameter, SuppliedEvent::DescriptorQuery)?;
+                let tuple = types.composite(*key).ok_or_else(|| self.wrong(parameter))?;
                 let CompositeShape::Tuple(positions) = tuple.shape() else {
-                    return Err(refuse());
+                    return Err(self.wrong(parameter));
                 };
                 if declaration.as_bytes() != key.as_bytes() || components.len() != positions.len() {
-                    return Err(refuse());
+                    return Err(self.wrong(parameter));
+                }
+                for _ in positions {
+                    self.charge(parameter, SuppliedEvent::DescriptorQuery)?;
                 }
                 pending.push(Step::Composite {
                     key: *key,
                     slots: vec![Slot::Present; components.len()],
+                    position: self.position,
                 });
                 pending.extend(
                     components
@@ -553,14 +745,15 @@ impl<'a> Converter<'a> {
                     WitnessValue::OrderedSet(elements) => (CollectionKind::OrderedSet, elements),
                     WitnessValue::Set(elements) => (CollectionKind::Set, elements),
                     WitnessValue::Bag(elements) => (CollectionKind::Bag, elements),
-                    _ => return Err(refuse()),
+                    _ => return Err(self.wrong(parameter)),
                 };
                 if declared.kind() != kind {
-                    return Err(refuse());
+                    return Err(self.wrong(parameter));
                 }
                 pending.push(Step::Collection {
                     declared,
                     count: elements.len(),
+                    position: self.position,
                 });
                 pending.extend(elements.iter().rev().map(|value| Step::Convert {
                     value,
@@ -571,7 +764,7 @@ impl<'a> Converter<'a> {
             // and a value no declared type of this package admits (a union:
             // the checker has no union type), refuse; so does every pairing
             // of a declared type with a value of another form.
-            _ => return Err(refuse()),
+            _ => return Err(self.wrong(parameter)),
         }
         Ok(())
     }
@@ -589,20 +782,32 @@ impl<'a> Converter<'a> {
                 numerator,
                 denominator,
             } => Rational::new(numerator.clone(), denominator.clone())
-                .map_err(|_| wrong_kind(parameter)),
+                .map_err(|_| self.wrong(parameter)),
             QuantityMagnitude::Decimal { coefficient, scale } => {
-                let exponent = scale.to_u64().ok_or_else(|| wrong_kind(parameter))?;
+                let exponent = scale.to_u64().ok_or_else(|| self.wrong(parameter))?;
                 if exponent > self.limits.scale_expansion {
-                    return Err(Stopped::Limit(Box::new(Incomplete {
-                        limit_kind: LimitKind::ScaleExpansion,
-                        limit: self.limits.scale_expansion,
-                        consumed: 0,
-                        next_charge: Integer::from(exponent),
-                        charge_point: ChargePoint::DecimalScaleExpansion,
-                    })));
+                    return Err(Box::new(SuppliedStop {
+                        context: SuppliedContext {
+                            phase: SuppliedPhase::Conversion,
+                            parameter: Some(parameter),
+                            event: Some(SuppliedEvent::WitnessMaterialization),
+                            locus: Some(SuppliedLocus::Witness {
+                                argument: parameter,
+                                position: self.position,
+                            }),
+                            consumed: 0,
+                        },
+                        cause: SuppliedCause::Limit(SuppliedLimit {
+                            limit_kind: SuppliedLimitKind::ScaleExpansion,
+                            limit: self.limits.scale_expansion,
+                            next_charge: exponent,
+                            counter: AttemptedCount::Count(exponent),
+                        }),
+                    })
+                    .into());
                 }
                 Rational::new(coefficient.clone(), Integer::power_of_ten(exponent))
-                    .map_err(|_| wrong_kind(parameter))
+                    .map_err(|_| self.wrong(parameter))
             }
         }
     }

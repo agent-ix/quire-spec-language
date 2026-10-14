@@ -9,12 +9,10 @@ use ix_trace_rs::trace;
 use qsl_foundation::digest::WireNodeId;
 use qsl_package::CheckedPackage;
 use quire_exact::{EnumMember, Value, ValueType};
-use quire_semantic_value::call::InputRefusal;
 use quire_semantic_value::checking::CheckingLimits;
 
-use super::{WitnessValue, UNLIMITED};
-use crate::execute::argument::{convert_arguments, Stopped};
-use crate::execute::ReplayRefusal;
+use super::{default_run, refused_parameter, WitnessValue, UNLIMITED};
+use crate::execute::argument::convert_arguments;
 
 #[path = "../../../../qsl-semantics/tests/support/variant_fields.rs"]
 mod fixture;
@@ -96,13 +94,10 @@ fn converted(
     value: WitnessValue,
     slot: ValueType,
 ) -> Result<Value, usize> {
-    match convert_arguments(package, &[slot], &[value], &UNLIMITED) {
+    match convert_arguments(package, &[slot], &[value], &UNLIMITED, &mut default_run()) {
         Ok(mut converted) => Ok(converted.values.remove(0)),
-        Err(Stopped::Refusal(refusal)) => match *refusal {
-            ReplayRefusal::Input(InputRefusal::WrongValueKind { parameter }) => Err(parameter),
-            other => panic!("a wrong-value-kind refusal, not {other:?}"),
-        },
-        Err(Stopped::Limit(limit)) => panic!("no limit applies: {limit:?}"),
+        Err(stopped) => Err(refused_parameter(&stopped)
+            .unwrap_or_else(|| panic!("a wrong-value-kind refusal, not {stopped:?}"))),
     }
 }
 

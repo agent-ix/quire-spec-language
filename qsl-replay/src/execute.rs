@@ -20,7 +20,10 @@
 //! settles `inconclusive` with its typed cause and is never repaired
 //! ([`crate::ReplayResult`]).
 
-use qsl_eval::value::{input_refusal_code, CallFailure, CheckedPackageEvaluation};
+use qsl_eval::value::{
+    input_refusal_code, supplied_stop_cause, supplied_stop_code, CallFailure,
+    CheckedPackageEvaluation,
+};
 use qsl_foundation::diagnostic::InternalFault;
 use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
 use qsl_foundation::{Code, SourceIdentity};
@@ -30,8 +33,11 @@ use qsl_semantics::library::{LibraryName, PackageId};
 use qsl_semantics::model::intake::package_input;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::value::environment_stage::{membership_failure_cause, membership_failure_code};
+use qsl_semantics::value::supplied::{
+    SuppliedCause, SuppliedFailure, SuppliedRun, SuppliedStop, UnsupportedHelperStop,
+};
 use quire_exact::{
-    Cancel, Integer, LimitKind, Meter, NodeKey, Outcome, ScalarLimits, Value, ValueType,
+    Cancel, CancelCause, LimitKind, Meter, NodeKey, Outcome, ScalarLimits, Value, ValueType,
 };
 use quire_semantic_value::call::InputRefusal;
 use quire_semantic_value::declaration::EnvironmentFailure;
@@ -208,6 +214,22 @@ pub enum ReplayRefusal {
         /// The kernel's storage failure.
         failure: EnvironmentFailure,
     },
+    /// FR-277: a supplied-value phase stopped before the call on invalid
+    /// input, the original cancellation, a failed reservation or an
+    /// unrepresentable size, with the phase context (a helper-ceiling stop
+    /// settles `inconclusive`/`NoValue` instead, see
+    /// [`ReplayResult::pre_call_limit`]). No evaluation ran.
+    #[error("supplied-value {phase} stopped before the call: {cause:?}", phase = .0.context.phase.as_str(), cause = .0.cause)]
+    Supplied(Box<SuppliedStop>),
+    /// FR-277: the supplied-value walk reached a helper family QSV has not
+    /// qualified, before that helper ran. Distinct from invalid input, a
+    /// limit, a cancellation, storage and capacity.
+    #[error("supplied-value {phase} reached the unqualified {family:?} helper", phase = .0.context.phase.as_str(), family = .0.family)]
+    UnsupportedHelper(Box<UnsupportedHelperStop>),
+    /// The caller's [`Cancel`] stopped the evaluation (ADR-029 LC-3): no
+    /// value and no verdict.
+    #[error("the replay was cancelled: {0:?}")]
+    Cancelled(CancelCause),
     /// The selected function's declared result is not `Boolean`, so it
     /// states no property a counterexample refutes. Refused before the
     /// call, from the declaration alone.
@@ -320,6 +342,9 @@ impl ReplayRefusal {
             | Self::NotAValueFunction { .. } => Code::InvalidRuntimeInput,
             Self::Input(refusal) => input_refusal_code(refusal),
             Self::Storage { failure, .. } => membership_failure_code(failure),
+            Self::Supplied(stop) => supplied_stop_code(stop),
+            Self::UnsupportedHelper(_) => Code::UnsupportedConstruct,
+            Self::Cancelled(_) => Code::Cancelled,
             Self::Fault(_) => Code::RuntimeInvariant,
         }
     }
@@ -343,6 +368,7 @@ impl ReplayRefusal {
             Self::WrongObservation { .. } => Some("wrong-observation"),
             Self::Input(refusal) => Some(refusal.cause()),
             Self::Storage { failure, .. } => membership_failure_cause(failure),
+            Self::Supplied(stop) => supplied_stop_cause(stop),
             Self::Admission(
                 AdmissionFailure::Refused(record) | AdmissionFailure::Incomplete(record),
             ) => Some(record.cause),
@@ -358,8 +384,25 @@ impl ReplayRefusal {
             | Self::NotAPredicate { .. }
             | Self::NotAValueFunction { .. }
             | Self::ParityBound(_)
+            | Self::UnsupportedHelper(_)
+            | Self::Cancelled(_)
             | Self::Fault(_) => None,
         }
+    }
+
+    /// The input refusal this refusal carries, whether it stopped before
+    /// any phase budget or inside the supplied-value conversion or
+    /// admission phase: the original kind and parameter either way.
+    pub fn input_refusal(&self) -> Option<&InputRefusal> {
+        if let Self::Input(refusal) = self {
+            return Some(refusal);
+        }
+        if let Self::Supplied(stop) = self {
+            if let SuppliedCause::Input { refusal, .. } = &stop.cause {
+                return Some(refusal);
+            }
+        }
+        None
     }
 }
 
@@ -460,6 +503,7 @@ pub enum DependencySelectionsCause {
 /// #   state_environment: StateEnvironment::new(vec![]),
 /// #   accounting_limits: unlimited,
 /// #   stage_limits: std::collections::BTreeMap::new(),
+/// #   supplied_limits: None,
 /// #   declared_domains: Vec::new(),
 /// #   byte_provision: vec![(
 /// #       Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
@@ -530,6 +574,7 @@ pub enum DependencySelectionsCause {
 /// #   state_environment: StateEnvironment::new(vec![]),
 /// #   accounting_limits: unlimited,
 /// #   stage_limits: std::collections::BTreeMap::new(),
+/// #   supplied_limits: None,
 /// #   declared_domains: Vec::new(),
 /// #   byte_provision: vec![(
 /// #       Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
@@ -540,10 +585,54 @@ pub enum DependencySelectionsCause {
 /// };
 /// assert!(replay(wire, ReplayLimits::default()).is_ok());
 /// ```
-#[deny(clippy::wildcard_enum_match_arm)]
 pub fn replay(
     wire: ReplayRequestWire,
     replay_limits: ReplayLimits,
+) -> Result<ReplayResult, ReplayRefusal> {
+    replay_with_cancel(wire, replay_limits, &Cancel::new())
+}
+
+/// [`replay`] under the caller's original [`Cancel`] handle (ADR-029,
+/// FR-277). The handle reaches every supplied-value phase and the call: a
+/// cancellation observed in conversion or admission is
+/// [`ReplayRefusal::Supplied`] with the original cause and its phase
+/// context, one observed during the call [`ReplayRefusal::Cancelled`], and
+/// neither is ever read as a limit.
+///
+/// The request's `limits.supplied` ceilings bound the conversion helper work
+/// H and the final admission helper work A as two cumulative budgets across
+/// every argument. A pre-call limit (those two, the per-argument converted
+/// nodes against `work_units`, or the occurrence count against
+/// `value_occurrences`) makes no call and settles `inconclusive`/`NoValue`
+/// carrying [`ReplayResult::pre_call_limit`]: zero replay charges, no
+/// `FunctionCall` charge point.
+pub fn replay_with_cancel(
+    wire: ReplayRequestWire,
+    replay_limits: ReplayLimits,
+    cancel: &Cancel,
+) -> Result<ReplayResult, ReplayRefusal> {
+    replay_under(wire, replay_limits, cancel, false)
+}
+
+/// [`replay_with_cancel`] refusing, as [`ReplayRefusal::UnsupportedHelper`],
+/// any argument whose membership reaches a helper family QSV has not
+/// qualified for supplied admission, before that helper runs. The default
+/// entries admit such an argument by QSV's unchanged unbudgeted membership
+/// instead (see [`SuppliedRun::refusing_unqualified_families`]).
+pub fn replay_refusing_unqualified_families(
+    wire: ReplayRequestWire,
+    replay_limits: ReplayLimits,
+    cancel: &Cancel,
+) -> Result<ReplayResult, ReplayRefusal> {
+    replay_under(wire, replay_limits, cancel, true)
+}
+
+#[deny(clippy::wildcard_enum_match_arm)]
+fn replay_under(
+    wire: ReplayRequestWire,
+    replay_limits: ReplayLimits,
+    cancel: &Cancel,
+    refuse_unqualified: bool,
 ) -> Result<ReplayResult, ReplayRefusal> {
     let request = ReplayRequest::decode(wire, replay_limits)?;
     let limits = request_limits(
@@ -561,23 +650,33 @@ pub fn replay(
         request.obligation_identity(),
     )?;
     let limits = request.accounting_limits();
-    let converted = match argument::convert_arguments(package, &call.types, &joined, &limits) {
-        Ok(converted) => converted,
-        Err(Stopped::Refusal(refusal)) => return Err(*refusal),
-        Err(Stopped::Limit(incomplete)) => return Ok(settle_stopped(&request, *incomplete)),
-    };
-    if let Some(incomplete) = exceeded_before_call(&converted, &limits) {
-        return Ok(settle_stopped(&request, incomplete));
+    let mut run = SuppliedRun::new(request.supplied_limits(), cancel.clone())
+        .map_err(ReplayRefusal::Supplied)?;
+    if refuse_unqualified {
+        run = run.refusing_unqualified_families();
     }
-    let mut meter = Meter::new(limits);
-    let evaluation = package
-        .call(
-            &call.name,
-            converted.values,
-            &ObjectEnvironment::default().with_unresolved_references(),
-            &mut meter,
-        )
-        .map_err(call_failure_to_replay_refusal)?;
+    let converted =
+        match argument::convert_arguments(package, &call.types, &joined, &limits, &mut run) {
+            Ok(converted) => converted,
+            Err(Stopped::Refusal(refusal)) => return Err(*refusal),
+            Err(Stopped::Supplied(failure)) => return settle_supplied(&request, failure),
+        };
+    let mut meter = Meter::new(limits).with_cancel(cancel.clone());
+    let evaluation = match package.call_supplied(
+        &call.name,
+        converted.values,
+        &ObjectEnvironment::default().with_unresolved_references(),
+        &mut meter,
+        &mut run,
+    ) {
+        Ok(evaluation) => evaluation,
+        // A supplied-phase stop is the run's full record, whatever arm the
+        // checked call gave it; anything else is the call's own failure.
+        Err(failure) => return after_call_failure(&request, &run, failure),
+    };
+    if let Some(cause) = cancel.tripped() {
+        return Err(ReplayRefusal::Cancelled(cause));
+    }
     let mut limit = None;
     let (replayed, value) = match evaluation.outcome {
         FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(holds))) => (
@@ -630,55 +729,39 @@ pub fn replay(
     })
 }
 
-/// The `Incomplete` outcome of a conversion whose counts exceed a limit of
-/// the request, checked before the call (FR-098): the occurrences of each
-/// converted argument against `value_occurrences`, then the nodes converted
-/// against `work_units`, naming the counter, its configured value and the
-/// count reached. Nothing is charged to the call's meter.
-fn exceeded_before_call(
-    converted: &argument::Converted,
-    limits: &ScalarLimits,
-) -> Option<quire_exact::Incomplete> {
-    let denied = |limit_kind, limit, next_charge| quire_exact::Incomplete {
-        limit_kind,
-        limit,
-        consumed: 0,
-        next_charge,
-        charge_point: quire_exact::ChargePoint::FunctionCall,
-    };
-    if let Some(occurrences) = converted
-        .values
-        .iter()
-        .map(Value::occ)
-        .find(|occ| *occ > Integer::from(limits.value_occurrences))
-    {
-        return Some(denied(
-            LimitKind::ValueOccurrences,
-            limits.value_occurrences,
-            occurrences,
-        ));
+/// The checked call's failure, read as the run's full supplied-phase record
+/// when the run stopped (FR-277), and as the call's own failure otherwise.
+fn after_call_failure(
+    request: &ReplayRequest,
+    run: &SuppliedRun,
+    failure: CallFailure,
+) -> Result<ReplayResult, ReplayRefusal> {
+    match run.failure() {
+        Some(recorded) => settle_supplied(request, recorded.clone()),
+        None => Err(call_failure_to_replay_refusal(failure)),
     }
-    (converted.nodes > limits.work_units).then(|| {
-        denied(
-            LimitKind::WorkUnits,
-            limits.work_units,
-            Integer::from(converted.nodes),
-        )
-    })
 }
 
-/// A replay that made no call because an accounting limit stopped the
-/// conversion: it settles `inconclusive` with cause `NoValue`, carrying the
-/// outcome `Incomplete` and no charges.
-fn settle_stopped(request: &ReplayRequest, incomplete: quire_exact::Incomplete) -> ReplayResult {
-    settle(
-        request,
-        Category::Incomplete,
-        None,
-        Vec::new(),
-        charges(std::iter::empty()),
-    )
-    .with_limit(incomplete)
+/// A supplied-value phase that stopped before the call: a helper or counter
+/// ceiling settles the replay `inconclusive`/`NoValue` with the phase-marked
+/// pre-call limit; every other stop is its own typed refusal (FR-277).
+fn settle_supplied(
+    request: &ReplayRequest,
+    failure: SuppliedFailure,
+) -> Result<ReplayResult, ReplayRefusal> {
+    match failure {
+        SuppliedFailure::Stop(stop) if stop.limit().is_some() => Ok(settle(
+            request,
+            Category::Incomplete,
+            None,
+            Vec::new(),
+            charges(std::iter::empty()),
+        )
+        .with_pre_call(stop)),
+        SuppliedFailure::Stop(stop) => Err(ReplayRefusal::Supplied(stop)),
+        SuppliedFailure::Unsupported(stop) => Err(ReplayRefusal::UnsupportedHelper(stop)),
+        SuppliedFailure::Fault(fault) => Err(ReplayRefusal::Fault(fault)),
+    }
 }
 
 /// The result on the arm of the request's replay source.
@@ -728,11 +811,9 @@ fn call_failure_to_replay_refusal(failure: CallFailure) -> ReplayRefusal {
             position: parameter,
             failure,
         },
-        // The replay meter holds no `Cancel` handle, so no charge is
-        // cancelled.
-        CallFailure::Cancelled(_) => {
-            ReplayRefusal::Fault(InternalFault::new("replay", "cancelled-without-a-handle"))
-        }
+        CallFailure::Supplied(stop) => ReplayRefusal::Supplied(stop),
+        CallFailure::UnsupportedHelper(stop) => ReplayRefusal::UnsupportedHelper(stop),
+        CallFailure::Cancelled(cause) => ReplayRefusal::Cancelled(cause),
     }
 }
 

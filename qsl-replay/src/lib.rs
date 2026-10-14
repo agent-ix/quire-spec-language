@@ -66,10 +66,10 @@ pub use composite::{
 };
 pub use execute::{
     parity_obligation, replay, replay_composite_parity, replay_frame, replay_operator_parity,
-    replay_value_parity, settle_verified_shadow, BoundEntries, DependencySelectionsCause, Domain,
-    FrameIdentityMismatch, FrameReplayResult, IdentityEncodeError, LimitAboveReader,
-    ParityArgument, ParityBoundRefusal, ParityPreimage, ReplayRefusal, ScalarIdentityMismatch,
-    ValueParityReport, ValueParityResult,
+    replay_refusing_unqualified_families, replay_value_parity, replay_with_cancel,
+    settle_verified_shadow, BoundEntries, DependencySelectionsCause, Domain, FrameIdentityMismatch,
+    FrameReplayResult, IdentityEncodeError, LimitAboveReader, ParityArgument, ParityBoundRefusal,
+    ParityPreimage, ReplayRefusal, ScalarIdentityMismatch, ValueParityReport, ValueParityResult,
 };
 pub use identity::{
     DeclaredDomain, EmptyQualifiedName, ObligationIdentity, ProfileSelection, QualifiedName,
@@ -146,8 +146,8 @@ pub use qsl_foundation::bound::{
 };
 pub use quire_exact::{EmptyInterval, Incomplete, Integer, IntegerInterval};
 pub use request::{
-    ByteProvision, DependencyEntry, DependencyEntryWire, ReplayRequest, ReplayRequestRefusal,
-    ReplayRequestWire, StageLimits, StateEnvironment,
+    read_supplied_limits, ByteProvision, DependencyEntry, DependencyEntryWire, ReplayRequest,
+    ReplayRequestRefusal, ReplayRequestWire, StageLimits, StateEnvironment, SuppliedLimitsRefusal,
 };
 pub use result::{
     read_bounded, CauseCodecError, DisagreementCause, EvaluatedValue, InputArmResult,
@@ -256,6 +256,7 @@ mod redaction_tests {
             state_environment: StateEnvironment::new(vec![]),
             accounting_limits: scalar_limits(1),
             stage_limits: std::collections::BTreeMap::new(),
+            supplied_limits: None,
             declared_domains: Vec::new(),
             byte_provision: vec![(
                 Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
@@ -296,6 +297,7 @@ mod redaction_tests {
             state_environment: StateEnvironment::new(vec![]),
             accounting_limits: scalar_limits(1),
             stage_limits: std::collections::BTreeMap::new(),
+            supplied_limits: None,
             declared_domains: Vec::new(),
             byte_provision: vec![(
                 Some(DigestDomain::SourceBytesV1.as_str().to_owned()),

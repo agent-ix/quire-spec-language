@@ -31,6 +31,7 @@ use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::intake::PackageDocument;
 use qsl_semantics::model::normalize::ModelRefusal;
 use qsl_semantics::model::refusal::{Inexact, IntakeLimit, ModelRefusalCause};
+use qsl_semantics::value::supplied::SuppliedLimits;
 
 /// The `quire.value.accounting/v1` scalar environment a replay starts from
 /// (FR-071's "state environment"). Opaque to #231: only the executor (#243)
@@ -222,6 +223,7 @@ pub struct ReplayRequest {
     state_environment: StateEnvironment,
     accounting_limits: ScalarLimits,
     stage_limits: StageLimits,
+    supplied_limits: SuppliedLimits,
     declared_domains: Vec<DeclaredDomain>,
     byte_provision: ByteProvision,
 }
@@ -280,6 +282,14 @@ impl ReplayRequest {
     /// The stage limits copied from the proving run, by setting.
     pub fn stage_limits(&self) -> &StageLimits {
         &self.stage_limits
+    }
+
+    /// The effective supplied-value helper ceilings (QSpec FR-323
+    /// `limits.supplied`): the request's own, or each published default when
+    /// the caller stated none. A defaulted request and one that states the
+    /// defaults are the same request.
+    pub fn supplied_limits(&self) -> SuppliedLimits {
+        self.supplied_limits
     }
     /// The declared domains of the proving run: the caller-substituted
     /// ADR-014 B-4 bounds the obligation was proved over (FR-071).
@@ -349,6 +359,13 @@ pub struct ReplayRequestWire {
     /// and `replay.input_bytes` or `format.output_bytes`. A name that is an accounting counter
     /// replaces that counter of `accounting_limits`.
     pub stage_limits: BTreeMap<String, u64>,
+    /// The supplied-value helper ceilings (QSpec FR-323 `limits.supplied`),
+    /// not a stage setting. `None` is a caller who stated none: each ceiling
+    /// resolves to its published default before the request is read, so the
+    /// request is the same one a caller stating those defaults makes. A
+    /// wire object that names only one ceiling, an unknown member or a
+    /// value past `u64` never reaches here: see [`read_supplied_limits`].
+    pub supplied_limits: Option<SuppliedLimits>,
     /// The declared domains of the proving run: the caller-substituted
     /// ADR-014 B-4 bounds the obligation was proved over.
     pub declared_domains: Vec<DeclaredDomain>,
@@ -494,6 +511,76 @@ pub enum ReplayRequestRefusal {
     /// The encoded request exceeds the configured reader bound.
     #[error(transparent)]
     BoundExceeded(#[from] BoundExceeded),
+}
+
+/// Why a wire `limits.supplied` object is refused before anything is
+/// consumed (QSpec FR-323 AC-10): the object is closed and complete, and
+/// each ceiling is an exact unsigned 64-bit integer. No ceiling is borrowed
+/// from a stage setting, the evaluator or the population ceiling.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum SuppliedLimitsRefusal {
+    /// `limits.supplied` is not a JSON object.
+    #[error("invalid_runtime_input/invalid-value: limits.supplied is not an object")]
+    NotAnObject,
+    /// The object names a member that is neither ceiling.
+    #[error("invalid_runtime_input/unknown-member: limits.supplied has no member `{name}`")]
+    UnknownMember {
+        /// The member as the wire wrote it.
+        name: String,
+    },
+    /// A ceiling is absent: the effective object is complete, with no
+    /// fallback to another limit or to a default.
+    #[error("invalid_runtime_input/invalid-value: limits.supplied lacks `{member}`")]
+    Incomplete {
+        /// The absent ceiling's setting name.
+        member: &'static str,
+    },
+    /// A ceiling is not an exact unsigned 64-bit integer.
+    #[error("invalid_runtime_input/invalid-value: limits.supplied `{member}` is not an unsigned 64-bit integer")]
+    NotUnsigned64 {
+        /// The ceiling's setting name.
+        member: &'static str,
+    },
+}
+
+impl SuppliedLimitsRefusal {
+    /// The catalog code of this refusal.
+    pub const fn code(&self) -> Code {
+        Code::InvalidRuntimeInput
+    }
+}
+
+/// Read a wire `limits.supplied` object (QSpec FR-323 AC-10): exactly
+/// `admission_work_units` and `conversion_work_units`, each an exact `u64`.
+///
+/// # Errors
+///
+/// [`SuppliedLimitsRefusal`] for a non-object, an unknown member, a missing
+/// ceiling or a ceiling that is no `u64`.
+pub fn read_supplied_limits(
+    value: &serde_json::Value,
+) -> Result<SuppliedLimits, SuppliedLimitsRefusal> {
+    const ADMISSION: &str = "admission_work_units";
+    const CONVERSION: &str = "conversion_work_units";
+    let serde_json::Value::Object(members) = value else {
+        return Err(SuppliedLimitsRefusal::NotAnObject);
+    };
+    if let Some(name) = members
+        .keys()
+        .find(|name| !matches!(name.as_str(), ADMISSION | CONVERSION))
+    {
+        return Err(SuppliedLimitsRefusal::UnknownMember { name: name.clone() });
+    }
+    let ceiling = |member: &'static str| {
+        members
+            .get(member)
+            .ok_or(SuppliedLimitsRefusal::Incomplete { member })?
+            .as_u64()
+            .ok_or(SuppliedLimitsRefusal::NotUnsigned64 { member })
+    };
+    Ok(SuppliedLimits::default()
+        .with_admission_work_units(ceiling(ADMISSION)?)
+        .with_conversion_work_units(ceiling(CONVERSION)?))
 }
 
 /// `bytes`' digest under `domain`: SHA-256 of the raw bytes for a
@@ -673,6 +760,7 @@ impl ReplayRequest {
         // runs under and any claim binds (FR-255 Behavior 10).
         let accounting_limits = wire.effective_accounting_limits();
         let stage_limits = StageLimits::decode(wire.stage_limits)?;
+        let supplied_limits = wire.supplied_limits.unwrap_or_default();
         let intake = CallerLimits::for_request(&stage_limits, accounting_limits, limits)
             .spine
             .model
@@ -785,6 +873,7 @@ impl ReplayRequest {
             state_environment: wire.state_environment,
             accounting_limits,
             stage_limits,
+            supplied_limits,
             declared_domains: wire.declared_domains,
             byte_provision,
         })
@@ -824,6 +913,7 @@ impl ReplayRequest {
             state_environment: self.state_environment.clone(),
             accounting_limits: self.accounting_limits,
             stage_limits: self.stage_limits.to_wire(),
+            supplied_limits: Some(self.supplied_limits),
             declared_domains: self.declared_domains.clone(),
             byte_provision: self
                 .byte_provision
@@ -910,6 +1000,7 @@ mod tests {
             state_environment: StateEnvironment::new(vec![("x".to_owned(), "1".to_owned())]),
             accounting_limits: scalar_limits(128),
             stage_limits: stage_limits(stage_seed),
+            supplied_limits: None,
             declared_domains: Vec::new(),
             byte_provision: vec![(
                 Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
