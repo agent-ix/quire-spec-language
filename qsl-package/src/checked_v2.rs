@@ -786,6 +786,15 @@ pub enum ImportViewRefusal {
         /// The closure entry's identity.
         identity: LibraryName,
     },
+    /// Evidence supplied for `package` conflicts with evidence already held
+    /// under the same key.
+    #[error("the evidence for {package} conflicts: {conflict}")]
+    Evidence {
+        /// The library identity whose evidence conflicted.
+        package: LibraryName,
+        /// The typed conflict, naming the exact key.
+        conflict: quire_contract_model::CheckedPackageEvidenceInsertionError,
+    },
     /// The I2 read of the package, or of a package of its closure, refused
     /// or reached a ceiling.
     #[error("the I2 read of {package} refused: {}", read_message(refusal))]
@@ -965,7 +974,12 @@ impl ClosureReader<'_> {
         }
         let mut evidence = emission.evidence.clone();
         for (digest, document) in self.domain_packages {
-            evidence.insert_domain_package_document(hex(digest), document.as_slice());
+            evidence
+                .insert_domain_package_document(hex(digest), document.as_slice())
+                .map_err(|conflict| ImportViewRefusal::Evidence {
+                    package: identity.clone(),
+                    conflict,
+                })?;
         }
         self.supply(package, &mut evidence)?;
         let pinned = PinnedRequest::single(identity.clone(), emission.package.package_id());
@@ -997,7 +1011,12 @@ impl ClosureReader<'_> {
                     identity: dependency.clone(),
                 }
             })?;
-            evidence.insert_dependency_package(dependency.as_str(), Arc::clone(admitted));
+            evidence
+                .insert_dependency_package(dependency.as_str(), Arc::clone(admitted))
+                .map_err(|conflict| ImportViewRefusal::Evidence {
+                    package: dependency.clone(),
+                    conflict,
+                })?;
         }
         Ok(())
     }
