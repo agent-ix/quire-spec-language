@@ -616,7 +616,7 @@ fn charge_type(ty: &NativeType<'_>, work: &mut Work, site: Site, depth: usize) -
     work.charge(D::Constraints, 1, site)?;
     let mut bytes = 0;
     match ty {
-        NativeType::Boolean => {}
+        NativeType::Boolean | NativeType::Uuid | NativeType::String => {}
         NativeType::Option(value) => charge_type(value, work, site, depth + 1)?,
         NativeType::Sequence { element, .. } => charge_type(element, work, site, depth + 1)?,
         NativeType::Scalar { model, role, .. } => {

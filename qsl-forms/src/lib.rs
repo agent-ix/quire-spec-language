@@ -27,12 +27,14 @@
 //! [`TypeForm`], resolved to the kernel `ValueType` only at check (E3,
 //! ADR-013 O-14/C-26). See `syntax::TypeForm`'s own doc.
 
+mod clause_text;
 mod dispatch;
 mod protocol_clause;
 mod spans;
 mod syntax;
 mod value;
 
+pub use clause_text::{parse_clause_text, ClauseTextRefusal};
 pub use dispatch::{
     build_unit, FormsCause, FormsRefusal, LeadingTokenKind, ParsedForm, ParsedUnit,
 };
@@ -42,11 +44,11 @@ pub use syntax::{
     BinderForm, BinderKind, BinderQuery, BuiltinType, ClauseKind, DeclarationForm, DeclarationKind,
     DeclaredClauseKind, DeclaredName, DimensionForm, DimensionTermForm, EnumForm, EnumMemberForm,
     ExactNumberForm, ExactNumberKind, ExprId, ExprNode, ExprRef, Expression, ExpressionBuilder,
-    FieldInitializer, FunctionDeclaration, NameForm, ProtocolBodyForm, ProtocolConstructForm,
-    ProtocolConstructKind, ProtocolDeclarationForm, ProtocolNodeDeclaration, ProtocolNodeKind,
-    RecordFieldForm, RecordForm, RoleForm, ScopeEntry, ScopeId, ScopeName, ScopedAnchorForm,
-    ShapeChanged, Spellings, StateClauseForm, StateClauseKind, TermOperator, TreeRefusal,
-    TupleForm, TypeForm, TypeFormHead, UnitForm, UsingAlias,
+    FieldInitializer, FunctionDeclaration, NameForm, OperationBodyForm, ProtocolBodyForm,
+    ProtocolConstructForm, ProtocolConstructKind, ProtocolDeclarationForm, ProtocolNodeDeclaration,
+    ProtocolNodeKind, RecordFieldForm, RecordForm, RoleForm, ScopeEntry, ScopeId, ScopeName,
+    ScopedAnchorForm, ShapeChanged, Spellings, StateClauseForm, StateClauseKind, TermOperator,
+    TreeRefusal, TupleForm, TypeForm, TypeFormHead, UnitForm, UsingAlias,
 };
 
 /// Each explicit heap stack S2 and the form traits keep grows by at most a

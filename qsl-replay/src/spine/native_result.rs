@@ -4,8 +4,8 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 
+use qsl_foundation::diagnostic::Code;
 use qsl_foundation::diagnostic::Locus;
-use qsl_foundation::diagnostic::{CatalogCoded, Code};
 use qsl_foundation::digest::{parse_lower_hex32, DigestDomain, DigestRecord};
 use qsl_foundation::wire_format::WireFormat;
 use qsl_foundation::LocatedSpan;
@@ -1694,17 +1694,36 @@ struct CallLocationWire {
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 enum CallOriginWire {
-    Body { function: String, index: usize },
-    Measure { function: String, index: usize },
+    Body {
+        function: String,
+        index: usize,
+    },
+    Measure {
+        function: String,
+        index: usize,
+    },
     Expression,
-    TypeDeclaration { name: String },
-    StateClause { clause: String, index: usize },
-    ProtocolAttempt { protocol: usize, attempt: usize },
+    TypeDeclaration {
+        name: String,
+    },
+    StateClause {
+        clause: String,
+        index: usize,
+    },
+    ProtocolAttempt {
+        protocol: usize,
+        attempt: usize,
+    },
+    ModelOperationClause {
+        operation: String,
+        clause: &'static str,
+        position: usize,
+    },
 }
 
 impl From<&quire_semantic_value::location::Location> for CallLocationWire {
     fn from(location: &quire_semantic_value::location::Location) -> Self {
-        use quire_semantic_value::location::Origin;
+        use quire_semantic_value::location::{OperationClauseKind, Origin};
         let origin = match &location.origin {
             Origin::Body { function, index } => CallOriginWire::Body {
                 function: function.clone(),
@@ -1725,6 +1744,18 @@ impl From<&quire_semantic_value::location::Location> for CallLocationWire {
             Origin::ProtocolAttempt { protocol, attempt } => CallOriginWire::ProtocolAttempt {
                 protocol: *protocol,
                 attempt: *attempt,
+            },
+            Origin::ModelOperationClause {
+                operation,
+                kind,
+                position,
+            } => CallOriginWire::ModelOperationClause {
+                operation: operation.clone(),
+                clause: match kind {
+                    OperationClauseKind::Requires => "requires",
+                    OperationClauseKind::Ensures => "ensures",
+                },
+                position: *position,
             },
         };
         Self {
@@ -1950,8 +1981,8 @@ impl Disposition {
                 while let super::CompileRefusal::Dependency { refusal, .. } = source {
                     source = refusal.as_ref();
                 }
+                record.fields = source.fields();
                 if let super::CompileRefusal::Limit(limit) = source {
-                    record.fields = limit.catalog_fields();
                     record.locus = limit.locus().map(crate::outcome::OutcomeLocus::from);
                 }
                 result.refusal = Some(record);

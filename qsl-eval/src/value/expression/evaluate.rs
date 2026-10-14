@@ -50,7 +50,7 @@ use quire_exact::{
 use quire_exact::{DivisionMember, IntegerDomain};
 use quire_exact::{Outcome, Refusal, Undefined};
 use quire_semantic_value::declaration::{
-    operand_value, CompositeShape, EqualityOperator, FieldRef,
+    operand_value, CompositeShape, EqualityOperator, FieldRef, TypeEnvironment,
 };
 use quire_semantic_value::enumeration::{compare_enum, EnumMemberIndex};
 use quire_semantic_value::location::Location;
@@ -1370,9 +1370,12 @@ impl<'a, 'm> Machine<'a, 'm> {
                     {
                         Value::Boolean((l == r) == (*operator == EqualityOperator::Equal))
                     }
-                    _ => Value::Boolean(outcome_into_stop(
-                        checked.evaluate(&left, &right, self.meter),
-                    )?),
+                    _ => Value::Boolean(outcome_into_stop(checked.evaluate(
+                        self.scope.types(),
+                        &left,
+                        &right,
+                        self.meter,
+                    ))?),
                 }
             }
             NodeKind::Not(_) => {
@@ -1383,17 +1386,31 @@ impl<'a, 'm> Machine<'a, 'm> {
                 ))?)
             }
             NodeKind::Field {
-                index, optional, ..
+                field, optional, ..
             } => {
                 let Value::Composite(composite) = self.pop()? else {
                     return Err(invariant("field-composite-value-expected"));
                 };
+                // FR-359 item 2: the slot is found in the value's own
+                // declaration by the field's identity. The value may be a
+                // child of the record the read is typed at, whose own fields
+                // are not a positional prefix of that record's.
+                let index = self
+                    .scope
+                    .record_slot(composite.declaration(), field)
+                    .ok_or_else(|| invariant("field-slot-unresolved"))?;
                 let slot = composite
                     .slots()
-                    .get(*index)
+                    .get(index)
                     .ok_or_else(|| invariant("field-slot-unresolved"))?;
-                let value = Self::project(slot, *optional, node.value_type(), false)?;
-                self.note_field(&composite, *index, &value);
+                let value = Self::project(
+                    self.scope.types(),
+                    slot,
+                    *optional,
+                    node.value_type(),
+                    false,
+                )?;
+                self.note_field(&composite, index, &value);
                 value
             }
             NodeKind::Attribute {
@@ -1421,6 +1438,20 @@ impl<'a, 'm> Machine<'a, 'm> {
                     }
                     charge_named(self.meter, ChargePoint::ModelNavigate)?;
                 }
+                let reference = if self.reads.is_some_and(|reads| {
+                    reads.get(node.location()) == Some(&qsl_semantics::check::Observation::Pre)
+                }) {
+                    self.trail
+                        .as_ref()
+                        .and_then(|trail| {
+                            (trail.receiver.as_ref() == Some(&reference))
+                                .then(|| trail.receiver_pre.clone())
+                                .flatten()
+                        })
+                        .unwrap_or(reference)
+                } else {
+                    reference
+                };
                 let objects = self.objects_for(node)?;
                 // A replay's references are unresolved: there is no object to
                 // read, so the read completes no value.
@@ -1439,7 +1470,13 @@ impl<'a, 'm> Machine<'a, 'm> {
                 } else {
                     self.witnessed_reads.remove(node.location());
                 }
-                let value = Self::project(slot, *optional, node.value_type(), witnessed)?;
+                let value = Self::project(
+                    self.scope.types(),
+                    slot,
+                    *optional,
+                    node.value_type(),
+                    witnessed,
+                )?;
                 self.note_member(node, &reference, &field.name, &value);
                 value
             }
@@ -1609,7 +1646,7 @@ impl<'a, 'm> Machine<'a, 'm> {
             }
             NodeKind::ConvertScalar(operand, _) => {
                 let value = self.pop()?;
-                operand_value(operand, &value, &self.units, self.meter)?
+                operand_value(self.scope.types(), operand, &value, &self.units, self.meter)?
             }
             NodeKind::IeeeToRational(_, domain) => {
                 let Value::Float(value) = self.pop()? else {
@@ -1975,6 +2012,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// outside its declared range, which an optional slot's checked
     /// construction would refuse. Every other slot is checked as before.
     fn project(
+        types: &TypeEnvironment,
         slot: &FieldValue,
         optional: bool,
         value_type: &ValueType,
@@ -1985,9 +2023,18 @@ impl<'a, 'm> Machine<'a, 'm> {
             (FieldValue::Present(value), true, ValueType::Option(payload)) if witnessed => Ok(
                 OptionValue::from_admitted((**payload).clone(), Some(value.clone())),
             ),
+            // FR-359 item 5: the payload is admitted by conformance under the
+            // type environment, so a child of the payload's record keeps its
+            // own identity in the `Option`. `OptionValue::present` is exact.
             (FieldValue::Present(value), true, ValueType::Option(payload)) => {
-                OptionValue::present((**payload).clone(), value.clone())
-                    .map_err(|_| invariant("field-option-payload-rejected"))
+                if types.admits(payload, value) {
+                    Ok(OptionValue::from_admitted(
+                        (**payload).clone(),
+                        Some(value.clone()),
+                    ))
+                } else {
+                    Err(invariant("field-option-payload-rejected"))
+                }
             }
             (FieldValue::Absent | FieldValue::Null, true, ValueType::Option(payload)) => {
                 Ok(OptionValue::none((**payload).clone()))
@@ -2274,7 +2321,15 @@ impl<'a, 'm> Machine<'a, 'm> {
                 (Some(observation), true) => observation.clone(),
                 _ => trail.observation.clone(),
             };
-            let provenance = Provenance::member(observation, object.clone(), member.to_owned());
+            let provenance = match trail.receiver_invocation.as_ref() {
+                Some(invocation)
+                    if trail.receiver.as_ref() == Some(object)
+                        || trail.receiver_pre.as_ref() == Some(object) =>
+                {
+                    Provenance::receiver_field(observation, invocation.clone(), member.to_owned())
+                }
+                _ => Provenance::member(observation, object.clone(), member.to_owned()),
+            };
             trail.record(value, provenance);
         }
     }
@@ -2542,6 +2597,149 @@ mod tests {
 
     // `TypeForm`'s span carries no identity (ADR-011 §2.2 row E2).
     const SPAN: qsl_foundation::Span = qsl_foundation::Span { start: 0, end: 0 };
+
+    #[trace("QSpec-TC-235", "QSpec-FR-208-AC-11", "QSpec-FR-207-AC-8")]
+    #[test]
+    fn context_pre_reads_remap_the_receiver_and_emit_invocation_field_paths() {
+        use super::super::s6a::separation::{
+            InvocationBinding, ObservationIdentity, RuntimeValuePath, ValuePathStep,
+            ValuePathSubject,
+        };
+        use quire_semantic_value::declaration::{
+            FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment,
+        };
+        use std::collections::BTreeMap;
+        let context_type = quire_exact::EffectiveId::from_digest([12; 32]);
+        let collection_type =
+            quire_exact::CollectionType::new(CollectionKind::Sequence, ValueType::Integer, None);
+        let graph = PackageDeclarations {
+            types: TypeEnvironment::new(
+                [],
+                [ObjectTypeDeclaration::new(
+                    context_type,
+                    "Context",
+                    vec![FieldDeclaration::new(
+                        "items",
+                        ValueType::collection(collection_type.clone()),
+                        quire_exact::Presence::Required,
+                    )],
+                )],
+            )
+            .unwrap(),
+            ..PackageDeclarations::new(
+                qsl_semantics::check::fixture_source(),
+                qsl_foundation::IdentityLimits::default(),
+            )
+        }
+        .check(CheckingLimits::default())
+        .unwrap();
+        let package = qsl_package::CheckedPackage::link(graph);
+        let field = || Expression::field(Expression::deref(Expression::name("self")), "items");
+        let checked = package
+            .graph()
+            .check_clause_expression(
+                vec![("self".to_owned(), ValueType::Reference(context_type))],
+                &Expression::binary(qsl_forms::BinaryOperator::Equal, field(), field()),
+                None,
+                qsl_forms::ClauseKind::Postcondition,
+                CheckMode::Kernel,
+                CheckingLimits::default(),
+            )
+            .unwrap();
+        let NodeKind::Equality(_, _, left, _) = checked.root().kind() else {
+            panic!("checked equality");
+        };
+        let reads = BTreeMap::from([(
+            checked.root().at(*left).location().clone(),
+            qsl_semantics::check::Observation::Pre,
+        )]);
+        let reference = |universe| {
+            ObjectReference::new(
+                quire_exact::UniverseId::from_digest([universe; 32]),
+                context_type,
+                quire_exact::ObjectId::new("i1").unwrap(),
+            )
+        };
+        let pre_receiver = reference(1);
+        let receiver = reference(2);
+        let pre_items = quire_exact::from_admitted(
+            collection_type.clone(),
+            vec![Value::Integer(Integer::from(0_i64))],
+        );
+        let post_items =
+            quire_exact::from_admitted(collection_type, vec![Value::Integer(Integer::from(1_i64))]);
+        let objects = |reference, items: Value| {
+            ObjectEnvironment::new(
+                ObjectClosure::new(
+                    package.graph().scope().types(),
+                    [(reference, vec![("items", FieldValue::Present(items))])],
+                    &[],
+                )
+                .unwrap(),
+            )
+        };
+        let pre = objects(pre_receiver.clone(), pre_items.clone());
+        let post = objects(receiver.clone(), post_items.clone());
+        let identity = |name: &str| ObservationIdentity {
+            authority: "test".to_owned(),
+            identity: name.to_owned(),
+            revision_namespace: "tc235".to_owned(),
+            revision: "1".to_owned(),
+        };
+        for context in [true, false] {
+            let mut trail = Trail::new(identity("q1"), Some(identity("p1")));
+            trail.receiver = Some(receiver.clone());
+            trail.receiver_pre = Some(pre_receiver.clone());
+            trail.receiver_invocation = context.then(|| identity("i1"));
+            let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
+            let (result, trail) = Machine::with_pre(
+                package.graph().scope(),
+                package.graph(),
+                &post,
+                Some(&pre),
+                Some(&reads),
+                &mut meter,
+                &[],
+            )
+            .with_trail(trail)
+            .run_traced(
+                checked.root(),
+                checked.slots(),
+                vec![Value::Reference(receiver.clone())],
+            )
+            .unwrap();
+            assert!(matches!(
+                result.outcome,
+                FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(false)))
+            ));
+            for (observation, object, value) in [
+                ("p1", &pre_receiver, &pre_items),
+                ("q1", &receiver, &post_items),
+            ] {
+                let subject = if context {
+                    ValuePathSubject::Invocation {
+                        invocation: identity("i1"),
+                        binding: InvocationBinding::Receiver,
+                    }
+                } else {
+                    ValuePathSubject::Object(object.clone())
+                };
+                let step = if context {
+                    ValuePathStep::Field("items".to_owned())
+                } else {
+                    ValuePathStep::Member("items".to_owned())
+                };
+                assert_eq!(
+                    trail.provenance(value).unwrap().path(0),
+                    RuntimeValuePath {
+                        observation: identity(observation),
+                        subject,
+                        steps: vec![step],
+                    }
+                );
+            }
+        }
+    }
 
     /// The shared minimal one-type (`model.A`), one-population
     /// (`model.pop.p1`) domain package [`population_binding`] and
@@ -3246,10 +3444,26 @@ mod tests {
         );
         let optional = ValueType::option(range);
         let outside = FieldValue::Present(Value::Integer(Integer::from(-1_i64)));
-        assert!(Machine::project(&outside, true, &optional, true).is_ok());
-        assert!(Machine::project(&outside, true, &optional, false).is_err());
+        assert!(
+            Machine::project(&TypeEnvironment::default(), &outside, true, &optional, true).is_ok()
+        );
+        assert!(Machine::project(
+            &TypeEnvironment::default(),
+            &outside,
+            true,
+            &optional,
+            false
+        )
+        .is_err());
         let wrong_kind = FieldValue::Present(Value::Boolean(true));
-        assert!(Machine::project(&wrong_kind, true, &optional, false).is_err());
+        assert!(Machine::project(
+            &TypeEnvironment::default(),
+            &wrong_kind,
+            true,
+            &optional,
+            false
+        )
+        .is_err());
     }
     /// FR-106 check 6.5: an equality compares an out-of-type integer by
     /// value only when the operand reads a witnessed slot. Two integers

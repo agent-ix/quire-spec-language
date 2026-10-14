@@ -88,11 +88,12 @@ over its concrete descendants.
 
 ### Family enumeration is bounded
 
-The model checker SHALL charge every `redefines` edge it follows, in the
+The model checker SHALL charge each distinct `redefines` edge once, however many
+walks follow it, in the
 redefinition-family walk and in the effective-precondition walk up each linked
 candidate's `redefines` chain, against the caller's `family_steps` work limit
 in `ModelNormalizationLimitsV1`, before following the edge. `family_steps` is
-an edge count over all those walks together, never a chain depth, so a family
+a count of distinct edges over all those walks together, never a chain depth, so a family
 of any depth links once the limit fits the edges its walks follow. Each walk
 runs over an explicit stack, not native recursion. The limit has a published
 default of 16777216 edges (NFR-012), the order of the S3 work default
@@ -100,7 +101,10 @@ default of 16777216 edges (NFR-012), the order of the S3 work default
 used as given. If a charge is denied, the model checker SHALL
 stop with the `Incomplete` outcome naming `family_steps`, its configured
 value and the count the denied charge would have reached (ADR-030 D-1), and
-SHALL NOT report a linked table or an ambiguity result for that family.
+SHALL NOT report a linked table or an ambiguity result for that family. The
+denied charge refuses `resource_exhausted`/`insufficient-next-charge`
+carrying `setting`, `limit` (the effective limit), `actual`, `stage`, `accounting_contract`, `limit_kind`, `consumed`, `next_charge` and `charge_point`; its `charge_point` is `model.family-edge`. The
+catalog has no `family-steps` cause.
 
 ## Acceptance Criteria
 

@@ -437,7 +437,7 @@ fn malformed_results_refuse_after_valid_composite_parameters() {
         )));
         case.result = wire;
         case.limits.post_state = PostStateRange::Witness;
-        assert_refused(case, Code::InvalidRuntimeInput, cause, None);
+        assert_refused(case, Code::InvalidRuntimeInput, cause, Some("result"));
     }
 }
 
@@ -523,7 +523,7 @@ fn excluded_collection_kinds_remain_explicit_refusals() {
             result,
             Code::UnknownRequiredFeature,
             "unsupported-feature",
-            None,
+            Some("result"),
         );
     }
 }
@@ -824,7 +824,12 @@ fn declared_sequence_bounds_are_checked_before_retaining_values() {
                 "invalid-value",
                 Some("arg"),
             );
-            assert_refused(result, Code::InvalidRuntimeInput, "invalid-value", None);
+            assert_refused(
+                result,
+                Code::InvalidRuntimeInput,
+                "invalid-value",
+                Some("result"),
+            );
         }
     }
 }

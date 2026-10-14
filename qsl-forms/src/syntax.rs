@@ -2112,6 +2112,34 @@ pub struct StateClauseForm {
     pub spans: DeclarationSpans,
 }
 
+/// `body L using p on M::T::op (a, b) { e }` (FR-102 "Outputs", QSpec
+/// FR-151): the one operation body a unit supplies for an operation
+/// candidate. S2 keeps the label, the `using` alias, each segment of the
+/// target name, each positional parameter name and the body expression
+/// spelled and spanned, resolving none of them: the assembler and S3 resolve
+/// the target to the operation's `DeclarationKey` (FR-104). The label is
+/// local to the unit and is not the operation's identity.
+#[derive(Clone, Debug)]
+pub struct OperationBodyForm {
+    /// The declared label.
+    pub label: DeclaredName,
+    /// The `using` alias.
+    pub profile: UsingAlias,
+    /// The target name's segments as written (`model-alias`, `Type`,
+    /// `operation` for a well-formed target), each with its own span.
+    pub target: Vec<DeclaredName>,
+    /// The span of the whole target name.
+    pub target_span: Span,
+    /// The receiver-less parameter names, in written order.
+    pub parameters: Vec<DeclaredName>,
+    /// The body.
+    pub body: Expression,
+    /// The form's byte spans: the whole declaration's, and one per node of
+    /// the body. A body declares no `decreases` measure, so `measure` is
+    /// always `None`.
+    pub spans: DeclarationSpans,
+}
+
 /// One segment of a `NodeReference`, exactly as written: its text and the
 /// span of that segment alone (FR-112 "Outputs"). `Main::Applied` has two
 /// segments, `Tried` has one.
@@ -2556,6 +2584,9 @@ pub enum DeclarationForm {
     /// An `invariant`, `pre` or `post` state clause, boxed for the same
     /// reason as [`Self::Function`] (FR-102).
     StateClause(Box<StateClauseForm>),
+    /// A `body` operation-body declaration, boxed for the same reason
+    /// (FR-102).
+    OperationBody(Box<OperationBodyForm>),
     /// A `protocol` declaration (FR-112).
     Protocol(ProtocolDeclarationForm),
 }

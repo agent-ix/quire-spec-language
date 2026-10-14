@@ -116,6 +116,7 @@ pub(super) fn locate(
             | BodyOrigin::Expression
             | BodyOrigin::TypeDeclaration { .. }
             | BodyOrigin::StateClause { .. }
+            | BodyOrigin::ModelOperationClause { .. }
             | BodyOrigin::ProtocolAttempt { .. } => false,
         })
         .cloned()

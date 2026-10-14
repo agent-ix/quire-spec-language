@@ -1134,6 +1134,7 @@ fn witness_type(
         | ValueType::Decimal(_)
         | ValueType::Float(_)
         | ValueType::Quantity(_)
+        | ValueType::String
         | ValueType::Text(_)
         | ValueType::Enum(_)
         | ValueType::Option(_)

@@ -287,6 +287,8 @@ impl<'s, 'm> Received<'s, 'm> {
                 Err(Error::Invalid(Invalid::Model))
             }
             NativeType::Boolean
+            | NativeType::Uuid
+            | NativeType::String
             | NativeType::Scalar { .. }
             | NativeType::Enumeration { .. }
             | NativeType::Reference { .. }

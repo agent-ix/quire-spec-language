@@ -13,6 +13,12 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-096
     type: references
+  - target: ix://agent-ix/quire-spec-language/FR-255
+    type: references
+  - target: ix://agent-ix/quire-spec-language/FR-260
+    type: references
+  - target: ix://agent-ix/quire-spec-language/ADR-014
+    type: references
   - target: "ix://agent-ix/quire-specification/FR-300"
     type: depends_on
 ---
@@ -25,8 +31,13 @@ the limits value the caller passes, with a published default the caller can
 replace (ADR-029 LC-4). Reaching a bound SHALL return the operation's specified
 limit outcome naming the limit, its configured value and the limits field that
 raises it, and is never read as success. The formatter's output budget follows
-FR-003's `resource_exhausted` outcome and FR-255's `format.output_bytes` row;
-the other lifecycle limit paths use `LimitExceeded` (ADR-013 T-4).
+FR-003's `resource_exhausted` outcome and FR-255's `format.output_bytes` row.
+A limit is classified by the type that carries it (FR-255 Behavior 1): a
+stage's or reader's own limits type uses `LimitExceeded` (ADR-013 T-4), while
+a caller-budget ceiling refuses `resource_exhausted` wherever it is read. That
+covers `select`'s model-normalization ceilings, `intake.input_bytes`
+(FR-260-AC-4), observation admission's re-run of `model.*` walks and the
+`admission.*` budgets.
 
 Nesting depth is not a limit. Node, byte and work limits bound every stage,
 and no stage recurses on the native stack (ADR-030 D-1). ADR-030 owns the
@@ -41,7 +52,8 @@ as the limits type's `Default` value.
 ## Outputs
 
 On reaching a bound, `StageFailure::Limit(LimitExceeded)`, or for `format`,
-FR-003's typed `resource_exhausted` diagnostic; for `execute`'s
+FR-003's typed `resource_exhausted` diagnostic, or for a caller-budget
+ceiling, the `resource_exhausted` refusal FR-255 Behavior 1 gives it; for `execute`'s
 accounting limits, the evaluation outcome `Incomplete` naming the counter;
 for `analyze`, each open FR-331 item settled `incomplete` with the limit as
 its cause.
@@ -57,7 +69,8 @@ FR-255 setting that sets the bound.
   settings operation shall route `format.output_bytes=<n>` to that field.
 - Each limits type shall give every field a published default that the
   caller replaces field by field.
-- Each non-format lifecycle operation that reaches a bound shall return
+- Each non-format lifecycle operation that reaches a stage's or reader's own
+  bound shall return
   `LimitExceeded` naming the limit kind, configured value, counter reached and
   limits field that raises it.
 - The format operation that reaches its output-byte bound shall return FR-003's
@@ -73,7 +86,7 @@ FR-255 setting that sets the bound.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-277-AC-1 | For each field of the limits types of all twelve operations (`parse`, `format`, `select`, `check`, `check_fences`, `package`, `execute`, `analyze`, `monitor`, `replay`, `inspect` and `render`), running the operation over its TC-755 step 6 input with that field set to one below the counter the input reaches names that field: `LimitExceeded` with the field's limit kind, configured value and limits-field name, except that `format.output_bytes` returns FR-003's typed `resource_exhausted` diagnostic; for `execute`, the outcome `Incomplete` naming that counter; for `analyze`, each open item `incomplete` with that limit as its cause. Setting the field to the counter reached succeeds. | Test (TC-758, TC-931) |
+| FR-277-AC-1 | For each field of the limits types of all twelve operations (`parse`, `format`, `select`, `check`, `check_fences`, `package`, `execute`, `analyze`, `monitor`, `replay`, `inspect` and `render`), running the operation over its TC-755 step 6 input with that field set to one below the counter the input reaches names that field: `LimitExceeded` with the field's limit kind, configured value and limits-field name, except that `format.output_bytes` returns FR-003's typed `resource_exhausted` diagnostic and each model-normalization field of `select`'s limits refuses `resource_exhausted`/`insufficient-next-charge` with the denied-charge fields of FR-255 Behavior 1, and `intake.input_bytes` refuses `resource_exhausted`/`intake-limit-exceeded` with `kind`, `bound`, `actual` and `setting`; for `execute`, the outcome `Incomplete` naming that counter; for `analyze`, each open item `incomplete` with that limit as its cause. Setting the field to the counter reached succeeds. | Test (TC-758, TC-931) |
 | FR-277-AC-2 | On a thread with the platform's default stack, a source whose body is a 100,000-term sum checks successfully when the caller raises `s3.nodes` to fit it, and with `s3.nodes` one below its node count refuses with `LimitExceeded` naming `s3.nodes`; no outcome names a depth. | Test (TC-758) |
 | FR-277-AC-3 | `execute` over an input whose work, with `work_units` set to one below what it needs, is denied returns the outcome `Incomplete` carrying the limit kind, the configured value, the counter at the failed charge (the consumed value with the denied amount) and the `accounting` field name that raises it. | Test (TC-758) |
 

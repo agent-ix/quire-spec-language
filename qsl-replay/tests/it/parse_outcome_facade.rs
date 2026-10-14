@@ -255,7 +255,7 @@ fn a_driver_serializes_requested_and_deadline_parse_cancellation() {
 #[test]
 fn a_driver_serializes_a_constructed_parse_fault_at_no_stage() {
     let fault = InternalFault::new("S2", "constructed-test-invariant");
-    let document = OutcomeDocument::from_parse(&Err(StageFailure::Fault(fault)));
+    let document = OutcomeDocument::from_parse(&Err(StageFailure::Fault(fault.clone())));
     assert_eq!(document.category(), Category::InternalFailure);
     assert_eq!(document.category().exit_code(), 30);
     assert_eq!(

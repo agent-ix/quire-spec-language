@@ -138,7 +138,7 @@ pub fn type_form(value_type: &ValueType) -> TypeForm {
              `value::declaration::EqualityOperand`'s own `ValueType`-based API instead, not a \
              `TypeForm`"
         ),
-        ValueType::Uuid | ValueType::Timestamp => panic!(
+        ValueType::String | ValueType::Uuid | ValueType::Timestamp => panic!(
             "type_form: {value_type:?} has no QSL source type spelling in this profile"
         ),
     }

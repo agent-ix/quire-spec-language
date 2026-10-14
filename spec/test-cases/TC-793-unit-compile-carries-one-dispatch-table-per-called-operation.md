@@ -25,6 +25,8 @@ links nothing, or leaves a call's node naming no table or the wrong one.
    `self.area()`.
 3. Read the checked package's linked dispatch tables and each dispatched
    call's checked node.
+4. Declare an abstract type between `A` and `B`, and compile a clause on it
+   calling `self.size()`.
 
 ## Expected Results
 
@@ -35,3 +37,4 @@ links nothing, or leaves a call's node naming no table or the wrong one.
    are literals in the test.
 3. Both `size` calls name the `size` table and both `area` calls name the
    `area` table.
+4. The call in step 4 compiles and names the `size` table.

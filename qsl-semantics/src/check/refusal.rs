@@ -517,6 +517,19 @@ pub enum CheckCause {
     ProfileProhibitedOperator(qsl_forms::BinaryOperator),
     /// FR-300: a nested model form retains StateModel ownership.
     StateModel(Box<super::state_model::StateModelRefusal>),
+    /// A completed model conformance stage retains every axis failure.
+    ModelConformance(Box<super::model_conformance::ModelConformanceFailure>),
+    /// An unfinished model stage exposes its exact five-field denial.
+    ModelIncomplete(crate::model::accounting::Incomplete),
+    /// Completing the staged type admission after a conformance stage that
+    /// found nothing refused, or reading it while pending, reached a type
+    /// environment refusal or ceiling.
+    TypeAdmission {
+        /// The stable code of the type admission's refusal or ceiling.
+        code: Code,
+        /// Its catalog cause.
+        cause: &'static str,
+    },
     /// `refused { code: ill_typed }` with its FR-272 cause.
     IllTyped(IllTypedCause),
     /// `refused { code: wrong_snapshot }` with its FR-272 cause: `pre(...)`
@@ -635,6 +648,9 @@ pub enum CheckCause {
     /// `InvalidDispatchDeclaration` above: this would otherwise be
     /// `CheckCause`'s widest variant.
     ProtocolAnchor(Box<ProtocolAnchorCause>),
+    /// FR-302: a called operation's dispatch family did not link at S3.
+    /// Boxed for the same reason as `ProtocolAnchor` above.
+    DispatchLink(Box<DispatchLinkCause>),
     /// FR-062-AC-8/TC-161/FR-063: exists only so `--cfg seam_probe` makes
     /// `CheckCause::code`'s match below non-exhaustive. Never constructed
     /// outside the probe build.
@@ -642,10 +658,57 @@ pub enum CheckCause {
     __SeamProbe,
 }
 
+/// FR-302: why one called operation's dispatch family did not link. An
+/// ambiguous family has one value for each subtype that did not link, as the
+/// QSpec FR-272 `ambiguous_dispatch` record names one closed subtype; any other
+/// failure has one value for the family. A compile that fails several
+/// families holds all of them in its one refusal.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct DispatchLinkCause {
+    /// The called operation: the root of the family that failed.
+    pub operation: crate::model::key::DeclarationKey,
+    /// The refusal's code.
+    pub code: Code,
+    /// The refusal's catalog pair: `resource_exhausted`/
+    /// `insufficient-next-charge` for a ceiling, `ambiguous_dispatch`/
+    /// `no-applicable` or `multiple-undominated` for an ambiguous family.
+    pub catalog: qsl_foundation::diagnostic::CatalogCode,
+    /// The caller-budget ceiling the family stopped on, when it did: the
+    /// setting that raises it, the limit, the count the refused step would
+    /// have reached and the retained charge (FR-255 Behavior 1).
+    pub denial: Option<qsl_foundation::diagnostic::BudgetDenial>,
+    /// The subtype that did not link, with its candidates and dominance
+    /// pairs; `None` unless the family was ambiguous.
+    pub subtype: Option<DispatchSubtypeFailure>,
+}
+
+/// One subtype that did not link in an ambiguous family (FR-083): its
+/// FR-151 cause, the applicable candidates and the strict dominance pairs
+/// among them.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct DispatchSubtypeFailure {
+    /// The subtype.
+    pub subtype: crate::model::key::DeclarationKey,
+    /// `no-applicable` or `multiple-undominated`.
+    pub cause: &'static str,
+    /// Every applicable candidate.
+    pub candidates: Vec<crate::model::key::DeclarationKey>,
+    /// Every `(dominant, dominated)` pair among them.
+    pub dominance_pairs: Vec<(
+        crate::model::key::DeclarationKey,
+        crate::model::key::DeclarationKey,
+    )>,
+}
+
 /// The invariant [`CheckCause::InternalFault`] names, with the value that
 /// broke it.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum KeyFault {
+    /// The private intake owner lost its corresponding assembled model.
+    MissingAdmittedModel(String),
+    /// A staged-admission read the conformance stage made for an admitted
+    /// member pair was refused, which the admitted records cannot cause.
+    PendingField(String),
     /// A `Reference<T>`'s `EffectiveId` is no `type_identities` value of an
     /// admitted domain package's effective view.
     UnknownEffectiveId(EffectiveId),
@@ -714,6 +777,8 @@ impl KeyFault {
     /// The violated invariant's stable identifier (ADR-013 T-4).
     pub fn invariant(&self) -> &'static str {
         match self {
+            Self::MissingAdmittedModel(_) => "intake-owner-has-assembled-model",
+            Self::PendingField(_) => "conformance-reads-admitted-member-pair",
             Self::UnknownEffectiveId(_) => "reference-target-admitted",
             Self::UnadmittedPackage(_) => "declaration-package-admitted",
             Self::EmptyNode(_) => "declaration-node-nonempty",
@@ -841,6 +906,7 @@ impl CheckCause {
     pub fn catalog_code(&self) -> Option<qsl_foundation::diagnostic::CatalogCode> {
         match self {
             Self::StateModel(cause) => cause.catalog_code(),
+            Self::DispatchLink(cause) => Some(cause.catalog),
             _ => Some(qsl_foundation::diagnostic::CatalogCode::new(
                 self.code().as_str(),
                 self.cause()?,
@@ -866,6 +932,9 @@ impl CheckCause {
         match self {
             Self::ProfileProhibitedOperator(_) => Code::UnsupportedConstruct,
             Self::StateModel(cause) => cause.cause.code(),
+            Self::ModelConformance(failure) => failure.code,
+            Self::ModelIncomplete(_) => Code::ResourceExhausted,
+            Self::TypeAdmission { code, .. } => *code,
             Self::IllTyped(_) | Self::NonBooleanRoot | Self::IntegerOutsideI128(_) => {
                 Code::IllTyped
             }
@@ -886,6 +955,7 @@ impl CheckCause {
             Self::Identity(IdentityRefusal::Allocation { .. }) => Code::ResourceExhausted,
             Self::Identity(IdentityRefusal::NonCanonical) => Code::RuntimeInvariant,
             Self::ProtocolAnchor(cause) => cause.code(),
+            Self::DispatchLink(cause) => cause.code,
             // Downstream crates (`qsl-eval`, `qsl-route`, the root crate)
             // have their own real seams over other enums, probed in the
             // same `--cfg seam_probe_downstream` build -- this arm exists
@@ -905,6 +975,11 @@ impl CheckCause {
     pub fn cause(&self) -> Option<&'static str> {
         match self {
             Self::StateModel(cause) => cause.cause.cause(),
+            Self::ModelConformance(failure) => Some(failure.cause.as_str()),
+            // The model ceilings are the caller's budget (FR-255), so a denied
+            // charge is an insufficient next charge, never a stage limit.
+            Self::ModelIncomplete(_) => Some("insufficient-next-charge"),
+            Self::TypeAdmission { cause, .. } => Some(cause),
             Self::IllTyped(cause) => cause.tag(),
             Self::WrongSnapshot(cause) => Some(cause.as_str()),
             Self::NonBooleanRoot => Some("non-boolean-root"),
@@ -937,6 +1012,7 @@ impl CheckCause {
                 None
             }
             Self::ProtocolAnchor(cause) => Some(cause.tag()),
+            Self::DispatchLink(cause) => Some(cause.catalog.cause()),
             // Not a seam-probe location (unlike `code()`, above --
             // deliberately left non-exhaustive there): this arm keeps
             // `cause()` compiling under `--cfg seam_probe`, so `code()`'s
