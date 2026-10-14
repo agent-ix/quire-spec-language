@@ -843,13 +843,14 @@ fn l12_all_instances_expression_selects_subtype_population_once() {
         Outcome::Completed(value) => value,
         other => panic!("expected a completed collection, got {other:?}"),
     };
-    // `A`'s effective-id hash sorts before `B`'s, so canonical reference-key
-    // order is every `A` member then every `B` member.
-    let expected = vec![
+    // Canonical reference-key order: the universe, then the member's
+    // effective type identity, then the object bytes.
+    let mut expected = vec![
         object_reference(&scenario.universe, &scenario.a, "a1"),
         object_reference(&scenario.universe, &scenario.a, "a2"),
         object_reference(&scenario.universe, &scenario.b, "b1"),
     ];
+    expected.sort();
     assert_eq!(reference_elements(&value), expected);
     assert!(meter.consumed(LimitKind::WorkUnits) > 0);
 
@@ -871,10 +872,10 @@ fn l12_all_instances_expression_selects_subtype_population_once() {
     };
     let b1_via_b = object_reference(&scenario.universe, &scenario.b, "b1");
     assert_eq!(reference_elements(&value_b), vec![b1_via_b.clone()]);
-    // B now sorts last among the three members (see this test's ordering
-    // comment above), so the shared `b1` reference is `value`'s last
-    // element, not its first.
-    assert_eq!(*reference_elements(&value).last().unwrap(), b1_via_b);
+    assert!(
+        reference_elements(&value).contains(&b1_via_b),
+        "the M::A selection carries the identical b1 reference"
+    );
 }
 
 /// FR-084-AC-2 / FR-090-AC-21 / TC-227: successful object admission does not
@@ -2232,11 +2233,12 @@ fn l07_pre_all_instances_reads_the_invocation_pre_population() {
         SCALAR_UNLIMITED,
         &population_environment(&scenario),
     );
-    // `A`'s effective-id hash sorts before `B`'s.
-    let post_expected = vec![
+    // Canonical reference-key order, by effective type identity.
+    let mut post_expected = vec![
         object_reference(&scenario.universe, &scenario.a, "a1"),
         object_reference(&scenario.universe, &scenario.b, "b1"),
     ];
+    post_expected.sort();
     match post_outcome {
         Outcome::Completed(value) => assert_eq!(reference_elements(&value), post_expected),
         other => panic!("expected a completed post-anchored collection, got {other:?}"),
@@ -2250,11 +2252,12 @@ fn l07_pre_all_instances_reads_the_invocation_pre_population() {
         SCALAR_UNLIMITED,
         &population_environment(&scenario),
     );
-    let pre_expected = vec![
+    let mut pre_expected = vec![
         object_reference(&scenario.universe, &scenario.a, "a1"),
         object_reference(&scenario.universe, &scenario.a, "a2"),
         object_reference(&scenario.universe, &scenario.b, "b1"),
     ];
+    pre_expected.sort();
     match pre_outcome {
         Outcome::Completed(value) => assert_eq!(reference_elements(&value), pre_expected),
         other => panic!("expected a completed pre-anchored collection, got {other:?}"),
