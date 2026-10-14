@@ -6,6 +6,7 @@ pub mod composed;
 mod constraints;
 mod inputs;
 mod proof;
+pub mod source_inventory;
 mod types;
 mod variables;
 

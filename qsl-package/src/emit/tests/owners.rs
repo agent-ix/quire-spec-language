@@ -413,7 +413,9 @@ fn model_declaration_nodes_and_clause_functions_carry_their_model_owner() {
             let digest = wire["lock"]["model_selections"][0]["digest"]
                 .as_str()
                 .unwrap();
-            evidence.insert_domain_package_document(digest, &document[..]);
+            evidence
+                .insert_domain_package_document(digest, &document[..])
+                .expect("a fresh evidence key");
             assert!(
                 matches!(read_with(emission, &evidence), Read::Verified { .. }),
                 "{root}: IR's v2 reader admits the package"

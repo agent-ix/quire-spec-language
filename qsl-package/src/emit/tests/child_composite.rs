@@ -40,7 +40,9 @@ fn emit_unit(unit_body: &str) -> (Emission, Value, Read) {
     for feature in wire["lock"]["required_features"].as_array().unwrap() {
         evidence.support_feature(feature.as_str().unwrap());
     }
-    evidence.insert_domain_package_document(digest.as_str(), document.as_slice());
+    evidence
+        .insert_domain_package_document(digest.as_str(), document.as_slice())
+        .expect("a fresh evidence key");
     let read = read_v2(
         emission.package.bytes(),
         library(),

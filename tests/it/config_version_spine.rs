@@ -1322,10 +1322,12 @@ fn tc_469_step_6_the_emitted_package_admits_via_i04() {
     // The lock's `model_selections` names the domain package by its own
     // `sha256-jcs` digest (FR-154/FR-322); I04 recomputes that digest from
     // the document bytes supplied here rather than trusting the lock.
-    evidence.insert_domain_package_document(
-        spine::model_digest_hex(),
-        spine::DOMAIN_PACKAGE.as_bytes().to_vec(),
-    );
+    evidence
+        .insert_domain_package_document(
+            spine::model_digest_hex(),
+            spine::DOMAIN_PACKAGE.as_bytes().to_vec(),
+        )
+        .expect("a fresh evidence key");
     let result = quire_contract_model::read_checked_package(
         bytes,
         quire_contract_model::CheckedPackageReadLimits::bounded(),

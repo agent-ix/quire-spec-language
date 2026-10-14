@@ -116,6 +116,7 @@ mod runtime_reading;
 mod runtime_validation;
 mod runtime_workflow;
 mod seam5_retired;
+mod source_inventory;
 mod source_map;
 mod spine_run;
 mod state_scalar_lowering;
