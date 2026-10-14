@@ -21,9 +21,11 @@ mod integer_division;
 mod library_resolution;
 #[cfg(feature = "test-support")]
 mod model_conformance;
+#[cfg(feature = "test-support")]
 mod model_conformance_boundary;
 #[cfg(feature = "test-support")]
 mod model_dispatch;
+#[cfg(feature = "test-support")]
 mod model_intake;
 #[cfg(feature = "test-support")]
 mod model_normalization;

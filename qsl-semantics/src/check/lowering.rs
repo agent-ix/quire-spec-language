@@ -2126,7 +2126,7 @@ impl<'a> Lowering<'a> {
     /// A declared record or tuple's node: its `declaration` and the unit's
     /// `owner`, one binding per field (record) or one reference per position
     /// (tuple).
-    fn composite(
+    fn composite_type_node(
         &mut self,
         declaration: NodeKey,
         location: &Location,
@@ -2137,7 +2137,7 @@ impl<'a> Lowering<'a> {
     /// The node of the declared composite `declaration` (FR-092-AC-12): its
     /// checked type node's id.
     pub(crate) fn composite_node(&mut self, declaration: NodeKey) -> Result<NodeKey, CheckRefusal> {
-        self.composite(declaration, &generated_location())
+        self.composite_type_node(declaration, &generated_location())
     }
 
     /// Build the admitted enum `binding`'s declaration node and one node
@@ -3292,14 +3292,14 @@ impl<'a> Lowering<'a> {
                 declaration,
                 arguments,
             } => {
-                let semantic_type = self.composite(*declaration, node.location())?;
+                let semantic_type = self.composite_type_node(*declaration, node.location())?;
                 (
                     Keyed::Value("tuple_value", semantic_type),
                     Operands::Each(arguments),
                 )
             }
             NodeKind::Record { declaration, slots } => {
-                let semantic_type = self.composite(*declaration, node.location())?;
+                let semantic_type = self.composite_type_node(*declaration, node.location())?;
                 let Some(CompositeShape::Record(fields)) = self
                     .scope
                     .types()
@@ -3993,7 +3993,7 @@ impl<'a> Lowering<'a> {
             )
         })?;
         Ok(Member::Field {
-            declaration: self.composite(field.declaration(), location)?,
+            declaration: self.composite_type_node(field.declaration(), location)?,
             name,
         })
     }
