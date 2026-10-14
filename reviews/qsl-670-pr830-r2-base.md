@@ -73,3 +73,23 @@ NFR-012; main's TC-1021 intact as the protocol-reference case), ADR-017 line,
 FR-084-AC-7 and TC-410 renames, test-parsed FR-092/FR-255 untouched, and
 quire validate on the changed files clean (module warnings only), consistent
 with the coder's make check-spec-validation rc=0 log.
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 163c1d78a28c610c978f5e338fab77eebba170ed |
+| FND-002 | fixed | 163c1d78a28c610c978f5e338fab77eebba170ed |
+| FND-003 | fixed | 163c1d78a28c610c978f5e338fab77eebba170ed |
+| FND-004 | fixed | 163c1d78a28c610c978f5e338fab77eebba170ed |
+| FND-005 | fixed | 163c1d78a28c610c978f5e338fab77eebba170ed |
+
+Round 1 at 163c1d78a. Recomputed: TC-434 expected 6 = 241 + 121 x 20 = 2,661;
+field-per-type chain admitted to 584 edges (268,295,952 B; 585: 269,212,521 B);
+counterexample 2,600 x 5,200 + 2,600 x 2,599 / 2 = 16,898,700 work units with
+13,003 facts. FND-002: 524,288 B is now the thread stack, which QSL-666's title
+("10000-edge/512KiB case") and the repo's "on a thread with a 512 KiB stack"
+convention (FR-092-AC-7, FR-256-AC-1, qsl-cst deep-input tests) support; no
+package-size bound remains. Recorded one-liners also fixed (903, 2^17 from the
+bottom type, "after the first 50"). Recorded low: TC-1025 step 1's "Fail setup
+rather than shrink the chain" no longer guards any assertion.
