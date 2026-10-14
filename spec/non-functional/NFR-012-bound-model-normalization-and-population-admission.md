@@ -52,8 +52,9 @@ ceiling therefore bounds the work done, not only the result:
   per parent, each edge already admitted by a `normalize.fact` and a
   `normalize.cycle-check` charge. No encoding holds an ancestor path longer
   than one edge, so hashed bytes grow with the type count plus the edge count
-  (about 834 bytes per type and 574 per edge, counting each preimage once on
-  its own and once inside the view), not with the number of ancestor paths.
+  (for the 83 to 87 byte keys of TC-1025, about 902 bytes per type and 608
+  per edge, counting each preimage once on its own and once inside the view),
+  not with the number of ancestor paths.
 - A diamond lattice is walked and stored once per edge. The cycle check
   charges one unit per direct edge for an acyclic package; a path-length
   charge applies only to the walk that reports a specialization cycle.
@@ -104,12 +105,12 @@ per-charge record, so its memory does not grow with the work it bounds.
   an effective subtype with a candidate declaration; the same ceiling keeps
   the pairing within the fact budget's scale.
 - **Hashed bytes, 268435456.** Sixteen times NFR-007's default package byte
-  ceiling. With about 834 bytes per effective type and 574 per direct edge,
-  it admits a single-inheritance chain up to the 100000 record ceiling
-  (99999 edges, 141432998 bytes) and about 454000 direct edges over 10001
-  types. A chain whose every type declares one field has (n+1)(n+2)/2
-  effective members and is refused at 547 edges on this ceiling and at 1786 on
-  the effective-declaration ceiling; those are member counts, which identity
+  ceiling. With about 902 bytes per effective type and 608 per direct edge
+  (keys of 83 to 87 bytes), it admits a single-inheritance chain up to the
+  100000 record ceiling (99999 edges, 151633328 bytes) and about 426000 direct
+  edges over 10001 types. A chain whose every type declares one field has
+  (n+1)(n+2)/2 effective members and is refused beyond 527 edges on this
+  ceiling and beyond 1786 on the effective-declaration ceiling; those are member counts, which identity
   chaining does not reduce. Each effective declaration's preimage is hashed once and again
   inside the view preimage, and the view holds those preimages, so this also
   bounds the view's retained size.
@@ -137,7 +138,7 @@ TC-434 covers the defaults and the bound on work:
   `hashed_bytes` is refused after work bounded by the limit, whatever the
   package's size.
 - A 10000-edge single-inheritance chain completes at the defaults with 20001
-  retained facts (TC-1025), and a diamond ladder with exponentially many
+  retained facts, 15104845 hashed bytes and 60006 work units (TC-1025), and a diamond ladder with exponentially many
   paths completes at the defaults (TC-1024).
 - The first denied charge decides the outcome: a `declaration_records`
   charge denied before the walk exhausts `ancestor_steps` stops on

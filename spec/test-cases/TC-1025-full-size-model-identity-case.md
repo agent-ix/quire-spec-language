@@ -15,6 +15,8 @@ relationships:
 Verify FR-081-AC-12 and FR-081-AC-13 at the full size. Deterministic counters and
 observed peak memory and elapsed time are separate acceptance conditions;
 none is inferred from a smaller case.
+The 524,288-byte bound on the package encoding is QSL's own, from FR-081-AC-12;
+the quire-specification case states no such bound.
 
 ## Test Procedure
 
@@ -37,10 +39,11 @@ Implement as the Rust integration test
 ## Expected Results
 
 All 10,001 effective type identities and the complete view are present. Retained
-facts are 20,001; hashed bytes are about 14.1 million for this fixture and at most
-16,777,216; work units are at most 100,000. Peak resident set is at most
+facts are 20,001; hashed bytes are 15,104,845 for this fixture (at most
+16,777,216); work units are 60,006 (at most 100,000). These are the counters of
+quire-specification TC-195 N19, which has the same chain. Peak resident set is at most
 21,474,836,480 bytes. Wall time is at most 30 seconds on the reference host
 Terra (Intel Core i9-10900K, 14 allocated threads, WSL2, 94 GiB). Memory and
 time are measured results; the expected figures follow from the byte formula
-(14.1 MB at the 7.74 MB/s debug-profile encoder rate is 1.8 s) and are not
+(15.1 MB at the 7.74 MB/s debug-profile encoder rate is 2.0 s) and are not
 extrapolated into the pass condition.

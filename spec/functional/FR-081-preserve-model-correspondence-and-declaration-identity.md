@@ -51,11 +51,13 @@ it.
 
 The selection identities above stay as they are: no consumer's selection
 changes, so FR-056 and every requirement or test that selects them keep their
-text. The identity domains `quire.model.effective-declaration`,
-`quire.model.effective-view` and `quire.model.object-universe` move to `/v2`,
-and the inherit, subset and redefine rule identities move to `/v2`; the
-definition, manifest and accounting definition are edited in place to carry
-them.
+text. Only the identity domains `quire.model.effective-declaration/v2`,
+`quire.model.effective-view/v2` and `quire.model.object-universe/v2` and the
+rule identities `quire.model.normalize.inherit/v2`, `.subset/v2` and
+`.redefine/v2` are new. `quire.model.complete/v1`,
+`quire.model.complete.rules/v1`, `quire.value.accounting/v1` and the
+selection digests of `complete/v1` stay at `/v1` and are edited in place in
+quire-specification to carry them.
 
 ## Outputs
 
@@ -115,6 +117,10 @@ supertype `P` of `T` that has one. The preimage SHALL NOT contain an ancestor
 path of more than one edge. A parent identity is a fixed-width digest field,
 so it adds a constant number of bytes however deep its ancestry is.
 
+A derivation fact is `{ordinal, rule, inputs, parent}`. `parent` is `null`, or
+`{domain, digest}` naming one effective declaration by a 64-character lowercase
+hex digest, and only an `inherit/v2` fact carries one.
+
 The retained derivation facts are the one-edge facts: one qualify fact, one
 inherit fact per direct parent (carrying that parent's identity), and the
 phase-4 subset and redefine facts of the declaration's own and its
@@ -155,7 +161,8 @@ definition; this requirement does not create a second identity writer.
 
 Total bytes admitted to the identity hash calls of a package with `V` effective
 types and `E` direct supertype edges and no members are linear in `V + E`
-(about `834 V + 574 E` bytes for the fixture of TC-1024), not in the
+(for the keys of TC-1025, 83 to 87 bytes, about 902 bytes per type and 608
+per edge; TC-1024 gives the exact formula in the key length), not in the
 number of ancestor paths or their length.
 
 ### Losing redefinitions are retained, not deleted
@@ -214,12 +221,20 @@ binder SHALL NOT charge an ancestor path's length for an acyclic package.
 `derivation_facts` counts the retained facts, not the path-form facts of their
 expansion. A preimage's length is counted from its parts, a parent digest
 being fixed width, and is charged to `hashed_bytes` before the preimage is
-encoded or hashed, with one exception: an effective type's identity is hashed
-in phase 3, before its phase-5 `normalize.hash`, because phase 4's charge order
-uses it. That preimage holds only the type's own key and its direct edges,
+encoded or hashed, with one exception that quire-specification does not need and that is QSL's
+alone: an effective type's identity is hashed in phase 3, before its phase-5
+`normalize.hash`, because phase 4's charge order uses it. That preimage holds only the type's own key and its direct edges,
 each already admitted by a `normalize.fact` and a `normalize.cycle-check`
 charge. Every member, universe and view preimage is charged before it is
 encoded.
+
+The phase-4 charges are unchanged in kind and count a type's derivation facts
+as its retained facts, its qualify fact and one inherit fact per direct
+supertype: each redefining member charges one `normalize.redefinition-check`
+of `m + r` work units, and each (effective type, redefined member) reached by
+`c >= 2` redefiners charges one `normalize.conflict-check` of
+`Σ (c − 1) × f(o)` work units, as quire-specification
+`value-accounting.md` defines.
 
 ## Constraints
 
@@ -244,7 +259,7 @@ encoded.
 | FR-081-AC-9 | Expanding the retained facts of every effective declaration through its parent identities yields the path-form facts of an independent enumeration over the original declarations, in phase, input and rule order with multiplicity, for a chain, a diamond and a hidden redefinition; a link naming a declaration of the wrong kind, owner or original is refused. | Test (TC-1022) |
 | FR-081-AC-10 | Changing one ancestor's original declaration key, one parent link, or one phase-4 fact changes the identity of every descendant that reaches it, and no two distinct effective declarations of a fixture set share an identity. | Test (TC-1023) |
 | FR-081-AC-11 | Hashed bytes, `derivation_facts` and `work_units` of a chain, a width-2 diamond ladder and a dense multi-parent shape equal the closed formulas of the test case; a diamond ladder whose path count is exponential is admitted at the default limits. | Test (TC-1024) |
-| FR-081-AC-12 | For a deterministic single-inheritance chain of 10,000 edges (10,001 effective types, package encoding at most 524,288 bytes), normalization at the NFR-012 default limits eagerly computes every effective identity and the complete view with 20,001 retained facts, at most 16,777,216 hashed bytes and at most 100,000 work units. | Test (TC-1025) |
+| FR-081-AC-12 | For a deterministic single-inheritance chain of 10,000 edges (10,001 effective types, package encoding at most 524,288 bytes), normalization at the NFR-012 default limits eagerly computes every effective identity and the complete view with 20,001 retained facts, 15,104,845 hashed bytes (at most 16,777,216) and 60,006 work units (at most 100,000). | Test (TC-1025) |
 | FR-081-AC-13 | The FR-081-AC-12 case, run in an isolated process, has a peak resident set of at most 21,474,836,480 bytes and a wall time of at most 30 seconds in the release profile on the reference host Terra, each measured from package input admission through retention of the complete result. | Test (TC-1025) |
 | FR-081-AC-16 | Given a variant type with two cases, the effective view holds one effective type and two effective members of it, each derived from the key of its own declaration with one `qualify` fact; permuting the cases changes no effective identity or position. | Test (TC-1003) |
 
