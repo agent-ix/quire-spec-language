@@ -1594,7 +1594,7 @@ dependencies = [
 [[package]]
 name = "quire-contract-model"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#4f4b9cfcc077a17f3a2f7cc5c36c9a01373a5700"
+source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#1227928d860d2878f69bbab509d28b13686a5af6"
 dependencies = [
  "jsonschema 0.17.1",
  "num-bigint",
