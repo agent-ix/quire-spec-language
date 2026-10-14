@@ -735,6 +735,26 @@ pub enum ModelRefusalCause {
         /// The later position retaining the same path.
         later: usize,
     },
+    /// An [`crate::model::key::EffectiveDeclarationPreimage`] holds two
+    /// inherit facts that link to the same parent declaration.
+    DuplicateParent {
+        /// The preimage's own original declaration.
+        original: DeclarationKey,
+        /// The earlier position linking the parent.
+        earlier: usize,
+        /// The later position linking the same parent.
+        later: usize,
+    },
+    /// A derivation fact's parent link is not what the fact states: an inherit
+    /// fact with no link, a link on another rule, a link to a declaration
+    /// that is absent, of the wrong kind, owned by another type or derived
+    /// from another original.
+    MisWiredLink {
+        /// The preimage's own original declaration.
+        original: DeclarationKey,
+        /// The mis-wired fact's array position.
+        position: usize,
+    },
     /// A scalar type's declared domain has a lower bound greater than its
     /// upper bound. FR-272's `invalid_model_binding` cause list is closed;
     /// there is no dedicated scalar-domain variant, so this is the
@@ -1266,6 +1286,8 @@ impl ModelRefusalCause {
             | Self::UnknownEndpoint { .. }
             | Self::UnsortedDerivation { .. }
             | Self::DuplicatePath { .. }
+            | Self::DuplicateParent { .. }
+            | Self::MisWiredLink { .. }
             | Self::MalformedDeclaration { .. }
             | Self::IntakeMalformedDeclaration { .. }
             | Self::IntakeMissingDeclaration { .. }
@@ -1350,6 +1372,8 @@ impl ModelRefusalCause {
             Self::UnknownEndpoint { .. } => "unknown-endpoint",
             Self::UnsortedDerivation { .. } => "unsorted-derivation",
             Self::DuplicatePath { .. } => "duplicate-path",
+            Self::DuplicateParent { .. } => "duplicate-parent",
+            Self::MisWiredLink { .. } => "mis-wired-link",
             Self::MalformedDeclaration
             | Self::IntakeMalformedDeclaration { .. }
             | Self::FrameEntryMalformed { .. }
@@ -1385,8 +1409,9 @@ impl ModelRefusalCause {
     /// ADR-013 O-17: this cause's `quire.native.diagnostics/v1` catalog
     /// code, with [`Self::as_str`] as its cause tag. One exhaustive match,
     /// one arm per catalog code and no `_` arm, read from the cause alone.
-    /// `UnsortedDerivation` and `DuplicatePath` share `UnsortedView`'s code:
-    /// all three are TC-195 N10 well-formedness refusals of an effective
+    /// `UnsortedDerivation`, `DuplicatePath`, `DuplicateParent` and
+    /// `MisWiredLink` share `UnsortedView`'s code:
+    /// all are TC-195 N10 well-formedness refusals of an effective
     /// declaration or view.
     pub fn catalog_code(&self) -> CatalogCode {
         let code = match self {
@@ -1410,6 +1435,8 @@ impl ModelRefusalCause {
             Self::UnsortedView { .. }
             | Self::UnsortedDerivation { .. }
             | Self::DuplicatePath { .. }
+            | Self::DuplicateParent { .. }
+            | Self::MisWiredLink { .. }
             | Self::SpecializationCycle { .. }
             | Self::DerivationConflict { .. }
             | Self::UnsuppliedProducerRecord
@@ -1707,6 +1734,15 @@ pub mod fixtures {
             earlier: 0,
             later: 0,
         },
+        DuplicateParent => ModelRefusalCause::DuplicateParent {
+            original: key("p"),
+            earlier: 0,
+            later: 1,
+        },
+        MisWiredLink => ModelRefusalCause::MisWiredLink {
+            original: key("p"),
+            position: 0,
+        },
         MalformedDeclaration => ModelRefusalCause::MalformedDeclaration,
         IntakeMalformedDeclaration => ModelRefusalCause::IntakeMalformedDeclaration {
             node: String::new(),
@@ -1997,6 +2033,8 @@ pub(crate) mod tests {
             ModelRefusalCause::UnknownEndpoint { .. } => "unknown-endpoint",
             ModelRefusalCause::UnsortedDerivation { .. } => "unsorted-derivation",
             ModelRefusalCause::DuplicatePath { .. } => "duplicate-path",
+            ModelRefusalCause::DuplicateParent { .. } => "duplicate-parent",
+            ModelRefusalCause::MisWiredLink { .. } => "mis-wired-link",
             ModelRefusalCause::MalformedDeclaration
             | ModelRefusalCause::IntakeMalformedDeclaration { .. }
             | ModelRefusalCause::FrameEntryMalformed { .. }
@@ -2037,7 +2075,8 @@ pub(crate) mod tests {
     /// literal arm per variant with no `_` arm, written independently of
     /// `ModelRefusalCause::catalog_code`'s grouped arms. Each code is the
     /// native code every construction site pairs with that cause;
-    /// `UnsortedDerivation` and `DuplicatePath` take `UnsortedView`'s.
+    /// `UnsortedDerivation`, `DuplicatePath`, `DuplicateParent` and
+    /// `MisWiredLink` take `UnsortedView`'s.
     fn expected_code(cause: &ModelRefusalCause) -> &'static str {
         match cause {
             ModelRefusalCause::UnknownOriginal { .. } => "dangling_reference",
@@ -2060,6 +2099,8 @@ pub(crate) mod tests {
             ModelRefusalCause::UnsortedView { .. } => "invalid_model_binding",
             ModelRefusalCause::UnsortedDerivation { .. } => "invalid_model_binding",
             ModelRefusalCause::DuplicatePath { .. } => "invalid_model_binding",
+            ModelRefusalCause::DuplicateParent { .. } => "invalid_model_binding",
+            ModelRefusalCause::MisWiredLink { .. } => "invalid_model_binding",
             ModelRefusalCause::SpecializationCycle { .. } => "invalid_model_binding",
             ModelRefusalCause::DerivationConflict { .. } => "invalid_model_binding",
             ModelRefusalCause::UnsuppliedProducerRecord => "invalid_model_binding",

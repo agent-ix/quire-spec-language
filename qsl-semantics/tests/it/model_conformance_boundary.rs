@@ -1591,8 +1591,8 @@ fn one_actual_member_can_subset_and_redefine_the_same_parent() {
             .collect();
         assert_eq!(
             rules,
-            vec![RULE_QUALIFY, RULE_SUBSET, RULE_REDEFINE],
-            "reverse={reverse}"
+            vec![RULE_QUALIFY, RULE_REDEFINE, RULE_SUBSET],
+            "equal-input facts order by the rule identity's bytes: reverse={reverse}"
         );
     }
 }

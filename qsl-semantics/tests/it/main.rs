@@ -26,6 +26,14 @@ mod model_conformance_boundary;
 #[cfg(feature = "test-support")]
 mod model_dispatch;
 #[cfg(feature = "test-support")]
+mod model_identity_cost;
+#[cfg(feature = "test-support")]
+mod model_identity_full_size;
+#[cfg(feature = "test-support")]
+mod model_identity_links;
+#[cfg(feature = "test-support")]
+mod model_identity_vectors;
+#[cfg(feature = "test-support")]
 mod model_intake;
 #[cfg(feature = "test-support")]
 mod model_normalization;

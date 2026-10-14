@@ -27,8 +27,10 @@ pub struct ModelNormalizationLimits {
     /// Cumulative work units.
     pub work_units: u64,
     /// Ceiling on the `supertypes` edges one walk follows, charged before
-    /// each edge is followed: one conformance walk (FR-082), or one type's
-    /// ancestor-path enumeration in normalization. Under multiple
+    /// each edge is followed: one conformance walk (FR-082), or
+    /// normalization's one pass over the direct supertype edges, each counted
+    /// once however many paths reach its target (a type on or below a cycle
+    /// is explored by path, one walk per type). Under multiple
     /// supertypes it counts the walk's closure, never a chain depth, and
     /// each walk starts a fresh count. A target or ancestor `n` edges up a
     /// chain is reached at `ancestor_steps == n`. Applies to normalization
@@ -280,7 +282,7 @@ impl LimitKind {
 ///
 /// This rung charges the phase-1/2/3/5 points below, plus
 /// phase 4's `normalize.redefinition-check`/`normalize.conflict-check`
-/// (`quire.model.normalize.redefine/v1`, TC-195 N06); see
+/// (`quire.model.normalize.redefine/v2`, TC-195 N06); see
 /// `crate::model::normalize` module docs for that pass's exact scope. FR-151
 /// adds `conformance.axis` (`crate::model::conformance`) and
 /// `dispatch.subtype`/`dispatch.candidate`/`dispatch.dominance`

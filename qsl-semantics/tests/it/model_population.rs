@@ -458,14 +458,18 @@ fn l01_all_instances_selects_subtype_population_once() {
     .into_iter()
     .collect();
     assert_eq!(selected_a.members(), &expected_a);
+    // Canonical reference-key order is the key's own order: universe, then
+    // the member's effective type identity, then the object bytes.
+    let mut canonical = vec![
+        reference_key(&universe, &a, "a1"),
+        reference_key(&universe, &a, "a2"),
+        reference_key(&universe, &b, "b1"),
+    ];
+    canonical.sort();
     assert_eq!(
-        selected_a.members().iter().collect::<Vec<_>>(),
-        [
-            &reference_key(&universe, &a, "a1"),
-            &reference_key(&universe, &a, "a2"),
-            &reference_key(&universe, &b, "b1"),
-        ],
-        "canonical reference-key order: every A member precedes every B member"
+        selected_a.members().iter().cloned().collect::<Vec<_>>(),
+        canonical,
+        "canonical reference-key order"
     );
     // Outputs clause: a typed reference to the queried type, bounded [0, 3]
     // (this binding's declared_maximum), never a bare unbounded set.
@@ -1342,7 +1346,7 @@ fn l04b_lookup_wrong_length_universe_refuses_as_foreign() {
 
 /// ADR-013 §8 OQ-E: one domain package's two connected components --
 /// [`fixture_two_components`]'s `{A, B}` and `{E}` -- bind two distinct
-/// `quire.model.object-universe/v1` universes, never the one whole-package
+/// `quire.model.object-universe/v2` universes, never the one whole-package
 /// universe every domain package produced before this fix. A reference
 /// minted in `E`'s own population is then a *foreign* universe against the
 /// `{A, B}` population's binding -- exactly [`l04_lookup_foreign_universe_refuses`]'s
@@ -4077,7 +4081,7 @@ fn an_unbounded_binding_selects_every_member_with_no_bound() {
 /// TC-410 (FR-084-AC-7): object types `A <- B`, `C, D <- E` and `X` form
 /// three supertype components; a member admitted in each component's own
 /// population carries that component's universe, the
-/// `quire.model.object-universe/v1` digest over the model selection and the
+/// `quire.model.object-universe/v2` digest over the model selection and the
 /// component's root types, and its object component is the authored identity.
 ///
 /// Mutation used (derived by reading, not executed): one universe over every
@@ -4114,7 +4118,7 @@ fn tc_410_each_connected_component_has_its_own_object_universe() {
             .collect();
         ids.sort();
         let preimage = serde_json::json!({
-            "version": "quire.model.object-universe/v1",
+            "version": "quire.model.object-universe/v2",
             "model_selection": {
                 "identity": selection.identity,
                 "digest_domain": "sha256-jcs",
@@ -4123,7 +4127,7 @@ fn tc_410_each_connected_component_has_its_own_object_universe() {
             "root_types": ids
                 .iter()
                 .map(|digest| serde_json::json!({
-                    "domain": "quire.model.effective-declaration/v1",
+                    "domain": "quire.model.effective-declaration/v2",
                     "digest": digest
                 }))
                 .collect::<Vec<_>>()

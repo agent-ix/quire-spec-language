@@ -9,8 +9,6 @@
 //! `Serialize` view below (`*Wire`), encoded by `quire-canonical`, the one
 //! RFC 8785 implementation (ADR-013 §2, ADR-013:113); the encoder orders
 //! members itself, so a view's field order carries no meaning.
-use std::sync::Arc;
-
 use qsl_foundation::ByteDigest;
 use quire_canonical::{Encode, FixedShape, Limits};
 use serde::Serialize;
@@ -30,7 +28,7 @@ use crate::model::refusal::ModelRefusalCause;
 const LIMITS: Limits = Limits::new(u64::MAX);
 
 /// The kernel's canonical `EffectiveId` (ADR-013 O-05, QC-15): 32 bytes in
-/// domain `quire.model.effective-declaration/v1`, minted only through
+/// domain `quire.model.effective-declaration/v2`, minted only through
 /// [`quire_exact::EffectiveId::from_digest`]. Re-exported at this
 /// path so every existing `crate::model::key::EffectiveId` import keeps
 /// working unchanged; this crate no longer defines a second, model-owned
@@ -46,14 +44,14 @@ pub use quire_exact::EffectiveId;
 /// selection (`model-complete.md`, "Identity domains").
 pub const SHA256_JCS_DIGEST_DOMAIN: &str = "sha256-jcs";
 
-/// Digest domain of one effective declaration (`quire.model.effective-declaration/v1`).
-pub const EFFECTIVE_DECLARATION_DOMAIN: &str = "quire.model.effective-declaration/v1";
+/// Digest domain of one effective declaration (`quire.model.effective-declaration/v2`).
+pub const EFFECTIVE_DECLARATION_DOMAIN: &str = "quire.model.effective-declaration/v2";
 
-/// Digest domain of one effective view (`quire.model.effective-view/v1`).
-pub const EFFECTIVE_VIEW_DOMAIN: &str = "quire.model.effective-view/v1";
+/// Digest domain of one effective view (`quire.model.effective-view/v2`).
+pub const EFFECTIVE_VIEW_DOMAIN: &str = "quire.model.effective-view/v2";
 
-/// Digest domain of one object universe (`quire.model.object-universe/v1`).
-pub const OBJECT_UNIVERSE_DOMAIN: &str = "quire.model.object-universe/v1";
+/// Digest domain of one object universe (`quire.model.object-universe/v2`).
+pub const OBJECT_UNIVERSE_DOMAIN: &str = "quire.model.object-universe/v2";
 
 /// The `quire.model.complete.rules/v1` manifest identity this crate reads.
 pub const RULES_IDENTITY: &str = "quire.model.complete.rules/v1";
@@ -66,15 +64,15 @@ pub const RULE_QUALIFY: RuleRef = RuleRef {
 };
 /// See [`RULE_QUALIFY`].
 pub const RULE_INHERIT: RuleRef = RuleRef {
-    identity: "quire.model.normalize.inherit/v1",
+    identity: "quire.model.normalize.inherit/v2",
 };
 /// See [`RULE_QUALIFY`].
 pub const RULE_SUBSET: RuleRef = RuleRef {
-    identity: "quire.model.normalize.subset/v1",
+    identity: "quire.model.normalize.subset/v2",
 };
 /// See [`RULE_QUALIFY`].
 pub const RULE_REDEFINE: RuleRef = RuleRef {
-    identity: "quire.model.normalize.redefine/v1",
+    identity: "quire.model.normalize.redefine/v2",
 };
 
 /// One original declaration key: `{package, node, digest_domain: "sha256-jcs"}`
@@ -105,11 +103,6 @@ impl DeclarationKey {
             package: "test/orders".to_owned(),
             node: node.into(),
         }
-    }
-
-    /// This key's RFC 8785 length.
-    fn canonical_len(&self) -> u64 {
-        canonical_len(&self.wire())
     }
 
     /// This key's `$defs.DeclarationKey` preimage view.
@@ -151,38 +144,43 @@ impl RuleRef {
     }
 }
 
-/// A run of producer keys that several facts share -- an ancestor path --
-/// with the length of its keys' RFC 8785 array elements counted once.
-/// Cloning shares the keys, so every fact derived along one path
-/// holds that path once, not a copy each.
-#[derive(Clone, Debug, Default)]
-pub(crate) struct KeyPath {
-    keys: Arc<[DeclarationKey]>,
-    /// The encoded length of `keys` as array elements: each key's RFC 8785
-    /// length, plus one separating comma between each two.
-    encoded_len: u64,
+/// One derivation fact: `{ordinal, rule, inputs, parent}`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Fact {
+    /// Zero-based decimal-string position in the declaration's `derivation` array.
+    pub ordinal: usize,
+    /// The rule that derived this fact.
+    pub rule: RuleRef,
+    /// Ordered producer keys the fact consumed.
+    pub inputs: Vec<DeclarationKey>,
+    /// The effective declaration an `inherit` fact links to; `None` for
+    /// every other rule.
+    pub parent: Option<EffectiveId>,
 }
 
-impl KeyPath {
-    /// This path extended by `key`, counting only `key`'s own encoding.
-    pub(crate) fn extended(&self, key: &DeclarationKey) -> Self {
-        let mut keys = Vec::with_capacity(self.keys.len() + 1);
-        keys.extend_from_slice(&self.keys);
-        keys.push(key.clone());
-        Self {
-            keys: keys.into(),
-            encoded_len: joined_len(self.encoded_len, !self.keys.is_empty(), key.canonical_len()),
+/// A [`Fact`]'s preimage form: `{ordinal, rule, inputs, parent}`, the
+/// ordinal a decimal string and `parent` `null` unless the fact links.
+#[derive(Serialize, FixedShape)]
+struct FactWire<'a> {
+    ordinal: String,
+    rule: RuleRefWire,
+    inputs: Vec<DeclarationKeyWire<'a>>,
+    parent: Option<EffectiveIdWire>,
+}
+
+impl Fact {
+    fn wire(&self) -> FactWire<'_> {
+        FactWire {
+            ordinal: self.ordinal.to_string(),
+            rule: self.rule.wire(),
+            inputs: self.inputs.iter().map(DeclarationKey::wire).collect(),
+            parent: self.parent.as_ref().map(EffectiveIdWire::from),
         }
     }
 
-    /// The keys, in order.
-    pub(crate) fn keys(&self) -> &[DeclarationKey] {
-        &self.keys
-    }
-
-    /// The number of keys.
-    pub(crate) fn len(&self) -> usize {
-        self.keys.len()
+    /// This fact's RFC 8785 length, counted by the encoder.
+    fn canonical_len(&self) -> u64 {
+        canonical_len(&self.wire())
     }
 }
 
@@ -193,132 +191,6 @@ fn joined_len(prefix: u64, prefix_nonempty: bool, extra: u64) -> u64 {
     prefix
         .saturating_add(u64::from(prefix_nonempty))
         .saturating_add(extra)
-}
-
-/// A fact's ordered producer keys: a shared ancestor path, then the keys this
-/// fact adds after it. Compares, and reads, as the one flat list
-/// of keys it spells.
-#[derive(Clone)]
-pub struct FactInputs {
-    path: KeyPath,
-    tail: Vec<DeclarationKey>,
-}
-
-impl FactInputs {
-    /// `path`, then `tail`.
-    pub(crate) fn new(path: KeyPath, tail: Vec<DeclarationKey>) -> Self {
-        Self { path, tail }
-    }
-
-    /// Every input key, in order.
-    pub fn iter(&self) -> impl Iterator<Item = &DeclarationKey> {
-        self.path.keys().iter().chain(&self.tail)
-    }
-
-    /// The number of input keys.
-    pub fn len(&self) -> usize {
-        self.path.len() + self.tail.len()
-    }
-
-    /// Whether these inputs begin with the very allocation `other`'s path
-    /// holds: shared, not copied (test-only).
-    #[cfg(test)]
-    pub(crate) fn shares_path_with(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.path.keys, &other.path.keys)
-    }
-
-    /// Whether the fact consumed no key.
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
-    /// The encoded length of the keys as array elements, reading the shared
-    /// path's length rather than re-encoding it.
-    fn encoded_len(&self) -> u64 {
-        self.tail
-            .iter()
-            .fold(
-                (self.path.encoded_len, !self.path.keys.is_empty()),
-                |(len, nonempty), key| (joined_len(len, nonempty, key.canonical_len()), true),
-            )
-            .0
-    }
-}
-
-impl From<Vec<DeclarationKey>> for FactInputs {
-    fn from(keys: Vec<DeclarationKey>) -> Self {
-        let path = keys
-            .iter()
-            .fold(KeyPath::default(), |path, key| path.extended(key));
-        Self::new(path, Vec::new())
-    }
-}
-
-impl std::fmt::Debug for FactInputs {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_list().entries(self.iter()).finish()
-    }
-}
-
-impl PartialEq for FactInputs {
-    fn eq(&self, other: &Self) -> bool {
-        self.iter().eq(other.iter())
-    }
-}
-
-impl Eq for FactInputs {}
-
-impl PartialEq<Vec<DeclarationKey>> for FactInputs {
-    fn eq(&self, other: &Vec<DeclarationKey>) -> bool {
-        self.iter().eq(other.iter())
-    }
-}
-
-impl PartialEq<FactInputs> for Vec<DeclarationKey> {
-    fn eq(&self, other: &FactInputs) -> bool {
-        other == self
-    }
-}
-
-/// One derivation fact: `{ordinal, rule, inputs}`.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Fact {
-    /// Zero-based decimal-string position in the declaration's `derivation` array.
-    pub ordinal: usize,
-    /// The rule that derived this fact.
-    pub rule: RuleRef,
-    /// Ordered producer keys the fact consumed.
-    pub inputs: FactInputs,
-}
-
-/// A [`Fact`]'s preimage form: `{ordinal, rule, inputs}`, the ordinal a
-/// decimal string.
-#[derive(Serialize, FixedShape)]
-struct FactWire<'a> {
-    ordinal: String,
-    rule: RuleRefWire,
-    inputs: Vec<DeclarationKeyWire<'a>>,
-}
-
-impl Fact {
-    fn wire(&self) -> FactWire<'_> {
-        FactWire {
-            ordinal: self.ordinal.to_string(),
-            rule: self.rule.wire(),
-            inputs: self.inputs.iter().map(DeclarationKey::wire).collect(),
-        }
-    }
-
-    /// This fact's RFC 8785 length: the fact with no inputs, plus its
-    /// inputs' element length. `"inputs":[]` grows by exactly that length.
-    fn canonical_len(&self) -> u64 {
-        let bare = FactWire {
-            ordinal: self.ordinal.to_string(),
-            rule: self.rule.wire(),
-            inputs: Vec::new(),
-        };
-        canonical_len(&bare).saturating_add(self.inputs.encoded_len())
-    }
 }
 
 /// [`EffectiveId`]'s formatting conveniences owned by this module (ADR-013
@@ -394,11 +266,11 @@ impl EffectiveDeclarationPreimage {
         }
     }
 
-    /// This preimage's `quire.model.effective-declaration/v1` identity,
+    /// This preimage's `quire.model.effective-declaration/v2` identity,
     /// encoded by `quire-canonical` (ADR-013 §2, ADR-013:113: one RFC 8785
     /// implementation).
     pub fn identity(&self) -> EffectiveId {
-        self.identity_and_canonical_len().0
+        EffectiveId::from_digest(sha256_digest(&self.wire()))
     }
 
     /// The length of this preimage's RFC 8785 bytes (for `normalize.hash`
@@ -428,13 +300,6 @@ impl EffectiveDeclarationPreimage {
             .fold(canonical_len(&bare), |len, (position, fact)| {
                 joined_len(len, position > 0, fact.canonical_len())
             })
-    }
-
-    /// This preimage's identity and its RFC 8785 byte length, from one
-    /// encoding: the encoder hashes as it encodes and returns the count.
-    pub(super) fn identity_and_canonical_len(&self) -> (EffectiveId, u64) {
-        let (digest, len) = sha256_and_len(&self.wire());
-        (EffectiveId::from_digest(digest), len)
     }
 
     /// Whether `derivation` is well-formed: every fact's `ordinal` matches
@@ -508,26 +373,30 @@ pub fn hex(bytes: &[u8]) -> String {
 /// `serde_json` encoder this replaced aborted the process on; this panics
 /// with the encoder's reason instead.
 pub(super) fn sha256_and_len(preimage: &impl Encode) -> ([u8; 32], u64) {
-    // ADR-013 §2 (arch-lint `canonical-encoder`): the digest goes
-    // through `quire-canonical`'s own `sha256` directly, never `to_vec` and
-    // then `ByteDigest::of` over the resulting bytes -- that pair is a
-    // second RFC 8785 encoder in every caller's own file, this module's own
-    // one exempted raw-bytes site aside. `canonical_len` (below) takes the
-    // same preimage's length the same way [`canonical_len`] always has, so
-    // this costs one extra discard-sink encode pass, never a second hash.
-    let digest = quire_canonical::sha256(preimage, LIMITS)
-        .unwrap_or_else(|error| panic!("a typed identity preimage encodes: {error}"));
+    // `canonical_len` (below) takes the same preimage's length the same way,
+    // so this costs one extra discard-sink encode pass, never a second hash.
+    let digest = sha256_digest(preimage);
     // SR-750 FND-011: `usize::try_from`, never a lossy `as usize` -- on a
     // 32-bit target a `u64` length past `usize::MAX` would otherwise
     // silently truncate. Every preimage this module hands here is a small,
     // fixed-shape typed identity value (see this function's own doc
     // comment), never externally supplied bytes of unbounded size, so this
     // is an internal invariant, panicking with its own reason exactly as
-    // the encode failure above does -- never a document-defect refusal.
+    // the encode failure does -- never a document-defect refusal.
     let byte_len = usize::try_from(canonical_len(preimage))
         .unwrap_or_else(|error| panic!("a typed identity preimage's length fits usize: {error}"));
     let len = quire_exact::length_amount(byte_len);
-    (*digest.as_bytes(), len)
+    (digest, len)
+}
+
+/// The SHA-256 digest of `preimage`'s RFC 8785 bytes, from one encoding by
+/// `quire-canonical`. ADR-013 §2 (arch-lint `canonical-encoder`): the digest
+/// goes through `quire-canonical`'s own `sha256` directly, never `to_vec`
+/// and then `ByteDigest::of` over the resulting bytes.
+pub(super) fn sha256_digest(preimage: &impl Encode) -> [u8; 32] {
+    *quire_canonical::sha256(preimage, LIMITS)
+        .unwrap_or_else(|error| panic!("a typed identity preimage encodes: {error}"))
+        .as_bytes()
 }
 
 /// The length of `preimage`'s RFC 8785 bytes, counted by `quire-canonical`
