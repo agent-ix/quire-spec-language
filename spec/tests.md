@@ -115,6 +115,10 @@ names different artifacts in each.
 | TC-236 | Two declarations sharing a display title classify and resolve independently by key | Unit | P1 | FR-086-AC-4 | ✅ |
 | TC-237 | A derivation conflict with no descendant redefiner exposes no effective member for either path | Unit | P1 | FR-081-AC-6 | ✅ |
 | TC-238 | Replaying normalization over a permuted IR node order reproduces the same correspondence | Property | P1 | FR-081-AC-7 | ✅ |
+| TC-1022 | Model identity links expand to exact provenance | Integration | P1 | FR-081-AC-9 | 🚧 |
+| TC-1023 | Model identity chain is unique and binds ancestry | Integration | P1 | FR-081-AC-10 | 🚧 |
+| TC-1024 | Model identity cost is linear in types plus edges | Integration | P1 | FR-081-AC-11, NFR-012 | 🚧 |
+| TC-1025 | The full 10,000-edge model identity case | Integration | P1 | FR-081-AC-12, FR-081-AC-13, NFR-012 | 🚧 |
 | TC-239 | An arity mismatch refuses without checking per-parameter axes, while result and effect axes are still checked | Unit | P1 | FR-082-AC-5 | ✅ |
 | TC-240 | allInstances and lookup return the FR-153 typed result shape and its bound/foreign/ineligible refusals | Unit | P1 | FR-084-AC-5 | 🚧 |
 | TC-241 | Kind mapping runs interfaces first, and a port whose interface type is not an Interface refuses wrong-export | Unit | P1 | FR-086-AC-5 | ✅ |
@@ -202,7 +206,7 @@ names different artifacts in each.
 | TC-430 | Native run and compile requests and their outputs carry the two source labels | Integration | P1 | FR-026-AC-6, FR-027-AC-4, FR-031-AC-5 | 🚧 |
 | TC-431 | Runtime input artifacts carry the two labels, and bytes missing one refuse | Unit | P1 | FR-018-AC-8, FR-024-AC-6 | 🚧 |
 | TC-432 | A family check's stage limit names its kind, bound and actual counter, and the counter is where the limit stops | Unit | P1 | FR-062-AC-12 | ✅ |
-| TC-434 | Model limits have finite defaults, and normalization work stops at the limit | Unit | P1 | NFR-012 (defaults and recording: steps 1 and 2; bounded work: steps 3 and 4; meter memory: step 5; shared paths: step 6; ancestor-steps order: step 7) | ✅ |
+| TC-434 | Model limits have finite defaults, and normalization work stops at the limit | Unit | P1 | NFR-012 (defaults and recording: steps 1 and 2; bounded work: steps 3 and 4; meter memory: step 5; retained facts: step 6; ancestor-steps order: step 7) | ✅ |
 | TC-436 | Proof-bound and interval-key constructors refuse empty ranges, and domain keys order by node then path | Unit | P1 | FR-097-AC-1, FR-097-AC-9 | ✅ |
 | TC-437 | The extent rule names each unbounded type position once, by node and path, under a node-count ceiling | Unit | P1 | FR-097-AC-2 | ✅ |
 | TC-438 | The request writer computes the available finite bound, writes a bounded request as its own item, and refuses bad bounds before writing | Unit | P1 | FR-097-AC-3, FR-097-AC-4, FR-097-AC-9 | ✅ |
@@ -310,6 +314,7 @@ names different artifacts in each.
 | TC-1018 | A function synthesized for dispatch is located at the unit declarations it came from | Integration | P1 | FR-096-AC-20 | ✅ |
 | TC-1019 | A family is called by the call that reaches it, and a body does not dispatch | Integration | P1 | FR-302-AC-9 | ✅ |
 | TC-1020 | A specialization cycle is refused once per declaration and cycle | Unit | P1 | FR-082-AC-15 | ✅ |
+| TC-1021 | A protocol reference resolves its target by typed key and emits one carrier | Integration | P1 | FR-308-AC-6, FR-218-AC-8, FR-218-AC-9, FR-092-AC-16, FR-092-AC-17, FR-092-AC-18 | 🚧 |
 | TC-810 | Abstraction binding keys are unique across all of a unit's declarations | Integration | P1 | FR-304-AC-7 | 🚧 |
 | TC-811 | Abstraction declarations parse from source and refuse unsupported or malformed forms | Integration | P1 | FR-304-AC-8 | 🚧 |
 | TC-518 | S3 checks fairness constraints and interval operators of infinite-trace clauses | Unit | P1 | FR-123-AC-1, FR-123-AC-2, FR-123-AC-3, FR-123-AC-4 | 🚧 |
