@@ -283,7 +283,7 @@ fn a_reference_without_a_selected_protocol_profile_refuses_missing_selection() {
 fn a_reference_bound_to_a_key_no_node_carries_refuses_missing_name() {
     let text = selecting(&format!("{REFERS_TO_FILL}{}", protocol("Fill")));
     let packages = qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT]);
-    let graph = assemble_with_models(text.as_bytes(), &packages)
+    let mut graph = assemble_with_models(text.as_bytes(), &packages)
         .expect("the unit assembles")
         .check(CheckingLimits::default())
         .expect("the package checks");
@@ -296,8 +296,8 @@ fn a_reference_bound_to_a_key_no_node_carries_refuses_missing_name() {
             .key()
     };
     let (target, reference) = (key_of("protocol_clause"), key_of("protocol_reference"));
-    let stale = graph.without_node(target);
-    let refusal = emit_checked(&CheckedPackage::link(stale)).expect_err("no package");
+    assert!(graph.semantic_graph_mut().remove(target).is_some());
+    let refusal = emit_checked(&CheckedPackage::link(graph)).expect_err("no package");
     assert_eq!(refusal.code(), qsl_foundation::Code::MissingDeclaration);
     assert_eq!(refusal.cause(), Some("missing-name"));
     assert_eq!(

@@ -330,10 +330,10 @@ impl SemanticGraph {
             .find(|key| key.as_bytes() == id.as_bytes())
     }
 
-    /// Take out the node keyed `key`.
+    /// Take out the node keyed `key`, as a re-key leaves the key it had.
     #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn remove(&mut self, key: NodeKey) {
-        self.nodes.remove(&key);
+    pub fn remove(&mut self, key: NodeKey) -> Option<SemanticNode> {
+        self.nodes.remove(&key)
     }
 
     /// Add an enclosing narrow node for a claims-keying fixture. The cloned

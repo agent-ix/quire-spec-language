@@ -1960,12 +1960,11 @@ impl CheckedGraph {
         &self.source
     }
 
-    /// A graph with the node keyed `key` taken out, as a re-keyed target
-    /// leaves the nodes that were bound to its old key (FR-218-AC-9).
+    /// The lowered nodes, for a test that re-keys one after the nodes bound
+    /// to its old key were minted (FR-218-AC-9).
     #[cfg(any(test, feature = "test-support"))]
-    pub fn without_node(mut self, key: quire_exact::NodeKey) -> Self {
-        self.semantic_graph.remove(key);
-        self
+    pub fn semantic_graph_mut(&mut self) -> &mut SemanticGraph {
+        &mut self.semantic_graph
     }
 
     /// FR-092/FR-093: every lowered, keyed node of this package's functions.
