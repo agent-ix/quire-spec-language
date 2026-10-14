@@ -95,17 +95,16 @@ In `forms::protocol_clause` (crate `qsl-forms`):
   expression position, where no declaration can begin, so it never changes
   how a `protocol-clause` declaration parses.
 - A protocol reference is admitted wherever the grammar admits a `primary`.
-  Its checked type is its target protocol's semantic type (FR-218). A
-  consumer that accepts no protocol-typed operand refuses it with its own
-  operand-type cause; this requirement adds no consumer.
+  Its checked type is the target's semantic type (today the Boolean type
+  node the protocol clause carries; FR-218). Its value is the value of the
+  target protocol clause: a pure reference that denotes the clause it names
+  and is evaluated exactly as that clause is.
 - S2 SHALL build one `ExpressionForm::ProtocolReference` per occurrence in
   source order, with the written target and the span of the whole
   expression, and SHALL resolve nothing. A target that is not a
   `qualified-name` is a parse refusal, not an S2 form.
-- QSpec owns the shared grammar. QSpec's shared grammar has no
-  `protocol-reference` production; QSL builds this form under the
-  production above, and its adoption into the shared grammar is requested
-  of QSpec.
+- QSpec owns the shared grammar. The `protocol-reference` production and
+  its meaning are QSpec FR-463's.
 
 ## Acceptance Criteria
 

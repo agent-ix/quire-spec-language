@@ -125,8 +125,9 @@ one protocol declared in the same unit. It carries no package selector.
   reference to that declaration's typed node key
   (`quire.checked-semantic-node/v1`), the key of the `protocol`/`protocol_clause`
   node FR-092 defines for it, never to the name. The checked
-  reference holds the target key and the target's semantic type as its own
-  type. No later stage looks the name up again (FR-088).
+  reference holds the target key and the target's semantic type (today the
+  Boolean type node the protocol clause carries) as its own type, and its
+  value is the value of the target protocol clause (FR-308). No later stage looks the name up again (FR-088).
 - A name that resolves to no declaration of the unit SHALL refuse
   with `missing_declaration`/`missing-name` at the reference, naming the
   written segments, as FR-113 refuses an unresolved name. A name that
@@ -176,7 +177,8 @@ one protocol declared in the same unit. It carries no package selector.
   [FR-104](FR-104-check-state-clauses.md).
 - QSpec owns the grammar and contracts of every construct, and the catalog
   spellings of its refusals: QSpec FR-052, FR-053, FR-170, FR-171, FR-228.
-  The protocol reference's resolution rules follow QSpec FR-322-AC-66.
+  The protocol reference's resolution rules follow QSpec FR-322-AC-66, and
+  its production and meaning are QSpec FR-463's.
 
 ## References
 
