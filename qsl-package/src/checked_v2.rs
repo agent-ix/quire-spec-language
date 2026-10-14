@@ -827,7 +827,7 @@ impl ImportViewRefusal {
                 ..
             } => refusal.code(),
             Self::Emission { refusal: None, .. } => Code::UnsupportedProjection,
-            Self::UnheldDependency { .. } => Code::RuntimeInvariant,
+            Self::UnheldDependency { .. } | Self::Evidence { .. } => Code::RuntimeInvariant,
             Self::Read {
                 refusal: StageFailure::Refused(refusal),
                 ..
