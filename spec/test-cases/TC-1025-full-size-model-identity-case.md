@@ -15,8 +15,10 @@ relationships:
 Verify FR-081-AC-12 and FR-081-AC-13 at the full size. Deterministic counters and
 observed peak memory and elapsed time are separate acceptance conditions;
 none is inferred from a smaller case.
-The 524,288-byte bound on the package encoding is QSL's own, from FR-081-AC-12;
-the quire-specification case states no such bound.
+The 524,288-byte (512 KiB) figure is QSL's own: the stack of the thread that
+runs the case (QSL-666's "512KiB case"), as in the repository's other
+deep-input tests. It bounds no package size. The quire-specification case
+states no stack bound.
 
 ## Test Procedure
 
@@ -25,9 +27,9 @@ Implement as the Rust integration test
 
 1. Generate a single-inheritance chain of 10,001 object types `T0` through
    `T10000` in package `test/orders`; each type after `T0` names only the
-   preceding type as its supertype. Assert the canonical package encoding is at
-   most 524,288 bytes; fail setup rather than shrink the chain.
-2. Normalize it in an isolated subprocess at the NFR-012 defaults, with no
+   preceding type as its supertype. Fail setup rather than shrink the chain.
+2. Normalize it in an isolated subprocess, on a thread with a 524,288-byte
+   stack, at the NFR-012 defaults, with no
    limit raised.
 3. Read the counters after complete normalization: retained facts, bytes
    admitted to every hash call, work units. Read the child's peak resident set

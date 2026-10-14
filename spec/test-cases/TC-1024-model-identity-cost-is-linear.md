@@ -60,7 +60,7 @@ Implement as the Rust integration test
 
 Hashed bytes, facts and work units equal the formulas exactly. The width-2
 ladder, whose path count is exponential in its layers, completes at the
-defaults. A shape where every type has 50 parents over 10,001 types (about 313
+defaults. A shape where every type after the first 50 has 50 parents, over 10,001 types (about 313
 million hashed bytes) is refused `resource_exhausted` at `hashed_bytes` before
 hashing the denied preimage. Its counters equal the quire-specification
 figures where the shapes coincide.

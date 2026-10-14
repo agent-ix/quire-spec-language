@@ -52,7 +52,7 @@ ceiling therefore bounds the work done, not only the result:
   per parent, each edge already admitted by a `normalize.fact` and a
   `normalize.cycle-check` charge. No encoding holds an ancestor path longer
   than one edge, so hashed bytes grow with the type count plus the edge count
-  (for the 83 to 87 byte keys of TC-1025, about 902 bytes per type and 608
+  (for the 83 to 87 byte keys of TC-1025, about 903 bytes per type and 608
   per edge, counting each preimage once on its own and once inside the view),
   not with the number of ancestor paths.
 - A diamond lattice is walked and stored once per edge. The cycle check
@@ -94,10 +94,11 @@ per-charge record, so its memory does not grow with the work it bounds.
   member is at least one entry of the package or population document it is
   read from.
 - **Derivation facts, 1600000.** Sixteen facts per record at the record
-  ceiling. An effective declaration's derivation holds one qualify fact, one
-  inherit fact per direct parent, and its phase-4 facts, so this admits a
-  package at the record ceiling whose declarations average fifteen direct
-  parents and phase-4 facts. It counts retained facts, never the path-form
+  ceiling. A type's derivation holds one qualify fact and one inherit fact per
+  direct parent; a member's holds one qualify fact when its type declares it,
+  or one inherit fact per direct parent that reaches it when it is inherited;
+  both add their phase-4 facts. This admits a package at the record ceiling
+  whose declarations average fifteen direct parents and phase-4 facts. It counts retained facts, never the path-form
   facts of their expansion.
 - **Effective declarations and dispatch candidates, 1600000.** Every
   effective declaration carries at least one derivation fact, so this
@@ -105,18 +106,24 @@ per-charge record, so its memory does not grow with the work it bounds.
   an effective subtype with a candidate declaration; the same ceiling keeps
   the pairing within the fact budget's scale.
 - **Hashed bytes, 268435456.** Sixteen times NFR-007's default package byte
-  ceiling. With about 902 bytes per effective type and 608 per direct edge
+  ceiling. With about 903 bytes per effective type and 608 per direct edge
   (keys of 83 to 87 bytes), it admits a single-inheritance chain up to the
   100000 record ceiling (99999 edges, 151633328 bytes) and about 426000 direct
   edges over 10001 types. A chain whose every type declares one field has
-  (n+1)(n+2)/2 effective members and is refused beyond 527 edges on this
+  (n+1)(n+2)/2 effective members and is refused beyond 584 edges on this
   ceiling and beyond 1786 on the effective-declaration ceiling; those are member counts, which identity
   chaining does not reduce. Each effective declaration's preimage is hashed once and again
   inside the view preimage, and the view holds those preimages, so this also
   bounds the view's retained size.
 - **Work, 16777216.** NFR-011's default work ceiling. Each record, fact,
-  declaration, hash and direct-edge cycle check charges one unit. The work
-  ceiling does not bind before the fact ceiling for an acyclic package.
+  declaration, hash and direct-edge cycle check charges one unit, which is
+  linear in the facts. The phase-4 `normalize.redefinition-check` (`m + r` per
+  redefining member) and `normalize.conflict-check` charges are quadratic, so
+  the work ceiling binds before the fact ceiling when many members are
+  redefined: a type of 2,600 fields and a subtype of 2,600 fields each
+  redefining one of them hold about 13,000 facts but charge 16,898,700 work
+  units. Without redefinitions, and for types only, the fact and hashed-byte
+  ceilings bind first.
 - **Ancestor and family steps, 16777216 edges.** The work default above,
   NFR-011's S3 work default. Both count edges followed, a unit of work: a
   walk follows each edge of a type's closure at most once, so the default

@@ -121,9 +121,10 @@ A derivation fact is `{ordinal, rule, inputs, parent}`. `parent` is `null`, or
 `{domain, digest}` naming one effective declaration by a 64-character lowercase
 hex digest, and only an `inherit/v2` fact carries one.
 
-The retained derivation facts are the one-edge facts: one qualify fact, one
-inherit fact per direct parent (carrying that parent's identity), and the
-phase-4 subset and redefine facts of the declaration's own and its
+The retained derivation facts are the one-edge facts: one qualify fact for an
+effective type and for a member of the type that declares it (an inherited
+member has none), one inherit fact per direct parent (carrying that parent's
+identity), and the phase-4 subset and redefine facts of the declaration's own and its
 redefiners' original declarations, each once. A diamond stores one inherit
 fact per direct edge, never one per path. Hidden declarations (a redefined or
 losing member) are computed, retained and ordered by digest exactly as visible
@@ -161,7 +162,7 @@ definition; this requirement does not create a second identity writer.
 
 Total bytes admitted to the identity hash calls of a package with `V` effective
 types and `E` direct supertype edges and no members are linear in `V + E`
-(for the keys of TC-1025, 83 to 87 bytes, about 902 bytes per type and 608
+(for the keys of TC-1025, 83 to 87 bytes, about 903 bytes per type and 608
 per edge; TC-1024 gives the exact formula in the key length), not in the
 number of ancestor paths or their length.
 
@@ -259,7 +260,7 @@ of `m + r` work units, and each (effective type, redefined member) reached by
 | FR-081-AC-9 | Expanding the retained facts of every effective declaration through its parent identities yields the path-form facts of an independent enumeration over the original declarations, in phase, input and rule order with multiplicity, for a chain, a diamond and a hidden redefinition; a link naming a declaration of the wrong kind, owner or original is refused. | Test (TC-1022) |
 | FR-081-AC-10 | Changing one ancestor's original declaration key, one parent link, or one phase-4 fact changes the identity of every descendant that reaches it, and no two distinct effective declarations of a fixture set share an identity. | Test (TC-1023) |
 | FR-081-AC-11 | Hashed bytes, `derivation_facts` and `work_units` of a chain, a width-2 diamond ladder and a dense multi-parent shape equal the closed formulas of the test case; a diamond ladder whose path count is exponential is admitted at the default limits. | Test (TC-1024) |
-| FR-081-AC-12 | For a deterministic single-inheritance chain of 10,000 edges (10,001 effective types, package encoding at most 524,288 bytes), normalization at the NFR-012 default limits eagerly computes every effective identity and the complete view with 20,001 retained facts, 15,104,845 hashed bytes (at most 16,777,216) and 60,006 work units (at most 100,000). | Test (TC-1025) |
+| FR-081-AC-12 | For a deterministic single-inheritance chain of 10,000 edges (10,001 effective types) run on a thread with a 524,288-byte (512 KiB) stack, normalization at the NFR-012 default limits eagerly computes every effective identity and the complete view with 20,001 retained facts, 15,104,845 hashed bytes (at most 16,777,216) and 60,006 work units (at most 100,000). | Test (TC-1025) |
 | FR-081-AC-13 | The FR-081-AC-12 case, run in an isolated process, has a peak resident set of at most 21,474,836,480 bytes and a wall time of at most 30 seconds in the release profile on the reference host Terra, each measured from package input admission through retention of the complete result. | Test (TC-1025) |
 | FR-081-AC-16 | Given a variant type with two cases, the effective view holds one effective type and two effective members of it, each derived from the key of its own declaration with one `qualify` fact; permuting the cases changes no effective identity or position. | Test (TC-1003) |
 

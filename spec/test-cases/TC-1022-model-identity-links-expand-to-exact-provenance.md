@@ -34,8 +34,8 @@ Implement as the Rust integration test
    the test oracle, without calling the production expansion routine, and
    compare every fact.
 4. Check retained counts: the diamond type `D` holds one qualify fact and two
-   inherit facts, not three; member `(D, f)` holds one qualify fact and two
-   inherit facts.
+   inherit facts, not three; member `(D, f)` is inherited and holds two
+   inherit facts and no qualify fact.
 5. Submit mutations to the strict reader: an inherit fact whose parent names
    a member where a type is required, a parent whose original differs from the
    fact's input key, a parent whose owner is not the named supertype, a

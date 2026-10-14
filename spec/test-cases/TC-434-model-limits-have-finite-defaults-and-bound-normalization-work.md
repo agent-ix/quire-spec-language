@@ -54,13 +54,13 @@ Verify NFR-012:
    steps, for either `n`.
 4. Both lattices complete at 200 with one fact per edge, 56 and 104
    retained facts (two qualify facts per level, four edges per level
-   boundary), although the deeper one has 2^18 paths. At 103 the 18-level
+   boundary), although the deeper one has 2^17 paths from its bottom type. At 103 the 18-level
    lattice is incomplete on `derivation_facts`.
 5. The admission count equals the number of charges, and no meter or charge
    type owns heap memory.
-6. The chain normalizes with 5,061 retained facts (241 for the types, 4,820
-   for the members), and every inherited member holds exactly one inherit
-   fact whose parent is the same member's identity in the preceding type.
+6. The chain normalizes with 2,661 retained facts (241 for the types, 2,420
+   for the members: 20 qualify facts at the root and 120 x 20 inherit facts), and every inherited member holds exactly one inherit
+   fact and no qualify fact whose parent is the same member's identity in the preceding type.
 7. The first run is incomplete on `declaration_records` at
    `normalize.record`; the second is incomplete on `ancestor_steps` naming
    bound 5.
