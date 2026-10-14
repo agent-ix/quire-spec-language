@@ -73,10 +73,14 @@ Requests are built from the unit's spine compile, as in TC-444.
    approved conversion helper sequence H. Repeat occurrence bounds 29,998
    and 29,999, accounting work bounds C-1 and C, conversion helper bounds
    H-1 and H, and admission helper A-1/A controls from TC-830. Isolate each
-   bound with all other pre-call bounds permitting progress. A C-bound
-   success means conversion succeeds; require enough evaluation work for
-   a completed replay. Then hold all pre-call bounds sufficient and run
-   the TC-831 evaluation 39,996/39,997 controls. The research prediction
+   bound with all other pre-call bounds permitting progress. Conversion and evaluation read one effective `work_units`, so at
+   `work_units` = C conversion admits the argument and the evaluator, which
+   needs more than C, then stops `Incomplete` at its actual `work_units`
+   charge point, with the typed limit, configured value, consumed and
+   next-charge fields. That is the C-bound success: conversion admitted and
+   the stop belongs to evaluation. Then hold all pre-call bounds sufficient
+   and run the TC-831 evaluation 39,996/39,997 controls, where 39,997
+   completes. The research prediction
    129,994 is neither H nor a runtime result.
 6. Bind multiple composite arguments in declared parameter order. Count
    C and occurrences independently per argument, but A/H cumulatively
@@ -168,7 +172,9 @@ depends on STD-113.
   `deref` settles `inconclusive` with cause `NoValue`, since a replayed
   function has no object environment.
 - Step 5: the unchanged full Tree completes by default and at the exact
-  independent bounds. Each pre-call denial settles incomplete/
+  occurrence, helper and evaluation bounds. At C-1 conversion denies; at C
+  conversion admits and the evaluator stops `Incomplete` at its actual
+  `work_units` charge point. Each pre-call denial settles incomplete/
   inconclusive/NoValue with zero evaluation consumption and the correct
   QSL phase limit record, never a fabricated kernel FunctionCall. C remains
   per-argument converted nodes. Evaluation controls reach the evaluator

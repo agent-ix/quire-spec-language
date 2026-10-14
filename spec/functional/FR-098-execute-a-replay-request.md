@@ -108,7 +108,8 @@ value (`unknown_required_feature`/`unsupported-feature`, construct
   recompile.
   Supplied admission/conversion ceilings SHALL instead use the paired
   QSpec FR-323 typed `limits.supplied` carrier; they are not recompile
-  stage settings and SHALL NOT be passed through `stage_limits`.
+  stage settings and SHALL NOT be passed through `stage_limits`. Their request-side
+  carriage is blocked on the paired QSpec FR-323 change that adds the member.
 - The recompiled `package_id` SHALL equal the request's. No
   `CheckedPackage` is built from wire bytes.
 - The executor SHALL resolve the selection by name lookup in the recompiled
