@@ -76,7 +76,9 @@ Scope: FR-093-AC-7, FR-093-AC-9, FR-093-AC-12, FR-093-AC-13, FR-093-AC-17, FR-09
     QSL writes: the packages of steps 1, 5, 6, 7 and 10, `fadd` over
     `Float32[nearest-even]`, the declared record and tuple, TC-435's and
     TC-442's spine fixtures, TC-442's unit with a `Population<M::Gadget>[3]`
-    parameter, a reference to a systems interface, TC-469's ConfigVersion
+    parameter, and with `Population<M::Gadget>[N]` parameters for N = 0, N = 1
+    and two distinct bounds in one function, each population node carrying
+    role `type` alone and its bound as the `max` binding, a reference to a systems interface, TC-469's ConfigVersion
     unit, TC-440's records, TC-160's `q` and `t`, a unit of quantifiers
     over a set, a bag and an ordered set with a predicate, a decimal
     comparison and record and tuple values, and an equality over the
