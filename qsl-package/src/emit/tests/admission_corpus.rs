@@ -82,11 +82,14 @@ enum Fixture {
     CyclicEquality,
     /// A function over a model variant type, FR-360 item 12.
     VariantType,
+    /// TC-1021: a function whose body refers to a declared protocol, under a
+    /// selected protocol profile.
+    ProtocolReference,
 }
 
 impl Fixture {
     /// Every fixture; each must back at least one row.
-    const ALL: [Self; 18] = [
+    const ALL: [Self; 19] = [
         Self::Tc416Functions,
         Self::RecursiveF,
         Self::Tree,
@@ -105,6 +108,7 @@ impl Fixture {
         Self::FormsUnit,
         Self::CyclicEquality,
         Self::VariantType,
+        Self::ProtocolReference,
     ];
 }
 
@@ -271,6 +275,14 @@ impl Fixture {
                 );
                 Emitted::placed(modelled(&unit, document, Vec::new()), vec![document])
             }
+            Self::ProtocolReference => Emitted::placed(
+                modelled(
+                    &super::protocol_reference::reference_unit(),
+                    SPINE_MODEL_DOCUMENT,
+                    Vec::new(),
+                ),
+                vec![SPINE_MODEL_DOCUMENT],
+            ),
         };
         vec![one]
     }
@@ -393,6 +405,14 @@ fn rows() -> Vec<Row> {
         row(K::State(StateForm::StateClause), F::ConfigVersion),
         row(K::State(StateForm::Frame), F::ConfigVersion),
         row(K::State(StateForm::OperationAnchor), F::ConfigVersion),
+        row(
+            K::Protocol(ProtocolForm::ProtocolClause),
+            F::ProtocolReference,
+        ),
+        row(
+            K::Protocol(ProtocolForm::ProtocolReference),
+            F::ProtocolReference,
+        ),
     ]
 }
 
@@ -455,7 +475,6 @@ const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
         (K::Temporal(TemporalForm::Window), NO_TAG),
         (K::Temporal(TemporalForm::Activation), NO_TAG),
         (K::Temporal(TemporalForm::Deadline), NO_TAG),
-        (K::Protocol(ProtocolForm::ProtocolClause), NO_TAG),
         (K::Protocol(ProtocolForm::Role), NO_TAG),
         (K::Protocol(ProtocolForm::Channel), NO_TAG),
         (K::Protocol(ProtocolForm::Queue), NO_TAG),

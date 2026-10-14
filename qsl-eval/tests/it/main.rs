@@ -24,6 +24,7 @@ mod float_rounding;
 mod inherited_attributes;
 mod kernel_refusal_payloads;
 mod model_reference_queries;
+mod protocol_reference;
 mod source_call;
 mod state_model_family;
 mod tc235_business_meaning_runtime;

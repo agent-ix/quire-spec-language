@@ -87,12 +87,14 @@ use quire_semantic_value::location::{Location, Origin};
 use quire_semantic_value::quantity::UnitTable;
 
 mod model;
+mod protocol;
 mod state;
 mod wire;
 
 pub(crate) use model::ParentSlotFailure;
 pub(crate) use model::{record_node_key, variant_type_node_key, RecordKeyError};
 pub use model::{AdmittedModel, ForeignView, ModelClause};
+pub(crate) use protocol::{declaration_origin, ProtocolInput};
 pub(crate) use state::{
     AnchorInput, AttemptInput, LoweredAttempt, LoweredClause, OperationBinding, StateClauseInput,
 };
@@ -109,6 +111,7 @@ pub(crate) use state::{
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct LockEvidence {
     text_profile: Option<DefinitionReference>,
+    protocol_profile: Option<DefinitionReference>,
 }
 
 impl LockEvidence {
@@ -118,8 +121,19 @@ impl LockEvidence {
         self
     }
 
+    /// Lock evidence selecting `definition` for the `protocol_profile` role,
+    /// the clause profile the unit's header selected (FR-110).
+    pub fn with_protocol_profile(mut self, definition: DefinitionReference) -> Self {
+        self.protocol_profile = Some(definition);
+        self
+    }
+
     fn text_profile(&self) -> Option<&DefinitionReference> {
         self.text_profile.as_ref()
+    }
+
+    fn protocol_profile(&self) -> Option<&DefinitionReference> {
+        self.protocol_profile.as_ref()
     }
 }
 
@@ -314,6 +328,12 @@ impl SemanticGraph {
             .keys()
             .copied()
             .find(|key| key.as_bytes() == id.as_bytes())
+    }
+
+    /// Take out the node keyed `key`.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn remove(&mut self, key: NodeKey) {
+        self.nodes.remove(&key);
     }
 
     /// Add an enclosing narrow node for a claims-keying fixture. The cloned
@@ -598,6 +618,10 @@ pub(crate) struct Lowering<'a> {
     /// first clause naming an operation, in source order, mints the
     /// occurrence; every later clause naming the same operation shares it.
     frame_origins: BTreeMap<(EffectiveId, String), OccurrenceOrigin>,
+    /// Each checked protocol declaration's node key, by its index in the
+    /// unit's protocols; `None` when the package selects no protocol
+    /// profile for the node to carry (FR-092).
+    protocol_keys: Vec<Option<NodeKey>>,
 }
 
 fn refuse(location: &Location, cause: CheckCause) -> CheckRefusal {
@@ -1420,6 +1444,7 @@ impl<'a> Lowering<'a> {
             node_budget: u64::MAX,
             text_reach: BTreeMap::new(),
             frame_origins: BTreeMap::new(),
+            protocol_keys: Vec::new(),
         }
     }
 
@@ -2266,7 +2291,8 @@ impl<'a> Lowering<'a> {
                 };
                 DefinitionLock::pinned().entry(role).reference()
             }),
-            LawRole::TemporalProfile | LawRole::ProtocolProfile => None,
+            LawRole::ProtocolProfile => self.lock.protocol_profile().cloned(),
+            LawRole::TemporalProfile => None,
         };
         definition
             .map(|definition| OperationLaw { role, definition })
@@ -3654,6 +3680,11 @@ impl<'a> Lowering<'a> {
                 Keyed::Application(Operator::Pre, plain("quire.op.state.pre")),
                 Operands::One(operand),
             ),
+            NodeKind::ProtocolReference { protocol } => {
+                return self
+                    .protocol_reference(node, *protocol)
+                    .map(LowerStep::Lowered)
+            }
             // FR-063/S3 seam: no arm for `NodeKind::__SeamProbe`
             // under `--cfg seam_probe` alone -- this match (already
             // `#[deny(clippy::wildcard_enum_match_arm)]`, this function's own

@@ -160,6 +160,45 @@ pub enum ProtocolAnchorCause {
     },
 }
 
+/// Why a protocol reference expression that resolved is still refused
+/// (FR-218). An unresolved or non-protocol target is `MissingName` and
+/// `IllTyped` like any other name.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum ProtocolReferenceCause {
+    /// A second reference to a target already referred to in the unit: the
+    /// carrier is keyed by its body alone and IR admits one `expression`
+    /// occurrence per carrier, so two references to one target cannot both
+    /// be written. `unsupported_construct`/`expression-form`, at the second
+    /// reference.
+    Repeated {
+        /// The first reference to the same target.
+        first: Location,
+    },
+}
+
+impl ProtocolReferenceCause {
+    /// The first reference to the same target.
+    pub fn first(&self) -> &Location {
+        match self {
+            Self::Repeated { first } => first,
+        }
+    }
+
+    /// This cause's catalog code.
+    pub fn code(&self) -> Code {
+        match self {
+            Self::Repeated { .. } => Code::UnsupportedConstruct,
+        }
+    }
+
+    /// This cause's catalog tag.
+    pub fn tag(&self) -> &'static str {
+        match self {
+            Self::Repeated { .. } => "expression-form",
+        }
+    }
+}
+
 /// The catalog code and tag a [`ProtocolAnchorCause::BinderType`] refuses
 /// with: the same classes `type_form::TypeFormError`'s own refusal uses
 /// (a missing or ambiguous name, else a type mismatch).
@@ -648,6 +687,9 @@ pub enum CheckCause {
     /// `InvalidDispatchDeclaration` above: this would otherwise be
     /// `CheckCause`'s widest variant.
     ProtocolAnchor(Box<ProtocolAnchorCause>),
+    /// FR-218: a protocol reference expression refused after it resolved.
+    /// Boxed for the same reason as `ProtocolAnchor` above.
+    ProtocolReference(Box<ProtocolReferenceCause>),
     /// FR-302: a called operation's dispatch family did not link at S3.
     /// Boxed for the same reason as `ProtocolAnchor` above.
     DispatchLink(Box<DispatchLinkCause>),
@@ -740,6 +782,9 @@ pub enum KeyFault {
     InvalidGroup,
     /// A node names a draft that dependency order never keyed.
     UnresolvedDraft,
+    /// A checked protocol declaration with no `run` control to name its
+    /// `profile_operator`, which the grammar cannot produce.
+    ProtocolWithoutControl(String),
     /// A record value's slots and its declaration's fields differ in
     /// number.
     RecordSlotCount,
@@ -791,6 +836,7 @@ impl KeyFault {
             Self::UnknownComposite(_) => "composite-declared",
             Self::InvalidGroup => "recursion-group-well-formed",
             Self::UnresolvedDraft => "draft-keyed-in-dependency-order",
+            Self::ProtocolWithoutControl(_) => "protocol-has-run-control",
             Self::RecordSlotCount => "record-slots-match-fields",
             Self::UntypedIeeeOperand => "ieee-operand-typed",
             Self::DuplicateModelSelection(_) => "one-model-version-per-identity",
@@ -955,6 +1001,7 @@ impl CheckCause {
             Self::Identity(IdentityRefusal::Allocation { .. }) => Code::ResourceExhausted,
             Self::Identity(IdentityRefusal::NonCanonical) => Code::RuntimeInvariant,
             Self::ProtocolAnchor(cause) => cause.code(),
+            Self::ProtocolReference(cause) => cause.code(),
             Self::DispatchLink(cause) => cause.code,
             // Downstream crates (`qsl-eval`, `qsl-route`, the root crate)
             // have their own real seams over other enums, probed in the
@@ -1012,6 +1059,7 @@ impl CheckCause {
                 None
             }
             Self::ProtocolAnchor(cause) => Some(cause.tag()),
+            Self::ProtocolReference(cause) => Some(cause.tag()),
             Self::DispatchLink(cause) => Some(cause.catalog.cause()),
             // Not a seam-probe location (unlike `code()`, above --
             // deliberately left non-exhaustive there): this arm keeps

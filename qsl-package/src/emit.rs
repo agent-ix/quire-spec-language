@@ -22,7 +22,9 @@
 //!   `quire.source.bytes/v1` digest.
 //! - `required_features` is `quire.value.complete/v1` (ADR-011 §2.4) and
 //!   `capability_report` reports it available.
-//! - `profile_selections` is empty: the `Value` family selects no profile.
+//! - `profile_selections` holds one row per clause-profile law a node body
+//!   names (`protocol_profile`, FR-092); it is empty for a package of
+//!   `Value`-family nodes only.
 //! - `model_selections` is `CheckedGraph::model_selections`: each domain
 //!   package the package was checked against, by identity and
 //!   `sha256-jcs` digest (ADR-011 §2.4).
@@ -55,7 +57,9 @@
 //! an omitted one. Every other node is written (FR-062-AC-9: all-or-nothing
 //! over the nodes a node names), `value`/`parameter` nodes and
 //! recursion-group application nodes included (IR-280, IR-242).
-//! [`Emission::omitted`] lists each omitted node and its cause.
+//! [`Emission::omitted`] lists each omitted node and its cause. A
+//! `protocol_reference` carrier whose target the wire does not write is not
+//! omitted: it refuses the emission ([`EmitRefusal::StaleProtocolReference`]).
 //!
 //! # Nominal nodes
 //!
@@ -86,7 +90,8 @@ use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
 use qsl_foundation::Code;
 use qsl_semantics::check::{
-    BodyTerm, CheckedGraph, LeafTerm, NodeTag, NominalNode, Owner, SemanticNode,
+    BodyTerm, CheckedGraph, LawRole, LeafTerm, NodeTag, NominalNode, OperationLaw, Owner,
+    SemanticNode,
 };
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::key::hex;
@@ -148,6 +153,16 @@ pub enum EmitRefusal {
         /// The encoder's message.
         reason: String,
     },
+    /// A protocol reference is bound to a key that is not the key of a node
+    /// the emitter writes (FR-218 stale target): a reference binds a key,
+    /// never a name, and a name is never looked up again.
+    #[error("protocol reference {} is bound to {}, which no written node carries", reference.digest, target.digest)]
+    StaleProtocolReference {
+        /// The reference's node.
+        reference: CheckedNodeId,
+        /// The key it is bound to.
+        target: CheckedNodeId,
+    },
     /// The caller's [`quire_exact::Cancel`] handle was cancelled, and the
     /// emitter stopped at its next charge (FR-276).
     #[error("the emitter was cancelled ({cause:?})")]
@@ -171,7 +186,20 @@ impl EmitRefusal {
             | Self::UnlocatedOccurrence { .. }
             | Self::UnknownOccurrenceRole { .. } => Code::UnsupportedProjection,
             Self::Encoding { .. } => Code::OutputFailure,
+            Self::StaleProtocolReference { .. } => Code::MissingDeclaration,
             Self::Cancelled { .. } => Code::Cancelled,
+        }
+    }
+
+    /// The catalog cause, where the code has one (FR-010).
+    pub fn cause(&self) -> Option<&'static str> {
+        match self {
+            Self::StaleProtocolReference { .. } => Some("missing-name"),
+            Self::NothingToEmit { .. }
+            | Self::UnlocatedOccurrence { .. }
+            | Self::UnknownOccurrenceRole { .. }
+            | Self::Encoding { .. }
+            | Self::Cancelled { .. } => None,
         }
     }
 }
@@ -267,7 +295,7 @@ fn node_id(key: NodeKey) -> CheckedNodeId {
 struct BodyNames {
     dependencies: BTreeSet<CheckedNodeId>,
     annotations: BTreeSet<CheckedNodeId>,
-    laws: Vec<DefinitionReference>,
+    laws: Vec<OperationLaw>,
 }
 
 impl BodyNames {
@@ -283,13 +311,9 @@ impl BodyNames {
                     names.dependencies.insert(node_id(declaration));
                 }
                 let leaf_laws = operation.leaves().iter().flat_map(|leaf| &leaf.laws);
-                names.laws.extend(
-                    operation
-                        .laws()
-                        .iter()
-                        .chain(leaf_laws)
-                        .map(|law| law.definition.clone()),
-                );
+                names
+                    .laws
+                    .extend(operation.laws().iter().chain(leaf_laws).cloned());
             }
             // QSpec FR-340: every `modifies` declaration and every
             // `creates`/`deletes` entry is a declared dependency of the
@@ -352,7 +376,7 @@ struct Candidate<'g> {
     /// Every node the written node names: its dependencies, its semantic
     /// type and its body's type annotations.
     names: BTreeSet<CheckedNodeId>,
-    laws: Vec<DefinitionReference>,
+    laws: Vec<OperationLaw>,
     /// The occurrences `check` recorded for the node, each with the
     /// location it was recorded at.
     occurrences: Recorded<'g>,
@@ -663,6 +687,69 @@ fn omissions(
         .into_iter()
         .map(|(node, cause)| OmittedNode { node, cause })
         .collect()
+}
+
+/// The role a clause-profile law is selected under in the lock's
+/// `profile_selections`, or `None` for a value law, which the lock selects in
+/// `definition_selections` (QSpec FR-322).
+fn profile_role(role: LawRole) -> Option<CheckedSelectionRole> {
+    match role {
+        LawRole::TemporalProfile => Some(CheckedSelectionRole::TemporalProfile),
+        LawRole::ProtocolProfile => Some(CheckedSelectionRole::ProtocolProfile),
+        LawRole::IntegerDivision | LawRole::IeeeProfile | LawRole::TextProfile => None,
+    }
+}
+
+/// The written nodes' laws: the lock's `profile_selections` rows for the
+/// clause-profile laws, each once in first-use order, and the value laws'
+/// definitions for `definition_selections`.
+fn split_laws(order: &[&Candidate<'_>]) -> (Vec<CheckedSelection>, Vec<DefinitionReference>) {
+    let mut profiles: Vec<CheckedSelection> = Vec::new();
+    let mut definitions = Vec::new();
+    for law in order.iter().flat_map(|candidate| &candidate.laws) {
+        match profile_role(law.role) {
+            Some(role) => {
+                let selection = CheckedSelection {
+                    role,
+                    definition: artifact(&law.definition),
+                };
+                if !profiles.contains(&selection) {
+                    profiles.push(selection);
+                }
+            }
+            None => definitions.push(law.definition.clone()),
+        }
+    }
+    (profiles, definitions)
+}
+
+/// FR-218: a `protocol_reference` carrier whose bound target is no node the
+/// wire writes -- absent from the graph, or omitted from it -- refuses the
+/// whole emission, never an omission: the reference binds a key, and the key
+/// names nothing.
+fn stale_protocol_reference(
+    candidates: &BTreeMap<CheckedNodeId, Candidate<'_>>,
+    omitted: &[OmittedNode],
+) -> Result<(), EmitRefusal> {
+    for candidate in candidates.values() {
+        let node = candidate.node;
+        if node.node_tag() != NodeTag::Protocol || node.semantic_form() != "protocol_reference" {
+            continue;
+        }
+        let BodyTerm::Leaf(LeafTerm::Reference { target }) = node.body() else {
+            continue;
+        };
+        let target = node_id(target.0);
+        let written = candidates.contains_key(&target)
+            && !omitted.iter().any(|omission| omission.node == target);
+        if !written {
+            return Err(EmitRefusal::StaleProtocolReference {
+                reference: candidate.id.clone(),
+                target,
+            });
+        }
+    }
+    Ok(())
 }
 
 /// FR-093's graph order: ascending by node id, except that a recursion
@@ -1009,6 +1096,7 @@ fn emit_package_inner(
         })
         .collect();
     let omitted = omissions(&candidates, graph.source());
+    stale_protocol_reference(&candidates, &omitted)?;
     let dropped: BTreeSet<&CheckedNodeId> = omitted.iter().map(|omission| &omission.node).collect();
     let kept: Vec<&Candidate<'_>> = candidates
         .values()
@@ -1029,10 +1117,7 @@ fn emit_package_inner(
             },
         )
         .collect::<Result<Vec<_>, _>>()?;
-    let laws: Vec<DefinitionReference> = order
-        .iter()
-        .flat_map(|candidate| candidate.laws.iter().cloned())
-        .collect();
+    let (profile_selections, laws) = split_laws(&order);
 
     let catalog = DefinitionLock::pinned();
     let (edition, definition_selections) = catalog_selections(&catalog, &laws);
@@ -1049,7 +1134,7 @@ fn emit_package_inner(
     let lock = CheckedPackageLockV2 {
         sources: sources.into_iter().collect(),
         edition: edition.clone(),
-        profile_selections: Vec::new(),
+        profile_selections: profile_selections.clone(),
         definition_selections: definition_selections.clone(),
         model_selections: model_selections.clone(),
         required_features: vec![root.into()],
@@ -1058,7 +1143,7 @@ fn emit_package_inner(
     let preimage = CheckedPackageIdentityPreimageV2 {
         version: IDENTITY_PREIMAGE_V2.into(),
         edition,
-        profile_selections: Vec::new(),
+        profile_selections,
         definition_selections,
         model_selections,
         required_features: lock.required_features.clone(),

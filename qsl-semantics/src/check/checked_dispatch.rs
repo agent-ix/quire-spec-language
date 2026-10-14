@@ -1805,6 +1805,7 @@ mod tests {
             ExprNode::SelfRef => "SelfRef",
             ExprNode::Result => "Result",
             ExprNode::Reaches { .. } => "Reaches",
+            ExprNode::ProtocolReference { .. } => "ProtocolReference",
         }
     }
 

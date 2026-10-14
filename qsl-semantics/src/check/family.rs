@@ -419,6 +419,10 @@ fn encode_expression(
                 out.write_str("name");
                 out.write_str(name);
             }
+            ExprNode::ProtocolReference { target } => {
+                out.write_str("protocol_reference");
+                out.write_str(target);
+            }
             ExprNode::Let { name, value, body } => {
                 out.write_str("let");
                 out.write_str(name);

@@ -940,6 +940,14 @@ pub enum NodeKind {
         /// The edge field, in `T`'s effective attribute set.
         edge: FieldRef,
     },
+    /// `protocol <name>` (FR-308, FR-218): a reference to the unit's
+    /// `protocol`-th protocol declaration, resolved once at S3 and typed
+    /// `Boolean`, the semantic type the protocol's node carries. Its value is
+    /// the value of that protocol clause.
+    ProtocolReference {
+        /// The target's index in the unit's protocol declarations.
+        protocol: usize,
+    },
     /// FR-063/S3: exists only so `--cfg seam_probe` makes every
     /// match over `NodeKind` outside this module non-exhaustive. Never
     /// constructed outside the probe build.
@@ -970,7 +978,9 @@ impl NodeKind {
     /// Direct operands in evaluation order.
     pub fn children(&self) -> Vec<NodeId> {
         match self {
-            NodeKind::Literal(_) | NodeKind::Local(_) => Vec::new(),
+            NodeKind::Literal(_) | NodeKind::Local(_) | NodeKind::ProtocolReference { .. } => {
+                Vec::new()
+            }
             NodeKind::Coerce(operand, _)
             | NodeKind::Negate(operand)
             | NodeKind::Not(operand)
