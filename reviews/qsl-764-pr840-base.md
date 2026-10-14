@@ -74,3 +74,39 @@ Recorded, not reported:
 - low: the IR checks the target's tag only, so any `protocol` form is a
   valid target. QSL narrows this to a protocol declaration, which is
   compatible.
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 26e53f967 |
+| FND-002 | fixed | 26e53f967 |
+| FND-003 | fixed | 26e53f967 |
+
+Disposition round 1, at 26e53f967945ec66aa288c24fe69ac33b6a43fa4. The new
+FR-092 section "The protocol node a reference targets" and FR-092-AC-18 were
+checked against IR main e0bee05 and QSpec FR-322:
+- Tag/form `protocol`/`protocol_clause`: `validate_protocol_references`
+  accepts any local node with the `protocol` tag and an equal semantic_type.
+- Body: the `quire.op.protocol.control` application with the
+  `protocol_profile` law and the `profile_operator` member (FR-322-AC-22).
+- Boolean semantic_type.
+- Key: `quire.application-node/v1`, whose preimage carries `declaration` and
+  no owner.
+- One `declaration` occurrence.
+
+This matches QSpec's positive-all-families protocol node. FR-113, FR-218,
+FR-092 and TC-1021 agree with each other. AC ids are unique. All four
+changed files pass `quire validate` on copies. `qsl-package` emits no
+`protocol_clause` node today, which is target design and not a
+contradiction.
+
+Recorded, not reported:
+- medium: "`declaration` and `owner` as FR-322 gives a declared clause node"
+  is correct but indirect. FR-322 gives an application-keyed node no
+  `owner`, while FR-092's other declared nodes carry the unit's owner.
+  Stating "no `owner`" would prevent that mix-up. AC-18's reader admission
+  catches it either way, because the IR refuses an owner on an
+  application-body node.
+- medium: AC-18 does not pin the `profile_operator` value or the
+  application's arguments.
