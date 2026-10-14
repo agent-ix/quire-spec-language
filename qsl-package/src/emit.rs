@@ -82,8 +82,8 @@ use quire_contract_model::{
     CheckedPackageEvidence, CheckedPackageIdentityPreimageV2, CheckedPackageLockV2,
     CheckedRational, CheckedSelection, CheckedSelectionRole, CheckedSemanticGraphV2,
     CheckedSemanticId, CheckedSemanticNodeV2, CheckedSourceMapEntry, CheckedSourceRef,
-    CheckedSourceRegion, NominalIdentityPreimage, NominalOwner, ValueForm, CHECKED_PACKAGE_V2,
-    DOMAIN_PACKAGE_DIGEST, PACKAGE_DOMAIN_V2,
+    CheckedSourceRegion, NominalIdentityPreimage, NominalOwner, ProtocolForm, ValueForm,
+    CHECKED_PACKAGE_V2, DOMAIN_PACKAGE_DIGEST, PACKAGE_DOMAIN_V2,
 };
 
 use qsl_foundation::digest::WireNodeId;
@@ -733,7 +733,9 @@ fn stale_protocol_reference(
 ) -> Result<(), EmitRefusal> {
     for candidate in candidates.values() {
         let node = candidate.node;
-        if node.node_tag() != NodeTag::Protocol || node.semantic_form() != "protocol_reference" {
+        let carrier = CheckedNodeKind::decode(candidate.tag, node.semantic_form())
+            == Some(CheckedNodeKind::Protocol(ProtocolForm::ProtocolReference));
+        if !carrier {
             continue;
         }
         let BodyTerm::Leaf(LeafTerm::Reference { target }) = node.body() else {

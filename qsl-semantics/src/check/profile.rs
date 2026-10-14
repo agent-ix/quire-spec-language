@@ -21,7 +21,9 @@ const PROTOCOL_AUTHORITY: &str = "agent-ix";
 const PROTOCOL_PROFILE: &str = "quire.protocol.finite-global/v1";
 
 /// The `protocol_profile` definition a header profile `identity` selects, if
-/// it is one the `ProtocolClause` family's catalog holds (FR-110).
+/// it is one the `ProtocolClause` family's catalog holds (FR-110). The one
+/// place a header profile's spelling is read for that family.
+#[qsl_attrs::string_edge]
 pub(crate) fn protocol_profile(identity: &str) -> Option<DefinitionReference> {
     (identity == PROTOCOL_PROFILE).then(|| DefinitionReference {
         authority: PROTOCOL_AUTHORITY.to_owned(),
