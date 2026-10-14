@@ -1,0 +1,81 @@
+---
+id: SR-9018
+title: "Code review of quire-spec-language PR #814: run-level dispatch vectors for FR-359-AC-8"
+type: SpecReview
+analysis: code-review
+scope: "agent-ix/quire-spec-language@c7e80a9d1a36127e4a1107b02594b4d9b0369d11; qsl-eval/tests/it/dispatch_calls.rs (the only file the PR changes, +236/-0); gate logs qsl737u-fmt, qsl737u-clippy, qsl737u-gate, qsl737u-upcast-red, qsl737u-upcast-green"
+review_set: subset
+relationships:
+  - target: ix://agent-ix/quire-spec-language/FR-359
+    type: reviews
+---
+# Code review of quire-spec-language PR #814
+
+## Summary
+
+Ticket: QSL-737. Base `impl/business-model-meanings`, head
+`feat/upcast-run-level-vectors`. One commit, c7e80a9d1. The diff is
+test-only: it changes only `qsl-eval/tests/it/dispatch_calls.rs` (+236, -0).
+It has no production, lock, or spec change. The Rust lane (`rust-review`) is
+folded into this file.
+
+The PR adds the helpers `money_family`, `money_bridge`, `run_money_call` and
+`completed_integer`, and two tests tagged `#[trace("FR-359-AC-8", "TC-1001")]`:
+
+- `a_redeclared_subtype_body_runs_with_a_child_argument` (rooted at `B`)
+- `the_ancestor_body_runs_with_a_child_argument_through_the_original_root`
+  (rooted at `A`)
+
+## Verdict
+
+**CONDITIONAL.** The test code is idiomatic. It has typed assertions only
+(`Integer`, `UndefinedReason::PreconditionFalse`, the `selected` record
+field, and `IllTypedCause::TypeMismatch` with its catalog code). It has no
+`#[ignore]`, no message-text assertion, no clock and no ambient state. Each
+assertion fails for the change it guards:
+
+- Running `A`'s body for a `B`-rooted call gives 5, not 105.
+- Running `B`'s body for an `A`-rooted call gives 109, not 9.
+- Refusing the child argument makes the `check_clause_expression` unwrap panic.
+- Admitting a `Fee` makes the `expect_err` call fail.
+- Dropping or conjoining the guard changes the amount-4 and amount-5 results.
+
+The red run (`qsl737u-upcast-red.log`, 104 at amount 4) was correct
+behaviour under FR-151, not a code defect. With `A.size` given no
+precondition, `B`'s effective precondition is `B`'s own clause OR `true`,
+which is `true`. The final fixture gives `A` an inert `>= 1000` guard, and
+this matches FR-151's rule (an absent precondition is `true`, and the
+effective precondition is a disjunction). It was not reverse-engineered to
+pass.
+
+Fmt (EXIT 0), workspace all-features clippy (run in the PR worktree, EXIT 0)
+and the focused run (`qsl737u-upcast-green.log`: dispatch_calls, 35 passed,
+the two new tests included) cover the head.
+
+The sem+eval+replay gate log does not cover the head (FND-001). FND-002 and
+FND-003 are documentation and oracle nits.
+
+## Findings
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-001 | medium | The sem+eval+replay+xtask gate log is not evidence for the PR head. `qsl737u-gate.log` compiled every qsl crate from `/home/peter/dev/quire-spec-language`, the main checkout on `main`. It is not the PR worktree. It resolved quire-exact 1d178c9c and QSV 010dca02 from main's lock; the head's lock pins 4c27c08 and ce9a0f1. None of the dispatch_calls child-argument tests appear in it, whether new or base. Its "0 failed, 1 ignored" therefore describes `main`, and the full gate has not been run on c7e80a9d1 | /home/peter/dev/worktrees/logs/qsl737u-gate.log:4-18,1983 |
+| FND-002 | low | The doc of `the_ancestor_body_runs_with_a_child_argument_through_the_original_root` calls the `A`-rooted call "the upcast of `B`'s redeclaration", and the PR title says "operation upcast". In this checker and in FR-151 ("reference upcasts only"), the Upcast is the typing of a dispatch argument at its parameter. That step runs `Frame::Upcast`, then `upcast`, then `Form::Argument`. Every dispatched call with a `TaxedMoney` argument goes through it, including both new tests and the earlier 14fda4097 test. A reader of the gap analysis would infer a distinct Upcast path that does not exist | qsl-eval/tests/it/dispatch_calls.rs:2956-2959; qsl-semantics/src/check/check/typing.rs:545; qsl-semantics/src/check/check.rs:2280-2294 |
+| FND-003 | low | The claim "reads the child's `amount`" cannot be falsified by a positional field read. `amount` is field 0 of both `Money` and `TaxedMoney`, so a read that takes field 0 instead of reading by key passes every vector. This is the defect class of QSL-737 AC-1 | qsl-eval/tests/it/dispatch_calls.rs:2760-2761 |
+
+## New findings (disposition pass 1)
+
+Reviewed at 0c14fc5142bf6da39a415bcd5e045c39d884b469.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | The doc of `dispatch_selects_the_redeclared_body_for_a_subtype_receiver_over_a_child_argument` says "B's body runs when either guard holds", but no vector has `A`'s guard true while `B`'s is false. `A`'s guard is `>= 1000`, which implies `B`'s `>= 5`, so the amount-1000 vector ("A's guard holds too") has both guards true. An effective guard of `B`'s own clause alone, without the FR-151 disjunction with `A`, passes every vector. Only "OR, not AND" is decided, by amount 5. To decide the `A` disjunct, `A`'s guard must not imply `B`'s (for example `m.amount == 3`, so amount 3 gives 103) | qsl-eval/tests/it/dispatch_calls.rs:2813-2814,2960-2961,2971 |
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 0c14fc514: `qsl737u-fix-gate.log` reran the sem+eval+replay+xtask gate in the PR worktree (`/home/peter/dev/worktrees/qsl-737-upcast-runlevel`, HEAD 0c14fc514, clean). It compiled qsl-eval and xtask from the worktree, with quire-exact 4c27c08e and QSV ce9a0f11 matching the head's lock. All four dispatch_calls child-argument tests pass, with 0 failures. The 4 ignores all name their reason: three are PR #789 (QSL-723) and one is the timing lane, and none is added by this PR. Clippy (`qsl737u-fix-clippy.log`, worktree) exits 0 |
+| FND-002 | fixed | 0c14fc514: the "upcast of `B`'s redeclaration" doc is gone. The test is replaced by the `Reference<A>`-site tests, and the PR title is now "run-level vectors for dispatch with child arguments and redeclared subtype bodies" |
+| FND-003 | fixed | 0c14fc514: `TaxedMoney` declares `tax` before `amount`. QSV `fill_slots` stores slots in declared order, so slot 0 of a `TaxedMoney` is `tax` (2). A positional read would give 102, not 105 |
+| FND-004 | fixed | 01fcbbebd: `A.size`'s own guard is now `m.amount == 3`, which does not imply `B`'s `>= 5`. At the `Reference<A>` site with a `B` receiver, amount 3 gives 103. Dropping `A`'s disjunct (B's own guard only) would make amount 3 `PreconditionFalse`. AND would fail amount 5 (5 == 3 is false) and amount 3 (3 >= 5 is false). The fixture matches FR-151: the effective precondition is the member's own clause OR the effective precondition of the member it redefines. The `A`-receiver vector at 9 (`PreconditionFalse`, `selected = model.A.size`) fails if `B` is selected or if `A` inherits `B`'s guard. The focused run `qsl737u-fix2-test.log` (worktree, 01fcbbebd) has dispatch_calls 36 passed. Clippy exits 0. `rustfmt --check` on the file is clean. The PR diff against base is still the test file plus `reviews/` |

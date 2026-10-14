@@ -30,7 +30,7 @@ use std::collections::BTreeMap;
 
 use qsl_forms::StateClauseKind;
 use qsl_foundation::diagnostic::{
-    CatalogCoded, Code, InternalFault, LimitExceeded, ALLOCATION_FAILED,
+    BudgetDenial, CatalogCoded, Code, InternalFault, LimitExceeded, ALLOCATION_FAILED,
 };
 use qsl_foundation::Setting;
 use quire_exact::{EffectiveId, Identifier, ObjectId, ObjectReference, UniverseId, Value};
@@ -133,6 +133,10 @@ pub struct OutOfRange {
     pub range: quire_exact::IntegerInterval,
     /// The value observed.
     pub observed: quire_exact::Integer,
+    /// For an integer inside a record value, the record field names from the
+    /// field (or sequence element) down to it, outermost first; empty
+    /// otherwise.
+    pub steps: Vec<PathStep>,
 }
 
 impl Default for ObservationLimits {
@@ -339,6 +343,23 @@ pub struct AdmissionRecord {
     /// The named input path components this record carries, keyed by name
     /// (`document`, `population`, `object`, `field`, `label`, ...).
     pub fields: BTreeMap<&'static str, String>,
+    /// For a defect inside a nested value, the typed steps from the checked
+    /// field, parameter or result down to it, outermost first (QSpec FR-207);
+    /// empty when the defect is at the checked value itself.
+    pub path: Vec<PathStep>,
+}
+
+/// One typed step of a nested value path (QSpec FR-207): never a rendered
+/// string, so a record field named `0` cannot be taken for the first
+/// element of a sequence.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PathStep {
+    /// A record field, by its exact name.
+    Field(String),
+    /// The payload of a present optional value.
+    OptionValue,
+    /// A sequence element, by its position.
+    Index(usize),
 }
 
 impl AdmissionRecord {
@@ -347,12 +368,21 @@ impl AdmissionRecord {
             code,
             cause,
             fields: BTreeMap::new(),
+            path: Vec::new(),
         }
     }
 
     #[must_use]
     fn with(mut self, key: &'static str, value: impl Into<String>) -> Self {
         self.fields.insert(key, value.into());
+        self
+    }
+
+    /// This record naming the nested value `path`: the typed steps from the
+    /// checked field, parameter or result down to it (FR-106 check 6.5).
+    #[must_use]
+    fn at(mut self, path: Vec<PathStep>) -> Self {
+        self.path = path;
         self
     }
 }
@@ -458,6 +488,15 @@ pub struct AdmittedObservations {
     pub post: Option<Observation>,
     /// The selected self object's reference.
     pub self_object: ObjectReference,
+    /// The selected invocation when `self` is a context with no declared
+    /// object identity. Evaluators use it to root receiver value paths.
+    pub receiver_invocation: Option<DocumentRef>,
+    /// The pre-observation receiver context's evaluator reference, when
+    /// this is a state-machine invocation.
+    pub receiver_pre: Option<ObjectReference>,
+    /// The post-observation receiver context's evaluator reference, when
+    /// this is a state-machine invocation with a post observation.
+    pub receiver_post: Option<ObjectReference>,
     /// The parameter values of an invocation or a pre-call observation, in
     /// declared order (empty for an invariant).
     pub parameters: Vec<(String, Value)>,
@@ -499,6 +538,21 @@ enum RawNode {
     Present(usize),
     Reference(SelectedObject),
     Sequence(Vec<usize>),
+    /// `{"record": {"type": .., "fields": {..}}}`: the record's `type`
+    /// identity and its fields in document order, each the index of its
+    /// value's node.
+    Record {
+        type_identity: String,
+        fields: Vec<(String, usize)>,
+    },
+    /// `{"variant": {"type": .., "case": ..}}` as read: each of the two
+    /// members when present, and whether the payload holds any other member
+    /// (FR-360 item 9 judges those defects in its own order).
+    Variant {
+        type_identity: Option<String>,
+        case: Option<String>,
+        extra_member: bool,
+    },
 }
 
 /// The form of one value of a [`SnapshotValue`], with nested values as
@@ -517,6 +571,41 @@ pub enum RawForm<'v> {
     Reference(&'v SelectedObject),
     /// `{"sequence": [<value>, ...]}`, its items in order.
     Sequence(RawItems<'v>),
+    /// `{"record": {"type": <declaration identity>, "fields": {..}}}`.
+    Record(RawRecord<'v>),
+    /// `{"variant": {"type": <declaration identity>, "case": <case name>}}`.
+    Variant(RawVariant<'v>),
+}
+
+/// A `variant` value as read: the members of its payload, whichever it
+/// holds (FR-360 item 9).
+#[derive(Clone, Copy, Debug)]
+pub struct RawVariant<'v> {
+    type_identity: Option<&'v str>,
+    case: Option<&'v str>,
+    extra_member: bool,
+}
+
+impl<'v> RawVariant<'v> {
+    /// The `type` member: the IR node identity of the variant type, if the
+    /// payload has one.
+    #[must_use]
+    pub fn type_identity(self) -> Option<&'v str> {
+        self.type_identity
+    }
+
+    /// The `case` member: the exact declared case name, if the payload has
+    /// one.
+    #[must_use]
+    pub fn case(self) -> Option<&'v str> {
+        self.case
+    }
+
+    /// Whether the payload holds a member other than `type` and `case`.
+    #[must_use]
+    pub fn has_extra_member(self) -> bool {
+        self.extra_member
+    }
 }
 
 /// One value inside a [`SnapshotValue`].
@@ -524,6 +613,39 @@ pub enum RawForm<'v> {
 pub struct RawValue<'v> {
     arena: &'v SnapshotValue,
     index: usize,
+}
+
+/// A `record` value: the identity of its most-specific record type and its
+/// fields in document order.
+#[derive(Clone, Copy, Debug)]
+pub struct RawRecord<'v> {
+    arena: &'v SnapshotValue,
+    type_identity: &'v str,
+    fields: &'v [(String, usize)],
+}
+
+impl<'v> RawRecord<'v> {
+    /// The `type` member: the IR node identity of the value's most-specific
+    /// record value type.
+    #[must_use]
+    pub fn type_identity(self) -> &'v str {
+        self.type_identity
+    }
+
+    /// The `fields` members, in document order.
+    pub fn fields(
+        self,
+    ) -> impl DoubleEndedIterator<Item = (&'v str, RawValue<'v>)> + ExactSizeIterator {
+        self.fields.iter().map(move |(name, index)| {
+            (
+                name.as_str(),
+                RawValue {
+                    arena: self.arena,
+                    index: *index,
+                },
+            )
+        })
+    }
 }
 
 /// The items of a `sequence` value, in order.
@@ -595,6 +717,51 @@ impl SnapshotValue {
         Self { nodes, root: at }
     }
 
+    /// `{"record": {"type": type_identity, "fields": {..}}}`, its fields in
+    /// the given order.
+    #[must_use]
+    pub fn record(type_identity: impl Into<String>, fields: Vec<(String, Self)>) -> Self {
+        let mut nodes = Vec::new();
+        let mut members = Vec::with_capacity(fields.len());
+        for (name, value) in fields {
+            let offset = nodes.len();
+            nodes.extend(value.nodes.into_iter().map(|node| node.shifted(offset)));
+            members.push((name, value.root + offset));
+        }
+        let at = nodes.len();
+        nodes.push(RawNode::Record {
+            type_identity: type_identity.into(),
+            fields: members,
+        });
+        Self { nodes, root: at }
+    }
+
+    /// `{"variant": {"type": type_identity, "case": case}}`.
+    #[must_use]
+    pub fn variant(type_identity: impl Into<String>, case: impl Into<String>) -> Self {
+        Self::single(RawNode::Variant {
+            type_identity: Some(type_identity.into()),
+            case: Some(case.into()),
+            extra_member: false,
+        })
+    }
+
+    /// A `variant` value read from a payload that may lack `type` or `case`
+    /// or hold another member, which admission refuses in FR-360 item 9's
+    /// order.
+    #[must_use]
+    pub fn variant_payload(
+        type_identity: Option<String>,
+        case: Option<String>,
+        extra_member: bool,
+    ) -> Self {
+        Self::single(RawNode::Variant {
+            type_identity,
+            case,
+            extra_member,
+        })
+    }
+
     /// The root value's form.
     #[must_use]
     pub fn form(&self) -> RawForm<'_> {
@@ -612,6 +779,23 @@ impl SnapshotValue {
             }),
             RawNode::Reference(reference) => RawForm::Reference(reference),
             RawNode::Sequence(items) => RawForm::Sequence(RawItems { arena: self, items }),
+            RawNode::Record {
+                type_identity,
+                fields,
+            } => RawForm::Record(RawRecord {
+                arena: self,
+                type_identity,
+                fields,
+            }),
+            RawNode::Variant {
+                type_identity,
+                case,
+                extra_member,
+            } => RawForm::Variant(RawVariant {
+                type_identity: type_identity.as_deref(),
+                case: case.as_deref(),
+                extra_member: *extra_member,
+            }),
         }
     }
 }
@@ -640,6 +824,23 @@ impl PartialEq for SnapshotValue {
                             .map(|(left, right)| (left.form(), right.form())),
                     );
                 }
+                (RawForm::Record(left), RawForm::Record(right))
+                    if left.type_identity() == right.type_identity()
+                        && left.fields().len() == right.fields().len() =>
+                {
+                    for ((left_name, left), (right_name, right)) in
+                        left.fields().zip(right.fields())
+                    {
+                        if left_name != right_name {
+                            return false;
+                        }
+                        work.push((left.form(), right.form()));
+                    }
+                }
+                (RawForm::Variant(left), RawForm::Variant(right))
+                    if left.type_identity() == right.type_identity()
+                        && left.case() == right.case()
+                        && left.has_extra_member() == right.has_extra_member() => {}
                 _ => return false,
             }
         }
@@ -657,9 +858,21 @@ impl RawNode {
             Self::Sequence(items) => {
                 Self::Sequence(items.into_iter().map(|item| item + offset).collect())
             }
-            other @ (Self::Boolean(_) | Self::Integer(_) | Self::Absent | Self::Reference(_)) => {
-                other
-            }
+            Self::Record {
+                type_identity,
+                fields,
+            } => Self::Record {
+                type_identity,
+                fields: fields
+                    .into_iter()
+                    .map(|(name, index)| (name, index + offset))
+                    .collect(),
+            },
+            other @ (Self::Boolean(_)
+            | Self::Integer(_)
+            | Self::Absent
+            | Self::Reference(_)
+            | Self::Variant { .. }) => other,
         }
     }
 }
@@ -729,20 +942,28 @@ fn model_views(
             .map_err(|_| fault("model-reconsistent-records"))?;
         let view = match normalize(&DomainPackage::new(package_ref, records), limits) {
             NormalizeOutcome::Completed(view) => view,
-            // A reached ceiling is the stage's limit outcome naming its
-            // setting; any other refusal is a broken invariant, since the
-            // same packages already normalized at compile time.
+            // A reached ceiling of `ModelNormalizationLimits` is the caller's
+            // budget wherever it is read (ADR-014 section 1), so it refuses
+            // as the compile path does, naming its setting; any other
+            // refusal is a broken invariant, since the same packages already
+            // normalized at compile time.
             NormalizeOutcome::Incomplete(incomplete) => {
-                return Err(limit_refusal(&incomplete.limit_exceeded()))
+                return Err(caller_budget_refusal(
+                    &incomplete.denial(),
+                    INSUFFICIENT_NEXT_CHARGE,
+                ))
             }
             NormalizeOutcome::Refused(refusals) => {
                 return Err(refusals
                     .iter()
-                    .find_map(|refusal| refusal.cause.limit_exceeded())
-                    .map_or_else(
-                        || fault("model-reconsistent-normalize"),
-                        |limit| limit_refusal(&limit),
-                    ))
+                    .find_map(|refusal| {
+                        let denial = refusal.cause.denial()?;
+                        Some(caller_budget_refusal(
+                            &denial,
+                            refusal.cause.catalog_code().cause(),
+                        ))
+                    })
+                    .unwrap_or_else(|| fault("model-reconsistent-normalize")))
             }
         };
         let by_effective_id = view
@@ -906,6 +1127,21 @@ fn input_bytes_exceeded(bound: u64, actual: u128) -> AdmissionFailure {
     ))
 }
 
+/// A reached ceiling of a caller's budget (`ModelNormalizationLimitsV1` or
+/// `PopulationAdmissionLimitsV1`, ADR-014 B-2) as an admission refusal: the compile path's
+/// `resource_exhausted` with its `cause`, carrying FR-255 Behavior 1's
+/// record from [`BudgetDenial::catalog_fields`].
+fn caller_budget_refusal(denial: &BudgetDenial, cause: &'static str) -> AdmissionFailure {
+    refuse(caller_budget_record(denial, cause))
+}
+
+/// [`caller_budget_refusal`]'s record.
+fn caller_budget_record(denial: &BudgetDenial, cause: &'static str) -> AdmissionRecord {
+    let mut record = AdmissionRecord::new(Code::ResourceExhausted, cause);
+    record.fields.extend(denial.catalog_fields());
+    record
+}
+
 /// `limit` as an admission refusal: `stage_limit_exceeded` with the limit's
 /// cause and its `kind`, `bound`, `actual` and `setting` fields (FR-255
 /// Behavior 1).
@@ -961,6 +1197,9 @@ impl ReadMeter {
         Ok(())
     }
 }
+
+/// The catalog cause of a denied accounting charge.
+const INSUFFICIENT_NEXT_CHARGE: &str = "insufficient-next-charge";
 
 /// FR-259 B6: reading or encoding the document could not reserve
 /// `requested` bytes of memory.
@@ -1327,6 +1566,8 @@ pub fn admit_observations(
                 &context,
                 PreCallInput {
                     call: None,
+                    receiver_invocation: None,
+                    invocation: None,
                     invocation_usage: AdmissionUsage::default(),
                     pre: read,
                     self_object,
@@ -1348,7 +1589,7 @@ pub fn admit_observations(
                 provisions,
                 invocation,
                 limits,
-                model_limits.ancestor_steps,
+                model_limits,
             ),
             // Check 2 above refused an invariant's `Invocation` selection.
             StateClauseKind::Invariant => Err(fault("invariant-selected-by-invocation")),
@@ -1361,10 +1602,12 @@ pub fn admit_observations(
 // `admit_invariant`/`admit_operation` below.
 
 mod document;
+mod encode;
 mod frame;
 mod tree;
 
 use document::{read_document, DocumentKind};
+pub use encode::ValueEncoder;
 
 #[allow(clippy::too_many_arguments)]
 fn admit_invariant(
@@ -1453,6 +1696,9 @@ fn admit_invariant(
         pre: None,
         post: None,
         self_object: self_reference,
+        receiver_invocation: None,
+        receiver_pre: None,
+        receiver_post: None,
         parameters: Vec::new(),
         result: None,
         created: Vec::new(),
@@ -1543,8 +1789,26 @@ struct InvocationAdmission {
     pre: document::AdmittedEnvironment,
     post: document::AdmittedEnvironment,
     self_reference: ObjectReference,
+    receiver_invocation: Option<DocumentRef>,
+    receiver_pre: Option<ObjectReference>,
+    receiver_post: Option<ObjectReference>,
     parameters: Vec<(String, Value)>,
     result: Option<Value>,
+}
+
+fn is_state_machine_context(context_view: &ModelView, context_name: &str) -> bool {
+    context_view
+        .view
+        .domain_package()
+        .records
+        .iter()
+        .any(|record| {
+            matches!(
+                record,
+                crate::model::domain_package::DomainPackageRecord::StateMachine(machine)
+                    if machine.key.node == context_name
+            )
+        })
 }
 
 impl InvocationAdmission {
@@ -1628,8 +1892,18 @@ fn admit_invocation_documents(
     check_model(context_view, &pre_snapshot.model)?;
     check_model(context_view, &post_snapshot.model)?;
 
-    // Check 5: operation.
+    // Check 5: operation, then the invocation each snapshot names.
     check_operation(&invocation.call, context_name, operation)?;
+    document::check_snapshot_invocation(
+        pre_snapshot,
+        &documents.pre.identity,
+        &documents.invocation.identity,
+    )?;
+    document::check_snapshot_invocation(
+        post_snapshot,
+        &documents.post.identity,
+        &documents.invocation.identity,
+    )?;
 
     // Checks 6 to 8: pre's own check 6, then post's, then pre's check 7,
     // then post's, then pre's check 8, then post's -- never fully
@@ -1639,31 +1913,63 @@ fn admit_invocation_documents(
     // FR-106 check 9: `self` is required in the post snapshot only for a
     // postcondition (SR-750 FND-006), never for a `Frame` run, whose
     // operation may delete it.
-    let post_self_population = post_self.then_some(self_object.population.as_str());
-    let pre_values = document::admit_population_values(
-        views,
-        types,
-        &pre_snapshot.populations,
-        PostStateRange::Refuse,
-        ancestor_steps,
-    )?;
-    let post_values = document::admit_population_values(
-        views,
-        types,
-        &post_snapshot.populations,
-        // Only a postcondition reads the post snapshot as the
-        // subject's output; a frame run refuses as for any input.
-        if post_self {
-            limits.post_state
-        } else {
-            PostStateRange::Refuse
-        },
-        ancestor_steps,
-    )?;
+    let state_machine = is_state_machine_context(context_view, context_name);
+    let post_range = if post_self {
+        limits.post_state
+    } else {
+        PostStateRange::Refuse
+    };
+    let (pre_values, receiver_pre, post_values, receiver_post) = if state_machine {
+        let (pre, pre_reference) = document::admit_state_machine_context_values(
+            views,
+            types,
+            context_view,
+            context_name,
+            &pre_snapshot.populations,
+            &documents.pre.identity,
+            selected,
+            PostStateRange::Refuse,
+            ancestor_steps,
+        )?;
+        let (post, post_reference) = document::admit_state_machine_context_values(
+            views,
+            types,
+            context_view,
+            context_name,
+            &post_snapshot.populations,
+            &documents.post.identity,
+            selected,
+            post_range,
+            ancestor_steps,
+        )?;
+        (pre, Some(pre_reference), post, Some(post_reference))
+    } else {
+        (
+            document::admit_population_values(
+                views,
+                types,
+                &pre_snapshot.populations,
+                PostStateRange::Refuse,
+                ancestor_steps,
+            )?,
+            None,
+            document::admit_population_values(
+                views,
+                types,
+                &post_snapshot.populations,
+                post_range,
+                ancestor_steps,
+            )?,
+            None,
+        )
+    };
+    let pre_self_population = (!state_machine).then_some(self_object.population.as_str());
+    let post_self_population =
+        (!state_machine && post_self).then_some(self_object.population.as_str());
     document::check_population_completeness(
         &pre_snapshot.populations,
         &pre_values.completeness,
-        Some(&self_object.population),
+        pre_self_population,
         &document::parameter_populations(
             views,
             &operation.declaration,
@@ -1689,24 +1995,39 @@ fn admit_invocation_documents(
     let pre_admitted = document::finish_populations(types, pre_values)?;
     let post_admitted = document::finish_populations(types, post_values)?;
 
-    let self_reference = document::resolve_self(
-        views,
-        types,
-        context_view,
-        context_name,
-        &pre_admitted.environment,
-        self_object,
-    )?;
-    if post_self {
-        let _ = document::resolve_self(
+    let self_reference = if state_machine {
+        if post_self {
+            receiver_post
+                .as_ref()
+                .ok_or_else(|| fault("post-context-reference-missing"))?
+                .clone()
+        } else {
+            receiver_pre
+                .as_ref()
+                .ok_or_else(|| fault("pre-context-reference-missing"))?
+                .clone()
+        }
+    } else {
+        let reference = document::resolve_self(
             views,
             types,
             context_view,
             context_name,
-            &post_admitted.environment,
+            &pre_admitted.environment,
             self_object,
         )?;
-    }
+        if post_self {
+            let _ = document::resolve_self(
+                views,
+                types,
+                context_view,
+                context_name,
+                &post_admitted.environment,
+                self_object,
+            )?;
+        }
+        reference
+    };
 
     // Check 10: parameters and result.
     // A reference parameter resolves against the pre snapshot's objects, a
@@ -1733,6 +2054,9 @@ fn admit_invocation_documents(
         pre: pre_admitted,
         post: post_admitted,
         self_reference,
+        receiver_invocation: state_machine.then(|| selected.clone()),
+        receiver_pre,
+        receiver_post,
         parameters,
         result,
     })
@@ -1772,6 +2096,9 @@ fn check_operation(
 /// object and the parameters.
 struct PreCallInput<'a> {
     call: Option<&'a document::InvocationCall>,
+    receiver_invocation: Option<&'a DocumentRef>,
+    /// The selected invocation's own identity, when one is selected.
+    invocation: Option<&'a DocumentRef>,
     invocation_usage: AdmissionUsage,
     pre: document::ReadDocument,
     self_object: &'a SelectedObject,
@@ -1809,6 +2136,8 @@ fn admit_pre_call_invocation(
         context,
         PreCallInput {
             call: Some(call),
+            receiver_invocation: Some(selected),
+            invocation: Some(&invocation_read.identity),
             invocation_usage: invocation_read.usage,
             pre: pre_read,
             self_object: &call.self_object,
@@ -1850,20 +2179,46 @@ fn admit_pre_call(
     if let Some(call) = call {
         check_operation(call, context.context_name, context.operation)?;
     }
+    if let Some(invocation) = input.invocation {
+        document::check_snapshot_invocation(snapshot, &input.pre.identity, invocation)?;
+    }
 
     // Checks 6 to 8, with every declared population a reference parameter
     // names required alongside `self`'s.
-    let values = document::admit_population_values(
-        context.views,
-        context.types,
-        &snapshot.populations,
-        PostStateRange::Refuse,
-        context.ancestor_steps,
-    )?;
+    let state_machine = is_state_machine_context(context.context_view, context.context_name);
+    let receiver_identity = input
+        .receiver_invocation
+        .cloned()
+        .unwrap_or_else(|| input.pre.identity.clone());
+    let (values, receiver_pre) = if state_machine {
+        let (values, reference) = document::admit_state_machine_context_values(
+            context.views,
+            context.types,
+            context.context_view,
+            context.context_name,
+            &snapshot.populations,
+            &input.pre.identity,
+            &receiver_identity,
+            PostStateRange::Refuse,
+            context.ancestor_steps,
+        )?;
+        (values, Some(reference))
+    } else {
+        (
+            document::admit_population_values(
+                context.views,
+                context.types,
+                &snapshot.populations,
+                PostStateRange::Refuse,
+                context.ancestor_steps,
+            )?,
+            None,
+        )
+    };
     document::check_population_completeness(
         &snapshot.populations,
         &values.completeness,
-        Some(&input.self_object.population),
+        (!state_machine).then_some(input.self_object.population.as_str()),
         &document::parameter_populations(
             context.views,
             &context.operation.declaration,
@@ -1878,14 +2233,18 @@ fn admit_pre_call(
     let admitted = document::finish_populations(context.types, values)?;
 
     // Check 9: self.
-    let self_reference = document::resolve_self(
-        context.views,
-        context.types,
-        context.context_view,
-        context.context_name,
-        &admitted.environment,
-        input.self_object,
-    )?;
+    let self_reference = if let Some(reference) = receiver_pre.as_ref() {
+        reference.clone()
+    } else {
+        document::resolve_self(
+            context.views,
+            context.types,
+            context.context_view,
+            context.context_name,
+            &admitted.environment,
+            input.self_object,
+        )?
+    };
 
     // Check 10: parameters, resolved against the pre snapshot. A pre-call
     // observation carries no result.
@@ -1910,6 +2269,9 @@ fn admit_pre_call(
         }),
         post: None,
         self_object: self_reference,
+        receiver_invocation: state_machine.then_some(receiver_identity),
+        receiver_pre,
+        receiver_post: None,
         parameters,
         result: None,
         created: Vec::new(),
@@ -1928,7 +2290,7 @@ fn admit_operation(
     provisions: &Provisions<'_>,
     selected: &DocumentRef,
     limits: ObservationLimits,
-    ancestor_steps: u64,
+    model_limits: ModelNormalizationLimits,
 ) -> Result<AdmittedObservations, AdmissionFailure> {
     let operation = operation.ok_or_else(|| fault("clause-declares-no-operation"))?;
     let admitted = admit_invocation_documents(
@@ -1941,7 +2303,7 @@ fn admit_operation(
         provisions,
         selected,
         limits,
-        ancestor_steps,
+        model_limits.ancestor_steps,
     )?;
     let invocation = admitted.documents.invocation()?;
 
@@ -1950,11 +2312,13 @@ fn admit_operation(
         views,
         types,
         context_view,
-        ancestor_steps,
+        limits: model_limits,
         effect: operation.declaration.effect(),
     };
+    let binding = frame_binding(invocation);
     let (created, deleted) = frame::enforce(
         &frame_context,
+        &binding,
         &admitted.documents.pre()?.populations,
         &admitted.documents.post()?.populations,
         &invocation.created,
@@ -1979,6 +2343,9 @@ fn admit_operation(
             out_of_range: admitted.post.out_of_range,
         }),
         self_object: admitted.self_reference,
+        receiver_invocation: admitted.receiver_invocation,
+        receiver_pre: admitted.receiver_pre,
+        receiver_post: admitted.receiver_post,
         parameters: admitted.parameters,
         result: admitted.result,
         created,
@@ -2020,7 +2387,7 @@ pub struct AdmittedInvocation<'t> {
     views: Vec<ModelView>,
     types: &'t TypeEnvironment,
     context: EffectiveId,
-    ancestor_steps: u64,
+    model_limits: ModelNormalizationLimits,
     documents: InvocationDocuments,
 }
 
@@ -2036,6 +2403,23 @@ impl std::fmt::Debug for AdmittedInvocation<'_> {
     }
 }
 
+/// The receiver and the reference arguments of `invocation`, which the
+/// frame's receiver-scoped and argument-scoped entries ground in (FR-013).
+fn frame_binding(invocation: &document::InvocationDocument) -> frame::FrameBinding<'_> {
+    let call = &invocation.call;
+    frame::FrameBinding {
+        receiver: &call.self_object,
+        arguments: call
+            .parameters
+            .iter()
+            .filter_map(|(name, value)| match value.form() {
+                RawForm::Reference(object) => Some((name.clone(), object)),
+                _ => None,
+            })
+            .collect(),
+    }
+}
+
 /// FR-115: check 11's result as the thing under test.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum FrameVerdict {
@@ -2045,8 +2429,10 @@ pub enum FrameVerdict {
     Violation(Box<FrameWitness>),
     /// The frame cannot be evaluated over the invocation: check 11's step 4
     /// found a declared delta that disagrees
-    /// (`population_delta_mismatch`/`delta-disagreement`), or the
-    /// conformance walk reached its ceiling.
+    /// (`population_delta_mismatch`/`delta-disagreement`), the
+    /// conformance walk reached its ceiling, or a `frame.write` or
+    /// `frame.redefines-link` charge was denied (`resource_exhausted`/
+    /// `insufficient-next-charge`).
     Refused(AdmissionRecord),
 }
 
@@ -2133,11 +2519,13 @@ impl AdmittedInvocation<'_> {
             views: &self.views,
             types: self.types,
             context_view,
-            ancestor_steps: self.ancestor_steps,
+            limits: self.model_limits,
             effect,
         };
+        let binding = frame_binding(invocation);
         frame::verdict(
             &frame_context,
+            &binding,
             &frame::WitnessDocuments {
                 invocation: &self.invocation,
                 pre: &self.pre,
@@ -2196,7 +2584,7 @@ pub fn admit_frame_invocation<'t>(
         views,
         types,
         context: frame.context,
-        ancestor_steps: model_limits.ancestor_steps,
+        model_limits,
         documents: admitted.documents,
     })
 }

@@ -23,6 +23,7 @@ use quire_contract_model::{
 };
 
 use super::super::extent_agreement::{package_declaring, records};
+use super::variant_types::fixture as variant_fixture;
 use super::*;
 use crate::checked_v2::{read_checked_package_v2, V2Read, V2ReadRefusal};
 use qsl_foundation::diagnostic::{StageFailure, Staged};
@@ -79,11 +80,13 @@ enum Fixture {
     FormsUnit,
     /// [`CYCLIC_EQUALITY`].
     CyclicEquality,
+    /// A function over a model variant type, FR-360 item 12.
+    VariantType,
 }
 
 impl Fixture {
     /// Every fixture; each must back at least one row.
-    const ALL: [Self; 17] = [
+    const ALL: [Self; 18] = [
         Self::Tc416Functions,
         Self::RecursiveF,
         Self::Tree,
@@ -101,6 +104,7 @@ impl Fixture {
         Self::QuantityAndT,
         Self::FormsUnit,
         Self::CyclicEquality,
+        Self::VariantType,
     ];
 }
 
@@ -124,6 +128,12 @@ const FORMS_UNIT: &str =
 /// (FR-093-AC-11).
 const CYCLIC_EQUALITY: &str = "record Tree { kids: Sequence<Tree>[0, 3]; }\n\
     function same using v(a: Tree, b: Tree): Boolean pure { a = b }\n";
+
+/// The FR-360 domain package, whose variant types the `VariantType` fixture
+/// names.
+static VARIANT_DOCUMENT: std::sync::LazyLock<Vec<u8>> = std::sync::LazyLock::new(|| {
+    serde_json::to_vec(&variant_fixture::document()).expect("the fixture serializes")
+});
 
 /// The domain package declaring the systems interface `Sensor`.
 const SYSTEMS_DOCUMENT: &[u8] =
@@ -250,6 +260,17 @@ impl Fixture {
             }
             Self::FormsUnit => text(FORMS_UNIT),
             Self::CyclicEquality => text(CYCLIC_EQUALITY),
+            Self::VariantType => {
+                let document = VARIANT_DOCUMENT.as_slice();
+                let unit = format!(
+                    "{COMPLETE_V1_HEADER}model M = {package:?} version \"1\" \
+                     digest \"sha256-jcs:{digest}\";\n\
+                     function keep using v(t: M::Tier): M::Tier pure {{ t }}\n",
+                    package = variant_fixture::PACKAGE,
+                    digest = document_digest(document),
+                );
+                Emitted::placed(modelled(&unit, document, Vec::new()), vec![document])
+            }
         };
         vec![one]
     }
@@ -363,6 +384,8 @@ fn rows() -> Vec<Row> {
         row(K::Function(FunctionForm::RecursiveFunction), F::RecursiveF),
         row(K::Model(ModelForm::ObjectType), F::SpineModel),
         row(K::Model(ModelForm::SystemsInterface), F::SystemsInterface),
+        row(K::Model(ModelForm::VariantType), F::VariantType),
+        row(K::Model(ModelForm::RecordValueType), F::VariantType),
         row(
             K::Relation(RelationForm::Relationship),
             F::RelationshipModel,
@@ -377,7 +400,7 @@ fn rows() -> Vec<Row> {
 const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
     use CheckedNodeKind as K;
     const NO_RECORD_FORM: &str =
-        "lowering's record_form maps only object types and systems interfaces to model nodes";
+        "lowering's record_form maps only object types, systems interfaces, record value types and variant types to model nodes";
     const NO_TAG: &str = "lowering builds no node of this tag";
     &[
         (
@@ -411,8 +434,6 @@ const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
         ),
         (K::Model(ModelForm::ModelImport), NO_RECORD_FORM),
         (K::Model(ModelForm::ValueType), NO_RECORD_FORM),
-        (K::Model(ModelForm::VariantType), NO_RECORD_FORM),
-        (K::Model(ModelForm::RecordValueType), NO_RECORD_FORM),
         (K::Model(ModelForm::EventType), NO_RECORD_FORM),
         (K::Model(ModelForm::StateMachine), NO_RECORD_FORM),
         (K::Model(ModelForm::Process), NO_RECORD_FORM),
@@ -694,4 +715,110 @@ fn every_emitted_body_of_the_corpus_is_in_the_stratified_grammar() {
         }
     }
     assert!(bodies > 0, "the corpus emits nodes");
+}
+
+/// A package over the TC-442 spine model whose one function `pop` takes a
+/// `Population<M::Gadget>[N]` parameter for each of `bounds`, emitted from
+/// source forms (source text spells no `Population` type).
+fn population_package(bounds: &[u64]) -> Emitted {
+    let parameters = bounds
+        .iter()
+        .enumerate()
+        .map(|(at, bound)| {
+            let population = TypeForm::new(TypeFormHead::Population, SPAN)
+                .with_arguments(vec![TypeForm::name("M::Gadget", SPAN)])
+                .with_bounds(vec![bound.to_string()]);
+            (format!("p{at}"), population)
+        })
+        .collect();
+    let pop = FunctionDeclaration::new(
+        "pop",
+        parameters,
+        boolean(),
+        None,
+        Expression::boolean(true),
+    );
+    Emitted::whole(
+        modelled(&spine_model_without(&[]), SPINE_MODEL_DOCUMENT, vec![pop]),
+        vec![SPINE_MODEL_DOCUMENT],
+    )
+}
+
+/// The `max` bound and the occurrence roles of each emitted
+/// `bounded_domain`/`model_population` node of `emitted`'s wire.
+fn population_nodes(emitted: &Emitted) -> Vec<(serde_json::Value, Vec<String>)> {
+    let written = wire(&emitted.emission);
+    nodes(&written)
+        .iter()
+        .filter(|node| {
+            node["node_tag"] == "bounded_domain" && node["semantic_form"] == "model_population"
+        })
+        .map(|node| {
+            let roles = node["occurrences"]
+                .as_array()
+                .expect("a node lists its occurrences")
+                .iter()
+                .map(|occurrence| occurrence["role"].as_str().unwrap_or_default().to_owned())
+                .collect();
+            (node["body"].clone(), roles)
+        })
+        .collect()
+}
+
+/// The integer `max` binding of a population node's aggregate `body`.
+fn max_of(body: &serde_json::Value) -> Option<u64> {
+    let max = body["members"]
+        .as_array()?
+        .iter()
+        .find(|member| member["name"] == "max")?;
+    max["value"]["value"].as_str()?.parse().ok()
+}
+
+/// QSL-768 (IR-760's `Population<T>[N]` corpus): the emitter writes, and
+/// IR's checked-package/v2 reader admits at its emitted `package_id`, a
+/// package for N = 0, N = 1, N = 3 and two populations with distinct bounds.
+/// Each population type node is a `model_population` node carrying role
+/// `type` and only that role.
+#[trace("FR-093-AC-19", "TC-416")]
+#[test]
+fn population_bounds_are_emitted_admitted_and_typed() {
+    let cases: [&[u64]; 4] = [&[0], &[1], &[3], &[2, 5]];
+    for bounds in cases {
+        let emitted = population_package(bounds);
+        assert_eq!(emitted.emission.omitted, [], "{bounds:?}");
+        let read = read(&emitted).unwrap_or_else(|failure| panic!("{bounds:?}: {failure:?}"));
+        assert_eq!(
+            read.package.package_id(),
+            emitted.emission.package.package_id(),
+            "{bounds:?}"
+        );
+        let admitted = read
+            .admitted
+            .node_kinds()
+            .iter()
+            .filter(|kind| {
+                **kind == CheckedNodeKind::BoundedDomain(BoundedDomainForm::ModelPopulation)
+            })
+            .count();
+        assert_eq!(
+            admitted,
+            bounds.len(),
+            "{bounds:?}: admitted population nodes"
+        );
+
+        let populations = population_nodes(&emitted);
+        assert_eq!(populations.len(), bounds.len(), "{bounds:?}");
+        for (body, roles) in &populations {
+            assert_eq!(roles, &["type"], "{bounds:?}: {body}");
+        }
+        let mut written: Vec<u64> = populations
+            .iter()
+            .map(|(body, _)| max_of(body).unwrap_or_else(|| panic!("{bounds:?}: no max in {body}")))
+            .collect();
+        written.sort_unstable();
+        assert_eq!(
+            written, bounds,
+            "the emitted `max` bindings are the declared bounds"
+        );
+    }
 }

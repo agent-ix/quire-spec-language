@@ -320,6 +320,7 @@ fn encode_value_type(out: &mut DeclarationMeter, value_type: &ValueType) {
                 out.write_u64(text_type.max());
                 out.write_str(text_profile_tag(text_type.profile()));
             }
+            ValueType::String => out.write_str("string"),
             ValueType::Enum(shape) => {
                 out.write_str("enum");
                 out.write_bool(shape.is_ordered());
@@ -830,6 +831,7 @@ fn is_package_independent(value_type: &ValueType) -> bool {
             | ValueType::Decimal(_)
             | ValueType::Float(_)
             | ValueType::Text(_)
+            | ValueType::String
             | ValueType::Uuid
             | ValueType::Timestamp => return true,
             ValueType::Option(payload) => current = payload,

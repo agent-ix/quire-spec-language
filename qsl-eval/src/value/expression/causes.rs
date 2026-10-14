@@ -453,9 +453,16 @@ mod tests {
                 };
             assert_eq!(category_of(&code), Some(expected), "{cause:?} -> {code}");
             // The catalog code is a native code spelling, and the cause tag
-            // is the cause's own.
+            // is the cause's own, except that a walk ceiling is a denied
+            // charge (QSpec FR-150-AC-11).
             assert!(Code::from_code(code.code()).is_some(), "{code}");
-            assert_eq!(code.cause(), cause.as_str());
+            let tag = match cause {
+                ModelRefusalCause::AncestorSteps { .. } | ModelRefusalCause::FamilySteps { .. } => {
+                    "insufficient-next-charge"
+                }
+                _ => cause.as_str(),
+            };
+            assert_eq!(code.cause(), tag);
         }
     }
 

@@ -874,29 +874,6 @@ fn supersedes_relationship() -> Value {
     })
 }
 
-/// A `Note` record value type, as a sibling declaration
-/// (`extra_constructs`/`extra_types`) beside `ConfigVersion`.
-fn note_record_value_type() -> (Value, Value) {
-    let note = format!("ix://{PACKAGE_IDENTITY}/Note");
-    let construct = wire_construct("record_value_type", meaning::RECORD_VALUE_TYPE, json!({}));
-    let type_node = wire_type(
-        &note,
-        "record_value_type",
-        json!({
-            "supertypes": [],
-            "operations": [],
-            "fields": [wire_field(
-                &format!("{note}/text"),
-                "text",
-                "ix://quire/native/Integer",
-                "required",
-                1,
-            )],
-        }),
-    );
-    (construct, type_node)
-}
-
 fn frame_key(suffix: &str) -> DeclarationKey {
     DeclarationKey {
         package: PACKAGE_IDENTITY.to_owned(),
@@ -965,7 +942,11 @@ pub(super) fn admit_and_assemble_with_body(
         &packages,
         ModelNormalizationLimits::default(),
     )
-    .unwrap_or_else(|refusal| panic!("I1 refused: {refusal:?}"));
+    .unwrap_or_else(|refusal| panic!("I1 refused: {refusal:?}"))
+    .with_parsed_operation_clauses(|text| {
+        qsl_forms::parse_clause_text(text, qsl_cst::Limits::default())
+    })
+    .unwrap_or_else(|failure| panic!("a kept operation clause does not parse: {failure:?}"));
     let raw = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("test", "tc-459", "fixture", "fixture:1"),
         "unit.native",
@@ -1379,7 +1360,7 @@ pub(super) fn parse_and_build(unit: &str) -> qsl_forms::ParsedUnit {
 fn admit(
     document: &[u8],
 ) -> Result<
-    Vec<qsl_semantics::model::intake::SelectedModel>,
+    qsl_semantics::model::intake::SelectedModels,
     qsl_semantics::model::intake::UnitIntakeRefusal,
 > {
     let (unit, packages) = config_unit(document);
@@ -1563,6 +1544,413 @@ fn bound_integer_value_type_admits_and_assembles() {
         .expect("num is an attribute");
     assert_eq!(num.value_type(), &version_number_bound());
     assert_eq!(num.presence(), Presence::Required);
+}
+
+/// FR-322's model operation owners include persistence interfaces. An
+/// admitted interface remains an original-only model declaration, so its
+/// storage metadata and operation signatures must not make assembly reject a
+/// package that does not select an interface operation in native source.
+#[trace("FR-322-AC-25", "TC-235")]
+#[test]
+fn persistence_interface_model_members_do_not_block_assembly() {
+    let order = format!("ix://{PACKAGE_IDENTITY}/Order");
+    let order_id = format!("{order}/id");
+    let store = format!("ix://{PACKAGE_IDENTITY}/OrderStore");
+    let operation = |name: &str| {
+        let identity = format!("{store}/{name}");
+        json!({
+            "identity": identity,
+            "name": name,
+            "params": [],
+            "pre": [],
+            "post": [],
+            "frame": {"modifies": [], "creates": [], "deletes": []},
+            "origin": {
+                "generated": {
+                    "generatorIdentity": identity,
+                    "generatorVersion": "1.0.0",
+                    "inputIdentities": [identity],
+                }
+            },
+        })
+    };
+    let document = wire_envelope(
+        json!([
+            wire_construct(
+                "object_type",
+                meaning::OBJECT_TYPE,
+                json!({"identityFields": "required"}),
+            ),
+            wire_construct(
+                "persistence_interface",
+                meaning::PERSISTENCE_INTERFACE,
+                json!({"persists": "required"}),
+            ),
+        ]),
+        json!([
+            wire_type(
+                &order,
+                "object_type",
+                json!({
+                    "identityFields": [order_id],
+                    "fields": [wire_field(
+                        &format!("{order}/id"),
+                        "id",
+                        "ix://quire/native/Boolean",
+                        "required",
+                        1,
+                    )],
+                    "operations": [],
+                    "relationships": [],
+                }),
+            ),
+            wire_type(
+                &store,
+                "persistence_interface",
+                json!({
+                    "fields": [],
+                    "operations": [operation("get"), operation("save")],
+                    "persists": [order],
+                }),
+            ),
+        ]),
+        json!([]),
+    )
+    .to_string()
+    .into_bytes();
+
+    admit_and_assemble(&document)
+        .expect("an original-only persistence interface must not block model assembly");
+}
+
+/// FR-322's model operation owners include processes. A process's identified
+/// runs use the object-type surface, so assembly must keep its fields,
+/// supertypes and operation signatures while its ordered steps remain domain
+/// package data.
+#[trace("FR-322-AC-25", "TC-235")]
+#[test]
+fn process_model_members_assemble_as_an_identified_run_type() {
+    let workflow = format!("ix://{PACKAGE_IDENTITY}/Workflow");
+    let workflow_id = format!("{workflow}/id");
+    let workflow_step = format!("{workflow}/begin");
+    let process = format!("ix://{PACKAGE_IDENTITY}/Fulfilment");
+    let correlation = format!("{process}/correlation_id");
+    let restart = format!("{process}/restart");
+    let step = format!("{process}/receive");
+    let document = wire_envelope(
+        json!([wire_construct(
+            "process",
+            meaning::PROCESS,
+            json!({"identityFields": "required", "steps": "required"}),
+        )]),
+        json!([
+            wire_type(
+                &workflow,
+                "process",
+                json!({
+                    "identityFields": [workflow_id],
+                    "fields": [wire_field(
+                        &format!("{workflow}/id"),
+                        "id",
+                        "ix://quire/native/Boolean",
+                        "required",
+                        1,
+                    )],
+                    "operations": [],
+                    "steps": [{
+                        "identity": workflow_step,
+                        "name": "begin",
+                        "stepKind": "command",
+                        "consumes": [],
+                        "emits": [],
+                        "origin": {
+                            "generated": {
+                                "generatorIdentity": workflow_step,
+                                "generatorVersion": "1.0.0",
+                                "inputIdentities": [workflow_step],
+                            }
+                        },
+                    }],
+                }),
+            ),
+            wire_type(
+                &process,
+                "process",
+                json!({
+                "identityFields": [correlation],
+                "supertypes": [workflow],
+                "fields": [wire_field(
+                    &format!("{process}/correlation_id"),
+                    "correlation_id",
+                    "ix://quire/native/UUID",
+                    "required",
+                    1,
+                )],
+                "operations": [{
+                    "identity": restart,
+                    "name": "restart",
+                    "params": [],
+                    "returns": {
+                        "typeRef": "ix://quire/native/Boolean",
+                        "multiplicity": {
+                            "lower": 1,
+                            "upper": 1,
+                            "ordered": false,
+                            "unique": true,
+                        },
+                        "nullable": false,
+                    },
+                    "pre": [],
+                    "post": [],
+                    "frame": {
+                        "modifies": [],
+                        "creates": [process],
+                        "deletes": [process],
+                    },
+                    "origin": {
+                        "generated": {
+                            "generatorIdentity": restart,
+                            "generatorVersion": "1.0.0",
+                            "inputIdentities": [restart],
+                        }
+                    },
+                }],
+                "steps": [{
+                    "identity": step,
+                    "name": "receive",
+                    "stepKind": "command",
+                    "consumes": [],
+                    "emits": [],
+                    "origin": {
+                        "generated": {
+                            "generatorIdentity": step,
+                            "generatorVersion": "1.0.0",
+                            "inputIdentities": [step],
+                        }
+                    },
+                }],
+                }),
+            ),
+        ]),
+        json!([]),
+    )
+    .to_string()
+    .into_bytes();
+
+    let declarations = admit_and_assemble(&document).expect(
+        "a process's identified-run members and process-valued create/delete frame entries must assemble",
+    );
+
+    let (unit, packages) = config_unit(&document);
+    let built = parse_and_build(&unit);
+    let views = admit_unit(
+        &built.selections().models,
+        &packages,
+        ModelNormalizationLimits::default(),
+    )
+    .expect("the process package admits");
+    let identities = views[0].view.type_identities();
+    let key = |node: &str| DeclarationKey {
+        package: PACKAGE_IDENTITY.to_owned(),
+        node: node.to_owned(),
+    };
+    let workflow_effective = identities[&key(&workflow)];
+    let process_effective = identities[&key(&process)];
+    let declared = declarations
+        .types
+        .object_type(process_effective)
+        .expect("Fulfilment is projected as an identified run type");
+    assert_eq!(declared.name(), "Config::Fulfilment");
+    assert_eq!(declared.supertypes(), &[workflow_effective]);
+    let correlation = declared
+        .attributes()
+        .iter()
+        .find(|field| field.name() == "correlation_id")
+        .expect("the process correlation field is projected");
+    assert_eq!(correlation.value_type(), &ValueType::Uuid);
+    assert_eq!(correlation.presence(), Presence::Required);
+
+    let operation = declarations
+        .operations
+        .declared_by(process_effective)
+        .iter()
+        .find(|operation| operation.name() == "restart")
+        .expect("the process operation is projected");
+    assert_eq!(operation.parameters(), &[]);
+    assert_eq!(operation.result(), Some(&ValueType::Boolean));
+    assert_eq!(operation.effect().modifies, Vec::new());
+    assert_eq!(operation.effect().creates, vec![key(&process)]);
+    assert_eq!(operation.effect().deletes, vec![key(&process)]);
+}
+
+/// FR-322 model-owned fields project from a state-machine owner through the
+/// same checked object surface used for its operations.
+#[trace("FR-322-AC-30", "TC-235")]
+#[test]
+fn state_machine_fields_assemble_on_the_state_owner() {
+    let machine = format!("ix://{PACKAGE_IDENTITY}/OrderLifecycle");
+    let placed = format!("{machine}/placed");
+    let place = format!("{machine}/place");
+    let transition = format!("{machine}/place_transition");
+    let state = |name: &str| {
+        let identity = format!("{machine}/{name}");
+        json!({
+            "identity": identity,
+            "name": name,
+            "origin": {
+                "generated": {
+                    "generatorIdentity": identity,
+                    "generatorVersion": "1.0.0",
+                    "inputIdentities": [identity],
+                }
+            },
+        })
+    };
+    let document = wire_envelope(
+        json!([wire_construct(
+            "state_machine",
+            meaning::STATE_MACHINE,
+            json!({"states": "required", "transitions": "required"}),
+        )]),
+        json!([wire_type(
+            &machine,
+            "state_machine",
+            json!({
+                "fields": [wire_field(
+                    &placed,
+                    "placed",
+                    "ix://quire/native/Boolean",
+                    "required",
+                    1,
+                )],
+                "operations": [{
+                    "identity": place,
+                    "name": "place",
+                    "params": [],
+                    "pre": [],
+                    "post": [],
+                    "frame": {"modifies": [placed], "creates": [], "deletes": []},
+                    "origin": {
+                        "generated": {
+                            "generatorIdentity": place,
+                            "generatorVersion": "1.0.0",
+                            "inputIdentities": [place],
+                        }
+                    },
+                }],
+                "clauses": [],
+                "supertypes": [],
+                "states": [state("Draft"), state("Placed")],
+                "transitions": [{
+                    "identity": transition,
+                    "from": format!("{machine}/Draft"),
+                    "to": format!("{machine}/Placed"),
+                    "trigger": place,
+                    "emits": [],
+                    "origin": {
+                        "generated": {
+                            "generatorIdentity": transition,
+                            "generatorVersion": "1.0.0",
+                            "inputIdentities": [transition],
+                        }
+                    },
+                }],
+            }),
+        )]),
+        json!([]),
+    )
+    .to_string()
+    .into_bytes();
+
+    let declarations = admit_and_assemble(&document)
+        .expect("a representable state-machine field assembles on its state owner");
+    let (unit, packages) = config_unit(&document);
+    let built = parse_and_build(&unit);
+    let views = admit_unit(
+        &built.selections().models,
+        &packages,
+        ModelNormalizationLimits::default(),
+    )
+    .expect("the state-machine package admits");
+    let machine_key = DeclarationKey {
+        package: PACKAGE_IDENTITY.to_owned(),
+        node: machine,
+    };
+    let machine_effective = views[0].view.type_identities()[&machine_key];
+    let declared = declarations
+        .types
+        .object_type(machine_effective)
+        .expect("OrderLifecycle is projected on the checked object surface");
+    let placed = declared
+        .attributes()
+        .iter()
+        .find(|field| field.name() == "placed")
+        .expect("the state-machine field is projected");
+    assert_eq!(placed.value_type(), &ValueType::Boolean);
+    assert_eq!(placed.presence(), Presence::Required);
+}
+
+/// Native UUID identity fields project on ordinary object owners as well as
+/// process-owned run types.
+#[trace("FR-322-AC-31", "TC-235")]
+#[test]
+fn object_uuid_field_projects_as_uuid() {
+    let order = format!("ix://{PACKAGE_IDENTITY}/Order");
+    let order_id = format!("{order}/order_id");
+    let document = wire_envelope(
+        json!([wire_construct(
+            "object_type",
+            meaning::OBJECT_TYPE,
+            json!({"identityFields": "required"}),
+        )]),
+        json!([wire_type(
+            &order,
+            "object_type",
+            json!({
+                "identityFields": [order_id],
+                "fields": [wire_field(
+                    &format!("{order}/order_id"),
+                    "order_id",
+                    "ix://quire/native/UUID",
+                    "required",
+                    1,
+                )],
+                "operations": [],
+                "relationships": [],
+                "supertypes": [],
+            }),
+        )]),
+        json!([]),
+    )
+    .to_string()
+    .into_bytes();
+
+    let declarations = admit_and_assemble(&document)
+        .expect("an object UUID identity field is assembled as a native UUID");
+    let (unit, packages) = config_unit(&document);
+    let built = parse_and_build(&unit);
+    let views = admit_unit(
+        &built.selections().models,
+        &packages,
+        ModelNormalizationLimits::default(),
+    )
+    .expect("the object package admits");
+    let order_key = DeclarationKey {
+        package: PACKAGE_IDENTITY.to_owned(),
+        node: order,
+    };
+    let order_effective = views[0].view.type_identities()[&order_key];
+    let declared = declarations
+        .types
+        .object_type(order_effective)
+        .expect("Order is projected on the checked object surface");
+    let order_id = declared
+        .attributes()
+        .iter()
+        .find(|field| field.name() == "order_id")
+        .expect("the object UUID identity field is projected");
+    assert_eq!(order_id.value_type(), &ValueType::Uuid);
+    assert_eq!(order_id.presence(), Presence::Required);
 }
 
 /// FR-056-AC-20 (TC-405 step 5): a native floating model field is refused by
@@ -1872,27 +2260,28 @@ fn a_decimal_typed_parameter_refuses_at_intake_not_assembly() {
     let UnitIntakeCause::Refused(refusals) = missing_policy.cause else {
         panic!("{missing_policy:?}: expected a Refused cause");
     };
-    assert_eq!(refusals.len(), 1, "{refusals:?}");
-    assert_eq!(
-        refusals[0].code.as_str(),
-        "invalid_model_binding",
+    // FR-056 retains the reader's diagnostic with its IR node, the
+    // parameter; FR-103-AC-3 adds unsupported_construct/declaration-form at
+    // the same parameter. Exactly these two.
+    let parameter_node = note["identity"].as_str().unwrap();
+    assert_eq!(refusals.len(), 2, "{refusals:?}");
+    assert!(
+        refusals.iter().any(|refusal| refusal.code.as_str()
+            == "invalid_model_binding"
+            && matches!(
+                &refusal.cause,
+                qsl_semantics::model::refusal::ModelRefusalCause::IntakeMalformedDeclaration { node, .. }
+                    if node == parameter_node
+            )),
         "{refusals:?}"
     );
     assert!(
-        matches!(
-            &refusals[0].cause,
-            qsl_semantics::model::refusal::ModelRefusalCause::IntakeMalformedDeclaration { node, .. }
-                if node == note["identity"].as_str().unwrap()
-        ),
-        "{refusals:?}"
-    );
-    // A missing Decimal policy is diagnosed at the parameter owning the walk,
-    // not at its typeRef member (FCD FR-144, Decimal policy).
-    assert_eq!(
-        refusals[0].detail,
-        "agent-ix-semantic-ir refused this document at \
-         /ir/types/1/operations/0/params/0 (agent-ix.semantic-ir.DECIMAL_POLICY_MISSING): \
-         a decimal parameter carries a decimal policy",
+        refusals.iter().any(|refusal| refusal.code.as_str() == "unsupported_construct"
+            && matches!(
+                &refusal.cause,
+                qsl_semantics::model::refusal::ModelRefusalCause::UnsupportedDeclarationForm { node, .. }
+                    if node == parameter_node
+            )),
         "{refusals:?}"
     );
     // The wire policy admits this Decimal parameter at FCD's boundary;
@@ -1961,33 +2350,102 @@ fn a_version_number_typed_parameter_admits_and_is_typed_bound_integer() {
     );
 }
 
-/// FR-103-AC-4 (TC-458 step 4): a package holding a record value type still
-/// refuses `UnsupportedModelMember` naming that node, with the operation
-/// admitted beside it not changing the refusal.
+/// FR-103-AC-4 (TC-458 step 4): a record value type `Address { street:
+/// VersionNumber }` and `ConfigVersion.address: Address` assemble beside
+/// `attemptUpdate`, which modifies `ConfigVersion/address`; a clause reading
+/// `self.address.street` checks; `address` is typed by the record's
+/// composite, not a `Reference`; and no `UnsupportedModelMember` names it.
 #[trace("TC-458", "FR-103-AC-4")]
 #[test]
-fn a_record_value_type_beside_an_admitted_operation_still_refuses() {
-    let note = format!("ix://{PACKAGE_IDENTITY}/Note");
-    let (construct, type_node) = note_record_value_type();
-    let document = config_version_document(
+fn a_record_value_type_beside_an_admitted_operation_assembles() {
+    let address = format!("ix://{PACKAGE_IDENTITY}/Address");
+    let construct = wire_construct("record_value_type", meaning::RECORD_VALUE_TYPE, json!({}));
+    let address_type = wire_type(
+        &address,
+        "record_value_type",
+        json!({
+            "supertypes": [],
+            "operations": [],
+            "fields": [wire_field(
+                &format!("{address}/street"),
+                "street",
+                &version_number_identity(),
+                "required",
+                1,
+            )],
+        }),
+    );
+    let bytes = config_version_document(
         attempt_update(
             json!([]),
             json!({
-                "modifies": [config_version_identity("versionNumber")],
+                "modifies": [config_version_identity("address")],
                 "creates": [],
                 "deletes": [],
             }),
         ),
         vec![construct],
-        vec![type_node],
+        vec![address_type],
         json!([]),
     );
-    let error = admit_and_assemble(&document).expect_err("a record value type still refuses");
+    let mut document: Value = serde_json::from_slice(&bytes).expect("the fixture is JSON");
+    let config_version = format!("ix://{PACKAGE_IDENTITY}/ConfigVersion");
+    let owner = document["types"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|node| node["identity"] == config_version.as_str())
+        .expect("ConfigVersion is declared");
+    owner["fields"].as_array_mut().unwrap().push(wire_field(
+        &config_version_identity("address"),
+        "address",
+        &address,
+        "required",
+        1,
+    ));
+    let bytes = serde_json::to_vec(&document).unwrap();
+
+    let body = "invariant AddressStreet using v on Config::ConfigVersion at current { \
+                self.address.street >= 0 }\n";
+    let declarations =
+        admit_and_assemble_with_body(&bytes, body).expect("a record value type assembles");
+
+    let (unit, packages) = config_unit(&bytes);
+    let built = parse_and_build(&unit);
+    let views = admit_unit(
+        &built.selections().models,
+        &packages,
+        ModelNormalizationLimits::default(),
+    )
+    .expect("the package admits");
+    let config_version_id = views[0].view.type_identities()[&DeclarationKey {
+        package: PACKAGE_IDENTITY.to_owned(),
+        node: config_version.clone(),
+    }];
+    let declared = declarations
+        .types
+        .object_type(config_version_id)
+        .expect("ConfigVersion is declared");
+    let field = declared
+        .attributes()
+        .iter()
+        .find(|field| field.name() == "address")
+        .expect("address is an attribute");
     assert!(
-        error.contains("UnsupportedModelMember"),
-        "{error}: expected AssemblyCause::UnsupportedModelMember naming {note:?}"
+        matches!(field.value_type(), ValueType::Composite(_)),
+        "address is typed by the record value type, not a Reference: {:?}",
+        field.value_type()
     );
-    assert!(error.contains(&note), "{error}: expected the node named");
+    assert!(
+        declarations
+            .types
+            .composites()
+            .any(|composite| composite.name() == "Config::Address"),
+        "the record value type Address is declared"
+    );
+    declarations
+        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .expect("the clause reading self.address.street checks");
 }
 
 /// FR-103-AC-5 (TC-458 step 5): admission is deterministic. Admitting the

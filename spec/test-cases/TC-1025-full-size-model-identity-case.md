@@ -1,5 +1,5 @@
 ---
-id: TC-1024
+id: TC-1025
 title: "The full 10,000-edge model identity case"
 type: TC
 relationships:
@@ -8,7 +8,7 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/NFR-012
     type: verifies
 ---
-# TC-1024: The full 10,000-edge model identity case
+# TC-1025: The full 10,000-edge model identity case
 
 ## Description
 

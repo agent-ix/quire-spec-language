@@ -20,8 +20,7 @@ relationships:
 
 ## Description
 
-When S2 builds the form of a protocol declaration under
-`quire.model.complete/v1`, it SHALL accept every surface form of QSpec's
+When S2 builds the form of a protocol declaration, it SHALL accept every surface form of QSpec's
 shared grammar "Complete temporal, choreography and analysis forms" that
 the protocol system runs, and SHALL build one typed form for each, holding
 every member the production writes with its span (ADR-012 §1, §3;
@@ -63,6 +62,8 @@ In `forms::protocol_clause` (crate `qsl-forms`):
   Option<{invariant, variant}>, guard, body, exhausted: Option<control>}`.
 - `AwaitForm`, `CompensationForm`, `TerminalForm::{When(block), Any}` and
   `SchedulingForm::Adversarial`, each with its spans.
+- `ExpressionForm::ProtocolReference{target: QualifiedName, span}`, the form
+  of a protocol reference expression (Protocol reference expression).
 
 ## Behavior
 
@@ -80,9 +81,30 @@ In `forms::protocol_clause` (crate `qsl-forms`):
 - A well-formed CST adds no S2 refusal. A CST that carries an error or
   recovery node SHALL refuse as `FormsCause::RecoveringCst`, with no
   partial form.
-- Under a profile that does not select `quire.model.complete/v1`, S2 SHALL
-  build no complete form, and S3 refuses each such construct
-  `unsupported_construct` (QSpec shared grammar).
+- S2 builds each complete form whether or not the unit selects
+  `quire.protocol.complete/v1`. QSpec's facet rule (an unselected facet gives
+  `unsupported_construct`) applies to it, but QSL has no header layer for that
+  profile, so the gate is not enforced (FR-361 item 8).
+
+### Protocol reference expression
+
+- A protocol reference is the `primary` alternative
+  `protocol-reference = 'protocol', qualified-name`. The target is a
+  qualified name that S3 resolves (FR-218); the expression carries no
+  package selector, alias or key. `protocol` leads a reference only in
+  expression position, where no declaration can begin, so it never changes
+  how a `protocol-clause` declaration parses.
+- A protocol reference is admitted wherever the grammar admits a `primary`.
+  Its checked type is the target's semantic type (today the Boolean type
+  node the protocol clause carries; FR-218). Its value is the value of the
+  target protocol clause: a pure reference that denotes the clause it names
+  and is evaluated exactly as that clause is.
+- S2 SHALL build one `ExpressionForm::ProtocolReference` per occurrence in
+  source order, with the written target and the span of the whole
+  expression, and SHALL resolve nothing. A target that is not a
+  `qualified-name` is a parse refusal, not an S2 form.
+- QSpec owns the shared grammar. The `protocol-reference` production and
+  its meaning are QSpec FR-463's.
 
 ## Acceptance Criteria
 
@@ -93,6 +115,7 @@ In `forms::protocol_clause` (crate `qsl-forms`):
 | FR-308-AC-3 | `repeat R by r visible() invariant {…} variant {…} while {…} …` builds a `RepeatForm` with no maximum, both loop-proof blocks and no `exhausted` control; `repeat R by r visible() max 3 while {…} … exhausted …` builds maximum 3, no loop proof and an `exhausted` control. | Test (TC-887) |
 | FR-308-AC-4 | A protocol with `terminal when {k.v = 3};`, then `terminal any;`, then `scheduling adversarial;` builds three members in that order with their spans; a protocol that names an identifier `fork` outside a step-row position builds it as an identifier. | Test (TC-887) |
 | FR-308-AC-5 | A protocol whose CST holds a recovery node refuses `FormsCause::RecoveringCst` with no form. Building the same declaration twice gives equal forms. | Test (TC-887) |
+| FR-308-AC-6 | `protocol Fill` written as an expression builds one `ExpressionForm::ProtocolReference` with target `Fill` and the span of the two tokens; `protocol M::Fill` builds the target `M::Fill`; two references in one unit build two forms in source order. A unit that holds a `protocol-clause` declaration and a reference builds both and the declaration parses as before. | Test (TC-1021) |
 
 ## Dependencies
 

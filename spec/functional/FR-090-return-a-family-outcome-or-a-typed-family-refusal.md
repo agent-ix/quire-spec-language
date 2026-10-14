@@ -486,7 +486,7 @@ unreachability, a fabricated identity, or a successful partial collection.
 | Evaluator quantity arithmetic: either operand is not Quantity | `quantity-value-expected` |
 | Evaluator quantity arithmetic: typed operation construction returns an error rather than a kernel outcome | `quantity-operation-rejected` |
 | Evaluator Field: operand is not Composite | `field-composite-value-expected` |
-| Evaluator Field: checked field index has no stored slot | `field-slot-unresolved` |
+| Evaluator Field: the value's own declaration has no slot for the checked field identity | `field-slot-unresolved` |
 | Evaluator Attribute: operand is not Reference | `attribute-reference-value-expected` |
 | Evaluator Attribute: resolved object has no stored attribute slot | `attribute-slot-unresolved` |
 | Evaluator Present or Value: operand is not Option | `option-value-expected` |
@@ -516,7 +516,7 @@ unreachability, a fabricated identity, or a successful partial collection.
 | Evaluator edge traversal: sequence contains a non-Reference element | `edge-reference-element-expected` |
 | Evaluator edge traversal: declared field type is neither Reference nor Sequence | `edge-field-type-invalid` |
 | Evaluator field projection: slot presence, optionality and checked result type do not match a projection case | `field-projection-shape-invalid` |
-| Evaluator field projection: checked Option constructor rejects a present payload | `field-option-payload-rejected` |
+| Evaluator field projection: checked Option constructor rejects a present payload that does not conform to the option's payload type | `field-option-payload-rejected` |
 | Evaluator ordered enumeration comparison: variant is not resolved | `ordered-enumeration-variant-unresolved` |
 | Evaluator ordered enumeration comparison: typed comparator construction rejects operands | `ordered-enumeration-comparison-rejected` |
 | Evaluator ordered text comparison: typed comparator construction rejects operands | `ordered-text-comparison-rejected` |

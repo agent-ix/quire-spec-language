@@ -569,6 +569,10 @@ pub(crate) fn argument_value(
             Value::Integer(value) => Ok(Value::Integer(value)),
             _ => Err(wrong()),
         },
+        ValueType::String => match value {
+            Value::String(value) => Ok(Value::String(value)),
+            _ => Err(wrong()),
+        },
         ValueType::Reference(_) => match value {
             Value::Reference(value) => Ok(Value::Reference(value)),
             _ => Err(wrong()),

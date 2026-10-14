@@ -1020,7 +1020,7 @@ mod tests {
     /// second v2 producer removed T12-B's one debt-list entry (`qsl-eval`'s
     /// `decode_v2`) along with the mint it named, so this scan now requires every mint outside `check` to be
     /// gone, not merely on a named exception list.
-    #[trace("TC-255", "FR-087-AC-6")]
+    #[trace("TC-255", "FR-087-AC-6", "FR-087-CON-3")]
     #[test]
     fn tc_255_no_node_key_is_minted_outside_check_or_from_a_wire_id() {
         let items = qsl_items();
@@ -1331,11 +1331,114 @@ mod tests {
                 && function.return_map_keys.contains("QualifiedName")));
     }
 
+    /// The raw wire views allowed a bare string type field, as (file, type,
+    /// field). Each holds a snapshot document's `record` `type` string until a
+    /// checked declaration resolves it by lookup; none is a model field type.
+    const RAW_WIRE_TYPE_FIELDS: [(&str, &str, &str); 4] = [
+        // The public raw view of a `record` member.
+        (
+            "qsl-semantics/src/model/observation.rs",
+            "RawRecord",
+            "type_identity",
+        ),
+        // The public raw view of a `variant` member.
+        (
+            "qsl-semantics/src/model/observation.rs",
+            "RawVariant",
+            "type_identity",
+        ),
+        // The arena node that view reads.
+        (
+            "qsl-semantics/src/model/observation.rs",
+            "RawNode",
+            "type_identity",
+        ),
+        // The reader's in-progress `record` form.
+        (
+            "qsl-semantics/src/model/observation/tree.rs",
+            "Open",
+            "type_identity",
+        ),
+    ];
+
+    /// Every `file: Type.field` of a struct or an enum variant whose name
+    /// contains `type` and whose type is a bare `NodeKey`, `String` or `str`,
+    /// except [`RAW_WIRE_TYPE_FIELDS`].
+    fn bare_type_fields<'s>(
+        structs: impl Iterator<Item = &'s Struct>,
+        enums: impl Iterator<Item = &'s Enum>,
+    ) -> Vec<String> {
+        let structs = structs.map(|item| (&item.file, &item.name, item.fields.iter().collect()));
+        let enums = enums.flat_map(|item| {
+            item.variants
+                .iter()
+                .map(move |(_, fields)| (&item.file, &item.name, fields.iter().collect()))
+        });
+        let mut found = Vec::new();
+        for (file, owner, fields) in structs.chain(enums) {
+            let fields: Vec<&Field> = fields;
+            for field in fields {
+                let Some(name) = field.name.as_deref() else {
+                    continue;
+                };
+                if !name.contains("type")
+                    || RAW_WIRE_TYPE_FIELDS.contains(&(file.as_str(), owner.as_str(), name))
+                {
+                    continue;
+                }
+                for bare in ["NodeKey", "String", "str"] {
+                    if field.type_names.contains(bare) {
+                        found.push(format!("{file}: {owner}.{name} is a bare {bare}"));
+                    }
+                }
+            }
+        }
+        found
+    }
+
+    /// TC-260 step 3's scan, self-tested: it rejects a bare-string or
+    /// bare-`NodeKey` type field in a struct and in an enum variant, and the
+    /// raw-wire allowance covers only the named (file, type, field) triples.
+    #[trace("TC-260", "FR-088-AC-8")]
+    #[test]
+    fn tc_260_scan_rejects_bare_type_fields_beyond_the_raw_wire_allowance() {
+        let items = scan_tree(&[(
+            "src/lib.rs",
+            "pub struct Bad { field_type: String, other_type: NodeKey }\n\
+             pub struct RawRecord<'v> { type_identity: &'v str }\n\
+             pub enum Foo { A { field_type: NodeKey }, B { value_type: String }, C(String) }\n",
+        )]);
+        let found = bare_type_fields(items.structs.iter(), items.enums.iter());
+        assert_eq!(found.len(), 5, "{found:?}");
+        assert!(found
+            .iter()
+            .any(|f| f.contains("Foo.field_type is a bare NodeKey")));
+        assert!(found
+            .iter()
+            .any(|f| f.contains("Foo.value_type is a bare String")));
+        let root = tempfile::tempdir().expect("a temp dir");
+        let dir = root.path().join("qsl-semantics/src/model");
+        std::fs::create_dir_all(&dir).expect("dirs");
+        std::fs::write(
+            dir.join("observation.rs"),
+            "pub struct RawRecord<'v> { type_identity: &'v str }\n\
+             pub enum RawNode { Record { type_identity: String } }\n\
+             pub struct Other { type_identity: String }\n\
+             pub enum OtherNode { Record { type_identity: String } }\n",
+        )
+        .expect("write");
+        let allowed = scan(root.path(), &["qsl-semantics/src"]).expect("scan runs");
+        let found = bare_type_fields(allowed.structs.iter(), allowed.enums.iter());
+        assert_eq!(found.len(), 2, "{found:?}");
+        assert!(found[0].contains("Other.type_identity"), "{found:?}");
+        assert!(found[1].contains("OtherNode.type_identity"), "{found:?}");
+    }
+
     /// FR-088-AC-8 (TC-260, partial: steps 1 and 2, and step 3 for fields
     /// whose name says they hold a type): `ValueTypeRef` is defined once in
     /// the QSL crates, as exactly `{Native(NativeValueType),
-    /// Package(DeclarationKey)}`; in `model`, every field whose name
-    /// contains `type` names no `NodeKey` or string, and each of the three
+    /// Package(DeclarationKey)}`; in `model`, every struct field and enum variant field whose name
+    /// contains `type` names no `NodeKey` or string (bar the raw wire views), and each of the three
     /// value-type records carries a `ValueTypeRef`.
     #[trace("TC-260", "FR-088-AC-8")]
     #[test]
@@ -1370,23 +1473,12 @@ mod tests {
                 .iter()
                 .filter(|item| item.file.starts_with("qsl-semantics/src/model/"))
         };
-        for item in model_structs() {
-            for field in &item.fields {
-                let Some(name) = field.name.as_deref() else {
-                    continue;
-                };
-                if !name.contains("type") {
-                    continue;
-                }
-                for bare in ["NodeKey", "String", "str"] {
-                    assert!(
-                        !field.type_names.contains(bare),
-                        "{}.{name} is a bare {bare}",
-                        item.name
-                    );
-                }
-            }
-        }
+        let model_enums = items
+            .enums
+            .iter()
+            .filter(|item| item.file.starts_with("qsl-semantics/src/model/"));
+        let bare = bare_type_fields(model_structs(), model_enums);
+        assert!(bare.is_empty(), "{bare:?}");
         for record in [
             "FieldMemberRecord",
             "OperationParameterRecord",

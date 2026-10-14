@@ -1038,7 +1038,7 @@ fn field_slot_and_record_constructor_fail_at_the_actual_application_sites() {
     let key = quire_exact::NodeKey::from_digest([4; 32]);
     let field = body(|ids| NodeKind::Field {
         operand: ids[0],
-        index: 1,
+        field: qsl_semantics::check::RecordField::new(key, "absent"),
         optional: false,
     });
     probe!("field-slot-unresolved", m, [], {
@@ -1548,7 +1548,8 @@ fn every_received_kernel_payload_survives_stop_and_public_fault_conversion() {
             assert_eq!(fault.category(), qsl_foundation::Category::InternalFailure);
             assert_eq!(fault.catalog_code().code(), "runtime_invariant");
             // Both public entries use map_err(CallFailure::Fault) unchanged.
-            let super::super::CallFailure::Fault(carried) = super::super::CallFailure::Fault(fault)
+            let super::super::CallFailure::Fault(carried) =
+                super::super::CallFailure::Fault(fault.clone())
             else {
                 panic!("public call/evaluate fault conversion changed category");
             };
@@ -1776,11 +1777,23 @@ fn admitted_stack_values_bound_locals_and_branch_keep_the_uncharged_valid_prefix
 #[trace("TC-917", "FR-090-AC-16")]
 fn valid_required_and_optional_projection_preserves_values_without_a_charge() {
     let slot = FieldValue::Present(Value::Boolean(true));
-    let required = Machine::project(&slot, false, &ValueType::Boolean, false)
-        .unwrap_or_else(|_| panic!("required projection"));
+    let required = Machine::project(
+        &TypeEnvironment::default(),
+        &slot,
+        false,
+        &ValueType::Boolean,
+        false,
+    )
+    .unwrap_or_else(|_| panic!("required projection"));
     assert!(matches!(required, Value::Boolean(true)));
-    let optional = Machine::project(&slot, true, &ValueType::option(ValueType::Boolean), false)
-        .unwrap_or_else(|_| panic!("optional projection"));
+    let optional = Machine::project(
+        &TypeEnvironment::default(),
+        &slot,
+        true,
+        &ValueType::option(ValueType::Boolean),
+        false,
+    )
+    .unwrap_or_else(|_| panic!("optional projection"));
     assert!(
         matches!(optional, Value::Option(value) if matches!(value.payload(), Some(Value::Boolean(true))))
     );
@@ -1824,7 +1837,10 @@ fn application_shapes_and_constructor_rejections_reach_their_detecting_sites() {
         (
             body(|ids| NodeKind::Field {
                 operand: ids[0],
-                index: 0,
+                field: qsl_semantics::check::RecordField::new(
+                    quire_exact::NodeKey::from_digest([4; 32]),
+                    "x",
+                ),
                 optional: false,
             }),
             vec![Value::Boolean(true)],
@@ -1944,14 +1960,34 @@ fn projection_and_ordering_shape_faults_keep_their_original_channels() {
     let slot = FieldValue::Present(Value::Integer(Integer::one()));
     probe!("field-option-payload-rejected", m, [], {
         let _ = m;
-        Machine::project(&slot, true, &ValueType::option(ValueType::Boolean), false).map(|_| ())
+        Machine::project(
+            &TypeEnvironment::default(),
+            &slot,
+            true,
+            &ValueType::option(ValueType::Boolean),
+            false,
+        )
+        .map(|_| ())
     });
     for slot in [FieldValue::Absent, FieldValue::Null] {
         probe!("field-projection-shape-invalid", m, [], {
             let _ = m;
-            Machine::project(&slot, false, &ValueType::Boolean, false).map(|_| ())
+            Machine::project(
+                &TypeEnvironment::default(),
+                &slot,
+                false,
+                &ValueType::Boolean,
+                false,
+            )
+            .map(|_| ())
         });
-        let control = Machine::project(&slot, true, &ValueType::option(ValueType::Boolean), false);
+        let control = Machine::project(
+            &TypeEnvironment::default(),
+            &slot,
+            true,
+            &ValueType::option(ValueType::Boolean),
+            false,
+        );
         assert!(matches!(control, Ok(Value::Option(option)) if option.payload().is_none()));
     }
     probe!("ordered-operand-kind-invalid", m, [], {
@@ -1960,6 +1996,76 @@ fn projection_and_ordering_shape_faults_keep_their_original_channels() {
             OrderedKind::Integers,
             &Value::Boolean(true),
             &Value::Boolean(false),
+        )
+        .map(|_| ())
+    });
+}
+
+/// FR-359-AC-10: an optional field projects a payload that conforms to the
+/// field's record type, keeping its own type; a payload that does not still
+/// reports `field-option-payload-rejected`.
+#[test]
+#[trace("FR-359-AC-10", "TC-1002")]
+fn a_conforming_option_payload_projects_and_an_unrelated_one_is_rejected() {
+    use quire_semantic_value::declaration::{CompositeDeclaration, FieldDeclaration};
+    let [money, taxed, fee] = [1, 2, 3].map(|byte| quire_exact::NodeKey::from_digest([byte; 32]));
+    let record = |key, name: &str, supertypes: Vec<quire_exact::NodeKey>| {
+        CompositeDeclaration::new(
+            key,
+            name,
+            CompositeShape::Record(vec![FieldDeclaration::new(
+                "amount",
+                ValueType::Integer,
+                quire_exact::Presence::Required,
+            )]),
+        )
+        .with_supertypes(supertypes)
+    };
+    let types = TypeEnvironment::new(
+        [
+            record(money, "Money", vec![]),
+            record(taxed, "TaxedMoney", vec![money]),
+            record(fee, "Fee", vec![]),
+        ],
+        [],
+    )
+    .unwrap();
+    let value = |key| {
+        types
+            .record(
+                key,
+                vec![(
+                    "amount",
+                    FieldValue::Present(Value::Integer(Integer::one())),
+                )],
+            )
+            .unwrap()
+    };
+    let payload = ValueType::option(ValueType::Composite(money));
+    let child = Machine::project(
+        &types,
+        &FieldValue::Present(value(taxed)),
+        true,
+        &payload,
+        false,
+    )
+    .ok()
+    .expect("a conforming payload projects");
+    let Value::Option(option) = child else {
+        panic!("an option");
+    };
+    assert_eq!(
+        format!("{:?}", option.payload()),
+        format!("{:?}", Some(&value(taxed)))
+    );
+    probe!("field-option-payload-rejected", m, [], {
+        let _ = m;
+        Machine::project(
+            &types,
+            &FieldValue::Present(value(fee)),
+            true,
+            &payload,
+            false,
         )
         .map(|_| ())
     });

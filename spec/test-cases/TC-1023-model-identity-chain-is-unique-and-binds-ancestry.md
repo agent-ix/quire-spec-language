@@ -1,12 +1,12 @@
 ---
-id: TC-1022
+id: TC-1023
 title: "Model identity chain is unique and binds ancestry"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-081
     type: verifies
 ---
-# TC-1022: Model identity chain is unique and binds ancestry
+# TC-1023: Model identity chain is unique and binds ancestry
 
 ## Description
 

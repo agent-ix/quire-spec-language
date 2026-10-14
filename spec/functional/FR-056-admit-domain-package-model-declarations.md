@@ -14,6 +14,8 @@ relationships:
   - { target: ix://agent-ix/quire-specification/FR-154, type: depends_on }
   - { target: ix://agent-ix/quire-specification/FR-208, type: depends_on }
   - { target: ix://agent-ix/quire-specification/FR-322, type: depends_on }
+  - { target: ix://agent-ix/quire-spec-language/FR-359, type: depends_on }
+  - { target: ix://agent-ix/quire-spec-language/FR-360, type: depends_on }
   - { target: ix://agent-ix/quire-specification/FR-272, type: depends_on }
   - { target: ix://agent-ix/filament-core-data/FR-142, type: depends_on }
   - { target: ix://agent-ix/filament-core-data/FR-143, type: depends_on }
@@ -212,25 +214,28 @@ node, artifact id and span.
 
 The complete domain-model vocabulary is not limited to the native type
 spellings of QSL source grammar. The compiler SHALL retain the distinct native
-types `UUID`, `Int`, `String`, `Boolean` and `Timestamp` required by QSpec
+types `UUID`, `Integer`, `String`, `Boolean` and `Timestamp` required by QSpec
 [TC-235](ix://agent-ix/quire-specification/TC-235)'s K2 domain package.
 These natives are not IR type-definition nodes. A value type `Instant`
-bound to `Timestamp` SHALL resolve to that native type; binding it to `Int`
+bound to `Timestamp` SHALL resolve to that native type; binding it to `Integer`
 does not satisfy an event's `Timestamp` occurrence-field requirement under
 [FR-208](ix://agent-ix/quire-specification/FR-208).
 The compiler SHALL NOT replace `UUID`, `String` or `Timestamp` with a local
 alias or a Boolean stand-in.
 
-### K2 canonical native payloads
+### K2 canonical native String, UUID and Timestamp payloads
 
-The following representation choices define the K2 UUID and Timestamp
+The following representation choices define the K2 String, UUID and Timestamp
 capabilities. They are selected here, not inferred from earlier native-name
 admission or from a JSON string's shape. Each is a distinct native type and
 value kind in the shared kernel. A caller supplies the canonical payload;
-the kernel validates it before constructing a typed value.
+the kernel validates it before constructing a typed value. Every Unicode
+scalar sequence is a valid String payload; unlike UUID and Timestamp, String
+has no narrower canonical payload grammar.
 
 | Native | Payload and single accepted text form | Closed wire object |
 | --- | --- | --- |
+| `String` | Any Unicode scalar sequence, with no normalization or case folding. Its single accepted text form is a JSON string under RFC 8259 encoded as UTF-8; lone surrogate code points are not Unicode scalar values and are refused. The empty string is valid. | `{"kind":"string","text":"..."}` |
 | `UUID` | Exactly 128 opaque bits, rendered as 32 lowercase ASCII hexadecimal digits in groups `8-4-4-4-12`, with four ASCII hyphens. The bits are decoded left to right, most-significant octet first. | `{"kind":"uuid","text":"00112233-4455-6677-8899-aabbccddeeff"}` |
 | `Timestamp` | An exact signed count of nanoseconds on the POSIX epoch scale, epoch `1970-01-01T00:00:00Z`, one unit = one billionth of a POSIX second, inclusive domain `-170141183460469231731687303715884105728` through `170141183460469231731687303715884105727` (signed 128-bit). Its text is ASCII `0` or an optional `-` followed by a nonzero digit and zero or more digits. | `{"kind":"timestamp","nanoseconds":"0"}` |
 
@@ -255,13 +260,25 @@ conversion or timezone capability. The payload has no offset, timezone,
 calendar fields or precision selector. Calendar text, including RFC 3339
 timestamps, is not an alternative accepted form.
 
+Native String equality compares the exact Unicode scalar sequence; it does
+not normalize or case-fold. Its type-owned key is the UTF-8 encoding of that
+sequence, ordered bytewise with a proper prefix first. The sequence's UTF-8
+bytes are the variable portion of its result-size accounting; it uses the
+existing typed-result size path and adds no separate budget. An empty String
+has zero variable payload bytes. The closed String wire object has exactly
+`kind` and `text`; `text` is the decoded scalar sequence, and the selected
+canonical JSON serializer determines member order and JSON escape spelling.
+String equality and key ordering do not authorize arithmetic, concatenation,
+or general relational operators.
+
 The wire objects have exactly the displayed members and tags. Object-member
 order is determined by the enclosing selected canonical JSON serializer,
-not by these examples. The payload string's decoded ASCII content is the
-single literal form; JSON escape choices belong to that serializer, not to
-kernel payload admission. QSL owns decoding and validation of the closed JSON
-envelope and passes only the decoded canonical-payload text to quire-exact;
-the kernel owns no JSON parser or envelope-member checks.
+not by these examples. For UUID and Timestamp, each payload string's decoded
+ASCII content is the single literal form. For String, the decoded Unicode
+scalar sequence is the payload. JSON escape choices belong to the enclosing
+serializer, not to kernel payload admission. QSL owns decoding and validation
+of the closed JSON envelope and passes only the decoded canonical-payload
+text to quire-exact; the kernel owns no JSON parser or envelope-member checks.
 
 Kernel admission SHALL return its `ConstructionRefusal` at `Component::Value`
 with one of three distinct typed `ConstructionCause` classes: noncanonical
@@ -297,20 +314,21 @@ non-ASCII digits, fractional or exponent forms and calendar/offset text are
 noncanonical. A bare JSON number is not a payload, even for zero.
 
 Within one native kind, equality SHALL compare the canonical payload content.
-Its type-owned key is that same content, compared unsigned ASCII bytewise
-with a proper prefix first, extending
+Its type-owned key is that same content, compared bytewise with a proper
+prefix first, extending
 [FR-144](ix://agent-ix/quire-specification/FR-144)'s equality/key invariant.
-For Timestamp this key order is deliberately a representation order, not
-chronological order. UUID and Timestamp have distinct type identities;
-cross-kind equality, including a Timestamp against `Int` or a UUID against
-text containing the same characters, refuses without a Boolean or coercion.
+For String the key bytes are UTF-8; for UUID and Timestamp this key order is
+deliberately a representation order, not chronological order. String, UUID
+and Timestamp have distinct type identities; cross-kind equality, including
+a String and a UUID with identical-looking text, refuses without a Boolean or
+coercion.
 [FR-149](ix://agent-ix/quire-specification/FR-149) owns the typed equality
 matrix and schedule. A key does not authorize `<`, `<=`, `>` or `>=`.
 
 quire-exact owns distinct native type/value identity, caller-text admission,
 typed invalid-payload refusal, equality and keys. QSL owns the JSON envelope
 and its diagnostic mapping, and binding K2's
-`Instant` to `Timestamp` and refusing its substitution by `Int` under the
+`Instant` to `Timestamp` and refusing its substitution by `Integer` under the
 event occurrence-field rule. Payload admission grants no model admission,
 source identity or package authority. Record subtype conformance remains the
 shared-value/QSL integration obligation stated below.
@@ -361,7 +379,9 @@ SHALL preserve FR-208's effective fields, inherited invariants and ancestor
 conformance. A subtype value is accepted wherever its ancestor is the declared
 field, parameter or result type. Equality compares the most-specific type and
 every effective field, so a subtype value is unequal to a value of a proper
-ancestor. Cross-meaning supertypes and specialization cycles retain FR-208's
+ancestor. FR-359 states how check, evaluation and replay type, read, compare
+and store that value, including as an `Option` payload and a collection
+element. Cross-meaning supertypes and specialization cycles retain FR-208's
 named refusals. An object reference or a Boolean stand-in is not a record value.
 
 The reader owns resolution of each module-qualified
@@ -399,7 +419,7 @@ table fixes:
 | `quire.meaning.model.object-type/v1` | one `object` |
 | `quire.meaning.model.value-type/v1` | one `scalar` naming the value type and its bound native value type |
 | `quire.meaning.model.record-value-type/v1` | one `record` naming the most-specific record value type and its effective fields; no object identity or reference export |
-| `quire.meaning.model.variant-type/v1` | one `enum`, one `variant` per case |
+| `quire.meaning.model.variant-type/v1` | one `enum` naming the type and its cases, one `variant` per case ("Variant types" below) |
 | `quire.meaning.model.population/v1` | one `population` |
 | `quire.meaning.systems.interface/v1`, `quire.meaning.systems.part/v1`, `quire.meaning.systems.port/v1`, `quire.meaning.systems.connection/v1`, `quire.meaning.systems.allocation/v1` | none; the node binds to its FR-152 kind |
 
@@ -421,9 +441,10 @@ field whose `typeRef` names an object type retains its object-reference type.
 Intake SHALL reject a `typeRef` to another business-model meaning
 under FR-154 before assembly, retaining that named refusal.
 
-If a clause names a declaration bound to `quire.meaning.model.variant-type/v1`,
-then the compiler SHALL refuse the clause with
-`unsupported_construct`/`declaration-form` (FR-150).
+A clause, field, operation parameter or operation result may name a declaration
+bound to `quire.meaning.model.variant-type/v1`; FR-360 states its admission,
+typing, equality and replay. Intake admits and exports the declaration under
+"Variant types" whether or not anything names it.
 
 The compiler SHALL key each `relationship` export by its owner's declaration
 identity and declared `name`, with its `sourceSpan` as the export locus.
@@ -438,6 +459,140 @@ connection and allocation rules to it.
 
 When an IR node binds as a Port, the compiler SHALL retain its owning part,
 direction, interface type and typed multiplicity.
+
+#### Variant types
+
+A variant type is a closed set of named cases (FR-208). In Semantic IR it is a
+type definition whose construct has shape `enumeration`, with a `variants`
+list (filament-core-data `semantic-ir.schema.json`, `$defs.variant`, line 715:
+required `identity`, `name` of at least one character and `origin`, optional
+`payloadType`). The `variants` list is read in the member order the document
+gives it, and that order carries no meaning.
+
+When a type definition binds to `quire.meaning.model.variant-type/v1`, intake
+SHALL admit it as one original declaration and the compiler SHALL derive these
+export records:
+
+- one `enum`, keyed by the type's declaration identity, carrying `name` (the
+  type's artifact id), `sourceSpan`, and `members`, the declared case names in
+  ascending UTF-8 byte order of the name;
+- one `variant` per case, keyed by the owner's declaration identity and the
+  case's declared name (as FR-056 keys a `relationship`), carrying `case` (the
+  case name), the owner `enum` key, and the case's `sourceSpan` as export
+  locus.
+
+The export field names follow QSpec FR-141's enum identity, which calls the
+case list `members` and the case `case`. QSL defines no other export
+vocabulary for these records.
+
+The compiler SHALL compare case names as exact UTF-8 byte sequences; letter
+case is kept, so `Gold` and `gold` are distinct cases. The declaration identity
+of a case node is FR-154's variant slot,
+`ix://<package identity>/variant/<Name>-<value>`, and the compiler SHALL NOT
+use it as the `variant` export key. Two variant types may declare the same case
+name, because their owners differ. A case has no value, ordinal or payload in
+v1. The compiler SHALL derive the order of `members` from the names alone, so
+reordering the `variants` list changes no key, export or ordering.
+
+QSL implements QSpec FR-154's variant-type rows (FR-154-AC-11) and
+FR-208-AC-15 for cause, node, member path and report order.
+
+Two cases of one variant type that share one case node identity, whatever
+their names, are refused first by the lift (filament-core-data FR-095:
+DUPLICATE_IDENTITY, and UNSLUGGABLE_NAME for names that slug alike) or the
+reader (`duplicate_identities`, semantic-ir `rules.rs:1133`), and FR-056's
+reader-first rule retains that diagnostic with no declaration. The reader
+refuses the second case in `variants` order, whichever of the two is minted
+correctly: with `[Gold, Silver]`, where `Silver` carries `Gold`'s identity, it
+names `Silver`; with `[Silver, Gold]` it names `Gold`, the correctly minted
+case, and `Silver` is not named. Either way the refusal is
+`invalid_model_binding`/`malformed-declaration` (the reader's diagnostic,
+retained as is, not translated to `conflicting-binding`), located at the second
+case's span, with path `TypeDefinition.variants[i].identity` for `i` the second
+case's position. Intake does not run.
+
+A member's `typeRef` may name a declaration bound to
+`quire.meaning.model.variant-type/v1`: FR-360 states how intake admits it and
+how the assembler types it. A `typeRef` that names a variant type whose own
+declaration is refused raises no refusal of its own; the package is unadmitted
+with the variant type's refusals. FR-208-AC-9 and FR-154's construct validity
+row keep `malformed-declaration` for a reference that names a node of any other
+meaning a field may not name.
+
+An operation parameter or result whose `typeRef` is refused as a signature value
+type SHALL refuse at the operation node, never without a node. This covers every
+cause: a `typeRef` naming a meaning a signature may not name (an event, state
+machine, process, persistence interface, namespace or interface-featured object
+type) refuses `invalid_model_binding`/`malformed-declaration`;
+a `typeRef` naming no declared type, in a package that reaches normalization
+without the reader, refuses `dangling_reference`/`unknown-value-type`. Each
+retains the operation's node identity, its FCD origin (source artifact and
+position, when the node has a source origin) and the typed member path
+`Operation.params[i].typeRef` for the parameter at zero-based position `i`, or
+`Operation.returns.typeRef` for the result. A `typeRef` naming a variant type is not a
+cause: FR-360 admits it, and the refusal path for the other meanings is
+unchanged.
+
+The same rule holds for the other `malformed-declaration` refusals the compiler
+raises at normalization on a node it holds: a relationship end naming a record
+value type refuses at the relationship node, path `Relationship.source` or
+`Relationship.target`; a namespace member that is itself a namespace refuses at
+the namespace node, path `TypeDefinition.members[i]`; a population member type
+that names a declaration of any other meaning than an object type (a record
+value type, an event type, a scalar, a persistence interface and so on)
+refuses at the population node, path `PopulationDefinition.members[i]`; a
+member type that names no declaration stays `missing_declaration`/`missing-name`.
+
+Every `malformed-declaration` refusal on a node, at intake and at normalization
+alike, retains that node's FCD `origin` as FR-154 requires: the refusal's
+artifact is the origin's source artifact and its span the origin's source
+position. Both are absent only when the node has no source origin: a `generated`
+origin, or a package built without the reader. The refusal keeps the origin of
+the node it names, so an operation an event type declares is located at the
+operation and a scalar type's bad `constraints` at the scalar type. Two
+refusals carry no declaration origin by design, because no IR node exists to
+name: a model selection with an empty identity or version (the selection is a
+field of the package reference, not a declaration) and a declaration key with an
+empty package or node component (the key names no node). The refusals intake
+raises about the package document itself, at node `$`, likewise have no
+declaration origin to retain.
+
+##### Effective identity of a variant type
+
+QSpec FR-208 says normalization admits a variant type as an effective type.
+FR-081 states the effective-identity contract; this section applies it. For each
+variant type the compiler SHALL derive, from the original declarations above:
+
+- one effective type for the `enum` export: `owner_effective_type` null,
+  `original` the type's declaration key, and one phase-2 `qualify` fact with
+  inputs `[declaration]`;
+- one effective member of that type per case: `owner_effective_type` the
+  variant type's effective identity, `original` the case node's declaration key
+  (`ix://<package identity>/variant/<Name>-<value>`, FR-154's variant slot, and
+  never the `variant` export key), and one `qualify` fact with inputs
+  `[declaration]`.
+
+A variant type declares no supertype, so it has no `inherit` fact, and it has no
+object universe. Its effective identity and each case's follow FR-081: the
+digest depends on the keys alone, so reordering the `variants` list changes no
+effective identity, entry or position; `Tier`'s `Gold` and `Level`'s `Gold`, and
+`Gold` and `gold`, are distinct effective members; and no presentation field
+enters any of them. The effective view lists the type among its effective types
+(`type_identities`) and each case among its members, and a package with a
+refused variant type has no effective view.
+
+The assembler SHALL declare each variant type of an admitted package in the
+package's type environment as `M::<artifact id>`, keyed by its effective
+identity, with its cases in ascending UTF-8 byte order of their names, each
+carrying its own effective identity. The declaration adds no object type to the
+unit's scope; FR-360 states how source names the type and its cases.
+
+A field, parameter or result typed by a variant type needs only this
+declaration, found by the effective identity of its `typeRef` target in the
+view's type identities; it needs no further record or identity. FR-360 owns
+that typing. This section adds no refusal of its own: every refusal of a
+variant type is typed under "Variant types" above, with its cause and
+`MemberPath`.
 
 ### Declarations
 
@@ -622,13 +777,24 @@ the assembler SHALL refuse it with `missing_declaration` at the name.
 | FR-056-AC-14 | The one parse refuses a document holding `9007199254740993.5`, `0.1000000000000000000001`, `1e-400`, `-1e-400` or `4.9e-324` at `/package/count` with `noncanonical_wire`/`inexact-number` and `document_pointer` `/package/count`; the same document holding `9007199254740993`, which fits both cases, refuses `inexact-integer`, as does `1e20`; and a document holding `0.5` at `/a/0` and `1e-400` at `/a/1` names `/a/1`. The same document holding `0.1`, `1.0`, `-0`, `-0.0`, `5e-324`, `1e15` or `9007199254740991` at `/package/count` is admitted, with the digest of the RFC 8785 text of the same value. A document holding `0.1000000000000000000001` at `/package/count`, offered under the `sha256-jcs` digest of the same document holding `0.1`, refuses `noncanonical_wire`/`inexact-number`, and the document holding `0.1` admits under it. The double nearest `1125899906842624.25` has two equally close shortest texts: a document holding `1125899906842624.2` (the even digit, RFC 8785's text) at `/package/count` is admitted, as are `1500000000000000.2` and `2.9802322387695312e-8`, and one holding `1125899906842624.3`, `1500000000000000.3` or `2.9802322387695313e-8` refuses `noncanonical_wire`/`inexact-number`. | Test |
 | FR-056-AC-15 | The derived view of an admitted document holds, for each non-whole number, the correctly rounded double of its text, the double its `sha256-jcs` digest encodes: a document holding `1.5e-300` admits, and its tree holds the double `1.5e-300` reads as, whatever `serde_json`'s own float parse reads. | Test |
 | FR-056-AC-16 | A domain package whose scalar type `Wide` is bound to `Integer` with `min` the canonical string `"0"` and `max` the canonical string `"18446744073709551615"` is admitted, and `Wide` resolves to `Int[0, 18446744073709551615]` exactly. With `max` the string `"9223372036854775808"` it resolves to `Int[0, 9223372036854775808]`; with `max` the string `"1000"` it resolves to `Int[0, 1000]`. With `min` the JSON number `0` or `max` the JSON number `1000`, intake refuses `invalid_model_binding`/`malformed-declaration`, retaining the reader's `agent-ix.semantic-ir.INVALID_OPERAND` diagnostic at that operand and admitting no declaration. With `max` the JSON number `18446744073709551615` the read refuses `noncanonical_wire`/`inexact-integer` at that number's pointer; with `max` the string `"170141183460469231731687303715884105728"` (`i128::MAX + 1`) or the noncanonical string `"0018"`, intake refuses `invalid_model_binding`/`malformed-declaration` at the scalar type, naming the constraint and the value. | Test |
-| FR-056-AC-17 | The canonical native controls below admit exactly the stated UUID and Timestamp payloads, retain their distinct native identities and refuse the stated alternatives without normalization. K2's `Instant` resolves to `Timestamp`; changing that binding to `Int` gives TC-235 M04 run 5's `invalid_model_binding`/`malformed-declaration` at `OrderPlaced`'s `TypeDefinition.occurrenceField`, rather than an admitted substitute. | Test |
+| FR-056-AC-17 | The canonical native controls below admit exactly the stated UUID and Timestamp payloads, retain their distinct native identities and refuse the stated alternatives without normalization. K2's `Instant` resolves to `Timestamp`; changing that binding to `Integer` gives TC-235 M04 run 5's `invalid_model_binding`/`malformed-declaration` at `OrderPlaced`'s `TypeDefinition.occurrenceField`, rather than an admitted substitute. | Test |
 | FR-056-AC-18 | TC-235 M17 run 1 retains `TaxedMoney`'s inherited `amount_minor`, `currency` and invariant `NonNegative`, its own `tax_minor`, and conformance to `Money`: its stated value is admitted at `Order/total` and wherever a parameter or result names `Money`, yet is unequal to the stated `Money` value because their most-specific types differ. M17 runs 2 and 3 retain the exact wrong-meaning and specialization-cycle refusals, including the cycle list, rather than object-reference or Boolean substitutes. | Test |
-| FR-056-AC-19 | Offering K2 bytes that the actual Semantic IR reader refuses retains every reader diagnostic and exposes no declaration, effective view or `normalize.record` charge. No downstream native binding repairs a reader refusal. Once the reader contract admits those inputs, K2's version `1`, unused `population` construct, Timestamp binding and all TC-235 vectors remain unchanged; native payload admission alone does not establish their declaration counts, refusals, normalization or runtime results. | Test |
+| FR-056-AC-19 | Offering K2 bytes that the actual Semantic IR reader refuses retains every reader diagnostic and exposes no declaration, effective view or `normalize.record` charge. No downstream native binding repairs a reader refusal. An intake diagnostic on the same member as a retained reader diagnostic is subsumed by it. Once the reader contract admits those inputs, K2's version `1`, unused `population` construct, Timestamp binding and all TC-235 vectors remain unchanged; native payload admission alone does not establish their declaration counts, refusals, normalization or runtime results. | Test |
 | FR-056-AC-20 | A selected domain package with an object field typed `ix://quire/native/Float32` or `ix://quire/native/Float64` has no assembled field type and refuses at the unit's `model` declaration with `unknown_required_feature`/`unsupported-feature`; it yields no `PackageDeclarations`. The refusal does not assign a rounding mode. A function parameter of either floating type remains admitted under FR-091-OQ-4. | Test |
 | FR-056-AC-21 | An admitted package containing record value type `Address { street: Text[0, 64; nfc] }`, object field `Account.address: Address` and a record subtype `PostalAddress` retains one `record` export per record, all effective fields and invariants, and subtype conformance. The type environment gives `Account.address` the record value type, an optional `Address` field `Option<Address>`, and an ordered non-unique `[0, 3]` field `Sequence<Address>[0, 3]`, never `Reference<Address>`; an operation parameter or result naming `Address` has the same value type. | Test |
 | FR-056-AC-22 | A record value type with an identity field or an operation refuses with FR-208's named cause before assembly; an object or record field whose `typeRef` names an event type, state machine, process, persistence interface or namespace refuses `invalid_model_binding`/`malformed-declaration` at intake. A valid finite recursive record field, such as `Node { next?: Node }`, retains its record type and optional edge in the type environment; it is not refused solely because the declaration graph is recursive. | Test |
-| FR-056-AC-23 | The complete-V1 type environment maps native `String` and `UUID` fields to distinct first-class value leaves, never to `Text` or `Reference`; it maps TC-235's `Money.currency` to `String`, `Order.order_id` and `Fulfilment.correlation_id` (the two identity slots) to `UUID`, and `OrderPlaced.order_id` (an ordinary event payload field) to `UUID`. String equality compares the exact Unicode scalar sequence without normalization (NFC `é` differs from `e` plus combining acute), UUID equality compares the canonical 128 bits, and mixed String/UUID equality is `ill_typed` during static checking with no Boolean result. Supplying a runtime value of the wrong native kind to either typed member is refused as `invalid_runtime_input`/`wrong-value-kind` at its member input path, with no value produced. Checked type display distinguishes `String`, `UUID`, `Text` and `Reference`; UUID value display is canonical lowercase text and String value display preserves its scalar sequence. Existing parameterized Text bounds/profile and UUID canonical-payload controls remain unchanged. | Test |
+| FR-056-AC-23 | K2's native String value retains any Unicode scalar sequence exactly, including empty, ASCII, multibyte and UUID-looking text; equality is exact-sequence equality, its key is UTF-8 byte order, and Text normalization does not apply. The closed String object accepts exactly `kind: string` and `text`; an extra member and a lone surrogate refuse, and the typed result wire round trip preserves each value and its UTF-8 byte contribution to result sizing. Existing Text, UUID and Timestamp kind encodings remain unchanged. String gains no arithmetic, concatenation or general relational operator. | Test |
+| FR-056-AC-24 | An admitted package containing variant type `Tier` with cases `Standard` and `Gold`, listed in the document as `Gold` then `Standard`, retains one declaration for `Tier` and one for each case node (`ix://<package identity>/variant/Tier-Gold`, `.../Tier-Standard`), one `enum` keyed by `Tier`'s declaration identity with `name` `Tier` and `members` `[Gold, Standard]`, and one `variant` per case keyed by (`Tier`'s identity, case name) carrying `case`, the owner `enum` key and span. Listing the cases `Standard` then `Gold` changes no key, export or ordering. A second variant type `Level` with a case `Gold` is admitted beside it with a distinct `variant` key, and a case `gold` beside `Gold` is a distinct case. | Test (TC-994) |
+| FR-056-AC-25 | A hand-authored variant type with a case carrying a resolving `payloadType` refuses `unsupported_construct`/`declaration-form` at node `.../variant/Tier-Gold`, path `Variant.payloadType`; it is not `invalid_model_binding`, and no declaration of the package is admitted. A payload-free case beside it raises no refusal of its own. Cause, node and path are FR-154-AC-11's. | Test (TC-995) |
+| FR-056-AC-26 | A variant type with no case, a case with no source span, and a type bound to the variant-type meaning whose construct shape is not `enumeration` each refuse `invalid_model_binding`/`malformed-declaration`. Two cases named `Gold` with one identity are refused by the lift or the reader with that diagnostic retained and no declaration; two cases named `Gold` with distinct identities, in a document the reader admits, refuse `invalid_model_binding`/`conflicting-binding` at node `.../Tier`, path `TypeDefinition.variants[1]`. A case with no name is refused by the reader's schema. Cause, node and path for the intake refusals are FR-154-AC-11's and FR-208-AC-15's. | Test (TC-996) |
+| FR-056-AC-27 | The package, `Tier`'s declaration and its `enum` and `variant` exports are admitted and equal whether or not a clause names `Tier`; a clause naming `Tier` raises no intake refusal (FR-360 states its checking). | Test (TC-997) |
+| FR-056-AC-28 | A field whose `typeRef` names `Tier` is admitted with one `field` export and no `reference` export (FR-360-AC-1). A field whose `typeRef` names a variant type whose own declaration is refused raises no refusal of its own. | Test (TC-997) |
+| FR-056-AC-29 | The TC-994 package normalizes to an effective view with one effective type for `Tier` and one for `Level` (owner null, `original` its declaration key, one `qualify` fact `[declaration]`), and one effective member per case (owner the variant type's effective identity, `original` the case node's key such as `.../variant/Tier-Gold`, one `qualify` fact). `type_identities` lists the two variant types and nothing else. `Tier`'s `Gold`, `Level`'s `Gold` and `Tier`'s `gold` have three distinct effective identities, and listing the cases `Standard` then `Gold` changes no effective identity, entry or position. | Test (TC-1003) |
+| FR-056-AC-30 | Two cases named `Gold` with distinct identities leave no effective view and refuse `invalid_model_binding`/`conflicting-binding` at node `.../Tier`, path `TypeDefinition.variants[1]`, even beside a valid variant type. Two cases that share one identity (`Gold` and a `Silver` carrying `.../variant/Tier-Gold`), listed in either order, refuse once at the reader, `invalid_model_binding`/`malformed-declaration` at path `TypeDefinition.variants[1].identity`, located at the second listed case's span (`Silver` for `[Gold, Silver]`, the correctly minted `Gold` for `[Silver, Gold]`), with the reader's `DUPLICATE_IDENTITY` diagnostic. | Test (TC-1003) |
+| FR-056-AC-31 | The unit assembled over the TC-994 package declares `Config::Tier` with cases `Gold`, `Standard` and `Config::Level` with case `Gold` in the type environment, ascending by effective identity; each declaration's key is the effective identity the view gives the type, and each case's key is the view's effective identity for the case node. A unit that names no variant type assembles. | Test (TC-1004) |
+| FR-056-AC-32 | An operation parameter or result whose `typeRef` names `Tier` is admitted (FR-360-AC-8). A parameter or result naming an event type, state machine, process, persistence interface, namespace or interface-featured object type refuses `invalid_model_binding`/`malformed-declaration` at the operation node, path `Operation.params[i].typeRef` for the parameter at position `i` (position 1 for the second parameter) or `Operation.returns.typeRef`, retaining the operation's artifact and source position; one naming an undeclared type, in a package built without the reader, does so under `dangling_reference`/`unknown-value-type`. A relationship end, namespace member or population member type naming the wrong meaning refuses at its own node with the paths `Relationship.source`/`Relationship.target`, `TypeDefinition.members[i]` and `PopulationDefinition.members[i]`. | Test (TC-997) |
+| FR-056-AC-33 | A normalization `malformed-declaration` retains the artifact and source position of the refused node's source origin: a record value type or event type with identity fields, an event occurrence that is not a Timestamp, an operation an event type declares (located at the operation), a state machine missing required members or emitting a non-event, a process with no identity or a supertype of another meaning, a relationship source or target of another meaning, and a population member of another meaning at `PopulationDefinition.members[i]`. A node with a `generated` origin leaves both absent, as do the refusals that name no declaration (an empty model selection, an empty declaration key, and the package document at node `$`). | Test (TC-1005) |
+| FR-056-AC-34 | The complete-V1 type environment maps native `String` and `UUID` fields to distinct first-class value leaves, never to `Text` or `Reference`; it maps TC-235's `Money.currency` to `String`, `Order.order_id` and `Fulfilment.correlation_id` (the two identity slots) to `UUID`, and `OrderPlaced.order_id` (an ordinary event payload field) to `UUID`. String equality compares the exact Unicode scalar sequence without normalization (NFC `é` differs from `e` plus combining acute), UUID equality compares the canonical 128 bits, and mixed String/UUID equality is `ill_typed` during static checking with no Boolean result. Supplying a runtime value of the wrong native kind to either typed member is refused as `invalid_runtime_input`/`wrong-value-kind` at its member input path, with no value produced. Checked type display distinguishes `String`, `UUID`, `Text` and `Reference`; UUID value display is canonical lowercase text and String value display preserves its scalar sequence. Existing parameterized Text bounds/profile and UUID canonical-payload controls remain unchanged. | Test |
 | FR-056-AC-8 | End to end, the filament-core-data#173 architecture fixture runs bundle → quire-rs → lift → intake seam; its ports resolve with owning part, direction, interface type and multiplicity, a connection between them is admitted under FR-152, and the model linker binds a native package's references to those declarations. | Test |
 
 ### FR-056-AC-17
@@ -655,7 +821,7 @@ Use independent fixed expected text, not the encoder's output as its own oracle.
   wrong tag and non-string payload, including the bare JSON number `0`,
   before payload admission. No rejected input produces a repaired value.
 - Same-kind equal payloads give true and equal canonical keys; changing one
-  UUID digit or Timestamp `0` to `1` gives false. Mixed UUID/Timestamp/Int
+  UUID digit or Timestamp `0` to `1` gives false. Mixed UUID/Timestamp/Integer
   pairs give a typed refusal, not false, under FR-149. These controls do not
   select an ordering or arithmetic operation.
 

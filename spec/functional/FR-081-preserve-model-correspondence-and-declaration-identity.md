@@ -99,6 +99,12 @@ collapse those derived declarations by an identity-equivalence rule. An
 original whose kind has no selected derivation rule remains in the exact
 original inventory without acquiring an effective identity from this guarantee.
 
+A variant type is an effective type and each of its cases an effective member of
+it, each with one `qualify` fact `[declaration]` and no other (FR-056
+"Effective identity of a variant type"). A case's `original` is its case node's
+declaration key, so its identity does not depend on the order of the
+`variants` list.
+
 ### An identity chains through its parents' identities
 
 An effective declaration's preimage SHALL bind exactly two things: its own
@@ -149,7 +155,7 @@ definition; this requirement does not create a second identity writer.
 
 Total bytes admitted to the identity hash calls of a package with `V` effective
 types and `E` direct supertype edges and no members are linear in `V + E`
-(about `834 V + 574 E` bytes for the fixture of TC-1023), not in the
+(about `834 V + 574 E` bytes for the fixture of TC-1024), not in the
 number of ancestor paths or their length.
 
 ### Losing redefinitions are retained, not deleted
@@ -235,11 +241,12 @@ encoded.
 | FR-081-AC-6 | Given two declared redefinitions of one member reaching the same effective type where neither redefining owner is a proper descendant of the other, normalization refuses derivation-conflict naming both redefiners and their owning types, and the correspondence exposes no effective member for either redefinition — not the winning one FR-081-AC-3's descendant case would pick, because no descendant exists here. | Test (TC-237) |
 | FR-081-AC-7 | Given the same `DomainPackage` value with its IR nodes presented in two different orders, normalization from each produces byte-identical original keys, effective identities and correspondence ordering. | Test (TC-238) |
 | FR-081-AC-8 | Given two object types, one field, one operation and one scalar admitted by FR-056, the retained original inventory contains exactly their admitted keys and origins. Effective-entry/fact origins are a subset; the scalar with no selected qualify rule creates no qualify fact, effective entry or extra declaration/hash charge. | Test |
-| FR-081-AC-9 | Expanding the retained facts of every effective declaration through its parent identities yields the path-form facts of an independent enumeration over the original declarations, in phase, input and rule order with multiplicity, for a chain, a diamond and a hidden redefinition; a link naming a declaration of the wrong kind, owner or original is refused. | Test (TC-1021) |
-| FR-081-AC-10 | Changing one ancestor's original declaration key, one parent link, or one phase-4 fact changes the identity of every descendant that reaches it, and no two distinct effective declarations of a fixture set share an identity. | Test (TC-1022) |
-| FR-081-AC-11 | Hashed bytes, `derivation_facts` and `work_units` of a chain, a width-2 diamond ladder and a dense multi-parent shape equal the closed formulas of the test case; a diamond ladder whose path count is exponential is admitted at the default limits. | Test (TC-1023) |
-| FR-081-AC-12 | For a deterministic single-inheritance chain of 10,000 edges (10,001 effective types, package encoding at most 524,288 bytes), normalization at the NFR-012 default limits eagerly computes every effective identity and the complete view with 20,001 retained facts, at most 16,777,216 hashed bytes and at most 100,000 work units. | Test (TC-1024) |
-| FR-081-AC-13 | The FR-081-AC-12 case, run in an isolated process, has a peak resident set of at most 21,474,836,480 bytes and a wall time of at most 30 seconds in the release profile on the reference host Terra, each measured from package input admission through retention of the complete result. | Test (TC-1024) |
+| FR-081-AC-9 | Expanding the retained facts of every effective declaration through its parent identities yields the path-form facts of an independent enumeration over the original declarations, in phase, input and rule order with multiplicity, for a chain, a diamond and a hidden redefinition; a link naming a declaration of the wrong kind, owner or original is refused. | Test (TC-1022) |
+| FR-081-AC-10 | Changing one ancestor's original declaration key, one parent link, or one phase-4 fact changes the identity of every descendant that reaches it, and no two distinct effective declarations of a fixture set share an identity. | Test (TC-1023) |
+| FR-081-AC-11 | Hashed bytes, `derivation_facts` and `work_units` of a chain, a width-2 diamond ladder and a dense multi-parent shape equal the closed formulas of the test case; a diamond ladder whose path count is exponential is admitted at the default limits. | Test (TC-1024) |
+| FR-081-AC-12 | For a deterministic single-inheritance chain of 10,000 edges (10,001 effective types, package encoding at most 524,288 bytes), normalization at the NFR-012 default limits eagerly computes every effective identity and the complete view with 20,001 retained facts, at most 16,777,216 hashed bytes and at most 100,000 work units. | Test (TC-1025) |
+| FR-081-AC-13 | The FR-081-AC-12 case, run in an isolated process, has a peak resident set of at most 21,474,836,480 bytes and a wall time of at most 30 seconds in the release profile on the reference host Terra, each measured from package input admission through retention of the complete result. | Test (TC-1025) |
+| FR-081-AC-16 | Given a variant type with two cases, the effective view holds one effective type and two effective members of it, each derived from the key of its own declaration with one `qualify` fact; permuting the cases changes no effective identity or position. | Test (TC-1003) |
 
 ## Dependencies
 
@@ -254,10 +261,10 @@ encoded.
   [FR-084](FR-084-admit-closed-populations-and-resolve-lookup.md) resolve
   conformance, dispatch and population membership over the correspondence
   this requirement produces.
-- [TC-1021](../test-cases/TC-1021-model-identity-links-expand-to-exact-provenance.md),
-  [TC-1022](../test-cases/TC-1022-model-identity-chain-is-unique-and-binds-ancestry.md),
-  [TC-1023](../test-cases/TC-1023-model-identity-cost-is-linear.md) and
-  [TC-1024](../test-cases/TC-1024-full-size-model-identity-case.md) verify the
+- [TC-1022](../test-cases/TC-1022-model-identity-links-expand-to-exact-provenance.md),
+  [TC-1023](../test-cases/TC-1023-model-identity-chain-is-unique-and-binds-ancestry.md),
+  [TC-1024](../test-cases/TC-1024-model-identity-cost-is-linear.md) and
+  [TC-1025](../test-cases/TC-1025-full-size-model-identity-case.md) verify the
   chain-link identity, its uniqueness and its cost.
 - [ADR-013](../decisions/ADR-013-canonical-type-package-conversion-ownership.md)
   O-03 and O-05 record QSL's ownership of original declaration identity and

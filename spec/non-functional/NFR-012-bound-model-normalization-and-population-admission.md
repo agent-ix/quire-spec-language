@@ -61,8 +61,9 @@ ceiling therefore bounds the work done, not only the result:
   walks read; a chain's proper-ancestor closure is quadratic in its length,
   so a representation holds it as compact indices, not as cloned keys.
 - `ancestor_steps` and `family_steps` are charged like every other ceiling:
-  each `supertypes` or `redefines` edge a walk follows is charged before it
-  is followed (FR-082, FR-083), and the first denied charge stops the walk
+  each `supertypes` edge a walk follows is charged before it is followed
+  (FR-082), and each distinct `redefines` edge is charged once, before the
+  first walk follows it, however many walks follow it (FR-083), and the first denied charge stops the walk
   `Incomplete`. They count edges, never a depth, and every walk uses an
   explicit stack.
 
@@ -136,8 +137,8 @@ TC-434 covers the defaults and the bound on work:
   `hashed_bytes` is refused after work bounded by the limit, whatever the
   package's size.
 - A 10000-edge single-inheritance chain completes at the defaults with 20001
-  retained facts (TC-1024), and a diamond ladder with exponentially many
-  paths completes at the defaults (TC-1023).
+  retained facts (TC-1025), and a diamond ladder with exponentially many
+  paths completes at the defaults (TC-1024).
 - The first denied charge decides the outcome: a `declaration_records`
   charge denied before the walk exhausts `ancestor_steps` stops on
   `declaration_records`, and otherwise the walk stops `Incomplete` on

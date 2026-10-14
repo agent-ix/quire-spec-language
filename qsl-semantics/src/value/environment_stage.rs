@@ -9,12 +9,70 @@
 //!
 //! [`TypeEnvironmentLimits`]: quire_semantic_value::declaration::TypeEnvironmentLimits
 
-use qsl_foundation::diagnostic::{LimitExceeded, StageFailure};
+use std::collections::BTreeMap;
+
+use qsl_foundation::diagnostic::{
+    CatalogCode, LimitExceeded, StageFailure, ALLOCATION_FAILED, RESERVATION_SIZE_OVERFLOW,
+};
 use qsl_foundation::Setting;
 
 use quire_semantic_value::declaration::{
-    EnvironmentFailure, EnvironmentLimit, EnvironmentLimitKind, InvalidDeclaration,
+    EnvironmentFailure, EnvironmentLimit, EnvironmentLimitKind, InvalidDeclaration, StorageRequest,
+    StorageUnit,
 };
+
+/// A refusal raised while admitting the shared type-environment registry.
+/// Storage causes retain the kernel's exact request amount and native unit.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum EnvironmentStageCause {
+    /// The kernel refused a declaration.
+    Declaration(InvalidDeclaration),
+    /// A real kernel allocation request was denied.
+    Allocation {
+        /// The exact request submitted to the allocation boundary.
+        request: StorageRequest,
+    },
+    /// The kernel could not compute or represent the reservation size.
+    Capacity {
+        /// The exact request submitted to the capacity calculation.
+        request: StorageRequest,
+    },
+}
+
+impl EnvironmentStageCause {
+    /// The catalog code for a storage refusal, when this is one. Declaration
+    /// refusals retain their kernel cause and are not reinterpreted here.
+    pub fn storage_catalog_code(&self) -> Option<CatalogCode> {
+        match self {
+            Self::Allocation { .. } => Some(ALLOCATION_FAILED),
+            Self::Capacity { .. } => Some(RESERVATION_SIZE_OVERFLOW),
+            Self::Declaration(_) => None,
+        }
+    }
+
+    /// The structured storage payload, without converting element counts to
+    /// byte counts.
+    pub fn storage_catalog_fields(&self) -> Option<BTreeMap<&'static str, String>> {
+        match self {
+            Self::Allocation { request } => Some(BTreeMap::from([(
+                "requested",
+                format!("{}:{}", storage_unit_name(request.unit()), request.amount()),
+            )])),
+            Self::Capacity { request } => Some(BTreeMap::from([(
+                "upstream",
+                format!("{}:{}", storage_unit_name(request.unit()), request.amount()),
+            )])),
+            Self::Declaration(_) => None,
+        }
+    }
+}
+
+fn storage_unit_name(unit: StorageUnit) -> &'static str {
+    match unit {
+        StorageUnit::Bytes => "bytes",
+        StorageUnit::AdditionalElements => "additional-elements",
+    }
+}
 
 /// `limit` as the stage limit it is: `ancestor_steps` is an edge count, the
 /// types one conformance walk expands (`environment.ancestor_steps`), and
@@ -29,10 +87,18 @@ pub fn stage_limit(limit: EnvironmentLimit) -> LimitExceeded {
 
 /// `failure` as the admitting stage's failure: a refusal stays the
 /// declaration's refusal, a ceiling becomes its [`stage_limit`].
-pub fn stage_failure(failure: EnvironmentFailure) -> StageFailure<InvalidDeclaration> {
+pub fn stage_failure(failure: EnvironmentFailure) -> StageFailure<EnvironmentStageCause> {
     match failure {
-        EnvironmentFailure::Refused(invalid) => StageFailure::Refused(invalid),
+        EnvironmentFailure::Refused(invalid) => {
+            StageFailure::Refused(EnvironmentStageCause::Declaration(invalid))
+        }
         EnvironmentFailure::Limit(limit) => StageFailure::Limit(stage_limit(limit)),
+        EnvironmentFailure::Allocation(request) => {
+            StageFailure::Refused(EnvironmentStageCause::Allocation { request })
+        }
+        EnvironmentFailure::Capacity(request) => {
+            StageFailure::Refused(EnvironmentStageCause::Capacity { request })
+        }
     }
 }
 
@@ -56,5 +122,61 @@ mod tests {
             stage_limit(EnvironmentLimit::new(EnvironmentLimitKind::WorkUnits, 4, 5)),
             LimitExceeded::new(Setting::EnvironmentWorkUnits, 4, 5)
         );
+    }
+
+    /// FR-082-AC-10: a registry denial preserves both native storage units.
+    #[test]
+    fn allocation_refusal_keeps_exact_amount_and_native_unit() {
+        for request in [
+            StorageRequest::new(6, StorageUnit::Bytes),
+            StorageRequest::new(3, StorageUnit::AdditionalElements),
+        ] {
+            let StageFailure::Refused(EnvironmentStageCause::Allocation { request: observed }) =
+                stage_failure(EnvironmentFailure::Allocation(request))
+            else {
+                panic!("allocator denial must remain a refusal")
+            };
+            assert_eq!(observed, request);
+            let cause = EnvironmentStageCause::Allocation { request: observed };
+            assert_eq!(cause.storage_catalog_code(), Some(ALLOCATION_FAILED));
+            assert_eq!(
+                cause.storage_catalog_fields(),
+                Some(BTreeMap::from([(
+                    "requested",
+                    format!("{}:{}", storage_unit_name(request.unit()), request.amount()),
+                )]))
+            );
+        }
+    }
+
+    /// FR-082-AC-11: reservation-size overflow retains the native request and
+    /// remains distinct from allocator denial.
+    #[test]
+    fn capacity_refusal_keeps_exact_amount_and_native_unit() {
+        for (request, expected_upstream) in [
+            (StorageRequest::new(9, StorageUnit::Bytes), "bytes:9"),
+            (
+                StorageRequest::new(4, StorageUnit::AdditionalElements),
+                "additional-elements:4",
+            ),
+        ] {
+            let StageFailure::Refused(EnvironmentStageCause::Capacity { request: observed }) =
+                stage_failure(EnvironmentFailure::Capacity(request))
+            else {
+                panic!("reservation-size overflow must remain a refusal")
+            };
+            assert_eq!(observed, request);
+            let cause = EnvironmentStageCause::Capacity { request: observed };
+            assert_eq!(
+                cause.storage_catalog_code(),
+                Some(RESERVATION_SIZE_OVERFLOW)
+            );
+            assert_eq!(
+                cause.storage_catalog_fields(),
+                Some(BTreeMap::from([
+                    ("upstream", expected_upstream.to_owned(),)
+                ]))
+            );
+        }
     }
 }

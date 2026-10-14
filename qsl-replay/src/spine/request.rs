@@ -195,6 +195,31 @@ fn snapshot_value(value: NodeRef<'_>) -> Result<SnapshotValue, ClauseRequestRead
                             key: key.to_owned(),
                         }));
                     }
+                    "variant" => {
+                        let Node::Object(payload) = content.node() else {
+                            return Err(invalid("parameters.variant", "expected object"));
+                        };
+                        let (mut type_identity, mut case, mut extra_member) = (None, None, false);
+                        for (name, member) in payload {
+                            let text = |member: NodeRef<'_>, field: &str| match member.node() {
+                                Node::String(text) => Ok(text.to_owned()),
+                                _ => Err(invalid(
+                                    format!("parameters.variant.{field}"),
+                                    "expected string",
+                                )),
+                            };
+                            match name {
+                                "type" => type_identity = Some(text(member, "type")?),
+                                "case" => case = Some(text(member, "case")?),
+                                _ => extra_member = true,
+                            }
+                        }
+                        values.push(SnapshotValue::variant_payload(
+                            type_identity,
+                            case,
+                            extra_member,
+                        ));
+                    }
                     "sequence" => {
                         let Node::Array(items) = content.node() else {
                             return Err(invalid("parameters.sequence", "expected array"));
@@ -440,5 +465,42 @@ mod tests {
             };
         }
         assert!(matches!(form, RawForm::Integer("7")));
+    }
+
+    /// FR-360 item 9: a `variant` parameter keeps the members it was read
+    /// with, so admission can refuse a missing or an extra one in its own
+    /// order.
+    #[test]
+    fn parameter_value_reader_keeps_the_members_of_a_variant() {
+        for (text, type_identity, case, extra_member) in [
+            (
+                r#"{"variant":{"type":"ix://p/Tier","case":"Gold"}}"#,
+                Some("ix://p/Tier"),
+                Some("Gold"),
+                false,
+            ),
+            (
+                r#"{"variant":{"type":"ix://p/Tier"}}"#,
+                Some("ix://p/Tier"),
+                None,
+                false,
+            ),
+            (r#"{"variant":{"case":"Gold"}}"#, None, Some("Gold"), false),
+            (
+                r#"{"variant":{"type":"ix://p/Tier","case":"Gold","x":1}}"#,
+                Some("ix://p/Tier"),
+                Some("Gold"),
+                true,
+            ),
+        ] {
+            let document = quire_canonical::read(text.as_bytes(), u64::MAX).unwrap();
+            let decoded = snapshot_value(document.root()).unwrap();
+            let RawForm::Variant(variant) = decoded.form() else {
+                panic!("a variant, not {:?}", decoded.form());
+            };
+            assert_eq!(variant.type_identity(), type_identity, "{text}");
+            assert_eq!(variant.case(), case, "{text}");
+            assert_eq!(variant.has_extra_member(), extra_member, "{text}");
+        }
     }
 }

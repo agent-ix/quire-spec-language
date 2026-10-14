@@ -103,7 +103,16 @@ from the node itself.
 |---|---|---|---|
 | `ObjectTypeRecord` with no `interfaceFeatures` | `model` / `object_type` | itself | `aggregate{[]}` |
 | `ObjectTypeRecord` with `interfaceFeatures` (FR-152 Interface) | `model` / `systems_interface` | itself | `aggregate{[]}` |
+| `StateMachineRecord` | `model` / `state_machine` | itself | `aggregate{[]}` |
 | `RelationshipRecord` | `relation` / `relationship` | itself | `aggregate{[]}` |
+| `RecordValueTypeRecord` | `model` / `record_value_type` | itself | `aggregate{[]}` |
+| `EventTypeRecord` | `model` / `event_type` | itself | `aggregate{[]}` |
+
+A record value type or event type is never a `composite_type` with a source
+owner (FR-359 item 3). Its model node's key is also the declaration key under
+which the type environment declares it, so a value of the record names its
+most-specific type by that key, whatever alias a unit gives the model
+(FR-359 item 9).
 
 A record kind that no checked node names has no node: a field member, an
 operation member, a scalar type, a component, an endpoint, an allocation and

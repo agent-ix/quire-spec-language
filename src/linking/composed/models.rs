@@ -287,6 +287,14 @@ impl Site {
                 matches!(self, Self::Relationship)
             }
             DeclarationKind::Allocation
+            | DeclarationKind::Clause
+            | DeclarationKind::Namespace
+            | DeclarationKind::EventType
+            | DeclarationKind::VariantType
+            | DeclarationKind::VariantCase
+            | DeclarationKind::StateMachine
+            | DeclarationKind::Process
+            | DeclarationKind::PersistenceInterface
             | DeclarationKind::Field
             | DeclarationKind::Operation
             | DeclarationKind::Population => false,
@@ -1103,6 +1111,8 @@ impl<'a> ModelBindings<'a> {
             NativeType::Object { role, .. } => &role.record,
             NativeType::Record { declaration, .. } => declaration.name(),
             NativeType::Boolean
+            | NativeType::Uuid
+            | NativeType::String
             | NativeType::Scalar { .. }
             | NativeType::Enumeration { .. }
             | NativeType::Reference { .. }

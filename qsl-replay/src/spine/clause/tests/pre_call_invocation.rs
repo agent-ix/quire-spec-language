@@ -160,7 +160,7 @@ fn run_pre_call() -> ClauseDisposition {
 /// frame check, so no `frame_violation`) and `ParentPresent` evaluates
 /// over it to `true`, the `PreCall` verdict. Reading the post snapshot
 /// would give `false`.
-#[trace("TC-464", "FR-106-AC-9")]
+#[trace("TC-464", "FR-106-AC-9", "QSpec-V1-EXPR-019", "QSpec-FR-012-AC-5")]
 #[test]
 fn a_precondition_over_an_invocation_reads_only_the_pre_side() {
     let pre_call = boolean_disposition(&run_pre_call());
@@ -173,7 +173,7 @@ fn a_precondition_over_an_invocation_reads_only_the_pre_side() {
 /// TC-464 step 6: with the post snapshot absent from the provision, or its
 /// bytes not JSON, the invocation still admits and gives the `PreCall`
 /// verdict, with no `unavailable_observation`, digest or other refusal.
-#[trace("TC-464", "FR-106-AC-9")]
+#[trace("TC-464", "FR-106-AC-9", "QSpec-V1-EXPR-019")]
 #[test]
 fn a_precondition_over_an_invocation_ignores_a_missing_or_malformed_post() {
     let pre_call = boolean_disposition(&run_pre_call());
@@ -187,7 +187,7 @@ fn a_precondition_over_an_invocation_ignores_a_missing_or_malformed_post() {
 /// `deleted` members removed, and again with each of them ill-formed,
 /// admits and gives the `PreCall` verdict: a precondition neither requires
 /// nor reads them.
-#[trace("TC-464", "FR-106-AC-9")]
+#[trace("TC-464", "FR-106-AC-9", "QSpec-V1-EXPR-019")]
 #[test]
 fn a_precondition_over_an_invocation_neither_requires_nor_reads_its_post_side_members() {
     const POST_SIDE: [&str; 4] = ["post", "result", "created", "deleted"];
@@ -211,7 +211,7 @@ fn a_precondition_over_an_invocation_neither_requires_nor_reads_its_post_side_me
 /// `result` `{"boolean": true}`, selected for the precondition
 /// `ReachesTarget`, admits and gives the `PreCall` verdict: the result
 /// check is a postcondition's.
-#[trace("TC-464", "FR-106-AC-9")]
+#[trace("TC-464", "FR-106-AC-9", "QSpec-V1-EXPR-019")]
 #[test]
 fn a_precondition_over_an_invocation_reads_no_result_value() {
     let model_digest_hex = config_version_step3_model_digest_hex();

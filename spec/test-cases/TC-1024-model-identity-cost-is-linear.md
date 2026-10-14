@@ -1,5 +1,5 @@
 ---
-id: TC-1023
+id: TC-1024
 title: "Model identity cost is linear in types plus edges"
 type: TC
 relationships:
@@ -8,7 +8,7 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/NFR-012
     type: verifies
 ---
-# TC-1023: Model identity cost is linear in types plus edges
+# TC-1024: Model identity cost is linear in types plus edges
 
 ## Description
 

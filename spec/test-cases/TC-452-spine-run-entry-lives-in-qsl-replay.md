@@ -74,7 +74,8 @@ Scope: FR-100-AC-7 to FR-100-AC-9, and FR-100-AC-12.
      and `expected` the universe of 32 bytes of `0x02` (each with an FR-096
      key-table row);
    - `FamilyResult::Refused` of `ModelRefusalCause::TypeMismatch` and of
-     `ModelRefusalCause::AncestorSteps` (neither with a row);
+     `ModelRefusalCause::AncestorSteps` (`TypeMismatch` has no row;
+     `AncestorSteps` has the denied-charge record of FR-255 Behavior 1);
    - `FamilyResult::Undefined` with reason `precondition-false` and
      `absent-key`;
    - a `CallFailure::Fault` of `InternalFault::new("S6a",
@@ -160,7 +161,9 @@ Tag the tests `#[trace("TC-452", "FR-100-AC-7")]` (steps 1 and 2),
     (`"0202…02"` and `"0101…01"`, 64 characters each); exit 20.
   - `TypeMismatch`: `code` `ill_typed`, `cause` `type-mismatch`, no `fields`
     member; exit 20. `AncestorSteps`: `code` `resource_exhausted`, `cause`
-    `ancestor-steps`, no `fields` member; exit 22.
+    `insufficient-next-charge`, `fields` exactly `setting`, `limit`, `actual`,
+    `stage`, `accounting_contract`, `limit_kind`, `consumed`, `next_charge` and `charge_point`;
+    exit 22.
   - `undefined` with `reason` `precondition-false` and `absent-key`, exit 10.
   - `CallFailure::Fault`: a `runtime_invariant` command error at stage
     `call` with `details` `{"stage": "S6a", "invariant":

@@ -13,7 +13,9 @@ use std::collections::BTreeMap;
 
 use qsl_eval::value::StopReport;
 use qsl_foundation::source::provenance::OccurrenceKey;
-use qsl_foundation::witness::{RuntimeValuePath, SeparationStep, ValuePathStep, ValuePathSubject};
+use qsl_foundation::witness::{
+    InvocationBinding, RuntimeValuePath, SeparationStep, ValuePathStep, ValuePathSubject,
+};
 use quire_exact::{compare_keys, Incomplete, ScalarLimits, Value};
 use quire_semantic_value::location::{Location, Origin};
 
@@ -198,7 +200,10 @@ fn origin_bytes(origin: &Origin) -> usize {
         Origin::Body { function: name, .. }
         | Origin::Measure { function: name, .. }
         | Origin::TypeDeclaration { name }
-        | Origin::StateClause { clause: name, .. } => name.len(),
+        | Origin::StateClause { clause: name, .. }
+        | Origin::ModelOperationClause {
+            operation: name, ..
+        } => name.len(),
         Origin::Expression | Origin::ProtocolAttempt { .. } => 0,
     }
 }
@@ -377,6 +382,19 @@ impl SeparatingWitnessRecord {
         let observation = &self.value_path.observation;
         let subject = match &self.value_path.subject {
             ValuePathSubject::Object(object) => 64 + object.object().as_str().len(),
+            ValuePathSubject::Invocation {
+                invocation,
+                binding,
+            } => {
+                invocation.authority.len()
+                    + invocation.identity.len()
+                    + invocation.revision_namespace.len()
+                    + invocation.revision.len()
+                    + match binding {
+                        InvocationBinding::Parameter(parameter) => 1 + parameter.len(),
+                        InvocationBinding::Result | InvocationBinding::Receiver => 1,
+                    }
+            }
             ValuePathSubject::Built(occurrence) => {
                 32 + occurrence.origin().role().as_str().len() + 8
             }
@@ -426,6 +444,7 @@ pub(crate) fn value_bytes(value: &Value) -> usize {
             Value::Decimal(decimal) => digits(decimal.representation().coefficient()) + 4,
             Value::Float(_) => 8,
             Value::Uuid(_) | Value::Timestamp(_) => 16,
+            Value::String(text) => text.len(),
             Value::Quantity(quantity) => {
                 let magnitude = quantity.magnitude();
                 digits(magnitude.numerator()) + digits(magnitude.denominator()) + 32
@@ -444,6 +463,11 @@ pub(crate) fn value_bytes(value: &Value) -> usize {
             Value::Option(option) => {
                 pending.extend(option.payload());
                 1
+            }
+            // The variant digest, then the payload values.
+            Value::Union(union) => {
+                pending.extend(union.payload());
+                32
             }
             Value::Composite(composite) => {
                 pending.extend(composite.slots().iter().filter_map(|slot| match slot {
@@ -837,6 +861,12 @@ mod tests {
             work_units: 100,
             result_units: 10,
         }
+    }
+
+    #[test]
+    fn native_string_result_size_uses_utf8_bytes() {
+        assert_eq!(value_bytes(&Value::String("Aλ雪".to_owned())), 6);
+        assert_eq!(value_bytes(&Value::String(String::new())), 0);
     }
 
     fn record(value_path: Vec<&str>) -> SeparatingWitnessRecord {
