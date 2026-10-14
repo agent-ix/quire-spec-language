@@ -109,8 +109,8 @@ fn admission_events(count: usize) -> Vec<SuppliedEvent> {
         SuppliedEvent::TypeComparison,
         SuppliedEvent::TypeComparison,
     ];
-    events.extend(std::iter::repeat(SuppliedEvent::ChildScheduling).take(count));
-    events.extend(std::iter::repeat(SuppliedEvent::ValueVisit).take(count));
+    events.extend(std::iter::repeat_n(SuppliedEvent::ChildScheduling, count));
+    events.extend(std::iter::repeat_n(SuppliedEvent::ValueVisit, count));
     events
 }
 

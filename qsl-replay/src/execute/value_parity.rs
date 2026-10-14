@@ -11,7 +11,6 @@
 //! settles a `Refuted` result: that stays with a `Boolean` predicate that is
 //! false at the bindings ([`super::replay`]).
 
-use qsl_eval::value::CallFailure;
 use qsl_eval::value::{input_refusal_code, CheckedPackageEvaluation};
 use qsl_foundation::diagnostic::InternalFault;
 use qsl_semantics::family::FamilyOutcome;

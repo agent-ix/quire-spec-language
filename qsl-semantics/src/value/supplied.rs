@@ -678,9 +678,8 @@ impl SuppliedRun {
                     },
                 })
             });
-        charged.map_err(|stop| {
+        charged.inspect_err(|stop| {
             self.remember(SuppliedFailure::Stop(stop.clone()));
-            stop
         })
     }
 
