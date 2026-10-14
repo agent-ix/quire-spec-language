@@ -289,6 +289,9 @@ pub struct Fact {
     pub rule: RuleRef,
     /// Ordered producer keys the fact consumed.
     pub inputs: FactInputs,
+    /// The effective declaration an `inherit` fact links to; `None` for
+    /// every other rule.
+    pub parent: Option<EffectiveId>,
 }
 
 /// A [`Fact`]'s preimage form: `{ordinal, rule, inputs}`, the ordinal a
@@ -298,6 +301,7 @@ struct FactWire<'a> {
     ordinal: String,
     rule: RuleRefWire,
     inputs: Vec<DeclarationKeyWire<'a>>,
+    parent: Option<EffectiveIdWire>,
 }
 
 impl Fact {
@@ -306,6 +310,7 @@ impl Fact {
             ordinal: self.ordinal.to_string(),
             rule: self.rule.wire(),
             inputs: self.inputs.iter().map(DeclarationKey::wire).collect(),
+            parent: self.parent.as_ref().map(EffectiveIdWire::from),
         }
     }
 
@@ -316,6 +321,7 @@ impl Fact {
             ordinal: self.ordinal.to_string(),
             rule: self.rule.wire(),
             inputs: Vec::new(),
+            parent: self.parent.as_ref().map(EffectiveIdWire::from),
         };
         canonical_len(&bare).saturating_add(self.inputs.encoded_len())
     }

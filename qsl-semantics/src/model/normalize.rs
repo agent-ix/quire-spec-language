@@ -2835,12 +2835,14 @@ fn build(
             ordinal: 0,
             rule: RULE_QUALIFY,
             inputs: vec![type_key.clone()].into(),
+            parent: None,
         }];
         for ancestor in &walk.paths {
             derivation.push(Fact {
                 ordinal: derivation.len(),
                 rule: RULE_INHERIT,
                 inputs: FactInputs::new(ancestor.path.clone(), Vec::new()),
+                parent: None,
             });
         }
         for closing in walk.closing_cycles {
@@ -2892,6 +2894,7 @@ fn build(
                 ordinal: entry.derivation.len(),
                 rule: RULE_QUALIFY,
                 inputs: vec![member.clone()].into(),
+                parent: None,
             });
         }
         let Some(paths) = type_paths.get(type_key) else {
@@ -2927,6 +2930,7 @@ fn build(
                     ordinal,
                     rule: RULE_INHERIT,
                     inputs,
+                    parent: None,
                 });
             }
         }
@@ -3887,6 +3891,7 @@ fn resolve_redefinitions(
             ordinal,
             rule: fact.rule,
             inputs: fact.inputs,
+            parent: None,
         });
     }
 }

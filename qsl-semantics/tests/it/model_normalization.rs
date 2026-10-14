@@ -741,6 +741,7 @@ fn n01_normalizes_f1_to_stable_deterministic_identities() {
                 DeclarationKey::fixture("ix://test/orders/A/x"),
             ]
             .into(),
+            parent: None,
         }],
         "an inherited member carries the inherit fact alone"
     );
@@ -2373,11 +2374,13 @@ fn derivation_duplicate_comparison_includes_the_rule() {
             ordinal: 0,
             rule: RULE_REDEFINE,
             inputs: inputs.clone(),
+            parent: None,
         },
         Fact {
             ordinal: 1,
             rule: RULE_SUBSET,
             inputs,
+            parent: None,
         },
     ];
     assert_eq!(

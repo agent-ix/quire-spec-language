@@ -139,6 +139,7 @@ fn qualified(node: &str, owner: Option<EffectiveId>) -> EffectiveDeclarationPrei
             ordinal: 0,
             rule: RULE_QUALIFY,
             inputs: vec![key(node)].into(),
+            parent: None,
         }],
     }
 }
