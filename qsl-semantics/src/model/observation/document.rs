@@ -1377,10 +1377,9 @@ fn admit_value<'a: 'w, 'w>(
                 let Some(FieldValue::Present(value)) = done.pop() else {
                     return Err(refuse_at("wrong-value-kind", &path));
                 };
-                done.push(FieldValue::Present(quire_exact::OptionValue::from_admitted(
-                    payload.clone(),
-                    Some(value),
-                )));
+                done.push(FieldValue::Present(
+                    quire_exact::OptionValue::from_admitted(payload.clone(), Some(value)),
+                ));
             }
             Admit::Sequence { collection, count } => {
                 if collection.bound().is_some_and(|bound| {

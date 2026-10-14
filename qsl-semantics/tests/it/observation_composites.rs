@@ -824,7 +824,12 @@ fn declared_sequence_bounds_are_checked_before_retaining_values() {
                 "invalid-value",
                 Some("arg"),
             );
-            assert_refused(result, Code::InvalidRuntimeInput, "invalid-value", Some("result"));
+            assert_refused(
+                result,
+                Code::InvalidRuntimeInput,
+                "invalid-value",
+                Some("result"),
+            );
         }
     }
 }
