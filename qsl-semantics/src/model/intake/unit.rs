@@ -18,9 +18,9 @@ use quire_exact::Cancel;
 
 use super::{admit_located, read_domain_package, PackageDocument};
 use crate::model::accounting::{Incomplete, Meter, ModelNormalizationLimits};
-use crate::model::domain_package::{
-    DomainPackage, DomainPackageRecord, DomainPackageRef, ParsedOperationClause,
-};
+#[cfg(any(test, feature = "test-support"))]
+use crate::model::domain_package::DomainPackage;
+use crate::model::domain_package::{DomainPackageRecord, DomainPackageRef, ParsedOperationClause};
 use crate::model::key::DeclarationKey;
 use crate::model::key::{raw_bytes_digest, SHA256_JCS_DIGEST_DOMAIN};
 use crate::model::normalize::{normalize_on, EffectiveView, NormalizeOutcome, Refusals};

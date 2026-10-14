@@ -832,6 +832,7 @@ fn an_empty_and_mis_shaped_variant_type_reports_both() {
     assert_malformed(&found[1], "Tier", "TypeDefinition.variants");
 }
 
+#[cfg(feature = "test-support")]
 fn lifted(values: &[&str]) -> Result<Vec<u8>, qsl_semantics::model::intake::LiftFailure> {
     let fixtures = crate::model_intake::fcd_fixtures_dir();
     let bundle = tempfile::tempdir().expect("tempdir");
@@ -864,6 +865,7 @@ fn lifted(values: &[&str]) -> Result<Vec<u8>, qsl_semantics::model::intake::Lift
 /// type whose minted case identities the reader accepts.
 #[trace("TC-994", "FR-056-AC-24")]
 #[test]
+#[cfg(feature = "test-support")]
 fn a_lifted_enumeration_is_admitted_as_a_variant_type() {
     let bytes = lifted(&["Gold", "Standard"]).expect("the bundle lifts");
     let document: Value = serde_json::from_slice(&bytes).unwrap();
@@ -893,6 +895,7 @@ fn a_lifted_enumeration_is_admitted_as_a_variant_type() {
 /// the lift with `UNSLUGGABLE_NAME`, before any document exists.
 #[trace("TC-996", "FR-056-AC-26")]
 #[test]
+#[cfg(feature = "test-support")]
 fn enumeration_rows_that_slug_alike_are_refused_by_the_lift() {
     let refused = lifted(&["Snap_Shot", "Snap__Shot"]).expect_err("slug-alike rows are refused");
     let qsl_semantics::model::intake::LiftFailure::Blocked(diagnostics) = refused else {
