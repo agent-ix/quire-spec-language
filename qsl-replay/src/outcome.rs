@@ -938,6 +938,7 @@ impl OutcomeDocument {
                 | RunRefusal::UnboundParameter { .. }
                 | RunRefusal::WrongValueKind { .. }
                 | RunRefusal::Admission { .. }
+                | RunRefusal::Storage { .. }
                 | RunRefusal::DanglingReference { .. } => Self::new(
                     Operation::Execute,
                     Some(OutcomeStage::S6a),
@@ -985,6 +986,7 @@ fn replay_stage(refusal: &ReplayRefusal) -> Option<OutcomeStage> {
         | ReplayRefusal::DuplicateArgument(_)
         | ReplayRefusal::UnboundParameter(_)
         | ReplayRefusal::Witness { .. }
+        | ReplayRefusal::Storage { .. }
         | ReplayRefusal::NotAPredicate { .. }
         | ReplayRefusal::NotAValueFunction { .. }
         | ReplayRefusal::ScalarIdentity(_)

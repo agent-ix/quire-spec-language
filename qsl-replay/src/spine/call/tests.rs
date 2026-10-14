@@ -2158,3 +2158,24 @@ fn counter_is_the_denied_size_for_a_high_water_limit_and_the_sum_for_a_cumulativ
     let cumulative = incomplete(quire_exact::LimitKind::WorkUnits);
     assert_eq!(cumulative.counter(), Integer::from(14_u64));
 }
+
+/// A membership query that reserved no storage is the `resource_exhausted`
+/// run refusal at its argument position, with its own cause, never
+/// `WrongValueKind`.
+#[test]
+fn storage_failure_converts_to_the_resource_exhausted_run_refusal() {
+    use quire_semantic_value::declaration::{EnvironmentFailure, StorageRequest, StorageUnit};
+    let request = StorageRequest::new(6, StorageUnit::AdditionalElements);
+    let refusal = convert_call_failure(qsl_eval::value::CallFailure::Storage {
+        parameter: 2,
+        failure: EnvironmentFailure::Allocation(request),
+    });
+    assert_eq!(refusal.code(), Code::ResourceExhausted);
+    assert_eq!(refusal.category(), Category::Incomplete);
+    assert_eq!(refusal.stage(), Some("call"));
+    let RunRefusal::Storage { position, failure } = *refusal else {
+        panic!("a storage failure must stay a storage refusal");
+    };
+    assert_eq!(position, 2);
+    assert_eq!(failure, EnvironmentFailure::Allocation(request));
+}

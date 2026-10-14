@@ -12,7 +12,7 @@
 use std::collections::BTreeMap;
 
 use qsl_foundation::diagnostic::{
-    CatalogCode, LimitExceeded, StageFailure, ALLOCATION_FAILED, RESERVATION_SIZE_OVERFLOW,
+    CatalogCode, Code, LimitExceeded, StageFailure, ALLOCATION_FAILED, RESERVATION_SIZE_OVERFLOW,
 };
 use qsl_foundation::Setting;
 
@@ -102,9 +102,56 @@ pub fn stage_failure(failure: EnvironmentFailure) -> StageFailure<EnvironmentSta
     }
 }
 
+/// The catalog code of a membership query (`TypeEnvironment::admits`) that
+/// decided nothing. A denied reservation or a reservation-size overflow is
+/// `resource_exhausted`, never a type refusal. The query charges no work and
+/// refuses no declaration, so a ceiling or a declaration refusal here is the
+/// kernel breaking its own contract.
+pub fn membership_failure_code(failure: &EnvironmentFailure) -> Code {
+    match failure {
+        EnvironmentFailure::Allocation(_) | EnvironmentFailure::Capacity(_) => {
+            Code::ResourceExhausted
+        }
+        EnvironmentFailure::Limit(_) => Code::StageLimitExceeded,
+        EnvironmentFailure::Refused(_) => Code::RuntimeInvariant,
+    }
+}
+
+/// The catalog cause under [`membership_failure_code`] for a storage
+/// failure; none for the two kernel-contract breaks.
+pub fn membership_failure_cause(failure: &EnvironmentFailure) -> Option<&'static str> {
+    match failure {
+        EnvironmentFailure::Allocation(_) => Some(ALLOCATION_FAILED.cause()),
+        EnvironmentFailure::Capacity(_) => Some(RESERVATION_SIZE_OVERFLOW.cause()),
+        EnvironmentFailure::Limit(_) | EnvironmentFailure::Refused(_) => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A membership query's storage failures are `resource_exhausted` with
+    /// their own causes, distinct from each other and from a type refusal.
+    #[test]
+    fn membership_storage_failures_are_resource_exhausted() {
+        let request = StorageRequest::new(8, StorageUnit::AdditionalElements);
+        let allocation = EnvironmentFailure::Allocation(request);
+        let capacity = EnvironmentFailure::Capacity(request);
+        assert_eq!(
+            membership_failure_code(&allocation),
+            Code::ResourceExhausted
+        );
+        assert_eq!(membership_failure_code(&capacity), Code::ResourceExhausted);
+        assert_eq!(
+            membership_failure_cause(&allocation),
+            Some("allocation-failed")
+        );
+        assert_eq!(
+            membership_failure_cause(&capacity),
+            Some("reservation-size-overflow")
+        );
+    }
 
     /// Each ceiling maps to its stage limit kind with its bound and counter
     /// unchanged.

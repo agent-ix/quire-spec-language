@@ -29,10 +29,12 @@ use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::library::{LibraryName, PackageId};
 use qsl_semantics::model::intake::package_input;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
+use qsl_semantics::value::environment_stage::{membership_failure_cause, membership_failure_code};
 use quire_exact::{
     Cancel, Integer, LimitKind, Meter, NodeKey, Outcome, ScalarLimits, Value, ValueType,
 };
 use quire_semantic_value::call::InputRefusal;
+use quire_semantic_value::declaration::EnvironmentFailure;
 
 use crate::bounds::ReplayLimits;
 use crate::identity::{ObligationIdentity, QualifiedName, RawSourceRef};
@@ -195,6 +197,17 @@ pub enum ReplayRefusal {
     /// `StageFailure::Refused` cause.
     #[error("{code} ({cause}): {refusal}", code = input_refusal_code(&.0).as_str(), cause = .0.cause(), refusal = .0)]
     Input(InputRefusal),
+    /// An argument's membership in its parameter's declared type was not
+    /// decided because the type environment could not reserve storage:
+    /// `resource_exhausted`, never an [`Self::Input`] wrong-value-kind
+    /// refusal.
+    #[error("the argument at position {position} was not decided: {failure:?}")]
+    Storage {
+        /// The parameter's zero-based declared position.
+        position: usize,
+        /// The kernel's storage failure.
+        failure: EnvironmentFailure,
+    },
     /// The selected function's declared result is not `Boolean`, so it
     /// states no property a counterexample refutes. Refused before the
     /// call, from the declaration alone.
@@ -306,6 +319,7 @@ impl ReplayRefusal {
             | Self::NotAPredicate { .. }
             | Self::NotAValueFunction { .. } => Code::InvalidRuntimeInput,
             Self::Input(refusal) => input_refusal_code(refusal),
+            Self::Storage { failure, .. } => membership_failure_code(failure),
             Self::Fault(_) => Code::RuntimeInvariant,
         }
     }
@@ -328,6 +342,7 @@ impl ReplayRefusal {
             }
             Self::WrongObservation { .. } => Some("wrong-observation"),
             Self::Input(refusal) => Some(refusal.cause()),
+            Self::Storage { failure, .. } => membership_failure_cause(failure),
             Self::Admission(
                 AdmissionFailure::Refused(record) | AdmissionFailure::Incomplete(record),
             ) => Some(record.cause),
@@ -709,6 +724,10 @@ fn call_failure_to_replay_refusal(failure: CallFailure) -> ReplayRefusal {
     match failure {
         CallFailure::Input(refusal) => ReplayRefusal::Input(refusal),
         CallFailure::Fault(fault) => ReplayRefusal::Fault(fault),
+        CallFailure::Storage { parameter, failure } => ReplayRefusal::Storage {
+            position: parameter,
+            failure,
+        },
         // The replay meter holds no `Cancel` handle, so no charge is
         // cancelled.
         CallFailure::Cancelled(_) => {

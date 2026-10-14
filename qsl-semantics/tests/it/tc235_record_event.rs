@@ -1315,19 +1315,34 @@ fn qsl_732_composite_subtype_is_admitted_at_its_parent_slot_only() {
     let parent = money_value(&declarations, "M::Money", false);
     let unrelated = money_value(&declarations, "M::Discount", false);
 
-    assert!(types.admits(&ValueType::Composite(money), &child));
-    assert!(types.admits(&ValueType::Composite(taxed), &child));
+    assert_eq!(types.admits(&ValueType::Composite(money), &child), Ok(true));
+    assert_eq!(types.admits(&ValueType::Composite(taxed), &child), Ok(true));
     // The child keeps its own identity when admitted at the parent's slot.
     let Value::Composite(record) = &child else {
         panic!("a composite value");
     };
     assert_eq!(record.declaration(), taxed);
 
-    assert!(!types.admits(&ValueType::Composite(taxed), &parent));
-    assert!(!types.admits(&ValueType::Composite(money), &unrelated));
-    assert!(!types.admits(&ValueType::Composite(taxed), &unrelated));
-    assert!(!types.admits(&ValueType::Composite(discount), &child));
-    assert!(!types.admits(&ValueType::Composite(discount), &parent));
+    assert_eq!(
+        types.admits(&ValueType::Composite(taxed), &parent),
+        Ok(false)
+    );
+    assert_eq!(
+        types.admits(&ValueType::Composite(money), &unrelated),
+        Ok(false)
+    );
+    assert_eq!(
+        types.admits(&ValueType::Composite(taxed), &unrelated),
+        Ok(false)
+    );
+    assert_eq!(
+        types.admits(&ValueType::Composite(discount), &child),
+        Ok(false)
+    );
+    assert_eq!(
+        types.admits(&ValueType::Composite(discount), &parent),
+        Ok(false)
+    );
 }
 
 /// QSL-732: an event type's `supertypes[]` assemble the same way.
@@ -1428,7 +1443,7 @@ fn tc235_m17_run1_taxed_money_is_admitted_at_order_total_and_not_equal_to_money(
     let child = build("M::TaxedMoney", Some(20));
     let parent = build("M::Money", None);
 
-    assert!(declarations.types.admits(&total_type, &child));
+    assert_eq!(declarations.types.admits(&total_type, &child), Ok(true));
     let Value::Composite(record) = &child else {
         panic!("t is a composite value");
     };

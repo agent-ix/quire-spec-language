@@ -518,6 +518,12 @@ pub(crate) fn separate(
     let separation = match package.check_separation(&qualified, observations, claim, meter) {
         Ok(separation) => separation,
         Err(CallFailure::Fault(fault)) => return Err(ReplayRefusal::Fault(fault)),
+        Err(CallFailure::Storage { parameter, failure }) => {
+            return Err(ReplayRefusal::Storage {
+                position: parameter,
+                failure,
+            })
+        }
         // The clause was resolved by name and admitted for that clause.
         Err(CallFailure::Input(_)) => {
             return Err(fault("separation-check-over-the-admitted-clause"))

@@ -50,7 +50,7 @@ use quire_exact::{
 use quire_exact::{DivisionMember, IntegerDomain};
 use quire_exact::{Outcome, Refusal, Undefined};
 use quire_semantic_value::declaration::{
-    operand_value, CompositeShape, EqualityOperator, FieldRef, TypeEnvironment,
+    operand_value, CompositeShape, EnvironmentFailure, EqualityOperator, FieldRef, TypeEnvironment,
 };
 use quire_semantic_value::enumeration::{compare_enum, EnumMemberIndex};
 use quire_semantic_value::location::Location;
@@ -2027,13 +2027,24 @@ impl<'a, 'm> Machine<'a, 'm> {
             // type environment, so a child of the payload's record keeps its
             // own identity in the `Option`. `OptionValue::present` is exact.
             (FieldValue::Present(value), true, ValueType::Option(payload)) => {
-                if types.admits(payload, value) {
-                    Ok(OptionValue::from_admitted(
+                // The evaluator's stop channel is the kernel `Stop`, which has no
+                // storage variant, so an undecided admission is its own fault
+                // identifier and is never read as "rejected".
+                match types.admits(payload, value) {
+                    Ok(true) => Ok(OptionValue::from_admitted(
                         (**payload).clone(),
                         Some(value.clone()),
-                    ))
-                } else {
-                    Err(invariant("field-option-payload-rejected"))
+                    )),
+                    Ok(false) => Err(invariant("field-option-payload-rejected")),
+                    Err(EnvironmentFailure::Allocation(_)) => Err(invariant(
+                        "field-option-payload-admission-allocation-denied",
+                    )),
+                    Err(EnvironmentFailure::Capacity(_)) => Err(invariant(
+                        "field-option-payload-admission-capacity-overflow",
+                    )),
+                    Err(EnvironmentFailure::Limit(_) | EnvironmentFailure::Refused(_)) => {
+                        Err(invariant("field-option-payload-admission-contract-broken"))
+                    }
                 }
             }
             (FieldValue::Absent | FieldValue::Null, true, ValueType::Option(payload)) => {

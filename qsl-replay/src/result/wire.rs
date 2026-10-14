@@ -23,6 +23,7 @@ use qsl_foundation::witness::{
 use qsl_package::CheckedPackage;
 use quire_canonical::{Document, Encode, Limits, Node, NodeRef, Sink, Writer};
 use quire_exact::{Origin, Role, Value};
+use quire_semantic_value::declaration::EnvironmentFailure;
 use quire_semantic_value::location::{Location, OperationClauseKind, Origin as Declaration};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::value::RawValue;
@@ -81,6 +82,16 @@ pub enum CauseCodecError {
     /// is empty or not a catalog spelling.
     #[error("the refusal's {0} is not a catalog spelling")]
     Spelling(&'static str),
+    /// A member's membership in its declared type was not decided because
+    /// the type environment could not reserve storage (`resource_exhausted`):
+    /// never a [`Self::Value`] refusal.
+    #[error("the {member} could not be admitted: {failure:?}")]
+    Storage {
+        /// The member whose admission was undecided.
+        member: &'static str,
+        /// The kernel's storage failure.
+        failure: EnvironmentFailure,
+    },
 }
 
 /// A [`CauseCodecError::Shape`] refusal.
