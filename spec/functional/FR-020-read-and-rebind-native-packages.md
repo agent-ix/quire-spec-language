@@ -55,17 +55,17 @@ digest cannot bypass derivation checks.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-020-AC-1 | A produced package reads through actual parse/link/check with the exact externally selected source/models/authored bindings and yields the expected healthy/violating observations through actual runtime validation/evaluation. | Test |
-| FR-020-AC-2 | Invalid UTF-8, BOM, trailing JSON, malformed numbers/escapes, unpaired surrogates, duplicate decoded members and unknown/missing closed fields refuse without an accepted package. | Test |
-| FR-020-AC-3 | Unknown format in recognized valid duplicate-free JSON receives unknown_wire before version-specific field checks; unsupported language/edition/profile refuses in the contract's selection order without fallback. | Test |
-| FR-020-AC-4 | Reordered unique required features preserve acceptance; duplicates receive invalid_package, and unknown features or features outside the declared consumer feature set receive unknown_required_feature. | Test |
-| FR-020-AC-5 | Changed package/source/model bytes or exact native/formal identities refuse at the corresponding binding stage, including conflicting unselected inventory identities. | Test |
-| FR-020-AC-6 | Missing, duplicate, extra, foreign or changed authored clause bindings refuse even when the attacker updates the package byte digest. | Test |
-| FR-020-AC-7 | Mutated resolutions, locations, runtime obligations, omitted features or projection dispositions refuse after successful setup rather than being trusted as checked facts. | Test |
-| FR-020-AC-8 | A validly encoded package cannot bypass actual syntax/link/type/definedness refusal when its selected source requires that refusal. | Test |
-| FR-020-AC-9 | Exhaustion in package intake or any selected frontend stage remains incomplete, retaining the actual stage/cause with no package; later retries have fresh accounting. | Test |
-| FR-020-AC-10 | Equivalent object-member spelling/order yields the same reconstructed meaning while retaining the accepted raw bytes/digest; reordered clauses/imports or arrays with ordered semantics refuse correspondence. | Test |
-| FR-020-AC-11 | Unsupported executable projection remains addressable after read/rebind and cannot be extracted as a BoundPackage or substituted for a native runtime result. | Test |
+| FR-020-AC-1 | A produced package reads through actual parse/link/check with the exact externally selected source/models/authored bindings and yields the expected healthy/violating observations through actual runtime validation/evaluation. | Test (TC-089) |
+| FR-020-AC-2 | Invalid UTF-8, BOM, trailing JSON, malformed numbers/escapes, unpaired surrogates, duplicate decoded members and unknown/missing closed fields refuse without an accepted package. | Test (TC-083) |
+| FR-020-AC-3 | Unknown format in recognized valid duplicate-free JSON receives unknown_wire before version-specific field checks; unsupported language/edition/profile refuses in the contract's selection order without fallback. | Test (TC-084) |
+| FR-020-AC-4 | Reordered unique required features preserve acceptance; duplicates receive invalid_package, and unknown features or features outside the declared consumer feature set receive unknown_required_feature. | Test (TC-084) |
+| FR-020-AC-5 | Changed package/source/model bytes or exact native/formal identities refuse at the corresponding binding stage, including conflicting unselected inventory identities. | Test (TC-085) |
+| FR-020-AC-6 | Missing, duplicate, extra, foreign or changed authored clause bindings refuse even when the attacker updates the package byte digest. | Test (TC-085) |
+| FR-020-AC-7 | Mutated resolutions, locations, runtime obligations, omitted features or projection dispositions refuse after successful setup rather than being trusted as checked facts. | Test (TC-086) |
+| FR-020-AC-8 | A validly encoded package cannot bypass actual syntax/link/type/definedness refusal when its selected source requires that refusal. | Test (TC-087) |
+| FR-020-AC-9 | Exhaustion in package intake or any selected frontend stage remains incomplete, retaining the actual stage/cause with no package; later retries have fresh accounting. | Test (TC-087, TC-088) |
+| FR-020-AC-10 | Equivalent object-member spelling/order yields the same reconstructed meaning while retaining the accepted raw bytes/digest; reordered clauses/imports or arrays with ordered semantics refuse correspondence. | Test (TC-082) |
+| FR-020-AC-11 | Unsupported executable projection remains addressable after read/rebind and cannot be extracted as a BoundPackage or substituted for a native runtime result. | Test (TC-081, TC-086) |
 
 ## Dependencies
 

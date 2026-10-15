@@ -550,7 +550,7 @@ classification) and `routing::route`, which is unchanged.
   keep `resource_exhausted` (B-2). The code change belongs to S-5b
   (`LimitExceeded`), and TC-220's type-environment rows are pending until it
   lands.
-- `spec/spec.md` and `spec/tests.md`: index rows.
+- `spec/spec.md`: index row.
 
 ### 13. Open dependencies
 
