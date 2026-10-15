@@ -4,7 +4,7 @@
 //!
 //! [`population_package`] builds one package over the TC-442 spine model
 //! whose function `pop` takes a `Population<M::Gadget>[N]` parameter for each
-//! of its bounds, and [`emit`] writes it through the real v2 emitter. The
+//! of its bounds, and [`fixture`] writes it through the real v2 emitter. The
 //! admission corpus asserts those bytes are admitted by IR's checked-package
 //! v2 reader; [`write`] writes the same bytes, for [`CASES`], into a new
 //! directory so IR's conformance gate can read them without depending on QSL.
@@ -21,8 +21,11 @@ use std::{
 
 use qsl_forms::{BuiltinType, Expression, FunctionDeclaration, TypeForm, TypeFormHead};
 use qsl_foundation::{source::provenance::SourceRegion, Span};
-use qsl_package::{CheckedPackage, Emission};
-use qsl_semantics::check::PackageDeclarations;
+use qsl_package::{read_import_view, AdmittedPackages, CheckedPackage, V2ReadLimits};
+use qsl_semantics::{
+    check::PackageDeclarations,
+    library::{LibraryName, PackageId},
+};
 use quire_semantic_value::checking::CheckingLimits;
 
 /// The domain package document `spine-model.native`'s `model M` selects.
@@ -38,7 +41,7 @@ pub const DOMAIN_PACKAGE_FILE: &str = "spine-model.semantic-ir.json";
 /// distinct bounds.
 pub const CASES: [&[u64]; 4] = [&[0], &[1], &[3], &[2, 5]];
 
-/// Why [`write`] or [`emit`] produced no complete fixture set.
+/// Why [`write`] or [`fixture`] produced no complete fixture set.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// The output path already exists, as a directory, file or link.
@@ -70,6 +73,9 @@ pub enum Error {
     /// The v2 emitter refused the checked package.
     #[error("the v2 emitter refused the population fixture package: {0}")]
     Emit(String),
+    /// IR's reader refused the emitted bytes.
+    #[error("IR's checked-package v2 reader refused the population fixture package: {0}")]
+    Admission(String),
     /// The emitter omitted nodes, so the bytes are not the whole package.
     #[error("the v2 emitter omitted {omitted} nodes of the population fixture package")]
     Omitted {
@@ -85,15 +91,15 @@ pub fn file_name(bounds: &[u64]) -> String {
     format!("population-{}.json", bounds.join("-"))
 }
 
-/// The domain package document the cases' reader evidence is keyed by.
-pub fn domain_package() -> &'static [u8] {
-    DOMAIN_PACKAGE
-}
-
 /// A package over the TC-442 spine model whose one function `pop` takes a
 /// `Population<M::Gadget>[N]` parameter for each of `bounds`, built from
-/// source forms (source text spells no `Population` type).
-pub fn population_package(bounds: &[u64]) -> Result<CheckedPackage, Error> {
+/// source forms (source text spells no `Population` type), handed to `with`
+/// (the stage types are minted only by their named constructors, so the
+/// package is lent, not returned).
+fn with_population_package<T>(
+    bounds: &[u64],
+    with: impl FnOnce(&CheckedPackage) -> Result<T, Error>,
+) -> Result<T, Error> {
     let span = Span { start: 0, end: 0 };
     let parameters = bounds
         .iter()
@@ -118,7 +124,7 @@ pub fn population_package(bounds: &[u64]) -> Result<CheckedPackage, Error> {
     let graph = declarations
         .check(CheckingLimits::default())
         .map_err(|refusal| Error::Check(format!("{refusal:?}")))?;
-    Ok(CheckedPackage::link(graph))
+    with(&CheckedPackage::link(graph))
 }
 
 /// The spine-model unit run S1, S2, I1 (against `packages`) and the
@@ -145,21 +151,54 @@ fn assemble(packages: &BTreeMap<[u8; 32], Vec<u8>>) -> Result<PackageDeclaration
         .map_err(|refusal| stage("assemble")(format!("{refusal:?}")))
 }
 
-/// `bounds`' package through the v2 emitter, with nothing omitted.
-pub fn emit(bounds: &[u64]) -> Result<Emission, Error> {
-    let package = population_package(bounds)?;
+/// One case: the v2 bytes the emitter wrote for a bound list and the
+/// `package_id` IR's reader admitted them at.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Fixture {
+    /// The `quire.checked-package/v2` bytes.
+    pub bytes: Vec<u8>,
+    /// The `package_id` the checked-package v2 reader admitted `bytes` at.
+    pub package_id: PackageId,
+}
+
+/// `bounds`' package through the v2 emitter, with nothing omitted, and read
+/// back through QSL's I2 read, which runs IR's checked-package v2 reader and
+/// refuses unless it admits the bytes at the emitted `package_id`.
+pub fn fixture(bounds: &[u64]) -> Result<Fixture, Error> {
+    with_population_package(bounds, emit_and_read)
+}
+
+/// [`fixture`] over `package`.
+fn emit_and_read(package: &CheckedPackage) -> Result<Fixture, Error> {
     // The forms carry no spans, so every occurrence is placed at the whole
     // of the unit the package was checked from.
     let source = package.graph().source().clone();
     let length = u64::try_from(SPINE_MODEL_UNIT.len()).unwrap_or(u64::MAX);
-    let emission = qsl_package::emit_package(&package, |_| {
+    let emission = qsl_package::emit_package(package, |_| {
         SourceRegion::new(source.clone(), 0, length).ok()
     })
     .map_err(|refusal| Error::Emit(format!("{refusal:?}")))?;
-    match emission.omitted().len() {
-        0 => Ok(emission),
-        omitted => Err(Error::Omitted { omitted }),
+    if !emission.omitted().is_empty() {
+        return Err(Error::Omitted {
+            omitted: emission.omitted().len(),
+        });
     }
+    let library =
+        LibraryName::new("pkg").map_err(|refusal| Error::Admission(format!("{refusal:?}")))?;
+    let domain_packages = qsl_semantics::model::intake::package_input([DOMAIN_PACKAGE]);
+    let view = read_import_view(
+        package,
+        &emission,
+        library,
+        &domain_packages,
+        &mut AdmittedPackages::default(),
+        V2ReadLimits::default(),
+    )
+    .map_err(|refusal| Error::Admission(format!("{refusal:?}")))?;
+    Ok(Fixture {
+        bytes: emission.package().bytes().to_vec(),
+        package_id: view.package(),
+    })
 }
 
 /// Writes the v2 package of every case of [`CASES`] and the domain package
@@ -169,8 +208,7 @@ pub fn emit(bounds: &[u64]) -> Result<Emission, Error> {
 pub fn write(directory: &Path) -> Result<(), Error> {
     let mut files = vec![(DOMAIN_PACKAGE_FILE.to_owned(), DOMAIN_PACKAGE.to_vec())];
     for bounds in CASES {
-        let emission = emit(bounds)?;
-        files.push((file_name(bounds), emission.package().bytes().to_vec()));
+        files.push((file_name(bounds), fixture(bounds)?.bytes));
     }
     fs::create_dir(directory).map_err(|source| match source.kind() {
         io::ErrorKind::AlreadyExists => Error::OutputExists {
@@ -196,8 +234,6 @@ fn io_at(path: &Path, source: io::Error) -> Error {
 mod tests {
     use super::*;
     use ix_trace_rs::trace;
-    use qsl_package::{read_import_view, AdmittedPackages, V2ReadLimits};
-    use qsl_semantics::library::LibraryName;
 
     fn written() -> (tempfile::TempDir, PathBuf) {
         let parent = tempfile::tempdir().unwrap();
@@ -225,33 +261,21 @@ mod tests {
     #[test]
     fn written_bytes_equal_the_emitted_package_and_are_admitted_by_ir() {
         let (_parent, output) = written();
-        let domain_packages = qsl_semantics::model::intake::package_input([domain_package()]);
         for bounds in CASES {
-            let emission = emit(bounds).unwrap();
+            // `fixture` fails unless IR's reader admits the bytes.
+            let fixture =
+                super::fixture(bounds).unwrap_or_else(|refusal| panic!("{bounds:?}: {refusal}"));
             let on_disk = fs::read(output.join(file_name(bounds))).unwrap();
-            assert_eq!(on_disk, emission.package().bytes(), "{bounds:?}");
-
-            // `read_import_view` runs IR's checked-package v2 reader over the
-            // emission's bytes and cross-checks the `package_id`.
-            let package = population_package(bounds).unwrap();
-            let view = read_import_view(
-                &package,
-                &emission,
-                LibraryName::new("pkg").unwrap(),
-                &domain_packages,
-                &mut AdmittedPackages::default(),
-                V2ReadLimits::default(),
-            )
-            .unwrap_or_else(|refusal| panic!("{bounds:?}: {refusal:?}"));
+            assert_eq!(on_disk, fixture.bytes, "{bounds:?}");
             assert_eq!(
-                view.package(),
-                emission.package().package_id(),
-                "{bounds:?}"
+                fixture,
+                super::fixture(bounds).unwrap(),
+                "{bounds:?}: emission is deterministic"
             );
         }
         assert_eq!(
             fs::read(output.join(DOMAIN_PACKAGE_FILE)).unwrap(),
-            domain_package()
+            DOMAIN_PACKAGE
         );
     }
 
@@ -262,7 +286,7 @@ mod tests {
     fn each_bound_is_a_typed_population_node() {
         for bounds in CASES {
             let wire: serde_json::Value =
-                serde_json::from_slice(emit(bounds).unwrap().package().bytes()).unwrap();
+                serde_json::from_slice(&fixture(bounds).unwrap().bytes).unwrap();
             let nodes = wire["semantic_graph"]["nodes"].as_array().unwrap();
             let mut maxima: Vec<u64> = Vec::new();
             for node in nodes.iter().filter(|node| {
