@@ -712,7 +712,7 @@ its own repository, agent-ix/quire-driver.
 
 The "Depends on" column is an exhaustive allow-list. A module may depend on a
 listed lower layer, or on a module earlier in its own layer's order. Every
-other edge is forbidden. The column lists the exhaustive allow-list of first-party layer edges; an external general-purpose crate is not a layer edge (for example, `quire-driver` uses `serde_json` to read FR-331 manifest bytes, because the driver reads manifests as data, ADR-013 T-7). The result is acyclic. #226 owns the drift gate that
+other edge is forbidden. The column is the exhaustive allow-list of first-party layer edges; it does not list an external general-purpose crate (one that parses or serializes data and carries no first-party layer edge, for example `serde_json`, which `quire-driver` uses to read FR-331 manifest bytes as data, ADR-013 T-7), a cell that names the external crates it admits (SV, WG) is exhaustive for that crate, and a per-crate exact dependency table in a layering test is the stricter gate that governs where it exists. The result is acyclic. #226 owns the drift gate that
 enforces it; before #226, §3's interim rule applies.
 
 | Layer | Modules, in order | Stage | Depends on |
@@ -742,8 +742,9 @@ each their own workspace crate (§7.2). K is `quire-exact` (X-1), SV is
 `quire-semantic-value` (X-11), W is `quire-walk`, an external crate in its own repository, `agent-ix/quire-walk`, and WG is `qsl-walk-grow`
 (ADR-030 FR-356). A layer
 crate's `[dependencies]` name only the layer crates and the external crates in
-its "Depends on" cell above, plus external general-purpose crates, which are not
-layer edges.
+its "Depends on" cell above, plus external general-purpose crates (§6.1) where
+its cell names no external crate and no stricter per-crate dependency table
+governs it.
 
 | Crate | Layer |
 |---|---|
