@@ -46,7 +46,7 @@ implementation selections.
 The refusal of an ambient `self`, operation `result` or `pre(expr)` inside a
 capture initializer is not restated here: it is owned by
 [FR-036](./FR-036-link-composed-native-packages.md)'s scope checking, is already
-delivered in the composed linker, and is covered by TC-011–TC-019. This requirement
+delivered in the composed linker, and is covered by [FR-036-AC-2](./FR-036-link-composed-native-packages.md) (TC-114). This requirement
 consumes that refusal rather than duplicating it.
 
 Agent F owns trigger observation binding, delivery transport and

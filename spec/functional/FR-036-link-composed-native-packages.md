@@ -139,6 +139,16 @@ does not change static meaning. A changed static definition, type owner or bindi
 contract requires an explicit new selection. Preserve full compile configuration
 provenance separately from static meaning, including resource-control changes.
 
+The linker SHALL bind a native reference to a domain declaration by its
+FR-154 key and kind. A type site SHALL bind an object, interface, record value
+or value type; a protocol role SHALL also bind a Part or Port; a protocol
+relationship SHALL bind a Connection or navigation relationship; the linker
+SHALL refuse a declaration of any other kind. The composed type checker SHALL
+type a domain object type, Interface or record value type, and a field read by
+the field's value type (`Boolean`, or another such domain type, under
+multiplicity `1`, `0..1` or `0..n`); it SHALL refuse any other field type, and
+a domain value type, as an unsupported prerequisite.
+
 The historical single-unit APIs and package encodings keep their existing atomic
 refusal and identity behavior. Partial composed reports cannot be serialized as
 historical complete packages or enter a historical execution API by retagging.
@@ -157,7 +167,7 @@ a new wire format as an incidental implementation choice.
 | FR-036-AC-6 | Two required requested pairs over different FR-057 capability kinds both remain in the request report in caller order; when either is not settled `supported`, complete aggregate success joined from the FR-331 accounting records on request index is unavailable, and a family body refused by its checker is never represented as checked. | Test (TC-115) |
 | FR-036-AC-7 | A dependency chain, diamond and cycle terminate under declared versioned work accounting and lowered traversal budgets. The accounting contract supplies exact-limit expectations, including shared dependencies and revisits; zero never disables a limit. An unaffordable next charge or counter overflow retains unfinished dispositions and yields no complete or executable package. A retry with sufficient budget preserves the original inputs and prior report. | Test (TC-114) |
 | FR-036-AC-8 | Historical linked/package artifacts retain their identities and atomic refusals; a composed partial report cannot enter an old reader or runner by changing a profile label. | Test (TC-115) |
-| FR-036-AC-9 | Native model references to a field, a Port and a Connection of a domain package admitted under FR-056 bind to their exact declaration keys and kinds; a same-shaped declaration from another domain package or a changed selected digest refuses each dependent declaration while unrelated declarations stay bound. | Test (TC-148) |
+| FR-036-AC-9 | Native model references to a field, a Port and a Connection of a domain package admitted under FR-056 bind to their exact declaration keys and kinds, and a declaration of a kind the site does not bind refuses at the linker; a same-shaped declaration from another domain package or a changed selected digest refuses each dependent declaration while unrelated declarations stay bound. | Test (TC-148) |
 
 ## Dependencies
 

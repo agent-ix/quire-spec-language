@@ -52,11 +52,11 @@ native package through their existing APIs.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-022-AC-1 | A mapped complete native clause compiles and retains exact body, original document and authored bindings. | Test |
-| FR-022-AC-2 | Wrong language, malformed body, extra clauses and a foreign native clause name refuse without producing a package. | Test |
-| FR-022-AC-3 | A native compiler failure retains its code, body location and exact original regions, including Unicode and deleted layout. | Test |
-| FR-022-AC-4 | Link/check/package exhaustion retains its actual typed cause; retrying the same mapped request starts fresh. | Test |
-| FR-022-AC-5 | A mapped parent/aggregate clause reaches existing runtime evaluation with healthy, violating and refused inputs and unchanged authored identity. | Test |
+| FR-022-AC-1 | A mapped complete native clause compiles and retains exact body, original document and authored bindings. | Test (TC-095) |
+| FR-022-AC-2 | Wrong language, malformed body, extra clauses and a foreign native clause name refuse without producing a package. | Test (TC-096) |
+| FR-022-AC-3 | A native compiler failure retains its code, body location and exact original regions, including Unicode and deleted layout. | Test (TC-096) |
+| FR-022-AC-4 | Link/check/package exhaustion retains its actual typed cause; retrying the same mapped request starts fresh. | Test (TC-096) |
+| FR-022-AC-5 | A mapped parent/aggregate clause reaches existing runtime evaluation with healthy, violating and refused inputs and unchanged authored identity. | Test (TC-095) |
 
 ## Dependencies
 
