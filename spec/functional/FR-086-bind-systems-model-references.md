@@ -161,9 +161,8 @@ outright before the target-kind charge.
   checked model view.
 - **Downstream:** none within this ticket's scope. Systems-model navigation
   over an object population — FR-152's "Navigation" section — is out of this
-  requirement's scope and is tracked by
-  [#147](https://github.com/agent-ix/quire-spec-language/issues/147), which
-  names FR-152-AC-1/3/5/7 as its unbacked criteria.
+  requirement's scope; its static typing is
+  [FR-363](FR-363-type-navigation-over-a-relationship-end.md)'s.
 - Relates to [FR-085](FR-085-resolve-relationship-end-references.md), which
   resolves a plain object-to-object relationship's ends; this requirement's
   Connection classification applies only once both ends already resolve to
