@@ -41,3 +41,12 @@ Examined:
 **FAIL: 2 blocking findings** (both also in SR-9133). AC3 is met. No
 untraced production code: every new item carries `FR-093-AC-19`/`TC-416`
 tests. No stub or tautology beyond the self-comparison in FND-001.
+
+## Dispositions
+
+Round 1, reviewed at 08d57a8da7fba3c32009cc02c551b6654333d1cc.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | deferred | Same as SR-9133 FND-001. The TC-390 obstacle is real and verified. The AC1 and AC2 deviation is recorded on QSL-771 by the lead for the planner. |
+| FND-002 | fixed 08d57a8da | `ir_admits_one_model_population_node_per_bound` decodes through IR's `CheckedNodeKind` for N = 0, 1, 3, [2, 5]. |

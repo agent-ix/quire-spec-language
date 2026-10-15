@@ -65,3 +65,15 @@ feature-gated); low, a mid-write I/O failure after `create_dir` leaves a
 partial directory (typed `Io`, same as the precedent); low, the CLI exit path
 is not tested as a process (same as the precedent); low, `assemble`
 duplicates the test helper `assemble_with_models` (forced by TC-390).
+
+## Dispositions
+
+Round 1, reviewed at 08d57a8da7fba3c32009cc02c551b6654333d1cc. Full `make ci`
+log `qsl771-ci4.log` ends `exit=0` and was written at 23:20, after the
+commit (21:34). It runs `ir_admits_one_model_population_node_per_bound ... ok`.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | deferred | The obstacle is real. TC-390 (`tests/it/family_outcome_layering.rs:319-328, 400-455`) fixes qsl-package's `[dependencies]` without qsl-cst or qsl-forms, which it admits as dev-only. The root crate depends on qsl-package, so the corpus cannot reach the root builder. The corpus N = 3 row is a separate fixture: parameter `p` against `p0`, regions 0..66 against 0..749. Nothing asserts it equals the written bytes, so no assertion claims an equality it does not prove. The deviation from ticket AC1 and AC2 is recorded on QSL-771 by the lead; the planner decides on amending TC-390/ADR-011 X-7. The PR body does not yet state it. |
+| FND-002 | fixed 08d57a8da | `AdmittedPackages::package` exposes IR's admitted `CheckedPackageV2`. `Fixture.node_kinds` comes from its `node_kinds()`. `ir_admits_one_model_population_node_per_bound` counts `CheckedNodeKind::BoundedDomain(BoundedDomainForm::ModelPopulation)` per bound for every case, so a wrong or missing kind fails the count. |
+| FND-003 | fixed 08d57a8da | The doc names `with_population_package` as plain code and links `write()`; `ci-docs` passed inside the full `make ci`. |
