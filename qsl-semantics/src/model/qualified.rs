@@ -145,7 +145,7 @@ pub fn resolve_systems(
     let resolved = resolve_kind(admitted.systems(), required, construct.key)
         .map_err(|refusal| ResolveFailure::Refused(Box::new(refusal)))?;
     admit_construct(admitted, view, &resolved, meter)?;
-    let owner = effective_owner(admitted, view, resolved.kind, &resolved.key)?;
+    let owner = effective_owner(admitted, view, resolved.kind, &resolved.key, name)?;
     let effective = view
         .declarations()
         .iter()
@@ -229,6 +229,7 @@ fn effective_owner(
     view: &EffectiveView,
     kind: Kind,
     key: &DeclarationKey,
+    name: &str,
 ) -> Result<Option<EffectiveId>, ResolveFailure> {
     let refuse = |refusal| ResolveFailure::Refused(Box::new(refusal));
     if kind == Kind::Interface {
@@ -244,7 +245,7 @@ fn effective_owner(
         refuse(ModelRefusal {
             code: Code::MissingDeclaration,
             cause: ModelRefusalCause::UnresolvedName {
-                name: key.node.clone(),
+                name: name.to_owned(),
                 segment: 1,
             },
             detail: format!(

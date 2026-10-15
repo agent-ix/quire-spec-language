@@ -261,8 +261,17 @@ fn y01_each_systems_kind_resolves_with_declaration_key_and_effective_identity() 
             },
             "{artifact}"
         );
-        assert_eq!(meter.consumed(LimitKind::WorkUnits), 1, "{artifact}");
-        assert_eq!(meter.admitted_charges(), [ChargePoint::SystemsResolve]);
+        // The resolve charge, then the admission rule's own charges: three
+        // connection conditions for a Connection, one for an Allocation.
+        let mut charges = vec![ChargePoint::SystemsResolve];
+        match kind {
+            Kind::Connection => {
+                charges.extend([ChargePoint::SystemsConnectionCondition; 3]);
+            }
+            Kind::Allocation => charges.push(ChargePoint::SystemsAllocation),
+            Kind::Part | Kind::Port | Kind::Interface | Kind::None => {}
+        }
+        assert_eq!(meter.admitted_charges(), charges, "{artifact}");
     }
     assert_ne!(
         member_entry(&world.view, "Pump", "pump_alloc"),
@@ -592,7 +601,7 @@ fn a_view_holding_only_another_owners_entry_refuses() {
     assert_eq!(
         refused(result).cause,
         ModelRefusalCause::UnresolvedName {
-            name: "ix://test/orders/pump_alloc".to_owned(),
+            name: "M::pump_alloc".to_owned(),
             segment: 1,
         }
     );
