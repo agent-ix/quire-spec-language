@@ -883,8 +883,6 @@ fn field_kind_matches(raw: &SnapshotValue, value_type: &quire_exact::ValueType) 
                 RawForm::Integer(_),
                 quire_exact::ValueType::Integer | quire_exact::ValueType::Int(_)
             )
-            | (RawForm::Uuid(_), quire_exact::ValueType::Uuid)
-            | (RawForm::Timestamp(_), quire_exact::ValueType::Timestamp)
             | (RawForm::Reference(_), quire_exact::ValueType::Reference(_))
             | (
                 RawForm::Absent | RawForm::Present(_),
@@ -921,8 +919,6 @@ fn object_field_kind_matches(
                 RawForm::Integer(_),
                 quire_exact::ValueType::Integer | quire_exact::ValueType::Int(_)
             )
-            | (RawForm::Uuid(_), quire_exact::ValueType::Uuid)
-            | (RawForm::Timestamp(_), quire_exact::ValueType::Timestamp)
             | (RawForm::Reference(_), quire_exact::ValueType::Reference(_))
             | (RawForm::Sequence(_), quire_exact::ValueType::Collection(_))
             | (RawForm::Record(_), quire_exact::ValueType::Composite(_))
@@ -1224,18 +1220,6 @@ fn admit_leaf(
                 }
                 None => Err(admission_record(Code::InvalidRuntimeInput, "invalid-value")),
             }
-        }
-        // FR-056: the kernel's canonical constructor decides the payload text;
-        // any refusal of it, whichever class, is `invalid-value`.
-        (RawForm::Uuid(payload), quire_exact::ValueType::Uuid) => {
-            quire_exact::Uuid::from_canonical_text(payload)
-                .map(Value::Uuid)
-                .map_err(|_| admission_record(Code::InvalidRuntimeInput, "invalid-value"))
-        }
-        (RawForm::Timestamp(payload), quire_exact::ValueType::Timestamp) => {
-            quire_exact::Timestamp::from_canonical_text(payload)
-                .map(Value::Timestamp)
-                .map_err(|_| admission_record(Code::InvalidRuntimeInput, "invalid-value"))
         }
         (RawForm::Reference(reference), quire_exact::ValueType::Reference(type_identity)) => {
             references
@@ -1581,12 +1565,7 @@ fn collect_references(raw: &SnapshotValue, into: &mut Vec<(String, String)>) {
             RawForm::Record(record) => {
                 pending.extend(record.fields().rev().map(|(_, value)| value.form()));
             }
-            RawForm::Boolean(_)
-            | RawForm::Integer(_)
-            | RawForm::Uuid(_)
-            | RawForm::Timestamp(_)
-            | RawForm::Absent
-            | RawForm::Variant(_) => {}
+            RawForm::Boolean(_) | RawForm::Integer(_) | RawForm::Absent | RawForm::Variant(_) => {}
         }
     }
 }

@@ -616,12 +616,12 @@ fn tc_1028_native_payloads_round_trip_in_the_value_text() {
     let uuid = WitnessValue::Uuid("00112233-4455-6677-8899-aabbccddeeff".to_owned());
     assert_eq!(
         uuid.to_value_text().unwrap(),
-        r#"{"type":"uuid","value":"00112233-4455-6677-8899-aabbccddeeff"}"#
+        r#"{"kind":"uuid","text":"00112233-4455-6677-8899-aabbccddeeff"}"#
     );
     let timestamp = WitnessValue::Timestamp("-1".to_owned());
     assert_eq!(
         timestamp.to_value_text().unwrap(),
-        r#"{"type":"timestamp","value":"-1"}"#
+        r#"{"kind":"timestamp","nanoseconds":"-1"}"#
     );
     let uppercase = WitnessValue::Uuid("00112233-4455-6677-8899-AABBCCDDEEFF".to_owned());
     for value in [uuid, timestamp, uppercase] {

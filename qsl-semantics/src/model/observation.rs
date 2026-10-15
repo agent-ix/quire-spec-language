@@ -534,11 +534,6 @@ pub struct SnapshotValue {
 enum RawNode {
     Boolean(bool),
     Integer(String),
-    /// `{"kind": "uuid", "text": ..}`: the payload text as read, admitted
-    /// through quire-exact's canonical constructor.
-    Uuid(String),
-    /// `{"kind": "timestamp", "nanoseconds": ..}`: the payload text as read.
-    Timestamp(String),
     Absent,
     Present(usize),
     Reference(SelectedObject),
@@ -568,11 +563,6 @@ pub enum RawForm<'v> {
     Boolean(bool),
     /// `{"integer": "<decimal>"}`.
     Integer(&'v str),
-    /// `{"kind": "uuid", "text": "<payload>"}`: the payload text as read.
-    Uuid(&'v str),
-    /// `{"kind": "timestamp", "nanoseconds": "<payload>"}`: the payload text
-    /// as read.
-    Timestamp(&'v str),
     /// `{"absent": {}}`.
     Absent,
     /// `{"present": <value>}`.
@@ -690,20 +680,6 @@ impl SnapshotValue {
         Self::single(RawNode::Integer(spelling.into()))
     }
 
-    /// `{"kind": "uuid", "text": "<payload>"}`. The payload is admitted, not
-    /// checked, here: admission refuses a noncanonical spelling.
-    #[must_use]
-    pub fn uuid(payload: impl Into<String>) -> Self {
-        Self::single(RawNode::Uuid(payload.into()))
-    }
-
-    /// `{"kind": "timestamp", "nanoseconds": "<payload>"}`. The payload is
-    /// admitted, not checked, here.
-    #[must_use]
-    pub fn timestamp(payload: impl Into<String>) -> Self {
-        Self::single(RawNode::Timestamp(payload.into()))
-    }
-
     /// `{"absent": {}}`.
     #[must_use]
     pub fn absent() -> Self {
@@ -796,8 +772,6 @@ impl SnapshotValue {
         match &self.nodes[index] {
             RawNode::Boolean(value) => RawForm::Boolean(*value),
             RawNode::Integer(spelling) => RawForm::Integer(spelling),
-            RawNode::Uuid(payload) => RawForm::Uuid(payload),
-            RawNode::Timestamp(payload) => RawForm::Timestamp(payload),
             RawNode::Absent => RawForm::Absent,
             RawNode::Present(inner) => RawForm::Present(RawValue {
                 arena: self,
@@ -836,8 +810,6 @@ impl PartialEq for SnapshotValue {
             match pair {
                 (RawForm::Boolean(left), RawForm::Boolean(right)) if left == right => {}
                 (RawForm::Integer(left), RawForm::Integer(right)) if left == right => {}
-                (RawForm::Uuid(left), RawForm::Uuid(right)) if left == right => {}
-                (RawForm::Timestamp(left), RawForm::Timestamp(right)) if left == right => {}
                 (RawForm::Absent, RawForm::Absent) => {}
                 (RawForm::Reference(left), RawForm::Reference(right)) if left == right => {}
                 (RawForm::Present(left), RawForm::Present(right)) => {
@@ -898,8 +870,6 @@ impl RawNode {
             },
             other @ (Self::Boolean(_)
             | Self::Integer(_)
-            | Self::Uuid(_)
-            | Self::Timestamp(_)
             | Self::Absent
             | Self::Reference(_)
             | Self::Variant { .. }) => other,
