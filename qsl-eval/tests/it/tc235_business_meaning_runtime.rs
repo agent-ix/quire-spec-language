@@ -1004,7 +1004,7 @@ fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
     ));
     assert_eq!(
         inconsistent.receiver_path(),
-        Some(&RuntimeValuePath {
+        &RuntimeValuePath {
             observation: ObservationIdentity {
                 authority: "test".to_owned(),
                 identity: "q1".to_owned(),
@@ -1021,7 +1021,7 @@ fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
                 binding: InvocationBinding::Receiver,
             },
             steps: Vec::new(),
-        })
+        }
     );
 
     let (snapshots, invocations, invocation) = run(&[], &[(true, false)]);
@@ -1468,10 +1468,11 @@ fn truth(package: &CheckedPackage, clause: &str, observations: &AdmittedObservat
 /// binding `self` to the first run of the population rather than the selected
 /// one flips `r2` to `true`; binding `pre(...)` reads to the post observation
 /// flips run 2's postcondition to `false`; dropping the precondition's
-/// observation selection flips run 3's precondition. The located-violation
-/// path (`root (s1, object (universe of Fulfilment, ..., r2))`, no steps) is
-/// reported by no evaluator API for an object receiver (only an invocation
-/// receiver has a root path), so it is not asserted here.
+/// observation selection flips run 3's precondition; reporting no receiver
+/// path for an object receiver (or the invocation receiver binding) flips the
+/// located-violation assertion. Run 3's "exactly one result" outcome and the
+/// per-read paths of M22 are not asserted here: no evaluator API reports a
+/// clause set's results together or a path per read.
 #[trace(
     "QSpec-TC-235",
     "QSpec-FR-208-AC-6",
@@ -1507,6 +1508,38 @@ fn tc235_m16_process_invariant_and_operation_clauses_evaluate_per_run() {
     };
     assert!(invariant(0), "r1 holds");
     assert!(!invariant(1), "r2 is a logical violation");
+
+    // Run 1's location: the violation is located at the root of the run's
+    // declared object identity at `s1`, with no steps -- never the
+    // invocation receiver binding, which a run with an object identity
+    // does not use (FR-207-AC-8).
+    let violation = package
+        .evaluate_clause(
+            &QualifiedName::unqualified("NonNegativeAttempts").unwrap(),
+            &process_observations(
+                &package,
+                "NonNegativeAttempts",
+                Some(s1.clone()),
+                None,
+                None,
+                runs[1].clone(),
+            ),
+            &mut Meter::new(UNLIMITED),
+        )
+        .expect("admitted observations evaluate");
+    assert_eq!(
+        violation.receiver_path(),
+        &RuntimeValuePath {
+            observation: ObservationIdentity {
+                authority: "test".to_owned(),
+                identity: "s1".to_owned(),
+                revision_namespace: "tc235".to_owned(),
+                revision: "1".to_owned(),
+            },
+            subject: ValuePathSubject::Object(runs[1].clone()),
+            steps: Vec::new(),
+        }
+    );
 
     // Runs 2 and 3: `restart` on r1.
     let restart = |from: i64, to: i64| {
