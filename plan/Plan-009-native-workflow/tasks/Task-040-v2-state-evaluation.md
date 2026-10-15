@@ -25,7 +25,7 @@ Protocol-owned truth callback or synthetic artifact authority.
 - [x] Share one evaluator across the existing v1 and new v2 public entry points.
 - [x] Admit compensation-specific binder anchors, subjects and model authority.
 - [x] Exercise unpublished, crossed, unavailable, wrong-authority and bounded paths.
-- [x] Run the required local Rust gates and reconcile the Test Matrix and capability records.
+- [x] Run the required local Rust gates and reconcile capability records.
 - [x] Complete self `/rust-review` and `/gap-analysis` at PR readiness.
 
 ## Delivery

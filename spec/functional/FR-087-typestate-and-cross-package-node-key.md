@@ -564,7 +564,7 @@ Each `resolve_source_package` capability goes one of two ways:
 backed: the tests tagged with them move with the code (ruling on QSL-234,
 2026-09-26). Those tags are written
 `QSpec-FR-131-AC-n` and `QSpec-FR-339-AC-3`; the repo-wide rule is in
-[tests.md](../tests.md#requirements-traceability). It builds no checked
+[AGENTS.md](../../AGENTS.md#trace-tag-ids). It builds no checked
 package, no v2 bytes and no backend artifact.
 
 QSL SHALL delete `ResolvedSourcePackage`, `resolve_source_package`,

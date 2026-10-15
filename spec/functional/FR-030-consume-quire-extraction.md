@@ -86,11 +86,11 @@ repositories, schemas, CLI/wire adoption and broader integration. This is A's na
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-030-AC-1 | Actual Quire extraction of an indented CRLF clause with Unicode surroundings reaches mapped compilation and existing healthy/violating/refused runtime outcomes with exact authored/source identity. | Test |
-| FR-030-AC-2 | Successful and failed native compilation retain Quire's original availability, complete clause population and diagnostics; an unchecked tag alone does not pass the native parser. | Test |
-| FR-030-AC-3 | Stale original digest, foreign context, missing/duplicate selected clauses and unavailable extraction refuse without a package; each foreign context field retains its distinct typed preflight cause before extraction. | Test |
-| FR-030-AC-4 | Verified original/body coordinates remain exact at body EOF and with trailing layout; invalid body identity and out-of-range mapping requests refuse. | Test |
-| FR-030-AC-5 | Original byte/line and native stage limits return incomplete, with successful fresh retry; minimal builds retain their existing behavior. | Test |
+| FR-030-AC-1 | Actual Quire extraction of an indented CRLF clause with Unicode surroundings reaches mapped compilation and existing healthy/violating/refused runtime outcomes with exact authored/source identity. | Test (TC-108) |
+| FR-030-AC-2 | Successful and failed native compilation retain Quire's original availability, complete clause population and diagnostics; an unchecked tag alone does not pass the native parser. | Test (TC-108) |
+| FR-030-AC-3 | Stale original digest, foreign context, missing/duplicate selected clauses and unavailable extraction refuse without a package; each foreign context field retains its distinct typed preflight cause before extraction. | Test (TC-108) |
+| FR-030-AC-4 | Verified original/body coordinates remain exact at body EOF and with trailing layout; invalid body identity and out-of-range mapping requests refuse. | Test (TC-108) |
+| FR-030-AC-5 | Original byte/line and native stage limits return incomplete, with successful fresh retry; minimal builds retain their existing behavior. | Test (TC-108) |
 
 ## Dependencies
 

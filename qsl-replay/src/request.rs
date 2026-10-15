@@ -1314,7 +1314,7 @@ mod tests {
     ///
     /// N1: no `#[trace]` tag -- this test cannot fail on TC-187/FR-071-AC-3's
     /// full claim (that no bare-string entry point exists at all), only on
-    /// the positive round-trip half; `spec/tests.md` keeps the row `Planned`.
+    /// the positive round-trip half.
     #[test]
     fn tc_187_selection_is_always_a_typed_qualified_name() {
         let request = ReplayRequest::decode(wire(1), crate::ReplayLimits::default()).unwrap();

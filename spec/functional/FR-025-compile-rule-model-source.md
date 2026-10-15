@@ -76,11 +76,11 @@ bytes or add another formal-model authority. No producer process or I/O is requi
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-025-AC-1 | The existing rule-model source produces the same admitted model bytes/digest and declaration/role loci through the public frontend. | Test |
-| FR-025-AC-2 | All admitted source types and role forms retain their existing meaning; repeated names in different declarations and Unicode/escaped text preserve their actual occurrences. | Test |
-| FR-025-AC-3 | Unknown profiles, malformed/unknown/duplicate fields, duplicate scalar declarations, unknown scalar uses and native admission failures retain source and distinct typed causes without partial success; owned/foreign raw occurrences refuse. | Test |
-| FR-025-AC-4 | Caller-configured source, entry-category and admission limits below an input's size return incomplete naming the limit in force, and a source larger than each default (2 MiB, 20,000 entries) is admitted once that limit is raised to fit it; exhausted entry groups stop before their values or later operations decode, and fresh requests can succeed. | Test |
-| FR-025-AC-5 | A public source-derived model reaches native compilation and actual state/operation execution without test-only semantic lowering. | Test |
+| FR-025-AC-1 | The existing rule-model source produces the same admitted model bytes/digest and declaration/role loci through the public frontend. | Test (TC-101) |
+| FR-025-AC-2 | All admitted source types and role forms retain their existing meaning; repeated names in different declarations and Unicode/escaped text preserve their actual occurrences. | Test (TC-101) |
+| FR-025-AC-3 | Unknown profiles, malformed/unknown/duplicate fields, duplicate scalar declarations, unknown scalar uses and native admission failures retain source and distinct typed causes without partial success; owned/foreign raw occurrences refuse. | Test (TC-102) |
+| FR-025-AC-4 | Caller-configured source, entry-category and admission limits below an input's size return incomplete naming the limit in force, and a source larger than each default (2 MiB, 20,000 entries) is admitted once that limit is raised to fit it; exhausted entry groups stop before their values or later operations decode, and fresh requests can succeed. | Test (TC-102) |
+| FR-025-AC-5 | A public source-derived model reaches native compilation and actual state/operation execution without test-only semantic lowering. | Test (TC-101) |
 
 ## Dependencies
 

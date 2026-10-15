@@ -189,10 +189,10 @@ caller names it with the same two labels and the artifact's content digest
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-001-AC-1 | Matching selected bytes produce the expected SHA-256 digest. | Test |
-| FR-001-AC-2 | Changed bytes under a selected digest receive source_digest_mismatch. | Test |
-| FR-001-AC-3 | Invalid UTF-8 receives a source diagnostic. | Test |
-| FR-001-AC-4 | Input beyond the selected byte ceiling receives resource_exhausted naming that ceiling, whether the ceiling is below or above the 1 MiB default. | Test |
+| FR-001-AC-1 | Matching selected bytes produce the expected SHA-256 digest. | Test (TC-011) |
+| FR-001-AC-2 | Changed bytes under a selected digest receive source_digest_mismatch. | Test (TC-011) |
+| FR-001-AC-3 | Invalid UTF-8 receives a source diagnostic. | Test (TC-011) |
+| FR-001-AC-4 | Input beyond the selected byte ceiling receives resource_exhausted naming that ceiling, whether the ceiling is below or above the 1 MiB default. | Test (TC-011) |
 | FR-001-AC-5 | Source admitted with authority `agent-ix`, identity `specs/a.quire` and bytes `b` carries a `RawSourceRef` whose authority and identity read exactly those labels and whose digest is the `quire.source.bytes/v1` digest of `b`, and no other member. Admitting bytes `b'` under the same labels gives a `RawSourceRef` that differs only in the digest. | Test (TC-424) |
 | FR-001-AC-6 | Admission refuses with `invalid_source_identity`, cause `blank-label`, and admits nothing, when exactly one of the authority or identity is empty, again when it is a single space, and again when it is U+3000 IDEOGRAPHIC SPACE; field `label` is `authority` or `identity` respectively. A label that is U+200B ZERO WIDTH SPACE, which is not `White_Space`, is not blank. | Test (TC-424) |
 | FR-001-AC-11 | With both the identity and the authority blank, admission refuses `invalid_source_identity`/`blank-label` with `label` `authority`. With the identity blank and the path empty, it refuses `blank-label` with `label` `identity`, not `empty-path`. With both labels non-blank and the path empty, it refuses `invalid_source_identity`/`empty-path` with no field. | Test (TC-424) |
