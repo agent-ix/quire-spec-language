@@ -1074,7 +1074,7 @@ mod tests {
     #[test]
     fn storage_and_capacity_arms_map_to_their_own_typed_causes() {
         let request = StorageRequest::new(usize::MAX, StorageUnit::AdditionalElements);
-        let mut run = run();
+        let run = run();
         let at = locus(&run);
         let cases = [
             (
