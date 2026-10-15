@@ -186,8 +186,9 @@ element, tuple position or record field whose declared type is a variant type.
    `invalid-value`. An `{"absent": {}}` at a required variant field is
    `wrong-value-kind` under FR-106 check 6 step 5. A variant value inside an
    `{"present": ...}` or `{"sequence": [...]}` SHALL be admitted by the same rule
-   at its element, and the closed value grammar of FR-106 otherwise gains only
-   this form. Evaluation, result sizing and equality SHALL use the admitted
+   at its element, and the closed value grammar of FR-106 gains this form beside
+   its UUID and Timestamp native payload forms, which a variant slot refuses
+   `wrong-value-kind`. Evaluation, result sizing and equality SHALL use the admitted
    case's identity.
 10. **Encoding.** Encoding a variant value SHALL write the form of item 9 from
     the value's type and case, and a decode followed by an encode SHALL yield
