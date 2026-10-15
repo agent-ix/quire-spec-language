@@ -407,8 +407,6 @@ pub struct SuppliedRun {
     conversion: SuppliedMembershipBudget,
     arena: MembershipPathArena,
     cancel: Cancel,
-    refuse_unqualified: bool,
-    unbudgeted: Vec<UnsupportedHelperFamily>,
     stopped: Option<SuppliedFailure>,
 }
 
@@ -436,36 +434,8 @@ impl SuppliedRun {
             conversion: SuppliedMembershipBudget::new(limits.conversion_work_units),
             arena,
             cancel,
-            refuse_unqualified: false,
-            unbudgeted: Vec::new(),
             stopped: None,
         })
-    }
-
-    /// This run refusing, as [`SuppliedFailure::Unsupported`], any argument
-    /// whose membership reaches a helper family QSV has not qualified for
-    /// supplied admission (integer-interval, rational and decimal domains,
-    /// unions), before that helper runs.
-    ///
-    /// By default such an argument is instead admitted by QSV's unchanged
-    /// unbudgeted membership after the budgeted walk stopped at the helper,
-    /// so a family QSV cannot yet bound keeps working: the families are
-    /// listed by [`Self::unbudgeted_families`], and the helper work of that
-    /// argument past the stop spends no A or H. This default ends when QSV
-    /// qualifies those families for the budgeted walk.
-    #[must_use]
-    pub const fn refusing_unqualified_families(mut self) -> Self {
-        self.refuse_unqualified = true;
-        self
-    }
-
-    /// The helper families whose membership ran unbudgeted in this run
-    /// because QSV had not qualified them (see
-    /// [`Self::refusing_unqualified_families`]), each once, in the order
-    /// first reached.
-    #[must_use]
-    pub fn unbudgeted_families(&self) -> &[UnsupportedHelperFamily] {
-        &self.unbudgeted
     }
 
     /// The first stop of this run with its full phase context, whichever
@@ -549,74 +519,9 @@ impl SuppliedRun {
         };
         let outcome = match result {
             Ok(()) => return Ok(()),
-            Err(SuppliedAdmissionError::UnsupportedHelper { family, locus })
-                if !self.refuse_unqualified =>
-            {
-                match self.admit_unbudgeted(phase, parameter, types, expected, value, family, locus)
-                {
-                    Ok(()) => return Ok(()),
-                    Err(failure) => failure,
-                }
-            }
             Err(error) => self.failure_of(phase, parameter, error),
         };
         Err(self.remember(outcome))
-    }
-
-    /// The unchanged unbudgeted membership of an argument whose budgeted
-    /// walk reached the unqualified helper `family` at `locus`.
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "the stop's family and locus travel with the argument it stopped"
-    )]
-    fn admit_unbudgeted(
-        &mut self,
-        phase: SuppliedPhase,
-        parameter: usize,
-        types: &TypeEnvironment,
-        expected: &ValueType,
-        value: &Value,
-        family: UnsupportedHelperFamily,
-        locus: MembershipLocus,
-    ) -> Result<(), SuppliedFailure> {
-        if !self.unbudgeted.contains(&family) {
-            self.unbudgeted.push(family);
-        }
-        let spent = self.spent(phase);
-        let stop = |cause| {
-            SuppliedFailure::from(SuppliedStop {
-                context: SuppliedContext {
-                    phase,
-                    parameter: Some(parameter),
-                    event: Some(SuppliedEvent::of_part(locus.part)),
-                    locus: self.locus_of(locus),
-                    consumed: spent,
-                },
-                cause,
-            })
-        };
-        match types.admits(expected, value) {
-            Ok(true) => Ok(()),
-            Ok(false) => Err(stop(SuppliedCause::Input {
-                refusal: InputRefusal::WrongValueKind { parameter },
-                membership: None,
-            })),
-            Err(EnvironmentFailure::Allocation(request)) => Err(stop(SuppliedCause::Storage(
-                SuppliedStorage::of_request(request),
-            ))),
-            Err(EnvironmentFailure::Capacity(request)) => Err(stop(SuppliedCause::Capacity(
-                SuppliedStorage::of_request(request),
-            ))),
-            // `admits` reports a ceiling or a declaration refusal only for
-            // an environment build, never for a membership query; reading
-            // either as a wrong value would hide a broken kernel contract.
-            Err(EnvironmentFailure::Limit(_) | EnvironmentFailure::Refused(_)) => {
-                Err(SuppliedFailure::Fault(InternalFault::new(
-                    "S6a",
-                    "membership-query-builds-no-environment",
-                )))
-            }
-        }
     }
 
     /// Charge one QSL-owned conversion event to the conversion budget before

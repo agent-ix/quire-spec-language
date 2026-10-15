@@ -238,7 +238,7 @@ pub fn checked_in_locations() -> BTreeSet<SeamLocation> {
         },
         SeamLocation {
             file: "qsl-replay/src/execute.rs".to_owned(),
-            item: "replay_under".to_owned(),
+            item: "replay_with_cancel".to_owned(),
         },
         // FR-100: `qsl_replay::spine::run`'s own seam over
         // `FamilyOutcome`, mirroring `execute::replay`'s above.

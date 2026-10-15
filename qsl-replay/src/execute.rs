@@ -606,33 +606,11 @@ pub fn replay(
 /// `value_occurrences`) makes no call and settles `inconclusive`/`NoValue`
 /// carrying [`ReplayResult::pre_call_limit`]: zero replay charges, no
 /// `FunctionCall` charge point.
+#[deny(clippy::wildcard_enum_match_arm)]
 pub fn replay_with_cancel(
     wire: ReplayRequestWire,
     replay_limits: ReplayLimits,
     cancel: &Cancel,
-) -> Result<ReplayResult, ReplayRefusal> {
-    replay_under(wire, replay_limits, cancel, false)
-}
-
-/// [`replay_with_cancel`] refusing, as [`ReplayRefusal::UnsupportedHelper`],
-/// any argument whose membership reaches a helper family QSV has not
-/// qualified for supplied admission, before that helper runs. The default
-/// entries admit such an argument by QSV's unchanged unbudgeted membership
-/// instead (see [`SuppliedRun::refusing_unqualified_families`]).
-pub fn replay_refusing_unqualified_families(
-    wire: ReplayRequestWire,
-    replay_limits: ReplayLimits,
-    cancel: &Cancel,
-) -> Result<ReplayResult, ReplayRefusal> {
-    replay_under(wire, replay_limits, cancel, true)
-}
-
-#[deny(clippy::wildcard_enum_match_arm)]
-fn replay_under(
-    wire: ReplayRequestWire,
-    replay_limits: ReplayLimits,
-    cancel: &Cancel,
-    refuse_unqualified: bool,
 ) -> Result<ReplayResult, ReplayRefusal> {
     let request = ReplayRequest::decode(wire, replay_limits)?;
     let limits = request_limits(
@@ -652,9 +630,6 @@ fn replay_under(
     let limits = request.accounting_limits();
     let mut run = SuppliedRun::new(request.supplied_limits(), cancel.clone())
         .map_err(ReplayRefusal::Supplied)?;
-    if refuse_unqualified {
-        run = run.refusing_unqualified_families();
-    }
     let converted =
         match argument::convert_arguments(package, &call.types, &joined, &limits, &mut run) {
             Ok(converted) => converted,

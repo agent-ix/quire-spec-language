@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-277-AC-4, FR-277-AC-5, FR-321-AC-5 (TC-830, TC-906): the supplied-value
+//! FR-277-AC-4, FR-277-AC-5 (TC-830, TC-906): the supplied-value
 //! admission phase of the public checked call. A caller-owned cumulative
 //! budget A (`supplied.admission_work_units`) is spent one QSV
 //! supplied-membership event at a time, before the call, and a stop is the
@@ -187,11 +187,11 @@ fn the_helper_ceilings_default_to_16777216_and_are_independent() {
     assert_eq!(lowered.conversion_work_units(), 7);
 }
 
-/// FR-277-AC-4, FR-321-AC-5: A-1 denies the actual next event unspent with
+/// FR-277-AC-4: A-1 denies the actual next event unspent with
 /// the phase, parameter, event, setting, ceiling, successful spend and
 /// denied amount; A admits. Zero denies the first event. Neither touches the
 /// evaluator's meter.
-#[trace("TC-830", "FR-277-AC-4", "FR-321-AC-5")]
+#[trace("TC-830", "FR-277-AC-4")]
 #[test]
 fn one_less_than_the_event_sequence_denies_its_next_event_and_exact_admits() {
     let package = package();
@@ -508,9 +508,8 @@ fn the_plain_call_runs_at_the_default_ceilings() {
 /// IR-714: a helper family QSV has not qualified for supplied admission is
 /// a distinct typed stop before that helper runs, never invalid input and
 /// never a limit. One vector per family reachable from source.
-#[trace("TC-830", "FR-277-AC-6")]
 #[test]
-fn a_run_refusing_unqualified_families_stops_before_the_helper() {
+fn an_unqualified_family_is_a_typed_stop_before_the_helper() {
     let package = package();
     let numeric = Value::Integer(Integer::from(3_i64));
     let decimal = Value::Decimal(Decimal::new(Integer::from(150_i64), 2));
@@ -519,9 +518,7 @@ fn a_run_refusing_unqualified_families_stops_before_the_helper() {
         ("money", decimal, UnsupportedHelperFamily::DecimalDomain),
     ] {
         let mut meter = Meter::new(UNLIMITED);
-        let mut run = SuppliedRun::new(SuppliedLimits::default(), Cancel::new())
-            .expect("the run")
-            .refusing_unqualified_families();
+        let mut run = SuppliedRun::new(SuppliedLimits::default(), Cancel::new()).expect("the run");
         let result = package.call_supplied(
             &name(function),
             vec![argument],
@@ -536,57 +533,45 @@ fn a_run_refusing_unqualified_families_stops_before_the_helper() {
         assert_eq!(stop.context.phase, SuppliedPhase::Admission);
         assert_eq!(stop.context.parameter, Some(0));
         assert_no_evaluation(&meter);
-        assert!(run.unbudgeted_families().is_empty());
     }
 }
 
-/// The default run keeps a family QSV cannot yet bound working: the
-/// argument is admitted by the unchanged unbudgeted membership, and the
-/// family is listed so the gap is visible, not hidden.
-#[trace("TC-830", "FR-277-AC-6")]
+/// A numeric-domain collection argument is the typed unsupported-helper
+/// stop with its locus, however many elements it holds: it is never
+/// admitted by an unbudgeted continuation (FR-277: neither ceiling is ever
+/// unbounded), and no evaluation runs.
 #[test]
-fn the_default_run_admits_an_unqualified_family_unbudgeted_and_lists_it() {
+fn a_numeric_domain_collection_is_the_typed_stop_and_never_admits_unbudgeted() {
     let package = package();
-    let mut meter = Meter::new(UNLIMITED);
-    let mut run = SuppliedRun::new(SuppliedLimits::default(), Cancel::new()).expect("the run");
-    let evaluation = package
-        .call_supplied(
-            &name("digit"),
-            vec![Value::Integer(Integer::from(3_i64))],
+    for count in [0_usize, 8] {
+        let callable = package.graph().callable("digits").expect("declared");
+        let ValueType::Collection(declared) = &callable.parameters[0].1 else {
+            panic!("a collection parameter");
+        };
+        let mut meter = Meter::new(UNLIMITED);
+        let Outcome::Completed(argument) = form(
+            declared,
+            vec![Value::Integer(Integer::from(3_i64)); count],
+            &mut meter,
+        ) else {
+            panic!("the sequence forms");
+        };
+        let mut meter = Meter::new(UNLIMITED);
+        let mut run = SuppliedRun::new(SuppliedLimits::default(), Cancel::new()).expect("the run");
+        let result = package.call_supplied(
+            &name("digits"),
+            vec![argument],
             &ObjectEnvironment::default(),
             &mut meter,
             &mut run,
-        )
-        .expect("a digit is admitted");
-    assert!(matches!(
-        evaluation.outcome,
-        FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(false)))
-    ));
-    assert_eq!(
-        run.unbudgeted_families(),
-        [UnsupportedHelperFamily::NumericDomain]
-    );
-    // A wrong value is still the original refusal under that path.
-    let mut meter = Meter::new(UNLIMITED);
-    let mut run = SuppliedRun::new(SuppliedLimits::default(), Cancel::new()).expect("the run");
-    let refused = package.call_supplied(
-        &name("digit"),
-        vec![Value::Integer(Integer::from(30_i64))],
-        &ObjectEnvironment::default(),
-        &mut meter,
-        &mut run,
-    );
-    assert!(matches!(
-        refused,
-        Err(CallFailure::Input(InputRefusal::WrongValueKind {
-            parameter: 0
-        }))
-    ));
-    assert!(matches!(
-        recorded(&run).cause,
-        SuppliedCause::Input {
-            refusal: InputRefusal::WrongValueKind { parameter: 0 },
-            ..
-        }
-    ));
+        );
+        let Err(CallFailure::UnsupportedHelper(stop)) = result else {
+            panic!("an unsupported-helper stop, got {result:?}");
+        };
+        assert_eq!(stop.family, UnsupportedHelperFamily::NumericDomain);
+        assert_eq!(stop.context.phase, SuppliedPhase::Admission);
+        assert_eq!(stop.context.parameter, Some(0));
+        assert!(stop.context.locus.is_some(), "the stop names its locus");
+        assert_no_evaluation(&meter);
+    }
 }

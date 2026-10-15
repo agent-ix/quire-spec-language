@@ -309,7 +309,7 @@ fn one_less_than_the_conversion_events_denies_the_next_event_and_exact_permits()
     }
 }
 
-/// FR-277-AC-4, FR-321-AC-5: A-1 denies the actual next admission event
+/// FR-277-AC-4: A-1 denies the actual next admission event
 /// unspent and A admits, with other bounds permitting progress; the pre-call
 /// stop reports zero replay charges.
 #[trace("TC-906", "FR-098-AC-12", "FR-277-AC-4")]
@@ -567,14 +567,12 @@ fn invalid_input_keeps_its_refusal_and_gains_the_phase_context() {
     assert_eq!(refusal.code(), Code::InvalidRuntimeInput);
 }
 
-/// IR-714, FR-277-AC-6: a helper family QSV has not qualified for supplied
+/// IR-714: a helper family QSV has not qualified for supplied
 /// admission is a distinct typed refusal before that helper runs, never
-/// invalid input and never a limit, when the caller asks to refuse it; one
-/// vector per family reachable from source. The default replay keeps the
-/// family working.
-#[trace("TC-906", "FR-277-AC-6")]
+/// invalid input and never a limit; one vector per family reachable from
+/// source.
 #[test]
-fn unqualified_families_are_a_distinct_refusal_only_when_refused() {
+fn unqualified_families_are_a_distinct_refusal() {
     let unit = unit();
     let digit = || unit.request("digit", vec![WitnessValue::Integer(3)]);
     let money = || {
@@ -590,12 +588,8 @@ fn unqualified_families_are_a_distinct_refusal_only_when_refused() {
         (digit(), UnsupportedHelperFamily::NumericDomain),
         (money(), UnsupportedHelperFamily::DecimalDomain),
     ] {
-        let refused = replay_refusing_unqualified_families(
-            wire.clone(),
-            ReplayLimits::default(),
-            &Cancel::new(),
-        )
-        .expect_err("refused before the helper");
+        let refused = replay_with_cancel(wire, ReplayLimits::default(), &Cancel::new())
+            .expect_err("refused before the helper");
         let ReplayRefusal::UnsupportedHelper(stop) = &refused else {
             panic!("{family:?}: an unsupported-helper refusal, got {refused:?}");
         };
@@ -603,8 +597,6 @@ fn unqualified_families_are_a_distinct_refusal_only_when_refused() {
         assert_eq!(stop.context.phase, SuppliedPhase::Admission);
         assert_eq!(stop.context.parameter, Some(0));
         assert!(refused.input_refusal().is_none(), "not invalid input");
-
-        assert_reproduced(&run(wire));
     }
 }
 
