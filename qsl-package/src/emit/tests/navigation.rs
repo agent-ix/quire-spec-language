@@ -165,7 +165,7 @@ fn a_navigation_lowers_to_one_navigate_application_over_the_reference() {
     };
     let expected = [
         ("order", "Fulfilment-order", "option"),
-        ("lines", "Order-lines", "set"),
+        ("lines", "Order-lines", "collection_bounds"),
         ("owner", "Order-lines", "reference"),
     ];
     for (role, owner, form) in expected {
@@ -196,7 +196,7 @@ fn a_navigation_lowers_to_one_navigate_application_over_the_reference() {
 
     let mut evidence = read_evidence(&emission);
     evidence
-        .insert_domain_package_document(&digest, &document[..])
+        .insert_domain_package_document(digest.as_str(), &document[..])
         .expect("a fresh evidence key");
     assert!(
         matches!(read_with(&emission, &evidence), Read::Verified { .. }),

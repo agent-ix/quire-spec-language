@@ -247,12 +247,22 @@ fn package(links: &[Link]) -> DomainPackage {
 /// Compile fixture N with `links` and check
 /// `invariant I using v on M::<owner> at current { <body> }`.
 fn compile(links: &[Link], owner: &str, body: &str) -> Result<CheckedGraph, Vec<CheckRefusal>> {
-    let package = package(links);
+    check_invariant(package(links), owner, body)
+}
+
+/// Check `invariant I using v on M::<owner> at current { <body> }` over the
+/// admitted model `package`, selected as `M`.
+pub(crate) fn check_invariant(
+    package: DomainPackage,
+    owner: &str,
+    body: &str,
+) -> Result<CheckedGraph, Vec<CheckRefusal>> {
     let digest = qsl_semantics::model::key::hex(&package.model_selection.digest);
+    let identity = package.model_selection.identity.clone();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
-         model M = \"test/orders\" version \"1\" digest \"sha256-jcs:{digest}\";\n\
+         model M = {identity:?} version \"1\" digest \"sha256-jcs:{digest}\";\n\
          invariant I using v on M::{owner} at current {{ {body} }}\n"
     );
     let selected = SelectedModels::fixture(
@@ -261,7 +271,7 @@ fn compile(links: &[Link], owner: &str, body: &str) -> Result<CheckedGraph, Vec<
         package,
         ModelNormalizationLimits::UNLIMITED,
     )
-    .expect("fixture N admits");
+    .expect("the model admits");
     let built = crate::model_operations::parse_and_build(&unit);
     let raw = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("test", "tc-1031", "fixture", "1"),
@@ -272,11 +282,11 @@ fn compile(links: &[Link], owner: &str, body: &str) -> Result<CheckedGraph, Vec<
     .expect("S1 admits the unit");
     let declarations =
         PackageDeclarations::assemble(raw.source().reference().clone(), built, selected, vec![])
-            .expect("fixture N assembles");
+            .expect("the model assembles");
     declarations.check(CheckingLimits::default())
 }
 
-fn descendants(root: CheckedNode<'_>) -> Vec<CheckedNode<'_>> {
+pub(crate) fn descendants(root: CheckedNode<'_>) -> Vec<CheckedNode<'_>> {
     let mut all = vec![root];
     let mut pending = root.children();
     while let Some(node) = pending.pop() {
@@ -287,7 +297,7 @@ fn descendants(root: CheckedNode<'_>) -> Vec<CheckedNode<'_>> {
 }
 
 /// The object type `M::<name>`.
-fn object(graph: &CheckedGraph, name: &str) -> EffectiveId {
+pub(crate) fn object(graph: &CheckedGraph, name: &str) -> EffectiveId {
     graph
         .scope()
         .types()
@@ -312,7 +322,7 @@ fn collection(kind: CollectionKind, element: ValueType, lower: u64, upper: u64) 
 /// Each `Navigate` node of invariant `I`: its static type, relationship and
 /// role. The body holds no `Attribute` node, so no `deref` read stands in for
 /// a navigation.
-fn navigations(graph: &CheckedGraph) -> Vec<(ValueType, DeclarationKey, String)> {
+pub(crate) fn navigations(graph: &CheckedGraph) -> Vec<(ValueType, DeclarationKey, String)> {
     let body = graph.state_clause("I").expect("I is checked").body();
     let nodes = descendants(body);
     assert!(
