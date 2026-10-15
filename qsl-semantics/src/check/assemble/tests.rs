@@ -314,6 +314,7 @@ fn the_assembler_reports_every_error() {
                 cause: AssemblyCause::AmbiguousTypeName {
                     name: "A".into(),
                     candidates: candidates.clone(),
+                    native: false,
                 },
                 span: candidates[1],
             },
@@ -321,6 +322,7 @@ fn the_assembler_reports_every_error() {
                 cause: AssemblyCause::AmbiguousTypeName {
                     name: "A".into(),
                     candidates,
+                    native: false,
                 },
                 span: after(&text, "(x: A)", "A"),
             },
@@ -509,6 +511,7 @@ fn each_assembler_cause_has_its_catalog_code() {
             AssemblyCause::AmbiguousTypeName {
                 name: "X".into(),
                 candidates: vec![span],
+                native: false,
             },
             "ambiguous_declaration/ambiguous-name",
         ),
@@ -1075,6 +1078,7 @@ fn a_duplicate_type_name_is_refused_in_either_order() {
                 cause: AssemblyCause::AmbiguousTypeName {
                     name: "P".into(),
                     candidates: vec![first, second],
+                    native: false,
                 },
                 span: second,
             }],
@@ -1562,6 +1566,7 @@ fn enum_and_type_name_errors_are_all_reported() {
                 == AssemblyCause::AmbiguousTypeName {
                     name: "F".to_owned(),
                     candidates: vec![enum_f, record_f],
+                    native: false,
                 }),
         "{found:?}"
     );

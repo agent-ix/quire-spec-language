@@ -2255,3 +2255,31 @@ fn run_cancellation_keeps_its_original_cause() {
         assert_eq!(refusal.category(), Category::Incomplete);
     }
 }
+
+/// TC-1028: a canonical UUID and Timestamp value bind to a parameter of their
+/// own native type; the other native kind, and a String, are wrong kinds.
+#[trace("TC-1028")]
+#[test]
+fn argument_value_binds_native_uuid_and_timestamp_values() {
+    let uuid = quire_exact::Uuid::from_canonical_text("00112233-4455-6677-8899-aabbccddeeff")
+        .expect("canonical UUID");
+    let stamp = quire_exact::Timestamp::from_canonical_text("5").expect("canonical Timestamp");
+    assert!(matches!(
+        argument_value(0, Value::Uuid(uuid), &ValueType::Uuid),
+        Ok(Value::Uuid(bound)) if bound == uuid
+    ));
+    assert!(matches!(
+        argument_value(0, Value::Timestamp(stamp), &ValueType::Timestamp),
+        Ok(Value::Timestamp(bound)) if bound == stamp
+    ));
+    for (value, value_type) in [
+        (Value::Timestamp(stamp), ValueType::Uuid),
+        (Value::Uuid(uuid), ValueType::Timestamp),
+        (Value::String("5".to_owned()), ValueType::Timestamp),
+    ] {
+        assert!(matches!(
+            argument_value(2, value, &value_type).map_err(|refusal| *refusal),
+            Err(RunRefusal::WrongValueKind { position: 2 })
+        ));
+    }
+}

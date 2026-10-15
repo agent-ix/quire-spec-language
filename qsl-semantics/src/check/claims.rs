@@ -366,8 +366,8 @@ fn is_scalar_application(node: CheckedNode<'_>) -> bool {
 }
 
 /// Whether an equality over `compared` operands is in a scalar family
-/// (FR-093 `Equality` row): Boolean, reference and structural equality are
-/// not.
+/// (FR-093 `Equality` row): Boolean, reference, structural and native
+/// scalar equality are not.
 fn scalar_equality(compared: &ValueType) -> bool {
     match compared {
         ValueType::Integer
@@ -375,7 +375,6 @@ fn scalar_equality(compared: &ValueType) -> bool {
         | ValueType::Rational(_)
         | ValueType::Decimal(_)
         | ValueType::Text(_)
-        | ValueType::String
         | ValueType::Enum(_)
         | ValueType::Quantity(_) => true,
         ValueType::Boolean
@@ -385,6 +384,10 @@ fn scalar_equality(compared: &ValueType) -> bool {
         | ValueType::Collection(_)
         | ValueType::Float(_)
         | ValueType::Population(_)
+        // The native scalar families (`quire.op.string.*`, `.uuid.*`,
+        // `.timestamp.*`) are not claim families (`SCALAR_FAMILIES`): their
+        // equality carries no bound to prove.
+        | ValueType::String
         | ValueType::Uuid
         | ValueType::Timestamp => false,
     }
