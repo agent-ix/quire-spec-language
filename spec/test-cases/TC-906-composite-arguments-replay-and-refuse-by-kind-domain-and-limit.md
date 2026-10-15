@@ -19,7 +19,7 @@ and domain defect refuses `WrongValueKind` before the call, and the
 `value_occurrences` and `work_units` limits stop the replay before the call, settling `Incomplete` by counter name.
 
 Scope: FR-098-AC-8, FR-098-AC-9, FR-098-AC-10, FR-098-AC-12,
-FR-277-AC-4, FR-277-AC-5, FR-277-AC-6. Steps 8-9 are source-proof
+FR-277-AC-4, FR-277-AC-5, FR-277-AC-6, FR-277-AC-7. Steps 8-9 are source-proof
 qualification Analysis; their negative control is not a runtime error test.
 All claimed supported family paths, including Decimal set membership in
 step 2, require FR-277 AC-6's proof and typed integration prerequisites.
@@ -140,11 +140,18 @@ Requests are built from the unit's spine compile, as in TC-444.
    scale 2. Tiny numerical inputs do not remove the helper's temporary
    allocation/cancellation qualification dependency.
 
+10. Magnitude bound B: with the default `supplied.numeric_magnitude_bits`,
+    replay `r(v: Rational)` and the step 1 `Int[0, 9]` fields; replay an
+    Integer parameter given a 4096-bit value, then a 4097-bit value (zero is
+    one bit). Replay once with B omitted and once with B stated 4096, then
+    with 4095. Type-link operands are a norm pending the IR follow-up and are
+    not exercised.
+
 Tag the tests `#[trace("TC-906", "FR-098-AC-8")]`,
 `#[trace("TC-906", "FR-098-AC-9")]` and
 `#[trace("TC-906", "FR-098-AC-10")]`. Steps 5-7 additionally bind
 `FR-098-AC-12`, `FR-277-AC-4` and `FR-277-AC-5` by their criterion IDs.
-Steps 8-9 bind `FR-277-AC-6` as Analysis evidence, including the
+Step 10 binds `FR-277-AC-7`. Steps 8-9 bind `FR-277-AC-6` as Analysis evidence, including the
 missing-premise negative control; no runnable trace or execution is
 claimed for that source-proof analysis.
 
@@ -213,3 +220,8 @@ depends on STD-113.
   No default bypass,
   partial admitted value or evaluation consumption is accepted. The IR
   source gap stays routed to its owner.
+- Step 10: the default B admits the 4096-bit Integer and the positive
+  fixtures replay as in steps 1 and 4; the 4097-bit value stops with the
+  `limit` cause for `supplied.numeric_magnitude_bits`, `limit` 4096, zero
+  evaluation consumption. Omitted and stated 4096 are the same request;
+  4095 is a different request.
