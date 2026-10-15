@@ -39,10 +39,10 @@ Scope: FR-106-AC-28, FR-106-AC-29, FR-106-AC-30, FR-106-AC-31, FR-106-AC-32.
    (anchor `handler validate`, `self` `child`). Reorder the members of the
    `label` object and the whitespace of the document, and admit again.
 2. Admit one mutation per row of `label` texts, each with its own digest:
-   the empty text `""`; `"  ready  "`; `"READY"`; S1 `"é"` (U+00E9);
-   S2 `"é"` (U+0065 U+0301); `"00112233-4455-6677-8899-aabbccddeeff"`;
-   `"\u0000"`; `"a\u001fb"`; `"￾"`; `"a;b>>>c"`; a text of 65,536
-   `a`; the paired escape `"😀"`, and separately the literal
+   the empty text `""`; `"  ready  "`; `"READY"`; S1 `"\u00e9"` (U+00E9);
+   S2 `"e\u0301"` (U+0065 U+0301); `"00112233-4455-6677-8899-aabbccddeeff"`;
+   `"\u0000"`; `"a\u001fb"`; `"\ufffe"`; `"a;b>>>c"`; a text of 65,536
+   `a`; the paired escape `"\ud83d\ude00"`, and separately the literal
    character U+1F600. Admit `note` as `{"present":{"kind":"string","text":"n"}}`
    and `tags` as `{"sequence":[{"kind":"string","text":"a"},{"kind":"string","text":""}]}`.
 3. Admit an invocation of `rename` (`name` a String object, `result` a String
@@ -50,7 +50,7 @@ Scope: FR-106-AC-28, FR-106-AC-29, FR-106-AC-30, FR-106-AC-31, FR-106-AC-32.
    selected through `PreCall`.
 4. Mutate `label` to each object defect, one per row: `kind` `1`; `kind`
    `null`; `kind` `{}`; `kind` `1` with no `text`; `kind` `"String"`; `kind`
-   `"STRING"`; `{"kind":"text","value":"x"}`; `{"kind":"string"}`;
+   `"STRING"`; `{"kind":"text","value":"x"}`; `{"kind":"text","text":"x"}`; `{"kind":"string"}`;
    `{"kind":"string","nanoseconds":"0"}`; an extra member `"extra":1` beside a
    valid `text`; a valid `text` beside `"nanoseconds":"0"`; `text` `5`; `text`
    `null`; `text` `true`; `text` `["x"]`; `text` `{}`; an extra member
@@ -68,7 +68,7 @@ Scope: FR-106-AC-28, FR-106-AC-29, FR-106-AC-30, FR-106-AC-31, FR-106-AC-32.
 6. Admit an invocation of `rename` changing `child.label` from `"ready"` to
    `"Ready"`, and one from S1 to S2, each with the grant and without it. Admit
    one whose post `label` is `ready` with the members of the object reordered,
-   and one whose post `label` is written `"ready"`.
+   and one whose post `label` is written `"\u0072eady"`.
 7. Under `PostStateRange::Witness`, admit an invocation whose post snapshot
    holds a UUID object in `label`, and one whose post `label` has `text` `5`.
 8. Mutate `note` to `{"present":{"kind":"string","text":"n"}}` and admit the
@@ -96,7 +96,7 @@ Scope: FR-106-AC-28, FR-106-AC-29, FR-106-AC-30, FR-106-AC-31, FR-106-AC-32.
 - Step 4 refuses every row `invalid_runtime_input` naming `child` and `label`
   by the listed order: the `kind` `1`, `null`, `{}` rows and the `kind` `1`
   row with no `text` give `wrong-value-kind` naming `kind` (check 1); the
-  `"String"`, `"STRING"` and `text`/`value` rows give `invalid-value` naming
+  `"String"`, `"STRING"`, `text`/`value` and `text`/`text` rows give `invalid-value` naming
   `kind` (check 2), their members unexamined; `{"kind":"string"}` and the
   `string`/`nanoseconds` object give `missing-member` naming `text` (check 3);
   the two extra-member rows give `unknown-member` naming `extra` and
@@ -113,7 +113,7 @@ Scope: FR-106-AC-28, FR-106-AC-29, FR-106-AC-30, FR-106-AC-31, FR-106-AC-32.
   no UUID value is read.
 - Step 6 admits both frames with the grant; without it each refuses
   `frame_violation`/`unauthorized-change` naming `child` and `label`. The
-  reordered-members post and the `"ready"` post are no change, so both
+  reordered-members post and the `"\u0072eady"` post are no change, so both
   admit without the grant.
 - Step 7 refuses both with `wrong-value-kind`, the second naming `text`.
 - Step 8 admits at the exact count; one less returns
