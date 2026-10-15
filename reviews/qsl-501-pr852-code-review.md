@@ -59,3 +59,9 @@ SR-11085 FND-001.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | medium | Recorded (latent until FR-318). `PreserveBind` keeps an arm binder that collides with a rename target, so `case s { A(r): x + r; }` with `x -> r` captures as `r + r`. `let` binders are alpha-renamed in that case. No effect today, because typing refuses every `case`. | qsl-semantics/src/check/checked_dispatch.rs:824-831 |
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | deferred | Has no effect while typing refuses every `case`; it becomes live with FR-318. Recorded in the PR body, and the planner records it on QSL-502. |

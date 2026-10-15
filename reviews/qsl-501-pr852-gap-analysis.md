@@ -47,3 +47,9 @@ left as it was.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | high | FR-360-AC-5, item 5 and TC-1007 step 3 say S1 refuses an expression-position `case` at the `case` token, so it never reaches the checker. After FR-313, S1 refuses at `when` instead: `variant_fields.rs:1410` now asserts `when`, but it still traces FR-360-AC-5. A `case t { Gold: ...; }` over a variant now reaches the checker and refuses `unknown_required_feature/unsupported-feature`. Item 5 requires `ill_typed/type-mismatch` at the scrutinee. Fix: amend FR-360 item 5, AC-5 and TC-1007 step 3 in this PR to state the post-FR-313 refusal, or implement the scrutinee refusal. | spec/functional/FR-360-type-a-field-by-a-variant-type-through-intake-check-evaluation-and-replay.md:126-130,275; qsl-semantics/tests/it/variant_fields.rs:1395-1413; qsl-semantics/src/check/check/typing.rs:662-670 |
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 520b275f2: FR-360 item 5, AC-5 and TC-1007 step 3 now state the `when`-token S1 refusal and the checker's unsupported-feature refusal until FR-318, and the new test `a_well_formed_case_over_a_variant_is_refused_by_the_checker_as_unsupported` backs the second. |
