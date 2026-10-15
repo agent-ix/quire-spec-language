@@ -1434,7 +1434,7 @@ fn validate_with_semantic_ir(document: &PackageDocument) -> Result<(), Vec<Model
         // normalization can report the ordered QSL loci.
         .filter(|located| !process_subtype_generalization_schema_diagnostic(document, located))
         .filter_map(|located| {
-            if let Some(refusal) = duplicate_process_step_refusal(document, located) {
+            if let Some(refusal) = duplicate_member_identity_refusal(document, located) {
                 return Some(refusal);
             }
             if let Some(refusal) = business_generalization_refusal(document, located) {
@@ -1653,14 +1653,15 @@ fn process_subtype_generalization_schema_diagnostic(
         })
 }
 
-/// FR-208 binding owns duplicate step, state, transition and clause
-/// identities. The semantic-IR reader reports each as its package-wide
-/// `DUPLICATE_IDENTITY` schema diagnostic before QSL's binders run; retain the
-/// source pointer but classify the selected member using QSL's typed refusal
-/// cause. Steps require a process owner, states and transitions a state
-/// machine, and a clause is accepted on an owner of any meaning.
+/// FR-208 and FR-154 own duplicate step, state, transition, clause, field,
+/// operation, parameter and variant case identities. The semantic-IR reader
+/// reports each as its package-wide `DUPLICATE_IDENTITY` schema diagnostic
+/// before QSL's binders run; retain the source pointer but classify the
+/// selected member using QSL's typed refusal cause. Steps require a process
+/// owner, states and transitions a state machine, and a clause, field,
+/// operation, parameter or variant case is accepted on an owner of any meaning.
 #[qsl_attrs::string_edge]
-fn duplicate_process_step_refusal(
+fn duplicate_member_identity_refusal(
     document: &PackageDocument,
     located: &agent_ix_semantic_ir::diag::Located,
 ) -> Option<ModelRefusal> {
@@ -1683,17 +1684,35 @@ fn duplicate_process_step_refusal(
         "states" => ("states", Some(meaning::STATE_MACHINE)),
         "transitions" => ("transitions", Some(meaning::STATE_MACHINE)),
         "clauses" => ("clauses", None),
+        // FR-154: two fields, two operations, a field and an operation, two
+        // parameters of one operation, or two variant cases of one owner that
+        // share one identity are the same conflicting binding.
+        "fields" => ("fields", None),
+        "operations" => ("operations", None),
+        "variants" => ("variants", None),
         _ => return None,
     };
-    let step_position = segments.next()?.parse::<usize>().ok()?;
-    if segments.next()? != "identity" || segments.next().is_some() {
+    let member_position = segments.next()?.parse::<usize>().ok()?;
+    // A parameter nests under its operation: `operations/k/params/s/identity`.
+    let mut path = MemberPath::type_definition()
+        .name(member)
+        .index(member_position);
+    let mut slot = segments.next()?;
+    let mut parameter_position = None;
+    if member == "operations" && slot == "params" {
+        let position = segments.next()?.parse::<usize>().ok()?;
+        path = path.name("params").index(position);
+        parameter_position = Some(position);
+        slot = segments.next()?;
+    }
+    if slot != "identity" || segments.next().is_some() {
         return None;
     }
 
     let types = document.tree.get("types")?.as_array()?;
-    let process = types.get(type_position)?;
-    let process_identity = process.get("identity")?.as_str()?;
-    let kind = process.get("kind")?;
+    let owner = types.get(type_position)?;
+    let owner_identity = owner.get("identity")?.as_str()?;
+    let kind = owner.get("kind")?;
     let kind_key = (
         kind.get("module")?.as_str()?.to_owned(),
         kind.get("name")?.as_str()?.to_owned(),
@@ -1703,23 +1722,28 @@ fn duplicate_process_step_refusal(
             return None;
         }
     }
-    let step = process.get(member)?.as_array()?.get(step_position)?;
-    let step_identity = step.get("identity")?.as_str()?;
+    let node = owner.get(member)?.as_array()?.get(member_position)?;
+    let node = match parameter_position {
+        Some(position) => node.get("params")?.as_array()?.get(position)?,
+        None => node,
+    };
+    let member_identity = node.get("identity")?.as_str()?;
     let package = document.tree.get("package")?.get("identity")?.as_str()?;
     let source_member = semantic_member_path(&located.pointer);
     Some(ModelRefusal {
         code: Code::InvalidModelBinding,
         cause: ModelRefusalCause::ConflictingBinding {
-            // A process step names the process (TC-235 M07 run 3).
+            // A process step names the process (TC-235 M07 run 3); every
+            // other member names the identity it shares (FR-154).
             key: if member == "steps" {
-                declaration_key(package, process_identity)
+                declaration_key(package, owner_identity)
             } else {
-                declaration_key(package, step_identity)
+                declaration_key(package, member_identity)
             },
-            member: Some(MemberPath::type_definition().name(member).index(step_position)),
+            member: Some(path),
         },
         detail: format!(
-            "{source_member} ({}) on {process_identity}: duplicate {member} identity {step_identity:?}",
+            "{source_member} ({}) on {owner_identity}: duplicate {member} identity {member_identity:?}",
             located.pointer
         ),
     })
