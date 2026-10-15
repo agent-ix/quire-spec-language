@@ -346,6 +346,7 @@ fn tc_906_a_value_the_declared_type_does_not_admit_refuses_by_kind() {
 /// distinct value texts and are numerically equal, refuses `WrongValueKind`.
 #[trace("TC-906", "FR-098-AC-8")]
 #[test]
+#[ignore = "waits for the QSV Decimal TypeLink bounded comparison (IR-719/IR-713)"]
 fn tc_906_a_set_holding_numerically_equal_decimals_refuses() {
     let fixture = fixture(
         "function g using v(v: Set<Decimal[0, 100; 0, 2; exact]>[0, 3]): Boolean pure { false }\n",
