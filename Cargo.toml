@@ -38,6 +38,11 @@ quire-extraction = ["dep:qsl-source", "qsl-source/quire-extraction", "qsl-replay
 # embeds the authored `examples/protocol-handoff/` recipe inputs, so the
 # default build leaves it out. It adds no dependency.
 handoff-writer = []
+# `population_fixtures`, the writer of the `Population<T>[N]` Contract IR v2
+# packages the admission corpus emits (QSL-771). It embeds the spine-model
+# fixtures under `tests/fixtures/`, so the default build leaves it out. It adds
+# no dependency.
+population-fixtures = []
 
 [dependencies]
 # ADR-013 O-05: only `model` calls the kernel `EffectiveId` constructor,
@@ -133,6 +138,11 @@ test = true
 name = "native_protocol_v2_handoff"
 required-features = ["handoff-writer"]
 test = true
+
+[[example]]
+name = "population_v2_fixtures"
+required-features = ["population-fixtures"]
+test = false
 
 [[bin]]
 name = "quire-spec"

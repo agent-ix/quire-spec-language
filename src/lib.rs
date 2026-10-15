@@ -22,6 +22,8 @@ pub mod model_source;
 pub mod native_model;
 pub mod package;
 mod parser;
+#[cfg(feature = "population-fixtures")]
+pub mod population_fixtures;
 pub mod protocol_artifact;
 pub mod runtime;
 pub mod state;
