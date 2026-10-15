@@ -440,9 +440,9 @@ fn a_variant_meaning_on_a_record_shaped_construct_refuses_as_malformed() {
     assert_one_malformed(&document, "Tier", "TypeDefinition.kind");
 }
 
-/// TC-996 step 4: two cases of one name and one identity are refused by the
-/// reader before intake; nothing is declared and the diagnostic is not the
-/// intake `conflicting-binding`.
+/// TC-996 step 4: two cases of one name and one identity are refused at the
+/// reader's duplicate position as `conflicting-binding` at the shared case identity, nothing
+/// is declared (FR-154: two nodes sharing one identity).
 #[trace("TC-996", "FR-056-AC-26")]
 #[test]
 fn two_cases_sharing_one_identity_are_refused_by_the_reader() {
@@ -451,13 +451,13 @@ fn two_cases_sharing_one_identity_are_refused_by_the_reader() {
     });
     let found = refusals(&document);
     assert_eq!(found.len(), 1, "{found:?}");
-    assert_eq!(node_of(&found[0]), id("variant/Tier-Gold"));
     assert_eq!(found[0].code, Code::InvalidModelBinding);
-    assert!(
-        !found
-            .iter()
-            .any(|refusal| matches!(refusal.cause, ModelRefusalCause::ConflictingBinding { .. })),
-        "the reader's diagnostic is kept, not intake's conflicting-binding"
+    assert_eq!(
+        found[0].cause,
+        ModelRefusalCause::ConflictingBinding {
+            key: key("variant/Tier-Gold"),
+            member: Some(path("TypeDefinition.variants[1]")),
+        }
     );
 }
 
@@ -1042,12 +1042,10 @@ fn a_same_name_case_conflict_yields_no_effective_view() {
     );
 }
 
-/// TC-1003 step 5: two cases that share one identity are refused at the second
-/// case of the `variants` list, whichever of them is minted correctly:
-/// `invalid_model_binding`/`malformed-declaration` at path
-/// `TypeDefinition.variants[1].identity`, located at that case's span (the
-/// correctly minted `Gold` when `Silver` is listed first), with
-/// the reader's `DUPLICATE_IDENTITY` diagnostic retained.
+/// TC-1003 step 5: two cases that share one identity are refused once, at the
+/// second case of the `variants` list, whichever of them is minted correctly:
+/// `invalid_model_binding`/`conflicting-binding` at the shared case identity,
+/// path `TypeDefinition.variants[1]` (FR-154: two nodes sharing one identity).
 #[trace("TC-1003", "FR-056-AC-30")]
 #[test]
 fn two_cases_sharing_an_identity_are_refused_at_the_second_listed() {
@@ -1055,30 +1053,20 @@ fn two_cases_sharing_an_identity_are_refused_at_the_second_listed() {
         let gold = case("Tier", "Gold", gold_line);
         let mut silver = case("Tier", "Silver", silver_line);
         silver["identity"] = json!(id("variant/Tier-Gold"));
-        let (list, later_line) = if gold_line < silver_line {
-            (json!([gold, silver]), silver_line)
+        let list = if gold_line < silver_line {
+            json!([gold, silver])
         } else {
-            (json!([silver, gold]), gold_line)
+            json!([silver, gold])
         };
         let found = refusals(&single_type(|d| d["types"][0]["variants"] = list));
         assert_eq!(found.len(), 1, "{found:?}");
         assert_eq!(found[0].code, Code::InvalidModelBinding);
-        let ModelRefusalCause::IntakeMalformedDeclaration {
-            node, member, span, ..
-        } = &found[0].cause
-        else {
-            panic!("{found:?}");
-        };
-        assert_eq!(node, &id("variant/Tier-Gold"));
-        assert_eq!(member, &path("TypeDefinition.variants[1].identity"));
         assert_eq!(
-            span.as_ref().map(|span| span.start.line),
-            Some(later_line as usize)
-        );
-        assert!(
-            found[0].detail.contains("DUPLICATE_IDENTITY"),
-            "{:?}",
-            found[0].detail
+            found[0].cause,
+            ModelRefusalCause::ConflictingBinding {
+                key: key("variant/Tier-Gold"),
+                member: Some(path("TypeDefinition.variants[1]")),
+            }
         );
     }
 }
