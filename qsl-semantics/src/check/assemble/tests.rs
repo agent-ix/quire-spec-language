@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
 use qsl_forms::build_unit;
+use qsl_foundation::diagnostic::Code;
 use qsl_foundation::{IdentityLimits, SourceIdentity, Span};
 use quire_exact::{
     CardinalityBound, CollectionKind, CollectionType, EffectiveId, IeeeWidth, IntegerInterval,
@@ -2430,6 +2431,11 @@ fn a_union_refuses_a_repeated_member_and_an_unresolved_payload_type() {
     assert_eq!(invalid.declaration, "U");
     assert_eq!(invalid.cause, DeclarationCause::DuplicateMember("A".into()));
     assert_eq!(error.span, after(&text, "union U", "U"));
+    assert_eq!(error.cause.code(), Code::AmbiguousDeclaration);
+    assert_eq!(
+        error.cause.catalog_code().to_string(),
+        "ambiguous_declaration/ambiguous-name"
+    );
 
     let (text, found) = errors("union U { A(Missing) }");
     assert_eq!(

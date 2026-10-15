@@ -336,7 +336,6 @@ fn a_case_reports_only_its_first_refusal_in_the_fixed_order() {
     }
 }
 
-#[trace("FR-318-AC-5", "TC-824")]
 #[test]
 fn a_case_checks_under_the_clause_kind_it_stands_in() {
     let unit = unit(&format!(
@@ -436,7 +435,6 @@ fn a_package_holding_a_union_is_refused_at_lowering_until_unions_are_keyed() {
 /// A `case` and its exhaustiveness obligation add no claim (FR-057); the
 /// scalar applications in its arm bodies are claim sites of the existing
 /// walk, found under each arm's payload binders.
-#[trace("FR-318-AC-5", "TC-824")]
 #[test]
 fn a_case_adds_no_claim_and_its_arm_bodies_are_claim_sites() {
     let (unit, typed) = check(
@@ -474,7 +472,7 @@ fn with_parameters(parameters: &str) -> Unit {
     ))
 }
 
-#[trace("FR-323-AC-1", "FR-323-AC-2", "TC-833")]
+#[trace("TC-833")]
 #[test]
 fn collections_of_a_union_are_admitted() {
     let unit = with_parameters(

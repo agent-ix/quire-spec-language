@@ -129,7 +129,7 @@ element, tuple position or record field whose declared type is a variant type.
    `case t when ...` in expression position as `invalid_syntax`, cause
    `UnexpectedToken`, at the `when` token, and a well-formed `case` expression
    reaches the checker, which refuses it `ill_typed`/`type-mismatch` at the
-   scrutinee (FR-318). The scrutinee refusal above is the one FR-318 gives.
+   scrutinee (FR-318).
    Neither the Text literal nor `none` reaches the checker.
 6. **Check typing is nominal and invariant.** A value of variant type `V` SHALL
    conform to a slot whose declared type is exactly `V` and to no other. A
