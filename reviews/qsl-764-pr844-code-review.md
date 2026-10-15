@@ -105,3 +105,9 @@ The following are recorded and do not block:
   protocol profile in the catalog.
 - operator-ineligible does not name the resolved kind (FR-218 text).
 - The parse-refusal test checks invalid_syntax but not its position.
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 626b9ac79 (tests unrolled in 61285b19b). With no protocol profile selected, `protocol_nodes` builds nothing and refuses nothing, so the unit checks as on main. `InternalFault(ProtocolWithoutControl)` and `KeyFault::ProtocolWithoutControl` are deleted, with no consumers left. With a profile selected, a root other than sequence/choice/parallel/repeat refuses `unsupported_construct`/`declaration-form` (`ProtocolReferenceCause::UnsupportedRoot`) at the declaration, and also at a reference. That is the cause FR-218-AC-5 and QSpec FR-052 give an unsupported protocol declaration shape. Refusing `await`/`check` roots is consistent with QSpec FR-322-AC-22 (an operator the profile defines, the FR-052 bounded controls). It is not a regression, because main had no protocol profile selection. The new typed tests fail on the old code (the no-profile case refused there). The FR-092-AC-18, FR-218-AC-8 and FR-308 spec edits match the code. The gate is qsl764c-ci6.log: exit 0, 9114 passed, 0 failed, 22 ignored, finished 19:24, after the 17:50 head commit, and it runs the new tests. |
