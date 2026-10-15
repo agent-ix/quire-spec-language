@@ -767,6 +767,9 @@ pub(crate) fn check_clause_admitted(
             ),
         },
         Err(CallFailure::Fault(fault)) => ClauseDisposition::EvaluateFault(fault),
+        Err(storage @ CallFailure::Storage { .. }) => {
+            ClauseDisposition::ArgumentRefusal(convert_call_failure(storage))
+        }
         // This meter holds no `Cancel` handle, so no charge is cancelled.
         Err(CallFailure::Cancelled(_)) => ClauseDisposition::EvaluateFault(InternalFault::new(
             "call",
@@ -917,6 +920,9 @@ pub(crate) fn check_frame(
             "frame-invocation-mismatch",
         )),
         Err(CallFailure::Fault(fault)) => ClauseDisposition::EvaluateFault(fault),
+        Err(storage @ CallFailure::Storage { .. }) => {
+            ClauseDisposition::ArgumentRefusal(convert_call_failure(storage))
+        }
         // This meter holds no `Cancel` handle, so no charge is cancelled.
         Err(CallFailure::Cancelled(_)) => ClauseDisposition::EvaluateFault(InternalFault::new(
             "call",

@@ -3539,3 +3539,35 @@ fn tc_913_a_u64_field_model_recompiles_to_its_package_id() {
         compiled.emitted.package_id()
     );
 }
+
+/// A membership query that reserved no storage settles
+/// `ReplayRefusal::Storage`: `resource_exhausted` with the allocator-denial
+/// or size-overflow cause, never an `Input` wrong-value-kind refusal.
+#[test]
+fn storage_failure_settles_resource_exhausted_with_its_cause() {
+    use quire_semantic_value::declaration::{EnvironmentFailure, StorageRequest, StorageUnit};
+    let request = StorageRequest::new(6, StorageUnit::Bytes);
+    for (failure, cause) in [
+        (EnvironmentFailure::Allocation(request), "allocation-failed"),
+        (
+            EnvironmentFailure::Capacity(request),
+            "reservation-size-overflow",
+        ),
+    ] {
+        let refusal = call_failure_to_replay_refusal(CallFailure::Storage {
+            parameter: 3,
+            failure: failure.clone(),
+        });
+        assert_eq!(refusal.code(), Code::ResourceExhausted);
+        assert_eq!(refusal.cause(), Some(cause));
+        let ReplayRefusal::Storage {
+            position,
+            failure: carried,
+        } = refusal
+        else {
+            panic!("a storage failure must stay a storage refusal");
+        };
+        assert_eq!(position, 3);
+        assert_eq!(carried, failure);
+    }
+}

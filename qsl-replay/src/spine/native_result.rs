@@ -18,6 +18,7 @@ use super::{ClauseDisposition, ClauseRunReport};
 use crate::result::RecordWire;
 use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::observation::{DocumentRef, FrameChange, FrameWitness};
+use qsl_semantics::value::environment_stage::membership_failure_cause;
 
 /// Why a clause-run report could not be written as a canonical document.
 #[derive(Debug, thiserror::Error)]
@@ -2047,6 +2048,7 @@ impl Disposition {
                     | super::RunRefusal::Admission { .. }
                     | super::RunRefusal::DanglingReference { .. }
                     | super::RunRefusal::Cancelled(_) => None,
+                    super::RunRefusal::Storage { failure, .. } => membership_failure_cause(failure),
                 };
                 let mut record = RefusalWire::new(refusal.code().as_str(), cause);
                 match refusal.as_ref() {
@@ -2109,7 +2111,8 @@ impl Disposition {
                         }
                         record = record.fields(fields);
                     }
-                    super::RunRefusal::DanglingReference { position } => {
+                    super::RunRefusal::DanglingReference { position }
+                    | super::RunRefusal::Storage { position, .. } => {
                         record =
                             record.fields(BTreeMap::from([("position", position.to_string())]));
                     }

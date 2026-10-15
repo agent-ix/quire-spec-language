@@ -41,6 +41,7 @@ use super::{digest, hex, malformed, present, CauseCodecError};
 mod tests {
     use super::*;
     use ix_trace_rs::trace;
+    use quire_semantic_value::declaration::EnvironmentFailure;
 
     fn package() -> CheckedPackage {
         let declarations = qsl_semantics::check::PackageDeclarations::new(
@@ -52,6 +53,36 @@ mod tests {
                 .check(quire_semantic_value::checking::CheckingLimits::default())
                 .expect("the empty fixture package checks"),
         )
+    }
+
+    /// A storage failure in a membership answer is reported as the storage
+    /// failure, not read as a value outside its type; a `false` before it
+    /// stops the walk first, as the `all` it replaces did.
+    #[test]
+    fn storage_failure_is_not_a_false_membership_answer() {
+        use quire_semantic_value::declaration::{StorageRequest, StorageUnit};
+        let failure = EnvironmentFailure::Allocation(StorageRequest::new(4, StorageUnit::Bytes));
+        let storage = || {
+            Err(CauseCodecError::Storage {
+                member: "slots",
+                failure: failure.clone(),
+            })
+        };
+        assert!(matches!(
+            all_fit([Ok(true), storage()].into_iter()),
+            Err(CauseCodecError::Storage {
+                member: "slots",
+                ..
+            })
+        ));
+        assert!(matches!(
+            all_fit([Ok(false), storage()].into_iter()),
+            Ok(false)
+        ));
+        assert!(matches!(
+            all_fit([Ok(true), Ok(true)].into_iter()),
+            Ok(true)
+        ));
     }
 
     #[trace("FR-056-AC-23")]
@@ -240,6 +271,31 @@ const READER_LIMITS: ScalarLimits = ScalarLimits {
     result_units: u64::MAX,
 };
 
+/// Whether `value` is a member of `value_type`, with a storage failure of the
+/// membership query reported as the undecided `member`, not as "no".
+fn admitted(
+    types: &TypeEnvironment,
+    value_type: &ValueType,
+    value: &Value,
+    member: &'static str,
+) -> Result<bool, CauseCodecError> {
+    types
+        .admits(value_type, value)
+        .map_err(|failure| CauseCodecError::Storage { member, failure })
+}
+
+/// Whether every answer is `true`, stopping at the first `false` or failure.
+fn all_fit(
+    answers: impl Iterator<Item = Result<bool, CauseCodecError>>,
+) -> Result<bool, CauseCodecError> {
+    for answer in answers {
+        if !answer? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
 /// The checked package's admitted declaration identities, which the reader
 /// resolves wire digests against.
 #[derive(Clone, Copy)]
@@ -283,18 +339,28 @@ impl<'a> Keys<'a> {
         let fits = match declaration.shape() {
             CompositeShape::Record(fields) => {
                 fields.len() == slots.len()
-                    && fields.iter().zip(slots.iter()).all(|(field, slot)| match slot {
-                        FieldValue::Present(value) => types.admits(field.value_type(), value),
-                        FieldValue::Absent | FieldValue::Null => {
-                            field.presence() == Presence::Optional
-                        }
-                    })
+                    && all_fit(
+                        fields
+                            .iter()
+                            .zip(slots.iter())
+                            .map(|(field, slot)| match slot {
+                                FieldValue::Present(value) => {
+                                    admitted(types, field.value_type(), value, "slots")
+                                }
+                                FieldValue::Absent | FieldValue::Null => {
+                                    Ok(field.presence() == Presence::Optional)
+                                }
+                            }),
+                    )?
             }
             CompositeShape::Tuple(positions) => {
                 positions.len() == slots.len()
-                    && positions.iter().zip(slots.iter()).all(|(position, slot)| {
-                        matches!(slot, FieldValue::Present(value) if types.admits(position, value))
-                    })
+                    && all_fit(positions.iter().zip(slots.iter()).map(
+                        |(position, slot)| match slot {
+                            FieldValue::Present(value) => admitted(types, position, value, "slots"),
+                            FieldValue::Absent | FieldValue::Null => Ok(false),
+                        },
+                    ))?
             }
         };
         if !fits {
@@ -1484,7 +1550,7 @@ pub(super) fn decode_element(node: NodeRef<'_>, keys: Keys<'_>) -> Result<Value,
                     // package's environment, so a child of the payload's
                     // record keeps its own declaration.
                     Some(payload) => {
-                        if !keys.types().admits(&payload_type, &payload) {
+                        if !admitted(keys.types(), &payload_type, &payload, "payload")? {
                             return Err(CauseCodecError::Value("payload"));
                         }
                         OptionValue::from_admitted(payload_type, Some(payload))
@@ -1518,10 +1584,9 @@ pub(super) fn decode_element(node: NodeRef<'_>, keys: Keys<'_>) -> Result<Value,
                 // Each element is admitted by conformance (FR-359 item 5);
                 // forming checks the bound, and a collapsed duplicate means
                 // the document listed one twice.
-                if !elements
-                    .iter()
-                    .all(|element| keys.types().admits(collection_type.element(), element))
-                {
+                if !all_fit(elements.iter().map(|element| {
+                    admitted(keys.types(), collection_type.element(), element, "elements")
+                }))? {
                     return Err(CauseCodecError::Value("elements"));
                 }
                 match form(&collection_type, elements, &mut meter) {
