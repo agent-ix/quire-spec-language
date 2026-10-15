@@ -712,7 +712,7 @@ its own repository, agent-ix/quire-driver.
 
 The "Depends on" column is an exhaustive allow-list. A module may depend on a
 listed lower layer, or on a module earlier in its own layer's order. Every
-other edge is forbidden. The result is acyclic. #226 owns the drift gate that
+other edge is forbidden. The column lists the exhaustive allow-list of first-party layer edges; an external general-purpose crate is not a layer edge (for example, `quire-driver` uses `serde_json` to read FR-331 manifest bytes, because the driver reads manifests as data, ADR-013 T-7). The result is acyclic. #226 owns the drift gate that
 enforces it; before #226, §3's interim rule applies.
 
 | Layer | Modules, in order | Stage | Depends on |
