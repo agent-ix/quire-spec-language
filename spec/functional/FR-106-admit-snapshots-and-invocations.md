@@ -21,6 +21,8 @@ relationships:
     type: traces_to
   - target: ix://agent-ix/quire-spec-language/FR-103
     type: traces_to
+  - target: ix://agent-ix/quire-spec-language/FR-364
+    type: depends_on
   - target: ix://agent-ix/quire-specification/FR-153
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-207
@@ -62,7 +64,8 @@ that compares only reference-valued fields (`PopulationMember::field_values`,
   Documents are read through `quire-canonical`'s shared reader at any
   nesting depth
   ([FR-261](FR-261-read-other-untrusted-json-at-any-depth.md)); the byte,
-  object and value limits bound the read.
+  object and value limits bound the read. Each relationship instance counts
+  as one value against the values-per-document limit.
 
 ## Outputs
 
@@ -74,7 +77,8 @@ that compares only reference-valued fields (`PopulationMember::field_values`,
   selected by `Invocation`, the pre and post observations, the self object, the parameter values, the result value or
   none, and the admitted invocation delta. Each observation
   holds its `PopulationBinding`s and an `ObjectEnvironment` with every field
-  value of every object, and keeps its document identity and digest.
+  value of every object and the relationship extents of the snapshot
+  (FR-364), and keeps its document identity and digest.
 - Or an `AdmissionFailure`: `Refused(RefusalRecord)` or
   `Incomplete(RefusalRecord)`, each with a catalog code, a cause and the input
   path (document identity, population, object key, field) it names.
@@ -122,10 +126,42 @@ Snapshot, format `quire.state.snapshot/v1`:
   is unbound to any invocation.
 - `population` and `type` are declaration identities of the selected
   package; `fields` is keyed by member name.
+- `relationships` is optional on a snapshot. Each entry has exactly `relationship`, `complete` and
+  `instances`. `relationship` is the declaration identity of a navigation
+  relationship of the selected package
+  (`ix://<package>/relationship/<Name>-<verb>-<TargetName>`), `complete` is a
+  boolean, and `instances` is an array of objects with exactly `source` and
+  `target`, each an object reference `{"population": ..., "key": ...}` as in
+  `self`. An instance links a source object to a target object through the
+  relationship; the entry's order and its instances' order carry no meaning,
+  and a link between the same two objects listed twice is two instances. An
+  entry with `"complete": true` and `"instances": []` states that the
+  relationship has no link in this state. A relationship with no entry is
+  unlisted: the snapshot says nothing about it, which is not the same as an
+  empty entry (FR-364). A snapshot without `relationships` lists none.
+
+  A snapshot of TC-1035's `orders` model lists two links of
+  a `Sys` object `s1` to its `Pump` objects as:
+
+  ```json
+  "relationships": [{
+    "relationship": "ix://test/orders/relationship/Sys-composition-Pump",
+    "complete": true,
+    "instances": [
+      {"source": {"population": "ix://test/orders/Q", "key": "s1"},
+       "target": {"population": "ix://test/orders/Q", "key": "p2"}},
+      {"source": {"population": "ix://test/orders/Q", "key": "s1"},
+       "target": {"population": "ix://test/orders/Q", "key": "p1"}}
+    ]
+  }]
+  ```
 - A value is exactly one of `{"boolean": true|false}`,
   `{"integer": "<decimal>"}`, `{"absent": {}}`, `{"present": <value>}`,
   `{"reference": {"population": ..., "key": ...}}`,
-  `{"sequence": [<value>, ...]}` and the record form below. There is no set, bag or ordered-set value:
+  `{"sequence": [<value>, ...]}`, the record form below, the variant form of
+  FR-360 and the two native payload forms below, `{"kind": "uuid", "text":
+  "<canonical UUID>"}` and `{"kind": "timestamp", "nanoseconds":
+  "<canonical decimal>"}`. There is no set, bag or ordered-set value:
   those collections are outside QSpec's selected state extension.
 
 A record value is `{"record": {"type": "<declaration identity>",
@@ -143,6 +179,66 @@ The record carries no object key, population or identity, and an object
 `reference` tag cannot stand in for it. Two admitted records compare under
 FR-208 by most-specific type and every effective field; JSON member order
 does not affect the typed value or the `sha256-jcs` digest.
+
+A **native payload value** is a UUID or a Timestamp, the closed wire objects of
+FR-056's K2 canonical native payloads. They take that requirement's spelling
+unchanged: the UUID object is `{"kind": "uuid", "text":
+"00112233-4455-6677-8899-aabbccddeeff"}`, whose `text` is 32 lowercase ASCII
+hexadecimal digits in groups `8-4-4-4-12` with four ASCII hyphens, and the
+Timestamp object is `{"kind": "timestamp", "nanoseconds": "0"}`, whose
+`nanoseconds` is a signed count on FR-056's POSIX-epoch scale in the
+signed-128 domain, spelled `0`, or an optional `-` then a nonzero digit and
+more digits. A value object with a `kind` member is a native payload
+object; every other value is a single-tag object. A UUID object has exactly
+the members `kind` and `text`, and a Timestamp object exactly `kind` and
+`nanoseconds`. The payload is a JSON string, never a JSON number, and the
+canonical text is the only accepted spelling: admission never case-folds,
+trims, inserts or removes a hyphen, strips a `urn:uuid:` prefix or braces,
+reads a calendar or offset text, or accepts an `Integer` for a Timestamp or a
+`String` for a UUID. UUID admission accepts every 128-bit payload, Nil and Max
+included, and retains the version and variant bits. A UUID or Timestamp
+object counts as one value against the values-per-document setting. Two
+admitted values of one native kind are equal exactly when their canonical
+payloads are equal (QSpec FR-149), so the frame check (check 11) compares a
+UUID or Timestamp field by payload, as it does a scalar. Native payload
+objects use the same closed value grammar anywhere a value may stand: a
+field, a parameter, a result, a record field, a present option and a
+sequence element.
+
+A field, parameter or result of declared type `UUID` admits only a UUID
+object, and one of declared type `Timestamp` only a Timestamp object. A
+UUID or Timestamp object fits no other declared type, and no other form
+fits those two. Admission checks a native payload object in this order and
+refuses the first defect found, at the nested value path and naming the
+member where one is listed, with `invalid_runtime_input` (the closed set of
+FR-056's runtime-input adapter; the kernel's construction classes are not
+catalog codes):
+
+1. A `kind` member that is not a JSON string (a number, `null`, an object)
+   refuses `wrong-value-kind`, naming `kind`.
+2. A `kind` string other than `uuid` and `timestamp` (including `string`,
+   which this grammar does not carry, and a letter-case variant such as
+   `UUID`) refuses `invalid-value`, naming `kind`. The members of such an
+   object are not examined.
+3. A missing payload member of the object's kind refuses `missing-member`,
+   naming `text` (UUID) or `nanoseconds` (Timestamp). So
+   `{"kind":"uuid","nanoseconds":"0"}` refuses `missing-member` naming `text`.
+4. An unknown member of the object's kind refuses `unknown-member`, naming the
+   first in document order. Here `nanoseconds` on a UUID object is unknown.
+5. A payload member that is not a JSON string, including a bare JSON number
+   (even `0`) or `null`, refuses `wrong-value-kind`, naming the member.
+6. A native kind that differs from the slot's declared type, a native
+   object in a slot of any other declared type, and a single-tag object
+   (such as `{"integer": "5"}`) in a `UUID` or `Timestamp` slot each refuse
+   `wrong-value-kind`.
+7. A payload that is not canonical refuses `invalid-value`, naming the
+   payload member, with the kernel class `noncanonical-payload`. A canonical
+   Timestamp text outside the signed-128 domain refuses `invalid-value` with
+   the kernel class `payload-out-of-domain`. Noncanonical text takes
+   precedence over the range check.
+
+A repeated member name in a document is settled earlier, by check 1.3's
+shared-reader rule, and never reaches this order.
 
 Invocation, format `quire.state.invocation/v1`:
 
@@ -185,7 +281,13 @@ condition, returning its one record. Inside a check, the conditions run in the
 order listed. Where a check walks the document, it walks populations in
 document order, objects in document order within a population, and fields in
 the object type's declared field order, and it reports the first failing
-object and field.
+object and field. After the last object, it walks a snapshot's `relationships`
+entries in document order, and the instances of each entry in document order.
+For each entry it runs checks 6.6 and 6.7, then for each instance of the entry
+it runs checks 6.8 and 6.9, and it stops at the first failing condition with
+its relationship and zero-based instance index. A defect of an earlier
+instance or entry is therefore reported before one of a later instance or
+entry, whatever check number each has.
 
 A precondition's input is the pre-call observation (QSpec FR-046-AC-7,
 FR-208-AC-13). For a precondition selected by `Invocation`, the selected
@@ -203,7 +305,9 @@ declared population of the package that a reference in a parameter of an
 invocation or `PreCall` selection names in the pre snapshot, including one
 nested in a record, present optional or sequence, and,
 repeatedly, every population named by a `reference` value anywhere in a field of
-any object of a required population, in the observations the clause reads.
+any object of a required population, and every population named by an end of an
+instance of a listed relationship whose other end names an object of a required
+population, in the observations the clause reads.
 A required population absent from its snapshot is not marked `complete`. A
 parameter reference naming no declared population makes no population
 required; check 10 settles it.
@@ -307,7 +411,8 @@ required; check 10 settles it.
       `missing-member`, an extra field `unknown-member`, an incompatible
       record type or value tag `wrong-value-kind`, and a malformed scalar
       payload `invalid-value`, all under `invalid_runtime_input` at the
-      nested value path. The same rule applies to operation parameters and
+      nested value path. A UUID or Timestamp object is checked by the native
+      payload rule above. The same rule applies to operation parameters and
       results in check 10.
       Inputs are refused, outputs are evidence: this refusal applies to
       every current snapshot, every pre snapshot and every operation
@@ -325,21 +430,69 @@ required; check 10 settles it.
       field is evidence in the same way. The field's declared range is part
       of the operation's contract, so the observation is the witness of a
       violation; the caller settles it. A post-state value of the wrong
-      kind or not in FR-038's spelling is still refused. The default is
+      kind, not in FR-038's spelling, or a UUID or Timestamp object that
+      fails the native payload checks above is still refused. The default is
       `Refuse`, under which every snapshot refuses, and a `Frame` run's
       post snapshot always refuses. A clause that compares or orders the
       field, or does arithmetic on it, evaluates over the exact integer;
       only a value admission recorded as out of range is exempt from the
       evaluator's declared-type check, and any other operand outside its
       type is still an internal fault.
+   6. If a `relationships` entry lacks a member, then admission SHALL refuse
+      `invalid_runtime_input`/`missing-member`, naming the first missing of
+      `relationship`, `complete` and `instances`. If an entry holds an unknown
+      member, then admission SHALL refuse `unknown-member`. If `complete` is
+      not a boolean or `instances` is not an array, then admission SHALL
+      refuse `wrong-value-kind`.
+   7. For each entry: admission SHALL decide FR-364's extent conditions 1 and 2
+      at the entry: a `relationship` that names no navigation relationship of
+      the package (a connection and an unknown identity included) refuses
+      `invalid_runtime_input`/`wrong-role-mapping`, and a second entry for one
+      relationship refuses `invalid_runtime_input`/`conflicting-identity` at
+      the later entry.
+   8. For each instance of an entry, in document order: if a member of the
+      instance or of `source` or `target` is missing or unknown, then
+      admission SHALL refuse `missing-member` or `unknown-member`, and a
+      non-string `population` or `key`, `wrong-value-kind`. If an end's
+      `population` names no population of the package, then admission SHALL
+      refuse `invalid_runtime_input`/`wrong-role-mapping`, `source` before
+      `target`. If an end names an object the snapshot lists, and that
+      object's type does not conform to the relationship's end type, then
+      admission SHALL refuse `invalid_runtime_input`/`wrong-value-kind`,
+      naming the relationship, the instance and the end (FR-364 condition 3).
+      An end naming a key the snapshot does not list is not decided here;
+      checks 7 and 8 decide it.
+   9. If an instance repeats an earlier instance of its entry and the
+      relationship's two ends do not both declare `unique: false`, then
+      admission SHALL refuse `invalid_runtime_input`/`conflicting-identity`
+      at the later instance (FR-364 condition 4). No instance count is
+      compared with an end's multiplicity bounds: a count outside `[lower,
+      upper]` admits, and navigation refuses it (FR-364).
 7. Completeness check. If a required population is not marked `complete`, then
    admission SHALL return `Incomplete` with `incomplete_population`/
    `incomplete-scope`, naming the first such population in walk order.
    Admission SHALL skip the dangling check over an incomplete population.
+   An instance end that names a key its population does not list, where the
+   population is not marked `complete`, also returns `Incomplete` with
+   `incomplete_population`/`incomplete-scope` naming that population, because
+   the end has no object to give the type component of its reference key; the
+   first such end in walk order is named, after the populations above. (An end
+   naming a listed key of an incomplete population admits.)
+   An extent's own `complete` flag is not decided here: an entry with
+   `"complete": false`, or an unlisted relationship, admits, and navigation
+   returns `incomplete_population`/`incomplete-scope` when a clause reads it
+   (FR-364).
 8. Closure check. If a `reference` value names a key absent from its complete
    population, then admission SHALL refuse `dangling_reference`/
    `absent-target-in-complete-population`, naming the first such reference
-   in walk order and its population.
+   in walk order and its population. After the `reference` values, an instance
+   end that names a key absent from its complete population refuses the same
+   way, naming the relationship, the instance index, the end and the key and
+   population; instances are walked as in check 6 and the ends of one instance
+   are checked `source` before `target`. With check 7's rule for an end in an
+   incomplete population, no stored end lacks an object: every admitted
+   instance is a triple of full references, because only the object supplies
+   the type component of its reference key (FR-364).
 9. Self check. If the selected self object is absent from the current
    snapshot, from the pre snapshot, or (for a postcondition) from the post
    snapshot, then admission SHALL refuse `invalid_runtime_input`/
@@ -397,6 +550,22 @@ required; check 10 settles it.
        identity in either, an identity in both, then a list that differs
        from the computed one: `population_delta_mismatch`/
        `delta-disagreement`.
+    5. once, after every population, over relationships rather than
+       objects. If a relationship that both snapshots list with
+       `"complete": true` is not in the frame's `modifies`, and an instance's
+       count differs between the pre and post extents, then admission SHALL
+       refuse `frame_violation`/`unauthorized-change` for the first such
+       instance, naming the relationship, the instance and whether it was
+       `added` or `removed`. Relationships are walked in ascending
+       `DeclarationKey` order and instances in ascending order of source then
+       target reference key. An instance with an end at an object the
+       invocation's `deleted` lists is left out, because a deleted object's
+       links go with it as its fields do. An instance with an end at a
+       created object is an added instance and needs the grant: unlike a
+       created object's own fields, a link also changes what the object at
+       its other end navigates to, and `creates` grants only the new object. A
+       relationship that is not listed complete in both snapshots is not
+       compared, because the snapshots do not say whether it changed.
 
 - Admission SHALL read no path, environment variable, clock or search
   location. The same package, provisions, selection and limits SHALL give
@@ -405,7 +574,8 @@ required; check 10 settles it.
   `observation`, `anchor.kind`, member names and value tags are converted
   once, at read, to closed enums or typed identities.
 - Value validation SHALL use an explicit work stack, walking populations
-  and objects in document order, record fields in exposed effective field
+  and objects in document order, then relationship entries and their
+  instances in document order, record fields in exposed effective field
   order and sequence
   elements by ascending index. It SHALL count the record, each option
   wrapper, each sequence and each contained value against the
@@ -445,12 +615,25 @@ required; check 10 settles it.
 | FR-106-AC-15 | A record payload with a missing effective field refuses `invalid_runtime_input`/`missing-member`; one with an extra field refuses `unknown-member`; a `type` naming an object type, an unrelated record subtype, or no selected record refuses `wrong-value-kind`; and an object reference in place of a record refuses `wrong-value-kind`. Each refusal names the first nested path reached in field order, including an index for a sequence element. The same cases in a parameter or result use the invocation binding as the path root. | Test |
 | FR-106-AC-16 | A finite `Node { next?: Node }` value nested through 10,000 present `next` fields admits when byte and value limits allow it, with no reader or validator stack-depth refusal. At the exact values-per-document bound the document admits; one more nested value returns `stage_limit_exceeded`/`node-count-exceeded` naming `observation.values`, the bound and the count reached, before that value is admitted. A false invariant on one nested `Node` is reported as a logical violation at its FR-207 runtime value path after admission, not as an input refusal. | Test |
 | FR-106-AC-17 | An invocation changing `Account.address` from one admitted record value to another admits its frame when the selected `modifies` grant covers that declared object field. Without that grant it refuses `frame_violation`/`unauthorized-change` naming `Account.address`, whether the change is to a record member or its most-specific type. The existing QSpec FR-013 and FR-340 receiver and grant semantics apply. | Test |
+| FR-106-AC-18 | Over the TC-1029 fixture, a current snapshot whose `child` holds `token` `{"kind":"uuid","text":"00112233-4455-6677-8899-aabbccddeeff"}` and `stamp` `{"kind":"timestamp","nanoseconds":"0"}` admits both as a UUID and a Timestamp value of the retained canonical payloads; reordering the members of either object, and the whitespace of the document, gives the same typed observation and digest. Nil (`00000000-0000-0000-0000-000000000000`), Max (`ffffffff-ffff-ffff-ffff-ffffffffffff`), a UUID whose version nibble is `0`, outside RFC 9562's version table (`00112233-4455-0677-8899-aabbccddeeff`), and Timestamps `1`, `-1`, `170141183460469231731687303715884105727` and `-170141183460469231731687303715884105728` admit unchanged. A present optional `prior`, each element of a `Sequence<Timestamp>` field `seen`, and the `id` and `at` parameters and a UUID `result` of an invocation admit by the same rule, and each object counts as one value toward `observation.values`. | Test (TC-1029) |
+| FR-106-AC-19 | A UUID `text` in uppercase (`00112233-4455-6677-8899-AABBCCDDEEFF`), mixed case, hyphenless, braced, `urn:uuid:`-prefixed, with a moved hyphen, with a non-hex digit, of the wrong length, padded with whitespace or holding a non-ASCII digit refuses `invalid_runtime_input`/`invalid-value` naming `child`, `token` and member `text`, with kernel class `noncanonical-payload`. A Timestamp `nanoseconds` of `-0`, `+1`, `01`, `-01`, the empty string, ` 1`, `1.0`, `1e3` and `2026-10-15T00:00:00Z` refuses `invalid-value` with class `noncanonical-payload`. `170141183460469231731687303715884105728` and `-170141183460469231731687303715884105729` refuse `invalid-value` with class `payload-out-of-domain`; `0170141183460469231731687303715884105728` refuses with `noncanonical-payload`, never the range class. No refusal produces a value or a repaired spelling. | Test (TC-1029) |
+| FR-106-AC-20 | Native payload objects refuse in the listed order: `kind` as `1` or `null` refuses `wrong-value-kind` naming `kind`, even beside a missing payload member; `kind` `string`, `UUID` and `uuidv4` refuse `invalid-value` naming `kind`, and `{"kind":"string","nanoseconds":"0"}` refuses the same way, its members unexamined; a UUID object with no `text` (and `{"kind":"uuid","nanoseconds":"0"}`) and a Timestamp object with no `nanoseconds` refuse `missing-member` naming that member; an extra member refuses `unknown-member` naming it; `nanoseconds` as the JSON number `0`, and `text` as `null` or `5`, refuse `wrong-value-kind` naming the member. An object with both an extra member and a noncanonical `text` refuses `unknown-member`. | Test (TC-1029) |
+| FR-106-AC-21 | A Timestamp object in the UUID field `token`, a UUID object in the Timestamp field `stamp`, `{"integer":"5"}` in `stamp`, `{"integer":"5"}` and `{"boolean":true}` in `token`, a UUID object in the integer field `versionNumber` and in a `Reference` field, a Timestamp object inside `{"present": ...}` of the optional UUID `prior`, and a UUID object as an element of `seen` each refuse `invalid_runtime_input`/`wrong-value-kind` at the nested path (the sequence element with its index), including a Timestamp object with `nanoseconds` `"01"` in `token` and a UUID object with `text` `"X"` in `stamp`, which are `wrong-value-kind`, never `invalid-value`. The same cases in a parameter or result use the invocation binding as the path root. | Test (TC-1029) |
+| FR-106-AC-22 | An invocation changing `token` or `stamp` between two admitted payloads admits its frame when the selected `modifies` grant covers the field and refuses `frame_violation`/`unauthorized-change` naming `child` and the field without it; one whose post holds the same payload, with differently ordered members, is no change. Under `PostStateRange::Witness`, a post snapshot holding a noncanonical UUID or Timestamp still refuses `invalid-value`. With `observation.values` set to the exact count of a document holding a `token` and a `stamp`, the document admits; one less returns `stage_limit_exceeded`/`node-count-exceeded` at the last of those values in walk order. | Test (TC-1029) |
+| FR-106-AC-23 | TC-1035's `orders` snapshot of population `Q` (`s1`, `s2`, `p1`, `p2`, `p3`, `t1`) lists `Sys-composition-Pump` complete with instances `s1`-`p2` then `s1`-`p1`, and `Pump-housing-Tank` complete with `p1`-`t1` and `p2`-`t1`. Selected for an invariant on `Sys` with `self` `s1`, it admits one observation whose composition extent reads `targets` `[p1, p2]` and whose housing extent reads `sources` of `t1` `[p1, p2]`; reordering the entries, the instances and the JSON members gives the same digest and the same admitted value. The same snapshot with no `relationships` member admits with both relationships unlisted (`complete` false); with `Sys-composition-Pump` listed `"complete": true` and `"instances": []` it admits with that extent complete and empty. A snapshot listing four instances `s1`-`p1` to `s1`-`p4` through `parts`, whose destination end is `{0,3}`, and one with no `Pump-housing-Tank` instance for `p3` through `home`, whose destination end is `{1,1}`, admit. | Test (TC-1035) |
+| FR-106-AC-24 | Each of checks 6.6 to 6.9 has one case that fails only it and returns exactly its code and cause, naming the relationship and the zero-based instance index: an entry without `instances`, an entry with an extra member, a `complete` of `"yes"`; a `relationship` that is a connection, and separately an unknown identity; two entries for one relationship; an instance without `target`, with an extra member, with a numeric `key`; a `population` naming no population of the package; a `Tank` `t1` at the `source` end of `Sys-composition-Pump`, and separately at its `target` end; a repeated `s1`-`p1` instance where the ends are unique. A repeated instance admits as two instances when both ends of the relationship declare `unique: false`, and refuses when only one does. Checks run entry by entry and instance by instance: a repeat at instance 1 with a wrong end type at instance 2 refuses the repeat, and a wrong end type at instance 0 of the first composition entry refuses before a second composition entry does. | Test (TC-1035) |
+| FR-106-AC-25 | A target `t9` of a `Pump-housing-Tank` instance that `Q` does not list, with `Q` complete, refuses `dangling_reference`/`absent-target-in-complete-population` naming the relationship, the instance and end `target`, `t9` and `Q`; the same snapshot with `Q` `"complete": false` returns `Incomplete` with `incomplete_population`/`incomplete-scope` and no dangling record. A dangling `reference` value and a dangling instance end in one snapshot report the `reference` value. Over a variant in which the `Tank` object `t1` lives in a second population `Tanks` marked `"complete": false`, an instance `p1`-`t1` makes `Tanks` required and returns `Incomplete` naming `Tanks`, while the same snapshot without the instance admits. An extent listed `"complete": false` admits. An instance end naming an unlisted key of a population that is not complete, with no end in a required population, returns `Incomplete` naming that population; the same end naming a listed key admits. | Test (TC-1035) |
+| FR-106-AC-26 | An invocation of the operation `rehome` on `Pump`, selected for its postcondition `RehomePost`, whose pre snapshot lists `Pump-housing-Tank` complete with `p1`-`t1` and `p2`-`t1` and whose post lists it complete with `p1`-`t2` and `p2`-`t1` admits its frame when `rehome` modifies `Pump-housing-Tank`, and refuses `frame_violation`/`unauthorized-change` naming the relationship and the instance `p1`-`t1` `removed` when it does not. A post that deletes `p2` and drops `p2`-`t1` admits under a frame that deletes `Pump` and does not modify the relationship; a post that creates `p3` with `p3`-`t1` under a frame that creates `Pump` and does not modify the relationship refuses naming `p3`-`t1` `added`. A relationship listed in only one of the two snapshots changes nothing. | Test (TC-1035) |
+| FR-106-AC-27 | Each instance counts as one value against `observation.values`: a snapshot whose objects and instances reach the bound exactly admits and one more instance returns `stage_limit_exceeded`/`node-count-exceeded` naming `observation.values`, the bound and the count reached. An invocation selected for a precondition admits and gives its `PreCall` verdict when its `post` snapshot lists a malformed `relationships` entry. | Test (TC-1035) |
 
 ## Dependencies
 
 - FR-084 and FR-089 (population binding and identity), FR-103 (operation
   effect), FR-001 (the two labels; QSpec STD-150), FR-056 (the `sha256-jcs` rule and its
-  digest-first order), FR-038 (integer spelling).
+  digest-first order; the K2 UUID and Timestamp payloads and their runtime-input
+  refusals), FR-038 (integer spelling).
+- FR-364 (relationship extents: the instance model, its admission conditions
+  and the read contract navigation uses).
 - QSpec FR-153 and `state-contract.md` (anchors, completeness and closure),
   `native-diagnostics.md` (every code and cause above).
 - QSpec FR-046-AC-7 and FR-208-AC-13 make a precondition's input the

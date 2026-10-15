@@ -517,6 +517,19 @@ pub enum RecordSlot {
     Present(NodeId),
 }
 
+/// One arm of a checked [`NodeKind::Case`] (FR-318): the member it selects,
+/// the slots its payload binds positionally, and its body.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CaseArm {
+    /// The selected member's position in the union's declared member order.
+    pub member: usize,
+    /// One slot per payload position, in payload order; a nullary member
+    /// binds none.
+    pub binders: Vec<Slot>,
+    /// The arm body, checked under the binders.
+    pub body: NodeId,
+}
+
 /// A one-binder query that visits every occurrence or stops early.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Visit {
@@ -948,6 +961,17 @@ pub enum NodeKind {
         /// The target's index in the unit's protocol declarations.
         protocol: usize,
     },
+    /// `case scrutinee { ... }` over a declared union (FR-318): one arm per
+    /// member of the union, in the union's declared member order, so the
+    /// arm order in the source does not reach the node.
+    Case {
+        /// The union-typed scrutinee.
+        scrutinee: NodeId,
+        /// The scrutinee's union declaration.
+        declaration: NodeKey,
+        /// The arms, one per member, in declared member order.
+        arms: Vec<CaseArm>,
+    },
     /// FR-063/S3: exists only so `--cfg seam_probe` makes every
     /// match over `NodeKind` outside this module non-exhaustive. Never
     /// constructed outside the probe build.
@@ -1045,6 +1069,11 @@ impl NodeKind {
                 children
             }
             NodeKind::AllInstances { population } => vec![*population],
+            NodeKind::Case {
+                scrutinee, arms, ..
+            } => std::iter::once(*scrutinee)
+                .chain(arms.iter().map(|arm| arm.body))
+                .collect(),
             NodeKind::Lookup {
                 population,
                 reference,
