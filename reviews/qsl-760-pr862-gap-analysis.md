@@ -54,3 +54,10 @@ scope:
   role: examined
   excerpt: "5. With `record Event { id: UUID; at: Timestamp; label: String; }`, check and evaluate the field, call-result and `let` vectors F1-F7 below."
 ```
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | deferred | 73fb60576d7f310f60723b179b11d7b61f01e769 removes FR-056-AC-35 from all tests (the only remaining mention is the E8 test's doc comment disclaiming it), and the PR body now lists AC-35 as NOT met, with the adapter, witness_type and admit_leaf in scope but not built. The adapter itself is still unbuilt. The body says "tracked separately", but no QSL ticket for it exists yet. One must be filed and its id cited in the PR body before merge. |
+| FND-002 | fixed | 73fb60576d7f310f60723b179b11d7b61f01e769 (`at` renamed to `moment` in step 5, F1, F2, F5 and F7; no `at` field use remains in TC-1028) |

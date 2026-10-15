@@ -73,3 +73,9 @@ scope:
   role: examined
   excerpt: "#[ignore = \"String, UUID and Timestamp now lower, but `=` on them is refused ill_typed/operator-ineligible; equality on native scalars is not yet admitted\"]"
 ```
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 73fb60576d7f310f60723b179b11d7b61f01e769 (`#[ignore]` removed; test body and expectations unchanged against origin/main, only the doc comment reworded; passes in qsl760-fix.log) |
