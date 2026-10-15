@@ -13,7 +13,7 @@ pub enum SuppliedLimitsRefusal {
     /// `limits.supplied` is not a JSON object.
     #[error("invalid_runtime_input/invalid-value: limits.supplied is not an object")]
     NotAnObject,
-    /// The object names a member that is neither ceiling.
+    /// The object names a member that is no ceiling.
     #[error("invalid_runtime_input/unknown-member: limits.supplied has no member `{name}`")]
     UnknownMember {
         /// The member as the wire wrote it.
@@ -42,7 +42,8 @@ impl SuppliedLimitsRefusal {
 }
 
 /// Read a wire `limits.supplied` object (QSpec FR-323 AC-10): exactly
-/// `admission_work_units` and `conversion_work_units`, each an exact `u64`.
+/// `admission_work_units`, `conversion_work_units` and
+/// `numeric_magnitude_bits` (B), each an exact `u64`.
 ///
 /// # Errors
 ///
@@ -53,12 +54,13 @@ pub fn read_supplied_limits(
 ) -> Result<SuppliedLimits, SuppliedLimitsRefusal> {
     const ADMISSION: &str = "admission_work_units";
     const CONVERSION: &str = "conversion_work_units";
+    const MAGNITUDE: &str = "numeric_magnitude_bits";
     let serde_json::Value::Object(members) = value else {
         return Err(SuppliedLimitsRefusal::NotAnObject);
     };
     if let Some(name) = members
         .keys()
-        .find(|name| !matches!(name.as_str(), ADMISSION | CONVERSION))
+        .find(|name| !matches!(name.as_str(), ADMISSION | CONVERSION | MAGNITUDE))
     {
         return Err(SuppliedLimitsRefusal::UnknownMember { name: name.clone() });
     }
@@ -71,5 +73,6 @@ pub fn read_supplied_limits(
     };
     Ok(SuppliedLimits::default()
         .with_admission_work_units(ceiling(ADMISSION)?)
-        .with_conversion_work_units(ceiling(CONVERSION)?))
+        .with_conversion_work_units(ceiling(CONVERSION)?)
+        .with_numeric_magnitude_bits(ceiling(MAGNITUDE)?))
 }

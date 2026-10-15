@@ -2,7 +2,8 @@
 //! FR-277's supplied-value phase budgets (the vocabulary the S6a checked call
 //! and the replay facade share): the caller-owned
 //! `supplied.admission_work_units` (A) and `supplied.conversion_work_units`
-//! (H), the phase-marked pre-call stop, and the run that carries both
+//! (H), the numeric magnitude bound `supplied.numeric_magnitude_bits` (B),
+//! the phase-marked pre-call stop, and the run that carries both
 //! budgets and the original [`Cancel`] through every supplied argument.
 //!
 //! The units are logical helper events, not evaluator charges: a pre-call
@@ -13,15 +14,16 @@
 //! one initiating-phase owner.
 
 use qsl_foundation::diagnostic::InternalFault;
-use quire_exact::{Cancel, CancelCause, Value, ValueType};
-use quire_semantic_value::call::InputRefusal;
-use quire_semantic_value::declaration::{
-    EnvironmentFailure, StorageRequest, StorageUnit, TypeEnvironment,
+use quire_exact::{
+    Cancel, CancelCause, NumericMembershipOperand, NumericTypeEndpoint, Value, ValueType,
 };
+use quire_semantic_value::call::InputRefusal;
+use quire_semantic_value::declaration::{StorageRequest, StorageUnit, TypeEnvironment};
 use quire_semantic_value::supplied_membership::{
-    InvalidMembershipCause, MembershipEvent, MembershipLocus, MembershipPart, MembershipPathArena,
-    PathArenaCapacity, PathArenaCapacityUnit, PathStep, SuppliedAdmissionError,
-    SuppliedMembershipBudget, UnsupportedHelperFamily,
+    BoundedSuppliedAdmissionError, DecimalMembershipOperand, InvalidMembershipCause,
+    MembershipEvent, MembershipLocus, MembershipPart, MembershipPathArena, PathArenaCapacity,
+    PathArenaCapacityUnit, PathStep, SuppliedAdmissionError, SuppliedMembershipBudget,
+    UnsupportedHelperFamily,
 };
 
 /// FR-277: the published default of each supplied helper ceiling.
@@ -33,14 +35,22 @@ pub const ADMISSION_WORK_UNITS: &str = "supplied.admission_work_units";
 /// The setting name of H, FR-277's caller-owned conversion ceiling.
 pub const CONVERSION_WORK_UNITS: &str = "supplied.conversion_work_units";
 
+/// FR-277: the published default of B, the numeric magnitude bound in bits.
+pub const DEFAULT_NUMERIC_MAGNITUDE_BITS: u64 = 4096;
+
+/// The setting name of B, FR-277's caller-owned numeric magnitude bound.
+pub const NUMERIC_MAGNITUDE_BITS: &str = "supplied.numeric_magnitude_bits";
+
 /// The typed supplied-value limits (FR-277, QSpec FR-323 `limits.supplied`):
-/// two independent caller ceilings, each defaulting to
-/// [`DEFAULT_SUPPLIED_WORK_UNITS`]. They are not setting-table rows and
-/// never travel in a replay request's `stage_limits`.
+/// two independent caller work ceilings, each defaulting to
+/// [`DEFAULT_SUPPLIED_WORK_UNITS`], and the numeric magnitude bound B,
+/// defaulting to [`DEFAULT_NUMERIC_MAGNITUDE_BITS`]. They are not
+/// setting-table rows and never travel in a replay request's `stage_limits`.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct SuppliedLimits {
     admission_work_units: u64,
     conversion_work_units: u64,
+    numeric_magnitude_bits: u64,
 }
 
 impl Default for SuppliedLimits {
@@ -48,6 +58,7 @@ impl Default for SuppliedLimits {
         Self {
             admission_work_units: DEFAULT_SUPPLIED_WORK_UNITS,
             conversion_work_units: DEFAULT_SUPPLIED_WORK_UNITS,
+            numeric_magnitude_bits: DEFAULT_NUMERIC_MAGNITUDE_BITS,
         }
     }
 }
@@ -65,6 +76,19 @@ impl SuppliedLimits {
     pub const fn with_conversion_work_units(mut self, units: u64) -> Self {
         self.conversion_work_units = units;
         self
+    }
+
+    /// These limits with B set to `bits`; A and H are unchanged.
+    #[must_use]
+    pub const fn with_numeric_magnitude_bits(mut self, bits: u64) -> Self {
+        self.numeric_magnitude_bits = bits;
+        self
+    }
+
+    /// B: `supplied.numeric_magnitude_bits`.
+    #[must_use]
+    pub const fn numeric_magnitude_bits(&self) -> u64 {
+        self.numeric_magnitude_bits
     }
 
     /// A: `supplied.admission_work_units`.
@@ -215,6 +239,9 @@ pub enum SuppliedLimitKind {
     /// A decimal quantity magnitude's power-of-ten expansion, bounded by
     /// `scale_expansion`.
     ScaleExpansion,
+    /// B: one numeric operand's bit length, bounded per operand with no
+    /// cumulative counter.
+    NumericMagnitudeBits,
 }
 
 impl SuppliedLimitKind {
@@ -227,6 +254,7 @@ impl SuppliedLimitKind {
             Self::WorkUnits => "work_units",
             Self::ValueOccurrences => "value_occurrences",
             Self::ScaleExpansion => "scale_expansion",
+            Self::NumericMagnitudeBits => NUMERIC_MAGNITUDE_BITS,
         }
     }
 }
@@ -242,7 +270,7 @@ pub enum AttemptedCount {
 
 /// The pre-call limit record (FR-277 "Projection into existing QSL
 /// carriers"): the numerical meanings of `Incomplete` without a charge point.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SuppliedLimit {
     /// The denied counter.
     pub limit_kind: SuppliedLimitKind,
@@ -252,6 +280,76 @@ pub struct SuppliedLimit {
     pub next_charge: u64,
     /// The checked attempted count.
     pub counter: AttemptedCount,
+    /// The numeric operand B denied; `None` for every other counter.
+    pub operand: Option<SuppliedNumericOperand>,
+}
+
+/// The numeric operand a B stop names (QSpec FR-323 "Numeric magnitude
+/// bound"): a value-in-domain operand, or an endpoint of a compared pair of
+/// type-chain links.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SuppliedNumericOperand {
+    /// An operand of one value-in-domain comparison.
+    Value(NumericMembershipOperand),
+    /// An endpoint of one type-link comparison.
+    TypeLink(NumericTypeEndpoint),
+    /// An operand of one Decimal value-in-domain comparison.
+    Decimal(DecimalMembershipOperand),
+}
+
+impl SuppliedNumericOperand {
+    /// The wire spelling of the operand.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Value(operand) => match operand {
+                NumericMembershipOperand::IntegerValue => "value",
+                NumericMembershipOperand::IntegerLower => "lower",
+                NumericMembershipOperand::IntegerUpper => "upper",
+                NumericMembershipOperand::RationalNumerator => "value-numerator",
+                NumericMembershipOperand::RationalDenominator => "value-denominator",
+                NumericMembershipOperand::RationalNumeratorLower => "numerator-lower",
+                NumericMembershipOperand::RationalNumeratorUpper => "numerator-upper",
+                NumericMembershipOperand::RationalDenominatorLower => "denominator-lower",
+                NumericMembershipOperand::RationalDenominatorUpper => "denominator-upper",
+            },
+            Self::Decimal(operand) => match operand {
+                DecimalMembershipOperand::Coefficient => "coefficient",
+                DecimalMembershipOperand::Lower => "lower",
+                DecimalMembershipOperand::Upper => "upper",
+            },
+            Self::TypeLink(endpoint) => match endpoint {
+                NumericTypeEndpoint::IntegerExpectedLower => "type-link-expected-lower",
+                NumericTypeEndpoint::IntegerExpectedUpper => "type-link-expected-upper",
+                NumericTypeEndpoint::IntegerActualLower => "type-link-actual-lower",
+                NumericTypeEndpoint::IntegerActualUpper => "type-link-actual-upper",
+                NumericTypeEndpoint::RationalExpectedNumeratorLower => {
+                    "type-link-expected-lower-numerator"
+                }
+                NumericTypeEndpoint::RationalExpectedNumeratorUpper => {
+                    "type-link-expected-upper-numerator"
+                }
+                NumericTypeEndpoint::RationalExpectedDenominatorLower => {
+                    "type-link-expected-lower-denominator"
+                }
+                NumericTypeEndpoint::RationalExpectedDenominatorUpper => {
+                    "type-link-expected-upper-denominator"
+                }
+                NumericTypeEndpoint::RationalActualNumeratorLower => {
+                    "type-link-actual-lower-numerator"
+                }
+                NumericTypeEndpoint::RationalActualNumeratorUpper => {
+                    "type-link-actual-upper-numerator"
+                }
+                NumericTypeEndpoint::RationalActualDenominatorLower => {
+                    "type-link-actual-lower-denominator"
+                }
+                NumericTypeEndpoint::RationalActualDenominatorUpper => {
+                    "type-link-actual-upper-denominator"
+                }
+            },
+        }
+    }
 }
 
 impl SuppliedLimit {
@@ -271,6 +369,9 @@ pub enum SuppliedStorageUnit {
     AdditionalElements,
     /// Distinct path-arena identifiers.
     ArenaIdentifiers,
+    /// Magnitude bits of the largest Decimal operand whose scratch layout
+    /// could not be represented.
+    MagnitudeBits,
 }
 
 /// The measured request of a storage or capacity stop, in its native unit.
@@ -403,6 +504,7 @@ impl From<SuppliedStop> for SuppliedFailure {
 /// never replaced.
 #[derive(Debug)]
 pub struct SuppliedRun {
+    numeric_magnitude_bits: u64,
     admission: SuppliedMembershipBudget,
     conversion: SuppliedMembershipBudget,
     arena: MembershipPathArena,
@@ -430,12 +532,51 @@ impl SuppliedRun {
             })
         })?;
         Ok(Self {
+            numeric_magnitude_bits: limits.numeric_magnitude_bits,
             admission: SuppliedMembershipBudget::new(limits.admission_work_units),
             conversion: SuppliedMembershipBudget::new(limits.conversion_work_units),
             arena,
             cancel,
             stopped: None,
         })
+    }
+
+    /// B: the numeric magnitude bound every Integer and Rational operand of
+    /// this run is checked against.
+    #[must_use]
+    pub const fn numeric_magnitude_bits(&self) -> u64 {
+        self.numeric_magnitude_bits
+    }
+
+    /// The `limit` stop of a numeric operand over B found by a conversion
+    /// domain comparison at the witness node `locus`, charged to the
+    /// conversion event `event` (FR-277: the stop is on the charged event).
+    pub fn conversion_magnitude_stop(
+        &mut self,
+        parameter: usize,
+        event: SuppliedEvent,
+        locus: SuppliedLocus,
+        operand: NumericMembershipOperand,
+        measured_bits: u64,
+    ) -> SuppliedFailure {
+        let failure = SuppliedStop {
+            context: SuppliedContext {
+                phase: SuppliedPhase::Conversion,
+                parameter: Some(parameter),
+                event: Some(event),
+                locus: Some(locus),
+                consumed: 0,
+            },
+            cause: SuppliedCause::Limit(SuppliedLimit {
+                limit_kind: SuppliedLimitKind::NumericMagnitudeBits,
+                limit: self.numeric_magnitude_bits,
+                next_charge: measured_bits,
+                counter: AttemptedCount::Count(measured_bits),
+                operand: Some(SuppliedNumericOperand::Value(operand)),
+            }),
+        }
+        .into();
+        self.remember(failure)
     }
 
     /// The first stop of this run with its full phase context, whichever
@@ -507,19 +648,93 @@ impl SuppliedRun {
                 admission,
                 conversion,
                 arena,
+                numeric_magnitude_bits,
                 ..
             } = self;
+            let numeric_magnitude_bits = *numeric_magnitude_bits;
             let budget = match phase {
                 SuppliedPhase::Admission => admission,
                 SuppliedPhase::Conversion => conversion,
             };
-            types.admit_supplied::<InvalidMembershipCause>(
-                expected, value, arena, at, budget, &cancel,
+            types.admit_supplied_bounded_numeric::<InvalidMembershipCause>(
+                expected,
+                value,
+                arena,
+                at,
+                budget,
+                &cancel,
+                numeric_magnitude_bits,
             )
         };
         let outcome = match result {
             Ok(()) => return Ok(()),
-            Err(error) => self.failure_of(phase, parameter, error),
+            Err(BoundedSuppliedAdmissionError::Admission(error)) => {
+                self.failure_of(phase, parameter, error)
+            }
+            Err(BoundedSuppliedAdmissionError::NumericSize {
+                operand,
+                measured_bits,
+                locus,
+                ..
+            }) => self.magnitude_stop(
+                phase,
+                parameter,
+                SuppliedEvent::ValueVisit,
+                SuppliedNumericOperand::Value(operand),
+                measured_bits,
+                locus,
+            ),
+            Err(BoundedSuppliedAdmissionError::DecimalSize {
+                operand,
+                measured_bits,
+                locus,
+                ..
+            }) => self.magnitude_stop(
+                phase,
+                parameter,
+                SuppliedEvent::ValueVisit,
+                SuppliedNumericOperand::Decimal(operand),
+                measured_bits,
+                locus,
+            ),
+            Err(BoundedSuppliedAdmissionError::DecimalCapacity {
+                magnitude_bits,
+                locus,
+            }) => self.storage_stop(
+                phase,
+                parameter,
+                locus,
+                SuppliedCause::Capacity(SuppliedStorage {
+                    requested: magnitude_bits,
+                    unit: SuppliedStorageUnit::MagnitudeBits,
+                }),
+            ),
+            Err(BoundedSuppliedAdmissionError::DecimalAllocation {
+                layout_bytes,
+                locus,
+                ..
+            }) => self.storage_stop(
+                phase,
+                parameter,
+                locus,
+                SuppliedCause::Storage(SuppliedStorage {
+                    requested: u64::try_from(layout_bytes).unwrap_or(u64::MAX),
+                    unit: SuppliedStorageUnit::Bytes,
+                }),
+            ),
+            Err(BoundedSuppliedAdmissionError::NumericTypeSize {
+                position,
+                measured_bits,
+                locus,
+                ..
+            }) => self.magnitude_stop(
+                phase,
+                parameter,
+                SuppliedEvent::TypeComparison,
+                SuppliedNumericOperand::TypeLink(position),
+                measured_bits,
+                locus,
+            ),
         };
         Err(self.remember(outcome))
     }
@@ -579,6 +794,7 @@ impl SuppliedRun {
                             counter: spent
                                 .checked_add(1)
                                 .map_or(AttemptedCount::Overflow, AttemptedCount::Count),
+                            operand: None,
                         }),
                     },
                 })
@@ -623,6 +839,59 @@ impl SuppliedRun {
             steps_from_leaf: resolved.steps_from_leaf().collect(),
             part: resolved.part(),
         })
+    }
+
+    /// The `limit` stop of one numeric operand over B: B is a per-operand
+    /// bound with no cumulative counter, so the owning counter's successful
+    /// prefix is zero and the denied amount is the operand's bit length.
+    fn magnitude_stop(
+        &self,
+        phase: SuppliedPhase,
+        parameter: usize,
+        event: SuppliedEvent,
+        operand: SuppliedNumericOperand,
+        measured_bits: u64,
+        locus: MembershipLocus,
+    ) -> SuppliedFailure {
+        SuppliedStop {
+            context: SuppliedContext {
+                phase,
+                parameter: Some(parameter),
+                event: Some(event),
+                locus: self.locus_of(locus),
+                consumed: 0,
+            },
+            cause: SuppliedCause::Limit(SuppliedLimit {
+                limit_kind: SuppliedLimitKind::NumericMagnitudeBits,
+                limit: self.numeric_magnitude_bits,
+                next_charge: measured_bits,
+                counter: AttemptedCount::Count(measured_bits),
+                operand: Some(operand),
+            }),
+        }
+        .into()
+    }
+
+    /// A Decimal helper's storage or capacity stop at the value visit that
+    /// requested it.
+    fn storage_stop(
+        &self,
+        phase: SuppliedPhase,
+        parameter: usize,
+        locus: MembershipLocus,
+        cause: SuppliedCause,
+    ) -> SuppliedFailure {
+        SuppliedStop {
+            context: SuppliedContext {
+                phase,
+                parameter: Some(parameter),
+                event: Some(SuppliedEvent::ValueVisit),
+                locus: self.locus_of(locus),
+                consumed: self.spent(phase),
+            },
+            cause,
+        }
+        .into()
     }
 
     fn failure_of(
@@ -673,6 +942,7 @@ impl SuppliedRun {
                     counter: spent
                         .checked_add(requested)
                         .map_or(AttemptedCount::Overflow, AttemptedCount::Count),
+                    operand: None,
                 }),
             }
             .into(),

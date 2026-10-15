@@ -36,9 +36,9 @@ use qsl_semantics::value::supplied::{
 };
 use quire_exact::{
     admit_text, form, from_admitted_slots, CollectionKind, CollectionType, Decimal, EnumMember,
-    FieldValue, IeeeValue, IeeeWidth, Integer, Meter, NodeKey, ObjectId, ObjectReference,
-    OptionValue, Outcome, Presence, Quantity, Rational, ScalarLimits, TextPayload, UniverseId,
-    Value, ValueType,
+    FieldValue, IeeeValue, IeeeWidth, Integer, Meter, NodeKey, NumericMembershipFailure, ObjectId,
+    ObjectReference, OptionValue, Outcome, Presence, Quantity, Rational, ScalarLimits, TextPayload,
+    UniverseId, Value, ValueType,
 };
 use quire_semantic_value::call::InputRefusal;
 use quire_semantic_value::declaration::{CompositeDeclaration, CompositeShape, TypeEnvironment};
@@ -330,6 +330,37 @@ impl<'a> Converter<'a, '_> {
         Ok(())
     }
 
+    /// The stop of a bounded numeric domain comparison at the current
+    /// witness node: an operand over B, or the original handle's cancel.
+    fn numeric_stop(&mut self, parameter: usize, failure: NumericMembershipFailure) -> Stopped {
+        let locus = SuppliedLocus::Witness {
+            argument: parameter,
+            position: self.position,
+        };
+        match failure {
+            NumericMembershipFailure::UnsupportedSize {
+                operand,
+                measured_bits,
+                ..
+            } => Stopped::Supplied(self.run.conversion_magnitude_stop(
+                parameter,
+                SuppliedEvent::WitnessMaterialization,
+                locus,
+                operand,
+                measured_bits,
+            )),
+            NumericMembershipFailure::Cancelled(_) => {
+                match self
+                    .run
+                    .check_cancelled(SuppliedPhase::Conversion, parameter)
+                {
+                    Err(failure) => Stopped::Supplied(failure),
+                    Ok(()) => invariant("numeric-cancel-without-cancel"),
+                }
+            }
+        }
+    }
+
     /// Count one converted node against the argument's C bound
     /// (`work_units`) before converting it.
     fn count_node(&mut self, parameter: usize) -> Result<(), Stopped> {
@@ -356,6 +387,7 @@ impl<'a> Converter<'a, '_> {
                     limit: self.limits.work_units,
                     next_charge: 1,
                     counter: attempted.map_or(AttemptedCount::Overflow, AttemptedCount::Count),
+                    operand: None,
                 }),
             })
             .into()),
@@ -383,6 +415,7 @@ impl<'a> Converter<'a, '_> {
                 limit: self.limits.value_occurrences,
                 next_charge: reached.unwrap_or(u64::MAX),
                 counter: reached.map_or(AttemptedCount::Overflow, AttemptedCount::Count),
+                operand: None,
             }),
         })
         .into())
@@ -524,10 +557,22 @@ impl<'a> Converter<'a, '_> {
                     integer_of(value).ok_or_else(|| self.wrong(parameter))?,
                 ));
             }
+            // The declared domain of an Integer or Rational leaf is compared
+            // under the caller's magnitude bound B (FR-277), never
+            // unbounded. An argument's root leaf is decided by supplied
+            // admission, which stops an operand over B on its charged value
+            // visit; a leaf inside a record or tuple is compared here.
             (ValueType::Int(interval), _) => {
                 let number = integer_of(value).ok_or_else(|| self.wrong(parameter))?;
-                if !interval.contains(&number) {
-                    return Err(self.wrong(parameter));
+                if self.position != 0 {
+                    let bits = self.run.numeric_magnitude_bits();
+                    let cancel = self.run.cancel().clone();
+                    let inside = interval
+                        .try_contains_bounded(&number, bits, &cancel)
+                        .map_err(|failure| self.numeric_stop(parameter, failure))?;
+                    if !inside {
+                        return Err(self.wrong(parameter));
+                    }
                 }
                 values.push(Value::Integer(number));
             }
@@ -540,8 +585,15 @@ impl<'a> Converter<'a, '_> {
             ) => {
                 let rational = Rational::new(numerator.clone(), denominator.clone())
                     .map_err(|_| self.wrong(parameter))?;
-                if !domain.contains(&rational) {
-                    return Err(self.wrong(parameter));
+                if self.position != 0 {
+                    let bits = self.run.numeric_magnitude_bits();
+                    let cancel = self.run.cancel().clone();
+                    let inside = domain
+                        .try_contains_bounded(&rational, bits, &cancel)
+                        .map_err(|failure| self.numeric_stop(parameter, failure))?;
+                    if !inside {
+                        return Err(self.wrong(parameter));
+                    }
                 }
                 values.push(Value::Rational(rational));
             }
@@ -802,6 +854,7 @@ impl<'a> Converter<'a, '_> {
                             limit: self.limits.scale_expansion,
                             next_charge: exponent,
                             counter: AttemptedCount::Count(exponent),
+                            operand: None,
                         }),
                     })
                     .into());

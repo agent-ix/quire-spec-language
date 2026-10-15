@@ -18,7 +18,6 @@ use qsl_semantics::value::supplied::{
     SuppliedStop,
 };
 use quire_exact::{Cancel, CancelCause, Integer};
-use quire_semantic_value::supplied_membership::UnsupportedHelperFamily;
 
 use super::*;
 use crate::supplied_limits::{read_supplied_limits, SuppliedLimitsRefusal};
@@ -173,6 +172,23 @@ fn a_defaulted_request_is_the_request_that_states_the_defaults() {
         Some(SuppliedLimits::default())
     );
 
+    let stated_b = decode(unit.with(
+        "seq",
+        vec![booleans(2)],
+        SuppliedLimits::default().with_numeric_magnitude_bits(4096),
+    ));
+    assert_eq!(omitted, stated_b, "omitted B is the stated default 4096");
+    let other_b = |bits| {
+        decode(unit.with(
+            "seq",
+            vec![booleans(2)],
+            SuppliedLimits::default().with_numeric_magnitude_bits(bits),
+        ))
+    };
+    assert_ne!(omitted, other_b(4095), "B is part of the request");
+    assert_ne!(omitted, other_b(4097));
+    assert_eq!(omitted.package_id(), other_b(4095).package_id());
+
     let raised_a = decode(unit.with("seq", vec![booleans(2)], only_a(16_777_217)));
     let raised_h = decode(unit.with("seq", vec![booleans(2)], only_h(16_777_217)));
     assert_ne!(omitted, raised_a, "A is part of the request");
@@ -203,6 +219,7 @@ fn a_supplied_ceiling_in_stage_limits_refuses_before_any_stage() {
     for member in [
         "supplied.admission_work_units",
         "supplied.conversion_work_units",
+        "supplied.numeric_magnitude_bits",
     ] {
         let mut wire = unit.request("seq", vec![booleans(1)]);
         wire.stage_limits.insert(member.to_owned(), 7);
@@ -227,35 +244,50 @@ fn a_supplied_ceiling_in_stage_limits_refuses_before_any_stage() {
 fn a_wire_supplied_object_is_closed_complete_and_u64() {
     let read = |text: &str| read_supplied_limits(&serde_json::from_str(text).unwrap());
     assert_eq!(
-        read(r#"{"admission_work_units":0,"conversion_work_units":18446744073709551615}"#),
+        read(
+            r#"{"admission_work_units":0,"conversion_work_units":18446744073709551615,
+                "numeric_magnitude_bits":0}"#
+        ),
         Ok(SuppliedLimits::default()
             .with_admission_work_units(0)
-            .with_conversion_work_units(u64::MAX))
+            .with_conversion_work_units(u64::MAX)
+            .with_numeric_magnitude_bits(0))
     );
+    for (text, member) in [
+        (
+            r#"{"admission_work_units":5,"numeric_magnitude_bits":5}"#,
+            "conversion_work_units",
+        ),
+        (
+            r#"{"conversion_work_units":5,"numeric_magnitude_bits":5}"#,
+            "admission_work_units",
+        ),
+        (
+            r#"{"admission_work_units":5,"conversion_work_units":5}"#,
+            "numeric_magnitude_bits",
+        ),
+    ] {
+        assert_eq!(
+            read(text),
+            Err(SuppliedLimitsRefusal::Incomplete { member }),
+            "{text}"
+        );
+    }
     assert_eq!(
-        read(r#"{"admission_work_units":5}"#),
-        Err(SuppliedLimitsRefusal::Incomplete {
-            member: "conversion_work_units"
-        })
-    );
-    assert_eq!(
-        read(r#"{"conversion_work_units":5}"#),
-        Err(SuppliedLimitsRefusal::Incomplete {
-            member: "admission_work_units"
-        })
-    );
-    assert_eq!(
-        read(r#"{"admission_work_units":1,"conversion_work_units":1,"depth":2}"#),
+        read(
+            r#"{"admission_work_units":1,"conversion_work_units":1,
+                "numeric_magnitude_bits":1,"depth":2}"#
+        ),
         Err(SuppliedLimitsRefusal::UnknownMember {
             name: "depth".to_owned()
         })
     );
     for malformed in [
-        r#"{"admission_work_units":18446744073709551616,"conversion_work_units":1}"#,
-        r#"{"admission_work_units":-1,"conversion_work_units":1}"#,
-        r#"{"admission_work_units":1.5,"conversion_work_units":1}"#,
-        r#"{"admission_work_units":"1","conversion_work_units":1}"#,
-        r#"{"admission_work_units":null,"conversion_work_units":1}"#,
+        r#"{"admission_work_units":18446744073709551616,"conversion_work_units":1,"numeric_magnitude_bits":1}"#,
+        r#"{"admission_work_units":-1,"conversion_work_units":1,"numeric_magnitude_bits":1}"#,
+        r#"{"admission_work_units":1.5,"conversion_work_units":1,"numeric_magnitude_bits":1}"#,
+        r#"{"admission_work_units":"1","conversion_work_units":1,"numeric_magnitude_bits":1}"#,
+        r#"{"admission_work_units":null,"conversion_work_units":1,"numeric_magnitude_bits":1}"#,
     ] {
         assert_eq!(
             read(malformed),
@@ -263,6 +295,25 @@ fn a_wire_supplied_object_is_closed_complete_and_u64() {
                 member: "admission_work_units"
             }),
             "{malformed}"
+        );
+    }
+    for malformed in [
+        "-1",
+        "1.5",
+        "18446744073709551616",
+        "null",
+        "\"64\"",
+        "true",
+    ] {
+        let text = format!(
+            r#"{{"admission_work_units":1,"conversion_work_units":1,"numeric_magnitude_bits":{malformed}}}"#
+        );
+        assert_eq!(
+            read(&text),
+            Err(SuppliedLimitsRefusal::NotUnsigned64 {
+                member: "numeric_magnitude_bits"
+            }),
+            "{text}"
         );
     }
     assert_eq!(read("[1,2]"), Err(SuppliedLimitsRefusal::NotAnObject));
@@ -567,37 +618,30 @@ fn invalid_input_keeps_its_refusal_and_gains_the_phase_context() {
     assert_eq!(refusal.code(), Code::InvalidRuntimeInput);
 }
 
-/// IR-714: a helper family QSV has not qualified for supplied
-/// admission is a distinct typed refusal before that helper runs, never
-/// invalid input and never a limit; one vector per family reachable from
-/// source.
+/// A Decimal parameter replays through the bounded Decimal caller, and a
+/// starved B stops it on the named Decimal operand as a pre-call result.
+#[trace("TC-906", "FR-277-AC-7")]
 #[test]
-fn unqualified_families_are_a_distinct_refusal() {
+fn a_decimal_parameter_replays_and_is_bounded_by_b() {
     let unit = unit();
-    let digit = || unit.request("digit", vec![WitnessValue::Integer(3)]);
-    let money = || {
-        unit.request(
+    let money = |limits: SuppliedLimits| {
+        unit.with(
             "money",
             vec![WitnessValue::Decimal {
                 coefficient: Integer::from(150_i64),
                 scale: Integer::from(2_i64),
             }],
+            limits,
         )
     };
-    for (wire, family) in [
-        (digit(), UnsupportedHelperFamily::NumericDomain),
-        (money(), UnsupportedHelperFamily::DecimalDomain),
-    ] {
-        let refused = replay_with_cancel(wire, ReplayLimits::default(), &Cancel::new())
-            .expect_err("refused before the helper");
-        let ReplayRefusal::UnsupportedHelper(stop) = &refused else {
-            panic!("{family:?}: an unsupported-helper refusal, got {refused:?}");
-        };
-        assert_eq!(stop.family, family);
-        assert_eq!(stop.context.phase, SuppliedPhase::Admission);
-        assert_eq!(stop.context.parameter, Some(0));
-        assert!(refused.input_refusal().is_none(), "not invalid input");
-    }
+    assert_reproduced(&run(money(SuppliedLimits::default())));
+    let starved = run(money(
+        SuppliedLimits::default().with_numeric_magnitude_bits(1),
+    ));
+    let limit = pre_call(&starved).limit().expect("a limit");
+    assert_eq!(limit.limit_kind, SuppliedLimitKind::NumericMagnitudeBits);
+    assert_eq!(limit.limit, 1);
+    assert!(limit.operand.is_some());
 }
 
 /// FR-277: at their published defaults both ceilings admit a large supplied
@@ -640,4 +684,120 @@ fn a_large_flat_argument_is_admitted_by_the_defaults_and_counted_exactly() {
     assert_eq!(stop.context.phase, SuppliedPhase::Admission);
     assert_eq!(stop.context.consumed, a - 1);
     assert_eq!(stop.context.event, admission_events(count).last().copied());
+}
+
+fn exact(bits: u64) -> WitnessValue {
+    // 2^(bits-1) has exactly `bits` bits.
+    WitnessValue::ExactInteger(Integer::one().shifted_left(bits - 1))
+}
+
+/// QSpec FR-323 numeric magnitude bound (TC-278 RE-23, RE-24; TC-906 step
+/// 10): at the default B of 4096 a 4096-bit operand passes the bound (the
+/// declared domain then refuses it by kind), and a 4097-bit operand stops
+/// on operand `value` with the `limit` cause for
+/// `supplied.numeric_magnitude_bits`, at event value-visit, as a pre-call
+/// result with zero charges and no kernel `Incomplete`.
+#[trace("TC-906", "FR-098-AC-12", "FR-277-AC-7")]
+#[test]
+fn the_default_magnitude_bound_admits_4096_bits_and_stops_4097_on_the_value() {
+    let unit = unit();
+    let at_bound = run(unit.request("digit", vec![exact(4096)]));
+    let refusal = at_bound.expect_err("outside the domain, not over B");
+    assert_eq!(
+        refusal.input_refusal(),
+        Some(&quire_semantic_value::call::InputRefusal::WrongValueKind { parameter: 0 })
+    );
+
+    let over = run(unit.request("digit", vec![exact(4097)]));
+    let stop = pre_call(&over);
+    let limit = stop.limit().expect("a limit cause");
+    assert_eq!(limit.limit_kind, SuppliedLimitKind::NumericMagnitudeBits);
+    assert_eq!(limit.field(), "supplied.numeric_magnitude_bits");
+    assert_eq!(limit.limit, 4096);
+    assert_eq!(limit.next_charge, 4097);
+    assert_eq!(limit.counter, AttemptedCount::Count(4097));
+    assert_eq!(limit.operand.map(|operand| operand.as_str()), Some("value"));
+    assert_eq!(stop.context.event, Some(SuppliedEvent::ValueVisit));
+    assert_eq!(stop.context.consumed, 0);
+    assert_eq!(stop.context.parameter, Some(0));
+}
+
+/// RE-23, RE-24: a stated B overrides the default exactly, 0 included: a
+/// 2-bit value with endpoints 0 and 9 passes B = 4, stops on `upper` at
+/// B = 3 and on `value` at B = 1; B = 0 admits no operand, and zero is one
+/// bit.
+#[trace("TC-906", "FR-098-AC-12", "FR-277-AC-7")]
+#[test]
+fn a_stated_magnitude_bound_overrides_the_default_exactly() {
+    let unit = unit();
+    let with = |bits| {
+        unit.with(
+            "digit",
+            vec![WitnessValue::Integer(3)],
+            SuppliedLimits::default().with_numeric_magnitude_bits(bits),
+        )
+    };
+    // The interval's endpoint 9 has 4 bits, the value 3 has 2; every
+    // operand is checked in order value, lower, upper.
+    assert_reproduced(&run(with(4)));
+    let three = run(with(3));
+    let limit = pre_call(&three).limit().expect("a limit");
+    assert_eq!(limit.limit, 3);
+    assert_eq!(limit.next_charge, 4);
+    assert_eq!(limit.operand.map(|operand| operand.as_str()), Some("upper"));
+    let one = run(with(1));
+    let limit = pre_call(&one).limit().expect("a limit");
+    assert_eq!(limit.limit, 1);
+    assert_eq!(limit.next_charge, 2);
+    assert_eq!(limit.operand.map(|operand| operand.as_str()), Some("value"));
+
+    // Zero counts as one bit: B = 1 admits it and B = 0 admits no operand.
+    let zero = |bits| {
+        unit.with(
+            "digit",
+            vec![WitnessValue::Integer(0)],
+            SuppliedLimits::default().with_numeric_magnitude_bits(bits),
+        )
+    };
+    let upper = run(zero(1));
+    let limit = pre_call(&upper).limit().expect("a limit");
+    assert_eq!(limit.next_charge, 4, "zero passes, the endpoint 9 does not");
+    assert_eq!(limit.operand.map(|operand| operand.as_str()), Some("upper"));
+    let none = run(zero(0));
+    let limit = pre_call(&none).limit().expect("a limit");
+    assert_eq!(limit.next_charge, 1);
+    assert_eq!(limit.operand.map(|operand| operand.as_str()), Some("value"));
+}
+
+/// RE-26: the three bounds are independent. A starved B leaves A and H
+/// unspent in the record; a starved A or H is never reported as B.
+#[trace("TC-906", "FR-277-AC-7")]
+#[test]
+fn a_h_and_b_are_accounted_independently() {
+    let unit = unit();
+    let digit = |limits| unit.with("digit", vec![WitnessValue::Integer(3)], limits);
+    let b = run(digit(
+        SuppliedLimits::default().with_numeric_magnitude_bits(1),
+    ));
+    assert_eq!(
+        pre_call(&b).limit().map(|l| l.limit_kind),
+        Some(SuppliedLimitKind::NumericMagnitudeBits)
+    );
+    let a = run(digit(only_a(0)));
+    assert_eq!(
+        pre_call(&a).limit().map(|l| l.limit_kind),
+        Some(SuppliedLimitKind::AdmissionWorkUnits)
+    );
+    let h = run(digit(only_h(0)));
+    assert_eq!(
+        pre_call(&h).limit().map(|l| l.limit_kind),
+        Some(SuppliedLimitKind::ConversionWorkUnits)
+    );
+    // Raising B does not change what A or H admit.
+    assert_reproduced(&run(digit(
+        SuppliedLimits::default()
+            .with_numeric_magnitude_bits(u64::MAX)
+            .with_admission_work_units(2)
+            .with_conversion_work_units(5),
+    )));
 }

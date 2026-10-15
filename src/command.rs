@@ -1250,20 +1250,25 @@ mod tests {
         let read = |text: &str| serde_json::from_str::<wire::Limits>(text);
         assert_eq!(read("{}").expect("no limits").supplied, None);
         assert_eq!(
-            read(r#"{"supplied":{"admission_work_units":0,"conversion_work_units":7}}"#)
+            read(r#"{"supplied":{"admission_work_units":0,"conversion_work_units":7,"numeric_magnitude_bits":9}}"#)
                 .expect("a complete object")
                 .supplied,
             Some(
                 SuppliedLimits::default()
                     .with_admission_work_units(0)
                     .with_conversion_work_units(7)
+                    .with_numeric_magnitude_bits(9)
             )
         );
         for malformed in [
             r#"{"supplied":{"admission_work_units":1}}"#,
             r#"{"supplied":{"conversion_work_units":1}}"#,
-            r#"{"supplied":{"admission_work_units":1,"conversion_work_units":1,"depth":1}}"#,
-            r#"{"supplied":{"admission_work_units":18446744073709551616,"conversion_work_units":1}}"#,
+            r#"{"supplied":{"admission_work_units":1,"conversion_work_units":1}}"#,
+            r#"{"supplied":{"admission_work_units":1,"conversion_work_units":1,"numeric_magnitude_bits":-1}}"#,
+            r#"{"supplied":{"admission_work_units":1,"conversion_work_units":1,"numeric_magnitude_bits":null}}"#,
+            r#"{"supplied":{"admission_work_units":1,"conversion_work_units":1,"numeric_magnitude_bits":"64"}}"#,
+            r#"{"supplied":{"admission_work_units":1,"conversion_work_units":1,"numeric_magnitude_bits":1,"depth":1}}"#,
+            r#"{"supplied":{"admission_work_units":18446744073709551616,"conversion_work_units":1,"numeric_magnitude_bits":1}}"#,
             r#"{"supplied":{"admission_work_units":-1,"conversion_work_units":1}}"#,
             r#"{"supplied":{"admission_work_units":1.5,"conversion_work_units":1}}"#,
             r#"{"supplied":{"admission_work_units":null,"conversion_work_units":1}}"#,

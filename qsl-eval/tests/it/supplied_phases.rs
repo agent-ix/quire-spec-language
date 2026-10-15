@@ -30,9 +30,7 @@ use quire_exact::{
 };
 use quire_semantic_value::call::InputRefusal;
 use quire_semantic_value::checking::CheckingLimits;
-use quire_semantic_value::supplied_membership::{
-    InvalidMembershipCause, MembershipPart, PathStep, UnsupportedHelperFamily,
-};
+use quire_semantic_value::supplied_membership::{InvalidMembershipCause, MembershipPart, PathStep};
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
     integer_bits: u64::MAX,
@@ -51,7 +49,8 @@ const UNIT: &str = "function seq using v(xs: Sequence<Boolean>[0, 64]): Boolean 
      function pair using v(a: Sequence<Boolean>[0, 64], b: Sequence<Boolean>[0, 64]): Boolean pure { false }\n\
      function digit using v(x: Int[0, 9]): Boolean pure { false }\n\
      function money using v(d: Decimal[0, 100; 0, 2; exact]): Boolean pure { false }\n\
-     function digits using v(xs: Sequence<Int[0, 9]>[0, 8]): Boolean pure { false }\n";
+     function digits using v(xs: Sequence<Int[0, 9]>[0, 8]): Boolean pure { false }\n\
+     function moneys using v(xs: Sequence<Decimal[0, 100; 0, 2; exact]>[0, 8]): Boolean pure { false }\n";
 
 fn package() -> CheckedPackage {
     let text = format!(
@@ -505,73 +504,116 @@ fn the_plain_call_runs_at_the_default_ceilings() {
     ));
 }
 
-/// IR-714: a helper family QSV has not qualified for supplied admission is
-/// a distinct typed stop before that helper runs, never invalid input and
-/// never a limit. One vector per family reachable from source.
+/// A Decimal argument goes through the bounded Decimal caller: admitted at
+/// the default B, and over a starved B it stops on the named Decimal operand
+/// with the supplied.numeric_magnitude_bits cause, before any evaluation.
 #[test]
-fn an_unqualified_family_is_a_typed_stop_before_the_helper() {
+fn a_decimal_argument_is_admitted_through_the_bounded_caller() {
     let package = package();
-    let numeric = Value::Integer(Integer::from(3_i64));
-    let decimal = Value::Decimal(Decimal::new(Integer::from(150_i64), 2));
-    for (function, argument, family) in [
-        ("digit", numeric, UnsupportedHelperFamily::NumericDomain),
-        ("money", decimal, UnsupportedHelperFamily::DecimalDomain),
-    ] {
+    let call = |limits: SuppliedLimits, coefficient: i64| {
         let mut meter = Meter::new(UNLIMITED);
-        let mut run = SuppliedRun::new(SuppliedLimits::default(), Cancel::new()).expect("the run");
+        let mut run = SuppliedRun::new(limits, Cancel::new()).expect("the run");
         let result = package.call_supplied(
-            &name(function),
-            vec![argument],
+            &name("money"),
+            vec![Value::Decimal(Decimal::new(Integer::from(coefficient), 2))],
             &ObjectEnvironment::default(),
             &mut meter,
             &mut run,
         );
-        let Err(CallFailure::UnsupportedHelper(stop)) = result else {
-            panic!("{function}: an unsupported-helper stop, got {result:?}");
-        };
-        assert_eq!(stop.family, family);
-        assert_eq!(stop.context.phase, SuppliedPhase::Admission);
-        assert_eq!(stop.context.parameter, Some(0));
-        assert_no_evaluation(&meter);
-    }
+        (result, meter)
+    };
+    let (admitted, _) = call(SuppliedLimits::default(), 150);
+    assert!(matches!(
+        admitted.expect("a decimal is admitted").outcome,
+        FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(false)))
+    ));
+    let (starved, meter) = call(
+        SuppliedLimits::default().with_numeric_magnitude_bits(1),
+        150,
+    );
+    let Err(CallFailure::Supplied(stop)) = starved else {
+        panic!("a starved B denies, got {starved:?}");
+    };
+    let limit = stop.limit().expect("a limit");
+    assert_eq!(limit.limit_kind, SuppliedLimitKind::NumericMagnitudeBits);
+    assert_eq!(limit.limit, 1);
+    assert!(limit.next_charge > 1);
+    assert_eq!(limit.counter, AttemptedCount::Count(limit.next_charge));
+    assert_eq!(stop.context.event, Some(SuppliedEvent::ValueVisit));
+    assert_eq!(stop.context.consumed, 0);
+    assert_no_evaluation(&meter);
+    // A value outside the declared domain is the ordinary input refusal.
+    let (outside, _) = call(SuppliedLimits::default(), 1_000_000);
+    assert!(matches!(
+        outside,
+        Err(CallFailure::Input(InputRefusal::WrongValueKind {
+            parameter: 0
+        }))
+    ));
 }
 
-/// A numeric-domain collection argument is the typed unsupported-helper
-/// stop with its locus, however many elements it holds: it is never
-/// admitted by an unbudgeted continuation (FR-277: neither ceiling is ever
-/// unbounded), and no evaluation runs.
+/// A numeric collection argument is admitted through the bounded numeric
+/// path under A: the least admitting A is found by search, one less denies
+/// at A with `limit` cause AdmissionWorkUnits, and a starved B stops on the
+/// value with the supplied.numeric_magnitude_bits cause.
 #[test]
-fn a_numeric_domain_collection_is_the_typed_stop_and_never_admits_unbudgeted() {
+fn a_numeric_collection_is_admitted_under_a_and_bounded_by_b() {
     let package = package();
-    for count in [0_usize, 8] {
-        let callable = package.graph().callable("digits").expect("declared");
-        let ValueType::Collection(declared) = &callable.parameters[0].1 else {
-            panic!("a collection parameter");
-        };
+    let callable = package.graph().callable("digits").expect("declared");
+    let ValueType::Collection(declared) = &callable.parameters[0].1 else {
+        panic!("a collection parameter");
+    };
+    let mut meter = Meter::new(UNLIMITED);
+    let Outcome::Completed(argument) = form(
+        declared,
+        vec![Value::Integer(Integer::from(3_i64)); 8],
+        &mut meter,
+    ) else {
+        panic!("the sequence forms");
+    };
+    let call = |limits: SuppliedLimits| {
         let mut meter = Meter::new(UNLIMITED);
-        let Outcome::Completed(argument) = form(
-            declared,
-            vec![Value::Integer(Integer::from(3_i64)); count],
-            &mut meter,
-        ) else {
-            panic!("the sequence forms");
-        };
-        let mut meter = Meter::new(UNLIMITED);
-        let mut run = SuppliedRun::new(SuppliedLimits::default(), Cancel::new()).expect("the run");
-        let result = package.call_supplied(
+        let mut run = SuppliedRun::new(limits, Cancel::new()).expect("the run");
+        package.call_supplied(
             &name("digits"),
-            vec![argument],
+            vec![argument.clone()],
             &ObjectEnvironment::default(),
             &mut meter,
             &mut run,
-        );
-        let Err(CallFailure::UnsupportedHelper(stop)) = result else {
-            panic!("an unsupported-helper stop, got {result:?}");
-        };
-        assert_eq!(stop.family, UnsupportedHelperFamily::NumericDomain);
-        assert_eq!(stop.context.phase, SuppliedPhase::Admission);
-        assert_eq!(stop.context.parameter, Some(0));
-        assert!(stop.context.locus.is_some(), "the stop names its locus");
-        assert_no_evaluation(&meter);
-    }
+        )
+    };
+    let least = (0..200_u64)
+        .find(|a| call(SuppliedLimits::default().with_admission_work_units(*a)).is_ok())
+        .expect("a small A admits it");
+    assert!(least > 8, "each element spends events: {least}");
+    let Err(CallFailure::Supplied(stop)) =
+        call(SuppliedLimits::default().with_admission_work_units(least - 1))
+    else {
+        panic!("one less than the least A denies");
+    };
+    let limit = stop.limit().expect("a limit");
+    assert_eq!(limit.limit_kind, SuppliedLimitKind::AdmissionWorkUnits);
+    assert_eq!(stop.context.consumed, least - 1);
+
+    // The endpoint 9 has 4 bits: the element type chain's charged
+    // type-comparison stops first, on the expected upper endpoint.
+    let Err(CallFailure::Supplied(stop)) =
+        call(SuppliedLimits::default().with_numeric_magnitude_bits(3))
+    else {
+        panic!("a starved B denies");
+    };
+    let limit = stop.limit().expect("a limit");
+    assert_eq!(limit.limit_kind, SuppliedLimitKind::NumericMagnitudeBits);
+    assert_eq!(limit.limit, 3);
+    assert_eq!(limit.next_charge, 4);
+    assert_eq!(
+        limit.operand.map(|operand| operand.as_str()),
+        Some("type-link-expected-upper")
+    );
+    assert_eq!(stop.context.event, Some(SuppliedEvent::TypeComparison));
+    assert_eq!(stop.context.consumed, 0);
+    assert!(
+        call(SuppliedLimits::default().with_numeric_magnitude_bits(4)).is_ok(),
+        "B = 4 admits every operand"
+    );
 }
