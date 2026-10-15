@@ -1392,10 +1392,11 @@ fn a_text_literal_and_none_are_refused_by_s2_as_unrepresented() {
     }
 }
 
-/// FR-360-AC-5: a `case` is a control form of the grammar
-/// (`case <ident> when <block> <control>`), not an expression. In expression
-/// position S1 refuses it as `invalid_syntax`, cause `UnexpectedToken`, at the
-/// `case` token, so no scrutinee check exists at this ref.
+/// FR-360-AC-5: the `case <ident> when <block> <control>` control form is not
+/// an expression. In expression position `case` opens FR-313's arm list
+/// (`case <scrutinee> { ... }`), so S1 refuses `when` where the `{` belongs as
+/// `invalid_syntax`, cause `UnexpectedToken`, and no scrutinee check exists at
+/// this ref.
 #[trace("TC-1007", "FR-360-AC-5")]
 #[test]
 fn a_case_in_expression_position_is_refused_by_s1_as_unexpected() {
@@ -1406,7 +1407,7 @@ fn a_case_in_expression_position_is_refused_by_s1_as_unexpected() {
     };
     assert_eq!(diagnostic.code, qsl_foundation::Code::InvalidSyntax);
     assert_eq!(diagnostic.cause, qsl_cst::CompleteCause::UnexpectedToken);
-    let at = source.find("case t when").expect("in source");
+    let at = source.find("when").expect("in source");
     let region = diagnostic.region.as_ref().expect("a region");
     let at = u64::try_from(at).unwrap();
     assert_eq!((region.start(), region.end()), (at, at + 4));

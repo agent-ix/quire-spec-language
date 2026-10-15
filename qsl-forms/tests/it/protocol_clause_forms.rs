@@ -122,6 +122,7 @@ fn operation_body(form: &DeclarationForm) -> &OperationBodyForm {
         | DeclarationForm::Tuple(_)
         | DeclarationForm::Enum(_)
         | DeclarationForm::Dimension(_)
+        | DeclarationForm::Union(_)
         | DeclarationForm::Unit(_)
         | DeclarationForm::StateClause(_)
         | DeclarationForm::Protocol(_) => panic!("an operation body form, not {form:?}"),

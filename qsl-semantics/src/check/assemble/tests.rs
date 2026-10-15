@@ -2287,3 +2287,38 @@ fn relaxing_a_widening_leaves_a_sibling_redefinition_alone() {
         "the sibling keeps its own type"
     );
 }
+
+/// S2 builds `union` declarations and `case` expressions (FR-313); no
+/// registry or case checker exists before FR-316/FR-318, so each is refused
+/// by name instead of being dropped.
+#[trace("FR-313-AC-1", "FR-313-AC-2", "TC-815")]
+#[test]
+fn union_declarations_and_case_expressions_refuse_until_they_are_checked() {
+    let (text, found) = errors("union Shape { Empty, Circle(Integer), }");
+    assert_eq!(
+        found,
+        [AssemblyError {
+            cause: AssemblyCause::UnsupportedUnion {
+                name: "Shape".into()
+            },
+            span: last(&text, "Shape"),
+        }]
+    );
+    assert_eq!(
+        found[0].cause.catalog_code().to_string(),
+        "unknown_required_feature/unsupported-feature"
+    );
+
+    let (_, assembled) =
+        assemble("function f using v(x: Int[0, 9]): Int[0, 9] pure { case x { A: 0; } }");
+    let refusals = assembled
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .expect_err("check refuses the case");
+    assert!(
+        refusals
+            .iter()
+            .any(|refusal| matches!(refusal.cause, CheckCause::UnsupportedFeature { .. })),
+        "{refusals:?}"
+    );
+}

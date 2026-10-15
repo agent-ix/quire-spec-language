@@ -334,6 +334,13 @@ pub enum AssemblyCause {
         /// The record's IR node identity.
         node: String,
     },
+    /// A `union` declaration (FR-313): S2 builds the form, but no union
+    /// registry exists until FR-316, so assembly refuses it rather than drop
+    /// it from the package.
+    UnsupportedUnion {
+        /// The union's declared name.
+        name: String,
+    },
     /// A `pre` or `post` state clause's operation names no operation of its
     /// context type's effective view (FR-104, FR-103).
     UnresolvedOperation {
@@ -393,9 +400,9 @@ impl AssemblyCause {
             // FR-091-OQ-12: STD-112 has not published the topology causes.
             Self::UnitGraphTopology { .. } => Code::InvalidPackage,
             Self::IllFormedBounds(_) | Self::ImportedTypeName { .. } => Code::IllTyped,
-            Self::FloatingType { .. } | Self::UnsupportedModelMember { .. } => {
-                Code::UnknownRequiredFeature
-            }
+            Self::FloatingType { .. }
+            | Self::UnsupportedModelMember { .. }
+            | Self::UnsupportedUnion { .. } => Code::UnknownRequiredFeature,
             Self::AliasCycle { .. } => Code::InvalidPackage,
             Self::InvalidTypeDeclaration(invalid) => match &invalid.cause {
                 DeclarationCause::DuplicateMember(_) => Code::AmbiguousDeclaration,
@@ -467,9 +474,9 @@ impl AssemblyCause {
             Self::UnitGraphTopology { .. } => "unit-graph-topology",
             Self::IllFormedBounds(_) => "type-mismatch",
             Self::ImportedTypeName { .. } => "operator-ineligible",
-            Self::FloatingType { .. } | Self::UnsupportedModelMember { .. } => {
-                "unsupported-feature"
-            }
+            Self::FloatingType { .. }
+            | Self::UnsupportedModelMember { .. }
+            | Self::UnsupportedUnion { .. } => "unsupported-feature",
             Self::AliasCycle { .. } => "definition-cycle",
             Self::UndeclaredAlias { .. }
             | Self::UnadmittedModel { .. }
@@ -588,6 +595,9 @@ struct Unit {
     /// Each `protocol` declaration's form, in source order, for FR-113's
     /// `check::protocol_clause` checker to resolve at S3.
     protocols: Vec<qsl_forms::ProtocolDeclarationForm>,
+    /// Each `union` declaration's form; assembly refuses them until FR-316
+    /// registers unions.
+    unions: Vec<qsl_forms::UnionForm>,
 }
 
 impl Unit {
@@ -603,6 +613,7 @@ impl Unit {
             state_clauses: Vec::new(),
             operation_bodies: Vec::new(),
             protocols: Vec::new(),
+            unions: Vec::new(),
         };
         for form in forms {
             match form.into_form() {
@@ -634,6 +645,7 @@ impl Unit {
                 DeclarationForm::StateClause(clause) => unit.state_clauses.push(*clause),
                 DeclarationForm::OperationBody(body) => unit.operation_bodies.push(*body),
                 DeclarationForm::Protocol(protocol) => unit.protocols.push(protocol),
+                DeclarationForm::Union(union) => unit.unions.push(union),
             }
         }
         unit
@@ -2050,6 +2062,12 @@ impl PackageDeclarations {
         let (selections, forms) = unit.into_parts();
         let unit = Unit::new(forms);
         let mut errors = Vec::new();
+        errors.extend(unit.unions.iter().map(|union| AssemblyError {
+            cause: AssemblyCause::UnsupportedUnion {
+                name: union.name.name.clone(),
+            },
+            span: union.name.span,
+        }));
         let owner = SourceOwner::from(&source);
         // The models and the one meter their admission counted on; checking
         // continues that meter into the conformance stage.
