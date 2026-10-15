@@ -62,7 +62,7 @@ In `forms::protocol_clause` (crate `qsl-forms`):
   Option<{invariant, variant}>, guard, body, exhausted: Option<control>}`.
 - `AwaitForm`, `CompensationForm`, `TerminalForm::{When(block), Any}` and
   `SchedulingForm::Adversarial`, each with its spans.
-- `ExpressionForm::ProtocolReference{target: QualifiedName, span}`, the form
+- `ExprNode::ProtocolReference{target}` (the span is the expression's own span in the S2 span tree), the form
   of a protocol reference expression (Protocol reference expression).
 
 ## Behavior
@@ -99,7 +99,7 @@ In `forms::protocol_clause` (crate `qsl-forms`):
   node the protocol clause carries; FR-218). Its value is the value of the
   target protocol clause: a pure reference that denotes the clause it names
   and is evaluated exactly as that clause is.
-- S2 SHALL build one `ExpressionForm::ProtocolReference` per occurrence in
+- S2 SHALL build one `ExprNode::ProtocolReference` per occurrence in
   source order, with the written target and the span of the whole
   expression, and SHALL resolve nothing. A target that is not a
   `qualified-name` is a parse refusal, not an S2 form.
@@ -115,7 +115,7 @@ In `forms::protocol_clause` (crate `qsl-forms`):
 | FR-308-AC-3 | `repeat R by r visible() invariant {…} variant {…} while {…} …` builds a `RepeatForm` with no maximum, both loop-proof blocks and no `exhausted` control; `repeat R by r visible() max 3 while {…} … exhausted …` builds maximum 3, no loop proof and an `exhausted` control. | Test (TC-887) |
 | FR-308-AC-4 | A protocol with `terminal when {k.v = 3};`, then `terminal any;`, then `scheduling adversarial;` builds three members in that order with their spans; a protocol that names an identifier `fork` outside a step-row position builds it as an identifier. | Test (TC-887) |
 | FR-308-AC-5 | A protocol whose CST holds a recovery node refuses `FormsCause::RecoveringCst` with no form. Building the same declaration twice gives equal forms. | Test (TC-887) |
-| FR-308-AC-6 | `protocol Fill` written as an expression builds one `ExpressionForm::ProtocolReference` with target `Fill` and the span of the two tokens; `protocol M::Fill` builds the target `M::Fill`; two references in one unit build two forms in source order. A unit that holds a `protocol-clause` declaration and a reference builds both and the declaration parses as before. | Test (TC-1021) |
+| FR-308-AC-6 | `protocol Fill` written as an expression builds one `ExprNode::ProtocolReference` with target `Fill` and the span of the two tokens; `protocol M::Fill` builds the target `M::Fill`; two references in one unit build two forms in source order. A unit that holds a `protocol-clause` declaration and a reference builds both and the declaration parses as before. | Test (TC-1021) |
 
 ## Dependencies
 

@@ -143,15 +143,15 @@ one protocol declared in the same unit. It carries no package selector.
   key, and produce no package (FR-092), as the IR reader and QSpec
   FR-322-AC-66 refuse a target key absent from the graph. A stale key is
   never repaired by looking the name up again.
-- A package holds one reference per target protocol. The carrier key
+- A package holds one reference node per target protocol. The carrier key
   (`quire.structural-node/v1`) is derived from the tag, form, semantic type
   and body and not from occurrences, and the body is exactly
   `{term: "reference", target}`, so two references to one target share one
-  key and one node, while the IR reader admits exactly one `expression`
-  occurrence per carrier (FR-092). Allowing repeated references is a
-  contract change owned by Contract IR. A second reference to the same target in
-  the same unit SHALL refuse with `unsupported_construct`/`expression-form`
-  at the second reference, naming the first.
+  key and one node. A repeated reference to the same target in the same unit
+  is admitted: it adds one `expression` occurrence, in source order, to the
+  existing node (FR-092), and leaves the node's key, body and
+  `dependencies` unchanged; the occurrences enter neither the node key nor the
+  package identity.
 
 ## Acceptance Criteria
 
@@ -164,7 +164,7 @@ one protocol declared in the same unit. It carries no package selector.
 | FR-218-AC-5 | A `repeat` whose body is one attempt checks with a maximum, with an invariant and variant and no maximum, with both, and with neither, and the checked clause records the maximum, invariant and variant each has. A `repeat` whose body is only a `check` refuses `unsupported_construct`/`declaration-form` at the `repeat`, naming it, and so does a `repeat` whose body is a `choice` with one attempt in one case and an empty `sequence` in the other. | Test (TC-663) |
 | FR-218-AC-6 | A protocol whose `send Tx` on channel `ch` follows `receive Rx` on the same thread, while `Rx` receives only from `Tx`, refuses `invalid_package`/`definition-cycle` naming `Tx` and `Rx`; with `Tx` on one branch and `Rx` on another, the protocol checks. | Test (TC-663) |
 | FR-218-AC-7 | A `repeat` whose body is a `choice` with an attempt in one case and a nested `repeat` around an attempt in the other refuses `unsupported_construct`/`declaration-form` at the outer `repeat`, because the nested `repeat`'s skip edge closes a cycle with no step; a `repeat` whose body is one `await` with a `timeout` control, or one `parallel` with a `join`, checks. | Test (TC-663) |
-| FR-218-AC-8 | In a unit that declares `protocol Fill`, `protocol Fill` as an expression checks to a reference bound to `Fill`'s node key, typed with `Fill`'s semantic type. `protocol Missing` refuses `missing_declaration`/`missing-name` at the reference naming `Missing`; the same name offered only through an import alias refuses the same way; a name that resolves to a function refuses `ill_typed`/`operator-ineligible`. A second `protocol Fill` refuses `unsupported_construct`/`expression-form` at the second reference, naming the first. Each refusal produces no package. | Test (TC-1021) |
+| FR-218-AC-8 | In a unit that declares `protocol Fill`, `protocol Fill` as an expression checks to a reference bound to `Fill`'s node key, typed with `Fill`'s semantic type. `protocol Missing` refuses `missing_declaration`/`missing-name` at the reference naming `Missing`; the same name offered only through an import alias refuses the same way; a name that resolves to a function refuses `ill_typed`/`operator-ineligible`. A second `protocol Fill` checks to a second reference bound to the same node key. A reference to a protocol requires a selected protocol profile (FR-092-AC-18): with none it refuses `missing_declaration`/`missing-selection`, and with one selected a reference to a protocol whose `run` root names no `profile_operator` refuses `unsupported_construct`/`declaration-form` at the reference. Each refusal produces no package. | Test (TC-1021) |
 | FR-218-AC-9 | A checked graph whose reference is bound to a key that no node of the graph carries, because the target protocol was re-keyed after binding, refuses `missing_declaration`/`missing-name` at the reference, naming the bound key, with no package and no name lookup. | Test (TC-1021) |
 
 ## Dependencies

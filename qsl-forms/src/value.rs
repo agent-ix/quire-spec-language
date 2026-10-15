@@ -610,6 +610,8 @@ enum Shape {
     /// `reaches(a, b, edge)` (FR-102, ADR-012 §15.2, `StateModel`): the
     /// edge member name and its span.
     Reaches(String, Span),
+    /// `protocol <qualified-name>` (FR-308): the written target.
+    ProtocolReference(String),
 }
 
 /// The built subexpressions of one node, consumed in order.
@@ -836,6 +838,10 @@ impl Shape {
                     edge,
                     edge_span,
                 }
+            }
+            Self::ProtocolReference(target) => {
+                arity(0)?;
+                ExprNode::ProtocolReference { target }
             }
         };
         Some(node)
@@ -1321,6 +1327,11 @@ impl<'c> Mapping<'c> {
             b"null" | b"none" => Err(unrepresented(Production::Primary, node.span())),
             b"self" => self.leaf(Shape::SelfRef, &task),
             b"result" => self.leaf(Shape::Result, &task),
+            b"protocol" => {
+                let target = only(items, Production::QualifiedName, node)?;
+                let target = spelled(self.cst, target)?;
+                self.leaf(Shape::ProtocolReference(target), &task)
+            }
             b"present" => self.with_children(Shape::Present, &task, one(&operands)?),
             b"value" => self.with_children(Shape::Value, &task, one(&operands)?),
             b"deref" => self.with_children(Shape::Deref, &task, one(&operands)?),

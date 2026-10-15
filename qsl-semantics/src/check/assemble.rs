@@ -1489,7 +1489,8 @@ fn expression_type_forms<'e>(roots: impl IntoIterator<Item = &'e Expression>) ->
                 | ExprNode::Pre(_)
                 | ExprNode::SelfRef
                 | ExprNode::Result
-                | ExprNode::Reaches { .. } => {}
+                | ExprNode::Reaches { .. }
+                | ExprNode::ProtocolReference { .. } => {}
                 // Not the S2 seam (`Typer::infer_form`'s own doc,
                 // `qsl-semantics/src/check/check/typing.rs`): an
                 // unconditional probe arm so this match keeps compiling
@@ -2661,6 +2662,22 @@ impl PackageDeclarations {
         package.state_clauses = state_clauses;
         package.operation_bodies = operation_bodies;
         package.selected_views = selected_views;
+        // FR-092: a protocol's node is declared at the protocol's name.
+        declared_type_spans.extend(unit.protocols.iter().map(|protocol| {
+            (
+                super::lowering::declaration_origin(&protocol.name.name),
+                protocol.name.span,
+            )
+        }));
+        // FR-110: the header profile that selects the protocol clause family's
+        // profile is the package's `protocol_profile` (ADR-011 §2.4).
+        if let Some(definition) = selections
+            .profiles
+            .iter()
+            .find_map(|profile| super::profile::protocol_profile(&profile.identity))
+        {
+            package.lock_evidence = package.lock_evidence.with_protocol_profile(definition);
+        }
         package.protocols = unit.protocols;
         package.protocol_attempts = protocol_attempts;
         package.declared_type_spans = declared_type_spans;

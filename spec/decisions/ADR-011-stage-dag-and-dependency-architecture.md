@@ -712,7 +712,7 @@ its own repository, agent-ix/quire-driver.
 
 The "Depends on" column is an exhaustive allow-list. A module may depend on a
 listed lower layer, or on a module earlier in its own layer's order. Every
-other edge is forbidden. The result is acyclic. #226 owns the drift gate that
+other edge is forbidden. The column is the exhaustive allow-list of first-party layer edges; an external third-party crate is not a layer edge and this column does not govern it (for example, `quire-driver` uses `serde_json` to read FR-331 manifest bytes as data, ADR-013 T-7), except that a cell that restricts its external crates with "only" or "without `std`" (SV, WG) is exhaustive for that crate; a per-crate exact dependency table in a layering test is a stricter gate that governs where it exists. The result is acyclic. #226 owns the drift gate that
 enforces it; before #226, §3's interim rule applies.
 
 | Layer | Modules, in order | Stage | Depends on |
@@ -742,7 +742,8 @@ each their own workspace crate (§7.2). K is `quire-exact` (X-1), SV is
 `quire-semantic-value` (X-11), W is `quire-walk`, an external crate in its own repository, `agent-ix/quire-walk`, and WG is `qsl-walk-grow`
 (ADR-030 FR-356). A layer
 crate's `[dependencies]` name only the layer crates and the external crates in
-its "Depends on" cell above.
+its "Depends on" cell above, plus external third-party crates that §6.1 says are not layer
+edges.
 
 | Crate | Layer |
 |---|---|
