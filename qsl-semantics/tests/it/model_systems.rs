@@ -894,7 +894,7 @@ fn y05_a_narrowed_end_multiplicity_refuses_and_exposes_no_connection() {
     let domain_package = fixture_y(|records| {
         find_relationship(records, "model.Sys.pipe")
             .target
-            .multiplicity = mult(0, Some(2));
+            .multiplicity = Some(mult(0, Some(2)));
     });
     let mut meter = unlimited_meter();
     let classification = classify(&domain_package, &mut meter).expect("classify admitted");
@@ -1334,7 +1334,7 @@ fn tc_234_a_connection_reports_every_failing_condition() {
         find_endpoint(records, "model.Sys.pump.out").direction = Some(PortDirection::In);
         find_relationship(records, "model.Sys.pipe")
             .source
-            .multiplicity = mult(0, Some(2));
+            .multiplicity = Some(mult(0, Some(2)));
     });
     let mut meter = unlimited_meter();
     let classification = classify(&domain_package, &mut meter).expect("classify admitted");

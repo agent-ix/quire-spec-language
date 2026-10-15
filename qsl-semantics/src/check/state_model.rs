@@ -123,10 +123,7 @@ pub(crate) fn fault(location: &Location) -> CheckRefusal {
 /// FR-363: the `Navigate` node `r.name` over `end` checks to, and its static
 /// type, which the destination end's multiplicity gives. The direction is
 /// decided before the multiplicity.
-fn navigation(
-    end: &Navigable<'_>,
-    reference: NodeId,
-) -> Result<(NodeKind, ValueType), CheckCause> {
+fn navigation(end: &Navigable<'_>, reference: NodeId) -> Result<(NodeKind, ValueType), CheckCause> {
     if !end.direction_admitted() {
         return Err(CheckCause::IllTyped(IllTypedCause::OperatorIneligible));
     }

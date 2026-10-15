@@ -156,9 +156,15 @@ fn a_resolved_end_retains_its_declared_role_and_multiplicity() {
         );
     };
     assert_eq!(relationship.source.role.as_deref(), Some("placed-by"));
-    assert_eq!(relationship.source.multiplicity, Some(multiplicity(1, Some(1))));
+    assert_eq!(
+        relationship.source.multiplicity,
+        Some(multiplicity(1, Some(1)))
+    );
     assert_eq!(relationship.target.role, None);
-    assert_eq!(relationship.target.multiplicity, Some(multiplicity(0, None)));
+    assert_eq!(
+        relationship.target.multiplicity,
+        Some(multiplicity(0, None))
+    );
     assert_eq!(
         relationship.direction,
         RelationshipDirection::SourceToTarget

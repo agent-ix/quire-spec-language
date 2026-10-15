@@ -13,8 +13,8 @@ use std::sync::Arc;
 
 use super::causes::{
     identity_string, ModelQueryRefusal, NavigateUnsupported, PreconditionFailure,
-    ProtocolClauseSnapshot, ProtocolClauseUnsupported, ProtocolReferenceUnsupported, ReferenceUnresolved,
-    StateModelUndefined,
+    ProtocolClauseSnapshot, ProtocolClauseUnsupported, ProtocolReferenceUnsupported,
+    ReferenceUnresolved, StateModelUndefined,
 };
 use super::s6a::separation::{
     locatable, occurrence_at, Provenance, Separation, SeparationStep, StopReport, Trail,

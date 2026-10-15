@@ -228,9 +228,9 @@ pub use protocol_clause::{CheckedAttempt, CheckedProtocol, ProtocolNodeId};
 pub use refusal::{
     AliasKind, AmbiguousMember, CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage,
     DispatchFunctionRole, DispatchLinkCause, DispatchSubtypeFailure, InvalidDispatchDeclaration,
-    KeyFault, MeasureObligation, MemberCandidate, NavigationBound, Obligation,
-    ProtocolAnchorCause, ProtocolReferenceCause, ProvedInterval, ShadowedDeclaration,
-    StageLimitCause, WrongSnapshotCause,
+    KeyFault, MeasureObligation, MemberCandidate, NavigationBound, Obligation, ProtocolAnchorCause,
+    ProtocolReferenceCause, ProvedInterval, ShadowedDeclaration, StageLimitCause,
+    WrongSnapshotCause,
 };
 
 /// A checked function.

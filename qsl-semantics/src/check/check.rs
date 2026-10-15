@@ -50,11 +50,11 @@ use std::sync::Arc;
 
 mod typing;
 
-use super::navigation::Relationships;
 use super::ir::{
     Arithmetic, BodyBuilder, CheckedLiteral, Connective, DispatchTable, Node, NodeId, NodeKind,
     OrderedKind, RecordField, RecordSlot, Slot, Visit,
 };
+use super::navigation::Relationships;
 use super::refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, Obligation, StageLimitCause,
 };

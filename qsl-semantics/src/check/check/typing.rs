@@ -1544,7 +1544,9 @@ impl<'a> Typer<'a> {
             // state clause or a function body, is a `Navigate` node. The
             // `StateModel` hook decides which, and refuses a receiver that
             // is not a reference at its operand.
-            Frame::Field(field, location) if !matches!(typed.value_type, ValueType::Composite(_)) => {
+            Frame::Field(field, location)
+                if !matches!(typed.value_type, ValueType::Composite(_)) =>
+            {
                 let operand_location = location.child(0);
                 self.attribute(typed, field, &operand_location, &location, false)
                     .map(Step::Typed)

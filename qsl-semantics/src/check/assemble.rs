@@ -63,8 +63,8 @@ use std::sync::Arc;
 
 mod units;
 
-use super::CheckedGraph;
 use super::navigation::{EndDeclaration, RelationshipDeclaration, Relationships};
+use super::CheckedGraph;
 use crate::model::domain_package::{
     DomainPackage, DomainPackageRecord, FieldMemberRecord, Multiplicity, NativeValueType,
     OperationMemberRecord, RelationshipEnd, ScalarValueDomain, ValueTypeRef,

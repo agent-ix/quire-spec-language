@@ -13,8 +13,8 @@ use qsl_semantics::family::FamilyKind;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord, Multiplicity,
-    ObjectTypeRecord, RelationshipDirection, RelationshipEnd, RelationshipRecord,
-    ScalarTypeRecord, ScalarValueDomain, ValueTypeRef,
+    ObjectTypeRecord, RelationshipDirection, RelationshipEnd, RelationshipRecord, ScalarTypeRecord,
+    ScalarValueDomain, ValueTypeRef,
 };
 use qsl_semantics::model::intake::SelectedModels;
 use qsl_semantics::model::key::DeclarationKey;
@@ -326,7 +326,11 @@ fn navigations(graph: &CheckedGraph) -> Vec<(ValueType, DeclarationKey, String)>
         .filter_map(|node| match node.kind() {
             NodeKind::Navigate {
                 relationship, role, ..
-            } => Some((node.value_type().clone(), relationship.clone(), role.clone())),
+            } => Some((
+                node.value_type().clone(),
+                relationship.clone(),
+                role.clone(),
+            )),
             _ => None,
         })
         .collect()
@@ -669,7 +673,11 @@ fn n10_an_unbounded_ordered_or_undeclared_end_is_unsupported() {
         let CheckCause::StateModel(model) = &refusal.cause else {
             panic!("{name}: a StateModel refusal");
         };
-        assert_eq!(model.cause, CheckCause::UnsupportedNavigation(bound), "{name}");
+        assert_eq!(
+            model.cause,
+            CheckCause::UnsupportedNavigation(bound),
+            "{name}"
+        );
     }
 }
 
