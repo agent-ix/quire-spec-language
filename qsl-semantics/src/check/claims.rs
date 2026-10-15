@@ -375,6 +375,8 @@ fn scalar_equality(compared: &ValueType) -> bool {
         | ValueType::Decimal(_)
         | ValueType::Text(_)
         | ValueType::String
+        | ValueType::Uuid
+        | ValueType::Timestamp
         | ValueType::Enum(_)
         | ValueType::Quantity(_) => true,
         ValueType::Boolean
@@ -383,9 +385,7 @@ fn scalar_equality(compared: &ValueType) -> bool {
         | ValueType::Composite(_)
         | ValueType::Collection(_)
         | ValueType::Float(_)
-        | ValueType::Population(_)
-        | ValueType::Uuid
-        | ValueType::Timestamp => false,
+        | ValueType::Population(_) => false,
     }
 }
 

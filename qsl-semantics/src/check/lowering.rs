@@ -4082,6 +4082,11 @@ impl<'a> Lowering<'a> {
             ValueType::Enum(_) => "enum",
             ValueType::Quantity(_) => "quantity",
             ValueType::Reference(_) => "reference",
+            // FR-093 "Native scalar equality": no law, mode, member or
+            // leaves, and no text-profile selection.
+            ValueType::String => "string",
+            ValueType::Uuid => "uuid",
+            ValueType::Timestamp => "timestamp",
             ValueType::Option(_) | ValueType::Composite(_) | ValueType::Collection(_) => {
                 let leaves = self.leaves(LeafSource::Compared(compared), location)?;
                 return Ok(Operation {
@@ -4099,10 +4104,7 @@ impl<'a> Lowering<'a> {
             }
             // FR-153: a population is never an equality operand; the
             // checker refuses one before lowering.
-            ValueType::Population(_)
-            | ValueType::Uuid
-            | ValueType::String
-            | ValueType::Timestamp => {
+            ValueType::Population(_) => {
                 return Err(refuse(
                     location,
                     CheckCause::IllTyped(quire_exact::IllTypedCause::OperatorIneligible),

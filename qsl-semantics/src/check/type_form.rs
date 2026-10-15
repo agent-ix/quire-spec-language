@@ -177,16 +177,31 @@ fn malformed(form: &TypeForm) -> TypeFormError {
     fault(form, TypeFormFault::Malformed)
 }
 
+/// The native value type a spelling names (FR-091): `String`, `UUID` and
+/// `Timestamp` are unreserved names, so the native type is one candidate
+/// beside the declared forms of the same name.
+pub(crate) fn native_scalar_named(name: &str) -> Option<ValueType> {
+    match name {
+        "String" => Some(ValueType::String),
+        "UUID" => Some(ValueType::Uuid),
+        "Timestamp" => Some(ValueType::Timestamp),
+        _ => None,
+    }
+}
+
 /// Resolve a qualified type name against `names`: an alias, a record or
-/// tuple, an enum, or a model object type.
+/// tuple, an enum, a model object type, or one of the native scalar
+/// spellings. A name that binds more than one of these is ambiguous.
 fn named_type(
     names: &impl TypeNames,
     name: &str,
     form: &TypeForm,
 ) -> Result<ValueType, TypeFormError> {
-    match names.named_types(name) {
-        [] => Err(fault(form, TypeFormFault::MissingName(name.to_owned()))),
-        [value_type] => Ok(value_type.clone()),
+    let native = native_scalar_named(name);
+    match (names.named_types(name), native) {
+        ([], None) => Err(fault(form, TypeFormFault::MissingName(name.to_owned()))),
+        ([], Some(native)) => Ok(native),
+        ([value_type], None) => Ok(value_type.clone()),
         _ => Err(fault(form, TypeFormFault::AmbiguousName(name.to_owned()))),
     }
 }

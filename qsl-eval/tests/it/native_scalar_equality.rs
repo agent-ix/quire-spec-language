@@ -31,17 +31,17 @@ const UNLIMITED: ScalarLimits = ScalarLimits {
 };
 
 const FUNCTIONS: &str = "\
-    record Event { id: UUID; at: Timestamp; label: String; }\n\
+    record Event { id: UUID; moment: Timestamp; label: String; }\n\
     function eqs using v(a: String, b: String): Boolean pure { a = b }\n\
     function nes using v(a: String, b: String): Boolean pure { a != b }\n\
     function equ using v(a: UUID, b: UUID): Boolean pure { a = b }\n\
     function neu using v(a: UUID, b: UUID): Boolean pure { a != b }\n\
     function eqt using v(a: Timestamp, b: Timestamp): Boolean pure { a = b }\n\
     function net using v(a: Timestamp, b: Timestamp): Boolean pure { a != b }\n\
-    function ft using v(x: Event, y: Event): Boolean pure { x.at = y.at }\n\
+    function ft using v(x: Event, y: Event): Boolean pure { x.moment = y.moment }\n\
     function fu using v(x: Event, y: Event): Boolean pure { x.id != y.id }\n\
     function fs using v(x: Event, y: Event): Boolean pure { x.label = y.label }\n\
-    function stamp using v(e: Event): Timestamp pure { e.at }\n\
+    function stamp using v(e: Event): Timestamp pure { e.moment }\n\
     function fc using v(x: Event, y: Event): Boolean pure { stamp(x) = stamp(y) }\n\
     function fl using v(x: Event, y: Event): Boolean pure { let p = x.id in let q = y.id in p = q }\n";
 
@@ -190,7 +190,7 @@ fn event(fixture: &Fixture, id: &str, at: &str, label: &str) -> Value {
             key,
             vec![
                 ("id", FieldValue::Present(uuid(id))),
-                ("at", FieldValue::Present(timestamp(at))),
+                ("moment", FieldValue::Present(timestamp(at))),
                 ("label", FieldValue::Present(string(label))),
             ],
         )

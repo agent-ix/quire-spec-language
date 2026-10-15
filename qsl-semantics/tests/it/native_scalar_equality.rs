@@ -60,7 +60,7 @@ fn preimages(graph: &CheckedGraph) -> Vec<Value> {
         .collect()
 }
 
-const EVENT: &str = "record Event { id: UUID; at: Timestamp; label: String; }\n";
+const EVENT: &str = "record Event { id: UUID; moment: Timestamp; label: String; }\n";
 
 /// The single refusal of `declarations`, located in the body of `function`
 /// at its root expression (the comparison).
@@ -232,17 +232,17 @@ fn a_uuid_against_a_reference_refuses_type_mismatch() {
 fn field_call_result_and_let_operands_compare_and_a_mixed_pair_refuses() {
     let declarations = format!(
         "{EVENT}\
-         function ft using v(x: Event, y: Event): Boolean pure {{ x.at = y.at }}\n\
+         function ft using v(x: Event, y: Event): Boolean pure {{ x.moment = y.moment }}\n\
          function fu using v(x: Event, y: Event): Boolean pure {{ x.id != y.id }}\n\
          function fs using v(x: Event, y: Event): Boolean pure {{ x.label = y.label }}\n\
-         function stamp using v(e: Event): Timestamp pure {{ e.at }}\n\
+         function stamp using v(e: Event): Timestamp pure {{ e.moment }}\n\
          function fc using v(x: Event, y: Event): Boolean pure {{ stamp(x) = stamp(y) }}\n\
          function fl using v(x: Event, y: Event): Boolean pure {{ let p = x.id in let q = y.id in p = q }}"
     );
     check(&declarations).expect("F1 to F6 check");
     refused_at_comparison(
         &format!(
-            "{EVENT}function fm using v(x: Event, y: Event): Boolean pure {{ x.at = y.id }}"
+            "{EVENT}function fm using v(x: Event, y: Event): Boolean pure {{ x.moment = y.id }}"
         ),
         "fm",
         IllTypedCause::TypeMismatch,

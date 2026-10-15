@@ -634,6 +634,14 @@ pub(crate) fn argument_value(
             Value::String(value) => Ok(Value::String(value)),
             _ => Err(wrong()),
         },
+        ValueType::Uuid => match value {
+            Value::Uuid(value) => Ok(Value::Uuid(value)),
+            _ => Err(wrong()),
+        },
+        ValueType::Timestamp => match value {
+            Value::Timestamp(value) => Ok(Value::Timestamp(value)),
+            _ => Err(wrong()),
+        },
         ValueType::Reference(_) => match value {
             Value::Reference(value) => Ok(Value::Reference(value)),
             _ => Err(wrong()),
@@ -650,9 +658,7 @@ pub(crate) fn argument_value(
         | ValueType::Enum(_)
         | ValueType::Option(_)
         | ValueType::Composite(_)
-        | ValueType::Collection(_)
-        | ValueType::Uuid
-        | ValueType::Timestamp => Err(wrong()),
+        | ValueType::Collection(_) => Err(wrong()),
     }
 }
 
