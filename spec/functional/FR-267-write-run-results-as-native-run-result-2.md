@@ -142,7 +142,8 @@ changed population's declaration identity. Each of `invocation`, `pre`
 and `post` is an FR-106 `DocumentRef`, encoded as a closed object with
 the four FR-001 labels `authority`, `identity`, `revision_namespace` and
 `revision`, and its `sha256-jcs` `digest`. A declaration key in `change`
-is a closed `{package, node}` object. The reader reconstructs the FR-115
+is a closed `{package, node}` object. For a `link` change the top-level
+`population` is the population of `source`. The reader reconstructs the FR-115
 value from these members; no document bytes, path or caller-supplied
 permission is inferred from the witness.
 
@@ -154,8 +155,9 @@ permission is inferred from the witness.
 | `created` | `object` (key), `type_name` (most-specific declaration key), `creates` (ordered array of declaration keys) | FR-115's checked `creates` |
 | `deleted` | `object` (key), `type_name` (most-specific declaration key), `deletes` (ordered array of declaration keys) | FR-115's checked `deletes` |
 | `retyped` | `object` (key), `pre_type` and `post_type` (most-specific declaration keys) | No frame permission authorizes retype |
+| `link` | `relationship` (declaration key), `difference` (`added` or `removed`), `source` and `target` (each a closed object with exactly `population`, the population's declaration identity, and `key`, the object key), `modifies` (ordered array of declaration keys) | FR-115's checked `modifies` |
 
-The reader SHALL reject an unknown `kind`, an absent required member, an
+The reader SHALL reject an unknown `kind` or `difference`, an absent required member, an
 extra member, `null` in place of a member, or a declaration key that is
 not the declared `{package, node}` form.
 
@@ -304,6 +306,7 @@ condition is false; the reader refuses `null` or a default in its place.
 | FR-267-AC-9 | The same QSL strict reader returns the clause-run variant for AC-1's document and the command-error variant for AC-3's envelope. CG consumes both typed variants without its own JSON parser and retains AC-3's envelope as non-success with no campaign qualification, measured coverage classification or coverage discharge, including when the binding receipt authenticates and matches. | Test |
 | FR-267-AC-10 | Independently removing a required command-error member, adding a clause-run-only member, replacing the unavailable basis with a decisive basis, adding a witness, or violating FR-100's code-specific cause/details rules makes the strict reader refuse with a located diagnostic. Changing an otherwise valid command-error envelope to `/1` or another unsupported format refuses before variant selection. | Test |
 | FR-267-AC-11 | FR-115's forbidden-parent-change Frame report writes `disposition.refusal.frame_witness` with its invocation, pre, post, population and `field_write` change naming `child`, `parent` and the checked `modifies` grant; reading the `/2` document restores an equal FR-115 `FrameWitness`. A creation, deletion and retype each round-trip their tagged change. The document has `violation`, `truth: false`, `basis: closed-scope`, no `disposition.outcome` and no top-level `witness`. Independently dropping a frame-witness member or change member, adding an unknown member, mismatching its code or cause with the enclosing refusal, or adding `frame_witness` to a non-Frame disposition refuses with a located wire diagnostic. | Test |
+| FR-267-AC-12 | FR-115's link Frame report (TC-1037's invocation I under a frame that modifies no relationship) writes `frame_witness` with a `link` change naming `relationship`, `difference`, `source`, `target` and the checked `modifies`; reading the `/2` document restores an equal FR-115 `FrameWitness`, for `added` and for `removed`. Independently dropping each `link` member or a `source` or `target` member, adding an unknown member, setting `difference` to another value or `null`, and giving an end a bare key refuse with a located wire diagnostic. | Test (TC-1037) |
 
 ## Dependencies
 

@@ -585,7 +585,8 @@ required; check 10 settles it.
        instance, naming the relationship, the instance and whether it was
        `added` or `removed`. Relationships are walked in ascending
        `DeclarationKey` order and instances in ascending order of source then
-       target reference key. An instance with an end at an object the
+       target reference key. A `Frame` run (FR-115) reports the refusal as the
+       evaluated `Link` change of its frame witness. An instance with an end at an object the
        invocation's `deleted` lists is left out, because a deleted object's
        links go with it as its fields do. An instance with an end at a
        created object is an added instance and needs the grant: unlike a

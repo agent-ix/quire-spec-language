@@ -15,6 +15,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-114
     type: traces_to
+  - target: ix://agent-ix/quire-spec-language/FR-364
+    type: references
   - target: ix://agent-ix/quire-specification/FR-013
     type: depends_on
 ---
@@ -26,8 +28,8 @@ Each operation frame records one `operation-contract` requirement (FR-104,
 FR-114). FR-109's `qsl_replay::spine::run_clause` SHALL run that frame on
 its own: a `Frame` selection names the operation, the entry admits the
 supplied invocation, and the `ProtocolClause` S6a `evaluate` arm checks the
-invocation against the operation's frame. A write, creation or deletion
-outside it is a violation verdict that carries the evaluated frame witness,
+invocation against the operation's frame. A write, creation, deletion or
+relationship link change outside it is a violation verdict that carries the evaluated frame witness,
 the counterexample (ADR-012 §12.2 Evaluate row). The check is the one
 FR-106's step 11 runs (`enforce_frame` through `admit_invocation`, with the
 operation's `OperationEffect`); this requirement adds a way to select the
@@ -66,17 +68,31 @@ typed members:
 | `invocation` | FR-106 `DocumentRef` of the checked invocation |
 | `pre` | FR-106 `DocumentRef` of its pre snapshot |
 | `post` | FR-106 `DocumentRef` of its post snapshot |
-| `population` | Declaration identity of the changed population |
+| `population` | Declaration identity of the changed population; for a link change, the population of its source end |
 | `change` | One change variant below |
 
 `change` is exactly one of `FieldWrite { object, field, modifies }`,
 `Created { object, type_name, creates }`,
 `Deleted { object, type_name, deletes }`, or
-`Retyped { object, pre_type, post_type }`. `object` is the changed key;
+`Retyped { object, pre_type, post_type }`, or
+`Link { relationship, difference, source, target, modifies }`. `object` is the changed key;
 `field` is the declared field name; each type or permission entry is a
 `DeclarationKey` of the compiled package. `modifies`, `creates` and
 `deletes` retain their checked permission entries in declared order.
 `Retyped` has no authorizing permission.
+
+`Link` names one changed instance of a relationship (FR-364) that FR-106's
+check 11.5 refuses. `relationship` is the `DeclarationKey` of the
+relationship node, the key a `modifies` entry names (QSpec FR-340).
+`difference` is `added` when the instance occurs more often in the post
+extent than in the pre extent, and `removed` when it occurs less often.
+`source` and `target` are the instance's ends, each an object reference
+naming the declaration identity of its population and its object key, as an
+instance end of an FR-106 snapshot does. `modifies` retains the frame's
+checked `modifies` entries, field and relationship entries alike, in
+declared order; `creates` and `deletes` grant no link and are not retained.
+A link between two populations has no single changed population, so the
+witness's `population` is the one of its `source`.
 
 ## Behavior
 
@@ -99,13 +115,25 @@ typed members:
   `OperationEffect`, in check 11's order, and stop at the first finding.
 - If check 11 finds nothing, then the entry SHALL report stage `evaluate`,
   `success`, `truth: true`, exit 0.
-- If check 11's steps 1 to 3 find a change outside the frame, then the
-  entry SHALL report stage `evaluate`, `violation`, `truth: false`, exit 10,
+- If check 11's steps 1 to 3, or its step 5, find a change outside the
+  frame, then the entry SHALL report stage `evaluate`, `violation`, `truth: false`, exit 10,
   with the evaluated frame witness: the invocation, the pre and post
   selections, the object and the field (or the created or deleted object and
-  its type), and the frame permission it was checked against. The witness's
-  cause is the catalog's `frame_violation`/`unauthorized-change`, whose
+  its type; or, for step 5, the relationship, the changed instance and
+  whether it was added or removed), and the frame permission it was checked
+  against. The witness's cause is the catalog's `frame_violation`/`unauthorized-change`, whose
   payload it carries.
+- A step 5 finding SHALL be the `Link` change of the first changed instance in
+  step 5's order: relationships in ascending `DeclarationKey` order, then
+  instances in ascending source reference key, then ascending target
+  reference key (the reference-key order of FR-364's reads). An instance
+  whose count differs between the pre and post extent is named once, whatever
+  the difference in count. Step 5 runs once after every population's steps 1
+  to 4, so a step 1 to 4 finding in any population precedes a link finding,
+  and a step 4 refusal of any population is reported instead of it. Links
+  that step 5 leaves out (a link with an end at an object the invocation
+  `deleted` lists, a relationship not listed complete in both snapshots, a
+  relationship the frame's `modifies` names) produce no witness.
 - If check 11's step 4 finds a declared delta that disagrees, then the
   entry SHALL report stage `evaluate`, `refusal`, `population_delta_mismatch`/
   `delta-disagreement`, exit 20: the invocation's own inventory is
@@ -131,6 +159,9 @@ typed members:
 | FR-115-AC-5 | Running one `Frame` request twice gives equal reports, including usage. | Test |
 | FR-115-AC-6 | The entry resolves `M::T::op` once, to the object type's `DeclarationKey` in the package `M` selects and the operation's identifier, and selects by that resolution. Over a package where `Sub` specializes `ConfigVersion` and declares no operation, `Config::Sub::attemptUpdate` resolves to `Sub`'s key and selects `ConfigVersion`'s frame with `Sub` as context. In a unit selecting two packages that both declare `ConfigVersion`, as `Config` and `Copy`, each alias resolves `ConfigVersion` to its own package's key and selects that package's frame. | Test |
 | FR-115-AC-7 | The evaluated field write, creation, deletion and retype frame violations each carry exactly the FrameWitness members and the applicable change variant above, retaining the checked declaration keys and selected document references. | Test |
+| FR-115-AC-8 | Over TC-1035's `orders` unit selected as `Orders`, `Frame { operation: Orders::Pump::rehome, invocation: I }`, whose post moves `p1` from `t1` to `t2` in the complete `Pump-housing-Tank`, reports `evaluate`, `success`, `truth: true`, exit 0 when `rehome` modifies `Pump-housing-Tank`, and `evaluate`, `violation`, `truth: false`, exit 10 when its `modifies` is empty. The witness carries cause `frame_violation`/`unauthorized-change`, the three document references, population `Q`, and the `Link` change naming `Pump-housing-Tank`, `removed`, source `p1` and target `t1`, with `modifies` empty. A post adding `p3` with `p3`-`t1`, `created: [p3]` and a frame that creates `Pump` and does not modify the relationship reports the `Link` change naming `p3`-`t1` `added`. A frame that `modifies` only a field of `Pump` retains that entry in the witness's `modifies`. | Test (TC-1037) |
+| FR-115-AC-9 | With several changed links the witness names the first by step 5's order: a changed link of `Pump-housing-Tank` before one of `Sys-composition-Pump`; within one relationship the lower source before the higher whatever the difference, then the lower target, so a `removed` instance has no precedence over an `added` one. A step 1 to 3 finding in any population is reported instead of a link finding, and a step 4 disagreement is reported as `population_delta_mismatch`/`delta-disagreement`, exit 20, instead of a link violation. Running one request twice gives equal reports. | Test (TC-1037) |
+| FR-115-AC-10 | Step 5 reports no witness for a link an end of which is an object the invocation deletes under a frame that deletes its type, for a relationship listed complete in only one of the two snapshots or incomplete in either, or for a relationship the frame modifies; each reports `evaluate`, `success`, `truth: true`, exit 0. | Test (TC-1037) |
 
 ## Dependencies
 
@@ -143,4 +174,5 @@ typed members:
 
 ## References
 
-- TC-514 exercises the Frame selection and its typed witness.
+- TC-514 exercises the Frame selection and its typed witness; TC-1037
+  exercises the link change.
