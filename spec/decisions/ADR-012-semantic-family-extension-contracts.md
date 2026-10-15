@@ -1503,7 +1503,10 @@ Imported }` (`family.rs:739`). A bare qualified name reaches `Typer::name`
      (through `Application::resolve`, as today).
    - More than one candidate, for example two unions named `q` that both
      declare `m`: `q::m` refuses `ambiguous_declaration`/`ambiguous-name`,
-     naming every candidate.
+     naming every candidate. Two same-named types exist only on hand-built
+     scopes: a single source unit refuses a second declaration of the same
+     type name at the assembler, so only a union and an import alias both
+     named `q` reach this rule from source.
    - No candidate: `q::m` refuses exactly as an unresolved name does today.
 
    Every unqualified name resolves exactly as it does today.
@@ -1788,7 +1791,7 @@ to the named cases.
 | Class | Cases | Stage | Oracle |
 | --- | --- | --- | --- |
 | Positive | a union with nullary and payload members; a recursive union that escapes (`union Tree { Leaf, Node(Integer, Option<Tree>, Option<Tree>) }`, FR-143); construction of a nullary and of a payload member; `case` selecting each member of a two-member union; a nested `case` in an arm body; `case` inside a state clause body and inside a `decreases` measure, each under its clause kind (FR-065-AC-5 pattern) | S2 to S6a | the checked node, then `Completed` with the expected value |
-| Adverse, resolution | `q::m` where a union and an enum named `q` both declare `m`, and where two unions named `q` both declare `m`, each refusing `ambiguous_declaration`/`ambiguous-name` with every candidate named; `q::m` where a union named `q` declares `m` and an import alias `q` exports `m`, refusing the same way; and two unions named `q` where only one declares `m`, which resolves to that one | S3 | §16.2 precedence |
+| Adverse, resolution | on hand-built scopes only (a single source unit refuses a second declaration of the same type name at the assembler): `q::m` where a union and an enum named `q` both declare `m`, and where two unions named `q` both declare `m`, each refusing `ambiguous_declaration`/`ambiguous-name` with every candidate named; and two unions named `q` where only one declares `m`, which resolves to that one; as source: `q::m` where a union named `q` declares `m` and an import alias `q` exports `m`, refusing the same way | S3 | §16.2 precedence |
 | Adverse, exhaustiveness | one `case` per obligation (`duplicate-arm`, `unknown-member` naming a member of a second union, `arm-arity`, `missing-arm`); one `case` that violates two obligations at once (`duplicate-arm` and `missing-arm`), asserting only `duplicate-arm` is reported (FR-146 order); an `unknown-member` arm whose body is ill-typed, asserting only `unknown-member` (its body is not checked) | S3 | §16.5 rows, with payload and locus |
 | Refusal order | one `case` with an ill-typed body in a resolved arm and a missing arm, asserting only `ill_typed` at that body (typing first); a scrutinee that is not a union, followed by arms naming unknown members, asserting only the scrutinee's `ill_typed` (a scrutinee refusal ends the builder) | S3 | §16.5 "One refusal per `case`" |
 | Adverse, typing | a scrutinee of enum type and one of `Integer`; an arm body of the wrong type | S3 | `ill_typed`/`type-mismatch` |
