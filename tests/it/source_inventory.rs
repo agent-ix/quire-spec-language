@@ -9,9 +9,9 @@ use qsl_foundation::SourceIdentity;
 use qsl_semantics::check::{CheckedGraph, PackageDeclarations};
 use quire_contract_model as ir;
 use quire_contract_model::source_obligation::{
-    SourceDeclarationHandle, SourceInventoryIdentity, SourceInventoryIncompleteReason,
-    SourceInventoryOwner, SourceInventoryScope, SourcePendingObligationKind,
-    SourceTypeWorkDimension,
+    SourceDeclarationHandle, SourceInventoryCompleteness, SourceInventoryIdentity,
+    SourceInventoryIncompleteReason, SourceInventoryOwner, SourceInventoryScope,
+    SourcePendingObligationKind, SourceTypeWorkDimension,
 };
 use quire_semantic_value::checking::CheckingLimits;
 use quire_spec_language::checking::composed::{self, TypeLimits};
@@ -108,15 +108,18 @@ fn a_fully_traversed_source_reports_rows_and_no_stop_cause() {
         TypeLimits::default(),
         |binding, formal, types| {
             let unit = CheckedUnit::new(formal, &graph, types).expect("the labels match");
-            let envelope = qsl_inventory(&unit);
+            let envelope = qsl_inventory(&unit).expect("a consistent enumeration");
             assert_eq!(envelope.owner(), SourceInventoryOwner::Qsl);
             assert_eq!(
                 envelope.scope(),
                 SourceInventoryScope::QslCheckedRequirementsAndPendingObligations
             );
             assert_eq!(envelope.source(), &selected());
-            // No stop cause reported; this is not a completeness claim (waits on IR-794).
-            assert!(envelope.stop_reason().is_none());
+            assert_eq!(
+                envelope.completeness(),
+                &SourceInventoryCompleteness::Complete
+            );
+            assert_eq!(envelope.observed_count(), envelope.items().len());
             let positive = id(binding, "Positive");
             let totals = envelope
                 .items()
@@ -145,7 +148,7 @@ fn requirement_and_pending_sets_stay_separate_identity_kinds() {
         TypeLimits::default(),
         |_, formal, types| {
             let unit = CheckedUnit::new(formal, &graph, types).expect("the labels match");
-            let envelope = qsl_inventory(&unit);
+            let envelope = qsl_inventory(&unit).expect("a consistent enumeration");
             let requirements: Vec<_> = envelope
                 .items()
                 .iter()
@@ -207,12 +210,18 @@ fn exhausted_type_work_keeps_its_native_fields() {
         |binding, formal, types| {
             let native = types.exhaustion().expect("the budget is exhausted");
             let unit = CheckedUnit::new(formal, &graph, types).expect("the labels match");
-            let envelope = qsl_inventory(&unit);
-            let Some(SourceInventoryIncompleteReason::TypeWorkExhausted(reported)) =
-                envelope.stop_reason()
+            let envelope = qsl_inventory(&unit).expect("a consistent enumeration");
+            let SourceInventoryCompleteness::Incomplete(
+                SourceInventoryIncompleteReason::TypeWorkExhausted(reported),
+            ) = envelope.completeness()
             else {
-                panic!("exhaustion is not reported as {:?}", envelope.stop_reason());
+                panic!(
+                    "exhaustion is not reported as {:?}",
+                    envelope.completeness()
+                );
             };
+            assert_eq!(envelope.items().len(), envelope.observed_count());
+            assert!(envelope.items().len() >= graph.requirements().len());
             assert_eq!(reported.dimension, SourceTypeWorkDimension::Normalization);
             assert_eq!(
                 (reported.limit, reported.prior, reported.requested),
@@ -243,12 +252,14 @@ fn an_unfinished_declaration_is_distinct_from_exhaustion() {
         |binding, formal, types| {
             assert!(types.exhaustion().is_none());
             let unit = CheckedUnit::new(formal, &graph, types).expect("the labels match");
-            let envelope = qsl_inventory(&unit);
+            let envelope = qsl_inventory(&unit).expect("a consistent enumeration");
             assert_eq!(
-                envelope.stop_reason(),
-                Some(&SourceInventoryIncompleteReason::TypeAdmissionUnfinished {
-                    declaration: SourceDeclarationHandle(id(binding, "Pending").index()),
-                })
+                envelope.completeness(),
+                &SourceInventoryCompleteness::Incomplete(
+                    SourceInventoryIncompleteReason::TypeAdmissionUnfinished {
+                        declaration: SourceDeclarationHandle(id(binding, "Pending").index()),
+                    }
+                )
             );
         },
     );

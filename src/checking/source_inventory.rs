@@ -5,11 +5,10 @@
 //! The report is built from QSL's own traversal: every checked requirement
 //! record of a [`CheckedGraph`] and every pending obligation of a
 //! [`TypeReport`], each under its native identity. The two sets stay separate
-//! identity kinds. This module claims no census and no completeness: it
+//! identity kinds. This module claims no census beyond its named scope: it
 //! reports the rows and, when QSL's own traversal stopped short, the typed
-//! cause. `stop_reason == None` means only that no stop cause was reported; it
-//! is not a completeness claim. A positive owner-native completion waits on the
-//! IR typed completion boundary (IR-794) and is emitted nowhere here.
+//! cause. Completion is issued by IR's `SourceInventoryOutcome` only when QSL's
+//! own traversal (see [`CheckedUnit`]) reaches its end with no stop cause.
 //!
 //! QSL-774: the rows are built from one [`CheckedUnit`], so the graph, the type
 //! report and the selected source cannot be passed as three loose inputs.
@@ -24,11 +23,11 @@
 use qsl_foundation::source::provenance::RawSourceRef;
 use qsl_semantics::check::CheckedGraph;
 use quire_contract_model::source_obligation::{
-    SourceDeclarationHandle, SourceExpressionHandle, SourceInventoryEnvelope,
-    SourceInventoryIdentity, SourceInventoryIncompleteReason, SourceInventoryOwner,
-    SourceInventoryRow, SourceInventoryScope, SourceObligationSite, SourcePendingObligationId,
-    SourcePendingObligationKind, SourceRequirementOccurrenceId, SourceTypeExhaustion,
-    SourceTypeWorkDimension, SourceUnitHandle,
+    SourceDeclarationHandle, SourceExpressionHandle, SourceInventoryEnumerator,
+    SourceInventoryIdentity, SourceInventoryIncompleteReason, SourceInventoryOutcome,
+    SourceInventoryOutcomeError, SourceInventoryOwner, SourceInventoryRow, SourceInventoryScope,
+    SourceObligationSite, SourcePendingObligationId, SourcePendingObligationKind,
+    SourceRequirementOccurrenceId, SourceTypeExhaustion, SourceTypeWorkDimension, SourceUnitHandle,
 };
 use quire_contract_model::SourceIdentity;
 
@@ -217,36 +216,80 @@ impl<'g, 'r, 'a> CheckedUnit<'g, 'r, 'a> {
     }
 }
 
-/// Report QSL's inventory rows for one checked unit.
+/// QSL's own traversal of the named scope: every checked requirement record of
+/// the graph, then every retained pending obligation of the type report.
+struct Traversal<'u> {
+    unit: &'u CheckedUnit<'u, 'u, 'u>,
+    rows: Box<dyn Iterator<Item = SourceInventoryIdentity> + 'u>,
+    observed: usize,
+}
+
+impl<'u> Traversal<'u> {
+    fn new(unit: &'u CheckedUnit<'u, 'u, 'u>) -> Self {
+        let requirements = unit.graph.requirements().keys().map(|key| {
+            SourceInventoryIdentity::RequirementRecord(SourceRequirementOccurrenceId {
+                node: *key.node().as_bytes(),
+                role: key.origin().role().as_str().into(),
+                ordinal: key.origin().ordinal(),
+            })
+        });
+        let obligations = unit
+            .types
+            .declarations()
+            .iter()
+            .flat_map(|typed| typed.obligations())
+            .map(|obligation| SourceInventoryIdentity::PendingObligation(pending(obligation)));
+        Self {
+            unit,
+            rows: Box::new(requirements.chain(obligations)),
+            observed: 0,
+        }
+    }
+}
+
+impl SourceInventoryEnumerator for Traversal<'_> {
+    fn source(&self) -> &SourceIdentity {
+        &self.unit.identity
+    }
+
+    fn owner(&self) -> SourceInventoryOwner {
+        SourceInventoryOwner::Qsl
+    }
+
+    fn scope(&self) -> SourceInventoryScope {
+        SourceInventoryScope::QslCheckedRequirementsAndPendingObligations
+    }
+
+    /// The end of the rows is the normal end only when QSL's type work neither
+    /// exhausted its budget nor left a declaration unfinished.
+    fn next_row(&mut self) -> Result<Option<SourceInventoryRow>, SourceInventoryIncompleteReason> {
+        match self.rows.next() {
+            Some(identity) => {
+                self.observed += 1;
+                Ok(Some(SourceInventoryRow::new(
+                    self.unit.identity.clone(),
+                    identity,
+                )))
+            }
+            None => stop_reason(self.unit.types).map_or(Ok(None), Err),
+        }
+    }
+
+    fn observed_count(&self) -> usize {
+        self.observed
+    }
+}
+
+/// Report QSL's inventory of one checked unit as an owner-issued outcome.
 ///
 /// Rows are, in order, one `RequirementRecord` per entry of
 /// [`CheckedGraph::requirements`] and one `PendingObligation` per retained
-/// obligation of the type report. The stop reason is `None` only when QSL's
-/// traversal neither exhausted its work budget nor left a declaration
-/// unfinished; that is not a completeness claim (see the module docs).
-pub fn qsl_inventory(unit: &CheckedUnit<'_, '_, '_>) -> SourceInventoryEnvelope {
-    let (source, graph, types) = (&unit.identity, unit.graph, unit.types);
-    let requirements = graph.requirements().keys().map(|key| {
-        SourceInventoryIdentity::RequirementRecord(SourceRequirementOccurrenceId {
-            node: *key.node().as_bytes(),
-            role: key.origin().role().as_str().into(),
-            ordinal: key.origin().ordinal(),
-        })
-    });
-    let obligations = types
-        .declarations()
-        .iter()
-        .flat_map(|typed| typed.obligations())
-        .map(|obligation| SourceInventoryIdentity::PendingObligation(pending(obligation)));
-    let items = requirements
-        .chain(obligations)
-        .map(|identity| SourceInventoryRow::new(source.clone(), identity))
-        .collect();
-    SourceInventoryEnvelope::new(
-        SourceInventoryOwner::Qsl,
-        source.clone(),
-        SourceInventoryScope::QslCheckedRequirementsAndPendingObligations,
-        items,
-        stop_reason(types),
-    )
+/// obligation of the type report. The outcome is `Complete` only when QSL's
+/// traversal reached its end with neither type-work exhaustion nor an
+/// unfinished declaration; otherwise it is `Incomplete` with that typed cause
+/// and keeps the rows emitted before the stop.
+pub fn qsl_inventory(
+    unit: &CheckedUnit<'_, '_, '_>,
+) -> Result<SourceInventoryOutcome, SourceInventoryOutcomeError> {
+    SourceInventoryOutcome::from_enumerator(Traversal::new(unit))
 }
