@@ -44,6 +44,8 @@ mod model_population;
 mod model_relationship;
 #[cfg(feature = "test-support")]
 mod model_systems;
+#[cfg(feature = "test-support")]
+mod model_systems_resolve;
 mod observation_composites;
 mod operation_bodies;
 mod operation_clauses;

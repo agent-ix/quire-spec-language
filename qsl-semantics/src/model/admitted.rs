@@ -328,6 +328,11 @@ impl AdmittedPackage {
         &self.package.model_selection
     }
 
+    /// The FR-152 kind mapping this package was admitted with.
+    pub fn systems(&self) -> &SystemsClassification {
+        &self.systems
+    }
+
     /// The admitted package itself.
     pub fn package(&self) -> &DomainPackage {
         &self.package

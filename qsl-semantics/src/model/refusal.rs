@@ -630,6 +630,29 @@ pub enum ModelRefusalCause {
     /// A domain package record does not export the required [`crate::model::key`]
     /// kind for its role.
     WrongExport,
+    /// An FR-152 qualified name resolves to no effective declaration of the
+    /// selected model: its model alias is unbound, a segment after the alias
+    /// names nothing (a construct is named by its artifact id, never through
+    /// an owner), or the resolved construct has no effective declaration in
+    /// the supplied view. The name never falls back to a lookup outside the
+    /// supplied inputs.
+    UnresolvedName {
+        /// The qualified name as written, alias first.
+        name: String,
+        /// The one-based position, counted after the alias, of the segment
+        /// that failed; `0` when the alias itself is unbound.
+        segment: usize,
+    },
+    /// An FR-152 qualified name whose model alias names another
+    /// ModelSelection than the one that owns the navigated declarations.
+    ForeignAlias {
+        /// The alias as written.
+        alias: String,
+        /// The selection the alias is bound to.
+        offered: DomainPackageRef,
+        /// The selection that owns the declarations being navigated.
+        expected: DomainPackageRef,
+    },
     /// Two records in the same domain package share one [`DeclarationKey`]
     /// (FR-154: "Two nodes share one identity"). Under #131's flat
     /// `DeclarationKey` (`package`/`node` only, no `revision`/`digest`), a
@@ -1312,7 +1335,9 @@ impl ModelRefusalCause {
             | Self::FrameFieldWriteOutsideGrant { .. }
             | Self::DuplicateDeclaredIdentity { .. }
             | Self::DeclaredCreateDeleteOverlap { .. }
-            | Self::DeclaredDeltaMismatch { .. } => None,
+            | Self::DeclaredDeltaMismatch { .. }
+            | Self::UnresolvedName { .. }
+            | Self::ForeignAlias { .. } => None,
         }
     }
 
@@ -1359,6 +1384,8 @@ impl ModelRefusalCause {
             Self::ForeignUniverse { .. } => "foreign-universe",
             Self::AbsentKey { .. } => "absent-key",
             Self::WrongExport => "wrong-export",
+            Self::UnresolvedName { .. } => "missing-name",
+            Self::ForeignAlias { .. } => "foreign-model-selection",
             Self::ConflictingBinding { .. } => "conflicting-binding",
             Self::UnknownRelationship { .. } => "unknown-relationship",
             Self::UnknownSourcePort { .. } => "unknown-source-port",
@@ -1467,6 +1494,7 @@ impl ModelRefusalCause {
             | Self::OperatorIneligible => "ill_typed",
             Self::UnprovedRefinement => "undefined_expression",
             Self::ForeignModelSelection { .. }
+            | Self::ForeignAlias { .. }
             | Self::ForeignType { .. }
             | Self::ForeignUniverse { .. } => "foreign_reference",
             Self::AbstractInstance { .. }
@@ -1476,6 +1504,7 @@ impl ModelRefusalCause {
             | Self::SubsettingViolation { .. } => "invalid_runtime_input",
             Self::UnknownPopulationMemberType { .. }
             | Self::UnknownRelationshipEnd { .. }
+            | Self::UnresolvedName { .. }
             | Self::FrameEntryMissing { .. }
             | Self::IntakeMissingDeclaration { .. } => "missing_declaration",
             Self::AboveMaximum { .. } => "cardinality_out_of_bound",
@@ -1698,6 +1727,15 @@ pub mod fixtures {
             key: Vec::new()
         },
         WrongExport => ModelRefusalCause::WrongExport,
+        UnresolvedName => ModelRefusalCause::UnresolvedName {
+            name: String::new(),
+            segment: 0,
+        },
+        ForeignAlias => ModelRefusalCause::ForeignAlias {
+            alias: String::new(),
+            offered: crate::model::domain_package::DomainPackageRef::fixture("p"),
+            expected: crate::model::domain_package::DomainPackageRef::fixture("p"),
+        },
         ConflictingBinding => ModelRefusalCause::ConflictingBinding {
             key: key("p"),
             member: None,
@@ -2020,6 +2058,8 @@ pub(crate) mod tests {
             ModelRefusalCause::ForeignUniverse { .. } => "foreign-universe",
             ModelRefusalCause::AbsentKey { .. } => "absent-key",
             ModelRefusalCause::WrongExport => "wrong-export",
+            ModelRefusalCause::UnresolvedName { .. } => "missing-name",
+            ModelRefusalCause::ForeignAlias { .. } => "foreign-model-selection",
             ModelRefusalCause::ConflictingBinding { .. } => "conflicting-binding",
             ModelRefusalCause::UnknownRelationship { .. } => "unknown-relationship",
             ModelRefusalCause::UnknownSourcePort { .. } => "unknown-source-port",
@@ -2132,6 +2172,7 @@ pub(crate) mod tests {
             ModelRefusalCause::OperatorIneligible => "ill_typed",
             ModelRefusalCause::UnprovedRefinement => "undefined_expression",
             ModelRefusalCause::ForeignModelSelection { .. } => "foreign_reference",
+            ModelRefusalCause::ForeignAlias { .. } => "foreign_reference",
             ModelRefusalCause::ForeignType { .. } => "foreign_reference",
             ModelRefusalCause::ForeignUniverse { .. } => "foreign_reference",
             ModelRefusalCause::AbstractInstance { .. } => "invalid_runtime_input",
@@ -2140,7 +2181,8 @@ pub(crate) mod tests {
             ModelRefusalCause::DuplicateMember { .. } => "invalid_runtime_input",
             ModelRefusalCause::SubsettingViolation { .. } => "invalid_runtime_input",
             ModelRefusalCause::UnknownPopulationMemberType { .. }
-            | ModelRefusalCause::UnknownRelationshipEnd { .. } => "missing_declaration",
+            | ModelRefusalCause::UnknownRelationshipEnd { .. }
+            | ModelRefusalCause::UnresolvedName { .. } => "missing_declaration",
             ModelRefusalCause::FrameEntryMissing { .. }
             | ModelRefusalCause::IntakeMissingDeclaration { .. } => "missing_declaration",
             ModelRefusalCause::AboveMaximum { .. } => "cardinality_out_of_bound",

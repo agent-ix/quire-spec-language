@@ -29,7 +29,7 @@ use qsl_semantics::model::systems::{
     ConditionFailure, ConnectionCheckOutcome, ConnectionOutcome, Kind,
 };
 
-fn mult(lower: u64, upper: Option<u64>) -> Multiplicity {
+pub(crate) fn mult(lower: u64, upper: Option<u64>) -> Multiplicity {
     Multiplicity {
         lower,
         upper,
@@ -38,11 +38,11 @@ fn mult(lower: u64, upper: Option<u64>) -> Multiplicity {
     }
 }
 
-fn one() -> Multiplicity {
+pub(crate) fn one() -> Multiplicity {
     mult(1, Some(1))
 }
 
-fn object_type(
+pub(crate) fn object_type(
     identity: &str,
     interface_features: Option<Vec<&str>>,
     supertypes: Vec<&str>,
@@ -59,14 +59,14 @@ fn object_type(
     })
 }
 
-fn scalar_type(identity: &str, lower: i128, upper: i128) -> DomainPackageRecord {
+pub(crate) fn scalar_type(identity: &str, lower: i128, upper: i128) -> DomainPackageRecord {
     DomainPackageRecord::ScalarType(ScalarTypeRecord {
         key: DeclarationKey::fixture(identity),
         domain: ScalarValueDomain::Integer { lower, upper },
     })
 }
 
-fn field_member(
+pub(crate) fn field_member(
     identity: &str,
     owner: &str,
     value_type: &str,
@@ -85,7 +85,7 @@ fn field_member(
     })
 }
 
-fn component(
+pub(crate) fn component(
     identity: &str,
     owning_type: &str,
     value_type: &str,
@@ -100,7 +100,7 @@ fn component(
     })
 }
 
-fn endpoint(
+pub(crate) fn endpoint(
     identity: &str,
     owning_component: &str,
     value_type: &str,
@@ -116,7 +116,7 @@ fn endpoint(
     })
 }
 
-fn relationship(
+pub(crate) fn relationship(
     identity: &str,
     source: &str,
     source_m: Multiplicity,
@@ -141,7 +141,7 @@ fn relationship(
     })
 }
 
-fn allocation(identity: &str, source_element: &str, target_element: &str) -> DomainPackageRecord {
+pub(crate) fn allocation(identity: &str, source_element: &str, target_element: &str) -> DomainPackageRecord {
     DomainPackageRecord::Allocation(AllocationRecord {
         key: DeclarationKey::fixture(identity),
         source_element: DeclarationKey::fixture(source_element),
