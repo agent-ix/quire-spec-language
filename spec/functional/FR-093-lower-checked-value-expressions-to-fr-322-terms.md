@@ -207,10 +207,11 @@ lowers to `quire.op.string.eq`/`.ne`, `quire.op.uuid.eq`/`.ne` or
 expression with result type `boolean`, arguments `[ref(l), ref(r)]`, and no
 law, mode, member or leaves. A `string` operand never takes a `text_profile`
 law or mode, and lowering never selects a `quire.op.text.*` identity for it.
-`check` refuses a comparison of unlike operand types or an ordering
-over these types before lowering (FR-056), so lowering sees only same-type
-pairs; a pair that nevertheless reaches it refuses
-`ill_typed`/`operator-ineligible` at the comparison, and no node is built.
+`check` refuses a comparison of unlike operand types (`ill_typed`/`type-mismatch`)
+or an ordering over these types (`ill_typed`/`operator-ineligible`) before
+lowering (FR-056), so lowering sees only same-type pairs; a pair that
+nevertheless reaches it refuses `ill_typed`/`operator-ineligible` at the
+comparison, and no node is built.
 No text-profile lock evidence is needed to lower these identities.
 
 A checked quantity type, `ValueType::Quantity(UnitId)`, has an exact
@@ -822,7 +823,7 @@ G18-G21, group digest `75c10c9c57db076a7c4219a4b40f68769843d38e582a4dc67fb845b99
 | FR-093-AC-25 | U2 and U4 with no selected text-profile definition refuse `missing_declaration`/`missing-selection` naming `text_profile` and yield no node; U2 still refuses when both compared values select `Empty`. When a selected node or work ceiling is exhausted by these walks, checking stops with `stage_limit_exceeded` and the corresponding `node-count-exceeded` or `work-budget-exceeded` cause before resolving leaf laws, yielding no node; every appended text or recursion leaf costs one node, every entered union costs composite work, and every leaf's full path bytes count toward work. | Test |
 | FR-093-AC-26 | Cancelling a lifecycle `check` during a Union text-leaf walk stops at the next charge with `StageFailure::Cancelled` retaining the requested cause and no output artifact (FR-276). Existing AC-10 and AC-11 Record/Tuple and optional-inner vectors remain byte-identical. | Test |
 | FR-093-AC-27 | For a selected model alias whose package declares an unreferenced relationship and has no function or frame naming it, `check` emits the `relation`/`relationship` node and records exactly one `generated` occurrence at that alias's declaration-site/source span. It never uses the fallback `generated_location` or emits an `UnlocatedOccurrence`. | Test (TC-417) |
-| FR-093-AC-28 | `function e1 using v(a: String, b: String): Boolean pure { a = b }`, the same over `UUID` and over `Timestamp`, and each with `!=`, lower to one `expression` node whose operation is `quire.op.string.eq`, `.ne`, `quire.op.uuid.eq`, `.ne`, `quire.op.timestamp.eq` or `.ne`, result type `boolean`, arguments `[ref(a's node), ref(b's node)]`, and no law, no mode, no member and no leaves, with no text-profile definition in the lock evidence and no `missing-selection` refusal. The same functions with a `Text[0, 8; nfc]` operand against a `String`, or `String` against `UUID`, refuse `ill_typed`/`operator-ineligible` and build no node for the declaration. | Test (TC-1028) |
+| FR-093-AC-28 | `function e1 using v(a: String, b: String): Boolean pure { a = b }`, the same over `UUID` and over `Timestamp`, and each with `!=`, lower to one `expression` node whose operation is `quire.op.string.eq`, `.ne`, `quire.op.uuid.eq`, `.ne`, `quire.op.timestamp.eq` or `.ne`, result type `boolean`, arguments `[ref(a's node), ref(b's node)]`, and no law, no mode, no member and no leaves, with no text-profile definition in the lock evidence and no `missing-selection` refusal. The same functions with a `Text[0, 8; nfc]` operand against a `String`, or `String` against `UUID`, refuse `ill_typed`/`type-mismatch` and build no node for the declaration. | Test (TC-1028) |
 
 ## Dependencies
 

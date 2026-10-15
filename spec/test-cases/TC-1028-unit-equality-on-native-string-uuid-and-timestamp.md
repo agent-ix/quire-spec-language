@@ -31,6 +31,8 @@ fields; the unit language has no literal for these types.
 3. Lower the six admitted functions and inspect each comparison node.
 4. Declare `record UUID { x: Integer; }` in a unit that also uses `UUID` as a
    parameter type.
+5. With `record Event { id: UUID; at: Timestamp; label: String; }`, check and
+   evaluate the field, call-result and `let` vectors F1-F6 below.
 
 | Vector | Function | Operands | Expected |
 | --- | --- | --- | --- |
@@ -48,24 +50,39 @@ fields; the unit language has no literal for these types.
 | E12 | `eqt` | `-170141183460469231731687303715884105728`, itself | `true` |
 | E13 | `eqt` | `170141183460469231731687303715884105727`, `-170141183460469231731687303715884105728` | `false` |
 | E14 | each `!=` counterpart | the operands of E1 to E13 | the negation of the row's result |
-| R1 | `a = b` over `a: String`, `b: UUID` | n/a | `ill_typed`/`operator-ineligible`, no Boolean |
-| R2 | `a = b` over `a: UUID`, `b: Timestamp` | n/a | `ill_typed`/`operator-ineligible` |
-| R3 | `a != b` over `a: String`, `b: Timestamp` | n/a | `ill_typed`/`operator-ineligible` |
-| R4 | `a = b` over `a: String`, `b: Text[0, 8; nfc]` | n/a | `ill_typed`/`operator-ineligible` |
-| R5 | `a = b` over `a: Timestamp`, `b: Integer` | n/a | `ill_typed`/`operator-ineligible` |
+| R1 | `a = b` over `a: String`, `b: UUID` | n/a | `ill_typed`/`type-mismatch`, no Boolean |
+| R2 | `a = b` over `a: UUID`, `b: Timestamp` | n/a | `ill_typed`/`type-mismatch` |
+| R3 | `a != b` over `a: String`, `b: Timestamp` | n/a | `ill_typed`/`type-mismatch` |
+| R4 | `a = b` over `a: String`, `b: Text[0, 8; nfc]` | n/a | `ill_typed`/`type-mismatch` |
+| R5 | `a = b` over `a: Timestamp`, `b: Integer` | n/a | `ill_typed`/`type-mismatch` |
 | R6 | `a < b`, `a <= b`, `a > b`, `a >= b` over two `String`, two `UUID` or two `Timestamp` operands | n/a | each `ill_typed`/`operator-ineligible` |
-| R7 | `a = b` over `a: UUID`, `b: Reference<T>` | n/a | `ill_typed`/`operator-ineligible` |
+| R7 | `a = b` over `a: UUID`, `b: Reference<T>` | n/a | `ill_typed`/`type-mismatch` |
+
+| Vector | Function | Operands | Expected |
+| --- | --- | --- | --- |
+| F1 | `function ft using v(x: Event, y: Event): Boolean pure { x.at = y.at }` | `at` `5` and `5` | `true`; `x.at` has checked type `Timestamp` |
+| F2 | `ft` | `at` `5` and `6` | `false` |
+| F3 | `function fu using v(x: Event, y: Event): Boolean pure { x.id != y.id }` | `id` `00112233-4455-6677-8899-aabbccddeeff` and `00112233-4455-6677-8899-aabbccddeefe` | `true` |
+| F4 | `function fs using v(x: Event, y: Event): Boolean pure { x.label = y.label }` | `label` `a` and `a` | `true` |
+| F5 | `function fc using v(x: Event, y: Event): Boolean pure { stamp(x) = stamp(y) }` with `function stamp using v(e: Event): Timestamp pure { e.at }` | `at` `5` and `5` | `true` (call results) |
+| F6 | `function fl using v(x: Event, y: Event): Boolean pure { let p = x.id in let q = y.id in p = q }` | the same `id` twice | `true` (let bindings) |
+| F7 | `function fm using v(x: Event, y: Event): Boolean pure { x.at = y.id }` | n/a | `ill_typed`/`type-mismatch` |
 
 ## Expected Results
 
 - Step 1: every function checks; each E-row gives its stated result, and E8
   produces no Boolean. The parameters and results resolve to the native
   `String`, `UUID` and `Timestamp` value types, distinct from `Text`.
-- Step 2: each R-row refuses with the stated code and cause at the comparison
+- Step 2: each R-row refuses with the stated code and cause (`type-mismatch` for unlike types, `operator-ineligible` for ordering) at the comparison
   and yields no Boolean, no coercion and no node.
 - Step 3: the String comparisons lower to `quire.op.string.eq` and `.ne`, the
   UUID comparisons to `quire.op.uuid.eq` and `.ne`, the Timestamp comparisons
   to `quire.op.timestamp.eq` and `.ne`, each `binary` with result `boolean`,
   arguments `[ref(a), ref(b)]`, and no law, mode, member or leaves, with no
   text-profile definition in the lock evidence.
-- Step 4: the use of `UUID` refuses `ambiguous_declaration`/`ambiguous-name`.
+- Step 4: the use of `UUID` refuses `ambiguous_declaration`/`ambiguous-name`,
+  naming the use, the span of the record declaration and the native `UUID`
+  candidate with no span.
+- Step 5: each F-row gives its stated result; the field, call-result and `let`
+  operands compare by the native rules, and the uppercase-UUID, Timestamp
+  field mapping and F7 refusal hold as in Steps 1 and 2.
