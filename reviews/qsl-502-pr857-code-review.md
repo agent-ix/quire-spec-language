@@ -66,3 +66,9 @@ spec-review SR-11178.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | high | `union U { A, A(Integer) }` refuses `ambiguous_declaration`/`ambiguous-name`, but FR-316-AC-3 (and FR-316 Behavior) require `invalid_semantic_graph` from `DeclarationCause::DuplicateMember`. The test asserts only the typed cause and span, so it passes while the AC fails. The test is tagged FR-316-AC-3, and the PR body does not record the gap. Fix the code mapping, or amend FR-316 to the existing mapping and record it. | qsl-semantics/src/check/assemble.rs:401; qsl-semantics/src/check/assemble/tests.rs:2420-2433 |
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | cdf6e5d02 (PR #858, on main) amends FR-316-AC-3, FR-316 Behavior, ADR-012 and TC-818 to `ambiguous_declaration`/`ambiguous-name`. 0d98c5aae makes the test assert the code and catalog pair beside the typed DuplicateMember cause and span. Round 1, reviewed at 0d98c5aae. |
