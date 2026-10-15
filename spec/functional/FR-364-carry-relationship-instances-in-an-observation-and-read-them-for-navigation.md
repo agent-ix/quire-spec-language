@@ -246,7 +246,7 @@ here; a navigation site reaches the evaluator already resolved.
   extent admission to the snapshot document and decides the dangling and
   completeness rules for it. The checker's typing of a relationship end, its
   direction, ambiguity and `unbounded` or `ordered` refusals, and the
-  `quire.op.model.navigate` lowering are outside this requirement.
+  `quire.op.model.navigate` lowering are FR-363's (open pull request #867).
 - The object environment holds the extents. Whether the extent store lives in
   the semantic-value object closure or in the model layer's environment beside
   it is an implementation placement; this requirement fixes only the reads
