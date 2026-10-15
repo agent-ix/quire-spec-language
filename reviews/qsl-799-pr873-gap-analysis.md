@@ -41,3 +41,9 @@ Examined:
 
 One blocking finding: wrong trace tags. The tests themselves are real and
 cover the ticket's ACs. No test was weakened.
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed e781f2d40 | The four tests now carry `#[trace("FR-093-AC-19", "TC-416")]`, as the sibling tests do. Contract IR's TC-453 appears only in doc comments, now labelled "Contract IR". |

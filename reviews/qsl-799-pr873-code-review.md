@@ -62,3 +62,9 @@ occurrence is at ordinal 0 over the same whole-unit region. So IR's FR-053-AC-2
 cannot tell the two same-type nodes apart from these files (medium). There is
 no byte-level regression test for the four cases. The existing typed tests
 cover their content, and golden bytes are not wanted (low).
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed e781f2d40 | `retarget` mints the digest with `quire_canonical::sha256(&preimage, limits)`. The file no longer names any `HASHERS` entry: the lint matches whole identifier tokens, so `sha256` is neither `sha2` nor `Sha256`. A call into another crate is not followed. No exemption was added and the file was not split. The digest is SHA-256 over the same RFC 8785 preimage bytes that `checked_v2.rs` passes to `of_preimage`, and IR's reader admits the result. |
