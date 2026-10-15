@@ -67,14 +67,14 @@ pub struct ClauseEvaluation {
     /// The S6a evaluation, unchanged.
     pub evaluation: Evaluation,
     trail: Trail,
-    receiver_path: Option<RuntimeValuePath>,
+    receiver_path: RuntimeValuePath,
 }
 
 impl ClauseEvaluation {
     pub(crate) fn new(
         evaluation: Evaluation,
         trail: Trail,
-        receiver_path: Option<RuntimeValuePath>,
+        receiver_path: RuntimeValuePath,
     ) -> Self {
         Self {
             evaluation,
@@ -83,10 +83,11 @@ impl ClauseEvaluation {
         }
     }
 
-    /// The root path of `self` when this clause evaluated an invocation
-    /// receiver with no declared object identity.
-    pub fn receiver_path(&self) -> Option<&RuntimeValuePath> {
-        self.receiver_path.as_ref()
+    /// The root path of `self` under the clause's own observation: the
+    /// invocation's receiver binding for a context with no declared object
+    /// identity, otherwise the receiver's declared object identity.
+    pub fn receiver_path(&self) -> &RuntimeValuePath {
+        &self.receiver_path
     }
 
     /// The decision recorded at the `and`, `or`, `implies` or `if` node at
