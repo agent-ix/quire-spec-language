@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
 use qsl_forms::build_unit;
+use qsl_foundation::diagnostic::Code;
 use qsl_foundation::{IdentityLimits, SourceIdentity, Span};
 use quire_exact::{
     CardinalityBound, CollectionKind, CollectionType, EffectiveId, IeeeWidth, IntegerInterval,
@@ -30,7 +31,8 @@ use crate::model::normalize::{normalize, NormalizeOutcome};
 use quire_exact::Cancel;
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::{
-    EnvironmentFailure, FieldDeclaration, StorageRequest, StorageUnit, TypeEnvironmentLimits,
+    CompositeShape, DeclarationCause, EnvironmentFailure, FieldDeclaration, RecursionEdges,
+    StorageRequest, StorageUnit, TypeEnvironmentLimits,
 };
 use quire_semantic_value::location::{Location, Origin};
 
@@ -2288,37 +2290,237 @@ fn relaxing_a_widening_leaves_a_sibling_redefinition_alone() {
     );
 }
 
-/// S2 builds `union` declarations and `case` expressions (FR-313); no
-/// registry or case checker exists before FR-316/FR-318, so each is refused
-/// by name instead of being dropped.
-#[trace("FR-313-AC-1", "FR-313-AC-2", "TC-815")]
+/// The composite declaration the unit declares under `name`.
+fn composite_named<'p>(
+    package: &'p PackageDeclarations,
+    name: &str,
+) -> &'p quire_semantic_value::declaration::CompositeDeclaration {
+    package
+        .types
+        .composites()
+        .find(|declaration| declaration.name() == name)
+        .unwrap_or_else(|| panic!("the unit declares {name}"))
+}
+
+/// A union's members as (name, payload types), in declared order.
+fn members_of(
+    declaration: &quire_semantic_value::declaration::CompositeDeclaration,
+) -> Vec<(String, Vec<ValueType>)> {
+    let CompositeShape::Union(members) = declaration.shape() else {
+        panic!("{} is a union", declaration.name())
+    };
+    members
+        .iter()
+        .map(|member| {
+            (
+                member.identifier().as_str().to_owned(),
+                member.positions().to_vec(),
+            )
+        })
+        .collect()
+}
+
+#[trace("FR-316-AC-1", "TC-817")]
 #[test]
-fn union_declarations_and_case_expressions_refuse_until_they_are_checked() {
-    let (text, found) = errors("union Shape { Empty, Circle(Integer), }");
+fn a_union_is_its_own_composite_in_declared_order_beside_an_enum() {
+    let (_, assembled) = assemble(
+        "union Shape { Empty, Circle(Integer), Rect(Integer, Integer) }\n\
+         enum Kind { Empty, Circle }",
+    );
+    let assembled = assembled.expect("the unit assembles");
+    let shape = composite_named(&assembled, "Shape");
+    assert_eq!(
+        members_of(shape),
+        [
+            ("Empty".to_owned(), vec![]),
+            ("Circle".to_owned(), vec![ValueType::Integer]),
+            (
+                "Rect".to_owned(),
+                vec![ValueType::Integer, ValueType::Integer]
+            ),
+        ]
+    );
+    let [kind] = assembled.enums.as_slice() else {
+        panic!("one enum")
+    };
+    assert_ne!(
+        ValueType::Composite(shape.key()),
+        ValueType::Enum(kind.shape()),
+        "a union and an enum with the same member names are different types"
+    );
+}
+
+/// The refusals of `declarations`, each with its recursion cycle when the
+/// cause is the recursion rule.
+fn recursion_refusals(
+    declarations: &str,
+) -> (String, Vec<(AssemblyError, RecursionEdges, Vec<String>)>) {
+    let (text, found) = errors(declarations);
+    let refusals = found
+        .into_iter()
+        .map(|error| {
+            let AssemblyCause::InvalidTypeDeclaration(invalid) = &error.cause else {
+                panic!("a type declaration refusal, not {:?}", error.cause)
+            };
+            let DeclarationCause::Recursion { edges, cycle } = &invalid.cause else {
+                panic!("the recursion rule, not {:?}", invalid.cause)
+            };
+            let (edges, cycle) = (*edges, cycle.clone());
+            (error, edges, cycle)
+        })
+        .collect();
+    (text, refusals)
+}
+
+#[trace("FR-316-AC-2", "TC-817", "TC-818")]
+#[test]
+fn a_union_recurses_only_through_an_escaping_edge() {
+    let (_, tree) = assemble(
+        "union Tree { Leaf, Node(Integer, Option<Tree>, Option<Tree>) }\n\
+         union L { Nil, Cons(Integer, Option<L>) }",
+    );
+    tree.expect("an Option payload escapes the recursion rule");
+
+    let (text, refusals) = recursion_refusals("union L { Nil, Cons(Integer, L) }");
+    let [(error, edges, cycle)] = refusals.as_slice() else {
+        panic!("one refusal, not {refusals:?}")
+    };
+    assert_eq!(*edges, RecursionEdges::NonEscaping);
+    assert_eq!(cycle, &["L", "L"]);
+    assert_eq!(error.span, after(&text, "union L", "L"));
+    assert_eq!(
+        error.cause.catalog_code().to_string(),
+        "ill_typed/type-mismatch"
+    );
+}
+
+#[trace("FR-316-AC-2", "TC-818")]
+#[test]
+fn a_cycle_through_a_record_and_a_union_is_refused_at_both_declarations() {
+    let (text, refusals) = recursion_refusals("record Box { inner: U; }\nunion U { Wrap(Box) }");
+    assert_eq!(refusals.len(), 2, "{refusals:?}");
+    let mut spans: Vec<Span> = refusals.iter().map(|(error, ..)| error.span).collect();
+    spans.sort_by_key(|span| span.start);
+    assert_eq!(
+        spans,
+        [
+            after(&text, "record Box", "Box"),
+            after(&text, "union U", "U")
+        ]
+    );
+    for (_, edges, cycle) in &refusals {
+        assert_eq!(*edges, RecursionEdges::NonEscaping);
+        let mut named: Vec<&str> = cycle.iter().map(String::as_str).collect();
+        named.sort_unstable();
+        named.dedup();
+        assert_eq!(named, ["Box", "U"], "the cycle runs through both");
+        assert_eq!(cycle.first(), cycle.last());
+    }
+}
+
+#[trace("FR-316-AC-3", "TC-818")]
+#[test]
+fn a_union_refuses_a_repeated_member_and_an_unresolved_payload_type() {
+    let (text, found) = errors("union U { A, A(Integer) }");
+    let [error] = found.as_slice() else {
+        panic!("one refusal, not {found:?}")
+    };
+    let AssemblyCause::InvalidTypeDeclaration(invalid) = &error.cause else {
+        panic!("a type declaration refusal, not {:?}", error.cause)
+    };
+    assert_eq!(invalid.declaration, "U");
+    assert_eq!(invalid.cause, DeclarationCause::DuplicateMember("A".into()));
+    assert_eq!(error.span, after(&text, "union U", "U"));
+    assert_eq!(error.cause.code(), Code::AmbiguousDeclaration);
+    assert_eq!(
+        error.cause.catalog_code().to_string(),
+        "ambiguous_declaration/ambiguous-name"
+    );
+
+    let (text, found) = errors("union U { A(Missing) }");
     assert_eq!(
         found,
         [AssemblyError {
-            cause: AssemblyCause::UnsupportedUnion {
-                name: "Shape".into()
+            cause: AssemblyCause::UnresolvedTypeName {
+                name: "Missing".into()
             },
-            span: last(&text, "Shape"),
+            span: last(&text, "Missing"),
         }]
     );
+}
+
+#[trace("FR-316-AC-4", "TC-818")]
+#[test]
+fn a_union_is_bounded_only_by_the_configured_ceilings() {
+    let members: Vec<String> = (0..5_000).map(|member| format!("M{member}")).collect();
+    let text = text(
+        PROFILE_V,
+        &format!("union Big {{ {} }}", members.join(", ")),
+    );
+    let assemble_under = |work_units: u64| {
+        let parsed = qsl_cst::parse(
+            SourceIdentity::new("a", "u", "git", "1"),
+            "unit.native",
+            text.as_bytes(),
+            qsl_cst::Limits::default(),
+        )
+        .expect("S1 reads the unit");
+        let unit = build_unit(&parsed).expect("S2 builds the unit");
+        PackageDeclarations::assemble_with_limits(
+            parsed.source().reference().clone(),
+            unit,
+            crate::model::intake::SelectedModels::default(),
+            Vec::new(),
+            crate::check::AssemblyLimits {
+                environment: TypeEnvironmentLimits {
+                    work_units,
+                    ..crate::check::AssemblyLimits::default().environment
+                },
+                ..crate::check::AssemblyLimits::default()
+            },
+        )
+    };
+    let default = crate::check::AssemblyLimits::default()
+        .environment
+        .work_units;
+    let admitted = assemble_under(default).expect("5,000 members are admitted by default");
+    assert_eq!(members_of(composite_named(&admitted, "Big")).len(), 5_000);
+    let needed = admitted.types.spent();
+    let refusal = assemble_under(needed - 1).expect_err("one unit short of the work needed");
+    let [error] = refusal.errors.as_slice() else {
+        panic!("one error, not {:?}", refusal.errors)
+    };
+    let AssemblyCause::TypeLimit(limit) = &error.cause else {
+        panic!("a type-environment limit, not {:?}", error.cause)
+    };
+    assert_eq!(limit.configured_bound(), needed - 1);
     assert_eq!(
-        found[0].cause.catalog_code().to_string(),
-        "unknown_required_feature/unsupported-feature"
+        limit.setting(),
+        qsl_foundation::Setting::EnvironmentWorkUnits
+    );
+    assert!(
+        assemble_under(needed).is_ok(),
+        "the field raised by one admits it"
     );
 
-    let (_, assembled) =
-        assemble("function f using v(x: Int[0, 9]): Int[0, 9] pure { case x { A: 0; } }");
-    let refusals = assembled
-        .expect("the unit assembles")
-        .check(CheckingLimits::default())
-        .expect_err("check refuses the case");
-    assert!(
-        refusals
-            .iter()
-            .any(|refusal| matches!(refusal.cause, CheckCause::UnsupportedFeature { .. })),
-        "{refusals:?}"
+    let nested = format!(
+        "union Deep {{ Wrap({}Integer{}) }}",
+        "Option<".repeat(1_000),
+        ">".repeat(1_000)
     );
+    assemble(&nested)
+        .1
+        .expect("1,000 nested payload levels are admitted");
+}
+
+/// FR-313 builds `case` and FR-318 checks it, so a unit holding one
+/// assembles; the union that declares the scrutinee type is registered.
+#[trace("FR-313-AC-2", "TC-815")]
+#[test]
+fn a_case_expression_assembles_over_a_registered_union() {
+    let (_, assembled) = assemble(
+        "union Shape { Empty, Circle(Integer) }\n\
+         function f using v(s: Shape): Integer pure { case s { Circle(r): r; Empty: 0; } }",
+    );
+    assembled.expect("the unit assembles");
 }

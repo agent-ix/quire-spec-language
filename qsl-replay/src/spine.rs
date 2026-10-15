@@ -547,9 +547,6 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
             "the domain package of `model {alias}` declares `{node}`, which no type environment \
              entry represents yet"
         ),
-        AssemblyCause::UnsupportedUnion { name } => {
-            format!("the `union {name}` declaration is not checked yet")
-        }
         AssemblyCause::ModelType { alias, node } => {
             format!("the domain package of `model {alias}` has no effective type for `{node}`")
         }

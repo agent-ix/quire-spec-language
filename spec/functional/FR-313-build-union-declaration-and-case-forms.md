@@ -59,7 +59,8 @@ its source span (ADR-012 §16.4 S1 and S2 rows).
 - S2 SHALL keep arms in source order, without reordering or deduplicating
   them; S3 checks them (FR-318).
 - The FR-151 dispatch rewrite SHALL rename inside a `case`'s scrutinee and
-  arm bodies and SHALL NOT rename an arm binder.
+  arm bodies and SHALL respell an arm binder only where a rename target
+  would capture it, as it respells a `let` binder.
 
 ## Acceptance Criteria
 

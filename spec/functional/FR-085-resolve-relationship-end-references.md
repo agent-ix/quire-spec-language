@@ -28,11 +28,10 @@ Static navigation over a resolved relationship end — qualified-name
 resolution, `r.name` runtime traversal and the typed
 `Option<Reference<U>>`/`Reference<U>`/`Set<Reference<U>>`/`Bag<Reference<U>>`
 result quire-specification [FR-152](ix://agent-ix/quire-specification/FR-152)'s
-"Navigation" section defines — is out of this requirement's scope; the
-remaining work is QSL-789, QSL-794 and QSL-795 (FR-152-AC-1 is backed by the
-qualified-name binder). This requirement
-resolves and binds a relationship end's declared type, role and multiplicity
-only.
+"Navigation" section defines — is out of this requirement's scope; its static
+typing is [FR-363](FR-363-type-navigation-over-a-relationship-end.md)'s. This
+requirement resolves and binds a relationship end's declared type, role and
+multiplicity only.
 
 ## Inputs
 
@@ -116,7 +115,9 @@ as a Connection is
   fields the evaluator later dereferences; this requirement does not itself
   perform reachability or dereference evaluation, which is
   [FR-047](FR-047-evaluate-finite-object-reference-graphs.md)'s scope over
-  an already-admitted value graph.
+  an already-admitted value graph. The instances a navigation reads and its
+  runtime evaluation are
+  [FR-364](FR-364-carry-relationship-instances-in-an-observation-and-read-them-for-navigation.md)'s.
 - Relates to [FR-086](FR-086-bind-systems-model-references.md), which
   classifies and admits Port-to-Port relationships as Connections; this
   requirement's scope is bounded to plain object-to-object relationship-end

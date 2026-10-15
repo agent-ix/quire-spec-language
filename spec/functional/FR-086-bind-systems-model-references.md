@@ -161,10 +161,8 @@ outright before the target-kind charge.
   checked model view.
 - **Downstream:** none within this ticket's scope. Systems-model navigation
   over an object population — FR-152's "Navigation" section — is out of this
-  requirement's scope. Remaining work: QSL-789 (`r.name` over a relationship
-  end), QSL-794 (relationship-instance population) and QSL-795 (navigation
-  charges, dangling and cardinality decisions). The qualified-name binder
-  (`qsl-semantics/src/model/qualified.rs`) backs FR-152-AC-1.
+  requirement's scope; its static typing is
+  [FR-363](FR-363-type-navigation-over-a-relationship-end.md)'s.
 - Relates to [FR-085](FR-085-resolve-relationship-end-references.md), which
   resolves a plain object-to-object relationship's ends; this requirement's
   Connection classification applies only once both ends already resolve to
