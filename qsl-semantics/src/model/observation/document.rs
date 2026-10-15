@@ -1569,7 +1569,12 @@ fn collect_references(raw: &SnapshotValue, into: &mut Vec<(String, String)>) {
             RawForm::Record(record) => {
                 pending.extend(record.fields().rev().map(|(_, value)| value.form()));
             }
-            RawForm::Boolean(_) | RawForm::Integer(_) | RawForm::Absent | RawForm::Variant(_) => {}
+            RawForm::Boolean(_)
+            | RawForm::Integer(_)
+            | RawForm::Uuid(_)
+            | RawForm::Timestamp(_)
+            | RawForm::Absent
+            | RawForm::Variant(_) => {}
         }
     }
 }
