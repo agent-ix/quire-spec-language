@@ -18,7 +18,7 @@ relationships:
 ---
 # FR-362: Produce the checked graph and the type report from one source and bind them by digest
 
-Status: Proposed. This text is the proposal of ADR-033 Option A.
+Status: Proposed. It becomes Accepted on merge. It states ADR-033 Option A.
 
 ## Description
 
@@ -52,9 +52,14 @@ bind a graph, a type report and a selected formal source only when the
    authority and identity of a graph, a type report or a formal source.
 7. **Profile selection.** A source selects a profile by identity alone
    (FR-110). The one grammar refuses a profile line that carries a `version`
-   or a `digest`, and the definition inventory is the caller's input to the
-   binding phase.
-8. **The inventory.** The owner-issued source inventory of QSL's checked
+   or a `digest` after the identity. A pin of a definition's revision and
+   digest belongs to the caller's definition inventory, an explicit input of
+   the binding phase, and never to the source.
+8. **Moved and unmoved families.** The producer admits a family only once its
+   type phase reads S2 forms. A construct of a family whose type phase has not
+   moved is refused with `unsupported_construct` at the construct, and no unit
+   is read by two parsers.
+9. **The inventory.** The owner-issued source inventory of QSL's checked
    requirements and pending obligations is built from the checked unit and
    from nothing else.
 
@@ -68,6 +73,7 @@ bind a graph, a type report and a selected formal source only when the
 | FR-362-AC-4 | A checked unit built from a graph and a type report of the same bytes yields the inventory rows of the producer's own unit, and a type report that covers two units is refused as not one unit. | Test (TC-1026) |
 | FR-362-AC-5 | No type or function compares only the authority and identity of a graph, a type report or a formal source: the label-only types and the label-only constructor do not exist. | Inspection (TC-1027) |
 | FR-362-AC-6 | The root crate has no composed parser, no composed syntax tree and no `ParsedUnit`-to-composed-tree conversion; the binding and type phase read the output of S2. | Inspection (TC-1027) |
+| FR-362-AC-7 | A unit that holds a construct of a family whose type phase has not moved to S2 forms is refused with `unsupported_construct` at that construct, and a unit mixing such a family with a moved family refuses only the unmoved one's constructs; no second parser reads either. | Test (TC-1026) |
 
 ## Dependencies
 

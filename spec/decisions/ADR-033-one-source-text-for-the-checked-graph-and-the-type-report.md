@@ -18,7 +18,7 @@ relationships:
 ---
 # ADR-033: One source text produces both the checked graph and the type report
 
-Status: Proposed. The owner rules on the choice in Recommendation.
+Status: Proposed. It becomes Accepted on merge. The planner has ruled for Option A and closed the two decisions below.
 
 ## Recommendation
 
@@ -174,23 +174,23 @@ Measured on main when this was written.
 
 ## Decision
 
-The decision is the owner's. The proposed text is FR-362 and the Recommendation
-above. If the owner rules for A, the normative text is the one in FR-362 and
-this record's status becomes Accepted. If the owner rules otherwise, FR-362 is
-rewritten for that option; its criteria on the digest comparison and on the
-deleted label match hold under any option.
+Option A is adopted: the complete-V1 grammar is the single source grammar, the
+composed lane is deleted, the checked unit compares whole `RawSourceRef`s, and
+no compatibility layer, bridge or second grammar exists. FR-362 is the normative
+text. Two points follow from it and are decided.
 
-## Open points for the owner
+- **Moved and unmoved families.** ADR-011 deletes the composed lane one family
+  at a time. The producer admits a family only once its type phase reads S2
+  forms. It refuses a construct of a family whose type phase has not moved with
+  `unsupported_construct`, at the construct. A unit is therefore never read by
+  two parsers.
+- **Profile selection.** A source selects a profile by identity alone (FR-110).
+  A profile line that states `version` or `digest` after the identity is not
+  the single grammar and is refused. Any pin of a definition's revision and
+  digest belongs to the caller's definition inventory, which is already an
+  explicit input of the binding phase.
 
-- **Mixed units.** ADR-011 deletes SEAM-2 one family at a time. A unit that
-  holds a family whose type phase has moved and one whose phase has not
-  would need both parsers. The proposal is that the producer admits a family
-  only after its type phase reads S2 forms, and refuses the other
-  with `unsupported_construct`, so no unit is read twice.
-- **Profile revision and digest.** Under A a source names a profile by
-  identity alone (FR-110). Any pin of a definition's revision and digest moves
-  to the caller's definition inventory, which is already an explicit input of
-  the binding phase.
+The implementing slice is sequenced after the supplied-budget and union slices.
 
 ## Consequences
 
