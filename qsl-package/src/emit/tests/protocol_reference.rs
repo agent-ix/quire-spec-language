@@ -99,14 +99,12 @@ fn unsupported_root(root: &'static str) -> CheckCause {
 #[trace("FR-092-AC-18", "TC-1021")]
 #[test]
 fn a_non_control_root_checks_and_emits_no_protocol_node_without_a_profile() {
-    for root in [ATTEMPT_ROOT] {
-        let graph = check_attempt_unit(&rooted(root, false, false), false)
-            .unwrap_or_else(|refusals| panic!("{root}: {refusals:?}"));
-        assert!(graph
-            .semantic_graph()
-            .nodes()
-            .all(|node| node.node_tag() != qsl_semantics::check::NodeTag::Protocol));
-    }
+    let graph = check_attempt_unit(&rooted(ATTEMPT_ROOT, false, false), false)
+        .unwrap_or_else(|refusals| panic!("{refusals:?}"));
+    assert!(graph
+        .semantic_graph()
+        .nodes()
+        .all(|node| node.node_tag() != qsl_semantics::check::NodeTag::Protocol));
 }
 
 /// With a protocol profile selected, the root has no operator to carry, so
@@ -116,24 +114,22 @@ fn a_non_control_root_checks_and_emits_no_protocol_node_without_a_profile() {
 #[trace("FR-092-AC-18", "FR-218-AC-8", "TC-1021")]
 #[test]
 fn a_non_control_root_refuses_a_selected_profile_and_a_reference_to_it() {
-    for (root, keyword) in [(ATTEMPT_ROOT, "attempt")] {
-        let cause = unsupported_root(keyword);
-        let declared = check_attempt_unit(&rooted(root, true, false), false)
-            .expect_err("the root names no operator");
-        assert_eq!(
-            declared.iter().map(|r| &r.cause).collect::<Vec<_>>(),
-            [&cause],
-            "{root}"
-        );
-        assert_eq!(cause.code(), qsl_foundation::Code::UnsupportedConstruct);
-        assert_eq!(cause.cause(), Some("declaration-form"));
+    let cause = unsupported_root("attempt");
+    assert_eq!(cause.code(), qsl_foundation::Code::UnsupportedConstruct);
+    assert_eq!(cause.cause(), Some("declaration-form"));
 
-        let referred = check_attempt_unit(&rooted(root, true, true), false)
-            .expect_err("the reference refuses too");
-        assert_eq!(referred.len(), 2, "{root}: {referred:?}");
-        assert!(referred.iter().all(|r| r.cause == cause), "{root}");
-        assert_ne!(referred[0].location, referred[1].location);
-    }
+    let declared = check_attempt_unit(&rooted(ATTEMPT_ROOT, true, false), false)
+        .expect_err("the root names no operator");
+    assert_eq!(
+        declared.iter().map(|r| &r.cause).collect::<Vec<_>>(),
+        [&cause]
+    );
+
+    let referred = check_attempt_unit(&rooted(ATTEMPT_ROOT, true, true), false)
+        .expect_err("the reference refuses too");
+    assert_eq!(referred.len(), 2, "{referred:?}");
+    assert!(referred.iter().all(|r| r.cause == cause));
+    assert_ne!(referred[0].location, referred[1].location);
 }
 
 fn node_of<'w>(wire: &'w Value, tag: &str, form: &str) -> &'w Value {
