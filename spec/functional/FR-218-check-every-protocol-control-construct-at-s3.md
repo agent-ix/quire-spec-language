@@ -149,8 +149,9 @@ one protocol declared in the same unit. It carries no package selector.
   `{term: "reference", target}`, so two references to one target share one
   key and one node. A repeated reference to the same target in the same unit
   is admitted: it adds one `expression` occurrence, in source order, to the
-  existing node (FR-092), and changes neither the node key nor the package
-  identity.
+  existing node (FR-092), and leaves the node's key, body and
+  `dependencies` unchanged; the occurrences enter neither the node key nor the
+  package identity.
 
 ## Acceptance Criteria
 
