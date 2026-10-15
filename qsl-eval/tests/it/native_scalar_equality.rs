@@ -132,7 +132,7 @@ fn assert_pair(fixture: &Fixture, (eq, ne): (&str, &str), a: Value, b: Value, ex
 }
 
 /// TC-1028 E1 to E5, E14: String equality is the identical scalar sequence.
-#[trace("FR-056-AC-35", "TC-1028")]
+#[trace("TC-1028")]
 #[test]
 fn string_equality_is_the_identical_scalar_sequence() {
     let fixture = fixture();
@@ -146,7 +146,7 @@ fn string_equality_is_the_identical_scalar_sequence() {
 }
 
 /// TC-1028 E6, E7, E14: UUID equality is payload equality.
-#[trace("FR-056-AC-35", "TC-1028")]
+#[trace("TC-1028")]
 #[test]
 fn uuid_equality_is_payload_equality() {
     let fixture = fixture();
@@ -155,9 +155,9 @@ fn uuid_equality_is_payload_equality() {
     assert_pair(&fixture, names, uuid(UUID_A), uuid(UUID_B), false);
 }
 
-/// TC-1028 E8: the uppercase spelling never becomes a value, so no
-/// comparison runs. The kernel refusal is the class the runtime-input
-/// adapter maps to `invalid-value`; this test covers the kernel half only.
+/// TC-1028 E8, kernel half only: this pins quire-exact's refusal of the
+/// uppercase spelling. It does not test the QSL runtime-input adapter, which
+/// is not built here, so it supports no FR-056-AC-35 claim.
 #[trace("TC-1028")]
 #[test]
 fn a_noncanonical_uuid_spelling_is_refused_before_any_value_exists() {
@@ -167,7 +167,7 @@ fn a_noncanonical_uuid_spelling_is_refused_before_any_value_exists() {
 }
 
 /// TC-1028 E9 to E13, E14: Timestamp equality is nanosecond-count equality.
-#[trace("FR-056-AC-35", "TC-1028")]
+#[trace("TC-1028")]
 #[test]
 fn timestamp_equality_is_nanosecond_count_equality() {
     let fixture = fixture();
@@ -204,7 +204,7 @@ fn event_type(fixture: &Fixture) -> ValueType {
 
 /// TC-1028 F1 to F6: field reads, call results and `let` bindings compare by
 /// the native rules.
-#[trace("FR-056-AC-35", "TC-1028")]
+#[trace("TC-1028")]
 #[test]
 fn field_call_result_and_let_operands_evaluate() {
     let fixture = fixture();

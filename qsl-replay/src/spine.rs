@@ -470,7 +470,7 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
             format!("`{name}` names an imported declaration, which stands only as a callee")
         }
         AssemblyCause::AmbiguousTypeName { name, .. } => {
-            format!("`{name}` names more than one declaration")
+            format!("`{name}` names more than one candidate")
         }
         AssemblyCause::IllFormedBounds(_) => "a type's declared bounds are ill-formed".to_owned(),
         AssemblyCause::FloatingType { .. } => "a floating type is not admitted".to_owned(),

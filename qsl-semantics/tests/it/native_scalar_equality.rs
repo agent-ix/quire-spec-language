@@ -86,7 +86,7 @@ fn refused_at_comparison(declarations: &str, function: &str, cause: IllTypedCaus
 /// TC-1028 step 1, FR-091-AC-40: `String`, `UUID` and `Timestamp` name the
 /// native types as parameter types with no `using` selection or domain
 /// package, and the six comparison functions check.
-#[trace("FR-091-AC-40", "FR-056-AC-35", "TC-1028")]
+#[trace("FR-091-AC-40", "TC-1028")]
 #[test]
 fn the_six_native_comparison_functions_check() {
     check(
@@ -236,7 +236,7 @@ fn a_uuid_against_a_reference_refuses_type_mismatch() {
 /// TC-1028 step 5 F1 to F7: a field read, a call result and a `let` binding
 /// are comparison operands; a `Timestamp` field against a `UUID` field
 /// refuses.
-#[trace("FR-056-AC-35", "FR-056-AC-36", "TC-1028")]
+#[trace("FR-056-AC-36", "TC-1028")]
 #[test]
 fn field_call_result_and_let_operands_compare_and_a_mixed_pair_refuses() {
     let declarations = format!(
