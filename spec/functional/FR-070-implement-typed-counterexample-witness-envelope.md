@@ -146,6 +146,8 @@ last field.
 | integer | `{"type":"integer","value":"<decimal>"}`: the exact value as FR-181's decimal string (`0`, or an optional `-` then `[1-9][0-9]*`), unbounded. It decodes to `WitnessValue::ExactInteger`, which holds a kernel `Integer`, whether or not the value fits `i64` |
 | enum | `{"type":"enum","name":"<declaration>","member":"<member>"}` |
 | text | `{"type":"text","value":"<string>"}`: the text's Unicode scalars as a JSON string |
+| UUID | `{"type":"uuid","value":"<text>"}`: the payload text as written. Decode reads the form only; FR-098 admits the text through the kernel's canonical constructor and refuses a noncanonical spelling `invalid_runtime_input`/`invalid-value` (FR-056) |
+| Timestamp | `{"type":"timestamp","value":"<decimal>"}`: the payload text as written, admitted the same way |
 | rational | `{"type":"rational","numerator":"<decimal>","denominator":"<decimal>"}`: reduced (the greatest common divisor is 1), with a positive denominator; zero is `0`/`1` |
 | decimal | `{"type":"decimal","coefficient":"<decimal>","scale":"<decimal>"}`: the retained coefficient and scale, before normalization (QSpec FR-140) |
 | float | `{"type":"float32","bits":"<8 hex>"}` or `{"type":"float64","bits":"<16 hex>"}`: the exact IEEE bits, big-endian lowercase hex, so NaN payloads and signed zeros stay distinct |
