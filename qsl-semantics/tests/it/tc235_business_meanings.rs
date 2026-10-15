@@ -2125,3 +2125,6 @@ mod tc235_origin_retained;
 
 #[path = "tc235_process_runs.rs"]
 mod tc235_process_runs;
+
+#[path = "tc757_same_identity_collisions.rs"]
+mod tc757_same_identity_collisions;

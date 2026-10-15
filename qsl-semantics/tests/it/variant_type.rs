@@ -1044,10 +1044,9 @@ fn a_same_name_case_conflict_yields_no_effective_view() {
 
 /// TC-1003 step 5: two cases that share one identity are refused at the second
 /// case of the `variants` list, whichever of them is minted correctly:
-/// `invalid_model_binding`/`malformed-declaration` at path
-/// `TypeDefinition.variants[1].identity`, located at that case's span (the
-/// correctly minted `Gold` when `Silver` is listed first), with
-/// the reader's `DUPLICATE_IDENTITY` diagnostic retained.
+/// `invalid_model_binding`/`conflicting-binding` at node `.../Tier`, path
+/// `TypeDefinition.variants[1]`, as two cases of one name are (FR-154: two
+/// nodes sharing one identity).
 #[trace("TC-1003", "FR-056-AC-30")]
 #[test]
 fn two_cases_sharing_an_identity_are_refused_at_the_second_listed() {
@@ -1055,30 +1054,20 @@ fn two_cases_sharing_an_identity_are_refused_at_the_second_listed() {
         let gold = case("Tier", "Gold", gold_line);
         let mut silver = case("Tier", "Silver", silver_line);
         silver["identity"] = json!(id("variant/Tier-Gold"));
-        let (list, later_line) = if gold_line < silver_line {
-            (json!([gold, silver]), silver_line)
+        let list = if gold_line < silver_line {
+            json!([gold, silver])
         } else {
-            (json!([silver, gold]), gold_line)
+            json!([silver, gold])
         };
         let found = refusals(&single_type(|d| d["types"][0]["variants"] = list));
         assert_eq!(found.len(), 1, "{found:?}");
         assert_eq!(found[0].code, Code::InvalidModelBinding);
-        let ModelRefusalCause::IntakeMalformedDeclaration {
-            node, member, span, ..
-        } = &found[0].cause
-        else {
-            panic!("{found:?}");
-        };
-        assert_eq!(node, &id("variant/Tier-Gold"));
-        assert_eq!(member, &path("TypeDefinition.variants[1].identity"));
         assert_eq!(
-            span.as_ref().map(|span| span.start.line),
-            Some(later_line as usize)
-        );
-        assert!(
-            found[0].detail.contains("DUPLICATE_IDENTITY"),
-            "{:?}",
-            found[0].detail
+            found[0].cause,
+            ModelRefusalCause::ConflictingBinding {
+                key: key("Tier"),
+                member: Some(path("TypeDefinition.variants[1]")),
+            }
         );
     }
 }
