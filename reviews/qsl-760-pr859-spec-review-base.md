@@ -51,3 +51,18 @@ cross-type refusal cause contradicts the owning equality matrix, QSpec
 FR-149-AC-15 (`type-mismatch`). There are two mediums: the name-ambiguity
 vector has no governing rule, and the field-operand and Timestamp-field
 clauses have no TC step. There is one low.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | medium | The FR-091 "Unresolved type name" refusal was not amended. It still fires when a name "names no alias, record, tuple or enum form of the unit and nothing in an admitted domain package". `a: String` in a unit with no form named `String` meets that condition, so the refusal list refuses the no-collision case. This contradicts the native resolution bullet and FR-091-AC-40's positive case (`function f using v(a: String, b: UUID, c: Timestamp)`). The rule needs to exclude the three native spellings. | spec/functional/FR-091-produce-value-forms-and-assemble-package-declarations.md:659-661,869 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 53c3c0d72: FR-056 subsection, FR-056-AC-36, FR-093 paragraph and AC-28, and TC-1028 R1-R5/R7 now give `ill_typed`/`type-mismatch` for unlike types; ordering stays `operator-ineligible`. The lowering backstop that stays `operator-ineligible` is a post-check invariant guard and is coherent. R7 is sound: QSpec FR-149's general rule refuses operands of different types with no admitted conversion as `ill_typed`, and quire-semantic-value `check_equality_in` gives `TypeMismatch` for (Uuid, Reference). |
+| FND-002 | fixed | 53c3c0d72: the Ambiguous type name rule now counts the native type as a candidate (no span), and the exactly-one arms exclude the three spellings, so FR-091-AC-40's collision case and TC-1028 step 4 follow from the rule. The no-collision case is FND-005. |
+| FND-003 | fixed | 53c3c0d72: TC-1028 step 5 with `record Event { id: UUID; at: Timestamp; label: String; }` adds F1-F4 (field reads, with the Timestamp field mapping checked in F1), F5 (call results), F6 (`let` bindings) and F7 (field type-mismatch). The vectors use existing `let ... in` and record syntax; `Event` is not a keyword (the keyword is lowercase `event`). |
+| FND-004 | fixed | 53c3c0d72: FR-056-AC-35 and the UUID table row now give `invalid_runtime_input`/`invalid-value` at a unit input, over the kernel's `noncanonical-payload` class, matching TC-1028 E8. |

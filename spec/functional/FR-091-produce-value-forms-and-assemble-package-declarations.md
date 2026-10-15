@@ -657,8 +657,9 @@ does not declare refuses there with `missing_declaration`/`missing-name`.
 The assembler refuses in these cases:
 
 - **Unresolved type name.** A qualified name names no alias, record, tuple
-  or enum form of the unit and nothing in an admitted domain package. The
-  refusal names the name and the span of the type form.
+  or enum form of the unit and nothing in an admitted domain package, other
+  than the spellings `String`, `UUID` and `Timestamp`, which resolve to the
+  native types. The refusal names the name and the span of the type form.
 - **Ambiguous type name.** A qualified name names more than one candidate: the
   unit's alias, record, tuple and enum forms and, for `String`, `UUID` and
   `Timestamp`, the native type of that spelling (ADR-013 O-11). The refusal

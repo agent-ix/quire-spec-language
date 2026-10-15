@@ -32,7 +32,7 @@ fields; the unit language has no literal for these types.
 4. Declare `record UUID { x: Integer; }` in a unit that also uses `UUID` as a
    parameter type.
 5. With `record Event { id: UUID; at: Timestamp; label: String; }`, check and
-   evaluate the field, call-result and `let` vectors F1-F6 below.
+   evaluate the field, call-result and `let` vectors F1-F7 below.
 
 | Vector | Function | Operands | Expected |
 | --- | --- | --- | --- |
