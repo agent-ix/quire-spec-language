@@ -134,7 +134,8 @@ impl LockEvidence {
     /// `protocol_profile` the unit's own header selected carried over from
     /// `assembled` (FR-110): a unit that selects none keeps none.
     pub fn with_header_selection_of(mut self, assembled: &Self) -> Self {
-        self.protocol_profile.clone_from(&assembled.protocol_profile);
+        self.protocol_profile
+            .clone_from(&assembled.protocol_profile);
         self
     }
 
