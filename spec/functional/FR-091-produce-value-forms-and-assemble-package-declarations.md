@@ -635,6 +635,14 @@ The resolution `match` has one explicit arm per type-form head:
   model field is still refused with the floating-type error (a follow-up);
 - `Reference<Q>` resolves `Q` against the admitted domain packages (I1). With
   no admitted domain package, `Q` is an unresolved name;
+- the unreserved names `String`, `UUID` and `Timestamp` resolve to the native
+  `ValueType::String`, `ValueType::Uuid` and `ValueType::Timestamp` (FR-056),
+  take no bounds or arguments, and need no domain package, and are available as a parameter, result, field
+  or alias target type of the unit. They are not keywords: for these three spellings the native type is a
+  candidate alongside the unit's alias, record, tuple and enum forms, so a unit
+  that also declares a form of the same name makes the use an ambiguous type
+  name, below, and the exactly-one arms below apply only when the name is not
+  one of these spellings;
 - a qualified name that names exactly one alias form of the unit resolves to
   that alias's resolved type;
 - a qualified name that names exactly one record or tuple form of the unit
@@ -649,12 +657,15 @@ does not declare refuses there with `missing_declaration`/`missing-name`.
 The assembler refuses in these cases:
 
 - **Unresolved type name.** A qualified name names no alias, record, tuple
-  or enum form of the unit and nothing in an admitted domain package. The
-  refusal names the name and the span of the type form.
-- **Ambiguous type name.** A qualified name names more than one alias,
-  record, tuple or enum form of the unit (ADR-013 O-11). The refusal names
-  the name, the span of the referencing type form and the span of each
-  candidate declaration.
+  or enum form of the unit and nothing in an admitted domain package, other
+  than the spellings `String`, `UUID` and `Timestamp`, which resolve to the
+  native types. The refusal names the name and the span of the type form.
+- **Ambiguous type name.** A qualified name names more than one candidate: the
+  unit's alias, record, tuple and enum forms and, for `String`, `UUID` and
+  `Timestamp`, the native type of that spelling (ADR-013 O-11). The refusal
+  names the name, the span of the referencing type form and the span of each
+  candidate declaration; the native candidate has no declaration span and is
+  reported as the native type of that name, without a span.
 - **Duplicate enum member.** As stated under "Enum declarations".
 - **Nominal-admission fault.** As stated under "Enum declarations" and
   "Dimension and unit declarations".
@@ -856,6 +867,7 @@ STD-112 publishes the causes and replaces it (FR-091-OQ-12).
 | FR-091-AC-37 | Check refuses `Int[0, 170141183460469231731687303715884105728]` (`i128::MAX + 1`) with `IntegerOutsideI128` naming site `upper`, value `170141183460469231731687303715884105728`, limit `i128::MAX` and the type form's span, and `Int[-170141183460469231731687303715884105729, 0]` naming site `lower` and limit `i128::MIN`. Each refusal's catalog code is `ill_typed`/`type-mismatch`, and the compile returns no checked package, so nothing is keyed or lowered. | Test (TC-909) |
 | FR-091-AC-38 | Over `x: Int[-170141183460469231731687303715884105728, 0]`: the body `x >= -170141183460469231731687303715884105728` checks, its right operand is one `Integer` literal of value `i128::MIN` with no `Negate` node, that literal node keys to FR-092 vector L7, and lowering writes it as one literal. The body `x >= -170141183460469231731687303715884105727` checks with its right operand a `Negate` of the literal 170141183460469231731687303715884105727, as before. The bodies `x < 170141183460469231731687303715884105728`, `x >= -(170141183460469231731687303715884105728)` and `x >= -170141183460469231731687303715884105729` refuse `IntegerOutsideI128` at the literal's span, with site `literal`, the literal's value as written, limit `i128::MAX` and code `ill_typed`/`type-mismatch`, and return no checked package. | Test (TC-909) |
 | FR-091-AC-39 | S2 maps `a div b`, `a rem b` and `a mod b` to distinct `IntegerDiv`, `IntegerRem` and `IntegerMod` binary forms with operand order and original spans, including in an unreachable branch. Check admits each well-typed operator under a resolved `quire.value.complete/v1` selection, using the checked package's exactly-one law for `div`/`rem` and Euclidean meaning for `mod`; without that facet, each receives a located `unsupported_construct` rather than `UnrepresentedConstruct`. `/` never becomes integer division; only under complete value does a rational `/` with integer operands and an expected rational type follow QSpec FR-149. | Test |
+| FR-091-AC-40 | The assembler admits `function f using v(a: String, b: UUID, c: Timestamp): Timestamp pure { c }` and resolves `a`, `b`, `c` and the result to the native String, UUID and Timestamp value types; a use of these names needs no `using` selection or domain package. A unit declaring `record UUID { x: Integer; }` and using `UUID` as a type refuses `ambiguous_declaration`/`ambiguous-name` naming the use, the span of the record declaration and the native `UUID` candidate with no span. | Test (TC-1028) |
 
 ## Dependencies
 
