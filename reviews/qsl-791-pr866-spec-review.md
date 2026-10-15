@@ -68,3 +68,22 @@ Recorded, not reported:
 - low: an unknown native kind is `invalid-value`, while FR-360-AC-10 makes an unknown single tag such as `{"string":..}` `wrong-value-kind`. Each follows its own owner rule.
 - low: the TC precondition "TC-465's `archive` package variant" names the fixture loosely.
 - low: code comments cite FR-106 line numbers, which this insertion shifts (observation.rs:1711, state_clauses.rs:4357).
+
+## Dispositions
+
+Round 1 was reviewed at 45b3566fe3384bb1dc62bfcae4cc691adb02c518. The fix commit is 45b3566fe (`git diff e0de2dd 45b3566`). This round adds no new finding.
+
+What was re-checked:
+- Every vector in the new order is reachable under check 1.3. All the numeric members are exact integers, so none of them hits `noncanonical_wire`.
+- The new order (kind type, then kind value, then missing member, then unknown member, then payload type, then fit, then payload) matches the order PR #865's witness decoder `visit_native` uses: it checks `kind` before `exact_object`, then the string payload.
+- No open PR shares an id with this one. PR #868, now at 7106078, uses FR-364, FR-106-AC-23..27 and TC-1033..1035. PR #867 uses FR-363 and TC-1031/1032.
+- `git merge-tree` of #866 and #868 gives two FR-106 conflicts. Both are resolved by keeping both sides: the AC table rows after AC-17, and the Dependencies FR-056 line next to #868's new FR-364 bullet. The value-grammar, check 6.5 and check 6.6-6.9 hunks merge cleanly and do not contradict each other.
+
+Recorded as low: AC-18 says version nibble `0` is "outside RFC 9562's version table", but that table lists `0` as Unused. The vector is still correct.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 45b3566fe |
+| FND-002 | fixed | 45b3566fe |
+| FND-003 | fixed | 45b3566fe |
+| FND-004 | fixed | quire-spec-language#867@818fe453 renumbered its TCs to TC-1031/TC-1032, so TC-1029 is now unique among the open PRs |
