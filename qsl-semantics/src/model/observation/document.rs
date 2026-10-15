@@ -1225,6 +1225,18 @@ fn admit_leaf(
                 None => Err(admission_record(Code::InvalidRuntimeInput, "invalid-value")),
             }
         }
+        // FR-056: the kernel's canonical constructor decides the payload text;
+        // any refusal of it, whichever class, is `invalid-value`.
+        (RawForm::Uuid(payload), quire_exact::ValueType::Uuid) => {
+            quire_exact::Uuid::from_canonical_text(payload)
+                .map(Value::Uuid)
+                .map_err(|_| admission_record(Code::InvalidRuntimeInput, "invalid-value"))
+        }
+        (RawForm::Timestamp(payload), quire_exact::ValueType::Timestamp) => {
+            quire_exact::Timestamp::from_canonical_text(payload)
+                .map(Value::Timestamp)
+                .map_err(|_| admission_record(Code::InvalidRuntimeInput, "invalid-value"))
+        }
         (RawForm::Reference(reference), quire_exact::ValueType::Reference(type_identity)) => {
             references
                 .resolve(reference, *type_identity)

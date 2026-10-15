@@ -1210,7 +1210,8 @@ fn arguments(
 
 /// The witness type a parameter of `value_type` is read as: `Boolean` for
 /// `Boolean`, `I128` for an integer type, and `Canonical` (a witness value
-/// text) for every other value type. A `Population<T>` is not a value, so it
+/// text) for every other value type, the native `UUID` and `Timestamp`
+/// included. A `Population<T>` is not a value, so it
 /// has no witness form and refuses `WrongValueKind` before the call.
 fn witness_type(
     parameter: usize,
@@ -1229,12 +1230,12 @@ fn witness_type(
         | ValueType::Option(_)
         | ValueType::Composite(_)
         | ValueType::Collection(_)
-        | ValueType::Reference(_) => Ok(WitnessValueType::Canonical),
-        ValueType::Population(_) | ValueType::Uuid | ValueType::Timestamp => {
-            Err(ReplayRefusal::Input(InputRefusal::WrongValueKind {
-                parameter,
-            }))
-        }
+        | ValueType::Reference(_)
+        | ValueType::Uuid
+        | ValueType::Timestamp => Ok(WitnessValueType::Canonical),
+        ValueType::Population(_) => Err(ReplayRefusal::Input(InputRefusal::WrongValueKind {
+            parameter,
+        })),
     }
 }
 
