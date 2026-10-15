@@ -893,12 +893,7 @@ fn payload_refusal(
             ReplayRefusal::NativePayload {
                 parameter,
                 refusal: ref kernel,
-            } => (
-                parameter,
-                refusal.code(),
-                refusal.cause(),
-                kernel.cause.clone(),
-            ),
+            } => (parameter, refusal.code(), refusal.cause(), kernel.cause),
             other => panic!("expected a native payload refusal, got {other:?}"),
         },
         other @ argument::Stopped::Supplied(_) => {
@@ -1023,12 +1018,7 @@ fn tc_1028_noncanonical_timestamp_is_refused_at_the_input() {
             };
             assert_eq!(
                 payload_refusal(stopped),
-                (
-                    0,
-                    Code::InvalidRuntimeInput,
-                    Some("invalid-value"),
-                    cause.clone()
-                ),
+                (0, Code::InvalidRuntimeInput, Some("invalid-value"), cause),
                 "{text:?}"
             );
         }
