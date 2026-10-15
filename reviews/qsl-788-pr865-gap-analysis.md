@@ -25,3 +25,10 @@ Recorded (medium): the document path drops the kernel class, so its AC-35 trace 
 | --- | --- | --- | --- |
 | FND-001 | high | The ticket criterion "canonical UUID/Timestamp inputs admitted through replay and reachable by the QSL-760 equality vectors" is not met. Every replay test calls `convert_one` or `convert_via_witness` below the spine, and no test calls `replay()` on a unit function over UUID or Timestamp. TC-1028 E6, E7 and E9-E13 (equality results over admitted inputs) are not run end to end. The coder disclosed this and attributes it to quire-contract-ir's `scalar_type` vocabulary, which has no uuid or timestamp form. Disposition needs a ticket for the cross-repo blocker and an end-to-end E6-E13 test that waits on it. Otherwise QSL-788 stays open after merge. | qsl-replay/src/execute/tests/composite.rs:842-1048 |
 | FND-002 | medium | `admit_leaf` maps every kernel refusal with `map_err(\|_\| ..)`, so the typed `ConstructionCause` is discarded on the document path. FR-056 line 301 says the adapter matches it exhaustively, and AC-35 refuses "over the kernel's `noncanonical-payload` class". `noncanonical_uuid_and_timestamp_leaves_are_refused_at_the_input` carries `Trace: FR-056-AC-35` but cannot assert the class. Recorded: carry the class on the admission record, or drop the AC-35 trace from the document test. | qsl-semantics/src/model/observation/document.rs:1230-1239; qsl-semantics/tests/it/observation_composites.rs:912-920 |
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | deferred | IR-800 (contract IR V2 native scalar forms) blocks replay() over UUID/Timestamp. The PR body marks E6/E7/E9-E13 as uncredited and keeps QSL-788 open until the replay() integration passes. No tag claims those vectors. |
+| FND-002 | fixed 1359be715 | The document test carrying the FR-056-AC-35 trace was removed with the document path. The remaining AC-35 test, tc_1028_noncanonical_uuid_is_refused_at_the_input, asserts ConstructionCause::UuidNoncanonical on the replay path. |

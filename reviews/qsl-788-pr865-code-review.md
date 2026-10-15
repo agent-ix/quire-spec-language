@@ -22,3 +22,9 @@ The blocking finding is the document reader's envelope handling. Recorded, not b
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | high | The snapshot/invocation reader refuses every FR-056 envelope fault as `wrong-value-kind`. FR-056 lines 293-298 require `missing-member`, `unknown-member` and `duplicate-member` for envelope member faults and `invalid-value` for an invalid tag. In `read_raw_value`, an object with a string `kind` returns `Ok(None)` on an unknown kind (`{"kind":"guid","text":..}`), an extra or missing member (`keys().count() != 2`, `{"kind":"uuid"}`) or a wrong payload member name. Its callers map `None` to `wrong_kind(name)`, which gives the wrong cause. Only the non-string payload case (`"nanoseconds":0`) is correctly `wrong-value-kind`. The coder disclosed this. Fix: return typed member and tag refusals from this branch and add one test per cause. Alternatively, split it to a ticket with the FR-106 form decision (QSL-791). | qsl-semantics/src/model/observation/tree.rs:201-217 |
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | deferred | The document reader was removed from this PR in 1359be715. Its code is on branch uuid-timestamp-document-form, and the spec is QSL-791 / PR 866. Whoever lands that branch must map envelope faults to FR-056's causes. Re-checked at 2db8accaa: no qsl-semantics diff and no RawNode/RawForm/SnapshotValue Uuid or Timestamp references remain. |
