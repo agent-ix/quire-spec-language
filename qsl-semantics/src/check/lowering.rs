@@ -122,9 +122,19 @@ impl LockEvidence {
     }
 
     /// Lock evidence selecting `definition` for the `protocol_profile` role,
-    /// the clause profile the unit's header selected (FR-110).
-    pub fn with_protocol_profile(mut self, definition: DefinitionReference) -> Self {
+    /// the clause profile the unit's header selected (FR-110). Only the
+    /// assembler calls it, from the header's catalog resolution; a caller
+    /// cannot supply the selection.
+    pub(crate) fn with_protocol_profile(mut self, definition: DefinitionReference) -> Self {
         self.protocol_profile = Some(definition);
+        self
+    }
+
+    /// These lock evidence's caller-supplied roles, with the
+    /// `protocol_profile` the unit's own header selected carried over from
+    /// `assembled` (FR-110): a unit that selects none keeps none.
+    pub fn with_header_selection_of(mut self, assembled: &Self) -> Self {
+        self.protocol_profile.clone_from(&assembled.protocol_profile);
         self
     }
 
