@@ -745,12 +745,18 @@ mod tests {
         set.dependencies[0].clone()
     }
 
+    /// The parameters typed by a population node: those of `pop`.
     fn parameters(package: &CheckedPackageV2) -> Vec<&CheckedSemanticNodeV2> {
+        let population_ids: Vec<&CheckedNodeId> = populations(package)
+            .into_iter()
+            .map(|(population, _)| &population.node_id)
+            .collect();
         package
             .graph()
             .nodes
             .iter()
             .filter(|node| &*node.node_tag == "value" && &*node.semantic_form == "parameter")
+            .filter(|node| population_ids.contains(&&node.semantic_type))
             .collect()
     }
 
