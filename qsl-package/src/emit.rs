@@ -919,10 +919,10 @@ pub fn emit_checked_with_cancel(
 }
 
 /// Emit `package` as `quire.checked-package/v2` bytes (FR-322). `regions`
-/// places each occurrence `check` recorded (see the module doc). The tests'
-/// entry point with a caller-supplied region conversion.
-#[cfg(test)]
-pub(crate) fn emit_package(
+/// places each occurrence `check` recorded (see the module doc). The entry
+/// point for a package built from forms that carry no spans, whose caller
+/// places every occurrence itself.
+pub fn emit_package(
     package: &CheckedPackage,
     regions: impl Fn(&Location) -> Option<SourceRegion>,
 ) -> Result<Emission, EmitRefusal> {
