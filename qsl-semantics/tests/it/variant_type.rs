@@ -440,9 +440,9 @@ fn a_variant_meaning_on_a_record_shaped_construct_refuses_as_malformed() {
     assert_one_malformed(&document, "Tier", "TypeDefinition.kind");
 }
 
-/// TC-996 step 4: two cases of one name and one identity are refused by the
-/// reader before intake; nothing is declared and the diagnostic is not the
-/// intake `conflicting-binding`.
+/// TC-996 step 4: two cases of one name and one identity are refused at the
+/// reader's duplicate position as `conflicting-binding` at the type, nothing
+/// is declared (FR-154: two nodes sharing one identity).
 #[trace("TC-996", "FR-056-AC-26")]
 #[test]
 fn two_cases_sharing_one_identity_are_refused_by_the_reader() {
@@ -451,13 +451,13 @@ fn two_cases_sharing_one_identity_are_refused_by_the_reader() {
     });
     let found = refusals(&document);
     assert_eq!(found.len(), 1, "{found:?}");
-    assert_eq!(node_of(&found[0]), id("variant/Tier-Gold"));
     assert_eq!(found[0].code, Code::InvalidModelBinding);
-    assert!(
-        !found
-            .iter()
-            .any(|refusal| matches!(refusal.cause, ModelRefusalCause::ConflictingBinding { .. })),
-        "the reader's diagnostic is kept, not intake's conflicting-binding"
+    assert_eq!(
+        found[0].cause,
+        ModelRefusalCause::ConflictingBinding {
+            key: key("Tier"),
+            member: Some(path("TypeDefinition.variants[1]")),
+        }
     );
 }
 

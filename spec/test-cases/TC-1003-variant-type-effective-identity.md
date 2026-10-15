@@ -28,5 +28,5 @@ Verify that normalization gives a variant type an effective type and each case a
 - Step 2 gives the same effective entries, in the same order.
 - Step 3 gives distinct effective identities for `Gold` and `gold`.
 - Step 4 refuses `invalid_model_binding`/`conflicting-binding` at node `ix://<package identity>/Tier`, path `TypeDefinition.variants[1]`, and yields no effective view.
-- Step 5 refuses once in each order, `invalid_model_binding`/`malformed-declaration` at path `TypeDefinition.variants[1].identity`, located at the second listed case's span (the correctly minted `Gold` when `Silver` is listed first), retaining `DUPLICATE_IDENTITY`.
-- Assertions compare typed code, cause, node identity, path and span.
+- Step 5 refuses once in each order, `invalid_model_binding`/`conflicting-binding` at node `ix://<package identity>/Tier`, path `TypeDefinition.variants[1]`.
+- Assertions compare typed code, cause, node identity and path.
