@@ -37,3 +37,11 @@ Ticket: QSL-757. Planless gap analysis. Plan completion: not assessed.
 CHANGES REQUESTED (one medium trace finding). The behaviour matches FR-154. Each
 collision kind has a vector that fails on the pre-change code. The shared-
 identity key is the right reading of the spec.
+
+## Dispositions
+
+Round 1, reviewed at bd32608341bda0788418f2cdde5a90371a5b7310.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | bd3260834. The tc757 tests now carry `FR-056-AC-30`, `TC-1003` and `QSpec-FR-154-AC-13`, and the AC-12 claim is gone. TC-1003 gains step 6 (field, operation and parameter collisions) and step 7 (distinct identities, and one member name under two owners admitted), and each step has a test. |

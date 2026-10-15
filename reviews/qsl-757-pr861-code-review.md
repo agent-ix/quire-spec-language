@@ -47,3 +47,11 @@ Recorded only, not blocking. The function and its locals (`process`, `step`)
 now cover fields, operations, parameters and cases, so the names mislead. If a
 member duplicates a type identity, the key is that type, so the type's own
 reader refusals are deduplicated away.
+
+## Dispositions
+
+Round 1, reviewed at bd32608341bda0788418f2cdde5a90371a5b7310.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | bd3260834. `assert_admitted` normalizes and requires `NormalizeOutcome::Completed`. A kept intake refusal or a normalization refusal now fails it. `the_admitted_helper_rejects_a_collision` (`should_panic`) shows it fails on a colliding package. |
