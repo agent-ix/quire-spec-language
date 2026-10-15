@@ -371,7 +371,7 @@ fn malformed_union_and_case_fail_at_their_grammar_not_setup() {
 
 #[trace("TC-815", "FR-313-AC-2")]
 #[test]
-fn arena_walks_and_rewrites_reach_case_children_without_renaming_arm_binders() {
+fn arena_walks_and_rewrites_reach_case_children_and_arm_binders() {
     let (_, _, unit) = build(&body("case s { A(x): case x { B(y): y; }; C: s; }"));
     let expression = &function(&unit, 0).body;
     assert_eq!(expression.root_node().children().len(), 3);
@@ -388,7 +388,7 @@ fn arena_walks_and_rewrites_reach_case_children_without_renaming_arm_binders() {
         rewritten.at(outer.scrutinee).node(),
         &ExprNode::Name("renamed_s".into())
     );
-    assert_eq!(outer.arms[0].binders[0].name, "x");
+    assert_eq!(outer.arms[0].binders[0].name, "renamed_x");
     assert_eq!(
         rewritten.at(outer.arms[1].body).node(),
         &ExprNode::Name("renamed_s".into())
@@ -396,7 +396,7 @@ fn arena_walks_and_rewrites_reach_case_children_without_renaming_arm_binders() {
     let ExprNode::Case(inner) = rewritten.at(outer.arms[0].body).node() else {
         panic!("nested case")
     };
-    assert_eq!(inner.arms[0].binders[0].name, "y");
+    assert_eq!(inner.arms[0].binders[0].name, "renamed_y");
     assert_eq!(
         rewritten.at(inner.scrutinee).node(),
         &ExprNode::Name("renamed_x".into())
@@ -405,7 +405,7 @@ fn arena_walks_and_rewrites_reach_case_children_without_renaming_arm_binders() {
         rewritten.at(inner.arms[0].body).node(),
         &ExprNode::Name("renamed_y".into())
     );
-    assert_eq!(rewritten.root_node().binders(), ["x"]);
+    assert_eq!(rewritten.root_node().binders(), ["renamed_x"]);
     let composed = Expression::call("f", vec![Expression::name("prefix"), rewritten.clone()]);
     let ExprNode::Call { arguments, .. } = composed.root_node() else {
         panic!("call")

@@ -464,3 +464,38 @@ fn a_case_adds_no_claim_and_its_arm_bodies_are_claim_sites() {
         .iter()
         .all(|claim| claim.site().location() != &Unit::body()));
 }
+
+/// A function `f` with the given parameter list over the standard unions and
+/// `union F { Measured(Float64[nearest-even]) }`.
+fn with_parameters(parameters: &str) -> Unit {
+    unit(&format!(
+        "{SHAPE}union F {{ Measured(Float64[nearest-even]) }}\n\
+         function f using v({parameters}): Integer pure {{ 0 }}"
+    ))
+}
+
+#[trace("FR-323-AC-1", "FR-323-AC-2", "TC-833")]
+#[test]
+fn collections_of_a_union_are_admitted() {
+    let unit = with_parameters(
+        "a: Set<Shape>[0, 4], b: Bag<Shape>[0, 4], c: OrderedSet<Shape>[0, 4], \
+         d: Sequence<Shape>[0, 4], e: Sequence<F>[0, 4]",
+    );
+    let (typed, _) = unit.type_body(ClauseKind::Body, CheckingLimits::default());
+    typed.expect("the collection types of a union are admitted");
+}
+
+#[trace("FR-323-AC-3", "TC-833")]
+#[test]
+fn a_keyed_collection_of_an_ieee_bearing_union_is_refused() {
+    for collection in ["Set<F>[0, 4]", "Bag<F>[0, 4]", "OrderedSet<F>[0, 4]"] {
+        let unit = with_parameters(&format!("a: {collection}"));
+        let (typed, _) = unit.type_body(ClauseKind::Body, CheckingLimits::default());
+        let refusal = typed.expect_err(collection);
+        assert_eq!(
+            refusal.cause,
+            CheckCause::IllTyped(IllTypedCause::OperatorIneligible),
+            "{collection}"
+        );
+    }
+}
