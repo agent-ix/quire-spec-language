@@ -267,6 +267,10 @@ pub fn classify_domains(
                         fields.iter().map(|field| field.value_type()).collect()
                     }
                     CompositeShape::Tuple(positions) => positions.iter().collect(),
+                    CompositeShape::Union(members) => members
+                        .iter()
+                        .flat_map(|member| member.positions())
+                        .collect(),
                 };
                 // Pushed last-first so the stack visits them in order.
                 for (index, member) in members.into_iter().enumerate().rev() {

@@ -362,6 +362,9 @@ impl<'a> Keys<'a> {
                         },
                     ))?
             }
+            // Slots are a record's or a tuple's; a union value is not
+            // built from them.
+            CompositeShape::Union(_) => false,
         };
         if !fits {
             return Err(CauseCodecError::Value("slots"));
