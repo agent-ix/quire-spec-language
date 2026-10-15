@@ -37,7 +37,9 @@ const BUCKET: usize = 100;
 // parser trees remain unchanged; the complete-family buckets were regenerated
 // to record the expanded diagnostics. FR-308's `protocol <name>` primary adds
 // `protocol` to the same sets, and the complete-family buckets were
-// regenerated again. Historical and composed native outputs remain
+// regenerated again. FR-313's `union` declaration and `case` expression add
+// `union` and `case` to the same sets; no generated input flipped between
+// admitted and refused. Historical and composed native outputs remain
 // byte-identical.
 const BASELINE: &str = include_str!("../fixtures/parser-differential/baseline.txt");
 

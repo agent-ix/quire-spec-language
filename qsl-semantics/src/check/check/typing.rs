@@ -659,6 +659,15 @@ impl<'a> Typer<'a> {
             }
             ExprNode::Name(name) => self.name(name, hint.as_deref(), &location)?,
             ExprNode::ProtocolReference { target } => self.protocol_reference(target, &location)?,
+            // FR-313: S2 builds the form; FR-318 checks it.
+            ExprNode::Case(_) => {
+                return Err(refuse(
+                    &location,
+                    CheckCause::UnsupportedFeature {
+                        loci: vec![location.clone()],
+                    },
+                ))
+            }
             ExprNode::Let { name, value, body } => {
                 return Ok(Self::binding(
                     Branches::Inferred(hint),

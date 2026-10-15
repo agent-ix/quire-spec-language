@@ -105,6 +105,7 @@ fn state_clause(form: &DeclarationForm) -> &StateClauseForm {
         | DeclarationForm::Record(_)
         | DeclarationForm::Tuple(_)
         | DeclarationForm::Enum(_)
+        | DeclarationForm::Union(_)
         | DeclarationForm::Dimension(_)
         | DeclarationForm::Unit(_)
         | DeclarationForm::OperationBody(_)
@@ -121,6 +122,7 @@ fn operation_body(form: &DeclarationForm) -> &OperationBodyForm {
         | DeclarationForm::Tuple(_)
         | DeclarationForm::Enum(_)
         | DeclarationForm::Dimension(_)
+        | DeclarationForm::Union(_)
         | DeclarationForm::Unit(_)
         | DeclarationForm::StateClause(_)
         | DeclarationForm::Protocol(_) => panic!("an operation body form, not {form:?}"),
@@ -135,6 +137,7 @@ fn protocol_form(form: &DeclarationForm) -> &ProtocolDeclarationForm {
         | DeclarationForm::Record(_)
         | DeclarationForm::Tuple(_)
         | DeclarationForm::Enum(_)
+        | DeclarationForm::Union(_)
         | DeclarationForm::Dimension(_)
         | DeclarationForm::Unit(_)
         | DeclarationForm::OperationBody(_)
