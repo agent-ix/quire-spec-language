@@ -898,6 +898,13 @@ pub fn read_import_view(
 #[derive(Debug, Default)]
 pub struct AdmittedPackages(BTreeMap<PackageId, Arc<CheckedPackageV2>>);
 
+impl AdmittedPackages {
+    /// The package a [`read_import_view`] call admitted at `package_id`.
+    pub fn package(&self, package_id: &PackageId) -> Option<&CheckedPackageV2> {
+        self.0.get(package_id).map(Arc::as_ref)
+    }
+}
+
 /// Supply `evidence` with the admitted package of every entry of
 /// `package`'s `dependency_selections`, each read as [`read_import_view`]
 /// reads it: for a caller that reads `package`'s own bytes itself.

@@ -2,13 +2,13 @@
 //! QSL-771 (FR-093-AC-19, TC-416 step 11): the `Population<T>[N]` Contract IR
 //! v2 packages the admission corpus emits, as files.
 //!
-//! [`population_package`] builds one package over the TC-442 spine model
+//! `with_population_package` builds one package over the TC-442 spine model
 //! whose function `pop` takes a `Population<M::Gadget>[N]` parameter for each
-//! of its bounds, and [`fixture`] writes it through the real v2 emitter. The
-//! admission corpus asserts those bytes are admitted by IR's checked-package
-//! v2 reader; [`write`] writes the same bytes, for [`CASES`], into a new
-//! directory so IR's conformance gate can read them without depending on QSL.
-//! The `population_v2_fixtures` example is a thin caller of [`write`].
+//! of its bounds, and [`fixture`] emits it through the real v2 emitter and reads
+//! it back through IR's checked-package v2 reader. [`write()`] writes those
+//! bytes, for [`CASES`], into a new directory so IR's conformance gate can
+//! read them without depending on QSL.
+//! The `population_v2_fixtures` example is a thin caller of [`write()`].
 //!
 //! Beside each case the directory holds the domain package document the
 //! reader needs as evidence, under [`DOMAIN_PACKAGE_FILE`].
@@ -26,6 +26,7 @@ use qsl_semantics::{
     check::PackageDeclarations,
     library::{LibraryName, PackageId},
 };
+use quire_contract_model::CheckedNodeKind;
 use quire_semantic_value::checking::CheckingLimits;
 
 /// The domain package document `spine-model.native`'s `model M` selects.
@@ -41,7 +42,7 @@ pub const DOMAIN_PACKAGE_FILE: &str = "spine-model.semantic-ir.json";
 /// distinct bounds.
 pub const CASES: [&[u64]; 4] = [&[0], &[1], &[3], &[2, 5]];
 
-/// Why [`write`] or [`fixture`] produced no complete fixture set.
+/// Why [`write()`] or [`fixture`] produced no complete fixture set.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// The output path already exists, as a directory, file or link.
@@ -159,6 +160,8 @@ pub struct Fixture {
     pub bytes: Vec<u8>,
     /// The `package_id` the checked-package v2 reader admitted `bytes` at.
     pub package_id: PackageId,
+    /// Each graph node's family and form as IR's reader decoded it.
+    pub node_kinds: Vec<CheckedNodeKind>,
 }
 
 /// `bounds`' package through the v2 emitter, with nothing omitted, and read
@@ -186,18 +189,25 @@ fn emit_and_read(package: &CheckedPackage) -> Result<Fixture, Error> {
     let library =
         LibraryName::new("pkg").map_err(|refusal| Error::Admission(format!("{refusal:?}")))?;
     let domain_packages = qsl_semantics::model::intake::package_input([DOMAIN_PACKAGE]);
+    let mut admitted = AdmittedPackages::default();
     let view = read_import_view(
         package,
         &emission,
         library,
         &domain_packages,
-        &mut AdmittedPackages::default(),
+        &mut admitted,
         V2ReadLimits::default(),
     )
     .map_err(|refusal| Error::Admission(format!("{refusal:?}")))?;
+    let package_id = view.package();
+    let node_kinds = admitted
+        .package(&package_id)
+        .map(|package| package.node_kinds().to_vec())
+        .ok_or_else(|| Error::Admission("the read recorded no admitted package".to_owned()))?;
     Ok(Fixture {
         bytes: emission.package().bytes().to_vec(),
-        package_id: view.package(),
+        package_id,
+        node_kinds,
     })
 }
 
@@ -234,6 +244,7 @@ fn io_at(path: &Path, source: io::Error) -> Error {
 mod tests {
     use super::*;
     use ix_trace_rs::trace;
+    use quire_contract_model::BoundedDomainForm;
 
     fn written() -> (tempfile::TempDir, PathBuf) {
         let parent = tempfile::tempdir().unwrap();
@@ -277,6 +288,24 @@ mod tests {
             fs::read(output.join(DOMAIN_PACKAGE_FILE)).unwrap(),
             DOMAIN_PACKAGE
         );
+    }
+
+    /// TC-416 step 11: IR's reader decodes one `model_population` bounded
+    /// domain per bound.
+    #[trace("FR-093-AC-19", "TC-416")]
+    #[test]
+    fn ir_admits_one_model_population_node_per_bound() {
+        for bounds in CASES {
+            let admitted = fixture(bounds)
+                .unwrap()
+                .node_kinds
+                .iter()
+                .filter(|kind| {
+                    **kind == CheckedNodeKind::BoundedDomain(BoundedDomainForm::ModelPopulation)
+                })
+                .count();
+            assert_eq!(admitted, bounds.len(), "{bounds:?}");
+        }
     }
 
     /// Each population type node is a `model_population` node carrying role
