@@ -57,3 +57,18 @@ Recorded, not reported: the `quire-driver` example is true of open
 agent-ix/quire-driver#53 (which moves `serde_json` to a normal dependency
 to read retained manifest bytes), not of driver main, where `serde_json` is
 still a dev-dependency.
+
+## New findings (disposition pass 1)
+
+Reviewed at agent-ix/quire-spec-language@8e0f761464e894b21749cd9f17473279698e3bb5.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | high | The narrowed crate-map rule now forbids dependencies that the enforced gate requires. External general-purpose crates are allowed only "where its cell names no external crate and no stricter per-crate dependency table governs it". Layer 3's cell names external crates ("FCD crates from `model::intake` only"), and qsl-semantics has no per-crate exact table (its test branch filters to workspace crates only). So the ADR now limits qsl-semantics to layer crates plus FCD, yet tests/it/family_outcome_layering.rs:385-394 asserts qsl-semantics MUST depend on `quire-canonical`, and qsl-semantics/Cargo.toml also names `serde`, `serde_json`, `thiserror` and `tempfile`. The same narrowing bars `serde`/`serde_json`/`thiserror` in qsl-source (I3 names quire-rs) and qsl-replay (layer 6 names `quire-contract-model`). Separately, the new definition ("one that parses or serializes data") excludes `thiserror`, `sha2`, `logos` and `tempfile`, which qsl-foundation, qsl-cst and qsl-semantics use with no exact table | ADR-011:715, ADR-011:728, ADR-011:745-747, tests/it/family_outcome_layering.rs:385-394, qsl-semantics/Cargo.toml |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 8e0f761: SV and WG cells are now exhaustive for their crates, and "general-purpose" is defined; no remaining contradiction with those cells (the definition's own reach is FND-003) |
+| FND-002 | fixed | 8e0f761: per-crate exact dependency tables (qsl-forms, qsl-package, qsl-eval, qsl-route) are named as the stricter gate that governs where they exist; the qsl-semantics mismatch the narrowing creates is FND-003 |
