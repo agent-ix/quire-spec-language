@@ -158,7 +158,10 @@ Snapshot, format `quire.state.snapshot/v1`:
 - A value is exactly one of `{"boolean": true|false}`,
   `{"integer": "<decimal>"}`, `{"absent": {}}`, `{"present": <value>}`,
   `{"reference": {"population": ..., "key": ...}}`,
-  `{"sequence": [<value>, ...]}` and the record form below. There is no set, bag or ordered-set value:
+  `{"sequence": [<value>, ...]}`, the record form below, the variant form of
+  FR-360 and the two native payload forms below, `{"kind": "uuid", "text":
+  "<canonical UUID>"}` and `{"kind": "timestamp", "nanoseconds":
+  "<canonical decimal>"}`. There is no set, bag or ordered-set value:
   those collections are outside QSpec's selected state extension.
 
 A record value is `{"record": {"type": "<declaration identity>",
@@ -176,6 +179,66 @@ The record carries no object key, population or identity, and an object
 `reference` tag cannot stand in for it. Two admitted records compare under
 FR-208 by most-specific type and every effective field; JSON member order
 does not affect the typed value or the `sha256-jcs` digest.
+
+A **native payload value** is a UUID or a Timestamp, the closed wire objects of
+FR-056's K2 canonical native payloads. They take that requirement's spelling
+unchanged: the UUID object is `{"kind": "uuid", "text":
+"00112233-4455-6677-8899-aabbccddeeff"}`, whose `text` is 32 lowercase ASCII
+hexadecimal digits in groups `8-4-4-4-12` with four ASCII hyphens, and the
+Timestamp object is `{"kind": "timestamp", "nanoseconds": "0"}`, whose
+`nanoseconds` is a signed count on FR-056's POSIX-epoch scale in the
+signed-128 domain, spelled `0`, or an optional `-` then a nonzero digit and
+more digits. A value object with a `kind` member is a native payload
+object; every other value is a single-tag object. A UUID object has exactly
+the members `kind` and `text`, and a Timestamp object exactly `kind` and
+`nanoseconds`. The payload is a JSON string, never a JSON number, and the
+canonical text is the only accepted spelling: admission never case-folds,
+trims, inserts or removes a hyphen, strips a `urn:uuid:` prefix or braces,
+reads a calendar or offset text, or accepts an `Integer` for a Timestamp or a
+`String` for a UUID. UUID admission accepts every 128-bit payload, Nil and Max
+included, and retains the version and variant bits. A UUID or Timestamp
+object counts as one value against the values-per-document setting. Two
+admitted values of one native kind are equal exactly when their canonical
+payloads are equal (QSpec FR-149), so the frame check (check 11) compares a
+UUID or Timestamp field by payload, as it does a scalar. Native payload
+objects use the same closed value grammar anywhere a value may stand: a
+field, a parameter, a result, a record field, a present option and a
+sequence element.
+
+A field, parameter or result of declared type `UUID` admits only a UUID
+object, and one of declared type `Timestamp` only a Timestamp object. A
+UUID or Timestamp object fits no other declared type, and no other form
+fits those two. Admission checks a native payload object in this order and
+refuses the first defect found, at the nested value path and naming the
+member where one is listed, with `invalid_runtime_input` (the closed set of
+FR-056's runtime-input adapter; the kernel's construction classes are not
+catalog codes):
+
+1. A `kind` member that is not a JSON string (a number, `null`, an object)
+   refuses `wrong-value-kind`, naming `kind`.
+2. A `kind` string other than `uuid` and `timestamp` (including `string`,
+   which this grammar does not carry, and a letter-case variant such as
+   `UUID`) refuses `invalid-value`, naming `kind`. The members of such an
+   object are not examined.
+3. A missing payload member of the object's kind refuses `missing-member`,
+   naming `text` (UUID) or `nanoseconds` (Timestamp). So
+   `{"kind":"uuid","nanoseconds":"0"}` refuses `missing-member` naming `text`.
+4. An unknown member of the object's kind refuses `unknown-member`, naming the
+   first in document order. Here `nanoseconds` on a UUID object is unknown.
+5. A payload member that is not a JSON string, including a bare JSON number
+   (even `0`) or `null`, refuses `wrong-value-kind`, naming the member.
+6. A native kind that differs from the slot's declared type, a native
+   object in a slot of any other declared type, and a single-tag object
+   (such as `{"integer": "5"}`) in a `UUID` or `Timestamp` slot each refuse
+   `wrong-value-kind`.
+7. A payload that is not canonical refuses `invalid-value`, naming the
+   payload member, with the kernel class `noncanonical-payload`. A canonical
+   Timestamp text outside the signed-128 domain refuses `invalid-value` with
+   the kernel class `payload-out-of-domain`. Noncanonical text takes
+   precedence over the range check.
+
+A repeated member name in a document is settled earlier, by check 1.3's
+shared-reader rule, and never reaches this order.
 
 Invocation, format `quire.state.invocation/v1`:
 
@@ -345,7 +408,8 @@ required; check 10 settles it.
       `missing-member`, an extra field `unknown-member`, an incompatible
       record type or value tag `wrong-value-kind`, and a malformed scalar
       payload `invalid-value`, all under `invalid_runtime_input` at the
-      nested value path. The same rule applies to operation parameters and
+      nested value path. A UUID or Timestamp object is checked by the native
+      payload rule above. The same rule applies to operation parameters and
       results in check 10.
       Inputs are refused, outputs are evidence: this refusal applies to
       every current snapshot, every pre snapshot and every operation
@@ -363,7 +427,8 @@ required; check 10 settles it.
       field is evidence in the same way. The field's declared range is part
       of the operation's contract, so the observation is the witness of a
       violation; the caller settles it. A post-state value of the wrong
-      kind or not in FR-038's spelling is still refused. The default is
+      kind, not in FR-038's spelling, or a UUID or Timestamp object that
+      fails the native payload checks above is still refused. The default is
       `Refuse`, under which every snapshot refuses, and a `Frame` run's
       post snapshot always refuses. A clause that compares or orders the
       field, or does arithmetic on it, evaluates over the exact integer;
@@ -538,6 +603,11 @@ required; check 10 settles it.
 | FR-106-AC-15 | A record payload with a missing effective field refuses `invalid_runtime_input`/`missing-member`; one with an extra field refuses `unknown-member`; a `type` naming an object type, an unrelated record subtype, or no selected record refuses `wrong-value-kind`; and an object reference in place of a record refuses `wrong-value-kind`. Each refusal names the first nested path reached in field order, including an index for a sequence element. The same cases in a parameter or result use the invocation binding as the path root. | Test |
 | FR-106-AC-16 | A finite `Node { next?: Node }` value nested through 10,000 present `next` fields admits when byte and value limits allow it, with no reader or validator stack-depth refusal. At the exact values-per-document bound the document admits; one more nested value returns `stage_limit_exceeded`/`node-count-exceeded` naming `observation.values`, the bound and the count reached, before that value is admitted. A false invariant on one nested `Node` is reported as a logical violation at its FR-207 runtime value path after admission, not as an input refusal. | Test |
 | FR-106-AC-17 | An invocation changing `Account.address` from one admitted record value to another admits its frame when the selected `modifies` grant covers that declared object field. Without that grant it refuses `frame_violation`/`unauthorized-change` naming `Account.address`, whether the change is to a record member or its most-specific type. The existing QSpec FR-013 and FR-340 receiver and grant semantics apply. | Test |
+| FR-106-AC-18 | Over the TC-1029 fixture, a current snapshot whose `child` holds `token` `{"kind":"uuid","text":"00112233-4455-6677-8899-aabbccddeeff"}` and `stamp` `{"kind":"timestamp","nanoseconds":"0"}` admits both as a UUID and a Timestamp value of the retained canonical payloads; reordering the members of either object, and the whitespace of the document, gives the same typed observation and digest. Nil (`00000000-0000-0000-0000-000000000000`), Max (`ffffffff-ffff-ffff-ffff-ffffffffffff`), a UUID whose version nibble is `0`, outside RFC 9562's version table (`00112233-4455-0677-8899-aabbccddeeff`), and Timestamps `1`, `-1`, `170141183460469231731687303715884105727` and `-170141183460469231731687303715884105728` admit unchanged. A present optional `prior`, each element of a `Sequence<Timestamp>` field `seen`, and the `id` and `at` parameters and a UUID `result` of an invocation admit by the same rule, and each object counts as one value toward `observation.values`. | Test (TC-1029) |
+| FR-106-AC-19 | A UUID `text` in uppercase (`00112233-4455-6677-8899-AABBCCDDEEFF`), mixed case, hyphenless, braced, `urn:uuid:`-prefixed, with a moved hyphen, with a non-hex digit, of the wrong length, padded with whitespace or holding a non-ASCII digit refuses `invalid_runtime_input`/`invalid-value` naming `child`, `token` and member `text`, with kernel class `noncanonical-payload`. A Timestamp `nanoseconds` of `-0`, `+1`, `01`, `-01`, the empty string, ` 1`, `1.0`, `1e3` and `2026-10-15T00:00:00Z` refuses `invalid-value` with class `noncanonical-payload`. `170141183460469231731687303715884105728` and `-170141183460469231731687303715884105729` refuse `invalid-value` with class `payload-out-of-domain`; `0170141183460469231731687303715884105728` refuses with `noncanonical-payload`, never the range class. No refusal produces a value or a repaired spelling. | Test (TC-1029) |
+| FR-106-AC-20 | Native payload objects refuse in the listed order: `kind` as `1` or `null` refuses `wrong-value-kind` naming `kind`, even beside a missing payload member; `kind` `string`, `UUID` and `uuidv4` refuse `invalid-value` naming `kind`, and `{"kind":"string","nanoseconds":"0"}` refuses the same way, its members unexamined; a UUID object with no `text` (and `{"kind":"uuid","nanoseconds":"0"}`) and a Timestamp object with no `nanoseconds` refuse `missing-member` naming that member; an extra member refuses `unknown-member` naming it; `nanoseconds` as the JSON number `0`, and `text` as `null` or `5`, refuse `wrong-value-kind` naming the member. An object with both an extra member and a noncanonical `text` refuses `unknown-member`. | Test (TC-1029) |
+| FR-106-AC-21 | A Timestamp object in the UUID field `token`, a UUID object in the Timestamp field `stamp`, `{"integer":"5"}` in `stamp`, `{"integer":"5"}` and `{"boolean":true}` in `token`, a UUID object in the integer field `versionNumber` and in a `Reference` field, a Timestamp object inside `{"present": ...}` of the optional UUID `prior`, and a UUID object as an element of `seen` each refuse `invalid_runtime_input`/`wrong-value-kind` at the nested path (the sequence element with its index), including a Timestamp object with `nanoseconds` `"01"` in `token` and a UUID object with `text` `"X"` in `stamp`, which are `wrong-value-kind`, never `invalid-value`. The same cases in a parameter or result use the invocation binding as the path root. | Test (TC-1029) |
+| FR-106-AC-22 | An invocation changing `token` or `stamp` between two admitted payloads admits its frame when the selected `modifies` grant covers the field and refuses `frame_violation`/`unauthorized-change` naming `child` and the field without it; one whose post holds the same payload, with differently ordered members, is no change. Under `PostStateRange::Witness`, a post snapshot holding a noncanonical UUID or Timestamp still refuses `invalid-value`. With `observation.values` set to the exact count of a document holding a `token` and a `stamp`, the document admits; one less returns `stage_limit_exceeded`/`node-count-exceeded` at the last of those values in walk order. | Test (TC-1029) |
 | FR-106-AC-23 | TC-1035's `orders` snapshot of population `Q` (`s1`, `p1`, `p2`, `t1`) lists `Sys-composition-Pump` complete with instances `s1`-`p2` then `s1`-`p1`, and `Pump-housing-Tank` complete with `p1`-`t1` and `p2`-`t1`. Selected for an invariant on `Sys` with `self` `s1`, it admits one observation whose composition extent reads `targets` `[p1, p2]` and whose housing extent reads `sources` of `t1` `[p1, p2]`; reordering the entries, the instances and the JSON members gives the same digest and the same admitted value. The same snapshot with no `relationships` member admits with both relationships unlisted (`complete` false); with `Sys-composition-Pump` listed `"complete": true` and `"instances": []` it admits with that extent complete and empty. A snapshot listing four instances `s1`-`p1` to `s1`-`p4` for `parts` `{0,3}`, and one with no `Pump-housing-Tank` instance for `p3` through `home` `{1,1}`, admit. | Test (TC-1035) |
 | FR-106-AC-24 | Each of checks 6.6 to 6.9 has one case that fails only it and returns exactly its code and cause, naming the relationship and the zero-based instance index: an entry without `instances`, an entry with an extra member, a `complete` of `"yes"`; a `relationship` that is a connection, and separately an unknown identity; two entries for one relationship; an instance without `target`, with an extra member, with a numeric `key`; a `population` naming no population of the package; a `Tank` `t1` at the `source` end of `Sys-composition-Pump`, and separately at its `target` end; a repeated `s1`-`p1` instance where the ends are unique. A repeated instance admits as two instances when both ends of the relationship declare `unique: false`, and refuses when only one does. | Test (TC-1035) |
 | FR-106-AC-25 | A target `t9` of a `Pump-housing-Tank` instance that `Q` does not list, with `Q` complete, refuses `dangling_reference`/`absent-target-in-complete-population` naming the relationship, the instance and end `target`, `t9` and `Q`; the same snapshot with `Q` `"complete": false` returns `Incomplete` with `incomplete_population`/`incomplete-scope` and no dangling record. A dangling `reference` value and a dangling instance end in one snapshot report the `reference` value. Over a variant in which the `Tank` object `t1` lives in a second population `Tanks` marked `"complete": false`, an instance `p1`-`t1` makes `Tanks` required and returns `Incomplete` naming `Tanks`, while the same snapshot without the instance admits. An extent listed `"complete": false` admits. | Test (TC-1035) |
@@ -548,7 +618,8 @@ required; check 10 settles it.
 
 - FR-084 and FR-089 (population binding and identity), FR-103 (operation
   effect), FR-001 (the two labels; QSpec STD-150), FR-056 (the `sha256-jcs` rule and its
-  digest-first order), FR-038 (integer spelling).
+  digest-first order; the K2 UUID and Timestamp payloads and their runtime-input
+  refusals), FR-038 (integer spelling).
 - FR-364 (relationship extents: the instance model, its admission conditions
   and the read contract navigation uses).
 - QSpec FR-153 and `state-contract.md` (anchors, completeness and closure),
