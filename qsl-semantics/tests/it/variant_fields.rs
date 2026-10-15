@@ -1414,28 +1414,17 @@ fn a_case_in_expression_position_is_refused_by_s1_as_unexpected() {
 }
 
 /// FR-360-AC-5 (item 5): since FR-313 a well-formed `case` over a variant
-/// parses and reaches the checker, which refuses it
-/// `unknown_required_feature`/`unsupported-feature` at the `case` until FR-318
-/// checks `case` expressions; the scrutinee `type-mismatch` is FR-318's.
-#[trace("TC-1007", "FR-360-AC-5")]
+/// parses and reaches the checker, and since FR-318 the checker refuses it
+/// `ill_typed`/`type-mismatch` at the scrutinee: `case` ranges over a declared
+/// union only, and a variant type is an enum type, not a union.
+#[trace("TC-1007", "FR-360-AC-5", "FR-318-AC-4")]
 #[test]
-fn a_well_formed_case_over_a_variant_is_refused_by_the_checker_as_unsupported() {
+fn a_well_formed_case_over_a_variant_is_refused_at_its_scrutinee() {
     let refusals = check_refusals(
         "function f using v(t: Config::Tier): Boolean pure { case t { Gold: true; } }",
     );
     assert!(
-        refused_in_body(
-            &refusals,
-            "f",
-            &[],
-            &CheckCause::UnsupportedFeature {
-                loci: vec![refusals
-                    .first()
-                    .expect("the case is refused")
-                    .location
-                    .clone()]
-            }
-        ),
+        refused_in_body(&refusals, "f", &[0], &mismatch()),
         "{refusals:?}"
     );
 }

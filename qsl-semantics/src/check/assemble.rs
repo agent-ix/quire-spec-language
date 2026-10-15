@@ -467,7 +467,9 @@ impl AssemblyCause {
             Self::UnitGraphTopology { .. } => "unit-graph-topology",
             Self::IllFormedBounds(_) => "type-mismatch",
             Self::ImportedTypeName { .. } => "operator-ineligible",
-            Self::FloatingType { .. } | Self::UnsupportedModelMember { .. } => "unsupported-feature",
+            Self::FloatingType { .. } | Self::UnsupportedModelMember { .. } => {
+                "unsupported-feature"
+            }
             Self::AliasCycle { .. } => "definition-cycle",
             Self::UndeclaredAlias { .. }
             | Self::UnadmittedModel { .. }
@@ -2562,7 +2564,8 @@ impl PackageDeclarations {
                         }
                         match Identifier::new(form.name.name.clone()) {
                             Ok(identifier) => {
-                                declared.push(UnionMemberDeclaration::resolved(identifier, payload));
+                                declared
+                                    .push(UnionMemberDeclaration::resolved(identifier, payload));
                             }
                             Err(_) => errors.push(AssemblyError {
                                 cause: AssemblyCause::handle(

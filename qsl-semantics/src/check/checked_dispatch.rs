@@ -1896,10 +1896,8 @@ mod tests {
     #[test]
     fn dispatch_substitution_renames_an_arm_binder_that_a_rename_target_would_capture() {
         let source = case_source("case x { A(r): x + r; B(k): k; }");
-        let renamed = substitute_names(
-            &source,
-            &BTreeMap::from([("x".to_owned(), "r".to_owned())]),
-        );
+        let renamed =
+            substitute_names(&source, &BTreeMap::from([("x".to_owned(), "r".to_owned())]));
         let ExprNode::Case(case) = renamed.root_node() else {
             panic!("case")
         };

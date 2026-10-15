@@ -2351,7 +2351,9 @@ fn a_union_is_its_own_composite_in_declared_order_beside_an_enum() {
 
 /// The refusals of `declarations`, each with its recursion cycle when the
 /// cause is the recursion rule.
-fn recursion_refusals(declarations: &str) -> (String, Vec<(AssemblyError, RecursionEdges, Vec<String>)>) {
+fn recursion_refusals(
+    declarations: &str,
+) -> (String, Vec<(AssemblyError, RecursionEdges, Vec<String>)>) {
     let (text, found) = errors(declarations);
     let refusals = found
         .into_iter()
@@ -2394,14 +2396,16 @@ fn a_union_recurses_only_through_an_escaping_edge() {
 #[trace("FR-316-AC-2", "TC-818")]
 #[test]
 fn a_cycle_through_a_record_and_a_union_is_refused_at_both_declarations() {
-    let (text, refusals) =
-        recursion_refusals("record Box { inner: U; }\nunion U { Wrap(Box) }");
+    let (text, refusals) = recursion_refusals("record Box { inner: U; }\nunion U { Wrap(Box) }");
     assert_eq!(refusals.len(), 2, "{refusals:?}");
     let mut spans: Vec<Span> = refusals.iter().map(|(error, ..)| error.span).collect();
     spans.sort_by_key(|span| span.start);
     assert_eq!(
         spans,
-        [after(&text, "record Box", "Box"), after(&text, "union U", "U")]
+        [
+            after(&text, "record Box", "Box"),
+            after(&text, "union U", "U")
+        ]
     );
     for (_, edges, cycle) in &refusals {
         assert_eq!(*edges, RecursionEdges::NonEscaping);
@@ -2443,7 +2447,10 @@ fn a_union_refuses_a_repeated_member_and_an_unresolved_payload_type() {
 #[test]
 fn a_union_is_bounded_only_by_the_configured_ceilings() {
     let members: Vec<String> = (0..5_000).map(|member| format!("M{member}")).collect();
-    let text = text(PROFILE_V, &format!("union Big {{ {} }}", members.join(", ")));
+    let text = text(
+        PROFILE_V,
+        &format!("union Big {{ {} }}", members.join(", ")),
+    );
     let assemble_under = |work_units: u64| {
         let parsed = qsl_cst::parse(
             SourceIdentity::new("a", "u", "git", "1"),
@@ -2467,7 +2474,9 @@ fn a_union_is_bounded_only_by_the_configured_ceilings() {
             },
         )
     };
-    let default = crate::check::AssemblyLimits::default().environment.work_units;
+    let default = crate::check::AssemblyLimits::default()
+        .environment
+        .work_units;
     let admitted = assemble_under(default).expect("5,000 members are admitted by default");
     assert_eq!(members_of(composite_named(&admitted, "Big")).len(), 5_000);
     let needed = admitted.types.spent();
@@ -2479,15 +2488,23 @@ fn a_union_is_bounded_only_by_the_configured_ceilings() {
         panic!("a type-environment limit, not {:?}", error.cause)
     };
     assert_eq!(limit.configured_bound(), needed - 1);
-    assert_eq!(limit.setting(), qsl_foundation::Setting::EnvironmentWorkUnits);
-    assert!(assemble_under(needed).is_ok(), "the field raised by one admits it");
+    assert_eq!(
+        limit.setting(),
+        qsl_foundation::Setting::EnvironmentWorkUnits
+    );
+    assert!(
+        assemble_under(needed).is_ok(),
+        "the field raised by one admits it"
+    );
 
     let nested = format!(
         "union Deep {{ Wrap({}Integer{}) }}",
         "Option<".repeat(1_000),
         ">".repeat(1_000)
     );
-    assemble(&nested).1.expect("1,000 nested payload levels are admitted");
+    assemble(&nested)
+        .1
+        .expect("1,000 nested payload levels are admitted");
 }
 
 /// FR-313 builds `case` and FR-318 checks it, so a unit holding one

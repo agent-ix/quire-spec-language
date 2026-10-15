@@ -109,8 +109,8 @@ mod settings;
 mod state_clause;
 mod state_model;
 mod sum_case;
-pub use sum_case::{ExhaustivenessObligation, SumCaseCause};
 pub use state_model::StateModelRefusal;
+pub use sum_case::{ExhaustivenessObligation, SumCaseCause};
 #[cfg(any(test, feature = "test-support"))]
 pub mod stratum;
 mod termination;
@@ -175,7 +175,8 @@ pub use family::fixtures::{
 };
 pub use ir::{
     Arithmetic, CaseArm, CheckedBody, CheckedLiteral, CheckedNode, Connective,
-    IntegerDivisionOperator, Node, NodeId, NodeKind, Observation, OrderedKind, RecordField, RecordSlot, Slot, Visit,
+    IntegerDivisionOperator, Node, NodeId, NodeKind, Observation, OrderedKind, RecordField,
+    RecordSlot, Slot, Visit,
 };
 
 pub use assemble::{

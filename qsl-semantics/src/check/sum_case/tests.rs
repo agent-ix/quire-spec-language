@@ -18,7 +18,7 @@ use quire_semantic_value::location::{Location, Origin};
 use super::{ExhaustivenessObligation, SumCaseCause};
 use crate::check::check::{bind_parameters, Scope, Signatures, Typer};
 use crate::check::ir::{CheckedBody, CheckedNode, NodeKind, Slot};
-use crate::check::{CheckCause, CheckRefusal, PackageDeclarations};
+use crate::check::{CheckCause, CheckRefusal, CheckingLimitKind, PackageDeclarations};
 
 const SHAPE: &str = "union Shape { Empty, Circle(Integer), Rect(Integer, Integer) }\n\
                      union Other { X }\n\
@@ -27,7 +27,9 @@ const SHAPE: &str = "union Shape { Empty, Circle(Integer), Rect(Integer, Integer
 /// A function over a `Shape` parameter `s` (and a second one `t`), with the
 /// given result type and body.
 fn function(result: &str, body: &str) -> String {
-    format!("function f using v(s: Shape, t: Shape, n: Integer, k: Kind): {result} pure {{ {body} }}")
+    format!(
+        "function f using v(s: Shape, t: Shape, n: Integer, k: Kind): {result} pure {{ {body} }}"
+    )
 }
 
 struct Unit {
@@ -186,7 +188,9 @@ fn a_case_over_a_union_checks_with_positional_binders_per_arm() {
         let reads = locals(root.at(arm.body));
         for slot in &arm.binders {
             assert!(
-                reads.iter().any(|(read, ty)| read == slot && ty == &ValueType::Integer),
+                reads
+                    .iter()
+                    .any(|(read, ty)| read == slot && ty == &ValueType::Integer),
                 "binder {slot:?} is read as an Integer in its arm"
             );
         }
@@ -286,24 +290,31 @@ fn each_exhaustiveness_obligation_refuses_with_its_union_arm_set_and_locus() {
 #[trace("FR-318-AC-4", "TC-823")]
 #[test]
 fn a_case_reports_only_its_first_refusal_in_the_fixed_order() {
-    let (_, refusal) = refused(
-        "Integer",
-        "case s { Empty: 0; Empty: 1; Circle(r): r; }",
-    );
+    let (_, refusal) = refused("Integer", "case s { Empty: 0; Empty: 1; Circle(r): r; }");
     let (_, _, obligation) = exhaustiveness(&refusal);
-    assert_eq!(obligation, ExhaustivenessObligation::DuplicateArm, "before missing-arm");
+    assert_eq!(
+        obligation,
+        ExhaustivenessObligation::DuplicateArm,
+        "before missing-arm"
+    );
 
     // An unknown or mis-sized arm's body is not checked.
     let (_, refusal) = refused(
         "Integer",
         "case s { Empty: 0; Other::X: true + 1; Circle(r): r; Rect(w, h): w; }",
     );
-    assert_eq!(exhaustiveness(&refusal).2, ExhaustivenessObligation::UnknownMember);
+    assert_eq!(
+        exhaustiveness(&refusal).2,
+        ExhaustivenessObligation::UnknownMember
+    );
     let (_, refusal) = refused(
         "Integer",
         "case s { Empty: 0; Circle(a, b): z; Rect(w, h): w; }",
     );
-    assert_eq!(exhaustiveness(&refusal).2, ExhaustivenessObligation::ArmArity);
+    assert_eq!(
+        exhaustiveness(&refusal).2,
+        ExhaustivenessObligation::ArmArity
+    );
 
     // Typing comes before reachability.
     let (_, bad) = refused("Integer", "case s { Circle(r): true; Empty: 0; }");
@@ -317,7 +328,11 @@ fn a_case_reports_only_its_first_refusal_in_the_fixed_order() {
             &format!("case {scrutinee} {{ Missing: 0; Other::X: 1; }}"),
         );
         assert_eq!(bad.cause, CheckCause::IllTyped(IllTypedCause::TypeMismatch));
-        assert_eq!(bad.location, Unit::body().child(0), "at the scrutinee {scrutinee}");
+        assert_eq!(
+            bad.location,
+            Unit::body().child(0),
+            "at the scrutinee {scrutinee}"
+        );
     }
 }
 
@@ -326,7 +341,10 @@ fn a_case_reports_only_its_first_refusal_in_the_fixed_order() {
 fn a_case_checks_under_the_clause_kind_it_stands_in() {
     let unit = unit(&format!(
         "{SHAPE}{}",
-        function("Integer", "case s { Circle(r): r; Rect(w, h): w; Empty: 0; }")
+        function(
+            "Integer",
+            "case s { Circle(r): r; Rect(w, h): w; Empty: 0; }"
+        )
     ));
     for clause in [
         ClauseKind::Body,
@@ -354,7 +372,10 @@ fn nesting_is_bounded_only_by_the_node_ceiling() {
     let unit = unit(&format!("{SHAPE}{}", function("Integer", &nested(1_000))));
     let (typed, needed) = unit.type_body(ClauseKind::Body, CheckingLimits::default());
     typed.expect("1,000 nested cases check under the default ceilings");
-    let (typed, _) = unit.type_body(ClauseKind::Body, CheckingLimits::default().with_nodes(needed - 1));
+    let (typed, _) = unit.type_body(
+        ClauseKind::Body,
+        CheckingLimits::default().with_nodes(needed - 1),
+    );
     let Err(CheckRefusal {
         cause: CheckCause::ResourceExhausted(limit),
         ..
@@ -362,8 +383,84 @@ fn nesting_is_bounded_only_by_the_node_ceiling() {
     else {
         panic!("one node short is a limit, not {typed:?}")
     };
-    assert_eq!(limit.kind, crate::check::CheckingLimitKind::Nodes);
+    assert_eq!(limit.kind, CheckingLimitKind::Nodes);
     assert_eq!(limit.limit, needed - 1);
-    let (typed, _) = unit.type_body(ClauseKind::Body, CheckingLimits::default().with_nodes(needed));
+    let (typed, _) = unit.type_body(
+        ClauseKind::Body,
+        CheckingLimits::default().with_nodes(needed),
+    );
     assert!(typed.is_ok(), "raising the ceiling by one admits it");
+
+    // Through the whole check, the denied node has a region of the source.
+    let refusals = unit
+        .package
+        .check(CheckingLimits::default().with_nodes(needed - 1))
+        .expect_err("one node short");
+    let [refusal] = refusals.as_slice() else {
+        panic!("one refusal, not {refusals:?}")
+    };
+    let CheckCause::ResourceExhausted(limit) = &refusal.cause else {
+        panic!("a node limit, not {refusal:?}")
+    };
+    assert_eq!(limit.kind, CheckingLimitKind::Nodes);
+    assert!(limit.region.is_some(), "the denied node is located");
+}
+
+/// A well-typed `case` checks, but FR-093 keys no union type or `case` node
+/// yet, so the package that holds one is refused at lowering with the
+/// unsupported-feature cause: an explicit refusal, never a package built
+/// without the node (FR-319, FR-320).
+#[test]
+fn a_package_holding_a_union_is_refused_at_lowering_until_unions_are_keyed() {
+    let unit = unit(&format!(
+        "{SHAPE}{}",
+        function(
+            "Integer",
+            "case s { Circle(r): r; Rect(w, h): w; Empty: 0; }"
+        )
+    ));
+    let refusals = unit
+        .package
+        .check(CheckingLimits::default())
+        .expect_err("the checked graph cannot lower a union yet");
+    assert!(!refusals.is_empty());
+    for refusal in &refusals {
+        assert!(
+            matches!(refusal.cause, CheckCause::UnsupportedFeature { .. }),
+            "{refusal:?}"
+        );
+        assert_eq!(refusal.cause.code(), Code::UnknownRequiredFeature);
+    }
+}
+
+/// A `case` and its exhaustiveness obligation add no claim (FR-057); the
+/// scalar applications in its arm bodies are claim sites of the existing
+/// walk, found under each arm's payload binders.
+#[trace("FR-318-AC-5", "TC-824")]
+#[test]
+fn a_case_adds_no_claim_and_its_arm_bodies_are_claim_sites() {
+    let (unit, typed) = check(
+        "Integer",
+        "case s { Circle(r): r * r * 3; Rect(w, h): w * h; Empty: 0; }",
+    );
+    let body = typed.expect("the case checks");
+    let (parameters, _) = unit
+        .package
+        .resolved_signatures
+        .get(0)
+        .cloned()
+        .expect("f's signature");
+    let claims = crate::check::claims::claims_of(
+        body.root(),
+        &parameters,
+        &Unit::body(),
+        &unit.package.types,
+        u64::MAX,
+    )
+    .expect("the claims walk finds the binders of every arm");
+    // `r * r`, `(r * r) * 3` and `w * h`; none at the `case` itself.
+    assert_eq!(claims.len(), 3);
+    assert!(claims
+        .iter()
+        .all(|claim| claim.site().location() != &Unit::body()));
 }

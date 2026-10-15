@@ -1030,11 +1030,8 @@ impl Scope {
                             pending.extend(fields.iter().map(FieldDeclaration::value_type));
                         }
                         Some(CompositeShape::Tuple(positions)) => pending.extend(positions),
-                        Some(CompositeShape::Union(members)) => pending.extend(
-                            members
-                                .iter()
-                                .flat_map(|member| member.positions().iter()),
-                        ),
+                        Some(CompositeShape::Union(members)) => pending
+                            .extend(members.iter().flat_map(|member| member.positions().iter())),
                         None => {}
                     }
                 }
