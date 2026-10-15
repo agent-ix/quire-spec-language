@@ -27,7 +27,7 @@ use quire_semantic_value::declaration::FieldRef;
 use RelationshipDirection::{Bidirectional, SourceToTarget, TargetToSource, Undirected};
 
 fn key(node: &str) -> DeclarationKey {
-    DeclarationKey::fixture(&format!("ix://test/orders/{node}"))
+    DeclarationKey::fixture(format!("ix://test/orders/{node}"))
 }
 
 /// A multiplicity `{lower,upper}` with `unique: true` and `ordered: false`.
