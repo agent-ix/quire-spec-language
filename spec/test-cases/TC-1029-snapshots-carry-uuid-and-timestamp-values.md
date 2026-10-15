@@ -39,7 +39,7 @@ Scope: FR-106-AC-18, FR-106-AC-19, FR-106-AC-20, FR-106-AC-21, FR-106-AC-22.
 2. Admit one mutation per row of `token` (UUID) values, each with its
    own digest: Nil `00000000-0000-0000-0000-000000000000`, Max
    `ffffffff-ffff-ffff-ffff-ffffffffffff`, and
-   `00112233-4455-0677-0899-aabbccddeeff`. Admit one mutation per row of
+   `00112233-4455-0677-8899-aabbccddeeff`. Admit one mutation per row of
    `stamp` (Timestamp) values: `"1"`, `"-1"`,
    `"170141183460469231731687303715884105727"` and
    `"-170141183460469231731687303715884105728"`. Admit `prior` as
@@ -64,16 +64,18 @@ Scope: FR-106-AC-18, FR-106-AC-19, FR-106-AC-20, FR-106-AC-21, FR-106-AC-22.
    and `"-170141183460469231731687303715884105729"` (out of domain);
    `"0170141183460469231731687303715884105728"` (noncanonical and out of
    domain).
-6. Mutate `token` to each envelope defect, one per row: `text` repeated;
-   no `text`; an extra member `"extra":1`; `text` `null`; `text` `5`; `kind` `1`; `kind`
-   `"string"`; `kind` `"UUID"`; `kind` `"uuidv4"`; an extra member together with
-   a noncanonical `text`. Repeat for `stamp` with no `nanoseconds`,
-   `nanoseconds` the JSON number `0`, and `nanoseconds` repeated.
+6. Mutate `token` to each envelope defect, one per row: no `text`;
+   `{"kind":"uuid","nanoseconds":"0"}`; an extra member `"extra":1`; `text`
+   `null`; `text` `5`; `kind` `1`; `kind` `null`; `kind` `"string"`; `kind`
+   `"UUID"`; `kind` `"uuidv4"`; `{"kind":"string","nanoseconds":"0"}`; an extra
+   member together with a noncanonical `text`; `kind` `1` with no `text`.
+   Repeat for `stamp` with no `nanoseconds` and `nanoseconds` the JSON
+   number `0`.
 7. Mutate for fit, one per row: a Timestamp object in `token`; a UUID object
    in `stamp`; `{"integer":"5"}` in `stamp`; `{"integer":"5"}` and
    `{"boolean":true}` in `token`; a UUID object in `versionNumber`; a UUID
    object as a `parent` value; a Timestamp object in `{"present":...}` of
-   `prior`; a UUID object as an element of `seen` at index 1. Repeat the
+   `prior`; a UUID object as an element of `seen` at index 1; a Timestamp object with `nanoseconds` `"01"` in `token`; a UUID object with `text` `"X"` in `stamp`. Repeat the
    first two as the `id` and `at` arguments of `touch`, and as its `result`.
 8. Admit an invocation of `touch` changing `child.token` from the base UUID
    to another canonical UUID, and `child.stamp` from `"0"` to `"1"`, with the
@@ -100,13 +102,15 @@ Scope: FR-106-AC-18, FR-106-AC-19, FR-106-AC-20, FR-106-AC-21, FR-106-AC-22.
   `noncanonical-payload`, the next two with `invalid-value` and class
   `payload-out-of-domain`, and the last with `noncanonical-payload`, all
   naming `child`, `stamp` and member `nanoseconds`.
-- Step 6 refuses, in order: `duplicate-member` naming `text` (and
-  `nanoseconds`); `missing-member` naming `text` (and `nanoseconds`);
-  `unknown-member` naming `extra`; `wrong-value-kind` naming `text` for `null` and `5`,
-  naming `kind` for `1` and naming `nanoseconds` for the number `0`;
-  `invalid-value` naming `kind` for `string`, `UUID` and `uuidv4`; and
-  `unknown-member` naming `extra` for the extra member beside the
-  noncanonical `text`.
+- Step 6 refuses by the listed order: `kind` `1` and `null` (also `kind` `1`
+  with no `text`) give `wrong-value-kind` naming `kind`; `kind` `"string"`,
+  `"UUID"`, `"uuidv4"` and the `string`/`nanoseconds` object give
+  `invalid-value` naming `kind`; the missing `text` rows (and the `uuid`
+  object carrying only `nanoseconds`) give `missing-member` naming `text`, and
+  the missing `nanoseconds` row naming `nanoseconds`; the extra member rows
+  give `unknown-member` naming `extra`, including beside a noncanonical
+  `text`; `text` `null` and `5`, and `nanoseconds` `0`, give `wrong-value-kind`
+  naming the member.
 - Step 7 refuses every row `invalid_runtime_input`/`wrong-value-kind` at the
   nested path (`prior` with its option-value step, `seen` with index 1, the
   `touch` binding root for arguments and result), even where the payload is

@@ -181,17 +181,19 @@ member where one is listed, with `invalid_runtime_input` (the closed set of
 FR-056's runtime-input adapter; the kernel's construction classes are not
 catalog codes):
 
-1. A repeated member refuses `duplicate-member`.
-2. A missing payload member refuses `missing-member`, naming `text` or
-   `nanoseconds`.
-3. An unknown member refuses `unknown-member`, naming the first in document
-   order.
-4. A `kind` or payload member that is not a JSON string, including a bare JSON
-   number (even `0`) or `null`, refuses `wrong-value-kind`, naming the
-   member.
-5. A `kind` string other than `uuid` and `timestamp` (including `string`,
-   which this grammar does not carry, and a letter-case variant) refuses
-   `invalid-value`, naming `kind`.
+1. A `kind` member that is not a JSON string (a number, `null`, an object)
+   refuses `wrong-value-kind`, naming `kind`.
+2. A `kind` string other than `uuid` and `timestamp` (including `string`,
+   which this grammar does not carry, and a letter-case variant such as
+   `UUID`) refuses `invalid-value`, naming `kind`. The members of such an
+   object are not examined.
+3. A missing payload member of the object's kind refuses `missing-member`,
+   naming `text` (UUID) or `nanoseconds` (Timestamp). So
+   `{"kind":"uuid","nanoseconds":"0"}` refuses `missing-member` naming `text`.
+4. An unknown member of the object's kind refuses `unknown-member`, naming the
+   first in document order. Here `nanoseconds` on a UUID object is unknown.
+5. A payload member that is not a JSON string, including a bare JSON number
+   (even `0`) or `null`, refuses `wrong-value-kind`, naming the member.
 6. A native kind that differs from the slot's declared type, a native
    object in a slot of any other declared type, and a single-tag object
    (such as `{"integer": "5"}`) in a `UUID` or `Timestamp` slot each refuse
@@ -201,6 +203,9 @@ catalog codes):
    Timestamp text outside the signed-128 domain refuses `invalid-value` with
    the kernel class `payload-out-of-domain`. Noncanonical text takes
    precedence over the range check.
+
+A repeated member name in a document is settled earlier, by check 1.3's
+shared-reader rule, and never reaches this order.
 
 Invocation, format `quire.state.invocation/v1`:
 
@@ -505,10 +510,10 @@ required; check 10 settles it.
 | FR-106-AC-15 | A record payload with a missing effective field refuses `invalid_runtime_input`/`missing-member`; one with an extra field refuses `unknown-member`; a `type` naming an object type, an unrelated record subtype, or no selected record refuses `wrong-value-kind`; and an object reference in place of a record refuses `wrong-value-kind`. Each refusal names the first nested path reached in field order, including an index for a sequence element. The same cases in a parameter or result use the invocation binding as the path root. | Test |
 | FR-106-AC-16 | A finite `Node { next?: Node }` value nested through 10,000 present `next` fields admits when byte and value limits allow it, with no reader or validator stack-depth refusal. At the exact values-per-document bound the document admits; one more nested value returns `stage_limit_exceeded`/`node-count-exceeded` naming `observation.values`, the bound and the count reached, before that value is admitted. A false invariant on one nested `Node` is reported as a logical violation at its FR-207 runtime value path after admission, not as an input refusal. | Test |
 | FR-106-AC-17 | An invocation changing `Account.address` from one admitted record value to another admits its frame when the selected `modifies` grant covers that declared object field. Without that grant it refuses `frame_violation`/`unauthorized-change` naming `Account.address`, whether the change is to a record member or its most-specific type. The existing QSpec FR-013 and FR-340 receiver and grant semantics apply. | Test |
-| FR-106-AC-18 | Over the TC-1029 fixture, a current snapshot whose `child` holds `token` `{"kind":"uuid","text":"00112233-4455-6677-8899-aabbccddeeff"}` and `stamp` `{"kind":"timestamp","nanoseconds":"0"}` admits both as a UUID and a Timestamp value of the retained canonical payloads; reordering the members of either object, and the whitespace of the document, gives the same typed observation and digest. Nil (`00000000-0000-0000-0000-000000000000`), Max (`ffffffff-ffff-ffff-ffff-ffffffffffff`), a UUID whose version and variant bits are not RFC 9562 values (`00112233-4455-0677-0899-aabbccddeeff`), and Timestamps `1`, `-1`, `170141183460469231731687303715884105727` and `-170141183460469231731687303715884105728` admit unchanged. A present optional `prior`, each element of a `Sequence<Timestamp>` field `seen`, and the `id` and `at` parameters and a UUID `result` of an invocation admit by the same rule, and each object counts as one value toward `observation.values`. | Test (TC-1029) |
+| FR-106-AC-18 | Over the TC-1029 fixture, a current snapshot whose `child` holds `token` `{"kind":"uuid","text":"00112233-4455-6677-8899-aabbccddeeff"}` and `stamp` `{"kind":"timestamp","nanoseconds":"0"}` admits both as a UUID and a Timestamp value of the retained canonical payloads; reordering the members of either object, and the whitespace of the document, gives the same typed observation and digest. Nil (`00000000-0000-0000-0000-000000000000`), Max (`ffffffff-ffff-ffff-ffff-ffffffffffff`), a UUID whose version nibble is `0`, outside RFC 9562's version table (`00112233-4455-0677-8899-aabbccddeeff`), and Timestamps `1`, `-1`, `170141183460469231731687303715884105727` and `-170141183460469231731687303715884105728` admit unchanged. A present optional `prior`, each element of a `Sequence<Timestamp>` field `seen`, and the `id` and `at` parameters and a UUID `result` of an invocation admit by the same rule, and each object counts as one value toward `observation.values`. | Test (TC-1029) |
 | FR-106-AC-19 | A UUID `text` in uppercase (`00112233-4455-6677-8899-AABBCCDDEEFF`), mixed case, hyphenless, braced, `urn:uuid:`-prefixed, with a moved hyphen, with a non-hex digit, of the wrong length, padded with whitespace or holding a non-ASCII digit refuses `invalid_runtime_input`/`invalid-value` naming `child`, `token` and member `text`, with kernel class `noncanonical-payload`. A Timestamp `nanoseconds` of `-0`, `+1`, `01`, `-01`, the empty string, ` 1`, `1.0`, `1e3` and `2026-10-15T00:00:00Z` refuses `invalid-value` with class `noncanonical-payload`. `170141183460469231731687303715884105728` and `-170141183460469231731687303715884105729` refuse `invalid-value` with class `payload-out-of-domain`; `0170141183460469231731687303715884105728` refuses with `noncanonical-payload`, never the range class. No refusal produces a value or a repaired spelling. | Test (TC-1029) |
-| FR-106-AC-20 | Native payload objects refuse in the listed order: a repeated `text` refuses `duplicate-member`; a UUID object with no `text` and a Timestamp object with no `nanoseconds` refuse `missing-member` naming that member; an extra member refuses `unknown-member` naming it; `nanoseconds` as the JSON number `0`, `text` as `null` or `5`, and `kind` as `1` refuse `wrong-value-kind` naming the member; `kind` `string`, `UUID` and `uuidv4` refuse `invalid-value` naming `kind`. An object with both an extra member and a noncanonical `text` refuses `unknown-member`. | Test (TC-1029) |
-| FR-106-AC-21 | A Timestamp object in the UUID field `token`, a UUID object in the Timestamp field `stamp`, `{"integer":"5"}` in `stamp`, `{"integer":"5"}` and `{"boolean":true}` in `token`, a UUID object in the integer field `versionNumber` and in a `Reference` field, a Timestamp object inside `{"present": ...}` of the optional UUID `prior`, and a UUID object as an element of `seen` each refuse `invalid_runtime_input`/`wrong-value-kind` at the nested path (the sequence element with its index), including when the object's payload is also noncanonical. The same cases in a parameter or result use the invocation binding as the path root. | Test (TC-1029) |
+| FR-106-AC-20 | Native payload objects refuse in the listed order: `kind` as `1` or `null` refuses `wrong-value-kind` naming `kind`, even beside a missing payload member; `kind` `string`, `UUID` and `uuidv4` refuse `invalid-value` naming `kind`, and `{"kind":"string","nanoseconds":"0"}` refuses the same way, its members unexamined; a UUID object with no `text` (and `{"kind":"uuid","nanoseconds":"0"}`) and a Timestamp object with no `nanoseconds` refuse `missing-member` naming that member; an extra member refuses `unknown-member` naming it; `nanoseconds` as the JSON number `0`, and `text` as `null` or `5`, refuse `wrong-value-kind` naming the member. An object with both an extra member and a noncanonical `text` refuses `unknown-member`. | Test (TC-1029) |
+| FR-106-AC-21 | A Timestamp object in the UUID field `token`, a UUID object in the Timestamp field `stamp`, `{"integer":"5"}` in `stamp`, `{"integer":"5"}` and `{"boolean":true}` in `token`, a UUID object in the integer field `versionNumber` and in a `Reference` field, a Timestamp object inside `{"present": ...}` of the optional UUID `prior`, and a UUID object as an element of `seen` each refuse `invalid_runtime_input`/`wrong-value-kind` at the nested path (the sequence element with its index), including a Timestamp object with `nanoseconds` `"01"` in `token` and a UUID object with `text` `"X"` in `stamp`, which are `wrong-value-kind`, never `invalid-value`. The same cases in a parameter or result use the invocation binding as the path root. | Test (TC-1029) |
 | FR-106-AC-22 | An invocation changing `token` or `stamp` between two admitted payloads admits its frame when the selected `modifies` grant covers the field and refuses `frame_violation`/`unauthorized-change` naming `child` and the field without it; one whose post holds the same payload, with differently ordered members, is no change. Under `PostStateRange::Witness`, a post snapshot holding a noncanonical UUID or Timestamp still refuses `invalid-value`. With `observation.values` set to the exact count of a document holding a `token` and a `stamp`, the document admits; one less returns `stage_limit_exceeded`/`node-count-exceeded` at the last of those values in walk order. | Test (TC-1029) |
 
 ## Dependencies
