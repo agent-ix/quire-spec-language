@@ -514,6 +514,19 @@ pub struct SuppliedRun {
     arena: MembershipPathArena,
     cancel: Cancel,
     stopped: Option<SuppliedFailure>,
+    #[cfg(feature = "test-support")]
+    permit: Option<ReservationPermit>,
+}
+
+/// The test-only answer to each measured admission reservation.
+#[cfg(feature = "test-support")]
+struct ReservationPermit(Box<dyn Fn(StorageRequest) -> bool>);
+
+#[cfg(feature = "test-support")]
+impl core::fmt::Debug for ReservationPermit {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("ReservationPermit")
+    }
 }
 
 impl SuppliedRun {
@@ -542,7 +555,23 @@ impl SuppliedRun {
             arena,
             cancel,
             stopped: None,
+            #[cfg(feature = "test-support")]
+            permit: None,
         })
+    }
+
+    /// Answer every admission reservation with `permit` instead of the global
+    /// reservations: a `false` answer is a denied reservation. Public only
+    /// under `test-support`; the production path always uses the global
+    /// reservations.
+    #[cfg(feature = "test-support")]
+    #[must_use]
+    pub fn with_reservation_permit(
+        mut self,
+        permit: impl Fn(StorageRequest) -> bool + 'static,
+    ) -> Self {
+        self.permit = Some(ReservationPermit(Box::new(permit)));
+        self
     }
 
     /// B: the numeric magnitude bound every Integer and Rational operand of
@@ -653,6 +682,8 @@ impl SuppliedRun {
                 conversion,
                 arena,
                 numeric_magnitude_bits,
+                #[cfg(feature = "test-support")]
+                permit,
                 ..
             } = self;
             let numeric_magnitude_bits = *numeric_magnitude_bits;
@@ -660,6 +691,32 @@ impl SuppliedRun {
                 SuppliedPhase::Admission => admission,
                 SuppliedPhase::Conversion => conversion,
             };
+            #[cfg(feature = "test-support")]
+            let injected = permit.as_ref();
+            #[cfg(feature = "test-support")]
+            if let Some(ReservationPermit(permit)) = injected {
+                types.admit_supplied_bounded_numeric_with_reservation::<InvalidMembershipCause>(
+                    expected,
+                    value,
+                    arena,
+                    at,
+                    budget,
+                    &cancel,
+                    numeric_magnitude_bits,
+                    permit,
+                )
+            } else {
+                types.admit_supplied_bounded_numeric::<InvalidMembershipCause>(
+                    expected,
+                    value,
+                    arena,
+                    at,
+                    budget,
+                    &cancel,
+                    numeric_magnitude_bits,
+                )
+            }
+            #[cfg(not(feature = "test-support"))]
             types.admit_supplied_bounded_numeric::<InvalidMembershipCause>(
                 expected,
                 value,
@@ -672,15 +729,28 @@ impl SuppliedRun {
         };
         let outcome = match result {
             Ok(()) => return Ok(()),
-            Err(BoundedSuppliedAdmissionError::Admission(error)) => {
+            Err(error) => self.bounded_failure_of(phase, parameter, error),
+        };
+        Err(self.remember(outcome))
+    }
+
+    /// The typed stop of one bounded-admission error, every arm named.
+    fn bounded_failure_of(
+        &self,
+        phase: SuppliedPhase,
+        parameter: usize,
+        error: BoundedSuppliedAdmissionError<InvalidMembershipCause>,
+    ) -> SuppliedFailure {
+        match error {
+            BoundedSuppliedAdmissionError::Admission(error) => {
                 self.failure_of(phase, parameter, error)
             }
-            Err(BoundedSuppliedAdmissionError::NumericSize {
+            BoundedSuppliedAdmissionError::NumericSize {
                 operand,
                 measured_bits,
                 locus,
                 ..
-            }) => self.magnitude_stop(
+            } => self.magnitude_stop(
                 phase,
                 parameter,
                 SuppliedEvent::ValueVisit,
@@ -688,12 +758,12 @@ impl SuppliedRun {
                 measured_bits,
                 locus,
             ),
-            Err(BoundedSuppliedAdmissionError::DecimalSize {
+            BoundedSuppliedAdmissionError::DecimalSize {
                 operand,
                 measured_bits,
                 locus,
                 ..
-            }) => self.magnitude_stop(
+            } => self.magnitude_stop(
                 phase,
                 parameter,
                 SuppliedEvent::ValueVisit,
@@ -701,10 +771,10 @@ impl SuppliedRun {
                 measured_bits,
                 locus,
             ),
-            Err(BoundedSuppliedAdmissionError::DecimalCapacity {
+            BoundedSuppliedAdmissionError::DecimalCapacity {
                 magnitude_bits,
                 locus,
-            }) => self.storage_stop(
+            } => self.storage_stop(
                 phase,
                 parameter,
                 locus,
@@ -713,11 +783,11 @@ impl SuppliedRun {
                     unit: SuppliedStorageUnit::MagnitudeBits,
                 }),
             ),
-            Err(BoundedSuppliedAdmissionError::DecimalAllocation {
+            BoundedSuppliedAdmissionError::DecimalAllocation {
                 layout_bytes,
                 locus,
                 ..
-            }) => self.storage_stop(
+            } => self.storage_stop(
                 phase,
                 parameter,
                 locus,
@@ -726,12 +796,12 @@ impl SuppliedRun {
                     unit: SuppliedStorageUnit::Bytes,
                 }),
             ),
-            Err(BoundedSuppliedAdmissionError::NumericTypeSize {
+            BoundedSuppliedAdmissionError::NumericTypeSize {
                 position,
                 measured_bits,
                 locus,
                 ..
-            }) => self.magnitude_stop(
+            } => self.magnitude_stop(
                 phase,
                 parameter,
                 SuppliedEvent::TypeComparison,
@@ -739,8 +809,7 @@ impl SuppliedRun {
                 measured_bits,
                 locus,
             ),
-        };
-        Err(self.remember(outcome))
+        }
     }
 
     /// Charge one QSL-owned conversion event to the conversion budget before
@@ -970,6 +1039,93 @@ impl SuppliedRun {
                 cause: SuppliedCause::Capacity(SuppliedStorage::of_request(request)),
             }
             .into(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ix_trace_rs::trace;
+
+    fn run() -> SuppliedRun {
+        SuppliedRun::new(SuppliedLimits::default(), Cancel::new()).expect("the run")
+    }
+
+    fn locus(run: &SuppliedRun) -> MembershipLocus {
+        MembershipLocus {
+            path: run.arena.root(0),
+            part: MembershipPart::Value,
+        }
+    }
+
+    fn stop(failure: SuppliedFailure) -> SuppliedStop {
+        match failure {
+            SuppliedFailure::Stop(stop) => *stop,
+            other => panic!("a supplied-phase stop, got {other:?}"),
+        }
+    }
+
+    /// FR-277-AC-5 (TC-906): every storage-bearing arm of QSV's bounded
+    /// admission error maps to its own typed cause: an allocator denial is
+    /// `Storage`, a size that cannot be represented is `Capacity`, and neither
+    /// is a type refusal or a limit.
+    #[trace("TC-906", "FR-277-AC-5")]
+    #[test]
+    fn storage_and_capacity_arms_map_to_their_own_typed_causes() {
+        let request = StorageRequest::new(usize::MAX, StorageUnit::AdditionalElements);
+        let mut run = run();
+        let at = locus(&run);
+        let cases = [
+            (
+                BoundedSuppliedAdmissionError::Admission(SuppliedAdmissionError::Allocation {
+                    request,
+                    locus: at,
+                }),
+                false,
+                SuppliedStorageUnit::AdditionalElements,
+            ),
+            (
+                BoundedSuppliedAdmissionError::Admission(SuppliedAdmissionError::Capacity {
+                    request,
+                    locus: at,
+                }),
+                true,
+                SuppliedStorageUnit::AdditionalElements,
+            ),
+            (
+                BoundedSuppliedAdmissionError::DecimalAllocation {
+                    additional_elements: 3,
+                    element_width: 4,
+                    layout_bytes: 12,
+                    locus: at,
+                },
+                false,
+                SuppliedStorageUnit::Bytes,
+            ),
+            (
+                BoundedSuppliedAdmissionError::DecimalCapacity {
+                    magnitude_bits: 77,
+                    locus: at,
+                },
+                true,
+                SuppliedStorageUnit::MagnitudeBits,
+            ),
+        ];
+        for (error, capacity, unit) in cases {
+            let stop = stop(run.bounded_failure_of(SuppliedPhase::Admission, 0, error));
+            let (SuppliedCause::Storage(storage) | SuppliedCause::Capacity(storage)) = &stop.cause
+            else {
+                panic!("a storage-bearing cause, got {:?}", stop.cause);
+            };
+            assert_eq!(
+                matches!(stop.cause, SuppliedCause::Capacity(_)),
+                capacity,
+                "{error:?}"
+            );
+            assert_eq!(storage.unit, unit);
+            assert!(stop.limit().is_none());
+            assert_eq!(stop.context.consumed, 0);
         }
     }
 }

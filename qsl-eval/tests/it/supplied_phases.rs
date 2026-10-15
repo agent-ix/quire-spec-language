@@ -22,14 +22,15 @@ use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::value::supplied::{
     AttemptedCount, SuppliedCause, SuppliedEvent, SuppliedFailure, SuppliedLimitKind,
-    SuppliedLimits, SuppliedLocus, SuppliedPhase, SuppliedRun, SuppliedStop, ADMISSION_WORK_UNITS,
-    CONVERSION_WORK_UNITS, DEFAULT_SUPPLIED_WORK_UNITS,
+    SuppliedLimits, SuppliedLocus, SuppliedPhase, SuppliedRun, SuppliedStop, SuppliedStorageUnit,
+    ADMISSION_WORK_UNITS, CONVERSION_WORK_UNITS, DEFAULT_SUPPLIED_WORK_UNITS,
 };
 use quire_exact::{
     form, Cancel, CancelCause, Decimal, Integer, Meter, Outcome, ScalarLimits, Value, ValueType,
 };
 use quire_semantic_value::call::InputRefusal;
 use quire_semantic_value::checking::CheckingLimits;
+use quire_semantic_value::declaration::StorageRequest;
 use quire_semantic_value::supplied_membership::{InvalidMembershipCause, MembershipPart, PathStep};
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
@@ -708,4 +709,59 @@ fn a_decimal_type_link_over_b_names_the_endpoint_operand() {
         );
         assert!(result.is_ok(), "{function}: B = 17 admits");
     }
+}
+
+/// One `call_supplied` of `seq` over three booleans whose admission
+/// reservations are answered by `permit`.
+fn seq_with_permit(
+    package: &CheckedPackage,
+    permit: impl Fn(StorageRequest) -> bool + 'static,
+) -> (Result<qsl_eval::value::Evaluation, CallFailure>, Meter) {
+    let mut meter = Meter::new(UNLIMITED);
+    let mut run = SuppliedRun::new(SuppliedLimits::default(), Cancel::new())
+        .expect("the run")
+        .with_reservation_permit(permit);
+    let result = package.call_supplied(
+        &name("seq"),
+        vec![booleans(package, "seq", 0, 3)],
+        &ObjectEnvironment::default(),
+        &mut meter,
+        &mut run,
+    );
+    (result, meter)
+}
+
+/// FR-277-AC-5 (TC-906, TC-907): a denied admission reservation is the typed
+/// `Storage` (Allocation) stop, distinct from Capacity, invalid input, a
+/// limit and a cancellation, with zero evaluation consumption and no
+/// `FunctionCall` charge; the same input then admits with a sufficient
+/// permit. The denial is injected only through the test-support seam.
+#[trace("TC-906", "FR-277-AC-5")]
+#[test]
+fn a_denied_reservation_is_a_typed_allocation_stop_and_the_retry_admits() {
+    let package = package();
+    let seen = Arc::new(AtomicU64::new(0));
+    let counted = Arc::clone(&seen);
+    let (result, meter) = seq_with_permit(&package, move |request| {
+        assert!(request.amount() > 0);
+        counted.fetch_add(1, Ordering::SeqCst);
+        false
+    });
+    assert!(seen.load(Ordering::SeqCst) > 0, "the permit was consulted");
+    let stop = stop_of(result);
+    let SuppliedCause::Storage(storage) = &stop.cause else {
+        panic!("a typed Allocation stop, got {:?}", stop.cause);
+    };
+    assert!(storage.requested > 0);
+    assert!(matches!(
+        storage.unit,
+        SuppliedStorageUnit::AdditionalElements | SuppliedStorageUnit::Bytes
+    ));
+    assert_eq!(stop.context.phase, SuppliedPhase::Admission);
+    assert_eq!(stop.context.parameter, Some(0));
+    assert!(stop.limit().is_none());
+    assert_no_evaluation(&meter);
+
+    let (retry, _) = seq_with_permit(&package, |_| true);
+    assert!(retry.is_ok(), "a sufficient permit admits the same input");
 }
