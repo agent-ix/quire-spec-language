@@ -428,7 +428,10 @@ fn retarget(
         .filter(|node| &*node.node_tag == "value" && &*node.semantic_form == "parameter")
         .filter(|node| node.semantic_type == from);
     let (Some(parameter), None) = (typed_by_first.next(), typed_by_first.next()) else {
-        let found = nodes.iter().filter(|node| node.semantic_type == from).count();
+        let found = nodes
+            .iter()
+            .filter(|node| node.semantic_type == from)
+            .count();
         return Err(refuse(RetargetRefusal::ParameterNodes { found }));
     };
     parameter.semantic_type = to;
@@ -496,7 +499,8 @@ fn rekey(
 /// The key IR derives for each of `nodes`, in order: structural candidates
 /// for the structural families, the application derivation for the rest.
 fn derived_keys(nodes: &[CheckedSemanticNodeV2]) -> Result<Vec<String>, RetargetRefusal> {
-    let derivation = |error: &dyn std::fmt::Debug| RetargetRefusal::Derivation(format!("{error:?}"));
+    let derivation =
+        |error: &dyn std::fmt::Debug| RetargetRefusal::Derivation(format!("{error:?}"));
     let structural = derive_structural_candidates(nodes, DERIVATION_BYTES, DERIVATION_WORK)
         .map_err(|error| derivation(&error))?;
     let mut derived: Vec<Option<String>> = vec![None; nodes.len()];
@@ -513,9 +517,11 @@ fn derived_keys(nodes: &[CheckedSemanticNodeV2]) -> Result<Vec<String>, Retarget
         .zip(derived)
         .map(|(node, structural)| match structural {
             Some(digest) => Ok(digest),
-            None => derive_application_node_id(ApplicationNodeDraft::new(node), None, DERIVATION_BYTES)
-                .map(|candidate| candidate.candidate_node_id().digest.to_string())
-                .map_err(|error| derivation(&error)),
+            None => {
+                derive_application_node_id(ApplicationNodeDraft::new(node), None, DERIVATION_BYTES)
+                    .map(|candidate| candidate.candidate_node_id().digest.to_string())
+                    .map_err(|error| derivation(&error))
+            }
         })
         .collect()
 }
@@ -572,7 +578,10 @@ pub fn write(directory: &Path) -> Result<(), Error> {
         files.push((file_name(bounds), fixture(bounds)?.bytes));
     }
     for variant in VARIANTS {
-        files.push((variant.file_name().to_owned(), variant_fixture(variant)?.bytes));
+        files.push((
+            variant.file_name().to_owned(),
+            variant_fixture(variant)?.bytes,
+        ));
     }
     fs::create_dir(directory).map_err(|source| match source.kind() {
         io::ErrorKind::AlreadyExists => Error::OutputExists {
@@ -620,7 +629,11 @@ mod tests {
             .collect();
         files.sort();
         let mut expected: Vec<String> = CASES.iter().map(|bounds| file_name(bounds)).collect();
-        expected.extend(VARIANTS.iter().map(|variant| variant.file_name().to_owned()));
+        expected.extend(
+            VARIANTS
+                .iter()
+                .map(|variant| variant.file_name().to_owned()),
+        );
         expected.push(DOMAIN_PACKAGE_FILE.to_owned());
         expected.sort();
         assert_eq!(files, expected);
@@ -709,7 +722,12 @@ mod tests {
             .filter(|(_, kind)| {
                 **kind == CheckedNodeKind::BoundedDomain(BoundedDomainForm::ModelPopulation)
             })
-            .map(|(node, _)| (node, population_max(node).expect("a population node has a max")))
+            .map(|(node, _)| {
+                (
+                    node,
+                    population_max(node).expect("a population node has a max"),
+                )
+            })
             .collect()
     }
 
@@ -739,7 +757,10 @@ mod tests {
 
     /// The object type a population ranges over: the dependency of the set
     /// type the population node is typed by.
-    fn object_type(package: &CheckedPackageV2, population: &CheckedSemanticNodeV2) -> CheckedNodeId {
+    fn object_type(
+        package: &CheckedPackageV2,
+        population: &CheckedSemanticNodeV2,
+    ) -> CheckedNodeId {
         let set = node(package, &population.semantic_type);
         assert_eq!(set.dependencies.len(), 1);
         set.dependencies[0].clone()
@@ -771,7 +792,9 @@ mod tests {
     #[trace("FR-094", "TC-453")]
     #[test]
     fn two_same_type_bindings_and_a_second_object_type_are_admitted() {
-        let package = variant_fixture(Variant::SameTypeAndOtherType).unwrap().package;
+        let package = variant_fixture(Variant::SameTypeAndOtherType)
+            .unwrap()
+            .package;
         assert_eq!(maxima(&package), [0, 3, 5]);
         let first = population_with_max(&package, 0);
         let second = population_with_max(&package, 5);
@@ -833,9 +856,15 @@ mod tests {
                 .filter(|parameter| parameter.semantic_type == *id)
                 .count()
         };
-        assert_eq!((pointing_at(base, &first), pointing_at(base, &second)), (1, 1));
         assert_eq!(
-            (pointing_at(retargeted, &first), pointing_at(retargeted, &second)),
+            (pointing_at(base, &first), pointing_at(base, &second)),
+            (1, 1)
+        );
+        assert_eq!(
+            (
+                pointing_at(retargeted, &first),
+                pointing_at(retargeted, &second)
+            ),
             (0, 2)
         );
         assert_ne!(base.package_id(), retargeted.package_id());
