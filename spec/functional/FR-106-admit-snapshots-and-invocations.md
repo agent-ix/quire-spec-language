@@ -21,7 +21,7 @@ relationships:
     type: traces_to
   - target: ix://agent-ix/quire-spec-language/FR-103
     type: traces_to
-  - target: ix://agent-ix/quire-spec-language/FR-363
+  - target: ix://agent-ix/quire-spec-language/FR-364
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-153
     type: depends_on
@@ -78,7 +78,7 @@ that compares only reference-valued fields (`PopulationMember::field_values`,
   none, and the admitted invocation delta. Each observation
   holds its `PopulationBinding`s and an `ObjectEnvironment` with every field
   value of every object and the relationship extents of the snapshot
-  (FR-363), and keeps its document identity and digest.
+  (FR-364), and keeps its document identity and digest.
 - Or an `AdmissionFailure`: `Refused(RefusalRecord)` or
   `Incomplete(RefusalRecord)`, each with a catalog code, a cause and the input
   path (document identity, population, object key, field) it names.
@@ -138,9 +138,9 @@ Snapshot, format `quire.state.snapshot/v1`:
   entry with `"complete": true` and `"instances": []` states that the
   relationship has no link in this state. A relationship with no entry is
   unlisted: the snapshot says nothing about it, which is not the same as an
-  empty entry (FR-363). A snapshot without `relationships` lists none.
+  empty entry (FR-364). A snapshot without `relationships` lists none.
 
-  A snapshot of TC-1031's `orders` model lists two links of
+  A snapshot of TC-1035's `orders` model lists two links of
   a `Sys` object `s1` to its `Pump` objects as:
 
   ```json
@@ -376,7 +376,7 @@ required; check 10 settles it.
       member, then admission SHALL refuse `unknown-member`. If `complete` is
       not a boolean or `instances` is not an array, then admission SHALL
       refuse `wrong-value-kind`.
-   7. For each entry: admission SHALL decide FR-363's extent conditions 1 and 2
+   7. For each entry: admission SHALL decide FR-364's extent conditions 1 and 2
       at the entry: a `relationship` that names no navigation relationship of
       the package (a connection and an unknown identity included) refuses
       `invalid_runtime_input`/`wrong-role-mapping`, and a second entry for one
@@ -391,15 +391,15 @@ required; check 10 settles it.
       `target`. If an end names an object the snapshot lists, and that
       object's type does not conform to the relationship's end type, then
       admission SHALL refuse `invalid_runtime_input`/`wrong-value-kind`,
-      naming the relationship, the instance and the end (FR-363 condition 3).
+      naming the relationship, the instance and the end (FR-364 condition 3).
       An end naming a key the snapshot does not list is not decided here;
       checks 7 and 8 decide it.
    9. If an instance repeats an earlier instance of its entry and the
       relationship's two ends do not both declare `unique: false`, then
       admission SHALL refuse `invalid_runtime_input`/`conflicting-identity`
-      at the later instance (FR-363 condition 4). No instance count is
+      at the later instance (FR-364 condition 4). No instance count is
       compared with an end's multiplicity bounds: a count outside `[lower,
-      upper]` admits, and navigation refuses it (FR-363).
+      upper]` admits, and navigation refuses it (FR-364).
 7. Completeness check. If a required population is not marked `complete`, then
    admission SHALL return `Incomplete` with `incomplete_population`/
    `incomplete-scope`, naming the first such population in walk order.
@@ -407,7 +407,7 @@ required; check 10 settles it.
    An extent's own `complete` flag is not decided here: an entry with
    `"complete": false`, or an unlisted relationship, admits, and navigation
    returns `incomplete_population`/`incomplete-scope` when a clause reads it
-   (FR-363).
+   (FR-364).
 8. Closure check. If a `reference` value names a key absent from its complete
    population, then admission SHALL refuse `dangling_reference`/
    `absent-target-in-complete-population`, naming the first such reference
@@ -417,7 +417,7 @@ required; check 10 settles it.
    population; instances are walked as in check 6 and the ends of one instance
    are checked `source` before `target`. This is the closure rule for a
    document: it keeps every stored end a full reference, because only the
-   object supplies the type component of its reference key (FR-363).
+   object supplies the type component of its reference key (FR-364).
 9. Self check. If the selected self object is absent from the current
    snapshot, from the pre snapshot, or (for a postcondition) from the post
    snapshot, then admission SHALL refuse `invalid_runtime_input`/
@@ -538,18 +538,18 @@ required; check 10 settles it.
 | FR-106-AC-15 | A record payload with a missing effective field refuses `invalid_runtime_input`/`missing-member`; one with an extra field refuses `unknown-member`; a `type` naming an object type, an unrelated record subtype, or no selected record refuses `wrong-value-kind`; and an object reference in place of a record refuses `wrong-value-kind`. Each refusal names the first nested path reached in field order, including an index for a sequence element. The same cases in a parameter or result use the invocation binding as the path root. | Test |
 | FR-106-AC-16 | A finite `Node { next?: Node }` value nested through 10,000 present `next` fields admits when byte and value limits allow it, with no reader or validator stack-depth refusal. At the exact values-per-document bound the document admits; one more nested value returns `stage_limit_exceeded`/`node-count-exceeded` naming `observation.values`, the bound and the count reached, before that value is admitted. A false invariant on one nested `Node` is reported as a logical violation at its FR-207 runtime value path after admission, not as an input refusal. | Test |
 | FR-106-AC-17 | An invocation changing `Account.address` from one admitted record value to another admits its frame when the selected `modifies` grant covers that declared object field. Without that grant it refuses `frame_violation`/`unauthorized-change` naming `Account.address`, whether the change is to a record member or its most-specific type. The existing QSpec FR-013 and FR-340 receiver and grant semantics apply. | Test |
-| FR-106-AC-18 | TC-1031's `orders` snapshot of population `Q` (`s1`, `p1`, `p2`, `t1`) lists `Sys-composition-Pump` complete with instances `s1`-`p2` then `s1`-`p1`, and `Pump-housing-Tank` complete with `p1`-`t1` and `p2`-`t1`. Selected for an invariant on `Sys` with `self` `s1`, it admits one observation whose composition extent reads `targets` `[p1, p2]` and whose housing extent reads `sources` of `t1` `[p1, p2]`; reordering the entries, the instances and the JSON members gives the same digest and the same admitted value. The same snapshot with no `relationships` member admits with both relationships unlisted (`complete` false); with `Sys-composition-Pump` listed `"complete": true` and `"instances": []` it admits with that extent complete and empty. A snapshot listing four instances `s1`-`p1` to `s1`-`p4` for `parts` `{0,3}`, and one with no `Pump-housing-Tank` instance for `p3` through `home` `{1,1}`, admit. | Test (TC-1031) |
-| FR-106-AC-19 | Each of checks 6.6 to 6.9 has one case that fails only it and returns exactly its code and cause, naming the relationship and the zero-based instance index: an entry without `instances`, an entry with an extra member, a `complete` of `"yes"`; a `relationship` that is a connection, and separately an unknown identity; two entries for one relationship; an instance without `target`, with an extra member, with a numeric `key`; a `population` naming no population of the package; a `Tank` `t1` at the `source` end of `Sys-composition-Pump`, and separately at its `target` end; a repeated `s1`-`p1` instance where the ends are unique. A repeated instance admits as two instances when both ends of the relationship declare `unique: false`, and refuses when only one does. | Test (TC-1031) |
-| FR-106-AC-20 | A target `t9` of a `Pump-housing-Tank` instance that `Q` does not list, with `Q` complete, refuses `dangling_reference`/`absent-target-in-complete-population` naming the relationship, the instance and end `target`, `t9` and `Q`; the same snapshot with `Q` `"complete": false` returns `Incomplete` with `incomplete_population`/`incomplete-scope` and no dangling record. A dangling `reference` value and a dangling instance end in one snapshot report the `reference` value. Over a variant in which the `Tank` object `t1` lives in a second population `Tanks` marked `"complete": false`, an instance `p1`-`t1` makes `Tanks` required and returns `Incomplete` naming `Tanks`, while the same snapshot without the instance admits. An extent listed `"complete": false` admits. | Test (TC-1031) |
-| FR-106-AC-21 | An invocation of the operation `rehome` on `Pump` whose pre snapshot lists `Pump-housing-Tank` complete with `p1`-`t1` and whose post lists it complete with `p1`-`t2` admits its frame when `rehome` modifies `Pump-housing-Tank`, and refuses `frame_violation`/`unauthorized-change` naming the relationship and the instance `p1`-`t1` `removed` when it does not. A post that deletes `p2` and drops `p2`-`t1` admits under a frame that deletes `Pump` and does not modify the relationship; a post that creates `p3` with `p3`-`t1` under a frame that creates `Pump` and does not modify the relationship refuses naming `p3`-`t1` `added`. A relationship listed in only one of the two snapshots changes nothing. | Test (TC-1031) |
-| FR-106-AC-22 | Each instance counts as one value against `observation.values`: a snapshot whose objects and instances reach the bound exactly admits and one more instance returns `stage_limit_exceeded`/`node-count-exceeded` naming `observation.values`, the bound and the count reached. An invocation selected for a precondition admits and gives its `PreCall` verdict when its `post` snapshot lists a malformed `relationships` entry. | Test (TC-1031) |
+| FR-106-AC-23 | TC-1035's `orders` snapshot of population `Q` (`s1`, `p1`, `p2`, `t1`) lists `Sys-composition-Pump` complete with instances `s1`-`p2` then `s1`-`p1`, and `Pump-housing-Tank` complete with `p1`-`t1` and `p2`-`t1`. Selected for an invariant on `Sys` with `self` `s1`, it admits one observation whose composition extent reads `targets` `[p1, p2]` and whose housing extent reads `sources` of `t1` `[p1, p2]`; reordering the entries, the instances and the JSON members gives the same digest and the same admitted value. The same snapshot with no `relationships` member admits with both relationships unlisted (`complete` false); with `Sys-composition-Pump` listed `"complete": true` and `"instances": []` it admits with that extent complete and empty. A snapshot listing four instances `s1`-`p1` to `s1`-`p4` for `parts` `{0,3}`, and one with no `Pump-housing-Tank` instance for `p3` through `home` `{1,1}`, admit. | Test (TC-1035) |
+| FR-106-AC-24 | Each of checks 6.6 to 6.9 has one case that fails only it and returns exactly its code and cause, naming the relationship and the zero-based instance index: an entry without `instances`, an entry with an extra member, a `complete` of `"yes"`; a `relationship` that is a connection, and separately an unknown identity; two entries for one relationship; an instance without `target`, with an extra member, with a numeric `key`; a `population` naming no population of the package; a `Tank` `t1` at the `source` end of `Sys-composition-Pump`, and separately at its `target` end; a repeated `s1`-`p1` instance where the ends are unique. A repeated instance admits as two instances when both ends of the relationship declare `unique: false`, and refuses when only one does. | Test (TC-1035) |
+| FR-106-AC-25 | A target `t9` of a `Pump-housing-Tank` instance that `Q` does not list, with `Q` complete, refuses `dangling_reference`/`absent-target-in-complete-population` naming the relationship, the instance and end `target`, `t9` and `Q`; the same snapshot with `Q` `"complete": false` returns `Incomplete` with `incomplete_population`/`incomplete-scope` and no dangling record. A dangling `reference` value and a dangling instance end in one snapshot report the `reference` value. Over a variant in which the `Tank` object `t1` lives in a second population `Tanks` marked `"complete": false`, an instance `p1`-`t1` makes `Tanks` required and returns `Incomplete` naming `Tanks`, while the same snapshot without the instance admits. An extent listed `"complete": false` admits. | Test (TC-1035) |
+| FR-106-AC-26 | An invocation of the operation `rehome` on `Pump` whose pre snapshot lists `Pump-housing-Tank` complete with `p1`-`t1` and whose post lists it complete with `p1`-`t2` admits its frame when `rehome` modifies `Pump-housing-Tank`, and refuses `frame_violation`/`unauthorized-change` naming the relationship and the instance `p1`-`t1` `removed` when it does not. A post that deletes `p2` and drops `p2`-`t1` admits under a frame that deletes `Pump` and does not modify the relationship; a post that creates `p3` with `p3`-`t1` under a frame that creates `Pump` and does not modify the relationship refuses naming `p3`-`t1` `added`. A relationship listed in only one of the two snapshots changes nothing. | Test (TC-1035) |
+| FR-106-AC-27 | Each instance counts as one value against `observation.values`: a snapshot whose objects and instances reach the bound exactly admits and one more instance returns `stage_limit_exceeded`/`node-count-exceeded` naming `observation.values`, the bound and the count reached. An invocation selected for a precondition admits and gives its `PreCall` verdict when its `post` snapshot lists a malformed `relationships` entry. | Test (TC-1035) |
 
 ## Dependencies
 
 - FR-084 and FR-089 (population binding and identity), FR-103 (operation
   effect), FR-001 (the two labels; QSpec STD-150), FR-056 (the `sha256-jcs` rule and its
   digest-first order), FR-038 (integer spelling).
-- FR-363 (relationship extents: the instance model, its admission conditions
+- FR-364 (relationship extents: the instance model, its admission conditions
   and the read contract navigation uses).
 - QSpec FR-153 and `state-contract.md` (anchors, completeness and closure),
   `native-diagnostics.md` (every code and cause above).

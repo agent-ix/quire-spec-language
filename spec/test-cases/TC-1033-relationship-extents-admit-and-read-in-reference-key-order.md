@@ -1,20 +1,20 @@
 ---
-id: TC-1029
+id: TC-1033
 title: "Relationship extents admit under four conditions and read in reference-key order"
 type: TC
 relationships:
-  - target: ix://agent-ix/quire-spec-language/FR-363
+  - target: ix://agent-ix/quire-spec-language/FR-364
     type: verifies
 ---
-# TC-1029: Relationship extents admit under four conditions and read in reference-key order
+# TC-1033: Relationship extents admit under four conditions and read in reference-key order
 
 ## Description
 
-Verify FR-363's extent admission, that no multiplicity bound is checked at
+Verify FR-364's extent admission, that no multiplicity bound is checked at
 admission, and the read contract navigation relies on, at the model layer
 (extents supplied as full references, with no snapshot document).
 
-Scope: FR-363-AC-1, FR-363-AC-2, FR-363-AC-3, FR-363-AC-4.
+Scope: FR-364-AC-1, FR-364-AC-2, FR-364-AC-3, FR-364-AC-4.
 
 ## Test Procedure
 
@@ -40,7 +40,7 @@ fixture: **bag** (both ends of `Sys-composition-Pump` `unique: false`),
 
 Objects are referenced by their full reference key. Build an observation's
 extents through the model-layer entry that FR-106 also uses. Tag the tests
-`#[trace("TC-1029", "FR-363-AC-n")]`.
+`#[trace("TC-1033", "FR-364-AC-n")]`.
 
 | # | Step | Expected |
 | --- | --- | --- |

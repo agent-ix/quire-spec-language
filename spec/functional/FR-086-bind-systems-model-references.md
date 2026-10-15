@@ -162,7 +162,7 @@ outright before the target-kind charge.
 - **Downstream:** none within this ticket's scope. Systems-model navigation
   over an object population — FR-152's "Navigation" section — is out of this
   requirement's scope; its runtime half is
-  [FR-363](FR-363-carry-relationship-instances-in-an-observation-and-read-them-for-navigation.md)'s
+  [FR-364](FR-364-carry-relationship-instances-in-an-observation-and-read-them-for-navigation.md)'s
   and its static half is tracked by
   [#147](https://github.com/agent-ix/quire-spec-language/issues/147), which
   names FR-152-AC-1/3/5/7 as its unbacked criteria.

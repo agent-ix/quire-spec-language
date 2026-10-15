@@ -31,7 +31,7 @@ result quire-specification [FR-152](ix://agent-ix/quire-specification/FR-152)'s
 "Navigation" section defines — is out of this requirement's scope. The
 runtime half (the instances an observation carries, their admission and
 the evaluation of a navigation over them) is
-[FR-363](FR-363-carry-relationship-instances-in-an-observation-and-read-them-for-navigation.md)'s;
+[FR-364](FR-364-carry-relationship-instances-in-an-observation-and-read-them-for-navigation.md)'s;
 the static half is tracked by
 [#147](https://github.com/agent-ix/quire-spec-language/issues/147), which
 names FR-152-AC-1/3/5/7 as its unbacked criteria. This requirement

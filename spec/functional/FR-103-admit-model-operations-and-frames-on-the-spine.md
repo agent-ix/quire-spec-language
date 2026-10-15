@@ -76,7 +76,7 @@ operation `pre`/`post` text is shape-checked and not kept (QSL-726).
   operation's IR node identity, the entry, the artifact id and the span.
 - Intake SHALL read a `modifies` entry that names a navigation relationship as
   a grant over that relationship's instances: an observation carries them
-  (FR-363), and the frame check compares them (FR-106 check 11.5). A
+  (FR-364), and the frame check compares them (FR-106 check 11.5). A
   `creates` or `deletes` entry that names a relationship is the
   `malformed-declaration` refusal below.
 - If a frame entry names a declaration of any other meaning, then intake SHALL

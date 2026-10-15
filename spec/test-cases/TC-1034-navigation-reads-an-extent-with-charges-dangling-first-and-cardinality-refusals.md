@@ -1,25 +1,25 @@
 ---
-id: TC-1030
+id: TC-1034
 title: "Navigation reads an extent: its charges, dangling before the count bound, and cardinality refusals"
 type: TC
 relationships:
-  - target: ix://agent-ix/quire-spec-language/FR-363
+  - target: ix://agent-ix/quire-spec-language/FR-364
     type: verifies
 ---
-# TC-1030: Navigation reads an extent: its charges, dangling before the count bound, and cardinality refusals
+# TC-1034: Navigation reads an extent: its charges, dangling before the count bound, and cardinality refusals
 
 ## Description
 
-Verify FR-363's runtime navigation over an observation's relationship extents:
+Verify FR-364's runtime navigation over an observation's relationship extents:
 the results, the exact `model.navigate` schedule, that a dangling target
 refuses before the count bound, and where each cardinality and incompleteness
 outcome fires.
 
-Scope: FR-363-AC-3, FR-363-AC-5, FR-363-AC-6, FR-363-AC-7, FR-363-AC-8, FR-363-AC-9.
+Scope: FR-364-AC-3, FR-364-AC-5, FR-364-AC-6, FR-364-AC-7, FR-364-AC-8, FR-364-AC-9.
 
 ## Test Procedure
 
-Use TC-1029's fixture **orders** and its variants. A navigation is written
+Use TC-1033's fixture **orders** and its variants. A navigation is written
 `navigate(end, r)`: the end named by its role, the receiver reference `r`,
 with the site already resolved (traversal direction and multiplicity come
 from the relationship). Every `ScalarLimitsV1` counter is unlimited unless a
@@ -27,7 +27,7 @@ row sets one. Charges are the `model.navigate` schedule of
 `quire.value.accounting/v1`, listed in order with the `value_occurrences` of
 the charge when it is not the default; the work and result units are the sums
 of the charges listed. Extents are complete unless a row says otherwise.
-Tag the tests `#[trace("TC-1030", "FR-363-AC-n")]`.
+Tag the tests `#[trace("TC-1034", "FR-364-AC-n")]`.
 
 Base extents: composition `s1`-`p2`, `s1`-`p1`; housing `p1`-`t1`, `p2`-`t1`.
 Rows 4 and 11 build their extents through the model-layer entry, which makes

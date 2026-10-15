@@ -1,5 +1,5 @@
 ---
-id: FR-363
+id: FR-364
 title: "Carry relationship instances in an observation and read them for runtime navigation"
 type: FR
 relationships:
@@ -16,7 +16,7 @@ relationships:
   - target: ix://agent-ix/quire-specification/AD-006
     type: depends_on
 ---
-# FR-363: Carry relationship instances in an observation and read them for runtime navigation
+# FR-364: Carry relationship instances in an observation and read them for runtime navigation
 
 ## Description
 
@@ -221,15 +221,15 @@ here; a navigation site reaches the evaluator already resolved.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-363-AC-1 | Extent admission refuses each of its four conditions alone with its code and cause: a relationship naming no navigation relationship (an unknown key, and separately a connection) `wrong-role-mapping`; a second extent of one relationship `conflicting-identity`; a `Tank` at the source end of a relationship whose source end is `Sys`, and separately at its target end, `wrong-value-kind` naming the end; a repeated instance of a relationship whose ends are unique `conflicting-identity` at the later instance. A repeated instance of a relationship whose two ends both declare `unique: false` admits as two instances; with only one of the two ends non-unique it refuses. | Test (TC-1029) |
-| FR-363-AC-2 | Admission compares no count with a bound: an extent giving one object four targets through an end `{0,3}`, an object with no instance through an end `{1,1}`, and an extent with no instance at all each admit. | Test (TC-1029) |
-| FR-363-AC-3 | `targets` and `sources` return references in ascending reference-key order whatever order the extent was built in, `sources` returns the references of the opposite end of the same instances `targets` returns, a repeated instance of a non-unique relationship returns its reference twice and adjacently, and two references with equal object identity in different universes are not equal. | Test (TC-1029) |
-| FR-363-AC-4 | An unlisted extent and an incomplete extent give `complete(R)` `false`, a complete extent with no instance gives `true` with empty `targets`; the three are never read as one another. Reading leaves the observation equal to what it was, and two evaluations of one navigation give equal results. | Test (TC-1029) |
-| FR-363-AC-5 | Navigating a multi-valued end `{0,3}` with two targets (and, for a non-unique end, a repeated target twice) returns the `Set<Reference<U>>[0,3]` in reference-key order after `model.navigate`, two `collection.visit`, `collection.bound` and `collection.result-retain`, and a work-unit limit equal to that schedule completes identically while one unit fewer is incomplete at `collection.result-retain`. | Test (TC-1030) |
-| FR-363-AC-6 | A count above a finite `upper` refuses `cardinality_out_of_bound`/`above-maximum` after `model.navigate`, one `collection.visit` per selected reference and `collection.bound`, with no `collection.result-retain` and no value; a count below `lower` refuses `below-minimum` at the same point; a single-valued end with count 0 through `[1,1]` refuses `below-minimum` and with count 2 refuses `above-maximum`, each after only `model.navigate`. | Test (TC-1030) |
-| FR-363-AC-7 | A single-valued end returns its `Reference<U>`, and for `[0,1]` the present `Option` or `none`, after `model.navigate` alone; a traversal from the target end returns the `sources` of the same extent. | Test (TC-1030) |
-| FR-363-AC-8 | A dangling target of a model-layer extent refuses `dangling_reference`/`absent-target-in-complete-population` before the count bound: with four selected targets through `{0,3}` the fourth absent, the refusal comes after `model.navigate` and three `collection.visit` and no cardinality refusal is returned. A target absent from a population not held complete gives `incomplete_population`/`incomplete-scope`. | Test (TC-1030) |
-| FR-363-AC-9 | Navigating through an unlisted extent and through an incomplete extent each give `incomplete_population`/`incomplete-scope` after `model.navigate` and no later charge, while the complete empty extent returns the empty collection or `none`. | Test (TC-1030) |
+| FR-364-AC-1 | Extent admission refuses each of its four conditions alone with its code and cause: a relationship naming no navigation relationship (an unknown key, and separately a connection) `wrong-role-mapping`; a second extent of one relationship `conflicting-identity`; a `Tank` at the source end of a relationship whose source end is `Sys`, and separately at its target end, `wrong-value-kind` naming the end; a repeated instance of a relationship whose ends are unique `conflicting-identity` at the later instance. A repeated instance of a relationship whose two ends both declare `unique: false` admits as two instances; with only one of the two ends non-unique it refuses. | Test (TC-1033) |
+| FR-364-AC-2 | Admission compares no count with a bound: an extent giving one object four targets through an end `{0,3}`, an object with no instance through an end `{1,1}`, and an extent with no instance at all each admit. | Test (TC-1033) |
+| FR-364-AC-3 | `targets` and `sources` return references in ascending reference-key order whatever order the extent was built in, `sources` returns the references of the opposite end of the same instances `targets` returns, a repeated instance of a non-unique relationship returns its reference twice and adjacently, and two references with equal object identity in different universes are not equal. | Test (TC-1033) |
+| FR-364-AC-4 | An unlisted extent and an incomplete extent give `complete(R)` `false`, a complete extent with no instance gives `true` with empty `targets`; the three are never read as one another. Reading leaves the observation equal to what it was, and two evaluations of one navigation give equal results. | Test (TC-1033) |
+| FR-364-AC-5 | Navigating a multi-valued end `{0,3}` with two targets (and, for a non-unique end, a repeated target twice) returns the `Set<Reference<U>>[0,3]` in reference-key order after `model.navigate`, two `collection.visit`, `collection.bound` and `collection.result-retain`, and a work-unit limit equal to that schedule completes identically while one unit fewer is incomplete at `collection.result-retain`. | Test (TC-1034) |
+| FR-364-AC-6 | A count above a finite `upper` refuses `cardinality_out_of_bound`/`above-maximum` after `model.navigate`, one `collection.visit` per selected reference and `collection.bound`, with no `collection.result-retain` and no value; a count below `lower` refuses `below-minimum` at the same point; a single-valued end with count 0 through `[1,1]` refuses `below-minimum` and with count 2 refuses `above-maximum`, each after only `model.navigate`. | Test (TC-1034) |
+| FR-364-AC-7 | A single-valued end returns its `Reference<U>`, and for `[0,1]` the present `Option` or `none`, after `model.navigate` alone; a traversal from the target end returns the `sources` of the same extent. | Test (TC-1034) |
+| FR-364-AC-8 | A dangling target of a model-layer extent refuses `dangling_reference`/`absent-target-in-complete-population` before the count bound: with four selected targets through `{0,3}` the fourth absent, the refusal comes after `model.navigate` and three `collection.visit` and no cardinality refusal is returned. A target absent from a population not held complete gives `incomplete_population`/`incomplete-scope`. | Test (TC-1034) |
+| FR-364-AC-9 | Navigating through an unlisted extent and through an incomplete extent each give `incomplete_population`/`incomplete-scope` after `model.navigate` and no later charge, while the complete empty extent returns the empty collection or `none`. | Test (TC-1034) |
 
 ## Dependencies
 

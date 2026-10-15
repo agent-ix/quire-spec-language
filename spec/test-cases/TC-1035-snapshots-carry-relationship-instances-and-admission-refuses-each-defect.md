@@ -1,14 +1,14 @@
 ---
-id: TC-1031
+id: TC-1035
 title: "Snapshots carry relationship instances and admission refuses each defect in check order"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-106
     type: verifies
-  - target: ix://agent-ix/quire-spec-language/FR-363
+  - target: ix://agent-ix/quire-spec-language/FR-364
     type: verifies
 ---
-# TC-1031: Snapshots carry relationship instances and admission refuses each defect in check order
+# TC-1035: Snapshots carry relationship instances and admission refuses each defect in check order
 
 ## Description
 
@@ -18,11 +18,11 @@ that each of checks 6.6 to 6.9 refuses its defect alone, how completeness and
 closure treat an instance end, that the frame compares instances, and that
 the document limits and a precondition's skipped `post` apply to them.
 
-Scope: FR-106-AC-18, FR-106-AC-19, FR-106-AC-20, FR-106-AC-21, FR-106-AC-22.
+Scope: FR-106-AC-23, FR-106-AC-24, FR-106-AC-25, FR-106-AC-26, FR-106-AC-27.
 
 ## Test Procedure
 
-Use TC-1029's fixture **orders** and variants, with two additions: the
+Use TC-1033's fixture **orders** and variants, with two additions: the
 invariant `SysOk` on `Sys` (always true) for the `Current` rows, and the
 operation `rehome` on `Pump` (no parameters, no result, `modifies` empty
 unless a row says otherwise) for the `Invocation` rows. Documents are written
@@ -36,7 +36,7 @@ fields as declared, `backup` absent), `relationships`:
 `Pump-housing-Tank` complete with `p1`-`t1` then `p2`-`t1`. Selection:
 `Current { snapshot: B, anchor: {handler, validate}, self: {Q, s1} }` for
 `SysOk`. Each row applies one mutation to B unless it says otherwise. Tag the
-tests `#[trace("TC-1031", "FR-106-AC-n")]`.
+tests `#[trace("TC-1035", "FR-106-AC-n")]`.
 
 | # | Check | Mutation | Expected |
 | --- | --- | --- | --- |
