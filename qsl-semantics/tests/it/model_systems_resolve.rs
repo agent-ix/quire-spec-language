@@ -186,7 +186,11 @@ fn member_entry(view: &EffectiveView, owner: &str, original: &str) -> EffectiveI
                 && entry.preimage.original == key(original)
         })
         .collect();
-    assert_eq!(entries.len(), 1, "{original} has one entry owned by {owner:?}");
+    assert_eq!(
+        entries.len(),
+        1,
+        "{original} has one entry owned by {owner:?}"
+    );
     entries[0].effective_id
 }
 
@@ -211,11 +215,31 @@ fn y01_each_systems_kind_resolves_with_declaration_key_and_effective_identity() 
     let sys = world.view.type_identities()[&key("Sys")];
     let pump = world.view.type_identities()[&key("Pump")];
     let cases = [
-        (Kind::Part, "sys_pump", Some(sys), member_entry(&world.view, "Sys", "sys_pump")),
-        (Kind::Port, "pump_out", Some(sys), member_entry(&world.view, "Sys", "pump_out")),
+        (
+            Kind::Part,
+            "sys_pump",
+            Some(sys),
+            member_entry(&world.view, "Sys", "sys_pump"),
+        ),
+        (
+            Kind::Port,
+            "pump_out",
+            Some(sys),
+            member_entry(&world.view, "Sys", "pump_out"),
+        ),
         (Kind::Interface, "Flow", None, flow),
-        (Kind::Connection, "pipe", Some(sys), member_entry(&world.view, "Sys", "pipe")),
-        (Kind::Allocation, "pump_alloc", Some(pump), member_entry(&world.view, "Pump", "pump_alloc")),
+        (
+            Kind::Connection,
+            "pipe",
+            Some(sys),
+            member_entry(&world.view, "Sys", "pipe"),
+        ),
+        (
+            Kind::Allocation,
+            "pump_alloc",
+            Some(pump),
+            member_entry(&world.view, "Pump", "pump_alloc"),
+        ),
     ];
     for (kind, artifact, owner, effective) in cases {
         let (result, meter) = resolve_m(&world, kind, &format!("M::{artifact}"));

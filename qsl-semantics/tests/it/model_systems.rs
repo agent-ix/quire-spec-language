@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-197: systems-model typed binding (FR-152), the kind-mapping,
-//! connection and allocation slice this rung builds. Y01-Y06 only —
-//! Y07-Y09 exercise `model.navigate`/`self.<field>` traversal over a
-//! runtime population, which `src/model/systems.rs`'s module doc records
-//! as out of scope (no qualified-name binder, no object population).
+//! connection and allocation slice this rung builds. Y02-Y06 only; Y01 is
+//! `model_systems_resolve.rs`. Y07-Y09 exercise `model.navigate`/`self.<field>`
+//! traversal over a runtime population, which `src/model/systems.rs`'s module
+//! doc records as out of scope (no object population).
 //!
 //! Fixture Y is TC-197's own fixture, transcribed field-for-field; every
 //! assertion below is checked against TC-197's table, not against this
@@ -141,7 +141,11 @@ pub(crate) fn relationship(
     })
 }
 
-pub(crate) fn allocation(identity: &str, source_element: &str, target_element: &str) -> DomainPackageRecord {
+pub(crate) fn allocation(
+    identity: &str,
+    source_element: &str,
+    target_element: &str,
+) -> DomainPackageRecord {
     DomainPackageRecord::Allocation(AllocationRecord {
         key: DeclarationKey::fixture(identity),
         source_element: DeclarationKey::fixture(source_element),
@@ -294,10 +298,7 @@ fn find_component<'a>(
         .unwrap_or_else(|| panic!("fixture Y has no component {identity}"))
 }
 
-// FR-152-AC-1 dropped (retagged, PR #144 review finding #1): AC-1 requires
-// resolving "exact producer AND effective-declaration identity," and this
-// module computes no effective-declaration identity at all (see the module
-// doc's own scope note) — nothing here can honestly claim AC-1.
+// FR-152-AC-1 is backed in `model_systems_resolve.rs` (qualified-name binder).
 /// FR-208-AC-9: a relationship end naming a record value type refuses
 /// `invalid_model_binding`/`malformed-declaration`, not as a dangling end:
 /// the end names a declared type of the wrong meaning.

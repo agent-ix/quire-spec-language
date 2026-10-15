@@ -26,7 +26,9 @@ use crate::model::accounting::{Charge, ChargePoint, Incomplete, Meter};
 use crate::model::admitted::AdmittedPackage;
 use crate::model::domain_package::{DomainPackageRecord, DomainPackageRef};
 use crate::model::key::{DeclarationKey, EffectiveId};
-use crate::model::normalize::{record_member_owners, EffectiveView, ModelRefusal, ModelRefusalCause};
+use crate::model::normalize::{
+    record_member_owners, EffectiveView, ModelRefusal, ModelRefusalCause,
+};
 use crate::model::systems::{resolve_kind, Kind};
 use qsl_foundation::diagnostic::Code;
 
@@ -180,5 +182,9 @@ fn effective_owner(
         .into_iter()
         .next()
         .ok_or(())?;
-    view.type_identities().get(owner).copied().map(Some).ok_or(())
+    view.type_identities()
+        .get(owner)
+        .copied()
+        .map(Some)
+        .ok_or(())
 }
