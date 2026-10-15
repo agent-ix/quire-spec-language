@@ -10,6 +10,7 @@ use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::family::FamilyOutcome;
+use qsl_semantics::model::intake::SelectedModels;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_exact::{
     ConstructionCause, FieldValue, Meter, Outcome, ScalarLimits, Timestamp, Uuid, Value, ValueType,
@@ -72,7 +73,7 @@ fn fixture() -> Fixture {
     let declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         unit,
-        Vec::new(),
+        SelectedModels::default(),
         Vec::new(),
     )
     .expect("the assembler builds the declarations");

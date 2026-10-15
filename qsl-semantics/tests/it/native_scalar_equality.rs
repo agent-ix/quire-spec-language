@@ -11,6 +11,7 @@ use qsl_foundation::{SourceIdentity, Span};
 use qsl_semantics::check::{
     AssemblyCause, CheckCause, CheckRefusal, CheckedGraph, PackageDeclarations,
 };
+use qsl_semantics::model::intake::SelectedModels;
 use quire_exact::IllTypedCause;
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::location::Origin;
@@ -45,7 +46,7 @@ fn assemble(
     declarations: &str,
 ) -> Result<PackageDeclarations, qsl_semantics::check::AssemblyRefusal> {
     let (_, unit, source) = parse(declarations);
-    PackageDeclarations::assemble(source, unit, Vec::new(), Vec::new())
+    PackageDeclarations::assemble(source, unit, SelectedModels::default(), Vec::new())
 }
 
 fn check(declarations: &str) -> Result<CheckedGraph, Vec<CheckRefusal>> {
