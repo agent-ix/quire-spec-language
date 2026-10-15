@@ -655,8 +655,7 @@ impl<'r> Scope<'r> {
         used
     }
 
-    /// Case arm binders remain authored declarations (FR-313); only the
-    /// scrutinee and body references participate in dispatch substitution.
+    /// Record `name` bound under the spelling `used`.
     fn bind_as(&mut self, name: &str, used: &str) {
         self.binders.push((name.to_owned(), used.to_owned()));
         self.shadows
@@ -705,12 +704,6 @@ enum Rewrite {
     /// Bind the `slot`th binder of the node ([`ExprNode::binders`]) for the scope
     /// about to be entered ([`Scope::bind`]).
     Bind(ExprId, usize),
-    /// Bind an arm identifier as authored, without respelling it.
-    PreserveBind {
-        node: ExprId,
-        arm: usize,
-        binder: usize,
-    },
     /// Leave the innermost binder's scope.
     Unbind,
 }
@@ -770,16 +763,16 @@ impl Renaming<'_, '_, '_> {
                 match node.node() {
                     ExprNode::Case(case) => {
                         children.push(Rewrite::Node(case.scrutinee));
-                        for (index, arm) in case.arms.iter().enumerate() {
-                            children.extend((0..arm.binders.len()).map(|binder| {
-                                Rewrite::PreserveBind {
-                                    node: id,
-                                    arm: index,
-                                    binder,
-                                }
-                            }));
+                        // `ExprNode::binders` numbers every arm's binders in
+                        // arm order, so an arm's binders start after the
+                        // earlier arms'.
+                        let mut first = 0;
+                        for arm in &case.arms {
+                            let next = first + arm.binders.len();
+                            children.extend((first..next).map(|slot| Rewrite::Bind(id, slot)));
                             children.push(Rewrite::Node(arm.body));
                             children.extend(arm.binders.iter().map(|_| Rewrite::Unbind));
+                            first = next;
                         }
                     }
                     ExprNode::Name(name) => {
@@ -824,14 +817,6 @@ impl Renaming<'_, '_, '_> {
                 }
             }
             Rewrite::Unbind => self.scope.unbind(),
-            Rewrite::PreserveBind { node, arm, binder } => {
-                if let Some(ExprNode::Case(case)) = self.tree.get(node).map(|node| node.node()) {
-                    if let Some(source) = case.arms.get(arm).and_then(|arm| arm.binders.get(binder))
-                    {
-                        self.scope.bind_as(&source.name, &source.name);
-                    }
-                }
-            }
         }
     }
 }
@@ -1902,6 +1887,30 @@ mod tests {
         };
         assert_eq!(renamed.at(*left).node(), &ExprNode::Name("receiver".into()));
         assert_eq!(renamed.at(*right).node(), &ExprNode::Name("k".into()));
+    }
+
+    /// A rename target that an arm binder already spells must not capture
+    /// the renamed reference: `x -> r` in `A(r): x + r` leaves the renamed
+    /// receiver `r` and the arm's own `r` apart, as a `let` binder does.
+    #[trace("TC-815", "FR-313-AC-2")]
+    #[test]
+    fn dispatch_substitution_renames_an_arm_binder_that_a_rename_target_would_capture() {
+        let source = case_source("case x { A(r): x + r; B(k): k; }");
+        let renamed = substitute_names(
+            &source,
+            &BTreeMap::from([("x".to_owned(), "r".to_owned())]),
+        );
+        let ExprNode::Case(case) = renamed.root_node() else {
+            panic!("case")
+        };
+        let fresh = case.arms[0].binders[0].name.clone();
+        assert_ne!(fresh, "r", "the binder no longer spells the rename target");
+        let ExprNode::Binary { left, right, .. } = renamed.at(case.arms[0].body).node() else {
+            panic!("binary body")
+        };
+        assert_eq!(renamed.at(*left).node(), &ExprNode::Name("r".into()));
+        assert_eq!(renamed.at(*right).node(), &ExprNode::Name(fresh));
+        assert_eq!(case.arms[1].binders[0].name, "k");
     }
 
     /// The rename walk's task stack grows by at most a constant per
