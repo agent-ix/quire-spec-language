@@ -143,12 +143,10 @@ fn each_native_comparison_lowers_to_its_native_equality_identity() {
             .collect();
         assert_eq!(found.len(), 1, "{identity} is one node");
         let operation = &found[0]["body"]["operation"];
-        for absent in ["law", "laws", "mode", "member", "leaves"] {
-            assert!(
-                operation.get(absent).is_none() && found[0]["body"].get(absent).is_none(),
-                "{identity} carries no {absent}: {operation}"
-            );
-        }
+        assert_eq!(operation["laws"], serde_json::json!([]), "{identity} laws");
+        assert_eq!(operation["leaves"], serde_json::json!([]), "{identity} leaves");
+        assert_eq!(operation["member"], Value::Null, "{identity} member");
+        assert_eq!(operation["mode"], Value::Null, "{identity} mode");
         assert_eq!(
             found[0]["body"]["arguments"].as_array().map(Vec::len),
             Some(2),
