@@ -61,13 +61,13 @@ pub const CASES: [&[u64]; 4] = [&[0], &[1], &[3], &[2, 5]];
 /// population-binding selection reads.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Variant {
-    /// TC-453 step 1: `Population<M::Gadget>[0]`, `Population<M::Gadget>[5]`
+    /// Contract IR TC-453 step 1: `Population<M::Gadget>[0]`, `Population<M::Gadget>[5]`
     /// and `Population<M::Widget>[3]`, one parameter each.
     SameTypeAndOtherType,
-    /// TC-453 step 3: [`Self::SameTypeAndOtherType`] regenerated with the
+    /// Contract IR TC-453 step 3: [`Self::SameTypeAndOtherType`] regenerated with the
     /// `Gadget[5]` maximum changed to 6 and nothing else.
     ChangedMax,
-    /// TC-453 step 5: [`Self::SameTypeAndOtherType`] with the `Gadget[0]`
+    /// Contract IR TC-453 step 5: [`Self::SameTypeAndOtherType`] with the `Gadget[0]`
     /// parameter's `semantic_type` retargeted to the `Gadget[5]` population
     /// node, identities and `package_id` rederived, source rows kept.
     RetargetedParameter,
@@ -444,10 +444,15 @@ fn retarget(
     let limits = quire_canonical::Limits::new(u64::MAX);
     let mut preimage = base.identity_preimage().clone();
     preimage.identity_projection = nodes.iter().map(Into::into).collect();
-    let preimage_bytes = quire_canonical::to_vec(&preimage, limits)
+    let digest = quire_canonical::sha256(&preimage, limits)
         .map_err(|error| refuse(RetargetRefusal::Encode(error.to_string())))?;
     let package_id = CheckedSemanticId {
-        digest: PackageId::of_preimage(&preimage_bytes).hex().into(),
+        digest: digest
+            .as_bytes()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+            .into(),
         ..base.package_id().clone()
     };
     let graph = CheckedSemanticGraphV2 {
@@ -787,9 +792,9 @@ mod tests {
         })
     }
 
-    /// TC-453 step 1: two bindings of one object type and one of another,
+    /// Contract IR TC-453 step 1: two bindings of one object type and one of another,
     /// each its own node with its own `Type` occurrence and source row.
-    #[trace("FR-094", "TC-453")]
+    #[trace("FR-093-AC-19", "TC-416")]
     #[test]
     fn two_same_type_bindings_and_a_second_object_type_are_admitted() {
         let package = variant_fixture(Variant::SameTypeAndOtherType)
@@ -809,9 +814,9 @@ mod tests {
         assert_eq!(parameters(&package).len(), 3);
     }
 
-    /// TC-453 step 3: the regenerated package differs only in one source
+    /// Contract IR TC-453 step 3: the regenerated package differs only in one source
     /// maximum, and the node and extent that maximum names change with it.
-    #[trace("FR-094", "TC-453")]
+    #[trace("FR-093-AC-19", "TC-416")]
     #[test]
     fn a_changed_maximum_regenerates_an_admitted_package() {
         let base = variant_fixture(Variant::SameTypeAndOtherType).unwrap();
@@ -831,11 +836,11 @@ mod tests {
         assert!(has_type_row(&changed.package, &moved.node_id));
     }
 
-    /// TC-453 step 5: one parameter's `semantic_type` is retargeted from the
+    /// Contract IR TC-453 step 5: one parameter's `semantic_type` is retargeted from the
     /// first population node to the second; identities are rederived, the
     /// original population nodes and source rows are kept, and IR's reader
     /// admits the package.
-    #[trace("FR-094", "TC-453")]
+    #[trace("FR-093-AC-19", "TC-416")]
     #[test]
     fn a_retargeted_parameter_is_rederived_and_admitted() {
         let base = variant_fixture(Variant::SameTypeAndOtherType).unwrap();
@@ -871,7 +876,7 @@ mod tests {
         assert_eq!(base.graph().nodes.len(), retargeted.graph().nodes.len());
     }
 
-    #[trace("FR-094", "TC-453")]
+    #[trace("FR-093-AC-19", "TC-416")]
     #[test]
     fn variants_are_deterministic_and_written_beside_the_cases() {
         let (_parent, output) = written();
