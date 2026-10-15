@@ -141,9 +141,10 @@ Requests are built from the unit's spine compile, as in TC-444.
    allocation/cancellation qualification dependency.
 
 10. Magnitude bound B: with the default `supplied.numeric_magnitude_bits`,
-    replay `r(v: Rational)` and the step 1 `Int[0, 9]` fields; replay an
-    Integer parameter given a 4096-bit value, then a 4097-bit value (zero is
-    one bit). Replay once with B omitted and once with B stated 4096, then
+    replay `r(v: Rational)` and the step 1 `Int[0, 9]` fields; replay a
+    parameter of the Integer interval `[0, 2^4096 - 1]` (both endpoints at most
+    4096 bits) given the 4096-bit value `2^4096 - 1`, then the 4097-bit value
+    `2^4096` (zero is one bit). Replay once with B omitted and once with B stated 4096, then
     with 4095. Type-link operands are a norm pending the IR follow-up and are
     not exercised.
 
@@ -222,6 +223,7 @@ depends on STD-113.
   source gap stays routed to its owner.
 - Step 10: the default B admits the 4096-bit Integer and the positive
   fixtures replay as in steps 1 and 4; the 4097-bit value stops with the
-  `limit` cause for `supplied.numeric_magnitude_bits`, `limit` 4096, zero
-  evaluation consumption. Omitted and stated 4096 are the same request;
+  `limit` cause for `supplied.numeric_magnitude_bits`: `operand` `value`,
+  `limit` 4096, `consumed` 0, `next_charge` and `counter` 4097, `event`
+  `value-visit`, zero evaluation consumption. Omitted and stated 4096 are the same request;
   4095 is a different request.
