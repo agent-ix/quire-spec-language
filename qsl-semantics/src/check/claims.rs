@@ -340,6 +340,7 @@ fn is_scalar_application(node: CheckedNode<'_>) -> bool {
         | NodeKind::Not(_)
         | NodeKind::Field { .. }
         | NodeKind::Attribute { .. }
+        | NodeKind::Navigate { .. }
         | NodeKind::Present(_)
         | NodeKind::Value(_)
         | NodeKind::Call { .. }

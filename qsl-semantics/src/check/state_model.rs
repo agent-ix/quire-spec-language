@@ -11,7 +11,10 @@ use quire_semantic_value::location::Location;
 
 use super::check::Scope;
 use super::ir::{Node, NodeId, NodeKind};
-use super::refusal::{CheckCause, CheckRefusal, KeyFault};
+use super::navigation::Navigable;
+use super::refusal::{
+    AmbiguousMember, CheckCause, CheckRefusal, KeyFault, MemberCandidate, NavigationBound,
+};
 use crate::family::{CheckContext, CheckOutcome, FamilyContract, FamilyKind};
 
 /// A located refusal attributed to the model form that produced it.
@@ -49,6 +52,9 @@ pub(crate) enum Form {
         field: String,
         operand_location: Location,
         derefed: bool,
+        /// Whether a bare `r.f` over a reference reads a field here: in a
+        /// state clause (FR-104), or after an explicit `deref(...)`.
+        field_reads: bool,
     },
     Reaches {
         source: NodeId,
@@ -114,6 +120,50 @@ pub(crate) fn fault(location: &Location) -> CheckRefusal {
     }
 }
 
+/// FR-363: the `Navigate` node `r.name` over `end` checks to, and its static
+/// type, which the destination end's multiplicity gives. The direction is
+/// decided before the multiplicity.
+fn navigation(
+    end: &Navigable<'_>,
+    reference: NodeId,
+) -> Result<(NodeKind, ValueType), CheckCause> {
+    if !end.direction_admitted() {
+        return Err(CheckCause::IllTyped(IllTypedCause::OperatorIneligible));
+    }
+    let destination = end.destination();
+    let unsupported = |bound| CheckCause::UnsupportedNavigation(bound);
+    let multiplicity = destination
+        .multiplicity
+        .ok_or_else(|| unsupported(NavigationBound::Undeclared))?;
+    let upper = multiplicity
+        .upper
+        .ok_or_else(|| unsupported(NavigationBound::Unbounded))?;
+    if multiplicity.ordered {
+        return Err(unsupported(NavigationBound::Ordered));
+    }
+    let element = ValueType::Reference(destination.object);
+    let value_type = match (multiplicity.lower, upper) {
+        (0, 1) => ValueType::option(element),
+        (1, 1) => element,
+        (lower, upper) => {
+            let bound = CardinalityBound::new(lower, upper)
+                .map_err(|_| CheckCause::UnrepresentableBound)?;
+            let kind = if multiplicity.unique {
+                CollectionKind::Set
+            } else {
+                CollectionKind::Bag
+            };
+            ValueType::collection(CollectionType::new(kind, element, Some(bound)))
+        }
+    };
+    let kind = NodeKind::Navigate {
+        reference,
+        relationship: end.relationship.key.clone(),
+        role: end.role.to_owned(),
+    };
+    Ok((kind, value_type))
+}
+
 /// The sole StateModel S3 family hook. StateModel has no S6a entry.
 pub(crate) struct StateModelFamily;
 
@@ -166,30 +216,66 @@ impl FamilyContract for StateModelFamily {
                     field,
                     operand_location,
                     derefed,
+                    field_reads,
                 } => {
                     let ValueType::Reference(object) = value_type else {
                         return Err(mismatch(operand_location));
                     };
-                    let attribute = scope
-                        .types()
-                        .attribute(*object, field)
-                        .ok_or_else(|| mismatch(location))?;
-                    let declared = attribute.field();
-                    let optional = declared.presence() == Presence::Optional;
-                    let value_type = if optional {
-                        ValueType::option(declared.value_type().clone())
+                    let declared = scope.types().attribute(*object, field);
+                    // `deref(r)` names the object, and a relationship end is
+                    // no member of it: only `r.name` navigates (FR-363).
+                    let ends: Vec<Navigable<'_>> = if *derefed {
+                        Vec::new()
                     } else {
-                        declared.value_type().clone()
+                        scope
+                            .relationships()
+                            .navigable(scope.types(), *object, field)
+                            .collect()
                     };
-                    make(
-                        NodeKind::Attribute {
-                            reference: *reference,
-                            field: attribute.identity(),
-                            optional,
-                            derefed: *derefed,
-                        },
-                        value_type,
-                    )
+                    match (declared, ends.as_slice()) {
+                        (None, []) => return Err(mismatch(location)),
+                        (Some(_), []) if !*field_reads => return Err(mismatch(location)),
+                        (Some(attribute), []) => {
+                            let declared = attribute.field();
+                            let optional = declared.presence() == Presence::Optional;
+                            let value_type = if optional {
+                                ValueType::option(declared.value_type().clone())
+                            } else {
+                                declared.value_type().clone()
+                            };
+                            make(
+                                NodeKind::Attribute {
+                                    reference: *reference,
+                                    field: attribute.identity(),
+                                    optional,
+                                    derefed: *derefed,
+                                },
+                                value_type,
+                            )
+                        }
+                        (None, [end]) => {
+                            let (kind, value_type) = navigation(end, *reference)
+                                .map_err(|cause| refuse(location, cause))?;
+                            make(kind, value_type)
+                        }
+                        (declared, ends) => {
+                            let candidates = declared
+                                .map(|attribute| MemberCandidate::Field(attribute.identity()))
+                                .into_iter()
+                                .chain(ends.iter().map(|end| MemberCandidate::RelationshipEnd {
+                                    relationship: end.relationship.key.clone(),
+                                    side: end.near,
+                                }))
+                                .collect();
+                            return Err(refuse(
+                                location,
+                                CheckCause::AmbiguousMember(Box::new(AmbiguousMember {
+                                    name: field.clone(),
+                                    candidates,
+                                })),
+                            ));
+                        }
+                    }
                 }
                 Form::Reaches {
                     source,

@@ -1540,10 +1540,11 @@ impl<'a> Typer<'a> {
             Frame::Unary(frame) => self.accept_unary(*frame, typed).map(Step::Typed),
             // FR-104: in a state clause, a field read through a reference
             // (`self.f`, `s.f`) is the `Attribute` node `deref(r).f` gives.
-            Frame::Field(field, location)
-                if self.in_state_clause()
-                    && matches!(typed.value_type, ValueType::Reference(_)) =>
-            {
+            // FR-363: `r.name` over a relationship end of a reference, in a
+            // state clause or a function body, is a `Navigate` node. The
+            // `StateModel` hook decides which, and refuses a receiver that
+            // is not a reference at its operand.
+            Frame::Field(field, location) if !matches!(typed.value_type, ValueType::Composite(_)) => {
                 let operand_location = location.child(0);
                 self.attribute(typed, field, &operand_location, &location, false)
                     .map(Step::Typed)

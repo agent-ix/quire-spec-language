@@ -50,6 +50,7 @@ use std::sync::Arc;
 
 mod typing;
 
+use super::navigation::Relationships;
 use super::ir::{
     Arithmetic, BodyBuilder, CheckedLiteral, Connective, DispatchTable, Node, NodeId, NodeKind,
     OrderedKind, RecordField, RecordSlot, Slot, Visit,
@@ -327,6 +328,9 @@ pub struct PackageDeclarations {
     pub types: TypeEnvironment,
     /// Where each record keeps the fields its ancestors name (FR-359).
     pub model_records: ModelRecords,
+    /// The relationships between the admitted models' object types, which
+    /// `r.name` navigates (FR-363).
+    pub relationships: Relationships,
     /// The model object types' own declared operations (FR-103), resolved
     /// through [`Self::types`]' effective view.
     pub operations: OperationTable,
@@ -486,6 +490,7 @@ impl PackageDeclarations {
             lock_evidence: super::lowering::LockEvidence::default(),
             types: TypeEnvironment::default(),
             model_records: ModelRecords::default(),
+            relationships: Relationships::default(),
             operations: OperationTable::default(),
             enums: Vec::new(),
             variant_types: Vec::new(),
@@ -635,6 +640,8 @@ pub struct Scope {
     types: TypeEnvironment,
     /// Where a record value keeps the fields its ancestors name (FR-359).
     model_records: ModelRecords,
+    /// The relationship ends a receiver type navigates (FR-363).
+    relationships: Relationships,
     /// Fixed once built, like `types`.
     enums: Vec<EnumBinding>,
     /// The admitted models' variant types, as the assembler ordered them.
@@ -804,6 +811,7 @@ impl Scope {
         Self {
             types,
             model_records: ModelRecords::default(),
+            relationships: Relationships::default(),
             enums,
             variant_types: Vec::new(),
             operations,
@@ -841,6 +849,17 @@ impl Scope {
     pub(crate) fn with_model_records(mut self, model_records: ModelRecords) -> Self {
         self.model_records = model_records;
         self
+    }
+
+    /// This scope with the relationship ends a receiver type navigates.
+    pub(crate) fn with_relationships(mut self, relationships: Relationships) -> Self {
+        self.relationships = relationships;
+        self
+    }
+
+    /// The relationship ends a receiver type navigates (FR-363).
+    pub(crate) fn relationships(&self) -> &Relationships {
+        &self.relationships
     }
 
     /// This scope with the admitted models' variant types.
@@ -2301,7 +2320,8 @@ impl<'a> Typer<'a> {
     }
 
     /// `deref(r).f` over the typed reference `r`, read at
-    /// `operand_location` (the `deref(r)` operand's own location).
+    /// `operand_location` (the `deref(r)` operand's own location), or the
+    /// navigation `r.name` over one of its relationship ends (FR-363).
     /// `derefed` is whether the source wrote an explicit `deref(...)`
     /// (`self.f`/`r.f` inside a state clause never does; SR-750 FND-008
     /// round 2).
@@ -2313,6 +2333,7 @@ impl<'a> Typer<'a> {
         location: &Location,
         derefed: bool,
     ) -> Result<Node, CheckRefusal> {
+        let field_reads = derefed || self.in_state_clause();
         let value_type = reference.value_type.clone();
         let on_self = self.state.as_ref().is_some_and(
             |state| matches!(&reference.kind, NodeKind::Local(slot) if *slot == state.self_slot),
@@ -2325,6 +2346,7 @@ impl<'a> Typer<'a> {
                 field: field.to_owned(),
                 operand_location: operand_location.clone(),
                 derefed,
+                field_reads,
             },
             location,
         )?;
