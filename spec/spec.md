@@ -182,6 +182,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-032
     type: contains
+  - target: ix://agent-ix/quire-spec-language/ADR-033
+    type: contains
   - target: ix://agent-ix/quire-spec-language/AD-001
     type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-018
@@ -724,6 +726,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-361
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-362
+    type: contains
   - target: ix://agent-ix/quire-spec-language/US-027
     type: contains
 ---
@@ -1239,6 +1243,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-359](functional/FR-359-carry-a-child-record-value-at-an-ancestor-typed-slot.md) | FR |
 | [FR-360](functional/FR-360-type-a-field-by-a-variant-type-through-intake-check-evaluation-and-replay.md) | FR |
 | [FR-361](functional/FR-361-gate-model-constructs-on-the-model-profile-selection.md) | FR |
+| [FR-362](functional/FR-362-bind-a-checked-unit-to-its-source-by-digest.md) | FR |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR |
 | [NFR-013](non-functional/NFR-013-isolate-native-ci-feature-artifacts.md) | NFR |
 | [ADR-014](decisions/ADR-014-temporal-trace-and-boundedness-architecture.md) | ADR |
@@ -1247,6 +1252,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [ADR-017](decisions/ADR-017-protocol-refinement-abstraction-boundaries.md) | ADR |
 | [ADR-031](decisions/ADR-031-state-forall-separating-witness.md) | ADR |
 | [ADR-032](decisions/ADR-032-checked-input-and-duplicate-canonical-type-gates.md) | ADR |
+| [ADR-033](decisions/ADR-033-one-source-text-for-the-checked-graph-and-the-type-report.md) | ADR |
 | [AD-001](assurance/AD-001-shared-evaluation-core-interface.md) | ArchitectureDescription |
 | [ADR-018](decisions/ADR-018-temporal-properties-over-every-behaviour.md) | ADR |
 | [ADR-019](decisions/ADR-019-strong-fairness.md) | ADR |
