@@ -41,7 +41,7 @@ declares `model Config = ...` over it.
    `[".../ConfigVersion"]`; then set `creates` to
    `[".../ConfigVersion/versionNumber"]`; then declare a relationship
    `Supersedes` from `ConfigVersion` to `ConfigVersion` and set `modifies` to
-   `[".../Supersedes"]`; then set both `modifies` to
+   `[".../Supersedes"]`; then set `creates` to `[".../Supersedes"]`; then set both `modifies` to
    `[".../ConfigVersion/missing"]` and `creates` to
    `[".../ConfigVersion/versionNumber"]`.
 3. Add parameter `note` typed `ix://quire/native/Decimal`; then replace it
@@ -73,9 +73,11 @@ Tag the tests `#[trace("TC-458", "FR-103-AC-n")]`.
   `modifies == [versionNumber's key]`, `creates == []`, `deletes == []`.
 - Step 2: `missing_declaration`/`missing-name` at the entry; then
   `invalid_model_binding`/`malformed-declaration` at the entry, twice; then
-  `unknown_required_feature`/`unsupported-feature` at the `Supersedes` entry;
+  the fixture admits with the effect `modifies == [Supersedes's key]`; then
+  `invalid_model_binding`/`malformed-declaration` at the `creates`
+  `Supersedes` entry;
   then only the `modifies` entry's `missing_declaration`/`missing-name`. No
-  declaration admitted.
+  declaration admitted in any refused case.
 - Step 3: `unsupported_construct`/`declaration-form` at the parameter, at I1
   (intake) -- the same stage and cause a field of that type refuses at, per
   FR-103's own Behavior ("as a field of that type does"); then

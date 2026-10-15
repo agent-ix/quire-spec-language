@@ -115,7 +115,9 @@ as a Connection is
   fields the evaluator later dereferences; this requirement does not itself
   perform reachability or dereference evaluation, which is
   [FR-047](FR-047-evaluate-finite-object-reference-graphs.md)'s scope over
-  an already-admitted value graph.
+  an already-admitted value graph. The instances a navigation reads and its
+  runtime evaluation are
+  [FR-364](FR-364-carry-relationship-instances-in-an-observation-and-read-them-for-navigation.md)'s.
 - Relates to [FR-086](FR-086-bind-systems-model-references.md), which
   classifies and admits Port-to-Port relationships as Connections; this
   requirement's scope is bounded to plain object-to-object relationship-end
