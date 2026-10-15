@@ -347,6 +347,10 @@ impl SuppliedNumericOperand {
                 NumericTypeEndpoint::RationalActualDenominatorUpper => {
                     "type-link-actual-upper-denominator"
                 }
+                NumericTypeEndpoint::DecimalExpectedLower => "type-link-expected-lower-coefficient",
+                NumericTypeEndpoint::DecimalExpectedUpper => "type-link-expected-upper-coefficient",
+                NumericTypeEndpoint::DecimalActualLower => "type-link-actual-lower-coefficient",
+                NumericTypeEndpoint::DecimalActualUpper => "type-link-actual-upper-coefficient",
             },
         }
     }
