@@ -81,3 +81,9 @@ The following are recorded and do not block:
   gets runtime_invariant/stage_limit_exceeded with no cause and position
   details. The FR-100 reader rejects that at stage call. The path is
   unreachable per QSV's contract.
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 278d1e170 |

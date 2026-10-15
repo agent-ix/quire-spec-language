@@ -41,3 +41,9 @@ from the lead's brief, and are checked against the diff and its tests:
 
 **FAIL on C3 only (FND-001, the same defect as SR-9121 FND-001).** C1, C2, C4
 for the mappings, and C5 are met.
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 278d1e170 |
