@@ -835,6 +835,7 @@ fn expressions(g: &mut Grammar) {
             x("none"),
             x("self"),
             x("result"),
+            s(vec![x("protocol"), r(P::QualifiedName)]),
             uint(),
             text(),
             r(P::ExactNumber),

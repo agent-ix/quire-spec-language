@@ -710,6 +710,9 @@ struct ScopeIndex {
     variant_shapes: BTreeMap<EnumShape, usize>,
     /// Every case name of every variant type, for the bare-case refusal.
     bare_cases: BTreeSet<String>,
+    /// Each protocol declaration's name to its index in the unit's
+    /// protocols (FR-218: a protocol reference binds a local protocol only).
+    protocols: BTreeMap<String, usize>,
 }
 
 impl ScopeIndex {
@@ -850,6 +853,29 @@ impl Scope {
     pub(crate) fn with_complete_model(mut self, complete_model: bool) -> Self {
         self.complete_model = complete_model;
         self
+    }
+
+    /// This scope with the unit's protocol declarations named `names`, in
+    /// declaration order (FR-218). A name declared twice keeps its first.
+    pub(crate) fn with_protocols<'n>(mut self, names: impl IntoIterator<Item = &'n str>) -> Self {
+        for (position, name) in names.into_iter().enumerate() {
+            self.index
+                .protocols
+                .entry(name.to_owned())
+                .or_insert(position);
+        }
+        self
+    }
+
+    /// The index of the unit's protocol declaration written `name`.
+    pub(crate) fn protocol_named(&self, name: &str) -> Option<usize> {
+        self.index.protocols.get(name).copied()
+    }
+
+    /// Whether `name` is a declared type or enum of the unit, which a
+    /// protocol reference cannot name (FR-218).
+    pub(crate) fn declares_type(&self, name: &str) -> bool {
+        self.index.types.contains_key(name)
     }
 
     /// The checked graph of the admitted import whose library has
@@ -1897,6 +1923,26 @@ impl<'a> Typer<'a> {
             ValueType::Rational(domain.clone()),
             location,
         ))
+    }
+
+    /// `protocol <target>` (FR-218): the unit's protocol declaration the
+    /// written name resolves to, once, in the unit's own scope. The
+    /// reference is typed `Boolean`, the semantic type every protocol node
+    /// carries. A name no declaration of the unit holds is `missing-name`
+    /// (an import or a qualified name offers no local protocol); a name that
+    /// resolves to a function or a type is `operator-ineligible`.
+    fn protocol_reference(&self, target: &str, location: &Location) -> Result<Node, CheckRefusal> {
+        if let Some(protocol) = self.scope.protocol_named(target) {
+            return Ok(node(
+                NodeKind::ProtocolReference { protocol },
+                ValueType::Boolean,
+                location,
+            ));
+        }
+        if self.signatures.declares(target) || self.scope.declares_type(target) {
+            return Err(ineligible(location));
+        }
+        Err(refuse(location, CheckCause::MissingName(target.to_owned())))
     }
 
     fn name(

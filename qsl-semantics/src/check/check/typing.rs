@@ -658,6 +658,7 @@ impl<'a> Typer<'a> {
                 self.rational_literal(numerator, denominator, hint.as_deref(), &location)?
             }
             ExprNode::Name(name) => self.name(name, hint.as_deref(), &location)?,
+            ExprNode::ProtocolReference { target } => self.protocol_reference(target, &location)?,
             ExprNode::Let { name, value, body } => {
                 return Ok(Self::binding(
                     Branches::Inferred(hint),
