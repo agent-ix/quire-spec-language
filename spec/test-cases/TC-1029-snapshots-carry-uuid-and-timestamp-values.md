@@ -66,8 +66,8 @@ Scope: FR-106-AC-18, FR-106-AC-19, FR-106-AC-20, FR-106-AC-21, FR-106-AC-22.
    domain).
 6. Mutate `token` to each envelope defect, one per row: no `text`;
    `{"kind":"uuid","nanoseconds":"0"}`; an extra member `"extra":1`; `text`
-   `null`; `text` `5`; `kind` `1`; `kind` `null`; `kind` `"string"`; `kind`
-   `"UUID"`; `kind` `"uuidv4"`; `{"kind":"string","nanoseconds":"0"}`; an extra
+   `null`; `text` `5`; `kind` `1`; `kind` `null`; `kind` `"String"`; `kind`
+   `"UUID"`; `kind` `"uuidv4"`; `{"kind":"String","nanoseconds":"0"}`; an extra
    member together with a noncanonical `text`; `kind` `1` with no `text`.
    Repeat for `stamp` with no `nanoseconds` and `nanoseconds` the JSON
    number `0`.
@@ -103,8 +103,8 @@ Scope: FR-106-AC-18, FR-106-AC-19, FR-106-AC-20, FR-106-AC-21, FR-106-AC-22.
   `payload-out-of-domain`, and the last with `noncanonical-payload`, all
   naming `child`, `stamp` and member `nanoseconds`.
 - Step 6 refuses by the listed order: `kind` `1` and `null` (also `kind` `1`
-  with no `text`) give `wrong-value-kind` naming `kind`; `kind` `"string"`,
-  `"UUID"`, `"uuidv4"` and the `string`/`nanoseconds` object give
+  with no `text`) give `wrong-value-kind` naming `kind`; `kind` `"String"`,
+  `"UUID"`, `"uuidv4"` and the `String`/`nanoseconds` object give
   `invalid-value` naming `kind`; the missing `text` rows (and the `uuid`
   object carrying only `nanoseconds`) give `missing-member` naming `text`, and
   the missing `nanoseconds` row naming `nanoseconds`; the extra member rows
