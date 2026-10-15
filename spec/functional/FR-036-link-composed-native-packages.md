@@ -139,15 +139,19 @@ does not change static meaning. A changed static definition, type owner or bindi
 contract requires an explicit new selection. Preserve full compile configuration
 provenance separately from static meaning, including resource-control changes.
 
-The linker SHALL bind a native reference to a domain declaration by its
-FR-154 key and kind. A type site SHALL bind an object, interface, record value
-or value type; a protocol role SHALL also bind a Part or Port; a protocol
-relationship SHALL bind a Connection or navigation relationship; the linker
-SHALL refuse a declaration of any other kind. The composed type checker SHALL
-type a domain object type, Interface or record value type, and a field read by
-the field's value type (`Boolean`, or another such domain type, under
-multiplicity `1`, `0..1` or `0..n`); it SHALL refuse any other field type, and
-a domain value type, as an unsupported prerequisite.
+The linker SHALL bind a native reference to a domain declaration by its FR-154 key and kind.
+
+The linker SHALL bind a type site to an object, interface, record value or value type.
+
+The linker SHALL bind a protocol role to a Part or Port in addition to the type-site kinds.
+
+The linker SHALL bind a protocol relationship to a Connection or navigation relationship.
+
+The linker SHALL refuse a native reference to a declaration of any other kind.
+
+The composed type checker SHALL type a domain object type, Interface or record value type, and a field read by the field's value type (`Boolean`, or another such domain type, under multiplicity `1`, `0..1` or `0..n`).
+
+The composed type checker SHALL refuse any other field type, and a domain value type, as an unsupported prerequisite.
 
 The historical single-unit APIs and package encodings keep their existing atomic
 refusal and identity behavior. Partial composed reports cannot be serialized as
