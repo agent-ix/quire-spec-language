@@ -49,6 +49,7 @@ mod request;
 mod result;
 mod scalar;
 pub mod spine;
+mod supplied_limits;
 mod witness;
 
 pub use bounds::{BoundExceeded, ReplayLimits, DEFAULT_REPLAY_INPUT_BYTES};
@@ -146,14 +147,15 @@ pub use qsl_foundation::bound::{
 };
 pub use quire_exact::{EmptyInterval, Incomplete, Integer, IntegerInterval};
 pub use request::{
-    read_supplied_limits, ByteProvision, DependencyEntry, DependencyEntryWire, ReplayRequest,
-    ReplayRequestRefusal, ReplayRequestWire, StageLimits, StateEnvironment, SuppliedLimitsRefusal,
+    ByteProvision, DependencyEntry, DependencyEntryWire, ReplayRequest, ReplayRequestRefusal,
+    ReplayRequestWire, StageLimits, StateEnvironment,
 };
 pub use result::{
     read_bounded, CauseCodecError, DisagreementCause, EvaluatedValue, InputArmResult,
     InputSettlement, ReplayResult, SeparatingWitnessRecord, SeparationReason, SeparationRefusal,
     Verdict, WitnessArmResult, WitnessCheck, WitnessFailure, WitnessSettlement,
 };
+pub use supplied_limits::{read_supplied_limits, SuppliedLimitsRefusal};
 // FR-265 and FR-268: the separation-check step and the QSpec FR-207 value
 // path a separating witness record carries, re-exported so CG names them
 // through this crate (ADR-011 FB-05).
