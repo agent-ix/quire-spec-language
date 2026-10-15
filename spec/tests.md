@@ -311,6 +311,8 @@ names different artifacts in each.
 | TC-1015 | Forms this requirement does not gate raise no model-gate refusal | Integration | P1 | FR-361-AC-4 | 🚧 |
 | TC-1016 | State clauses against a model alias are admitted under every other layer | Integration | P1 | FR-361-AC-5 | 🚧 |
 | TC-1017 | The model profile is selected by the header only | Integration | P1 | FR-361-AC-6, FR-361-AC-7, FR-361-AC-8, FR-361-AC-9, FR-361-AC-10, FR-361-AC-11, FR-361-AC-12 | 🚧 |
+| TC-1026 | One source yields the graph and the type report, and a checked unit is bound by digest | Integration | P1 | FR-362-AC-1, FR-362-AC-2, FR-362-AC-3, FR-362-AC-4 | 🚧 |
+| TC-1027 | No label-only match and no composed parser remain | Inspection | P1 | FR-362-AC-5, FR-362-AC-6 | 🚧 |
 | TC-1018 | A function synthesized for dispatch is located at the unit declarations it came from | Integration | P1 | FR-096-AC-20 | ✅ |
 | TC-1019 | A family is called by the call that reaches it, and a body does not dispatch | Integration | P1 | FR-302-AC-9 | ✅ |
 | TC-1020 | A specialization cycle is refused once per declaration and cycle | Unit | P1 | FR-082-AC-15 | ✅ |
