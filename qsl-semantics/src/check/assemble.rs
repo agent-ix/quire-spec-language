@@ -38,8 +38,8 @@ use qsl_foundation::diagnostic::{CatalogCode, LimitExceeded};
 use qsl_foundation::source::provenance::RawSourceRef;
 use qsl_foundation::{Code, IdentityLimits, Setting, SettingLimits, Span};
 use quire_exact::{
-    Cancel, CardinalityBound, CollectionKind, CollectionType, EffectiveId, EnumShape, IeeeWidth,
-    Integer, IntegerInterval, NodeKey, Presence, RoundingMode, ValueType,
+    Cancel, CardinalityBound, CollectionKind, CollectionType, EffectiveId, EnumShape, Identifier,
+    IeeeWidth, Integer, IntegerInterval, NodeKey, Presence, RoundingMode, ValueType,
 };
 
 use super::check::{
@@ -81,7 +81,7 @@ use crate::value::semantic_node::{identity_limit, NominalRefusal, OwnerSelection
 use quire_semantic_value::declaration::{
     CompositeDeclaration, CompositeShape, DeclarationCause, EnvironmentFailure, FieldDeclaration,
     FieldRef, InvalidDeclaration, ObjectTypeDeclaration, StorageUnit, TypeEnvironment,
-    TypeEnvironmentLimits,
+    TypeEnvironmentLimits, UnionMemberDeclaration,
 };
 use quire_semantic_value::semantic_node::{IdentityRefusal, InvalidSemanticGraph};
 
@@ -334,13 +334,6 @@ pub enum AssemblyCause {
         /// The record's IR node identity.
         node: String,
     },
-    /// A `union` declaration (FR-313): S2 builds the form, but no union
-    /// registry exists until FR-316, so assembly refuses it rather than drop
-    /// it from the package.
-    UnsupportedUnion {
-        /// The union's declared name.
-        name: String,
-    },
     /// A `pre` or `post` state clause's operation names no operation of its
     /// context type's effective view (FR-104, FR-103).
     UnresolvedOperation {
@@ -400,9 +393,9 @@ impl AssemblyCause {
             // FR-091-OQ-12: STD-112 has not published the topology causes.
             Self::UnitGraphTopology { .. } => Code::InvalidPackage,
             Self::IllFormedBounds(_) | Self::ImportedTypeName { .. } => Code::IllTyped,
-            Self::FloatingType { .. }
-            | Self::UnsupportedModelMember { .. }
-            | Self::UnsupportedUnion { .. } => Code::UnknownRequiredFeature,
+            Self::FloatingType { .. } | Self::UnsupportedModelMember { .. } => {
+                Code::UnknownRequiredFeature
+            }
             Self::AliasCycle { .. } => Code::InvalidPackage,
             Self::InvalidTypeDeclaration(invalid) => match &invalid.cause {
                 DeclarationCause::DuplicateMember(_) => Code::AmbiguousDeclaration,
@@ -474,9 +467,7 @@ impl AssemblyCause {
             Self::UnitGraphTopology { .. } => "unit-graph-topology",
             Self::IllFormedBounds(_) => "type-mismatch",
             Self::ImportedTypeName { .. } => "operator-ineligible",
-            Self::FloatingType { .. }
-            | Self::UnsupportedModelMember { .. }
-            | Self::UnsupportedUnion { .. } => "unsupported-feature",
+            Self::FloatingType { .. } | Self::UnsupportedModelMember { .. } => "unsupported-feature",
             Self::AliasCycle { .. } => "definition-cycle",
             Self::UndeclaredAlias { .. }
             | Self::UnadmittedModel { .. }
@@ -556,13 +547,14 @@ pub struct AssemblyRefusal {
     pub errors: Vec<AssemblyError>,
 }
 
-/// A declared record's or tuple's members, as written.
+/// A declared record's, tuple's or union's members, as written.
 enum Members {
     Record(Vec<RecordFieldForm>),
     Tuple(Vec<TypeForm>),
+    Union(Vec<qsl_forms::UnionMemberForm>),
 }
 
-/// A declared record or tuple.
+/// A declared record, tuple or union.
 struct Composite {
     name: DeclaredName,
     members: Members,
@@ -595,9 +587,6 @@ struct Unit {
     /// Each `protocol` declaration's form, in source order, for FR-113's
     /// `check::protocol_clause` checker to resolve at S3.
     protocols: Vec<qsl_forms::ProtocolDeclarationForm>,
-    /// Each `union` declaration's form; assembly refuses them until FR-316
-    /// registers unions.
-    unions: Vec<qsl_forms::UnionForm>,
 }
 
 impl Unit {
@@ -613,7 +602,6 @@ impl Unit {
             state_clauses: Vec::new(),
             operation_bodies: Vec::new(),
             protocols: Vec::new(),
-            unions: Vec::new(),
         };
         for form in forms {
             match form.into_form() {
@@ -645,7 +633,13 @@ impl Unit {
                 DeclarationForm::StateClause(clause) => unit.state_clauses.push(*clause),
                 DeclarationForm::OperationBody(body) => unit.operation_bodies.push(*body),
                 DeclarationForm::Protocol(protocol) => unit.protocols.push(protocol),
-                DeclarationForm::Union(union) => unit.unions.push(union),
+                DeclarationForm::Union(union) => {
+                    unit.declare(&union.name, Declared::Composite);
+                    unit.composites.push(Composite {
+                        name: union.name,
+                        members: Members::Union(union.members),
+                    });
+                }
             }
         }
         unit
@@ -1945,35 +1939,56 @@ fn admit_types_with<T>(
                 return refuse(errors);
             }
             Err(EnvironmentFailure::Refused(invalid)) => {
-                let before = declarations.len();
-                set_aside_keys.extend(
-                    declarations
-                        .iter()
-                        .filter(|declaration| declaration.name() == invalid.declaration)
-                        .map(CompositeDeclaration::key),
-                );
-                declarations.retain(|declaration| declaration.name() != invalid.declaration);
-                let set_aside = declarations.len() < before;
-                // Only a name that an earlier round set aside is a
-                // consequence; a key no declaration ever held (a dangling
-                // field type or composite supertype) is its own refusal.
-                let consequence = set_aside
-                    && matches!(
-                        &invalid.cause,
-                        DeclarationCause::UnknownDeclaration(missing)
-                            if set_aside_keys.contains(missing)
-                    );
-                if !consequence {
-                    let span = spans
-                        .get(&invalid.declaration)
-                        .copied()
-                        .unwrap_or(Span { start: 0, end: 0 });
-                    errors.push(AssemblyError {
-                        cause: AssemblyCause::InvalidTypeDeclaration(invalid),
-                        span,
-                    });
+                // The recursion rule refuses every declaration on the cycle,
+                // once each, in the order the cycle names them (FR-316);
+                // any other cause is its one declaration's.
+                let mut named: Vec<&str> = Vec::new();
+                match &invalid.cause {
+                    DeclarationCause::Recursion { cycle, .. } => {
+                        for name in cycle {
+                            if !named.contains(&name.as_str()) {
+                                named.push(name);
+                            }
+                        }
+                    }
+                    _ => named.push(&invalid.declaration),
                 }
-                if !set_aside {
+                let mut progressed = false;
+                for name in named {
+                    let before = declarations.len();
+                    set_aside_keys.extend(
+                        declarations
+                            .iter()
+                            .filter(|declaration| declaration.name() == name)
+                            .map(CompositeDeclaration::key),
+                    );
+                    declarations.retain(|declaration| declaration.name() != name);
+                    let set_aside = declarations.len() < before;
+                    progressed |= set_aside;
+                    // Only a name that an earlier round set aside is a
+                    // consequence; a key no declaration ever held (a dangling
+                    // field type or composite supertype) is its own refusal.
+                    let consequence = set_aside
+                        && matches!(
+                            &invalid.cause,
+                            DeclarationCause::UnknownDeclaration(missing)
+                                if set_aside_keys.contains(missing)
+                        );
+                    if !consequence {
+                        let span = spans
+                            .get(name)
+                            .copied()
+                            .unwrap_or(Span { start: 0, end: 0 });
+                        errors.push(AssemblyError {
+                            cause: AssemblyCause::InvalidTypeDeclaration(InvalidDeclaration {
+                                declaration: name.to_owned(),
+                                cause: invalid.cause.clone(),
+                            }),
+                            span,
+                        });
+                    }
+                }
+                if !progressed {
                     return refuse(errors);
                 }
             }
@@ -2062,12 +2077,6 @@ impl PackageDeclarations {
         let (selections, forms) = unit.into_parts();
         let unit = Unit::new(forms);
         let mut errors = Vec::new();
-        errors.extend(unit.unions.iter().map(|union| AssemblyError {
-            cause: AssemblyCause::UnsupportedUnion {
-                name: union.name.name.clone(),
-            },
-            span: union.name.span,
-        }));
         let owner = SourceOwner::from(&source);
         // The models and the one meter their admission counted on; checking
         // continues that meter into the conformance stage.
@@ -2295,6 +2304,18 @@ impl PackageDeclarations {
                             &model_composite_names,
                             &qualified,
                             element,
+                            &mut errors,
+                        );
+                    }
+                }
+                Members::Union(members) => {
+                    for payload in members.iter().flat_map(|member| &member.payload) {
+                        check_names(
+                            &unit,
+                            &object_names,
+                            &model_composite_names,
+                            &qualified,
+                            payload,
                             &mut errors,
                         );
                     }
@@ -2528,6 +2549,32 @@ impl PackageDeclarations {
                         }
                     }
                     CompositeShape::Tuple(declared)
+                }
+                Members::Union(forms) => {
+                    let mut declared = Vec::with_capacity(forms.len());
+                    for form in forms {
+                        let mut payload = Vec::with_capacity(form.payload.len());
+                        for position in &form.payload {
+                            match resolve_form(&names, position) {
+                                Ok(value_type) => payload.push(value_type),
+                                Err(error) => errors.push(resolution_error(&unit, error)),
+                            }
+                        }
+                        match Identifier::new(form.name.name.clone()) {
+                            Ok(identifier) => {
+                                declared.push(UnionMemberDeclaration::resolved(identifier, payload));
+                            }
+                            Err(_) => errors.push(AssemblyError {
+                                cause: AssemblyCause::handle(
+                                    NodeKeyRefusal::InvalidQualifiedNameSegment {
+                                        segment: form.name.name.clone(),
+                                    },
+                                ),
+                                span: form.name.span,
+                            }),
+                        }
+                    }
+                    CompositeShape::Union(declared)
                 }
             };
             declarations.push(CompositeDeclaration::new(

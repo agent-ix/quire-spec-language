@@ -280,3 +280,6 @@ pub(crate) fn unlowered(location: &Location) -> CheckRefusal {
         },
     }
 }
+
+#[cfg(test)]
+mod tests;
