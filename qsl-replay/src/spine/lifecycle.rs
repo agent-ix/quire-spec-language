@@ -942,7 +942,12 @@ impl<'a> Resolution<'a> {
                 refusal,
             })
         })?;
-        declarations.lock_evidence = frame.lock.clone();
+        // The caller's lock evidence supplies the value laws; the protocol
+        // profile stays the one the unit's header selected (FR-110).
+        declarations.lock_evidence = frame
+            .lock
+            .clone()
+            .with_header_selection_of(&declarations.lock_evidence);
         // FR-302: link the dispatch table of each family a dispatched call's
         // member name may name, under the caller's model normalization
         // limits, before `check` types the calls against them. A family
