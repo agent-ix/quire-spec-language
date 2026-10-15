@@ -94,8 +94,9 @@ observable: every read is in canonical reference-key order.
 ### Extent admission is the same for every way of building an extent
 
 Whether an extent is read from a snapshot (FR-106) or supplied by a
-model-layer caller, admission SHALL decide these conditions in this order and
-stop at the first:
+model-layer caller, admission SHALL decide conditions 1 and 2 for each extent
+and conditions 3 and 4 for each instance of it, extent by extent and instance
+by instance in the order supplied, and stop at the first failing condition:
 
 1. If the relationship names no navigation relationship of the admitted
    domain package (an unknown key, a connection, an allocation or any other
@@ -134,7 +135,10 @@ document names a population and an object key and the type component of the
 key comes from the object. FR-106 therefore refuses a dangling end of a
 document at its closure check, with the rule it applies to a `reference` value:
 `dangling_reference`/`absent-target-in-complete-population` when the end's
-population is complete, and the incomplete outcome when it is not. An extent a
+population is complete. When the population is not complete, an end naming a
+key it does not list returns the incomplete outcome (`incomplete_population`/
+`incomplete-scope` naming the population), because no object gives the end its
+type component; an end naming a listed key admits. An extent a
 model-layer caller supplies carries full references and is admitted without a
 closure check, so the navigation below decides a dangling end of such an
 extent. Neither place changes the other's rule.
@@ -229,7 +233,7 @@ FR-152's examples name the far end; this requirement follows FR-363; a navigatio
 | FR-364-AC-2 | Admission compares no count with a bound: an extent giving one object four targets through an end `{0,3}`, an object with no instance through an end `{1,1}`, and an extent with no instance at all each admit. | Test (TC-1033) |
 | FR-364-AC-3 | `targets` and `sources` return references in ascending reference-key order whatever order the extent was built in, `sources` returns the references of the opposite end of the same instances `targets` returns, a repeated instance of a non-unique relationship returns its reference twice and adjacently, and two references with equal object identity in different universes are not equal. | Test (TC-1033) |
 | FR-364-AC-4 | An unlisted extent and an incomplete extent give `complete(R)` `false`, a complete extent with no instance gives `true` with empty `targets`; the three are never read as one another. Reading leaves the observation equal to what it was, and two evaluations of one navigation give equal results. | Test (TC-1033) |
-| FR-364-AC-5 | Navigating a multi-valued end `{0,3}` with two targets (and, for a non-unique end, a repeated target twice) returns the `Set<Reference<U>>[0,3]` in reference-key order after `model.navigate`, two `collection.visit`, `collection.bound` and `collection.result-retain`, and a work-unit limit equal to that schedule completes identically while one unit fewer is incomplete at `collection.result-retain`. | Test (TC-1034) |
+| FR-364-AC-5 | Navigating a multi-valued end `{0,3}` with two targets returns the `Set<Reference<U>>[0,3]` in reference-key order after `model.navigate`, two `collection.visit`, `collection.bound` and `collection.result-retain`, and a work-unit limit equal to that schedule completes identically while one unit fewer is incomplete at `collection.result-retain`. A non-unique end holding one target twice returns the `Bag<Reference<U>>[0,3]` with that target twice. | Test (TC-1034) |
 | FR-364-AC-6 | A count above a finite `upper` refuses `cardinality_out_of_bound`/`above-maximum` after `model.navigate`, one `collection.visit` per selected reference and `collection.bound`, with no `collection.result-retain` and no value; a count below `lower` refuses `below-minimum` at the same point; a single-valued end with count 0 through `[1,1]` refuses `below-minimum` and with count 2 refuses `above-maximum`, each after only `model.navigate`. | Test (TC-1034) |
 | FR-364-AC-7 | A single-valued end returns its `Reference<U>`, and for `[0,1]` the present `Option` or `none`, after `model.navigate` alone; a traversal from the target end returns the `sources` of the same extent. | Test (TC-1034) |
 | FR-364-AC-8 | A dangling target of a model-layer extent refuses `dangling_reference`/`absent-target-in-complete-population` before the count bound: with four selected targets through `{0,3}` the fourth absent, the refusal comes after `model.navigate` and three `collection.visit` and no cardinality refusal is returned. A target absent from a population not held complete gives `incomplete_population`/`incomplete-scope`. | Test (TC-1034) |
@@ -250,7 +254,7 @@ FR-152's examples name the far end; this requirement follows FR-363; a navigatio
   extent admission to the snapshot document and decides the dangling and
   completeness rules for it. The checker's typing of a relationship end, its
   direction, ambiguity and `unbounded` or `ordered` refusals, and the
-  `quire.op.model.navigate` lowering are FR-363's (open pull request #867).
+  `quire.op.model.navigate` lowering are FR-363's.
 - The object environment holds the extents. Whether the extent store lives in
   the semantic-value object closure or in the model layer's environment beside
   it is an implementation placement; this requirement fixes only the reads

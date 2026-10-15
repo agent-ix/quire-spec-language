@@ -39,7 +39,10 @@ under it):
 
 Multiplicity `{l,u}` means `ordered: false, unique: true`. Variants of the
 fixture: **bag** (both ends of `Sys-composition-Pump` `unique: false`),
-**bag-target** (only its target end `unique: false`).
+**bag-target** (only its target end `unique: false`), **min** (the target end
+of `Sys-composition-Pump` `{2,3}`), **optional** (the target end of
+`Pump-housing-Tank` `{0,1}`), **housing-undirected** (the direction of
+`Pump-housing-Tank` `undirected`).
 
 Objects are referenced by their full reference key. Build an observation's
 extents through the model-layer entry that FR-106 also uses. Tag the tests
