@@ -466,11 +466,10 @@ prerelease repository does not build. `quire.compiled-protocol/2`
 `quire.compiled-protocol/3` ([FR-054](FR-054-publish-control-temporal-activation-map.md))
 each embed the same shared `Model` population and change in place with it,
 falsifying stronger statements than a shared sentence in the wire docs:
-**`FR-050-AC-4`**, marked `✅ Passed` in
-[`spec/model-linking/tests.md`](../model-linking/tests.md), states "`/1`
+**`FR-050-AC-4`**, marked passed, states "`/1`
 bytes remain byte-identical and readable only by the unchanged strict `/1`
 reader"; this requirement changes those `/1` bytes and that `/1` reader, so
-that criterion's `✅ Passed` status becomes false the moment this lands, and
+that criterion's passed status becomes false the moment this lands, and
 its owner needs to re-verify and re-mark it. **FR-054**'s Description states
 "The compiler SHALL leave the frozen `/1` and `/2` bytes, readers and
 semantics unchanged"; this requirement invalidates that SHALL. Neither FR

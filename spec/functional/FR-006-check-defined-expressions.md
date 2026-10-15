@@ -28,11 +28,11 @@ The checker consumes the reviewed finite-state semantics. Presence facts cannot 
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-006-AC-1 | An unguarded optional unwrap receives undefined_expression. | Test |
-| FR-006-AC-2 | A cross-snapshot presence proof is rejected. | Test |
-| FR-006-AC-3 | A guarded in-range addition is admitted. | Test |
-| FR-006-AC-4 | An ambiguous scalar inference receives ill_typed. | Test |
-| FR-006-AC-5 | A non-Boolean clause root receives ill_typed. | Test |
+| FR-006-AC-1 | An unguarded optional unwrap receives undefined_expression. | Test (TC-025) |
+| FR-006-AC-2 | A cross-snapshot presence proof is rejected. | Test (TC-026) |
+| FR-006-AC-3 | A guarded in-range addition is admitted. | Test (TC-027) |
+| FR-006-AC-4 | An ambiguous scalar inference receives ill_typed. | Test (TC-028) |
+| FR-006-AC-5 | A non-Boolean clause root receives ill_typed. | Test (TC-029) |
 
 ## Dependencies
 

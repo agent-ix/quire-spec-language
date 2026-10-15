@@ -6,8 +6,8 @@
 check-no-committed-binaries:
 	tools/check-no-committed-binaries.sh
 
-# Fail when an FR or TC artifact under spec/ has no row in the
-# master index (spec/spec.md, spec/**/tests.md). Offline, no build required.
+# Fail when an FR artifact under spec/ has no row in the
+# master index (spec/spec.md). Offline, no build required.
 check-index-completeness:
 	tools/check-index-completeness.sh
 

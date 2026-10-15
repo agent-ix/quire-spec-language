@@ -429,7 +429,7 @@ analysis, not by a test.
 
 These run today and exercise the shared foundation. They validate the
 mechanism, not the unfinished A04 and A05 features. Tests are cited by
-function, not by the matrix status in `spec/tests.md`.
+function.
 
 - **ConfigVersion through the spine**:
   `tc_469_step_1_every_case_matches_the_independent_expected_table`
@@ -479,7 +479,7 @@ function, not by the matrix status in `spec/tests.md`.
 - FR-089 Behavior, AC-1, new AC-7 and Status: ID-5.
 - FR-120 "Post-states" and new AC-13: every generated candidate counts
   toward `max_candidates`, and candidates are generated lazily (G-4).
-- `spec/spec.md` and `spec/tests.md`: index rows.
+- `spec/spec.md`: index row.
 
 ## Open dependencies
 

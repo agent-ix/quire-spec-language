@@ -43,7 +43,7 @@ builds. No additional agents or hosted CI. Optional semantic review is declined.
 
 ## Test Plan
 
-[TM-006](../../spec/native-lowering/tests.md) maps the criteria. Unsupported
+Each FR's Verification cell maps the criteria. Unsupported
 clauses must reach lowering after valid native checking. Tests cover identity,
 complete populations, observation mapping, limits and real generated execution.
 

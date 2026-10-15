@@ -67,3 +67,11 @@ Owner update (2026-09-09): prioritize engineering toward the first proof of
 concept. Track incomplete assurance separately from implementation dependencies;
 it need not block engineering delivery. Keep routine local checks and PR reviews,
 and retain unmet acceptance criteria for the later testing/assurance campaign.
+
+## Trace tag ids
+
+A `#[trace]` tag with a bare id (`TC-196`, `FR-075-AC-4`) names a QSL
+artifact. A tag that names a quire-specification requirement or test case
+carries the `QSpec-` prefix (`QSpec-TC-196`, `QSpec-FR-151-AC-2`), because
+the two repositories number their artifacts independently and the same id
+names different artifacts in each.

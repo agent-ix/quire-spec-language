@@ -339,8 +339,7 @@ for later checking; the caller owns assigning the formal identity.
 The [requirements index](spec/spec.md) covers LC01–LC05 through discrete Quoin
 catalog artifacts. These requirements are drafts. The owner adopted specification PR8 for internal
 LC02 implementation.
-[LC02's test matrix](spec/model-linking/tests.md) records qualified linking and
-planned type checking. The new
+The new
 [formal linker API](docs/formal-environment-linking.md) owns the exact parsed
 source and borrows immutable models; CLI parse/format still perform syntax work
 only. Accepted Contract IR ADR-0054 closes #54 and removes the former

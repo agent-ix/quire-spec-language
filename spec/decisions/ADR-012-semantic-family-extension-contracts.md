@@ -1743,7 +1743,7 @@ reopens #221.
 3. **Tests and evidence:** each crate's `tests/`, unit-test modules, and
    `xtask/src/seam_probe.rs`.
 4. **Specification and docs:** #187's own FR and TC files, their rows in
-   `spec/spec.md` and `spec/tests.md`, and `docs/native-error-codes.md` if
+   `spec/spec.md`, and `docs/native-error-codes.md` if
    it lists causes.
 
 | Crate | Paths | Nature |
