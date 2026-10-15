@@ -922,7 +922,12 @@ fn noncanonical_uuid_and_timestamp_leaves_are_refused_at_the_input() {
                 json!({"kind": "uuid", "text": text}),
             );
             case.pre_call = pre_call;
-            assert_refused(case, Code::InvalidRuntimeInput, "invalid-value", Some("arg"));
+            assert_refused(
+                case,
+                Code::InvalidRuntimeInput,
+                "invalid-value",
+                Some("arg"),
+            );
         }
         for text in [
             "-0",
@@ -938,7 +943,12 @@ fn noncanonical_uuid_and_timestamp_leaves_are_refused_at_the_input() {
                 json!({"kind": "timestamp", "nanoseconds": text}),
             );
             case.pre_call = pre_call;
-            assert_refused(case, Code::InvalidRuntimeInput, "invalid-value", Some("arg"));
+            assert_refused(
+                case,
+                Code::InvalidRuntimeInput,
+                "invalid-value",
+                Some("arg"),
+            );
         }
     }
 }

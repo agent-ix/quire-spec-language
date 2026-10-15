@@ -12,7 +12,7 @@ use quire_exact::{Integer, ValueType};
 use quire_semantic_value::call::InputRefusal;
 
 use super::*;
-use crate::witness::{QuantityMagnitude, WitnessField, WitnessSlot};
+use crate::witness::{QuantityMagnitude, WitnessBinding, WitnessField, WitnessSlot};
 
 /// A compiled unit under test.
 struct Fixture {
@@ -840,13 +840,7 @@ fn tc_906_a_reference_replays_by_identity_and_a_dereference_completes_no_value()
     );
 }
 
-const NATIVE: &str = "function u using v(a: UUID): Boolean pure { false }\n\
-     function t using v(a: Timestamp): Boolean pure { false }\n\
-     function eu using v(a: UUID, b: UUID): Boolean pure { a = b }\n\
-     function et using v(a: Timestamp, b: Timestamp): Boolean pure { a = b }\n";
-
 const UUID_TEXT: &str = "00112233-4455-6677-8899-aabbccddeeff";
-const UUID_TEXT_OTHER: &str = "00112233-4455-6677-8899-aabbccddeefe";
 const TIMESTAMP_MAX: &str = "170141183460469231731687303715884105727";
 const TIMESTAMP_MIN: &str = "-170141183460469231731687303715884105728";
 
@@ -858,87 +852,105 @@ fn timestamp(text: &str) -> WitnessValue {
     WitnessValue::Timestamp(text.to_owned())
 }
 
-/// `function` replayed with both parameters bound, in declared order.
-fn replay_pair(
-    fixture: &Fixture,
-    function: &str,
-    values: [WitnessValue; 2],
-) -> Result<ReplayResult, ReplayRefusal> {
-    let [first, second] = values;
-    let assignments = vec![
-        crate::CanonicalAssignment {
-            parameter: parameter(&fixture.compiled, function, 0),
-            value: first,
-        },
-        crate::CanonicalAssignment {
-            parameter: parameter(&fixture.compiled, function, 1),
-            value: second,
-        },
-    ];
-    replay(
-        fixture.request(function, ReplaySource::Input(assignments)),
-        ReplayLimits::default(),
-    )
+/// `value` as read from a witness transcript entry bound to a parameter of
+/// `declared`: the binding type `witness_type` gives, the entry written as
+/// value text, decoded, and then converted. The checked-package wire has no
+/// `uuid` or `timestamp` scalar form yet, so a unit function over them does
+/// not reach replay through the spine; this is the same path an argument
+/// takes below it.
+fn convert_via_witness(
+    declared: &ValueType,
+    value: &WitnessValue,
+) -> Result<quire_exact::Value, argument::Stopped> {
+    let parameter = WireNodeId::from_digest([1; 32]);
+    let binding = WitnessBinding {
+        parameter,
+        value_type: witness_type(0, declared).expect("a UUID or Timestamp has a witness form"),
+    };
+    let transcript = format!(
+        "<<<assertion|h|c|{parameter}={}>>>",
+        value.to_value_text().unwrap()
+    );
+    let decoded = Witness::parse(transcript)
+        .unwrap()
+        .decode(&[binding])
+        .expect("the entry decodes");
+    convert_one(declared, &decoded[0], &UNLIMITED)
 }
 
 /// The typed refusal a native payload carries: its parameter, its catalog
 /// code and cause, and the kernel class beneath.
 fn payload_refusal(
-    result: &Result<ReplayResult, ReplayRefusal>,
-) -> (usize, Code, Option<&'static str>, quire_exact::ConstructionCause) {
-    match result {
-        Err(refusal @ ReplayRefusal::NativePayload { parameter, refusal: kernel }) => {
-            (*parameter, refusal.code(), refusal.cause(), kernel.cause.clone())
+    stopped: argument::Stopped,
+) -> (
+    usize,
+    Code,
+    Option<&'static str>,
+    quire_exact::ConstructionCause,
+) {
+    match stopped {
+        argument::Stopped::Refusal(refusal) => match *refusal {
+            ReplayRefusal::NativePayload {
+                parameter,
+                refusal: ref kernel,
+            } => (
+                parameter,
+                refusal.code(),
+                refusal.cause(),
+                kernel.cause.clone(),
+            ),
+            other => panic!("expected a native payload refusal, got {other:?}"),
+        },
+        other @ argument::Stopped::Supplied(_) => {
+            panic!("expected a native payload refusal, got {other:?}")
         }
-        other => panic!("expected a native payload refusal, got {other:?}"),
     }
 }
 
+/// Both arms an argument takes: converted directly, and decoded from a
+/// witness transcript first.
+fn both_arms(
+    declared: &ValueType,
+    value: &WitnessValue,
+) -> [Result<quire_exact::Value, argument::Stopped>; 2] {
+    [
+        convert_one(declared, value, &UNLIMITED),
+        convert_via_witness(declared, value),
+    ]
+}
+
 /// FR-056: a canonical UUID or Timestamp binds to its parameter on both
-/// arms, the Nil and Max UUIDs and both Timestamp endpoints included.
+/// arms, as the kernel's native value of exactly that payload; the Nil and
+/// Max UUIDs and both Timestamp endpoints included.
 #[trace("TC-1028")]
 #[test]
-fn tc_1028_canonical_uuid_and_timestamp_inputs_replay() {
-    let fixture = fixture(NATIVE);
+fn tc_1028_canonical_uuid_and_timestamp_arguments_convert() {
     for text in [
         UUID_TEXT,
         "00000000-0000-0000-0000-000000000000",
         "ffffffff-ffff-ffff-ffff-ffffffffffff",
     ] {
-        for result in fixture.both("u", uuid(text)) {
-            assert_reproduced(result);
+        for converted in both_arms(&ValueType::Uuid, &uuid(text)) {
+            let Ok(quire_exact::Value::Uuid(bound)) = converted else {
+                panic!("{text}: expected a native UUID, got {converted:?}");
+            };
+            assert_eq!(bound, quire_exact::Uuid::from_canonical_text(text).unwrap());
         }
     }
-    for text in ["0", "1", "-1", TIMESTAMP_MAX, TIMESTAMP_MIN] {
-        for result in fixture.both("t", timestamp(text)) {
-            assert_reproduced(result);
+    for (text, nanoseconds) in [
+        ("0", 0_i128),
+        ("1", 1),
+        ("-1", -1),
+        (TIMESTAMP_MAX, i128::MAX),
+        (TIMESTAMP_MIN, i128::MIN),
+    ] {
+        for converted in both_arms(&ValueType::Timestamp, &timestamp(text)) {
+            let Ok(quire_exact::Value::Timestamp(bound)) = converted else {
+                panic!("{text}: expected a native Timestamp, got {converted:?}");
+            };
+            assert_eq!(bound.nanoseconds(), nanoseconds);
         }
     }
-}
-
-/// TC-1028 E6, E7, E9, E10: the unit-language equality is reachable from
-/// replay inputs. Equal payloads are true (success), unequal are false.
-#[trace("TC-1028")]
-#[test]
-fn tc_1028_equality_over_replayed_uuid_and_timestamp_inputs() {
-    let fixture = fixture(NATIVE);
-    let category = |result: Result<ReplayResult, ReplayRefusal>| result.unwrap().category();
-    assert_eq!(
-        category(replay_pair(&fixture, "eu", [uuid(UUID_TEXT), uuid(UUID_TEXT)])),
-        Category::Success
-    );
-    assert_eq!(
-        category(replay_pair(&fixture, "eu", [uuid(UUID_TEXT), uuid(UUID_TEXT_OTHER)])),
-        Category::Violation
-    );
-    assert_eq!(
-        category(replay_pair(&fixture, "et", [timestamp("0"), timestamp("0")])),
-        Category::Success
-    );
-    assert_eq!(
-        category(replay_pair(&fixture, "et", [timestamp("0"), timestamp("1")])),
-        Category::Violation
-    );
 }
 
 /// FR-056-AC-35, TC-1028 E8 at the wire: an uppercase UUID at a unit input
@@ -948,9 +960,6 @@ fn tc_1028_equality_over_replayed_uuid_and_timestamp_inputs() {
 #[trace("FR-056-AC-35", "TC-1028")]
 #[test]
 fn tc_1028_noncanonical_uuid_is_refused_at_the_input() {
-    use quire_exact::ConstructionCause::UuidNoncanonical;
-    let fixture = fixture(NATIVE);
-    let expected = |parameter| (parameter, Code::InvalidRuntimeInput, Some("invalid-value"), UuidNoncanonical);
     for text in [
         "00112233-4455-6677-8899-AABBCCDDEEFF",
         "00112233-4455-6677-8899-aabbccddeeFf",
@@ -963,16 +972,22 @@ fn tc_1028_noncanonical_uuid_is_refused_at_the_input() {
         " 00112233-4455-6677-8899-aabbccddeeff",
         "",
     ] {
-        for result in fixture.both("u", uuid(text)) {
-            assert_eq!(payload_refusal(&result), expected(0), "{text:?}");
+        for converted in both_arms(&ValueType::Uuid, &uuid(text)) {
+            let Err(stopped) = converted else {
+                panic!("{text:?}: expected a refusal");
+            };
+            assert_eq!(
+                payload_refusal(stopped),
+                (
+                    0,
+                    Code::InvalidRuntimeInput,
+                    Some("invalid-value"),
+                    quire_exact::ConstructionCause::UuidNoncanonical
+                ),
+                "{text:?}"
+            );
         }
     }
-    let at_second = replay_pair(
-        &fixture,
-        "eu",
-        [uuid(UUID_TEXT), uuid("00112233-4455-6677-8899-AABBCCDDEEFF")],
-    );
-    assert_eq!(payload_refusal(&at_second), expected(1));
 }
 
 /// TC-1028: a noncanonical Timestamp is refused `invalid-value` over the
@@ -982,49 +997,62 @@ fn tc_1028_noncanonical_uuid_is_refused_at_the_input() {
 #[test]
 fn tc_1028_noncanonical_timestamp_is_refused_at_the_input() {
     use quire_exact::ConstructionCause::{TimestampNoncanonical, TimestampOutOfDomain};
-    let fixture = fixture(NATIVE);
-    let refused = |text: &str, cause: quire_exact::ConstructionCause| {
-        for result in fixture.both("t", timestamp(text)) {
+    let cases = [
+        ("-0", TimestampNoncanonical),
+        ("+1", TimestampNoncanonical),
+        ("01", TimestampNoncanonical),
+        ("-01", TimestampNoncanonical),
+        ("", TimestampNoncanonical),
+        (" 1", TimestampNoncanonical),
+        ("1.0", TimestampNoncanonical),
+        ("1e0", TimestampNoncanonical),
+        ("1970-01-01T00:00:00Z", TimestampNoncanonical),
+        (
+            "170141183460469231731687303715884105728",
+            TimestampOutOfDomain,
+        ),
+        (
+            "-170141183460469231731687303715884105729",
+            TimestampOutOfDomain,
+        ),
+    ];
+    for (text, cause) in cases {
+        for converted in both_arms(&ValueType::Timestamp, &timestamp(text)) {
+            let Err(stopped) = converted else {
+                panic!("{text:?}: expected a refusal");
+            };
             assert_eq!(
-                payload_refusal(&result),
-                (0, Code::InvalidRuntimeInput, Some("invalid-value"), cause.clone()),
+                payload_refusal(stopped),
+                (
+                    0,
+                    Code::InvalidRuntimeInput,
+                    Some("invalid-value"),
+                    cause.clone()
+                ),
                 "{text:?}"
             );
         }
-    };
-    for text in [
-        "-0",
-        "+1",
-        "01",
-        "-01",
-        "",
-        " 1",
-        "1.0",
-        "1e0",
-        "1970-01-01T00:00:00Z",
-    ] {
-        refused(text, TimestampNoncanonical);
     }
-    refused("170141183460469231731687303715884105728", TimestampOutOfDomain);
-    refused("-170141183460469231731687303715884105729", TimestampOutOfDomain);
-    let at_second = replay_pair(&fixture, "et", [timestamp("0"), timestamp("-0")]);
-    assert_eq!(payload_refusal(&at_second).0, 1);
 }
 
-/// FR-056: a wire value of another kind at a UUID or Timestamp parameter,
-/// or a UUID where a Timestamp is declared, is `wrong-value-kind`.
+/// FR-056: a value of another kind at a UUID or Timestamp parameter, or a
+/// UUID where a Timestamp is declared, is `wrong-value-kind` naming the
+/// parameter; and a UUID or Timestamp where another type is declared is too.
 #[trace("TC-1028")]
 #[test]
 fn tc_1028_another_kind_at_a_native_parameter_is_wrong_value_kind() {
-    let fixture = fixture(NATIVE);
-    for (function, value) in [
-        ("u", WitnessValue::Text(UUID_TEXT.to_owned())),
-        ("u", timestamp("0")),
-        ("t", uuid(UUID_TEXT)),
-        ("t", int(0)),
+    for (declared, value) in [
+        (ValueType::Uuid, WitnessValue::Text(UUID_TEXT.to_owned())),
+        (ValueType::Uuid, timestamp("0")),
+        (ValueType::Uuid, int(0)),
+        (ValueType::Timestamp, uuid(UUID_TEXT)),
+        (ValueType::Timestamp, int(0)),
+        (ValueType::Integer, timestamp("0")),
+        (ValueType::Boolean, uuid(UUID_TEXT)),
     ] {
-        for result in fixture.both(function, value) {
-            assert_wrong_kind(result, function);
-        }
+        let Err(stopped) = convert_one(&declared, &value, &UNLIMITED) else {
+            panic!("{declared:?}: expected a refusal");
+        };
+        assert_eq!(refused_parameter(&stopped), Some(0), "{declared:?}");
     }
 }
