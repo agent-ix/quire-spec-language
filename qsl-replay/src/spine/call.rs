@@ -86,6 +86,9 @@ pub struct Call {
     pub arguments: Vec<CallArgument>,
     /// The S6a `quire.value.accounting/v1` limits the call charges under.
     pub accounting: ScalarLimits,
+    /// FR-277: the caller's supplied-value helper ceilings. An omitted
+    /// ceiling is its published default.
+    pub supplied: qsl_semantics::value::supplied::SuppliedLimits,
 }
 
 /// A value [`run`] completed. [`run`] refuses `unsupported_construct` before
@@ -311,6 +314,18 @@ pub enum RunRefusal {
     /// S6a (ADR-029 LC-3): category incomplete, exit 22, no call outcome.
     #[error("the run was cancelled: {0:?}")]
     Cancelled(CancelCause),
+    /// FR-277: the supplied-value admission phase stopped before the call, at
+    /// a helper ceiling, on invalid input, on the original cancellation, on
+    /// a failed reservation or on an unrepresentable size, with the phase
+    /// context. No evaluation ran: zero meter consumption, no `FunctionCall`
+    /// charge and no partial value. Not a declaration environment failure.
+    #[error("supplied-value {phase} stopped before the call: {cause:?}", phase = .0.context.phase.as_str(), cause = .0.cause)]
+    Supplied(Box<qsl_semantics::value::supplied::SuppliedStop>),
+    /// FR-277: the admission walk reached a helper family QSV has not
+    /// qualified, before that helper ran. Distinct from every other
+    /// refusal: never invalid input, never a limit.
+    #[error("supplied-value {phase} reached the unqualified {family:?} helper", phase = .0.context.phase.as_str(), family = .0.family)]
+    UnsupportedHelper(Box<qsl_semantics::value::supplied::UnsupportedHelperStop>),
 }
 
 impl RunRefusal {
@@ -332,9 +347,38 @@ impl RunRefusal {
             | Self::Admission { .. }
             | Self::Storage { .. }
             | Self::DanglingReference { .. }
+            | Self::Supplied(_)
+            | Self::UnsupportedHelper(_)
             | Self::Fault(_) => "call",
             Self::Cancelled(_) => return None,
         })
+    }
+
+    /// The original cancellation cause, whether the handle stopped a stage,
+    /// the call, or a supplied-value phase.
+    pub fn cancel_cause(&self) -> Option<CancelCause> {
+        match self {
+            Self::Cancelled(cause) => Some(*cause),
+            Self::Supplied(stop) => match stop.cause {
+                qsl_semantics::value::supplied::SuppliedCause::Cancelled(cause) => Some(cause),
+                qsl_semantics::value::supplied::SuppliedCause::Limit(_)
+                | qsl_semantics::value::supplied::SuppliedCause::Input { .. }
+                | qsl_semantics::value::supplied::SuppliedCause::Storage(_)
+                | qsl_semantics::value::supplied::SuppliedCause::Capacity(_) => None,
+            },
+            Self::Compile(_)
+            | Self::MissingDeclaration { .. }
+            | Self::UnsupportedResult { .. }
+            | Self::UnknownParameter { .. }
+            | Self::DuplicateArgument { .. }
+            | Self::UnboundParameter { .. }
+            | Self::WrongValueKind { .. }
+            | Self::Admission { .. }
+            | Self::Storage { .. }
+            | Self::DanglingReference { .. }
+            | Self::UnsupportedHelper(_)
+            | Self::Fault(_) => None,
+        }
     }
 
     /// The catalog code. For [`Self::Fault`] this is always
@@ -353,6 +397,8 @@ impl RunRefusal {
             Self::DanglingReference { .. } => Code::DanglingReference,
             Self::Fault(_) => Code::RuntimeInvariant,
             Self::Cancelled(_) => Code::Cancelled,
+            Self::Supplied(stop) => qsl_eval::value::supplied_stop_code(stop),
+            Self::UnsupportedHelper(_) => Code::UnsupportedConstruct,
         }
     }
 
@@ -436,6 +482,7 @@ pub fn run(
             function: &selected.name,
             arguments: &arguments,
             objects,
+            supplied: call.supplied,
         },
         call.accounting,
         cancel,
@@ -795,6 +842,8 @@ pub(crate) fn convert_call_failure(failure: qsl_eval::value::CallFailure) -> Box
             position: parameter,
             failure,
         }),
+        CallFailure::Supplied(stop) => Box::new(RunRefusal::Supplied(stop)),
+        CallFailure::UnsupportedHelper(stop) => Box::new(RunRefusal::UnsupportedHelper(stop)),
         // A clause run makes its own handle and shares it with nobody, so
         // nothing cancels it: a cancellation here is a broken invariant.
         // `run` takes the caller's handle and maps a cancel itself.

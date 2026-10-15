@@ -129,6 +129,7 @@ pub mod environment_stage;
 pub(crate) mod member;
 pub mod model_query;
 pub(crate) mod semantic_node;
+pub mod supplied;
 pub(crate) mod unit;
 
 // `ChargePoint`, `Incomplete`, `InjectedDenial`, `LimitKind`,

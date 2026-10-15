@@ -931,6 +931,38 @@ impl OutcomeDocument {
                 .with_diagnostics(vec![OutcomeDiagnostic::from_compile_refusal(compile)]),
                 RunRefusal::Cancelled(cause) => Self::cancelled(Operation::Execute, *cause),
                 RunRefusal::Fault(fault) => Self::faulted(Operation::Execute, fault),
+                // FR-277: a supplied-phase stop is phase-marked, not a
+                // catalog record. Its category is the document's; the shared
+                // result contract has no field for the phase context yet, so
+                // nothing is invented for it here.
+                RunRefusal::Supplied(stop) => match stop.cause {
+                    qsl_semantics::value::supplied::SuppliedCause::Cancelled(cause) => {
+                        Self::cancelled(Operation::Execute, cause)
+                    }
+                    qsl_semantics::value::supplied::SuppliedCause::Limit(_) => Self::new(
+                        Operation::Execute,
+                        Some(OutcomeStage::S6a),
+                        refusal.category(),
+                    ),
+                    qsl_semantics::value::supplied::SuppliedCause::Input { .. }
+                    | qsl_semantics::value::supplied::SuppliedCause::Storage(_)
+                    | qsl_semantics::value::supplied::SuppliedCause::Capacity(_) => Self::new(
+                        Operation::Execute,
+                        Some(OutcomeStage::S6a),
+                        refusal.category(),
+                    )
+                    .with_diagnostics(vec![OutcomeDiagnostic::new(
+                        qsl_eval::value::supplied_stop_cause(stop),
+                        qsl_eval::value::supplied_stop_code(stop).as_str(),
+                        None,
+                        refusal.to_string(),
+                    )]),
+                },
+                RunRefusal::UnsupportedHelper(_) => Self::new(
+                    Operation::Execute,
+                    Some(OutcomeStage::S6a),
+                    refusal.category(),
+                ),
                 RunRefusal::MissingDeclaration { .. }
                 | RunRefusal::UnsupportedResult { .. }
                 | RunRefusal::UnknownParameter { .. }
@@ -991,6 +1023,9 @@ fn replay_stage(refusal: &ReplayRefusal) -> Option<OutcomeStage> {
         | ReplayRefusal::NotAValueFunction { .. }
         | ReplayRefusal::ScalarIdentity(_)
         | ReplayRefusal::ParityBound(_)
+        | ReplayRefusal::Supplied(_)
+        | ReplayRefusal::UnsupportedHelper(_)
+        | ReplayRefusal::Cancelled(_)
         | ReplayRefusal::Input(_) => Some(OutcomeStage::S8),
     }
 }
@@ -1715,6 +1750,7 @@ mod tests {
                 function: "seven".to_owned(),
                 arguments: Vec::new(),
                 accounting,
+                supplied: Default::default(),
             };
             let (_, outcome) = run(
                 SourceIdentity::new("agent-ix", "test:outcome", "fixture", "fixture:1"),
@@ -1752,6 +1788,7 @@ mod tests {
             function: "seven".to_owned(),
             arguments: Vec::new(),
             accounting: default_accounting(1_000_000),
+            supplied: Default::default(),
         };
         let (_, outcome) = run(
             SourceIdentity::new("agent-ix", "test:outcome", "fixture", "fixture:1"),
@@ -1781,6 +1818,7 @@ mod tests {
 
         let starved = Call {
             accounting: default_accounting(0),
+            supplied: Default::default(),
             ..call
         };
         let (_, outcome) = run(
@@ -2027,6 +2065,7 @@ mod tests {
                 function: function.to_owned(),
                 arguments: Vec::new(),
                 accounting: default_accounting(1_000_000),
+                supplied: Default::default(),
             },
             &ObjectEnvironment::default(),
             cancel,

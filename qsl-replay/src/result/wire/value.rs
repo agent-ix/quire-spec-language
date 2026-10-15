@@ -362,6 +362,9 @@ impl<'a> Keys<'a> {
                         },
                     ))?
             }
+            // A union value is no slot list: its payload is a member, not a
+            // record or tuple (QSL-503 adds the union wire form).
+            CompositeShape::Union(_) => false,
         };
         if !fits {
             return Err(CauseCodecError::Value("slots"));

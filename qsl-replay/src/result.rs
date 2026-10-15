@@ -16,6 +16,7 @@ use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::witness::{
     InvocationBinding, RuntimeValuePath, SeparationStep, ValuePathStep, ValuePathSubject,
 };
+use qsl_semantics::value::supplied::SuppliedStop;
 use quire_exact::{compare_keys, Incomplete, ScalarLimits, Value};
 use quire_semantic_value::location::{Location, Origin};
 
@@ -495,6 +496,7 @@ pub struct WitnessArmResult {
     resolved_regions: Vec<SourceRegion>,
     charges: ScalarLimits,
     limit: Option<Incomplete>,
+    pre_call: Option<Box<SuppliedStop>>,
 }
 
 impl WitnessArmResult {
@@ -533,6 +535,7 @@ impl WitnessArmResult {
             resolved_regions,
             charges,
             limit: None,
+            pre_call: None,
         }
     }
 
@@ -557,6 +560,7 @@ impl WitnessArmResult {
             resolved_regions,
             charges,
             limit: None,
+            pre_call: None,
         }
     }
 
@@ -572,6 +576,22 @@ impl WitnessArmResult {
     #[must_use]
     pub fn with_limit(mut self, limit: Incomplete) -> Self {
         self.limit = Some(limit);
+        self
+    }
+
+    /// The phase-marked pre-call limit that stopped the replay before any
+    /// call, when one did (FR-277): the conversion or admission phase, the
+    /// parameter, the actual event, the configured ceiling, the successful
+    /// spend and the denied amount, with no charge point.
+    pub fn pre_call_limit(&self) -> Option<&SuppliedStop> {
+        self.pre_call.as_deref()
+    }
+
+    /// This result carrying `stop` as the pre-call limit that stopped the
+    /// replay.
+    #[must_use]
+    pub fn with_pre_call(mut self, stop: Box<SuppliedStop>) -> Self {
+        self.pre_call = Some(stop);
         self
     }
 
@@ -623,6 +643,7 @@ pub struct InputArmResult {
     resolved_regions: Vec<SourceRegion>,
     charges: ScalarLimits,
     limit: Option<Incomplete>,
+    pre_call: Option<Box<SuppliedStop>>,
 }
 
 impl InputArmResult {
@@ -653,6 +674,7 @@ impl InputArmResult {
             resolved_regions,
             charges,
             limit: None,
+            pre_call: None,
         }
     }
 
@@ -672,6 +694,7 @@ impl InputArmResult {
             resolved_regions,
             charges,
             limit: None,
+            pre_call: None,
         }
     }
 
@@ -687,6 +710,22 @@ impl InputArmResult {
     #[must_use]
     pub fn with_limit(mut self, limit: Incomplete) -> Self {
         self.limit = Some(limit);
+        self
+    }
+
+    /// The phase-marked pre-call limit that stopped the replay before any
+    /// call, when one did (FR-277): the conversion or admission phase, the
+    /// parameter, the actual event, the configured ceiling, the successful
+    /// spend and the denied amount, with no charge point.
+    pub fn pre_call_limit(&self) -> Option<&SuppliedStop> {
+        self.pre_call.as_deref()
+    }
+
+    /// This result carrying `stop` as the pre-call limit that stopped the
+    /// replay.
+    #[must_use]
+    pub fn with_pre_call(mut self, stop: Box<SuppliedStop>) -> Self {
+        self.pre_call = Some(stop);
         self
     }
 
@@ -746,6 +785,25 @@ impl ReplayResult {
         match self {
             Self::Witness(result) => Self::Witness(result.with_limit(limit)),
             Self::Input(result) => Self::Input(result.with_limit(limit)),
+        }
+    }
+
+    /// The phase-marked pre-call limit that stopped the replay before any
+    /// call, when one did (FR-277).
+    pub fn pre_call_limit(&self) -> Option<&SuppliedStop> {
+        match self {
+            Self::Witness(result) => result.pre_call_limit(),
+            Self::Input(result) => result.pre_call_limit(),
+        }
+    }
+
+    /// This result carrying `stop` as the pre-call limit that stopped the
+    /// replay.
+    #[must_use]
+    pub fn with_pre_call(self, stop: Box<SuppliedStop>) -> Self {
+        match self {
+            Self::Witness(result) => Self::Witness(result.with_pre_call(stop)),
+            Self::Input(result) => Self::Input(result.with_pre_call(stop)),
         }
     }
 

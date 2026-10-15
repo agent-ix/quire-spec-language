@@ -338,6 +338,10 @@ pub(super) fn derive(
                         fields.iter().map(|field| field.value_type()).collect()
                     }
                     CompositeShape::Tuple(positions) => positions.iter().collect(),
+                    CompositeShape::Union(union_members) => union_members
+                        .iter()
+                        .flat_map(|member| member.positions())
+                        .collect(),
                 };
                 for (index, member) in members.into_iter().enumerate().rev() {
                     pending.push(child(&position, index, member, Some(*declaration))?);

@@ -20,6 +20,7 @@ use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
+use qsl_semantics::value::supplied::SuppliedLimits;
 use quire_exact::{Cancel, CancelCause, Integer, Outcome, Value};
 use quire_semantic_value::checking::CheckingLimits;
 
@@ -139,6 +140,7 @@ fn call_seven(
             function: &function,
             arguments: &[],
             objects: &ObjectEnvironment::default(),
+            supplied: SuppliedLimits::default(),
         },
         accounting,
         cancel,
@@ -746,6 +748,7 @@ fn an_execute_cancelled_from_another_thread_returns_no_value() {
                 function: &function,
                 arguments: &[],
                 objects: &ObjectEnvironment::default(),
+                supplied: SuppliedLimits::default(),
             },
             default_accounting(u64::MAX),
             cancel,
@@ -791,6 +794,7 @@ fn a_cancel_tripped_mid_run_is_cancelled_with_its_cause_never_a_fault() {
                 function: "seven".to_owned(),
                 arguments: Vec::new(),
                 accounting: default_accounting(DEFAULT_WORK_UNITS),
+                supplied: SuppliedLimits::default(),
             },
             &ObjectEnvironment::default(),
             cancel,

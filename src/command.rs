@@ -1086,6 +1086,7 @@ fn run_complete(
         function: call.function.clone(),
         arguments,
         accounting: call_accounting(&call.accounting),
+        supplied: request.limits.supplied.unwrap_or_default(),
     };
     let (package_id, outcome) = qsl_replay::spine::run(
         source.source().identity().clone(),
@@ -1237,5 +1238,44 @@ mod tests {
             defaults
         );
         assert_eq!(limits(r#"{"function":"f","arguments":[]}"#), defaults);
+    }
+
+    /// QSpec FR-323-AC-10 (TC-278 RE-13): a request's `limits.supplied` is
+    /// closed and complete with each ceiling an exact `u64`, or it refuses
+    /// at decode; absent, the published defaults apply.
+    #[test]
+    #[trace("TC-721", "FR-255-AC-4")]
+    fn limits_supplied_is_complete_and_u64_or_the_request_refuses() {
+        use qsl_semantics::value::supplied::SuppliedLimits;
+        let read = |text: &str| serde_json::from_str::<wire::Limits>(text);
+        assert_eq!(read("{}").expect("no limits").supplied, None);
+        assert_eq!(
+            read(r#"{"supplied":{"admission_work_units":0,"conversion_work_units":7,"numeric_magnitude_bits":9}}"#)
+                .expect("a complete object")
+                .supplied,
+            Some(
+                SuppliedLimits::default()
+                    .with_admission_work_units(0)
+                    .with_conversion_work_units(7)
+                    .with_numeric_magnitude_bits(9)
+            )
+        );
+        for malformed in [
+            r#"{"supplied":{"admission_work_units":1}}"#,
+            r#"{"supplied":{"conversion_work_units":1}}"#,
+            r#"{"supplied":{"admission_work_units":1,"conversion_work_units":1}}"#,
+            r#"{"supplied":{"admission_work_units":1,"conversion_work_units":1,"numeric_magnitude_bits":-1}}"#,
+            r#"{"supplied":{"admission_work_units":1,"conversion_work_units":1,"numeric_magnitude_bits":null}}"#,
+            r#"{"supplied":{"admission_work_units":1,"conversion_work_units":1,"numeric_magnitude_bits":"64"}}"#,
+            r#"{"supplied":{"admission_work_units":1,"conversion_work_units":1,"numeric_magnitude_bits":1,"depth":1}}"#,
+            r#"{"supplied":{"admission_work_units":18446744073709551616,"conversion_work_units":1,"numeric_magnitude_bits":1}}"#,
+            r#"{"supplied":{"admission_work_units":-1,"conversion_work_units":1}}"#,
+            r#"{"supplied":{"admission_work_units":1.5,"conversion_work_units":1}}"#,
+            r#"{"supplied":{"admission_work_units":null,"conversion_work_units":1}}"#,
+            r#"{"supplied":null}"#,
+            r#"{"supplied":[1,2]}"#,
+        ] {
+            assert!(read(malformed).is_err(), "{malformed} must refuse");
+        }
     }
 }

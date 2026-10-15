@@ -641,6 +641,17 @@ fn refuse(location: &Location, cause: CheckCause) -> CheckRefusal {
     }
 }
 
+/// A union declaration reached a type walk: QSL authors no union
+/// declaration yet (QSL-503), so lowering one is an unsupported feature.
+fn unsupported_union(location: &Location) -> CheckRefusal {
+    refuse(
+        location,
+        CheckCause::UnsupportedFeature {
+            loci: vec![location.clone()],
+        },
+    )
+}
+
 fn fault(location: &Location, fault: KeyFault) -> CheckRefusal {
     refuse(location, CheckCause::InternalFault(Box::new(fault)))
 }
@@ -1226,6 +1237,7 @@ impl<'w> LeafWalk<'w> {
                             }
                         }));
                     }
+                    CompositeShape::Union(_) => return Err(unsupported_union(location)),
                 }
                 return Ok(Some(open));
             }
@@ -1274,6 +1286,10 @@ impl<'w> LeafWalk<'w> {
                     fields.iter().map(FieldDeclaration::value_type).collect()
                 }
                 Some(CompositeShape::Tuple(positions)) => positions.iter().collect(),
+                Some(CompositeShape::Union(union_members)) => union_members
+                    .iter()
+                    .flat_map(|member| member.positions())
+                    .collect(),
                 None => return Err(fault(location, KeyFault::UnknownComposite(composite))),
             };
             let mut named = Vec::new();
@@ -2072,6 +2088,7 @@ impl<'a> Lowering<'a> {
         let members = match shape {
             CompositeShape::Record(fields) => fields.len(),
             CompositeShape::Tuple(positions) => positions.len(),
+            CompositeShape::Union(_) => return Err(unsupported_union(location)),
         };
         Ok(OpenComposite::Open(CompositeFrame {
             declaration,
@@ -2100,6 +2117,7 @@ impl<'a> Lowering<'a> {
             CompositeShape::Tuple(positions) => positions
                 .get(at)
                 .map(|position| (position, Presence::Required)),
+            CompositeShape::Union(_) => return Err(unsupported_union(location)),
         };
         let Some((value_type, presence)) = next else {
             return Ok(TypeStep::Built(self.close_composite(composite, location)?));
@@ -2135,6 +2153,7 @@ impl<'a> Lowering<'a> {
         let form = match shape {
             CompositeShape::Record(_) => "record",
             CompositeShape::Tuple(_) => "tuple",
+            CompositeShape::Union(_) => return Err(unsupported_union(location)),
         };
         let key = self.insert(
             location,

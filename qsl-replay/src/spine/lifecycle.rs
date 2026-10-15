@@ -573,6 +573,8 @@ pub(crate) struct ExecuteRequest<'a> {
     pub arguments: &'a [Value],
     /// The object environment.
     pub objects: &'a ObjectEnvironment,
+    /// The caller's supplied-value helper ceilings (FR-277).
+    pub supplied: qsl_semantics::value::supplied::SuppliedLimits,
 }
 
 /// S6a: call a checked function under `accounting` (FR-275). It runs no
@@ -588,11 +590,17 @@ pub(crate) fn execute(
         return Err(CallFailure::Cancelled(cause));
     }
     let mut meter = Meter::new(accounting).with_cancel(cancel.clone());
-    let evaluation = package.package.call(
+    // One run for the whole invocation: both helper budgets and the
+    // caller's original handle, never a fresh one (FR-277).
+    let mut run =
+        qsl_semantics::value::supplied::SuppliedRun::new(request.supplied, cancel.clone())
+            .map_err(CallFailure::Supplied)?;
+    let evaluation = package.package.call_supplied(
         request.function,
         request.arguments.to_vec(),
         request.objects,
         &mut meter,
+        &mut run,
     );
     if let Some(cause) = cancel.tripped() {
         return Err(CallFailure::Cancelled(cause));

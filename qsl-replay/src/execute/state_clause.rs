@@ -530,6 +530,11 @@ pub(crate) fn separate(
         }
         // This meter holds no `Cancel` handle, so no charge is cancelled.
         Err(CallFailure::Cancelled(_)) => return Err(fault("cancelled-without-a-handle")),
+        // Clause separation admits no supplied-value argument: the admission
+        // phase never runs here.
+        Err(CallFailure::Supplied(_) | CallFailure::UnsupportedHelper(_)) => {
+            return Err(fault("separation-check-runs-no-supplied-phase"))
+        }
     };
     match separation {
         Separation::Holds => Ok(SeparationOutcome::Holds),
