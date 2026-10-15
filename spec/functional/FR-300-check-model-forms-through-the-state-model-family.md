@@ -38,7 +38,8 @@ at S3, the checker SHALL report that refusal with a `StateModel`-owned cause.
 ## Inputs
 
 - One model expression form, nested in a `Value` function body or a
-  `ProtocolClause` body: `deref` (a field read, `NodeKind::Attribute`),
+  `ProtocolClause` body: `deref` (a field read, `NodeKind::Attribute`, or a relationship-end
+  navigation `r.name`, `NodeKind::Navigate`, [FR-363](FR-363-type-navigation-over-a-relationship-end.md)),
   `allInstances<T>(p)`, `lookup<T>(p, r) absent m`, `reaches` inside a clause, or a
   dispatched call
   `receiver.member(args)` (QSpec FR-151 rule
@@ -49,7 +50,7 @@ at S3, the checker SHALL report that refusal with a `StateModel`-owned cause.
 
 ## Outputs
 
-The form's checked node (`NodeKind::Attribute`, `AllInstances`, `Lookup`,
+The form's checked node (`NodeKind::Attribute`, `Navigate`, `AllInstances`, `Lookup`,
 `Reaches`, or a dispatched call bound to its FR-083 dispatch table) and its
 static type, or a located refusal whose cause belongs to `StateModel`.
 
@@ -106,7 +107,9 @@ part in no S6a seam (ADR-016 FP-3).
   it no S6a hook; [FR-063](FR-063-exhaustive-family-extension-seam-probe.md)
   supplies the seam probe; QSpec FR-151 and FR-153 own the model semantics
   and their catalog codes.
-- **Downstream:** [FR-301](FR-301-render-state-model-causes-under-the-enclosing-family.md)
+- **Downstream:** [FR-363](FR-363-type-navigation-over-a-relationship-end.md)
+  types the relationship-end half of the field-read form;
+  [FR-301](FR-301-render-state-model-causes-under-the-enclosing-family.md)
   carries the same attribution into evaluation;
   [FR-302](FR-302-link-dispatch-during-unit-compile.md) links the dispatch
   table a dispatched call's checked node names.

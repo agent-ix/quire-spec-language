@@ -545,7 +545,7 @@ struct ClauseSetup<'a> {
     pre: Option<&'a ObjectEnvironment>,
     bindings: Vec<Value>,
     trail: s6a::separation::Trail,
-    receiver_path: Option<s6a::separation::RuntimeValuePath>,
+    receiver_path: s6a::separation::RuntimeValuePath,
 }
 
 impl<'a> ClauseSetup<'a> {
@@ -619,16 +619,21 @@ impl<'a> ClauseSetup<'a> {
             .receiver_invocation
             .as_ref()
             .map(s6a::separation::observation_identity);
-        let receiver_path = observations.receiver_invocation.as_ref().map(|invocation| {
-            s6a::separation::RuntimeValuePath {
-                observation: s6a::separation::observation_identity(&current.identity),
-                subject: s6a::separation::ValuePathSubject::Invocation {
-                    invocation: s6a::separation::observation_identity(invocation),
-                    binding: s6a::separation::InvocationBinding::Receiver,
-                },
-                steps: Vec::new(),
-            }
-        });
+        // FR-207-AC-8: the receiver is rooted at the invocation's receiver
+        // binding when the context has no declared object identity, and at
+        // its declared object identity otherwise.
+        let receiver_subject = match observations.receiver_invocation.as_ref() {
+            Some(invocation) => s6a::separation::ValuePathSubject::Invocation {
+                invocation: s6a::separation::observation_identity(invocation),
+                binding: s6a::separation::InvocationBinding::Receiver,
+            },
+            None => s6a::separation::ValuePathSubject::Object(observations.self_object.clone()),
+        };
+        let receiver_path = s6a::separation::RuntimeValuePath {
+            observation: s6a::separation::observation_identity(&current.identity),
+            subject: receiver_subject,
+            steps: Vec::new(),
+        };
         Ok(Self {
             declaration,
             current: &current.environment,

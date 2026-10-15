@@ -28,16 +28,17 @@ use crate::check::ir::{
     CheckedBody, CheckedLiteral, Connective, IntegerDivisionOperator, Node, NodeId, NodeKind,
     RecordSlot, Slot, Visit,
 };
-use crate::check::refusal::{CheckCause, CheckRefusal, WrongSnapshotCause};
+use crate::check::refusal::{CheckCause, CheckRefusal, KeyFault, WrongSnapshotCause};
+use crate::check::sum_case::{ArmHead, CaseBuilder, UnionRef};
 use crate::check::type_form::{IntegerOutsideI128, IntegerSite};
 use crate::check::DispatchOperation;
 use qsl_forms::{
-    Accumulation, BinaryOperator, BinderQuery, ClauseKind, ExprNode, ExprRef, Expression,
+    Accumulation, BinaryOperator, BinderQuery, CaseForm, ClauseKind, ExprNode, ExprRef, Expression,
     FieldInitializer,
 };
 use qsl_foundation::absence::AbsenceMode;
 use quire_exact::{
-    ArithmeticOperator, CollectionType, NodeKey, OrderingOperator, Value, ValueType,
+    ArithmeticOperator, CollectionType, IllTypedCause, NodeKey, OrderingOperator, Value, ValueType,
 };
 use quire_semantic_value::declaration::{EqualityOperand, EqualityOperator, FieldDeclaration};
 use quire_semantic_value::location::Location;
@@ -125,6 +126,7 @@ enum Frame<'e, 'r> {
     Upcast(Want<'r>, Location),
     If(Box<IfFrame<'e, 'r>>),
     Let(Box<LetFrame<'e, 'r>>),
+    Case(Box<CaseFrame<'e, 'r>>),
     Connective(Box<ConnectiveFrame<'e>>),
     Peer(Box<PeerFrame<'e, 'r>>),
     Unary(Box<UnaryFrame<'r>>),
@@ -178,6 +180,41 @@ struct LetFrame<'e, 'r> {
     location: Location,
     /// The typed value and the slot it is bound to, once typed.
     value: Option<(Node, Slot)>,
+}
+
+/// `case scrutinee { arms }` (FR-318): the scrutinee first, then each arm
+/// whose head resolved, in source order.
+struct CaseFrame<'e, 'r> {
+    branches: Branches<'r>,
+    /// The `case` expression, whose arena holds its scrutinee and bodies.
+    expression: ExprRef<'e>,
+    case: &'e CaseForm,
+    location: Location,
+    stage: CaseStage<'r>,
+}
+
+enum CaseStage<'r> {
+    /// The scrutinee is being typed.
+    Scrutinee,
+    /// The arms are being resolved and their bodies typed.
+    Arms(Box<CaseArms<'r>>),
+}
+
+/// The arms of a `case` whose scrutinee is typed.
+struct CaseArms<'r> {
+    builder: CaseBuilder<'r>,
+    /// The next arm to resolve.
+    next: usize,
+    /// The arm whose body is being typed.
+    open: Option<OpenArm>,
+    /// The result type the arm bodies inferred so far.
+    result: Option<ValueType>,
+}
+
+/// An arm whose binders are bound and whose body is being typed.
+struct OpenArm {
+    member: usize,
+    binders: Vec<Slot>,
 }
 
 /// Which operand of a pair is being typed.
@@ -412,6 +449,31 @@ struct DispatchArgumentsFrame<'e, 'r> {
     typed: Vec<NodeId>,
 }
 
+/// The result type the arm bodies infer once `body`, the next one in source
+/// order, is typed (QSpec FR-146 "Case result type"): the type every body
+/// shares, `Integer` when every body is `Integer` or an `Int[..]` type, and
+/// otherwise a refusal at the first body that has neither.
+fn case_result(result: Option<ValueType>, body: &Node) -> Result<ValueType, CheckRefusal> {
+    match result {
+        None => Ok(body.value_type.clone()),
+        Some(result) if result == body.value_type => Ok(result),
+        Some(result) if is_integer(&result) && is_integer(&body.value_type) => {
+            Ok(ValueType::Integer)
+        }
+        Some(_) => Err(mismatch(&body.location)),
+    }
+}
+
+/// A broken invariant of the `case` frame, never a refusal of the input.
+fn case_fault(location: &Location, invariant: &'static str) -> CheckRefusal {
+    refuse(
+        location,
+        CheckCause::InternalFault(Box::new(KeyFault::StageFault(
+            qsl_foundation::InternalFault::new("S3", invariant),
+        ))),
+    )
+}
+
 /// `(first, second)` in source order: `second` is the left operand when
 /// the right one was typed first.
 fn ordered<T>(right_first: bool, first: T, second: T) -> (T, T) {
@@ -535,6 +597,15 @@ impl<'a> Typer<'a> {
                     frames,
                 ))
             }
+            ExprNode::Case(case) => {
+                self.enter(&location)?;
+                Ok(Self::case(
+                    Branches::Expected(expected),
+                    (expression, case),
+                    location,
+                    frames,
+                ))
+            }
             _ => {
                 let hint = match expected {
                     Expected::Checked(required) => {
@@ -587,6 +658,24 @@ impl<'a> Typer<'a> {
             value: None,
         })));
         Step::Descend(Goal::Infer(value, None, value_location))
+    }
+
+    /// Start `case scrutinee { arms }` (FR-318): type the scrutinee first.
+    fn case<'e, 'r>(
+        branches: Branches<'r>,
+        (expression, case): (ExprRef<'e>, &'e CaseForm),
+        location: Location,
+        frames: &mut Vec<Frame<'e, 'r>>,
+    ) -> Step<'e, 'r> {
+        let scrutinee = Goal::Infer(expression.at(case.scrutinee), None, location.child(0));
+        frames.push(Frame::Case(Box::new(CaseFrame {
+            branches,
+            expression,
+            case,
+            location,
+            stage: CaseStage::Scrutinee,
+        })));
+        Step::Descend(scrutinee)
     }
 
     /// Start a form over one operand, `goal`.
@@ -659,13 +748,12 @@ impl<'a> Typer<'a> {
             }
             ExprNode::Name(name) => self.name(name, hint.as_deref(), &location)?,
             ExprNode::ProtocolReference { target } => self.protocol_reference(target, &location)?,
-            // FR-313: S2 builds the form; FR-318 checks it.
-            ExprNode::Case(_) => {
-                return Err(refuse(
-                    &location,
-                    CheckCause::UnsupportedFeature {
-                        loci: vec![location.clone()],
-                    },
+            ExprNode::Case(case) => {
+                return Ok(Self::case(
+                    Branches::Inferred(hint),
+                    (expression, case),
+                    location,
+                    frames,
                 ))
             }
             ExprNode::Let { name, value, body } => {
@@ -1446,6 +1534,7 @@ impl<'a> Typer<'a> {
             }
             Frame::If(frame) => self.accept_if(frame, typed, frames),
             Frame::Let(frame) => self.accept_let(frame, typed, frames),
+            Frame::Case(frame) => self.accept_case(frame, typed, frames),
             Frame::Connective(frame) => Ok(self.accept_connective(frame, typed, frames)),
             Frame::Peer(frame) => self.accept_peer(frame, typed, frames),
             Frame::Unary(frame) => self.accept_unary(*frame, typed).map(Step::Typed),
@@ -1667,6 +1756,102 @@ impl<'a> Typer<'a> {
                 )))
             }
         }
+    }
+
+    /// Hand `typed` to a `case`: its scrutinee, or the body of its open arm.
+    fn accept_case<'e, 'r>(
+        &mut self,
+        mut frame: Box<CaseFrame<'e, 'r>>,
+        typed: Node,
+        frames: &mut Vec<Frame<'e, 'r>>,
+    ) -> Result<Step<'e, 'r>, CheckRefusal>
+    where
+        'a: 'r,
+    {
+        let arms = match std::mem::replace(&mut frame.stage, CaseStage::Scrutinee) {
+            CaseStage::Scrutinee => {
+                // A scrutinee refusal, including a type that is no declared
+                // union, ends the case before any arm is resolved.
+                let scope: &'a super::Scope = self.scope;
+                let union = UnionRef::of(scope.types(), &typed.value_type)
+                    .ok_or_else(|| mismatch(&typed.location))?;
+                let scrutinee = self.push(typed);
+                Box::new(CaseArms {
+                    builder: CaseBuilder::new(union, scrutinee),
+                    next: 0,
+                    open: None,
+                    result: None,
+                })
+            }
+            CaseStage::Arms(mut arms) => {
+                let open = arms
+                    .open
+                    .take()
+                    .ok_or_else(|| case_fault(&frame.location, "case-arm-body-unexpected"))?;
+                self.unbind(open.binders.len());
+                if matches!(frame.branches, Branches::Inferred(_)) {
+                    arms.result = Some(case_result(arms.result.take(), &typed)?);
+                }
+                let body = self.push(typed);
+                arms.builder.arm(open.member, open.binders, body);
+                arms
+            }
+        };
+        self.next_arm(frame, arms, frames)
+    }
+
+    /// Resolve arm heads in source order until one whose binders are typed
+    /// has a body to check, or every arm is resolved and the `case`
+    /// finishes. Recording a head refuses nothing.
+    fn next_arm<'e, 'r>(
+        &mut self,
+        mut frame: Box<CaseFrame<'e, 'r>>,
+        mut arms: Box<CaseArms<'r>>,
+        frames: &mut Vec<Frame<'e, 'r>>,
+    ) -> Result<Step<'e, 'r>, CheckRefusal>
+    where
+        'a: 'r,
+    {
+        while let Some(arm) = frame.case.arms.get(arms.next) {
+            let at = frame.location.child(1 + arms.next);
+            arms.next += 1;
+            let ArmHead::Resolved(member) = arms.builder.head(&arm.member.name, arm.binders.len())
+            else {
+                continue;
+            };
+            let mut binders = Vec::with_capacity(arm.binders.len());
+            for (binder, value_type) in arm.binders.iter().zip(arms.builder.payload(member)) {
+                binders.push(self.bind(&binder.name, value_type.clone(), &at, LocalKind::Bound)?);
+            }
+            let goal = frame.branches.goal(frame.expression.at(arm.body), at);
+            arms.open = Some(OpenArm { member, binders });
+            frame.stage = CaseStage::Arms(arms);
+            frames.push(Frame::Case(frame));
+            return Ok(Step::Descend(goal));
+        }
+        let CaseFrame {
+            branches, location, ..
+        } = *frame;
+        let CaseArms {
+            builder, result, ..
+        } = *arms;
+        let (scrutinee, declaration, arms) = builder.finish(&location)?;
+        let value_type = match branches {
+            Branches::Expected(expected) => expected.into_type(),
+            // Only a union with no member has no arm body to infer from.
+            Branches::Inferred(_) => result.ok_or_else(|| {
+                CheckRefusal::ill_typed(&location, IllTypedCause::AmbiguousLiteral)
+            })?,
+        };
+        Ok(Step::Typed(node(
+            NodeKind::Case {
+                scrutinee,
+                declaration,
+                arms,
+            },
+            value_type,
+            &location,
+        )))
     }
 
     fn accept_connective<'e, 'r>(

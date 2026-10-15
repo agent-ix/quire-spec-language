@@ -641,15 +641,10 @@ fn refuse(location: &Location, cause: CheckCause) -> CheckRefusal {
     }
 }
 
-/// A union declaration reached a type walk: QSL authors no union
-/// declaration yet (QSL-503), so lowering one is an unsupported feature.
-fn unsupported_union(location: &Location) -> CheckRefusal {
-    refuse(
-        location,
-        CheckCause::UnsupportedFeature {
-            loci: vec![location.clone()],
-        },
-    )
+/// The invariant a composite frame breaks by holding a union, which
+/// `open_composite` refuses before a frame opens.
+fn union_frame() -> qsl_foundation::InternalFault {
+    qsl_foundation::InternalFault::new("S3", "union-composite-frame")
 }
 
 fn fault(location: &Location, fault: KeyFault) -> CheckRefusal {
@@ -1237,7 +1232,7 @@ impl<'w> LeafWalk<'w> {
                             }
                         }));
                     }
-                    CompositeShape::Union(_) => return Err(unsupported_union(location)),
+                    CompositeShape::Union(_) => return Err(super::sum_case::unlowered(location)),
                 }
                 return Ok(Some(open));
             }
@@ -2088,7 +2083,10 @@ impl<'a> Lowering<'a> {
         let members = match shape {
             CompositeShape::Record(fields) => fields.len(),
             CompositeShape::Tuple(positions) => positions.len(),
-            CompositeShape::Union(_) => return Err(unsupported_union(location)),
+            CompositeShape::Union(_) => {
+                self.composites_in_progress.pop();
+                return Err(super::sum_case::unlowered(location));
+            }
         };
         Ok(OpenComposite::Open(CompositeFrame {
             declaration,
@@ -2117,7 +2115,10 @@ impl<'a> Lowering<'a> {
             CompositeShape::Tuple(positions) => positions
                 .get(at)
                 .map(|position| (position, Presence::Required)),
-            CompositeShape::Union(_) => return Err(unsupported_union(location)),
+            // `open_composite` refuses a union before a frame opens.
+            CompositeShape::Union(_) => {
+                return Err(fault(location, KeyFault::StageFault(union_frame())))
+            }
         };
         let Some((value_type, presence)) = next else {
             return Ok(TypeStep::Built(self.close_composite(composite, location)?));
@@ -2153,7 +2154,10 @@ impl<'a> Lowering<'a> {
         let form = match shape {
             CompositeShape::Record(_) => "record",
             CompositeShape::Tuple(_) => "tuple",
-            CompositeShape::Union(_) => return Err(unsupported_union(location)),
+            // `open_composite` refuses a union before a frame opens.
+            CompositeShape::Union(_) => {
+                return Err(fault(location, KeyFault::StageFault(union_frame())))
+            }
         };
         let key = self.insert(
             location,
@@ -3705,6 +3709,9 @@ impl<'a> Lowering<'a> {
                     Operands::Receiver(receiver, arguments),
                 )
             }
+            // FR-319 keys a `case` node by its declared-order body; that
+            // lowering waits on the union wire vocabulary.
+            NodeKind::Case { .. } => return Err(super::sum_case::unlowered(node.location())),
             NodeKind::Pre(operand) => (
                 Keyed::Application(Operator::Pre, plain("quire.op.state.pre")),
                 Operands::One(operand),

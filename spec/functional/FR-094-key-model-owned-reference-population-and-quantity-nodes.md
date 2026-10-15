@@ -158,8 +158,8 @@ even when the fixture has no function that names it.
   resolves `m` statically to the one effective operation `T` exposes, so the
   member names `T`'s node even when a supertype of `T` declares `m`
   (ADR-013 O-06);
-- a `relationship_end` member names the relationship's node and the end's
-  name;
+- a `relationship_end` member of a `Navigate` (`r.name`, FR-363) names the
+  relationship's node and the end's role;
 - the `type_argument` member of `allInstances<T>` and `lookup<T>` names the
   model node of `T`.
 

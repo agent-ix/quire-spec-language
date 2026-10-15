@@ -57,7 +57,7 @@ use super::{
 };
 use crate::family::{classify_domains, ClaimExtent, ClassifyFailure, Requirements};
 use qsl_foundation::bound::DomainKind;
-use quire_semantic_value::declaration::TypeEnvironment;
+use quire_semantic_value::declaration::{CompositeShape, TypeEnvironment, UnionMemberDeclaration};
 use quire_semantic_value::location::{Location, Origin as CheckOrigin};
 
 /// The fault stage name this module reports.
@@ -358,7 +358,8 @@ fn is_scalar_application(node: CheckedNode<'_>) -> bool {
         | NodeKind::Dispatch { .. }
         | NodeKind::Pre(_)
         | NodeKind::Reaches { .. }
-        | NodeKind::ProtocolReference { .. } => false,
+        | NodeKind::ProtocolReference { .. }
+        | NodeKind::Case { .. } => false,
         #[cfg(seam_probe)]
         NodeKind::__SeamProbe => unreachable!("never constructed outside the probe build"),
     }
@@ -458,6 +459,10 @@ fn bound_by(node: CheckedNode<'_>, binding: &Location) -> Vec<BinderSite> {
             binder,
             ..
         } => vec![site(*accumulator), site(*binder)],
+        NodeKind::Case { arms, .. } => arms
+            .iter()
+            .flat_map(|arm| arm.binders.iter().map(|slot| site(*slot)))
+            .collect(),
         _ => Vec::new(),
     }
 }
@@ -571,6 +576,32 @@ impl<'n> ClaimsWalk<'n, '_> {
             (NodeKind::Query { slot, source, .. }, 1) => {
                 self.roots
                     .bind(*slot, &frame.binding, element_type(node.at(*source))?);
+            }
+            // Child `index` of a `case` is the arm body of arm `index - 1`:
+            // its payload binders are roots typed by the member's payload.
+            (
+                NodeKind::Case {
+                    declaration, arms, ..
+                },
+                1..,
+            ) => {
+                let payload = self
+                    .types
+                    .composite(*declaration)
+                    .and_then(|union| match union.shape() {
+                        CompositeShape::Union(members) => members.get(arms.get(index - 1)?.member),
+                        CompositeShape::Record(_) | CompositeShape::Tuple(_) => None,
+                    })
+                    .map(UnionMemberDeclaration::positions);
+                let (Some(arm), Some(payload)) = (arms.get(index - 1), payload) else {
+                    return Err(ClassifyFailure::Fault(InternalFault::new(
+                        STAGE,
+                        "case-arm-payload",
+                    )));
+                };
+                for (slot, value_type) in arm.binders.iter().zip(payload) {
+                    self.roots.bind(*slot, &frame.binding, value_type);
+                }
             }
             (
                 NodeKind::Fold {

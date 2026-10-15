@@ -614,6 +614,10 @@ pub enum CheckCause {
     },
     /// `undefined_expression` with the cause of its obligation.
     Unproved(Obligation),
+    /// The `SumCase` family's one failed `case` exhaustiveness obligation
+    /// (FR-318): `undefined_expression`/`unproved-exhaustiveness`. Boxed like
+    /// [`Self::ProtocolAnchor`], to keep `CheckCause` small.
+    SumCase(Box<super::SumCaseCause>),
     /// `undefined_expression` / `unproved-decrease` for one recursive
     /// component.
     UnprovedDecrease {
@@ -994,6 +998,7 @@ impl CheckCause {
             Self::MissingName(_) => Code::MissingDeclaration,
             Self::AmbiguousName { .. } => Code::AmbiguousDeclaration,
             Self::Unproved(_) | Self::UnprovedDecrease { .. } => Code::UndefinedExpression,
+            Self::SumCase(cause) => cause.code(),
             Self::ResourceExhausted(_) => Code::StageLimitExceeded,
             Self::IeeeProfileNotAdmitted
             | Self::DefinitionCycle { .. }
@@ -1048,6 +1053,7 @@ impl CheckCause {
                 | Obligation::NonemptyReduction { .. },
             ) => Some("unproved-range"),
             Self::UnprovedDecrease { .. } => Some("unproved-decrease"),
+            Self::SumCase(cause) => Some(cause.tag()),
             Self::ResourceExhausted(cause) => Some(cause.kind.setting().kind().catalog_cause()),
             Self::DefinitionCycle { .. } => Some("definition-cycle"),
             Self::InvalidDispatchDeclaration(_) => Some("invalid-value"),
