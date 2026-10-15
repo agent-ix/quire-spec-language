@@ -178,6 +178,10 @@ pub enum AssemblyCause {
         name: String,
         /// The span of each candidate declaration's name.
         candidates: Vec<Span>,
+        /// Whether the native type of this spelling is also a candidate: it
+        /// has no declaration span, so it is not among `candidates`
+        /// (FR-091 "Ambiguous type name").
+        native: bool,
     },
     /// A built-in constructor's declared bounds are rejected by its value
     /// type, with that value type's own cause.
@@ -1585,6 +1589,7 @@ fn check_names(
                     cause: AssemblyCause::AmbiguousTypeName {
                         name: name.clone(),
                         candidates: unit.candidates(name),
+                        native: false,
                     },
                     span: form.span,
                 }),
@@ -1626,6 +1631,7 @@ fn resolution_error(unit: &Unit, error: TypeFormError) -> AssemblyError {
         TypeFormFault::MissingName(name) => AssemblyCause::UnresolvedTypeName { name },
         TypeFormFault::AmbiguousName(name) => AssemblyCause::AmbiguousTypeName {
             candidates: unit.candidates(&name),
+            native: false,
             name,
         },
         fault @ (TypeFormFault::Malformed
@@ -2221,6 +2227,7 @@ impl PackageDeclarations {
                     cause: AssemblyCause::AmbiguousTypeName {
                         name: name.clone(),
                         candidates: candidates.clone(),
+                        native: false,
                     },
                     span: *span,
                 });

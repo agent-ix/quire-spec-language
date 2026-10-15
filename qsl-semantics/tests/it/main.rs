@@ -38,6 +38,7 @@ mod model_intake;
 #[cfg(feature = "test-support")]
 mod model_normalization;
 mod model_operations;
+mod native_scalar_equality;
 #[cfg(feature = "test-support")]
 mod model_population;
 #[cfg(feature = "test-support")]
