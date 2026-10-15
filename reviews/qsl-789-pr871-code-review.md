@@ -28,3 +28,17 @@ Recorded and not blocking: FND-001 (medium) and FND-002 and FND-003 (low).
 | FND-001 | medium | The `Frame::Field` guard changed from "state clause and Reference" to "not Composite". Every non-record `x.f` in every context (Int, Option of a record, Tuple, Set) is now refused by the StateModel hook: the refusal is attributed to StateModel and sits at the operand, where before it was a Value-family type-mismatch at the form. A bare `r.f` over a Reference in a function body is now StateModel-wrapped, with the same code, cause and location. The PR says such reads "stay refused as before", which is not true of their attribution. No test pins either behaviour, and FR-363 states the operand rule only for model receivers | qsl-semantics/src/check/check/typing.rs:1547, qsl-semantics/src/check/state_model.rs:220-236 |
 | FND-002 | low | `check_connection` now skips the narrowing check for an end with no multiplicity. Intake never reaches that case (`multiplicity_of` refuses an absent multiplicity as malformed), and no test covers it. The change from `Multiplicity` to `Option` stays inside this repo: there is no serde, no schema and no consumer outside it | qsl-semantics/src/model/systems.rs:660-663 |
 | FND-003 | low | N12 part 2 (`self.order.order`) also passes with typing removed, because the inner unknown name refuses type-mismatch at the same path [0,0]. That is acceptable, because N01 pins the typing and the path check catches a form-located or Option-lifting implementation. A fixture such as `self.order.lines` would make the vector prove the rule on its own | qsl-semantics/tests/it/relationship_navigation.rs:716-724 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | medium | `is_model_receiver` sends an Option, collection or population of references to the hook only inside a state clause. In a function body, `o.order` over `o: Option<Reference<M::Fulfilment>>` therefore keeps the Value-family type-mismatch at the form. FR-363's non-Reference receiver rule (StateModel, at the operand) states no context limit, but every TC-1031 vector is an invariant. Recorded, not blocking | qsl-semantics/src/check/check.rs:2331-2346 |
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | b6338e48c12633c2d44a8d82a897b338aecc650b |
+| FND-002 | accepted-no-change | A recorded low under the review cap. The skip cannot be reached from intake, and the Option change stays inside this repo |
+| FND-003 | fixed | b6338e48c12633c2d44a8d82a897b338aecc650b |
