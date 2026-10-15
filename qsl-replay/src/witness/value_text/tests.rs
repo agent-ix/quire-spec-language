@@ -605,3 +605,26 @@ fn tc_905_the_element_order_check_reads_spans() {
     assert_eq!(decodes(&sound), Ok(()));
     assert_eq!(decodes(&outer), Err(EntryFault::Elements));
 }
+
+/// TC-1028: a native UUID and Timestamp are written as their payload text
+/// under their own tags and read back unchanged, noncanonical text
+/// included: the payload's spelling is admitted when the executor converts
+/// it, not by the form.
+#[trace("TC-1028")]
+#[test]
+fn tc_1028_native_payloads_round_trip_in_the_value_text() {
+    let uuid = WitnessValue::Uuid("00112233-4455-6677-8899-aabbccddeeff".to_owned());
+    assert_eq!(
+        uuid.to_value_text().unwrap(),
+        r#"{"type":"uuid","value":"00112233-4455-6677-8899-aabbccddeeff"}"#
+    );
+    let timestamp = WitnessValue::Timestamp("-1".to_owned());
+    assert_eq!(
+        timestamp.to_value_text().unwrap(),
+        r#"{"type":"timestamp","value":"-1"}"#
+    );
+    let uppercase = WitnessValue::Uuid("00112233-4455-6677-8899-AABBCCDDEEFF".to_owned());
+    for value in [uuid, timestamp, uppercase] {
+        assert_eq!(round_trip(&value), value);
+    }
+}

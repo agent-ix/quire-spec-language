@@ -839,3 +839,192 @@ fn tc_906_a_reference_replays_by_identity_and_a_dereference_completes_no_value()
         "an empty identity",
     );
 }
+
+const NATIVE: &str = "function u using v(a: UUID): Boolean pure { false }\n\
+     function t using v(a: Timestamp): Boolean pure { false }\n\
+     function eu using v(a: UUID, b: UUID): Boolean pure { a = b }\n\
+     function et using v(a: Timestamp, b: Timestamp): Boolean pure { a = b }\n";
+
+const UUID_TEXT: &str = "00112233-4455-6677-8899-aabbccddeeff";
+const UUID_TEXT_OTHER: &str = "00112233-4455-6677-8899-aabbccddeefe";
+const TIMESTAMP_MAX: &str = "170141183460469231731687303715884105727";
+const TIMESTAMP_MIN: &str = "-170141183460469231731687303715884105728";
+
+fn uuid(text: &str) -> WitnessValue {
+    WitnessValue::Uuid(text.to_owned())
+}
+
+fn timestamp(text: &str) -> WitnessValue {
+    WitnessValue::Timestamp(text.to_owned())
+}
+
+/// `function` replayed with both parameters bound, in declared order.
+fn replay_pair(
+    fixture: &Fixture,
+    function: &str,
+    values: [WitnessValue; 2],
+) -> Result<ReplayResult, ReplayRefusal> {
+    let [first, second] = values;
+    let assignments = vec![
+        crate::CanonicalAssignment {
+            parameter: parameter(&fixture.compiled, function, 0),
+            value: first,
+        },
+        crate::CanonicalAssignment {
+            parameter: parameter(&fixture.compiled, function, 1),
+            value: second,
+        },
+    ];
+    replay(
+        fixture.request(function, ReplaySource::Input(assignments)),
+        ReplayLimits::default(),
+    )
+}
+
+/// The typed refusal a native payload carries: its parameter, its catalog
+/// code and cause, and the kernel class beneath.
+fn payload_refusal(
+    result: &Result<ReplayResult, ReplayRefusal>,
+) -> (usize, Code, Option<&'static str>, quire_exact::ConstructionCause) {
+    match result {
+        Err(refusal @ ReplayRefusal::NativePayload { parameter, refusal: kernel }) => {
+            (*parameter, refusal.code(), refusal.cause(), kernel.cause.clone())
+        }
+        other => panic!("expected a native payload refusal, got {other:?}"),
+    }
+}
+
+/// FR-056: a canonical UUID or Timestamp binds to its parameter on both
+/// arms, the Nil and Max UUIDs and both Timestamp endpoints included.
+#[trace("TC-1028")]
+#[test]
+fn tc_1028_canonical_uuid_and_timestamp_inputs_replay() {
+    let fixture = fixture(NATIVE);
+    for text in [
+        UUID_TEXT,
+        "00000000-0000-0000-0000-000000000000",
+        "ffffffff-ffff-ffff-ffff-ffffffffffff",
+    ] {
+        for result in fixture.both("u", uuid(text)) {
+            assert_reproduced(result);
+        }
+    }
+    for text in ["0", "1", "-1", TIMESTAMP_MAX, TIMESTAMP_MIN] {
+        for result in fixture.both("t", timestamp(text)) {
+            assert_reproduced(result);
+        }
+    }
+}
+
+/// TC-1028 E6, E7, E9, E10: the unit-language equality is reachable from
+/// replay inputs. Equal payloads are true (success), unequal are false.
+#[trace("TC-1028")]
+#[test]
+fn tc_1028_equality_over_replayed_uuid_and_timestamp_inputs() {
+    let fixture = fixture(NATIVE);
+    let category = |result: Result<ReplayResult, ReplayRefusal>| result.unwrap().category();
+    assert_eq!(
+        category(replay_pair(&fixture, "eu", [uuid(UUID_TEXT), uuid(UUID_TEXT)])),
+        Category::Success
+    );
+    assert_eq!(
+        category(replay_pair(&fixture, "eu", [uuid(UUID_TEXT), uuid(UUID_TEXT_OTHER)])),
+        Category::Violation
+    );
+    assert_eq!(
+        category(replay_pair(&fixture, "et", [timestamp("0"), timestamp("0")])),
+        Category::Success
+    );
+    assert_eq!(
+        category(replay_pair(&fixture, "et", [timestamp("0"), timestamp("1")])),
+        Category::Violation
+    );
+}
+
+/// FR-056-AC-35, TC-1028 E8 at the wire: an uppercase UUID at a unit input
+/// is refused `invalid_runtime_input`/`invalid-value` over the kernel's
+/// noncanonical UUID class, naming the parameter, so no comparison runs.
+/// Every other noncanonical spelling refuses the same way.
+#[trace("FR-056-AC-35", "TC-1028")]
+#[test]
+fn tc_1028_noncanonical_uuid_is_refused_at_the_input() {
+    use quire_exact::ConstructionCause::UuidNoncanonical;
+    let fixture = fixture(NATIVE);
+    let expected = |parameter| (parameter, Code::InvalidRuntimeInput, Some("invalid-value"), UuidNoncanonical);
+    for text in [
+        "00112233-4455-6677-8899-AABBCCDDEEFF",
+        "00112233-4455-6677-8899-aabbccddeeFf",
+        "00112233445566778899aabbccddeeff",
+        "{00112233-4455-6677-8899-aabbccddeeff}",
+        "urn:uuid:00112233-4455-6677-8899-aabbccddeeff",
+        "0011223-34455-6677-8899-aabbccddeeff",
+        "00112233-4455-6677-8899-aabbccddeefg",
+        "00112233-4455-6677-8899-aabbccddeef",
+        " 00112233-4455-6677-8899-aabbccddeeff",
+        "",
+    ] {
+        for result in fixture.both("u", uuid(text)) {
+            assert_eq!(payload_refusal(&result), expected(0), "{text:?}");
+        }
+    }
+    let at_second = replay_pair(
+        &fixture,
+        "eu",
+        [uuid(UUID_TEXT), uuid("00112233-4455-6677-8899-AABBCCDDEEFF")],
+    );
+    assert_eq!(payload_refusal(&at_second), expected(1));
+}
+
+/// TC-1028: a noncanonical Timestamp is refused `invalid-value` over the
+/// kernel's noncanonical class, and a canonical one outside the signed
+/// 128-bit domain over the out-of-domain class.
+#[trace("TC-1028")]
+#[test]
+fn tc_1028_noncanonical_timestamp_is_refused_at_the_input() {
+    use quire_exact::ConstructionCause::{TimestampNoncanonical, TimestampOutOfDomain};
+    let fixture = fixture(NATIVE);
+    let refused = |text: &str, cause: quire_exact::ConstructionCause| {
+        for result in fixture.both("t", timestamp(text)) {
+            assert_eq!(
+                payload_refusal(&result),
+                (0, Code::InvalidRuntimeInput, Some("invalid-value"), cause.clone()),
+                "{text:?}"
+            );
+        }
+    };
+    for text in [
+        "-0",
+        "+1",
+        "01",
+        "-01",
+        "",
+        " 1",
+        "1.0",
+        "1e0",
+        "1970-01-01T00:00:00Z",
+    ] {
+        refused(text, TimestampNoncanonical);
+    }
+    refused("170141183460469231731687303715884105728", TimestampOutOfDomain);
+    refused("-170141183460469231731687303715884105729", TimestampOutOfDomain);
+    let at_second = replay_pair(&fixture, "et", [timestamp("0"), timestamp("-0")]);
+    assert_eq!(payload_refusal(&at_second).0, 1);
+}
+
+/// FR-056: a wire value of another kind at a UUID or Timestamp parameter,
+/// or a UUID where a Timestamp is declared, is `wrong-value-kind`.
+#[trace("TC-1028")]
+#[test]
+fn tc_1028_another_kind_at_a_native_parameter_is_wrong_value_kind() {
+    let fixture = fixture(NATIVE);
+    for (function, value) in [
+        ("u", WitnessValue::Text(UUID_TEXT.to_owned())),
+        ("u", timestamp("0")),
+        ("t", uuid(UUID_TEXT)),
+        ("t", int(0)),
+    ] {
+        for result in fixture.both(function, value) {
+            assert_wrong_kind(result, function);
+        }
+    }
+}

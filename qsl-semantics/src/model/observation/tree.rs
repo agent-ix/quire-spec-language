@@ -198,6 +198,23 @@ pub(super) fn read_raw_value<E>(
         let Some(object) = next.as_object() else {
             return Ok(None);
         };
+        // FR-056's closed native wire objects carry their kind as a member
+        // beside the payload, not as the single tag the other forms use.
+        if let Some(kind) = object.member("kind").and_then(Json::as_str) {
+            let (payload_member, make): (&str, fn(String) -> RawNode) = match kind {
+                "uuid" => ("text", RawNode::Uuid),
+                "timestamp" => ("nanoseconds", RawNode::Timestamp),
+                _ => return Ok(None),
+            };
+            if object.keys().count() != 2 {
+                return Ok(None);
+            }
+            let Some(payload) = object.member(payload_member).and_then(Json::as_str) else {
+                return Ok(None);
+            };
+            finished = Some(push(&mut nodes, make(payload.to_owned())));
+            continue;
+        }
         let mut members = object.iter();
         let (Some((tag, payload)), None) = (members.next(), members.next()) else {
             return Ok(None);
