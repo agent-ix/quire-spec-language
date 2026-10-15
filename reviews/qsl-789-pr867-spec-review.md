@@ -59,3 +59,16 @@ Recorded (medium/low, not blocking):
 - Medium: TC-1031 N12's `p.order` uses a parameter `p`, but the procedure writes every vector in an invariant, which has no parameters. The vector needs a function (as in TC-1032) or a let-bound receiver.
 - Medium: QSL's existing TC-235 M21 fixture (`tc235_record_event.rs`) gives `Fulfilment/order`'s target end `{lower: 0}` with no upper, which is unbounded. Under FR-363, `present(self.order)` then refuses `expression-form`. QSpec M21 states no multiplicity. The coder must give the fixture `{0,1}` to reach the ticket's outcome.
 - Low: "navigable from `T`" could be read as including direction. N09 settles it: candidates are formed by receiver conformance only, and direction is checked afterwards.
+
+## Dispositions
+
+Round 1, reviewed at 62a14fb43c5d6ff465aafbd0758e0cc8ea604b4c.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | deferred | The fix is owned by open PR #868, whose TC-1034 at fe2672a8 still names traversals by the far end's role (`navigate(parts, s1)`, `navigate(home, p1)`, `navigate(pump, t1)`). #868 must move to the near-end rule before it merges. #867 itself is now unambiguous: c70128899 adds a worked `Order/lines` example that agrees with FR-322-AC-56/57, IR and N01 to N04. |
+| FND-002 | fixed c70128899 | Dependencies now credits the role lookup and the lowered-node checks to FR-322-AC-56/57 alone, and FR-152 only with direction and result types. It also states that TC-197 Y07 to Y09 name the far end's role and that ports use the near-end role. |
+
+Recorded medium N12, resolved at c70128899. N12 is now `self.order.order` on `M::Fulfilment`. The inner `self.order` checks as `Option<Reference<M::Order>>` (destination `{0,1}`), so the outer read reaches the non-`Reference` receiver rule. It refuses `ill_typed`/`type-mismatch` at the operand `self.order`, which is valid inside an invariant. A lifting mutant would refuse at the form instead (`order` is not navigable from `Order`), so the test must assert the locus.
+
+Merge check: origin/main merged cleanly. spec.md lists FR-363 once in both the relationships block and the index. TC-1029 is now only #866's, on main. FR-364 and TC-1033 to TC-1035 (#868) do not collide.
