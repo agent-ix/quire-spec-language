@@ -79,3 +79,9 @@ Recorded, not blocking:
   across members. Unreachable before QSL-503.
 - low: plain `CheckedPackage::call`/`evaluate` build a fresh Cancel. The API
   takes no handle; spine and replay pass the caller's handle.
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed a4a193942 | Composite parity `admit` now runs each converted operand through `run.admit(SuppliedPhase::Admission, ..)` on one run for both operands, so A is cumulative per call as FR-277 requires. The shared `stopped()` names all three `SuppliedFailure` arms. `tc_907_a_numeric_root_operand_is_admitted_by_its_domain_and_by_b` was red before the fix (qsl772-e1, EXIT 101) and is green after it. It asserts RefusedInput at index 0 for (12, 3) and at index 1 for (3, 12), that (3, 4) is compared, and that B=3 settles Incomplete(Admission) with NumericMagnitudeBits, limit 3. qsl-replay lib: 528 passed, 1 ignored; spine_run: 22 passed (qsl772-e2). Recorded low: a conversion-phase stop on operand 1 names parameter 0, because `convert_arguments` runs per operand |
