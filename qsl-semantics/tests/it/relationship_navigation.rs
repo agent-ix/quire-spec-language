@@ -19,7 +19,8 @@ use qsl_semantics::model::domain_package::{
 use qsl_semantics::model::intake::SelectedModels;
 use qsl_semantics::model::key::DeclarationKey;
 use quire_exact::{
-    CardinalityBound, CollectionKind, CollectionType, EffectiveId, Presence, ValueType,
+    CardinalityBound, CollectionKind, CollectionType, EffectiveId, IllTypedCause, Presence,
+    ValueType,
 };
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::FieldRef;
@@ -257,13 +258,24 @@ pub(crate) fn check_invariant(
     owner: &str,
     body: &str,
 ) -> Result<CheckedGraph, Vec<CheckRefusal>> {
+    check_declarations(
+        package,
+        &format!("invariant I using v on M::{owner} at current {{ {body} }}"),
+    )
+}
+
+/// Check `declarations` over the admitted model `package`, selected as `M`.
+fn check_declarations(
+    package: DomainPackage,
+    declarations: &str,
+) -> Result<CheckedGraph, Vec<CheckRefusal>> {
     let digest = qsl_semantics::model::key::hex(&package.model_selection.digest);
     let identity = package.model_selection.identity.clone();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
          model M = {identity:?} version \"1\" digest \"sha256-jcs:{digest}\";\n\
-         invariant I using v on M::{owner} at current {{ {body} }}\n"
+         {declarations}\n"
     );
     let selected = SelectedModels::fixture(
         "M",
@@ -705,6 +717,46 @@ fn n11_the_direction_refusal_precedes_the_bound_refusal() {
     );
 }
 
+/// A read `x.f` whose receiver cannot be a model receiver is still the record
+/// field read it was before FR-363: a `Value`-family `ill_typed`/`type-mismatch`
+/// at the form, not a `StateModel` refusal at the operand.
+fn assert_old_field_refusal(declarations: &str) {
+    let Err(refusals) = check_declarations(package(&links()), declarations) else {
+        panic!("{declarations} is refused");
+    };
+    assert_eq!(refusals.len(), 1, "{declarations}: {refusals:?}");
+    assert_eq!(
+        refusals[0].cause,
+        CheckCause::IllTyped(IllTypedCause::TypeMismatch),
+        "{declarations}"
+    );
+    assert_eq!(refusals[0].location.path(), vec![0], "{declarations}");
+}
+
+/// `x.f` over an `Integer`, a `Set<Integer>` and a tuple keeps its
+/// `Value`-family refusal at the form, in a function body and in a state clause.
+#[test]
+fn a_non_model_receiver_keeps_its_field_read_refusal() {
+    for declarations in [
+        "function f using v(n: Integer): Boolean pure { n.x = n.x }",
+        "function f using v(s: Set<Integer>[0, 2]): Boolean pure { s.x = s.x }",
+        "tuple Pair(Integer, Integer);\n\
+         function f using v(p: Pair): Boolean pure { p.x = p.x }",
+        "invariant I using v on M::Order at current { self.code.x = self.code.x }",
+    ] {
+        assert_old_field_refusal(declarations);
+    }
+}
+
+/// A bare `r.f` over a `Reference` in a function body is not a field read of
+/// the object, and keeps its `Value`-family refusal at the form.
+#[test]
+fn a_bare_field_read_in_a_function_body_keeps_its_refusal() {
+    assert_old_field_refusal(
+        "function f using v(o: Reference<M::Order>): Boolean pure { o.code = o.code }",
+    );
+}
+
 /// FR-363-AC-5 (N12): `deref(self).order` refuses `type-mismatch` at the
 /// form, and `self.order.order` over an `Option<Reference<M::Order>>` refuses
 /// it at the receiver operand `self.order`, not the whole expression.
@@ -730,4 +782,14 @@ fn n12_a_deref_or_a_non_reference_receiver_is_a_type_mismatch() {
         vec![0, 0],
     );
     assert_eq!(option.location.path(), vec![0, 0], "the operand self.order");
+
+    // `lines` is navigable from `Order`, so only the receiver's type refuses.
+    assert_refused(
+        &links(),
+        "Fulfilment",
+        "present(self.order.lines)",
+        Code::IllTyped,
+        "type-mismatch",
+        vec![0, 0],
+    );
 }

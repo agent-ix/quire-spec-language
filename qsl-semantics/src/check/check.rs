@@ -2323,6 +2323,65 @@ impl<'a> Typer<'a> {
         Ok(node(kind, value_type, location))
     }
 
+    /// Whether `x.name` over an `x` of `value_type` is a model read (FR-104,
+    /// FR-363) rather than a record field read. A reference is one in a state
+    /// clause, and elsewhere when `name` names a relationship end navigable
+    /// from it. In a state clause an `Option`, a collection or a population of
+    /// references is one too, which the hook refuses at the operand.
+    pub(crate) fn is_model_receiver(&self, value_type: &ValueType, name: &str) -> bool {
+        match value_type {
+            ValueType::Reference(object) => {
+                self.in_state_clause()
+                    || self
+                        .scope
+                        .relationships()
+                        .navigable(&self.scope.types, *object, name)
+                        .next()
+                        .is_some()
+            }
+            ValueType::Option(element) => self.in_state_clause() && Self::holds_references(element),
+            ValueType::Collection(collection) => {
+                self.in_state_clause() && Self::holds_references(collection.element())
+            }
+            ValueType::Population(_) => self.in_state_clause(),
+            ValueType::Boolean
+            | ValueType::Int(_)
+            | ValueType::Integer
+            | ValueType::Text(_)
+            | ValueType::String
+            | ValueType::Uuid
+            | ValueType::Timestamp
+            | ValueType::Enum(_)
+            | ValueType::Composite(_)
+            | ValueType::Rational(_)
+            | ValueType::Decimal(_)
+            | ValueType::Float(_)
+            | ValueType::Quantity(_) => false,
+        }
+    }
+
+    fn holds_references(value_type: &ValueType) -> bool {
+        match value_type {
+            ValueType::Reference(_) => true,
+            ValueType::Option(element) => Self::holds_references(element),
+            ValueType::Collection(collection) => Self::holds_references(collection.element()),
+            ValueType::Boolean
+            | ValueType::Int(_)
+            | ValueType::Integer
+            | ValueType::Text(_)
+            | ValueType::String
+            | ValueType::Uuid
+            | ValueType::Timestamp
+            | ValueType::Enum(_)
+            | ValueType::Composite(_)
+            | ValueType::Rational(_)
+            | ValueType::Decimal(_)
+            | ValueType::Float(_)
+            | ValueType::Quantity(_)
+            | ValueType::Population(_) => false,
+        }
+    }
+
     /// `deref(r).f` over the typed reference `r`, read at
     /// `operand_location` (the `deref(r)` operand's own location), or the
     /// navigation `r.name` over one of its relationship ends (FR-363).
