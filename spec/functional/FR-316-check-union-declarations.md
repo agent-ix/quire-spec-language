@@ -51,8 +51,9 @@ declaration row; SC-Q1 option (a)).
   then the checker SHALL refuse exactly as an unresolved field type is
   refused.
 - If one union declares a member name twice, then the checker SHALL refuse
-  `invalid_semantic_graph` from `DeclarationCause::DuplicateMember`, naming
-  the member, located at the union declaration.
+  `ambiguous_declaration`/`ambiguous-name` from
+  `DeclarationCause::DuplicateMember`, as for any other duplicate
+  declaration, naming the member, located at the union declaration.
 - The checker SHALL add each union member payload position to the shared
   declaration containment graph
   (`quire_semantic_value::declaration::TypeEnvironment`'s recursion check)
@@ -81,7 +82,7 @@ declaration row; SC-Q1 option (a)).
 |----|----------|--------------|
 | FR-316-AC-1 | `union Shape { Empty, Circle(Integer), Rect(Integer, Integer) }` is admitted: the type environment holds one union composite keyed by its node key with members `Empty`, `Circle` and `Rect` in declared order and payload types `[]`, `[Integer]` and `[Integer, Integer]`; `enum Kind { Empty, Circle }` beside it keeps its own enum type, and the two are not the same type. | Test (TC-817) |
 | FR-316-AC-2 | `union Tree { Leaf, Node(Integer, Option<Tree>, Option<Tree>) }` is admitted (QSpec TC-263). `union L { Nil, Cons(Integer, L) }` refuses `ill_typed` with recursion subgraph non-escaping and cycle `L, L`; the same union with `Option<L>` is admitted. A record `record Box { inner: U; }` and `union U { Wrap(Box) }` refuse `ill_typed` naming the cycle through both, at both declarations. | Test (TC-817, TC-818) |
-| FR-316-AC-3 | `union U { A, A(Integer) }` refuses `invalid_semantic_graph` naming member `A`, located at the union declaration. `union U { A(Missing) }` refuses as an unresolved field type does, naming `Missing` at its span. | Test (TC-818) |
+| FR-316-AC-3 | `union U { A, A(Integer) }` refuses `ambiguous_declaration`/`ambiguous-name` naming member `A`, located at the union declaration. `union U { A(Missing) }` refuses as an unresolved field type does, naming `Missing` at its span. | Test (TC-818) |
 | FR-316-AC-4 | A union with 5,000 members and one whose payload type nests `Option<...>` 1,000 levels deep are admitted under the default checking ceilings. The same 5,000-member union checked with the work ceiling set one below the work units its admission charges returns `StageFailure::Limit` with kind work budget, the configured bound and the `CheckingLimits` field to raise; raising that field by one admits it. No outcome names a nesting-depth limit. | Test (TC-818) |
 
 ## Dependencies

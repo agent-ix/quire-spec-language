@@ -31,6 +31,7 @@ use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::intake::PackageDocument;
 use qsl_semantics::model::normalize::ModelRefusal;
 use qsl_semantics::model::refusal::{Inexact, IntakeLimit, ModelRefusalCause};
+use qsl_semantics::value::supplied::SuppliedLimits;
 
 /// The `quire.value.accounting/v1` scalar environment a replay starts from
 /// (FR-071's "state environment"). Opaque to #231: only the executor (#243)
@@ -222,6 +223,7 @@ pub struct ReplayRequest {
     state_environment: StateEnvironment,
     accounting_limits: ScalarLimits,
     stage_limits: StageLimits,
+    supplied_limits: SuppliedLimits,
     declared_domains: Vec<DeclaredDomain>,
     byte_provision: ByteProvision,
 }
@@ -280,6 +282,14 @@ impl ReplayRequest {
     /// The stage limits copied from the proving run, by setting.
     pub fn stage_limits(&self) -> &StageLimits {
         &self.stage_limits
+    }
+
+    /// The effective supplied-value helper ceilings (QSpec FR-323
+    /// `limits.supplied`): the request's own, or each published default when
+    /// the caller stated none. A defaulted request and one that states the
+    /// defaults are the same request.
+    pub fn supplied_limits(&self) -> SuppliedLimits {
+        self.supplied_limits
     }
     /// The declared domains of the proving run: the caller-substituted
     /// ADR-014 B-4 bounds the obligation was proved over (FR-071).
@@ -349,6 +359,13 @@ pub struct ReplayRequestWire {
     /// and `replay.input_bytes` or `format.output_bytes`. A name that is an accounting counter
     /// replaces that counter of `accounting_limits`.
     pub stage_limits: BTreeMap<String, u64>,
+    /// The supplied-value helper ceilings (QSpec FR-323 `limits.supplied`),
+    /// not a stage setting. `None` is a caller who stated none: each ceiling
+    /// resolves to its published default before the request is read, so the
+    /// request is the same one a caller stating those defaults makes. A
+    /// wire object that names only one ceiling, an unknown member or a
+    /// value past `u64` never reaches here: see [`crate::read_supplied_limits`].
+    pub supplied_limits: Option<SuppliedLimits>,
     /// The declared domains of the proving run: the caller-substituted
     /// ADR-014 B-4 bounds the obligation was proved over.
     pub declared_domains: Vec<DeclaredDomain>,
@@ -673,6 +690,7 @@ impl ReplayRequest {
         // runs under and any claim binds (FR-255 Behavior 10).
         let accounting_limits = wire.effective_accounting_limits();
         let stage_limits = StageLimits::decode(wire.stage_limits)?;
+        let supplied_limits = wire.supplied_limits.unwrap_or_default();
         let intake = CallerLimits::for_request(&stage_limits, accounting_limits, limits)
             .spine
             .model
@@ -785,6 +803,7 @@ impl ReplayRequest {
             state_environment: wire.state_environment,
             accounting_limits,
             stage_limits,
+            supplied_limits,
             declared_domains: wire.declared_domains,
             byte_provision,
         })
@@ -824,6 +843,7 @@ impl ReplayRequest {
             state_environment: self.state_environment.clone(),
             accounting_limits: self.accounting_limits,
             stage_limits: self.stage_limits.to_wire(),
+            supplied_limits: Some(self.supplied_limits),
             declared_domains: self.declared_domains.clone(),
             byte_provision: self
                 .byte_provision
@@ -910,6 +930,7 @@ mod tests {
             state_environment: StateEnvironment::new(vec![("x".to_owned(), "1".to_owned())]),
             accounting_limits: scalar_limits(128),
             stage_limits: stage_limits(stage_seed),
+            supplied_limits: None,
             declared_domains: Vec::new(),
             byte_provision: vec![(
                 Some(DigestDomain::SourceBytesV1.as_str().to_owned()),

@@ -338,9 +338,10 @@ pub(super) fn derive(
                         fields.iter().map(|field| field.value_type()).collect()
                     }
                     CompositeShape::Tuple(positions) => positions.iter().collect(),
-                    // No checked package holds a union until FR-093 lowers
-                    // one, so no replayed type reaches this.
-                    CompositeShape::Union(_) => return Err(fault("union-composite-domain")),
+                    CompositeShape::Union(union_members) => union_members
+                        .iter()
+                        .flat_map(|member| member.positions())
+                        .collect(),
                 };
                 for (index, member) in members.into_iter().enumerate().rev() {
                     pending.push(child(&position, index, member, Some(*declaration))?);

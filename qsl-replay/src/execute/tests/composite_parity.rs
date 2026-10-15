@@ -22,10 +22,12 @@ use crate::identity::DeclaredDomain;
 use crate::scalar::{OperandIdentity, ScalarClaim};
 use crate::witness::{WitnessField, WitnessSlot};
 use qsl_foundation::source::provenance::OccurrenceKey;
+use qsl_semantics::value::supplied::{SuppliedLimitKind, SuppliedLimits};
 
 const UNIT: &str = "record Q { x: Int[0, 9]; s: Sequence<Int[0, 9]>[0, 3]; }\n\
      function f using v(a: Q, b: Q): Boolean pure { a = b }\n\
      function g using v(a: Q): Boolean pure { a != Q { x: 1, s: sequence[] } }\n\
+     function n using v(a: Int[0, 9], b: Int[0, 9]): Boolean pure { a = b }\n\
      record List { head: Int[0, 9]; tail: List?; }\n\
      function h using v(a: List, b: List): Boolean pure { a = b }\n\
      enum Color { Red, Green, Blue }\n\
@@ -558,6 +560,50 @@ fn tc_907_the_falsified_rows_settle_in_order() {
         }
     ));
     assert_resource_exhausted(&report.terminal_value());
+}
+
+/// FR-358-AC-2 (TC-907 F-3), FR-277-AC-7: an operand declared `Int[0, 9]`
+/// is admitted by S6a admission as well as conversion. At 12 it settles
+/// `RefusedInput` naming its position, and over the request's magnitude
+/// bound B it settles the B limit stop, never a comparison.
+#[trace("TC-907", "FR-358-AC-2", "FR-277-AC-7")]
+#[test]
+fn tc_907_a_numeric_root_operand_is_admitted_by_its_domain_and_by_b() {
+    let unit = unit();
+    let claim = || unit.claim("n", EqualityOperator::Equal, vec![]);
+    let run = |wire: ReplayRequestWire, left: i64, right: i64| {
+        replay_composite_parity(
+            wire,
+            claim(),
+            falsified(int(left), int(right), outcome(false, 1)),
+            ReplayLimits::default(),
+        )
+    };
+    let wire = || unit.wire("n", &claim(), vec![]);
+
+    assert_refused_input(&run(wire(), 12, 3), 0);
+    assert_refused_input(&run(wire(), 3, 12), 1);
+    assert!(
+        matches!(
+            run(wire(), 3, 4).result(),
+            CompositeParityResult::Diverged { .. } | CompositeParityResult::Agrees { .. }
+        ),
+        "operands inside the domain are compared"
+    );
+
+    // 9 needs 4 magnitude bits: B = 3 stops admission on it.
+    let mut starved = wire();
+    starved.supplied_limits = Some(SuppliedLimits::default().with_numeric_magnitude_bits(3));
+    let report = run(starved, 9, 1);
+    let CompositeParityResult::Incomplete {
+        stage: IncompleteStage::Admission(stop),
+    } = report.result()
+    else {
+        panic!("expected the admission stage, got {:?}", report.result());
+    };
+    let limit = stop.limit().expect("a limit stop");
+    assert_eq!(limit.limit_kind, SuppliedLimitKind::NumericMagnitudeBits);
+    assert_eq!(limit.limit, 3);
 }
 
 /// FR-358-AC-3 (TC-907 step 3): both entries refuse before any evaluation or

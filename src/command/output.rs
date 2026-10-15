@@ -329,6 +329,21 @@ pub(super) fn error(error: &RunError, artifact: bool) -> Result<Value, serde_jso
                         position: *position,
                     }
                 }
+                // The phase-marked pre-call stop names the argument it reached
+                // by position; its full record is the replay result's, and the
+                // command wire projection of it is a separate follow-on.
+                qsl_replay::spine::RunRefusal::Supplied(stop) => stop
+                    .context
+                    .parameter
+                    .map_or(types::Details::None, |position| types::Details::Position {
+                        position,
+                    }),
+                qsl_replay::spine::RunRefusal::UnsupportedHelper(stop) => stop
+                    .context
+                    .parameter
+                    .map_or(types::Details::None, |position| types::Details::Position {
+                        position,
+                    }),
                 qsl_replay::spine::RunRefusal::Compile(_)
                 | qsl_replay::spine::RunRefusal::Cancelled(_) => types::Details::None,
                 qsl_replay::spine::RunRefusal::Fault(fault) => types::Details::Invariant {

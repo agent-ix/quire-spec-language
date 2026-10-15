@@ -33,6 +33,7 @@ fn call(function: &str, arguments: Vec<CallArgument>) -> Call {
         function: function.to_owned(),
         arguments,
         accounting: default_accounting(1_000_000),
+        supplied: Default::default(),
     }
 }
 
@@ -261,6 +262,7 @@ fn tc_792_source_compiled_lookup_driver_preserves_present_and_absent_paths() {
                     },
                 ],
                 accounting: default_accounting(1_000_000),
+                supplied: Default::default(),
             },
             &objects,
             &Cancel::new(),
@@ -312,6 +314,7 @@ fn tc_792_source_driver_admits_unused_parameters_before_body_evaluation() {
                 },
             ],
             accounting: default_accounting(1_000_000),
+            supplied: Default::default(),
         },
         &objects,
         &Cancel::new(),
@@ -345,6 +348,7 @@ fn tc_792_source_driver_binding_precedence_precedes_value_admission() {
                 value: Value::Boolean(true),
             }],
             accounting: default_accounting(1_000_000),
+            supplied: Default::default(),
         },
         &objects,
         &Cancel::new(),
@@ -385,6 +389,7 @@ fn tc_792_source_driver_cancellation_returns_no_lookup_result() {
                 },
             ],
             accounting: default_accounting(1_000_000),
+            supplied: Default::default(),
         },
         &objects,
         &cancel,
@@ -413,6 +418,7 @@ fn tc_792_typed_call_contract_is_not_an_integer_only_facade() {
             value: Value::Boolean(true),
         }],
         accounting: default_accounting(1_000_000),
+        supplied: Default::default(),
     };
     let result = run(
         source(),
@@ -2178,4 +2184,74 @@ fn storage_failure_converts_to_the_resource_exhausted_run_refusal() {
     };
     assert_eq!(position, 2);
     assert_eq!(failure, EnvironmentFailure::Allocation(request));
+}
+
+const SUPPLIED_UNIT: &str = "language \"ix:native\" edition \"1-draft\";\n\
+    profile v = \"quire.value.complete/v1\";\n\
+    function lesser using v(x: Integer, y: Integer): Boolean pure { x < y }\n";
+
+/// FR-277-AC-4, FR-277-AC-5 (TC-830, TC-906): the final admission of a
+/// `run` spends one cumulative A across its arguments, one QSV visit event
+/// per integer argument. A-1 denies the second argument's visit unspent
+/// before the call, as the phase-marked pre-call limit and not as an
+/// evaluation `Incomplete`; A admits and the call completes.
+#[trace("TC-830", "FR-277-AC-4", "FR-277-AC-5")]
+#[test]
+fn run_admission_spends_one_cumulative_budget_and_denies_before_the_call() {
+    use qsl_semantics::value::supplied::{
+        AttemptedCount, SuppliedEvent, SuppliedLimitKind, SuppliedLimits, SuppliedPhase,
+    };
+    let with = |admission: u64| Call {
+        supplied: SuppliedLimits::default().with_admission_work_units(admission),
+        ..call("lesser", vec![arg("x", 1), arg("y", 2)])
+    };
+    let outcome = run_fixture(SUPPLIED_UNIT, &with(2)).expect("two visits admit");
+    assert!(matches!(outcome, CallOutcome::Completed(_)));
+
+    for (admission, parameter) in [(1_u64, 1_usize), (0, 0)] {
+        let refusal = run_fixture(SUPPLIED_UNIT, &with(admission)).unwrap_err();
+        let RunRefusal::Supplied(stop) = refusal.as_ref() else {
+            panic!("a supplied-phase stop, got {refusal:?}");
+        };
+        assert_eq!(stop.context.phase, SuppliedPhase::Admission);
+        assert_eq!(stop.context.parameter, Some(parameter));
+        assert_eq!(stop.context.event, Some(SuppliedEvent::ValueVisit));
+        assert_eq!(
+            stop.context.consumed, admission,
+            "the denied visit is unspent"
+        );
+        let limit = stop.limit().expect("a limit");
+        assert_eq!(limit.limit_kind, SuppliedLimitKind::AdmissionWorkUnits);
+        assert_eq!(limit.limit, admission);
+        assert_eq!(limit.next_charge, 1);
+        assert_eq!(limit.counter, AttemptedCount::Count(admission + 1));
+        assert_eq!(refusal.category(), Category::Incomplete);
+        assert_eq!(refusal.stage(), Some("call"));
+        assert_eq!(refusal.cancel_cause(), None);
+    }
+}
+
+/// FR-277-AC-5: a run whose handle is cancelled stops with the original
+/// cause and is never read as a limit.
+#[trace("TC-830", "FR-277-AC-5")]
+#[test]
+fn run_cancellation_keeps_its_original_cause() {
+    for cause in [CancelCause::Requested, CancelCause::Deadline] {
+        let cancel = Cancel::new();
+        cancel.cancel(cause);
+        let refusal = run(
+            source(),
+            "spine-run.native",
+            SUPPLIED_UNIT.as_bytes(),
+            &BTreeMap::new(),
+            &DependencyInput::default(),
+            SpineLimits::default(),
+            &call("lesser", vec![arg("x", 1), arg("y", 2)]),
+            &qsl_semantics::model::object_environment::ObjectEnvironment::default(),
+            &cancel,
+        )
+        .unwrap_err();
+        assert_eq!(refusal.cancel_cause(), Some(cause));
+        assert_eq!(refusal.category(), Category::Incomplete);
+    }
 }

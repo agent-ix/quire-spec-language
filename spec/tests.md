@@ -313,6 +313,7 @@ names different artifacts in each.
 | TC-1017 | The model profile is selected by the header only | Integration | P1 | FR-361-AC-6, FR-361-AC-7, FR-361-AC-8, FR-361-AC-9, FR-361-AC-10, FR-361-AC-11, FR-361-AC-12 | 🚧 |
 | TC-1026 | One source yields the graph and the type report, and a checked unit is bound by digest | Integration | P1 | FR-362-AC-1, FR-362-AC-2, FR-362-AC-3, FR-362-AC-4, FR-362-AC-7 | 🚧 |
 | TC-1027 | No label-only match and no composed parser reachable from the producer | Inspection | P1 | FR-362-AC-5, FR-362-AC-6 | 🚧 |
+| TC-1028 | Native String, UUID and Timestamp compare with = and != in the unit language | Integration | P1 | FR-056-AC-35, FR-056-AC-36, FR-091-AC-40, FR-093-AC-28 | 🚧 |
 | TC-1018 | A function synthesized for dispatch is located at the unit declarations it came from | Integration | P1 | FR-096-AC-20 | ✅ |
 | TC-1019 | A family is called by the call that reaches it, and a body does not dispatch | Integration | P1 | FR-302-AC-9 | ✅ |
 | TC-1020 | A specialization cycle is refused once per declaration and cycle | Unit | P1 | FR-082-AC-15 | ✅ |

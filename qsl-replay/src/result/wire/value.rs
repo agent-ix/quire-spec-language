@@ -362,8 +362,8 @@ impl<'a> Keys<'a> {
                         },
                     ))?
             }
-            // Slots are a record's or a tuple's; a union value is not
-            // built from them.
+            // A union value is no slot list: its payload is a member, not a
+            // record or tuple (QSL-503 adds the union wire form).
             CompositeShape::Union(_) => false,
         };
         if !fits {

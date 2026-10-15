@@ -267,7 +267,7 @@ pub fn classify_domains(
                         fields.iter().map(|field| field.value_type()).collect()
                     }
                     CompositeShape::Tuple(positions) => positions.iter().collect(),
-                    CompositeShape::Union(members) => members
+                    CompositeShape::Union(union_members) => union_members
                         .iter()
                         .flat_map(|member| member.positions())
                         .collect(),

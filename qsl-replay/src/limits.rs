@@ -621,6 +621,24 @@ mod tests {
         }
     }
 
+    /// FR-255-AC-3, FR-255-AC-4: the supplied-value ceilings of FR-277 are no
+    /// setting-table rows, so the settings operation refuses them as it
+    /// refuses any name that is no setting; they travel in the typed
+    /// `limits.supplied` member.
+    #[trace("TC-721", "FR-255-AC-3", "FR-255-AC-4")]
+    #[test]
+    fn the_supplied_ceilings_are_not_settings() {
+        for name in [
+            "supplied.admission_work_units",
+            "supplied.conversion_work_units",
+        ] {
+            let operand = format!("{name}=5");
+            let refusal = CallerLimits::from_operands([operand.as_str()]).unwrap_err();
+            assert_eq!(refusal.operand, operand);
+            assert_eq!(refusal.cause, UsageCause::UnknownSetting);
+        }
+    }
+
     /// FR-255-AC-10: a `stage_limits` counter entry replaces that counter of
     /// the request's accounting limits and no other.
     #[trace("TC-921", "FR-255-AC-10")]

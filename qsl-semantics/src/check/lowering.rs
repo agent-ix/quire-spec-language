@@ -1281,7 +1281,7 @@ impl<'w> LeafWalk<'w> {
                     fields.iter().map(FieldDeclaration::value_type).collect()
                 }
                 Some(CompositeShape::Tuple(positions)) => positions.iter().collect(),
-                Some(CompositeShape::Union(members)) => members
+                Some(CompositeShape::Union(union_members)) => union_members
                     .iter()
                     .flat_map(|member| member.positions())
                     .collect(),
