@@ -41,7 +41,9 @@ fn parse(
     (text, unit, parsed.source().reference().clone())
 }
 
-fn assemble(declarations: &str) -> Result<PackageDeclarations, qsl_semantics::check::AssemblyRefusal> {
+fn assemble(
+    declarations: &str,
+) -> Result<PackageDeclarations, qsl_semantics::check::AssemblyRefusal> {
     let (_, unit, source) = parse(declarations);
     PackageDeclarations::assemble(source, unit, Vec::new(), Vec::new())
 }
@@ -67,7 +69,11 @@ const EVENT: &str = "record Event { id: UUID; moment: Timestamp; label: String; 
 fn refused_at_comparison(declarations: &str, function: &str, cause: IllTypedCause) {
     let refusals = check(declarations).expect_err("the unit does not check");
     assert_eq!(refusals.len(), 1, "{declarations}: {refusals:?}");
-    assert_eq!(refusals[0].cause, CheckCause::IllTyped(cause), "{declarations}");
+    assert_eq!(
+        refusals[0].cause,
+        CheckCause::IllTyped(cause),
+        "{declarations}"
+    );
     assert!(
         matches!(&refusals[0].location.origin,
             Origin::Body { function: found, .. } if found == function),
@@ -144,7 +150,11 @@ fn each_native_comparison_lowers_to_its_native_equality_identity() {
         assert_eq!(found.len(), 1, "{identity} is one node");
         let operation = &found[0]["body"]["operation"];
         assert_eq!(operation["laws"], serde_json::json!([]), "{identity} laws");
-        assert_eq!(operation["leaves"], serde_json::json!([]), "{identity} leaves");
+        assert_eq!(
+            operation["leaves"],
+            serde_json::json!([]),
+            "{identity} leaves"
+        );
         assert_eq!(operation["member"], Value::Null, "{identity} member");
         assert_eq!(operation["mode"], Value::Null, "{identity} mode");
         assert_eq!(
@@ -154,9 +164,10 @@ fn each_native_comparison_lowers_to_its_native_equality_identity() {
         );
     }
     assert!(
-        all.iter().all(|preimage| !preimage["body"]["operation"]["identity"]
-            .as_str()
-            .is_some_and(|identity| identity.starts_with("quire.op.text."))),
+        all.iter()
+            .all(|preimage| !preimage["body"]["operation"]["identity"]
+                .as_str()
+                .is_some_and(|identity| identity.starts_with("quire.op.text."))),
         "no text-profile equality is selected"
     );
 }

@@ -158,7 +158,7 @@ fn uuid_equality_is_payload_equality() {
 /// TC-1028 E8: the uppercase spelling never becomes a value, so no
 /// comparison runs. The kernel refusal is the class the runtime-input
 /// adapter maps to `invalid-value`; this test covers the kernel half only.
-#[trace("FR-056-AC-35", "TC-1028")]
+#[trace("TC-1028")]
 #[test]
 fn a_noncanonical_uuid_spelling_is_refused_before_any_value_exists() {
     let refusal = Uuid::from_canonical_text("00112233-4455-6677-8899-AABBCCDDEEFF")
@@ -210,7 +210,8 @@ fn field_call_result_and_let_operands_evaluate() {
     let fixture = fixture();
     let a = event(&fixture, UUID_A, "5", "a");
     let b = event(&fixture, UUID_B, "6", "b");
-    let same = |name: &str, x: &Value, y: &Value| truth(call(&fixture, name, vec![x.clone(), y.clone()]));
+    let same =
+        |name: &str, x: &Value, y: &Value| truth(call(&fixture, name, vec![x.clone(), y.clone()]));
     // F1, F2
     assert!(same("ft", &a, &a));
     assert!(!same("ft", &a, &b));

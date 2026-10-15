@@ -56,8 +56,7 @@ use super::state_clause::{
     population_of, AttemptDeclaration, ClauseOperation, StateClauseDeclaration,
 };
 use super::type_form::{
-    native_scalar_named, parse_rounding_mode, resolve_form, TypeFormError, TypeFormFault,
-    TypeNames,
+    native_scalar_named, parse_rounding_mode, resolve_form, TypeFormError, TypeFormFault, TypeNames,
 };
 use crate::library::{ImportView, LibraryName};
 use std::sync::Arc;
