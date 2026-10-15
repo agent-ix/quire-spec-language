@@ -317,5 +317,5 @@ A00 -> A01 -> A02 -> A03 -> A04 -> A05 -> A06 -> A07 -> A08
   target-codex-backends`; No hosted CI is dispatched.
 - Do not modify `resources/native-v1`, move/delete tags, infer completion from a
   self-report, or replace an unsupported capability with smaller semantics.
-- After every merge, reconcile the child, parent, QSpec #9 inventory/matrix and
+- After every merge, reconcile the child, parent and
   maintained Research plan before taking the next ticket.
