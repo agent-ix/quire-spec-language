@@ -60,3 +60,41 @@ Recorded, not reported:
 - medium (PR #867, not this PR): FR-363 names a navigation by the end nearest the receiver, while QSpec TC-197 Y07/Y08 and this PR's TC-1034 name the destination end (`self.parts` from `Sys`, `self.pump` from `Tank`).
 - low: FR-106-AC-23 lists `Q` as `s1, p1, p2, t1`; TC-1035's B holds `s1, s2, p1, p2, p3, t1`.
 - low: code comments cite FR-106 line numbers (observation.rs:1711, state_clauses.rs:4357), which this insertion shifts further.
+
+## Dispositions
+
+Round 1 was reviewed at 0d76f635550481dcfa30453cb02c71aae98e24f0, with the fixes in 0d76f6355. The near-end role renaming is in b9415ecd2. This round adds no new finding.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 0d76f6355 |
+| FND-002 | fixed | 0d76f6355 |
+| FND-003 | fixed | 0d76f6355 |
+| FND-004 | fixed | 0d76f6355 |
+| FND-005 | fixed | 0d76f6355 |
+
+What was re-checked:
+- TC-1035 rows 23 to 33 were traced through FR-106 checks 1 to 11 in order. Each row's expected result is the first failure, or an admit.
+  - Invocation I is selected for `RehomePost`, so check 2 passes and check 11 runs.
+  - Row 25: check 8 passes because neither snapshot lists composition. Check 11.2 grants `deletes [Pump]`, 11.4 finds the delta equal, and 11.5 leaves out `p2`-`t1`.
+  - Row 26: `p3` is absent from the pre snapshot, so 11.1 and 11.4 pass and 11.5 reports `p3`-`t1` as `added`.
+  - Row 24: `p1`-`t1` sorts before `p1`-`t2`, so `removed` is reported first.
+  - Row 29: the `post` snapshot is not read for a precondition.
+  - Row 30: `Spare` and `Tanks` are not required, so the new check-7 rule reports `Tanks`. Row 31 admits.
+  - Rows 32 and 33 pin the entry-by-entry, instance-by-instance order.
+  - The fixture has no native payload objects, so #866's native-object order is never reached.
+- `incomplete_population`/`incomplete-scope` is the code and cause check 7 already uses. The new end rule comes after the required-population rule, so rows 17 to 22 keep their results.
+- TC-1034's note now names rows 4 and 10, and row 10 is marked as a model-layer extent.
+- FR-364 now orders conditions extent by extent and instance by instance, which matches FR-106's walk paragraph and FR-106-AC-24.
+- FR-364's Dependencies cite FR-363 plainly. FR-363 is on main, and no PR or ticket id remains in the spec diff.
+- Recorded mediums: FR-364-AC-5 now names `Bag`, TC-1033 defines the min, optional and housing-undirected variants, 11.5 states its reason for the created-link grant, and AC-23's population list matches B.
+- The near-end role rule holds. Under TC-1033's renamed roles, every `navigate(...)` call takes its bound from the destination end:
+  - `parts` from `s1` reaches `{0,3}`.
+  - `home` from `p1` reaches Tank `{1,1}`, or `{0,1}` under the optional variant.
+  - `pump` from `t1` takes the inverse traversal to Pump `{1,1}` under the housing-undirected variant.
+  - The min variant puts `{2,3}` on the composition target end.
+- The fixture matches the planned QSpec TC-197 swap exactly: composition `parts` Sys `{1,1}` to `owner` Pump `{0,3}`, and housing `home` Pump `{1,1}` to `pump` Tank `{1,1}`.
+
+Recorded, not reported (round 1):
+- medium: FR-364 says "QSpec FR-152's examples name the far end", and TC-1034 says "QSpec TC-197's own vectors name the far end". FR-152 has no examples. Once the TC-197 fixture swap lands, both sentences become false, and they describe another repo's state. Delete them.
+- low: FR-106-AC-23 says "for `parts` `{0,3}`", but `{0,3}` is the multiplicity of the `owner` end, which is the destination of `parts`.

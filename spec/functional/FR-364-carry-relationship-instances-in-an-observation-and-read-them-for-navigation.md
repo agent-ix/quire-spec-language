@@ -208,8 +208,8 @@ ascending reference-key order. The static form, direction, ambiguity and
 here. The role `name` is the one nearest the receiver, as FR-363 and QSpec
 FR-322 resolve it: the source end's role names the forward traversal from the
 source type, the target end's role the inverse traversal from the target
-type, and `{l, u}` and `U` belong to the end the role does not name. QSpec
-FR-152's examples name the far end; this requirement follows FR-363; a navigation site reaches the evaluator already resolved.
+type, and `{l, u}` and `U` belong to the end the role does not name, as in
+FR-363; a navigation site reaches the evaluator already resolved.
 
 ### Where each refusal fires
 

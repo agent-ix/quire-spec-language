@@ -27,8 +27,7 @@ the inverse traversal from a target-type receiver), the receiver reference is
 `r`, and the multiplicity bound is the destination end's. The site is already
 resolved: direction is the checker's, so a row that traverses an inverse role
 sets the relationship `undirected` or `target-to-source` or
-`bidirectional`. QSpec TC-197's own vectors name the far end; these rows do
-not. Every `ScalarLimitsV1` counter is unlimited unless a
+`bidirectional`. Every `ScalarLimitsV1` counter is unlimited unless a
 row sets one. Charges are the `model.navigate` schedule of
 `quire.value.accounting/v1`, listed in order with the `value_occurrences` of
 the charge when it is not the default; the work and result units are the sums
