@@ -1,12 +1,12 @@
 ---
-id: TC-1030
+id: TC-1032
 title: "A checked navigation lowers to one quire.op.model.navigate application"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-363
     type: verifies
 ---
-# TC-1030: A checked navigation lowers to one quire.op.model.navigate application
+# TC-1032: A checked navigation lowers to one quire.op.model.navigate application
 
 ## Description
 
@@ -18,7 +18,7 @@ Catches a lowering that routes `r.name` over an end through `deref` and
 
 ## Test Procedure
 
-Over TC-1029's fixture **N**, check and lower the functions
+Over TC-1031's fixture **N**, check and lower the functions
 `f1(r: Reference<M::Fulfilment>): Option<Reference<M::Order>> { r.order }`,
 `f2(o: Reference<M::Order>): Set<Reference<M::Line>>[0,3] { o.lines }` and
 `f3(l: Reference<M::Line>): Reference<M::Order> { l.owner }`. Read the emitted

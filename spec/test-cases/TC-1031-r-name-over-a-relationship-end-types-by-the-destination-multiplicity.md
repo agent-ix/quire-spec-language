@@ -1,12 +1,12 @@
 ---
-id: TC-1029
+id: TC-1031
 title: "r.name over a relationship end types by the destination multiplicity and refuses by name, direction and bound"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-363
     type: verifies
 ---
-# TC-1029: r.name over a relationship end types by the destination multiplicity and refuses by name, direction and bound
+# TC-1031: r.name over a relationship end types by the destination multiplicity and refuses by name, direction and bound
 
 ## Description
 
