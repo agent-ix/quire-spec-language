@@ -63,7 +63,7 @@ the field `code` typed `Int[0,9]`.
 | N09 | `self.rival` on `M::Order`; `self.rivalOf` on `M::Rival`; `self.owner` on `M::Line` with `Order/lines` changed to `source-to-target` | `refused { code: ill_typed, cause: operator-ineligible }` (forward against `target-to-source`); `Option<Reference<M::Order>>`; `refused { code: ill_typed, cause: operator-ineligible }` (inverse against `source-to-target`) |
 | N10 | `self.watchers` on `M::Order`; `self.steps` on `M::Order`; `self.notes` on `M::Order` | each `refused { code: unsupported_construct, cause: expression-form }` |
 | N11 | `Order/watchers` changed to direction `target-to-source`, then `self.watchers` on `M::Order` | `refused { code: ill_typed, cause: operator-ineligible }`: the direction refusal precedes the unbounded-bound refusal |
-| N12 | `deref(self).order` on `M::Fulfilment`; `p.order` over a parameter `p: Option<Reference<M::Fulfilment>>` | `refused { code: ill_typed, cause: type-mismatch }` at the form; `refused { code: ill_typed, cause: type-mismatch }` at the receiver operand `p` |
+| N12 | `deref(self).order` on `M::Fulfilment`; `self.order.order` on `M::Fulfilment`, whose receiver `self.order` is an `Option<Reference<M::Order>>` | `refused { code: ill_typed, cause: type-mismatch }` at the form; `refused { code: ill_typed, cause: type-mismatch }` at the receiver operand `self.order` |
 
 Each refusal's family is `StateModel` and its catalog code carries the
 `state-model` prefix (FR-300).

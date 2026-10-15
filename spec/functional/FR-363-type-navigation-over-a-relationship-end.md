@@ -62,6 +62,12 @@ source type is read under the source end's role:
   type navigate to the source end. A target end with no role has no inverse
   end, and no name is synthesised for it.
 
+For example, `Order/lines` is declared with source end `Order`, role `lines`,
+and target end `Line`, role `owner`. `self.lines` is navigable from an `Order`
+and gives the `Line` end's multiplicity; `self.owner` is navigable from a
+`Line` and gives the `Order` end's multiplicity. `self.lines` from a `Line`, or
+`self.owner` from an `Order`, finds no candidate.
+
 Conformance is FR-082's, so a receiver whose type is a subtype of the end's
 type navigates. The destination end is the end the role does not name.
 
@@ -138,6 +144,9 @@ Evaluating a navigation node is outside this requirement.
   conformance; [FR-093](FR-093-lower-checked-value-expressions-to-fr-322-terms.md)
   and [FR-094](FR-094-key-model-owned-reference-population-and-quantity-nodes.md)
   own the lowered node and the model node it names. QSpec FR-152
-  "Navigation" and FR-322-AC-56 and AC-57 own the direction rule, the result
-  types, the role lookup and the lowered node's checks.
+  "Navigation" owns the direction rule and the result types; FR-322-AC-56 and
+  AC-57 alone own the role lookup and the lowered node's checks. QSpec TC-197
+  Y07 to Y09 (and a QSpec model-definition sentence) name a traversal by the
+  far, destination end's role; this requirement follows FR-322's near-end rule,
+  so a port of Y07 or Y08 must use the near-end role.
 - **Downstream:** none.
