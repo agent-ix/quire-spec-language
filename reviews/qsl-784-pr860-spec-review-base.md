@@ -38,3 +38,13 @@ cleanup are correct. The 119 moved traces are accurate. Three medium findings
 need fixing in this PR: 65 ACs whose only AC-level trace was deleted
 (FND-001), one moved trace that is wrong (FND-002), and one deleted
 linker/checker rule paragraph (FND-003). There are two lows.
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 281099866 |
+| FND-002 | fixed | 281099866 |
+| FND-003 | fixed | 7249a08e6 |
+| FND-004 | fixed | 281099866 |
+| FND-005 | fixed | 281099866 |
