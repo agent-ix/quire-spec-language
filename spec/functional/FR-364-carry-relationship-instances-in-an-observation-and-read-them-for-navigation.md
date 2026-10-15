@@ -164,8 +164,8 @@ incomplete extent return what the extent holds; the evaluator reads
 
 ### Runtime navigation reads only the extent of its relationship
 
-For a navigation `r.name` whose site resolved to end `e` of relationship `R`
-with multiplicity `{l, u}`, a traversal from the source reads `targets(R, r)`
+For a navigation `r.name` whose site resolved to relationship `R`, with the
+destination end's multiplicity `{l, u}`, a traversal from the source reads `targets(R, r)`
 and a traversal from the target reads `sources(R, r)`. A field of the receiver
 is never read as a link and a link is never read as a field: a name matching
 both is refused at checking, not here. The evaluator SHALL then, stopping at
@@ -201,7 +201,11 @@ present reference for count 1; any other finite `{l, u}` the `Set<Reference<U>>[
 when `unique` is `true` and the `Bag<Reference<U>>[l,u]` when it is `false`, in
 ascending reference-key order. The static form, direction, ambiguity and
 `unbounded` or `ordered` refusals are decided at checking and are not decided
-here; a navigation site reaches the evaluator already resolved.
+here. The role `name` is the one nearest the receiver, as FR-363 and QSpec
+FR-322 resolve it: the source end's role names the forward traversal from the
+source type, the target end's role the inverse traversal from the target
+type, and `{l, u}` and `U` belong to the end the role does not name. QSpec
+FR-152's examples name the far end; this requirement follows FR-363; a navigation site reaches the evaluator already resolved.
 
 ### Where each refusal fires
 

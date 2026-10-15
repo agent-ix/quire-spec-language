@@ -26,11 +26,14 @@ under it):
 - population `Q`, extent `closed`, member types `[Sys, Pump, Tank]`, holding
   `s1`, `s2` of `Sys`; `p1`, `p2`, `p3` of `Pump`; `t1` of `Tank`;
 - navigation relationship `relationship/Sys-composition-Pump`: source end
-  role `owner` (`Sys`, `{1,1}`), target end role `parts` (`Pump`, `{0,3}`),
-  direction `source-to-target`;
+  role `parts` (`Sys`, `{1,1}`), target end role `owner` (`Pump`, `{0,3}`),
+  direction `source-to-target`; `s1.parts` is the forward traversal, whose
+  destination is the target end `{0,3}`, and `p1.owner` the inverse, whose
+  destination is the source end `{1,1}`;
 - navigation relationship `relationship/Pump-housing-Tank`: source end role
-  `pump` (`Pump`, `{1,1}`), target end role `home` (`Tank`, `{1,1}`),
-  direction `source-to-target`;
+  `home` (`Pump`, `{1,1}`), target end role `pump` (`Tank`, `{1,1}`),
+  direction `source-to-target`; `p1.home` is the forward traversal and
+  `t1.pump` the inverse;
 - a Connection `pipe` between two ports, so that `pipe` is a declaration of
   the package that is not a navigation relationship.
 
