@@ -22,6 +22,7 @@ mod event;
 pub mod index;
 pub mod intake;
 pub mod key;
+pub mod links;
 mod meaning_dispatch;
 mod namespace;
 pub mod normalize;

@@ -48,7 +48,9 @@ pub struct AdmittedModel {
     records: BTreeMap<DeclarationKey, DomainPackageRecord>,
     types: BTreeMap<EffectiveId, DeclarationKey>,
     index: std::sync::Arc<crate::model::index::ModelIndex>,
-    ancestors: BTreeMap<DeclarationKey, std::collections::BTreeSet<DeclarationKey>>,
+    /// Each type's direct supertypes, from the inherit facts of its effective
+    /// declaration; ancestry beyond one edge is followed on demand.
+    supertypes: BTreeMap<DeclarationKey, Vec<DeclarationKey>>,
 }
 
 /// One lineage's parent member, as the staged admission selects it.
@@ -167,11 +169,23 @@ impl AdmittedModel {
         specific: &DeclarationKey,
         general: &DeclarationKey,
     ) -> bool {
-        specific == general
-            || self
-                .ancestors
-                .get(specific)
-                .is_some_and(|ancestors| ancestors.contains(general))
+        if specific == general {
+            return true;
+        }
+        let mut visited: std::collections::BTreeSet<&DeclarationKey> =
+            std::collections::BTreeSet::new();
+        let mut pending = vec![specific];
+        while let Some(at) = pending.pop() {
+            for parent in self.supertypes.get(at).into_iter().flatten() {
+                if parent == general {
+                    return true;
+                }
+                if visited.insert(parent) {
+                    pending.push(parent);
+                }
+            }
+        }
+        false
     }
 
     pub(crate) fn narrows_value_type(
@@ -345,7 +359,7 @@ impl AdmittedModel {
     fn assemble(domain_package: &DomainPackage, view: &EffectiveView) -> Self {
         Self {
             index: view.shared_model_index().clone(),
-            ancestors: view
+            supertypes: view
                 .declarations()
                 .iter()
                 .filter(|entry| entry.preimage.owner_effective_type.is_none())
@@ -389,7 +403,7 @@ impl AdmittedModel {
             index: std::sync::Arc::new(crate::model::index::ModelIndex::build(
                 domain_package.clone(),
             )),
-            ancestors: BTreeMap::new(),
+            supertypes: BTreeMap::new(),
             alias: None,
             selection: domain_package.model_selection.clone(),
             records: domain_package

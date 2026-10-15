@@ -117,8 +117,8 @@ impl FromStr for ByteDigest {
 /// The closed FR-201 canonical-identity-domain vocabulary, as amended by
 /// QSpec#138 (QC-2, merged `f4128c45`): the sixteen domains FR-201 already
 /// named, plus the three QSL-derived model-schema domains QC-2 adds
-/// (`ModelEffectiveDeclarationV1`, `ModelEffectiveViewV1`,
-/// `ModelObjectUniverseV1`). Exhaustive: a domain FR-201 does not list is not
+/// (`ModelEffectiveDeclarationV2`, `ModelEffectiveViewV2`,
+/// `ModelObjectUniverseV2`). Exhaustive: a domain FR-201 does not list is not
 /// a variant, and reading one refuses ([`InvalidDigestRecord::UnknownDomain`])
 /// rather than silently admitting it.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -159,12 +159,12 @@ pub enum DigestDomain {
     TypedExpressionIdentity,
     /// `quire.verification.jcs`.
     VerificationJcs,
-    /// `quire.model.effective-declaration/v1` (QC-2; O-05's `EffectiveId`).
-    ModelEffectiveDeclarationV1,
-    /// `quire.model.effective-view/v1` (QC-2).
-    ModelEffectiveViewV1,
-    /// `quire.model.object-universe/v1` (QC-2).
-    ModelObjectUniverseV1,
+    /// `quire.model.effective-declaration/v2` (QC-2; O-05's `EffectiveId`).
+    ModelEffectiveDeclarationV2,
+    /// `quire.model.effective-view/v2` (QC-2).
+    ModelEffectiveViewV2,
+    /// `quire.model.object-universe/v2` (QC-2).
+    ModelObjectUniverseV2,
 }
 
 impl DigestDomain {
@@ -189,9 +189,9 @@ impl DigestDomain {
         Self::SimulationStateKeyV1,
         Self::TypedExpressionIdentity,
         Self::VerificationJcs,
-        Self::ModelEffectiveDeclarationV1,
-        Self::ModelEffectiveViewV1,
-        Self::ModelObjectUniverseV1,
+        Self::ModelEffectiveDeclarationV2,
+        Self::ModelEffectiveViewV2,
+        Self::ModelObjectUniverseV2,
     ];
 
     /// The exact FR-201 label string. Never case-folded or aliased
@@ -217,9 +217,9 @@ impl DigestDomain {
             Self::SimulationStateKeyV1 => "quire.simulation.state-key/v1",
             Self::TypedExpressionIdentity => "typed-expression-identity",
             Self::VerificationJcs => "quire.verification.jcs",
-            Self::ModelEffectiveDeclarationV1 => "quire.model.effective-declaration/v1",
-            Self::ModelEffectiveViewV1 => "quire.model.effective-view/v1",
-            Self::ModelObjectUniverseV1 => "quire.model.object-universe/v1",
+            Self::ModelEffectiveDeclarationV2 => "quire.model.effective-declaration/v2",
+            Self::ModelEffectiveViewV2 => "quire.model.effective-view/v2",
+            Self::ModelObjectUniverseV2 => "quire.model.object-universe/v2",
         }
     }
 }
@@ -615,7 +615,7 @@ mod digest_record_tests {
     /// `from_wire`/`hex`/`domain` with no loss. The label table below is
     /// hand-written against FR-201's own text, independent of
     /// `DigestDomain::as_str()`'s own match arms: a wrong label there (e.g.
-    /// `ModelEffectiveDeclarationV1` silently becoming `.../v2`) fails the
+    /// `ModelEffectiveDeclarationV2` silently becoming `.../v3`) fails the
     /// first assertion in the loop rather than round-tripping only against
     /// itself (#260 review item 4). Both `[(...); 21]` and `DigestDomain::
     /// ALL: [Self; 21]` are fixed-length arrays, so a 21st-to-22nd-entry
@@ -665,16 +665,16 @@ mod digest_record_tests {
             ),
             (DigestDomain::VerificationJcs, "quire.verification.jcs"),
             (
-                DigestDomain::ModelEffectiveDeclarationV1,
-                "quire.model.effective-declaration/v1",
+                DigestDomain::ModelEffectiveDeclarationV2,
+                "quire.model.effective-declaration/v2",
             ),
             (
-                DigestDomain::ModelEffectiveViewV1,
-                "quire.model.effective-view/v1",
+                DigestDomain::ModelEffectiveViewV2,
+                "quire.model.effective-view/v2",
             ),
             (
-                DigestDomain::ModelObjectUniverseV1,
-                "quire.model.object-universe/v1",
+                DigestDomain::ModelObjectUniverseV2,
+                "quire.model.object-universe/v2",
             ),
         ];
         assert_eq!(DigestDomain::ALL.len(), 21);
@@ -757,7 +757,7 @@ mod digest_record_tests {
     fn a_cross_domain_digest_is_unequal_despite_equal_bytes() {
         let same_bytes = bytes(0x42);
         let node = DigestRecord::mint(DigestDomain::CheckedSemanticNodeV1, same_bytes);
-        let effective = DigestRecord::mint(DigestDomain::ModelEffectiveDeclarationV1, same_bytes);
+        let effective = DigestRecord::mint(DigestDomain::ModelEffectiveDeclarationV2, same_bytes);
         assert_ne!(node, effective);
         assert_eq!(
             node.as_bytes(),
