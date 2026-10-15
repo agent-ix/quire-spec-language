@@ -180,6 +180,7 @@ fn malformed(form: &TypeForm) -> TypeFormError {
 /// The native value type a spelling names (FR-091): `String`, `UUID` and
 /// `Timestamp` are unreserved names, so the native type is one candidate
 /// beside the declared forms of the same name.
+#[qsl_attrs::string_edge]
 pub(crate) fn native_scalar_named(name: &str) -> Option<ValueType> {
     match name {
         "String" => Some(ValueType::String),
