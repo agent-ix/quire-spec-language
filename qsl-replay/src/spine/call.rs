@@ -31,10 +31,12 @@ use qsl_semantics::library::PackageId;
 use qsl_semantics::model::normalize::{ModelRefusal, ModelRefusalCause};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::refusal::OfferedSelection;
+use qsl_semantics::value::environment_stage::membership_failure_code;
 use quire_exact::{
     Cancel, CancelCause, Incomplete, Integer, Outcome, Refusal, ScalarLimits, Undefined, Value,
     ValueType,
 };
+use quire_semantic_value::declaration::EnvironmentFailure;
 use quire_semantic_value::location::Location;
 
 use super::lifecycle as front_end;
@@ -283,6 +285,16 @@ pub enum RunRefusal {
         /// The owning model refusal.
         refusal: ModelRefusal,
     },
+    /// An argument's membership in its parameter's declared type was not
+    /// decided because the type environment could not reserve storage
+    /// (`resource_exhausted`): never a wrong-value-kind refusal.
+    #[error("the argument at position {position} was not decided: {failure:?}")]
+    Storage {
+        /// The parameter's zero-based declared position.
+        position: usize,
+        /// The kernel's storage failure.
+        failure: EnvironmentFailure,
+    },
     /// The reference is absent from the complete admitted object world.
     #[error("the argument at position {position} names no admitted object")]
     DanglingReference {
@@ -318,6 +330,7 @@ impl RunRefusal {
             | Self::UnboundParameter { .. }
             | Self::WrongValueKind { .. }
             | Self::Admission { .. }
+            | Self::Storage { .. }
             | Self::DanglingReference { .. }
             | Self::Fault(_) => "call",
             Self::Cancelled(_) => return None,
@@ -336,6 +349,7 @@ impl RunRefusal {
             | Self::UnboundParameter { .. }
             | Self::WrongValueKind { .. } => Code::InvalidRuntimeInput,
             Self::Admission { refusal, .. } => refusal.code,
+            Self::Storage { failure, .. } => membership_failure_code(failure),
             Self::DanglingReference { .. } => Code::DanglingReference,
             Self::Fault(_) => Code::RuntimeInvariant,
             Self::Cancelled(_) => Code::Cancelled,
@@ -739,7 +753,10 @@ fn admit_model_arguments(
                 },
             }));
         }
-        if !types.admits(value_type, argument) {
+        let admitted = types
+            .admits(value_type, argument)
+            .map_err(|failure| Box::new(RunRefusal::Storage { position, failure }))?;
+        if !admitted {
             return Err(Box::new(RunRefusal::WrongValueKind { position }));
         }
         if objects.references_are_unresolved() || !objects.objects().contains(reference) {
@@ -774,6 +791,10 @@ pub(crate) fn convert_call_failure(failure: qsl_eval::value::CallFailure) -> Box
             "spine-run-supplies-admitted-name-and-arity",
         ))),
         CallFailure::Fault(fault) => Box::new(RunRefusal::Fault(fault)),
+        CallFailure::Storage { parameter, failure } => Box::new(RunRefusal::Storage {
+            position: parameter,
+            failure,
+        }),
         // A clause run makes its own handle and shares it with nobody, so
         // nothing cancels it: a cancellation here is a broken invariant.
         // `run` takes the caller's handle and maps a cancel itself.

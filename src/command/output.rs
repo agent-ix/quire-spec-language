@@ -323,7 +323,8 @@ pub(super) fn error(error: &RunError, artifact: bool) -> Result<Value, serde_jso
                         },
                     }
                 }
-                qsl_replay::spine::RunRefusal::DanglingReference { position } => {
+                qsl_replay::spine::RunRefusal::DanglingReference { position }
+                | qsl_replay::spine::RunRefusal::Storage { position, .. } => {
                     types::Details::Position {
                         position: *position,
                     }
@@ -371,6 +372,9 @@ pub(super) fn error(error: &RunError, artifact: bool) -> Result<Value, serde_jso
             RunCause::SpineRun(refusal) => match refusal.as_ref() {
                 qsl_replay::spine::RunRefusal::Compile(refusal) => refusal.cause(),
                 qsl_replay::spine::RunRefusal::Fault(_) => Some("established-invariant-broken"),
+                qsl_replay::spine::RunRefusal::Storage { failure, .. } => {
+                    qsl_semantics::value::environment_stage::membership_failure_cause(failure)
+                }
                 _ => None,
             },
             _ => None,

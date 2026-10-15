@@ -221,6 +221,24 @@ fn scale_of(scale: &Integer) -> Option<u32> {
 }
 
 impl<'a> Converter<'a> {
+    /// Whether `value` is a member of `value_type` under the environment. A
+    /// storage failure of the query refuses the argument as undecided, never
+    /// as a wrong value kind.
+    fn admits(
+        &self,
+        parameter: usize,
+        value_type: &ValueType,
+        value: &Value,
+    ) -> Result<bool, Stopped> {
+        self.types.admits(value_type, value).map_err(|failure| {
+            ReplayRefusal::Storage {
+                position: parameter,
+                failure,
+            }
+            .into()
+        })
+    }
+
     /// Convert argument `parameter`.
     fn convert(
         &mut self,
@@ -255,7 +273,7 @@ impl<'a> Converter<'a> {
                         // record keeps its own type. `OptionValue::present`
                         // is the exact test.
                         Some(payload) => {
-                            if !self.types.admits(payload_type, &payload) {
+                            if !self.admits(parameter, payload_type, &payload)? {
                                 return Err(wrong_kind(parameter));
                             }
                             OptionValue::from_admitted(payload_type.clone(), Some(payload))
@@ -295,11 +313,10 @@ impl<'a> Converter<'a> {
                     // checks the declared cardinality and collapses a
                     // duplicate the kernel's equality relates, which a set or
                     // ordered set refuses.
-                    if !elements
-                        .iter()
-                        .all(|element| self.types.admits(declared.element(), element))
-                    {
-                        return Err(wrong_kind(parameter));
+                    for element in &elements {
+                        if !self.admits(parameter, declared.element(), element)? {
+                            return Err(wrong_kind(parameter));
+                        }
                     }
                     match form(declared, elements, &mut meter) {
                         Outcome::Completed(Value::Collection(formed)) => {

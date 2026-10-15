@@ -21,7 +21,7 @@ use qsl_foundation::diagnostic::InternalFault;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_exact::{FieldValue, Meter, NodeKey, Value, ValueType};
 use quire_semantic_value::call::InputRefusal;
-use quire_semantic_value::declaration::TypeEnvironment;
+use quire_semantic_value::declaration::{EnvironmentFailure, TypeEnvironment};
 use s6a::{ReferenceEvaluation, S6aFamilyKind};
 
 pub use evaluate::Evaluation;
@@ -106,6 +106,16 @@ pub enum CallFailure {
     /// value.
     #[error("the call was cancelled: {0:?}")]
     Cancelled(quire_exact::CancelCause),
+    /// An argument's membership in its parameter type was not decided because
+    /// the type environment's admission worklist could not reserve storage.
+    /// It is `resource_exhausted`, never a wrong-value-kind refusal.
+    #[error("admission of argument {parameter} decided nothing: {failure:?}")]
+    Storage {
+        /// The parameter index.
+        parameter: usize,
+        /// The kernel's storage failure.
+        failure: EnvironmentFailure,
+    },
 }
 
 impl CallFailure {
@@ -116,7 +126,7 @@ impl CallFailure {
         match self {
             Self::Input(_) => Category::Refusal,
             Self::Fault(fault) => fault.category(),
-            Self::Cancelled(_) => Category::Incomplete,
+            Self::Cancelled(_) | Self::Storage { .. } => Category::Incomplete,
         }
     }
 }
@@ -164,12 +174,13 @@ fn validate(
     arguments: &[Value],
     objects: &ObjectEnvironment,
     types: &TypeEnvironment,
-) -> Result<(), InputRefusal> {
+) -> Result<(), CallFailure> {
     if parameters.len() != arguments.len() {
         return Err(InputRefusal::Arity {
             declared: parameters.len(),
             supplied: arguments.len(),
-        });
+        }
+        .into());
     }
     for (parameter, ((_, value_type), argument)) in parameters.iter().zip(arguments).enumerate() {
         // FR-089-AC-6: kernel `ValueType::admits` refuses every
@@ -186,10 +197,13 @@ fn validate(
                 .resolve_population(*population_id)
                 .is_some_and(|binding| binding.declared_maximum() == *maximum);
             if !resolved {
-                return Err(InputRefusal::WrongValueKind { parameter });
+                return Err(InputRefusal::WrongValueKind { parameter }.into());
             }
-        } else if !types.admits(value_type, argument) {
-            return Err(InputRefusal::WrongValueKind { parameter });
+        } else if !types
+            .admits(value_type, argument)
+            .map_err(|failure| CallFailure::Storage { parameter, failure })?
+        {
+            return Err(InputRefusal::WrongValueKind { parameter }.into());
         }
         let mut pending = vec![argument];
         while let Some(value) = pending.pop() {
@@ -198,7 +212,7 @@ fn validate(
                     if !objects.references_are_unresolved()
                         && !objects.objects().contains(reference)
                     {
-                        return Err(InputRefusal::DanglingReference { parameter });
+                        return Err(InputRefusal::DanglingReference { parameter }.into());
                     }
                 }
                 Value::Option(option) => pending.extend(option.payload()),
@@ -786,6 +800,24 @@ mod tests {
         assert_eq!(input.category().exit_code(), 20);
         let fault = CallFailure::Fault(qsl_foundation::diagnostic::InternalFault::new("S6a", "x"));
         assert_eq!(fault.category().exit_code(), 30);
+    }
+
+    /// A membership query that reserved no storage is incomplete (exit 22),
+    /// not a refused argument (exit 20) and not a fault.
+    #[test]
+    fn storage_failure_is_incomplete_not_a_refused_argument() {
+        use quire_semantic_value::declaration::{StorageRequest, StorageUnit};
+        for failure in [
+            EnvironmentFailure::Allocation(StorageRequest::new(8, StorageUnit::AdditionalElements)),
+            EnvironmentFailure::Capacity(StorageRequest::new(8, StorageUnit::Bytes)),
+        ] {
+            let storage = CallFailure::Storage {
+                parameter: 1,
+                failure,
+            };
+            assert_eq!(storage.category(), Category::Incomplete);
+            assert_eq!(storage.category().exit_code(), 22);
+        }
     }
 
     /// Each admission refusal maps to its catalog code: a missing name to
