@@ -2106,9 +2106,13 @@ impl<'a> Typer<'a> {
             | (ValueType::Option(_), ValueType::Option(_))
             | (ValueType::Composite(_), ValueType::Composite(_))
             | (ValueType::Collection(_), ValueType::Collection(_))
-            | (ValueType::Reference(_), ValueType::Reference(_)) => {
-                return Err(ineligible(location))
-            }
+            | (ValueType::Reference(_), ValueType::Reference(_))
+            // FR-056 "Unit-language equality on native String, UUID and
+            // Timestamp": their key order is a representation order, not an
+            // ordering capability.
+            | (ValueType::String, ValueType::String)
+            | (ValueType::Uuid, ValueType::Uuid)
+            | (ValueType::Timestamp, ValueType::Timestamp) => return Err(ineligible(location)),
             _ => return Err(mismatch(location)),
         };
         Ok(node(
