@@ -1503,7 +1503,10 @@ Imported }` (`family.rs:739`). A bare qualified name reaches `Typer::name`
      (through `Application::resolve`, as today).
    - More than one candidate, for example two unions named `q` that both
      declare `m`: `q::m` refuses `ambiguous_declaration`/`ambiguous-name`,
-     naming every candidate.
+     naming every candidate. Two same-named types exist only on hand-built
+     scopes: a single source unit refuses a second declaration of the same
+     type name at the assembler, so only a union and an import alias both
+     named `q` reach this rule from source.
    - No candidate: `q::m` refuses exactly as an unresolved name does today.
 
    Every unqualified name resolves exactly as it does today.
@@ -1642,7 +1645,7 @@ section follows TC-264.
 | Arm body not of the `case` result type | the body's family, S3, under QSpec FR-146 "Case result type" above | `ill_typed`/`type-mismatch` | expected and actual type | the body |
 | Construction: undeclared member, payload on a nullary member, missing call on a payload member, or wrong argument count | `SumCase`, S3 construction | `ill_typed`/`type-mismatch` (FR-143) | expected and actual shape | the construction expression |
 | Union recursion that does not escape | `SumCase` declaration check, through the shared recursion graph. Payload positions are named edges (FR-143), so they enter the `NonEscaping` subgraph and not the `Unnamed` (tuple-position) one. | `ill_typed`, from the existing `DeclarationCause::Recursion { edges: NonEscaping, cycle }` (`quire_semantic_value::declaration`) | the cycle | the union declaration |
-| Duplicate member name in one union | `SumCase` declaration check | `invalid_semantic_graph`, from the existing `DeclarationCause::DuplicateMember` (same function) | the member name | the union declaration |
+| Duplicate member name in one union | `SumCase` declaration check | `ambiguous_declaration`/`ambiguous-name`, from the existing `DeclarationCause::DuplicateMember` (same function) | the member name | the union declaration |
 | Stage limit or meter exhaustion inside a family `check` | `SumCase`, S3 | `StageFailure::Limit(LimitExceeded)`, the node-count limit when the `case` nodes exceed `s3.nodes`, or the work-budget limit when the family `check` exhausts its meter (§2, T-4), each naming its value and setting. `case` nesting depth is never a limit kind: nesting of any depth is admitted, bounded only by those limits (QSpec FR-146; ADR-030 D-1) | the limit record, naming the limit, its value and the setting that raises it (FR-255) | the charge's locus |
 
 The unreachable-arm row explains why the table has no separate code for it.
@@ -1788,12 +1791,12 @@ to the named cases.
 | Class | Cases | Stage | Oracle |
 | --- | --- | --- | --- |
 | Positive | a union with nullary and payload members; a recursive union that escapes (`union Tree { Leaf, Node(Integer, Option<Tree>, Option<Tree>) }`, FR-143); construction of a nullary and of a payload member; `case` selecting each member of a two-member union; a nested `case` in an arm body; `case` inside a state clause body and inside a `decreases` measure, each under its clause kind (FR-065-AC-5 pattern) | S2 to S6a | the checked node, then `Completed` with the expected value |
-| Adverse, resolution | `q::m` where a union and an enum named `q` both declare `m`, and where two unions named `q` both declare `m`, each refusing `ambiguous_declaration`/`ambiguous-name` with every candidate named; `q::m` where a union named `q` declares `m` and an import alias `q` exports `m`, refusing the same way; and two unions named `q` where only one declares `m`, which resolves to that one | S3 | §16.2 precedence |
+| Adverse, resolution | on hand-built scopes only (a single source unit refuses a second declaration of the same type name at the assembler): `q::m` where a union and an enum named `q` both declare `m`, and where two unions named `q` both declare `m`, each refusing `ambiguous_declaration`/`ambiguous-name` with every candidate named; and two unions named `q` where only one declares `m`, which resolves to that one; as source: `q::m` where a union named `q` declares `m` and an import alias `q` exports `m`, refusing the same way | S3 | §16.2 precedence |
 | Adverse, exhaustiveness | one `case` per obligation (`duplicate-arm`, `unknown-member` naming a member of a second union, `arm-arity`, `missing-arm`); one `case` that violates two obligations at once (`duplicate-arm` and `missing-arm`), asserting only `duplicate-arm` is reported (FR-146 order); an `unknown-member` arm whose body is ill-typed, asserting only `unknown-member` (its body is not checked) | S3 | §16.5 rows, with payload and locus |
 | Refusal order | one `case` with an ill-typed body in a resolved arm and a missing arm, asserting only `ill_typed` at that body (typing first); a scrutinee that is not a union, followed by arms naming unknown members, asserting only the scrutinee's `ill_typed` (a scrutinee refusal ends the builder) | S3 | §16.5 "One refusal per `case`" |
 | Adverse, typing | a scrutinee of enum type and one of `Integer`; an arm body of the wrong type | S3 | `ill_typed`/`type-mismatch` |
 | Adverse, construction | FR-143's four construction refusals, one case each | S3 | `ill_typed`/`type-mismatch` at the construction |
-| Adverse, declaration | `union L { Nil, Cons(Integer, L) }` (does not escape) refuses `ill_typed`, and the same union with `Option<L>` is admitted (AD-015 decision row); a union declaring one member name twice refuses `invalid_semantic_graph` | S3 | §16.5 declaration rows |
+| Adverse, declaration | `union L { Nil, Cons(Integer, L) }` (does not escape) refuses `ill_typed`, and the same union with `Option<L>` is admitted (AD-015 decision row); a union declaring one member name twice refuses `ambiguous_declaration`/`ambiguous-name` | S3 | §16.5 declaration rows |
 | Adverse, parse | a `case` whose scrutinee is an unparenthesized record value is not parsed as a scrutinee; the parenthesized form parses (shared-grammar.md `case` rule) | S1 | parse diagnostic, and the admitted form |
 | Collections | `Set<U>`, `Bag<U>` and `OrderedSet<U>` of a union are admitted and keyed by the FR-144 union key (sets and bags in key order, ordered sets in first-occurrence order); a union with an IEEE-bearing payload makes them refuse `ill_typed`/`operator-ineligible`; `Sequence<U>` is admitted (§16.4, FR-323) | S3 | §16.4 collection row |
 | Limits | a `case` nested 1,000 levels deep is admitted under the default limits; a nested `case` fixture of N nodes checked with `s3.nodes` at N - 1 returns `StageFailure::Limit` with the node-count kind, bound N - 1, count N and setting `s3.nodes`, and the same fixture at N is admitted (FR-062-AC-7 pattern). No outcome names a nesting-depth limit | S3 | §16.5 limit row |
