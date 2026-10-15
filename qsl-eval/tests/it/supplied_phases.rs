@@ -50,7 +50,9 @@ const UNIT: &str = "function seq using v(xs: Sequence<Boolean>[0, 64]): Boolean 
      function digit using v(x: Int[0, 9]): Boolean pure { false }\n\
      function money using v(d: Decimal[0, 100; 0, 2; exact]): Boolean pure { false }\n\
      function digits using v(xs: Sequence<Int[0, 9]>[0, 8]): Boolean pure { false }\n\
-     function moneys using v(xs: Sequence<Decimal[0, 100; 0, 2; exact]>[0, 8]): Boolean pure { false }\n";
+     function moneys using v(xs: Sequence<Decimal[0, 100; 0, 2; exact]>[0, 8]): Boolean pure { false }\n\
+     function wide_lower using v(xs: Sequence<Decimal[-100000, 100; 0, 2; exact]>[0, 8]): Boolean pure { false }\n\
+     function wide_upper using v(xs: Sequence<Decimal[0, 100000; 0, 2; exact]>[0, 8]): Boolean pure { false }\n";
 
 fn package() -> CheckedPackage {
     let text = format!(
@@ -616,4 +618,94 @@ fn a_numeric_collection_is_admitted_under_a_and_bounded_by_b() {
         call(SuppliedLimits::default().with_numeric_magnitude_bits(4)).is_ok(),
         "B = 4 admits every operand"
     );
+}
+
+/// FR-277-AC-4 (TC-906), IR-798: a Decimal retained type link is bounded by B
+/// on each of its four coefficient endpoints. The stop is the typed `limit`
+/// cause naming the endpoint, the measured bits and B, charged on the
+/// type-comparison event with zero evaluation consumption; B equal to the
+/// measured bits admits.
+#[trace("TC-906", "FR-277-AC-4")]
+#[test]
+fn a_decimal_type_link_over_b_names_the_endpoint_operand() {
+    let package = package();
+    let empty = |function: &str| {
+        let callable = package.graph().callable(function).expect("declared");
+        let ValueType::Collection(declared) = &callable.parameters[0].1 else {
+            panic!("a collection parameter");
+        };
+        let mut meter = Meter::new(UNLIMITED);
+        match form(declared, Vec::new(), &mut meter) {
+            Outcome::Completed(value) => value,
+            other => panic!("the sequence forms: {other:?}"),
+        }
+    };
+    // (function called, function whose type the value carries, B, operand,
+    // measured bits). 100 has 7 bits; 100000 has 17.
+    let cases = [
+        (
+            "moneys",
+            "moneys",
+            6_u64,
+            "type-link-expected-upper-coefficient",
+            7_u64,
+        ),
+        (
+            "wide_lower",
+            "wide_lower",
+            16,
+            "type-link-expected-lower-coefficient",
+            17,
+        ),
+        (
+            "moneys",
+            "wide_lower",
+            16,
+            "type-link-actual-lower-coefficient",
+            17,
+        ),
+        (
+            "moneys",
+            "wide_upper",
+            16,
+            "type-link-actual-upper-coefficient",
+            17,
+        ),
+    ];
+    for (function, carried, bits, operand, measured) in cases {
+        let (result, meter, _) = call(
+            &package,
+            function,
+            vec![empty(carried)],
+            SuppliedLimits::default().with_numeric_magnitude_bits(bits),
+            Cancel::new(),
+        );
+        let Err(CallFailure::Supplied(stop)) = result else {
+            panic!("{operand}: B = {bits} denies");
+        };
+        let limit = stop.limit().expect("a limit");
+        assert_eq!(limit.limit_kind, SuppliedLimitKind::NumericMagnitudeBits);
+        assert_eq!(limit.limit, bits, "{operand}");
+        assert_eq!(limit.next_charge, measured, "{operand}");
+        assert_eq!(limit.counter, AttemptedCount::Count(measured), "{operand}");
+        assert_eq!(
+            limit.operand.map(|found| found.as_str()),
+            Some(operand),
+            "{operand}"
+        );
+        assert_eq!(stop.context.event, Some(SuppliedEvent::TypeComparison));
+        assert_eq!(stop.context.consumed, 0, "{operand}");
+        assert_no_evaluation(&meter);
+    }
+    // B at the measured bits admits every endpoint.
+    for (function, carried) in [("moneys", "moneys"), ("wide_lower", "wide_lower")] {
+        let (result, _, _) = call(
+            &package,
+            function,
+            vec![empty(carried)],
+            SuppliedLimits::default().with_numeric_magnitude_bits(17),
+            Cancel::new(),
+        );
+        assert!(result.is_ok(), "{function}: B = 17 admits");
+    }
 }
