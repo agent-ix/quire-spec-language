@@ -142,6 +142,7 @@ fn show(expression: ExprRef<'_>) -> String {
         ExprNode::SelfRef => "SelfRef".into(),
         ExprNode::Result => "Result".into(),
         ExprNode::Reaches { edge, .. } => format!("Reaches[{edge}]"),
+        ExprNode::ProtocolReference { target } => format!("ProtocolReference[{target}]"),
     };
     if children.is_empty() {
         head

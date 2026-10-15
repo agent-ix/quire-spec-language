@@ -902,6 +902,7 @@ fn show(expression: ExprRef<'_>) -> String {
         ExprNode::SelfRef => "SelfRef".into(),
         ExprNode::Result => "Result".into(),
         ExprNode::Reaches { edge, .. } => format!("Reaches[{edge}]"),
+        ExprNode::ProtocolReference { target } => format!("ProtocolReference[{target}]"),
         other => panic!("this fixture's bodies use no other form: {other:?}"),
     };
     if children.is_empty() {

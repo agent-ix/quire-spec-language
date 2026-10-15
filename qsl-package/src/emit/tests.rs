@@ -38,6 +38,7 @@ mod deep_bodies;
 mod golden;
 mod identity_depth;
 mod owners;
+mod protocol_reference;
 mod variant_types;
 
 /// The unit the fixture packages are read from; every occurrence's region is
@@ -1337,6 +1338,9 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
             Err(EmitRefusal::UnknownOccurrenceRole { .. }) => Seen::UnknownOccurrenceRole,
             Err(EmitRefusal::Encoding { .. }) => Seen::Encoding,
             Err(EmitRefusal::Cancelled { .. }) => panic!("no handle was cancelled"),
+            Err(EmitRefusal::StaleProtocolReference { .. }) => {
+                panic!("the fixture set holds no protocol reference")
+            }
         }
     }
     assert_eq!(

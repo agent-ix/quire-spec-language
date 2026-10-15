@@ -705,6 +705,13 @@ pub enum ExprNode {
         /// The span of the edge member name.
         edge_span: Span,
     },
+    /// `protocol <qualified-name>` (FR-308): a reference to a protocol
+    /// declared in the same unit, written as `target` and resolved by S3
+    /// (FR-218). It carries no package selector, alias or key.
+    ProtocolReference {
+        /// The written qualified name, segments joined by `::`.
+        target: String,
+    },
     /// FR-063/S2: exists only so `--cfg seam_probe` makes every
     /// match over `ExprNode` outside this module non-exhaustive. Never
     /// constructed outside the probe build.
@@ -722,7 +729,8 @@ impl ExprNode {
             | Self::Rational(..)
             | Self::Name(_)
             | Self::SelfRef
-            | Self::Result => Vec::new(),
+            | Self::Result
+            | Self::ProtocolReference { .. } => Vec::new(),
             Self::Let { value, body, .. } => vec![*value, *body],
             Self::If {
                 condition,
@@ -827,7 +835,8 @@ impl ExprNode {
             | Self::AllInstances { .. }
             | Self::Lookup { .. }
             | Self::Dispatch { .. }
-            | Self::Reaches { .. } => Vec::new(),
+            | Self::Reaches { .. }
+            | Self::ProtocolReference { .. } => Vec::new(),
             #[cfg(seam_probe)]
             Self::__SeamProbe => unreachable!("never constructed outside the probe build"),
         }
@@ -880,7 +889,8 @@ impl ExprNode {
             | Self::AllInstances { .. }
             | Self::Lookup { .. }
             | Self::Dispatch { .. }
-            | Self::Reaches { .. } => Spellings {
+            | Self::Reaches { .. }
+            | Self::ProtocolReference { .. } => Spellings {
                 reference: None,
                 binders: Vec::new(),
             },
@@ -898,7 +908,8 @@ impl ExprNode {
             | Self::Rational(..)
             | Self::Name(_)
             | Self::SelfRef
-            | Self::Result => {}
+            | Self::Result
+            | Self::ProtocolReference { .. } => {}
             Self::Negate(operand)
             | Self::Not(operand)
             | Self::Present(operand)

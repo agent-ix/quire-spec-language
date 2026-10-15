@@ -102,6 +102,7 @@ mod operation_body;
 mod operation_clause;
 mod profile;
 mod protocol_clause;
+mod protocol_reference;
 mod refusal;
 mod region;
 mod settings;
@@ -222,8 +223,8 @@ pub use protocol_clause::{CheckedAttempt, CheckedProtocol, ProtocolNodeId};
 pub use refusal::{
     AliasKind, CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, DispatchFunctionRole,
     DispatchLinkCause, DispatchSubtypeFailure, InvalidDispatchDeclaration, KeyFault,
-    MeasureObligation, Obligation, ProtocolAnchorCause, ProvedInterval, ShadowedDeclaration,
-    StageLimitCause, WrongSnapshotCause,
+    MeasureObligation, Obligation, ProtocolAnchorCause, ProtocolReferenceCause, ProvedInterval,
+    ShadowedDeclaration, StageLimitCause, WrongSnapshotCause,
 };
 
 /// A checked function.
@@ -781,7 +782,12 @@ impl PackageDeclarations {
         .with_imports(self.imports)
         .with_integer_division(self.integer_division)
         .with_complete_value(complete_value)
-        .with_complete_model(complete_model);
+        .with_complete_model(complete_model)
+        .with_protocols(
+            self.protocols
+                .iter()
+                .map(|protocol| protocol.name.name.as_str()),
+        );
         let dispatch_tables = self.dispatch_tables;
         if let Some(index) = self
             .resolved_signatures
@@ -1232,6 +1238,15 @@ impl PackageDeclarations {
                 }
             }
         }
+        // FR-218: a second reference to one protocol in the unit refuses at
+        // the second: the function bodies in declaration order, then the
+        // state clauses.
+        refusals.extend(protocol_reference::repeated(
+            drafts
+                .iter()
+                .map(|(_, body, _)| &body.body)
+                .chain(typed_clauses.iter().map(|clause| &clause.body)),
+        ));
         if !refusals.is_empty() {
             return Err(refusals);
         }
@@ -1412,6 +1427,12 @@ impl PackageDeclarations {
             .collect();
         if let Err(refusal) = lowering.relationship_nodes(&relationship_locations) {
             refusals.push(refusal);
+        }
+        // FR-092: each checked protocol's node, before any function that
+        // refers to it is lowered.
+        match lowering.protocol_nodes(&protocol_reference::inputs(&self.protocols)) {
+            Ok(unsupported) => refusals.extend(unsupported),
+            Err(refusal) => refusals.push(refusal),
         }
         for group in &order {
             let inputs: Vec<lowering::FunctionInput<'_>> = group
@@ -1933,6 +1954,13 @@ impl CheckedGraph {
     /// from, the lock's `sources` entry (QSpec FR-322 `PackageLock`).
     pub fn source(&self) -> &qsl_foundation::source::provenance::RawSourceRef {
         &self.source
+    }
+
+    /// The lowered nodes, for a test that re-keys one after the nodes bound
+    /// to its old key were minted (FR-218-AC-9).
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn semantic_graph_mut(&mut self) -> &mut SemanticGraph {
+        &mut self.semantic_graph
     }
 
     /// FR-092/FR-093: every lowered, keyed node of this package's functions.

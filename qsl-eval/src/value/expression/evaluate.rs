@@ -13,7 +13,8 @@ use std::sync::Arc;
 
 use super::causes::{
     identity_string, ModelQueryRefusal, PreconditionFailure, ProtocolClauseSnapshot,
-    ProtocolClauseUnsupported, ReferenceUnresolved, StateModelUndefined,
+    ProtocolClauseUnsupported, ProtocolReferenceUnsupported, ReferenceUnresolved,
+    StateModelUndefined,
 };
 use super::s6a::separation::{
     locatable, occurrence_at, Provenance, Separation, SeparationStep, StopReport, Trail,
@@ -1186,6 +1187,13 @@ impl<'a, 'm> Machine<'a, 'm> {
                     return Err(invariant("reaches-reference-value-expected"));
                 };
                 Value::Boolean(self.evaluate_reaches(node, &source, &target, edge)?)
+            }
+            // FR-308: the value of a protocol reference is the value of its
+            // protocol clause, which nothing evaluates.
+            NodeKind::ProtocolReference { .. } => {
+                return Err(Halt::Family(FamilyResult::Refused(Box::new(
+                    ProtocolReferenceUnsupported,
+                ))))
             }
             // FR-063: no arm for the probe variant under `--cfg seam_probe`
             // alone (`E0004`, this seam's evidence). The arm below exists

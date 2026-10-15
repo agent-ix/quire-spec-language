@@ -35,8 +35,10 @@ const BUCKET: usize = 100;
 // QSL-667 adds valid `Population` type and `lookup` expression forms, so those
 // sets legitimately gain the new grammar tokens. The generated inputs and
 // parser trees remain unchanged; the complete-family buckets were regenerated
-// to record the expanded diagnostics. Historical and composed native outputs
-// remain byte-identical.
+// to record the expanded diagnostics. FR-308's `protocol <name>` primary adds
+// `protocol` to the same sets, and the complete-family buckets were
+// regenerated again. Historical and composed native outputs remain
+// byte-identical.
 const BASELINE: &str = include_str!("../fixtures/parser-differential/baseline.txt");
 
 /// xorshift64*: a fixed, dependency-free generator so the inputs are the
