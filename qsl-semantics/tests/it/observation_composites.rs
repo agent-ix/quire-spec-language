@@ -881,9 +881,12 @@ fn canonical_uuid_and_timestamp_leaves_admit() {
         );
         uuid.pre_call = pre_call;
         let admitted = uuid.admit().expect("a canonical UUID admits");
+        let Value::Uuid(bound) = &admitted.parameters[0].1 else {
+            panic!("expected a native UUID: {:?}", admitted.parameters[0].1)
+        };
         assert_eq!(
-            admitted.parameters[0].1,
-            Value::Uuid(quire_exact::Uuid::from_canonical_text(UUID_TEXT).unwrap())
+            bound,
+            &quire_exact::Uuid::from_canonical_text(UUID_TEXT).unwrap()
         );
         for nanoseconds in ["0", "-1", "170141183460469231731687303715884105727"] {
             let mut timestamp = Case::new(
@@ -893,9 +896,15 @@ fn canonical_uuid_and_timestamp_leaves_admit() {
             );
             timestamp.pre_call = pre_call;
             let admitted = timestamp.admit().expect("a canonical Timestamp admits");
+            let Value::Timestamp(bound) = &admitted.parameters[0].1 else {
+                panic!(
+                    "expected a native Timestamp: {:?}",
+                    admitted.parameters[0].1
+                )
+            };
             assert_eq!(
-                admitted.parameters[0].1,
-                Value::Timestamp(quire_exact::Timestamp::from_canonical_text(nanoseconds).unwrap())
+                bound,
+                &quire_exact::Timestamp::from_canonical_text(nanoseconds).unwrap()
             );
         }
     }
