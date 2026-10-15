@@ -3541,12 +3541,12 @@ fn read_connection(
             // ends) carries no `role` member at all -- not merely an absent
             // optional one -- so this end never has one to preserve.
             role: None,
-            multiplicity: source_multiplicity,
+            multiplicity: Some(source_multiplicity),
         },
         target: RelationshipEnd {
             type_identity: declaration_key(package, target_type),
             role: None,
-            multiplicity: target_multiplicity,
+            multiplicity: Some(target_multiplicity),
         },
         direction,
     })
@@ -3653,7 +3653,7 @@ fn read_relationship_end(
     Ok(RelationshipEnd {
         type_identity: declaration_key(package, type_ref),
         role,
-        multiplicity,
+        multiplicity: Some(multiplicity),
     })
 }
 

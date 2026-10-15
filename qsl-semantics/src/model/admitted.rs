@@ -549,7 +549,7 @@ mod tests {
         let end = |role: Option<&str>| RelationshipEnd {
             type_identity: key("Order"),
             role: role.map(str::to_owned),
-            multiplicity,
+            multiplicity: Some(multiplicity),
         };
         let Err(AdmitFailure::Refused(refusals)) = admit(vec![
             order(key("Order")),
@@ -627,7 +627,7 @@ mod tests {
         let end = |role: Option<&str>| RelationshipEnd {
             type_identity: key("Order"),
             role: role.map(str::to_owned),
-            multiplicity,
+            multiplicity: Some(multiplicity),
         };
         let relationship = |name: &str, role: Option<&str>| {
             DomainPackageRecord::Relationship(RelationshipRecord {

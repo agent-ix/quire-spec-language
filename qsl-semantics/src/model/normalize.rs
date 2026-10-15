@@ -4572,22 +4572,22 @@ mod tests {
                     source: RelationshipEnd {
                         type_identity: DeclarationKey::fixture("model.Order"),
                         role: Some("source".to_owned()),
-                        multiplicity: Multiplicity {
+                        multiplicity: Some(Multiplicity {
                             lower: 0,
                             upper: None,
                             ordered: false,
                             unique: true,
-                        },
+                        }),
                     },
                     target: RelationshipEnd {
                         type_identity: DeclarationKey::fixture("model.Order"),
                         role: Some("target".to_owned()),
-                        multiplicity: Multiplicity {
+                        multiplicity: Some(Multiplicity {
                             lower: 0,
                             upper: None,
                             ordered: false,
                             unique: true,
-                        },
+                        }),
                     },
                     direction: RelationshipDirection::SourceToTarget,
                 }),
@@ -4660,12 +4660,12 @@ mod tests {
         let end = |role: Option<&str>| RelationshipEnd {
             type_identity: DeclarationKey::fixture("model.Number"),
             role: role.map(str::to_owned),
-            multiplicity: Multiplicity {
+            multiplicity: Some(Multiplicity {
                 lower: 0,
                 upper: None,
                 ordered: false,
                 unique: true,
-            },
+            }),
         };
         let relationship = |name: &str, index: usize| {
             DomainPackageRecord::Relationship(RelationshipRecord {
@@ -4870,7 +4870,7 @@ mod tests {
             let end = RelationshipEnd {
                 type_identity: DeclarationKey::fixture("model.Order"),
                 role: None,
-                multiplicity,
+                multiplicity: Some(multiplicity),
             };
             let package = package(vec![
                 object_type("model.Order", &[]),

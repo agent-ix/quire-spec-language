@@ -130,12 +130,12 @@ fn relationship(
         source: RelationshipEnd {
             type_identity: DeclarationKey::fixture(source),
             role: None,
-            multiplicity: source_m,
+            multiplicity: Some(source_m),
         },
         target: RelationshipEnd {
             type_identity: DeclarationKey::fixture(target),
             role: None,
-            multiplicity: target_m,
+            multiplicity: Some(target_m),
         },
         direction,
     })

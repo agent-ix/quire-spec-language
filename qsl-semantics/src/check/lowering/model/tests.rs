@@ -231,12 +231,12 @@ fn acme(version: &str) -> DomainPackage {
                 source: RelationshipEnd {
                     type_identity: key("Order"),
                     role: Some("order".to_owned()),
-                    multiplicity: one(),
+                    multiplicity: Some(one()),
                 },
                 target: RelationshipEnd {
                     type_identity: key("Invoice"),
                     role: Some("invoice".to_owned()),
-                    multiplicity: one(),
+                    multiplicity: Some(one()),
                 },
                 direction: RelationshipDirection::SourceToTarget,
             }),

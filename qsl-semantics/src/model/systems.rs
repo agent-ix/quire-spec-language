@@ -657,17 +657,21 @@ pub fn check_connection(
         (&relationship.source, source_port, "source"),
         (&relationship.target, target_port, "target"),
     ] {
-        if !multiplicity_conforms(&end.multiplicity, &port.multiplicity) {
+        // An end that declares no multiplicity states no bound to narrow.
+        let Some(declared) = end.multiplicity else {
+            continue;
+        };
+        if !multiplicity_conforms(&declared, &port.multiplicity) {
             failures.push(ConditionFailure {
                 condition: "multiplicity",
                 code: Code::IllTyped,
                 cause: ModelRefusalCause::MultiplicityNarrowing {
-                    from: end.multiplicity,
+                    from: declared,
                     to: port.multiplicity,
                 },
                 detail: format!(
-                    "{label} end {:?} does not conform to port {:?}",
-                    end.multiplicity, port.multiplicity
+                    "{label} end {declared:?} does not conform to port {:?}",
+                    port.multiplicity
                 ),
             });
         }
