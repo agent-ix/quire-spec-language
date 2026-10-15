@@ -36,7 +36,7 @@ Examined:
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | high | TC-1036 lost two of its JSON escapes, so two vectors are vacuous. In step 2 the row described as "the paired escape" holds the literal U+1F600 bytes (F0 9F 98 80), not `😀`, so it is the same document as the "literal character U+1F600" row. In step 6 the post `label` "written `"ready"`" is the base spelling, not `"ready"`, so it cannot show that escape spelling is no change. FR-106-AC-28's surrogate-pair claim and FR-106-AC-31's escape-spelling claim therefore have no vector that could fail. Write both as escapes in the TC text, as steps 2 and 9 already do for `\u0000` and `\ud800`. | spec/test-cases/TC-1036-snapshots-carry-string-values.md:45-46,71,91-92,115-116 |
+| FND-001 | high | TC-1036 lost two of its JSON escapes, so two vectors are vacuous. In step 2 the row described as "the paired escape" holds the literal U+1F600 bytes (F0 9F 98 80), not `\ud83d\ude00`, so it is the same document as the "literal character U+1F600" row. In step 6 the post `label` "written `"ready"`" is the base spelling, not `"\u0072eady"`, so it cannot show that escape spelling is no change. FR-106-AC-28's surrogate-pair claim and FR-106-AC-31's escape-spelling claim therefore have no vector that could fail. Write both as escapes in the TC text, as steps 2 and 9 already do for `\u0000` and `\ud800`. | spec/test-cases/TC-1036-snapshots-carry-string-values.md:45-46,71,91-92,115-116 |
 
 ## Verdict
 
@@ -68,3 +68,9 @@ Recorded (medium/low, not blocking):
 - low: FR-070's witness paragraph still lists leaf families without String, and the String row is not next to #865's native rows.
 - low: TC-1036 step 4 has no row for `kind` `"text"` with a `text` member. AC-29 lists one, and only `{"kind":"text","value":"x"}` is covered.
 - low: the postcondition clause on `rename` and the "without the grant" frame are not named in the TC-1036 fixture. This matches TC-1029.
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 4cf3123de (reviewed at 2f276c82c240b2872eaab650be8a3575ebdeff7a): step 2 now writes S1 `"\u00e9"`, S2 `"e\u0301"`, `"\ufffe"` and the paired escape `"\ud83d\ude00"` as ASCII escape text, each a document whose bytes differ from its literal twin; step 6 writes the post `label` `"\u0072eady"`. FR-106-AC-28's pair-equals-literal and AC-31's escape-is-no-change claims now have vectors that a reader keeping escape spelling, or a frame check comparing raw bytes, would fail. Recorded items: FR-070 and TC-905 hunks dropped (no residue in the diff); the `{"kind":"text","text":"x"}` row was added and reaches check 2 (`invalid-value` naming `kind`); the `rename` fixture low is still recorded. |
