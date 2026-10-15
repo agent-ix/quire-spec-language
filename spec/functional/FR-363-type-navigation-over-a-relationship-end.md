@@ -69,8 +69,8 @@ type navigates. The destination end is the end the role does not name.
 and by every relationship end navigable from `T` under that role. It resolves
 to the one candidate; otherwise:
 
-- no candidate: `ill_typed`/`type-mismatch` at the form, the refusal FR-300
-  gives a field the static type does not declare;
+- no candidate: `ill_typed`/`type-mismatch` at the form, the refusal an
+  undeclared record field and an undeclared object field both get (FR-300);
 - two or more candidates (a field and an end, or two ends):
   `ambiguous_declaration`/`ambiguous-name` at the form, naming every
   candidate.
