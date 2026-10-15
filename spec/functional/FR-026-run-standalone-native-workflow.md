@@ -115,11 +115,11 @@ including incomplete native, model, package and runtime input failures.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-026-AC-1 | A file-driven aggregate example returns exact true/false outcomes, package/source/input identities and measured work using the real compiler/runtime. | Test |
-| FR-026-AC-2 | Recorded pre/post operation files execute with immutable captures; illegal frame changes refuse without Boolean truth. | Test |
-| FR-026-AC-3 | Stale source/input selections, malformed requests, unknown formats and unavailable files report their actual stage and catalogued code with available provenance; emitted outcomes conform to the native result schema. | Test |
-| FR-026-AC-4 | A request one byte over `request_bytes`, and dependent files one byte over `dependent_bytes`, each refuse naming the limit, its configured value and its CLI option; the same requests with each limit raised to their size run; caller-lowered runtime limits stop with incomplete; a fresh default request succeeds. | Test |
-| FR-026-AC-5 | Existing parse/format behavior remains, command-specific arity errors precede I/O, and relative and absolute file operands resolve independently of the working directory. | Test |
+| FR-026-AC-1 | A file-driven aggregate example returns exact true/false outcomes, package/source/input identities and measured work using the real compiler/runtime. | Test (TC-103) |
+| FR-026-AC-2 | Recorded pre/post operation files execute with immutable captures; illegal frame changes refuse without Boolean truth. | Test (TC-103) |
+| FR-026-AC-3 | Stale source/input selections, malformed requests, unknown formats and unavailable files report their actual stage and catalogued code with available provenance; emitted outcomes conform to the native result schema. | Test (TC-104) |
+| FR-026-AC-4 | A request one byte over `request_bytes`, and dependent files one byte over `dependent_bytes`, each refuse naming the limit, its configured value and its CLI option; the same requests with each limit raised to their size run; caller-lowered runtime limits stop with incomplete; a fresh default request succeeds. | Test (TC-104) |
+| FR-026-AC-5 | Existing parse/format behavior remains, command-specific arity errors precede I/O, and relative and absolute file operands resolve independently of the working directory. | Test (TC-103) |
 | FR-026-AC-6 | A native-run/1 request whose program source, model source and snapshot selection each name `authority` `agent-ix` and their own `identity` runs, and its result renders each with those two labels and its digest, and no other identity member. The same request without the program source's `authority`, and again without the snapshot selection's `identity`, refuses at the request stage with `invalid-request` and exits 20. A present but blank `authority` refuses with `invalid_source_identity`, cause `blank-label`, field `label` `authority` (FR-001). | Test (TC-430) |
 
 ## Dependencies

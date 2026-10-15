@@ -71,12 +71,12 @@ checked package identity as checking the original source.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-003-AC-1 | Formatting preserves the ordered token spellings. | Test |
-| FR-003-AC-2 | Formatting preserves comments. | Test |
-| FR-003-AC-3 | A second formatting pass produces identical bytes. | Test |
+| FR-003-AC-1 | Formatting preserves the ordered token spellings. | Test (TC-013) |
+| FR-003-AC-2 | Formatting preserves comments. | Test (TC-013) |
+| FR-003-AC-3 | A second formatting pass produces identical bytes. | Test (TC-013) |
 | FR-003-AC-4 | Output beyond its selected ceiling receives `resource_exhausted`/`input-bytes-exceeded`; its rendered diagnostic calls this a format output-byte limit, reports the configured bound and emitted UTF-8 byte count, names `format.output_bytes`, and does not present the emitted count as input or source bytes. | Test (TC-931) |
-| FR-003-AC-5 | Exactly-at-ceiling output succeeds, including the final newline; zero or one-byte-short ceilings refuse without returning a partial string. | Test |
-| FR-003-AC-6 | format(source) and format_with_limit(source, 1048576) return identical bytes. Source whose formatted output exceeds 1 MiB refuses under format(source) naming the limit, its value and format_with_limit, and formats in full under format_with_limit with a limit raised to fit it. | Test |
+| FR-003-AC-5 | Exactly-at-ceiling output succeeds, including the final newline; zero or one-byte-short ceilings refuse without returning a partial string. | Test (TC-016) |
+| FR-003-AC-6 | format(source) and format_with_limit(source, 1048576) return identical bytes. Source whose formatted output exceeds 1 MiB refuses under format(source) naming the limit, its value and format_with_limit, and formats in full under format_with_limit with a limit raised to fit it. | Test (TC-016) |
 | FR-003-AC-7 | format and format_with_limit take a `qsl_cst::ParsedSource`. `qsl-cst/src/format.rs` names no type from the arena `syntax` or native `parser` modules, and formatting complete-V1 source that the arena parser does not accept succeeds under AC-1 to AC-3. | Test (TC-404) |
 | FR-003-AC-8 | format and format_with_limit refuse a `ParsedSource` whose CST carries a recovery, and one that carries a diagnostic and no recovery, each with a typed cause and no output string; neither call panics. | Test (TC-404) |
 | FR-003-AC-9 | For each complete-V1 fixture unit in the repository's tests that checks, checking its formatted source through the S1 to S4 spine yields a checked package identity equal to the original's, and formatting the formatted source again yields identical bytes. | Test (TC-885) |

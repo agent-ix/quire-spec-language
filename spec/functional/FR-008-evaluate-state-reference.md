@@ -54,26 +54,26 @@ establish all-input validity or backend cost parity.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-008-AC-1 | The healthy parent-order case yields true. | Test |
-| FR-008-AC-2 | The violating parent-order case yields false. | Test |
-| FR-008-AC-3 | A self-loop satisfies one-or-more-edge reachability. | Test |
-| FR-008-AC-4 | Zero expression budget receives resource_exhausted before entering the clause. | Test |
-| FR-008-AC-5 | Cancellation yields no Boolean value. | Test |
-| FR-008-AC-6 | The adopted precondition and immutable-parameter examples produce their stated values after actual model linking and runtime validation. | Test |
-| FR-008-AC-7 | A false implication antecedent records its entry and value without a consequent-entry event. | Test |
-| FR-008-AC-8 | A completed true antecedent followed by consequent evaluation records the corresponding entries in evaluation order. | Test |
-| FR-008-AC-9 | Exhaustion before consequent entry preserves completed true-antecedent events and returns no implication Boolean. | Test |
-| FR-008-AC-10 | Every emitted implication event identifies its exact authored source binding, implication/operand ExprIds and original operand region, including CRLF and multibyte text. | Test |
-| FR-008-AC-11 | Generated finite functional graphs agree with an independent transitive-closure oracle, including isolated nodes, self-loops, cycles, disconnected targets and distinct equal-valued objects. | Test |
-| FR-008-AC-12 | Checked integer operations produce exact admitted results with division toward zero and signed remainder; an unexpected execution invariant failure produces no Boolean. | Test |
-| FR-008-AC-13 | Forall/exists visit sequence occurrences in order with duplicates, short circuit correctly and return true/false respectively for empty sequences. | Test |
-| FR-008-AC-14 | Let evaluates its initializer once; local reads, selected conditional values and pre expressions preserve captured observations without deep-copying input values. | Test |
-| FR-008-AC-15 | Text ordering uses Unicode scalar lexicographic order; eligible records compare declared fields and object/reference equality compares exact identity excluding observation. | Test |
-| FR-008-AC-16 | Every independent accounting vector completes at its exact required expression/graph budgets and stops incomplete one below a nonzero required budget. | Test |
-| FR-008-AC-17 | Nested and repeated implications retain actual event order; event-capacity exhaustion stops with the recorded prefix and no Boolean. | Test |
-| FR-008-AC-18 | Auxiliary comparison and text limits stop before excess work while leaving expression/graph accounting distinct. | Test |
-| FR-008-AC-19 | Repeated runs have fresh budgets, locals, visited sets and events; success cannot make a subsequent smaller-budget run succeed or change input bytes. | Test |
-| FR-008-AC-20 | A collect expression with duplicate outputs is refused by the actual frontend without silently deduplicating or reaching reference evaluation. | Test |
+| FR-008-AC-1 | The healthy parent-order case yields true. | Test (TC-067, TC-077) |
+| FR-008-AC-2 | The violating parent-order case yields false. | Test (TC-067, TC-077) |
+| FR-008-AC-3 | A self-loop satisfies one-or-more-edge reachability. | Test (TC-068) |
+| FR-008-AC-4 | Zero expression budget receives resource_exhausted before entering the clause. | Test (TC-074) |
+| FR-008-AC-5 | Cancellation yields no Boolean value. | Test (TC-075) |
+| FR-008-AC-6 | The adopted precondition and immutable-parameter examples produce their stated values after actual model linking and runtime validation. | Test (TC-061, TC-071) |
+| FR-008-AC-7 | A false implication antecedent records its entry and value without a consequent-entry event. | Test (TC-073) |
+| FR-008-AC-8 | A completed true antecedent followed by consequent evaluation records the corresponding entries in evaluation order. | Test (TC-073) |
+| FR-008-AC-9 | Exhaustion before consequent entry preserves completed true-antecedent events and returns no implication Boolean. | Test (TC-073) |
+| FR-008-AC-10 | Every emitted implication event identifies its exact authored source binding, implication/operand ExprIds and original operand region, including CRLF and multibyte text. | Test (TC-073) |
+| FR-008-AC-11 | Generated finite functional graphs agree with an independent transitive-closure oracle, including isolated nodes, self-loops, cycles, disconnected targets and distinct equal-valued objects. | Test (TC-068) |
+| FR-008-AC-12 | Checked integer operations produce exact admitted results with division toward zero and signed remainder; an unexpected execution invariant failure produces no Boolean. | Test (TC-069) |
+| FR-008-AC-13 | Forall/exists visit sequence occurrences in order with duplicates, short circuit correctly and return true/false respectively for empty sequences. | Test (TC-070) |
+| FR-008-AC-14 | Let evaluates its initializer once; local reads, selected conditional values and pre expressions preserve captured observations without deep-copying input values. | Test (TC-071) |
+| FR-008-AC-15 | Text ordering uses Unicode scalar lexicographic order; eligible records compare declared fields and object/reference equality compares exact identity excluding observation. | Test (TC-072) |
+| FR-008-AC-16 | Every independent accounting vector completes at its exact required expression/graph budgets and stops incomplete one below a nonzero required budget. | Test (TC-074) |
+| FR-008-AC-17 | Nested and repeated implications retain actual event order; event-capacity exhaustion stops with the recorded prefix and no Boolean. | Test (TC-073, TC-075) |
+| FR-008-AC-18 | Auxiliary comparison and text limits stop before excess work while leaving expression/graph accounting distinct. | Test (TC-075) |
+| FR-008-AC-19 | Repeated runs have fresh budgets, locals, visited sets and events; success cannot make a subsequent smaller-budget run succeed or change input bytes. | Test (TC-075) |
+| FR-008-AC-20 | A collect expression with duplicate outputs is refused by the actual frontend without silently deduplicating or reaching reference evaluation. | Test (TC-076) |
 
 ## Dependencies
 

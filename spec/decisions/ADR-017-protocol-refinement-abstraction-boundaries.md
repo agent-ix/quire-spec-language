@@ -132,9 +132,8 @@ FR-116):
   frame, keyed by the frame's occurrence (`check/mod.rs:1452-1572`).
 - Tests: TC-462, TC-463, TC-514 and TC-515 pass locally; TC-463 step 1 (the
   I2 read-back) passes through IR-370's `reaches_field` reference-edge check.
-  `spec/tests.md` still lists TC-510
-  to TC-513 as planned although traced tests for them exist; this record
-  cites them only as specified.
+  Traced tests exist for TC-510 to TC-513; this record cites them only as
+  specified.
 - SEAM-3 handoffs to IR are deleted (M-6d). `src/protocol_artifact`
   remains for the root crate's native, state and temporal paths only; no
   `qsl-*` crate imports it.
@@ -817,8 +816,7 @@ Ticket-text corrections for the owner (all ticket text read as data):
 - ADR-013 O-25 packet list: a frame packet's members per PF-4.
 - FR-057 claim-form row for refinement between operation contracts,
   FR-057-AC-10 (that row is outside V1) and its Dependencies; TC-153 step 7
-  and its expected results; the FR-057-AC-10 row of
-  `spec/model-linking/tests.md` (RF-1).
+  and its expected results (RF-1).
 - `spec/spec.md`: index row.
 - 2026-10-01, with FR-340 to FR-345: RF-2's pair direction is the corpus's
   `prior`/`superseding` naming alone (the lexical revision-label comparison

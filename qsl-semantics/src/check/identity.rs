@@ -904,9 +904,9 @@ mod tests {
     /// other golden or vector pinned to it); no other test or fixture moved.
     ///
     /// PR #300 review round 2, L9: retagged `TC-252`/`FR-088-AC-10` (this
-    /// function's own owning pair per `spec/tests.md`) -- the prior
-    /// `TC-259`/`FR-088-AC-10` pairing named a combination absent from the
-    /// Test Matrix (TC-259 verifies AC-7; AC-10 is TC-252).
+    /// function's own owning pair) -- the prior `TC-259`/`FR-088-AC-10`
+    /// pairing named a combination TC-259 does not verify (TC-259 verifies
+    /// AC-7; AC-10 is TC-252).
     ///
     /// Also TC-409 step 2 (FR-088-AC-11): the pinned digest is the same
     /// independently computed FR-141 member node key TC-409's own procedure

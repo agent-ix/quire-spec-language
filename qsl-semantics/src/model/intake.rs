@@ -5660,9 +5660,9 @@ mod tests {
     /// declaration production: meaning, exports, artifact id, span). FR-152
     /// (`quire-specification`) does carry acceptance criteria for the
     /// systems binder's own reference resolution (FR-152-AC-1..8), but no
-    /// `FR-151-AC` or `FR-152-AC` row exists anywhere in this repo's own
-    /// matrices (`spec/model-linking/tests.md` and siblings) -- tagging a
-    /// test with one would point at a row that does not exist locally.
+    /// `FR-151-AC` or `FR-152-AC` criterion exists anywhere in this repo's
+    /// own spec -- tagging a test with one would point at a criterion that
+    /// does not exist locally.
     /// FR-152-AC-4 in particular ("port direction, port interface type and
     /// multiplicity are all enforced before a connection is exposed",
     /// verified by TC-197) is about the binder's own `check_connection`

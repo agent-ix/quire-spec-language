@@ -33,10 +33,10 @@ versions and Quire availability remain unchanged.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-011-AC-1 | A verified extracted body reaches the native parser with its authored source mapping. | Test |
-| FR-011-AC-2 | An unchecked native tag alone grants no parsed result. | Test |
-| FR-011-AC-3 | A malformed original/body mapping refuses the adapter join. | Test |
-| FR-011-AC-4 | An unsupported native clause retains its authored obligation identity. | Test |
+| FR-011-AC-1 | A verified extracted body reaches the native parser with its authored source mapping. | Test (TC-108) |
+| FR-011-AC-2 | An unchecked native tag alone grants no parsed result. | Test (TC-108) |
+| FR-011-AC-3 | A malformed original/body mapping refuses the adapter join. | Test (TC-108) |
+| FR-011-AC-4 | An unsupported native clause retains its authored obligation identity. | Test (TC-108) |
 
 ## Dependencies
 

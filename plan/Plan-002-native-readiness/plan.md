@@ -21,7 +21,7 @@ relationships:
 ## Requirements Summary
 
 - [x] Reconcile native OS arguments, inclusive formatter budgets and standard diagnostic traits with reviewed requirements.
-- [x] Bind all existing native tests plus the new adverse cases to TM-002 and resolve SR-009 findings for the implemented boundary.
+- [x] Bind all existing native tests plus the new adverse cases to TC-011–TC-019 and resolve SR-009 findings for the implemented boundary.
 
 ## Dependency Graph
 
@@ -31,7 +31,7 @@ adapter seam required for future linking work is not yet accepted.
 
 ## Test Plan
 
-TM-002 at spec/native-readiness/tests.md defines TC-011–TC-019. Run local
+TC-011–TC-019 define the tests. Run local
 formatter, strict all-feature/all-target Clippy, Rust tests, the explicit LR02
 private-packet lane and Quire validation/coverage. No hosted CI dispatch.
 

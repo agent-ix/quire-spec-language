@@ -46,12 +46,12 @@ existing closed shared-reference schemas are not silently extended here.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-021-AC-1 | Independently authored canonical bytes and domain-prefix hash vectors match the producer, including Unicode escaping and a revision above the binary64 exact-integer range. | Test |
-| FR-021-AC-2 | Reordered JSON members and unique feature order preserve reconstructed canonical identity while their differing raw artifact bytes retain distinct ByteDigests. | Test |
-| FR-021-AC-3 | Each changed semantic selector, source binding, selected model declaration/role, authored clause, resolution or runtime obligation changes the independently computed static identity. | Test |
-| FR-021-AC-4 | The canonical input omits projection availability, and a forged excluded projection claim still refuses package reconstruction despite an unchanged canonical identity. | Test |
-| FR-021-AC-5 | An unknown canonical domain/version/algorithm refuses selection; a wrong digest or raw/IR/JCS digest substitution refuses correspondence without a package. | Test |
-| FR-021-AC-6 | Canonical derivation obeys its separately reported package-pass limits before excess work; runtime populations, evaluator budgets and local display paths do not enter its bytes. | Test |
+| FR-021-AC-1 | Independently authored canonical bytes and domain-prefix hash vectors match the producer, including Unicode escaping and a revision above the binary64 exact-integer range. | Test (TC-090) |
+| FR-021-AC-2 | Reordered JSON members and unique feature order preserve reconstructed canonical identity while their differing raw artifact bytes retain distinct ByteDigests. | Test (TC-082) |
+| FR-021-AC-3 | Each changed semantic selector, source binding, selected model declaration/role, authored clause, resolution or runtime obligation changes the independently computed static identity. | Test (TC-091) |
+| FR-021-AC-4 | The canonical input omits projection availability, and a forged excluded projection claim still refuses package reconstruction despite an unchanged canonical identity. | Test (TC-091) |
+| FR-021-AC-5 | An unknown canonical domain/version/algorithm refuses selection; a wrong digest or raw/IR/JCS digest substitution refuses correspondence without a package. | Test (TC-091) |
+| FR-021-AC-6 | Canonical derivation obeys its separately reported package-pass limits before excess work; runtime populations, evaluator budgets and local display paths do not enter its bytes. | Test (TC-088, TC-090) |
 
 ## Dependencies
 

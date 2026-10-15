@@ -39,8 +39,7 @@ written before that gate. Plan-005's checker work is done and remains intact.
 - [x] NFR-005: new production and qualification paths remain Rust.
 - [x] IT-006-SC-01..07: actual source/model/input/reference-result pipeline.
 
-The detailed criterion-to-test mapping remains in
-[TM-004](../../spec/native-runtime/tests.md). TC-055–057 are qualified in SR-096;
+The criterion-to-test mapping is in each FR's Verification cell. TC-055–057 are qualified in SR-096;
 the validation portions of TC-058–066 are qualified by SR-097.
 TC-061's evaluation portion and TC-067–076 are qualified by SR-098.
 TC-077 is qualified by SR-099. Task-015's qualification and private

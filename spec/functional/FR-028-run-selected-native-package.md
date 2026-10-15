@@ -53,10 +53,10 @@ The command shall preserve fresh budgets for subsequent requests.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-028-AC-1 | Selected exported state/operation packages produce the expected true, false and frame-refused outcomes through the real binary. | Test |
-| FR-028-AC-2 | An equivalent alternate package layout retains its selected byte digest while its static identity and runtime observations agree with source compilation. | Test |
-| FR-028-AC-3 | Stale bytes, forged claims with recomputed digest, incompatible source/bindings and malformed package selections refuse without fallback, preserving actual reader details where reached. | Test |
-| FR-028-AC-4 | Selected-file/count/byte and runtime limits retain incomplete outcomes with fresh successful retry; omitted selection preserves run and compile behavior. | Test |
+| FR-028-AC-1 | Selected exported state/operation packages produce the expected true, false and frame-refused outcomes through the real binary. | Test (TC-106) |
+| FR-028-AC-2 | An equivalent alternate package layout retains its selected byte digest while its static identity and runtime observations agree with source compilation. | Test (TC-106) |
+| FR-028-AC-3 | Stale bytes, forged claims with recomputed digest, incompatible source/bindings and malformed package selections refuse without fallback, preserving actual reader details where reached. | Test (TC-106) |
+| FR-028-AC-4 | Selected-file/count/byte and runtime limits retain incomplete outcomes with fresh successful retry; omitted selection preserves run and compile behavior. | Test (TC-106) |
 
 ## Dependencies
 

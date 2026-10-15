@@ -73,12 +73,12 @@ as materialization invariants.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-034-AC-1 | Actual IR readers bind ConfigVersion's unchanged-version rule with one bounded field declaration and distinct pre/post references; linked field/source/model identities, deterministic collision-free aliases and operand order survive. | Test |
-| FR-034-AC-2 | Validated unchanged/changed ConfigVersion inputs materialize the actual pre/post integers with exact artifact/object/arena provenance; independent native execution returns true/false, and forbidden frame changes produce no validated context. | Test |
-| FR-034-AC-3 | Direct state and captured Boolean/integer parameters retain their values and observations; another checked package is rejected, and only the selected clause's inputs are returned. | Test |
-| FR-034-AC-4 | Unsupported receivers, nonprimitive fields and later unsupported clauses refuse atomically; exact and insufficient lowering/materialization budgets, cancellation and fresh retries behave as specified. | Test |
-| FR-034-AC-5 | The actual standalone command exports the new target bytes for the concrete update fixture; prior targets retain their field/pre refusals and default behavior. | Test |
-| FR-034-AC-6 | ConfigVersion's object-presence and graph-reachability clauses refuse as unsupported with the offending clause and an authored span covering the refused expression, with no upstream IR diagnostic and no artifact. | Test |
+| FR-034-AC-1 | Actual IR readers bind ConfigVersion's unchanged-version rule with one bounded field declaration and distinct pre/post references; linked field/source/model identities, deterministic collision-free aliases and operand order survive. | Test (TC-112) |
+| FR-034-AC-2 | Validated unchanged/changed ConfigVersion inputs materialize the actual pre/post integers with exact artifact/object/arena provenance; independent native execution returns true/false, and forbidden frame changes produce no validated context. | Test (TC-112) |
+| FR-034-AC-3 | Direct state and captured Boolean/integer parameters retain their values and observations; another checked package is rejected, and only the selected clause's inputs are returned. | Test (TC-112) |
+| FR-034-AC-4 | Unsupported receivers, nonprimitive fields and later unsupported clauses refuse atomically; exact and insufficient lowering/materialization budgets, cancellation and fresh retries behave as specified. | Test (TC-112) |
+| FR-034-AC-5 | The actual standalone command exports the new target bytes for the concrete update fixture; prior targets retain their field/pre refusals and default behavior. | Test (TC-112) |
+| FR-034-AC-6 | ConfigVersion's object-presence and graph-reachability clauses refuse as unsupported with the offending clause and an authored span covering the refused expression, with no upstream IR diagnostic and no artifact. | Test (TC-112) |
 
 ## Dependencies
 
