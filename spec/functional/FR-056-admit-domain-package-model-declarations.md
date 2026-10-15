@@ -353,8 +353,10 @@ Checked type display SHALL identify these leaves as `String` and `UUID`,
 distinct from `Text` and `Reference`. A UUID value display SHALL use its
 canonical lowercase `8-4-4-4-12` text. A String value display SHALL preserve
 its exact scalar sequence using the existing value-display escaping; it
-SHALL NOT normalize, case-fold or truncate it. These checked leaves do not
-add QSL source type constructors or change FR-056 intake's native-name rules.
+SHALL NOT normalize, case-fold or truncate it. These checked leaves add no
+QSL source type constructor and change none of this requirement's intake
+native-name rules; the unit-language names for them are under "Unit-language
+equality on native String, UUID and Timestamp" below.
 
 The binding is exercised by QSpec
 [TC-235](ix://agent-ix/quire-specification/TC-235)'s native fields:
@@ -363,6 +365,40 @@ The binding is exercised by QSpec
 field of either type therefore has a checked leaf rather than refusing as an
 unsupported model member. A separate profile-bounded `Text` field remains a
 `Text` value type.
+
+### Unit-language equality on native String, UUID and Timestamp
+
+A field typed by native `Timestamp` SHALL have the distinct checked value type
+`Timestamp`, as `String` and `UUID` do above. In the unit language, `=` and
+`!=` SHALL admit two operands of the same one native type `String`, `UUID` or
+`Timestamp`, whether each operand is a parameter, a field read, a call result
+or a `let` binding, and the application SHALL have the result type `Boolean`.
+`!=` is the negation of `=`. Equality is reflexive, symmetric and transitive.
+The rule is equality only: it adds no ordering and no arithmetic, and no
+literal form for these types.
+
+| Native | `=` is true exactly when | Source |
+| --- | --- | --- |
+| `String` | the two Unicode scalar sequences are identical; no normalization, case folding or truncation applies, and `Text` profiles do not apply | the payload table and String paragraph above |
+| `UUID` | the two 128-bit payloads are equal. Text spelling never reaches the operator: a case variant, hyphenless, braced or `urn:uuid:` spelling is refused at payload admission as `noncanonical-payload` before any value exists | the payload table above; QSpec FR-149-AC-14 |
+| `Timestamp` | the two signed 128-bit nanosecond counts are equal. No timezone, calendar, offset or precision conversion applies, and counts `0` and `1` are unequal | the payload table above; QSpec FR-149-AC-14 |
+
+Comparing operands of two different types refuses
+`ill_typed`/`operator-ineligible` at the comparison and yields no Boolean and
+no coercion. This covers `String` against `UUID` or `Timestamp`, `UUID`
+against `Timestamp`, and each native against `Text`, `Integer`, `Reference`
+or any other type, including a `String` that holds a UUID's canonical text.
+The operators `<`, `<=`, `>` and `>=` over these types refuse
+`ill_typed`/`operator-ineligible` before any charge (QSpec FR-149-AC-16);
+a key order is a representation order and creates no ordering capability.
+Structural equality over an option, record, tuple, union or collection that
+holds these types compares each leaf by the rows above and adds no `Text`
+leaf.
+
+The checked package lowers each admitted comparison to the native-scalar
+equality identities of QSpec FR-322, as FR-093 states. QSpec FR-322 and
+FR-149 own the identities, the canonical equality and the refusal causes
+named here; this requirement states only that the unit language admits them.
 
 ### K2 admission and composite boundary
 
@@ -783,7 +819,7 @@ the assembler SHALL refuse it with `missing_declaration` at the name.
 | FR-056-AC-20 | A selected domain package with an object field typed `ix://quire/native/Float32` or `ix://quire/native/Float64` has no assembled field type and refuses at the unit's `model` declaration with `unknown_required_feature`/`unsupported-feature`; it yields no `PackageDeclarations`. The refusal does not assign a rounding mode. A function parameter of either floating type remains admitted under FR-091-OQ-4. | Test |
 | FR-056-AC-21 | An admitted package containing record value type `Address { street: Text[0, 64; nfc] }`, object field `Account.address: Address` and a record subtype `PostalAddress` retains one `record` export per record, all effective fields and invariants, and subtype conformance. The type environment gives `Account.address` the record value type, an optional `Address` field `Option<Address>`, and an ordered non-unique `[0, 3]` field `Sequence<Address>[0, 3]`, never `Reference<Address>`; an operation parameter or result naming `Address` has the same value type. | Test |
 | FR-056-AC-22 | A record value type with an identity field or an operation refuses with FR-208's named cause before assembly; an object or record field whose `typeRef` names an event type, state machine, process, persistence interface or namespace refuses `invalid_model_binding`/`malformed-declaration` at intake. A valid finite recursive record field, such as `Node { next?: Node }`, retains its record type and optional edge in the type environment; it is not refused solely because the declaration graph is recursive. | Test |
-| FR-056-AC-23 | K2's native String value retains any Unicode scalar sequence exactly, including empty, ASCII, multibyte and UUID-looking text; equality is exact-sequence equality, its key is UTF-8 byte order, and Text normalization does not apply. The closed String object accepts exactly `kind: string` and `text`; an extra member and a lone surrogate refuse, and the typed result wire round trip preserves each value and its UTF-8 byte contribution to result sizing. Existing Text, UUID and Timestamp kind encodings remain unchanged. String gains no arithmetic, concatenation or general relational operator. | Test |
+| FR-056-AC-23 | K2's native String value retains any Unicode scalar sequence exactly, including empty, ASCII, multibyte and UUID-looking text; equality is exact-sequence equality, its key is UTF-8 byte order, and Text normalization does not apply. The closed String object accepts exactly `kind: string` and `text`; an extra member and a lone surrogate refuse, and the typed result wire round trip preserves each value and its UTF-8 byte contribution to result sizing. Existing Text, UUID and Timestamp kind encodings remain unchanged. String gains no arithmetic, concatenation or general relational operator; its unit-language `=` and `!=` are FR-056-AC-35's. | Test |
 | FR-056-AC-24 | An admitted package containing variant type `Tier` with cases `Standard` and `Gold`, listed in the document as `Gold` then `Standard`, retains one declaration for `Tier` and one for each case node (`ix://<package identity>/variant/Tier-Gold`, `.../Tier-Standard`), one `enum` keyed by `Tier`'s declaration identity with `name` `Tier` and `members` `[Gold, Standard]`, and one `variant` per case keyed by (`Tier`'s identity, case name) carrying `case`, the owner `enum` key and span. Listing the cases `Standard` then `Gold` changes no key, export or ordering. A second variant type `Level` with a case `Gold` is admitted beside it with a distinct `variant` key, and a case `gold` beside `Gold` is a distinct case. | Test (TC-994) |
 | FR-056-AC-25 | A hand-authored variant type with a case carrying a resolving `payloadType` refuses `unsupported_construct`/`declaration-form` at node `.../variant/Tier-Gold`, path `Variant.payloadType`; it is not `invalid_model_binding`, and no declaration of the package is admitted. A payload-free case beside it raises no refusal of its own. Cause, node and path are FR-154-AC-11's. | Test (TC-995) |
 | FR-056-AC-26 | A variant type with no case, a case with no source span, and a type bound to the variant-type meaning whose construct shape is not `enumeration` each refuse `invalid_model_binding`/`malformed-declaration`. Two cases named `Gold` with one identity are refused by the lift or the reader with that diagnostic retained and no declaration; two cases named `Gold` with distinct identities, in a document the reader admits, refuse `invalid_model_binding`/`conflicting-binding` at node `.../Tier`, path `TypeDefinition.variants[1]`. A case with no name is refused by the reader's schema. Cause, node and path for the intake refusals are FR-154-AC-11's and FR-208-AC-15's. | Test (TC-996) |
@@ -795,6 +831,8 @@ the assembler SHALL refuse it with `missing_declaration` at the name.
 | FR-056-AC-32 | An operation parameter or result whose `typeRef` names `Tier` is admitted (FR-360-AC-8). A parameter or result naming an event type, state machine, process, persistence interface, namespace or interface-featured object type refuses `invalid_model_binding`/`malformed-declaration` at the operation node, path `Operation.params[i].typeRef` for the parameter at position `i` (position 1 for the second parameter) or `Operation.returns.typeRef`, retaining the operation's artifact and source position; one naming an undeclared type, in a package built without the reader, does so under `dangling_reference`/`unknown-value-type`. A relationship end, namespace member or population member type naming the wrong meaning refuses at its own node with the paths `Relationship.source`/`Relationship.target`, `TypeDefinition.members[i]` and `PopulationDefinition.members[i]`. | Test (TC-997) |
 | FR-056-AC-33 | A normalization `malformed-declaration` retains the artifact and source position of the refused node's source origin: a record value type or event type with identity fields, an event occurrence that is not a Timestamp, an operation an event type declares (located at the operation), a state machine missing required members or emitting a non-event, a process with no identity or a supertype of another meaning, a relationship source or target of another meaning, and a population member of another meaning at `PopulationDefinition.members[i]`. A node with a `generated` origin leaves both absent, as do the refusals that name no declaration (an empty model selection, an empty declaration key, and the package document at node `$`). | Test (TC-1005) |
 | FR-056-AC-34 | The complete-V1 type environment maps native `String` and `UUID` fields to distinct first-class value leaves, never to `Text` or `Reference`; it maps TC-235's `Money.currency` to `String`, `Order.order_id` and `Fulfilment.correlation_id` (the two identity slots) to `UUID`, and `OrderPlaced.order_id` (an ordinary event payload field) to `UUID`. String equality compares the exact Unicode scalar sequence without normalization (NFC `é` differs from `e` plus combining acute), UUID equality compares the canonical 128 bits, and mixed String/UUID equality is `ill_typed` during static checking with no Boolean result. Supplying a runtime value of the wrong native kind to either typed member is refused as `invalid_runtime_input`/`wrong-value-kind` at its member input path, with no value produced. Checked type display distinguishes `String`, `UUID`, `Text` and `Reference`; UUID value display is canonical lowercase text and String value display preserves its scalar sequence. Existing parameterized Text bounds/profile and UUID canonical-payload controls remain unchanged. | Test |
+| FR-056-AC-35 | In the unit language, `=` and `!=` over two `String`, two `UUID` or two `Timestamp` operands check to `Boolean`, with operand values supplied as parameters or fields, not literals. String: any String value equals itself, the empty String equals only the empty String, NFC `é` (U+00E9) differs from `e` plus U+0301, and `A` differs from `a`. UUID: `00112233-4455-6677-8899-aabbccddeeff` equals itself and differs from `00112233-4455-6677-8899-aabbccddeefe`; the uppercase spelling of the first is refused at payload admission as `noncanonical-payload`, so no value of it reaches `=`. Timestamp: `0` equals `0`, differs from `1` and from `-1`, and both signed-128 endpoints equal themselves and differ from each other. `!=` gives the negation of each result. | Test (TC-1028) |
+| FR-056-AC-36 | `=` or `!=` over `String` and `UUID`, `UUID` and `Timestamp`, `String` and `Timestamp`, `String` and `Text[0, 8; nfc]`, `Timestamp` and `Integer`, or `UUID` and `Reference<T>` refuses `ill_typed`/`operator-ineligible` at the comparison, with no Boolean result and no coercion, including a `String` that holds a UUID's canonical text. `<`, `<=`, `>` and `>=` over two `String`, two `UUID` or two `Timestamp` operands each refuse `ill_typed`/`operator-ineligible`. | Test (TC-1028) |
 | FR-056-AC-8 | End to end, the filament-core-data#173 architecture fixture runs bundle → quire-rs → lift → intake seam; its ports resolve with owning part, direction, interface type and multiplicity, a connection between them is admitted under FR-152, and the model linker binds a native package's references to those declarations. | Test |
 
 ### FR-056-AC-17
@@ -829,6 +867,7 @@ Use independent fixed expected text, not the encoder's output as its own oracle.
 
 | Question | Owner | Blocked criteria |
 | --- | --- | --- |
+| Whether the unit-language type names `String`, `UUID` and `Timestamp` resolve as predeclared names (FR-091's resolution list, recommended) or become reserved type keywords of QSpec's shared grammar, which would also change QSL's lexer and CST grammar. | Architect decision | FR-091-AC-40 |
 | Component, endpoint, participant contract and configuration constructs have no FR-208 meaning id, so a construct naming one is refused under FR-154-AC-7 until FR-208 adds ids for them. | Architect decision | None in this requirement; FR-048 positive component, endpoint and participant cases |
 
 ## Dependencies
@@ -860,6 +899,8 @@ Use independent fixed expected text, not the encoder's output as its own oracle.
 - IR-704 owns quire-exact's UUID/Timestamp implementation against the canonical
   payload contract above. Reader alignment and QSL/shared-value integration
   remain separate dependencies; accepting this spec does not deliver them.
+- [TC-1028](../test-cases/TC-1028-unit-equality-on-native-string-uuid-and-timestamp.md)
+  verifies unit-language `=` and `!=` over native String, UUID and Timestamp.
 - [TC-992](../test-cases/TC-992-native-string-and-uuid-checked-leaves.md)
   verifies checked leaf mapping, exact String equality, UUID identity and
   display. QSpec TC-235 owns the K2 source declarations.
