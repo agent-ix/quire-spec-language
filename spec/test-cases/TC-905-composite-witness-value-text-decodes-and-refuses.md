@@ -51,7 +51,9 @@ otherwise.
    - a `float32` with bits `7fc00001`, and a `float64` with bits
      `8000000000000000`;
    - a decimal quantity with coefficient `15`, scale `1` and a unit digest;
-   - a reference.
+   - a reference;
+   - the String `a;b>>>c` and the empty String, each as
+     `{"kind":"string","text":...}`.
 
    Then decode a sequence of the texts `x;y` and `p>q`.
 3. For each malformed entry below, decode a transcript whose `P` entry
@@ -100,7 +102,8 @@ Tag the tests `#[trace("TC-905", "FR-070-AC-8")]`,
   decodes to its leaf exactly: the integer beyond `i64`, the member `Red` of
   `COLOR`, the text `a;b=c<<<d>>>e%f`, the rational, the decimal's retained
   coefficient and scale, both bit patterns, the quantity's magnitude and
-  unit, and the reference's three identities. The sequence decodes to its
+  unit, and the reference's three identities, and the two Strings exactly (the
+  empty one included). The sequence decodes to its
   two texts, in order.
 - Step 3: each refuses `DecodeRefusal::Malformed` naming `P`, and no value is
   returned.
