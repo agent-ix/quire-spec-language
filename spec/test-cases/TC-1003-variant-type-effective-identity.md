@@ -21,6 +21,8 @@ Verify that normalization gives a variant type an effective type and each case a
 3. Normalize `Tier` with cases `Gold` and `gold`.
 4. Normalize `Tier` with two cases named `Gold` and distinct identities, beside the valid `Level`.
 5. Normalize `Tier` with `Gold` and a `Silver` carrying the identity `.../variant/Tier-Gold`, listed in each order.
+6. Normalize K2 with `Money` given a second field carrying the identity of its first; then `OrderLifecycle` given an operation carrying the identity of its field `placed`; then `OrderStore` given a second operation carrying the identity of `get`; then `OrderStore/get` given two parameters carrying one identity.
+7. Normalize K2 with `Money` given a second field of a new identity; then `OrderStore/get` given two parameters of distinct identities; then K2 with `Order` and `Money` each given a field `label`, and `OrderStore` and `OrderLifecycle` each given an operation `reset`.
 
 ## Expected Results
 
@@ -28,5 +30,7 @@ Verify that normalization gives a variant type an effective type and each case a
 - Step 2 gives the same effective entries, in the same order.
 - Step 3 gives distinct effective identities for `Gold` and `gold`.
 - Step 4 refuses `invalid_model_binding`/`conflicting-binding` at node `ix://<package identity>/Tier`, path `TypeDefinition.variants[1]`, and yields no effective view.
-- Step 5 refuses once in each order, `invalid_model_binding`/`malformed-declaration` at path `TypeDefinition.variants[1].identity`, located at the second listed case's span (the correctly minted `Gold` when `Silver` is listed first), retaining `DUPLICATE_IDENTITY`.
-- Assertions compare typed code, cause, node identity, path and span.
+- Step 5 refuses once in each order, `invalid_model_binding`/`conflicting-binding` at node `ix://<package identity>/variant/Tier-Gold`, path `TypeDefinition.variants[1]`.
+- Step 6 refuses each run once, `invalid_model_binding`/`conflicting-binding` at the shared identity, paths `TypeDefinition.fields[2]`, `TypeDefinition.operations[2]` (for both operation runs) and `TypeDefinition.operations[0].params[1]`.
+- Step 7 is admitted in each run: the identities are distinct, and one member name under two owners names two nodes.
+- Assertions compare typed code, cause, node identity and path.
