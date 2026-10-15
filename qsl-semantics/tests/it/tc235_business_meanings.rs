@@ -718,6 +718,7 @@ fn assert_process_missing_event_refusal(document: &Value, reference: &str) {
         node,
         reference: actual,
         path,
+        member: actual_member,
         ..
     } = &refusals[0].cause
     else {
@@ -729,6 +730,7 @@ fn assert_process_missing_event_refusal(document: &Value, reference: &str) {
     assert_eq!(node, &id("Fulfilment"));
     assert_eq!(actual, &id(reference));
     assert_eq!(path.as_str(), "/types/5/steps/1/emits/0");
+    assert_eq!(actual_member, &member("TypeDefinition.steps[1].emits[0]"));
 }
 
 fn assert_record_charge_count(meter: &Meter, expected: usize) {
