@@ -1004,7 +1004,7 @@ fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
     ));
     assert_eq!(
         inconsistent.receiver_path(),
-        Some(&RuntimeValuePath {
+        &RuntimeValuePath {
             observation: ObservationIdentity {
                 authority: "test".to_owned(),
                 identity: "q1".to_owned(),
@@ -1021,7 +1021,7 @@ fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
                 binding: InvocationBinding::Receiver,
             },
             steps: Vec::new(),
-        })
+        }
     );
 
     let (snapshots, invocations, invocation) = run(&[], &[(true, false)]);
@@ -1529,7 +1529,7 @@ fn tc235_m16_process_invariant_and_operation_clauses_evaluate_per_run() {
         .expect("admitted observations evaluate");
     assert_eq!(
         violation.receiver_path(),
-        Some(&RuntimeValuePath {
+        &RuntimeValuePath {
             observation: ObservationIdentity {
                 authority: "test".to_owned(),
                 identity: "s1".to_owned(),
@@ -1538,7 +1538,7 @@ fn tc235_m16_process_invariant_and_operation_clauses_evaluate_per_run() {
             },
             subject: ValuePathSubject::Object(runs[1].clone()),
             steps: Vec::new(),
-        })
+        }
     );
 
     // Runs 2 and 3: `restart` on r1.
