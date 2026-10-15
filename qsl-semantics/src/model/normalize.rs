@@ -2543,7 +2543,7 @@ fn element_owner<'a>(
 /// Phase-2 member owners of the records that are not fields, clauses or
 /// operations: a variant case's type, and systems members in source-end order. A connection or allocation has
 /// a qualify fact at each end, even when both ends resolve to the same type.
-fn record_member_owners<'a>(
+pub(crate) fn record_member_owners<'a>(
     record: &'a DomainPackageRecord,
     records: &HashMap<&DeclarationKey, &'a DomainPackageRecord>,
 ) -> Vec<&'a DeclarationKey> {
