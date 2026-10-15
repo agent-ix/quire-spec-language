@@ -857,11 +857,15 @@ impl ExprNode {
     /// child id in reach.
     fn spellings_mut(&mut self) -> Spellings<'_> {
         match self {
-            // Dispatch rewriting reaches the child name nodes, never arm
-            // binder declarations or member selectors (FR-313).
-            Self::Case(_) => Spellings {
+            // Dispatch rewriting respells arm binders, in the order
+            // `binders` lists them, and never a member selector (FR-313).
+            Self::Case(case) => Spellings {
                 reference: None,
-                binders: Vec::new(),
+                binders: case
+                    .arms
+                    .iter_mut()
+                    .flat_map(|arm| arm.binders.iter_mut().map(|binder| &mut binder.name))
+                    .collect(),
             },
             Self::Name(name) => Spellings {
                 reference: Some(name),
