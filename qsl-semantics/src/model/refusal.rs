@@ -649,9 +649,9 @@ pub enum ModelRefusalCause {
         /// The alias as written.
         alias: String,
         /// The selection the alias is bound to.
-        offered: DomainPackageRef,
+        offered: Box<DomainPackageRef>,
         /// The selection that owns the declarations being navigated.
-        expected: DomainPackageRef,
+        expected: Box<DomainPackageRef>,
     },
     /// Two records in the same domain package share one [`DeclarationKey`]
     /// (FR-154: "Two nodes share one identity"). Under #131's flat
@@ -1733,8 +1733,8 @@ pub mod fixtures {
         },
         ForeignAlias => ModelRefusalCause::ForeignAlias {
             alias: String::new(),
-            offered: crate::model::domain_package::DomainPackageRef::fixture("p"),
-            expected: crate::model::domain_package::DomainPackageRef::fixture("p"),
+            offered: Box::new(crate::model::domain_package::DomainPackageRef::fixture("p")),
+            expected: Box::new(crate::model::domain_package::DomainPackageRef::fixture("p")),
         },
         ConflictingBinding => ModelRefusalCause::ConflictingBinding {
             key: key("p"),

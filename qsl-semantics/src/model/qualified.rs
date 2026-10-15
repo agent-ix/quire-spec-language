@@ -102,8 +102,8 @@ pub fn resolve_systems(
             code: Code::ForeignReference,
             cause: ModelRefusalCause::ForeignAlias {
                 alias: alias.to_owned(),
-                offered: bound.selection.clone(),
-                expected: admitted.selection().clone(),
+                offered: Box::new(bound.selection.clone()),
+                expected: Box::new(admitted.selection().clone()),
             },
             detail: format!(
                 "{name}: alias {alias} names model {}, not the selection that owns the declarations",

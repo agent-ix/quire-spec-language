@@ -390,8 +390,8 @@ fn an_alias_naming_another_model_selection_is_foreign() {
         refusal.cause,
         ModelRefusalCause::ForeignAlias {
             alias: "N".to_owned(),
-            offered: other.clone(),
-            expected: world.selection.clone(),
+            offered: Box::new(other.clone()),
+            expected: Box::new(world.selection.clone()),
         }
     );
     assert!(meter.admitted_charges().is_empty());
