@@ -74,12 +74,11 @@ fn a_selected_protocol_profile_reaches_the_emitted_lock() {
     );
 }
 
-/// Changing the header's profile spelling changes the outcome: a profile in
-/// no catalog refuses, and dropping the selection leaves the reference with
+/// A header profile in no catalog refuses, and dropping the selection leaves the reference with
 /// no `protocol_profile` law (no default is supplied).
 #[trace("FR-092-AC-18", "TC-1021")]
 #[test]
-fn a_changed_profile_binding_changes_the_selection_or_refuses() {
+fn an_unknown_or_missing_profile_binding_refuses() {
     let declarations = format!("{REFERENCE}{PROTOCOL}");
     assert_eq!(
         refusal_code(compile(&unit(
