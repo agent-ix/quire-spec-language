@@ -68,22 +68,21 @@
 //! An enum member node depends on its declaration, as QSpec's
 //! `quire.enum-member-node/v1` rule requires.
 //!
-//! The wire envelope is a local struct: IR keeps its own
-//! `CheckedPackageWireV2` private (IR-238). IR's reader admits exactly its
-//! member set, so the round-trip tests fail if the two diverge.
+//! The wire envelope is written by IR's typed encoder,
+//! [`encode_checked_package_v2`]; this module defines no envelope type of its
+//! own, and IR's reader admits exactly the bytes that encoder writes.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use quire_canonical::{Encode, Sink, Writer};
 use quire_contract_model::{
-    CheckedArtifactRef, CheckedCapability, CheckedCapabilityDisposition, CheckedDeclaration,
-    CheckedDependencySelection, CheckedDiagnosticsV2, CheckedDomainPackageRef, CheckedNodeId,
-    CheckedNodeKind, CheckedNodeOwner, CheckedNodeTag, CheckedOccurrence, CheckedOccurrenceRole,
-    CheckedPackageEvidence, CheckedPackageIdentityPreimageV2, CheckedPackageLockV2,
-    CheckedRational, CheckedSelection, CheckedSelectionRole, CheckedSemanticGraphV2,
-    CheckedSemanticId, CheckedSemanticNodeV2, CheckedSourceMapEntry, CheckedSourceRef,
-    CheckedSourceRegion, NominalIdentityPreimage, NominalOwner, ProtocolForm, ValueForm,
-    CHECKED_PACKAGE_V2, DOMAIN_PACKAGE_DIGEST, PACKAGE_DOMAIN_V2,
+    encode_checked_package_v2, CheckedArtifactRef, CheckedCapability, CheckedCapabilityDisposition,
+    CheckedDeclaration, CheckedDependencySelection, CheckedDiagnosticsV2, CheckedDomainPackageRef,
+    CheckedNodeId, CheckedNodeKind, CheckedNodeOwner, CheckedNodeTag, CheckedOccurrence,
+    CheckedOccurrenceRole, CheckedPackageEvidence, CheckedPackageIdentityPreimageV2,
+    CheckedPackageLockV2, CheckedRational, CheckedSelection, CheckedSelectionRole,
+    CheckedSemanticGraphV2, CheckedSemanticId, CheckedSemanticNodeV2, CheckedSourceMapEntry,
+    CheckedSourceRef, CheckedSourceRegion, NominalIdentityPreimage, NominalOwner, ProtocolForm,
+    ValueForm, DOMAIN_PACKAGE_DIGEST, PACKAGE_DOMAIN_V2,
 };
 
 use qsl_foundation::digest::WireNodeId;
@@ -905,62 +904,6 @@ fn occurrence_role(node: NodeKey, origin: &Origin) -> Result<CheckedOccurrenceRo
     })
 }
 
-/// The `quire.checked-package/v2` envelope. See the module doc for why it is
-/// local. Its members are IR's types, and a node body nests as deep as the
-/// expression it holds, so the envelope writes each member into
-/// `quire-canonical`'s event API ([`Encode`]) rather than through serde.
-struct WireV2<'a> {
-    contract_version: &'static str,
-    identity_preimage: &'a CheckedPackageIdentityPreimageV2,
-    package_id: CheckedSemanticId,
-    lock: &'a CheckedPackageLockV2,
-    semantic_graph: &'a CheckedSemanticGraphV2,
-    source_map: &'a [CheckedSourceMapEntry],
-    capability_report: &'a [CheckedCapability],
-    diagnostics: &'a CheckedDiagnosticsV2,
-}
-
-/// Each member writes itself through IR's own encoding: the identity
-/// preimage, the semantic graph and the diagnostics through their `Encode`,
-/// and the fixed-depth members through their derived `FixedShape`.
-impl Encode for WireV2<'_> {
-    fn encode_into<S: Sink + ?Sized>(
-        &self,
-        writer: &mut Writer<'_, S>,
-    ) -> Result<(), quire_canonical::Error> {
-        writer.begin_object()?;
-        writer.name("contract_version")?;
-        writer.string(self.contract_version)?;
-        writer.name("identity_preimage")?;
-        self.identity_preimage.encode_into(writer)?;
-        writer.name("package_id")?;
-        self.package_id.encode_into(writer)?;
-        writer.name("lock")?;
-        self.lock.encode_into(writer)?;
-        writer.name("semantic_graph")?;
-        self.semantic_graph.encode_into(writer)?;
-        writer.name("source_map")?;
-        encode_array(writer, self.source_map)?;
-        writer.name("capability_report")?;
-        encode_array(writer, self.capability_report)?;
-        writer.name("diagnostics")?;
-        self.diagnostics.encode_into(writer)?;
-        writer.end_object()
-    }
-}
-
-/// `items` as one JSON array, each item writing itself.
-fn encode_array<S: Sink + ?Sized, T: Encode>(
-    writer: &mut Writer<'_, S>,
-    items: &[T],
-) -> Result<(), quire_canonical::Error> {
-    writer.begin_array()?;
-    for item in items {
-        item.encode_into(writer)?;
-    }
-    writer.end_array()
-}
-
 /// `package`'s FR-322 `dependency_selections`, in its closure's ascending
 /// UTF-8 byte order of identity.
 fn dependency_selections(package: &CheckedPackage) -> Vec<CheckedDependencySelection> {
@@ -1165,17 +1108,17 @@ fn emit_package_inner(
         entries: Vec::new(),
     };
     let package = EmittedPackage::new(&preimage, |package_id: PackageId| {
-        let wire = WireV2 {
-            contract_version: CHECKED_PACKAGE_V2,
-            identity_preimage: &preimage,
-            package_id: semantic_id(package_id),
-            lock: &lock,
-            semantic_graph: &semantic_graph,
-            source_map: &source_map,
-            capability_report: &capability_report,
-            diagnostics: &diagnostics,
-        };
-        quire_canonical::to_vec(&wire, crate::checked::EMIT_LIMITS).map_err(EmitRefusal::from)
+        encode_checked_package_v2(
+            &preimage,
+            &semantic_id(package_id),
+            &lock,
+            &semantic_graph,
+            &source_map,
+            &capability_report,
+            &diagnostics,
+            crate::checked::EMIT_LIMITS,
+        )
+        .map_err(EmitRefusal::from)
     })?;
     let evidence = own_evidence(&lock);
     Ok(Emission {
