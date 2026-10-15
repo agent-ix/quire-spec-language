@@ -8,7 +8,8 @@
 //! declaration in the supplied [`EffectiveView`]: an Interface's effective
 //! type, or the effective member owned by the construct's source end-owner
 //! type (a Part's owning type, a Port's part's owning type, a Connection's or
-//! Allocation's source end-owner type). A construct is never named through
+//! Allocation's source end-owner type). A Connection or Allocation resolves
+//! only when its admission rule holds, as admission applies it. A construct is never named through
 //! its owner, an alias never reaches another selection's declarations, and
 //! nothing outside the supplied inputs is consulted.
 //!
@@ -26,10 +27,11 @@ use crate::model::accounting::{Charge, ChargePoint, Incomplete, Meter};
 use crate::model::admitted::AdmittedPackage;
 use crate::model::domain_package::{DomainPackageRecord, DomainPackageRef};
 use crate::model::key::{DeclarationKey, EffectiveId};
-use crate::model::normalize::{
-    record_member_owners, EffectiveView, ModelRefusal, ModelRefusalCause,
+use crate::model::normalize::{EffectiveView, ModelRefusal, ModelRefusalCause};
+use crate::model::systems::{
+    check_allocation, check_connection, resolve_kind, wrong_export, AllocationCheckOutcome,
+    ConditionFailure, ConnectionCheckOutcome, ConnectionOutcome, Kind, ResolvedElement,
 };
-use crate::model::systems::{resolve_kind, Kind};
 use qsl_foundation::diagnostic::Code;
 
 /// A model alias of the unit being checked and the selection it names.
@@ -60,7 +62,10 @@ pub struct ResolvedSystemsElement {
 pub enum ResolveFailure {
     /// The name is refused.
     Refused(Box<ModelRefusal>),
-    /// A `systems.resolve` charge was denied.
+    /// The connection conditions refused the Connection; every failing
+    /// condition, in table order.
+    Connection(Vec<ConditionFailure>),
+    /// A charge was denied.
     Incomplete(Incomplete),
 }
 
@@ -139,8 +144,8 @@ pub fn resolve_systems(
     };
     let resolved = resolve_kind(admitted.systems(), required, construct.key)
         .map_err(|refusal| ResolveFailure::Refused(Box::new(refusal)))?;
-    let owner = effective_owner(admitted, view, required, &resolved.key)
-        .map_err(|()| unresolved(name, 1, "the view holds no effective declaration for it"))?;
+    admit_construct(admitted, view, &resolved, meter)?;
+    let owner = effective_owner(admitted, view, resolved.kind, &resolved.key)?;
     let effective = view
         .declarations()
         .iter()
@@ -159,15 +164,73 @@ pub fn resolve_systems(
     })
 }
 
+/// Applies the admission rule of the construct's kind, as admission does:
+/// the connection conditions for a Connection, the target rule for an
+/// Allocation. A construct admission would refuse does not resolve.
+fn admit_construct(
+    admitted: &AdmittedPackage,
+    view: &EffectiveView,
+    resolved: &ResolvedElement,
+    meter: &mut Meter,
+) -> Result<(), ResolveFailure> {
+    match resolved.kind {
+        Kind::Connection => {
+            match check_connection(view.model_index(), admitted.systems(), &resolved.key, meter) {
+                ConnectionCheckOutcome::Completed(ConnectionOutcome::Admitted) => Ok(()),
+                ConnectionCheckOutcome::Completed(ConnectionOutcome::Refused(failures)) => {
+                    Err(ResolveFailure::Connection(failures))
+                }
+                ConnectionCheckOutcome::Refused(refusal) => {
+                    Err(ResolveFailure::Refused(Box::new(refusal)))
+                }
+                ConnectionCheckOutcome::Incomplete(incomplete) => {
+                    Err(ResolveFailure::Incomplete(incomplete))
+                }
+            }
+        }
+        Kind::Allocation => match check_allocation(admitted.systems(), &resolved.key, meter) {
+            AllocationCheckOutcome::Admitted => Ok(()),
+            AllocationCheckOutcome::Refused(refusal) => {
+                Err(ResolveFailure::Refused(Box::new(refusal)))
+            }
+            AllocationCheckOutcome::Incomplete(incomplete) => {
+                Err(ResolveFailure::Incomplete(incomplete))
+            }
+        },
+        Kind::Part | Kind::Port | Kind::Interface | Kind::None => Ok(()),
+    }
+}
+
+/// The owner of a Port or operation source: a Port belongs to its Part's
+/// owning type, an operation to its declaring type.
+fn element_owner<'a>(
+    key: &DeclarationKey,
+    records: &HashMap<&DeclarationKey, &'a DomainPackageRecord>,
+) -> Option<&'a DeclarationKey> {
+    match records.get(key)? {
+        DomainPackageRecord::Component(part) => Some(&part.owning_type),
+        DomainPackageRecord::Endpoint(port) => match records.get(&port.owning_component)? {
+            DomainPackageRecord::Component(part) => Some(&part.owning_type),
+            _ => None,
+        },
+        DomainPackageRecord::OperationMember(operation) => Some(&operation.owner),
+        _ => None,
+    }
+}
+
 /// The effective type that owns `key`'s effective declaration: none for an
 /// Interface, else the effective identity of the construct's source
-/// end-owner type.
+/// end-owner type. The source end's owner is computed on its own: a source
+/// that has none (a Port whose owner is not a Part, or an element that is
+/// not a Part, Port or operation) is `wrong-export`, never replaced by the
+/// target end's owner.
 fn effective_owner(
     admitted: &AdmittedPackage,
     view: &EffectiveView,
     kind: Kind,
     key: &DeclarationKey,
-) -> Result<Option<EffectiveId>, ()> {
+) -> Result<Option<EffectiveId>, ResolveFailure> {
+    let refuse = |refusal| ResolveFailure::Refused(Box::new(refusal));
     if kind == Kind::Interface {
         return Ok(None);
     }
@@ -177,14 +240,46 @@ fn effective_owner(
         .iter()
         .map(|record| (record.key(), record))
         .collect();
-    let record = records.get(key).ok_or(())?;
-    let owner = record_member_owners(record, &records)
-        .into_iter()
-        .next()
-        .ok_or(())?;
+    let missing = || {
+        refuse(ModelRefusal {
+            code: Code::MissingDeclaration,
+            cause: ModelRefusalCause::UnresolvedName {
+                name: key.node.clone(),
+                segment: 1,
+            },
+            detail: format!(
+                "{}: the view holds no effective declaration for it",
+                key.node
+            ),
+        })
+    };
+    let record = records.get(key).ok_or_else(missing)?;
+    let source = match record {
+        DomainPackageRecord::Component(part) => Some(&part.owning_type),
+        DomainPackageRecord::Endpoint(_) => element_owner(key, &records),
+        DomainPackageRecord::Relationship(connection) => {
+            element_owner(&connection.source.type_identity, &records)
+        }
+        DomainPackageRecord::Allocation(allocation) => {
+            element_owner(&allocation.source_element, &records)
+        }
+        _ => None,
+    };
+    let Some(source) = source else {
+        let end = match record {
+            DomainPackageRecord::Relationship(connection) => &connection.source.type_identity,
+            DomainPackageRecord::Allocation(allocation) => &allocation.source_element,
+            _ => key,
+        };
+        return Err(refuse(wrong_export(
+            Kind::Part,
+            admitted.systems().actual_kind(end),
+            &end.node,
+        )));
+    };
     view.type_identities()
-        .get(owner)
+        .get(source)
         .copied()
         .map(Some)
-        .ok_or(())
+        .ok_or_else(missing)
 }

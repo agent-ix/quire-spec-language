@@ -15,8 +15,8 @@ use qsl_semantics::model::accounting::{
 };
 use qsl_semantics::model::admitted::AdmittedPackage;
 use qsl_semantics::model::domain_package::{
-    DomainPackage, DomainPackageRecord, DomainPackageRef, OperationEffect, OperationMemberRecord,
-    PortDirection, RelationshipDirection,
+    AllocationRecord, DomainPackage, DomainPackageRecord, DomainPackageRef, OperationEffect,
+    OperationMemberRecord, PortDirection, RelationshipDirection, RelationshipRecord,
 };
 use qsl_semantics::model::key::{DeclarationKey, EffectiveId};
 use qsl_semantics::model::normalize::{
@@ -25,10 +25,11 @@ use qsl_semantics::model::normalize::{
 use qsl_semantics::model::qualified::{
     resolve_systems, ModelAlias, ResolveFailure, ResolvedSystemsElement,
 };
-use qsl_semantics::model::systems::Kind;
+use qsl_semantics::model::systems::{ConditionFailure, Kind};
 
 use super::model_systems::{
-    allocation, component, endpoint, field_member, object_type, one, relationship, scalar_type,
+    allocation, component, endpoint, field_member, mult, object_type, one, relationship,
+    scalar_type,
 };
 
 fn id(artifact: &str) -> String {
@@ -98,6 +99,12 @@ fn fixture_y(skip: &[&str]) -> DomainPackage {
         .filter(|record| !skip.contains(&record.key().node.as_str()))
         .collect();
     DomainPackage::new(DomainPackageRef::fixture("y"), records)
+}
+
+fn fixture_with(mutate: impl FnOnce(&mut Vec<DomainPackageRecord>)) -> DomainPackage {
+    let mut package = fixture_y(&[]);
+    mutate(&mut package.records);
+    package
 }
 
 struct World {
@@ -410,7 +417,7 @@ fn an_alias_naming_another_model_selection_is_foreign() {
 /// FR-152-AC-5: identity is the construct's declaration, never its name. A
 /// request for a kind the named construct does not have refuses
 /// `wrong-export` even though the name resolves.
-#[trace("QSpec-TC-197", "QSpec-FR-152-AC-2", "QSpec-FR-152-AC-5")]
+#[trace("QSpec-TC-197", "QSpec-FR-152-AC-2")]
 #[test]
 fn a_name_resolving_to_another_kind_is_wrong_export() {
     let world = world();
@@ -448,4 +455,156 @@ fn a_denied_systems_resolve_charge_is_incomplete() {
             charge_point: ChargePoint::SystemsResolve,
         }))
     );
+}
+
+fn world_with(mutate: impl FnOnce(&mut Vec<DomainPackageRecord>)) -> World {
+    let package = fixture_with(mutate);
+    world_of(package.clone(), &package)
+}
+
+fn pipe(records: &mut [DomainPackageRecord]) -> &mut RelationshipRecord {
+    records
+        .iter_mut()
+        .find_map(|record| match record {
+            DomainPackageRecord::Relationship(r) if r.key == key("pipe") => Some(r),
+            _ => None,
+        })
+        .expect("fixture Y has pipe")
+}
+
+fn pump_alloc(records: &mut [DomainPackageRecord]) -> &mut AllocationRecord {
+    records
+        .iter_mut()
+        .find_map(|record| match record {
+            DomainPackageRecord::Allocation(a) if a.key == key("pump_alloc") => Some(a),
+            _ => None,
+        })
+        .expect("fixture Y has pump_alloc")
+}
+
+fn connection_failures(
+    result: Result<ResolvedSystemsElement, ResolveFailure>,
+) -> Vec<ConditionFailure> {
+    match result {
+        Err(ResolveFailure::Connection(failures)) => failures,
+        other => panic!("expected the connection conditions to refuse, got {other:?}"),
+    }
+}
+
+/// TC-197 Y02: an Allocation whose target is a Port, not a Part, does not
+/// resolve: admission's allocation rule refuses it `wrong-export`.
+///
+/// Mutation: resolving on the kind mapping alone returns the Allocation.
+#[trace("QSpec-TC-197", "QSpec-FR-152-AC-1", "QSpec-FR-152-AC-2")]
+#[test]
+fn y02_an_allocation_targeting_a_port_does_not_resolve() {
+    let world = world_with(|records| pump_alloc(records).target_element = key("pump_out"));
+    let (result, meter) = resolve_m(&world, Kind::Allocation, "M::pump_alloc");
+    let refusal = refused(result);
+    assert_eq!(refusal.code, Code::InvalidModelBinding);
+    assert_eq!(refusal.cause, ModelRefusalCause::WrongExport);
+    assert_eq!(
+        meter.admitted_charges(),
+        [ChargePoint::SystemsResolve, ChargePoint::SystemsAllocation]
+    );
+}
+
+/// TC-197 Y03(a): a Connection whose source is the `in` port and whose
+/// target is the `out` port does not resolve: `port-direction`.
+#[trace("QSpec-TC-197", "QSpec-FR-152-AC-1", "QSpec-FR-152-AC-4")]
+#[test]
+fn y03a_a_connection_against_port_direction_does_not_resolve() {
+    let world = world_with(|records| {
+        let pipe = pipe(records);
+        pipe.source.type_identity = key("tank_in");
+        pipe.target.type_identity = key("pump_out");
+    });
+    let (result, meter) = resolve_m(&world, Kind::Connection, "M::pipe");
+    let failures = connection_failures(result);
+    assert_eq!(failures.len(), 1);
+    assert_eq!(failures[0].code, Code::InvalidModelBinding);
+    assert_eq!(
+        failures[0].cause,
+        ModelRefusalCause::PortDirection {
+            source: key("tank_in"),
+            target: key("pump_out"),
+        }
+    );
+    assert_eq!(
+        meter
+            .admitted_charges()
+            .iter()
+            .filter(|point| **point == ChargePoint::SystemsConnectionCondition)
+            .count(),
+        3
+    );
+}
+
+/// TC-197 Y05: a Connection whose target end multiplicity `{0,2}` does not
+/// conform to its port's `{1,1}` does not resolve: `multiplicity-narrowing`.
+#[trace("QSpec-TC-197", "QSpec-FR-152-AC-1", "QSpec-FR-152-AC-4")]
+#[test]
+fn y05_a_connection_narrowing_its_port_multiplicity_does_not_resolve() {
+    let world = world_with(|records| pipe(records).target.multiplicity = mult(0, Some(2)));
+    let (result, _) = resolve_m(&world, Kind::Connection, "M::pipe");
+    let failures = connection_failures(result);
+    assert_eq!(failures.len(), 1);
+    assert_eq!(failures[0].code, Code::IllTyped);
+    assert!(matches!(
+        failures[0].cause,
+        ModelRefusalCause::MultiplicityNarrowing { .. }
+    ));
+}
+
+/// An Allocation whose source element is not a Part, Port or operation has
+/// no source end-owner. It refuses `wrong-export` rather than taking the
+/// target end's owner, which the view also holds an entry for.
+///
+/// Mutation: taking the first of the source and target owners resolves it
+/// through the target's `Sys` entry.
+#[trace("QSpec-TC-197", "QSpec-FR-152-AC-1")]
+#[test]
+fn an_allocation_without_a_source_owner_never_takes_the_target_owner() {
+    let world = world_with(|records| pump_alloc(records).source_element = key("Count"));
+    let (result, _) = resolve_m(&world, Kind::Allocation, "M::pump_alloc");
+    let refusal = refused(result);
+    assert_eq!(refusal.code, Code::InvalidModelBinding);
+    assert_eq!(refusal.cause, ModelRefusalCause::WrongExport);
+}
+
+/// FR-152-AC-3: when the view holds only another owner's entry for the
+/// construct (here `Sys`'s, from a package whose Allocation starts at
+/// `sys_pump`), the name refuses; it never matches an entry of any owner.
+///
+/// Mutation: dropping the owner from the entry match resolves it.
+#[trace("QSpec-TC-197", "QSpec-FR-152-AC-3")]
+#[test]
+fn a_view_holding_only_another_owners_entry_refuses() {
+    let admitted = fixture_y(&[]);
+    let viewed = fixture_with(|records| pump_alloc(records).source_element = key("sys_pump"));
+    let sys = viewed_owner_ids(&viewed);
+    assert_eq!(
+        sys, 1,
+        "the viewed package qualifies the Allocation once, under Sys"
+    );
+    let world = world_of(admitted, &viewed);
+    let (result, _) = resolve_m(&world, Kind::Allocation, "M::pump_alloc");
+    assert_eq!(
+        refused(result).cause,
+        ModelRefusalCause::UnresolvedName {
+            name: "ix://test/orders/pump_alloc".to_owned(),
+            segment: 1,
+        }
+    );
+}
+
+fn viewed_owner_ids(package: &DomainPackage) -> usize {
+    let NormalizeOutcome::Completed(view) = normalize(package, ModelNormalizationLimits::UNLIMITED)
+    else {
+        panic!("normalizes");
+    };
+    view.declarations()
+        .iter()
+        .filter(|entry| entry.preimage.original == key("pump_alloc"))
+        .count()
 }

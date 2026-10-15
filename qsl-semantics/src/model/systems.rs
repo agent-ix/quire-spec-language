@@ -145,7 +145,7 @@ impl SystemsClassification {
     }
 }
 
-fn wrong_export(required: Kind, actual: Kind, item: &str) -> ModelRefusal {
+pub(crate) fn wrong_export(required: Kind, actual: Kind, item: &str) -> ModelRefusal {
     ModelRefusal {
         code: Code::InvalidModelBinding,
         cause: ModelRefusalCause::WrongExport,

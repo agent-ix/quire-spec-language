@@ -161,17 +161,19 @@ outright before the target-kind charge.
   checked model view.
 - **Downstream:** none within this ticket's scope. Systems-model navigation
   over an object population — FR-152's "Navigation" section — is out of this
-  requirement's scope and is tracked by
-  [#147](https://github.com/agent-ix/quire-spec-language/issues/147), which
-  names FR-152-AC-1/3/5/7 as its unbacked criteria.
+  requirement's scope. Remaining work: QSL-789 (`r.name` over a relationship
+  end), QSL-794 (relationship-instance population) and QSL-795 (navigation
+  charges, dangling and cardinality decisions). The qualified-name binder
+  (`qsl-semantics/src/model/qualified.rs`) backs FR-152-AC-1.
 - Relates to [FR-085](FR-085-resolve-relationship-end-references.md), which
   resolves a plain object-to-object relationship's ends; this requirement's
   Connection classification applies only once both ends already resolve to
   declared endpoints.
-- Systems-model records receive no effective-declaration identity under
-  [FR-081](FR-081-preserve-model-correspondence-and-declaration-identity.md):
-  this requirement resolves each record's own original declaration key and
-  kind only, consistent with AD-006's export table, which names no export
+- This requirement resolves each record's own original declaration key and
+  kind only; the effective declaration of a systems record under
+  [FR-081](FR-081-preserve-model-correspondence-and-declaration-identity.md)
+  is read from the effective view by the qualified-name binder
+  (`qsl-semantics/src/model/qualified.rs`). This is consistent with AD-006's export table, which names no export
   record for the five systems meanings beyond binding to their FR-152 kind.
 - `ComponentRecord::has_part_signature` (`qsl-semantics/src/model/domain_package.rs`) and
   `classify`'s `unsupplied("part-signature", ...)` refusal arm for it are
