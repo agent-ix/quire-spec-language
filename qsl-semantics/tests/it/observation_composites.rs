@@ -865,3 +865,114 @@ fn model_owned_sequence_signature_admits_through_real_intake_and_checking() {
         assert_integer(&value.elements()[1], 2);
     }
 }
+
+const UUID_TEXT: &str = "00112233-4455-6677-8899-aabbccddeeff";
+
+/// TC-1028: a canonical UUID and Timestamp leaf, as a PreCall parameter and
+/// as an invocation's parameter and result, admit as the kernel's native
+/// values of their declared types.
+#[test]
+fn canonical_uuid_and_timestamp_leaves_admit() {
+    for pre_call in [false, true] {
+        let mut uuid = Case::new(
+            ValueType::Uuid,
+            SnapshotValue::uuid(UUID_TEXT),
+            json!({"kind": "uuid", "text": UUID_TEXT}),
+        );
+        uuid.pre_call = pre_call;
+        let admitted = uuid.admit().expect("a canonical UUID admits");
+        assert_eq!(
+            admitted.parameters[0].1,
+            Value::Uuid(quire_exact::Uuid::from_canonical_text(UUID_TEXT).unwrap())
+        );
+        for nanoseconds in ["0", "-1", "170141183460469231731687303715884105727"] {
+            let mut timestamp = Case::new(
+                ValueType::Timestamp,
+                SnapshotValue::timestamp(nanoseconds),
+                json!({"kind": "timestamp", "nanoseconds": nanoseconds}),
+            );
+            timestamp.pre_call = pre_call;
+            let admitted = timestamp.admit().expect("a canonical Timestamp admits");
+            assert_eq!(
+                admitted.parameters[0].1,
+                Value::Timestamp(quire_exact::Timestamp::from_canonical_text(nanoseconds).unwrap())
+            );
+        }
+    }
+}
+
+/// Trace: FR-056-AC-35, TC-1028
+///
+/// An uppercase UUID at a unit input is refused
+/// `invalid_runtime_input`/`invalid-value`, naming the parameter, on the
+/// supplied-parameter and the invocation-wire paths alike, so no comparison
+/// runs. A noncanonical or out-of-domain Timestamp refuses the same way.
+#[test]
+fn noncanonical_uuid_and_timestamp_leaves_are_refused_at_the_input() {
+    for pre_call in [false, true] {
+        for text in [
+            "00112233-4455-6677-8899-AABBCCDDEEFF",
+            "00112233445566778899aabbccddeeff",
+            "urn:uuid:00112233-4455-6677-8899-aabbccddeeff",
+            "{00112233-4455-6677-8899-aabbccddeeff}",
+        ] {
+            let mut case = Case::new(
+                ValueType::Uuid,
+                SnapshotValue::uuid(text),
+                json!({"kind": "uuid", "text": text}),
+            );
+            case.pre_call = pre_call;
+            assert_refused(case, Code::InvalidRuntimeInput, "invalid-value", Some("arg"));
+        }
+        for text in [
+            "-0",
+            "+1",
+            "01",
+            "1.0",
+            "1970-01-01T00:00:00Z",
+            "170141183460469231731687303715884105728",
+        ] {
+            let mut case = Case::new(
+                ValueType::Timestamp,
+                SnapshotValue::timestamp(text),
+                json!({"kind": "timestamp", "nanoseconds": text}),
+            );
+            case.pre_call = pre_call;
+            assert_refused(case, Code::InvalidRuntimeInput, "invalid-value", Some("arg"));
+        }
+    }
+}
+
+/// TC-1028: a UUID leaf at a Timestamp parameter, a Timestamp at a UUID one,
+/// and an integer at either, are `wrong-value-kind`.
+#[test]
+fn native_leaves_of_another_kind_are_wrong_value_kind() {
+    for pre_call in [false, true] {
+        for (value_type, raw, wire) in [
+            (
+                ValueType::Timestamp,
+                SnapshotValue::uuid(UUID_TEXT),
+                json!({"kind": "uuid", "text": UUID_TEXT}),
+            ),
+            (
+                ValueType::Uuid,
+                SnapshotValue::timestamp("0"),
+                json!({"kind": "timestamp", "nanoseconds": "0"}),
+            ),
+            (
+                ValueType::Uuid,
+                SnapshotValue::integer("0"),
+                json!({"integer": "0"}),
+            ),
+        ] {
+            let mut case = Case::new(value_type, raw, wire);
+            case.pre_call = pre_call;
+            assert_refused(
+                case,
+                Code::InvalidRuntimeInput,
+                "wrong-value-kind",
+                Some("arg"),
+            );
+        }
+    }
+}

@@ -173,6 +173,10 @@ impl SnapshotValue {
             let value = match node {
                 RawNode::Boolean(held) => json!({"boolean": held}),
                 RawNode::Integer(spelling) => json!({"integer": spelling}),
+                RawNode::Uuid(payload) => json!({"kind": "uuid", "text": payload}),
+                RawNode::Timestamp(payload) => {
+                    json!({"kind": "timestamp", "nanoseconds": payload})
+                }
                 RawNode::Absent => json!({"absent": {}}),
                 RawNode::Present(inner) => json!({"present": take(&mut built, *inner)}),
                 RawNode::Reference(reference) => json!({"reference": {

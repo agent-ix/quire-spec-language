@@ -475,6 +475,10 @@ fn value_steps<'v>(value: &'v WitnessValue, order: Option<&[usize]>) -> Vec<Task
             vec![],
         ),
         WitnessValue::Text(text) => object(vec![tag("text"), ("value", Task::Str(text))], vec![]),
+        WitnessValue::Uuid(text) => object(vec![tag("uuid"), ("value", Task::Str(text))], vec![]),
+        WitnessValue::Timestamp(text) => {
+            object(vec![tag("timestamp"), ("value", Task::Str(text))], vec![])
+        }
         WitnessValue::Rational {
             numerator,
             denominator,
@@ -1134,6 +1138,15 @@ fn visit<'d>(
             values.push(WitnessValue::Text(
                 string_member(&members, "value")?.to_owned(),
             ));
+        }
+        "uuid" | "timestamp" => {
+            let members = exact_object(node, &["type", "value"])?;
+            let text = string_member(&members, "value")?.to_owned();
+            values.push(if tag == "uuid" {
+                WitnessValue::Uuid(text)
+            } else {
+                WitnessValue::Timestamp(text)
+            });
         }
         "rational" | "decimal" => {
             let rational = tag == "rational";

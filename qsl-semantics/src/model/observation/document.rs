@@ -883,6 +883,8 @@ fn field_kind_matches(raw: &SnapshotValue, value_type: &quire_exact::ValueType) 
                 RawForm::Integer(_),
                 quire_exact::ValueType::Integer | quire_exact::ValueType::Int(_)
             )
+            | (RawForm::Uuid(_), quire_exact::ValueType::Uuid)
+            | (RawForm::Timestamp(_), quire_exact::ValueType::Timestamp)
             | (RawForm::Reference(_), quire_exact::ValueType::Reference(_))
             | (
                 RawForm::Absent | RawForm::Present(_),
@@ -919,6 +921,8 @@ fn object_field_kind_matches(
                 RawForm::Integer(_),
                 quire_exact::ValueType::Integer | quire_exact::ValueType::Int(_)
             )
+            | (RawForm::Uuid(_), quire_exact::ValueType::Uuid)
+            | (RawForm::Timestamp(_), quire_exact::ValueType::Timestamp)
             | (RawForm::Reference(_), quire_exact::ValueType::Reference(_))
             | (RawForm::Sequence(_), quire_exact::ValueType::Collection(_))
             | (RawForm::Record(_), quire_exact::ValueType::Composite(_))
