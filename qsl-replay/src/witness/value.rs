@@ -397,8 +397,6 @@ impl WitnessValue {
                 | Self::Text(_)
                 | Self::Uuid(_)
                 | Self::Timestamp(_)
-            | Self::Uuid(_)
-            | Self::Timestamp(_)
                 | Self::Rational { .. }
                 | Self::Decimal { .. }
                 | Self::Float32(_)

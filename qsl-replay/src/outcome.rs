@@ -1026,6 +1026,7 @@ fn replay_stage(refusal: &ReplayRefusal) -> Option<OutcomeStage> {
         | ReplayRefusal::Supplied(_)
         | ReplayRefusal::UnsupportedHelper(_)
         | ReplayRefusal::Cancelled(_)
+        | ReplayRefusal::NativePayload { .. }
         | ReplayRefusal::Input(_) => Some(OutcomeStage::S8),
     }
 }
