@@ -423,6 +423,19 @@ fn encode_expression(
                 out.write_str("protocol_reference");
                 out.write_str(target);
             }
+            ExprNode::Case(case) => {
+                out.write_str("case");
+                out.write_u64(case.arms.len() as u64);
+                pending.push(expr.at(case.scrutinee));
+                for arm in &case.arms {
+                    out.write_str(&arm.member.name);
+                    out.write_u64(arm.binders.len() as u64);
+                    for binder in &arm.binders {
+                        out.write_str(&binder.name);
+                    }
+                    pending.push(expr.at(arm.body));
+                }
+            }
             ExprNode::Let { name, value, body } => {
                 out.write_str("let");
                 out.write_str(name);
