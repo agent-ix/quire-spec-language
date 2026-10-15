@@ -16,7 +16,7 @@ Verify check typing of variant values. Scope: FR-360-AC-4 and FR-360-AC-5.
 
 1. Check `f(t: Config::Tier): Config::Tier { t }`, a field read, a `let`, an `Option` `value`, a collection element, a conditional of two cases, and a literal at a field, a parameter and an `Option` slot.
 2. Check a clause naming `Config::Tier` and `Config::Tier::Gold`.
-3. Check each mistyped use of FR-360-AC-5: another variant type's case, Integer, a bare case name, a collection or `Option` of the variant type at the wrong type, an undeclared and a letter-case-variant case, an unknown type name and an ordering operator; then the spellings `"Gold"`, `none` and a `case` in expression position.
+3. Check each mistyped use of FR-360-AC-5: another variant type's case, Integer, a bare case name, a collection or `Option` of the variant type at the wrong type, an undeclared and a letter-case-variant case, an unknown type name and an ordering operator; then the spellings `"Gold"`, `none`, `case t when { true } true` and a well-formed `case` over a variant.
 4. Check a clause context and an operation-body target naming `Config::Tier`.
 5. Admit a variant type with a case `Gold Plus` and check `Config::Tier::Gold`, then the spelling `Config::Tier::Gold Plus`.
 
@@ -24,7 +24,7 @@ Verify check typing of variant values. Scope: FR-360-AC-4 and FR-360-AC-5.
 
 - Step 1 checks every form as `Config::Tier`.
 - Step 2 raises no `unsupported_construct`.
-- Step 3 refuses each use `ill_typed`/`type-mismatch` at the expression naming the expected and actual types, an undeclared case and a mistyped value `ill_typed`/`type-mismatch`, an unknown type name `missing_declaration`/`missing-name`, the ordering operators `ill_typed`/`operator-ineligible`; `"Gold"` and `none` refuse at S2 `unsupported_construct` (`UnrepresentedConstruct`, `Primary`) at the literal, and the `case` refuses at S1 `invalid_syntax` (`UnexpectedToken`) at the `case` token.
+- Step 3 refuses each use `ill_typed`/`type-mismatch` at the expression naming the expected and actual types, an undeclared case and a mistyped value `ill_typed`/`type-mismatch`, an unknown type name `missing_declaration`/`missing-name`, the ordering operators `ill_typed`/`operator-ineligible`; `"Gold"` and `none` refuse at S2 `unsupported_construct` (`UnrepresentedConstruct`, `Primary`) at the literal, `case t when ...` refuses at S1 `invalid_syntax` (`UnexpectedToken`) at the `when` token, and a well-formed `case` over a variant refuses at the checker `unknown_required_feature`/`unsupported-feature` until FR-318.
 - Step 4 refuses `missing_declaration`/`missing-name` at the name.
 - Step 5 admits the type, checks the writable case, and does not parse the unwritable spelling.
 - Assertions compare typed codes, causes, keys and paths.

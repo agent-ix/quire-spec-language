@@ -1413,6 +1413,33 @@ fn a_case_in_expression_position_is_refused_by_s1_as_unexpected() {
     assert_eq!((region.start(), region.end()), (at, at + 4));
 }
 
+/// FR-360-AC-5 (item 5): since FR-313 a well-formed `case` over a variant
+/// parses and reaches the checker, which refuses it
+/// `unknown_required_feature`/`unsupported-feature` at the `case` until FR-318
+/// checks `case` expressions; the scrutinee `type-mismatch` is FR-318's.
+#[trace("TC-1007", "FR-360-AC-5")]
+#[test]
+fn a_well_formed_case_over_a_variant_is_refused_by_the_checker_as_unsupported() {
+    let refusals = check_refusals(
+        "function f using v(t: Config::Tier): Boolean pure { case t { Gold: true; } }",
+    );
+    assert!(
+        refused_in_body(
+            &refusals,
+            "f",
+            &[],
+            &CheckCause::UnsupportedFeature {
+                loci: vec![refusals
+                    .first()
+                    .expect("the case is refused")
+                    .location
+                    .clone()]
+            }
+        ),
+        "{refusals:?}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // FR-360 item 10: the encoder
 // ---------------------------------------------------------------------------
