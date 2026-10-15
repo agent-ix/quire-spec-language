@@ -97,10 +97,7 @@ fn two_parameters_sharing_an_identity_are_conflicting_binding() {
     });
     let (key, at) = collision(&document);
     assert_eq!(key, package_key("OrderStore/get/left"));
-    assert_eq!(
-        at,
-        Some(member("TypeDefinition.operations[0].params[1]"))
-    );
+    assert_eq!(at, Some(member("TypeDefinition.operations[0].params[1]")));
 }
 
 /// Distinct identities in the same positions stay admitted.

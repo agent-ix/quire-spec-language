@@ -1694,7 +1694,9 @@ fn duplicate_process_step_refusal(
     };
     let step_position = segments.next()?.parse::<usize>().ok()?;
     // A parameter nests under its operation: `operations/k/params/s/identity`.
-    let mut path = MemberPath::type_definition().name(member).index(step_position);
+    let mut path = MemberPath::type_definition()
+        .name(member)
+        .index(step_position);
     let mut slot = segments.next()?;
     let mut parameter_position = None;
     if member == "operations" && slot == "params" {
