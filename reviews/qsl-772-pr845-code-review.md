@@ -101,3 +101,9 @@ Recorded, not blocking:
   injection seam.
 - The command-wire projection of the pre-call record waits on the shared
   result contract, as FR-277 directs.
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed 872752303 | The lenient `admit_unbudgeted` route is deleted. Numeric families are admitted through QSV `admit_supplied_bounded_numeric` under A/H and B (6c4b99a72), and the stops QSV still raises are the typed `UnsupportedHelper`. Verified at 0dc1e0187 (SR-11089) |

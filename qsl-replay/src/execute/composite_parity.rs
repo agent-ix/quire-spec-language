@@ -17,7 +17,9 @@ use std::collections::BTreeMap;
 use qsl_foundation::bound::DomainKey;
 use qsl_foundation::diagnostic::InternalFault;
 use qsl_foundation::digest::WireNodeId;
-use qsl_semantics::value::supplied::{SuppliedCause, SuppliedFailure, SuppliedRun, SuppliedStop};
+use qsl_semantics::value::supplied::{
+    SuppliedCause, SuppliedFailure, SuppliedPhase, SuppliedRun, SuppliedStop,
+};
 use quire_exact::{plan_equality, planned_equality, Meter, Outcome, ScalarLimits, Value};
 use quire_exact::{Cancel, IntegerInterval};
 use quire_semantic_value::declaration::EqualityOperator;
@@ -351,26 +353,24 @@ fn admit(prepared: &Prepared, operands: &[WitnessValue; 2]) -> Result<Admission,
                 ReplayRefusal::Input(_) => return Ok(Admission::Refused(index)),
                 other => return Err(other),
             },
-            Err(Stopped::Supplied(SuppliedFailure::Stop(stop))) => {
-                if stop.limit().is_some() {
-                    return Ok(Admission::Stopped(stop));
-                }
-                if matches!(stop.cause, SuppliedCause::Input { .. }) {
-                    return Ok(Admission::Refused(index));
-                }
-                return Err(ReplayRefusal::Supplied(stop));
-            }
-            Err(Stopped::Supplied(SuppliedFailure::Unsupported(stop))) => {
-                return Err(ReplayRefusal::UnsupportedHelper(stop));
-            }
-            Err(Stopped::Supplied(SuppliedFailure::Fault(fault))) => {
-                return Err(ReplayRefusal::Fault(fault));
-            }
+            Err(Stopped::Supplied(failure)) => return stopped(index, failure),
         };
         let value = converted
             .values
             .pop()
             .ok_or_else(|| fault("converted-operand"))?;
+        // S6a admission of the converted operand against its declared type,
+        // in the admission phase of the same run (FR-358, FR-277): the
+        // conversion above does not decide a root numeric domain or B.
+        if let Err(failure) = run.admit(
+            SuppliedPhase::Admission,
+            index,
+            package.graph().scope().types(),
+            operand.value_type(),
+            &value,
+        ) {
+            return stopped(index, failure);
+        }
         if let Operand::Literal { value: literal, .. } = operand {
             let mut meter = Meter::new(argument::UNLIMITED);
             match planned_equality(&value, literal, &mut meter) {
@@ -385,6 +385,24 @@ fn admit(prepared: &Prepared, operands: &[WitnessValue; 2]) -> Result<Admission,
     }
     let [left, right] = <[Value; 2]>::try_from(admitted).map_err(|_| fault("two-operands"))?;
     Ok(Admission::Admitted(Box::new([left, right])))
+}
+
+/// What a supplied-phase failure of the operand at `index` settles: an input
+/// refusal, a pre-call limit stop, or a refusal of the replay.
+fn stopped(index: usize, failure: SuppliedFailure) -> Result<Admission, ReplayRefusal> {
+    match failure {
+        SuppliedFailure::Stop(stop) => {
+            if stop.limit().is_some() {
+                Ok(Admission::Stopped(stop))
+            } else if matches!(stop.cause, SuppliedCause::Input { .. }) {
+                Ok(Admission::Refused(index))
+            } else {
+                Err(ReplayRefusal::Supplied(stop))
+            }
+        }
+        SuppliedFailure::Unsupported(stop) => Err(ReplayRefusal::UnsupportedHelper(stop)),
+        SuppliedFailure::Fault(fault) => Err(ReplayRefusal::Fault(fault)),
+    }
 }
 
 fn fault(invariant: &'static str) -> ReplayRefusal {

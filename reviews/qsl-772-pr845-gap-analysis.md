@@ -59,3 +59,9 @@ Recorded, not blocking:
   untested.
 - TC-906 steps 8-9 are Analysis that this PR does not carry.
 - Decimal is blocked on IR-718/IR-719.
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed 872752303 | No `FR-321-AC-5` or `FR-277-AC-6` trace tag remains in code at 0dc1e0187. The flat tests carry `TC-830`/`TC-906` with FR-277-AC-4/5/7 only (SR-11090) |
