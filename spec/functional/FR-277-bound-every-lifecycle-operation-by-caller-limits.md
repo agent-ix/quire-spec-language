@@ -99,24 +99,40 @@ counts; helper traversal events SHALL NOT redefine converted nodes.
 | Evaluation | Actual semantic charges at their existing charge points | `work_units` and other existing accounting fields | The existing evaluation Meter; pre-call counters contribute zero |
 
 - QSL SHALL expose a typed supplied-value limits value with independent
-  `admission_work_units` and `conversion_work_units` fields on its public
+  `admission_work_units` (A) and `conversion_work_units` (H) fields, and the
+  magnitude bound `numeric_magnitude_bits` (B), on its public
   checked-call and replay limits where the phase applies. Their setting
-  names are `supplied.admission_work_units` and
-  `supplied.conversion_work_units`, distinct from population admission's
-  `admission.work_units`. They are not FR-255 setting-table rows: this
-  requirement owns them, each with the published default 16777216 units
-  (FR-255 Behavior 1 names only their carrying type). Their units are the supplied-membership and
+  names are `supplied.admission_work_units`,
+  `supplied.conversion_work_units` and `supplied.numeric_magnitude_bits`,
+  distinct from population admission's `admission.work_units`. They are not
+  FR-255 setting-table rows: this requirement owns them, each a caller
+  limits field with a published default (A and H 16777216 units, B 4096
+  bits; FR-255 Behavior 1 names only their carrying type). The units of A and
+  H are the supplied-membership and
   conversion-helper events below, independently of whatever evaluation limit
   the caller chooses. A default is never computed from a caller's evaluation
   allowance, an existing expression/declaration-work default or a runtime
-  measured count, and neither ceiling is ever unbounded. At its default each
+  measured count, and no one of the three is ever unbounded. At its default each
   ceiling SHALL permit the unchanged full TC-830/831/906 Tree to complete.
-  A replay request carries these two fields in the typed `limits.supplied`
+  A replay request carries these three fields in the typed `limits.supplied`
   member of the shared replay request (QSpec FR-323), not in `stage_limits`:
   that closed member carries only recompile stage settings under QSpec
   FR-460/461. QSL SHALL NOT add a private member to the shared request. It
-  SHALL NOT derive either bound from the evaluation allowance, multiply that
+  SHALL NOT derive any of them from the evaluation allowance, multiply that
   allowance, reset helper spend between arguments, or bypass a phase.
+- `supplied.numeric_magnitude_bits` (B) is the caller-owned finite magnitude
+  bound for Integer and Rational supplied-value admission, the finite operand
+  bound that FR-277-AC-6 requires. Its envelope semantics are QSpec FR-323's
+  and its kernel operation is quire-exact FR-380's; QSL SHALL apply them
+  unchanged. An omitted B in the caller API resolves to the published default
+  4096, so an omitted and a stated 4096 are the same request; a different
+  stated B is a different request. A malformed, above-u64, null or
+  `stage_limits` B is a typed input refusal before consumption. A bit length
+  above B stops on the charged logical event with the catalogued `limit` cause
+  for `supplied.numeric_magnitude_bits`, charging that event first and
+  consuming no evaluation work; zero has bit length one. The value-in-domain
+  operands (3 for Integer, 6 for Rational) are covered; covering type-link
+  operands is a norm that no implementation is yet qualified to meet.
 - Every helper event SHALL have exactly one initiating-phase budget owner.
   QSL conversion invoking QSV membership SHALL pass its conversion budget;
   direct or final checked-call admission SHALL pass its admission budget.
@@ -337,7 +353,8 @@ Integer and both interval endpoints, or the Rational numerator/denominator
 and all interval endpoints. These are not two/four limb comparisons.
 Qualification SHALL identify the authoritative helper operation and actual
 finite operand bounds; these cost premises neither qualify Decimal storage
-nor select any default numeric/type bound.
+nor select any numeric/type bound: the cost premises pick none, and the
+published default of B is the caller-limits default above.
 
 Before a supplied-family path is qualified, every required helper SHALL
 satisfy the source-proof prerequisites above and its actual typed consumer
@@ -373,6 +390,7 @@ implement a copied helper or silently change event units.
 | FR-277-AC-4 | TC-830 and TC-906 distinguish admission/conversion limits, invalid input, caller cancellation, measured storage failure and capacity failure through the typed phase outcome above. Limits preserve the setting, configured ceiling, successful spend and denied event/amount without spending the denied step; all pre-call failures have zero evaluation consumption and no FunctionCall projection. Zero ceilings and checked overflow cannot admit a value. | Test (TC-830, TC-906) |
 | FR-277-AC-5 | Across multiple arguments and nested helpers, TC-906 retains the same original Cancel and cumulative admission/conversion budgets. No helper event is debited twice or seeded into converted-node counts; cancellation at a later argument remains cancellation, and a failed reservation precedes mutation with no partial success. | Test (TC-830, TC-906) |
 | FR-277-AC-6 | For each claimed supported supplied-family path, qualification identifies every required indivisible helper and its authoritative operation, actual finite bounds for all operands/inputs, finite work and peak temporary-storage proof, original-Cancel response boundary, actual fallible failure route where storage is required and reviewed typed consumer mapping. Omitting any premise blocks implementation qualification, not a fabricated runtime result. Decimal's tiny [0,100], 1@0, scale-2 allocation falsifier remains blocked until reviewed IR-718/implemented IR-719 capability and typed integration satisfy these premises; once enabled, FR-098 AC-10's positive Decimal replay remains mandatory. TC-906 steps 8-9 inspect this prerequisite and its missing-premise negative control. | Analysis (TC-906) |
+| FR-277-AC-7 | The typed supplied limits (`SuppliedLimits`) list `admission_work_units`, `conversion_work_units` and `numeric_magnitude_bits`, with defaults 16777216, 16777216 and 4096. For a parameter of the Integer interval `[0, 2^4096 - 1]` (both endpoints at most 4096 bits), at the default B a supplied value of 4096 bits admits and the 4097-bit value `2^4096` stops on operand `value` with the `limit` cause for `supplied.numeric_magnitude_bits` (zero counted as one bit); omitting B and stating 4096 are the same request and stating 4095 is not. TC-906's positive fixtures (`Int[0, 9]` fields, `r(v: Rational)`) replay with the default B. Type-link operand coverage is a norm pending the IR follow-up and is not claimed. | Test (TC-906) |
 
 ## Dependencies
 
