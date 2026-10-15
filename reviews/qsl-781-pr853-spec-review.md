@@ -71,3 +71,39 @@ ran. No Rust file references FR-362, ADR-033, TC-1026 or TC-1027 as include_str!
 input. The only include_str! of a spec file is FR-092, which this PR does not
 touch. The open PRs (852, 845, 723, 674, 672 and the rest) add no FR-36x,
 ADR-033 or TC-102x file.
+
+## Dispositions
+
+Round 1, reviewed at aee2325446a7118d82f064a610dcf871662078dc.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | aee232544 |
+| FND-002 | fixed | aee232544 |
+| FND-003 | fixed | aee232544 |
+| FND-004 | fixed | aee232544 |
+| FND-005 | fixed | aee232544 |
+| FND-006 | fixed | aee232544 |
+| FND-007 | fixed | aee232544 |
+| FND-008 | fixed | aee232544 |
+
+Evidence. FND-001: Reason 1 quotes ADR-011 M-6e (line 1165) and the section 8
+"B composed" row (line 1195) verbatim, A-only is rejected, and the Decision
+matches. FND-002: FR-362 item 9 and ADR-033 Decision keep FR-035, FR-036,
+FR-040 and FR-049 normative for unmoved families and retire them per family,
+which is ADR-011 M-6e's own order. FND-003: only `parse_native*`,
+`src/parser/composed*`, `src/syntax/composed*`, the composed arms of
+`src/parser.rs` and the `src/lib.rs:34` re-exports go; `parse` and
+`parse_source` stay until M-6c. All of these paths exist on main. FND-004: the
+spine (`qsl-replay/src/spine/lifecycle.rs`) and `qsl-bench` are listed, and the
+spine calls no `linking` or `checking::composed` code. The only public
+`CheckedUnit` types on main are `spine::CheckedUnit` (lifecycle.rs:392) and
+`source_inventory::CheckedUnit` (source_inventory.rs:172), so TC-1027 step 1
+is well-defined. FND-005: S2's `from_spelling` has no entry for `temporal`,
+`relation` or `hyper`, and qsl-cst parses all three (grammar.rs:279-282).
+`FormsCause::NoDispatchEntry` maps to `Code::UnsupportedConstruct` at the
+declaration span, and it refuses the whole unit. So the step 5 vector can be
+produced today and its expected result is what the code emits. FND-006: AC-2
+and step 2 now state that `qsl_cst::parse` recovers and that
+`build_unit`/the producer refuse. FND-007: the figure is now about 13,000
+lines. FND-008: TC-1027 names the symbols and paths.
