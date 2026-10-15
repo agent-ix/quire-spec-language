@@ -742,7 +742,8 @@ each their own workspace crate (§7.2). K is `quire-exact` (X-1), SV is
 `quire-semantic-value` (X-11), W is `quire-walk`, an external crate in its own repository, `agent-ix/quire-walk`, and WG is `qsl-walk-grow`
 (ADR-030 FR-356). A layer
 crate's `[dependencies]` name only the layer crates and the external crates in
-its "Depends on" cell above.
+its "Depends on" cell above, plus external general-purpose crates, which are not
+layer edges.
 
 | Crate | Layer |
 |---|---|
