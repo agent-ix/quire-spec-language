@@ -19,7 +19,7 @@ use super::{refuse, Lowering, NodeContent};
 use crate::check::family::OccurrenceRole;
 use crate::check::ir::CheckedNode;
 use crate::check::node_key::{BodyTerm, LawRole, LeafTerm, NodeTag, Operation, Operator};
-use crate::check::refusal::{CheckCause, CheckRefusal};
+use crate::check::refusal::{CheckCause, CheckRefusal, ProtocolReferenceCause};
 use crate::value::member::Member;
 
 /// The `Origin::TypeDeclaration` name a protocol's declaration is located
@@ -32,8 +32,10 @@ pub(crate) fn declaration_origin(protocol: &str) -> String {
 pub(crate) struct ProtocolInput {
     /// The declared name.
     pub(crate) name: String,
-    /// The `run` tree's root control keyword, the `profile_operator`.
-    pub(crate) operator: &'static str,
+    /// The `run` tree's root keyword.
+    pub(crate) root: &'static str,
+    /// The root's `profile_operator`, when it is a FR-052 control construct.
+    pub(crate) operator: Option<&'static str>,
 }
 
 impl ProtocolInput {
@@ -49,32 +51,50 @@ impl Lowering<'_> {
     /// Lower and key each protocol of `protocols`, in declaration order,
     /// recording its one `declaration` occurrence. A package that selects no
     /// protocol profile has no `protocol_profile` law to carry (ADR-011
-    /// §2.4): no node is built, and a reference to a protocol refuses
-    /// `missing-selection`.
+    /// §2.4): no node is built and nothing is refused, so the unit is as it
+    /// was before protocol nodes; a reference to a protocol refuses
+    /// `missing-selection`. With a profile selected, a protocol whose root
+    /// names no `profile_operator` refuses at its declaration
+    /// (`unsupported_construct`/`declaration-form`), and so does a reference
+    /// to it.
     pub(crate) fn protocol_nodes(
         &mut self,
         protocols: &[ProtocolInput],
-    ) -> Result<(), CheckRefusal> {
+    ) -> Result<Vec<CheckRefusal>, CheckRefusal> {
         let mut keys = Vec::with_capacity(protocols.len());
+        let mut refusals = Vec::new();
         for protocol in protocols {
             let location = protocol.location();
-            let key = match self.law(LawRole::ProtocolProfile, &location) {
-                Ok(law) => Some(self.protocol_node(protocol, law, &location)?),
+            let law = match self.law(LawRole::ProtocolProfile, &location) {
+                Ok(law) => law,
                 Err(CheckRefusal {
                     cause: CheckCause::MissingSelection { .. },
                     ..
-                }) => None,
+                }) => {
+                    keys.push(ProtocolKey::Unselected);
+                    continue;
+                }
                 Err(other) => return Err(other),
             };
-            keys.push(key);
+            match protocol.operator {
+                Some(operator) => {
+                    let key = self.protocol_node(protocol, operator, law, &location)?;
+                    keys.push(ProtocolKey::Keyed(key));
+                }
+                None => {
+                    refusals.push(unsupported_root(protocol.root, &location));
+                    keys.push(ProtocolKey::UnsupportedRoot(protocol.root));
+                }
+            }
         }
         self.protocol_keys = keys;
-        Ok(())
+        Ok(refusals)
     }
 
     fn protocol_node(
         &mut self,
         protocol: &ProtocolInput,
+        operator: &'static str,
         law: crate::check::node_key::OperationLaw,
         location: &Location,
     ) -> Result<NodeKey, CheckRefusal> {
@@ -92,7 +112,7 @@ impl Lowering<'_> {
         let operation = Operation {
             laws: vec![law],
             member: Some(Member::ProfileOperator {
-                operator: identifier(protocol.operator)?,
+                operator: identifier(operator)?,
             }),
             ..Operation::plain("quire.op.protocol.control")
         };
@@ -142,19 +162,38 @@ impl Lowering<'_> {
     }
 
     /// The node key of the `protocol`-th declaration, or the refusal that
-    /// the package selected no protocol profile for it to carry.
+    /// the package selected no protocol profile for it to carry, or that its
+    /// root names no operator.
     fn protocol_key(&self, protocol: usize, location: &Location) -> Result<NodeKey, CheckRefusal> {
-        self.protocol_keys
-            .get(protocol)
-            .copied()
-            .flatten()
-            .ok_or_else(|| {
-                refuse(
-                    location,
-                    CheckCause::MissingSelection {
-                        role: LawRole::ProtocolProfile,
-                    },
-                )
-            })
+        match self.protocol_keys.get(protocol) {
+            Some(ProtocolKey::Keyed(key)) => Ok(*key),
+            Some(ProtocolKey::UnsupportedRoot(root)) => Err(unsupported_root(root, location)),
+            Some(ProtocolKey::Unselected) | None => Err(refuse(
+                location,
+                CheckCause::MissingSelection {
+                    role: LawRole::ProtocolProfile,
+                },
+            )),
+        }
     }
+}
+
+/// What lowering holds for one protocol declaration.
+#[derive(Clone, Copy, Debug)]
+pub(super) enum ProtocolKey {
+    /// The key of its `protocol_clause` node.
+    Keyed(NodeKey),
+    /// The package selects no protocol profile.
+    Unselected,
+    /// The profile is selected and the root names no `profile_operator`.
+    UnsupportedRoot(&'static str),
+}
+
+/// `unsupported_construct`/`declaration-form` at `location`: a protocol
+/// whose `root` is no FR-052 control construct.
+fn unsupported_root(root: &'static str, location: &Location) -> CheckRefusal {
+    refuse(
+        location,
+        CheckCause::ProtocolReference(Box::new(ProtocolReferenceCause::UnsupportedRoot { root })),
+    )
 }

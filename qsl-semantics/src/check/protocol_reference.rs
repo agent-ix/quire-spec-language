@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-218's unit-wide rules on protocol references and the protocols they
 //! name: a second reference to one target refuses, and each protocol is
-//! lowered under the keyword of its `run` tree's root control.
+//! read for the root of its `run` tree, whose keyword is its node's
+//! `profile_operator`.
 
 use std::collections::BTreeMap;
 
 use qsl_forms::{ProtocolDeclarationForm, ProtocolNodeKind};
-use quire_semantic_value::location::{Location, Origin};
+use quire_semantic_value::location::Location;
 
 use super::ir::{CheckedBody, NodeKind};
-use super::lowering::{declaration_origin, ProtocolInput};
-use super::refusal::{CheckCause, CheckRefusal, KeyFault, ProtocolReferenceCause};
+use super::lowering::ProtocolInput;
+use super::refusal::{CheckCause, CheckRefusal, ProtocolReferenceCause};
 
 /// The refusal of every reference to a target already referred to earlier in
 /// the unit, at the later reference, naming the first. `bodies` are the
@@ -46,54 +47,59 @@ pub(super) fn repeated<'b>(bodies: impl IntoIterator<Item = &'b CheckedBody>) ->
     refusals
 }
 
-/// Each protocol of `protocols` as lowering reads it. A protocol with no
-/// `run` control cannot reach here (the grammar requires one), and is an
-/// internal fault if it does.
-pub(super) fn inputs(
-    protocols: &[ProtocolDeclarationForm],
-) -> Result<Vec<ProtocolInput>, CheckRefusal> {
+/// Each protocol of `protocols` as lowering reads it.
+pub(super) fn inputs(protocols: &[ProtocolDeclarationForm]) -> Vec<ProtocolInput> {
     protocols
         .iter()
         .map(|protocol| {
-            let operator = run_control(protocol).ok_or_else(|| CheckRefusal {
-                location: Location::root(Origin::TypeDeclaration {
-                    name: declaration_origin(&protocol.name.name),
-                }),
-                cause: CheckCause::InternalFault(Box::new(KeyFault::ProtocolWithoutControl(
-                    protocol.name.name.clone(),
-                ))),
-            })?;
-            Ok(ProtocolInput {
+            let root = run_root(protocol);
+            ProtocolInput {
                 name: protocol.name.name.clone(),
-                operator,
-            })
+                root: root.label(),
+                operator: operator(root),
+            }
         })
         .collect()
 }
 
-/// The keyword of the `run` tree's root control: the first top-level
-/// declaration that is a control.
-fn run_control(protocol: &ProtocolDeclarationForm) -> Option<&'static str> {
+/// The kind of the `run` tree's root: the first top-level declaration that
+/// is neither the `finish` nor a `compensate` template. The grammar's
+/// `Control` is a structural control, an event node or a `commit`.
+fn run_root(protocol: &ProtocolDeclarationForm) -> ProtocolNodeKind {
     protocol
         .declarations
         .iter()
         .filter(|declaration| declaration.scope.is_none())
-        .find_map(|declaration| match declaration.kind {
-            ProtocolNodeKind::Sequence
-            | ProtocolNodeKind::Choice
-            | ProtocolNodeKind::Parallel
-            | ProtocolNodeKind::Repeat
-            | ProtocolNodeKind::Await
-            | ProtocolNodeKind::Check => Some(declaration.kind.label()),
-            ProtocolNodeKind::Send
-            | ProtocolNodeKind::Receive
-            | ProtocolNodeKind::Attempt
-            | ProtocolNodeKind::Effect
-            | ProtocolNodeKind::Event
-            | ProtocolNodeKind::Commit
-            | ProtocolNodeKind::Finish
-            | ProtocolNodeKind::CompensateTemplate
-            | ProtocolNodeKind::Branch
-            | ProtocolNodeKind::Case => None,
+        .map(|declaration| declaration.kind)
+        .find(|kind| {
+            !matches!(
+                kind,
+                ProtocolNodeKind::Finish | ProtocolNodeKind::CompensateTemplate
+            )
         })
+        .unwrap_or(ProtocolNodeKind::Finish)
+}
+
+/// The `profile_operator` a root names: one of FR-052's bounded control
+/// constructs. An `await`, a `check`, an event node and a `commit` name
+/// none, and QSpec FR-322-AC-22 defines no other.
+fn operator(root: ProtocolNodeKind) -> Option<&'static str> {
+    match root {
+        ProtocolNodeKind::Sequence
+        | ProtocolNodeKind::Choice
+        | ProtocolNodeKind::Parallel
+        | ProtocolNodeKind::Repeat => Some(root.label()),
+        ProtocolNodeKind::Await
+        | ProtocolNodeKind::Check
+        | ProtocolNodeKind::Send
+        | ProtocolNodeKind::Receive
+        | ProtocolNodeKind::Attempt
+        | ProtocolNodeKind::Effect
+        | ProtocolNodeKind::Event
+        | ProtocolNodeKind::Commit
+        | ProtocolNodeKind::Finish
+        | ProtocolNodeKind::CompensateTemplate
+        | ProtocolNodeKind::Branch
+        | ProtocolNodeKind::Case => None,
+    }
 }

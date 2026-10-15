@@ -6,7 +6,7 @@
 //! IR's v2 reader.
 
 use ix_trace_rs::trace;
-use qsl_semantics::check::{CheckCause, CheckRefusal, LawRole};
+use qsl_semantics::check::{CheckCause, CheckRefusal, LawRole, ProtocolReferenceCause};
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value};
 
@@ -52,6 +52,88 @@ fn refusals(text: &str) -> Vec<CheckRefusal> {
         .expect("the unit assembles")
         .check(CheckingLimits::default())
         .expect_err("the unit refuses")
+}
+
+/// A unit over the ConfigVersion model whose one protocol `Flow` has `root`
+/// as its `run` root, with the protocol profile selected or not, and a
+/// function that refers to `Flow` or not.
+fn rooted(root: &str, profile: bool, reference: bool) -> String {
+    let profile = if profile {
+        format!("profile p = \"{PROTOCOL_PROFILE}\";\n")
+    } else {
+        String::new()
+    };
+    let function = if reference {
+        "function refers using v(): Boolean pure { protocol Flow }\n"
+    } else {
+        ""
+    };
+    format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.value.complete/v1\";\n{profile}\
+         model Config = \"example/config-version\" version \"1\" digest \
+         \"sha256-jcs:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\";\n\
+         {function}\
+         protocol Flow using v over (input: Boolean) on origin {{\n\
+         role R on Config::ConfigVersion;\n\
+         run {root}\n\
+         finish End as (outcome: Boolean) {{ true }};\n\
+         }}\n"
+    )
+}
+
+const ATTEMPT_ROOT: &str = "attempt Update by R on Config::ConfigVersion::attemptUpdate \
+     contracts [] as (tried: Boolean) { true };";
+
+/// The refusal an event- or commit-rooted protocol carries when a protocol
+/// profile is selected: the root names no FR-052 control construct to be the
+/// node's `profile_operator`.
+fn unsupported_root(root: &'static str) -> CheckCause {
+    CheckCause::ProtocolReference(Box::new(ProtocolReferenceCause::UnsupportedRoot { root }))
+}
+
+/// SR-9123 FND-001: a protocol whose `run` root is an event node (a
+/// `commit` root does not check at S3 at all, on main or here) is a unit that checks, whether or not it is referred to, until a protocol
+/// profile is selected. With no profile selected there is no node to build,
+/// so the unit checks and emits no protocol node.
+#[trace("FR-092-AC-18", "TC-1021")]
+#[test]
+fn a_non_control_root_checks_and_emits_no_protocol_node_without_a_profile() {
+    for root in [ATTEMPT_ROOT] {
+        let graph = check_attempt_unit(&rooted(root, false, false), false)
+            .unwrap_or_else(|refusals| panic!("{root}: {refusals:?}"));
+        assert!(graph
+            .semantic_graph()
+            .nodes()
+            .all(|node| node.node_tag() != qsl_semantics::check::NodeTag::Protocol));
+    }
+}
+
+/// With a protocol profile selected, the root has no operator to carry, so
+/// the protocol refuses `unsupported_construct`/`declaration-form` at its
+/// declaration, a catalogued cause and never an internal fault; a reference
+/// to it refuses with the same cause at the reference.
+#[trace("FR-092-AC-18", "FR-218-AC-8", "TC-1021")]
+#[test]
+fn a_non_control_root_refuses_a_selected_profile_and_a_reference_to_it() {
+    for (root, keyword) in [(ATTEMPT_ROOT, "attempt")] {
+        let cause = unsupported_root(keyword);
+        let declared = check_attempt_unit(&rooted(root, true, false), false)
+            .expect_err("the root names no operator");
+        assert_eq!(
+            declared.iter().map(|r| &r.cause).collect::<Vec<_>>(),
+            [&cause],
+            "{root}"
+        );
+        assert_eq!(cause.code(), qsl_foundation::Code::UnsupportedConstruct);
+        assert_eq!(cause.cause(), Some("declaration-form"));
+
+        let referred = check_attempt_unit(&rooted(root, true, true), false)
+            .expect_err("the reference refuses too");
+        assert_eq!(referred.len(), 2, "{root}: {referred:?}");
+        assert!(referred.iter().all(|r| r.cause == cause), "{root}");
+        assert_ne!(referred[0].location, referred[1].location);
+    }
 }
 
 fn node_of<'w>(wire: &'w Value, tag: &str, form: &str) -> &'w Value {
@@ -253,7 +335,11 @@ fn unresolved_non_protocol_and_repeated_references_refuse_by_cause() {
     let CheckCause::ProtocolReference(cause) = &twice.cause else {
         panic!("a protocol reference cause: {twice:?}");
     };
-    assert_ne!(cause.first(), &twice.location, "names the first reference");
+    assert_ne!(
+        cause.first(),
+        Some(&twice.location),
+        "names the first reference"
+    );
 }
 
 /// FR-092 "The protocol node a reference targets": with no protocol profile

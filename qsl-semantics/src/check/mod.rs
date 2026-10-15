@@ -1430,12 +1430,8 @@ impl PackageDeclarations {
         }
         // FR-092: each checked protocol's node, before any function that
         // refers to it is lowered.
-        match protocol_reference::inputs(&self.protocols) {
-            Ok(inputs) => {
-                if let Err(refusal) = lowering.protocol_nodes(&inputs) {
-                    refusals.push(refusal);
-                }
-            }
+        match lowering.protocol_nodes(&protocol_reference::inputs(&self.protocols)) {
+            Ok(unsupported) => refusals.extend(unsupported),
             Err(refusal) => refusals.push(refusal),
         }
         for group in &order {

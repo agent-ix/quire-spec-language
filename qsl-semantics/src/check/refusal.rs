@@ -174,20 +174,29 @@ pub enum ProtocolReferenceCause {
         /// The first reference to the same target.
         first: Location,
     },
+    /// A protocol, or a reference to it, whose `run` root names no FR-052
+    /// control construct (`sequence`, `choice`, `parallel`, `repeat`) to be
+    /// the `profile_operator` of its node, while a protocol profile is
+    /// selected. `unsupported_construct`/`declaration-form`.
+    UnsupportedRoot {
+        /// The root's own keyword, such as `attempt` or `commit`.
+        root: &'static str,
+    },
 }
 
 impl ProtocolReferenceCause {
-    /// The first reference to the same target.
-    pub fn first(&self) -> &Location {
+    /// The first reference to the same target, for a repeated reference.
+    pub fn first(&self) -> Option<&Location> {
         match self {
-            Self::Repeated { first } => first,
+            Self::Repeated { first } => Some(first),
+            Self::UnsupportedRoot { .. } => None,
         }
     }
 
     /// This cause's catalog code.
     pub fn code(&self) -> Code {
         match self {
-            Self::Repeated { .. } => Code::UnsupportedConstruct,
+            Self::Repeated { .. } | Self::UnsupportedRoot { .. } => Code::UnsupportedConstruct,
         }
     }
 
@@ -195,6 +204,7 @@ impl ProtocolReferenceCause {
     pub fn tag(&self) -> &'static str {
         match self {
             Self::Repeated { .. } => "expression-form",
+            Self::UnsupportedRoot { .. } => "declaration-form",
         }
     }
 }
@@ -782,9 +792,6 @@ pub enum KeyFault {
     InvalidGroup,
     /// A node names a draft that dependency order never keyed.
     UnresolvedDraft,
-    /// A checked protocol declaration with no `run` control to name its
-    /// `profile_operator`, which the grammar cannot produce.
-    ProtocolWithoutControl(String),
     /// A record value's slots and its declaration's fields differ in
     /// number.
     RecordSlotCount,
@@ -836,7 +843,6 @@ impl KeyFault {
             Self::UnknownComposite(_) => "composite-declared",
             Self::InvalidGroup => "recursion-group-well-formed",
             Self::UnresolvedDraft => "draft-keyed-in-dependency-order",
-            Self::ProtocolWithoutControl(_) => "protocol-has-run-control",
             Self::RecordSlotCount => "record-slots-match-fields",
             Self::UntypedIeeeOperand => "ieee-operand-typed",
             Self::DuplicateModelSelection(_) => "one-model-version-per-identity",

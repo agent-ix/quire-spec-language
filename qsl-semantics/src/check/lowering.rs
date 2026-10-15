@@ -618,10 +618,9 @@ pub(crate) struct Lowering<'a> {
     /// first clause naming an operation, in source order, mints the
     /// occurrence; every later clause naming the same operation shares it.
     frame_origins: BTreeMap<(EffectiveId, String), OccurrenceOrigin>,
-    /// Each checked protocol declaration's node key, by its index in the
-    /// unit's protocols; `None` when the package selects no protocol
-    /// profile for the node to carry (FR-092).
-    protocol_keys: Vec<Option<NodeKey>>,
+    /// What lowering holds for each checked protocol declaration, by its
+    /// index in the unit's protocols (FR-092).
+    protocol_keys: Vec<protocol::ProtocolKey>,
 }
 
 fn refuse(location: &Location, cause: CheckCause) -> CheckRefusal {
