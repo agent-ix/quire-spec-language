@@ -1731,13 +1731,12 @@ fn duplicate_process_step_refusal(
     Some(ModelRefusal {
         code: Code::InvalidModelBinding,
         cause: ModelRefusalCause::ConflictingBinding {
-            // A process step, field, operation, parameter or variant case
-            // names its owner (TC-235 M07 run 3); a state, transition or
-            // clause names its own identity.
-            key: if matches!(member, "states" | "transitions" | "clauses") {
-                declaration_key(package, step_identity)
-            } else {
+            // A process step names the process (TC-235 M07 run 3); every
+            // other member names the identity it shares (FR-154).
+            key: if member == "steps" {
                 declaration_key(package, process_identity)
+            } else {
+                declaration_key(package, step_identity)
             },
             member: Some(path),
         },

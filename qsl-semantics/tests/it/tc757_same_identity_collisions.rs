@@ -17,11 +17,14 @@ fn parameter(operation: &str, node_name: &str, name: &str) -> Value {
     })
 }
 
-/// The one intake refusal of `document`, as `(owner key, member path)`.
+/// The one refusal of `document`, as `(shared identity key, member path)`.
 fn collision(document: &Value) -> (DeclarationKey, Option<MemberPath>) {
-    let Err(refusals) = read_k2(document) else {
-        panic!("the shared identity must be refused at intake");
+    let package = read_k2(document).expect("intake retains the typed refusal for normalization");
+    let (outcome, _meter) = normalize_with_meter(&package, ModelNormalizationLimits::default());
+    let NormalizeOutcome::Refused(refusals) = outcome else {
+        panic!("the shared identity must be refused, got {outcome:?}");
     };
+    let refusals: Vec<ModelRefusal> = refusals.iter().cloned().collect();
     assert_eq!(refusals.len(), 1, "one refusal: {refusals:?}");
     assert_eq!(refusals[0].code, Code::InvalidModelBinding);
     assert_eq!(refusals[0].cause.as_str(), "conflicting-binding");
@@ -44,7 +47,7 @@ fn two_fields_sharing_an_identity_are_conflicting_binding() {
             .push(second);
     });
     let (key, at) = collision(&document);
-    assert_eq!(key, package_key("Money"));
+    assert_eq!(key, package_key("Money/amount_minor"));
     assert_eq!(at, Some(member("TypeDefinition.fields[2]")));
 }
 
@@ -61,7 +64,7 @@ fn an_operation_sharing_a_fields_identity_is_conflicting_binding() {
             .push(shared);
     });
     let (key, at) = collision(&document);
-    assert_eq!(key, package_key("OrderLifecycle"));
+    assert_eq!(key, package_key("OrderLifecycle/placed"));
     assert_eq!(at, Some(member("TypeDefinition.operations[2]")));
 }
 
@@ -78,7 +81,7 @@ fn two_operations_sharing_an_identity_are_conflicting_binding() {
             .push(second);
     });
     let (key, at) = collision(&document);
-    assert_eq!(key, package_key("OrderStore"));
+    assert_eq!(key, package_key("OrderStore/get"));
     assert_eq!(at, Some(member("TypeDefinition.operations[2]")));
 }
 
@@ -93,7 +96,7 @@ fn two_parameters_sharing_an_identity_are_conflicting_binding() {
         ]);
     });
     let (key, at) = collision(&document);
-    assert_eq!(key, package_key("OrderStore"));
+    assert_eq!(key, package_key("OrderStore/get/left"));
     assert_eq!(
         at,
         Some(member("TypeDefinition.operations[0].params[1]"))

@@ -441,7 +441,7 @@ fn a_variant_meaning_on_a_record_shaped_construct_refuses_as_malformed() {
 }
 
 /// TC-996 step 4: two cases of one name and one identity are refused at the
-/// reader's duplicate position as `conflicting-binding` at the type, nothing
+/// reader's duplicate position as `conflicting-binding` at the shared case identity, nothing
 /// is declared (FR-154: two nodes sharing one identity).
 #[trace("TC-996", "FR-056-AC-26")]
 #[test]
@@ -455,7 +455,7 @@ fn two_cases_sharing_one_identity_are_refused_by_the_reader() {
     assert_eq!(
         found[0].cause,
         ModelRefusalCause::ConflictingBinding {
-            key: key("Tier"),
+            key: key("variant/Tier-Gold"),
             member: Some(path("TypeDefinition.variants[1]")),
         }
     );
@@ -1042,11 +1042,10 @@ fn a_same_name_case_conflict_yields_no_effective_view() {
     );
 }
 
-/// TC-1003 step 5: two cases that share one identity are refused at the second
-/// case of the `variants` list, whichever of them is minted correctly:
-/// `invalid_model_binding`/`conflicting-binding` at node `.../Tier`, path
-/// `TypeDefinition.variants[1]`, as two cases of one name are (FR-154: two
-/// nodes sharing one identity).
+/// TC-1003 step 5: two cases that share one identity are refused once, at the
+/// second case of the `variants` list, whichever of them is minted correctly:
+/// `invalid_model_binding`/`conflicting-binding` at the shared case identity,
+/// path `TypeDefinition.variants[1]` (FR-154: two nodes sharing one identity).
 #[trace("TC-1003", "FR-056-AC-30")]
 #[test]
 fn two_cases_sharing_an_identity_are_refused_at_the_second_listed() {
@@ -1065,7 +1064,7 @@ fn two_cases_sharing_an_identity_are_refused_at_the_second_listed() {
         assert_eq!(
             found[0].cause,
             ModelRefusalCause::ConflictingBinding {
-                key: key("Tier"),
+                key: key("variant/Tier-Gold"),
                 member: Some(path("TypeDefinition.variants[1]")),
             }
         );
