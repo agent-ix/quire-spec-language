@@ -71,27 +71,30 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
 
 - The assembler SHALL resolve the `using` alias to one of the unit's profile
   selections, exactly as it does for a function (FR-091).
-- If `M` names no `model` declaration of the unit, or `T` no object type of
-  its package, then the assembler SHALL refuse `missing_declaration`/
-  `missing-name` at the name.
-- The anchor context of a state clause is an object type (QSpec FR-342). If
-  `T` names a process of its package, then the assembler
-  SHALL refuse `invalid_model_binding`/`malformed-declaration` at `T`, for an
-  invariant as for a `pre` or `post` clause, and SHALL NOT resolve `op`. So
-  an operation a process declares (FR-103) cannot be named by a clause and
-  has no anchor: a clause takes no frame of it, and its frame is read into
-  its `OperationEffect` as FR-103 and FR-154 state, with no `state`/`frame`
-  node, no `operation_anchor` node and no `operation-contract` record (FR-105).
-  The refusal is the one QSpec FR-342 gives a `context` that is no
-  `model`/`object_type` node; QSL gives it at the name, before any anchor is
-  built. The `self` of a unit state clause (an invariant, `pre` or `post`
-  clause) is a `Reference` to an object, never a run. A state machine stays a
-  valid anchor context (FR-107). A process operation's own `requires` and
-  `ensures` clauses are not unit state clauses: they bind `self` as FR-103
-  states, the operation's receiver, which for a process is its run (QSpec
-  FR-208), and they carry no anchor or frame. A `T` that names an object type is unchanged, and a `T` that names
-  no declaration or a declaration of any other meaning refuses
-  `missing_declaration`/`missing-name` as above.
+- If `M` names no `model` declaration of the unit, or `T` no object type,
+  state machine or process of its package, then the assembler SHALL refuse
+  `missing_declaration`/`missing-name` at the name.
+- The context `M::T` of a clause is the declaration `T` names, whichever of
+  the three it is, and a process is a context as an object type is. The
+  `self` of a clause on a process is one run of it (QSpec FR-208): a
+  `Reference<M::T>` to the run, whose declared object identity roots the
+  clause's receiver path (FR-107), so an invariant on a process holds for
+  every run of its population at `current` and a `pre` or `post` clause of a
+  process operation reads the run the operation is called on, as one on an
+  object type reads its object. An operation `op` a process declares
+  (FR-103) is resolved, anchored and framed as an object type's operation is
+  (FR-105): its anchor and frame are the ones every clause and attempt that
+  names it share, the anchor's `context` is the node of the process that
+  declares `op` (`model`/`process`), and the frame is the operation's
+  `OperationEffect` as FR-103 and FR-154 admit it. No scoped frame is built
+  for a process operation: intake refuses its receiver-scoped members
+  (`modifies_receiver`, `deletes_receiver: true`) at the member
+  (FR-154-AC-8), so the frame a clause names holds only `every-object` `modifies`
+  entries, `creates`, `deletes` and `deletes_parameters` entries, and no
+  clause can name a process operation whose frame holds a receiver-scoped
+  entry. The anchor context of an operation of a state machine is the node of
+  the state machine in the same way, with `self` the machine's context
+  (FR-107).
 - If a `pre` or `post` clause's `op` names no operation of `M::T`'s effective
   view (FR-103), then the assembler SHALL refuse `missing_declaration`/
   `missing-name` at `op`.
@@ -227,7 +230,7 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
   boundable by `Cardinality`.
 - The checker SHALL key a population domain as
   `DomainKey::Population{member_type, ordinal}` with `member_type` the
-  `model`/`object_type` node of the population's *canonical*
+  `model`/`object_type` or `model`/`process` node of the population's *canonical*
   member type: the least, in ascending `DeclarationKey` order, of its
   declared member types -- never a node of the clause's context type `T`
   itself when `T` is a proper subtype of a member (SR-736 FND-010), and
@@ -270,7 +273,7 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
 | FR-104-AC-7 | In postconditions of `attemptUpdate` over a package whose frame modifies `parent`: `present(pre(self.parent)) implies deref(value(self.parent)).versionNumber > 0` refuses `undefined_expression`/`unproved-presence` at `value(self.parent)`; `pre(present(self.parent) implies deref(value(self.parent)).versionNumber > 0)` checks; `let v = self.versionNumber in pre(v) = 1` and `let s = self in pre(s.versionNumber) = 1` each refuse `wrong_snapshot`/`forbidden-pre-read` at the `pre`; `let s = pre(self) in s.versionNumber = 1` checks with its read `pre`. | Test (TC-459) |
 | FR-104-AC-8 | Over a package that adds operation `probe(target: ConfigVersion)` on `ConfigVersion` with no result and an empty frame: the postcondition `deref(target).versionNumber = 1` checks with its read `post`; the precondition `deref(target).versionNumber = 1` checks with its read `pre`; the postcondition `pre(deref(target).versionNumber) = 1` checks with its read `pre`; the postcondition `pre(target) = target` refuses `wrong_snapshot`/`forbidden-pre-read` at the `pre`. | Test (TC-459) |
 | FR-104-AC-9 | Under `quire.model.complete/v1`, `reaches(self, target, parent)` on a `ConfigVersion` subtype with its inherited `parent: Option<Reference<ConfigVersion>>` field checks with `self` retained as the subtype reference and `target` as the base reference, without erasing the operand identity FR-043 evaluates; a target type not conforming to the edge owner refuses `ill_typed`/`operator-ineligible`. The subtype/base operands under any other admitted model selection refuse `ill_typed`/`operator-ineligible` by the exact-type rule. | Test |
-| FR-104-AC-10 | Over the ConfigVersion package (TC-458's) with a process `Flow` that declares operation `go` with an empty frame, `pre P using v on Config::Flow::go { true }`, `post Q using v on Config::Flow::go { true }` and `invariant I using v on Config::Flow at current { true }` each refuse `invalid_model_binding`/`malformed-declaration` at `Flow`, and `on Config::Flow::missing` refuses the same, not `missing_declaration`/`missing-name`. Compiling the package with no clause naming `go` holds no anchor node, frame node or `operation-contract` record for `go`. | Test (TC-460) |
+| FR-104-AC-10 | Over the ConfigVersion package (TC-458's) with a process `Flow` (identity field `x`, field `n: Integer`) that declares operation `go` whose frame is `modifies [Flow/n]` and a closed population of `Flow`, `pre P using v on Config::Flow::go { self.n < 3 }`, `post Q using v on Config::Flow::go { self.n = pre(self.n) + 1 }` and `invariant I using v on Config::Flow at current { self.n >= 0 }` each check, `self` being `Reference<Config::Flow>` and `self.n` an `Attribute` of type `Integer`; `P`'s read is `pre`, `Q`'s reads are `post` and `pre`, `I`'s read is `current`. `pre M using v on Config::Flow::missing { true }` refuses `missing_declaration`/`missing-name` at `missing`. | Test (TC-459, TC-460) |
 
 ## Dependencies
 
