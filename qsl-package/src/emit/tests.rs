@@ -2924,21 +2924,10 @@ fn e4_refuses_a_conflicting_diamond() {
 /// the package also declares `Sub`, specializing `ConfigVersion` and
 /// inheriting `attemptUpdate` (FR-114-AC-4).
 fn config_version_model(with_sub: bool) -> qsl_semantics::model::intake::SelectedModel {
-    config_version_model_with(with_sub, false)
-}
-
-/// [`config_version_model`], with `with_flow` also declaring a process
-/// `Flow` (identity field `x`) with operation `go` and an empty frame (TC-460
-/// row 13).
-fn config_version_model_with(
-    with_sub: bool,
-    with_flow: bool,
-) -> qsl_semantics::model::intake::SelectedModel {
     use qsl_semantics::model::accounting::ModelNormalizationLimits;
     use qsl_semantics::model::domain_package::{
         DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord, Multiplicity,
-        NativeValueType, ObjectTypeRecord, OperationEffect, OperationMemberRecord, ProcessRecord,
-        ValueTypeRef,
+        NativeValueType, ObjectTypeRecord, OperationEffect, OperationMemberRecord, ValueTypeRef,
     };
     use qsl_semantics::model::key::DeclarationKey;
     use qsl_semantics::model::normalize::{normalize, NormalizeOutcome};
@@ -2992,42 +2981,6 @@ fn config_version_model_with(
             abstract_type: false,
             supertypes: vec![key("ConfigVersion")],
         }));
-    }
-    if with_flow {
-        records.push(DomainPackageRecord::Process(ProcessRecord {
-            key: key("Flow"),
-            identity_fields: vec![key("Flow/x")],
-            identity_fields_declared: true,
-            supertypes: Vec::new(),
-            steps: Vec::new(),
-        }));
-        records.push(DomainPackageRecord::FieldMember(FieldMemberRecord {
-            key: key("Flow/x"),
-            owner: key("Flow"),
-            value_type: ValueTypeRef::Native(NativeValueType::Boolean),
-            multiplicity: Multiplicity {
-                lower: 1,
-                upper: Some(1),
-                ordered: false,
-                unique: true,
-            },
-            presence: Presence::Required,
-            subsets: Vec::new(),
-            redefines: None,
-        }));
-        records.push(DomainPackageRecord::OperationMember(
-            OperationMemberRecord {
-                key: key("Flow/go"),
-                owner: key("Flow"),
-                parameters: Vec::new(),
-                result: None,
-                effect: OperationEffect::default(),
-                requires: Vec::new(),
-                ensures: Vec::new(),
-                has_body: false,
-                redefines: None,
-            },
-        ));
     }
     let package = DomainPackage::new(
         DomainPackageRef {
@@ -3103,62 +3056,6 @@ fn check_attempt_unit_revision(
     PackageDeclarations::assemble(raw, unit, vec![config_version_model(with_sub)], Vec::new())
         .expect("the unit assembles")
         .check(CheckingLimits::default())
-}
-
-/// S1, S2, the assembler and `check` over `unit` against
-/// [`config_version_model_with`]'s package with its process `Flow`.
-fn check_flow_unit(
-    unit: &str,
-) -> Result<qsl_semantics::check::CheckedGraph, qsl_semantics::check::AssemblyRefusal> {
-    let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("agent-ix", "test:qsl-808", "fixture", "fixture:1"),
-        "program.native",
-        unit.as_bytes(),
-        qsl_cst::Limits::default(),
-    )
-    .expect("S1 admits the unit");
-    let raw = parsed.source().reference().clone();
-    let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
-    let declarations = PackageDeclarations::assemble(
-        raw,
-        unit,
-        vec![config_version_model_with(false, true)],
-        Vec::new(),
-    )?;
-    Ok(declarations
-        .check(CheckingLimits::default())
-        .expect("the unit checks"))
-}
-
-/// TC-460 row 16 / FR-104-AC-10, FR-105: the package with a process `Flow`
-/// declaring `go` and no clause naming `go` compiles and emits no
-/// `operation_anchor` node, no `frame` node and no frame record.
-#[trace("TC-460", "FR-104-AC-10", "FR-003-AC-9")]
-#[test]
-fn a_process_operation_no_clause_names_emits_no_anchor_frame_or_record() {
-    let unit = "language \"ix:native\" edition \"1-draft\";\n\
-         profile v = \"quire.value.complete/v1\";\n\
-         model Config = \"example/config-version\" version \"1\" digest \
-         \"sha256-jcs:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\";\n\
-         invariant I using v on Config::ConfigVersion at current { true }";
-    let graph = check_flow_unit(unit).expect("the unit assembles");
-    assert_eq!(
-        graph.requirements().len(),
-        1,
-        "the invariant's record alone"
-    );
-    let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
-    assert_eq!(emission.omitted, []);
-    let anchors = nodes(&wire(&emission))
-        .iter()
-        .filter(|node| {
-            matches!(
-                node["semantic_form"].as_str(),
-                Some("operation_anchor" | "frame")
-            )
-        })
-        .count();
-    assert_eq!(anchors, 0);
 }
 
 /// What FR-114's emission assertions read from one attempt unit: the

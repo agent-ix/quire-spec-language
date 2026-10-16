@@ -356,14 +356,6 @@ pub enum AssemblyCause {
         /// The operation name as written.
         operation: String,
     },
-    /// A state clause's or protocol attempt's context `M::T` names a process:
-    /// the anchor context is an object type (QSpec FR-342), so an operation
-    /// a process declares has no anchor and no frame (FR-104 "Resolution",
-    /// FR-114). Raised before the operation is resolved.
-    ProcessAnchorContext {
-        /// The context type as written, `M::T`.
-        context: String,
-    },
     /// Two unit `operation-body` declarations resolve to one operation's
     /// `DeclarationKey` (FR-302: exactly one executable body per key).
     DuplicateOperationBody {
@@ -400,7 +392,6 @@ impl AssemblyCause {
             | Self::AmbiguousPopulation { .. } => Code::AmbiguousDeclaration,
             Self::UnresolvedQuantityName { .. } => Code::MissingDeclaration,
             Self::DuplicateOperationBody { .. } => Code::ConflictingDeclaration,
-            Self::ProcessAnchorContext { .. } => Code::InvalidModelBinding,
             Self::QuantityCycle { .. } => Code::InvalidPackage,
             Self::ZeroDenominator => Code::UndefinedExpression,
             Self::DecimalScaleLimit(_) => Code::StageLimitExceeded,
@@ -473,7 +464,6 @@ impl AssemblyCause {
             | Self::AmbiguousPopulation { .. } => "ambiguous-name",
             Self::UnresolvedQuantityName { .. } => "missing-name",
             Self::DuplicateOperationBody { .. } => "duplicate-declaration",
-            Self::ProcessAnchorContext { .. } => "malformed-declaration",
             Self::QuantityCycle { .. } => "definition-cycle",
             Self::ZeroDenominator => "unproved-nonzero",
             Self::DecimalScaleLimit(limit) => limit.kind().catalog_cause(),
@@ -2708,7 +2698,6 @@ impl PackageDeclarations {
             &object_names,
             &types,
             &operations,
-            &models,
             &admitted,
         );
         let (state_clauses, protocol_attempts, operation_bodies) =
@@ -2884,15 +2873,6 @@ fn state_clauses(
             ));
             continue;
         };
-        if is_process_type(selected, context) {
-            errors.push(error(
-                AssemblyCause::ProcessAnchorContext {
-                    context: form.context.name.clone(),
-                },
-                form.context.span,
-            ));
-            continue;
-        }
         let mut operation_key = None;
         let operation = match &form.operation {
             None => None,
@@ -2994,25 +2974,6 @@ fn state_clauses(
     } else {
         refuse(errors)
     }
-}
-
-/// Whether `context` is the effective identity of a process of a selected
-/// model: a process is an identified run type, and no object type, so no
-/// clause or attempt takes it as its anchor context (FR-104 "Resolution",
-/// FR-114).
-fn is_process_type(models: &[SelectedModel], context: EffectiveId) -> bool {
-    models.iter().any(|model| {
-        model
-            .view
-            .type_identities()
-            .iter()
-            .filter(|(_, identity)| **identity == context)
-            .any(|(key, _)| {
-                model.view.domain_package().records.iter().any(|record| {
-                    matches!(record, DomainPackageRecord::Process(process) if &process.key == key)
-                })
-            })
-    })
 }
 
 /// FR-103, FR-302: the `DeclarationKey` of the operation `name` that the
@@ -3200,7 +3161,6 @@ fn protocol_attempts(
     object_names: &BTreeMap<String, EffectiveId>,
     types: &TypeEnvironment,
     operations: &OperationTable,
-    selected: &[SelectedModel],
     models: &[AdmittedModel],
 ) -> Result<Vec<Vec<AttemptDeclaration>>, AssemblyRefusal> {
     let mut errors = Vec::new();
@@ -3219,15 +3179,6 @@ fn protocol_attempts(
                 ));
                 continue;
             };
-            if is_process_type(selected, context) {
-                errors.push(error(
-                    AssemblyCause::ProcessAnchorContext {
-                        context: attempt.context.name.clone(),
-                    },
-                    attempt.context.span,
-                ));
-                continue;
-            }
             let operation = match operations.resolve(types, context, &attempt.operation.name) {
                 OperationLookup::Declared {
                     declaring,

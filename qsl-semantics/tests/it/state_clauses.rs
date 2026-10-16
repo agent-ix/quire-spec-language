@@ -30,8 +30,8 @@ use crate::model_operations::{
     admit_and_assemble_with_body, ambiguous_operation_document, archive_population,
     attempt_update_modifies_version_and_parent, attempt_update_modifies_version_number,
     config_unit_with_body, config_version_document, config_version_document_with_operations,
-    config_version_document_with_population, empty_frame, flow_process_parts, frame_test_document,
-    operation, probe_operation, subtype_document, subtype_document_with_two_member_population,
+    config_version_document_with_population, empty_frame, frame_test_document, operation,
+    probe_operation, subtype_document, subtype_document_with_two_member_population,
     tc464_flag_source, tc464_integer_argument_source, tc464_sub_target_source,
     tc465_creates_subtype_document, tc465_deep_hierarchy_document, tc465_document,
     tc465_document_with, tc465_document_with_archive_population,
@@ -5553,113 +5553,4 @@ fn a_denied_frame_charge_ends_check_eleven_with_the_budget_record() {
     let admitted =
         run(qsl_semantics::model::accounting::ModelNormalizationLimits::default().work_units);
     assert!(admitted.is_ok(), "expected admission, got {admitted:?}");
-}
-
-/// The ConfigVersion package of TC-458 plus process `Flow` declaring `go`
-/// with an empty frame (TC-460 row 13).
-fn flow_document() -> Vec<u8> {
-    let (constructs, types) = flow_process_parts();
-    config_version_document(
-        attempt_update_modifies_version_number(),
-        constructs,
-        types,
-        json!([]),
-    )
-}
-
-/// Asserts `body` refuses once at assembly with `invalid_model_binding`/
-/// `malformed-declaration` located at the written `Config::Flow`, naming
-/// that context.
-fn assert_process_anchor_refused(document: &[u8], body: &str) {
-    let (unit, _) = config_unit_with_body(document, body);
-    let errors = assembly_refusals(document, body);
-    assert_eq!(errors.len(), 1, "{errors:?}");
-    let AssemblyCause::ProcessAnchorContext { context } = &errors[0].cause else {
-        panic!("expected ProcessAnchorContext, got {:?}", errors[0].cause);
-    };
-    assert_eq!(context, "Config::Flow");
-    assert_eq!(errors[0].cause.code(), Code::InvalidModelBinding);
-    assert_eq!(
-        errors[0].cause.catalog_code().cause(),
-        "malformed-declaration"
-    );
-    assert_eq!(
-        &unit[errors[0].span.start..errors[0].span.end],
-        "Config::Flow"
-    );
-}
-
-/// TC-460 rows 13-14 / FR-104-AC-10: a `pre`, a `post` and an invariant
-/// naming the process `Flow` each refuse `invalid_model_binding`/
-/// `malformed-declaration` at `Flow`.
-#[trace("TC-460", "FR-104-AC-10")]
-#[test]
-fn a_clause_naming_a_process_refuses_at_the_process() {
-    let document = flow_document();
-    for body in [
-        "pre J using v on Config::Flow::go { true }\n",
-        "post K using v on Config::Flow::go { true }\n",
-        "invariant L using v on Config::Flow at current { true }\n",
-    ] {
-        assert_process_anchor_refused(&document, body);
-    }
-}
-
-/// TC-460 row 15 / FR-104-AC-10: `on Config::Flow::missing` refuses the same
-/// refusal, not `missing-name`: `op` is not resolved.
-#[trace("TC-460", "FR-104-AC-10")]
-#[test]
-fn a_process_refuses_before_its_operation_is_resolved() {
-    assert_process_anchor_refused(
-        &flow_document(),
-        "pre M using v on Config::Flow::missing { true }\n",
-    );
-}
-
-/// TC-460 row 16 / FR-104-AC-10, FR-105: the package with `Flow` and no
-/// clause naming `go` checks, and holds no state clause, no operation
-/// contract record for `go`, and so no anchor or frame of it.
-#[trace("TC-460", "FR-104-AC-10")]
-#[test]
-fn a_process_operation_no_clause_names_holds_no_contract_record() {
-    let graph = check(&flow_document(), PARENT_ORDER)
-        .expect("the package with Flow and ParentOrder checks");
-    let without_flow = check(
-        &config_version_document(
-            attempt_update_modifies_version_number(),
-            Vec::new(),
-            Vec::new(),
-            json!([]),
-        ),
-        PARENT_ORDER,
-    )
-    .expect("the package without Flow checks");
-    assert_eq!(graph.state_clauses().len(), 1);
-    assert_eq!(
-        graph.requirements().len(),
-        without_flow.requirements().len(),
-        "Flow and `go` add no requirement record"
-    );
-}
-
-/// TC-513 step 5 / FR-114-AC-5: an attempt `on Config::Flow::go` refuses
-/// `invalid_model_binding`/`malformed-declaration` at `Flow` with `contracts
-/// []` and with `contracts [Absent]`, the absent entry unread.
-#[trace("TC-513", "FR-114-AC-5")]
-#[test]
-fn an_attempt_naming_a_process_refuses_at_the_process() {
-    let document = flow_document();
-    for contracts in ["", "Absent"] {
-        let body = format!(
-            "protocol Wf using v over (input: Boolean) on origin {{\n\
-             role R on Config::ConfigVersion;\n\
-             run sequence Main {{\n\
-             attempt U by R on Config::Flow::go contracts [{contracts}] \
-             as (tried: Boolean) {{ true }};\n\
-             }}\n\
-             finish End as (outcome: Boolean) {{ true }};\n\
-             }}\n"
-        );
-        assert_process_anchor_refused(&document, &body);
-    }
 }
