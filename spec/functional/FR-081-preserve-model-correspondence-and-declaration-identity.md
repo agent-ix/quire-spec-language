@@ -197,13 +197,13 @@ effective member," bound to this compiler's refusal type.
 A completed view SHALL expose, for each state machine type `T` of its domain
 package, `EffectiveView::state_machine(T)`: the effective states and the
 effective transitions of `T`, which are the union of `T`'s own with those of
-every ancestor (quire-specification FR-208 "State machine"). Each entry
+every ancestor (quire-specification FR-208). Each entry
 SHALL carry its declaring machine, its original declaration key and its
 position in that machine's list. A state entry SHALL also carry its name. A
 transition entry SHALL also carry its `from` and `to` state keys, its `trigger`
 operation key, its optional `guard` clause key and its emitted event type
 keys, exactly as the declaring machine authored them. States are ordered by
-declaring machine's key ascending, then position; transitions likewise. The
+the declaring machine's key ascending as UTF-8 bytes, then position; transitions likewise. The
 accessor SHALL return nothing for a key that names no state machine type of the
 package. A state or transition has no effective identity: they are not members,
 so the accessor adds no entry to `declarations()`, no `normalize.inherit` or
@@ -215,7 +215,9 @@ conforms to `T` by FR-082's closed-graph reachability over the declared
 `supertypes` edges, for any two declared types of the package, and false for
 two types that share only a display name. The relation is read from the edges
 the view retains; reading it adds no normalization charge and no limit
-outcome, because the walk was admitted when the view completed.
+outcome, because normalization phase 3 already charged every declared
+`supertypes` edge against the package's `ancestor_steps` limit when the view
+completed, so a read follows only admitted edges.
 
 A package refused or left incomplete has no view, so neither accessor is
 reachable for it. Operations, fields and invariant clauses of a state machine
@@ -295,9 +297,9 @@ of `m + r` work units, and each (effective type, redefined member) reached by
 | FR-081-AC-12 | For a deterministic single-inheritance chain of 10,000 edges (10,001 effective types) run on a thread with a 524,288-byte (512 KiB) stack, normalization at the NFR-012 default limits eagerly computes every effective identity and the complete view with 20,001 retained facts, 15,104,845 hashed bytes (at most 16,777,216) and 60,006 work units (at most 100,000). | Test (TC-1025) |
 | FR-081-AC-13 | The FR-081-AC-12 case, run in an isolated process, has a peak resident set of at most 21,474,836,480 bytes and a wall time of at most 30 seconds in the release profile on the reference host Terra, each measured from package input admission through retention of the complete result. | Test (TC-1025) |
 | FR-081-AC-16 | Given a variant type with two cases, the effective view holds one effective type and two effective members of it, each derived from the key of its own declaration with one `qualify` fact; permuting the cases changes no effective identity or position. | Test (TC-1003) |
-| FR-081-AC-17 | Given K2 plus `ExpressLifecycle` (supertype `OrderLifecycle`, state `Expedited`, one transition `Placed` to `Expedited` triggered by its own operation `expedite`), `state_machine(ExpressLifecycle)` returns states `Cancelled`, `Draft` and `Placed` declared by `OrderLifecycle`, each at its position in that machine's list, and `Expedited` declared by `ExpressLifecycle` at position 0, and transitions `OrderLifecycle` `[0]` to `[2]` followed by `ExpressLifecycle` `[0]`, each with its authored `from`, `to`, `trigger` and `guard`; `OrderLifecycle` `[0]` carries guard `NotYetPlaced`. `state_machine(OrderLifecycle)` returns only `OrderLifecycle`'s own states and transitions, and `state_machine` of an object type or of an absent key returns nothing. | Test (TC-1049) |
-| FR-081-AC-18 | In the AC-17 view, `conforms(ExpressLifecycle, OrderLifecycle)` and `conforms(ExpressLifecycle, ExpressLifecycle)` are true; `conforms(OrderLifecycle, ExpressLifecycle)` and `conforms(ExpressLifecycle, Fulfilment)` are false; two types with equal display names and distinct keys do not conform. `declarations()`, `type_identities()` and the view's identity are byte-identical to those of the same package computed without calling either accessor, and the states and transitions appear in no `declarations()` entry. | Test (TC-1049) |
-| FR-081-AC-19 | Giving the AC-17 `ExpressLifecycle` transition the guard `NotYetPlaced` leaves the entries of AC-17 unchanged except that `ExpressLifecycle` `[0]` carries guard `NotYetPlaced`. A package that refuses (a repeated state name, a transition naming no effective state) has no view and no accessor. | Test (TC-1049) |
+| FR-081-AC-17 | Given K2 plus `ExpressLifecycle` (supertype `OrderLifecycle`, state `Expedited`, one transition `Placed` to `Expedited` triggered by its own operation `expedite`), `state_machine(ExpressLifecycle)` returns states `Expedited` (declared by `ExpressLifecycle`, position 0), then `OrderLifecycle`'s `Draft`, `Placed` and `Cancelled` (positions 0, 1, 2), and transitions `ExpressLifecycle` `[0]`, then `OrderLifecycle` `[0]`, `[1]`, `[2]`, each with its authored `from`, `to`, `trigger`, `guard` and `emits`; `OrderLifecycle` `[0]` carries guard `NotYetPlaced` and emits `OrderPlaced`. The order is by declaring machine key bytes (`ix://test/orders/ExpressLifecycle` before `ix://test/orders/OrderLifecycle`), then position. `state_machine(OrderLifecycle)` returns only `OrderLifecycle`'s own states and transitions, and `state_machine` of an object type or of an absent key returns nothing. | Test (TC-1049) |
+| FR-081-AC-18 | In the AC-17 view, `conforms(ExpressLifecycle, OrderLifecycle)` and `conforms(ExpressLifecycle, ExpressLifecycle)` are true; `conforms(OrderLifecycle, ExpressLifecycle)` and `conforms(ExpressLifecycle, Fulfilment)` are false; two types with equal display names and distinct keys do not conform (`ExpressLifecycleCopy`, display name `ExpressLifecycle`, conforms to neither `ExpressLifecycle` nor `OrderLifecycle`). `declarations()`, `type_identities()` and the view's identity are byte-identical to those of the same package computed without calling either accessor, and the states and transitions appear in no `declarations()` entry. | Test (TC-1049) |
+| FR-081-AC-19 | Giving the AC-17 `ExpressLifecycle` transition the guard `NotYetPlaced` leaves the entries of AC-17 unchanged except that `ExpressLifecycle` `[0]` carries guard `NotYetPlaced`. A package that refuses (a repeated state name, a transition naming another machine's state) has no view and no accessor. | Test (TC-1049) |
 
 ## Dependencies
 
