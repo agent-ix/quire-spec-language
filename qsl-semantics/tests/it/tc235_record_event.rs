@@ -592,7 +592,7 @@ fn tc235_m21_relationship_sources_and_owner_rules_are_retained() {
             },
             "targetEnd": {
                 "type": id(target),
-                "multiplicity": {"lower": 0, "ordered": false, "unique": true},
+                "multiplicity": {"lower": 0, "upper": 1, "ordered": false, "unique": true},
             },
         })
     };
@@ -662,6 +662,24 @@ fn tc235_m21_relationship_sources_and_owner_rules_are_retained() {
     assert_eq!(
         clause_for(&package, "Fulfilment/HasOrder").text,
         "present(self.order)"
+    );
+    // FR-363-AC-1: the authored clause type-checks, `self.order` navigating
+    // the `[0,1]` target end of `Fulfilment/order` as an `Option<Reference<Order>>`.
+    let checked = crate::relationship_navigation::check_invariant(
+        package.clone(),
+        "Fulfilment",
+        &clause_for(&package, "Fulfilment/HasOrder").text,
+    )
+    .expect("present(self.order) type-checks");
+    assert_eq!(
+        crate::relationship_navigation::navigations(&checked),
+        [(
+            quire_exact::ValueType::option(quire_exact::ValueType::Reference(
+                crate::relationship_navigation::object(&checked, "Order")
+            )),
+            key("relationship/Fulfilment-order-Order"),
+            "order".to_owned(),
+        )]
     );
     assert!(package.records.iter().any(|record| {
         matches!(record, DomainPackageRecord::Population(population)
