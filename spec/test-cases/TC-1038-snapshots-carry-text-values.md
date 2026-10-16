@@ -22,6 +22,8 @@ FR-106-AC-38.
 
 ## Preconditions
 
+- Steps 1, 3 and 7 to 10 declare the Text value types below and so depend on
+  the amended semantic-IR validator that FR-056's Text paragraph states.
 - TC-1036's package, with Text value types, declared in the form of FR-056-AC-37, `Title` (`Text[1, 8; nfc]`), `Tag`
   (`Text[0, 4; unicode-scalars]`) and `Code` (`Text[0, 4; binary-utf8]`), and
   `ConfigVersion` also gaining, after its other fields and in this declared

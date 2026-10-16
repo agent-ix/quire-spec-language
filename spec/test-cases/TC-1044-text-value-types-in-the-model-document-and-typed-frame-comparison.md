@@ -24,6 +24,14 @@ case never uses that spelling.
 
 ## Preconditions
 
+Every row that admits `Title` or reaches the Text reader (steps 1, 3, 4 and
+step 2 rows (b) to (k)) depends on the amended semantic-IR validator that
+FR-056's Text paragraph states: a `minLength`, `maxLength` or `format`
+constraint applied to a value type of `scalar` `string` is applicable. At the
+pinned validator those rows refuse `invalid_model_binding`/
+`malformed-declaration` at `Title`. Rows (a), (l), (m), (n) and the field row
+are decided by the validator or the reader without it and are reachable today.
+
 - TC-897's base package, with package identity prefix `P`. Where a step says
   `Title`, the package declares the value type below; its constraints are
   written in the member order of RFC 8785, `O` is the origin of any other
@@ -55,7 +63,7 @@ case never uses that spelling.
 2. Mutate `Title` one row at a time, each from the base: (a) add the member
    `"textProfile":"nfc"`; (b) add a constraint `{"appliesTo":"ix://P/Title",
    "diagnosticCode":"K.TITLE_PATTERN","identity":"ix://P/constraint/Title/
-   pattern","keyword":"pattern","operands":{"regex":"^a"},"origin":O}`;
+   pattern","keyword":"pattern","operands":{"dialect":"ecma-262","regex":"^a"},"origin":O}`;
    (c) change `Cfmt`'s name to `email:rfc`; (d) add a second `minLength`
    constraint with identity `.../minLength-2`; (e) remove `Cfmt`; (f) remove
    `Cmin`; (g) remove `Cmax`; (h) set the profile to `nfx`; (i) set the
@@ -90,7 +98,8 @@ case never uses that spelling.
   profile `p`, then `Text[0, 0; nfc]` and `Text[3, 3; nfc]`; the reordered
   constraints give the same declaration. `tag` is `String`, never `Text`.
 - Step 2 refuses each row at `Title` except the last, and admits nothing: (a)
-  `unsupported_construct`/`declaration-form` naming `textProfile`; (b)
+  `invalid_model_binding`/`malformed-declaration` from the validator, the
+  schema admitting `textProfile` only on the core string scalar; (b)
   `declaration-form` naming `pattern`; (c) `declaration-form` naming `format`;
   (d) `invalid_model_binding`/`malformed-declaration` naming `minLength`; (e)
   `declaration-form` naming `profile`; (f) `malformed-declaration` naming
@@ -104,9 +113,9 @@ case never uses that spelling.
 - Step 3 admits eight pairs by every surface, as eight retained scalars. Nine
   pairs and the empty text refuse `invalid_runtime_input`/`invalid-value` for
   the snapshot, naming `title`, the bounds `1` and `8`, the profile and the
-  measured length; the replayed argument refuses `text_length_out_of_domain`/
-  `outside-domain` before the call, for the `Input` assignment and the
-  `Witness` entry, with `expected` `Text[1, 8; nfc]`. The two U+00E9 admit under
+  measured length; the replayed argument refuses `invalid_runtime_input`/`WrongValueKind`
+  naming the parameter's position before the call, for the `Input` assignment
+  and the `Witness` entry. The two U+00E9 admit under
   `Bin` (four bytes) and three refuse (six bytes). The String object in the
   Text slot and the Text object in the String slot refuse `wrong-value-kind`.
 - Step 4 decides each row by its declared type: the `label` change (String)
@@ -114,6 +123,6 @@ case never uses that spelling.
   the `title` change from U+00E9 to U+0065 U+0301 under `nfc` admits as no
   change, and `a` to `b` refuses naming `child` and `title`; the `subtitle`
   change under `unicode-scalars` refuses naming `child` and `subtitle`; absent
-  to present refuses naming `subtitle`, and the reordered members admit; the
+  to present refuses naming `child` and `subtitle`, and the reordered members admit; the
   swapped `aliases` refuse naming `child` and `aliases`, and the whitespace
   change admits; the `token` change refuses naming `child` and `token`.
