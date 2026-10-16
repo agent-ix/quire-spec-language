@@ -71,3 +71,11 @@ Recorded (medium/low, not fixed):
   values. This is unmetered hashing work.
 - A doc comment line in `tests/support/native_values.rs:48` runs past the
   line width.
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 0e0a52dee: `git diff origin/main HEAD` (two-dot) and `origin/main...HEAD` (three-dot) both list only the five qsl-semantics files and reviews/qsl-812-code-review.md, reviews/qsl-812-gap-analysis.md. |
+| FND-002 | fixed | 0e0a52dee: `Item.address` is declared before `aliases` in the fixture and in `text_fields`, so the aliases Text is value 17 and the refusal at bound 16 is that Text. The "last value in walk order" wording is restored. |
+| FND-003 | fixed | 0e0a52dee: the new test carries no trace tag. Its doc names FR-106 check 11, whose record clause has no AC row (recorded, not blocking). |
