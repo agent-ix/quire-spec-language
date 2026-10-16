@@ -1,5 +1,5 @@
 ---
-id: TC-1040
+id: TC-1041
 title: "The population manifest decides whether a missing object is dangling or undecidable"
 type: TC
 relationships:
@@ -8,7 +8,7 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-106
     type: verifies
 ---
-# TC-1040: The population manifest decides whether a missing object is dangling or undecidable
+# TC-1041: The population manifest decides whether a missing object is dangling or undecidable
 
 ## Description
 
@@ -26,7 +26,7 @@ FR-106-AC-39.
 Use TC-1033's fixture **orders** and TC-1034's navigation notation and
 charges. Rows 1 to 17 build the observation through the model-layer entry
 with the enumerator below; rows 18 to 20 admit snapshot documents as in
-TC-1035. Tag the tests `#[trace("TC-1040", "FR-364-AC-n")]`.
+TC-1035. Tag the tests `#[trace("TC-1041", "FR-364-AC-n")]`.
 
 The enumerator yields one row per population declaration of the package, in
 ascending declaration-key order, with the declared member types as covered
