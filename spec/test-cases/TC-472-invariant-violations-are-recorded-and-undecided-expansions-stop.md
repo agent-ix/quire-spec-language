@@ -50,9 +50,9 @@ and the sampler is the `quire.simulation.sampler/v1`
    against the default-budget system. Repeat step 1 and this step.
 6. Package `test/tallies` (object type `test/tallies/Tally` with
    `items: Sequence<Int[0, 2]>[1, 1]`, population `test/tallies/tallies`,
-   operation `touch()` with an empty frame), unit type `Tiny = Int[0, 1]`,
-   initial state `t1` with `items` `[2]`, universe `[t1]`. Expand `t1` with:
-   `pre Low { sum<Tiny>(x in self.items: x) = 0 }` alone; `Low` and
+   operation `touch()` with an empty frame, and a query operation
+   `ready(): Boolean` whose effective precondition is `false`), initial state `t1` with `items` `[2]`, universe `[t1]`. Expand `t1` with:
+   `pre Low { self.ready() }` alone; `Low` and
    `pre Never { false }`; `Low` and `pre Aaa { false }`; `post LowPost` with
    `Low`'s body and no `pre` clause.
 
@@ -94,8 +94,9 @@ Tag the tests `#[trace("TC-472", "FR-120-AC-n")]`.
   Some(resource_exhausted/insufficient-next-charge), replayed: None }`. The
   repeated runs give equal `Exploration`s and equal `ModelTrace`s.
 - Step 6: `Low` alone: no `touch` successor, and `t1` has
-  `ContractUndetermined { <touch>, none, Low, Undefined(SumOutOfDomain) }`.
+  `ContractUndetermined { <touch>, none, Low, FamilyResult::Undefined
+  precondition-false }`.
   `Low` with `Never`, and `Low` with `Aaa`: no `touch` successor and no
   finding. `LowPost`: no `touch` successor, and `t1` has
   `ContractUndetermined { <touch>, Some(<t1's digest>), LowPost,
-  Undefined(SumOutOfDomain) }`.
+  FamilyResult::Undefined precondition-false }`.

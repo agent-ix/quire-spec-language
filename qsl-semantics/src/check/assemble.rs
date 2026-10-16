@@ -1296,6 +1296,7 @@ fn model_value_type(
                     IntegerInterval::new(Integer::from(*lower), Integer::from(*upper))
                         .map_err(|_| Unmapped::Unsupported)?,
                 ),
+                ScalarValueDomain::Text(text) => ValueType::Text(*text),
                 ScalarValueDomain::Native(NativeValueType::Uuid) => ValueType::Uuid,
                 ScalarValueDomain::Native(NativeValueType::Timestamp) => ValueType::Timestamp,
                 ScalarValueDomain::Native(_) => return Err(Unmapped::Unsupported),
