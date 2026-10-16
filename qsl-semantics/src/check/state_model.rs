@@ -157,6 +157,7 @@ fn navigation(end: &Navigable<'_>, reference: NodeId) -> Result<(NodeKind, Value
         reference,
         relationship: end.relationship.key.clone(),
         role: end.role.to_owned(),
+        near: end.near,
     };
     Ok((kind, value_type))
 }

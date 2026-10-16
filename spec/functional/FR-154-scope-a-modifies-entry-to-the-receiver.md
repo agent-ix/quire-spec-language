@@ -120,12 +120,14 @@ impl StateModel {
     of an object type, so such an operation refuses a non-empty
     `modifies_receiver` and `deletes_receiver: true` with
     `invalid_model_binding`/`malformed-declaration` at that member
-    (`modifies_receiver` first), before any entry is read (QSpec FR-013). An
+    (`modifies_receiver` first), before any entry is read (QSpec FR-013). A
+    unit state clause never names a process operation (FR-104), so its `self`
+    is always an object; a process operation's own `requires`/`ensures` bind
+    `self` as FR-103 states. An
     empty `modifies_receiver`, `deletes_receiver: false` and
-    `deletes_parameters` read as for an object type. QSL FR-103 admits
-    operations only on object types and processes, so QSL has no
-    state-machine operations and none reaches this rule; QSpec's Frames row,
-    which refuses the same forms on them, is their contract.
+    `deletes_parameters` read as for an object type. QSpec's Frames row refuses
+    the same forms on a state machine's operation, and that row is its
+    contract.
   - A `modifies_receiver` entry SHALL name a field among the fields, own and inherited, of the
     operation's declaring object type. An entry that names
     no declaration of the package refuses `missing_declaration`/`missing-name`
