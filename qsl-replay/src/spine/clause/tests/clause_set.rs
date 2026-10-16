@@ -26,15 +26,15 @@ fn unit() -> Unit {
 }
 
 /// The documents of the TC-1039 invocations and the current snapshot.
-struct Documents {
-    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
-    invocations: BTreeMap<[u8; 32], Vec<u8>>,
+pub(super) struct Documents {
+    pub(super) snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    pub(super) invocations: BTreeMap<[u8; 32], Vec<u8>>,
 }
 
 impl Documents {
     /// An `attemptUpdate` invocation on `child` whose version goes `from` to
     /// `to`, with `root` at 0 in both snapshots.
-    fn invocation(&mut self, name: &str, from: i64, to: i64) -> DocumentRef {
+    pub(super) fn invocation(&mut self, name: &str, from: i64, to: i64) -> DocumentRef {
         let digest = config_version_model_digest_hex();
         let (pre, pre_bytes) = document_ref_and_bytes(&format!("{name}-pre"), |label| {
             config_version_invocation_snapshot(label, &digest, "pre", 0, from)
@@ -53,16 +53,27 @@ impl Documents {
 
     /// The current snapshot `cur`: `root` 0 and `child` 1.
     fn current(&mut self) -> DocumentRef {
+        self.current_snapshot("cur", 0, Some(1))
+    }
+
+    /// A current snapshot named `name`: `root` at `root_version`, and `child`
+    /// at `child_version` naming `root` when there is one.
+    pub(super) fn current_snapshot(
+        &mut self,
+        name: &str,
+        root_version: i64,
+        child_version: Option<i64>,
+    ) -> DocumentRef {
         let digest = config_version_model_digest_hex();
-        let (current, bytes) = document_ref_and_bytes("cur", |label| {
-            config_version_snapshot(label, &digest, 0, Some(1))
+        let (current, bytes) = document_ref_and_bytes(name, |label| {
+            config_version_snapshot(label, &digest, root_version, child_version)
         });
         self.snapshots.insert(current.digest, bytes);
         current
     }
 }
 
-fn documents() -> Documents {
+pub(super) fn documents() -> Documents {
     Documents {
         snapshots: BTreeMap::new(),
         invocations: BTreeMap::new(),
@@ -70,7 +81,7 @@ fn documents() -> Documents {
 }
 
 /// `clause` admitted by FR-106 over `selection`.
-fn admit(
+pub(super) fn admit(
     unit: &Unit,
     documents: &Documents,
     clause: &str,
