@@ -160,7 +160,9 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
   profile to FR-043. For any other selection, `a` and `b` SHALL both be
   `Reference<M::T>` of that exact object type, as before. An ineligible
   operand or edge shape, including a set, bag or ordered set of references,
-  SHALL refuse `ill_typed`/`operator-ineligible` at the `reaches`.
+  SHALL refuse `ill_typed`/`operator-ineligible` at the `reaches`. When `edge` names a
+  relationship end instead of a field, [FR-365](FR-365-reach-an-object-over-a-relationship-end-in-a-state-clause.md)
+  checks, lowers and evaluates the form.
 
 ### Definedness facts
 
