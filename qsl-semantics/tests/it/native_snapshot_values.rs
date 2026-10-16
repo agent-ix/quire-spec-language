@@ -48,6 +48,10 @@ fn string(text: &str) -> Value {
     json!({"kind": "string", "text": text})
 }
 
+fn text(text: &str) -> Value {
+    json!({"kind": "text", "text": text})
+}
+
 fn integer(spelling: &str) -> Value {
     json!({"integer": spelling})
 }
@@ -80,10 +84,21 @@ struct Replay {
     graph: CheckedGraph,
     packages: BTreeMap<[u8; 32], Vec<u8>>,
     model: Value,
+    /// The field values of `Item.i1` in the base snapshot.
+    base: Vec<(String, Value)>,
 }
 
 fn replay() -> Replay {
-    let document = fixture::document();
+    replay_of(fixture::document(), base_fields())
+}
+
+/// The Text fixture (TC-1038): `Item` also holding `title`, `subtitle`,
+/// `code` and `aliases`.
+fn text_replay() -> Replay {
+    replay_of(fixture::text_document(), text_fields())
+}
+
+fn replay_of(document: Value, base: Vec<(String, Value)>) -> Replay {
     let bytes = serde_json::to_vec(&document).expect("the fixture serializes");
     let packages = package_input([bytes.as_slice()]);
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
@@ -134,6 +149,7 @@ fn replay() -> Replay {
         graph,
         packages,
         model,
+        base,
     }
 }
 
@@ -155,6 +171,23 @@ fn base_fields() -> Vec<(String, Value)> {
     .into_iter()
     .map(|(name, value)| (name.to_owned(), value))
     .collect()
+}
+
+/// TC-1038's base `Item.i1`: [`base_fields`] and then `title`, `subtitle`,
+/// `code` and `aliases`.
+fn text_fields() -> Vec<(String, Value)> {
+    let mut fields = base_fields();
+    fields.extend(
+        [
+            ("title", text("Ready")),
+            ("subtitle", json!({"absent": {}})),
+            ("code", text("abc")),
+            ("aliases", json!({"sequence": []})),
+        ]
+        .into_iter()
+        .map(|(name, value)| (name.to_owned(), value)),
+    );
+    fields
 }
 
 fn with(mut fields: Vec<(String, Value)>, name: &str, value: Value) -> Vec<(String, Value)> {
@@ -445,7 +478,7 @@ impl Replay {
         result: Value,
         limits: ObservationLimits,
     ) -> Result<AdmittedObservations, AdmissionFailure> {
-        let fields = base_fields();
+        let fields = self.base.clone();
         let invoked = self.invocation(operation, &fields, &fields, parameters, result);
         self.select(
             operation,
@@ -467,7 +500,7 @@ impl Replay {
         limits: ObservationLimits,
     ) -> Result<AdmittedObservations, AdmissionFailure> {
         let (parameters, result) = default_call(operation);
-        let invoked = self.invocation(operation, &base_fields(), post, parameters, result);
+        let invoked = self.invocation(operation, &self.base, post, parameters, result);
         self.select(
             operation,
             Selected::Postcondition,
@@ -522,7 +555,7 @@ impl Replay {
         operation: &str,
         parameters: Vec<(&str, SnapshotValue)>,
     ) -> Result<AdmittedObservations, AdmissionFailure> {
-        let (reference, bytes) = snapshot(self, "pre", "pre", &base_fields());
+        let (reference, bytes) = snapshot(self, "pre", "pre", &self.base);
         let snapshots = BTreeMap::from([(reference.digest, bytes)]);
         let parameters = parameters
             .into_iter()
@@ -547,9 +580,19 @@ impl Replay {
 
     /// Check 11 over `operation` changing the base fields to `post`.
     fn frame(&self, operation: &str, post: &[(String, Value)]) -> FrameVerdict {
+        self.frame_from(operation, &self.base, post)
+    }
+
+    /// Check 11 over `operation` changing the field values `pre` to `post`.
+    fn frame_from(
+        &self,
+        operation: &str,
+        pre: &[(String, Value)],
+        post: &[(String, Value)],
+    ) -> FrameVerdict {
         self.frame_over(
             operation,
-            &snapshot_text(self, "pre", "pre", &base_fields()),
+            &snapshot_text(self, "pre", "pre", pre),
             &snapshot_text(self, "post", "post", post),
         )
     }
@@ -597,6 +640,7 @@ fn default_call(operation: &str) -> (Value, Value) {
             json!({"id": uuid(UUID_TEXT), "at": timestamp("0")}),
             uuid(OTHER_UUID),
         ),
+        "retitle" | "rekeep" => (json!({"name": text("Ready")}), text("Steady")),
         _ => (json!({"name": string("n")}), string("r")),
     }
 }
@@ -1653,5 +1697,288 @@ fn a_native_object_directly_in_an_optional_slot_is_judged_in_order() {
     assert_eq!(
         refused_field(&replay, "note", string("n")),
         expect("wrong-value-kind", "note", &[], None, None)
+    );
+}
+
+// ---------------------------------------------------------------------------
+// TC-1038: Text value types, the rows QSL-798 left open
+// ---------------------------------------------------------------------------
+
+/// Whether `value` is the Text whose retained sequence is exactly `retained`.
+fn is_text(value: &Datum, retained: &str) -> bool {
+    matches!(value, Datum::Text(held) if held.retained() == retained)
+}
+
+/// TC-1044 step 1 (FR-056-AC-37): a field typed by a Text value type has the
+/// value type `Text[min, max; profile]` the value type declares.
+#[trace("TC-1044", "FR-056-AC-37")]
+#[test]
+fn a_field_typed_by_a_text_value_type_is_that_text() {
+    use quire_exact::{TextProfile, TextType, ValueType};
+    let replay = text_replay();
+    let attributes = replay
+        .graph
+        .scope()
+        .types()
+        .attributes(replay.item())
+        .expect("Item has attributes");
+    let declared = |name: &str| {
+        attributes
+            .iter()
+            .find(|attribute| attribute.field().name() == name)
+            .map(|attribute| attribute.field().value_type().clone())
+            .unwrap_or_else(|| panic!("{name} is declared"))
+    };
+    let text = |min, max, profile| {
+        ValueType::Text(TextType::new(min, max, profile).expect("nonempty bounds"))
+    };
+    assert_eq!(declared("title"), text(1, 8, TextProfile::Nfc));
+    assert_eq!(declared("code"), text(0, 4, TextProfile::BinaryUtf8));
+    assert_eq!(declared("subtitle"), text(0, 4, TextProfile::UnicodeScalars));
+    assert_eq!(declared("label"), ValueType::String);
+}
+
+/// TC-1038 step 1 (FR-106-AC-33): the base snapshot admits `title` as the Text
+/// of the retained sequence `Ready`; reordering the members of the object and
+/// the whitespace of the document gives the same value and digest.
+#[trace("TC-1038", "FR-106-AC-33")]
+#[test]
+fn the_base_snapshot_admits_a_text() {
+    let replay = text_replay();
+    let closure = replay
+        .admit(&replay.base, ObservationLimits::default())
+        .unwrap_or_else(|failure| panic!("the snapshot admits: {failure:?}"));
+    assert!(is_text(&replay.value(&closure, "title"), "Ready"));
+    assert!(is_text(&replay.value(&closure, "code"), "abc"));
+    let reordered = with(
+        replay.base.clone(),
+        "title",
+        json!({"text": "Ready", "kind": "text"}),
+    );
+    let spaced = snapshot_text(&replay, "current", "current", &reordered)
+        .replace("\",\"", "\" , \"")
+        .replace(":{", ": {");
+    let (plain, _) = snapshot(&replay, "current", "current", &replay.base);
+    let (respelled, _) = snapshot(&replay, "current", "current", &reordered);
+    assert_eq!(plain.digest, respelled.digest, "the digest is canonical");
+    let provision = BTreeMap::from([(plain.digest, spaced.into_bytes())]);
+    let (environment, _) = admit_current_snapshot(
+        replay.graph.model_selections(),
+        replay.graph.scope().types(),
+        &replay.packages,
+        ModelNormalizationLimits::default(),
+        &provision,
+        &plain,
+        ObservationLimits::default(),
+    )
+    .unwrap_or_else(|failure| panic!("the respelled document admits: {failure:?}"));
+    assert!(is_text(
+        &replay.value(environment.objects(), "title"),
+        "Ready"
+    ));
+}
+
+/// TC-1038 step 3 (FR-106-AC-33): an invocation of `retitle` admits `name` and
+/// `result` as Text values in both selections, the `PreCall` selection
+/// reading no result.
+#[trace("TC-1038", "FR-106-AC-33")]
+#[test]
+fn an_invocation_admits_text_arguments_and_result() {
+    let replay = text_replay();
+    let (parameters, result) = default_call("retitle");
+    for selected in [Selected::Postcondition, Selected::Precondition] {
+        let admitted = replay
+            .invoke(
+                "retitle",
+                selected,
+                parameters.clone(),
+                result.clone(),
+                ObservationLimits::default(),
+            )
+            .unwrap_or_else(|failure| panic!("the invocation admits: {failure:?}"));
+        assert!(is_text(&admitted.parameters[0].1, "Ready"));
+        match selected {
+            Selected::Postcondition => {
+                assert!(admitted
+                    .result
+                    .as_ref()
+                    .is_some_and(|r| is_text(r, "Steady")));
+            }
+            Selected::Precondition => assert!(admitted.result.is_none()),
+        }
+    }
+    let admitted = replay
+        .pre_call(
+            "retitle",
+            vec![(
+                "name",
+                SnapshotValue::native(
+                    RawNativeKind::Known(NativeKind::Text),
+                    vec![("text".to_owned(), Some("Ready".to_owned()))],
+                ),
+            )],
+        )
+        .unwrap_or_else(|failure| panic!("the PreCall admits: {failure:?}"));
+    assert!(is_text(&admitted.parameters[0].1, "Ready"));
+    assert!(admitted.result.is_none());
+}
+
+/// TC-1038 step 7 (FR-106-AC-37): a changed `title` admits its frame with the
+/// grant and violates it without; a post that is the same text under `nfc`
+/// (U+00E9 against U+0065 U+0301, reordered members, an escaped `R`) is no
+/// change; a `subtitle` change under `unicode-scalars` is a change.
+#[trace("TC-1038", "FR-106-AC-37")]
+#[test]
+fn the_frame_compares_a_text_by_its_retained_sequence() {
+    let replay = text_replay();
+    let steady = with(replay.base.clone(), "title", text("Steady"));
+    assert_eq!(replay.frame("retitle", &steady), FrameVerdict::Holds);
+    let FrameVerdict::Violation(witness) = replay.frame("rekeep", &steady) else {
+        panic!("a change without the grant violates the frame");
+    };
+    assert_eq!(witness.code, Code::FrameViolation);
+    assert_eq!(witness.cause, "unauthorized-change");
+    assert!(writes(&witness.change, "title"), "{:?}", witness.change);
+
+    let composed = with(replay.base.clone(), "title", text("\u{e9}"));
+    let decomposed = with(replay.base.clone(), "title", text("e\u{301}"));
+    assert_eq!(
+        replay.frame_from("rekeep", &composed, &decomposed),
+        FrameVerdict::Holds,
+        "U+00E9 and U+0065 U+0301 are one value under nfc"
+    );
+    let reordered = with(
+        replay.base.clone(),
+        "title",
+        json!({"text": "Ready", "kind": "text"}),
+    );
+    assert_eq!(
+        replay.frame_from("rekeep", &replay.base, &reordered),
+        FrameVerdict::Holds
+    );
+    let pre = snapshot_text(&replay, "pre", "pre", &replay.base);
+    let escaped = snapshot_text(&replay, "post", "post", &replay.base)
+        .replace("\"Ready\"", "\"\\u0052eady\"");
+    assert_eq!(
+        replay.frame_over("rekeep", &pre, &escaped),
+        FrameVerdict::Holds
+    );
+
+    let present = |text_value: &str| json!({"present": text(text_value)});
+    let before = with(replay.base.clone(), "subtitle", present("\u{e9}"));
+    let after = with(replay.base.clone(), "subtitle", present("e\u{301}"));
+    let FrameVerdict::Violation(witness) = replay.frame_from("rekeep", &before, &after) else {
+        panic!("a unicode-scalars change violates the frame");
+    };
+    assert_eq!(witness.cause, "unauthorized-change");
+    assert!(writes(&witness.change, "subtitle"), "{:?}", witness.change);
+}
+
+/// TC-1038 step 8 (FR-106-AC-36): under `PostStateRange::Witness` a post
+/// snapshot holding a String object in `title` refuses `wrong-value-kind`, an
+/// empty `title` refuses `invalid-value` naming `text`, and a `text` of `5`
+/// refuses `wrong-value-kind` naming `text`.
+#[trace("TC-1038", "FR-106-AC-36")]
+#[test]
+fn a_witness_post_snapshot_still_refuses_a_wrong_text() {
+    let replay = text_replay();
+    let witness = ObservationLimits {
+        post_state: PostStateRange::Witness,
+        ..ObservationLimits::default()
+    };
+    for (value, cause, member) in [
+        (string("Ready"), "wrong-value-kind", None),
+        (text(""), "invalid-value", Some("text")),
+        (json!({"kind": "text", "text": 5}), "wrong-value-kind", Some("text")),
+    ] {
+        let post = with(replay.base.clone(), "title", value.clone());
+        assert_eq!(
+            refusal_of(replay.invoke_with_post("retitle", &post, witness)),
+            expect(cause, "title", &[], member, None),
+            "{value}"
+        );
+    }
+}
+
+/// TC-1038 step 9 (FR-106-AC-37): a Text element inside `aliases`, the last
+/// value in walk order, counts as one value; the exact count admits and one
+/// less refuses `node-count-exceeded` naming `observation.values`.
+#[trace("TC-1038", "FR-106-AC-37")]
+#[test]
+fn a_text_object_counts_as_one_value() {
+    let replay = text_replay();
+    let fields = with(
+        replay.base.clone(),
+        "aliases",
+        json!({"sequence": [text("x")]}),
+    );
+    assert_eq!(replay.values_used(&fields), 15);
+    replay
+        .admit(&fields, ObservationLimits::default().with_values_per_document(15))
+        .expect("the exact count admits");
+    assert_values_limit(
+        replay.admit(
+            &fields,
+            ObservationLimits::default().with_values_per_document(14),
+        ),
+        14,
+    );
+}
+
+/// TC-1038 step 10 (FR-106-AC-38): a `title` text holding a lone surrogate
+/// escape or the byte `0xC0`, selected under the base snapshot's digest,
+/// refuses `byte-digest-mismatch` before any value is read (a wrong-kind
+/// `token` elsewhere changes nothing); a document over the byte limit refuses
+/// `input-bytes-exceeded` naming `observation.input_bytes`.
+#[trace("TC-1038", "FR-106-AC-38")]
+#[test]
+fn the_document_edge_refuses_a_title_before_any_value_is_read() {
+    let replay = text_replay();
+    let (base, _) = snapshot(&replay, "current", "current", &replay.base);
+    let admit_bytes = |bytes: Vec<u8>| {
+        let provision = BTreeMap::from([(base.digest, bytes)]);
+        admit_current_snapshot(
+            replay.graph.model_selections(),
+            replay.graph.scope().types(),
+            &replay.packages,
+            ModelNormalizationLimits::default(),
+            &provision,
+            &base,
+            ObservationLimits::default(),
+        )
+        .map(|_| ())
+    };
+    let text_of = snapshot_text(&replay, "current", "current", &replay.base);
+    let wrong_token = with(replay.base.clone(), "token", timestamp("0"));
+    let wrong_text = snapshot_text(&replay, "current", "current", &wrong_token);
+    let mut documents = vec![
+        text_of.replace("\"Ready\"", "\"\\ud800\"").into_bytes(),
+        text_of.replace("\"Ready\"", "\"\\udc00\"").into_bytes(),
+        wrong_text.replace("\"Ready\"", "\"\\ud800\"").into_bytes(),
+    ];
+    let mut raw = text_of.replace("\"Ready\"", "\"r\u{1}y\"").into_bytes();
+    let at = raw
+        .windows(3)
+        .position(|window| window == b"r\x01y")
+        .expect("the marker");
+    raw[at + 1] = 0xC0;
+    raw.remove(at + 2);
+    documents.push(raw);
+    for bytes in documents {
+        let Err(AdmissionFailure::Refused(record)) = admit_bytes(bytes) else {
+            panic!("a refusal");
+        };
+        assert_eq!(record.code, Code::StaleDependency);
+        assert_eq!(record.cause, "byte-digest-mismatch");
+    }
+    let huge = text_of.replace("\"Ready\"", &format!("\"{}\"", "a".repeat(1_048_576)));
+    let Err(AdmissionFailure::Refused(record)) = admit_bytes(huge.into_bytes()) else {
+        panic!("a refusal");
+    };
+    assert_eq!(record.code, Code::StageLimitExceeded);
+    assert_eq!(record.cause, "input-bytes-exceeded");
+    assert_eq!(
+        record.fields.get("setting").map(String::as_str),
+        Some("observation.input_bytes")
     );
 }
