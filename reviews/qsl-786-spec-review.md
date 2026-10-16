@@ -54,3 +54,23 @@ Recorded, not blocking:
 - low: FR-092's "QSpec FR-322 ... fixes these three spellings;" line is indented as a continuation of the `timestamp` bullet.
 - low: TC-1052 declares `verifies` FR-098, but no FR-098 AC names TC-1052.
 - low: whether `uuid`/`timestamp` are reserved in the complete-V1 vocabulary only (like `decimal`) or also in base/historical editions (like `rational`) is unstated.
+
+## New findings (disposition pass 1)
+
+Reviewed at agent-ix/quire-spec-language@8a3303bd064d9691510514f52a7f00952a145eef.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | high | FR-091-AC-43 expects `Timestamp(-170141183460469231731687303715884105729)` to refuse `IntegerOutsideI128` with limit `i128::MIN`. S2 folds only the directly negated 2^127 (`qsl-forms/src/value.rs:1236-1243`); any other `-n` is `Negate` over the positive literal, so check refuses the literal `170141183460469231731687303715884105729` with limit `i128::MAX` (`qsl-semantics/src/check/type_form.rs:90-97`), as merged FR-091-AC-38 states for the same spelling. The FR-091 Timestamp paragraph defers to that refusal. Fix: expect limit `i128::MAX` for both rows (value as the positive literal), or specify a new fold. | spec/functional/FR-091-produce-value-forms-and-assemble-package-declarations.md:806-810, :951, :955 |
+
+Recorded, not blocking (pass 1):
+
+- medium: the "Name resolution" paragraph says `UUID`/`Timestamp` calls resolve "through the same name resolution as any call" where "exactly one candidate is required". Today's `Application::resolve` (`qsl-semantics/src/check/family.rs:869-930`) is precedence: a declared function wins, then a type name, and a native type head refuses `operator-ineligible`. The `function UUID` ambiguity is new behavior. The AC states it explicitly, so an implementer has the target, but the paragraph presents it as existing.
+- low: FR-091-AC-42 places the `Timestamp(1, 2)` arity refusal "at the argument". Today's arity mismatch is located at the call.
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 8a3303bd064d9691510514f52a7f00952a145eef |
+| FND-002 | fixed | 8a3303bd064d9691510514f52a7f00952a145eef |

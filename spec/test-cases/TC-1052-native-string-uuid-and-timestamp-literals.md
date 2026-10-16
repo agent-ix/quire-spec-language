@@ -53,7 +53,7 @@ Every unit starts with the complete-V1 header and one profile selection `v`.
   `invalid_syntax`/`invalid-token`); a parameter named `timestamp` or `uuid`
   stays valid.
 - Step 3: `MalformedUuidLiteral` and `IntegerOutsideI128` carry
-  `ill_typed`/`type-mismatch`, the argument or integer as written, the limit
+  `ill_typed`/`type-mismatch`, the argument or the positive literal as written, the limit
   for a count, and the span; the in-range maximum checks.
 - Step 4: every FR-056-AC-40 vector gives its stated Boolean; every
   FR-056-AC-41 vector refuses with the stated cause and yields no Boolean.
