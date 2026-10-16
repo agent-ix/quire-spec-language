@@ -84,6 +84,10 @@ pub enum WitnessValue {
     /// A native Timestamp, as the wire's payload text of signed decimal
     /// nanoseconds. Admitted by the executor like [`Self::Uuid`].
     Timestamp(String),
+    /// A native String: any Unicode scalar sequence, kept exactly (FR-070's
+    /// `{"kind":"string","text":..}` row). Distinct from [`Self::Text`], so a
+    /// `string` and a `text` of the same scalars are two values.
+    String(String),
     /// A reduced rational with a positive denominator.
     Rational {
         /// The numerator.
@@ -180,6 +184,7 @@ impl WitnessValue {
             | Self::Text(_)
             | Self::Uuid(_)
             | Self::Timestamp(_)
+            | Self::String(_)
             | Self::Rational { .. }
             | Self::Decimal { .. }
             | Self::Float32(_)
@@ -207,6 +212,7 @@ impl WitnessValue {
             Self::Text(text) => Self::Text(text.clone()),
             Self::Uuid(text) => Self::Uuid(text.clone()),
             Self::Timestamp(text) => Self::Timestamp(text.clone()),
+            Self::String(text) => Self::String(text.clone()),
             Self::Rational {
                 numerator,
                 denominator,
@@ -295,7 +301,8 @@ impl WitnessValue {
             ) => da == db && ma == mb,
             (Self::Text(a), Self::Text(b))
             | (Self::Uuid(a), Self::Uuid(b))
-            | (Self::Timestamp(a), Self::Timestamp(b)) => a == b,
+            | (Self::Timestamp(a), Self::Timestamp(b))
+            | (Self::String(a), Self::String(b)) => a == b,
             (
                 Self::Rational {
                     numerator: na,
@@ -397,6 +404,7 @@ impl WitnessValue {
                 | Self::Text(_)
                 | Self::Uuid(_)
                 | Self::Timestamp(_)
+                | Self::String(_)
                 | Self::Rational { .. }
                 | Self::Decimal { .. }
                 | Self::Float32(_)
@@ -441,6 +449,7 @@ impl WitnessValue {
             | Self::Text(_)
             | Self::Uuid(_)
             | Self::Timestamp(_)
+            | Self::String(_)
             | Self::Rational { .. }
             | Self::Decimal { .. }
             | Self::Float32(_)
@@ -470,6 +479,7 @@ impl WitnessValue {
             Self::Text(_) => "text",
             Self::Uuid(_) => "uuid",
             Self::Timestamp(_) => "timestamp",
+            Self::String(_) => "string",
             Self::Rational { .. } => "rational",
             Self::Decimal { .. } => "decimal",
             Self::Float32(_) => "float32",

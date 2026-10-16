@@ -651,6 +651,11 @@ impl<'a> Converter<'a, '_> {
                     .map_err(|refusal| native_payload(parameter, refusal))?;
                 values.push(Value::Timestamp(bound));
             }
+            // A String is any Unicode scalar sequence, kept exactly: no payload
+            // refusal exists (FR-056). It fits only a String slot.
+            (ValueType::String, WitnessValue::String(text)) => {
+                values.push(Value::String(text.clone()));
+            }
             (ValueType::Text(text_type), WitnessValue::Text(text)) => {
                 let payload =
                     TextPayload::from_utf8(text.as_bytes()).map_err(|_| self.wrong(parameter))?;
