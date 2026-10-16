@@ -90,3 +90,9 @@ Round 1, reviewed at agent-ix/quire-spec-language@0080264c36e63b5df86f059ae7a01e
 | --- | --- | --- |
 | FND-001 | fixed | 0ab3f8450 |
 | FND-002 | still-open | TC-1049 Test Procedure step 3 is unchanged: it still calls `conforms` on the four K2 pairs only and never builds `ExpressLifecycleCopy` or calls `conforms` on it. Expected Results step 3 now says "then false, false, false (the copy ...)" for calls and a fixture the procedure never introduces, and AC-18 names the copy without its shape. Fix: add to the procedure the copy's construction (distinct key, `displayName` `ExpressLifecycle`, no supertypes, and as a state machine at least one operation, state and transition per FR-208-AC-5, or else an object type) and the three calls `(Copy, ExpressLifecycle)`, `(Copy, OrderLifecycle)`, `(ExpressLifecycle, Copy)`. |
+
+Round 2, reviewed at agent-ix/quire-spec-language@6f1a16247af052a7f3a0a91a4327b96f584c30cd.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-002 | fixed | 6f1a16247 |
