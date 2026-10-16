@@ -17,6 +17,8 @@ relationships:
     type: traces_to
   - target: ix://agent-ix/quire-specification/FR-153
     type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-207
+    type: depends_on
 ---
 # FR-107: Evaluate a state clause over admitted observations at S6a
 
@@ -45,9 +47,13 @@ object environment.
 
 ## Outputs
 
-- `Result<Evaluation, CallFailure>`: `Ok` with the `Evaluation`, or
-  `CallFailure::Input(InputRefusal)` for a selection refused before S6a, or
-  `CallFailure::Fault(InternalFault)` for an S6a invariant break.
+- `evaluate_clause`: `Result<ClauseEvaluation, CallFailure>`: `Ok` with a
+  `ClauseEvaluation` holding the `Evaluation` and what the evaluation
+  recorded beside it (FR-265's decisions and stop reports, the receiver path
+  and the read paths below), or `CallFailure::Input(InputRefusal)` for a
+  selection refused before S6a, or `CallFailure::Fault(InternalFault)` for an
+  S6a invariant break.
+- `evaluate_clause_set`: `Result<ClauseSetEvaluation, CallFailure>`, below.
 
 ## Behavior
 
@@ -56,7 +62,7 @@ object environment.
   one call to the `ProtocolClause` `evaluate` hook.
 - `CheckedPackageEvaluation` SHALL gain `evaluate_clause(&self, clause:
   &QualifiedName, observations: &AdmittedObservations, meter: &mut Meter)
-  -> Result<Evaluation, CallFailure>`.
+  -> Result<ClauseEvaluation, CallFailure>`.
 - If the name resolves to no state clause, then `evaluate_clause` SHALL
   return `CallFailure::Input(InputRefusal::UnknownClause)` without charging
   the meter. If the observations were admitted for another clause, then
@@ -108,6 +114,119 @@ object environment.
   observations and meter budget give the same `Evaluation` and the same
   charge log.
 
+### The receiver path
+
+`ClauseEvaluation::receiver_path()` SHALL return the QSpec FR-207 runtime
+value path of `self` under the clause's own observation, with no steps, or
+none:
+
+- If `self` has a declared object identity (QSpec FR-204), then the path's
+  subject SHALL be that declared object identity, whether or not an
+  invocation is selected.
+- If `self` is a context with no declared object identity (a state machine's
+  context, QSpec FR-208) and the admitted observations select an invocation,
+  then the path's subject SHALL be that invocation's receiver binding.
+- If `self` is such a context and no invocation is selected (a precondition
+  selected by `PreCall`), then the path SHALL be none: there is no invocation
+  to name, and QSpec FR-207 gives an absent subject no path.
+- The path's observation SHALL be the clause's own observation (`current` for
+  an invariant, `pre` for a precondition, `post` for a postcondition).
+
+The observation of a state machine's invariant over an invocation (QSpec
+FR-208 "State-machine context anchors" and AC-10, which bind it to the
+invocation's pre and post contexts) is constructed at the model layer from the
+invocation's identity and its pre and post contexts. FR-106 admits an
+invariant only from a current snapshot, which names no invocation, so
+admitting that observation from a snapshot document is a separate requirement
+not yet specified; the receiver-path rule above and AC-7 and AC-11 are stated
+against the model-layer observation.
+
+`AdmittedObservations` (FR-106) carries the selected invocation's identity,
+whatever kind `self` is, or none; a receiver, parameter or result binding is
+rooted at it.
+
+### Read paths
+
+`ClauseEvaluation::reads()` SHALL return the clause's reads in the order the
+evaluator performed them. A read is the evaluation of a field or member
+selection `e.f`, including `deref(e).f` and a selection through an implicit
+dereference of a `Reference`. Every other node (a literal, an operator, a
+function call, `value(e)`, `deref(e)`, `present(e)`, a relationship
+navigation `e.end`) records no entry of its own. Each entry SHALL hold the
+location of its selection node and the FR-207 runtime value path of the value
+the selection read, or none.
+
+- The evaluator SHALL record one entry for each evaluation of a selection
+  node that is charged `model.navigate` as a field read: a node evaluated
+  once per element of a quantifier records one entry per element; a node on
+  a branch a short-circuit skips records none; a read whose charge the meter
+  denies records none. The operand is evaluated, and so recorded, before the
+  selection that consumes it, and a left operand before a right one.
+- The root observation of an entry SHALL be the observation the read took
+  place in (FR-104 "Observations of reads"): the clause's own observation, or
+  the pre observation for a read under `pre(e)`. A path that follows a
+  reference keeps the observation of that reference.
+- The root subject SHALL be the first of these that applies to the selection's
+  operand: `self` of an object receiver, the declared object identity of
+  `self`; `self` of a context receiver, the invocation's receiver binding; a
+  parameter `p`, the invocation's parameter binding `p`; `result`, the
+  invocation's result binding; an element of a quantifier's domain, the
+  stored or built location FR-265 gives that element (QSpec FR-207-AC-9 and
+  AC-11). A selection whose operand has no such location (a literal, an
+  arithmetic or function result, a navigation) has no path of its own, with
+  the one exception below. A parameter, result or receiver binding with no
+  selected invocation has none.
+- The steps SHALL extend the operand's path by one step per selection: the
+  `member` step (QSpec FR-207's member selection, FR-265-AC-7) for a
+  selection from a declared object, `field` for a selection from a record
+  value and for a context receiver's field (QSpec FR-208 "Locations"),
+  `option_value` for each `value(e)` between the operand and the selection,
+  and `reference` naming the referenced object's declared identity (QSpec
+  FR-207-AC-10) for each dereference of a `Reference`, explicit or implicit,
+  other than `self` of an object receiver, which is already the declared
+  object identity.
+- A selection on the result of a relationship navigation `e.end` (FR-363,
+  FR-364) has the referenced object's declared object identity as its subject
+  and the member step alone, because QSpec FR-207 has no step for a
+  relationship end: the path locates the stored value, not the route that
+  reached it.
+- A path SHALL name no value the evaluation did not read: it holds exactly
+  the steps of the selections evaluated.
+
+### Clause sets
+
+`CheckedPackageEvaluation` SHALL gain `evaluate_clause_set(&self, clauses:
+&[(QualifiedName, &AdmittedObservations)], limits: ScalarLimits) ->
+Result<ClauseSetEvaluation, CallFailure>`, the one place a set of clauses of
+one invocation, one object or one state is evaluated and combined (FR-120's
+conjunctions use it). Each clause is evaluated as `evaluate_clause` evaluates
+it, with a fresh meter built from `limits` (FR-120).
+
+- The result SHALL be `ClauseSetEvaluation { results: Vec<ClauseSetEntry>,
+  outcome: ClauseSetOutcome }`. A `ClauseSetEntry` holds the clause's name
+  and its `ClauseEvaluation`; there is one entry for each clause the set
+  evaluated, and none for a clause it did not.
+- The set SHALL evaluate its invariants, then its preconditions, then its
+  postconditions, each group in ascending name order (UTF-8 bytes) whatever
+  order the slice lists them in.
+- The set SHALL evaluate its postconditions only when it evaluated every
+  precondition it holds and every one is `Completed(true)`: a call whose
+  precondition is not true is outside the operation's contract (FR-120, "An
+  application is enabled when its effective precondition is `true`"), so its
+  postconditions give no result. Invariants are never skipped.
+- `outcome` SHALL be `Incomplete` when a clause evaluated to `Incomplete`; the
+  set stops at that clause, which is its last entry. Otherwise it is
+  `False` when any entry is `Completed(false)`, `Undecided` when none is and
+  one or more are `Undefined`, `Refused` or a family result other than a
+  completed Boolean (both the kernel `Outcome` arms and the `FamilyResult`
+  arms), and `True` only when every entry is `Completed(true)`, including
+  for an empty set (FR-120's conjunction).
+- A clause named twice in the slice SHALL be refused
+  `CallFailure::Input(InputRefusal::DuplicateClause)` naming it. An unknown
+  name and a mismatched `AdmittedObservations` are refused as
+  `evaluate_clause` refuses them. A refused set returns no entry.
+- A `CallFailure::Fault` from any clause SHALL be the set's result.
+
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
@@ -118,6 +237,18 @@ object environment.
 | FR-107-AC-4 | healthy-parent with a meter budget of zero is `Incomplete` with `resource_exhausted`/`insufficient-next-charge` and no truth value; the next call with the default budget is `Completed(true)`. | Test (TC-467) |
 | FR-107-AC-5 | `evaluate_clause` with a name that is a function, not a state clause, returns `CallFailure::Input(InputRefusal::UnknownClause)`; with observations admitted for `ParentOrder` but the name `NoCycle`, it returns `CallFailure::Input(InputRefusal::ObservationsMismatch)`; neither reaches S6a (the meter is uncharged). | Test (TC-467) |
 | FR-107-AC-6 | Evaluating each corpus case twice gives equal `Evaluation`s and equal charge logs. With the S6a probe variant added, the build fails with E0004 at exactly the checked-in S6a seam list, whose `evaluate_declaration` match now has the `ProtocolClause` arm (FR-063). | Test (TC-467) |
+| FR-107-AC-7 | `receiver_path()` of `ParentOrder` over healthy-parent is rooted at the observation `ix://example/config-version/current/healthy-parent` and the declared object identity of `child`, with no steps; of the state machine invariant `Consistent` over an invocation `i1` it is rooted at `q1` and `i1`'s receiver binding, with no steps; of `PlaceRequires` over a pre-call observation it is none. | Test (TC-1040) |
+| FR-107-AC-8 | `reads()` of `ParentOrder` over healthy-parent holds four entries in this order: the two `self.parent` selections, `deref(value(self.parent)).versionNumber`, `self.versionNumber`; over absent-parent it holds the one `self.parent` entry, and with a work budget of zero it is empty. | Test (TC-1040) |
+| FR-107-AC-9 | The paths of those four entries are: `[member parent]` twice, `[member parent, option_value, reference root, member versionNumber]` and `[member versionNumber]`, all rooted at the declared object identity of `child`; and `VersionUnchanged` over changed-version has two entries, both `[member versionNumber]` of `child`, the first rooted at the post observation and the second, read under `pre`, at the pre observation. | Test (TC-1040) |
+| FR-107-AC-10 | In `ProbeOrdered`, `target.versionNumber` over an invocation is located at the parameter binding `target` of that invocation with steps `[reference b, member versionNumber]`, and `self.versionNumber` at the declared object identity of `a`; over a pre-call observation the first has no path and the second the same path as before. | Test (TC-1040) |
+| FR-107-AC-11 | `Consistent`'s reads of `self.placed` and `self.cancelled` are located at the receiver binding of `i1` with the steps `[field placed]` and `[field cancelled]`, `FlagsPlaced`'s read of `flags.placed` at the parameter binding `flags` of `i1` with `[field placed]`; the two `placed` paths compare unequal, the parameter path orders first, and their wire forms are the objects TC-1040 lists. | Test (TC-1040) |
+| FR-107-AC-12 | The elements of the list `[value(self.parent), self]` built inside `GuardedAll` are read at the built-list subject with the steps `[index 0, reference root, member versionNumber]` and `[index 1, reference mid, member versionNumber]`. | Test (TC-1040) |
+| FR-107-AC-13 | `evaluate_clause_set` over `UpdateAllowed` and `UpdateRaises` gives two results, both `Completed(true)` and outcome `True`, for a call from version 1 to 2, and exactly one result, `UpdateAllowed` `Completed(false)`, and outcome `False` for a call from version 3 to 4; the slice order does not change a result. | Test (TC-1039) |
+| FR-107-AC-14 | With `UpdateNotMax` added, the call from 3 to 4 gives the two results `UpdateAllowed` `Completed(false)` and `UpdateNotMax` `Completed(true)`, in that order, and no result for `UpdateRaises`; with the invariant `NoCycle` over its own observation added instead, the results are `NoCycle` `Completed(true)` then `UpdateAllowed` `Completed(false)`, and still none for `UpdateRaises`. | Test (TC-1039) |
+| FR-107-AC-15 | With `limits` whose work budget is zero the call from 1 to 2 gives one result, `UpdateAllowed` `Incomplete`, and outcome `Incomplete`; an empty set gives no result and outcome `True`; the same set evaluated twice gives equal results. | Test (TC-1039) |
+| FR-107-AC-16 | A set naming `UpdateAllowed` twice is refused `InputRefusal::DuplicateClause`; a set naming the function `sameIdentity` is refused `InputRefusal::UnknownClause`; a set pairing `UpdateAllowed`'s name with observations admitted for `UpdateRaises` is refused `InputRefusal::ObservationsMismatch`; none returns a result. | Test (TC-1039) |
+| FR-107-AC-17 | A selection on `self.home`, a relationship navigation, is located at the declared object identity of the tank `t1` with the step `[member level]` and the navigation records no entry. This criterion depends on clause-level navigation evaluation (FR-364) and is built when that lands. | Test (TC-1040) |
+| FR-107-AC-18 | With `UpdateDivides` (`100 / self.versionNumber > 0`) over a call from version 0 to 1, the set {`UpdateDivides`, `UpdateRaises`} gives one entry, `UpdateDivides` not a completed Boolean, outcome `Undecided`, and no entry for `UpdateRaises`; the set {`UpdateAllowed`, `UpdateDivides`} gives both entries and outcome `Undecided`. | Test (TC-1039) |
 
 ## Dependencies
 
@@ -126,6 +257,10 @@ object environment.
   admits `ProtocolClause`), FR-104 (the checked clause and its read
   observations), FR-106 (the admitted observations), FR-062 and FR-063 (the
   S6a seam and probe).
+- FR-265 (the decisions and stop reports `ClauseEvaluation` carries),
+  FR-120 (the conjunction and enabling rules the set shares), FR-363 and
+  FR-364 (navigation). QSpec FR-207 (the runtime value path: subjects,
+  steps, absence), FR-208 ("Locations", AC-10) and FR-204.
 - QSpec `state-contract.md` ("Operation anchors, aliases and captures",
   "Finite graph extension"), `value-accounting.md` ("Model and graph
   evaluation") and FR-153.

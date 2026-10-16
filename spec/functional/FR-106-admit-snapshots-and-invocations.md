@@ -23,6 +23,8 @@ relationships:
     type: traces_to
   - target: ix://agent-ix/quire-spec-language/FR-364
     type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-141
+    type: depends_on
   - target: ix://agent-ix/quire-specification/FR-153
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-207
@@ -75,10 +77,20 @@ that compares only reference-valued fields (`PopulationMember::field_values`,
   precondition selected by `Invocation`, the same pre-call observation from
   the invocation's pre snapshot, `self` and parameters; for a postcondition
   selected by `Invocation`, the pre and post observations, the self object, the parameter values, the result value or
-  none, and the admitted invocation delta. Each observation
+  none, and the admitted invocation delta. The value also names the selected
+  invocation by its four identity labels, whatever kind `self` is, for a
+  postcondition and for a precondition selected by `Invocation`, and none for
+  an invariant and for a precondition selected by `PreCall`. FR-107 roots
+  value paths at it. Each observation
   holds its `PopulationBinding`s and an `ObjectEnvironment` with every field
   value of every object and the relationship extents of the snapshot
-  (FR-364), and keeps its document identity and digest.
+  (FR-364), and keeps its document identity and digest. Admission also
+  issues each observation's population manifest and bundle (FR-364): one row
+  per population declaration of the package, `complete` exactly when the
+  snapshot lists the population `"complete": true`, so a declared population
+  the snapshot does not list is an incomplete row; the manifest is closed by
+  exhausting that traversal of the package's declarations and by nothing the
+  document says.
 - Or an `AdmissionFailure`: `Refused(RefusalRecord)` or
   `Incomplete(RefusalRecord)`, each with a catalog code, a cause and the input
   path (document identity, population, object key, field) it names.
@@ -159,10 +171,11 @@ Snapshot, format `quire.state.snapshot/v1`:
   `{"integer": "<decimal>"}`, `{"absent": {}}`, `{"present": <value>}`,
   `{"reference": {"population": ..., "key": ...}}`,
   `{"sequence": [<value>, ...]}`, the record form below, the variant form of
-  FR-360 and the three native payload forms below, `{"kind": "string",
+  FR-360 and the four payload object forms below, `{"kind": "string",
   "text": "<any Unicode scalar sequence>"}`, `{"kind": "uuid", "text":
-  "<canonical UUID>"}` and `{"kind": "timestamp", "nanoseconds":
-  "<canonical decimal>"}`. There is no set, bag or ordered-set value:
+  "<canonical UUID>"}`, `{"kind": "timestamp", "nanoseconds":
+  "<canonical decimal>"}` and `{"kind": "text", "text": "<any Unicode scalar
+  sequence>"}`. There is no set, bag or ordered-set value:
   those collections are outside QSpec's selected state extension.
 
 A record value is `{"record": {"type": "<declaration identity>",
@@ -191,10 +204,12 @@ hexadecimal digits in groups `8-4-4-4-12` with four ASCII hyphens, and the
 Timestamp object is `{"kind": "timestamp", "nanoseconds": "0"}`, whose
 `nanoseconds` is a signed count on FR-056's POSIX-epoch scale in the
 signed-128 domain, spelled `0`, or an optional `-` then a nonzero digit and
-more digits. A value object with a `kind` member is a native payload
-object; every other value is a single-tag object. A UUID object has exactly
-the members `kind` and `text`, a String object exactly `kind` and `text`, and
-a Timestamp object exactly `kind` and `nanoseconds`. The payload is a JSON
+more digits. A value object with a `kind` member is a payload object (the
+three native payload objects above and the Text object below); every other
+value is a single-tag object. A UUID object has exactly
+the members `kind` and `text`, a String object exactly `kind` and `text`, a
+Text object exactly `kind` and `text`, and a Timestamp object exactly `kind`
+and `nanoseconds`. The payload is a JSON
 string, never a JSON number, and the canonical text is the only accepted
 spelling of a UUID or a Timestamp: admission never case-folds, trims, inserts
 or removes a hyphen, strips a `urn:uuid:` prefix or braces, reads a calendar
@@ -212,23 +227,52 @@ character) belongs to the document reader and does not change the payload or
 the digest. The one text a document cannot carry is a lone UTF-16 surrogate
 escape, and a document with one, or with bytes that are not UTF-8, is a
 document the shared reader refuses and check 1.3 settles, before any value is
-read. Only a String slot reads a String object; the object `key` of an
-object, a record's `type`, a variant `case` and every member name are
-identities, not String values. UUID admission accepts every 128-bit payload, Nil and Max
-included, and retains the version and variant bits. A String, UUID or
-Timestamp object counts as one value against the values-per-document setting.
+read. Only a String slot reads a String object and only a Text slot a Text
+object; the object `key` of an object, a record's `type`, a variant `case`
+and every member name are identities, not String or Text values. UUID admission accepts every 128-bit payload, Nil and Max
+included, and retains the version and variant bits. A String, UUID, Timestamp or
+Text object counts as one value against the values-per-document setting.
 Two admitted values of one native kind are equal exactly when their canonical
 payloads are equal (QSpec FR-149; FR-056 for String, whose payloads are equal
 when the scalar sequences are identical), so the frame check (check 11)
-compares a String, UUID or Timestamp field by payload, as it does a scalar. Native payload
+compares a String, UUID or Timestamp field by payload, as it does a scalar. Payload
 objects use the same closed value grammar anywhere a value may stand: a
 field, a parameter, a result, a record field, a present option and a
 sequence element.
 
+A **Text value** is the object `{"kind": "text", "text": "<any Unicode scalar
+sequence>"}`, the value of a field, parameter or result of declared type
+`Text[min, max; profile]` (QSpec FR-141; FR-056 admits that type from a scalar
+type bound to `Text`). FR-056 and QSpec define no wire object for Text: the
+K2 payloads are String, UUID and Timestamp. The Text object is this
+grammar's own, spelled with the String object's members, so one envelope rule
+reads all four payload objects. `Text` is a distinct type from `String`. Its
+`text` is the decoded scalar sequence of the runtime text input, with the
+String object's rules for JSON escape spelling, lone surrogate escapes and
+bytes that are not UTF-8, which the document reader and check 1.3 settle
+before any value is read. The value retains the sequence under the
+declared profile, as QSpec FR-141 states: the scalar sequence itself under
+`unicode-scalars`, its normalization under `nfc`, `nfd`, `nfkc` and `nfkd`,
+and its UTF-8 bytes under `binary-utf8`. Its length is the profile length of
+the retained sequence: the scalar count, or the byte count under
+`binary-utf8`. Admission normalizes a supplied text under a normalizing
+profile and never refuses it for being unnormalized; it never case-folds,
+trims, truncates, escapes or repairs a text. The empty text is a Text value
+exactly when the declared minimum is `0`. Two Text values of one declared
+type are equal exactly when their retained sequences are equal (QSpec FR-141
+and FR-149), so the frame check compares a Text field by its retained
+sequence: under `nfc`, U+00E9 and U+0065 U+0301 are one value, and under
+`unicode-scalars` they are two. The document's digest covers the supplied
+text, so two documents holding those spellings have different digests and one
+typed value.
+
 A field, parameter or result of declared type `String` admits only a String
-object, one of declared type `UUID` only a UUID object, and one of declared
-type `Timestamp` only a Timestamp object. A String, UUID or Timestamp object
-fits no other declared type, and no other form fits those three. Admission checks a native payload object in this order and
+object, one of declared type `UUID` only a UUID object, one of declared
+type `Timestamp` only a Timestamp object, and one of declared type `Text[min,
+max; profile]` only a Text object. A String, UUID, Timestamp or Text object
+fits no other declared type, and no other form fits those four. A Text
+object does not fit a `String` slot and a String object does not fit a Text
+slot. Admission checks a payload object in this order and
 refuses the first defect found, at the nested value path and naming the
 member where one is listed, with `invalid_runtime_input` (the closed set of
 FR-056's runtime-input adapter; the kernel's construction classes are not
@@ -236,32 +280,39 @@ catalog codes):
 
 1. A `kind` member that is not a JSON string (a number, `null`, an object)
    refuses `wrong-value-kind`, naming `kind`.
-2. A `kind` string other than `string`, `uuid` and `timestamp` (including a
-   letter-case variant such as `String` or `UUID`) refuses `invalid-value`,
+2. A `kind` string other than `string`, `uuid`, `timestamp` and `text`
+   (including a letter-case variant such as `String`, `UUID` or `Text`)
+   refuses `invalid-value`,
    naming `kind`. The members of such an object are not examined.
 3. A missing payload member of the object's kind refuses `missing-member`,
-   naming `text` (String, UUID) or `nanoseconds` (Timestamp). So
-   `{"kind":"uuid","nanoseconds":"0"}` and
-   `{"kind":"string","nanoseconds":"0"}` refuse `missing-member` naming
+   naming `text` (String, UUID, Text) or `nanoseconds` (Timestamp). So
+   `{"kind":"uuid","nanoseconds":"0"}`,
+   `{"kind":"string","nanoseconds":"0"}` and
+   `{"kind":"text","nanoseconds":"0"}` refuse `missing-member` naming
    `text`.
 4. An unknown member of the object's kind refuses `unknown-member`, naming the
-   first in document order. Here `nanoseconds` on a String or UUID object is
-   unknown.
+   first in document order. Here `nanoseconds` on a String, UUID or Text
+   object is unknown.
 5. A payload member that is not a JSON string, including a bare JSON number
    (even `0`) or `null`, refuses `wrong-value-kind`, naming the member.
-6. A native kind that differs from the slot's declared type, a native
+6. A payload kind that differs from the slot's declared type, a payload
    object in a slot of any other declared type, and a single-tag object
-   (such as `{"integer": "5"}`) in a `String`, `UUID` or `Timestamp` slot each
-   refuse `wrong-value-kind`. A String object whose text spells a UUID or a
-   Timestamp is still a String object and fits only a `String` slot; no
-   payload is read as another kind.
+   (such as `{"integer": "5"}`) in a `String`, `UUID`, `Timestamp` or `Text`
+   slot each refuse `wrong-value-kind`. A String object whose text spells a
+   UUID or a Timestamp is still a String object and fits only a `String`
+   slot, and a Text object holding the same scalars as a String fits only a
+   `Text` slot; no payload is read as another kind.
 7. A UUID or Timestamp payload that is not canonical refuses `invalid-value`,
    naming the payload member, with the kernel class `noncanonical-payload`. A
    canonical Timestamp text outside the signed-128 domain refuses
    `invalid-value` with the kernel class `payload-out-of-domain`.
-   Noncanonical text takes precedence over the range check. A String payload
-   has no defect to refuse here, because every Unicode scalar sequence is a
-   String.
+   Noncanonical text takes precedence over the range check. A Text payload
+   whose profile length, measured on the retained sequence, lies outside the
+   declared `[min, max]` refuses `invalid-value`, naming `text`, the declared
+   bounds, the profile and the measured length; QSpec FR-141's text-length
+   refusal maps to this cause as the kernel's payload refusals do (FR-056),
+   and no value is produced. A String payload has no defect to refuse here,
+   because every Unicode scalar sequence is a String.
 
 A repeated member name in a document, a lone surrogate escape in a `text` and
 bytes that are not UTF-8 are settled earlier, by check 1.3's shared-reader
@@ -438,8 +489,8 @@ required; check 10 settles it.
       `missing-member`, an extra field `unknown-member`, an incompatible
       record type or value tag `wrong-value-kind`, and a malformed scalar
       payload `invalid-value`, all under `invalid_runtime_input` at the
-      nested value path. A String, UUID or Timestamp object is checked by the
-      native payload rule above. The same rule applies to operation parameters and
+      nested value path. A String, UUID, Timestamp or Text object is checked by the
+      payload rule above. The same rule applies to operation parameters and
       results in check 10.
       Inputs are refused, outputs are evidence: this refusal applies to
       every current snapshot, every pre snapshot and every operation
@@ -457,8 +508,9 @@ required; check 10 settles it.
       field is evidence in the same way. The field's declared range is part
       of the operation's contract, so the observation is the witness of a
       violation; the caller settles it. A post-state value of the wrong
-      kind, not in FR-038's spelling, or a String, UUID or Timestamp object that
-      fails the native payload checks above is still refused. The default is
+      kind, not in FR-038's spelling, or a String, UUID, Timestamp or Text object
+      that fails the payload checks above (a Text outside its declared length
+      included) is still refused. The default is
       `Refuse`, under which every snapshot refuses, and a `Frame` run's
       post snapshot always refuses. A clause that compares or orders the
       field, or does arithmetic on it, evaluates over the exact integer;
@@ -519,7 +571,10 @@ required; check 10 settles it.
    are checked `source` before `target`. With check 7's rule for an end in an
    incomplete population, no stored end lacks an object: every admitted
    instance is a triple of full references, because only the object supplies
-   the type component of its reference key (FR-364).
+   the type component of its reference key (FR-364). The `resolve` of every
+   stored end is therefore `present`; `dangling` and `undecidable` belong to
+   model-layer extents. Checks 7 and 8 read the same `complete` flags the
+   manifest rows carry.
 9. Self check. If the selected self object is absent from the current
    snapshot, from the pre snapshot, or (for a postcondition) from the post
    snapshot, then admission SHALL refuse `invalid_runtime_input`/
@@ -654,10 +709,17 @@ required; check 10 settles it.
 | FR-106-AC-26 | An invocation of the operation `rehome` on `Pump`, selected for its postcondition `RehomePost`, whose pre snapshot lists `Pump-housing-Tank` complete with `p1`-`t1` and `p2`-`t1` and whose post lists it complete with `p1`-`t2` and `p2`-`t1` admits its frame when `rehome` modifies `Pump-housing-Tank`, and refuses `frame_violation`/`unauthorized-change` naming the relationship and the instance `p1`-`t1` `removed` when it does not. A post that deletes `p2` and drops `p2`-`t1` admits under a frame that deletes `Pump` and does not modify the relationship; a post that creates `p3` with `p3`-`t1` under a frame that creates `Pump` and does not modify the relationship refuses naming `p3`-`t1` `added`. A relationship listed in only one of the two snapshots changes nothing. | Test (TC-1035) |
 | FR-106-AC-27 | Each instance counts as one value against `observation.values`: a snapshot whose objects and instances reach the bound exactly admits and one more instance returns `stage_limit_exceeded`/`node-count-exceeded` naming `observation.values`, the bound and the count reached. An invocation selected for a precondition admits and gives its `PreCall` verdict when its `post` snapshot lists a malformed `relationships` entry. | Test (TC-1035) |
 | FR-106-AC-28 | Over the TC-1036 fixture, a current snapshot whose `child` holds `label` `{"kind":"string","text":"ready"}`, an absent `note` and an empty `tags` admits `label` as a String value of the retained scalar sequence; reordering the members of the object, and the whitespace of the document, gives the same typed observation and digest. These `label` texts each admit unchanged: the empty String, `"  ready  "`, `"READY"`, `"\u00e9"` (U+00E9), `"e\u0301"` (U+0065 U+0301), `"00112233-4455-6677-8899-aabbccddeeff"`, `"\u0000"`, `"a\u001fb"`, `"\ufffe"`, `"a;b>>>c"`, a text of 65,536 scalars and the paired escape `"\ud83d\ude00"`, which gives the value and digest of the literal U+1F600. U+00E9 and U+0065 U+0301 are two unequal values with different digests. A present `note`, each element of `tags` and the `name` parameter and the String `result` of an invocation admit by the same rule, and each object counts as one value toward `observation.values`. | Test (TC-1036) |
-| FR-106-AC-29 | String objects refuse in the order of the native payload rule: `kind` as `1`, `null` or `{}` refuses `wrong-value-kind` naming `kind`, even beside a missing `text`; `kind` `String`, `STRING` and `text`, and `{"kind":"text","value":"x"}`, refuse `invalid-value` naming `kind`, the members unexamined; `{"kind":"string"}` and `{"kind":"string","nanoseconds":"0"}` refuse `missing-member` naming `text`; `{"kind":"string","text":"x","extra":1}` refuses `unknown-member` naming `extra` and `{"kind":"string","text":"x","nanoseconds":"0"}` naming `nanoseconds`; `text` as `5`, `null`, `true`, `["x"]` and `{}` refuses `wrong-value-kind` naming `text`; an object with both an extra member and a `text` of `5` refuses `unknown-member`. No `text` makes a String object refuse `invalid-value`: every Unicode scalar sequence is a String. | Test (TC-1036) |
+| FR-106-AC-29 | String objects refuse in the order of the native payload rule: `kind` as `1`, `null` or `{}` refuses `wrong-value-kind` naming `kind`, even beside a missing `text`; `kind` `"String"`, `"STRING"` and `"Text"`, and `{"kind":"blob","value":"x"}`, refuse `invalid-value` naming `kind`, the members unexamined; `{"kind":"string"}` and `{"kind":"string","nanoseconds":"0"}` refuse `missing-member` naming `text`; `{"kind":"string","text":"x","extra":1}` refuses `unknown-member` naming `extra` and `{"kind":"string","text":"x","nanoseconds":"0"}` naming `nanoseconds`; `text` as `5`, `null`, `true`, `["x"]` and `{}` refuses `wrong-value-kind` naming `text`; an object with both an extra member and a `text` of `5` refuses `unknown-member`. No `text` makes a String object refuse `invalid-value`: every Unicode scalar sequence is a String. | Test (TC-1036) |
 | FR-106-AC-30 | A String object in the UUID field `token`, the Timestamp field `stamp`, the integer field `versionNumber`, the `Reference` field `parent`, a `{"present": ...}` of the optional UUID `prior` and as an element of `seen`; a UUID object, a Timestamp object, `{"integer":"5"}`, `{"boolean":true}`, `{"absent":{}}` and the bare JSON string `"ready"` in the String field `label`; and a String object whose text is a canonical UUID in `token` each refuse `invalid_runtime_input`/`wrong-value-kind` at the nested path (the sequence element with its index) and read the text as no other kind. `{"kind":"string","text":5}` in `token` refuses `wrong-value-kind` naming `text`, and `{"kind":"string","text":"x","extra":1}` in `versionNumber` refuses `unknown-member`, because both defects come before type fit. The same cases in a parameter or result use the invocation binding as the path root. | Test (TC-1036) |
 | FR-106-AC-31 | An invocation changing `label` between two admitted payloads admits its frame when the selected `modifies` grant covers the field and refuses `frame_violation`/`unauthorized-change` naming `child` and `label` without it, including a change from U+00E9 to U+0065 U+0301 and from `ready` to `Ready`; one whose post holds the same payload with differently ordered members, or written `"\u0072eady"`, is no change. Under `PostStateRange::Witness`, a post snapshot holding a `label` of the wrong kind still refuses `wrong-value-kind`. With `observation.values` set to the exact count of a document whose `child` holds a present `note` as its last value in walk order, the document admits; one less returns `stage_limit_exceeded`/`node-count-exceeded` naming `observation.values`, the bound and the count the String object inside `note` would have reached. | Test (TC-1036) |
 | FR-106-AC-32 | A `label` text holding a lone high surrogate escape `\ud800`, a lone low surrogate escape `\udc00` or the byte `0xC0` refuses `stale_dependency`/`byte-digest-mismatch` at check 1.3 carrying the selected digest and the raw bytes' own digest, before any value is read: the same document with a wrong-kind `token` elsewhere gives that refusal and not `wrong-value-kind`. A `label` text that brings the document over the byte limit refuses `stage_limit_exceeded`/`input-bytes-exceeded` naming `observation.input_bytes` at check 1.2. | Test (TC-1036) |
+| FR-106-AC-33 | Over the TC-1038 fixture, a current snapshot whose `child` holds `title` `{"kind":"text","text":"Ready"}`, an absent `subtitle`, `code` `{"kind":"text","text":"abc"}` and an empty `aliases` admits `title` as a Text value of the retained sequence; reordering the members of the object, and the whitespace of the document, gives the same typed observation and digest. These `title` texts each admit: `"a"` (the declared minimum), `"abcdefgh"` (the declared maximum), `"a;b>>>c"`, U+00E9, U+0065 U+0301, `"\u0000"`, and the paired escape `"\ud83d\ude00"`, which gives the value and digest of the literal U+1F600. Under `nfc`, U+00E9 and U+0065 U+0301 retain one sequence and so are one equal value with two different digests, and eight pairs of U+0065 U+0301 (sixteen supplied scalars) retain eight scalars and admit. A present `subtitle`, each element of `aliases` and the `name` argument and the Text `result` of an invocation admit by the same rule, and each Text object counts as one value toward `observation.values`. | Test (TC-1038) |
+| FR-106-AC-34 | Text objects refuse in the order of the payload rule: `kind` as `1`, `null` or `{}` refuses `wrong-value-kind` naming `kind`, even beside a missing `text`; `kind` `"Text"`, `"TEXT"` and `{"kind":"blob","value":"x"}` refuse `invalid-value` naming `kind`, the members unexamined; `{"kind":"text"}` and `{"kind":"text","nanoseconds":"0"}` refuse `missing-member` naming `text`; `{"kind":"text","text":"Ready","extra":1}` refuses `unknown-member` naming `extra` and `{"kind":"text","text":"Ready","nanoseconds":"0"}` naming `nanoseconds`; `text` as `5`, `null`, `true`, `["x"]` and `{}` refuses `wrong-value-kind` naming `text`; an object with both an extra member and a `text` of `5` refuses `unknown-member`. | Test (TC-1038) |
+| FR-106-AC-35 | A String object in the Text field `title`, as a `{"present": ...}` of the Text field `subtitle` and as an element of `aliases`; a Text object in the String field `label`, the UUID field `token`, the Timestamp field `stamp`, the integer field `versionNumber` and the `Reference` field `parent`; a UUID object, a Timestamp object, `{"integer":"5"}`, `{"boolean":true}`, `{"absent":{}}` and the bare JSON string `"Ready"` in `title`; and a Text object holding the canonical UUID text in `token` each refuse `invalid_runtime_input`/`wrong-value-kind` at the nested path (the sequence element with its index) and read the text as no other kind. A Text object whose text is longer than `title`'s maximum, placed in `label`, refuses `wrong-value-kind`, never `invalid-value`, because type fit comes before the length check. `{"kind":"text","text":5}` in `token` refuses `wrong-value-kind` naming `text`, and `{"kind":"text","text":"x","extra":1}` in `versionNumber` refuses `unknown-member`, because both defects come before type fit. The same cases in a parameter or result use the invocation binding as the path root. | Test (TC-1038) |
+| FR-106-AC-36 | Text length is measured on the retained sequence under the declared profile and refuses `invalid_runtime_input`/`invalid-value` naming `text`, the declared bounds, the profile and the measured length, nested at the field. Over `title` (`Text[1, 8; nfc]`): `""` (length 0), `"abcdefghi"` (9), nine pairs of U+0065 U+0301 (nine retained scalars) and a text of 65,536 `a` refuse, while eight pairs of U+0065 U+0301 admit. Over `subtitle` (`Text[0, 4; unicode-scalars]`): `"abcd"` and four U+00E9 admit; `"abcde"` and three pairs of U+0065 U+0301 (six scalars, nothing normalized) refuse. Over `code` (`Text[0, 4; binary-utf8]`, length in bytes): `"abcd"`, two U+00E9 and one U+1F600 admit; three U+00E9 (six bytes) and two U+1F600 refuse. The same refusals hold for the `name` argument and the `result` of `retitle`, and under `PostStateRange::Witness` a post snapshot holding an over-length Text still refuses `invalid-value` and one holding a String object in `title` still refuses `wrong-value-kind`. | Test (TC-1038) |
+| FR-106-AC-37 | An invocation changing `title` between two admitted payloads admits its frame when the selected `modifies` grant covers the field and refuses `frame_violation`/`unauthorized-change` naming `child` and `title` without it; one whose post holds the same text with differently ordered members, written `"\u0052eady"`, or changed from U+00E9 to U+0065 U+0301 under `nfc`, is no change and admits without the grant. A change of `subtitle` from U+00E9 to U+0065 U+0301 under `unicode-scalars` is a change and refuses naming `child` and `subtitle` when `retitle`'s frame does not grant it. With `observation.values` set to the exact count of a document whose `aliases` holds one Text element as the last value in walk order, the document admits; one less returns `stage_limit_exceeded`/`node-count-exceeded` naming `observation.values`, the bound and the count the Text object inside `aliases` would have reached. | Test (TC-1038) |
+| FR-106-AC-38 | A `title` text holding a lone high surrogate escape `\ud800`, a lone low surrogate escape `\udc00` or the byte `0xC0` refuses `stale_dependency`/`byte-digest-mismatch` at check 1.3 carrying the selected digest and the raw bytes' own digest, before any value is read: the same document with a wrong-kind `token` elsewhere gives that refusal and not `wrong-value-kind`. A `title` text that brings the document over the byte limit refuses `stage_limit_exceeded`/`input-bytes-exceeded` naming `observation.input_bytes` at check 1.2, not `invalid-value`. | Test (TC-1038) |
+| FR-106-AC-39 | Over TC-1035's base snapshot **B** in a package that also declares population `Spare` (member type `Pump`), which **B** does not list, admission issues a closed manifest with the rows `Q` complete and `Spare` incomplete in ascending declaration-key order; with `Spare` listed `"complete": false` the rows are the same, and listed `"complete": true` both rows are complete. The admitted observation's `resolve` for each stored instance end is `present`. | Test (TC-1041) |
 
 ## Dependencies
 
@@ -667,6 +729,8 @@ required; check 10 settles it.
   refusals), FR-038 (integer spelling).
 - FR-364 (relationship extents: the instance model, its admission conditions
   and the read contract navigation uses).
+- QSpec FR-141 and FR-149 (the `Text[min, max; profile]` retained sequence, its
+  length and its equality; the Text object's profile semantics).
 - QSpec FR-153 and `state-contract.md` (anchors, completeness and closure),
   `native-diagnostics.md` (every code and cause above).
 - QSpec FR-046-AC-7 and FR-208-AC-13 make a precondition's input the
