@@ -402,7 +402,8 @@ fn lifecycle_invariant_observations(
         }
         .unwrap_or(&admitted.self_object)
         .clone(),
-        receiver_invocation: admitted.receiver_invocation.clone(),
+        invocation: admitted.invocation.clone(),
+        self_kind: admitted.self_kind,
         receiver_pre: admitted.receiver_pre.clone(),
         receiver_post: admitted.receiver_post.clone(),
         parameters: Vec::new(),
@@ -904,7 +905,7 @@ fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
         &snapshots,
         &invocations,
         post_one
-            .receiver_invocation
+            .invocation
             .clone()
             .expect("run 1 invocation identity"),
     )
@@ -1004,7 +1005,7 @@ fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
     ));
     assert_eq!(
         inconsistent.receiver_path(),
-        &RuntimeValuePath {
+        Some(&RuntimeValuePath {
             observation: ObservationIdentity {
                 authority: "test".to_owned(),
                 identity: "q1".to_owned(),
@@ -1021,7 +1022,7 @@ fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
                 binding: InvocationBinding::Receiver,
             },
             steps: Vec::new(),
-        }
+        })
     );
 
     let (snapshots, invocations, invocation) = run(&[], &[(true, false)]);
@@ -1431,7 +1432,8 @@ fn process_observations(
         pre,
         post,
         self_object,
-        receiver_invocation: None,
+        invocation: None,
+        self_kind: qsl_semantics::model::observation::SelfKind::Object,
         receiver_pre: None,
         receiver_post: None,
         parameters: Vec::new(),
@@ -1529,7 +1531,7 @@ fn tc235_m16_process_invariant_and_operation_clauses_evaluate_per_run() {
         .expect("admitted observations evaluate");
     assert_eq!(
         violation.receiver_path(),
-        &RuntimeValuePath {
+        Some(&RuntimeValuePath {
             observation: ObservationIdentity {
                 authority: "test".to_owned(),
                 identity: "s1".to_owned(),
@@ -1538,7 +1540,7 @@ fn tc235_m16_process_invariant_and_operation_clauses_evaluate_per_run() {
             },
             subject: ValuePathSubject::Object(runs[1].clone()),
             steps: Vec::new(),
-        }
+        })
     );
 
     // Runs 2 and 3: `restart` on r1.

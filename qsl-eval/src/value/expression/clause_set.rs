@@ -5,6 +5,9 @@
 use qsl_semantics::check::Observation;
 use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::model::observation::AdmittedObservations;
+use std::collections::BTreeSet;
+
+use quire_semantic_value::call::InputRefusal;
 use quire_exact::{Meter, Outcome, ScalarLimits, Value};
 
 use super::{resolve_clause, CallFailure, CheckedPackageEvaluation, ClauseEvaluation, QualifiedName};
@@ -69,12 +72,42 @@ fn verdict(evaluation: &ClauseEvaluation) -> Verdict {
     }
 }
 
+/// Evaluate `group` in order, each clause with a fresh meter; `false` when a
+/// clause was `Incomplete`, which ends the set.
+fn run_group(
+    package: &CheckedPackage,
+    group: &[(&QualifiedName, &AdmittedObservations)],
+    limits: ScalarLimits,
+    results: &mut Vec<ClauseSetEntry>,
+    seen: &mut Vec<Verdict>,
+) -> Result<bool, CallFailure> {
+    for (name, observations) in group {
+        let evaluation = package.evaluate_clause(name, observations, &mut Meter::new(limits))?;
+        let verdict = verdict(&evaluation);
+        results.push(ClauseSetEntry {
+            name: (*name).clone(),
+            evaluation,
+        });
+        seen.push(verdict);
+        if verdict == Verdict::Incomplete {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
 pub(super) fn evaluate(
     package: &CheckedPackage,
     clauses: &[(QualifiedName, &AdmittedObservations)],
     limits: ScalarLimits,
 ) -> Result<ClauseSetEvaluation, CallFailure> {
     // Refuse a bad set whole, before any clause is evaluated.
+    let mut named = BTreeSet::new();
+    for (name, _) in clauses {
+        if !named.insert(name) {
+            return Err(InputRefusal::DuplicateClause(name.to_string()).into());
+        }
+    }
     let mut invariants = Vec::new();
     let mut preconditions = Vec::new();
     let mut postconditions = Vec::new();
@@ -92,34 +125,20 @@ pub(super) fn evaluate(
 
     let mut results = Vec::new();
     let mut seen = Vec::new();
-    let mut run = |group: &[(&QualifiedName, &AdmittedObservations)],
-                   results: &mut Vec<ClauseSetEntry>|
-     -> Result<bool, CallFailure> {
-        for (name, observations) in group {
-            let evaluation =
-                package.evaluate_clause(name, observations, &mut Meter::new(limits))?;
-            let verdict = verdict(&evaluation);
-            results.push(ClauseSetEntry {
-                name: (*name).clone(),
-                evaluation,
-            });
-            seen.push(verdict);
-            if verdict == Verdict::Incomplete {
-                return Ok(false);
-            }
-        }
-        Ok(true)
+    let mut run = |group: &[(&QualifiedName, &AdmittedObservations)]| {
+        run_group(package, group, limits, &mut results, &mut seen)
     };
-    let mut complete = run(&invariants, &mut results)?;
-    let preconditions_start = seen.len();
-    if complete {
-        complete = run(&preconditions, &mut results)?;
-    }
-    let preconditions_true = seen[preconditions_start..]
-        .iter()
-        .all(|verdict| *verdict == Verdict::True);
-    if complete && preconditions_true {
-        run(&postconditions, &mut results)?;
+    let invariants_done = run(&invariants)?;
+    let preconditions_done = invariants_done && run(&preconditions)?;
+    // Postconditions follow only when every precondition was evaluated and
+    // is true; an invariant never skips them.
+    let preconditions_true = preconditions.iter().all(|(name, _)| {
+        results
+            .iter()
+            .any(|entry| &entry.name == *name && verdict(&entry.evaluation) == Verdict::True)
+    });
+    if preconditions_done && preconditions_true {
+        run_group(package, &postconditions, limits, &mut results, &mut seen)?;
     }
     let outcome = if seen.contains(&Verdict::Incomplete) {
         ClauseSetOutcome::Incomplete

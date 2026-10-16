@@ -87,7 +87,9 @@ pub fn input_refusal_code(refusal: &InputRefusal) -> qsl_foundation::diagnostic:
             Code::InvalidRuntimeInput
         }
         InputRefusal::DanglingReference { .. } => Code::DanglingReference,
-        InputRefusal::ObservationsMismatch => Code::InvalidRuntimeInput,
+        InputRefusal::ObservationsMismatch | InputRefusal::DuplicateClause(_) => {
+            Code::InvalidRuntimeInput
+        }
     }
 }
 
