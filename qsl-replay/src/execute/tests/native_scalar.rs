@@ -143,7 +143,10 @@ fn tc_1028_noncanonical_and_out_of_domain_timestamps_are_refused_through_replay(
     for (text, class) in [
         ("+1", TimestampNoncanonical),
         ("00", TimestampNoncanonical),
-        ("170141183460469231731687303715884105728", TimestampOutOfDomain),
+        (
+            "170141183460469231731687303715884105728",
+            TimestampOutOfDomain,
+        ),
     ] {
         let refusal = replay(
             call("eqt", timestamp("0"), timestamp(text)),

@@ -133,8 +133,7 @@ const FORMS_UNIT: &str =
 
 /// TC-1028: native `String`, `UUID` and `Timestamp` equality, the families
 /// IR-800 admits.
-const NATIVE_SCALARS: &str =
-    "function eqs using v(a: String, b: String): Boolean pure { a = b }\n\
+const NATIVE_SCALARS: &str = "function eqs using v(a: String, b: String): Boolean pure { a = b }\n\
      function neu using v(a: UUID, b: UUID): Boolean pure { a != b }\n\
      function eqt using v(a: Timestamp, b: Timestamp): Boolean pure { a = b }\n";
 
