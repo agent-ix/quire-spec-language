@@ -64,7 +64,7 @@ source map (FR-095).
 | --- | --- | --- | --- |
 | `state`/`state_clause` | the `Boolean` scalar type node | an application of `quire.op.state.clause` whose `member` is `{kind: "state_clause", clause: <kind>}` and whose arguments are, in order: `aggregate` of the parameter references (`self`, then `result` when present, then the operation's parameters in declared order), a `reference` to the anchor, and the condition term | one `claim` occurrence per declaration that checks to this node, ordinals 0, 1, ... in source order |
 | `state`/`operation_anchor` | the declaring `model`/`object_type` node | `aggregate[ binding("context", reference(declaring object_type)), binding("operation", literal(text, "<operation name>")), binding("frame", reference(frame)) ]` | one `anchor` occurrence per clause or protocol attempt (FR-114) that names the operation, ordinals in source order |
-| `state`/`frame` | the declaring `model`/`object_type` node | QSpec FR-340's frame term, with each `modifies` entry an (object type node, field name) pair as STD-111 spells it, and each `creates`/`deletes` entry an `object_type` node | `generated`, one occurrence per named operation, ordinals by ascending (declaring `DeclarationKey`, operation name as UTF-8 bytes) over the unit's named operations, never by source order (FR-104 "Requirements", SR-736 FND-008/FND-009): two operations whose frame node holds equal content still get two occurrences, ordered this way |
+| `state`/`frame` | the declaring `model`/`object_type` node | QSpec FR-340's frame term: `modifies`, `creates`, `deletes` and `deletes_scoped`, with each field `modifies` entry an (object type node, field name) pair carrying its `scope`, each `creates`/`deletes` entry an `object_type` node, and each `deletes_scoped` entry `receiver` or a reference parameter's name (FR-154) | `generated`, one occurrence per named operation, ordinals by ascending (declaring `DeclarationKey`, operation name as UTF-8 bytes) over the unit's named operations, never by source order (FR-104 "Requirements", SR-736 FND-008/FND-009): two operations whose frame node holds equal content still get two occurrences, ordered this way |
 
 - `<kind>` is `invariant`, `precondition` or `postcondition`. The anchor is
   the context's `model`/`object_type` node for an invariant, and the
@@ -117,6 +117,12 @@ source map (FR-095).
   ascending order of (object type node digest, field name), and SHALL list
   each entry's object type node in the frame's `dependencies` (QSpec FR-340's
   dependency rule).
+- S4 SHALL emit every field `modifies` entry with its `scope`, `receiver` or
+  `every-object`, and `deletes_scoped` always, as FR-154 states: the
+  `receiver` entry first, then `parameter` entries by name as UTF-8 bytes.
+  A `deletes_scoped` entry names no node and adds no `dependencies` entry.
+  The scope and the scoped deletes are part of the frame node's content, so
+  they take part in its node id.
 - S4 SHALL emit no `state`/`snapshot` and no `state`/`transition` node for a
   state clause (ADR-012 §15.4).
 - S4 SHALL emit bytes that are independent of any snapshot or invocation: the
@@ -127,7 +133,7 @@ source map (FR-095).
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-105-AC-1 | The ConfigVersion unit of FR-104-AC-1 emits exactly three `state_clause` nodes (kinds `invariant`, `invariant`, `postcondition`), one `operation_anchor` (context `ConfigVersion`, operation `"attemptUpdate"`) and one `frame`, whose `modifies` is exactly (`ConfigVersion` node, `versionNumber`) and whose `creates` and `deletes` are empty. The package holds no `model`/`field_declaration`, `model`/`operation_declaration`, `state`/`snapshot` or `state`/`transition` node. | Test (TC-462); covered |
+| FR-105-AC-1 | The ConfigVersion unit of FR-104-AC-1 emits exactly three `state_clause` nodes (kinds `invariant`, `invariant`, `postcondition`), one `operation_anchor` (context `ConfigVersion`, operation `"attemptUpdate"`) and one `frame`, whose `modifies` is exactly (`ConfigVersion` node, `versionNumber`) with scope `every-object` and whose `creates`, `deletes` and `deletes_scoped` are empty. The package holds no `model`/`field_declaration`, `model`/`operation_declaration`, `state`/`snapshot` or `state`/`transition` node. | Test (TC-462); covered |
 | FR-105-AC-2 | Each emitted node's body, `semantic_type`, `dependencies` and occurrences match the Outputs table; `VersionUnchanged`'s condition holds a `quire.op.state.pre` application over the field read of `versionNumber`; `NoCycle`'s holds a `quire.op.model.reaches_field` application whose member is `{kind: "field", declaration: <ConfigVersion node>, name: "parent"}`, the same member shape `ParentOrder`'s `self.parent` read carries. | Test (TC-462); covered |
 | FR-105-AC-3 | The emitted package passes QSL's I2 read (`qsl-package` `checked_v2` reader), including its frame step, and its recomputed `package_id` equals the emitted one. | Test (TC-463) |
 | FR-105-AC-4 | Compiling the unit twice gives identical bytes. Renaming `ParentOrder` changes no node id; changing its `<` to `<=` changes its `state_clause` node id and the `package_id`; adding `ParentOrder2` with `ParentOrder`'s body adds no node and a second `claim` occurrence (ordinal 1) to `ParentOrder`'s node; adding a second `post` clause on `attemptUpdate` adds one `state_clause` node and no second anchor or frame. Over a package where `Sub` specializes `ConfigVersion`, `pre A ... on Config::ConfigVersion::attemptUpdate` and `pre B ... on Config::Sub::attemptUpdate` share one anchor whose context is `ConfigVersion`. | Test (TC-463); covered |
