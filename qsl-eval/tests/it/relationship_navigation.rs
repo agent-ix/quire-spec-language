@@ -54,6 +54,10 @@ fn housing() -> DeclarationKey {
     key("relationship/Pump-housing-Tank")
 }
 
+fn holds() -> DeclarationKey {
+    key("relationship/Sys-holds-Part")
+}
+
 const UNLIMITED: ScalarLimits = qsl_semantics::check::SCALAR_LIMITS_UNLIMITED;
 
 /// The destination multiplicities of the two relationships: the variants of
@@ -134,6 +138,11 @@ fn orders_package(shape: Shape) -> CheckedPackage {
             housing(),
             declared_end("Pump", Some("home"), mult((1, 1), true)),
             declared_end("Tank", Some("pump"), mult(shape.home, true)),
+        ),
+        relationship(
+            holds(),
+            declared_end("Sys", Some("holds"), mult((0, 99), true)),
+            declared_end("Part", None, mult((0, 3), true)),
         ),
     ];
     let package = DomainPackage::new(DomainPackageRef::fixture("bundle.orders"), records);
@@ -278,6 +287,17 @@ impl Orders {
                 },
                 target: RelationshipEnd {
                     object_type: self.id("Tank"),
+                    unique: true,
+                },
+            },
+            NavigationRelationship {
+                key: holds(),
+                source: RelationshipEnd {
+                    object_type: self.id("Sys"),
+                    unique: true,
+                },
+                target: RelationshipEnd {
+                    object_type: self.id("Part"),
                     unique: true,
                 },
             },
@@ -471,6 +491,7 @@ fn a_multi_valued_end_returns_the_set_after_the_navigate_visit_bound_retain_sche
     assert_eq!(incomplete.limit_kind, LimitKind::WorkUnits);
     assert_eq!(incomplete.limit, 4);
     assert_eq!(incomplete.consumed, 4);
+    assert_eq!(incomplete.next_charge, quire_exact::Integer::from(1u64));
     assert_eq!(incomplete.charge_point, RETAIN);
     assert_charges(&meter, &[NAVIGATE, VISIT, VISIT, BOUND], 4, 0);
 }
@@ -742,7 +763,7 @@ fn an_incomplete_or_unlisted_extent_is_incomplete_scope_and_an_empty_one_is_empt
 /// population covering Pump does not hold complete is undecidable, so the
 /// outcome is incomplete, not dangling, and never the cardinality refusal
 /// the count (4 above 3) would give.
-#[trace("TC-1034", "FR-364-AC-8", "FR-364-AC-12")]
+#[trace("TC-1034", "FR-364-AC-8")]
 #[test]
 fn an_undecidable_target_is_incomplete_scope_before_the_count_bound() {
     let orders = Orders::new(Shape::BASE);
@@ -838,4 +859,77 @@ fn navigating_twice_gives_equal_results_and_leaves_the_observation_unchanged() {
         )
     };
     assert_eq!(extents(&objects), extents(&before));
+}
+
+/// TC-1034 row 4 through a single-valued end: a dangling target refuses
+/// `dangling_reference` after `model.navigate` alone, never a cardinality
+/// refusal.
+#[trace("TC-1034", "FR-364-AC-8")]
+#[test]
+fn a_dangling_target_through_a_single_valued_end_refuses_after_model_navigate_alone() {
+    let orders = Orders::new(Shape::BASE);
+    let objects = orders.observe(
+        &orders.held(),
+        vec![Orders::extent(
+            housing(),
+            true,
+            vec![(orders.at("Pump", "p1"), orders.at("Tank", "t9"))],
+        )],
+        vec![orders.q()],
+    );
+    let (evaluation, meter) =
+        orders.navigate("home", &orders.at("Pump", "p1"), &objects, UNLIMITED);
+    let (code, cause, fields) = refusal(evaluation);
+    assert_eq!(
+        (code.as_str(), cause.as_str()),
+        ("dangling_reference", "absent-target-in-complete-population")
+    );
+    assert_eq!(fields["reference"], "t9");
+    assert_charges(&meter, &[NAVIGATE], 1, 0);
+}
+
+/// TC-1041 row 15 (variants **spare** and **spare-tank**): of `p9` (Pump)
+/// and `t9` (Tank) missing from one extent, the first in reference-key order
+/// decides: undecidable gives `incomplete-scope`, dangling gives
+/// `dangling_reference`, after `model.navigate` alone. Across the two
+/// variants, which type is undecidable swaps, so both outcomes occur.
+#[trace("TC-1041", "FR-364-AC-12")]
+#[test]
+fn the_first_missing_target_in_key_order_decides_between_dangling_and_undecidable() {
+    let orders = Orders::new(Shape::BASE);
+    let s1 = orders.at("Sys", "s1");
+    let (p9, t9) = (orders.at("Pump", "p9"), orders.at("Tank", "t9"));
+    let first = if p9 < t9 { &p9 } else { &t9 };
+    let mut outcomes = Vec::new();
+    for undecidable_type in ["Pump", "Tank"] {
+        let objects = orders.observe(
+            &orders.held(),
+            vec![Orders::extent(
+                holds(),
+                true,
+                vec![(s1.clone(), p9.clone()), (s1.clone(), t9.clone())],
+            )],
+            vec![orders.q(), orders.row("Spare", &[undecidable_type], false)],
+        );
+        let (evaluation, meter) = orders.navigate("holds", &s1, &objects, UNLIMITED);
+        let (code, cause, fields) = refusal(evaluation);
+        let first_is_undecidable = first.object_type() == orders.id(undecidable_type);
+        let expected = if first_is_undecidable {
+            ("incomplete_population", "incomplete-scope")
+        } else {
+            ("dangling_reference", "absent-target-in-complete-population")
+        };
+        assert_eq!((code.as_str(), cause.as_str()), expected);
+        assert_eq!(
+            fields["reference"],
+            first.object().as_str(),
+            "the first missing target is the one retained"
+        );
+        assert_charges(&meter, &[NAVIGATE], 1, 0);
+        outcomes.push(code);
+    }
+    assert_ne!(
+        outcomes[0], outcomes[1],
+        "both results occur across variants"
+    );
 }
