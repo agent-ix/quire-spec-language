@@ -309,7 +309,15 @@ missing target never yields a cardinality refusal. A count below `l` is `cardina
 `below-minimum` and a count above a finite `u` is `cardinality_out_of_bound`/
 `above-maximum`, each retaining the collection type, the inclusive bound, the
 count and the expression locus; the count is the number of selected
-instances. A refusal makes no later charge, so a multi-valued bound refusal
+instances. The refusal's collection type is `Set<Reference<U>>` when the destination
+end is `unique: true` and `Bag<Reference<U>>` when it is `unique: false`, with
+`U` the destination end's type, for a single-valued end as for a multi-valued
+end: a single-valued end is no collection in a result, but its refusal names
+the kind its `unique` flag gives, whichever bound failed. The refusal retains
+no element. The selected references are taken in ascending reference-key
+order, which decides the first one for the `resolve` decisions above; a
+repeated instance of a non-unique end counts once per instance, so the count
+of a `Bag` can exceed the number of distinct targets. A refusal makes no later charge, so a multi-valued bound refusal
 charges no `collection.result-retain` and returns no value. A denied charge is
 the incomplete outcome of the charge point, with no value.
 
@@ -351,7 +359,7 @@ FR-363; a navigation site reaches the evaluator already resolved.
 | FR-364-AC-3 | `targets` and `sources` return references in ascending reference-key order whatever order the extent was built in, `sources` returns the references of the opposite end of the same instances `targets` returns, a repeated instance of a non-unique relationship returns its reference twice and adjacently, and two references with equal object identity in different universes are not equal. | Test (TC-1033) |
 | FR-364-AC-4 | An unlisted extent and an incomplete extent give `complete(R)` `false`, a complete extent with no instance gives `true` with empty `targets`; the three are never read as one another. Reading leaves the observation equal to what it was, and two evaluations of one navigation give equal results. | Test (TC-1033) |
 | FR-364-AC-5 | Navigating a multi-valued end `{0,3}` with two targets returns the `Set<Reference<U>>[0,3]` in reference-key order after `model.navigate`, two `collection.visit`, `collection.bound` and `collection.result-retain`, and a work-unit limit equal to that schedule completes identically while one unit fewer is incomplete at `collection.result-retain`. A non-unique end holding one target twice returns the `Bag<Reference<U>>[0,3]` with that target twice. | Test (TC-1034) |
-| FR-364-AC-6 | A count above a finite `upper` refuses `cardinality_out_of_bound`/`above-maximum` after `model.navigate`, one `collection.visit` per selected reference and `collection.bound`, with no `collection.result-retain` and no value; a count below `lower` refuses `below-minimum` at the same point; a single-valued end with count 0 through `[1,1]` refuses `below-minimum` and with count 2 refuses `above-maximum`, each after only `model.navigate`. | Test (TC-1034) |
+| FR-364-AC-6 | A count above a finite `upper` refuses `cardinality_out_of_bound`/`above-maximum` after `model.navigate`, one `collection.visit` per selected reference and `collection.bound`, with no `collection.result-retain` and no value; a count below `lower` refuses `below-minimum` at the same point; a single-valued end with count 0 through `[1,1]` refuses `below-minimum` and with count 2 refuses `above-maximum`, each after only `model.navigate`. The retained collection type of a cardinality refusal is `Set` for a `unique: true` destination end and `Bag` for a `unique: false` one, for a single-valued end as for a multi-valued end, and a repeated instance of a non-unique single-valued end counts once per instance. | Test (TC-1034) |
 | FR-364-AC-7 | A single-valued end returns its `Reference<U>`, and for `[0,1]` the present `Option` or `none`, after `model.navigate` alone; a traversal from the target end returns the `sources` of the same extent. | Test (TC-1034) |
 | FR-364-AC-8 | A dangling target of a model-layer extent refuses `dangling_reference`/`absent-target-in-complete-population` before the count bound: with four selected targets through `{0,3}` the fourth absent, the refusal comes after `model.navigate` and three `collection.visit` and no cardinality refusal is returned. A target absent from a population not held complete gives `incomplete_population`/`incomplete-scope`. | Test (TC-1034) |
 | FR-364-AC-9 | Navigating through an unlisted extent and through an incomplete extent each give `incomplete_population`/`incomplete-scope` after `model.navigate` and no later charge, while the complete empty extent returns the empty collection or `none`. | Test (TC-1034) |
