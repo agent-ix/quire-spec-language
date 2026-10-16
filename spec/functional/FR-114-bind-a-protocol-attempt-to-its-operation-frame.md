@@ -33,10 +33,10 @@ substitute a more permissive frame" (`state-contract.md`, FR-013).
 When S3 checks an attempt, the `ProtocolClause` family SHALL resolve its
 operation, bind it to the operation's one anchor and one frame, and check
 each `contracts` entry against that anchor. S4 SHALL name the frame by
-FR-105's `state`/`frame` node. There is one frame node per (declaring object
-type, operation name), however many clauses and attempts name the operation
-(FR-105); an attempt adds no second frame node and no second frame
-requirement record.
+FR-105's `state`/`frame` node. There is one anchor per (declaring object
+type, operation name), however many clauses and attempts name the operation,
+and it references the operation's frame node (FR-105); an attempt adds no
+second anchor, no second frame node and no second frame requirement record.
 
 A protocol holding the attempt compiles only when every other part of it is
 checked (FR-113 Description lists what is and what still refuses
