@@ -12,9 +12,9 @@ use std::collections::{BTreeSet, VecDeque};
 use std::sync::Arc;
 
 use super::causes::{
-    identity_string, ModelQueryRefusal, PreconditionFailure, ProtocolClauseSnapshot,
-    ProtocolClauseUnsupported, ProtocolReferenceUnsupported, ReferenceUnresolved,
-    StateModelUndefined,
+    identity_string, ModelQueryRefusal, NavigateUnsupported, PreconditionFailure,
+    ProtocolClauseSnapshot, ProtocolClauseUnsupported, ProtocolReferenceUnsupported,
+    ReferenceUnresolved, StateModelUndefined,
 };
 use super::s6a::separation::{
     locatable, occurrence_at, Provenance, Separation, SeparationStep, StopReport, Trail,
@@ -1752,6 +1752,11 @@ impl<'a, 'm> Machine<'a, 'm> {
                     }
                 }
                 retain_scalar(Value::Boolean(found), self.meter)?
+            }
+            NodeKind::Navigate { .. } => {
+                return Err(Halt::Family(FamilyResult::Refused(Box::new(
+                    NavigateUnsupported,
+                ))));
             }
             NodeKind::AllInstances { population } => {
                 if self.is_protocol_clause() {

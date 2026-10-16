@@ -169,6 +169,26 @@ impl CatalogCoded for ProtocolClauseUnsupported {
     }
 }
 
+/// A relationship-end navigation `r.name` (FR-363) reached evaluation. Its
+/// static typing and lowering are checked, but no stage resolves a
+/// relationship's population at run time yet, so it refuses, typed, rather
+/// than answer with a value no relationship supplied.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct NavigateUnsupported;
+
+impl CatalogCoded for NavigateUnsupported {
+    /// `unknown_required_feature`/`unsupported-feature`, naming the
+    /// construct, as [`ProtocolClauseUnsupported`] does for its own scoped
+    /// gap.
+    fn catalog_code(&self) -> CatalogCode {
+        CatalogCode::new("unknown_required_feature", "unsupported-feature")
+    }
+
+    fn catalog_fields(&self) -> Option<BTreeMap<&'static str, String>> {
+        Some(BTreeMap::from([("construct", "navigate".to_owned())]))
+    }
+}
+
 /// A protocol reference expression (FR-308) reached evaluation. Its value is
 /// the value of the protocol clause it names, and no stage evaluates a
 /// protocol clause: S6a evaluates state clauses only. It refuses, typed,

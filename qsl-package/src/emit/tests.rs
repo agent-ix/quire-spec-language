@@ -38,6 +38,7 @@ mod deep_bodies;
 mod envelope_adoption;
 mod golden;
 mod identity_depth;
+mod navigation;
 mod owners;
 mod protocol_reference;
 mod variant_types;

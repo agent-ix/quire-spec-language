@@ -3541,12 +3541,12 @@ fn read_connection(
             // ends) carries no `role` member at all -- not merely an absent
             // optional one -- so this end never has one to preserve.
             role: None,
-            multiplicity: source_multiplicity,
+            multiplicity: Some(source_multiplicity),
         },
         target: RelationshipEnd {
             type_identity: declaration_key(package, target_type),
             role: None,
-            multiplicity: target_multiplicity,
+            multiplicity: Some(target_multiplicity),
         },
         direction,
     })
@@ -3653,7 +3653,7 @@ fn read_relationship_end(
     Ok(RelationshipEnd {
         type_identity: declaration_key(package, type_ref),
         role,
-        multiplicity,
+        multiplicity: Some(multiplicity),
     })
 }
 
@@ -5977,7 +5977,10 @@ mod tests {
             relationship.source.type_identity,
             declaration_key("acme/orders", "ix://acme/orders/Flow2")
         );
-        assert_eq!(relationship.source.multiplicity.upper, None);
+        assert_eq!(
+            relationship.source.multiplicity.map(|m| m.upper),
+            Some(None)
+        );
         // `targetEnd.role` is absent here: `relationshipTargetEnd`'s own
         // schema does not require it, and this reader preserves that as
         // `None`, not a fabricated default.
@@ -5986,7 +5989,10 @@ mod tests {
             relationship.target.type_identity,
             declaration_key("acme/orders", "ix://acme/orders/Flow")
         );
-        assert_eq!(relationship.target.multiplicity.upper, Some(1));
+        assert_eq!(
+            relationship.target.multiplicity.map(|m| m.upper),
+            Some(Some(1))
+        );
     }
 
     /// `direction` on this shape is source-to-target/target-to-source/

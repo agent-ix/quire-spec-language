@@ -2,6 +2,7 @@
 //! The typed, name-resolved expression tree that checking produces and the
 //! evaluator runs.
 
+use crate::model::key::DeclarationKey;
 use qsl_foundation::absence::AbsenceMode;
 use quire_exact::DecimalType;
 use quire_exact::EffectiveId;
@@ -812,6 +813,17 @@ pub enum NodeKind {
         /// (SR-750 FND-008 round 2).
         derefed: bool,
     },
+    /// `r.name` over a relationship end of the reference's static object type
+    /// (FR-363). The node's own `value_type` is the destination end's typed
+    /// result (`Reference<U>`, `Option<Reference<U>>`, `Set<..>` or `Bag<..>`).
+    Navigate {
+        /// The object reference navigated from.
+        reference: NodeId,
+        /// The relationship's declaration.
+        relationship: DeclarationKey,
+        /// The role of the end nearest the reference, which the source named.
+        role: String,
+    },
     /// Whether an `Option` operand holds a value.
     Present(NodeId),
     /// The payload of an `Option` operand.
@@ -1010,6 +1022,9 @@ impl NodeKind {
             | NodeKind::Not(operand)
             | NodeKind::Field { operand, .. }
             | NodeKind::Attribute {
+                reference: operand, ..
+            }
+            | NodeKind::Navigate {
                 reference: operand, ..
             }
             | NodeKind::Present(operand)

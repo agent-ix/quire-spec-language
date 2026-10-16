@@ -3288,6 +3288,33 @@ impl<'a> Lowering<'a> {
                 });
                 return Ok(LowerStep::Descend(node.at(*reference)));
             }
+            NodeKind::Navigate {
+                reference,
+                relationship,
+                role,
+            } => {
+                // FR-093/FR-094 (FR-363): one `quire.op.model.navigate` over
+                // the reference, naming the end by the relationship's model
+                // node and the role. No `deref` node: the reference is the
+                // argument.
+                let declaration = self.model_node(relationship, node.location())?;
+                let name = Identifier::new(role.clone()).map_err(|_| {
+                    refuse(
+                        node.location(),
+                        CheckCause::NodePreimage(NodeKeyRefusal::EmptyBindingName),
+                    )
+                })?;
+                (
+                    Keyed::Application(
+                        Operator::Query,
+                        Operation {
+                            member: Some(Member::RelationshipEnd { declaration, name }),
+                            ..plain("quire.op.model.navigate")
+                        },
+                    ),
+                    Operands::One(reference),
+                )
+            }
             NodeKind::Present(operand) => (
                 Keyed::Application(Operator::Present, plain("quire.op.option.present")),
                 Operands::One(operand),

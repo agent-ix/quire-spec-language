@@ -49,6 +49,8 @@ mod observation_composites;
 mod operation_bodies;
 mod operation_clauses;
 mod quantities;
+#[cfg(feature = "test-support")]
+mod relationship_navigation;
 mod state_clauses;
 #[cfg(feature = "test-support")]
 mod tc235_business_meanings;
