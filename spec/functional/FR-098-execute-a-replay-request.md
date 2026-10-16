@@ -134,7 +134,8 @@ value (`unknown_required_feature`/`unsupported-feature`, construct
   parameter's position.
 - The executor SHALL take a `WitnessValue` tree for a parameter of any value
   type other than `Boolean`, an integer type and `Population<T>`: a leaf of
-  enum, text, rational, decimal, float, quantity or reference type, or an
+  enum, text, String, UUID, Timestamp, rational, decimal, float, quantity or
+  reference type, or an
   `Option`, record, tuple, union or collection nested to any depth with
   leaves of any value family. It arrives as an `Input` assignment's value,
   or as a witness entry read as a `Canonical` binding in FR-070's witness
@@ -148,7 +149,10 @@ value (`unknown_required_feature`/`unsupported-feature`, construct
   with no charge, when:
   - a node's shape is not its declared type's kind (for example, a
     sequence for a `Set`, a record for an `Option`, a `float32` for a
-    `Float64`, or a decimal for a `Rational`);
+    `Float64`, a decimal for a `Rational`, a String, UUID or Timestamp
+    object for a parameter of any other declared type, or a `text` value for
+    a `String`, `UUID` or `Timestamp` parameter, with no payload read as
+    another kind);
   - an enum, record, tuple or union `name` is not the declared type's
     declaration node id, or a quantity's `unit` is not the declared unit;
   - an enum or union `member` is not a member of that declaration;
@@ -166,7 +170,11 @@ value (`unknown_required_feature`/`unsupported-feature`, construct
     FR-144-AC-6, FR-323-AC-3), so such a value matches no declared type and
     fails conversion as a kind mismatch.
 - An enum member converts to the kernel member with its declared rank. A
-  text converts to a kernel text of the declared text type. A rational,
+  text converts to a kernel text of the declared text type. A String object
+  converts to a kernel String of its exact scalar sequence, which no content
+  refuses, and a UUID or Timestamp object converts through the kernel's
+  canonical constructor, which refuses a noncanonical spelling
+  `invalid_runtime_input`/`invalid-value` (FR-070, FR-056). A rational,
   decimal, float or quantity converts exactly, with no rounding. A
   reference converts to the kernel object reference, which a predicate
   replay holds as a value. A replayed function has no object environment,
@@ -321,6 +329,7 @@ NOT produce a semantic ChargePoint or override the original refusal cause.
 | FR-098-AC-10 | One predicate per leaf family, each taking one parameter of that family (an enum `Color`, `Text[0, 8]`, `Rational`, a `Decimal` with scales `[0, 2]`, `Float64`, a quantity in a declared unit `m`, and a `Reference<T>`), replays its counterexample from a `Witness` entry in FR-070's witness value text and settles as AC-2 states; the reference predicate tests the reference for equality with itself and does not dereference it. Positive replay requires FR-277 AC-6's reviewed capability and typed integration for the invoked helpers: Decimal remains a mandatory positive family once IR-718's reviewed capability is enabled through IR-719 and its typed mapping is approved. Missing proof blocks implementation qualification, not a runtime unsupported/invalid/limit/storage outcome. Each of these refuses `WrongValueKind` naming position 0, before the call: an enum value naming another enum's declaration; a nine-scalar text; a decimal with scale 3; a `float32` for the `Float64`; a quantity in another unit; and a reference whose `object_type` is another type's. A predicate that dereferences its reference settles `inconclusive` with cause `NoValue`. | Test (TC-906) |
 | FR-098-AC-11 | A proved package whose one source declares `function wide using v(x: Int[0, 18446744073709551615]): Boolean pure { x <= 18446744073709551614 }` recompiles from its byte provision to the request's `package_id`, and an `Input` assignment of `x` = 18446744073709551615, carried on the replay wire as the decimal string `"18446744073709551615"`, settles `reproduced-without-witness` with the call's result `false`. The same holds for `x: Int[0, 9223372036854775808]` with body `x <= 9223372036854775807` and `x` = `"9223372036854775808"`, for `x: Int[0, 18446744073709551616]` with body `x <= 18446744073709551615` and `x` = `"18446744073709551616"`, and for `x: Int[-170141183460469231731687303715884105728, 170141183460469231731687303715884105727]` with body `x > -170141183460469231731687303715884105728` and `x` = `"-170141183460469231731687303715884105728"`. As the QSL-source stand-in for QSL-642's CG wide-range model (the u64 range CG admits under IR-624 AC35), a unit declaring `record Meter { reading: Int[0, 18446744073709551615]; }` and `function meter_over using v(m: Meter): Boolean pure { m.reading <= 18446744073709551614 }` recompiles from its byte provision to the request's `package_id`. | Test (TC-913) |
 | FR-098-AC-12 | TC-906 counts the specified conversion helper events as H: H-1 denies its actual next event unspent, H permits conversion when other bounds fit. Across multiple arguments H is cumulative and independent of each argument's node C. Original Cancel, invalid input and storage/capacity failures retain their FR-277 typed phase causes and zero evaluation consumption. | Test (TC-906) |
+| FR-098-AC-13 | TC-1028 E1 to E5 replay through the real spine. A unit declaring `function eqs using v(a: String, b: String): Boolean pure { a = b }`, its `!=` counterpart and `function equ using v(a: UUID, b: UUID): Boolean pure { a = b }` is composed and replayed from `Input` assignments that carry String values (the String wire object, `{"kind":"string","text":...}`), and each replay completes with the Boolean TC-1028 states as its evaluated value (the proved verdict is `violation`, so a `true` result settles `inconclusive` with cause `Verdicts` and a `false` result settles `reproduced-without-witness`): `""` and `""` give `true`; `"abc"` and `"abc"` give `true`; U+00E9 and U+0065 U+0301 give `false`; `"A"` and `"a"` give `false`; the text `00112233-4455-6677-8899-aabbccddeeff` and itself give `true`; the `!=` function gives the negation of each. Before the call and with no charge, each of these refuses `WrongValueKind` (`invalid_runtime_input`) naming the parameter's position, from an `Input` assignment and from a `Witness` entry: the String object whose text is `00112233-4455-6677-8899-aabbccddeeff` at position 0 of `equ`; a UUID object at position 1 of `eqs`; a Timestamp object at position 0 of `eqs`; `{"type":"text","value":"abc"}` at position 0 of `eqs`; and a String object at position 0 of the Text-parameter predicate of FR-098-AC-10. | Test (TC-1028) |
 
 The union cases of AC-8 and AC-9 depend on QSL-503's S6a union
 arguments. A quantity-typed parameter in source (AC-10) depends on

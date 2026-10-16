@@ -50,7 +50,7 @@ Scope: FR-106-AC-28, FR-106-AC-29, FR-106-AC-30, FR-106-AC-31, FR-106-AC-32.
    selected through `PreCall`.
 4. Mutate `label` to each object defect, one per row: `kind` `1`; `kind`
    `null`; `kind` `{}`; `kind` `1` with no `text`; `kind` `"String"`; `kind`
-   `"STRING"`; `{"kind":"text","value":"x"}`; `{"kind":"text","text":"x"}`; `{"kind":"string"}`;
+   `"STRING"`; `"Text"`; `{"kind":"blob","value":"x"}`; `{"kind":"blob","text":"x"}`; `{"kind":"string"}`;
    `{"kind":"string","nanoseconds":"0"}`; an extra member `"extra":1` beside a
    valid `text`; a valid `text` beside `"nanoseconds":"0"`; `text` `5`; `text`
    `null`; `text` `true`; `text` `["x"]`; `text` `{}`; an extra member
@@ -96,7 +96,7 @@ Scope: FR-106-AC-28, FR-106-AC-29, FR-106-AC-30, FR-106-AC-31, FR-106-AC-32.
 - Step 4 refuses every row `invalid_runtime_input` naming `child` and `label`
   by the listed order: the `kind` `1`, `null`, `{}` rows and the `kind` `1`
   row with no `text` give `wrong-value-kind` naming `kind` (check 1); the
-  `"String"`, `"STRING"`, `text`/`value` and `text`/`text` rows give `invalid-value` naming
+  `"String"`, `"STRING"`, `"Text"`, `blob`/`value` and `blob`/`text` rows give `invalid-value` naming
   `kind` (check 2), their members unexamined; `{"kind":"string"}` and the
   `string`/`nanoseconds` object give `missing-member` naming `text` (check 3);
   the two extra-member rows give `unknown-member` naming `extra` and
