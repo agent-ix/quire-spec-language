@@ -909,6 +909,14 @@ pub(super) fn retained_text(declared: &quire_exact::TextType, payload: &str) -> 
     }
 }
 
+/// A Text object's `text` member, if it is a string.
+#[qsl_attrs::string_edge]
+fn text_member(native: RawNative<'_>) -> Option<&str> {
+    native
+        .members()
+        .find_map(|(name, text)| (name == "text").then_some(text).flatten())
+}
+
 impl SnapshotValue {
     /// Whether the two values are equal, a value of a declared Text type
     /// comparing by its retained sequence (FR-106-AC-40, FR-141): `declared`
@@ -926,17 +934,12 @@ impl SnapshotValue {
                 (RawForm::Boolean(left), RawForm::Boolean(right)) if left == right => {}
                 (RawForm::Integer(left), RawForm::Integer(right)) if left == right => {}
                 (RawForm::Native(left), RawForm::Native(right)) => {
-                    fn text<'t>(native: RawNative<'t>) -> Option<&'t str> {
-                        native
-                            .members()
-                            .find_map(|(name, text)| (name == "text").then_some(text).flatten())
-                    }
                     let equal = match (declared, left.kind, right.kind) {
                         (
                             Some(ValueType::Text(text_type)),
                             RawNativeKind::Known(NativeKind::Text),
                             RawNativeKind::Known(NativeKind::Text),
-                        ) => match (text(left), text(right)) {
+                        ) => match (text_member(left), text_member(right)) {
                             (Some(left), Some(right)) => {
                                 retained_text(text_type, left) == retained_text(text_type, right)
                             }
