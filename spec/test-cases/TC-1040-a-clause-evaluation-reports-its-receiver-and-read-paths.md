@@ -1,12 +1,12 @@
 ---
-id: TC-1039
+id: TC-1040
 title: "A clause evaluation reports its receiver path and the runtime value path of each field read"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-107
     type: verifies
 ---
-# TC-1039: A clause evaluation reports its receiver path and the runtime value path of each field read
+# TC-1040: A clause evaluation reports its receiver path and the runtime value path of each field read
 
 ## Description
 
@@ -26,7 +26,7 @@ with an unlimited meter unless a step says otherwise. A path is written
 the object with key `K`: the universe of its population, its type and `K`.
 The observation `H` is the current snapshot `healthy-parent` of FR-108 (`root`
 1, `child` 2 with parent `root`) and `A` its current snapshot `absent-parent`.
-Tag the tests `#[trace("TC-1039", "FR-107-AC-n")]`.
+Tag the tests `#[trace("TC-1040", "FR-107-AC-n")]`.
 
 **Object receiver (FR-108 `Config`).**
 

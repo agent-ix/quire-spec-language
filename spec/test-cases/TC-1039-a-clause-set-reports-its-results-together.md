@@ -1,12 +1,12 @@
 ---
-id: TC-1038
+id: TC-1039
 title: "A clause set reports its results together, evaluates postconditions only after true preconditions and refuses a bad set whole"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-107
     type: verifies
 ---
-# TC-1038: A clause set reports its results together, evaluates postconditions only after true preconditions and refuses a bad set whole
+# TC-1039: A clause set reports its results together, evaluates postconditions only after true preconditions and refuses a bad set whole
 
 ## Description
 
@@ -41,7 +41,7 @@ A current snapshot `cur` holds `root` 0 and `child` 1 with no parent, for
 `NoCycle` (FR-108) with `self` `child`. Admit each clause's observations by
 FR-106 (a precondition from the invocation's pre snapshot, a postcondition
 from both) and call `evaluate_clause_set` with unlimited `limits` unless a
-step sets one. Tag the tests `#[trace("TC-1038", "FR-107-AC-n")]`.
+step sets one. Tag the tests `#[trace("TC-1039", "FR-107-AC-n")]`.
 
 1. The set {`UpdateAllowed`, `UpdateRaises`} over `up12`, then over `up34`.
 2. The set {`UpdateRaises`, `UpdateNotMax`, `UpdateAllowed`}, listed in that
