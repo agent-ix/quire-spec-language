@@ -35,17 +35,17 @@ of the `Counter` object type node, and `<Gauge>` for `Gauge`'s. Every frame
 body is written with its members in canonical JCS order. Tag the tests
 `#[trace("TC-1043", "FR-154-AC-n")]` and `#[trace("TC-1043", "FR-115-AC-11")]`.
 
-Operations and their model-document `frame` (FR-154 "Inputs"):
+Operations and their model-document `frame` (FR-154 "Inputs"). The three arrays `modifies`, `creates` and `deletes` are always present. The rows that use a scoped member (`modifies_receiver`, `deletes_receiver`, `deletes_parameters`) depend on the amended model-contract and semantic-IR frame schema; the rows that use only the three arrays are reachable today:
 
 | Operation | Parameters | `frame` |
 | --- | --- | --- |
-| `bump` | none | `{"modifies":["Counter/value"],"modifies_receiver":["Counter/step"],"deletes_receiver":true}` |
-| `merge` | `a: Reference<Counter>`, `b: Reference<Counter>` | `{"deletes":["Counter"],"deletes_parameters":["b","a"],"deletes_receiver":true}` |
-| `noop` | none | `{}` |
-| `own` | none | `{"modifies_receiver":["Counter/value"]}` |
-| `all` | none | `{"modifies":["Counter/value"]}` |
-| `drop` | none | `{"deletes_receiver":true}` |
-| `dispose` | none | `{"deletes":["Gauge"],"deletes_receiver":true}` |
+| `bump` | none | `{"modifies":["Counter/value"],"creates":[],"deletes":[],"modifies_receiver":["Counter/step"],"deletes_receiver":true}` |
+| `merge` | `a: Reference<Counter>`, `b: Reference<Counter>` | `{"modifies":[],"creates":[],"deletes":["Counter"],"deletes_parameters":["b","a"],"deletes_receiver":true}` |
+| `noop` | none | `{"modifies":[],"creates":[],"deletes":[]}` |
+| `own` | none | `{"modifies":[],"creates":[],"deletes":[],"modifies_receiver":["Counter/value"]}` |
+| `all` | none | `{"modifies":["Counter/value"],"creates":[],"deletes":[]}` |
+| `drop` | none | `{"modifies":[],"creates":[],"deletes":[],"deletes_receiver":true}` |
+| `dispose` | none | `{"modifies":[],"creates":[],"deletes":["Gauge"],"deletes_receiver":true}` |
 
 Meaning in surface text: `bump` is `modifies value`, `modifies self.step`,
 `deletes self`; `merge` is `deletes b`, `deletes a`, `deletes self`,
@@ -54,7 +54,7 @@ Meaning in surface text: `bump` is `modifies value`, `modifies self.step`,
 1. Emit the unit and read each operation's `state`/`frame` node body.
 2. Compare the node ids of `own` and `all`, and of `drop` and `noop`. Emit
    package B1, the fixture without `all`, and package B2, B1 with `own`'s
-   frame replaced by `{"modifies":["Counter/value"]}`; compare their
+   frame replaced by `{"modifies":["Counter/value"],"creates":[],"deletes":[]}`; compare their
    `package_id`s. (B2 holds no second operation with an equal frame.)
 3. Intake the package once per row of this table, each row replacing the
    `frame` of an operation `t(n: Integer, a: Reference<Counter>)` of
@@ -62,17 +62,23 @@ Meaning in surface text: `bump` is `modifies value`, `modifies self.step`,
 
    | Row | `frame` |
    | --- | --- |
-   | I1 | `{"modifies_receiver":["Counter/nope"]}` |
-   | I2 | `{"modifies_receiver":["Gauge/d"]}` |
-   | I3 | `{"modifies_receiver":["Supersedes"]}` |
-   | I4 | `{"deletes_parameters":["missing"]}` |
-   | I5 | `{"deletes_parameters":["n"]}` |
-   | I6 | `{"deletes_parameters":["a"],"deletes_receiver":true}` |
-   | I7 | `{"modifies_receiver":["Counter/value"]}` |
-   | I8 | `{"modifies":["Counter/value"],"modifies_receiver":["Counter/nope","Counter/value"]}` |
-   | I9 | `{"modifies":["Counter/value"],"modifies_receiver":["Counter/value"]}` |
-   | I10 | `{"deletes_receiver":"yes"}` |
-   | I11 | `{"modifies_self":[]}` |
+   | I1 | `{"modifies":[],"creates":[],"deletes":[],"modifies_receiver":["Counter/nope"]}` |
+   | I2 | `{"modifies":[],"creates":[],"deletes":[],"modifies_receiver":["Gauge/d"]}` |
+   | I3 | `{"modifies":[],"creates":[],"deletes":[],"modifies_receiver":["Supersedes"]}` |
+   | I4 | `{"modifies":[],"creates":[],"deletes":[],"deletes_parameters":["missing"]}` |
+   | I5 | `{"modifies":[],"creates":[],"deletes":[],"deletes_parameters":["n"]}` |
+   | I6 | `{"modifies":[],"creates":[],"deletes":[],"deletes_parameters":["a"],"deletes_receiver":true}` |
+   | I7 | `{"modifies":[],"creates":[],"deletes":[],"modifies_receiver":["Counter/value"]}` |
+   | I8 | `{"modifies":["Counter/value"],"creates":[],"deletes":[],"modifies_receiver":["Counter/nope","Counter/value"]}` |
+   | I9 | `{"modifies":["Counter/value"],"creates":[],"deletes":[],"modifies_receiver":["Counter/value"]}` |
+   | I10 | `{"modifies":[],"creates":[],"deletes":[],"deletes_receiver":"yes"}` |
+   | I11 | `{"modifies":[],"creates":[],"deletes":[],"modifies_self":[]}` |
+   | I12 | `{"modifies":[],"creates":[]}` |
+
+   Rows I1 to I12 and the operations `bump`, `merge`, `own`, `drop` and
+   `dispose` use a scoped member or its refusal, so they depend on the
+   amended model-contract and semantic-IR frame schema. `noop`, `all`, B1 and
+   B2 use only the three arrays and are reachable today.
 
 4. For each of X1 to X8, copy the emitted package, edit the named frame node
    body, and re-key it: compute the edited frame node's key, replace the key
@@ -133,7 +139,8 @@ Results:
   `Counter/value`, because the conflict is checked once every entry resolves.
   I9 refuses `invalid_model_binding`/`conflicting-binding` naming both
   entries and `t`. I10 refuses `invalid_model_binding`/`malformed-declaration`
-  at `deletes_receiver` and I11 at `modifies_self`, before any entry is read.
+  at `deletes_receiver`, I11 at `modifies_self`, and I12 at the absent
+  `deletes`, before any entry is read.
 - Step 4: X1, X2 and X3 are refused as schema failures of the frame body. X4
   and X5 refuse `invalid_semantic_graph`. X6 refuses `missing_declaration`/
   `missing-name`. X7 is admitted.

@@ -25,3 +25,20 @@ Ticket: QSL-522. One spec-review pass over `git diff origin/main...HEAD`. It cov
 | FND-004 | medium | Recorded. X7 places two field entries with equal order keys. FR-340 and FR-154 do not say whether a non-strict ascending order is canonical, or whether `conflicting-binding` is checked before the order check. | TC-1043 X7 |
 | FND-005 | medium | Recorded, existing before this PR. FR-105's frame row keeps one frame node for two operations whose frames have equal content. QSpec FR-342 refuses a frame shared by two anchors. TC-1043 step 2's variant package (`own` changed to `modifies value`, equal to `all`) builds exactly that shared frame. | spec/functional/FR-105-...md:67 |
 | FND-006 | low | Recorded. Minor points: the type of `step` is not stated (D1 writes 1). The operation `t` in step 3 is not in the operations table. Seven clauses share the name `Done`. `ModifiesEntry{field,scope}` cannot hold a relationship entry, which has no scope. FR-154 line 95 has the `effective` validator warning. | TC-1043; FR-154 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | high | The fix's model-document frame form contradicts QSpec's model-complete Frames rule ("`Operation.frame` has exactly `modifies`, `creates` and `deletes`"). It is also refused by the semantic-IR schema that intake runs first (`validate_with_semantic_ir`). The pinned filament-core-data `$defs.frame`, unchanged on its main, is `required: [modifies, creates, deletes]`, `additionalProperties: false`. So `modifies_receiver`, `deletes_receiver`, `deletes_parameters`, and any frame that omits one of the three members (`noop` `{}`, `own`, `drop`, `bump`, I1-I11), get a schema diagnostic before FR-154's entry checks run. QSL cannot add frame members on its own: the form needs QSpec's model contract and the FCD semantic-IR schema to define it (FCD change in the same slice), or FR-154 must state that schema change. | spec/functional/FR-154-...md "Inputs"; TC-1043 operations table, step 3 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 4f48e4564 |
+| FND-002 | still-open | Intake rows now give concrete JSON, but the form they use cannot be reached: the semantic-IR schema validator refuses those members first (see FND-007). I1-I11 and every fixture frame that omits a member do not reach their stated results. |
+| FND-003 | fixed | 4f48e4564 |
+| FND-004 | fixed | 4f48e4564 |
+| FND-005 | fixed | 4f48e4564 |
+| FND-006 | fixed | 4f48e4564 |

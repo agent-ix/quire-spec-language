@@ -50,14 +50,22 @@ counter's `v` is reported as a frame violation (US-019).
 - The model-document form of that scope, which QSL intake reads. The `frame`
   of an operation is a closed object with exactly these optional members; an
   absent member is empty or false:
-  - `modifies`, `creates`, `deletes`: arrays of node identity strings, as
-    before. They mean `every-object` field entries (or relationship
+  - `modifies`, `creates`, `deletes`: required arrays of node identity
+    strings, as before, each present and empty when empty. They mean `every-object` field entries (or relationship
     entries), `creates` entries and type-wide `deletes` entries.
   - `modifies_receiver`: an array of field node identity strings, the
     receiver-scoped `modifies self.f` entries.
   - `deletes_receiver`: a boolean, `true` for `deletes self`.
   - `deletes_parameters`: an array of parameter-name strings, the
     `deletes p` entries.
+
+  A frame that omits `modifies`, `creates` or `deletes` is malformed.
+
+  The three scoped members are a required amendment of the model contract's
+  Frames rule and of the semantic-IR frame schema, which today admit exactly
+  `modifies`, `creates` and `deletes`. The model document SHALL carry the
+  three members as optional members with the types above, and the amendment
+  SHALL be in place before intake can read them.
 
   A member the list does not name, a member of the wrong JSON type, or an
   array element that is not a string refuses `invalid_model_binding`/
@@ -186,7 +194,7 @@ impl StateModel {
 | FR-154-AC-5 | An operation `drop()` framed `deletes self` on receiver `c1`: `check_frame` admits a post without `c1` and refuses a post without `c2` as `frame_violation`/`unauthorized-change` naming `c2`; framed `deletes Counter`, both posts and a post without either are admitted; the S4 frame nodes of the two frames differ. | Test (TC-572) |
 | FR-154-AC-6 | The S4 frame body of `bump()` framed `modifies self.step`, `modifies value` and `deletes self` over `test/counters` is exactly TC-1043 vector W1; the body of `merge(a, b)` framed `deletes b`, `deletes a`, `deletes self` and `deletes Counter` is exactly vector W2, where `deletes_scoped` lists the receiver first and then `a` before `b` whatever the authored order, and `deletes` holds the `Counter` node reference; a frame with no entry has all four members empty (vector W3). | Test (TC-1043) |
 | FR-154-AC-7 | Frames that differ only by one entry's scope (`modifies self.value` against `modifies value`, vectors W4 and W5), or only by `deletes self` against no entry (vectors W6 and W3), have different frame node ids, and two packages differing only by that one scope have different `package_id`s; the frame node of a frame with only type-wide entries carries `deletes_scoped: []` and every field entry `every-object`. | Test (TC-1043) |
-| FR-154-AC-8 | Over TC-1043's fixture, intake reads the frame members of rows I1 to I11: a `modifies_receiver` entry naming no declaration refuses `missing_declaration`/`missing-name` (I1); one naming a field of `Gauge`, a type `Counter` does not conform to, or a relationship refuses `invalid_model_binding`/`malformed-declaration` (I2, I3); a `deletes_parameters` name that is no parameter, or the name of an `Integer` parameter, refuses `missing_declaration`/`missing-name` (I4, I5); `deletes_parameters` naming a `Reference<Counter>` parameter with `deletes_receiver` true admits (I6), and so does `modifies_receiver` naming `value` on an operation of `Sub`, which inherits it (I7); a frame whose `modifies_receiver` holds a missing field and `value` while `modifies` holds `value` reports only the `missing-name` refusal (I8); `modifies` and `modifies_receiver` both naming `value` refuse `conflicting-binding` (I9); a non-boolean `deletes_receiver` and an unnamed member refuse `malformed-declaration` (I10, I11). | Test (TC-1043) |
+| FR-154-AC-8 | Over TC-1043's fixture, intake reads the frame members of rows I1 to I12: a `modifies_receiver` entry naming no declaration refuses `missing_declaration`/`missing-name` (I1); one naming a field of `Gauge`, a type `Counter` does not conform to, or a relationship refuses `invalid_model_binding`/`malformed-declaration` (I2, I3); a `deletes_parameters` name that is no parameter, or the name of an `Integer` parameter, refuses `missing_declaration`/`missing-name` (I4, I5); `deletes_parameters` naming a `Reference<Counter>` parameter with `deletes_receiver` true admits (I6), and so does `modifies_receiver` naming `value` on an operation of `Sub`, which inherits it (I7); a frame whose `modifies_receiver` holds a missing field and `value` while `modifies` holds `value` reports only the `missing-name` refusal (I8); `modifies` and `modifies_receiver` both naming `value` refuse `conflicting-binding` (I9); a non-boolean `deletes_receiver`, an unnamed member and a frame omitting `deletes` refuse `malformed-declaration` (I10, I11, I12). | Test (TC-1043) |
 | FR-154-AC-9 | `check_frame` over state `w` holding `c1`, `c2` and `c3` of `Counter` with effect `modifies self.value`, `modifies step`, receiver `c1` admits a post that changes `c1.value` and `c2.step` and refuses a post that changes `c2.value`, naming `c2` and `value`. With effect `deletes self`, `deletes a` (`a` bound to `c2`) and receiver `c1`, a post without `c1` and `c2` is admitted and a post without `c3` is `frame_violation`/`unauthorized-change` naming `c3`; with effect `deletes a` alone a post without `c1` is `frame_violation` naming `c1`. | Test (TC-1043) |
 | FR-154-AC-10 | The I2 reader's frame step refuses, as QSpec FR-340 states each: a field entry with no `scope` or a `scope` other than `receiver` or `every-object`, and a frame body with no `deletes_scoped` (schema failures of the frame body, each read after the edited node and its dependents are re-keyed, as TC-1043 step 4 states); a `deletes_scoped` array with the `parameter` entry for `a` before the `receiver` entry, or with `b` before `a` (`invalid_semantic_graph`); a `parameter` entry naming a parameter that is not a reference parameter of the operation (`missing_declaration`/`missing-name`). The body of vector W1 is admitted. | Test (TC-1043) |
 
