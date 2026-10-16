@@ -2243,13 +2243,21 @@ fn check_node<'a>(
                     }
                 }
             }
-            for field in op
+            // A `modifies` entry names a field or a navigation relationship
+            // (FR-103); a receiver-scoped entry names a field only.
+            let writes = op
                 .effect
                 .modifies
                 .iter()
-                .chain(&op.effect.receiver_modifies)
-            {
-                if !index.is_field_member(field) {
+                .map(|write| (write, index.is_navigation_relationship(write)))
+                .chain(
+                    op.effect
+                        .receiver_modifies
+                        .iter()
+                        .map(|write| (write, false)),
+                );
+            for (field, is_relationship) in writes {
+                if !is_relationship && !index.is_field_member(field) {
                     refusals.push(ModelRefusal {
                         code: Code::DanglingReference,
                         cause: ModelRefusalCause::UnknownFieldWrite {
@@ -2257,7 +2265,8 @@ fn check_node<'a>(
                             field: field.clone(),
                         },
                         detail: format!(
-                            "operation {} effect writes {}, which is not a declared field member",
+                            "operation {} effect writes {}, which is not a declared field member \
+                             or navigation relationship",
                             op.key.node, field.node
                         ),
                     });

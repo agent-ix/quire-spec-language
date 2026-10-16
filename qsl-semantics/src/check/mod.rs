@@ -148,9 +148,9 @@ pub use lowering::{
     AdmittedModel, ForeignView, LockEvidence, ModelClause, NominalNode, SemanticGraph, SemanticNode,
 };
 pub use node_key::{
-    AggregateTerm, ApplicationTerm, Binding, BindingValue, BodyTerm, FrameField, FrameTerm,
-    GroupMember, GroupTerm, InvalidModelOwner, InvalidSourceOwner, LawRole, LeafSegment, LeafTerm,
-    LiteralValue, MemberTerm, ModelOwner, NodeKeyRefusal, NodeRef, NodeTag, Operation,
+    AggregateTerm, ApplicationTerm, Binding, BindingValue, BodyTerm, FrameField, FrameModifies,
+    FrameTerm, GroupMember, GroupTerm, InvalidModelOwner, InvalidSourceOwner, LawRole, LeafSegment,
+    LeafTerm, LiteralValue, MemberTerm, ModelOwner, NodeKeyRefusal, NodeRef, NodeTag, Operation,
     OperationLaw, OperationLeaf, OperationMode, Operator, Owner, PackageRef, SourceOwner,
     TupleMember, TupleTerm, WireNodeRef,
 };

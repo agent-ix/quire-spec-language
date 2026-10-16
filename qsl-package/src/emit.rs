@@ -330,7 +330,7 @@ impl BodyNames {
                     frame
                         .modifies
                         .iter()
-                        .map(|field| node_id(field.declaration().0)),
+                        .map(|entry| node_id(entry.declaration().0)),
                 );
                 names.dependencies.extend(
                     frame

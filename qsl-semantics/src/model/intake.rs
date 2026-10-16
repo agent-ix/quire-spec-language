@@ -2259,30 +2259,6 @@ fn missing_frame_declaration(
 }
 
 /// FR-103: `entry` (a `modifies`/`creates`/`deletes` frame entry) names a
-/// relationship or a process -- QSpec's Frames row admits both, but no
-/// FR-106 observation carries a relationship link or a process instance, so
-/// a grant over either could never be enforced. See
-/// [`missing_frame_declaration`] for `node`/`artifact`/`span`.
-fn unsupported_frame_feature(
-    node: String,
-    artifact: Option<String>,
-    span: Option<LocatedSpan>,
-    entry: &str,
-    at: &str,
-) -> ModelRefusal {
-    ModelRefusal {
-        code: Code::UnknownRequiredFeature,
-        cause: ModelRefusalCause::FrameEntryUnsupported {
-            node,
-            artifact,
-            span,
-            entry: entry.to_owned(),
-        },
-        detail: format!("{at}: {entry:?} names a relationship or a process, never grantable"),
-    }
-}
-
-/// FR-103: `entry` (a `modifies`/`creates`/`deletes` frame entry) names a
 /// declaration of this domain package, but of the wrong meaning for that
 /// member (an object type for `modifies`, a field for `creates`/`deletes`,
 /// and so on). See [`missing_frame_declaration`] for `node`/`artifact`/
@@ -4101,7 +4077,13 @@ fn frame_entry_kind(record: &DomainPackageRecord) -> FrameEntryKind {
         DomainPackageRecord::FieldMember(_) => FrameEntryKind::Field,
         DomainPackageRecord::ObjectType(_) => FrameEntryKind::ObjectType,
         DomainPackageRecord::Process(_) => FrameEntryKind::Process,
-        DomainPackageRecord::Relationship(_) => FrameEntryKind::Relationship,
+        // A relationship read from an object type's `relationships` array is
+        // a navigation relationship, the only kind a frame can grant
+        // (FR-103); a systems connection has no such slot.
+        DomainPackageRecord::Relationship(relationship) if relationship.declared_at.is_some() => {
+            FrameEntryKind::Relationship
+        }
+        DomainPackageRecord::Relationship(_) => FrameEntryKind::Other,
         DomainPackageRecord::Enum(_)
         | DomainPackageRecord::Variant(_)
         | DomainPackageRecord::RecordValueType(_)
@@ -4124,16 +4106,13 @@ fn frame_entry_kind(record: &DomainPackageRecord) -> FrameEntryKind {
 /// then `creates`, then `deletes` (FR-103's own document order), and
 /// reporting the first that fails within this array. `expected` lists the
 /// [`FrameEntryKind`] values this array admits (`Field` for `modifies`,
-/// `ObjectType` or `Process` for `creates`/`deletes`); `unsupported`, when given, is the
-/// other kind the Frames row admits but this reader cannot grant
-/// (`Relationship` for `modifies`).
+/// `ObjectType` or `Process` for `creates`/`deletes`).
 fn resolve_frame_array(
     package: &str,
     classification: &HashMap<&str, FrameEntryKind>,
     frame: &PendingFrame,
     entries: &[(String, String)],
     expected: &[FrameEntryKind],
-    unsupported: Option<FrameEntryKind>,
 ) -> Result<Vec<DeclarationKey>, ModelRefusal> {
     let mut keys = Vec::with_capacity(entries.len());
     for (entry, at) in entries {
@@ -4148,15 +4127,6 @@ fn resolve_frame_array(
                 ))
             }
             Some(kind) if expected.contains(kind) => keys.push(declaration_key(package, entry)),
-            Some(kind) if Some(*kind) == unsupported => {
-                return Err(unsupported_frame_feature(
-                    frame.node.clone(),
-                    frame.artifact.clone(),
-                    frame.span,
-                    entry,
-                    at,
-                ))
-            }
             Some(_) => {
                 return Err(malformed_frame_entry(
                     frame.node.clone(),
@@ -4184,8 +4154,7 @@ fn resolve_frame(
         classification,
         frame,
         &frame.modifies,
-        &[FrameEntryKind::Field],
-        Some(FrameEntryKind::Relationship),
+        &[FrameEntryKind::Field, FrameEntryKind::Relationship],
     )?;
     let creates = resolve_frame_array(
         package,
@@ -4193,7 +4162,6 @@ fn resolve_frame(
         frame,
         &frame.creates,
         &[FrameEntryKind::ObjectType, FrameEntryKind::Process],
-        None,
     )?;
     let deletes = resolve_frame_array(
         package,
@@ -4201,7 +4169,6 @@ fn resolve_frame(
         frame,
         &frame.deletes,
         &[FrameEntryKind::ObjectType, FrameEntryKind::Process],
-        None,
     )?;
     Ok(OperationEffect {
         modifies,
@@ -4744,6 +4711,59 @@ mod tests {
     use super::*;
     use ix_trace_rs::trace;
     use sha2::{Digest, Sha256};
+
+    /// FR-103-AC-2: a `modifies` entry naming a systems connection (a
+    /// relationship with no slot in a type's `relationships` array) is not a
+    /// navigation relationship, so it refuses `malformed-declaration`, while
+    /// the same record read from a type's array is granted.
+    #[trace("FR-103-AC-2")]
+    #[test]
+    fn a_modifies_entry_naming_a_connection_refuses_and_a_navigation_relationship_resolves() {
+        use crate::model::domain_package::{
+            DeclaredSlot, RelationshipDirection, RelationshipEnd, RelationshipRecord,
+        };
+        let end = |node: &str| RelationshipEnd {
+            type_identity: DeclarationKey::fixture(node),
+            role: None,
+            multiplicity: None,
+        };
+        let relationship = |declared_at| {
+            DomainPackageRecord::Relationship(RelationshipRecord {
+                key: DeclarationKey::fixture("R"),
+                declared_at,
+                source: end("A"),
+                target: end("B"),
+                direction: RelationshipDirection::SourceToTarget,
+            })
+        };
+        let frame = PendingFrame {
+            operation: DeclarationKey::fixture("A/op"),
+            node: "A/op".to_owned(),
+            artifact: None,
+            span: None,
+            modifies: vec![("R".to_owned(), "$.frame.modifies[0]".to_owned())],
+            creates: Vec::new(),
+            deletes: Vec::new(),
+        };
+        let connection = relationship(None);
+        let classification = HashMap::from([("R", frame_entry_kind(&connection))]);
+        let refusal = resolve_frame("test/orders", &classification, &frame)
+            .expect_err("a connection is not grantable");
+        assert_eq!(refusal.code, Code::InvalidModelBinding);
+        assert!(matches!(
+            refusal.cause,
+            ModelRefusalCause::FrameEntryMalformed { .. }
+        ));
+
+        let navigation = relationship(Some(DeclaredSlot {
+            owner: DeclarationKey::fixture("A"),
+            index: 0,
+        }));
+        let classification = HashMap::from([("R", frame_entry_kind(&navigation))]);
+        let effect = resolve_frame("test/orders", &classification, &frame)
+            .expect("a navigation relationship is grantable");
+        assert_eq!(effect.modifies, vec![declaration_key("test/orders", "R")]);
+    }
 
     fn digest_of(bytes: &[u8]) -> [u8; 32] {
         Sha256::digest(bytes).into()

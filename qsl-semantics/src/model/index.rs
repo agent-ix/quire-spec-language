@@ -80,6 +80,9 @@ struct DeclFlags {
     namespace: bool,
     field_member: bool,
     operation_member: bool,
+    /// Some `Relationship` record under this key is a navigation
+    /// relationship, one read from an object type's `relationships` array.
+    navigation_relationship: bool,
 }
 
 /// One member's own `redefines` edge, as normalization's phase 4 reads it.
@@ -715,6 +718,7 @@ impl RecordIndex {
                     ports.insert(own, at(&port.owning_component));
                 }
                 DomainPackageRecord::Relationship(relationship) => {
+                    index.flags[own.0].navigation_relationship = relationship.declared_at.is_some();
                     end_members.push((
                         own,
                         at(&relationship.source.type_identity),
@@ -852,6 +856,11 @@ impl RecordIndex {
     /// Whether some `FieldMember` record declares `key`.
     pub(crate) fn is_field_member(&self, key: &DeclarationKey) -> bool {
         self.flags(key).field_member
+    }
+
+    /// Whether some navigation `Relationship` record declares `key`.
+    pub(crate) fn is_navigation_relationship(&self, key: &DeclarationKey) -> bool {
+        self.flags(key).navigation_relationship
     }
 
     /// Whether some `OperationMember` record declares `key`.
