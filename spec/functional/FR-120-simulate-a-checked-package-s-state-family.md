@@ -333,9 +333,9 @@ intake.rs:1444`), so the applicable clauses are the selected member's own.
 The effective postcondition is the conjunction of the applicable `post`
 clauses, and `true` when none applies.
 
-A conjunction is evaluated through FR-107's `evaluate_clause`, each call
-with a fresh meter, over every applicable clause in ascending name order
-(UTF-8 bytes):
+A conjunction is evaluated through FR-107's `evaluate_clause_set`, over the
+applicable clauses of one kind, with a fresh meter for each clause and each
+clause in ascending name order (UTF-8 bytes):
 
 - An `Incomplete` result stops the expansion with `resource_exhausted`/
   `insufficient-next-charge` at once: the successor set is not known.

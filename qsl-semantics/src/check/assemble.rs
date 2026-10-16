@@ -63,10 +63,11 @@ use std::sync::Arc;
 
 mod units;
 
+use super::navigation::{EndDeclaration, RelationshipDeclaration, Relationships};
 use super::CheckedGraph;
 use crate::model::domain_package::{
-    DomainPackageRecord, FieldMemberRecord, Multiplicity, NativeValueType, OperationMemberRecord,
-    ScalarValueDomain, ValueTypeRef,
+    DomainPackage, DomainPackageRecord, FieldMemberRecord, Multiplicity, NativeValueType,
+    OperationMemberRecord, RelationshipEnd, ScalarValueDomain, ValueTypeRef,
 };
 use crate::model::intake::{
     member_identity_name, type_identity_segment, SelectedModel, SelectedModels,
@@ -771,6 +772,7 @@ struct ModelTypes {
     composites: Vec<CompositeDeclaration>,
     variant_types: Vec<VariantTypeDeclaration>,
     model_records: ModelRecords,
+    relationships: Vec<RelationshipDeclaration>,
 }
 
 /// The object types of the domain package admitted for the `model`
@@ -1070,16 +1072,59 @@ fn model_object_types(
             model_records.declare_event(*handle);
         }
     }
+    let relationships = relationship_declarations(package, identities, &declarations);
     if errors.is_empty() {
         Ok(ModelTypes {
             objects: declarations,
             composites,
             variant_types,
             model_records,
+            relationships,
         })
     } else {
         Err(errors)
     }
+}
+
+/// The relationships of `package` between two of its object types (FR-363),
+/// each end by the effective identity of the object type it names. A
+/// relationship an end of which names no object type of the type environment
+/// (a systems connection between endpoints) is no navigation of an object
+/// reference, so it is not collected.
+fn relationship_declarations(
+    package: &DomainPackage,
+    identities: &BTreeMap<DeclarationKey, EffectiveId>,
+    objects: &[ObjectTypeDeclaration],
+) -> Vec<RelationshipDeclaration> {
+    let object = |key: &DeclarationKey| {
+        let identity = *identities.get(key)?;
+        objects
+            .iter()
+            .any(|declared| declared.key() == identity)
+            .then_some(identity)
+    };
+    package
+        .records
+        .iter()
+        .filter_map(|record| {
+            let DomainPackageRecord::Relationship(relationship) = record else {
+                return None;
+            };
+            let end = |end: &RelationshipEnd, object: EffectiveId| EndDeclaration {
+                object,
+                role: end.role.clone(),
+                multiplicity: end.multiplicity,
+            };
+            let source = object(&relationship.source.type_identity)?;
+            let target = object(&relationship.target.type_identity)?;
+            Some(RelationshipDeclaration {
+                key: relationship.key.clone(),
+                direction: relationship.direction,
+                source: end(&relationship.source, source),
+                target: end(&relationship.target, target),
+            })
+        })
+        .collect()
 }
 
 /// Where each record keeps the fields its ancestors name (FR-359 item 2).
@@ -2100,6 +2145,7 @@ impl PackageDeclarations {
         let mut model_composites = Vec::new();
         let mut model_variant_types = Vec::new();
         let mut model_records = ModelRecords::default();
+        let mut model_relationships = Vec::new();
         let mut operations = OperationTable::default();
         let mut object_spans = BTreeMap::new();
         let mut operation_clauses = Vec::new();
@@ -2128,6 +2174,7 @@ impl PackageDeclarations {
                     model_composites.extend(types.composites);
                     model_variant_types.extend(types.variant_types);
                     model_records.extend(types.model_records);
+                    model_relationships.extend(types.relationships);
                     match operation_clause_declarations(&selection.alias, model, &operations) {
                         Ok(resolved) => operation_clauses.extend(resolved),
                         Err(cause) => errors.push(AssemblyError {
@@ -2761,6 +2808,7 @@ impl PackageDeclarations {
         package.protocol_attempts = protocol_attempts;
         package.declared_type_spans = declared_type_spans;
         package.model_records = model_records;
+        package.relationships = Relationships::new(model_relationships);
         package.imports = qualified;
         Ok(package)
     }

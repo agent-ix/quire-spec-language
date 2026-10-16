@@ -9,6 +9,12 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-085
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-082
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-362
+    type: depends_on
+  - target: ix://agent-ix/quire-semantic-value/FR-119
+    type: references
   - target: ix://agent-ix/quire-spec-language/FR-106
     type: references
   - target: ix://agent-ix/quire-specification/FR-152
@@ -27,7 +33,11 @@ well-formed set of links of the declared relationship. When a clause navigates
 a relationship end, the evaluator SHALL take its targets from a read-only view
 of those instances alone, and SHALL decide the refusals and charges
 quire-specification [FR-152](ix://agent-ix/quire-specification/FR-152)'s
-"Navigation" section states.
+"Navigation" section states. When it must tell a missing object that is
+dangling from one it cannot decide, it SHALL read a population manifest that
+the observation's producer issued from an exhausted traversal of the admitted
+package's population declarations, and SHALL decide `dangling` only from a
+closed manifest.
 
 This requirement is QSL's own contract for the runtime half of FR-152's
 "Navigation" section, which [FR-085](FR-085-resolve-relationship-end-references.md)
@@ -49,6 +59,8 @@ binds it to the snapshot document.
 - For an extent to admit: the relationship's declaration key, a completeness
   flag and a list of instances, each a source reference and a target
   reference.
+- For `resolve`: the population manifest of the observation (below), bound
+  with the observation and the type environment to one source and selection.
 - For a navigation: the resolved site (the relationship, the end named, the
   traversal direction and that end's multiplicity), the receiver reference,
   and the stage limits.
@@ -105,14 +117,21 @@ by instance in the order supplied, and stop at the first failing condition:
 2. If the observation already holds an extent for the relationship, then
    admission SHALL refuse `invalid_runtime_input`/`conflicting-identity`,
    retaining the relationship.
-3. If the object at the source end has a type that does not conform to the
-   relationship's source end type, or the object at the target end has a type
-   that does not conform to the target end type, then admission SHALL refuse
-   `invalid_runtime_input`/`wrong-value-kind`, retaining the relationship, the
-   end (`source` or `target`), the object's type and the declared end type.
-   Conformance is [FR-082](FR-082-resolve-conformance-subsetting-and-redefinition.md)'s,
-   reflexive. An end whose object the observation does not hold has no type
-   to check; condition 3 skips it, and the closure rule below decides it.
+3. If the reference at the source end has a type that does not conform to the
+   relationship's source end type, or the reference at the target end has a
+   type that does not conform to the target end type, then admission SHALL
+   refuse `invalid_runtime_input`/`wrong-value-kind`, retaining the
+   relationship, the end (`source` or `target`), the reference's type and the
+   declared end type. A type that is no object type of the admitted model does
+   not conform. Conformance is [FR-082](FR-082-resolve-conformance-subsetting-and-redefinition.md)'s,
+   reflexive. A full reference carries its type, so condition 3 checks every
+   end of a model-layer extent, whether the observation holds its object or
+   not: existence and type conformance are separate, and a missing object
+   affects only `resolve` and never the type check. Only an end of a snapshot
+   document whose object the snapshot does not list has no type to check
+   (the document names a population and a key, and the type component of the
+   reference comes from the object); condition 3 skips that end, and the
+   closure rule below decides it.
 4. If an instance repeats an earlier instance of the same extent (equal
    relationship, source reference and target reference), then admission SHALL
    refuse `invalid_runtime_input`/`conflicting-identity` at the later
@@ -140,8 +159,100 @@ key it does not list returns the incomplete outcome (`incomplete_population`/
 `incomplete-scope` naming the population), because no object gives the end its
 type component; an end naming a listed key admits. An extent a
 model-layer caller supplies carries full references and is admitted without a
-closure check, so the navigation below decides a dangling end of such an
-extent. Neither place changes the other's rule.
+closure check, so the navigation below decides, with `resolve`, an end of such
+an extent whose object the observation does not hold. A snapshot-built extent
+never reaches that decision: every stored end is a held object. Neither place
+changes the other's rule.
+
+### The population manifest states which populations exist and which are complete
+
+An observation's population manifest is a state, `closed` or `partial`, and
+rows, one per population declaration of the admitted domain package
+([FR-084](FR-084-admit-closed-populations-and-resolve-lookup.md)), in ascending
+declaration-key order. A row is (population, covered types, complete). The
+covered types are the declaration's declared member types, a non-empty set.
+`complete` is `true` only when the observation states that the population holds
+every object of its member types: a population the model layer binds (FR-084
+binds a closed population) and a snapshot population listed `"complete":
+true`. A declared population the observation does not bind or list has a row
+with `complete` `false`, because an absent population states nothing about its
+members. The manifest therefore names every population the observation could
+hold, and no applicable population can be omitted from it.
+
+A row **covers** a type `T` exactly when `T` conforms to at least one of the
+row's covered types, reflexively
+([FR-082](FR-082-resolve-conformance-subsetting-and-redefinition.md),
+[FR-084](FR-084-admit-closed-populations-and-resolve-lookup.md)): a declared
+member type covers itself and every type that conforms to it, and a declared
+child type does not cover its parent. A population holds an object only when
+the object's type conforms to a declared member type, so every population that
+could hold an object of type `T` covers `T`.
+
+**The manifest is closed only by an exhausted traversal.** The producer of the
+observation owns the traversal: FR-106 admission for a snapshot-built
+observation and the model layer's observation builder for a model-layer one.
+Its evidence is an authenticated population enumerator that yields one row per
+population declaration of the admitted package and reads the observation's own
+bindings or listing for each row's `complete`, and nothing a caller supplies. The
+manifest is `closed` exactly when the enumerator reports normal exhaustion.
+The row limit passed to the store is the number of population declarations of
+the admitted package, so it is a count the package fixes, not a configurable
+limit with a setting, and a limit stop cannot occur. An enumerator that
+fails (it cannot read a declaration) leaves the manifest `partial`, with the
+rows read and the failure; failure is the only way a manifest is partial. No operation accepts a `closed` flag, builds a closed manifest
+from supplied rows, converts a partial manifest into a closed one or closes a
+manifest before the enumerator is exhausted. The semantic-value store builds
+the manifest from the enumerator and keeps its state private
+([FR-119](ix://agent-ix/quire-semantic-value/FR-119)).
+
+### `resolve` decides a missing object by the manifest alone
+
+For a reference `x` of type `T` whose object the observation does not hold,
+`resolve(x)` SHALL return, stopping at the first rule that applies:
+
+1. `undecidable` when the manifest is `partial`;
+2. `undecidable` when `T` is no object type of the admitted model;
+3. `undecidable` when no row covers `T`: a population the manifest does not
+   cover `T` with may hold `x`, and no completeness is guessed, so there is no
+   vacuous `dangling`;
+4. `undecidable` when any row that covers `T` is not complete, even if another
+   covering row is complete;
+5. otherwise `dangling`: the manifest is closed, at least one row covers `T`
+   and every covering row is complete, so every population that could hold `x`
+   is complete and none holds it.
+
+A held object is `present` before any of these rules, whether or not the
+manifest is closed. The rules read no population member list and no field.
+
+### One bundle binds the manifest, the observation and the type environment
+
+The producer issues one bundle of the manifest, the observation's object
+closure and the type environment, all bound to one key: the checked unit's
+source reference as a whole (authority, identity and the `quire.source.bytes/v1`
+digest, [FR-362](FR-362-bind-a-checked-unit-to-its-source-by-digest.md)) the
+selection (the selected clause and, for a snapshot-built observation, the
+digest of each selected document), and the observation's identity: its role
+(`current`, `pre` or `post`) and, snapshot-built, its own document digest,
+or, model-layer, the label the producer issued for that observation. A `pre`
+manifest never pairs with a `post` closure. Keys are equal only when every component is
+equal: equal labels with a different digest are different keys. `resolve` is
+read only through the bundle. A constructor that takes the selected key and
+the three parts separately SHALL refuse the first part, in the order
+`manifest`, `closure`, `types`, whose key differs from the selected key with
+`invalid_runtime_input`/`conflicting-identity`, retaining the part, the
+selected key and the differing one. A manifest from another source or
+selection therefore never classifies a missing reference.
+
+### What the model layer passes to the semantic-value store
+
+The model layer passes: the navigation relationships, each by its declaration
+key with both end types (from the authenticated declarations) and both `unique`
+flags, and no multiplicity bound and no identity the store minted; the extents
+in the order supplied; and the population enumerator. The store admits the
+extents under conditions 1 to 4, builds the manifest, and answers `complete`,
+`targets`, `sources` and `resolve` with the read contract below. It decides no
+charge, reads no document and authenticates no source: the bundle's key is the
+model layer's.
 
 ### The read contract: what the evaluator may rely on
 
@@ -153,7 +264,7 @@ exactly these reads, and no other:
 | `complete(R)` | `true` exactly when the observation holds a complete extent of `R`; `false` for an unlisted or incomplete extent |
 | `targets(R, r)` | the target reference of every instance of `R` whose source reference equals `r`, one per instance, in ascending reference-key order; repeats of one reference are adjacent |
 | `sources(R, r)` | the source reference of every instance of `R` whose target reference equals `r`, in the same order |
-| `resolve(x)` | `present` when the observation holds the object `x` names; `dangling` when it does not and the population of `x` is held complete; `undecidable` when it does not and the population is not held complete |
+| `resolve(x)` | `present` when the observation holds the object `x` names, whatever the manifest says; otherwise `dangling` or `undecidable` by the manifest, as the next section states |
 
 Reference equality is equality of the whole reference key (universe, type,
 object identity), never of the object identity alone or of a display name.
@@ -189,9 +300,12 @@ the first outcome:
 
 A `resolve` of `dangling` is `dangling_reference`/
 `absent-target-in-complete-population`, retaining the reference and the
-relationship; of `undecidable`, `incomplete_population`/`incomplete-scope`.
-Both come before the count bound, so a dangling target never yields a
-cardinality refusal. A count below `l` is `cardinality_out_of_bound`/
+relationship; of `undecidable`, `incomplete_population`/`incomplete-scope`,
+retaining the reference and the relationship. The first selected reference
+that is not `present` decides the outcome, whichever kind it is: an
+`undecidable` reference before a `dangling` one gives the incomplete outcome,
+and the reverse gives the refusal. Both come before the count bound, so a
+missing target never yields a cardinality refusal. A count below `l` is `cardinality_out_of_bound`/
 `below-minimum` and a count above a finite `u` is `cardinality_out_of_bound`/
 `above-maximum`, each retaining the collection type, the inclusive bound, the
 count and the expression locus; the count is the number of selected
@@ -221,7 +335,10 @@ FR-363; a navigation site reaches the evaluator already resolved.
 | Repeated instance where an end is unique | extent admission, condition 4 | `invalid_runtime_input`/`conflicting-identity` |
 | Dangling end in a snapshot | snapshot admission, closure check | `dangling_reference`/`absent-target-in-complete-population` |
 | Required population of an instance not complete | snapshot admission, completeness check | `incomplete_population`/`incomplete-scope` |
+| End reference of a model-layer extent, absent, of a type that does not conform | extent admission, condition 3 | `invalid_runtime_input`/`wrong-value-kind` |
+| Part of a bundle from another source or selection | bundle construction | `invalid_runtime_input`/`conflicting-identity` |
 | Dangling end of a model-layer extent | navigation, before the count bound | `dangling_reference`/`absent-target-in-complete-population` |
+| End of a model-layer extent that `resolve` cannot decide | navigation, before the count bound | `incomplete_population`/`incomplete-scope` |
 | Extent unlisted or incomplete | navigation, after `model.navigate` | `incomplete_population`/`incomplete-scope` |
 | Count below `lower` or above `upper` | navigation, after the dangling decisions | `cardinality_out_of_bound`/`below-minimum` or `above-maximum` |
 
@@ -238,6 +355,11 @@ FR-363; a navigation site reaches the evaluator already resolved.
 | FR-364-AC-7 | A single-valued end returns its `Reference<U>`, and for `[0,1]` the present `Option` or `none`, after `model.navigate` alone; a traversal from the target end returns the `sources` of the same extent. | Test (TC-1034) |
 | FR-364-AC-8 | A dangling target of a model-layer extent refuses `dangling_reference`/`absent-target-in-complete-population` before the count bound: with four selected targets through `{0,3}` the fourth absent, the refusal comes after `model.navigate` and three `collection.visit` and no cardinality refusal is returned. A target absent from a population not held complete gives `incomplete_population`/`incomplete-scope`. | Test (TC-1034) |
 | FR-364-AC-9 | Navigating through an unlisted extent and through an incomplete extent each give `incomplete_population`/`incomplete-scope` after `model.navigate` and no later charge, while the complete empty extent returns the empty collection or `none`. | Test (TC-1034) |
+| FR-364-AC-10 | The manifest has one row per declared population in ascending declaration-key order, with the declared member types as covered types: a bound population and a population listed complete are complete rows, and a declared population the observation does not bind or list, and one listed incomplete, are incomplete rows. An enumerator that reports normal exhaustion, including exactly at its row limit, gives a closed manifest, and one stopped by a failure gives a partial manifest that holds the rows read. The row limit is the package's declaration count, so a partial manifest arises only from an enumerator failure. | Test (TC-1041) |
+| FR-364-AC-11 | `resolve` of a missing reference gives `dangling` only from a closed manifest in which every row covering its type is complete and at least one row covers it. It gives `undecidable` when a covering row is incomplete (even beside a complete covering row), when no row covers the type (a type no declared population names, and a parent type whose declared children are covered), and under a partial manifest. A held object is `present` under any manifest. | Test (TC-1041) |
+| FR-364-AC-12 | Navigation over a model-layer extent whose target is missing and undecidable gives `incomplete_population`/`incomplete-scope` after `model.navigate` and the `collection.visit` of the targets before it, and no cardinality refusal even when the count is above `upper`; the first selected target that is not present decides between `dangling` and `undecidable`. | Test (TC-1041) |
+| FR-364-AC-13 | Condition 3 checks the type of every end of a model-layer extent whether the object is held or not: a missing `Tank` at the `Pump` end refuses `wrong-value-kind` naming the end, `Tank` and `Pump`; a missing `Pump` at that end admits and is decided by `resolve`; a reference whose type is no object type of the model refuses `wrong-value-kind`. A snapshot document end naming an unlisted key skips condition 3 and is decided by the closure rule. | Test (TC-1041) |
+| FR-364-AC-14 | A bundle is refused `invalid_runtime_input`/`conflicting-identity`, naming the first part (`manifest`, `closure`, `types`) whose key differs from the selected key, the selected key and the differing one, when that part carries another source digest under the same authority and identity, another selected clause, another selected document digest, or another observation (a `pre` manifest with a `post` closure of one source and clause); a bundle whose parts all carry the selected key resolves a missing reference by its manifest. | Test (TC-1041) |
 
 ## Dependencies
 
@@ -255,6 +377,10 @@ FR-363; a navigation site reaches the evaluator already resolved.
   completeness rules for it. The checker's typing of a relationship end, its
   direction, ambiguity and `unbounded` or `ordered` refusals, and the
   `quire.op.model.navigate` lowering are FR-363's.
+- [FR-362](FR-362-bind-a-checked-unit-to-its-source-by-digest.md) supplies the
+  source reference the bundle key compares as a whole. quire-semantic-value
+  [FR-119](ix://agent-ix/quire-semantic-value/FR-119) is the store this
+  requirement's reads and manifest are built in.
 - The object environment holds the extents. Whether the extent store lives in
   the semantic-value object closure or in the model layer's environment beside
   it is an implementation placement; this requirement fixes only the reads
