@@ -2849,6 +2849,16 @@ fn read_value_type_ref(
                 format!("{type_ref:?} names no native value type QSL declares"),
             )
         })?;
+        // A profile belongs to the Text value type; QSL reads no second
+        // spelling of it on a String-typed member (FR-056's Text paragraph).
+        if native == NativeValueType::String && ctx.value.get("textProfile").is_some() {
+            return Err(unsupported_member(
+                ctx.value,
+                &ctx.at,
+                MemberPath::from_document_location(&ctx.at).child("textProfile"),
+                "textProfile",
+            ));
+        }
         let missing = native.unsupported_parameters();
         if !missing.is_empty() {
             return Err(unsupported_native_parameters(
@@ -6593,6 +6603,217 @@ mod tests {
         );
     }
 
+    /// A Text value type `Title` as the model document writes it
+    /// (FR-056-AC-37): the three constraints in the order given.
+    fn title(constraints: &[(&str, Value)]) -> Value {
+        let constraints: Vec<Value> = constraints
+            .iter()
+            .map(|(keyword, operands)| {
+                serde_json::json!({
+                    "keyword": keyword,
+                    "operands": operands,
+                    "appliesTo": "ix://acme/orders/Title",
+                })
+            })
+            .collect();
+        serde_json::json!({
+            "identity": "ix://acme/orders/Title",
+            "scalar": "string",
+            "constraints": constraints,
+        })
+    }
+
+    fn base_title() -> Vec<(&'static str, Value)> {
+        vec![
+            ("minLength", serde_json::json!({"value": 1})),
+            ("maxLength", serde_json::json!({"value": 8})),
+            ("format", serde_json::json!({"name": "text-profile:nfc"})),
+        ]
+    }
+
+    fn read_title(constraints: &[(&str, Value)]) -> Result<ScalarTypeRecord, ModelRefusal> {
+        read_value_type(
+            "acme/orders",
+            &title(constraints),
+            "ix://acme/orders/Title",
+            "$.types[0]",
+        )
+    }
+
+    fn text_domain(record: &ScalarTypeRecord) -> (u64, u64, TextProfile) {
+        match &record.domain {
+            ScalarValueDomain::Text(text) => (text.min(), text.max(), text.profile()),
+            other => panic!("expected a Text domain, got {other:?}"),
+        }
+    }
+
+    /// TC-1044 step 1 (FR-056-AC-37): a value type of `scalar` `string` with
+    /// `minLength`, `maxLength` and a `text-profile:` `format` reads as
+    /// `Text[min, max; profile]`, for each of the six profiles, the
+    /// constraints in any order, and bounds `0, 0` and `3, 3`.
+    #[trace("TC-1044", "FR-056-AC-37")]
+    #[test]
+    fn reads_a_text_value_type() {
+        let record = read_title(&base_title()).expect("Title reads");
+        assert_eq!(
+            record.key,
+            declaration_key("acme/orders", "ix://acme/orders/Title")
+        );
+        assert_eq!(text_domain(&record), (1, 8, TextProfile::Nfc));
+        for profile in TextProfile::ALL {
+            let mut constraints = base_title();
+            constraints[2].1 = serde_json::json!({"name": format!("text-profile:{}", profile.as_str())});
+            let record = read_title(&constraints).expect("each profile reads");
+            assert_eq!(text_domain(&record), (1, 8, profile));
+        }
+        let mut reordered = base_title();
+        reordered.reverse();
+        assert_eq!(
+            read_title(&reordered).expect("any order reads"),
+            read_title(&base_title()).expect("Title reads")
+        );
+        for (min, max) in [(0, 0), (3, 3)] {
+            let mut constraints = base_title();
+            constraints[0].1 = serde_json::json!({"value": min});
+            constraints[1].1 = serde_json::json!({"value": max});
+            let record = read_title(&constraints).expect("the bounds read");
+            assert_eq!(text_domain(&record), (min, max, TextProfile::Nfc));
+        }
+    }
+
+    /// TC-1044 step 2 (FR-056-AC-38), the rows the Text reader decides: each
+    /// defect refuses at `Title` with its code and names what the row names,
+    /// in the paragraph's order.
+    #[trace("TC-1044", "FR-056-AC-38")]
+    #[test]
+    fn refuses_a_defective_text_value_type_in_the_reader_order() {
+        let with = |edit: &dyn Fn(&mut Vec<(&'static str, Value)>)| {
+            let mut constraints = base_title();
+            edit(&mut constraints);
+            constraints
+        };
+        let profile = |name: &str| serde_json::json!({"name": format!("text-profile:{name}")});
+        let bounds = |min: u64, max: u64| {
+            move |constraints: &mut Vec<(&'static str, Value)>| {
+                constraints[0].1 = serde_json::json!({"value": min});
+                constraints[1].1 = serde_json::json!({"value": max});
+            }
+        };
+        let cases: Vec<(&str, Vec<(&str, Value)>, Code, &str)> = vec![
+            (
+                "(b) pattern",
+                with(&|c| {
+                    c.push((
+                        "pattern",
+                        serde_json::json!({"dialect": "ecma-262", "regex": "^a"}),
+                    ))
+                }),
+                Code::UnsupportedConstruct,
+                "constraints:pattern",
+            ),
+            (
+                "(c) format email:rfc",
+                with(&|c| c[2].1 = serde_json::json!({"name": "email:rfc"})),
+                Code::UnsupportedConstruct,
+                "constraints:format",
+            ),
+            (
+                "(d) second minLength",
+                with(&|c| c.push(("minLength", serde_json::json!({"value": 2})))),
+                Code::InvalidModelBinding,
+                "\"minLength\" is declared twice",
+            ),
+            (
+                "(e) no format",
+                with(&|c| {
+                    c.pop();
+                }),
+                Code::UnsupportedConstruct,
+                ":profile",
+            ),
+            (
+                "(f) no minLength",
+                with(&|c| {
+                    c.remove(0);
+                }),
+                Code::InvalidModelBinding,
+                "minLength: missing",
+            ),
+            (
+                "(g) no maxLength",
+                with(&|c| {
+                    c.remove(1);
+                }),
+                Code::InvalidModelBinding,
+                "maxLength: missing",
+            ),
+            (
+                "(h) profile nfx",
+                with(&|c| c[2].1 = profile("nfx")),
+                Code::UnsupportedConstruct,
+                ":profile=nfx",
+            ),
+            (
+                "(i) profile NFC",
+                with(&|c| c[2].1 = profile("NFC")),
+                Code::UnsupportedConstruct,
+                ":profile=NFC",
+            ),
+            (
+                "(j) bounds 5 and 2",
+                with(&bounds(5, 2)),
+                Code::UnsupportedConstruct,
+                ":bounds=5..2",
+            ),
+            (
+                "(k) profile before bounds",
+                with(&|c| {
+                    bounds(5, 2)(c);
+                    c[2].1 = profile("nfx");
+                }),
+                Code::UnsupportedConstruct,
+                ":profile=nfx",
+            ),
+        ];
+        for (row, constraints, code, naming) in cases {
+            let refusal = read_title(&constraints).expect_err(row);
+            assert_eq!(refusal.code, code, "{row}");
+            assert!(
+                refusal.detail.starts_with("$.types[0]") && refusal.detail.contains(naming),
+                "{row}: {}",
+                refusal.detail
+            );
+        }
+    }
+
+    /// TC-1044 step 2, the last row (FR-056-AC-38): a member typed native
+    /// `String` that carries `textProfile` refuses `declaration-form` at that
+    /// member, naming `textProfile`.
+    #[trace("TC-1044", "FR-056-AC-38")]
+    #[test]
+    fn refuses_a_text_profile_on_a_string_member() {
+        let field = serde_json::json!({
+            "identity": "ix://acme/orders/Note/label",
+            "typeRef": "ix://quire/native/String",
+            "presence": "required",
+            "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
+            "textProfile": "nfc",
+        });
+        let refusal =
+            read_field_member("acme/orders", "ix://acme/orders/Note", &field, "$.fields[0]")
+                .expect_err("textProfile on a String member");
+        assert_eq!(refusal.code, Code::UnsupportedConstruct);
+        let ModelRefusalCause::UnsupportedDeclarationForm { what, member, .. } = &refusal.cause
+        else {
+            panic!("declaration-form, not {:?}", refusal.cause);
+        };
+        assert_eq!(what, "textProfile");
+        assert_eq!(
+            member,
+            &MemberPath::from_document_location("$.fields[0]").child("textProfile")
+        );
+    }
+
     /// FR-056-AC-16 (TC-911 step 1): a bound beyond +/-2^53 arrives as a
     /// canonical decimal string and reads exactly, up to the i128 limits;
     /// small bounds use the same exact-string wire form.
@@ -6781,10 +7002,10 @@ mod tests {
     fn refuses_a_malformed_or_unsupported_bound_scalar() {
         for (extra, code, detail) in [
             (
-                serde_json::json!({"scalar": "string"}),
+                serde_json::json!({"scalar": "boolean"}),
                 Code::UnsupportedConstruct,
                 "$.types[0]: construct meaning/capability \
-                 \"quire.meaning.model.value-type/v1:scalar=string\" has no reader yet",
+                 \"quire.meaning.model.value-type/v1:scalar=boolean\" has no reader yet",
             ),
             (
                 serde_json::json!({"constraints": [
