@@ -69,7 +69,7 @@ FR-105's and are pending STD-111, as FR-105's are.
   `ambiguous-name` at `op` when two ancestors declare it and neither
   declaring type is more derived. An operation inherited by a subtype binds
   the anchor and frame of its declaring type (FR-105).
-- If `M::T` names a process or a state machine, then the checker SHALL
+- If `M::T` names a process, then the checker SHALL
   refuse `invalid_model_binding`/`malformed-declaration` at `T`, as FR-104's
   Resolution refuses a clause, before resolving `op` and before checking any
   `contracts` entry: the anchor context is an object type, so an operation a
@@ -101,7 +101,7 @@ FR-105's and are pending STD-111, as FR-105's are.
 | FR-114-AC-2 | The same unit with `VersionUnchanged` removed, so only the attempt names `attemptUpdate` (with `contracts []`), still gets exactly one anchor node, one frame node and one frame record for `attemptUpdate`. | Test (TC-513) |
 | FR-114-AC-3 | `on Config::ConfigVersion::missing` refuses `missing_declaration`/`missing-name` at `missing`; `contracts [Absent]` refuses `missing_declaration`/`missing-name` at the entry; `contracts [ParentOrder]` (an invariant) and `contracts [ProbePre]` (a `pre` clause of `probe`) each refuse `wrong_snapshot`/`wrong-anchor` at the entry, naming both anchors. | Test (TC-513) |
 | FR-114-AC-4 | Over a package where `Sub` specializes `ConfigVersion`, an attempt on `Config::Sub::attemptUpdate` and a `post` clause on `Config::ConfigVersion::attemptUpdate` share one anchor node and one frame node, whose context is `ConfigVersion`. | Test (TC-513) |
-| FR-114-AC-5 | An attempt `on Config::Flow::go`, with `Flow` a process declaring `go`, refuses `invalid_model_binding`/`malformed-declaration` at `Flow`, also when its `contracts` list is empty or names an absent entry; the package holds no anchor or frame for `go`. | Test (TC-513) |
+| FR-114-AC-5 | An attempt `on Config::Flow::go`, with `Flow` a process declaring `go`, refuses `invalid_model_binding`/`malformed-declaration` at `Flow`, also when its `contracts` list is empty or names an absent entry. | Test (TC-513) |
 
 ## Dependencies
 

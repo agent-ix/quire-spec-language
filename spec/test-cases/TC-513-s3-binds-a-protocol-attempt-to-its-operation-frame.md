@@ -52,6 +52,6 @@ Tag the tests `#[trace("TC-513", "FR-114-AC-n")]`.
   `ProbePre`, each naming both anchors.
 - Step 4: one anchor and one frame, context `ConfigVersion`.
 - Step 5: `invalid_model_binding`/`malformed-declaration` at `Flow` both
-  times, and the package holds no anchor or frame for `go`.
+  times.
 - Steps 1, 2 and 4's emitted-node assertions wait on STD-111, as TC-462's do;
   the checked-graph assertions do not.
