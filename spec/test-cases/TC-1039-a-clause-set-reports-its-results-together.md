@@ -25,8 +25,7 @@ Use FR-108's `Config` unit and domain package with these added clauses on
 ```text
 pre UpdateAllowed using v on Config::ConfigVersion::attemptUpdate { self.versionNumber < 3 }
 pre UpdateNotMax using v on Config::ConfigVersion::attemptUpdate { self.versionNumber < 1000 }
-pre UpdateDivides using v on Config::ConfigVersion::attemptUpdate { 100 / self.versionNumber > 0 }
-post UpdateRaises using v on Config::ConfigVersion::attemptUpdate { self.versionNumber = pre(self.versionNumber) + 1 }
+post UpdateRaises using v on Config::ConfigVersion::attemptUpdate { self.versionNumber - pre(self.versionNumber) = 1 }
 ```
 
 Invocations of `attemptUpdate` with `self` `child` and result `true`; every
@@ -37,7 +36,6 @@ snapshot holds `root` (version 0, no parent) and `child`, and the table gives
 | --- | --- | --- |
 | `up12` | `child` 1 | `child` 2 |
 | `up34` | `child` 3 | `child` 4 |
-| `up01` | `child` 0 | `child` 1 |
 
 A current snapshot `cur` holds `root` 0 and `child` 1 with no parent, for
 `NoCycle` (FR-108) with `self` `child`. Admit each clause's observations by
@@ -54,8 +52,12 @@ step sets one. Tag the tests `#[trace("TC-1039", "FR-107-AC-n")]`.
 5. The set {`UpdateAllowed`, `UpdateAllowed`}; the set {`UpdateAllowed`,
    `sameIdentity`}; the set {`UpdateAllowed` with the observations admitted
    for `UpdateRaises`}.
-6. The set {`UpdateDivides`, `UpdateRaises`} over `up01`, then the set
-   {`UpdateAllowed`, `UpdateDivides`} over `up01`.
+6. The combination of verdicts, called directly as a unit test of the crate
+   (no clause of the `Config` unit evaluates to a not-completed Boolean,
+   FR-107 Behavior): the sets {}, {true, true}, {true, false}, {false, X},
+   {true, X}, {X}, {X, X}, {true, incomplete}, {false, incomplete}, where
+   X is in turn a kernel `Undefined(DivisionByZero)`, a kernel `Refused` and
+   a family `Undefined` with reason `precondition-false`.
 
 ## Expected Results
 
@@ -77,7 +79,6 @@ step sets one. Tag the tests `#[trace("TC-1039", "FR-107-AC-n")]`.
   `UpdateAllowed`; `CallFailure::Input(InputRefusal::UnknownClause)` naming
   `sameIdentity`; `CallFailure::Input(InputRefusal::ObservationsMismatch)`.
   No call returns an entry.
-- Step 6: over `up01`, one entry, `UpdateDivides`, not a completed Boolean
-  (its division by zero), outcome `Undecided`, and no entry for
-  `UpdateRaises`; the second set gives `UpdateAllowed` `Completed(true)` then
-  `UpdateDivides`, outcome `Undecided`.
+- Step 6: `True` for {} and {true, true}; `False` for {true, false} and
+  {false, X}; `Undecided` for {true, X}, {X} and {X, X}; `Incomplete` for
+  {true, incomplete} and {false, incomplete}; each X gives the same outcome.

@@ -222,6 +222,13 @@ it, with a fresh meter built from `limits` (FR-120).
   completed Boolean (both the kernel `Outcome` arms and the `FamilyResult`
   arms), and `True` only when every entry is `Completed(true)`, including
   for an empty set (FR-120's conjunction).
+- The combined outcome SHALL be a function of the entries' verdicts alone
+  (`True`, `False`, not a completed Boolean, `Incomplete`). A linked clause
+  proves every divisor nonzero, every `value(..)` present and every reduction
+  non-empty (FR-104, "Definedness facts"), so no linked clause evaluates to
+  `Undefined`; the `Undefined`, `Refused` and family-result rows of the
+  combination are reached by giving that function the verdicts directly, and
+  a clause evaluation stays as FR-100's mapping and FR-109 define it.
 - A clause named twice in the slice SHALL be refused
   `CallFailure::Input(InputRefusal::DuplicateClause)` naming it. An unknown
   name and a mismatched `AdmittedObservations` are refused as
@@ -249,7 +256,7 @@ it, with a fresh meter built from `limits` (FR-120).
 | FR-107-AC-15 | With `limits` whose work budget is zero the call from 1 to 2 gives one result, `UpdateAllowed` `Incomplete`, and outcome `Incomplete`; an empty set gives no result and outcome `True`; the same set evaluated twice gives equal results. | Test (TC-1039) |
 | FR-107-AC-16 | A set naming `UpdateAllowed` twice is refused `InputRefusal::DuplicateClause`; a set naming the function `sameIdentity` is refused `InputRefusal::UnknownClause`; a set pairing `UpdateAllowed`'s name with observations admitted for `UpdateRaises` is refused `InputRefusal::ObservationsMismatch`; none returns a result. | Test (TC-1039) |
 | FR-107-AC-17 | A selection on `self.home`, a relationship navigation, is located at the declared object identity of the tank `t1` with the step `[member level]` and the navigation records no entry. This criterion depends on clause-level navigation evaluation (FR-364) and is built when that lands. | Test (TC-1040) |
-| FR-107-AC-18 | With `UpdateDivides` (`100 / self.versionNumber > 0`) over a call from version 0 to 1, the set {`UpdateDivides`, `UpdateRaises`} gives one entry, `UpdateDivides` not a completed Boolean, outcome `Undecided`, and no entry for `UpdateRaises`; the set {`UpdateAllowed`, `UpdateDivides`} gives both entries and outcome `Undecided`. | Test (TC-1039) |
+| FR-107-AC-18 | The combination of a set's verdicts gives `True` for an empty set and for {true, true}; `False` for {true, false} and {false, not a completed Boolean}; `Undecided` for {true, not a completed Boolean}, {not a completed Boolean} and {not a completed Boolean, not a completed Boolean}; `Incomplete` for {true, incomplete} and {false, incomplete}. A not-completed-Boolean verdict stands for each of a kernel `Undefined`, a kernel `Refused` and a family result other than a completed Boolean, and the result is the same for each. | Test (TC-1039) |
 
 ## Dependencies
 
