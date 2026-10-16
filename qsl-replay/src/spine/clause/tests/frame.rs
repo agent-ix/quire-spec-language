@@ -551,8 +551,8 @@ fn native_result_two_round_trips_a_link_change() {
 fn native_result_two_refuses_broken_link_changes() {
     use qsl_semantics::model::observation::LinkDifference;
 
-    let bytes = crate::spine::write_clause_run_result(&link_report(LinkDifference::Removed))
-        .unwrap();
+    let bytes =
+        crate::spine::write_clause_run_result(&link_report(LinkDifference::Removed)).unwrap();
     let valid: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     type Edit = (String, Box<dyn Fn(&mut serde_json::Value)>);
     let mut edits: Vec<Edit> = Vec::new();
