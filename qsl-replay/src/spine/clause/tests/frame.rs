@@ -483,9 +483,8 @@ fn link_report(
     report
 }
 
-/// FR-115-AC-8: a link finding is a violation at `evaluate`, exit 10,
+/// Routing pin (no criterion claimed): a link finding is a violation at `evaluate`, exit 10,
 /// carrying its witness (TC-1037 row 2).
-#[trace("TC-1037", "FR-115-AC-8")]
 #[test]
 fn a_link_finding_routes_to_a_violation_with_exit_ten() {
     use qsl_semantics::model::observation::LinkDifference;
