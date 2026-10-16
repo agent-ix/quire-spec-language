@@ -1599,7 +1599,7 @@ fn tc235_m16_process_invariant_and_operation_clauses_evaluate_per_run() {
 /// `true`, outcome `True`; from `{attempts: 3}` to `{attempts: 4}` it reports
 /// exactly one result, the precondition `RestartRequires` `false`, outcome
 /// `False`, and no result for the postcondition `RestartEnsures`.
-#[trace("QSpec-TC-235", "FR-107-AC-13", "FR-107-AC-14")]
+#[trace("QSpec-TC-235")]
 #[test]
 fn tc235_m16_run3_a_clause_set_reports_one_result_for_a_false_precondition() {
     let (package, view, _) = model_package(
@@ -1872,6 +1872,7 @@ fn tc235_m22_receiver_and_parameter_reads_are_located_at_their_bindings() {
         &package,
         &packages,
         &snapshots,
+        "PlaceRequires",
         ClauseSelectionInput::PreCall {
             snapshot: pre_ref,
             self_object: SelectedObject {
@@ -1892,17 +1893,15 @@ fn tc235_m22_receiver_and_parameter_reads_are_located_at_their_bindings() {
     assert_eq!(reads_of(&evaluation), vec![None]);
 }
 
-/// `PlaceRequires` admitted from a pre-call `input`.
+/// `clause` admitted from a pre-call `input`.
 fn lifecycle_pre_call(
     package: &CheckedPackage,
     packages: &BTreeMap<[u8; 32], Vec<u8>>,
     snapshots: &BTreeMap<[u8; 32], Vec<u8>>,
+    clause: &str,
     input: ClauseSelectionInput,
 ) -> AdmittedObservations {
-    let checked = package
-        .graph()
-        .state_clause("PlaceRequires")
-        .expect("clause");
+    let checked = package.graph().state_clause(clause).expect("clause");
     let facts = ClauseFacts {
         identity: checked.identity(),
         kind: checked.kind(),
@@ -1923,10 +1922,163 @@ fn lifecycle_pre_call(
             invocations: &BTreeMap::new(),
         },
         &ClauseSelection {
-            name: "PlaceRequires".to_owned(),
+            name: clause.to_owned(),
             input,
         },
         ObservationLimits::default(),
     )
     .expect("the pre-call observation admits")
+}
+
+/// The lifecycle package with `place(flags: Flags)`, the context field
+/// `items` (a sequence of `Flags`) and the precondition `ItemsPlaced`, and
+/// the snapshots `p1` and `q1` whose context holds two items, `{placed: true}`
+/// and `{placed: false}`, plus the invocation `i1`.
+fn items_fixture() -> OrdersFixture {
+    use crate::tc235_k2::{declaration, field, id, origin};
+    let flags_type = id("Flags");
+    let document = lifecycle_document_with("not self.placed", |document| {
+        document["types"].as_array_mut().unwrap().push(declaration(
+            "Flags",
+            "money",
+            serde_json::json!({
+                "fields": [field("Flags", "placed", "ix://quire/native/Boolean")],
+                "operations": [],
+            }),
+        ));
+        let lifecycle = crate::tc235_k2::type_named_mut(document, "OrderLifecycle");
+        let mut items = field("OrderLifecycle", "items", &flags_type);
+        items["multiplicity"] =
+            serde_json::json!({"lower": 0, "upper": 3, "ordered": true, "unique": false});
+        lifecycle["fields"].as_array_mut().unwrap().push(items);
+        lifecycle["operations"][0]["params"] = serde_json::json!([{
+            "identity": id("OrderLifecycle/place/flags"),
+            "origin": origin("OrderLifecycle/place/flags"),
+            "name": "flags",
+            "typeRef": flags_type,
+            "presence": "required",
+            "nullable": false,
+            "defaultKind": "none",
+            "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
+        }]);
+    });
+    let (package, _, packages) = model_package(
+        &document,
+        "pre ItemsPlaced using v on M::OrderLifecycle::place { forall(x in self.items: x.placed) }",
+        26,
+    )
+    .expect("the items package checks");
+    let model_digest = packages.keys().next().expect("the package");
+    let with_items = |label: &str, observation: &str, contexts: &[(bool, bool)]| {
+        let (_, bytes) = lifecycle_observation(model_digest, label, observation, contexts);
+        let mut document: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        let item = |placed: bool| {
+            serde_json::json!({"record": {
+                "type": flags_type,
+                "fields": {"placed": {"boolean": placed}},
+            }})
+        };
+        document["populations"][0]["objects"][0]["fields"]["items"] =
+            serde_json::json!({"sequence": [item(true), item(false)]});
+        let bytes = serde_json::to_vec(&document).unwrap();
+        (lifecycle_document_ref(label, &bytes), bytes)
+    };
+    let (pre_ref, pre_bytes) = with_items("p1", "pre", &[(false, false)]);
+    let (post_ref, post_bytes) = with_items("q1", "post", &[(true, true)]);
+    let (invocation_ref, invocation_bytes) = lifecycle_invocation_with(
+        model_digest,
+        &pre_ref,
+        &post_ref,
+        serde_json::json!({"flags": {"record": {
+            "type": flags_type,
+            "fields": {"placed": {"boolean": true}},
+        }}}),
+    );
+    (
+        package,
+        packages,
+        BTreeMap::from([(pre_ref.digest, pre_bytes), (post_ref.digest, post_bytes)]),
+        BTreeMap::from([(invocation_ref.digest, invocation_bytes)]),
+        invocation_ref,
+    )
+}
+
+/// FR-107 "The receiver path" and "Read paths": a state machine's context
+/// with no invocation selected (a precondition selected by `PreCall`) has no
+/// location, so a read of its collection field and every read of an element
+/// of that collection have no path; with an invocation selected the same
+/// field read is located at the invocation's receiver binding with a `field`
+/// step.
+#[trace("TC-1040", "FR-107-AC-7")]
+#[test]
+fn a_context_collection_read_under_pre_call_has_no_path() {
+    use qsl_semantics::model::observation::{SelectedObject, SnapshotValue};
+    let (package, packages, snapshots, invocations, i1) = items_fixture();
+    let evaluate = |observations: &AdmittedObservations| {
+        package
+            .evaluate_clause(
+                &QualifiedName::unqualified("ItemsPlaced").unwrap(),
+                observations,
+                &mut Meter::new(UNLIMITED),
+            )
+            .expect("admitted observations evaluate")
+    };
+
+    let by_invocation = lifecycle_observations(
+        &package,
+        &packages,
+        "ItemsPlaced",
+        &snapshots,
+        &invocations,
+        i1.clone(),
+    )
+    .expect("the invocation admits");
+    let located = evaluate(&by_invocation);
+    assert_eq!(
+        reads_of(&located)[0],
+        Some(invocation_path(
+            "p1",
+            InvocationBinding::Receiver,
+            vec![ValuePathStep::Field("items".to_owned())],
+        ))
+    );
+
+    let model_digest = packages.keys().next().expect("the package");
+    let _ = model_digest;
+    let pre_ref = snapshots
+        .iter()
+        .find(|(_, bytes)| {
+            serde_json::from_slice::<serde_json::Value>(bytes).unwrap()["observation"] == "pre"
+        })
+        .map(|(digest, bytes)| {
+            let reference = lifecycle_document_ref("p1", bytes);
+            assert_eq!(&reference.digest, digest);
+            reference
+        })
+        .expect("the pre snapshot");
+    let by_pre_call = lifecycle_pre_call(
+        &package,
+        &packages,
+        &snapshots,
+        "ItemsPlaced",
+        ClauseSelectionInput::PreCall {
+            snapshot: pre_ref,
+            self_object: SelectedObject {
+                population: crate::tc235_k2::id("OrderLifecycle"),
+                key: "i1".to_owned(),
+            },
+            parameters: BTreeMap::from([(
+                quire_exact::Identifier::new("flags").unwrap(),
+                SnapshotValue::record(
+                    crate::tc235_k2::id("Flags"),
+                    vec![("placed".to_owned(), SnapshotValue::boolean(true))],
+                ),
+            )]),
+        },
+    );
+    let unlocated = evaluate(&by_pre_call);
+    assert_eq!(unlocated.receiver_path(), None);
+    // `self.items`, then `x.placed` for the first and the second item (the
+    // `forall` stops at the second, which is false).
+    assert_eq!(reads_of(&unlocated), vec![None, None, None]);
 }

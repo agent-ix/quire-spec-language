@@ -251,10 +251,15 @@ fn a_set_stops_at_an_incomplete_clause_and_an_empty_set_is_true() {
     let exhausted = evaluate(&unit, &set, 0).unwrap();
     assert_eq!(exhausted.results.len(), 1);
     assert_eq!(exhausted.results[0].name.to_string(), "UpdateAllowed");
-    assert!(matches!(
-        exhausted.results[0].evaluation.evaluation.outcome,
-        FamilyOutcome::Evaluated(Outcome::Incomplete(_))
-    ));
+    // The denied charge is `resource_exhausted`/`insufficient-next-charge`:
+    // the first work-units charge against a zero budget.
+    let FamilyOutcome::Evaluated(Outcome::Incomplete(denied)) =
+        &exhausted.results[0].evaluation.evaluation.outcome
+    else {
+        panic!("a zero work budget leaves the clause incomplete");
+    };
+    assert_eq!(denied.limit_kind, quire_exact::LimitKind::WorkUnits);
+    assert_eq!(denied.limit, 0);
     assert_eq!(exhausted.outcome, ClauseSetOutcome::Incomplete);
 
     let empty = evaluate(&unit, &[], UNLIMITED).unwrap();
@@ -274,8 +279,8 @@ fn a_set_stops_at_an_incomplete_clause_and_an_empty_set_is_true() {
 }
 
 /// TC-1039 step 5, the unknown-name and mismatch refusals (the duplicate
-/// refusal is in a separate test: it needs `InputRefusal::DuplicateClause`).
-#[trace("TC-1039", "FR-107-AC-16")]
+/// refusal needs `InputRefusal::DuplicateClause`, which is not in this test).
+#[trace("TC-1039")]
 #[test]
 fn a_set_naming_an_unknown_clause_or_mismatched_observations_is_refused_whole() {
     let unit = unit();

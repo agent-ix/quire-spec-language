@@ -273,6 +273,10 @@ pub(crate) struct Trail {
     pub(crate) receiver: Option<ObjectReference>,
     pub(crate) receiver_pre: Option<ObjectReference>,
     pub(crate) receiver_invocation: Option<ObservationIdentity>,
+    /// `self` is a state machine's context and no invocation is selected: it
+    /// has no location, so nothing read from it is located (FR-107 "The
+    /// receiver path").
+    pub(crate) receiver_unlocated: bool,
     /// The root subject of each clause slot (`self`, `result`, the
     /// parameters, in slot order); none when the slot has no location.
     pub(crate) bindings: Vec<Option<ValuePathSubject>>,
@@ -296,6 +300,7 @@ impl Trail {
             receiver: None,
             receiver_pre: None,
             receiver_invocation: None,
+            receiver_unlocated: false,
             bindings: Vec::new(),
             element_paths: BTreeMap::new(),
             selection_paths: BTreeMap::new(),

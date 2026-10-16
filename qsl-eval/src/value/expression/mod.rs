@@ -663,6 +663,7 @@ impl<'a> ClauseSetup<'a> {
             )),
             SelfKind::Context => {
                 trail.receiver_invocation = invocation.clone();
+                trail.receiver_unlocated = invocation.is_none();
                 invocation
                     .clone()
                     .map(|invocation| s6a::separation::ValuePathSubject::Invocation {

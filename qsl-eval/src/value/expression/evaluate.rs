@@ -2516,6 +2516,12 @@ impl<'a, 'm> Machine<'a, 'm> {
             reads.get(node.location()) == Some(&qsl_semantics::check::Observation::Pre)
         });
         if let Some(trail) = self.trail.as_mut() {
+            if trail.receiver_unlocated
+                && (trail.receiver.as_ref() == Some(object)
+                    || trail.receiver_pre.as_ref() == Some(object))
+            {
+                return;
+            }
             let observation = match (&trail.pre, pre) {
                 (Some(observation), true) => observation.clone(),
                 _ => trail.observation.clone(),
@@ -2567,7 +2573,18 @@ impl<'a, 'm> Machine<'a, 'm> {
         if self.frames.len() != 1 || !self.imported.is_empty() {
             return None;
         }
-        let mut path = self.located(node.at(operand))?;
+        let operand = node.at(operand);
+        let mut path = if matches!(step, ReadStep::Attribute(_)) && Self::navigated(operand) {
+            // FR-107 "Read paths": a selection on a navigation's result is
+            // located at the referenced object's declared identity.
+            RuntimeValuePath {
+                observation: trail.observation.clone(),
+                subject: ValuePathSubject::Object(reference?.clone()),
+                steps: Vec::new(),
+            }
+        } else {
+            self.located(operand)?
+        };
         let under_pre = self.reads.is_some_and(|reads| {
             reads.get(node.location()) == Some(&qsl_semantics::check::Observation::Pre)
         });
@@ -2601,6 +2618,26 @@ impl<'a, 'm> Machine<'a, 'm> {
             }
         }
         Some(path)
+    }
+
+    /// Whether `node` is a relationship navigation, possibly under `value`,
+    /// `pre` or a coercion.
+    fn navigated(node: CheckedNode<'_>) -> bool {
+        match node.kind() {
+            NodeKind::Navigate { .. } => true,
+            NodeKind::Value(operand) | NodeKind::Pre(operand) | NodeKind::Coerce(operand, _) => {
+                Self::navigated(node.at(*operand))
+            }
+            _ => false,
+        }
+    }
+
+    /// Whether `node` is a field or member selection.
+    fn selected(node: CheckedNode<'_>) -> bool {
+        matches!(
+            node.kind(),
+            NodeKind::Attribute { .. } | NodeKind::Field { .. }
+        )
     }
 
     /// The path of the value `node` evaluated to, when it has one: a clause
@@ -2644,9 +2681,31 @@ impl<'a, 'm> Machine<'a, 'm> {
         if self.trail.is_none() || self.frames.len() != 1 || !self.imported.is_empty() {
             return;
         }
-        let path = self
-            .provenance_of(domain, source)
-            .and_then(|provenance| provenance.position(position).map(|at| provenance.path(at)));
+        let Some(trail) = self.trail.as_ref() else {
+            return;
+        };
+        let path = if Self::navigated(source) {
+            // An element of a navigation's result is located at its own
+            // declared identity.
+            match domain.elements().get(position) {
+                Some(Value::Reference(object)) => Some(RuntimeValuePath {
+                    observation: trail.observation.clone(),
+                    subject: ValuePathSubject::Object(object.clone()),
+                    steps: Vec::new(),
+                }),
+                _ => None,
+            }
+        } else if Self::selected(source)
+            && trail
+                .provenance(&Value::Collection(Arc::clone(domain)))
+                .is_none()
+        {
+            // A collection read from an owner with no location has none.
+            None
+        } else {
+            self.provenance_of(domain, source)
+                .and_then(|provenance| provenance.position(position).map(|at| provenance.path(at)))
+        };
         if let Some(trail) = self.trail.as_mut() {
             match path {
                 Some(path) => {
