@@ -102,3 +102,51 @@ Recorded (not blocking):
   conflict).
 - low: qsl-eval comments cite FR-107 by line number (`:92-93`, `:102-105`),
   and this PR shifts those lines. Line-number citations are ceremony.
+
+## Dispositions
+
+Round 1, reviewed at 4a2a33f9cd967837bcdfe3c5a1aecfd23c08da87.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 4a2a33f9c |
+
+Round 1 notes. FR-106 Outputs now names an invocation only for a
+postcondition and for an `Invocation`-selected precondition, and none for an
+invariant. That agrees with check 2 and the `Current` form. FR-107 now
+states that a state-machine invariant's observation over an invocation is
+built at the model layer, and admitting it from a snapshot is not yet
+specified. TC-1040 step 6 uses that construction; `AdmittedObservations` has
+public fields, so the test can build it. Step 7's `FlagsPlaced` is admitted
+by FR-106 and names `i1` by the same four labels, with `q1` as its post
+observation. Steps 6 and 7 therefore share the root observation and the
+invocation, and the comparison holds: parameter orders before receiver.
+
+The recorded mediums are addressed:
+- The outcome rule now covers the kernel and `FamilyResult` arms, and
+  `True` requires every entry to be `Completed(true)`.
+- The `Orders` fixture names its source, and `place`'s frame modifies
+  `placed` and `cancelled`.
+- AC-12 now holds only the built-list half. The navigation half is AC-17,
+  marked as depending on FR-364 evaluation.
+- New AC-18 and TC-1039 step 6 add an `Undecided` vector.
+
+The `Undecided` vector traced:
+- `versionNumber` 0 is in range (`Int[0, 1000]`, the boundary-zero case).
+- FR-109-AC-7 shows that a state clause dividing by a field difference
+  equal to 0 compiles and evaluates to category `undefined`, cause
+  `division-by-zero`. So `UpdateDivides` over `up01` is `Undefined`.
+- Both sets give `Undecided`. The first set skips `UpdateRaises`. The second
+  set gives `UpdateAllowed` (0 < 3) `Completed(true)` first, by name order.
+- "Not a completed Boolean" is a typed check that `Completed(true)` would
+  fail, and the `Undecided` outcome excludes `Incomplete` and `False`.
+
+No id collides with main or the open PRs, and no test parses the touched
+tables.
+
+Recorded (not blocking):
+- low: AC-18 could pin `Undefined`/`division-by-zero` (FR-109-AC-7) instead
+  of "not a completed Boolean".
+- low: TC-1040 step 6 builds "from `p1` and `q1`", but the expected results
+  use the post-context observation `q1`. It should say that the evaluation is
+  over the post context (FR-208 evaluates pre and post separately).
