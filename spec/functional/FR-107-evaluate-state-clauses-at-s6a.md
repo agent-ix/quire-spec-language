@@ -130,7 +130,9 @@ none:
   selected by `PreCall`), then the path SHALL be none: there is no invocation
   to name, and QSpec FR-207 gives an absent subject no path.
 - The path's observation SHALL be the clause's own observation (`current` for
-  an invariant, `pre` for a precondition, `post` for a postcondition).
+  an invariant of an object type, the selected side's `pre` or `post`
+  snapshot for a state machine's invariant, `pre` for a precondition, `post`
+  for a postcondition).
 
 The observation of a state machine's invariant over an invocation (QSpec
 FR-208 "State-machine context anchors" and AC-10, which bind it to the
@@ -138,8 +140,7 @@ invocation's pre and post contexts) is admitted by FR-106 from the invocation
 document and its `pre` and `post` snapshots, which carry the machine's context
 as `contexts`, selected by `Context` with `side` `pre` or `post`. Each
 selection gives one evaluation, over the context of the selected side, and the
-path's observation is that side's snapshot. The receiver-path rule above and
-AC-7 and AC-11 hold for an observation so admitted.
+path's observation is that side's snapshot. AC-7 and AC-11 state the paths of an observation so admitted.
 
 `AdmittedObservations` (FR-106) carries the selected invocation's identity,
 whatever kind `self` is, or none; a receiver, parameter or result binding is

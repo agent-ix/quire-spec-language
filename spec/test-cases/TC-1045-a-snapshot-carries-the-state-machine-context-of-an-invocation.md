@@ -19,7 +19,7 @@ documents.
 
 Scope: FR-106-AC-41, FR-106-AC-42, FR-106-AC-43, FR-106-AC-44,
 FR-106-AC-45, FR-106-AC-46 and FR-106-AC-47. TC-1040 steps 6 to 8 use the
-documents of steps 1 and 2.
+documents of step 1: `P1` is TC-1040's `p1` and `Q2` its `q1`.
 
 ## Preconditions
 
@@ -30,8 +30,15 @@ The `Orders` fixture of TC-1040 (state machine `OrderLifecycle` with the
 `FlagsPlaced`), with these declarations added: state machine
 `ExpressLifecycle` specializing `OrderLifecycle` with the field `retries:
 Int[0, 5]`; state machine `Billing` with the field `paid: Boolean`; state
-machine `Owned` with the field `owner: Reference<Pump>`; the object type
-`Pump` in the complete-able population `Q`; the process `Fulfilment`. The
+machine `Owned` with the fields `owner: Reference<Pump>` and `label: String`,
+the operation `claim()` (no parameter, no result, frame modifies `owner` and
+`label`) and the clause `invariant Owner using v on M::Owned at current {
+self.label = self.label }`; the operation `expedite()` of `ExpressLifecycle`
+(no parameter, no result, frame modifies `placed`, `cancelled` and `retries`)
+and the clause `invariant Bounded using v on M::ExpressLifecycle at current {
+self.retries >= 0 }`; the object type `Pump` in the population `Q`; the
+process `Fulfilment`. The invocation `i2` of `expedite` and the invocation
+`i3` of `claim` have `self` `null`. The
 invocation `i1` of `place` has `self` `null` and `flags` `{placed: true}`.
 Snapshots hold `"populations": []` unless a step says otherwise. Tag the tests
 `#[trace("TC-1045", "FR-106-AC-n")]`.
@@ -64,10 +71,12 @@ Snapshots hold `"populations": []` unless a step says otherwise. Tag the tests
    `{"sequence": []}`; `placed` `{"integer": "1"}`. Then a snapshot with an
    object defect (`Q` object of an unlisted type) and a context defect, and a
    snapshot with defects in two entries.
-5. `ExpressLifecycle` with the post context `{placed: true, cancelled: false,
-   retries: -1}` selected side `post` for a clause on `ExpressLifecycle`,
-   under `PostStateRange::Witness` and under `Refuse`; the same `-1` in the
-   `pre` context under `Witness`.
+5. `Bounded` selected by `Context` over `i2`, whose `pre` snapshot `E1` holds
+   the `ExpressLifecycle` context `{placed: false, cancelled: false, retries:
+   0}` and whose `post` snapshot `E2` holds `{placed: true, cancelled: false,
+   retries: -1}`, side `post` under `PostStateRange::Witness` and under
+   `Refuse`; then `E1` with `retries` `-1` and an unchanged `E2` side `pre`
+   under `Witness`.
 6. Frame: Step 1's `Q2` against `place` modifying `placed` and `cancelled`;
    against `place` modifying only `placed`, for `FlagsPlaced` and for the
    invariant side `post`; the invariant side `pre` under the narrower frame.
@@ -76,10 +85,14 @@ Snapshots hold `"populations": []` unless a step says otherwise. Tag the tests
    for an object operation. `Consistent` selected by `Current`, by `PreCall`
    and by `Invocation`; an object invariant selected by `Context`; `PlaceRequires`
    by `PreCall` naming `self` `p1`.
-7. A snapshot with population `Q` and the machine `Owned`, context `{owner:
-   reference Q/p9}`: `Q` complete without `p9`; `Q` `"complete": false`;
-   `Q` listing `p1` with `owner` naming `p1`; `Q` incomplete with a context of
-   `OrderLifecycle` only. `observation.values` set to the exact count of
+7. `Owner` selected by `Context` side `pre` over `i3`, whose `pre` snapshot
+   `O1` holds the `Owned` context `{owner: reference Q/p9, label: string
+   "x"}` (the `post` snapshot is not read): `Q` listed complete without `p9`;
+   `Q` listed `"complete": false`; `Q` listed complete holding `p1` with
+   `owner` naming `p1`; that last snapshot with a second, incomplete
+   population `Spare` that no reference names; `label` `{"kind":"string",
+   "text":"\u00e9"}`; `label` `{"kind":"string","text":5}`.
+   `observation.values` set to the exact count of
    the `P1` document, and one less. A replay environment document (FR-098) that
    holds `contexts`.
 
@@ -89,9 +102,10 @@ Snapshots hold `"populations": []` unless a step says otherwise. Tag the tests
   four identity labels, no self object, no parameters, no result, and
   `Consistent` is `Completed(true)`. Side `post` over `Q1` admits the post
   context and gives `Completed(true)`; over `Q2` it admits and gives
-  `Completed(false)`, a logical violation and no refusal. The reordered
-  documents give the same typed observation, the same digest and the same
-  results.
+  `Completed(false)`, a logical violation and no refusal. Reordering the
+  `fields` members of a context gives the same typed observation, digest and
+  results; reordering the `contexts` entries gives the same typed observation
+  and results, and the digest (of the document) may differ.
 - Step 2: side `pre` gives `Completed(true)` for every variant with no
   refusal; side `post` with `Q1` absent returns `Incomplete` with
   `unavailable_observation`/`missing-required-artifact`.
@@ -114,11 +128,12 @@ Snapshots hold `"populations": []` unless a step says otherwise. Tag the tests
   `wrong-value-kind` at the path `OrderLifecycle`, `placed`. The object defect
   is reported before the context defect, and the first entry's defect before
   the second's.
-- Step 5: under `Witness` the post context admits and the post observation
-  reports one `OutOfRange` naming `ExpressLifecycle`, `retries`, the range
+- Step 5: side `post` under `Witness`: the frame holds, the post context
+  admits and the post observation reports one `OutOfRange` naming `ExpressLifecycle`, `retries`, the range
   `[0, 5]` and the observed `-1`; under `Refuse`, and for the `pre` context
-  under `Witness`, `invalid_runtime_input`/`invalid-value` at
-  `ExpressLifecycle`, `retries`.
+  under `Witness` (side `pre`, check 6.12), `invalid_runtime_input`/
+  `invalid-value` at `ExpressLifecycle`, `retries`; `Bounded` evaluates
+  `Completed(false)` on the admitted `-1`.
 - Step 6: `Q2` against the wide frame admits. Against the narrow frame
   `FlagsPlaced` and the invariant side `post` refuse `frame_violation`/
   `unauthorized-change` naming `OrderLifecycle` and `cancelled`; the invariant
@@ -130,8 +145,11 @@ Snapshots hold `"populations": []` unless a step says otherwise. Tag the tests
 - Step 7: `Q` complete without `p9` refuses `dangling_reference`/
   `absent-target-in-complete-population` naming `Owned`, `owner`, `p9` and
   `Q`; `Q` incomplete returns `Incomplete` with `incomplete_population`/
-  `incomplete-scope` naming `Q`; `owner` naming the listed `p1` admits; the
-  snapshot with only an `OrderLifecycle` context admits. The document at the
+  `incomplete-scope` naming `Q` (check 7, before the dangling check);
+  `owner` naming the listed `p1` admits, and still admits with `Spare`
+  incomplete; `label` U+00E9 admits unchanged; `label` with `text` `5`
+  refuses `invalid_runtime_input`/`wrong-value-kind` naming `text`, at the
+  path `Owned`, `label`, in check 6.12 before any reference is closed. The document at the
   exact bound admits and one less returns `stage_limit_exceeded`/
   `node-count-exceeded` naming `observation.values`. The environment document
   refuses `invalid_runtime_input`/`unknown-member` naming `contexts`.
