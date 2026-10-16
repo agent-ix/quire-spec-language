@@ -732,16 +732,12 @@ pub(super) fn version_number_value_type() -> (Value, Value, String) {
     // `validate_with_semantic_ir` schema check, not just this reader's own
     // hand-rolled one), unlike `intake.rs`'s own direct-reader unit tests.
     // `appliesTo` names the native scalar the value type binds
-    // (`ix://quire/native/Integer`), not `VersionNumber`'s own identity:
-    // `agent-ix-semantic-ir`'s own applicability table (`rules.rs::applies_to`)
-    // only ever resolves a construct-kind node's own `kind`/`shape` to
-    // `"construct"`, never `"scalar"` (no `Shape` variant means "scalar" at
-    // this pinned rev) -- a constraint whose `appliesTo` named `VersionNumber`
-    // itself would refuse `CONSTRAINT_NOT_APPLICABLE` even though this is
-    // exactly the bound `VersionNumber` names. Naming the native scalar
-    // directly is what actually resolves to `Resolved::Native("integer")`,
-    // and is what `VALUE_TYPE`'s own meaning describes: "naming the value
-    // type and its bound native value type".
+    // (`ix://quire/native/Integer`), which is what `VALUE_TYPE`'s own
+    // meaning describes: "naming the value type and its bound native value
+    // type". FCD also judges a constraint applied to a value type carrying
+    // `scalar` by that scalar's keyword table, so naming `VersionNumber`
+    // itself is no longer refused `CONSTRAINT_NOT_APPLICABLE`; this form
+    // stays valid.
     let constraint = |keyword: &str, value: &str| {
         json!({
             "identity": format!("{identity}/constraints/{keyword}"),
@@ -2277,19 +2273,10 @@ fn only_the_modifies_refusal_is_reported_when_both_members_are_invalid() {
 /// arm (`qsl-semantics/src/check/assemble.rs`) is unreachable dead code for
 /// a package-declared operation parameter/result.
 ///
-/// `Text` itself cannot be used through the real pipeline at all: the
-/// pinned FCD schema validator's own native-scalar vocabulary
-/// (`agent-ix-semantic-ir`,
-/// `crates/semantic-ir/src/rules.rs`'s `NATIVE_SCALARS`) has no `Text`
-/// entry -- it spells the same concept `String` -- so
-/// `validate_with_semantic_ir` refuses any `ix://quire/native/Text`
-/// `typeRef` as `UNRESOLVED_TYPE_REF` before this reader's own
-/// `read_value_type_ref` ever runs; `ix://quire/native/String` does resolve
-/// at FCD's layer, but QSL's own `NativeValueType::from_str` has no
-/// `String` variant (only `Text`), so it would refuse there instead, with a
-/// different cause (`malformed-declaration`). That cross-repo vocabulary
-/// gap is **QSL-290**, not fixed by this ticket; `Decimal` is the closest
-/// substitute both vocabularies recognize by the same name.
+/// `ix://quire/native/Text` resolves at FCD's layer (its native vocabulary
+/// admits `Text`), so a `Text` parameter now reaches this reader; QSL's
+/// Text intake is the next slice (QSL-806). `Decimal` remains the native
+/// type this test uses.
 #[trace("TC-458", "FR-103-AC-3")]
 #[test]
 fn a_decimal_typed_parameter_refuses_at_intake_not_assembly() {
