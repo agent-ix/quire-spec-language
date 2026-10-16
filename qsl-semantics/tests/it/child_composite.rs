@@ -505,10 +505,9 @@ fn a_model_record_key_is_its_model_node_key_whatever_the_alias() {
 
 /// FR-359-AC-1: a field typed UUID or Timestamp is read, and compared, at a
 /// parent-typed slot like any other. Lowering a UUID, Timestamp or String leaf
-/// now lowers (PR #789); the `=` the unit uses on them is still refused.
+/// lowers (PR #789), and the unit's `=` on them is admitted (FR-056).
 #[trace("FR-359-AC-1", "TC-998")]
 #[test]
-#[ignore = "String, UUID and Timestamp now lower, but `=` on them is refused ill_typed/operator-ineligible; equality on native scalars is not yet admitted"]
 fn uuid_timestamp_and_string_fields_are_read_through_a_child() {
     assemble_document(
         &fixture::document_with_native_leaves(),
@@ -673,6 +672,7 @@ fn refusal_of(result: Result<(), AdmissionFailure>) -> Refusal {
         cause,
         fields,
         path,
+        ..
     })) = result
     else {
         panic!("a refusal, not {result:?}");

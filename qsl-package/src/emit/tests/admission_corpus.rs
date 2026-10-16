@@ -85,11 +85,14 @@ enum Fixture {
     /// TC-1021: a function whose body refers to a declared protocol, under a
     /// selected protocol profile.
     ProtocolReference,
+    /// TC-1028: `=` and `!=` over native `String`, `UUID` and `Timestamp`
+    /// parameters.
+    NativeScalars,
 }
 
 impl Fixture {
     /// Every fixture; each must back at least one row.
-    const ALL: [Self; 19] = [
+    const ALL: [Self; 20] = [
         Self::Tc416Functions,
         Self::RecursiveF,
         Self::Tree,
@@ -109,6 +112,7 @@ impl Fixture {
         Self::CyclicEquality,
         Self::VariantType,
         Self::ProtocolReference,
+        Self::NativeScalars,
     ];
 }
 
@@ -126,6 +130,12 @@ const FORMS_UNIT: &str =
      tuple T(Int[0, 9], Int[0, 9]);\n\
      function mk using v(a: Int[0, 9]): P pure { P { x: a } }\n\
      function mt using v(a: Int[0, 9]): T pure { T(a, a) }\n";
+
+/// TC-1028: native `String`, `UUID` and `Timestamp` equality, the families
+/// IR-800 admits.
+const NATIVE_SCALARS: &str = "function eqs using v(a: String, b: String): Boolean pure { a = b }\n\
+     function neu using v(a: UUID, b: UUID): Boolean pure { a != b }\n\
+     function eqt using v(a: Timestamp, b: Timestamp): Boolean pure { a = b }\n";
 
 /// Structural equality over TC-416's recursive `Tree`, the STD-129 case: a
 /// recursive compared type that reaches no `Text`, so it has no leaves
@@ -264,6 +274,7 @@ impl Fixture {
             }
             Self::FormsUnit => text(FORMS_UNIT),
             Self::CyclicEquality => text(CYCLIC_EQUALITY),
+            Self::NativeScalars => text(NATIVE_SCALARS),
             Self::VariantType => {
                 let document = VARIANT_DOCUMENT.as_slice();
                 let unit = format!(
@@ -348,6 +359,9 @@ fn rows() -> Vec<Row> {
         row(K::ScalarType(S::Float32), F::Float32Add),
         row(K::ScalarType(S::Float64), F::GoldenCases),
         row(K::ScalarType(S::Text), F::Tc416Functions),
+        row(K::ScalarType(S::String), F::NativeScalars),
+        row(K::ScalarType(S::Uuid), F::NativeScalars),
+        row(K::ScalarType(S::Timestamp), F::NativeScalars),
         row(K::ScalarType(S::Enum), F::OrderedEnum),
         row(K::ScalarType(S::Dimension), F::QuantityAndT),
         row(K::ScalarType(S::Unit), F::QuantityAndT),

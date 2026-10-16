@@ -3288,6 +3288,33 @@ impl<'a> Lowering<'a> {
                 });
                 return Ok(LowerStep::Descend(node.at(*reference)));
             }
+            NodeKind::Navigate {
+                reference,
+                relationship,
+                role,
+            } => {
+                // FR-093/FR-094 (FR-363): one `quire.op.model.navigate` over
+                // the reference, naming the end by the relationship's model
+                // node and the role. No `deref` node: the reference is the
+                // argument.
+                let declaration = self.model_node(relationship, node.location())?;
+                let name = Identifier::new(role.clone()).map_err(|_| {
+                    refuse(
+                        node.location(),
+                        CheckCause::NodePreimage(NodeKeyRefusal::EmptyBindingName),
+                    )
+                })?;
+                (
+                    Keyed::Application(
+                        Operator::Query,
+                        Operation {
+                            member: Some(Member::RelationshipEnd { declaration, name }),
+                            ..plain("quire.op.model.navigate")
+                        },
+                    ),
+                    Operands::One(reference),
+                )
+            }
             NodeKind::Present(operand) => (
                 Keyed::Application(Operator::Present, plain("quire.op.option.present")),
                 Operands::One(operand),
@@ -4089,6 +4116,11 @@ impl<'a> Lowering<'a> {
             ValueType::Enum(_) => "enum",
             ValueType::Quantity(_) => "quantity",
             ValueType::Reference(_) => "reference",
+            // FR-093 "Native scalar equality": no law, mode, member or
+            // leaves, and no text-profile selection.
+            ValueType::String => "string",
+            ValueType::Uuid => "uuid",
+            ValueType::Timestamp => "timestamp",
             ValueType::Option(_) | ValueType::Composite(_) | ValueType::Collection(_) => {
                 let leaves = self.leaves(LeafSource::Compared(compared), location)?;
                 return Ok(Operation {
@@ -4106,10 +4138,7 @@ impl<'a> Lowering<'a> {
             }
             // FR-153: a population is never an equality operand; the
             // checker refuses one before lowering.
-            ValueType::Population(_)
-            | ValueType::Uuid
-            | ValueType::String
-            | ValueType::Timestamp => {
+            ValueType::Population(_) => {
                 return Err(refuse(
                     location,
                     CheckCause::IllTyped(quire_exact::IllTypedCause::OperatorIneligible),

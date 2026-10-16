@@ -56,17 +56,18 @@ use super::state_clause::{
     population_of, AttemptDeclaration, ClauseOperation, StateClauseDeclaration,
 };
 use super::type_form::{
-    parse_rounding_mode, resolve_form, TypeFormError, TypeFormFault, TypeNames,
+    native_scalar_named, parse_rounding_mode, resolve_form, TypeFormError, TypeFormFault, TypeNames,
 };
 use crate::library::{ImportView, LibraryName};
 use std::sync::Arc;
 
 mod units;
 
+use super::navigation::{EndDeclaration, RelationshipDeclaration, Relationships};
 use super::CheckedGraph;
 use crate::model::domain_package::{
-    DomainPackageRecord, FieldMemberRecord, Multiplicity, NativeValueType, OperationMemberRecord,
-    ScalarValueDomain, ValueTypeRef,
+    DomainPackage, DomainPackageRecord, FieldMemberRecord, Multiplicity, NativeValueType,
+    OperationMemberRecord, RelationshipEnd, ScalarValueDomain, ValueTypeRef,
 };
 use crate::model::intake::{
     member_identity_name, type_identity_segment, SelectedModel, SelectedModels,
@@ -178,6 +179,10 @@ pub enum AssemblyCause {
         name: String,
         /// The span of each candidate declaration's name.
         candidates: Vec<Span>,
+        /// Whether the native type of this spelling is also a candidate: it
+        /// has no declaration span, so it is not among `candidates`
+        /// (FR-091 "Ambiguous type name").
+        native: bool,
     },
     /// A built-in constructor's declared bounds are rejected by its value
     /// type, with that value type's own cause.
@@ -767,6 +772,7 @@ struct ModelTypes {
     composites: Vec<CompositeDeclaration>,
     variant_types: Vec<VariantTypeDeclaration>,
     model_records: ModelRecords,
+    relationships: Vec<RelationshipDeclaration>,
 }
 
 /// The object types of the domain package admitted for the `model`
@@ -1066,16 +1072,59 @@ fn model_object_types(
             model_records.declare_event(*handle);
         }
     }
+    let relationships = relationship_declarations(package, identities, &declarations);
     if errors.is_empty() {
         Ok(ModelTypes {
             objects: declarations,
             composites,
             variant_types,
             model_records,
+            relationships,
         })
     } else {
         Err(errors)
     }
+}
+
+/// The relationships of `package` between two of its object types (FR-363),
+/// each end by the effective identity of the object type it names. A
+/// relationship an end of which names no object type of the type environment
+/// (a systems connection between endpoints) is no navigation of an object
+/// reference, so it is not collected.
+fn relationship_declarations(
+    package: &DomainPackage,
+    identities: &BTreeMap<DeclarationKey, EffectiveId>,
+    objects: &[ObjectTypeDeclaration],
+) -> Vec<RelationshipDeclaration> {
+    let object = |key: &DeclarationKey| {
+        let identity = *identities.get(key)?;
+        objects
+            .iter()
+            .any(|declared| declared.key() == identity)
+            .then_some(identity)
+    };
+    package
+        .records
+        .iter()
+        .filter_map(|record| {
+            let DomainPackageRecord::Relationship(relationship) = record else {
+                return None;
+            };
+            let end = |end: &RelationshipEnd, object: EffectiveId| EndDeclaration {
+                object,
+                role: end.role.clone(),
+                multiplicity: end.multiplicity,
+            };
+            let source = object(&relationship.source.type_identity)?;
+            let target = object(&relationship.target.type_identity)?;
+            Some(RelationshipDeclaration {
+                key: relationship.key.clone(),
+                direction: relationship.direction,
+                source: end(&relationship.source, source),
+                target: end(&relationship.target, target),
+            })
+        })
+        .collect()
 }
 
 /// Where each record keeps the fields its ancestors name (FR-359 item 2).
@@ -1560,6 +1609,9 @@ fn check_names(
                 }
             }
             TypeFormHead::Name(name) => match unit.declared.get(name).map(Vec::len) {
+                // FR-091: a native spelling is a candidate beside the unit's
+                // own forms, so it resolves only when the unit declares none.
+                None | Some(0) if native_scalar_named(name).is_some() => {}
                 None | Some(0)
                     if object_types.contains_key(name) || model_composites.contains(name) => {}
                 None | Some(0)
@@ -1576,11 +1628,12 @@ fn check_names(
                     cause: AssemblyCause::UnresolvedTypeName { name: name.clone() },
                     span: form.span,
                 }),
-                Some(1) => {}
+                Some(1) if native_scalar_named(name).is_none() => {}
                 Some(_) => errors.push(AssemblyError {
                     cause: AssemblyCause::AmbiguousTypeName {
                         name: name.clone(),
                         candidates: unit.candidates(name),
+                        native: native_scalar_named(name).is_some(),
                     },
                     span: form.span,
                 }),
@@ -1622,6 +1675,7 @@ fn resolution_error(unit: &Unit, error: TypeFormError) -> AssemblyError {
         TypeFormFault::MissingName(name) => AssemblyCause::UnresolvedTypeName { name },
         TypeFormFault::AmbiguousName(name) => AssemblyCause::AmbiguousTypeName {
             candidates: unit.candidates(&name),
+            native: native_scalar_named(&name).is_some(),
             name,
         },
         fault @ (TypeFormFault::Malformed
@@ -2091,6 +2145,7 @@ impl PackageDeclarations {
         let mut model_composites = Vec::new();
         let mut model_variant_types = Vec::new();
         let mut model_records = ModelRecords::default();
+        let mut model_relationships = Vec::new();
         let mut operations = OperationTable::default();
         let mut object_spans = BTreeMap::new();
         let mut operation_clauses = Vec::new();
@@ -2119,6 +2174,7 @@ impl PackageDeclarations {
                     model_composites.extend(types.composites);
                     model_variant_types.extend(types.variant_types);
                     model_records.extend(types.model_records);
+                    model_relationships.extend(types.relationships);
                     match operation_clause_declarations(&selection.alias, model, &operations) {
                         Ok(resolved) => operation_clauses.extend(resolved),
                         Err(cause) => errors.push(AssemblyError {
@@ -2232,6 +2288,7 @@ impl PackageDeclarations {
                     cause: AssemblyCause::AmbiguousTypeName {
                         name: name.clone(),
                         candidates: candidates.clone(),
+                        native: false,
                     },
                     span: *span,
                 });
@@ -2751,6 +2808,7 @@ impl PackageDeclarations {
         package.protocol_attempts = protocol_attempts;
         package.declared_type_spans = declared_type_spans;
         package.model_records = model_records;
+        package.relationships = Relationships::new(model_relationships);
         package.imports = qualified;
         Ok(package)
     }

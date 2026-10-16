@@ -17,6 +17,10 @@ relationships:
     type: traces_to
   - target: ix://agent-ix/quire-specification/FR-323
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-106
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-364
+    type: depends_on
 ---
 # FR-098: Execute a replay request through the layer-6 replay facade
 
@@ -41,15 +45,24 @@ it. It is not part of the facade CG may call: the FR-060 T12-A rule
 refuses any CG reference to `qsl_replay::spine` -- a `use` of it, a path
 through it, or a crate alias or glob import that reaches it.
 
-A replay runs its call over an object environment with unresolved
-references (`ObjectEnvironment::with_unresolved_references`): a reference
-argument is admitted by its identity, and a read through one completes no
-value (`unknown_required_feature`/`unsupported-feature`, construct
-`dereference`), so it settles `inconclusive` with cause `NoValue`.
+A replay runs its call over an object environment. A request without
+`object_environment` supplies none: the call runs over an environment with
+unresolved references (`ObjectEnvironment::with_unresolved_references`), a
+reference argument is admitted by its identity, and a read through one
+completes no value (`unknown_required_feature`/`unsupported-feature`,
+construct `dereference`), so it settles `inconclusive` with cause `NoValue`.
+A request with `object_environment` supplies an admitted one: the executor
+admits the snapshot document the member names by FR-106, a reference argument
+is an object of that environment, and `deref(r).f` reads that object's field
+and completes. The environment is the `ObjectEnvironment` FR-106's admission
+builds, with the relationship extents and the population manifest FR-364
+states. Replay holds no store of its own and no object the document does not
+list.
 
 ## Inputs
 
-- An FR-071 replay request, in its wire shape.
+- An FR-071 replay request, in its wire shape, with its optional
+  `object_environment` (FR-071).
 
 ## Outputs
 
@@ -134,7 +147,8 @@ value (`unknown_required_feature`/`unsupported-feature`, construct
   parameter's position.
 - The executor SHALL take a `WitnessValue` tree for a parameter of any value
   type other than `Boolean`, an integer type and `Population<T>`: a leaf of
-  enum, text, rational, decimal, float, quantity or reference type, or an
+  enum, text, String, UUID, Timestamp, rational, decimal, float, quantity or
+  reference type, or an
   `Option`, record, tuple, union or collection nested to any depth with
   leaves of any value family. It arrives as an `Input` assignment's value,
   or as a witness entry read as a `Canonical` binding in FR-070's witness
@@ -143,12 +157,22 @@ value (`unknown_required_feature`/`unsupported-feature`, construct
 - The executor SHALL convert a `WitnessValue` tree to a kernel value of the
   parameter's declared type. It walks the value against the recompiled
   package's type environment on an explicit heap stack (ADR-030 D-1) and
-  builds each node through the kernel's value constructors. It SHALL refuse
-  `WrongValueKind`, naming the parameter's position, before the call and
-  with no charge, when:
+  builds each node through the kernel's value constructors. It SHALL decide a reference's universe correspondence after its value
+  shape and before its conformance, as FR-100 orders them. A
+  reference whose `universe` differs from the universe of the declared
+  `Reference<T>`'s object type (QSL FR-084) refuses
+  `ReplayRefusal::ForeignReference` (`foreign_reference`/`foreign-universe`),
+  naming the parameter's position and carrying the required and supplied
+  universes as lowercase hex, before conformance is considered, so a reference
+  that is both foreign-universe and nonconforming keeps this refusal. It SHALL
+  refuse `WrongValueKind`, naming the parameter's position, before the call
+  and with no charge, when:
   - a node's shape is not its declared type's kind (for example, a
     sequence for a `Set`, a record for an `Option`, a `float32` for a
-    `Float64`, or a decimal for a `Rational`);
+    `Float64`, a decimal for a `Rational`, a String, UUID or Timestamp
+    object for a parameter of any other declared type, or a `text` value for
+    a `String`, `UUID` or `Timestamp` parameter, with no payload read as
+    another kind);
   - an enum, record, tuple or union `name` is not the declared type's
     declaration node id, or a quantity's `unit` is not the declared unit;
   - an enum or union `member` is not a member of that declaration;
@@ -156,8 +180,12 @@ value (`unknown_required_feature`/`unsupported-feature`, construct
     order, or an absent or `null` slot is given for a field that does not
     admit it;
   - an arity differs from the declaration;
-  - a reference's `object_type` is not the declared `Reference<T>`'s
-    effective object type;
+  - a reference's `object_type` names no object type of the model, or names a
+    type that is neither the declared `Reference<T>`'s object type nor a type
+    that conforms to it (QSpec FR-151; the reference admission of FR-100), so
+    a proper subtype's reference is a `Reference<T>`; or a reference's
+    `identity` is empty or not UTF-8, which the kernel's object identity
+    constructor never accepts (FR-100);
   - a `set` or `ordered-set` holds two elements the kernel's equality
     relates (decimals compare by numeric value, so `1.0` and `1.00` are
     duplicates, though FR-070 gives them distinct value texts);
@@ -166,12 +194,17 @@ value (`unknown_required_feature`/`unsupported-feature`, construct
     FR-144-AC-6, FR-323-AC-3), so such a value matches no declared type and
     fails conversion as a kind mismatch.
 - An enum member converts to the kernel member with its declared rank. A
-  text converts to a kernel text of the declared text type. A rational,
+  text converts to a kernel text of the declared text type. A String object
+  converts to a kernel String of its exact scalar sequence, which no content
+  refuses, and a UUID or Timestamp object converts through the kernel's
+  canonical constructor, which refuses a noncanonical spelling
+  `invalid_runtime_input`/`invalid-value` (FR-070, FR-056). A rational,
   decimal, float or quantity converts exactly, with no rounding. A
-  reference converts to the kernel object reference, which a predicate
-  replay holds as a value. A replayed function has no object environment,
-  so a call that dereferences one completes no value and settles
-  `inconclusive` with cause `NoValue`.
+  reference converts to the kernel object reference of its three witness
+  components, universe, `object_type` and identity, which a predicate replay
+  holds as a value. A call that dereferences one completes a value only over
+  an object environment the request supplies (below); with none it completes
+  no value and settles `inconclusive` with cause `NoValue`.
 - The executor SHALL admit a converted argument through S6a
   (`CheckedPackage::call`), the admission every runtime argument takes,
   under FR-106's input rule: a supplied input outside its declared domain is
@@ -282,6 +315,80 @@ semantic evaluation charge. Actual successful helper work before invalid
 input is discovered SHALL remain reported in its owner budget; it SHALL
 NOT produce a semantic ChargePoint or override the original refusal cause.
 
+### The object environment
+
+A function that takes a `Reference` reads the object it names through an
+object environment. A counterexample over such a function supplies, besides
+its arguments, the environment document: a `quire.state.snapshot/v1` document
+(FR-106) listing the objects the argument references name and every object
+reachable from them by reference fields, each with every declared field, in
+populations marked `complete`. A reference argument arrives in FR-070's one
+reference spelling. An object record never travels in a witness or an `Input`
+assignment, so a record or any other value for a `Reference` parameter is a
+node whose shape is not its declared type's kind and refuses `WrongValueKind`
+as above. The executor SHALL decide the following in this order, each step
+before the next, with no charge to the call's meter:
+
+1. **Unused environment.** If the request carries `object_environment` and no
+   parameter of the selected function has a type that contains a `Reference`,
+   directly or nested in an `Option`, record, tuple, union or collection, then
+   the executor SHALL refuse `ReplayRefusal::UnusedObjectEnvironment`
+   (`invalid_runtime_input`/`unknown-member`, naming `object_environment`).
+   It decides this after the argument join and before any conversion and
+   before it reads the document. Such a function can dereference nothing.
+2. **Conversion.** Every argument converts as above, a conversion refusal or a
+   pre-call accounting settlement before step 3.
+3. **Admission.** The executor SHALL admit the named document as FR-109's
+   `Function` selection admits its current snapshot, reading it only from the
+   byte provision by its `sha256-jcs` digest, under FR-106's default
+   `ObservationLimits` (with `stage_limits` entries for their settings and
+   post-state witnessing off), by these FR-106 checks in this order, stopping
+   at the first failing condition: check 1; check 3 for its role condition
+   alone, the document's `observation` being `current` (else
+   `wrong_snapshot`/`wrong-observation`); check 4, with the document's `model`
+   equal to a model selection of the recompiled package; and checks 6, 7 and
+   8. The document's `anchor` is read for form and never compared, because a
+   function has no anchor. Checks 2, 5, 9, 10 and 11 do not apply: there is no
+   clause, invocation, `self` object, parameter map or result. The required
+   populations of check 7 are the populations that hold an object a converted
+   argument's reference names, found by its reference key, and, repeatedly,
+   FR-106's closure over their reference fields and relationship ends. The
+   admission also issues FR-364's population manifest and bundle, whose
+   selection is the function's `QualifiedName` with the document's digest and
+   whose observation role is `current`. A failing condition SHALL refuse
+   `ReplayRefusal::ObjectEnvironment` holding FR-106's record, the code,
+   cause and path it names, `Refused` or `Incomplete`, and the executor SHALL
+   call nothing. A missing document is `unavailable_observation`/
+   `missing-required-artifact`, a repeated object key `invalid_runtime_input`/
+   `conflicting-identity`, an ill-typed field `invalid_runtime_input`/
+   `wrong-value-kind`, a reference to an object a complete population does not
+   list `dangling_reference`/`absent-target-in-complete-population`, and a
+   required population not marked `complete` `incomplete_population`/
+   `incomplete-scope`. Replay defines no environment grammar, code or cause of
+   its own.
+4. **Resolution.** For each reference in each converted argument, in parameter
+   order and, within an argument, in the conversion's walk order (a reference
+   nested in an `Option`, record, tuple, union or collection included), the
+   executor SHALL decide FR-364's `resolve` over the bundle and SHALL stop at
+   the first reference that is not `present`. A reference is `present` when
+   the environment holds the object whose whole reference key (universe,
+   type and identity) equals it, never one whose identity alone matches.
+   `dangling` SHALL refuse `ReplayRefusal::ObjectEnvironment` with
+   `dangling_reference`/`absent-target-in-complete-population`, and
+   `undecidable` SHALL refuse it with `incomplete_population`/
+   `incomplete-scope` as `Incomplete`; each names the parameter's position and
+   the reference. These are FR-364's names, and resolution decides no charge.
+5. **Call.** The executor SHALL call the function through S6a over the
+   admitted environment, not over unresolved references. A `deref(r).f` of a
+   held reference completes the field's stored value and the call settles as
+   FR-072 states by the Boolean it completes. Every reference reachable from a
+   held object is held, by FR-106 checks 7 and 8, so the call decides no
+   `dangling` or `undecidable` of its own; a read of an object the environment
+   does not hold is an internal fault and never a `NoValue`.
+
+A request with no `object_environment` skips steps 1, 3 and 4 and runs as
+the first paragraph of the Description states.
+
 ### Refusal and settlement
 
 - Each ADR-013 O-26 refusal SHALL be a typed `ReplayRefusal` variant with no
@@ -294,7 +401,10 @@ NOT produce a semantic ChargePoint or override the original refusal cause.
   (`DependencyInput`), a recompile
   refusal or stage limit (`stage_limit_exceeded`), a stale `package_id` (`stale_dependency`/`content-mismatch`, carrying the request's and the recompiled `package_id`), a
   selection naming no function node, an argument naming no parameter, a
-  parameter bound twice or not at all, a witness that does not decode
+  parameter bound twice or not at all, an `object_environment` the selected
+  function cannot use (`UnusedObjectEnvironment`), an environment document or
+  a reference argument that FR-106's admission or FR-364's `resolve` refuses
+  (`ObjectEnvironment`), a witness that does not decode
   (naming the request's `obligation_identity`), an S6a
   admission refusal (wrong type, or a value outside the declared
   domain), and a selected function whose declared result is not
@@ -318,9 +428,16 @@ NOT produce a semantic ChargePoint or override the original refusal cause.
 | FR-098-AC-7 | A request whose `dependencies` entries are swapped, or repeat one identity, refuses `ReplayRefusal::DependencySelections` (`invalid_package`/`invalid-value` at `/package/dependencies`) before any recompile; one carrying an extra entry no import reaches refuses `DependencySelections` after the recompile; two entries whose sources share one authority and identity refuse `ReplayRefusal::DependencyInput` (`invalid_package`/`conflicting-definition`); one lacking an entry refuses `ReplayRefusal::Recompile` carrying `missing_import`/`missing-selection` at the import; an entry naming two sources, or a definition document, refuses as a source reference that is not one source unit. None yields a verdict. | Test (TC-444) |
 | FR-098-AC-8 | Over `record Inner { a: Int[0, 9]; b?: Boolean; }`, `union Shape { Circle(Int[0, 9]), Empty }` and `record Outer { i: Inner; o: Option<Int[0, 9]>; s: Sequence<Int[0, 9]>[0, 3]; u: Shape; }`, a predicate `p(x: Outer): Boolean` replays its counterexample from an `Input` assignment and from a `Witness` entry, and each settles as AC-2 states, with the replayed call evaluating the nested values. Each of these refuses `WrongValueKind` naming position 0, before the call and with no charge: a sequence given for `o`; an `Inner` whose `name` is `Outer`'s node id; a record missing `a`, and one with an undeclared field; an absent `a`; union member `Square`; `Circle` with no component; a leaf `12` for `a`; and four elements for `s`. Over `g(v): Boolean`, whose `v` is a `Set` of a `Decimal` type with scales 0 to 2, a set holding `1.0` and `1.00` (distinct value texts, numerically equal) refuses `WrongValueKind` the same way. | Test (TC-906) |
 | FR-098-AC-9 | For the AC-8 counterexample and TC-906's unchanged full Tree, with other bounds permitting progress, occurrence-count-minus-one and converted-node-count C-1 make no call and settle `inconclusive`/`NoValue` with conversion-phase `Incomplete` preserving the configured `value_occurrences` or `work_units` and denied count. Counts at the bound admit the argument; successful replay also requires sufficient evaluation allowance. C remains converted nodes per argument, not helper visits, and contributes zero to the evaluation Meter. Direct/replay evaluation charge sequences are equal. | Test (TC-906) |
-| FR-098-AC-10 | One predicate per leaf family, each taking one parameter of that family (an enum `Color`, `Text[0, 8]`, `Rational`, a `Decimal` with scales `[0, 2]`, `Float64`, a quantity in a declared unit `m`, and a `Reference<T>`), replays its counterexample from a `Witness` entry in FR-070's witness value text and settles as AC-2 states; the reference predicate tests the reference for equality with itself and does not dereference it. Positive replay requires FR-277 AC-6's reviewed capability and typed integration for the invoked helpers: Decimal remains a mandatory positive family once IR-718's reviewed capability is enabled through IR-719 and its typed mapping is approved. Missing proof blocks implementation qualification, not a runtime unsupported/invalid/limit/storage outcome. Each of these refuses `WrongValueKind` naming position 0, before the call: an enum value naming another enum's declaration; a nine-scalar text; a decimal with scale 3; a `float32` for the `Float64`; a quantity in another unit; and a reference whose `object_type` is another type's. A predicate that dereferences its reference settles `inconclusive` with cause `NoValue`. | Test (TC-906) |
+| FR-098-AC-10 | One predicate per leaf family, each taking one parameter of that family (an enum `Color`, `Text[0, 8]`, `Rational`, a `Decimal` with scales `[0, 2]`, `Float64`, a quantity in a declared unit `m`, and a `Reference<T>`), replays its counterexample from a `Witness` entry in FR-070's witness value text and settles as AC-2 states; the reference predicate tests the reference for equality with itself and does not dereference it. Positive replay requires FR-277 AC-6's reviewed capability and typed integration for the invoked helpers: Decimal remains a mandatory positive family once IR-718's reviewed capability is enabled through IR-719 and its typed mapping is approved. Missing proof blocks implementation qualification, not a runtime unsupported/invalid/limit/storage outcome. Each of these refuses `WrongValueKind` naming position 0, before the call: an enum value naming another enum's declaration; a nine-scalar text; a decimal with scale 3; a `float32` for the `Float64`; a quantity in another unit; and a reference whose `object_type` is another type's. A predicate that dereferences its reference settles `inconclusive` with cause `NoValue` when the request carries no `object_environment`. | Test (TC-906) |
 | FR-098-AC-11 | A proved package whose one source declares `function wide using v(x: Int[0, 18446744073709551615]): Boolean pure { x <= 18446744073709551614 }` recompiles from its byte provision to the request's `package_id`, and an `Input` assignment of `x` = 18446744073709551615, carried on the replay wire as the decimal string `"18446744073709551615"`, settles `reproduced-without-witness` with the call's result `false`. The same holds for `x: Int[0, 9223372036854775808]` with body `x <= 9223372036854775807` and `x` = `"9223372036854775808"`, for `x: Int[0, 18446744073709551616]` with body `x <= 18446744073709551615` and `x` = `"18446744073709551616"`, and for `x: Int[-170141183460469231731687303715884105728, 170141183460469231731687303715884105727]` with body `x > -170141183460469231731687303715884105728` and `x` = `"-170141183460469231731687303715884105728"`. As the QSL-source stand-in for QSL-642's CG wide-range model (the u64 range CG admits under IR-624 AC35), a unit declaring `record Meter { reading: Int[0, 18446744073709551615]; }` and `function meter_over using v(m: Meter): Boolean pure { m.reading <= 18446744073709551614 }` recompiles from its byte provision to the request's `package_id`. | Test (TC-913) |
 | FR-098-AC-12 | TC-906 counts the specified conversion helper events as H: H-1 denies its actual next event unspent, H permits conversion when other bounds fit. Across multiple arguments H is cumulative and independent of each argument's node C. Original Cancel, invalid input and storage/capacity failures retain their FR-277 typed phase causes and zero evaluation consumption. | Test (TC-906) |
+| FR-098-AC-13 | TC-1028 E1 to E5 replay through the real spine. A unit declaring `function eqs using v(a: String, b: String): Boolean pure { a = b }`, its `!=` counterpart and `function equ using v(a: UUID, b: UUID): Boolean pure { a = b }` is composed and replayed from `Input` assignments that carry String values (the String wire object, `{"kind":"string","text":...}`), and each replay completes with the Boolean TC-1028 states as its evaluated value (the proved verdict is `violation`, so a `true` result settles `inconclusive` with cause `Verdicts` and a `false` result settles `reproduced-without-witness`): `""` and `""` give `true`; `"abc"` and `"abc"` give `true`; U+00E9 and U+0065 U+0301 give `false`; `"A"` and `"a"` give `false`; the text `00112233-4455-6677-8899-aabbccddeeff` and itself give `true`; the `!=` function gives the negation of each. Before the call and with no charge, each of these refuses `WrongValueKind` (`invalid_runtime_input`) naming the parameter's position, from an `Input` assignment and from a `Witness` entry: the String object whose text is `00112233-4455-6677-8899-aabbccddeeff` at position 0 of `equ`; a UUID object at position 1 of `eqs`; a Timestamp object at position 0 of `eqs`; `{"type":"text","value":"abc"}` at position 0 of `eqs`; and a String object at position 0 of the Text-parameter predicate of FR-098-AC-10. | Test (TC-1028) |
+| FR-098-AC-14 | Over the fixture of TC-1042 (`Node` with `items: Sequence<Int[0, 9]>[0, 3]`, `Hub` specializing `Node`, a complete population `G`) and the environment document S1, `function fa using v(n: Reference<M::Node>): Boolean pure { forall(x in deref(n).items: x < 5) }` replays a reference to `a` (items 3, 7) to `false` from an `Input` assignment (`reproduced-without-witness`) and from a `Witness` entry (`reproduced-with-evaluated-witness`); a reference to `b` (items 1, 2) completes `true` and settles `inconclusive` with cause `Verdicts`; a reference to the `Hub` object `h` (items 9), whose `object_type` is the proper subtype, completes `false`; a sequence of references to `b` then `a` completes `false` through two reference reads (`forall` stops at the first false); and a different `anchor` in S1 changes none of these. | Test (TC-1042) |
+| FR-098-AC-15 | With no `object_environment`, the call of `fa` over a reference to `a` settles `inconclusive` with cause `NoValue` (`unknown_required_feature`/`unsupported-feature`, construct `dereference`), while a predicate that only compares the reference with itself completes `true` and settles `Verdicts` with and without the environment. A `record` value for the `Reference` parameter refuses `WrongValueKind` naming position 0. | Test (TC-1042) |
+| FR-098-AC-16 | A reference of `Lone`'s universe for the `Node` parameter refuses `ForeignReference` (`foreign_reference`/`foreign-universe`) naming position 0, whether or not its `object_type` conforms; a `Node` reference for a `Reference<Hub>` parameter (same universe, no conformance), a reference whose `object_type` names no object type, one with the empty `identity`, and one with the identity byte `ff` each refuse `WrongValueKind` naming position 0, before the environment document is read. | Test (TC-1042) |
+| FR-098-AC-17 | A request carrying `object_environment` for a function with no `Reference` parameter refuses `UnusedObjectEnvironment` (`invalid_runtime_input`/`unknown-member`, naming `object_environment`), whether or not the document is in the byte provision, and before a wrong-kind argument of that function is converted. | Test (TC-1042) |
+| FR-098-AC-18 | The environment document refuses with `ReplayRefusal::ObjectEnvironment` holding FR-106's record, one case per condition: a digest with no byte-provision entry (`unavailable_observation`/`missing-required-artifact`); a `pre` document (`wrong_snapshot`/`wrong-observation`); a `model` digest the package does not select (`invalid_model_binding`/`wrong-model-selection`); a repeated object key (`conflicting-identity`), reported before the dangling reference the same request's argument would raise; a non-sequence and an out-of-range element for `items` (`wrong-value-kind`, `invalid-value`); a reference field to an unlisted object of a complete population (`dangling_reference`/`absent-target-in-complete-population` at check 8); and an argument's population not marked `complete` (`incomplete_population`/`incomplete-scope` naming it at check 7). The call is never made. | Test (TC-1042) |
+| FR-098-AC-19 | Against a complete population, a reference argument whose object the environment does not list refuses `dangling_reference`/`absent-target-in-complete-population` naming position 0 and the reference, and so does one whose `object_type` is another type's, within the same universe, from the held object of the same identity (a different universe refuses earlier, at conversion, as `foreign-universe`); against a population not marked `complete`, such a reference refuses `incomplete_population`/`incomplete-scope`. In a sequence of references the first one that is not present is named, and a present reference before it is not. | Test (TC-1042) |
 
 The union cases of AC-8 and AC-9 depend on QSL-503's S6a union
 arguments. A quantity-typed parameter in source (AC-10) depends on
@@ -331,7 +448,12 @@ STD-113; the quantity conversion is tested directly.
 - [FR-070](FR-070-implement-typed-counterexample-witness-envelope.md): the
   witness transcript, its witness value text and `decode`.
 - [FR-106](FR-106-admit-snapshots-and-invocations.md): inputs out of their
-  declared domain are refused input;
+  declared domain are refused input, and the admission of the object
+  environment document;
+  [FR-364](FR-364-carry-relationship-instances-in-an-observation-and-read-them-for-navigation.md):
+  the population manifest, the bundle and `resolve`;
+  [FR-109](FR-109-run-a-state-clause-through-the-spine.md): the `Function`
+  selection's admission of one current snapshot;
   [FR-321](FR-321-admit-supplied-union-values.md): union argument admission;
   [FR-277](FR-277-bound-every-lifecycle-operation-by-caller-limits.md):
   `LimitExceeded`.

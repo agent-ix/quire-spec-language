@@ -78,9 +78,13 @@ mod dispatch_link;
 pub use dispatch_link::PendingLinks;
 mod facts;
 mod family;
+// The scalar limits of a caller that bounds nothing itself, for the model
+// layer's kernel admissions (a Text snapshot value's retention).
+pub(crate) use family::SCALAR_LIMITS_UNLIMITED as UNBOUNDED_SCALAR_LIMITS;
 mod field_refinement;
 mod identity;
 mod model_conformance;
+mod navigation;
 // The nested expression forms of TC-415, shared by this crate's tests and the
 // package emitter's tests, so only `test-support` exposes them.
 #[cfg(any(test, feature = "test-support"))]
@@ -222,12 +226,14 @@ pub use identity::{
 };
 pub use ir::{CollectionLoss, CollectionProperty, DispatchCandidate, DispatchTable};
 pub use model_conformance::ModelConformanceFailure;
+pub use navigation::{EndDeclaration, EndSide, RelationshipDeclaration, Relationships};
 pub use protocol_clause::{CheckedAttempt, CheckedProtocol, ProtocolNodeId};
 pub use refusal::{
-    AliasKind, CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, DispatchFunctionRole,
-    DispatchLinkCause, DispatchSubtypeFailure, InvalidDispatchDeclaration, KeyFault,
-    MeasureObligation, Obligation, ProtocolAnchorCause, ProtocolReferenceCause, ProvedInterval,
-    ShadowedDeclaration, StageLimitCause, WrongSnapshotCause,
+    AliasKind, AmbiguousMember, CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage,
+    DispatchFunctionRole, DispatchLinkCause, DispatchSubtypeFailure, InvalidDispatchDeclaration,
+    KeyFault, MeasureObligation, MemberCandidate, NavigationBound, Obligation, ProtocolAnchorCause,
+    ProtocolReferenceCause, ProvedInterval, ShadowedDeclaration, StageLimitCause,
+    WrongSnapshotCause,
 };
 
 /// A checked function.
@@ -782,6 +788,7 @@ impl PackageDeclarations {
         )
         .with_variant_types(self.variant_types)
         .with_model_records(self.model_records)
+        .with_relationships(self.relationships)
         .with_imports(self.imports)
         .with_integer_division(self.integer_division)
         .with_complete_value(complete_value)

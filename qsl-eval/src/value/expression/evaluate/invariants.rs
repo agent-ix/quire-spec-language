@@ -890,6 +890,47 @@ fn result_stack_reference_and_import_shapes_reach_their_actual_producers() {
     });
 }
 
+/// A checked `Navigate` node (FR-363) reaching evaluation refuses
+/// `unknown_required_feature`/`unsupported-feature` naming `navigate`, never a
+/// fault: no stage resolves a relationship at run time yet.
+#[test]
+fn a_navigation_refuses_evaluation_as_an_unsupported_feature() {
+    let navigate = CheckedBody::fixture(
+        vec![ValueType::Reference(reference().object_type())],
+        |ids| NodeKind::Navigate {
+            reference: ids[0],
+            relationship: qsl_semantics::model::key::DeclarationKey::fixture("model.owns"),
+            role: "owner".to_owned(),
+        },
+        ValueType::option(ValueType::Reference(reference().object_type())),
+    );
+    let (package, _) = super::tests::population_function_package();
+    let graph = package.graph();
+    let objects = ObjectEnvironment::default();
+    let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
+    let mut machine = Machine::new(
+        graph.scope(),
+        graph,
+        &objects,
+        &mut meter,
+        graph.dispatch_tables(),
+    );
+    machine.values.push(Value::Reference(reference()));
+    let Err(Halt::Family(FamilyResult::Refused(cause))) = machine.apply(navigate.root()) else {
+        panic!("a navigation refuses as a family result");
+    };
+    let code = cause.catalog_code();
+    assert_eq!(code.code(), "unknown_required_feature");
+    assert_eq!(code.cause(), "unsupported-feature");
+    assert_eq!(
+        cause.catalog_fields(),
+        Some(std::collections::BTreeMap::from([(
+            "construct",
+            "navigate".to_owned()
+        )]))
+    );
+}
+
 #[test]
 #[trace("TC-917", "FR-090-AC-15", "FR-090-AC-16")]
 fn query_type_consumers_are_exercised_individually_after_population_resolution() {

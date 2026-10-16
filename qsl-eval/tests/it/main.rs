@@ -24,6 +24,7 @@ mod float_rounding;
 mod inherited_attributes;
 mod kernel_refusal_payloads;
 mod model_reference_queries;
+mod native_scalar_equality;
 mod protocol_reference;
 mod source_call;
 mod state_model_family;

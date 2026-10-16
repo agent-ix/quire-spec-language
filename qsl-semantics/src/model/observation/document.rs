@@ -15,8 +15,9 @@ use super::helpers::{admission_record, object_reference};
 use super::tree::{read_raw_value, Json, Object};
 use super::{
     check_document_digest, fault, incomplete, population_universe, refuse, AdmissionFailure,
-    AdmissionRecord, DocumentRef, ModelView, ObservationLimits, OutOfRange, PathStep,
-    PostStateRange, RawForm, RawValue, ReadMeter, SelectedObject, SnapshotValue,
+    AdmissionRecord, DocumentRef, ModelView, NativeKind, ObservationLimits, OutOfRange, PathStep,
+    PostStateRange, RawForm, RawNative, RawNativeKind, RawValue, ReadMeter, SelectedObject,
+    SnapshotValue,
 };
 use crate::model::key::DeclarationKey;
 use crate::model::object_environment::ObjectEnvironment;
@@ -93,7 +94,7 @@ pub(super) struct RawPopulation {
 /// pattern) converts it once, at read (`read_snapshot_body`), so no caller
 /// compares `SnapshotDocument::observation` against a string literal.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum ObservationRole {
+pub enum ObservationRole {
     /// `current`.
     Current,
     /// `pre`.
@@ -110,6 +111,8 @@ pub(super) struct SnapshotDocument {
     pub(super) invocation: Option<InvocationLabels>,
     pub(super) model: ModelHeader,
     pub(super) populations: Vec<RawPopulation>,
+    /// The snapshot's `relationships` entries, in document order (FR-106).
+    pub(super) relationships: Vec<super::relationships::RawEntry>,
 }
 
 /// The four FR-001 labels of an invocation document's own `identity`: how
@@ -342,6 +345,7 @@ pub(super) fn read_document(
             "invocation",
             "model",
             "populations",
+            "relationships",
         ],
         DocumentKind::Invocation | DocumentKind::InvocationCall => INVOCATION_MEMBERS,
     };
@@ -619,12 +623,14 @@ fn read_snapshot_body(
         None => None,
     };
     let populations = read_populations(object, meter)?;
+    let relationships = super::relationships::read_relationships(object, meter)?;
     Ok(SnapshotDocument {
         observation,
         anchor,
         invocation,
         model,
         populations,
+        relationships,
     })
 }
 
@@ -891,7 +897,7 @@ fn field_kind_matches(raw: &SnapshotValue, value_type: &quire_exact::ValueType) 
             | (RawForm::Sequence(_), quire_exact::ValueType::Collection(_))
             | (RawForm::Record(_), quire_exact::ValueType::Composite(_))
             | (RawForm::Variant(_), quire_exact::ValueType::Enum(_))
-    )
+    ) || matches!(raw.form(), RawForm::Native(_))
 }
 
 /// An object type's own field's raw kind test: presence
@@ -909,6 +915,11 @@ fn object_field_kind_matches(
     value_type: &quire_exact::ValueType,
     presence: quire_exact::Presence,
 ) -> bool {
+    // A native payload object is judged by `admit_native`, whose order puts
+    // its own envelope defects before declared-type fit.
+    if matches!(raw, RawForm::Native(_)) {
+        return true;
+    }
     if presence == quire_exact::Presence::Optional {
         return matches!(raw, RawForm::Absent | RawForm::Present(_));
     }
@@ -1229,11 +1240,142 @@ fn admit_leaf(
         (RawForm::Variant(variant), quire_exact::ValueType::Enum(slot)) => {
             admit_variant(references, variant, slot)
         }
+        (RawForm::Native(native), value_type) => admit_native(native, value_type),
         _ => Err(admission_record(
             Code::InvalidRuntimeInput,
             "wrong-value-kind",
         )),
     }
+}
+
+/// A native payload object's kind and payload text, once its envelope is
+/// sound. The first defect refuses, in FR-106's native order: a `kind` that
+/// is not text (`wrong-value-kind`), a `kind` that names no native kind
+/// (`invalid-value`, the members unexamined), a missing payload member
+/// (`missing-member`), an unknown member (`unknown-member`, the first in
+/// document order), and a payload that is not text (`wrong-value-kind`).
+/// Each names the member.
+#[qsl_attrs::string_edge]
+fn native_payload(native: RawNative<'_>) -> Result<(NativeKind, &str), AdmissionRecord> {
+    let refuse = |cause: &'static str, member: &str| {
+        admission_record(Code::InvalidRuntimeInput, cause).with("member", member.to_owned())
+    };
+    let kind = match native.kind() {
+        RawNativeKind::NotText => return Err(refuse("wrong-value-kind", "kind")),
+        RawNativeKind::Unknown => return Err(refuse("invalid-value", "kind")),
+        RawNativeKind::Known(kind) => kind,
+    };
+    let member = match kind {
+        NativeKind::String | NativeKind::Uuid | NativeKind::Text => "text",
+        NativeKind::Timestamp => "nanoseconds",
+    };
+    let Some((_, payload)) = native.members().find(|(name, _)| *name == member) else {
+        return Err(refuse("missing-member", member));
+    };
+    if let Some((unknown, _)) = native.members().find(|(name, _)| *name != member) {
+        return Err(refuse("unknown-member", unknown));
+    }
+    payload
+        .map(|text| (kind, text))
+        .ok_or_else(|| refuse("wrong-value-kind", member))
+}
+
+/// A native payload object admitted as a value of `value_type` (FR-106's
+/// native order): the envelope ([`native_payload`]), then the slot's fit
+/// (`wrong-value-kind`), then, for a UUID or a Timestamp, the kernel's
+/// canonical constructor (`invalid-value` naming the payload member, with
+/// the kernel's class) and, for a Text, its profile length ([`admit_text`]).
+/// A String has every Unicode scalar sequence as a value, so it has no
+/// payload refusal.
+fn admit_native(
+    native: RawNative<'_>,
+    value_type: &quire_exact::ValueType,
+) -> Result<Value, AdmissionRecord> {
+    let (kind, payload) = native_payload(native)?;
+    let invalid = |refusal: quire_exact::ConstructionRefusal, member: &'static str| {
+        admission_record(Code::InvalidRuntimeInput, "invalid-value")
+            .with("member", member)
+            .kernel_class(refusal.cause)
+    };
+    match (kind, value_type) {
+        (NativeKind::String, quire_exact::ValueType::String) => {
+            Ok(Value::String(payload.to_owned()))
+        }
+        (NativeKind::Uuid, quire_exact::ValueType::Uuid) => {
+            quire_exact::Uuid::from_canonical_text(payload)
+                .map(Value::Uuid)
+                .map_err(|refusal| invalid(refusal, "text"))
+        }
+        (NativeKind::Timestamp, quire_exact::ValueType::Timestamp) => {
+            quire_exact::Timestamp::from_canonical_text(payload)
+                .map(Value::Timestamp)
+                .map_err(|refusal| invalid(refusal, "nanoseconds"))
+        }
+        (NativeKind::Text, quire_exact::ValueType::Text(declared)) => admit_text(payload, declared),
+        // Type fit (check 6) refuses every other pairing before any length.
+        (
+            NativeKind::String | NativeKind::Uuid | NativeKind::Timestamp | NativeKind::Text,
+            quire_exact::ValueType::Boolean
+            | quire_exact::ValueType::Integer
+            | quire_exact::ValueType::Int(_)
+            | quire_exact::ValueType::Rational(_)
+            | quire_exact::ValueType::Decimal(_)
+            | quire_exact::ValueType::Float(_)
+            | quire_exact::ValueType::Quantity(_)
+            | quire_exact::ValueType::Text(_)
+            | quire_exact::ValueType::String
+            | quire_exact::ValueType::Uuid
+            | quire_exact::ValueType::Timestamp
+            | quire_exact::ValueType::Enum(_)
+            | quire_exact::ValueType::Option(_)
+            | quire_exact::ValueType::Composite(_)
+            | quire_exact::ValueType::Collection(_)
+            | quire_exact::ValueType::Reference(_)
+            | quire_exact::ValueType::Population(_),
+        ) => Err(admission_record(
+            Code::InvalidRuntimeInput,
+            "wrong-value-kind",
+        )),
+    }
+}
+
+/// A Text payload admitted into `declared` (FR-106 check 7): the kernel
+/// retains the sequence under the declared profile, and a profile length
+/// outside `[min, max]`, measured on the retained sequence, refuses
+/// `invalid-value` naming `text`, the declared type (`expected`) and the
+/// measured length (`actual`). Nothing is trimmed, truncated or repaired.
+#[qsl_attrs::string_edge]
+fn admit_text(payload: &str, declared: &quire_exact::TextType) -> Result<Value, AdmissionRecord> {
+    let profile = declared.profile();
+    let retained: String = match profile.normalization() {
+        Some(form) => form.apply(payload).collect(),
+        None => payload.to_owned(),
+    };
+    let measured = profile.length(&retained);
+    if !(declared.min()..=declared.max()).contains(&measured) {
+        return Err(admission_record(Code::InvalidRuntimeInput, "invalid-value")
+            .with("member", "text")
+            .with(
+                "expected",
+                format!(
+                    "Text[{}, {}; {}]",
+                    declared.min(),
+                    declared.max(),
+                    profile.as_str()
+                ),
+            )
+            .with("actual", measured.to_string()));
+    }
+    let mut meter = quire_exact::Meter::new(crate::check::UNBOUNDED_SCALAR_LIMITS);
+    quire_exact::admit_text(
+        &quire_exact::TextPayload::from_utf8(payload.as_bytes())
+            .map_err(|_| admission_record(Code::InvalidRuntimeInput, "invalid-value"))?,
+        declared,
+        &mut meter,
+    )
+    .completed()
+    .map(Value::Text)
+    .ok_or_else(|| admission_record(Code::InvalidRuntimeInput, "invalid-value"))
 }
 
 /// A `variant` form admitted as a value of the enum type `slot` (FR-360
@@ -1427,6 +1569,14 @@ fn admit_value<'a: 'w, 'w>(
                             });
                             work.push(Admit::Enter(PathStep::OptionValue));
                         }
+                        // The native order refuses an envelope defect before
+                        // the slot's fit.
+                        RawForm::Native(native) => {
+                            return Err(match native_payload(native) {
+                                Err(record) => record.at(path.clone()),
+                                Ok(_) => refuse_at("wrong-value-kind", &path),
+                            });
+                        }
                         _ => return Err(refuse_at("wrong-value-kind", &path)),
                     }
                     continue;
@@ -1565,7 +1715,11 @@ fn collect_references(raw: &SnapshotValue, into: &mut Vec<(String, String)>) {
             RawForm::Record(record) => {
                 pending.extend(record.fields().rev().map(|(_, value)| value.form()));
             }
-            RawForm::Boolean(_) | RawForm::Integer(_) | RawForm::Absent | RawForm::Variant(_) => {}
+            RawForm::Boolean(_)
+            | RawForm::Integer(_)
+            | RawForm::Native(_)
+            | RawForm::Absent
+            | RawForm::Variant(_) => {}
         }
     }
 }
@@ -1580,6 +1734,11 @@ pub(super) struct PopulationValues<'t> {
     objects: Vec<(ObjectReference, Vec<(&'t str, FieldValue)>)>,
     pub(super) completeness: BTreeMap<String, bool>,
     pub(super) keys_by_population: BTreeMap<String, BTreeSet<String>>,
+    /// The entries of the snapshot's `relationships` member that passed
+    /// checks 6.6 to 6.9 (FR-364).
+    pub(super) extents: Vec<super::relationships::CheckedExtent>,
+    /// The package facts the extent store is built from.
+    facts: super::relationships::ModelFacts,
     /// Each reference that named no object of this snapshot, with the wire
     /// population it named ([`References`]).
     unresolved: Vec<(String, ObjectReference)>,
@@ -1599,10 +1758,12 @@ pub(super) fn admit_population_values<'t>(
     views: &[ModelView],
     types: &'t TypeEnvironment,
     populations: &[RawPopulation],
+    relationships: &[super::relationships::RawEntry],
     range: PostStateRange,
     ancestor_steps: u64,
 ) -> Result<PopulationValues<'t>, AdmissionFailure> {
     let mut objects: Vec<(ObjectReference, Vec<(&str, FieldValue)>)> = Vec::new();
+    let mut listed = super::relationships::Listed::new();
     let mut completeness = BTreeMap::new();
     let mut keys_by_population: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     let mut references = References::over(views, types, populations);
@@ -1768,6 +1929,12 @@ pub(super) fn admit_population_values<'t>(
             // own `invalid-value` (SR-750 FND-004 round 2): propagated
             // directly, never re-mapped to a `Fault`.
             let reference = object_reference(views, effective_type, &object.key)?;
+            if !listed.contains_key(&entry.population) {
+                listed.insert(entry.population.clone(), BTreeMap::new());
+            }
+            if let Some(objects) = listed.get_mut(&entry.population) {
+                objects.insert(object.key.clone(), reference.clone());
+            }
             out_of_range.extend(breaches.into_iter().map(|(field, breach)| OutOfRange {
                 object: reference.clone(),
                 field,
@@ -1780,10 +1947,16 @@ pub(super) fn admit_population_values<'t>(
         }
     }
 
+    // 6.6 to 6.9: the `relationships` entries, after the last object.
+    let facts = super::relationships::model_facts(views, types);
+    let extents = super::relationships::check_entries(types, &facts, relationships, &listed)?;
+
     Ok(PopulationValues {
         objects,
         completeness,
         keys_by_population,
+        extents,
+        facts,
         unresolved: references.unresolved,
         out_of_range,
     })
@@ -1801,6 +1974,7 @@ pub(super) fn admit_state_machine_context_values<'t>(
     context_view: &ModelView,
     context_name: &str,
     populations: &[RawPopulation],
+    relationships: &[super::relationships::RawEntry],
     observation: &DocumentRef,
     invocation: &DocumentRef,
     range: PostStateRange,
@@ -1941,7 +2115,14 @@ pub(super) fn admit_state_machine_context_values<'t>(
         effective_type,
         object,
     );
-    let mut values = admit_population_values(views, types, &ordinary, range, ancestor_steps)?;
+    let mut values = admit_population_values(
+        views,
+        types,
+        &ordinary,
+        relationships,
+        range,
+        ancestor_steps,
+    )?;
     values
         .out_of_range
         .extend(breaches.into_iter().map(|(field, breach)| OutOfRange {
@@ -2033,6 +2214,7 @@ pub(super) fn check_population_completeness(
     completeness: &BTreeMap<String, bool>,
     self_population: Option<&str>,
     parameter_populations: &[String],
+    extents: &[super::relationships::CheckedExtent],
 ) -> Result<(), AdmissionFailure> {
     // Built from the wire-declared `reference.population` (SR-750 FND-001):
     // a dangling reference (whose target this call never admits into
@@ -2064,6 +2246,8 @@ pub(super) fn check_population_completeness(
                 }
             }
         }
+        // An instance end makes the population of its other end required.
+        grew |= super::relationships::extend_required(&mut required, extents);
         if !grew {
             break;
         }
@@ -2085,6 +2269,13 @@ pub(super) fn check_population_completeness(
             walk_order.push(name);
         }
     }
+    // A declared population only an instance end made required follows them
+    // all (check 6.8 admitted only declared populations at instance ends).
+    for name in super::relationships::end_populations(extents) {
+        if required.contains(name) && !walk_order.contains(&name) {
+            walk_order.push(name);
+        }
+    }
     for name in walk_order {
         if required.contains(name) && completeness.get(name).copied() != Some(true) {
             return Err(incomplete(
@@ -2093,7 +2284,7 @@ pub(super) fn check_population_completeness(
             ));
         }
     }
-    Ok(())
+    super::relationships::check_unlisted_ends(extents, completeness)
 }
 
 /// FR-106 check 8: closure, skipped over an incomplete population, over
@@ -2104,6 +2295,7 @@ pub(super) fn check_population_closure(
     populations: &[RawPopulation],
     completeness: &BTreeMap<String, bool>,
     keys_by_population: &BTreeMap<String, BTreeSet<String>>,
+    extents: &[super::relationships::CheckedExtent],
 ) -> Result<(), AdmissionFailure> {
     for entry in populations {
         for object in &entry.objects {
@@ -2132,7 +2324,8 @@ pub(super) fn check_population_closure(
             }
         }
     }
-    Ok(())
+    // After the `reference` values: the instance ends.
+    super::relationships::check_dangling_ends(extents)
 }
 
 /// Builds the final [`AdmittedEnvironment`] from `values`, once checks 6, 7
@@ -2167,11 +2360,18 @@ pub(super) fn finish_populations(
         widened = widen_ranges(types)?;
         &widened
     };
+    let extents = super::relationships::build_extents(
+        types,
+        values.facts,
+        &values.extents,
+        &values.completeness,
+    )?;
     let environment = ObjectEnvironment::new(
         ObjectClosure::new(closure_types, values.objects, &tolerated)
             .map_err(map_environment_refusal)?,
     )
-    .with_out_of_range(out_of_range.clone());
+    .with_out_of_range(out_of_range.clone())
+    .with_extents(extents);
     Ok(AdmittedEnvironment {
         environment,
         completeness: values.completeness,
@@ -2220,6 +2420,7 @@ pub(super) fn admit_populations(
     views: &[ModelView],
     types: &TypeEnvironment,
     populations: &[RawPopulation],
+    relationships: &[super::relationships::RawEntry],
     self_population: Option<&str>,
     ancestor_steps: u64,
 ) -> Result<AdmittedEnvironment, AdmissionFailure> {
@@ -2227,14 +2428,22 @@ pub(super) fn admit_populations(
         views,
         types,
         populations,
+        relationships,
         PostStateRange::Refuse,
         ancestor_steps,
     )?;
-    check_population_completeness(populations, &values.completeness, self_population, &[])?;
+    check_population_completeness(
+        populations,
+        &values.completeness,
+        self_population,
+        &[],
+        &values.extents,
+    )?;
     check_population_closure(
         populations,
         &values.completeness,
         &values.keys_by_population,
+        &values.extents,
     )?;
     finish_populations(types, values)
 }
@@ -2722,5 +2931,231 @@ mod tests {
         let mut found = Vec::new();
         collect_references(&raw, &mut found);
         assert_eq!(found, [("p".to_owned(), "k".to_owned())]);
+    }
+
+    /// A `Text[min, max; profile]` slot.
+    fn text_slot(min: u64, max: u64, profile: quire_exact::TextProfile) -> quire_exact::ValueType {
+        quire_exact::ValueType::Text(
+            quire_exact::TextType::new(min, max, profile).expect("the bounds are not empty"),
+        )
+    }
+
+    fn title() -> quire_exact::ValueType {
+        text_slot(1, 8, quire_exact::TextProfile::Nfc)
+    }
+
+    fn tag() -> quire_exact::ValueType {
+        text_slot(0, 4, quire_exact::TextProfile::UnicodeScalars)
+    }
+
+    fn code() -> quire_exact::ValueType {
+        text_slot(0, 4, quire_exact::TextProfile::BinaryUtf8)
+    }
+
+    /// The Text object of `text`, admitted into `slot`.
+    fn admit_text_object(
+        text: &str,
+        slot: &quire_exact::ValueType,
+    ) -> Result<Value, AdmissionRecord> {
+        let object = snapshot(&serde_json::json!({"kind": "text", "text": text}).to_string());
+        let RawForm::Native(native) = object.form() else {
+            panic!("a native object");
+        };
+        admit_native(native, slot)
+    }
+
+    /// The retained sequence of an admitted Text value.
+    fn retained(admitted: Result<Value, AdmissionRecord>) -> String {
+        match admitted {
+            Ok(Value::Text(text)) => text.retained().to_owned(),
+            other => panic!("a Text value, not {other:?}"),
+        }
+    }
+
+    /// TC-1038 step 2 (FR-106-AC-33): each text admits into its declared
+    /// type; under `nfc` U+00E9 and U+0065 U+0301 retain one sequence and
+    /// sixteen supplied scalars retain eight.
+    #[trace("TC-1038", "FR-106-AC-33")]
+    #[test]
+    fn a_text_object_admits_into_a_text_slot_under_its_profile() {
+        for text in ["a", "abcdefgh", "a;b>>>c", "\u{e9}", "\u{0}", "\u{1f600}"] {
+            assert_eq!(retained(admit_text_object(text, &title())), text);
+        }
+        assert_eq!(retained(admit_text_object("e\u{301}", &title())), "\u{e9}");
+        assert_eq!(
+            retained(admit_text_object(&"e\u{301}".repeat(8), &title())),
+            "\u{e9}".repeat(8)
+        );
+        // Unicode scalars and bytes retain what was supplied.
+        assert_eq!(
+            retained(admit_text_object(&"\u{e9}".repeat(4), &tag())),
+            "\u{e9}".repeat(4)
+        );
+        assert_eq!(retained(admit_text_object("", &tag())), "");
+        for text in ["abcd", "\u{e9}\u{e9}", "\u{1f600}"] {
+            assert_eq!(retained(admit_text_object(text, &code())), text);
+        }
+    }
+
+    /// TC-1038 step 4 (FR-106-AC-34): each object defect refuses in the
+    /// payload order, the first defect naming its member.
+    #[trace("TC-1038", "FR-106-AC-34")]
+    #[test]
+    fn a_defective_text_object_refuses_in_the_payload_order() {
+        for (object, cause, member) in [
+            (r#"{"kind":1}"#, "wrong-value-kind", Some("kind")),
+            (r#"{"kind":null}"#, "wrong-value-kind", Some("kind")),
+            (r#"{"kind":{}}"#, "wrong-value-kind", Some("kind")),
+            (
+                r#"{"kind":"Text","text":"x"}"#,
+                "invalid-value",
+                Some("kind"),
+            ),
+            (
+                r#"{"kind":"TEXT","text":"x"}"#,
+                "invalid-value",
+                Some("kind"),
+            ),
+            (
+                r#"{"kind":"blob","value":"x"}"#,
+                "invalid-value",
+                Some("kind"),
+            ),
+            (
+                r#"{"kind":"blob","text":"x"}"#,
+                "invalid-value",
+                Some("kind"),
+            ),
+            (r#"{"kind":"text"}"#, "missing-member", Some("text")),
+            (
+                r#"{"kind":"text","nanoseconds":"0"}"#,
+                "missing-member",
+                Some("text"),
+            ),
+            (
+                r#"{"kind":"text","text":"Ready","extra":1}"#,
+                "unknown-member",
+                Some("extra"),
+            ),
+            (
+                r#"{"kind":"text","text":"Ready","nanoseconds":"0"}"#,
+                "unknown-member",
+                Some("nanoseconds"),
+            ),
+            (
+                r#"{"kind":"text","text":5}"#,
+                "wrong-value-kind",
+                Some("text"),
+            ),
+            (
+                r#"{"kind":"text","text":null}"#,
+                "wrong-value-kind",
+                Some("text"),
+            ),
+            (
+                r#"{"kind":"text","text":true}"#,
+                "wrong-value-kind",
+                Some("text"),
+            ),
+            (
+                r#"{"kind":"text","text":["x"]}"#,
+                "wrong-value-kind",
+                Some("text"),
+            ),
+            (
+                r#"{"kind":"text","text":{}}"#,
+                "wrong-value-kind",
+                Some("text"),
+            ),
+            (
+                r#"{"extra":1,"kind":"text","text":5}"#,
+                "unknown-member",
+                Some("extra"),
+            ),
+        ] {
+            let object_value = snapshot(object);
+            let RawForm::Native(native) = object_value.form() else {
+                panic!("a native object: {object}");
+            };
+            let Err(record) = admit_native(native, &title()) else {
+                panic!("a refusal: {object}");
+            };
+            assert_eq!(record.code, Code::InvalidRuntimeInput, "{object}");
+            assert_eq!(record.cause, cause, "{object}");
+            assert_eq!(
+                record.fields.get("member").map(String::as_str),
+                member,
+                "{object}"
+            );
+        }
+    }
+
+    /// TC-1038 step 5 (FR-106-AC-35): a String object in a Text slot and a
+    /// Text object in any other native slot refuse `wrong-value-kind`
+    /// naming no member, and a Text object longer than the Text slot's
+    /// maximum placed in a String slot refuses fit, not length.
+    #[trace("TC-1038", "FR-106-AC-35")]
+    #[test]
+    fn text_and_string_objects_fit_only_their_own_slots() {
+        let string_object = snapshot(r#"{"kind":"string","text":"Ready"}"#);
+        let RawForm::Native(native) = string_object.form() else {
+            panic!("a native object");
+        };
+        let refusal = admit_native(native, &title()).expect_err("a String fits no Text slot");
+        assert_eq!(refusal.code, Code::InvalidRuntimeInput);
+        assert_eq!(refusal.cause, "wrong-value-kind");
+        assert!(!refusal.fields.contains_key("member"));
+        for slot in [
+            quire_exact::ValueType::String,
+            quire_exact::ValueType::Uuid,
+            quire_exact::ValueType::Timestamp,
+            quire_exact::ValueType::Integer,
+        ] {
+            for text in ["Ready", "00112233-4455-6677-8899-aabbccddeeff", "aaaaaaaaa"] {
+                let refusal = admit_text_object(text, &slot).expect_err("a Text fits no such slot");
+                assert_eq!(refusal.cause, "wrong-value-kind", "{slot:?} {text}");
+                assert!(!refusal.fields.contains_key("member"), "{slot:?} {text}");
+            }
+        }
+        // A defect before type fit still wins: `text` 5 in a UUID slot.
+        let broken = snapshot(r#"{"kind":"text","text":5}"#);
+        let RawForm::Native(native) = broken.form() else {
+            panic!("a native object");
+        };
+        let refusal = admit_native(native, &quire_exact::ValueType::Uuid).expect_err("refused");
+        assert_eq!(refusal.cause, "wrong-value-kind");
+        assert_eq!(
+            refusal.fields.get("member").map(String::as_str),
+            Some("text")
+        );
+    }
+
+    /// TC-1038 step 6 (FR-106-AC-36): the length is the profile length of the
+    /// retained sequence; a text outside the declared bounds refuses
+    /// `invalid-value` naming `text`, the declared type and the measured
+    /// length.
+    #[trace("TC-1038", "FR-106-AC-36")]
+    #[test]
+    fn a_text_outside_its_declared_length_refuses_with_the_measured_length() {
+        let long = "a".repeat(65_536);
+        let pairs = |count: usize| "e\u{301}".repeat(count);
+        for (text, slot, expected, measured) in [
+            ("", title(), "Text[1, 8; nfc]", 0),
+            ("abcdefghi", title(), "Text[1, 8; nfc]", 9),
+            (pairs(9).as_str(), title(), "Text[1, 8; nfc]", 9),
+            (long.as_str(), title(), "Text[1, 8; nfc]", 65_536),
+            ("abcde", tag(), "Text[0, 4; unicode-scalars]", 5),
+            (pairs(3).as_str(), tag(), "Text[0, 4; unicode-scalars]", 6),
+            ("\u{e9}\u{e9}\u{e9}", code(), "Text[0, 4; binary-utf8]", 6),
+            ("\u{1f600}\u{1f600}", code(), "Text[0, 4; binary-utf8]", 8),
+        ] {
+            let refusal = admit_text_object(text, &slot).expect_err("outside the bounds");
+            assert_eq!(refusal.code, Code::InvalidRuntimeInput);
+            assert_eq!(refusal.cause, "invalid-value");
+            let field = |name: &str| refusal.fields.get(name).map(String::as_str);
+            assert_eq!(field("member"), Some("text"));
+            assert_eq!(field("expected"), Some(expected));
+            assert_eq!(field("actual"), Some(measured.to_string().as_str()));
+        }
     }
 }

@@ -559,6 +559,41 @@ pub struct StageLimitCause {
     pub region: Option<SourceRegion>,
 }
 
+/// One candidate of an ambiguous `r.name` (FR-363).
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum MemberCandidate {
+    /// A field of the receiver's object type.
+    Field(quire_semantic_value::declaration::FieldRef),
+    /// A relationship end navigable from the receiver, named by the role of
+    /// the end on `side` (the end nearest the receiver).
+    RelationshipEnd {
+        /// The relationship's declaration.
+        relationship: crate::model::key::DeclarationKey,
+        /// The end whose role the name matched.
+        side: super::navigation::EndSide,
+    },
+}
+
+/// [`CheckCause::AmbiguousMember`]'s payload.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct AmbiguousMember {
+    /// The ambiguous name.
+    pub name: String,
+    /// Every candidate the name matched.
+    pub candidates: Vec<MemberCandidate>,
+}
+
+/// Why a destination end's multiplicity types no navigation (FR-363).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum NavigationBound {
+    /// The destination end declares no multiplicity, and none is substituted.
+    Undeclared,
+    /// The destination end's upper bound is unbounded.
+    Unbounded,
+    /// The destination end's multiplicity is ordered.
+    Ordered,
+}
+
 /// The typed cause of a checking refusal.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum CheckCause {
@@ -594,6 +629,14 @@ pub enum CheckCause {
         /// Every declaring locus.
         loci: Vec<Location>,
     },
+    /// FR-363: `r.name` names more than one candidate, a field and a
+    /// relationship end or two ends: `ambiguous_declaration` /
+    /// `ambiguous-name`, naming every candidate. Boxed like the other
+    /// payload-bearing causes, to keep `CheckCause` small.
+    AmbiguousMember(Box<AmbiguousMember>),
+    /// FR-363: `r.name` names a relationship end whose destination multiplicity
+    /// types no navigation: `unsupported_construct` / `expression-form`.
+    UnsupportedNavigation(NavigationBound),
     /// `ill_typed` / `type-mismatch` (FR-091): an integer literal outside
     /// `i128::MIN..=i128::MAX`, at the literal. Never a nonzero-magnitude
     /// rewrite: a literal is refused, not truncated.
@@ -996,7 +1039,8 @@ impl CheckCause {
             }
             Self::WrongSnapshot(_) | Self::UnanchoredResult { .. } => Code::WrongSnapshot,
             Self::MissingName(_) => Code::MissingDeclaration,
-            Self::AmbiguousName { .. } => Code::AmbiguousDeclaration,
+            Self::AmbiguousName { .. } | Self::AmbiguousMember(_) => Code::AmbiguousDeclaration,
+            Self::UnsupportedNavigation(_) => Code::UnsupportedConstruct,
             Self::Unproved(_) | Self::UnprovedDecrease { .. } => Code::UndefinedExpression,
             Self::SumCase(cause) => cause.code(),
             Self::ResourceExhausted(_) => Code::StageLimitExceeded,
@@ -1044,7 +1088,8 @@ impl CheckCause {
             Self::IntegerOutsideI128(_) => Some("type-mismatch"),
             Self::UnanchoredResult { .. } => Some("wrong-anchor"),
             Self::MissingName(_) => Some("missing-name"),
-            Self::AmbiguousName { .. } => Some("ambiguous-name"),
+            Self::AmbiguousName { .. } | Self::AmbiguousMember(_) => Some("ambiguous-name"),
+            Self::UnsupportedNavigation(_) => Some("expression-form"),
             Self::Unproved(Obligation::Nonzero) => Some("unproved-nonzero"),
             Self::Unproved(Obligation::Presence) => Some("unproved-presence"),
             Self::Unproved(

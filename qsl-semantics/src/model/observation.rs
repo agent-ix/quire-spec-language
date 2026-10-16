@@ -347,6 +347,10 @@ pub struct AdmissionRecord {
     /// field, parameter or result down to it, outermost first (QSpec FR-207);
     /// empty when the defect is at the checked value itself.
     pub path: Vec<PathStep>,
+    /// For a native UUID or Timestamp payload the kernel's canonical
+    /// constructor refused (FR-106 native order, step 7), the kernel's own
+    /// class beneath `invalid-value`; `None` for every other refusal.
+    pub kernel: Option<quire_exact::ConstructionCause>,
 }
 
 /// One typed step of a nested value path (QSpec FR-207): never a rendered
@@ -369,6 +373,7 @@ impl AdmissionRecord {
             cause,
             fields: BTreeMap::new(),
             path: Vec::new(),
+            kernel: None,
         }
     }
 
@@ -383,6 +388,13 @@ impl AdmissionRecord {
     #[must_use]
     fn at(mut self, path: Vec<PathStep>) -> Self {
         self.path = path;
+        self
+    }
+
+    /// This record carrying the kernel class beneath it.
+    #[must_use]
+    fn kernel_class(mut self, class: quire_exact::ConstructionCause) -> Self {
+        self.kernel = Some(class);
         self
     }
 }
@@ -534,6 +546,9 @@ pub struct SnapshotValue {
 enum RawNode {
     Boolean(bool),
     Integer(String),
+    /// A value object with a `kind` member, kept as read so admission judges
+    /// it in the native payload order.
+    Native(NativeObject),
     Absent,
     Present(usize),
     Reference(SelectedObject),
@@ -563,6 +578,10 @@ pub enum RawForm<'v> {
     Boolean(bool),
     /// `{"integer": "<decimal>"}`.
     Integer(&'v str),
+    /// A value object with a `kind` member: `{"kind": "string", "text": ..}`,
+    /// `{"kind": "uuid", "text": ..}` or `{"kind": "timestamp",
+    /// "nanoseconds": ..}`, or a defective one, as read.
+    Native(RawNative<'v>),
     /// `{"absent": {}}`.
     Absent,
     /// `{"present": <value>}`.
@@ -605,6 +624,64 @@ impl<'v> RawVariant<'v> {
     #[must_use]
     pub fn has_extra_member(self) -> bool {
         self.extra_member
+    }
+}
+
+/// The kind of a native payload value (FR-056's K2 canonical native
+/// payloads).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NativeKind {
+    /// `"string"`.
+    String,
+    /// `"uuid"`.
+    Uuid,
+    /// `"timestamp"`.
+    Timestamp,
+    /// `"text"`: admitted only into a `Text[min, max; profile]` slot; every
+    /// other slot refuses it `wrong-value-kind` (FR-106-AC-35).
+    Text,
+}
+
+/// A native payload object's `kind` member as read.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RawNativeKind {
+    /// Not a JSON string.
+    NotText,
+    /// A string that names no native kind.
+    Unknown,
+    /// A native kind.
+    Known(NativeKind),
+}
+
+/// A native payload object as read, outside its `kind` member: every other
+/// member in document order, its text or `None` where it is not a JSON
+/// string.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct NativeObject {
+    kind: RawNativeKind,
+    members: Vec<(String, Option<String>)>,
+}
+
+/// A native payload object as read (see [`RawForm::Native`]).
+#[derive(Clone, Copy, Debug)]
+pub struct RawNative<'v> {
+    kind: RawNativeKind,
+    members: &'v [(String, Option<String>)],
+}
+
+impl<'v> RawNative<'v> {
+    /// The `kind` member.
+    #[must_use]
+    pub fn kind(self) -> RawNativeKind {
+        self.kind
+    }
+
+    /// Every member other than `kind`, in document order: its name and its
+    /// text, `None` where it is not a JSON string.
+    pub fn members(self) -> impl Iterator<Item = (&'v str, Option<&'v str>)> {
+        self.members
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_deref()))
     }
 }
 
@@ -678,6 +755,15 @@ impl SnapshotValue {
     #[must_use]
     pub fn integer(spelling: impl Into<String>) -> Self {
         Self::single(RawNode::Integer(spelling.into()))
+    }
+
+    /// A native payload object: its `kind` and every other member in
+    /// document order, each with its text or `None` where it is not a JSON
+    /// string. Admission judges it in the native payload order, so a defective
+    /// object is held as read.
+    #[must_use]
+    pub fn native(kind: RawNativeKind, members: Vec<(String, Option<String>)>) -> Self {
+        Self::single(RawNode::Native(NativeObject { kind, members }))
     }
 
     /// `{"absent": {}}`.
@@ -772,6 +858,10 @@ impl SnapshotValue {
         match &self.nodes[index] {
             RawNode::Boolean(value) => RawForm::Boolean(*value),
             RawNode::Integer(spelling) => RawForm::Integer(spelling),
+            RawNode::Native(native) => RawForm::Native(RawNative {
+                kind: native.kind,
+                members: &native.members,
+            }),
             RawNode::Absent => RawForm::Absent,
             RawNode::Present(inner) => RawForm::Present(RawValue {
                 arena: self,
@@ -810,6 +900,8 @@ impl PartialEq for SnapshotValue {
             match pair {
                 (RawForm::Boolean(left), RawForm::Boolean(right)) if left == right => {}
                 (RawForm::Integer(left), RawForm::Integer(right)) if left == right => {}
+                (RawForm::Native(left), RawForm::Native(right))
+                    if left.kind == right.kind && left.members == right.members => {}
                 (RawForm::Absent, RawForm::Absent) => {}
                 (RawForm::Reference(left), RawForm::Reference(right)) if left == right => {}
                 (RawForm::Present(left), RawForm::Present(right)) => {
@@ -870,6 +962,7 @@ impl RawNode {
             },
             other @ (Self::Boolean(_)
             | Self::Integer(_)
+            | Self::Native(_)
             | Self::Absent
             | Self::Reference(_)
             | Self::Variant { .. }) => other,
@@ -1437,6 +1530,7 @@ pub fn admit_current_snapshot(
         &views,
         types,
         &snapshot.populations,
+        &snapshot.relationships,
         None,
         model_limits.ancestor_steps,
     )?;
@@ -1603,11 +1697,18 @@ pub fn admit_observations(
 
 mod document;
 mod encode;
+mod extents;
 mod frame;
+mod relationships;
 mod tree;
 
+pub use document::ObservationRole;
 use document::{read_document, DocumentKind};
 pub use encode::ValueEncoder;
+pub use extents::{
+    BundleKey, BundlePart, BundleRefusal, Keyed, ObservationOrigin, PopulationEnumerationFailure,
+    PopulationManifest, RelationshipExtents, ResolveBundle,
+};
 
 #[allow(clippy::too_many_arguments)]
 fn admit_invariant(
@@ -1670,6 +1771,7 @@ fn admit_invariant(
         views,
         types,
         &snapshot.populations,
+        &snapshot.relationships,
         Some(&self_object.population),
         ancestor_steps,
     )?;
@@ -1926,6 +2028,7 @@ fn admit_invocation_documents(
             context_view,
             context_name,
             &pre_snapshot.populations,
+            &pre_snapshot.relationships,
             &documents.pre.identity,
             selected,
             PostStateRange::Refuse,
@@ -1937,6 +2040,7 @@ fn admit_invocation_documents(
             context_view,
             context_name,
             &post_snapshot.populations,
+            &post_snapshot.relationships,
             &documents.post.identity,
             selected,
             post_range,
@@ -1949,6 +2053,7 @@ fn admit_invocation_documents(
                 views,
                 types,
                 &pre_snapshot.populations,
+                &pre_snapshot.relationships,
                 PostStateRange::Refuse,
                 ancestor_steps,
             )?,
@@ -1957,6 +2062,7 @@ fn admit_invocation_documents(
                 views,
                 types,
                 &post_snapshot.populations,
+                &post_snapshot.relationships,
                 post_range,
                 ancestor_steps,
             )?,
@@ -1975,22 +2081,26 @@ fn admit_invocation_documents(
             &operation.declaration,
             &invocation.call.parameters,
         ),
+        &pre_values.extents,
     )?;
     document::check_population_completeness(
         &post_snapshot.populations,
         &post_values.completeness,
         post_self_population,
         &[],
+        &post_values.extents,
     )?;
     document::check_population_closure(
         &pre_snapshot.populations,
         &pre_values.completeness,
         &pre_values.keys_by_population,
+        &pre_values.extents,
     )?;
     document::check_population_closure(
         &post_snapshot.populations,
         &post_values.completeness,
         &post_values.keys_by_population,
+        &post_values.extents,
     )?;
     let pre_admitted = document::finish_populations(types, pre_values)?;
     let post_admitted = document::finish_populations(types, post_values)?;
@@ -2197,6 +2307,7 @@ fn admit_pre_call(
             context.context_view,
             context.context_name,
             &snapshot.populations,
+            &snapshot.relationships,
             &input.pre.identity,
             &receiver_identity,
             PostStateRange::Refuse,
@@ -2209,6 +2320,7 @@ fn admit_pre_call(
                 context.views,
                 context.types,
                 &snapshot.populations,
+                &snapshot.relationships,
                 PostStateRange::Refuse,
                 context.ancestor_steps,
             )?,
@@ -2224,11 +2336,13 @@ fn admit_pre_call(
             &context.operation.declaration,
             input.parameters,
         ),
+        &values.extents,
     )?;
     document::check_population_closure(
         &snapshot.populations,
         &values.completeness,
         &values.keys_by_population,
+        &values.extents,
     )?;
     let admitted = document::finish_populations(context.types, values)?;
 
@@ -2319,8 +2433,8 @@ fn admit_operation(
     let (created, deleted) = frame::enforce(
         &frame_context,
         &binding,
-        &admitted.documents.pre()?.populations,
-        &admitted.documents.post()?.populations,
+        frame_snapshot(admitted.documents.pre()?),
+        frame_snapshot(admitted.documents.post()?),
         &invocation.created,
         &invocation.deleted,
     )?;
@@ -2400,6 +2514,14 @@ impl std::fmt::Debug for AdmittedInvocation<'_> {
             .field("pre", &self.pre)
             .field("post", &self.post)
             .finish_non_exhaustive()
+    }
+}
+
+/// `snapshot` as check 11 reads it.
+fn frame_snapshot(snapshot: &document::SnapshotDocument) -> frame::FrameSnapshot<'_> {
+    frame::FrameSnapshot {
+        populations: &snapshot.populations,
+        relationships: &snapshot.relationships,
     }
 }
 
@@ -2497,6 +2619,29 @@ pub enum FrameChange {
         /// Its post most-specific type.
         post_type: DeclarationKey,
     },
+    /// A relationship instance was added or removed, and the frame's
+    /// `modifies` does not name the relationship (FR-115 step 5).
+    Link {
+        /// The relationship node's key.
+        relationship: DeclarationKey,
+        /// Whether the instance is in the post extent only or the pre only.
+        difference: LinkDifference,
+        /// The instance's source end.
+        source: SelectedObject,
+        /// The instance's target end.
+        target: SelectedObject,
+        /// The frame's checked `modifies`, in declared order.
+        modifies: Vec<DeclarationKey>,
+    },
+}
+
+/// FR-115: which extent a changed relationship instance is in.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LinkDifference {
+    /// The instance is in the post extent and not in the pre extent.
+    Added,
+    /// The instance is in the pre extent and not in the post extent.
+    Removed,
 }
 
 impl AdmittedInvocation<'_> {
@@ -2531,8 +2676,8 @@ impl AdmittedInvocation<'_> {
                 pre: &self.pre,
                 post: &self.post,
             },
-            &self.documents.pre().map_err(as_fault)?.populations,
-            &self.documents.post().map_err(as_fault)?.populations,
+            frame_snapshot(self.documents.pre().map_err(as_fault)?),
+            frame_snapshot(self.documents.post().map_err(as_fault)?),
             &invocation.created,
             &invocation.deleted,
         )
