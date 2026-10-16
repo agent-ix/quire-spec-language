@@ -126,7 +126,10 @@ then writes the value text below. QSL owns this form and its decode
 **Transcript entry.** The entry is `<parameter node id>=<escaped value
 text>`, joined by node id like every other entry. The value text is the RFC
 8785 (JCS) encoding of the value in QSpec FR-181's typed canonical form,
-limited to the shapes below.
+limited to the shapes below. The table lists each object's members in
+reading order. The value text writes them in JCS order, the ascending UTF-16
+code units of the member names, so a reference is written
+`{"identity":"<hex>","object_type":"<64 hex>","type":"reference","universe":"<64 hex>"}`.
 
 **Transcript escaping.** JCS escapes only `"`, `\` and the control
 characters U+0000 to U+001F. It writes `;`, `<` and `>` as themselves, so a
@@ -153,7 +156,7 @@ last field.
 | decimal | `{"type":"decimal","coefficient":"<decimal>","scale":"<decimal>"}`: the retained coefficient and scale, before normalization (QSpec FR-140) |
 | float | `{"type":"float32","bits":"<8 hex>"}` or `{"type":"float64","bits":"<16 hex>"}`: the exact IEEE bits, big-endian lowercase hex, so NaN payloads and signed zeros stay distinct |
 | quantity | its magnitude's rational or decimal form with an added `"unit":"<unit>"` member |
-| reference | `{"type":"reference","universe":"<64 hex>","object_type":"<64 hex>","identity":"<hex>"}`: the universe and effective object type identities, and the object's identity bytes in lowercase hex |
+| reference | `{"type":"reference","universe":"<64 hex>","object_type":"<64 hex>","identity":"<hex>"}`: the reference key of one object (QSL FR-084): the identity of its universe, the identity of its effective (most-specific) object type, both as 64 lowercase hex digits, and its identity bytes in lowercase hex. A snapshot object's identity bytes are the UTF-8 bytes of its `key` (FR-106). It is the one spelling of a Reference value; no record or object payload stands in for it |
 | `Option<T>` | `{"type":"option","value":<value>}` when present, `{"type":"option","value":null}` for `none` |
 | record | `{"type":"record","name":"<declaration>","fields":[{"name":"<field>","value":<slot>}, ...]}`, one entry per declared field in declaration order. `<slot>` is a value when present, `null` when an optional (`?`) field is absent, and `{"type":"null"}` for a `null` slot |
 | tuple | `{"type":"tuple","name":"<declaration>","components":[<value>, ...]}`, in declaration order |
@@ -196,8 +199,9 @@ parameter, when the entry:
   payload member that is not a JSON string;
 - holds a decimal string not in FR-181's spelling, a rational that is not
   reduced or whose denominator is not positive, a `bits` string of the
-  wrong length or not lowercase hex, or an `identity` that is not
-  lowercase hex of whole bytes;
+  wrong length or not lowercase hex, an `identity` that is not
+  lowercase hex of whole bytes, or a reference `universe` or `object_type`
+  that is not exactly 64 lowercase hex digits;
 - uses `{"type":"null"}` anywhere but as a record field's slot;
 - has `set` or `bag` elements out of ascending order, or two elements with
   equal JCS bytes in a `set` or an `ordered-set`.
@@ -252,6 +256,8 @@ length of its escaped value text.
 | FR-070-AC-13 | Encoding a witness value does work proportional to its output at any depth. The counted work is the number of bytes the encoder's JCS writer produces plus the number of bytes compared while ordering set and bag elements; the output is the value's JCS bytes before transcript escaping. Each value's bytes are produced once and set and bag elements are ordered by comparing finished bytes in place, so for nested sets (each level a set of the next level and a text), nested options and nested sequences (each level a sequence of the next level and an integer), doubling the depth from 5,000 to 10,000 at most triples the counted work (a subtree copied into every ancestor quadruples it); at depth 5,000 the counted work is at least the output's bytes, and at depth 10,000 it is at most three times the output's bytes. The value text's length is counted from the encoder's finished bytes: for a text value of 1,000,000 `;` characters, `value_text_len` returns 3,000,026, the length of the text `to_value_text` returns, and the encoder holds that value as one finished value whose buffers together hold at least its 1,000,026 JCS bytes, each buffer's capacity smaller than 3,000,026 bytes. | Test (TC-905) |
 | FR-070-AC-14 | One `Canonical` entry per String and Text shape decodes exactly as written: the String `a;b>>>c` (its entry holds `{"kind":"string","text":"a%3Bb%3E%3E%3Ec"}`), the empty String, the String of the scalar U+00E9, the String of the scalars U+0065 U+0301 (two unequal values), the String `say "hi"\x;` with a quote, a backslash and a semicolon (its entry holds `{"kind":"string","text":"say \"hi\"\\x%3B"}`), and the String `100%<` (its entry holds `{"kind":"string","text":"100%25%3C"}`). The Text `a;b>>>c` (its entry holds `{"type":"text","value":"a%3Bb%3E%3E%3Ec"}`) and the empty Text decode as Text values. A `string` value and a `text` value of the same scalars decode to two unequal `WitnessValue`s. A two-entry transcript `P` then `Q`, each holding the String `a;b>>>c`, parses as one assertion block and decodes both entries, so a `;` or `>` left unescaped inside either value would split or end the block. The escaped bytes of each count toward `replay.input_bytes`. | Test (TC-905) |
 | FR-070-AC-15 | Each of these entries refuses `DecodeRefusal::Malformed` naming the parameter, with no partial result: `{"kind":"string"}` and `{"kind":"string","nanoseconds":"0"}` (a missing member); `{"extra":"y","kind":"string","text":"x"}` (an extra member); `{"kind":"string","text":5}` and `{"kind":"string","text":null}` (a payload that is not a JSON string); `{"kind":"String","text":"x"}` and `{"kind":"blob","text":"x"}` (a `kind` outside the three); `{"text":"x","kind":"string"}` (members out of JCS order); a String whose JSON text writes U+00E9 as the escape `\u00e9` where JCS writes the literal scalar; a String whose JSON text holds the lone surrogate escape `\ud800`; and a raw `%` that does not begin one of the four escapes inside a String. | Test (TC-905) |
+| FR-070-AC-16 | A `Canonical` entry holding the reference `{"identity":"61","object_type":"<64 hex>","type":"reference","universe":"<64 hex>"}` decodes to one `WitnessValue::Reference` carrying the universe, the object type and the identity bytes `61`; the same entry with the empty `identity` `""` decodes too (FR-098 refuses it at conversion, not decode). | Test (TC-1042) |
+| FR-070-AC-17 | Each of these reference entries refuses `DecodeRefusal::Malformed` naming the parameter, with no partial result: a `universe` of 63 hex digits; an `object_type` written with an uppercase hex digit; an `identity` of odd length; an entry written `{"type":"reference","universe":...,"object_type":...,"identity":...}` (members in the table's reading order, not JCS order); a missing `identity`; an extra member; and a `universe` that is a JSON number. | Test (TC-1042) |
 
 ## Dependencies
 
