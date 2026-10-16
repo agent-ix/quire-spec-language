@@ -554,7 +554,7 @@ fn y03a_a_connection_against_port_direction_does_not_resolve() {
 #[trace("QSpec-TC-197", "QSpec-FR-152-AC-1", "QSpec-FR-152-AC-4")]
 #[test]
 fn y05_a_connection_narrowing_its_port_multiplicity_does_not_resolve() {
-    let world = world_with(|records| pipe(records).target.multiplicity = mult(0, Some(2)));
+    let world = world_with(|records| pipe(records).target.multiplicity = Some(mult(0, Some(2))));
     let (result, _) = resolve_m(&world, Kind::Connection, "M::pipe");
     let failures = connection_failures(result);
     assert_eq!(failures.len(), 1);
