@@ -75,8 +75,8 @@ operation `pre`/`post` text is shape-checked and not kept (QSL-726).
   order, and reporting the first that fails.
 - A `modifies` entry has a scope and a `deletes` entry has a scope (QSpec
   FR-013). FR-154 states how intake reads them, which entries a scope admits,
-  and the refusals a scoped entry gives; the order above covers scoped
-  entries too, in document order within each member, and a conflict between
+  and the refusals a scoped entry gives; the scoped members are
+  checked in the order FR-154 states, in document order within each member, and a conflict between
   two scopes of one field is reported only after every entry resolves.
 - If a frame entry names no declaration of the package, then intake SHALL
   refuse `missing_declaration`/`missing-name` at the entry, retaining the

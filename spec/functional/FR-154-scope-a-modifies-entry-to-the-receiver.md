@@ -46,8 +46,24 @@ counter's `v` is reported as a frame violation (US-019).
 ## Inputs
 
 - A domain package whose operation frames carry a scope on each `modifies`
-  entry (QSpec FR-013 with the receiver-scope amendment; the frame entry
-  shape is QSpec's, see References).
+  and `deletes` entry (QSpec FR-013 with the receiver-scope amendment).
+- The model-document form of that scope, which QSL intake reads. The `frame`
+  of an operation is a closed object with exactly these optional members; an
+  absent member is empty or false:
+  - `modifies`, `creates`, `deletes`: arrays of node identity strings, as
+    before. They mean `every-object` field entries (or relationship
+    entries), `creates` entries and type-wide `deletes` entries.
+  - `modifies_receiver`: an array of field node identity strings, the
+    receiver-scoped `modifies self.f` entries.
+  - `deletes_receiver`: a boolean, `true` for `deletes self`.
+  - `deletes_parameters`: an array of parameter-name strings, the
+    `deletes p` entries.
+
+  A member the list does not name, a member of the wrong JSON type, or an
+  array element that is not a string refuses `invalid_model_binding`/
+  `malformed-declaration` at the member. The form is this requirement's
+  reading of QSpec FR-013 for the model document; QSpec's model contract
+  does not yet spell it.
 
 ## Outputs
 
@@ -58,6 +74,7 @@ pub struct ModifiesEntry {
 }
 
 pub enum FrameScope { Receiver, EveryObject }
+// ModifiesEntry holds field entries only; a relationship entry has no scope.
 
 pub enum DeletesEntry {
     /// `deletes T`: any subset of the objects conforming to `T`.
@@ -88,25 +105,26 @@ impl StateModel {
 - **Intake.** Intake SHALL read each `modifies` entry's scope, `receiver`
   or `every-object`, into `ModifiesEntry.scope`, and each `deletes` entry's
   scope (type-wide, receiver or argument) into the effect, as QSpec FR-013
-  defines them. It SHALL resolve a `modifies` entry's field as FR-103 does,
-  and it SHALL check the entries in FR-103's order (`modifies`, then
-  `creates`, then `deletes`, each in document order), reporting the first
-  that fails, with these refusals:
-  - A `receiver` entry SHALL name a field in the effective fields of the
-    operation's declaring object type, own and inherited. An entry that names
+  defines them. It SHALL resolve a `modifies` entry's field as FR-103 does.
+  It SHALL check the frame's member shapes first, then the entries in this
+  order: `modifies`, `modifies_receiver`, `creates`, `deletes`,
+  `deletes_parameters`, each in document order, reporting the first that
+  fails, with these refusals:
+  - A `modifies_receiver` entry SHALL name a field among the fields, own and inherited, of the
+    operation's declaring object type. An entry that names
     no declaration of the package refuses `missing_declaration`/`missing-name`
     at the entry. An entry that names a declaration of any other meaning, a
     relationship, an object type, or a field of a type the declaring object
     type does not conform to, refuses `invalid_model_binding`/
     `malformed-declaration` at the entry. A relationship `modifies` entry has
     no scope.
-  - A `deletes p` entry SHALL name a parameter of the operation whose type is
+  - A `deletes_parameters` entry SHALL name a parameter of the operation whose type is
     `Reference<T>`. A name that is no parameter, or a parameter of any other
     type, refuses `missing_declaration`/`missing-name` at the entry (QSpec
-    FR-340 states the same refusal for the wire entry). `deletes self` is
+    FR-340 states the same refusal for the wire entry). `deletes_receiver: true` is
     always admitted for an operation of an object type.
-  - After every entry of the frame resolves, an `every-object` and a
-    `receiver` entry for one field SHALL refuse `invalid_model_binding`/
+  - After every entry of the frame resolves, a `modifies` entry and a
+    `modifies_receiver` entry for one field SHALL refuse `invalid_model_binding`/
     `conflicting-binding`, naming both entries and the operation, as QSpec
     FR-013 states, located at the later of the two in document order; intake
     never merges them. A field written twice with one scope, and a scoped
@@ -164,13 +182,13 @@ impl StateModel {
 | FR-154-AC-1 | The `test/counters` package of FR-120 with `increment()` framed `modifies self.value`, state `w` holding `c1` and `c2` at `value` 0, and no clause: `increment` on receiver `c1` has three successors, each changing only `c1.value`, and `c2.value` is 0 in every one. With the frame `modifies value` (every-object), the same application has nine successors, ranging both objects' `value`. | Test (TC-572) |
 | FR-154-AC-2 | `check_frame` with effect `modifies self.value`, receiver `c1`, no arguments, pre `w` and a post with `c2.value` 1 returns `frame_violation`/`unauthorized-change` naming `c2` and `value`; the same post with receiver `c2` returns a delta with no creation or deletion; with effect `modifies value` both return a delta. | Test (TC-572) |
 | FR-154-AC-3 | FR-115's `Frame` run of an invocation of `increment` on `self = c1` whose post snapshot changes `c2.value` settles `violation` with the frame witness naming `c2.value` under `modifies self.value`, and `success` under `modifies value`. The FR-106 clause-run admission of the same invocation refuses `frame_violation` under `modifies self.value`. | Test (TC-573) |
-| FR-154-AC-4 | The S4 frame node of `increment` under `modifies self.value` carries the scope `receiver`, and under `modifies value` the scope `every-object`; the two nodes' contents differ. A frame with both `modifies self.value` and `modifies value` is refused at intake with `invalid_model_binding`/`conflicting-binding` naming both entries and `increment`, and no frame node is emitted for it. | Test (TC-573) |
+| FR-154-AC-4 | The S4 frame node of `increment` under `modifies self.value` carries the scope `receiver`, and under `modifies value` the scope `every-object`; the two nodes' contents differ. A frame whose `modifies_receiver` and `modifies` both name `value` is refused at intake with `invalid_model_binding`/`conflicting-binding` naming both entries and `increment`, and no frame node is emitted for it. | Test (TC-573) |
 | FR-154-AC-5 | An operation `drop()` framed `deletes self` on receiver `c1`: `check_frame` admits a post without `c1` and refuses a post without `c2` as `frame_violation`/`unauthorized-change` naming `c2`; framed `deletes Counter`, both posts and a post without either are admitted; the S4 frame nodes of the two frames differ. | Test (TC-572) |
 | FR-154-AC-6 | The S4 frame body of `bump()` framed `modifies self.step`, `modifies value` and `deletes self` over `test/counters` is exactly TC-1043 vector W1; the body of `merge(a, b)` framed `deletes b`, `deletes a`, `deletes self` and `deletes Counter` is exactly vector W2, where `deletes_scoped` lists the receiver first and then `a` before `b` whatever the authored order, and `deletes` holds the `Counter` node reference; a frame with no entry has all four members empty (vector W3). | Test (TC-1043) |
-| FR-154-AC-7 | Frames that differ only by one entry's scope (`modifies self.value` against `modifies value`, vectors W4 and W5), or only by `deletes self` against no entry (vectors W6 and W3), have different frame node ids and different `package_id`s; the frame node of a frame with only type-wide entries carries `deletes_scoped: []` and every field entry `every-object`. | Test (TC-1043) |
-| FR-154-AC-8 | Intake refuses, at the entry named, `modifies self.nope` (`missing_declaration`/`missing-name`), `modifies self.d` where `d` is a field of `Gauge`, a type `Counter` does not conform to (`invalid_model_binding`/`malformed-declaration`), `modifies self.Supersedes` for a relationship (`invalid_model_binding`/`malformed-declaration`), and `deletes missing` and `deletes n` for an `Integer` parameter `n` (`missing_declaration`/`missing-name`); `deletes a` for a `Reference<Counter>` parameter `a`, `deletes self` admit, and so does `modifies self.value` on an operation of `Sub`, which inherits `value` from `Counter`. A frame holding both `modifies self.nope` and `modifies self.value` plus `modifies value` reports only the `missing-name` refusal, not the conflict. | Test (TC-1043) |
+| FR-154-AC-7 | Frames that differ only by one entry's scope (`modifies self.value` against `modifies value`, vectors W4 and W5), or only by `deletes self` against no entry (vectors W6 and W3), have different frame node ids, and two packages differing only by that one scope have different `package_id`s; the frame node of a frame with only type-wide entries carries `deletes_scoped: []` and every field entry `every-object`. | Test (TC-1043) |
+| FR-154-AC-8 | Over TC-1043's fixture, intake reads the frame members of rows I1 to I11: a `modifies_receiver` entry naming no declaration refuses `missing_declaration`/`missing-name` (I1); one naming a field of `Gauge`, a type `Counter` does not conform to, or a relationship refuses `invalid_model_binding`/`malformed-declaration` (I2, I3); a `deletes_parameters` name that is no parameter, or the name of an `Integer` parameter, refuses `missing_declaration`/`missing-name` (I4, I5); `deletes_parameters` naming a `Reference<Counter>` parameter with `deletes_receiver` true admits (I6), and so does `modifies_receiver` naming `value` on an operation of `Sub`, which inherits it (I7); a frame whose `modifies_receiver` holds a missing field and `value` while `modifies` holds `value` reports only the `missing-name` refusal (I8); `modifies` and `modifies_receiver` both naming `value` refuse `conflicting-binding` (I9); a non-boolean `deletes_receiver` and an unnamed member refuse `malformed-declaration` (I10, I11). | Test (TC-1043) |
 | FR-154-AC-9 | `check_frame` over state `w` holding `c1`, `c2` and `c3` of `Counter` with effect `modifies self.value`, `modifies step`, receiver `c1` admits a post that changes `c1.value` and `c2.step` and refuses a post that changes `c2.value`, naming `c2` and `value`. With effect `deletes self`, `deletes a` (`a` bound to `c2`) and receiver `c1`, a post without `c1` and `c2` is admitted and a post without `c3` is `frame_violation`/`unauthorized-change` naming `c3`; with effect `deletes a` alone a post without `c1` is `frame_violation` naming `c1`. | Test (TC-1043) |
-| FR-154-AC-10 | The I2 reader's frame step refuses, as QSpec FR-340 states each: a field entry with no `scope` or a `scope` other than `receiver` or `every-object`, and a frame body with no `deletes_scoped` (schema failures of the frame body); a `deletes_scoped` array with the `parameter` entry for `a` before the `receiver` entry, or with `b` before `a` (`invalid_semantic_graph`); a `parameter` entry naming a parameter that is not a reference parameter of the operation (`missing_declaration`/`missing-name`); and two field entries of one declaration and name with different scopes (`invalid_model_binding`/`conflicting-binding`). The body of vector W1 is admitted. | Test (TC-1043) |
+| FR-154-AC-10 | The I2 reader's frame step refuses, as QSpec FR-340 states each: a field entry with no `scope` or a `scope` other than `receiver` or `every-object`, and a frame body with no `deletes_scoped` (schema failures of the frame body, each read after the edited node and its dependents are re-keyed, as TC-1043 step 4 states); a `deletes_scoped` array with the `parameter` entry for `a` before the `receiver` entry, or with `b` before `a` (`invalid_semantic_graph`); a `parameter` entry naming a parameter that is not a reference parameter of the operation (`missing_declaration`/`missing-name`). The body of vector W1 is admitted. | Test (TC-1043) |
 
 ## Dependencies
 
