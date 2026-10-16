@@ -13,7 +13,7 @@ relationships:
 Verify the node set, bodies, types, dependencies and occurrences S4 emits for
 state clauses, and the totality of the clause-kind mapping.
 
-Scope: FR-105-AC-1, FR-105-AC-2, FR-105-AC-5.
+Scope: FR-105-AC-1, FR-105-AC-2, FR-105-AC-5, FR-105-AC-8.
 
 ## Test Procedure
 
@@ -26,6 +26,9 @@ Scope: FR-105-AC-1, FR-105-AC-2, FR-105-AC-5.
 4. Run `CheckedClauseKind`'s mapping forward over all seven variants and
    backward over every triple the forward pass gives and over
    (`state`, `frame`); run `cargo mutants` over the mapping functions.
+5. Spine-compile a unit holding TC-459 step 7's `P`, `Q` and `I` against
+   that step's package, and decode the emitted graph; then compile it with
+   only `I`.
 
 Tag the tests `#[trace("TC-462", "FR-105-AC-n")]`.
 
@@ -51,3 +54,13 @@ Tag the tests `#[trace("TC-462", "FR-105-AC-n")]`.
 - Step 4: each variant gives one triple, no two share one, each triple
   decodes back to its variant, (`state`, `frame`) decodes to none, and
   `StateTransition` gives (`state`, `transition`); no mutant survives.
+- Step 5: one `state`/`operation_anchor` for `go`, with context the `Flow`
+  `model`/`process` node and operation the text literal `"go"`; one
+  `state`/`frame`, whose `semantic_type` is the `Flow` node and whose
+  `modifies` is exactly (`Flow` node, `n`, scope `every-object`), with
+  `creates`, `deletes` and `deletes_scoped` empty; one `operation-contract`
+  frame record for `go`; two `anchor` occurrences of the anchor, for `P` and
+  `Q`. `I`'s `state_clause` references the `Flow` node. With only `I`, the
+  package holds no anchor, frame node or frame record for `go`. As for step
+  1, the emitted-node assertions wait on STD-111; the checked-graph
+  assertions do not.
