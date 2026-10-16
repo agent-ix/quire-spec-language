@@ -973,6 +973,24 @@ pub enum NodeKind {
         /// The edge field, in `T`'s effective attribute set.
         edge: FieldRef,
     },
+    /// `reaches(source, target, name)` where `name` is a relationship end of
+    /// the operands' object type (FR-365): whether `target` is reachable from
+    /// `source` by one or more links of the relationship, read from the state
+    /// clause's own observation. Both operands are `Reference<S>` with `S`
+    /// conforming to the near end's type; the destination end is
+    /// single-valued and of the near end's own type.
+    ReachesEnd {
+        /// The source reference.
+        source: NodeId,
+        /// The target reference.
+        target: NodeId,
+        /// The relationship's declaration.
+        relationship: DeclarationKey,
+        /// The role of the end nearest the operands, which the source named.
+        role: String,
+        /// The relationship end nearest the operands.
+        near: EndSide,
+    },
     /// `protocol <name>` (FR-308, FR-218): a reference to the unit's
     /// `protocol`-th protocol declaration, resolved once at S3 and typed
     /// `Boolean`, the semantic type the protocol's node carries. Its value is
@@ -1064,6 +1082,11 @@ impl NodeKind {
             | NodeKind::Connective(_, left, right)
             | NodeKind::Contains(left, right)
             | NodeKind::Reaches {
+                source: left,
+                target: right,
+                ..
+            }
+            | NodeKind::ReachesEnd {
                 source: left,
                 target: right,
                 ..

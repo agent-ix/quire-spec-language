@@ -2529,6 +2529,68 @@ pub(super) struct PendingFrame {
     modifies: Vec<(String, String)>,
     creates: Vec<(String, String)>,
     deletes: Vec<(String, String)>,
+    /// The declaring object type of an operation whose receiver is an
+    /// object; `None` for an operation whose receiver is not (FR-154).
+    receiver_type: Option<DeclarationKey>,
+    /// The receiver-scoped `modifies self.f` entries (`modifies_receiver`).
+    modifies_receiver: Vec<(String, String)>,
+    /// `deletes self` (`deletes_receiver`).
+    deletes_receiver: bool,
+    /// The `deletes p` entries (`deletes_parameters`), each a parameter name.
+    deletes_parameters: Vec<(String, String)>,
+    /// The operation's parameters by name, to check each `deletes p` entry.
+    parameters: Vec<(String, ValueTypeRef)>,
+}
+
+/// What an operation's receiver is (FR-154): the object `self` of an object
+/// type, or no object (a process's run, a persistence interface).
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub(super) enum OperationReceiver {
+    /// The operation's owner is an object type.
+    Object,
+    /// The operation's owner is not an object type.
+    NoObject,
+}
+
+/// Which declaration the shared object reader reads (FR-154).
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub(super) enum ObjectShape {
+    /// An object type.
+    Object,
+    /// An object type that declares `interfaceFeatures`.
+    Interface,
+    /// A process, whose receiver is a run.
+    Process,
+}
+
+impl ObjectShape {
+    fn receiver(self) -> OperationReceiver {
+        match self {
+            Self::Object | Self::Interface => OperationReceiver::Object,
+            Self::Process => OperationReceiver::NoObject,
+        }
+    }
+}
+
+/// The members a frame object may carry (FR-154 "Inputs").
+const FRAME_MEMBERS: [&str; 6] = [
+    "modifies",
+    "creates",
+    "deletes",
+    "modifies_receiver",
+    "deletes_receiver",
+    "deletes_parameters",
+];
+
+/// A frame's `deletes_receiver`: absent reads as `false`; a non-boolean
+/// refuses at the member.
+fn frame_deletes_receiver(ctx: &NodeCtx<'_>, frame: &Value) -> Result<bool, ModelRefusal> {
+    match frame.get("deletes_receiver") {
+        None => Ok(false),
+        Some(value) => value
+            .as_bool()
+            .ok_or_else(|| ctx.malformed_in("frame.deletes_receiver", "not a boolean")),
+    }
 }
 
 /// `frame[member]`'s entries as `(identity, at-path)` pairs, in document
@@ -2537,10 +2599,15 @@ pub(super) struct PendingFrame {
 /// non-string entry still refuses here rather than panicking, the same
 /// defensive posture every other reader in this module takes.
 fn frame_entries(
+    ctx: &NodeCtx<'_>,
     frame: &Value,
     frame_at: &str,
     member: &'static str,
+    required: bool,
 ) -> Result<Vec<(String, String)>, ModelRefusal> {
+    if required && frame.get(member).is_none() {
+        return Err(ctx.malformed_in(&format!("frame.{member}"), "missing"));
+    }
     let member_at = format!("{frame_at}.{member}");
     let member_ctx = NodeCtx::new(frame, member_at.clone());
     member_ctx
@@ -2562,6 +2629,7 @@ pub(super) fn read_operation_member(
     owner_identity: &str,
     operation: &Value,
     at: &str,
+    receiver: OperationReceiver,
     pending: &mut Vec<PendingFrame>,
 ) -> Result<OperationMemberRecord, ModelRefusal> {
     let ctx = NodeCtx::new(operation, at);
@@ -2612,10 +2680,46 @@ pub(super) fn read_operation_member(
     // `resolve_pending_frames` rather than resolved (or refused) here.
     if let Some(frame) = operation.get("frame") {
         let frame_at = format!("{at}.frame");
-        let modifies = frame_entries(frame, &frame_at, "modifies")?;
-        let creates = frame_entries(frame, &frame_at, "creates")?;
-        let deletes = frame_entries(frame, &frame_at, "deletes")?;
-        if !(modifies.is_empty() && creates.is_empty() && deletes.is_empty()) {
+        let members = frame
+            .as_object()
+            .ok_or_else(|| ctx.malformed_in("frame", "not an object"))?;
+        if let Some(unnamed) = members
+            .keys()
+            .find(|member| !FRAME_MEMBERS.contains(&member.as_str()))
+        {
+            return Err(ctx.malformed_in(&format!("frame.{unnamed}"), "not a frame member"));
+        }
+        let modifies = frame_entries(&ctx, frame, &frame_at, "modifies", true)?;
+        let creates = frame_entries(&ctx, frame, &frame_at, "creates", true)?;
+        let deletes = frame_entries(&ctx, frame, &frame_at, "deletes", true)?;
+        let modifies_receiver = frame_entries(&ctx, frame, &frame_at, "modifies_receiver", false)?;
+        let deletes_receiver = frame_deletes_receiver(&ctx, frame)?;
+        let deletes_parameters =
+            frame_entries(&ctx, frame, &frame_at, "deletes_parameters", false)?;
+        // QSpec FR-013: a process operation's receiver is a run, not an
+        // object, so it takes no receiver-scoped entry; refused before any
+        // entry is read.
+        if receiver == OperationReceiver::NoObject {
+            if !modifies_receiver.is_empty() {
+                return Err(ctx.malformed_in(
+                    "frame.modifies_receiver",
+                    "the receiver of this operation is not an object",
+                ));
+            }
+            if deletes_receiver {
+                return Err(ctx.malformed_in(
+                    "frame.deletes_receiver",
+                    "the receiver of this operation is not an object",
+                ));
+            }
+        }
+        if !(modifies.is_empty()
+            && creates.is_empty()
+            && deletes.is_empty()
+            && modifies_receiver.is_empty()
+            && !deletes_receiver
+            && deletes_parameters.is_empty())
+        {
             let (artifact, span) = node_span(operation);
             pending.push(PendingFrame {
                 operation: declaration_key(package, node),
@@ -2625,6 +2729,18 @@ pub(super) fn read_operation_member(
                 modifies,
                 creates,
                 deletes,
+                receiver_type: (receiver == OperationReceiver::Object)
+                    .then(|| declaration_key(package, owner_identity)),
+                modifies_receiver,
+                deletes_receiver,
+                deletes_parameters,
+                parameters: parameters
+                    .iter()
+                    .filter_map(|parameter| {
+                        member_identity_name(node, &parameter.key.node)
+                            .map(|name| (name.to_owned(), parameter.value_type.clone()))
+                    })
+                    .collect(),
             });
         }
     }
@@ -2759,6 +2875,7 @@ pub(super) fn read_persistence_interface(
             node,
             operation,
             &operation_at,
+            OperationReceiver::NoObject,
             pending,
         )?));
     }
@@ -2936,7 +3053,7 @@ pub(super) fn read_object_type(
     type_value: &Value,
     node: &str,
     at: &str,
-    is_interface: bool,
+    shape: ObjectShape,
     records: &mut Vec<DomainPackageRecord>,
     pending: &mut Vec<PendingFrame>,
 ) -> Result<(), ModelRefusal> {
@@ -2952,7 +3069,8 @@ pub(super) fn read_object_type(
             .as_bool()
             .ok_or_else(|| ctx.malformed_in("abstract", "not a boolean"))?,
     };
-    let interface_features = if is_interface {
+    let receiver = shape.receiver();
+    let interface_features = if shape == ObjectShape::Interface {
         Some(ctx.identity_keys(package, "featureOrder")?)
     } else {
         None
@@ -2979,6 +3097,7 @@ pub(super) fn read_object_type(
             node,
             operation,
             &format!("{operations_at}[{position}]"),
+            receiver,
             pending,
         )?));
     }
@@ -3077,6 +3196,7 @@ pub(super) fn read_record_value_type(
             node,
             operation,
             &format!("{operations_at}[{position}]"),
+            OperationReceiver::NoObject,
             pending,
         )?));
     }
@@ -4123,11 +4243,27 @@ fn read_type_node(
     }
     match construct_meaning.as_str() {
         meaning::OBJECT_TYPE => {
-            read_object_type(package, type_value, node, at, false, &mut records, pending)?;
+            read_object_type(
+                package,
+                type_value,
+                node,
+                at,
+                ObjectShape::Object,
+                &mut records,
+                pending,
+            )?;
             read_clauses(package, node, &ctx, &mut records)?;
         }
         meaning::SYSTEMS_INTERFACE => {
-            read_object_type(package, type_value, node, at, true, &mut records, pending)?;
+            read_object_type(
+                package,
+                type_value,
+                node,
+                at,
+                ObjectShape::Interface,
+                &mut records,
+                pending,
+            )?;
             read_clauses(package, node, &ctx, &mut records)?;
         }
         meaning::VALUE_TYPE => {
@@ -4260,14 +4396,157 @@ fn resolve_frame_array(
     Ok(keys)
 }
 
-/// One [`PendingFrame`]'s resolved [`OperationEffect`]: `modifies`, then
-/// `creates`, then `deletes`, each checked in document order, reporting the
-/// first that fails (FR-103's own Behavior; TC-458-AC-2 step 5).
+/// The package-wide facts a [`PendingFrame`] resolves against.
+struct FrameIndex<'a> {
+    /// What each record names, by node identity.
+    classification: HashMap<&'a str, FrameEntryKind>,
+    /// Each field's owning object type, by the field's key.
+    field_owners: HashMap<&'a DeclarationKey, &'a DeclarationKey>,
+    /// Each object type's declared supertypes, by the type's key.
+    supertypes: HashMap<&'a DeclarationKey, &'a [DeclarationKey]>,
+}
+
+impl<'a> FrameIndex<'a> {
+    fn of(records: &'a [DomainPackageRecord]) -> Self {
+        let mut index = Self {
+            classification: HashMap::with_capacity(records.len()),
+            field_owners: HashMap::new(),
+            supertypes: HashMap::new(),
+        };
+        for record in records {
+            index
+                .classification
+                .insert(record.key().node.as_str(), frame_entry_kind(record));
+            match record {
+                DomainPackageRecord::FieldMember(field) => {
+                    index.field_owners.insert(&field.key, &field.owner);
+                }
+                DomainPackageRecord::ObjectType(object) => {
+                    index
+                        .supertypes
+                        .insert(&object.key, object.supertypes.as_slice());
+                }
+                _ => {}
+            }
+        }
+        index
+    }
+
+    /// Whether object type `declaring` is `ancestor` or inherits from it,
+    /// through the declared `supertypes` (each type visited once).
+    fn conforms(&self, declaring: &DeclarationKey, ancestor: &DeclarationKey) -> bool {
+        let mut visited: Vec<&DeclarationKey> = Vec::new();
+        let mut pending: Vec<&DeclarationKey> = vec![declaring];
+        while let Some(key) = pending.pop() {
+            if key == ancestor {
+                return true;
+            }
+            if visited.contains(&key) {
+                continue;
+            }
+            visited.push(key);
+            if let Some(supertypes) = self.supertypes.get(key) {
+                pending.extend(supertypes.iter());
+            }
+        }
+        false
+    }
+}
+
+/// FR-154: a `modifies_receiver` array's entries, in document order. An
+/// entry names a field among the own and inherited fields of the
+/// operation's declaring object type; an entry naming no declaration
+/// refuses `missing-name`, and one of any other meaning, or a field of a
+/// type the declaring type does not conform to, refuses
+/// `malformed-declaration`.
+fn resolve_receiver_modifies(
+    package: &str,
+    index: &FrameIndex<'_>,
+    frame: &PendingFrame,
+) -> Result<Vec<DeclarationKey>, ModelRefusal> {
+    let mut keys: Vec<DeclarationKey> = Vec::with_capacity(frame.modifies_receiver.len());
+    for (entry, at) in &frame.modifies_receiver {
+        let granted = match index.classification.get(entry.as_str()) {
+            None => {
+                return Err(missing_frame_declaration(
+                    frame.node.clone(),
+                    frame.artifact.clone(),
+                    frame.span,
+                    entry,
+                    at,
+                ))
+            }
+            Some(FrameEntryKind::Field) => index
+                .field_owners
+                .get(&declaration_key(package, entry))
+                .zip(frame.receiver_type.as_ref())
+                .is_some_and(|(owner, declaring)| index.conforms(declaring, owner)),
+            Some(_) => false,
+        };
+        if !granted {
+            return Err(malformed_frame_entry(
+                frame.node.clone(),
+                frame.artifact.clone(),
+                frame.span,
+                entry,
+                at,
+            ));
+        }
+        let key = declaration_key(package, entry);
+        if !keys.contains(&key) {
+            keys.push(key);
+        }
+    }
+    Ok(keys)
+}
+
+/// FR-154: a `deletes_parameters` array's entries, in document order. Each
+/// names a parameter of the operation typed `Reference<T>` for an object
+/// type `T`; any other name refuses `missing-name`.
+fn resolve_deletes_parameters(
+    index: &FrameIndex<'_>,
+    frame: &PendingFrame,
+) -> Result<Vec<String>, ModelRefusal> {
+    let mut names: Vec<String> = Vec::with_capacity(frame.deletes_parameters.len());
+    for (name, at) in &frame.deletes_parameters {
+        let is_reference = frame
+            .parameters
+            .iter()
+            .find(|(parameter, _)| parameter == name)
+            .is_some_and(|(_, value_type)| {
+                value_type.as_package().is_some_and(|object| {
+                    index.classification.get(object.node.as_str())
+                        == Some(&FrameEntryKind::ObjectType)
+                })
+            });
+        if !is_reference {
+            return Err(missing_frame_declaration(
+                frame.node.clone(),
+                frame.artifact.clone(),
+                frame.span,
+                name,
+                at,
+            ));
+        }
+        if !names.contains(name) {
+            names.push(name.clone());
+        }
+    }
+    Ok(names)
+}
+
+/// One [`PendingFrame`]'s resolved [`OperationEffect`]: the member shapes
+/// were read already; the entries are checked in this order, `modifies`,
+/// `modifies_receiver`, `creates`, `deletes`, `deletes_parameters`, each in
+/// document order, reporting the first that fails (FR-154 "Intake"). Once
+/// every entry resolves, a `modifies` entry and a `modifies_receiver` entry
+/// for one field refuse `conflicting-binding` at the later entry.
 fn resolve_frame(
     package: &str,
-    classification: &HashMap<&str, FrameEntryKind>,
+    index: &FrameIndex<'_>,
     frame: &PendingFrame,
 ) -> Result<OperationEffect, ModelRefusal> {
+    let classification = &index.classification;
     let modifies = resolve_frame_array(
         package,
         classification,
@@ -4275,6 +4554,7 @@ fn resolve_frame(
         &frame.modifies,
         &[FrameEntryKind::Field, FrameEntryKind::Relationship],
     )?;
+    let receiver_modifies = resolve_receiver_modifies(package, index, frame)?;
     let creates = resolve_frame_array(
         package,
         classification,
@@ -4289,11 +4569,33 @@ fn resolve_frame(
         &frame.deletes,
         &[FrameEntryKind::ObjectType, FrameEntryKind::Process],
     )?;
+    let deletes_arguments = resolve_deletes_parameters(index, frame)?;
+    for (entry, at) in &frame.modifies_receiver {
+        if let Some((_, every_object_at)) = frame
+            .modifies
+            .iter()
+            .find(|(candidate, _)| candidate == entry)
+        {
+            return Err(ModelRefusal {
+                code: Code::InvalidModelBinding,
+                cause: ModelRefusalCause::ConflictingBinding {
+                    key: frame.operation.clone(),
+                    member: Some(MemberPath::from_document_location(at)),
+                },
+                detail: format!(
+                    "{at}: {entry:?} is scoped to the receiver here and to every object at                      {every_object_at} of operation {}",
+                    frame.node
+                ),
+            });
+        }
+    }
     Ok(OperationEffect {
         modifies,
         creates,
         deletes,
-        ..Default::default()
+        receiver_modifies,
+        deletes_receiver: frame.deletes_receiver,
+        deletes_arguments,
     })
 }
 
@@ -4309,13 +4611,10 @@ fn resolve_pending_frames(
     records: &mut [DomainPackageRecord],
     refusals: &mut Vec<ModelRefusal>,
 ) {
-    let classification: HashMap<&str, FrameEntryKind> = records
-        .iter()
-        .map(|record| (record.key().node.as_str(), frame_entry_kind(record)))
-        .collect();
+    let index = FrameIndex::of(records);
     let mut resolved: Vec<(DeclarationKey, OperationEffect)> = Vec::with_capacity(pending.len());
     for frame in pending {
-        match resolve_frame(package, &classification, frame) {
+        match resolve_frame(package, &index, frame) {
             Ok(effect) => resolved.push((frame.operation.clone(), effect)),
             Err(refusal) => refusals.push(refusal),
         }
@@ -4863,10 +5162,16 @@ mod tests {
             modifies: vec![("R".to_owned(), "$.frame.modifies[0]".to_owned())],
             creates: Vec::new(),
             deletes: Vec::new(),
+            receiver_type: None,
+            modifies_receiver: Vec::new(),
+            deletes_receiver: false,
+            deletes_parameters: Vec::new(),
+            parameters: Vec::new(),
         };
         let connection = relationship(None);
-        let classification = HashMap::from([("R", frame_entry_kind(&connection))]);
-        let refusal = resolve_frame("test/orders", &classification, &frame)
+        let records = [connection];
+        let index = FrameIndex::of(&records);
+        let refusal = resolve_frame("test/orders", &index, &frame)
             .expect_err("a connection is not grantable");
         assert_eq!(refusal.code, Code::InvalidModelBinding);
         assert!(matches!(
@@ -4878,10 +5183,80 @@ mod tests {
             owner: DeclarationKey::fixture("A"),
             index: 0,
         }));
-        let classification = HashMap::from([("R", frame_entry_kind(&navigation))]);
-        let effect = resolve_frame("test/orders", &classification, &frame)
+        let records = [navigation];
+        let index = FrameIndex::of(&records);
+        let effect = resolve_frame("test/orders", &index, &frame)
             .expect("a navigation relationship is grantable");
         assert_eq!(effect.modifies, vec![declaration_key("test/orders", "R")]);
+    }
+
+    /// TC-1043 I10 to I12: the reader's own member-shape contract for a
+    /// frame (the semantic-IR schema refuses these documents first through
+    /// the full pipeline, so they are read directly here), each refused at
+    /// the member before any entry is read.
+    #[ix_trace_rs::trace("TC-1043", "FR-154-AC-8")]
+    #[test]
+    fn a_malformed_frame_member_refuses_at_the_member() {
+        let cases = [
+            (
+                serde_json::json!({
+                    "modifies": [], "creates": [], "deletes": [], "deletes_receiver": "yes"
+                }),
+                "frame.deletes_receiver",
+            ),
+            (
+                serde_json::json!({
+                    "modifies": [], "creates": [], "deletes": [], "modifies_self": []
+                }),
+                "frame.modifies_self",
+            ),
+            (
+                serde_json::json!({"modifies": [], "creates": []}),
+                "frame.deletes",
+            ),
+            (
+                serde_json::json!({
+                    "modifies": [], "creates": [], "deletes": [],
+                    "deletes_parameters": [1]
+                }),
+                "deletes_parameters[0]",
+            ),
+        ];
+        for (frame, member) in cases {
+            let operation = serde_json::json!({
+                "identity": "ix://test/orders/Order/t",
+                "name": "t",
+                "params": [],
+                "pre": [],
+                "post": [],
+                "frame": frame,
+            });
+            let mut pending = Vec::new();
+            let refusal = read_operation_member(
+                "test/orders",
+                "ix://test/orders/Order",
+                &operation,
+                "$.types[0].operations[0]",
+                OperationReceiver::Object,
+                &mut pending,
+            )
+            .expect_err("a malformed frame member refuses");
+            assert_eq!(refusal.code, Code::InvalidModelBinding, "{member}");
+            assert!(
+                matches!(
+                    refusal.cause,
+                    ModelRefusalCause::IntakeMalformedDeclaration { .. }
+                ),
+                "{member}: {:?}",
+                refusal.cause
+            );
+            assert!(
+                refusal.detail.contains(member),
+                "{member}: {}",
+                refusal.detail
+            );
+            assert!(pending.is_empty(), "{member}: no frame is queued");
+        }
     }
 
     fn digest_of(bytes: &[u8]) -> [u8; 32] {
@@ -6086,7 +6461,7 @@ mod tests {
             &type_value,
             "ix://acme/orders/Flow2",
             "$.types[0]",
-            true,
+            ObjectShape::Interface,
             &mut records,
             &mut Vec::new(),
         )
@@ -6172,7 +6547,7 @@ mod tests {
             &type_value,
             "ix://acme/orders/Widget",
             "$.types[0]",
-            false,
+            ObjectShape::Object,
             &mut records,
             &mut Vec::new(),
         )
@@ -6222,7 +6597,7 @@ mod tests {
             &type_value,
             "ix://acme/orders/Flow2",
             "$.types[0]",
-            false,
+            ObjectShape::Object,
             &mut records,
             &mut Vec::new(),
         )
@@ -6277,7 +6652,7 @@ mod tests {
             &type_value,
             "ix://acme/orders/Flow2",
             "$.types[0]",
-            false,
+            ObjectShape::Object,
             &mut records,
             &mut Vec::new(),
         )
@@ -6323,7 +6698,7 @@ mod tests {
             &type_value,
             "ix://acme/orders/Flow2",
             "$.types[0]",
-            false,
+            ObjectShape::Object,
             &mut records,
             &mut Vec::new(),
         )
@@ -6370,7 +6745,7 @@ mod tests {
             &type_value,
             "ix://acme/orders/Flow2",
             "$.types[0]",
-            false,
+            ObjectShape::Object,
             &mut records,
             &mut Vec::new(),
         )
