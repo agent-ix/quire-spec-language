@@ -15,8 +15,10 @@ use serde_json::{json, Value};
 use super::*;
 use crate::object_environment::{
     read_object_environment, write_object_environment, EnvironmentLabels, EnvironmentModel,
-    EnvironmentObject, EnvironmentPopulation, ObjectEnvironmentRef, ObjectEnvironmentRefusal,
+    object_reference_witness, EnvironmentObject, EnvironmentPopulation, ObjectEnvironmentRef,
+    ObjectEnvironmentRefusal, ObjectReferenceError,
 };
+use qsl_semantics::model::key::DeclarationKey;
 use crate::result::{DisagreementCause, Verdict};
 use crate::witness::{DecodeRefusal, WitnessBinding, WitnessField, WitnessSlot, WitnessValueType};
 use crate::SnapshotValue;
@@ -1318,4 +1320,85 @@ fn an_object_of_a_type_the_model_does_not_declare_is_refused() {
         "wrong-role-mapping",
     );
     assert_eq!(record.fields.get("object").map(String::as_str), Some("a"));
+}
+
+fn node_key() -> DeclarationKey {
+    DeclarationKey {
+        package: PACKAGE.to_owned(),
+        node: identity("Node"),
+    }
+}
+
+/// FR-098, FR-070: the builder's witness for `Node`/`a` equals the one replay
+/// resolves for a `Reference<Node>` parameter, and replayed over the document
+/// `write_object_environment` wrote it dereferences `a` (`items` [3, 7, 1],
+/// where 7 is not below 5) and completes `false`.
+#[trace("TC-1042", "FR-098-AC-14")]
+#[test]
+fn the_built_reference_witness_resolves_the_written_object() {
+    let graph = graph();
+    let witness = object_reference_witness(
+        graph.compiled.package.graph().model_selections(),
+        &graph.packages,
+        SpineLimits::default().model,
+        &node_key(),
+        "a",
+    )
+    .expect("Node is declared");
+    assert_eq!(witness, graph.node("a"));
+
+    let items = SnapshotValue::sequence(
+        ["3", "7", "1"]
+            .into_iter()
+            .map(SnapshotValue::integer)
+            .collect(),
+    );
+    let object = EnvironmentObject {
+        key: "a".to_owned(),
+        type_identity: node_key(),
+        fields: vec![
+            ("items".to_owned(), items),
+            ("next".to_owned(), SnapshotValue::absent()),
+        ],
+    };
+    let document = write_object_environment(
+        labels(),
+        &EnvironmentModel {
+            identity: PACKAGE.to_owned(),
+            version: "1.0.0".to_owned(),
+            digest: sha256_jcs(&graph.package),
+        },
+        &[EnvironmentPopulation {
+            population: identity("G"),
+            complete: true,
+            objects: vec![object],
+        }],
+    )
+    .expect("the document has a canonical form");
+    let mut wire = graph.input("fa", witness);
+    wire.byte_provision.push(document.provision_entry());
+    wire.object_environment = Some(document.member().clone());
+    assert_completes_false(run(wire), false);
+}
+
+/// A type no selected model declares is refused by name.
+#[trace("TC-1042", "FR-098-AC-14")]
+#[test]
+fn a_type_no_selected_model_declares_is_refused() {
+    let graph = graph();
+    let missing = DeclarationKey {
+        package: PACKAGE.to_owned(),
+        node: identity("Missing"),
+    };
+    let refusal = object_reference_witness(
+        graph.compiled.package.graph().model_selections(),
+        &graph.packages,
+        SpineLimits::default().model,
+        &missing,
+        "a",
+    );
+    assert!(matches!(
+        refusal,
+        Err(ObjectReferenceError::UndeclaredType(key)) if key == missing
+    ));
 }
