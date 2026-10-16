@@ -295,6 +295,7 @@ The `Value` production maps each CST expression construct to one
 | `true`, `false` | `Boolean` |
 | unsigned integer literal | `Integer` |
 | `rational(n, d)` | `Rational(n, d)` |
+| quoted text `"..."` | `String`, holding the decoded Unicode scalar sequence |
 | identifier, qualified name, enum value `E::m` | `Name`, spelled as written with `::` separators |
 | `let x = v in b` | `Let` |
 | `if c then a else b` | `If` |
@@ -307,7 +308,7 @@ The `Value` production maps each CST expression construct to one
 | unary `-e` | `Negate` |
 | `e.f` | `Field` |
 | `present(e)`, `value(e)` | `Present`, `Value` |
-| `name(args)`, tuple value `Q(args)` | `Call`, with arguments in source order |
+| `name(args)`, tuple value `Q(args)` | `Call`, with arguments in source order; `UUID("...")` and `Timestamp(n)` are such calls, and check resolves them ("Native scalar literals") |
 | record value `R { f: e, g: null }` | `Record`; a field whose whole value is `null` is `FieldInitializer::Null` |
 | `sequence[..]`, `set[..]`, `bag[..]`, `orderedSet[..]` | `Collection` with kind `Sequence`, `Set`, `Bag`, `OrderedSet` |
 | `map`, `collect` `(x in c: e)` | `Query` with `BinderQuery::Map` |
@@ -357,7 +358,7 @@ measure:
 
 A construct that no family's variant represents refuses the whole unit with
 cause `UnrepresentedConstruct`, naming the construct's CST production and
-span. These constructs are text literals, `decimal(..)`, `float32(bits: ..)`
+span. These constructs are `decimal(..)`, `float32(bits: ..)`
 and `float64(bits: ..)`, `null` outside a record field value, `none`,
 `self`, `result`, indexing `e[i]`, `size<T>(e)` and
 `reaches(..)`. S2 returns no form for any declaration of that unit.
@@ -755,6 +756,89 @@ Runtime values are not type bounds. The evaluator's `ScalarLimits` budget
 the size of the values a run computes; they never narrow a declared bound
 or refuse a literal that this rule admits.
 
+### Native scalar literals
+
+The unit language writes a constant of each native value type `String`,
+`UUID` and `Timestamp` with one literal form. The forms are the only way to
+write such a constant, and each has exactly one checked type. They add no
+production, no token and no reserved word: the quoted text token is already
+read by the lexer, and `UUID("...")` and `Timestamp(n)` are ordinary calls
+that the shared complete-V1 grammar already parses.
+
+| Literal | Syntax | Checked type | Value |
+|---|---|---|---|
+| `"..."` | the quoted text token | `String` | the decoded Unicode scalar sequence |
+| `UUID("...")` | a call of the name `UUID` with one quoted text argument | `UUID` | the 128-bit payload of the canonical text |
+| `Timestamp(n)` | a call of the name `Timestamp` with one integer argument | `Timestamp` | the signed 128-bit nanosecond count `n` on the POSIX epoch scale |
+
+**String.** The quoted text token is the JSON-compatible quoted text the
+lexer already reads: the escapes `\"`, `\\`, `\/`, `\b`, `\f`, `\n`, `\r`,
+`\t` and `\uXXXX` (a surrogate pair is one scalar) decode as JSON decodes
+them. S2 builds `Expression::String` holding the decoded scalar sequence. The
+sequence is kept exactly, as FR-056 states for the native String: the empty
+sequence, a NUL (`"\u0000"`), a multibyte scalar and UUID-looking text are
+all admitted, and no normalization, case folding or truncation applies, so
+`"\u00e9"` and `"é"` are one value and differ from `"e\u0301"`. A quoted
+literal has the type `String` in every position. It is never `Text`, never
+`UUID` and never a variant or enum value, and it takes no profile, bound or
+expected type. A malformed escape, a lone surrogate escape, an unterminated
+literal and a raw control character below U+0020 inside the quotes are lexical
+errors: `invalid_syntax`/`invalid-escape` for the first two and
+`invalid_syntax`/`invalid-token` for the others, at the literal, before S2.
+
+**UUID.** `UUID("...")` takes one argument, which must be a quoted text
+literal (not a `String`-typed expression such as a parameter or a `let`
+binding). Its text must be the canonical UUID text of FR-056's K2 canonical
+native payloads: 32 lowercase hexadecimal digits grouped `8-4-4-4-12` with
+four hyphens, and no other spelling. A case variant, a hyphenless, braced or
+`urn:uuid:` spelling, text of another length, a non-hexadecimal digit and the
+empty text are each malformed. Check admits the text as the 128-bit payload
+through the same K2 admission FR-056 applies to a runtime input, and refuses a
+malformed text with the typed cause `MalformedUuidLiteral`, naming the
+argument text as written and the span of the call, code
+`ill_typed`/`type-mismatch`. The refusal is reported with every other error of
+the unit, and no checked package holds the literal.
+
+**Timestamp.** `Timestamp(n)` takes one argument, which must be an integer
+literal or a directly negated integer literal (the forms of "Integer bounds
+and literals up to i128"), and the value is the nanosecond count. No calendar,
+timezone, offset or precision form exists, and the count is not converted. The
+value is the integer value, so `Timestamp(-0)` and `Timestamp(0)` are one
+value. A count above `i128::MAX` or below `i128::MIN` is the argument literal's
+own `IntegerOutsideI128` refusal, which that section states, and needs no
+cause of its own; `Timestamp(-170141183460469231731687303715884105728)` is the
+folded `i128::MIN` literal and is admitted. A leading-zero integer such as
+`007` is refused by the lexer as `invalid_syntax`/`invalid-token` before any
+form exists. An `Integer`-typed expression never converts to a `Timestamp`.
+
+**Name resolution.** `UUID` and `Timestamp` in a call position resolve with the native
+literal constructor of that spelling as a candidate beside the unit's function,
+predicate and tuple declarations of that name, and exactly one candidate is
+required. This is new behavior: a call otherwise resolves a declared function
+before a type, and a call headed by a native type refuses
+`ill_typed`/`operator-ineligible`; the literal constructors are the only calls
+that take the native type name. A unit that also
+declares a function, predicate or tuple `UUID` (or `Timestamp`) makes the call
+an ambiguous name, `ambiguous_declaration`/`ambiguous-name`, naming the use,
+the span of each declaration and the native constructor as a candidate without
+a span, as the ambiguous type-name rule above does. A qualified spelling such
+as `M::UUID("...")` names no native constructor and resolves as any qualified
+call does, refusing `missing_declaration`/`missing-name` when it names
+nothing. A call whose argument is not the form above (`UUID(x)`, `UUID(5)`,
+`Timestamp(x)`, `Timestamp("5")`, `Timestamp(1 + 2)`), or that has no argument
+or two, refuses `ill_typed`/`type-mismatch` at the argument, or at the call
+when the argument count is not one, naming the expected argument form. The `UUID` and
+`Timestamp` type names are the predeclared type names above and are unaffected.
+
+The three literals have no operator of their own. They take part in `=` and
+`!=` under FR-056, as arguments, `let` bindings, record field values,
+conditional branches, collection elements and bodies, wherever a value of the
+literal's type is accepted. A literal at a slot of another type, including
+`"abc"` at a `Text[0, 8; nfc]` slot, `"00112233-4455-6677-8899-aabbccddeeff"`
+at a `UUID` slot and the integer `5` at a `Timestamp` slot, refuses
+`ill_typed`/`type-mismatch` at the literal as every typed mismatch does, with
+no coercion. FR-093 lowers the three literals.
+
 ### Catalog codes
 
 Each S2 and assembler cause has one exhaustive `catalog_code()` (ADR-013
@@ -770,6 +854,7 @@ code or code/cause:
 | ambiguous type name | `ambiguous_declaration` |
 | ill-formed scalar bounds | `ill_typed` |
 | integer outside i128 (`IntegerOutsideI128`), a bound or a literal | `ill_typed`/`type-mismatch` |
+| malformed UUID literal (`MalformedUuidLiteral`) | `ill_typed`/`type-mismatch` |
 | floating type (a domain package model field only) | `unknown_required_feature`/`unsupported-feature` |
 | undeclared `using` alias | `missing_declaration`/`missing-selection` |
 | duplicate alias | `ambiguous_declaration`/`ambiguous-name` |
@@ -834,7 +919,7 @@ STD-112 publishes the causes and replaces it (FR-091-OQ-12).
 | FR-091-AC-4 | S2 refuses a `ParsedSource` whose CST carries a recovery with cause `RecoveringCst`. It refuses an admissible parse, to which `prepend_diagnostic` has added one diagnostic, with the diagnosed-source cause holding that diagnostic's code. Neither refusal returns a parsed unit. | Test (TC-395) |
 | FR-091-AC-5 | S2 refuses the whole unit with cause `NoDispatchEntry` for an admissible unit holding a valid `function` declaration followed by `invariant Positive using v on M::T at current { true }`. The refusal names the spelling `invariant` and that declaration's span, and S2 returns no form for the `function` declaration. | Test (TC-395) |
 | FR-091-AC-6 | S2 builds a parsed unit with one form for an admissible unit whose only declaration is `enum Color { RED }`, `ordered enum Level { LOW }`, `predicate P using v(x: Boolean): Boolean { x }`, `dimension Length;` or, after `dimension Length;`, `unit m : Length = rational(1, 1);`. None of these refuses with `NoDispatchEntry`. No module under `forms` other than the `Value` family form builder names the `EnumDeclaration`, `EnumMember`, `Predicate`, `DimensionDeclaration` or `UnitDeclaration` CST production. | Test (TC-395) |
-| FR-091-AC-7 | S2 refuses the whole unit with cause `UnrepresentedConstruct`, naming the construct's CST production and span and returning no form, for a function body that holds exactly one of: a text literal, `decimal(1, 2)`, `xs[0]`, `none`, `reaches(a, b, M::R)`. | Test |
+| FR-091-AC-7 | S2 refuses the whole unit with cause `UnrepresentedConstruct`, naming the construct's CST production and span and returning no form, for a function body that holds exactly one of: `decimal(1, 2)`, `xs[0]`, `none`, `reaches(a, b, M::R)`. | Test |
 | FR-091-AC-8 | For each of `function f using v(x: Int[0, 9]): Boolean pure { B }` with body `B` equal to `deref(x)`, `allInstances<M::T>(x)` or `pre(x)`, and `function g using v(x: Int[0, 9]): Boolean pure decreases(pre(x)) { true }`, each in a unit with no admitted domain package, S2 returns a parsed unit that holds `Deref`, `AllInstances` or `Pre` where the construct is written. Check refuses `pre(x)`, in the body and in the measure, with `wrong_snapshot`/`forbidden-pre-read`, the `ProtocolClause` cause, and `deref(x)` with `ill_typed`/`type-mismatch`. The assembler refuses `allInstances<M::T>(x)` with an unresolved-type-name error naming `M::T` (`missing_declaration`/`missing-name`). None of these refusals has code `unsupported_construct`. | Test (TC-396) |
 | FR-091-AC-9 | S2 builds a form for each of the function bodies `not`×8 `a`, `not`×20 `a` and `not`×129 `a`, each admitted by S1 at its default limits, and each form's expression tree is as deep as its body. S2 takes no limit set, and no S2 outcome names a depth. | Test (TC-397) |
 | FR-091-AC-10 | Every `Expression` node in a `Value` form carries the span of the CST node it maps from. For the body `if a then b else c + d`, the `If` node's span covers the whole body, the `Add` node's span covers `c + d`, and the `Name("d")` node's span covers `d`. For `(a + b) * c`, the `Add` node's span covers `a + b`, without the parentheses. | Test (TC-403) |
@@ -868,9 +953,14 @@ STD-112 publishes the causes and replaces it (FR-091-OQ-12).
 | FR-091-AC-38 | Over `x: Int[-170141183460469231731687303715884105728, 0]`: the body `x >= -170141183460469231731687303715884105728` checks, its right operand is one `Integer` literal of value `i128::MIN` with no `Negate` node, that literal node keys to FR-092 vector L7, and lowering writes it as one literal. The body `x >= -170141183460469231731687303715884105727` checks with its right operand a `Negate` of the literal 170141183460469231731687303715884105727, as before. The bodies `x < 170141183460469231731687303715884105728`, `x >= -(170141183460469231731687303715884105728)` and `x >= -170141183460469231731687303715884105729` refuse `IntegerOutsideI128` at the literal's span, with site `literal`, the literal's value as written, limit `i128::MAX` and code `ill_typed`/`type-mismatch`, and return no checked package. | Test (TC-909) |
 | FR-091-AC-39 | S2 maps `a div b`, `a rem b` and `a mod b` to distinct `IntegerDiv`, `IntegerRem` and `IntegerMod` binary forms with operand order and original spans, including in an unreachable branch. Check admits each well-typed operator under a resolved `quire.value.complete/v1` selection, using the checked package's exactly-one law for `div`/`rem` and Euclidean meaning for `mod`; without that facet, each receives a located `unsupported_construct` rather than `UnrepresentedConstruct`. `/` never becomes integer division; only under complete value does a rational `/` with integer operands and an expected rational type follow QSpec FR-149. | Test |
 | FR-091-AC-40 | The assembler admits `function f using v(a: String, b: UUID, c: Timestamp): Timestamp pure { c }` and resolves `a`, `b`, `c` and the result to the native String, UUID and Timestamp value types; a use of these names needs no `using` selection or domain package. A unit declaring `record UUID { x: Integer; }` and using `UUID` as a type refuses `ambiguous_declaration`/`ambiguous-name` naming the use, the span of the record declaration and the native `UUID` candidate with no span. | Test (TC-1028) |
+| FR-091-AC-41 | S2 builds, for the bodies `"abc"`, `""`, `"\u00e9"`, `"é"`, `"e\u0301"`, `"a\nb"`, `"\ud83d\ude00"` and `"\u0000"`, one `Expression::String` each, holding the scalar sequences: `a`, `b`, `c`; empty; U+00E9 (twice); U+0065 U+0301; `a`, LF, `b`; the single scalar U+1F600; U+0000. For `UUID("00112233-4455-6677-8899-aabbccddeeff")`, `Timestamp(0)`, `Timestamp(-1)` and `Timestamp(-170141183460469231731687303715884105728)` it builds a `Call` of the name `UUID` or `Timestamp` and no new expression kind; check resolves each to the native `UUID` or `Timestamp` literal, the last holding `i128::MIN`, and `Timestamp(-0)` and `Timestamp(0)` are one value. | Test (TC-1052) |
+| FR-091-AC-42 | `"\ud800"` and `"\q"` refuse `invalid_syntax`/`invalid-escape`, and an unterminated literal, a literal holding a raw line feed and `Timestamp(007)` refuse `invalid_syntax`/`invalid-token`, each at the offending token with no form. `UUID(x)` over a `String` parameter, `UUID(5)`, `Timestamp(x)`, `Timestamp("5")`, `Timestamp(1 + 2)`, `Timestamp()` and `Timestamp(1, 2)` each refuse `ill_typed`/`type-mismatch` at the argument (at the call for `Timestamp()` and `Timestamp(1, 2)`). `function UUID using v(): Boolean pure { true }` beside a use `UUID("00112233-4455-6677-8899-aabbccddeeff")` refuses `ambiguous_declaration`/`ambiguous-name` naming the use, the declaration's span and the native constructor with no span; `M::UUID("00112233-4455-6677-8899-aabbccddeeff")` over an alias `M` that declares no `UUID` refuses `missing_declaration`/`missing-name`. A parameter or field named `timestamp` or `uuid` stays valid. | Test (TC-1052) |
+| FR-091-AC-43 | Check refuses `UUID("00112233-4455-6677-8899-AABBCCDDEEFF")`, `UUID("00112233445566778899aabbccddeeff")`, `UUID("{00112233-4455-6677-8899-aabbccddeeff}")`, `UUID("urn:uuid:00112233-4455-6677-8899-aabbccddeeff")`, `UUID("00112233-4455-6677-8899-aabbccddeef")`, `UUID("00112233-4455-6677-8899-aabbccddeefg")` and `UUID("")` with `MalformedUuidLiteral`, code `ill_typed`/`type-mismatch`, naming the argument as written and the call's span. It refuses `Timestamp(170141183460469231731687303715884105728)` and `Timestamp(-170141183460469231731687303715884105729)` with `IntegerOutsideI128`, site `literal`, limit `i128::MAX` in both cases (the second names the positive literal 170141183460469231731687303715884105729, as FR-091-AC-38 states), code `ill_typed`/`type-mismatch`; `Timestamp(170141183460469231731687303715884105727)` checks. A refused literal reaches no keying, lowering or IR. | Test (TC-1052) |
 
 ## Dependencies
 
+- [TC-1052](../test-cases/TC-1052-native-string-uuid-and-timestamp-literals.md)
+  verifies the native scalar literals.
 - **Upstream:** [FR-067](FR-067-add-s2-forms-and-retire-seam-5.md) built the
   `forms` core: the dispatch table, `ParsedForm`'s span, edition and
   declared-extent accessors, and the `RecoveringCst` and `NoDispatchEntry`

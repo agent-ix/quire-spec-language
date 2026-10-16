@@ -395,7 +395,22 @@ holds that invariant in the pre observation and separately in the post
 observation of every invocation of the machine's operations, so a caller
 selects each side and gets one verdict per selection. For a clause whose
 receiver is a state machine's context, `self` of `Current` and of `PreCall` is
-none. `PreCall` is the
+none. `ValueInvariants { snapshot: DocumentRef, invocation: Option<DocumentRef> }`
+selects no clause: it admits one current snapshot and, when given, one
+invocation, for the evaluation of the type-level invariants of every type over
+every value they range over (FR-366). The snapshot is read as a `Current`
+snapshot is, and its anchor is not compared with any clause's. The invocation
+is read as an `Invocation` selection of a postcondition reads it: its `pre` and
+`post` snapshots, the `contexts` they hold, the parameters and the result,
+admitted by the same checks. Checks that name the selected clause do not apply to it: check 4 compares
+the document's model with the package's model, since there is no clause alias;
+check 5 has no clause receiver, and check 9's `self` tests do not apply, there being no `self`, but its context rule does: each `pre` and `post` snapshot of the invocation holds exactly one context entry for the one machine the invocation's `context` names (an entry whose machine is that machine or a specialization of it, as check 9 reads it), else `invalid_model_binding`/`wrong-context` naming that machine and the snapshot, or `invalid_runtime_input`/`duplicate-member` at the later entry; no context is required of any other machine, whatever invariants it has, and a context of another machine is validated by check 6 and ignored; check 11's frame check runs on the invocation as it does for a postcondition; and check 7's
+required population is every population of the snapshot, there being no
+population holding `self`. The invocation's `context` and `operation` are
+checked only against the package: `context` names a state machine, an object type or a process of it, and `operation` one of its effective operations. The admitted value holds no clause
+identity and no `self` object; it holds the current observation and, for an
+invocation, the observations, parameters, result and contexts as an `Invocation`
+selection admits them. `PreCall` is the
 observation of a call before the operation runs: the snapshot is the
 operation's pre state, and a precondition reads only that state, `self` and
 the parameters (FR-104, FR-107), so it has no post snapshot, result or
@@ -898,6 +913,7 @@ required; check 10 settles it.
 | FR-106-AC-45 | The post-state range witness reaches a context: over `ExpressLifecycle` with a field `retries: Int[0, 5]`, a `post` context holding `-1` under `PostStateRange::Witness` admits side `post` and reports one `OutOfRange` naming the machine `ExpressLifecycle`, the field `retries`, the range `[0, 5]` and the observed `-1`; the same value in a `pre` context, and in a post context under `Refuse`, refuses `invalid_runtime_input`/`invalid-value` at `ExpressLifecycle`, `retries`. A context field of a record, String, UUID, Timestamp or Text type follows the value rules and payload order of the object fields. | Test (TC-1045) |
 | FR-106-AC-46 | The frame check compares contexts: with `place` modifying `placed` and `cancelled`, a post context changing both admits; with `place` modifying only `placed`, a post context that also changes `cancelled` refuses `frame_violation`/`unauthorized-change` naming `OrderLifecycle` and `cancelled`, for the postcondition and for the invariant on side `post`, and side `pre` runs no frame check and admits. A `post` context equal to the `pre` context in every field, written in another member order, is no change. An invocation whose `self` is an object reference for a state-machine operation, and one whose `self` is `null` for an object operation, refuse `invalid_runtime_input`/`wrong-value-kind`. A machine invariant selected by `Current`, `PreCall` or `Invocation`, an object invariant selected by `Context`, and a `Current` selection naming a `self` for a machine precondition refuse `wrong_snapshot`/`wrong-observation`. | Test (TC-1045) |
 | FR-106-AC-47 | A context field `owner: Reference<Pump>` of the machine `Owned` naming `p9`, absent from the complete population `Q` of the same snapshot, refuses `dangling_reference`/`absent-target-in-complete-population` naming `Owned`, `owner`, `p9` and `Q`; with `Q` marked `"complete": false` it returns `Incomplete` with `incomplete_population`/`incomplete-scope` naming `Q`, and the same field naming a listed key of `Q` admits. A second population `Spare` listed incomplete that no reference names admits. Each context entry and each of its field values counts toward `observation.values`: a document at the exact bound admits and one more value returns `stage_limit_exceeded`/`node-count-exceeded` naming `observation.values`. A `quire.state.snapshot/v1` environment document supplied to replay (FR-098) that holds `contexts` refuses `invalid_runtime_input`/`unknown-member` naming `contexts`, because an environment document is a current snapshot. | Test (TC-1045) |
+| FR-106-AC-48 | `ValueInvariants` over TC-235 K2 with `Order` given `quoted`, `history`, `discount` and operation `requote(amount: Money)` admits observation `s1` holding `o1` and invocation `i1` of `requote` with `amount` `{amount_minor: -7, currency: "EUR"}`, and names `s1`, `i1`'s `pre` snapshot and `i1`'s parameter `amount`; the same selection with a `pre` document as `snapshot` refuses `wrong_snapshot`/`wrong-observation`, and with an `i1` whose `amount` is missing refuses `invalid_runtime_input`/`missing-member`. | Test (TC-1051) |
 
 
 ## Dependencies

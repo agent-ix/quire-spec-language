@@ -17,13 +17,14 @@ use super::causes::{
     ReferenceUnresolved, StateModelUndefined,
 };
 use super::s6a::separation::{
-    locatable, occurrence_at, Provenance, Separation, SeparationStep, StopReport, Trail,
-    WitnessClaim,
+    locatable, occurrence_at, InvocationBinding, Provenance, RuntimeValuePath, Separation,
+    SeparationStep, StopReport, Trail, ValuePathStep, ValuePathSubject, WitnessClaim,
 };
 use qsl_foundation::diagnostic::{kernel_refusal_record, InternalFault, Locus, RefusalRecord};
 use qsl_semantics::check::{
     Arithmetic, CheckedGraph, CheckedLiteral, CheckedNode, Connective, DispatchTable, EndSide,
-    IntegerDivisionOperator, NodeKind, Operator, OrderedKind, RecordSlot, Scope, Slot, Visit,
+    IntegerDivisionOperator, NodeId, NodeKind, Operator, OrderedKind, RecordSlot, Scope, Slot,
+    Visit,
 };
 use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::family::FamilyResult;
@@ -471,6 +472,15 @@ struct Iteration<'a> {
     sources: Vec<usize>,
     accumulator: Option<Value>,
     count: Integer,
+}
+
+/// The selection a recorded read evaluated (FR-107 "Read paths").
+#[derive(Clone, Copy)]
+enum ReadStep<'s> {
+    /// A record value's field.
+    Field(&'s str),
+    /// A model object's attribute.
+    Attribute(&'s str),
 }
 
 /// Which value family a [`Machine`] evaluates (SR-750 FND-011 round 2):
@@ -1092,6 +1102,9 @@ impl<'a, 'm> Machine<'a, 'm> {
                 Ok(())
             }
             Task::Bind(slot) => {
+                if let Some(trail) = self.trail.as_mut() {
+                    trail.element_paths.remove(&slot);
+                }
                 let value = self.pop()?;
                 *self.slot(slot)? = Some(value);
                 Ok(())
@@ -1505,7 +1518,9 @@ impl<'a, 'm> Machine<'a, 'm> {
                 ))?)
             }
             NodeKind::Field {
-                field, optional, ..
+                operand,
+                field,
+                optional,
             } => {
                 let Value::Composite(composite) = self.pop()? else {
                     return Err(invariant("field-composite-value-expected"));
@@ -1530,13 +1545,14 @@ impl<'a, 'm> Machine<'a, 'm> {
                     false,
                 )?;
                 self.note_field(&composite, index, &value);
+                self.note_read(node, *operand, ReadStep::Field(field.name()), None);
                 value
             }
             NodeKind::Attribute {
+                reference: operand,
                 field,
                 optional,
                 derefed,
-                ..
             } => {
                 let Value::Reference(reference) = self.pop()? else {
                     return Err(invariant("attribute-reference-value-expected"));
@@ -1557,6 +1573,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                     }
                     charge_named(self.meter, ChargePoint::ModelNavigate)?;
                 }
+                let read_reference = reference.clone();
                 let reference = if self.reads.is_some_and(|reads| {
                     reads.get(node.location()) == Some(&qsl_semantics::check::Observation::Pre)
                 }) {
@@ -1597,6 +1614,12 @@ impl<'a, 'm> Machine<'a, 'm> {
                     witnessed,
                 )?;
                 self.note_member(node, &reference, &field.name, &value);
+                self.note_read(
+                    node,
+                    *operand,
+                    ReadStep::Attribute(&field.name),
+                    Some(&read_reference),
+                );
                 value
             }
             NodeKind::Present(_) => {
@@ -2541,8 +2564,12 @@ impl<'a, 'm> Machine<'a, 'm> {
         };
         charge_visit(self.meter)?;
         iteration.next = iteration.next.saturating_add(1);
+        let position = iteration.next.saturating_sub(1);
         let body = match node.kind() {
-            NodeKind::Query { slot, body, .. } => {
+            NodeKind::Query {
+                slot, body, source, ..
+            } => {
+                self.note_element(node.at(*source), &iteration.source, *slot, position);
                 *self.slot(*slot)? = Some(element);
                 body
             }
@@ -2556,6 +2583,10 @@ impl<'a, 'm> Machine<'a, 'm> {
                     .accumulator
                     .clone()
                     .ok_or_else(|| invariant("fold-accumulator-missing"))?;
+                if let Some(trail) = self.trail.as_mut() {
+                    trail.element_paths.remove(accumulator);
+                    trail.element_paths.remove(binder);
+                }
                 *self.slot(*accumulator)? = Some(current);
                 *self.slot(*binder)? = Some(element);
                 step
@@ -2615,6 +2646,12 @@ impl<'a, 'm> Machine<'a, 'm> {
             reads.get(node.location()) == Some(&qsl_semantics::check::Observation::Pre)
         });
         if let Some(trail) = self.trail.as_mut() {
+            if trail.receiver_unlocated
+                && (trail.receiver.as_ref() == Some(object)
+                    || trail.receiver_pre.as_ref() == Some(object))
+            {
+                return;
+            }
             let observation = match (&trail.pre, pre) {
                 (Some(observation), true) => observation.clone(),
                 _ => trail.observation.clone(),
@@ -2629,6 +2666,185 @@ impl<'a, 'm> Machine<'a, 'm> {
                 _ => Provenance::member(observation, object.clone(), member.to_owned()),
             };
             trail.record(value, provenance);
+        }
+    }
+
+    /// FR-107 "Read paths": record the field or member selection at `node`,
+    /// whose operand is `operand`, after its charge was met and its value
+    /// read. `reference` is the object an attribute selection read from.
+    fn note_read(
+        &mut self,
+        node: CheckedNode<'_>,
+        operand: NodeId,
+        step: ReadStep<'_>,
+        reference: Option<&ObjectReference>,
+    ) {
+        if self.trail.is_none() {
+            return;
+        }
+        let path = self.read_path(node, operand, step, reference);
+        if let Some(trail) = self.trail.as_mut() {
+            trail.read(node.location(), path);
+        }
+    }
+
+    /// The runtime value path (QSpec FR-207) of the selection at `node`: its
+    /// operand's path extended by the selection's step, or none when the
+    /// operand has no location or the selection is not in the clause's own
+    /// frame.
+    fn read_path(
+        &self,
+        node: CheckedNode<'_>,
+        operand: NodeId,
+        step: ReadStep<'_>,
+        reference: Option<&ObjectReference>,
+    ) -> Option<RuntimeValuePath> {
+        let trail = self.trail.as_ref()?;
+        if self.frames.len() != 1 || !self.imported.is_empty() {
+            return None;
+        }
+        let operand = node.at(operand);
+        let mut path = if matches!(step, ReadStep::Attribute(_)) && Self::navigated(operand) {
+            // FR-107 "Read paths": a selection on a navigation's result is
+            // located at the referenced object's declared identity.
+            RuntimeValuePath {
+                observation: trail.observation.clone(),
+                subject: ValuePathSubject::Object(reference?.clone()),
+                steps: Vec::new(),
+            }
+        } else {
+            self.located(operand)?
+        };
+        let under_pre = self.reads.is_some_and(|reads| {
+            reads.get(node.location()) == Some(&qsl_semantics::check::Observation::Pre)
+        });
+        if let (true, Some(pre)) = (under_pre, trail.pre.as_ref()) {
+            path.observation = pre.clone();
+        }
+        match step {
+            ReadStep::Field(name) => path.steps.push(ValuePathStep::Field(name.to_owned())),
+            ReadStep::Attribute(name) => {
+                let at_root = path.steps.is_empty();
+                let receiver_binding = at_root
+                    && matches!(
+                        &path.subject,
+                        ValuePathSubject::Invocation {
+                            binding: InvocationBinding::Receiver,
+                            ..
+                        }
+                    );
+                if receiver_binding {
+                    path.steps.push(ValuePathStep::Field(name.to_owned()));
+                } else {
+                    let declared = at_root
+                        && matches!(&path.subject, ValuePathSubject::Object(object)
+                            if Some(object) == reference);
+                    if !declared {
+                        path.steps
+                            .push(ValuePathStep::Reference(reference?.clone()));
+                    }
+                    path.steps.push(ValuePathStep::Member(name.to_owned()));
+                }
+            }
+        }
+        Some(path)
+    }
+
+    /// Whether `node` is a relationship navigation, possibly under `value`,
+    /// `pre` or a coercion.
+    fn navigated(node: CheckedNode<'_>) -> bool {
+        match node.kind() {
+            NodeKind::Navigate { .. } => true,
+            NodeKind::Value(operand) | NodeKind::Pre(operand) | NodeKind::Coerce(operand, _) => {
+                Self::navigated(node.at(*operand))
+            }
+            _ => false,
+        }
+    }
+
+    /// Whether `node` is a field or member selection.
+    fn selected(node: CheckedNode<'_>) -> bool {
+        matches!(
+            node.kind(),
+            NodeKind::Attribute { .. } | NodeKind::Field { .. }
+        )
+    }
+
+    /// The path of the value `node` evaluated to, when it has one: a clause
+    /// binding, a quantifier element, a selection or the payload of an
+    /// optional value read from one.
+    fn located(&self, node: CheckedNode<'_>) -> Option<RuntimeValuePath> {
+        let trail = self.trail.as_ref()?;
+        match node.kind() {
+            NodeKind::Local(slot) => trail.element_paths.get(slot).cloned().or_else(|| {
+                let subject = trail.bindings.get(*slot)?.clone()?;
+                Some(RuntimeValuePath {
+                    observation: trail.observation.clone(),
+                    subject,
+                    steps: Vec::new(),
+                })
+            }),
+            NodeKind::Attribute { .. } | NodeKind::Field { .. } => {
+                trail.selection_path(node.location()).cloned()
+            }
+            NodeKind::Value(operand) => {
+                let mut path = self.located(node.at(*operand))?;
+                path.steps.push(ValuePathStep::OptionValue);
+                Some(path)
+            }
+            NodeKind::Pre(operand) | NodeKind::Coerce(operand, _) => {
+                self.located(node.at(*operand))
+            }
+            _ => None,
+        }
+    }
+
+    /// FR-107 "Read paths": the quantifier element at `position` of
+    /// `domain`, bound to `slot`, is located where FR-265 locates it.
+    fn note_element(
+        &mut self,
+        source: CheckedNode<'_>,
+        domain: &Arc<CollectionValue>,
+        slot: Slot,
+        position: usize,
+    ) {
+        if self.trail.is_none() || self.frames.len() != 1 || !self.imported.is_empty() {
+            return;
+        }
+        let Some(trail) = self.trail.as_ref() else {
+            return;
+        };
+        let path = if Self::navigated(source) {
+            // An element of a navigation's result is located at its own
+            // declared identity.
+            match domain.elements().get(position) {
+                Some(Value::Reference(object)) => Some(RuntimeValuePath {
+                    observation: trail.observation.clone(),
+                    subject: ValuePathSubject::Object(object.clone()),
+                    steps: Vec::new(),
+                }),
+                _ => None,
+            }
+        } else if Self::selected(source)
+            && trail
+                .provenance(&Value::Collection(Arc::clone(domain)))
+                .is_none()
+        {
+            // A collection read from an owner with no location has none.
+            None
+        } else {
+            self.provenance_of(domain, source)
+                .and_then(|provenance| provenance.position(position).map(|at| provenance.path(at)))
+        };
+        if let Some(trail) = self.trail.as_mut() {
+            match path {
+                Some(path) => {
+                    trail.element_paths.insert(slot, path);
+                }
+                None => {
+                    trail.element_paths.remove(&slot);
+                }
+            }
         }
     }
 

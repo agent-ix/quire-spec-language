@@ -90,7 +90,7 @@ element, tuple position or record field whose declared type is a variant type.
    resolves for a native model enum member, where `Gold` is the case name matched
    byte for byte (`gold` is another case). The checker SHALL give a case literal
    the static type `Alias::Tier` and the value of that case. No other literal has
-   a variant type: a Text literal, an Integer literal or a bare `Gold` at a
+   a variant type: a String literal, an Integer literal or a bare `Gold` at a
    variant slot is not a variant value. Four refusals apply, each at the name:
    - a variant type name that resolves to no variant type of the alias (in a
      type position or as the qualifier of a case) SHALL refuse
@@ -116,21 +116,23 @@ element, tuple position or record field whose declared type is a variant type.
    element of a collection, and a conditional whose branches both have the same
    variant type. The checker SHALL admit no conversion into or out of a variant
    type: no Text, Integer or ordinal conversion of a case, and no construction of
-   a case from a name computed at runtime. Where the language has a Text literal, a
-   `none` or a `case` expression, the checker SHALL refuse a Text literal or a
-   `none` at a variant slot `ill_typed`/`type-mismatch` at the expression, and a
+   a case from a name computed at runtime. Where the language has a quoted
+   String literal, a `none` or a `case` expression, the checker SHALL refuse a
+   String literal or a `none` at a variant slot `ill_typed`/`type-mismatch` at the expression, and a
    `case` expression whose scrutinee has a variant type `ill_typed`/`type-mismatch`
    at the scrutinee (ADR-012 §16.2 admits `case` over a declared union only, and
-   §16.5 gives a scrutinee that is not a union this refusal). QSL's expression
-   forms hold neither a Text literal nor `none` today. A Text literal or `none` in an
-   expression is read by S1 and refused by S2 as `unsupported_construct`, cause
-   `UnrepresentedConstruct` of the `Primary` production, at the literal. Since FR-313, `case`
+   §16.5 gives a scrutinee that is not a union this refusal). A quoted
+   literal is a String literal (FR-091, "Native scalar literals") and reaches the
+   checker, which refuses it at a variant slot. QSL's expression forms hold no
+   `none` today: `none` in an expression is read by S1 and refused by S2 as
+   `unsupported_construct`, cause `UnrepresentedConstruct` of the `Primary`
+   production, at the `none`. Since FR-313, `case`
    opens an expression whose arm list is `{ ... }`: S1 refuses the control form
    `case t when ...` in expression position as `invalid_syntax`, cause
    `UnexpectedToken`, at the `when` token, and a well-formed `case` expression
    reaches the checker, which refuses it `ill_typed`/`type-mismatch` at the
    scrutinee (FR-318).
-   Neither the Text literal nor `none` reaches the checker.
+   `none` does not reach the checker.
 6. **Check typing is nominal and invariant.** A value of variant type `V` SHALL
    conform to a slot whose declared type is exactly `V` and to no other. A
    variant type has no supertype, so FR-359's ancestor rule never applies to it
@@ -276,7 +278,7 @@ The cross-repo test cases are QSpec TC-939 to TC-942.
 | FR-360-AC-2 | The unit assembled over that package gives `Account.tier` the type `Config::Tier`, an `optional` field `Option<Config::Tier>`, and an ordered non-unique `[0, 3]` field `Sequence<Config::Tier>[0, 3]`, never `Reference<Config::Tier>`; an operation parameter or result naming `Tier` has the same type. The type environment holds, for `Config::Tier` and each case, the effective identity of the view and the checked node key together, and a unit that selects the same package as `Cfg` assigns the same keys of both kinds. | Test (TC-1006) |
 | FR-360-AC-3 | A variant `typeRef` whose variant type has no case refuses once, `invalid_model_binding`/`malformed-declaration` at the variant type, path `TypeDefinition.variants`, and the field naming it raises no refusal of its own. | Test (TC-1006) |
 | FR-360-AC-4 | With `Config::Tier::Gold` in a function `f(t: Config::Tier): Config::Tier { t }`, a field read `a.tier`, a `let` binding, an `Option` `value`, a collection element and `if c then Config::Tier::Gold else a.tier` each check as type `Config::Tier`; `Config::Tier::Gold` at an `Account.tier` slot, passed to `f` and in an `Option<Config::Tier>` literal checks. A clause may name `Config::Tier` in a type position and `Config::Tier::Gold` as a literal with no `unsupported_construct` refusal. A variant type with a case named `Gold Plus` is admitted; `Config::Tier::Gold` beside it still checks, and the spelling `Config::Tier::Gold Plus` does not parse as a case literal. | Test (TC-1007) |
-| FR-360-AC-5 | Each of the following refuses at the expression naming the expected and actual types. `ill_typed`/`type-mismatch`: `Config::Level::Gold` at a `Config::Tier` slot; the Integer literal `0` at a `Config::Tier` slot; a bare `Gold`; a `Config::Tier` at a `Config::Level` parameter; a `Sequence<Config::Tier>` at a `Sequence<Config::Level>` and at `Option<Config::Tier>`; `Config::Tier::Silver` (undeclared case) and `Config::Tier::gold` (letter-case variant). The Text literal `"Gold"` and `none` are refused by S2 as `unsupported_construct` (cause `UnrepresentedConstruct`, production `Primary`) at the literal, and, since FR-313, `case t when { true } true` by S1 as `invalid_syntax` (cause `UnexpectedToken`) at the `when` token (item 5); a well-formed `case` expression over a variant is refused by the checker as `ill_typed`/`type-mismatch` at the scrutinee (item 5, FR-318). `missing_declaration`/`missing-name` at the name: `Config::Nope::Gold` and `Config::Nope` in a type position. `ill_typed`/`operator-ineligible`: `Config::Tier::Gold < Config::Tier::Standard`, `<=`, `>` and `>=`. | Test (TC-1007) |
+| FR-360-AC-5 | Each of the following refuses at the expression naming the expected and actual types. `ill_typed`/`type-mismatch`: `Config::Level::Gold` at a `Config::Tier` slot; the Integer literal `0` at a `Config::Tier` slot; a bare `Gold`; a `Config::Tier` at a `Config::Level` parameter; a `Sequence<Config::Tier>` at a `Sequence<Config::Level>` and at `Option<Config::Tier>`; `Config::Tier::Silver` (undeclared case) and `Config::Tier::gold` (letter-case variant). The String literal `"Gold"` is refused by the checker as `ill_typed`/`type-mismatch` at the literal, naming the expected variant type and the actual type `String`; `none` is refused by S2 as `unsupported_construct` (cause `UnrepresentedConstruct`, production `Primary`) at the `none`, and, since FR-313, `case t when { true } true` by S1 as `invalid_syntax` (cause `UnexpectedToken`) at the `when` token (item 5); a well-formed `case` expression over a variant is refused by the checker as `ill_typed`/`type-mismatch` at the scrutinee (item 5, FR-318). `missing_declaration`/`missing-name` at the name: `Config::Nope::Gold` and `Config::Nope` in a type position. `ill_typed`/`operator-ineligible`: `Config::Tier::Gold < Config::Tier::Standard`, `<=`, `>` and `>=`. | Test (TC-1007) |
 | FR-360-AC-6 | Over `Config::Tier`, `=` is true for `Gold = Gold` and false for `Gold = Standard`, `!=` the negation, in either operand order, with no checked-invariant refusal. `Config::Level::Gold = Config::Tier::Gold` refuses `ill_typed`/`type-mismatch` at check and never evaluates. A case read from a field equals the same case written as a literal. | Test (TC-1008) |
 | FR-360-AC-7 | Equality reaches a variant value inside other values by the same rule: two `Settings` records equal exactly when `tier` is the same case (and their other fields are equal), two `Option<Config::Tier>` equal exactly when both are `none` or both hold the same case, and two `Sequence<Config::Tier>`, `Set<Config::Tier>` and a tuple position likewise. A `Set<Config::Tier>` built from `Gold, Gold, Standard` has two elements and one built from `Standard, Gold` has the same two, each in the order `Gold`, `Standard` (ascending UTF-8 bytes of the case names); a `Set<Config::Tier>` over a `Tier` with cases `Standard`, `Gold`, `Bronze` orders `Bronze`, `Gold`, `Standard`, and the reverse order fails. | Test (TC-1008) |
 | FR-360-AC-8 | An operation parameter of type `Tier` is admitted at intake, its call with `Config::Tier::Gold` checks and runs, and a call with a `Config::Level` value refuses `ill_typed`/`type-mismatch` naming the parameter; an operation result of type `Tier` is admitted and its value compares by case. The checked package emits `Config::Tier` as a `model`/`variant_type` node, the case literal as an `enum_value` of it and the argument by `ref` with no conversion node, and reads back `Verified`, also for a type whose cases include `Gold Plus`, `2x` and `Café`. A parameter or result naming an interface-featured object type keeps `invalid_model_binding`/`malformed-declaration` at the operation node, path `Operation.params[i].typeRef` or `Operation.returns.typeRef`. | Test (TC-1009) |

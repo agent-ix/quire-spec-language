@@ -21,7 +21,7 @@ parameters and results, that `=` and `!=` over two operands of one of these
 types check and evaluate by the native payload, that unlike operand types and
 ordering refuse, and that each admitted comparison lowers to its native
 equality identity. Operand values are supplied as runtime inputs or read from
-fields; the unit language has no literal for these types.
+fields; TC-1052 covers the literal forms of these types.
 
 ## Test Procedure
 

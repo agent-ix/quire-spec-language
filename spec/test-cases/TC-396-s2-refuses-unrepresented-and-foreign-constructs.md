@@ -29,7 +29,7 @@ Every fixture unit below starts with the complete-V1 header
 alias is `v`.
 
 1. For each body below, build an admissible unit whose one function body is
-   that construct, and run S2: `"text"`; `decimal(1, 2)`;
+   that construct, and run S2: `decimal(1, 2)`;
    `xs[0]`; `none`; `reaches(a, b, M::R)`.
 2. Run S2 on `a div b`, `a rem b`, `a mod b` and
    `if true then 1 else a mod b`, each under a state-only declaration
