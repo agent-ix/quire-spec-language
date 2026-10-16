@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-1028 E6 to E14 through the real spine: a unit-language source is
-//! composed (parse, check, emit, IR's checked-package/v2 read), then `replay`
-//! recompiles it and binds native `UUID` and `Timestamp` arguments.
+//! composed (parse, check, emit), then `replay` recompiles it and binds native
+//! `UUID` and `Timestamp` arguments. Neither compose nor `replay` reads the
+//! unit's own package back through IR; IR's admission of the new forms is
+//! asserted only by the admission-corpus rows in `qsl-package`.
 //!
 //! Every assertion compares typed fields (the evaluated value, the category,
 //! the refusal's code, cause, parameter position and kernel class), never
@@ -136,7 +138,7 @@ fn tc_1028_noncanonical_uuid_is_refused_through_replay() {
 /// TC-1028 Timestamp admission: a noncanonical spelling and a canonical
 /// count outside the signed 128-bit domain are refused at the input, each
 /// over its own kernel class.
-#[trace("FR-056-AC-35", "TC-1028")]
+#[trace("TC-1028")]
 #[test]
 fn tc_1028_noncanonical_and_out_of_domain_timestamps_are_refused_through_replay() {
     use quire_exact::ConstructionCause::{TimestampNoncanonical, TimestampOutOfDomain};
