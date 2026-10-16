@@ -14,7 +14,7 @@ Verify FR-107's `evaluate_clause_set`: the entries it returns and their order,
 that a postcondition is evaluated only after every precondition is true, the
 combined outcome, the stop at an incomplete clause, and the refusals.
 
-Scope: FR-107-AC-13, FR-107-AC-14, FR-107-AC-15, FR-107-AC-16, FR-107-AC-18.
+Scope: FR-107-AC-13, FR-107-AC-14, FR-107-AC-15, FR-107-AC-16, FR-107-AC-18, FR-107-AC-19, FR-107-AC-20.
 
 ## Test Procedure
 
@@ -25,8 +25,7 @@ Use FR-108's `Config` unit and domain package with these added clauses on
 ```text
 pre UpdateAllowed using v on Config::ConfigVersion::attemptUpdate { self.versionNumber < 3 }
 pre UpdateNotMax using v on Config::ConfigVersion::attemptUpdate { self.versionNumber < 1000 }
-pre UpdateDivides using v on Config::ConfigVersion::attemptUpdate { 100 / self.versionNumber > 0 }
-post UpdateRaises using v on Config::ConfigVersion::attemptUpdate { self.versionNumber = pre(self.versionNumber) + 1 }
+post UpdateRaises using v on Config::ConfigVersion::attemptUpdate { self.versionNumber - pre(self.versionNumber) = 1 }
 ```
 
 Invocations of `attemptUpdate` with `self` `child` and result `true`; every
@@ -37,7 +36,6 @@ snapshot holds `root` (version 0, no parent) and `child`, and the table gives
 | --- | --- | --- |
 | `up12` | `child` 1 | `child` 2 |
 | `up34` | `child` 3 | `child` 4 |
-| `up01` | `child` 0 | `child` 1 |
 
 A current snapshot `cur` holds `root` 0 and `child` 1 with no parent, for
 `NoCycle` (FR-108) with `self` `child`. Admit each clause's observations by
@@ -54,8 +52,21 @@ step sets one. Tag the tests `#[trace("TC-1039", "FR-107-AC-n")]`.
 5. The set {`UpdateAllowed`, `UpdateAllowed`}; the set {`UpdateAllowed`,
    `sameIdentity`}; the set {`UpdateAllowed` with the observations admitted
    for `UpdateRaises`}.
-6. The set {`UpdateDivides`, `UpdateRaises`} over `up01`, then the set
-   {`UpdateAllowed`, `UpdateDivides`} over `up01`.
+6. The combination of verdicts, called directly as a unit test of the crate
+   (no `Linked` clause evaluates to a kernel `Undefined` or `Refused`, FR-107
+   Behavior): the sets {}, {true, true}, {true, false}, {false, X},
+   {true, X}, {X}, {X, X}, {true, incomplete}, {false, incomplete} and
+   {X, incomplete}, X being in turn a kernel `Undefined(DivisionByZero)` and
+   a kernel `Refused`.
+7. A self-contained fixture, not the `Config` unit: TC-792's, a model `M`
+   with an object type `A` and a query operation `ready(): Boolean` whose
+   effective precondition is `false` for the receiver `r1`, with the clauses
+   `pre F using v on M::A::ready { self.ready() }`,
+   `pre G using v on M::A::ready { true }` and
+   `post H using v on M::A::ready { true }`, and an invocation of `ready`
+   with `self` `r1` and result `true` whose snapshots hold `r1`. Call
+   `evaluate_clause_set` with the sets {`F`}, {`G`, `F`} and {`H`, `F`}; then
+   with the effective precondition `true`, the set {`F`}.
 
 ## Expected Results
 
@@ -77,7 +88,13 @@ step sets one. Tag the tests `#[trace("TC-1039", "FR-107-AC-n")]`.
   `UpdateAllowed`; `CallFailure::Input(InputRefusal::UnknownClause)` naming
   `sameIdentity`; `CallFailure::Input(InputRefusal::ObservationsMismatch)`.
   No call returns an entry.
-- Step 6: over `up01`, one entry, `UpdateDivides`, not a completed Boolean
-  (its division by zero), outcome `Undecided`, and no entry for
-  `UpdateRaises`; the second set gives `UpdateAllowed` `Completed(true)` then
-  `UpdateDivides`, outcome `Undecided`.
+- Step 6: `True` for {} and {true, true}; `False` for {true, false} and
+  {false, X}; `Undecided` for {true, X}, {X} and {X, X}; `Incomplete` for
+  {true, incomplete}, {false, incomplete} and {X, incomplete}; each X gives
+  the same outcome.
+- Step 7: {`F`}: one entry, `F` `FamilyResult::Undefined` with reason
+  `precondition-false` (operation `ready`), outcome `Undecided`; {`G`, `F`}:
+  two entries in the order `F`, `G`, `F` that result and `G`
+  `Completed(true)`, outcome `Undecided`; {`H`, `F`}: one entry, `F` with that
+  result, no entry for `H`, outcome `Undecided`; with the precondition
+  `true`, {`F`}: one entry, `F` `Completed(true)`, outcome `True`.

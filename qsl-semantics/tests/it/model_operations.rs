@@ -2338,6 +2338,44 @@ fn a_decimal_typed_parameter_refuses_at_intake_not_assembly() {
     assert_eq!(refusals[0].cause.as_str(), "declaration-form");
 }
 
+/// FR-056-AC-11 (TC-897 step 3): a parameter whose `typeRef` is the bare
+/// `ix://quire/native/Text` resolves at the pinned validator and refuses
+/// `unsupported_construct`/`declaration-form` at the parameter, naming
+/// `profile`: `Text[min, max; profile]` needs its parameters.
+#[trace("TC-897", "FR-056-AC-11")]
+#[test]
+fn a_bare_native_text_parameter_refuses_naming_the_profile() {
+    let note = parameter("note", "ix://quire/native/Text");
+    let parameter_node = note["identity"].as_str().unwrap().to_owned();
+    let document = config_version_document(
+        attempt_update(
+            json!([note]),
+            json!({"modifies": [], "creates": [], "deletes": []}),
+        ),
+        Vec::new(),
+        Vec::new(),
+        json!([]),
+    );
+    let refusal = admit(&document).expect_err("a bare native Text refuses at I1");
+    let UnitIntakeCause::Refused(refusals) = refusal.cause else {
+        panic!("{refusal:?}: expected a Refused cause");
+    };
+    assert_eq!(refusals.len(), 1, "{refusals:?}");
+    assert_eq!(refusals[0].code.as_str(), "unsupported_construct");
+    let qsl_semantics::model::refusal::ModelRefusalCause::UnsupportedDeclarationForm {
+        node, ..
+    } = &refusals[0].cause
+    else {
+        panic!("declaration-form, not {:?}", refusals[0].cause);
+    };
+    assert_eq!(node, &parameter_node);
+    assert!(
+        refusals[0].detail.contains("requires parameter(s) profile"),
+        "{}",
+        refusals[0].detail
+    );
+}
+
 /// FR-103-AC-3 (TC-458 step 3, part 2): a parameter typed `VersionNumber`
 /// admits it typed the bound `Int[0, 1000]`, alongside `attemptUpdate`'s
 /// existing no-op frame.

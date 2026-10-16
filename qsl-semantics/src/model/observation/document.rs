@@ -1347,10 +1347,7 @@ fn admit_native(
 #[qsl_attrs::string_edge]
 fn admit_text(payload: &str, declared: &quire_exact::TextType) -> Result<Value, AdmissionRecord> {
     let profile = declared.profile();
-    let retained: String = match profile.normalization() {
-        Some(form) => form.apply(payload).collect(),
-        None => payload.to_owned(),
-    };
+    let retained = super::retained_text(declared, payload);
     let measured = profile.length(&retained);
     if !(declared.min()..=declared.max()).contains(&measured) {
         return Err(admission_record(Code::InvalidRuntimeInput, "invalid-value")

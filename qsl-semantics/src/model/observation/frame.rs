@@ -15,7 +15,7 @@
 
 use std::collections::BTreeMap;
 
-use quire_exact::{EffectiveId, ObjectReference};
+use quire_exact::{EffectiveId, ObjectReference, ValueType};
 
 use super::document::{find_declaration, raw_field, RawObject, RawPopulation};
 use super::helpers::object_reference;
@@ -98,7 +98,7 @@ struct WireFacts<'a> {
 /// One population's objects on one side, in document order:
 /// `frame[i]` and `facts[i]` describe the same object.
 struct WireSide<'a> {
-    frame: Vec<FrameObject<'a, &'a SnapshotValue>>,
+    frame: Vec<FrameObject<'a, TypedRaw<'a>>>,
     facts: Vec<WireFacts<'a>>,
 }
 
@@ -117,7 +117,7 @@ impl WireSide<'_> {
 fn wire_object<'a>(
     context: &FrameContext<'a>,
     object: &'a RawObject,
-) -> Result<(FrameObject<'a, &'a SnapshotValue>, WireFacts<'a>), AdmissionFailure> {
+) -> Result<(FrameObject<'a, TypedRaw<'a>>, WireFacts<'a>), AdmissionFailure> {
     let (view, type_identity) = find_declaration(context.views, object.type_identity.as_str())
         .ok_or_else(|| fault("frame-object-type-unresolved"))?;
     let effective_type = *view
@@ -142,7 +142,13 @@ fn wire_object<'a>(
         };
         let value =
             raw_field(&object.fields, name).ok_or_else(|| fault("frame-declared-field-missing"))?;
-        fields.insert(key.clone(), value);
+        fields.insert(
+            key.clone(),
+            TypedRaw {
+                value,
+                declared: attribute.field().value_type(),
+            },
+        );
         names.insert(key, name);
     }
     Ok((
@@ -305,7 +311,7 @@ fn run<'a>(
             &frame,
             &pre.frame,
             &post.frame,
-            |_, left, right| raw_values_equal(left.copied(), right.copied()),
+            |_, left, right| typed_values_equal(left, right),
             &mut |charge| {
                 let point = match charge {
                     FrameCharge::Write => ChargePoint::FrameWrite,
@@ -550,6 +556,19 @@ fn budget_record(incomplete: &Incomplete) -> AdmissionRecord {
     caller_budget_record(&incomplete.denial(), INSUFFICIENT_NEXT_CHARGE)
 }
 
-fn raw_values_equal(left: Option<&SnapshotValue>, right: Option<&SnapshotValue>) -> bool {
-    left == right
+/// A wire field value with the type its slot declares.
+struct TypedRaw<'a> {
+    value: &'a SnapshotValue,
+    declared: &'a ValueType,
+}
+
+/// Whether a field is unchanged (FR-106 check 11, FR-106-AC-40): each value
+/// compares by its declared type's own equality, so a Text compares by its
+/// retained sequence under its profile and every other type as written.
+fn typed_values_equal(left: Option<&TypedRaw<'_>>, right: Option<&TypedRaw<'_>>) -> bool {
+    match (left, right) {
+        (None, None) => true,
+        (Some(left), Some(right)) => left.value.equals_by(right.value, Some(left.declared)),
+        _ => false,
+    }
 }
