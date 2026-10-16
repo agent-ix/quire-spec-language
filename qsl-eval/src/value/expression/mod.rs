@@ -12,6 +12,7 @@
 //! through its public accessors, never through a private field (US-009).
 
 mod causes;
+mod clause_set;
 mod evaluate;
 mod family;
 mod s6a;
@@ -19,6 +20,7 @@ mod s6a;
 use evaluate::Machine;
 use qsl_foundation::diagnostic::InternalFault;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
+use qsl_semantics::model::observation::SelfKind;
 use qsl_semantics::value::supplied::{
     SuppliedCause, SuppliedFailure, SuppliedLimits, SuppliedPhase, SuppliedRun, SuppliedStop,
     UnsupportedHelperStop,
@@ -28,11 +30,12 @@ use quire_semantic_value::call::InputRefusal;
 use quire_semantic_value::declaration::{EnvironmentFailure, TypeEnvironment};
 use s6a::{ReferenceEvaluation, S6aFamilyKind};
 
+pub use clause_set::{ClauseSetEntry, ClauseSetEvaluation, ClauseSetOutcome};
 pub use evaluate::Evaluation;
 pub use family::{InvalidQualifiedName, QualifiedName};
 pub use s6a::separation::{
-    ClauseEvaluation, InvocationBinding, ObservationIdentity, RuntimeValuePath, Separation,
-    SeparationStep, StopReport, ValuePathStep, ValuePathSubject, WitnessClaim,
+    ClauseEvaluation, ClauseRead, InvocationBinding, ObservationIdentity, RuntimeValuePath,
+    Separation, SeparationStep, StopReport, ValuePathStep, ValuePathSubject, WitnessClaim,
 };
 
 // `CheckedExpression` is `check`'s own checked-output type; this module
@@ -499,6 +502,25 @@ pub trait CheckedPackageEvaluation: family::sealed::Sealed {
         meter: &mut Meter,
     ) -> Result<ClauseEvaluation, CallFailure>;
 
+    /// FR-107 "Clause sets": evaluate `clauses`, the state clauses of one
+    /// invocation, one object or one state, each over its own admitted
+    /// observations and with a fresh meter built from `limits`, and report
+    /// the entries together with their combined outcome (FR-120).
+    ///
+    /// Invariants come first, then preconditions, then postconditions, each
+    /// group in ascending name order; postconditions are evaluated only
+    /// when every precondition is `Completed(true)`. Refuses as
+    /// [`Self::evaluate_clause`] does for an unknown clause or mismatched
+    /// observations, before evaluating any clause.
+    fn evaluate_clause_set(
+        &self,
+        clauses: &[(
+            QualifiedName,
+            &qsl_semantics::model::observation::AdmittedObservations,
+        )],
+        limits: quire_exact::ScalarLimits,
+    ) -> Result<ClauseSetEvaluation, CallFailure>;
+
     /// FR-268 (ADR-031 SW-13): check that `claim` separates the state
     /// clause `clause` over `observations`, charged to `meter`: step 1
     /// resolves the claim's quantifier to a `forall` or `exists` node of the
@@ -545,7 +567,28 @@ struct ClauseSetup<'a> {
     pre: Option<&'a ObjectEnvironment>,
     bindings: Vec<Value>,
     trail: s6a::separation::Trail,
-    receiver_path: s6a::separation::RuntimeValuePath,
+    receiver_path: Option<s6a::separation::RuntimeValuePath>,
+}
+
+/// FR-107: the state clause `clause` names, when `observations` were
+/// admitted for it. Refuses `UnknownClause` or `ObservationsMismatch`
+/// before any charge.
+fn resolve_clause<'a>(
+    package: &'a CheckedPackage,
+    clause: &QualifiedName,
+    observations: &qsl_semantics::model::observation::AdmittedObservations,
+) -> Result<&'a qsl_semantics::check::CheckedStateClause, CallFailure> {
+    let name = clause
+        .as_unqualified()
+        .ok_or_else(|| InputRefusal::UnknownClause(clause.to_string()))?;
+    let declaration = package
+        .graph()
+        .state_clause(name)
+        .ok_or_else(|| InputRefusal::UnknownClause(clause.to_string()))?;
+    if declaration.identity() != observations.clause {
+        return Err(InputRefusal::ObservationsMismatch.into());
+    }
+    Ok(declaration)
 }
 
 impl<'a> ClauseSetup<'a> {
@@ -554,16 +597,7 @@ impl<'a> ClauseSetup<'a> {
         clause: &QualifiedName,
         observations: &'a qsl_semantics::model::observation::AdmittedObservations,
     ) -> Result<Self, CallFailure> {
-        let name = clause
-            .as_unqualified()
-            .ok_or_else(|| InputRefusal::UnknownClause(clause.to_string()))?;
-        let declaration = package
-            .graph()
-            .state_clause(name)
-            .ok_or_else(|| InputRefusal::UnknownClause(clause.to_string()))?;
-        if declaration.identity() != observations.clause {
-            return Err(InputRefusal::ObservationsMismatch.into());
-        }
+        let declaration = resolve_clause(package, clause, observations)?;
         // The clause's own observation (FR-107): `current` for an
         // invariant, `post` for a postcondition, and `pre` for a
         // precondition, which reads every model read there and never the
@@ -612,28 +646,60 @@ impl<'a> ClauseSetup<'a> {
         // The clause's own observation names its value paths: the pre
         // snapshot for a precondition (FR-104).
         let own = s6a::separation::observation_identity(&current.identity);
-        let mut trail = s6a::separation::Trail::new(own, pre);
-        trail.receiver = Some(observations.self_object.clone());
-        trail.receiver_pre = observations.receiver_pre.clone();
-        trail.receiver_invocation = observations
-            .receiver_invocation
+        let invocation = observations
+            .invocation
             .as_ref()
             .map(s6a::separation::observation_identity);
-        // FR-207-AC-8: the receiver is rooted at the invocation's receiver
-        // binding when the context has no declared object identity, and at
-        // its declared object identity otherwise.
-        let receiver_subject = match observations.receiver_invocation.as_ref() {
-            Some(invocation) => s6a::separation::ValuePathSubject::Invocation {
-                invocation: s6a::separation::observation_identity(invocation),
-                binding: s6a::separation::InvocationBinding::Receiver,
-            },
-            None => s6a::separation::ValuePathSubject::Object(observations.self_object.clone()),
+        let mut trail = s6a::separation::Trail::new(own.clone(), pre);
+        trail.receiver = Some(observations.self_object.clone());
+        trail.receiver_pre = observations.receiver_pre.clone();
+        // FR-107 "The receiver path": `self` is rooted at its declared
+        // object identity when it has one, and at the invocation's receiver
+        // binding when it is a context; a context with no invocation has no
+        // path.
+        let receiver_subject = match observations.self_kind {
+            SelfKind::Object => Some(s6a::separation::ValuePathSubject::Object(
+                observations.self_object.clone(),
+            )),
+            SelfKind::Context => {
+                trail.receiver_invocation = invocation.clone();
+                trail.receiver_unlocated = invocation.is_none();
+                invocation
+                    .clone()
+                    .map(|invocation| s6a::separation::ValuePathSubject::Invocation {
+                        invocation,
+                        binding: s6a::separation::InvocationBinding::Receiver,
+                    })
+            }
         };
-        let receiver_path = s6a::separation::RuntimeValuePath {
-            observation: s6a::separation::observation_identity(&current.identity),
-            subject: receiver_subject,
+        let binding = |binding: s6a::separation::InvocationBinding| {
+            invocation
+                .clone()
+                .map(|invocation| s6a::separation::ValuePathSubject::Invocation {
+                    invocation,
+                    binding,
+                })
+        };
+        trail.bindings.push(receiver_subject.clone());
+        let mut remaining_slots = declaration.parameters().get(1..).unwrap_or(&[]).iter();
+        if declaration.binds_result() {
+            remaining_slots.next();
+            trail
+                .bindings
+                .push(binding(s6a::separation::InvocationBinding::Result));
+        }
+        for (parameter, _) in remaining_slots {
+            trail
+                .bindings
+                .push(binding(s6a::separation::InvocationBinding::Parameter(
+                    parameter.clone(),
+                )));
+        }
+        let receiver_path = receiver_subject.map(|subject| s6a::separation::RuntimeValuePath {
+            observation: own,
+            subject,
             steps: Vec::new(),
-        };
+        });
         Ok(Self {
             declaration,
             current: &current.environment,
@@ -826,6 +892,17 @@ impl CheckedPackageEvaluation for CheckedPackage {
             trail,
             setup.receiver_path,
         ))
+    }
+
+    fn evaluate_clause_set(
+        &self,
+        clauses: &[(
+            QualifiedName,
+            &qsl_semantics::model::observation::AdmittedObservations,
+        )],
+        limits: quire_exact::ScalarLimits,
+    ) -> Result<ClauseSetEvaluation, CallFailure> {
+        clause_set::evaluate(self, clauses, limits)
     }
 
     fn check_separation(

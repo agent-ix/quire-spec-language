@@ -34,7 +34,7 @@ pub enum InvocationBinding {
 
 /// QSpec FR-207's root subject, for the subjects a state clause's domain
 /// collection can have.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum ValuePathSubject {
     /// A declared object identity (QSpec FR-204): a collection stored in a
     /// member of that object.
@@ -53,7 +53,7 @@ pub enum ValuePathSubject {
 }
 
 /// QSpec FR-207's traversal steps a state clause's domain path uses.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum ValuePathStep {
     /// A declared field of a record, by its exact spelling.
     Field(String),
@@ -63,11 +63,14 @@ pub enum ValuePathStep {
     Member(String),
     /// The element at this zero-based position of a collection.
     Index(u64),
+    /// The object a reference value refers to, by its declared object
+    /// identity (QSpec FR-207's object-reference selection).
+    Reference(ObjectReference),
 }
 
 /// QSpec FR-207's runtime value path: a root (the observation and the
 /// subject) and an ordered sequence of traversal steps.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct RuntimeValuePath {
     /// The observation the value is read under.
     pub observation: ObservationIdentity,
