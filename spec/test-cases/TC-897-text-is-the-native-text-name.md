@@ -24,6 +24,14 @@ QSpec TC-235 retains K2's model binding and complete business vectors.
 
 ## Test Procedure
 
+Steps 1, 2 and 5 declare `Label` as a Text value type in the form of
+FR-056-AC-37 and depend on the amended semantic-IR validator that FR-056's
+Text paragraph states (a length or format constraint applied to a value type
+of `scalar` `string` is applicable). Step 3 depends on the validator's native
+vocabulary naming `Text`: at the pinned validator, which has no `Text`, step 3
+refuses `invalid_model_binding`/`malformed-declaration` at `label`, as step 4
+does. Steps 4 and 6 and 7 are reachable today.
+
 Start from a domain package whose object type `Note` declares a field
 `label` and an operation `rename(to): Boolean` that intake admits.
 

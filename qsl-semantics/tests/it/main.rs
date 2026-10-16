@@ -51,7 +51,11 @@ mod operation_bodies;
 mod operation_clauses;
 mod quantities;
 #[cfg(feature = "test-support")]
+mod relationship_extents;
+#[cfg(feature = "test-support")]
 mod relationship_navigation;
+#[cfg(feature = "test-support")]
+mod relationship_snapshots;
 mod state_clauses;
 #[cfg(feature = "test-support")]
 mod tc235_business_meanings;
