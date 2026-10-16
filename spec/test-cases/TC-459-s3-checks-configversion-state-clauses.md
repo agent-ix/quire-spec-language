@@ -89,6 +89,5 @@ Tag the tests `#[trace("TC-459", "FR-104-AC-n")]`.
   retains each object's most-specific identity under QSpec FR-043/FR-010.
 - Step 7: each checks. `self` is `Reference<Config::Flow>` and `self.n` an
   `Attribute` of type `Integer`; `P`'s read of `n` is `pre`, `Q`'s reads are
-  `post` and `pre`, and `I`'s read is `current`. The evaluator (FR-107)
-  binds `self` to the run and roots the receiver path at the run's declared
-  object identity, with no steps.
+  `post` and `pre`, and `I`'s read is `current`. (Evaluation of such clauses
+  per run, with `self` the run, is QSpec TC-235 M16's reference test.)

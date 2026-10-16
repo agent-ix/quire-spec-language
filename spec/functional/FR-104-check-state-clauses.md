@@ -89,7 +89,7 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
   `OperationEffect` as FR-103 and FR-154 admit it. No scoped frame is built
   for a process operation: intake refuses its receiver-scoped members
   (`modifies_receiver`, `deletes_receiver: true`) at the member
-  (FR-154), so the frame a clause names holds only `every-object` `modifies`
+  (FR-154-AC-8), so the frame a clause names holds only `every-object` `modifies`
   entries, `creates`, `deletes` and `deletes_parameters` entries, and no
   clause can name a process operation whose frame holds a receiver-scoped
   entry. The anchor context of an operation of a state machine is the node of
@@ -232,7 +232,7 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
   boundable by `Cardinality`.
 - The checker SHALL key a population domain as
   `DomainKey::Population{member_type, ordinal}` with `member_type` the
-  `model`/`object_type` node of the population's *canonical*
+  `model`/`object_type` or `model`/`process` node of the population's *canonical*
   member type: the least, in ascending `DeclarationKey` order, of its
   declared member types -- never a node of the clause's context type `T`
   itself when `T` is a proper subtype of a member (SR-736 FND-010), and
@@ -276,7 +276,6 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
 | FR-104-AC-8 | Over a package that adds operation `probe(target: ConfigVersion)` on `ConfigVersion` with no result and an empty frame: the postcondition `deref(target).versionNumber = 1` checks with its read `post`; the precondition `deref(target).versionNumber = 1` checks with its read `pre`; the postcondition `pre(deref(target).versionNumber) = 1` checks with its read `pre`; the postcondition `pre(target) = target` refuses `wrong_snapshot`/`forbidden-pre-read` at the `pre`. | Test (TC-459) |
 | FR-104-AC-9 | Under `quire.model.complete/v1`, `reaches(self, target, parent)` on a `ConfigVersion` subtype with its inherited `parent: Option<Reference<ConfigVersion>>` field checks with `self` retained as the subtype reference and `target` as the base reference, without erasing the operand identity FR-043 evaluates; a target type not conforming to the edge owner refuses `ill_typed`/`operator-ineligible`. The subtype/base operands under any other admitted model selection refuse `ill_typed`/`operator-ineligible` by the exact-type rule. | Test |
 | FR-104-AC-10 | Over the ConfigVersion package (TC-458's) with a process `Flow` (identity field `x`, field `n: Integer`) that declares operation `go` whose frame is `modifies [Flow/n]` and a closed population of `Flow`, `pre P using v on Config::Flow::go { self.n < 3 }`, `post Q using v on Config::Flow::go { self.n = pre(self.n) + 1 }` and `invariant I using v on Config::Flow at current { self.n >= 0 }` each check, `self` being `Reference<Config::Flow>` and `self.n` an `Attribute` of type `Integer`; `P`'s read is `pre`, `Q`'s reads are `post` and `pre`, `I`'s read is `current`. `pre M using v on Config::Flow::missing { true }` refuses `missing_declaration`/`missing-name` at `missing`. | Test (TC-459, TC-460) |
-| FR-104-AC-11 | A `go` whose frame holds `modifies_receiver [Flow/n]` or `deletes_receiver: true` is refused at intake `invalid_model_binding`/`malformed-declaration` at the member (FR-154-AC-8), so no clause names it and none reaches the assembler. | Test (TC-1043) |
 
 ## Dependencies
 

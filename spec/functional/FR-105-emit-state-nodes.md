@@ -29,7 +29,7 @@ relationships:
 When a checked graph holds state clauses (FR-104), S4 SHALL emit, all or
 nothing, the `state`/`state_clause`, `state`/`operation_anchor` and
 `state`/`frame` nodes below (ADR-012 §15.3, §15.4). S4 SHALL name every model
-member by its declaring object type's `model`/`object_type` node and its
+member by its declaring type's node (`model`/`object_type`, `model`/`process` or `model`/`state_machine`) and its
 member name, as ADR-013 O-06, FR-094 and QSpec FR-322 "Model-owned members"
 already do, and SHALL emit no `model`/`field_declaration` or
 `model`/`operation_declaration` node. The package's `package_id` covers these
@@ -63,11 +63,11 @@ source map (FR-095).
 | Node | `semantic_type` | `body` | Occurrences |
 | --- | --- | --- | --- |
 | `state`/`state_clause` | the `Boolean` scalar type node | an application of `quire.op.state.clause` whose `member` is `{kind: "state_clause", clause: <kind>}` and whose arguments are, in order: `aggregate` of the parameter references (`self`, then `result` when present, then the operation's parameters in declared order), a `reference` to the anchor, and the condition term | one `claim` occurrence per declaration that checks to this node, ordinals 0, 1, ... in source order |
-| `state`/`operation_anchor` | the declaring `model`/`object_type` node | `aggregate[ binding("context", reference(declaring object_type)), binding("operation", literal(text, "<operation name>")), binding("frame", reference(frame)) ]` | one `anchor` occurrence per clause or protocol attempt (FR-114) that names the operation, ordinals in source order |
-| `state`/`frame` | the declaring `model`/`object_type` node | QSpec FR-340's frame term: `modifies`, `creates`, `deletes` and `deletes_scoped`, with each field `modifies` entry an (object type node, field name) pair carrying its `scope`, each `creates`/`deletes` entry an `object_type` node, and each `deletes_scoped` entry `receiver` or a reference parameter's name (FR-154) | `generated`, one occurrence per named operation, ordinals by ascending (declaring `DeclarationKey`, operation name as UTF-8 bytes) over the unit's named operations, never by source order (FR-104 "Requirements", SR-736 FND-008/FND-009): two operations whose frame node holds equal content still get two occurrences, ordered this way |
+| `state`/`operation_anchor` | the declaring type's node (`model`/`object_type`, `model`/`process` or `model`/`state_machine`) | `aggregate[ binding("context", reference(declaring type node)), binding("operation", literal(text, "<operation name>")), binding("frame", reference(frame)) ]` | one `anchor` occurrence per clause or protocol attempt (FR-114) that names the operation, ordinals in source order |
+| `state`/`frame` | the declaring type's node (as the anchor's) | QSpec FR-340's frame term: `modifies`, `creates`, `deletes` and `deletes_scoped`, with each field `modifies` entry an (object type node, field name) pair carrying its `scope`, each `creates`/`deletes` entry an `object_type` node, and each `deletes_scoped` entry `receiver` or a reference parameter's name (FR-154) | `generated`, one occurrence per named operation, ordinals by ascending (declaring `DeclarationKey`, operation name as UTF-8 bytes) over the unit's named operations, never by source order (FR-104 "Requirements", SR-736 FND-008/FND-009): two operations whose frame node holds equal content still get two occurrences, ordered this way |
 
 - `<kind>` is `invariant`, `precondition` or `postcondition`. The anchor is
-  the context's `model`/`object_type` node for an invariant, and the
+  the context's node (`model`/`object_type`, `model`/`process` or `model`/`state_machine`) for an invariant, and the
   operation's `state`/`operation_anchor` node otherwise.
 - `self`, `result` and each operation parameter are `value`/`parameter`
   nodes, as a function's parameters are (FR-092). `result` is present only in
@@ -93,7 +93,7 @@ source map (FR-095).
 - S4 SHALL emit one `state_clause` node per distinct clause node id. Two
   declarations that check to one node id (FR-104-AC-6) SHALL give one node
   with two `claim` occurrences, never two nodes with one id.
-- S4 SHALL emit one `operation_anchor` per (declaring object type, operation
+- S4 SHALL emit one `operation_anchor` per (declaring type, operation
   name), however many clauses name the operation and from whichever subtype
   they name it, and none for an operation no clause and no protocol attempt
   (FR-114) names. The anchor's `frame` is the node of that operation's
