@@ -762,6 +762,7 @@ pub(crate) fn check_clause_admitted(
             InputRefusal::UnknownFunction(_)
             | InputRefusal::Arity { .. }
             | InputRefusal::WrongValueKind { .. }
+            | InputRefusal::DuplicateClause(_)
             | InputRefusal::DanglingReference { .. } => ClauseDisposition::EvaluateFault(
                 InternalFault::new("call", "evaluate-clause-supplies-no-function-style-input"),
             ),
