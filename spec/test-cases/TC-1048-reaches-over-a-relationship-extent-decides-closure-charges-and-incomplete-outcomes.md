@@ -1,12 +1,12 @@
 ---
-id: TC-1047
+id: TC-1048
 title: "reaches over a relationship extent decides one-or-more-edge closure, its charges and its incomplete and dangling outcomes"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-365
     type: verifies
 ---
-# TC-1047: reaches over a relationship extent decides one-or-more-edge closure, its charges and its incomplete and dangling outcomes
+# TC-1048: reaches over a relationship extent decides one-or-more-edge closure, its charges and its incomplete and dangling outcomes
 
 ## Description
 
@@ -22,7 +22,7 @@ with a bound, or that charges `model.navigate`.
 
 ## Test Procedure
 
-Use TC-1045's fixture **R**, relationship `Order/next` (forward role `next`)
+Use TC-1046's fixture **R**, relationship `Order/next` (forward role `next`)
 and TC-1033's way of building extents; every extent is complete unless a row
 says otherwise and every `ScalarLimitsV1` counter is unlimited unless a row
 sets one. Objects `o1`, `o2`, `o3`, `o4` and `o5` are `Order` objects of one
@@ -32,7 +32,7 @@ different identities; `r1` is a `Rush`. A reachability is written
 with their `value_occurrences` `k` for `graph.expand`; the work and result units
 are the sums (each charge is one work unit, `graph.result-retain` is also one
 result unit). Rows 20 and 21 build their extents through the model-layer entry,
-which makes no closure check. Tag the tests `#[trace("TC-1047", "FR-365-AC-n")]`.
+which makes no closure check. Tag the tests `#[trace("TC-1048", "FR-365-AC-n")]`.
 
 Base extent **chain**: `o1`-`o2`, `o2`-`o3` (a link is source-target).
 

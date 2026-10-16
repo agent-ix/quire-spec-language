@@ -1,12 +1,12 @@
 ---
-id: TC-1045
+id: TC-1046
 title: "reaches over a relationship end types as Boolean and refuses by name, operand, direction and destination"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-365
     type: verifies
 ---
-# TC-1045: reaches over a relationship end types as Boolean and refuses by name, operand, direction and destination
+# TC-1046: reaches over a relationship end types as Boolean and refuses by name, operand, direction and destination
 
 ## Description
 

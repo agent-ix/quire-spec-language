@@ -1,12 +1,12 @@
 ---
-id: TC-1046
+id: TC-1047
 title: "A checked reaches over a relationship end lowers to one quire.op.model.reaches node a proof can bind"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-365
     type: verifies
 ---
-# TC-1046: A checked reaches over a relationship end lowers to one quire.op.model.reaches node a proof can bind
+# TC-1047: A checked reaches over a relationship end lowers to one quire.op.model.reaches node a proof can bind
 
 ## Description
 
@@ -19,7 +19,7 @@ observation in the node, or keys the node by its clause.
 
 ## Test Procedure
 
-Over TC-1045's fixture **R**, check, lower and emit the units below, and read
+Over TC-1046's fixture **R**, check, lower and emit the units below, and read
 each emitted package with IR's v2 reader.
 
 | # | Input | Expected |
