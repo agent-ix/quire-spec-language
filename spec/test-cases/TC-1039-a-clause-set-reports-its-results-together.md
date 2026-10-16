@@ -14,7 +14,7 @@ Verify FR-107's `evaluate_clause_set`: the entries it returns and their order,
 that a postcondition is evaluated only after every precondition is true, the
 combined outcome, the stop at an incomplete clause, and the refusals.
 
-Scope: FR-107-AC-13, FR-107-AC-14, FR-107-AC-15, FR-107-AC-16, FR-107-AC-18.
+Scope: FR-107-AC-13, FR-107-AC-14, FR-107-AC-15, FR-107-AC-16, FR-107-AC-18, FR-107-AC-19, FR-107-AC-20.
 
 ## Test Procedure
 
@@ -53,11 +53,20 @@ step sets one. Tag the tests `#[trace("TC-1039", "FR-107-AC-n")]`.
    `sameIdentity`}; the set {`UpdateAllowed` with the observations admitted
    for `UpdateRaises`}.
 6. The combination of verdicts, called directly as a unit test of the crate
-   (no clause of the `Config` unit evaluates to a not-completed Boolean,
-   FR-107 Behavior): the sets {}, {true, true}, {true, false}, {false, X},
-   {true, X}, {X}, {X, X}, {true, incomplete}, {false, incomplete}, where
-   X is in turn a kernel `Undefined(DivisionByZero)`, a kernel `Refused` and
-   a family `Undefined` with reason `precondition-false`.
+   (no `Linked` clause evaluates to a kernel `Undefined` or `Refused`, FR-107
+   Behavior): the sets {}, {true, true}, {true, false}, {false, X},
+   {true, X}, {X}, {X, X}, {true, incomplete}, {false, incomplete} and
+   {X, incomplete}, X being in turn a kernel `Undefined(DivisionByZero)` and
+   a kernel `Refused`.
+7. A self-contained fixture, not the `Config` unit: TC-792's, a model `M`
+   with an object type `A` and a query operation `ready(): Boolean` whose
+   effective precondition is `false` for the receiver `r1`, with the clauses
+   `pre F using v on M::A::ready { self.ready() }`,
+   `pre G using v on M::A::ready { true }` and
+   `post H using v on M::A::ready { true }`, and an invocation of `ready`
+   with `self` `r1` and result `true` whose snapshots hold `r1`. Call
+   `evaluate_clause_set` with the sets {`F`}, {`G`, `F`} and {`H`, `F`}; then
+   with the effective precondition `true`, the set {`F`}.
 
 ## Expected Results
 
@@ -81,4 +90,11 @@ step sets one. Tag the tests `#[trace("TC-1039", "FR-107-AC-n")]`.
   No call returns an entry.
 - Step 6: `True` for {} and {true, true}; `False` for {true, false} and
   {false, X}; `Undecided` for {true, X}, {X} and {X, X}; `Incomplete` for
-  {true, incomplete} and {false, incomplete}; each X gives the same outcome.
+  {true, incomplete}, {false, incomplete} and {X, incomplete}; each X gives
+  the same outcome.
+- Step 7: {`F`}: one entry, `F` `FamilyResult::Undefined` with reason
+  `precondition-false` (operation `ready`), outcome `Undecided`; {`G`, `F`}:
+  two entries in the order `F`, `G`, `F` that result and `G`
+  `Completed(true)`, outcome `Undecided`; {`H`, `F`}: one entry, `F` with that
+  result, no entry for `H`, outcome `Undecided`; with the precondition
+  `true`, {`F`}: one entry, `F` `Completed(true)`, outcome `True`.
