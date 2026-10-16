@@ -2191,7 +2191,7 @@ fn projection_of(nodes: &[Value]) -> Vec<Value> {
 /// none is stale, then recomputes the projection and `package_id`. Returns
 /// each original digest's final digest, so a test names a node by its
 /// current key.
-fn rekey_stale(envelope: &mut Value) -> BTreeMap<String, String> {
+pub(crate) fn rekey_stale(envelope: &mut Value) -> BTreeMap<String, String> {
     let mut renames = BTreeMap::<String, String>::new();
     let limit = envelope["semantic_graph"]["nodes"]
         .as_array()
@@ -2402,7 +2402,7 @@ fn modifies_relationship(declaration: &Value) -> Value {
 /// `model`/`object_type` or `model`/`record_value_type` node (STD-111's
 /// `{kind: "field", declaration, name}` shape).
 fn modifies_field(declaration: &Value, name: &str) -> Value {
-    json!({"kind": "field", "declaration": declaration, "name": name})
+    json!({"kind": "field", "declaration": declaration, "name": name, "scope": "every-object"})
 }
 
 /// A `state`/`frame` node whose `dependencies` and body members are given
@@ -2431,6 +2431,7 @@ fn frame_node(
             "modifies": modifies,
             "creates": creates,
             "deletes": deletes,
+            "deletes_scoped": [],
         },
     })
 }

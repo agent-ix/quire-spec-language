@@ -418,6 +418,56 @@ fn a_process_operation_refuses_receiver_scoped_members_at_the_member() {
     }
 }
 
+/// `document` plus the record value type `Pair`, whose operation `swap()`
+/// is framed `frame_value`.
+fn document_with_pair(frame_value: &Value) -> Vec<u8> {
+    let mut document: Value = serde_json::from_slice(&document(&frame(json!({})), false, None))
+        .expect("the fixture is JSON");
+    let swap = operation("Pair", "swap", Vec::new(), Some(frame_value.clone()));
+    let pair = wire_type(
+        &id("Pair"),
+        "record_value_type",
+        json!({
+            "fields": [wire_field(&id("Pair/n"), "n", "ix://quire/native/Boolean", "required", 1)],
+            "operations": [swap],
+        }),
+    );
+    document["types"].as_array_mut().expect("types").push(pair);
+    document["constructs"]
+        .as_array_mut()
+        .expect("constructs")
+        .push(wire_construct(
+            "record_value_type",
+            meaning::RECORD_VALUE_TYPE,
+            json!({"identityFields": "optional"}),
+        ));
+    document.to_string().into_bytes()
+}
+
+/// I23: over the record value type `Pair`, whose operation has no object
+/// receiver, a non-empty `modifies_receiver` with `deletes_receiver: true`
+/// refuses `malformed-declaration` at `modifies_receiver` alone, and the
+/// entry `Counter/value` is not read.
+#[trace("TC-1043", "FR-154-AC-8")]
+#[test]
+fn a_record_value_type_operation_refuses_receiver_scoped_members_at_the_member() {
+    let refusal = sole_refusal(&document_with_pair(&frame(json!({
+        "modifies_receiver": [id("Counter/value")],
+        "deletes_receiver": true,
+    }))));
+    assert_eq!(refusal.code.as_str(), "invalid_model_binding");
+    let ModelRefusalCause::IntakeMalformedDeclaration { member, .. } = &refusal.cause else {
+        panic!(
+            "expected IntakeMalformedDeclaration, got {:?}",
+            refusal.cause
+        );
+    };
+    assert!(
+        format!("{member:?}").ends_with("Name(\"frame\"), Name(\"modifies_receiver\")] }"),
+        "{member:?}"
+    );
+}
+
 /// I15 and I16: over `Flow`, an empty `modifies_receiver` with
 /// `deletes_receiver: false`, and `deletes_parameters` naming a
 /// `Reference<Counter>` parameter, admit.

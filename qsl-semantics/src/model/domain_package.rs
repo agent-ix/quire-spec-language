@@ -469,6 +469,26 @@ pub struct OperationEffect {
     pub deletes_arguments: Vec<String>,
 }
 
+impl OperationEffect {
+    /// Every field this operation writes on some object, under either
+    /// scope: the every-object and the receiver-scoped entries.
+    pub fn written_fields(&self) -> impl Iterator<Item = &DeclarationKey> {
+        self.modifies.iter().chain(&self.receiver_modifies)
+    }
+
+    /// Whether the frame grants nothing: no write, creation or deletion
+    /// under any scope.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.modifies.is_empty()
+            && self.receiver_modifies.is_empty()
+            && self.creates.is_empty()
+            && self.deletes.is_empty()
+            && !self.deletes_receiver
+            && self.deletes_arguments.is_empty()
+    }
+}
+
 /// One `requires` or `ensures` clause of a domain-package operation, kept
 /// verbatim with its source identity (FR-103). Keeping it does not parse it.
 #[derive(Clone, Debug, Eq, PartialEq)]

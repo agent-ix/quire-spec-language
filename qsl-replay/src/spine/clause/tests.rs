@@ -3924,6 +3924,7 @@ fn s4_emits_exactly_the_fr_105_state_nodes() {
         modifies,
         creates,
         deletes,
+        deletes_scoped,
     }) = frames[0].body()
     else {
         panic!(
@@ -3933,6 +3934,7 @@ fn s4_emits_exactly_the_fr_105_state_nodes() {
     };
     assert!(creates.is_empty(), "{creates:?}");
     assert!(deletes.is_empty(), "{deletes:?}");
+    assert!(deletes_scoped.is_empty(), "{deletes_scoped:?}");
     let [only] = modifies.as_slice() else {
         panic!("exactly one modifies entry, got {modifies:?}");
     };
@@ -4125,11 +4127,15 @@ fn s4_emitted_frame_node_lists_configversion_in_dependencies() {
         .expect("exactly one emitted frame node");
     assert_eq!(
         frame["body"]["modifies"],
-        json!([{"kind": "field", "declaration": expected_id, "name": "versionNumber"}]),
+        json!([{
+            "kind": "field", "declaration": expected_id, "name": "versionNumber",
+            "scope": "every-object",
+        }]),
         "the emitted frame body's modifies entry"
     );
     assert_eq!(frame["body"]["creates"], json!([]));
     assert_eq!(frame["body"]["deletes"], json!([]));
+    assert_eq!(frame["body"]["deletes_scoped"], json!([]));
     assert!(
         frame["dependencies"]
             .as_array()
@@ -5147,6 +5153,7 @@ mod frame;
 mod frame_replay;
 mod invocation_parameters;
 mod pre_call_invocation;
+mod receiver_frames;
 mod state_clause_replay;
 mod witness;
 mod witness_member;
