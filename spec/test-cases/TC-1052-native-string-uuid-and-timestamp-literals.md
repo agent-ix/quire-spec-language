@@ -16,22 +16,24 @@ relationships:
 
 ## Description
 
-Verify that the quoted literal, `uuid("...")` and `timestamp(n)` build, check,
+Verify that the quoted literal, `UUID("...")` and `Timestamp(n)` build, check,
 lower and evaluate as the native `String`, `UUID` and `Timestamp` values; that
 malformed literals refuse with the stated code and cause; and that a literal
 never adapts to a slot of another type.
 
 Catches a quoted literal typed `Text`, a normalized or case-folded String, a
 UUID literal that accepts a non-canonical spelling, a Timestamp read through
-Integer coercion, a literal that reaches lowering unvalidated, and a reserved
-word that breaks a member named `timestamp`.
+Integer coercion, a literal that reaches lowering unvalidated, a leading-zero count
+accepted, and a call of `UUID` or `Timestamp` that is not resolved by name
+resolution.
 
 ## Test Procedure
 
 Every unit starts with the complete-V1 header and one profile selection `v`.
 
 1. Run S2 on the bodies of FR-091-AC-41 and check them; read each form's value.
-2. Run S1/S2 on the syntax refusals of FR-091-AC-42.
+2. Run S1, S2 and check on the refusals of FR-091-AC-42, including
+   `Timestamp(007)` and the unit that also declares `function UUID`.
 3. Check the literals of FR-091-AC-43 and read each refusal.
 4. Check and evaluate the FR-056-AC-40 vectors, then the FR-056-AC-41
    refusals.
@@ -43,14 +45,16 @@ Every unit starts with the complete-V1 header and one profile selection `v`.
 
 ## Expected Results
 
-- Step 1: the forms hold the stated scalar sequences, UUID text and counts;
-  `timestamp(-0)` equals `timestamp(0)`.
+- Step 1: the String forms hold the stated scalar sequences, and the UUID and
+  Timestamp calls resolve to their literals with the stated counts;
+  `Timestamp(-0)` equals `Timestamp(0)`.
 - Step 2: each row refuses with the stated code and cause at the stated
-  position and yields no form; `x.timestamp`, `x.uuid` and `M::timestamp`
-  parse.
-- Step 3: `MalformedUuidLiteral` and `TimestampOutsideI128` carry
+  position and yields no form (`Timestamp(007)` is
+  `invalid_syntax`/`invalid-token`); a parameter named `timestamp` or `uuid`
+  stays valid.
+- Step 3: `MalformedUuidLiteral` and `IntegerOutsideI128` carry
   `ill_typed`/`type-mismatch`, the argument or integer as written, the limit
-  for a count, and the literal's span; the in-range maximum checks.
+  for a count, and the span; the in-range maximum checks.
 - Step 4: every FR-056-AC-40 vector gives its stated Boolean; every
   FR-056-AC-41 vector refuses with the stated cause and yields no Boolean.
 - Step 5: each literal lowers to one `value`/`literal` node of the stated

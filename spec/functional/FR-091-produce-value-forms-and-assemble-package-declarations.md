@@ -296,8 +296,6 @@ The `Value` production maps each CST expression construct to one
 | unsigned integer literal | `Integer` |
 | `rational(n, d)` | `Rational(n, d)` |
 | quoted text `"..."` | `String`, holding the decoded Unicode scalar sequence |
-| `uuid("...")` | `Uuid`, holding the decoded argument text |
-| `timestamp(n)` | `Timestamp`, holding the signed integer `n` |
 | identifier, qualified name, enum value `E::m` | `Name`, spelled as written with `::` separators |
 | `let x = v in b` | `Let` |
 | `if c then a else b` | `If` |
@@ -310,7 +308,7 @@ The `Value` production maps each CST expression construct to one
 | unary `-e` | `Negate` |
 | `e.f` | `Field` |
 | `present(e)`, `value(e)` | `Present`, `Value` |
-| `name(args)`, tuple value `Q(args)` | `Call`, with arguments in source order |
+| `name(args)`, tuple value `Q(args)` | `Call`, with arguments in source order; `UUID("...")` and `Timestamp(n)` are such calls, and check resolves them ("Native scalar literals") |
 | record value `R { f: e, g: null }` | `Record`; a field whose whole value is `null` is `FieldInitializer::Null` |
 | `sequence[..]`, `set[..]`, `bag[..]`, `orderedSet[..]` | `Collection` with kind `Sequence`, `Set`, `Bag`, `OrderedSet` |
 | `map`, `collect` `(x in c: e)` | `Query` with `BinderQuery::Map` |
@@ -762,13 +760,16 @@ or refuse a literal that this rule admits.
 
 The unit language writes a constant of each native value type `String`,
 `UUID` and `Timestamp` with one literal form. The forms are the only way to
-write such a constant, and each has exactly one checked type.
+write such a constant, and each has exactly one checked type. They add no
+production, no token and no reserved word: the quoted text token is already
+read by the lexer, and `UUID("...")` and `Timestamp(n)` are ordinary calls
+that the shared complete-V1 grammar already parses.
 
-| Literal | Production | Checked type | Value |
+| Literal | Syntax | Checked type | Value |
 |---|---|---|---|
 | `"..."` | the quoted text token | `String` | the decoded Unicode scalar sequence |
-| `uuid("...")` | `uuid` `(` quoted text `)` | `UUID` | the 128-bit payload of the canonical text |
-| `timestamp(n)` | `timestamp` `(` signed integer `)` | `Timestamp` | the signed 128-bit nanosecond count `n` on the POSIX epoch scale |
+| `UUID("...")` | a call of the name `UUID` with one quoted text argument | `UUID` | the 128-bit payload of the canonical text |
+| `Timestamp(n)` | a call of the name `Timestamp` with one integer argument | `Timestamp` | the signed 128-bit nanosecond count `n` on the POSIX epoch scale |
 
 **String.** The quoted text token is the JSON-compatible quoted text the
 lexer already reads: the escapes `\"`, `\\`, `\/`, `\b`, `\f`, `\n`, `\r`,
@@ -785,43 +786,46 @@ literal and a raw control character below U+0020 inside the quotes are lexical
 errors: `invalid_syntax`/`invalid-escape` for the first two and
 `invalid_syntax`/`invalid-token` for the others, at the literal, before S2.
 
-**UUID.** `uuid("...")` takes one quoted text argument. Its text must be the
-canonical UUID text of FR-056's K2 canonical native payloads: 32 lowercase
-hexadecimal digits grouped `8-4-4-4-12` with four hyphens, and no other
-spelling. A case variant, a hyphenless, braced or `urn:uuid:` spelling, text
-of another length, a non-hexadecimal digit and the empty text are each
-malformed. S2 builds `Expression::Uuid` holding the decoded argument text, and
-check admits it as the 128-bit payload through the same K2 admission FR-056
-applies to a runtime input. Check SHALL refuse a malformed argument with the
-typed cause `MalformedUuidLiteral`, naming the argument text as written and
-the span of the literal, code `ill_typed`/`type-mismatch`. The refusal is
-reported with every other error of the unit, and no checked package holds the
-literal.
+**UUID.** `UUID("...")` takes one argument, which must be a quoted text
+literal (not a `String`-typed expression such as a parameter or a `let`
+binding). Its text must be the canonical UUID text of FR-056's K2 canonical
+native payloads: 32 lowercase hexadecimal digits grouped `8-4-4-4-12` with
+four hyphens, and no other spelling. A case variant, a hyphenless, braced or
+`urn:uuid:` spelling, text of another length, a non-hexadecimal digit and the
+empty text are each malformed. Check admits the text as the 128-bit payload
+through the same K2 admission FR-056 applies to a runtime input, and refuses a
+malformed text with the typed cause `MalformedUuidLiteral`, naming the
+argument text as written and the span of the call, code
+`ill_typed`/`type-mismatch`. The refusal is reported with every other error of
+the unit, and no checked package holds the literal.
 
-**Timestamp.** `timestamp(n)` takes one signed integer, the same
-`SignedInteger` production `rational(n, d)` takes, and the value is the
-nanosecond count. No calendar, timezone, offset or precision form exists, and
-the count is not converted. The value `n` is the integer value, not its
-spelling: `timestamp(-0)` and `timestamp(0)` are one value, as are
-`timestamp(007)` and `timestamp(7)`. S2 builds `Expression::Timestamp`
-holding that integer. Check SHALL refuse a count outside the signed 128-bit
-range `-170141183460469231731687303715884105728` to
-`170141183460469231731687303715884105727` with the typed cause
-`TimestampOutsideI128`, naming the integer as written, the limit it crosses
-(`i128::MIN` or `i128::MAX`) and the span of the literal, code
-`ill_typed`/`type-mismatch`. The argument of `timestamp` is not an
-`Integer`-typed expression: `timestamp(x)` and `timestamp(1 + 2)` do not
-parse, and an `Integer` never converts to a `Timestamp`.
+**Timestamp.** `Timestamp(n)` takes one argument, which must be an integer
+literal or a directly negated integer literal (the forms of "Integer bounds
+and literals up to i128"), and the value is the nanosecond count. No calendar,
+timezone, offset or precision form exists, and the count is not converted. The
+value is the integer value, so `Timestamp(-0)` and `Timestamp(0)` are one
+value. A count above `i128::MAX` or below `i128::MIN` is the argument literal's
+own `IntegerOutsideI128` refusal, which that section states, and needs no
+cause of its own; `Timestamp(-170141183460469231731687303715884105728)` is the
+folded `i128::MIN` literal and is admitted. A leading-zero integer such as
+`007` is refused by the lexer as `invalid_syntax`/`invalid-token` before any
+form exists. An `Integer`-typed expression never converts to a `Timestamp`.
 
-**Words and arguments.** `uuid` and `timestamp` are reserved words of the
-expression grammar as `rational` and `decimal` are, so neither names a
-parameter, `let` binder or function, and each opens its literal only with a
-`(`. Both stay valid member names after `.` and `::`, so a field `timestamp`
-reads as `e.timestamp`. A `uuid` or `timestamp` not followed by its production,
-an argument that is not the production's (`uuid(x)`, `uuid(5)`, `timestamp(x)`,
-`timestamp("5")`, `timestamp()`), refuses `invalid_syntax`/`unexpected-token`
-at the offending token. The type names `UUID` and `Timestamp` are unrelated
-spellings and stay predeclared type names.
+**Name resolution.** `UUID` and `Timestamp` in a call position resolve through
+the same name resolution as any call, with the native literal constructor of
+that spelling as a candidate beside the unit's function, predicate and tuple
+declarations of that name. Exactly one candidate is required. A unit that also
+declares a function, predicate or tuple `UUID` (or `Timestamp`) makes the call
+an ambiguous name, `ambiguous_declaration`/`ambiguous-name`, naming the use,
+the span of each declaration and the native constructor as a candidate without
+a span, as the ambiguous type-name rule above does. A qualified spelling such
+as `M::UUID("...")` names no native constructor and resolves as any qualified
+call does, refusing `missing_declaration`/`missing-name` when it names
+nothing. A call whose argument is not the form above (`UUID(x)`, `UUID(5)`,
+`Timestamp(x)`, `Timestamp("5")`, `Timestamp(1 + 2)`), or that has no argument
+or two, refuses `ill_typed`/`type-mismatch` at the argument, or at the call
+when an argument is missing, naming the expected argument form. The `UUID` and
+`Timestamp` type names are the predeclared type names above and are unaffected.
 
 The three literals have no operator of their own. They take part in `=` and
 `!=` under FR-056, as arguments, `let` bindings, record field values,
@@ -848,7 +852,6 @@ code or code/cause:
 | ill-formed scalar bounds | `ill_typed` |
 | integer outside i128 (`IntegerOutsideI128`), a bound or a literal | `ill_typed`/`type-mismatch` |
 | malformed UUID literal (`MalformedUuidLiteral`) | `ill_typed`/`type-mismatch` |
-| Timestamp literal outside i128 (`TimestampOutsideI128`) | `ill_typed`/`type-mismatch` |
 | floating type (a domain package model field only) | `unknown_required_feature`/`unsupported-feature` |
 | undeclared `using` alias | `missing_declaration`/`missing-selection` |
 | duplicate alias | `ambiguous_declaration`/`ambiguous-name` |
@@ -947,9 +950,9 @@ STD-112 publishes the causes and replaces it (FR-091-OQ-12).
 | FR-091-AC-38 | Over `x: Int[-170141183460469231731687303715884105728, 0]`: the body `x >= -170141183460469231731687303715884105728` checks, its right operand is one `Integer` literal of value `i128::MIN` with no `Negate` node, that literal node keys to FR-092 vector L7, and lowering writes it as one literal. The body `x >= -170141183460469231731687303715884105727` checks with its right operand a `Negate` of the literal 170141183460469231731687303715884105727, as before. The bodies `x < 170141183460469231731687303715884105728`, `x >= -(170141183460469231731687303715884105728)` and `x >= -170141183460469231731687303715884105729` refuse `IntegerOutsideI128` at the literal's span, with site `literal`, the literal's value as written, limit `i128::MAX` and code `ill_typed`/`type-mismatch`, and return no checked package. | Test (TC-909) |
 | FR-091-AC-39 | S2 maps `a div b`, `a rem b` and `a mod b` to distinct `IntegerDiv`, `IntegerRem` and `IntegerMod` binary forms with operand order and original spans, including in an unreachable branch. Check admits each well-typed operator under a resolved `quire.value.complete/v1` selection, using the checked package's exactly-one law for `div`/`rem` and Euclidean meaning for `mod`; without that facet, each receives a located `unsupported_construct` rather than `UnrepresentedConstruct`. `/` never becomes integer division; only under complete value does a rational `/` with integer operands and an expected rational type follow QSpec FR-149. | Test |
 | FR-091-AC-40 | The assembler admits `function f using v(a: String, b: UUID, c: Timestamp): Timestamp pure { c }` and resolves `a`, `b`, `c` and the result to the native String, UUID and Timestamp value types; a use of these names needs no `using` selection or domain package. A unit declaring `record UUID { x: Integer; }` and using `UUID` as a type refuses `ambiguous_declaration`/`ambiguous-name` naming the use, the span of the record declaration and the native `UUID` candidate with no span. | Test (TC-1028) |
-| FR-091-AC-41 | S2 builds, for the bodies `"abc"`, `""`, `"\u00e9"`, `"é"`, `"e\u0301"`, `"a\nb"`, `"\ud83d\ude00"`, `"\u0000"`, `uuid("00112233-4455-6677-8899-aabbccddeeff")`, `timestamp(0)`, `timestamp(-1)` and `timestamp(-170141183460469231731687303715884105728)`, one `Expression::String`, `Expression::Uuid` or `Expression::Timestamp` each with its span. The String forms hold the scalar sequences: empty; `a`, `b`, `c`; U+00E9 (twice); U+0065 U+0301; `a`, LF, `b`; the single scalar U+1F600; U+0000. The Timestamp forms hold 0, -1 and `i128::MIN`. Check types each as `String`, `UUID` or `Timestamp`, and `timestamp(-0)` equals `timestamp(0)` and `timestamp(007)` equals `timestamp(7)` as values. | Test (TC-1052) |
-| FR-091-AC-42 | `"\ud800"` and `"\q"` refuse `invalid_syntax`/`invalid-escape`, and an unterminated literal and a literal holding a raw line feed refuse `invalid_syntax`/`invalid-token`, each at the literal with no form. `uuid(x)`, `uuid(5)`, `timestamp(x)`, `timestamp("5")`, `timestamp(1 + 2)` and `timestamp()` each refuse `invalid_syntax`/`unexpected-token` at the offending token. `function uuid using v(): Boolean pure { true }` and `function f using v(timestamp: Boolean): Boolean pure { timestamp }` refuse `invalid_syntax`/`unexpected-token`, while `x.timestamp`, `x.uuid` and `M::timestamp` parse as member names. | Test (TC-1052) |
-| FR-091-AC-43 | Check refuses `uuid("00112233-4455-6677-8899-AABBCCDDEEFF")`, `uuid("00112233445566778899aabbccddeeff")`, `uuid("{00112233-4455-6677-8899-aabbccddeeff}")`, `uuid("urn:uuid:00112233-4455-6677-8899-aabbccddeeff")`, `uuid("00112233-4455-6677-8899-aabbccddeef")`, `uuid("00112233-4455-6677-8899-aabbccddeefg")` and `uuid("")` with `MalformedUuidLiteral`, code `ill_typed`/`type-mismatch`, naming the argument as written and the literal's span. It refuses `timestamp(170141183460469231731687303715884105728)` and `timestamp(-170141183460469231731687303715884105729)` with `TimestampOutsideI128`, code `ill_typed`/`type-mismatch`, naming the integer as written, limit `i128::MAX` for the first and `i128::MIN` for the second, and the literal's span; `timestamp(170141183460469231731687303715884105727)` checks. A refused literal reaches no keying, lowering or IR. | Test (TC-1052) |
+| FR-091-AC-41 | S2 builds, for the bodies `"abc"`, `""`, `"\u00e9"`, `"é"`, `"e\u0301"`, `"a\nb"`, `"\ud83d\ude00"` and `"\u0000"`, one `Expression::String` each, holding the scalar sequences: `a`, `b`, `c`; empty; U+00E9 (twice); U+0065 U+0301; `a`, LF, `b`; the single scalar U+1F600; U+0000. For `UUID("00112233-4455-6677-8899-aabbccddeeff")`, `Timestamp(0)`, `Timestamp(-1)` and `Timestamp(-170141183460469231731687303715884105728)` it builds a `Call` of the name `UUID` or `Timestamp` and no new expression kind; check resolves each to the native `UUID` or `Timestamp` literal, the last holding `i128::MIN`, and `Timestamp(-0)` and `Timestamp(0)` are one value. | Test (TC-1052) |
+| FR-091-AC-42 | `"\ud800"` and `"\q"` refuse `invalid_syntax`/`invalid-escape`, and an unterminated literal, a literal holding a raw line feed and `Timestamp(007)` refuse `invalid_syntax`/`invalid-token`, each at the offending token with no form. `UUID(x)` over a `String` parameter, `UUID(5)`, `Timestamp(x)`, `Timestamp("5")`, `Timestamp(1 + 2)`, `Timestamp()` and `Timestamp(1, 2)` each refuse `ill_typed`/`type-mismatch` at the argument (at the call for `Timestamp()`). `function UUID using v(): Boolean pure { true }` beside a use `UUID("00112233-4455-6677-8899-aabbccddeeff")` refuses `ambiguous_declaration`/`ambiguous-name` naming the use, the declaration's span and the native constructor with no span; `M::UUID("00112233-4455-6677-8899-aabbccddeeff")` over an alias `M` that declares no `UUID` refuses `missing_declaration`/`missing-name`. A parameter or field named `timestamp` or `uuid` stays valid. | Test (TC-1052) |
+| FR-091-AC-43 | Check refuses `UUID("00112233-4455-6677-8899-AABBCCDDEEFF")`, `UUID("00112233445566778899aabbccddeeff")`, `UUID("{00112233-4455-6677-8899-aabbccddeeff}")`, `UUID("urn:uuid:00112233-4455-6677-8899-aabbccddeeff")`, `UUID("00112233-4455-6677-8899-aabbccddeef")`, `UUID("00112233-4455-6677-8899-aabbccddeefg")` and `UUID("")` with `MalformedUuidLiteral`, code `ill_typed`/`type-mismatch`, naming the argument as written and the call's span. It refuses `Timestamp(170141183460469231731687303715884105728)` and `Timestamp(-170141183460469231731687303715884105729)` with `IntegerOutsideI128`, site `literal`, limit `i128::MAX` and `i128::MIN`, code `ill_typed`/`type-mismatch`; `Timestamp(170141183460469231731687303715884105727)` checks. A refused literal reaches no keying, lowering or IR. | Test (TC-1052) |
 
 ## Dependencies
 
