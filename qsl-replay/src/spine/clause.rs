@@ -1064,6 +1064,7 @@ fn run_function(
                             cause: "wrong-role-mapping",
                             fields,
                             path: Vec::new(),
+                            kernel: None,
                         },
                     ))));
                 };

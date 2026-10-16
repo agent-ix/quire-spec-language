@@ -12,7 +12,7 @@
 
 use quire_canonical::{Node, NodeRef};
 
-use super::{RawNode, SelectedObject, SnapshotValue};
+use super::{NativeKind, NativeObject, RawNativeKind, RawNode, SelectedObject, SnapshotValue};
 
 /// One value of a document read by `quire-canonical`.
 #[derive(Clone, Copy, Debug)]
@@ -107,8 +107,8 @@ fn push(nodes: &mut Vec<RawNode>, node: RawNode) -> usize {
 /// first form past a limit and the walk never outruns it.
 type Charge<'c, E> = &'c mut dyn FnMut() -> Result<(), E>;
 
-/// Read one FR-106 value form from `json`, or `Ok(None)` when it is not one
-/// of the seven tagged shapes: a wire-reading edge (ADR-012 §9), converting
+/// Read one FR-106 value form from `json`, or `Ok(None)` when it is neither a
+/// native payload object nor one of the seven tagged shapes: a wire-reading edge (ADR-012 §9), converting
 /// each value's tag to a closed form once, here. The tree is walked from an
 /// explicit heap stack, so a value of any depth reads in constant native
 /// stack; `charge` runs once per value form read (`observation.values`),
@@ -198,6 +198,29 @@ pub(super) fn read_raw_value<E>(
         let Some(object) = next.as_object() else {
             return Ok(None);
         };
+        // FR-106's native payload objects carry their kind as a member beside
+        // the payload, not as the single tag the other forms use. They are
+        // kept as read, every defect included, so admission judges them in
+        // the native payload order.
+        if let Some(kind) = object.member("kind") {
+            let kind = match kind.as_str() {
+                None => RawNativeKind::NotText,
+                Some("string") => RawNativeKind::Known(NativeKind::String),
+                Some("uuid") => RawNativeKind::Known(NativeKind::Uuid),
+                Some("timestamp") => RawNativeKind::Known(NativeKind::Timestamp),
+                Some(_) => RawNativeKind::Unknown,
+            };
+            let members = object
+                .iter()
+                .filter(|(name, _)| *name != "kind")
+                .map(|(name, value)| (name.to_owned(), value.as_str().map(str::to_owned)))
+                .collect();
+            finished = Some(push(
+                &mut nodes,
+                RawNode::Native(NativeObject { kind, members }),
+            ));
+            continue;
+        }
         let mut members = object.iter();
         let (Some((tag, payload)), None) = (members.next(), members.next()) else {
             return Ok(None);

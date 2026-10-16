@@ -10,7 +10,8 @@ use quire_exact::{CollectionKind, EnumMember, FieldValue, NodeKey, Value, Varian
 use quire_semantic_value::declaration::{CompositeShape, TypeEnvironment};
 
 use super::{
-    fault, model_views, AdmissionFailure, ModelNormalizationLimits, RawNode, SnapshotValue,
+    fault, model_views, AdmissionFailure, ModelNormalizationLimits, NativeKind, RawNativeKind,
+    RawNode, SnapshotValue,
 };
 use crate::model::domain_package::DomainPackageRef;
 
@@ -173,6 +174,25 @@ impl SnapshotValue {
             let value = match node {
                 RawNode::Boolean(held) => json!({"boolean": held}),
                 RawNode::Integer(spelling) => json!({"integer": spelling}),
+                RawNode::Native(native) => {
+                    // A `kind` that was not text, and a member that was not
+                    // text, are held only to be refused by admission; they
+                    // are written as `null`.
+                    let mut object = Map::new();
+                    object.insert(
+                        "kind".to_owned(),
+                        match native.kind {
+                            RawNativeKind::Known(NativeKind::String) => json!("string"),
+                            RawNativeKind::Known(NativeKind::Uuid) => json!("uuid"),
+                            RawNativeKind::Known(NativeKind::Timestamp) => json!("timestamp"),
+                            RawNativeKind::Unknown | RawNativeKind::NotText => Json::Null,
+                        },
+                    );
+                    for (name, text) in &native.members {
+                        object.insert(name.clone(), json!(text));
+                    }
+                    Json::Object(object)
+                }
                 RawNode::Absent => json!({"absent": {}}),
                 RawNode::Present(inner) => json!({"present": take(&mut built, *inner)}),
                 RawNode::Reference(reference) => json!({"reference": {

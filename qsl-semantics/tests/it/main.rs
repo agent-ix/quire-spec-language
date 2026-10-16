@@ -45,6 +45,7 @@ mod model_relationship;
 #[cfg(feature = "test-support")]
 mod model_systems;
 mod native_scalar_equality;
+mod native_snapshot_values;
 mod observation_composites;
 mod operation_bodies;
 mod operation_clauses;

@@ -4,8 +4,8 @@
 use std::collections::BTreeMap;
 
 use qsl_semantics::model::observation::{
-    ClauseSelection, ClauseSelectionInput, DocumentRef, ObservationLimits, SelectedAnchor,
-    SelectedObject, SnapshotValue,
+    ClauseSelection, ClauseSelectionInput, DocumentRef, NativeKind, ObservationLimits,
+    RawNativeKind, SelectedAnchor, SelectedObject, SnapshotValue,
 };
 use quire_canonical::{Node, NodeRef};
 use quire_exact::{Identifier, ScalarLimits};
@@ -144,6 +144,30 @@ fn snapshot_value(value: NodeRef<'_>) -> Result<SnapshotValue, ClauseRequestRead
                 let Node::Object(mut object) = value.node() else {
                     return Err(invalid("parameters", "expected a value object"));
                 };
+                // A native payload object (String, UUID, Timestamp) carries
+                // its kind as a member beside the payload; every defect is
+                // held for admission to judge in FR-106's native order.
+                if let Some(kind) = value.get("kind") {
+                    let kind = match kind.node() {
+                        Node::String("string") => RawNativeKind::Known(NativeKind::String),
+                        Node::String("uuid") => RawNativeKind::Known(NativeKind::Uuid),
+                        Node::String("timestamp") => RawNativeKind::Known(NativeKind::Timestamp),
+                        Node::String(_) => RawNativeKind::Unknown,
+                        _ => RawNativeKind::NotText,
+                    };
+                    let members = object
+                        .filter(|(name, _)| *name != "kind")
+                        .map(|(name, member)| {
+                            let text = match member.node() {
+                                Node::String(text) => Some(text.to_owned()),
+                                _ => None,
+                            };
+                            (name.to_owned(), text)
+                        })
+                        .collect();
+                    values.push(SnapshotValue::native(kind, members));
+                    continue;
+                }
                 if object.len() != 1 {
                     return Err(invalid("parameters", "expected one value form"));
                 }
@@ -447,7 +471,7 @@ pub fn read_clause_run_request(
 #[cfg(test)]
 mod tests {
     use super::snapshot_value;
-    use qsl_semantics::model::observation::RawForm;
+    use qsl_semantics::model::observation::{NativeKind, RawForm, RawNativeKind};
 
     #[test]
     fn parameter_value_reader_uses_heap_stack_past_128_levels() {
@@ -465,6 +489,43 @@ mod tests {
             };
         }
         assert!(matches!(form, RawForm::Integer("7")));
+    }
+
+    /// FR-106: a native payload object parameter keeps its `kind` and every
+    /// other member as read, so admission judges a defect in the native
+    /// payload order rather than the request reader refusing it.
+    #[test]
+    fn native_parameter_keeps_its_kind_and_members_as_read() {
+        let read = |text: &str| {
+            let document = quire_canonical::read(text.as_bytes(), u64::MAX).unwrap();
+            snapshot_value(document.root()).unwrap()
+        };
+        let uuid = read(r#"{"kind":"uuid","text":"t","extra":1}"#);
+        let RawForm::Native(native) = uuid.form() else {
+            panic!("expected a native object");
+        };
+        assert_eq!(native.kind(), RawNativeKind::Known(NativeKind::Uuid));
+        assert_eq!(
+            native.members().collect::<Vec<_>>(),
+            [("text", Some("t")), ("extra", None)]
+        );
+        for (text, kind) in [
+            (
+                r#"{"kind":"string","text":""}"#,
+                RawNativeKind::Known(NativeKind::String),
+            ),
+            (
+                r#"{"kind":"timestamp","nanoseconds":"0"}"#,
+                RawNativeKind::Known(NativeKind::Timestamp),
+            ),
+            (r#"{"kind":"String"}"#, RawNativeKind::Unknown),
+            (r#"{"kind":1}"#, RawNativeKind::NotText),
+        ] {
+            let RawForm::Native(native) = read(text).form() else {
+                panic!("{text}: expected a native object");
+            };
+            assert_eq!(native.kind(), kind, "{text}");
+        }
     }
 
     /// FR-360 item 9: a `variant` parameter keeps the members it was read
