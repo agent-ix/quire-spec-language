@@ -572,6 +572,17 @@ enum StepWire {
     OptionValue,
     Member { name: String },
     Index { index: u64 },
+    Reference { object: ObjectWire },
+}
+
+/// A declared object identity in a `reference` step.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ObjectWire {
+    universe: String,
+    #[serde(rename = "type")]
+    object_type: String,
+    object_identity: String,
 }
 
 impl PathWire {
@@ -617,6 +628,14 @@ impl PathWire {
             }
             SubjectWire::Built { occurrence } => {
                 occurrence.clone().read()?;
+            }
+        }
+        for step in &self.steps {
+            if let StepWire::Reference { object } = step {
+                digest(&object.universe, "universe")?;
+                digest(&object.object_type, "type")?;
+                quire_exact::ObjectId::new(object.object_identity.clone())
+                    .map_err(|_| CauseCodecError::Empty("object_identity"))?;
             }
         }
         Ok(())
@@ -674,6 +693,13 @@ impl PathWire {
                     ValuePathStep::OptionValue => StepWire::OptionValue,
                     ValuePathStep::Member(name) => StepWire::Member { name: name.clone() },
                     ValuePathStep::Index(index) => StepWire::Index { index: *index },
+                    ValuePathStep::Reference(object) => StepWire::Reference {
+                        object: ObjectWire {
+                            universe: hex(object.universe().as_bytes()),
+                            object_type: hex(object.object_type().as_bytes()),
+                            object_identity: object.object().as_str().to_owned(),
+                        },
+                    },
                 })
                 .collect(),
         }
@@ -725,13 +751,21 @@ impl PathWire {
             steps: self
                 .steps
                 .into_iter()
-                .map(|step| match step {
-                    StepWire::Field { name } => ValuePathStep::Field(name),
-                    StepWire::OptionValue => ValuePathStep::OptionValue,
-                    StepWire::Member { name } => ValuePathStep::Member(name),
-                    StepWire::Index { index } => ValuePathStep::Index(index),
+                .map(|step| {
+                    Ok(match step {
+                        StepWire::Field { name } => ValuePathStep::Field(name),
+                        StepWire::OptionValue => ValuePathStep::OptionValue,
+                        StepWire::Member { name } => ValuePathStep::Member(name),
+                        StepWire::Index { index } => ValuePathStep::Index(index),
+                        StepWire::Reference { object } => ValuePathStep::Reference(reference_of(
+                            keys,
+                            &object.universe,
+                            &object.object_type,
+                            object.object_identity,
+                        )?),
+                    })
                 })
-                .collect(),
+                .collect::<Result<_, CauseCodecError>>()?,
         })
     }
 }
@@ -1097,5 +1131,51 @@ mod tc235_path_tests {
         let mut unknown_binding = receiver_json;
         unknown_binding["root"]["subject"]["binding"] = serde_json::json!("context");
         assert!(serde_json::from_value::<PathWire>(unknown_binding).is_err());
+    }
+
+    /// A `reference` step carries the referenced object's declared identity
+    /// as `object` (QSpec FR-207's serialization), and a malformed identity
+    /// refuses at shape validation.
+    #[trace("QSpec-FR-207-AC-10")]
+    #[test]
+    fn a_reference_step_serializes_the_referenced_object_identity() {
+        let object = |key: &str| {
+            quire_exact::ObjectReference::new(
+                quire_exact::UniverseId::from_digest([1; 32]),
+                quire_exact::EffectiveId::from_digest([2; 32]),
+                quire_exact::ObjectId::new(key).unwrap(),
+            )
+        };
+        let path = RuntimeValuePath {
+            observation: ObservationIdentity {
+                authority: "test".to_owned(),
+                identity: "q1".to_owned(),
+                revision_namespace: "tc235".to_owned(),
+                revision: "1".to_owned(),
+            },
+            subject: ValuePathSubject::Object(object("child")),
+            steps: vec![
+                ValuePathStep::Member("parent".to_owned()),
+                ValuePathStep::Reference(object("root")),
+            ],
+        };
+        let json = serde_json::to_value(PathWire::of(&path)).unwrap();
+        assert_eq!(
+            json["steps"][1],
+            serde_json::json!({
+                "tag": "reference",
+                "object": {
+                    "universe": hex(&[1; 32]),
+                    "type": hex(&[2; 32]),
+                    "object_identity": "root",
+                },
+            })
+        );
+        let wire: PathWire = serde_json::from_value(json.clone()).unwrap();
+        wire.validate_shape().unwrap();
+        let mut malformed = json;
+        malformed["steps"][1]["object"]["universe"] = serde_json::json!("not hex");
+        let wire: PathWire = serde_json::from_value(malformed).unwrap();
+        assert!(wire.validate_shape().is_err());
     }
 }
