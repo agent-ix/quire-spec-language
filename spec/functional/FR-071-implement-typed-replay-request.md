@@ -22,8 +22,8 @@ QSL SHALL implement a typed replay request, defined in the layer-6 `replay`
 module and part of its public API (ADR-011 §2.1 E9, §6.1; ADR-013 O-26),
 that is exactly the ADR-013 O-25 counterexample packet plus the FR-070
 envelope's members — the state environment, the `quire.value.accounting/v1`
-limits, and the S1-to-S4 stage limits copied from the proving run — and
-nothing else. The type SHALL make it structurally impossible to obtain a
+limits, the S1-to-S4 stage limits copied from the proving run, and the
+optional object environment below — and nothing else. The type SHALL make it structurally impossible to obtain a
 recompilation input other than by digest: it SHALL carry a digest-addressed
 byte provision (QSpec FR-323 `byte_provision`, ADR-013 QC-1) and SHALL have
 no field, accessor or constructor argument typed as a filesystem path,
@@ -41,6 +41,9 @@ call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
 - An ADR-013 O-25 counterexample packet.
 - The FR-070 envelope's state environment, accounting limits, and S1-to-S4
   stage limits copied from the proving run.
+- Optionally, the object environment of a replay whose function takes a
+  `Reference`: the reference to one `quire.state.snapshot/v1` document
+  (FR-106) in the byte provision.
 - The digest-addressed byte provision (QSpec FR-323 `byte_provision`): every
   source, definition and domain-package input the replay would recompile,
   each keyed by its declared digest domain and digest.
@@ -98,6 +101,25 @@ call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
   (`inexact-integer` or `inexact-number`) and `document_pointer` (FR-056).
   **Amended**: `sha256-jcs` used to refuse as ineligible, which
   left no way for a domain package to reach the executor.
+- A present `object_environment` member SHALL be a closed object with exactly
+  `identity` and `digest`, in the form FR-106's invocation uses for its `pre`
+  and `post` members: the identity labels of a snapshot document and its
+  `sha256-jcs` digest. The `identity` is the label set the result retains with the
+  digest (FR-122); admission selects the document by digest alone and does not
+  compare it with the document's own `identity`. The member names the document, whose bytes are a
+  `sha256-jcs` entry of the byte provision like every other recompilation
+  input. A request without the member carries no object environment.
+- The request reader SHALL NOT read the `object_environment` document nor
+  require its byte-provision entry at construction: the executor admits the
+  document by FR-106 (FR-098), and the request defines no second document
+  grammar.
+- The reader SHALL refuse a malformed `object_environment` at decode, naming
+  the member or the member inside it, with `invalid_runtime_input`:
+  `wrong-value-kind` for a member that is not an object, or an `identity` or
+  `digest` of the wrong JSON kind; `missing-member` for a missing `identity`
+  or `digest`; `unknown-member` for any other member, naming the first in
+  document order; and `invalid-value` for a `digest` that is not in the
+  `sha256-jcs` domain or whose hex is not 64 lowercase digits.
 - The byte provision SHALL be complete at construction: every
   `RawSourceRef` digest the package reference names SHALL have a matching
   byte-provision entry; a request whose package reference names a digest
@@ -139,6 +161,7 @@ call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
 | FR-071-AC-9 | A request whose package reference carries two `dependencies` entries round-trips them exactly, in order; an entry whose source digest has no byte-provision entry refuses at construction, as AC-5 states; an entry with an empty identity, or a `package_id` in the `quire.source.bytes/v1` domain, refuses at decode. | Test (TC-186) |
 | FR-071-AC-10 | A request whose semantic profile selection names a profile outside the closed known set refuses at decode with `unknown_profile`/`unsupported-selection`, keeping the supplied selection and its role, and refuses so even when a byte-provision entry's bytes do not match its digest: the byte provision is not read first. | Test (TC-186) |
 | FR-071-AC-11 | A `sha256-jcs` byte-provision entry holding a repeated member name refuses `invalid_model_binding`/`malformed-declaration`; an entry intake refuses at one of its limits refuses `resource_exhausted`/`intake-limit-exceeded`, naming that limit and its bound; an allocation failure of 4096 requested bytes while reading or digesting an entry refuses `resource_exhausted`/`allocation-failed` carrying 4096; and an entry holding `18446744073709551616` at `/package/count` refuses `noncanonical_wire`/`inexact-integer` with `document_pointer` `/package/count`, and one holding `0.1000000000000000000001` at `/a~1b/0` refuses `noncanonical_wire`/`inexact-number` with `document_pointer` `/a~1b/0`. | Test (TC-186) |
+| FR-071-AC-12 | A request whose `object_environment` is `{"digest": <sha256-jcs digest>, "identity": {...}}` round-trips it exactly. Each of these refuses at decode with `invalid_runtime_input`, naming the member: a string for `object_environment` (`wrong-value-kind`); an object without `digest` (`missing-member` naming `object_environment.digest`); a third member (`unknown-member`); a `digest` in the `quire.source.bytes/v1` domain, and a `sha256-jcs` digest of 63 hex digits (each `invalid-value`). A request whose `object_environment` digest has no byte-provision entry constructs: the entry is read at admission, not at decode. | Test (TC-1042) |
 
 ## Dependencies
 
