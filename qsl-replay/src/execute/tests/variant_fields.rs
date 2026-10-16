@@ -94,7 +94,14 @@ fn converted(
     value: WitnessValue,
     slot: ValueType,
 ) -> Result<Value, usize> {
-    match convert_arguments(package, &[slot], &[value], &UNLIMITED, &mut default_run()) {
+    match convert_arguments(
+        package,
+        &[slot],
+        &[value],
+        &UNLIMITED,
+        &mut default_run(),
+        &crate::execute::argument::ReferenceModel::unselected(),
+    ) {
         Ok(mut converted) => Ok(converted.values.remove(0)),
         Err(stopped) => Err(refused_parameter(&stopped)
             .unwrap_or_else(|| panic!("a wrong-value-kind refusal, not {stopped:?}"))),

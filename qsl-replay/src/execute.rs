@@ -65,6 +65,8 @@ use qsl_semantics::model::observation::{AdmissionFailure, ObservationForm};
 use quire_exact::Identifier;
 
 mod argument;
+mod object_environment;
+pub use object_environment::{ObjectEnvironmentFailure, Unresolved};
 mod frame;
 pub use frame::{replay_frame, FrameIdentityMismatch, FrameReplayResult};
 
@@ -98,6 +100,10 @@ pub struct LimitAboveReader {
     /// The reader limit: `replay.input_bytes`, the most bytes any admitted
     /// request can carry.
     pub reader: u64,
+}
+
+fn hex(digest: &[u8; 32]) -> WireNodeId {
+    WireNodeId::from_digest(*digest)
 }
 
 /// Why [`replay`] settled no verdict. Each variant is one ADR-013 O-26
@@ -313,6 +319,28 @@ pub enum ReplayRefusal {
     /// failed, with its own record.
     #[error(transparent)]
     Admission(AdmissionFailure),
+    /// FR-098 step 1: the request carries an `object_environment` and no
+    /// parameter of the selected function holds a `Reference`
+    /// (`invalid_runtime_input`/`unknown-member`, naming
+    /// `object_environment`).
+    #[error("invalid_runtime_input/unknown-member: `object_environment` is supplied for a function with no Reference parameter")]
+    UnusedObjectEnvironment,
+    /// FR-098 step 2, FR-100: a reference argument's universe is not the
+    /// universe of its declared `Reference<T>`'s object type
+    /// (`foreign_reference`/`foreign-universe`).
+    #[error("foreign_reference/foreign-universe: the reference at position {position} is in universe {supplied}, not {required}", required = hex(.required), supplied = hex(.supplied))]
+    ForeignReference {
+        /// The parameter's zero-based declared position.
+        position: usize,
+        /// The universe of the declared object type.
+        required: [u8; 32],
+        /// The universe the reference names.
+        supplied: [u8; 32],
+    },
+    /// FR-098 steps 3 and 4: FR-106 admission of the environment document, or
+    /// FR-364's `resolve` of a reference argument, refused.
+    #[error("the object environment is refused: {0}")]
+    ObjectEnvironment(ObjectEnvironmentFailure),
     /// An executor or S6a invariant broke.
     #[error("internal fault in {}: {}", .0.stage(), .0.invariant())]
     Fault(InternalFault),
@@ -340,6 +368,9 @@ impl ReplayRefusal {
                 Code::StaleDependency
             }
             Self::UnknownClause { .. } => Code::MissingDeclaration,
+            Self::UnusedObjectEnvironment => Code::InvalidRuntimeInput,
+            Self::ForeignReference { .. } => Code::ForeignReference,
+            Self::ObjectEnvironment(failure) => failure.code(),
             Self::ParityBound(refusal) => refusal.code(),
             Self::WrongObservation { .. } => Code::WrongSnapshot,
             Self::Admission(
@@ -379,6 +410,9 @@ impl ReplayRefusal {
                 Some("content-mismatch")
             }
             Self::WrongObservation { .. } => Some("wrong-observation"),
+            Self::UnusedObjectEnvironment => Some("unknown-member"),
+            Self::ForeignReference { .. } => Some("foreign-universe"),
+            Self::ObjectEnvironment(failure) => failure.cause(),
             Self::Input(refusal) => Some(refusal.cause()),
             Self::NativePayload { .. } => Some("invalid-value"),
             Self::Storage { failure, .. } => membership_failure_cause(failure),
@@ -518,6 +552,7 @@ pub enum DependencySelectionsCause {
 /// #   accounting_limits: unlimited,
 /// #   stage_limits: std::collections::BTreeMap::new(),
 /// #   supplied_limits: None,
+/// #   object_environment: None,
 /// #   declared_domains: Vec::new(),
 /// #   byte_provision: vec![(
 /// #       Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
@@ -589,6 +624,7 @@ pub enum DependencySelectionsCause {
 /// #   accounting_limits: unlimited,
 /// #   stage_limits: std::collections::BTreeMap::new(),
 /// #   supplied_limits: None,
+/// #   object_environment: None,
 /// #   declared_domains: Vec::new(),
 /// #   byte_provision: vec![(
 /// #       Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
@@ -627,12 +663,12 @@ pub fn replay_with_cancel(
     cancel: &Cancel,
 ) -> Result<ReplayResult, ReplayRefusal> {
     let request = ReplayRequest::decode(wire, replay_limits)?;
-    let limits = request_limits(
+    let caller = request_limits(
         request.stage_limits(),
         request.accounting_limits(),
         replay_limits,
     )?;
-    let compiled = recompile(&request, &limits)?;
+    let compiled = recompile(&request, &caller)?;
     let package = compiled.checked.package();
     let call = select(&compiled, request.selected_function(), Claim::Predicate)?;
     let joined = arguments(
@@ -641,20 +677,45 @@ pub fn replay_with_cancel(
         request.source(),
         request.obligation_identity(),
     )?;
+    // FR-098 step 1, after the join and before any conversion.
+    if request.object_environment().is_some()
+        && !object_environment::holds_reference(package.graph().scope().types(), &call.types)
+    {
+        return Err(ReplayRefusal::UnusedObjectEnvironment);
+    }
     let limits = request.accounting_limits();
     let mut run = SuppliedRun::new(request.supplied_limits(), cancel.clone())
         .map_err(ReplayRefusal::Supplied)?;
-    let converted =
-        match argument::convert_arguments(package, &call.types, &joined, &limits, &mut run) {
-            Ok(converted) => converted,
-            Err(Stopped::Refusal(refusal)) => return Err(*refusal),
-            Err(Stopped::Supplied(failure)) => return settle_supplied(&request, failure),
-        };
+    let converted = match argument::convert_arguments(
+        package,
+        &call.types,
+        &joined,
+        &limits,
+        &mut run,
+        &compiled.reference_model(),
+    ) {
+        Ok(converted) => converted,
+        Err(Stopped::Refusal(refusal)) => return Err(*refusal),
+        Err(Stopped::Supplied(failure)) => return settle_supplied(&request, failure),
+    };
+    // FR-098 steps 3 and 4: a request without an environment runs over
+    // unresolved references.
+    let environment = if request.object_environment().is_some() {
+        object_environment::admit(
+            &request,
+            &compiled,
+            call.identity,
+            &converted.references,
+            &caller,
+        )?
+    } else {
+        ObjectEnvironment::default().with_unresolved_references()
+    };
     let mut meter = Meter::new(limits).with_cancel(cancel.clone());
     let evaluation = match package.call_supplied(
         &call.name,
         converted.values,
-        &ObjectEnvironment::default().with_unresolved_references(),
+        &environment,
         &mut meter,
         &mut run,
     ) {
@@ -834,6 +895,17 @@ pub(crate) struct Recompiled {
     pub(crate) checked: spine::CheckedUnit,
     /// The recompiled package's v2 bytes and `package_id`.
     pub(crate) emitted: spine::EmittedUnit,
+    /// The domain packages the recompile read, by `sha256-jcs` digest.
+    pub(crate) packages: std::collections::BTreeMap<[u8; 32], Vec<u8>>,
+    /// The limits the models were normalized under.
+    pub(crate) model_limits: qsl_semantics::model::accounting::ModelNormalizationLimits,
+}
+
+impl Recompiled {
+    /// Where a reference argument's universe is read from.
+    pub(crate) fn reference_model(&self) -> argument::ReferenceModel<'_> {
+        argument::ReferenceModel::new(self.checked.package(), &self.packages, self.model_limits)
+    }
 }
 
 /// The one S1-to-E4 spine run: parse, select, check and emit `bytes` as
@@ -881,7 +953,12 @@ pub(crate) fn run_spine(
     let emitted = spine::package(&checked, spine::PackageLimits::default(), &cancel)
         .map_err(refusal)?
         .into_value();
-    Ok(Recompiled { checked, emitted })
+    Ok(Recompiled {
+        checked,
+        emitted,
+        packages: packages.clone(),
+        model_limits: limits.model,
+    })
 }
 
 /// Recompile the request's one source unit from the byte provision against
@@ -1048,6 +1125,8 @@ enum Claim {
 /// declared types in declared order.
 struct Selected {
     name: qsl_eval::value::QualifiedName,
+    /// The function's node.
+    identity: NodeKey,
     parameters: Vec<NodeKey>,
     types: Vec<ValueType>,
 }
@@ -1142,6 +1221,7 @@ fn select(
     })?;
     Ok(Selected {
         name,
+        identity: callable.identity,
         parameters,
         types,
     })

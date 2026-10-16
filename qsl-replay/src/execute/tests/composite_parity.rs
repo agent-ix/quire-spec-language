@@ -82,7 +82,12 @@ fn unit() -> Unit {
     let emitted = package(&checked, crate::spine::PackageLimits::default(), &cancel)
         .expect("the unit emits")
         .into_value();
-    let compiled = Recompiled { checked, emitted };
+    let compiled = Recompiled {
+        checked,
+        emitted,
+        packages: BTreeMap::new(),
+        model_limits: SpineLimits::default().model,
+    };
     Unit { source, compiled }
 }
 
