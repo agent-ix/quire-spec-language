@@ -1132,4 +1132,50 @@ mod tc235_path_tests {
         unknown_binding["root"]["subject"]["binding"] = serde_json::json!("context");
         assert!(serde_json::from_value::<PathWire>(unknown_binding).is_err());
     }
+
+    /// A `reference` step carries the referenced object's declared identity
+    /// as `object` (QSpec FR-207's serialization), and a malformed identity
+    /// refuses at shape validation.
+    #[trace("QSpec-FR-207-AC-10")]
+    #[test]
+    fn a_reference_step_serializes_the_referenced_object_identity() {
+        let object = |key: &str| {
+            quire_exact::ObjectReference::new(
+                quire_exact::UniverseId::from_digest([1; 32]),
+                quire_exact::EffectiveId::from_digest([2; 32]),
+                quire_exact::ObjectId::new(key).unwrap(),
+            )
+        };
+        let path = RuntimeValuePath {
+            observation: ObservationIdentity {
+                authority: "test".to_owned(),
+                identity: "q1".to_owned(),
+                revision_namespace: "tc235".to_owned(),
+                revision: "1".to_owned(),
+            },
+            subject: ValuePathSubject::Object(object("child")),
+            steps: vec![
+                ValuePathStep::Member("parent".to_owned()),
+                ValuePathStep::Reference(object("root")),
+            ],
+        };
+        let json = serde_json::to_value(PathWire::of(&path)).unwrap();
+        assert_eq!(
+            json["steps"][1],
+            serde_json::json!({
+                "tag": "reference",
+                "object": {
+                    "universe": hex(&[1; 32]),
+                    "type": hex(&[2; 32]),
+                    "object_identity": "root",
+                },
+            })
+        );
+        let wire: PathWire = serde_json::from_value(json.clone()).unwrap();
+        wire.validate_shape().unwrap();
+        let mut malformed = json;
+        malformed["steps"][1]["object"]["universe"] = serde_json::json!("not hex");
+        let wire: PathWire = serde_json::from_value(malformed).unwrap();
+        assert!(wire.validate_shape().is_err());
+    }
 }
