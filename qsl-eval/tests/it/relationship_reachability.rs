@@ -25,7 +25,7 @@ use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::observation::{
     AdmissionUsage, AdmittedObservations, DocumentRef, Observation, PopulationEnumerationFailure,
-    RelationshipExtents,
+    RelationshipExtents, SelfKind,
 };
 use quire_exact::{
     ChargePoint, EffectiveId, FieldValue, LimitKind, Meter, ObjectId, ObjectReference, Outcome,
@@ -392,7 +392,8 @@ impl Orders {
             pre: pre.map(|environment| instant("pre", environment)),
             post: post.map(|environment| instant("post", environment)),
             self_object: start.clone(),
-            receiver_invocation: None,
+            invocation: None,
+            self_kind: SelfKind::Object,
             receiver_pre: None,
             receiver_post: None,
             parameters: vec![("target".to_owned(), Value::Reference(goal.clone()))],
