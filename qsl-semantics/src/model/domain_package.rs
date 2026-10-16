@@ -601,8 +601,9 @@ pub struct RelationshipEnd {
     /// `Some(role)` when the producer's own end shape carries a role;
     /// `None` when it does not.
     pub role: Option<String>,
-    /// The declared multiplicity.
-    pub multiplicity: Multiplicity,
+    /// The declared multiplicity; `None` when the end declares none, which
+    /// is retained as absent and never defaulted (FR-085-AC-2).
+    pub multiplicity: Option<Multiplicity>,
 }
 
 /// Where a record sits in its declaring type's array (`relationships[i]`).
