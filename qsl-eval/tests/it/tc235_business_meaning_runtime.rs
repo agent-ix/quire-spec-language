@@ -1677,17 +1677,21 @@ fn tc235_m16_run3_a_clause_set_reports_one_result_for_a_false_precondition() {
     );
 }
 
-/// The M15 lifecycle package with `place(flags: Flags)` and the TC-235 M22
-/// clauses, and the invocation `i1` of `place` binding `flags` to
-/// `{placed: true}` between `p1` `{placed: false, cancelled: false}` and `q1`
-/// `{placed: true, cancelled: true}`.
-fn orders_fixture() -> (
+/// The package, its offered package documents, snapshots, invocations and the
+/// selected invocation of [`orders_fixture`].
+type OrdersFixture = (
     CheckedPackage,
     BTreeMap<[u8; 32], Vec<u8>>,
     BTreeMap<[u8; 32], Vec<u8>>,
     BTreeMap<[u8; 32], Vec<u8>>,
     DocumentRef,
-) {
+);
+
+/// The M15 lifecycle package with `place(flags: Flags)` and the TC-235 M22
+/// clauses, and the invocation `i1` of `place` binding `flags` to
+/// `{placed: true}` between `p1` `{placed: false, cancelled: false}` and `q1`
+/// `{placed: true, cancelled: true}`.
+fn orders_fixture() -> OrdersFixture {
     use crate::tc235_k2::{declaration, field, id, origin};
     let flags_type = id("Flags");
     let document = lifecycle_document_with("not self.placed", |document| {
