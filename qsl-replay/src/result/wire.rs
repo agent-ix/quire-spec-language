@@ -572,6 +572,17 @@ enum StepWire {
     OptionValue,
     Member { name: String },
     Index { index: u64 },
+    Reference { object: ObjectWire },
+}
+
+/// A declared object identity in a `reference` step.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ObjectWire {
+    universe: String,
+    #[serde(rename = "type")]
+    object_type: String,
+    object_identity: String,
 }
 
 impl PathWire {
@@ -617,6 +628,14 @@ impl PathWire {
             }
             SubjectWire::Built { occurrence } => {
                 occurrence.clone().read()?;
+            }
+        }
+        for step in &self.steps {
+            if let StepWire::Reference { object } = step {
+                digest(&object.universe, "universe")?;
+                digest(&object.object_type, "type")?;
+                quire_exact::ObjectId::new(object.object_identity.clone())
+                    .map_err(|_| CauseCodecError::Empty("object_identity"))?;
             }
         }
         Ok(())
@@ -674,6 +693,13 @@ impl PathWire {
                     ValuePathStep::OptionValue => StepWire::OptionValue,
                     ValuePathStep::Member(name) => StepWire::Member { name: name.clone() },
                     ValuePathStep::Index(index) => StepWire::Index { index: *index },
+                    ValuePathStep::Reference(object) => StepWire::Reference {
+                        object: ObjectWire {
+                            universe: hex(object.universe().as_bytes()),
+                            object_type: hex(object.object_type().as_bytes()),
+                            object_identity: object.object().as_str().to_owned(),
+                        },
+                    },
                 })
                 .collect(),
         }
@@ -725,13 +751,21 @@ impl PathWire {
             steps: self
                 .steps
                 .into_iter()
-                .map(|step| match step {
-                    StepWire::Field { name } => ValuePathStep::Field(name),
-                    StepWire::OptionValue => ValuePathStep::OptionValue,
-                    StepWire::Member { name } => ValuePathStep::Member(name),
-                    StepWire::Index { index } => ValuePathStep::Index(index),
+                .map(|step| {
+                    Ok(match step {
+                        StepWire::Field { name } => ValuePathStep::Field(name),
+                        StepWire::OptionValue => ValuePathStep::OptionValue,
+                        StepWire::Member { name } => ValuePathStep::Member(name),
+                        StepWire::Index { index } => ValuePathStep::Index(index),
+                        StepWire::Reference { object } => ValuePathStep::Reference(reference_of(
+                            keys,
+                            &object.universe,
+                            &object.object_type,
+                            object.object_identity,
+                        )?),
+                    })
                 })
-                .collect(),
+                .collect::<Result<_, CauseCodecError>>()?,
         })
     }
 }

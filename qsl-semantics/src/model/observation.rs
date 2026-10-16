@@ -480,6 +480,25 @@ impl AdmissionUsage {
     }
 }
 
+/// What `self` is in an admitted observation set (FR-107 "The receiver path").
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SelfKind {
+    /// An object with a declared object identity (QSpec FR-204).
+    Object,
+    /// A state machine's context, with no declared object identity.
+    Context,
+}
+
+impl SelfKind {
+    fn of(state_machine: bool) -> Self {
+        if state_machine {
+            Self::Context
+        } else {
+            Self::Object
+        }
+    }
+}
+
 /// FR-106 Outputs: one typed observation set admitted for S6a.
 #[derive(Clone, Debug)]
 pub struct AdmittedObservations {
@@ -500,9 +519,14 @@ pub struct AdmittedObservations {
     pub post: Option<Observation>,
     /// The selected self object's reference.
     pub self_object: ObjectReference,
-    /// The selected invocation when `self` is a context with no declared
-    /// object identity. Evaluators use it to root receiver value paths.
-    pub receiver_invocation: Option<DocumentRef>,
+    /// The selected invocation, whatever kind `self` is: some for a
+    /// postcondition and for a precondition selected by `Invocation`, none
+    /// for an invariant and for a precondition selected by `PreCall`.
+    /// Evaluators root receiver, parameter and result value paths at it.
+    pub invocation: Option<DocumentRef>,
+    /// Whether `self` is an object with a declared object identity or a
+    /// state machine's context, which has none (QSpec FR-208).
+    pub self_kind: SelfKind,
     /// The pre-observation receiver context's evaluator reference, when
     /// this is a state-machine invocation.
     pub receiver_pre: Option<ObjectReference>,
@@ -1866,7 +1890,8 @@ fn admit_invariant(
         pre: None,
         post: None,
         self_object: self_reference,
-        receiver_invocation: None,
+        invocation: None,
+        self_kind: SelfKind::Object,
         receiver_pre: None,
         receiver_post: None,
         parameters: Vec::new(),
@@ -1959,7 +1984,8 @@ struct InvocationAdmission {
     pre: document::AdmittedEnvironment,
     post: document::AdmittedEnvironment,
     self_reference: ObjectReference,
-    receiver_invocation: Option<DocumentRef>,
+    invocation: DocumentRef,
+    self_kind: SelfKind,
     receiver_pre: Option<ObjectReference>,
     receiver_post: Option<ObjectReference>,
     parameters: Vec<(String, Value)>,
@@ -2232,7 +2258,8 @@ fn admit_invocation_documents(
         pre: pre_admitted,
         post: post_admitted,
         self_reference,
-        receiver_invocation: state_machine.then(|| selected.clone()),
+        invocation: selected.clone(),
+        self_kind: SelfKind::of(state_machine),
         receiver_pre,
         receiver_post,
         parameters,
@@ -2451,7 +2478,8 @@ fn admit_pre_call(
         }),
         post: None,
         self_object: self_reference,
-        receiver_invocation: state_machine.then_some(receiver_identity),
+        invocation: input.receiver_invocation.cloned(),
+        self_kind: SelfKind::of(state_machine),
         receiver_pre,
         receiver_post: None,
         parameters,
@@ -2525,7 +2553,8 @@ fn admit_operation(
             out_of_range: admitted.post.out_of_range,
         }),
         self_object: admitted.self_reference,
-        receiver_invocation: admitted.receiver_invocation,
+        invocation: Some(admitted.invocation),
+        self_kind: admitted.self_kind,
         receiver_pre: admitted.receiver_pre,
         receiver_post: admitted.receiver_post,
         parameters: admitted.parameters,
