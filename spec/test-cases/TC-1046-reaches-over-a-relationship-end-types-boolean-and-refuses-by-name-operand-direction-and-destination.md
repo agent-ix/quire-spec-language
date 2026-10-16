@@ -49,6 +49,7 @@ is declared by its source type; the end names type, role and multiplicity
 | `Order/parent` | `source-to-target` | `Order`, role `parent`, `{0,1}` | `Order`, no role, `{0,1}` |
 | `Order/twinA` | `source-to-target` | `Order`, role `twin`, `{0,1}` | `Order`, no role, `{0,1}` |
 | `Order/twinB` | `source-to-target` | `Order`, role `twin`, `{0,1}` | `Order`, no role, `{0,1}` |
+| `Order/loose` | `source-to-target` | `Order`, role `loose`, `{0,1}` | `Person`, no role, `{0,unbounded}` |
 
 | Vector | Input | Expected result/disposition |
 | --- | --- | --- |
@@ -56,17 +57,18 @@ is declared by its source type; the end names type, role and multiplicity
 | C02 | `reaches(self, target, next)` as a `pre` clause, and as a `post` clause, of `reroute` | admitted, `Boolean` each |
 | C03 | `reaches(self, target, next)` as an invariant on `M::Rush` with `target: Reference<M::Order>`, and with `target` a `Reference<M::Rush>` | admitted: each operand conforms to the near end's type `Order` |
 | C04 | `reaches(self, self, incoming)` on `M::Order` (`bidirectional`); `reaches(self, self, mateOf)` (`undirected`); `reaches(self, self, outgoing)` | admitted, `Boolean` each |
-| C05 | `reaches(self, self, via)` on `M::Order` | admitted: the field-edge form, unchanged, checks as FR-104 states |
+| C05 | `reaches(self, self, via)` on `M::Order` | admitted: the field-edge form checks as FR-104 states |
 | C06 | `reaches(self, self, parent)` on `M::Order` (the field `parent` and the end `parent`); `reaches(self, self, twin)` (two ends) | `ambiguous_declaration`/`ambiguous-name` at the third argument, naming both candidates, each |
 | C07 | `reaches(self, self, nothing)` | `missing_declaration`/`missing-name` at the third argument |
 | C08 | `reaches(self, target, next)` with `target: Reference<M::Person>`; and with `target: Int[0,9]` | `ill_typed`/`operator-ineligible` at the form, each |
-| C09 | `reaches(self, self, previous)` on `M::Order` (the inverse of `source-to-target`); `reaches(self, self, back)` (forward against `target-to-source`) | `ill_typed`/`operator-ineligible`, each: direction |
+| C09 | `reaches(self, self, previous)` on `M::Order` (the inverse of `source-to-target`) | `ill_typed`/`operator-ineligible`: direction |
 | C10 | `reaches(self, self, kids)` (finite multi-valued destination); `reaches(self, self, owner)` (destination `Person`) | `ill_typed`/`operator-ineligible`, each |
 | C11 | `reaches(self, self, crowd)`; `reaches(self, self, ranked)`; `reaches(self, self, bare)` | `unsupported_construct`/`expression-form`, each |
-| C12 | a `target-to-source` relationship whose forward traversal is refused and whose destination is unbounded: `reaches(self, self, back)` | `ill_typed`/`operator-ineligible` (direction), not `expression-form`: direction before multiplicity |
+| C12 | `reaches(self, self, back)` on `M::Order`: forward traversal of a `target-to-source` relationship whose destination is also unbounded | `ill_typed`/`operator-ineligible` (direction), not `expression-form`: direction before multiplicity |
 | C13 | `reaches(self, self, next)` in a `Value` function body `f(o: Reference<M::Order>): Boolean pure` | `ill_typed`/`operator-ineligible` at the form: no observation to traverse |
-| C14 | `reaches(self, self, M::Order::next)` | refused at the form's build as FR-102 states for a qualified edge, unchanged |
-| C15 | add a population `archive` with member type `Order` and no maximum; `reaches(self, self, next)` on `M::Person` with a parameter `o: Reference<M::Order>` and `reaches(o, o, next)` | `ambiguous_declaration`/`ambiguous-name` at the form naming `archive` and `orders` in ascending `DeclarationKey` order; without `archive`, admitted and the requirements record adds the `orders` domain once |
+| C14 | `reaches(self, self, M::Order::next)` | refused at the form's build as FR-102 states for a qualified edge |
+| C15 | `Person` declares the operation `watch(o: Reference<M::Order>)`; the clause `pre using V on M::Person::watch { reaches(o, o, next) }` (`next` resolves on `Order`, the operand's type, as the end of `Order/next`; the context object is a `Person`, so the walked population is not the context population); then with an added population `archive` with member type `Order` and no maximum | admitted, type `Boolean`, and the requirements record adds the `orders` domain once beside the context population `people`; then `ambiguous_declaration`/`ambiguous-name` at the form naming `archive` and `orders` in ascending `DeclarationKey` order |
+| C16 | `reaches(self, self, loose)` on `M::Order`, where `Order/loose`'s destination is an unbounded `Person` end (it fails both the multiplicity and the destination-type check) | `unsupported_construct`/`expression-form`, not `ill_typed`/`operator-ineligible`: multiplicity before destination type |
 
 ## Expected Results
 
