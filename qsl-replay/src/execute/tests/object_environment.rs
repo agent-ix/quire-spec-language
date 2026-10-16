@@ -1225,7 +1225,10 @@ fn a_written_environment_document_round_trips_through_admission() {
     for (items, holds) in [(vec![], true), (vec![4], true), (vec![3, 7, 1], false)] {
         let node = EnvironmentObject {
             key: "a".to_owned(),
-            type_identity: identity("Node"),
+            type_identity: crate::DeclarationKey {
+                package: PACKAGE.to_owned(),
+                node: identity("Node"),
+            },
             fields: vec![
                 (
                     "items".to_owned(),

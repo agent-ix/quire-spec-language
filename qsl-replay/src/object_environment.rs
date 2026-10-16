@@ -264,13 +264,16 @@ impl ObjectEnvironmentDocument {
 ///
 /// ```
 /// use qsl_replay::{
-///     write_object_environment, EnvironmentLabels, EnvironmentModel, EnvironmentObject,
+///     write_object_environment, DeclarationKey, EnvironmentLabels, EnvironmentModel, EnvironmentObject,
 ///     EnvironmentPopulation, SnapshotValue,
 /// };
 ///
 /// let node = EnvironmentObject {
 ///     key: "a".to_owned(),
-///     type_identity: "ix://test/graph/Node".to_owned(),
+///     type_identity: DeclarationKey {
+///         package: "test/graph".to_owned(),
+///         node: "ix://test/graph/Node".to_owned(),
+///     },
 ///     fields: vec![
 ///         (
 ///             "items".to_owned(),

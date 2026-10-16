@@ -7,6 +7,8 @@
 
 use serde_json::{json, Map, Value as Json};
 
+use crate::model::key::DeclarationKey;
+
 use super::{fault, AdmissionFailure, SnapshotValue};
 
 /// The four FR-001 labels of a document. Admission selects a document by
@@ -29,8 +31,9 @@ pub struct EnvironmentLabels {
 pub struct EnvironmentObject {
     /// The object's declared key.
     pub key: String,
-    /// The object type's declaration identity.
-    pub type_identity: String,
+    /// The object type's declaration. The document names it by its `node`
+    /// identity; the package is the model's, named once by the document.
+    pub type_identity: DeclarationKey,
     /// Each declared field, by member name.
     pub fields: Vec<(String, SnapshotValue)>,
 }
@@ -84,7 +87,7 @@ pub fn write_environment_document(
                         .iter()
                         .map(|(name, value)| (name.clone(), value.to_json()))
                         .collect();
-                    json!({"key": object.key, "type": object.type_identity, "fields": fields})
+                    json!({"key": object.key, "type": object.type_identity.node, "fields": fields})
                 })
                 .collect();
             json!({
