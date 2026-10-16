@@ -307,3 +307,19 @@ fn a_set_naming_an_unknown_clause_or_mismatched_observations_is_refused_whole() 
         Err(CallFailure::Input(InputRefusal::ObservationsMismatch))
     ));
 }
+
+/// TC-1039 step 5, the duplicate refusal. Needs `InputRefusal::DuplicateClause`
+/// from quire-semantic-value.
+#[trace("TC-1039", "FR-107-AC-16")]
+#[test]
+fn a_set_naming_a_clause_twice_is_refused_naming_it() {
+    let unit = unit();
+    let mut docs = documents();
+    let up12 = docs.invocation("up12", 1, 2);
+    let allowed = over(&unit, &docs, &up12, &["UpdateAllowed"]);
+    let twice = vec![allowed[0].clone(), allowed[0].clone()];
+    assert!(matches!(
+        evaluate(&unit, &twice, UNLIMITED),
+        Err(CallFailure::Input(InputRefusal::DuplicateClause(name))) if name == "UpdateAllowed"
+    ));
+}

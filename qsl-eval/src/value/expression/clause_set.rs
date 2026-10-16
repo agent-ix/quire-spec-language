@@ -5,6 +5,9 @@
 use qsl_semantics::check::Observation;
 use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::model::observation::AdmittedObservations;
+use quire_semantic_value::call::InputRefusal;
+use std::collections::BTreeSet;
+
 use quire_exact::{Meter, Outcome, ScalarLimits, Value};
 
 use super::{
@@ -114,6 +117,12 @@ pub(super) fn evaluate(
     limits: ScalarLimits,
 ) -> Result<ClauseSetEvaluation, CallFailure> {
     // Refuse a bad set whole, before any clause is evaluated.
+    let mut named = BTreeSet::new();
+    for (name, _) in clauses {
+        if !named.insert(name) {
+            return Err(InputRefusal::DuplicateClause(name.to_string()).into());
+        }
+    }
     let mut invariants = Vec::new();
     let mut preconditions = Vec::new();
     let mut postconditions = Vec::new();
