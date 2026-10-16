@@ -37,8 +37,8 @@ Tag the tests `#[trace("TC-1034", "FR-364-AC-n")]`.
 Base extents: composition `s1`-`p2`, `s1`-`p1`; housing `p1`-`t1`, `p2`-`t1`.
 Rows 4 and 10 build their extents through the model-layer entry, which makes
 no closure check, so that a dangling end (row 4) and an end of a population
-not held complete (row 10) exist to be navigated; a snapshot refuses row 4
-at check 8 and returns `Incomplete` for row 10 at check 7. Every other row's
+not held complete (row 10) exist to be navigated; a snapshot refuses rows 4
+and 10 at check 8, an end naming an unlisted key of a complete population. Every other row's
 extents would also admit from a snapshot.
 
 | # | Input | Expected |
@@ -52,7 +52,7 @@ extents would also admit from a snapshot.
 | 7 | `navigate(home, p3)` with no housing instance for `p3`; then variant **min** (the composition target end `{2,3}`) with composition `s1`-`p1` alone and `navigate(parts, s1)` | `refused { code: cardinality_out_of_bound, cause: below-minimum }` with bound `[1,1]` and count 0 after one `model.navigate`, no other charge; then `below-minimum` with bound `[2,3]` and count 1 after `model.navigate`, one `collection.visit` and `collection.bound`: three work units, no `collection.result-retain` |
 | 8 | variant **optional** (the housing target end `{0,1}`); `navigate(home, p3)`; then `navigate(home, p1)` | `Option<Reference<Tank>>` `none` after one `model.navigate`; then the present option naming `t1` after one `model.navigate` |
 | 9 | composition listed `complete: false` holding `s1`-`p1`, `navigate(parts, s1)`; composition not listed; composition listed complete with no instance and `navigate(parts, s2)`; housing complete with no instance and `navigate(home, p3)` under variant **optional** | `incomplete { code: incomplete_population, cause: incomplete-scope }` retaining composition and `s1`, after one `model.navigate` and no `collection.visit`, twice; then the empty `Set<Reference<Pump>>[0,3]` after one `model.navigate` and no `collection.visit`; then `none` |
-| 10 | (model-layer extent) composition `s1`-`p9`, where the observation does not hold `p9` and its population `Q9` is not held complete; `navigate(parts, s1)` | `incomplete_population`/`incomplete-scope`, not `dangling_reference`, after one `model.navigate`; no cardinality refusal |
+| 10 | (model-layer extent) composition `s1`-`p9`, where the observation does not hold `p9` and a declared population covering `Pump` is not held complete (TC-1041's variant **spare**); `navigate(parts, s1)` | `incomplete_population`/`incomplete-scope`, not `dangling_reference`, after one `model.navigate`; no cardinality refusal |
 | 11 | variant **bag**; composition `s1`-`p1` twice; `navigate(parts, s1)` | `Bag<Reference<Pump>>[0,3]` equal to `[p1, p1]`, with two `collection.visit` and count 2 |
 | 12 | row 1 twice, then compare the observation with a clone taken before | equal results, equal charges, an unchanged observation |
 
