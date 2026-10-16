@@ -2326,8 +2326,9 @@ impl<'a> Typer<'a> {
     /// Whether `x.name` over an `x` of `value_type` is a model read (FR-104,
     /// FR-363) rather than a record field read. A reference is one in a state
     /// clause, and elsewhere when `name` names a relationship end navigable
-    /// from it. In a state clause an `Option`, a collection or a population of
-    /// references is one too, which the hook refuses at the operand.
+    /// from it. An `Option`, a collection or a population of references is one
+    /// in a function body as in a state clause, which the hook refuses at the
+    /// operand (FR-363).
     pub(crate) fn is_model_receiver(&self, value_type: &ValueType, name: &str) -> bool {
         match value_type {
             ValueType::Reference(object) => {
@@ -2339,11 +2340,9 @@ impl<'a> Typer<'a> {
                         .next()
                         .is_some()
             }
-            ValueType::Option(element) => self.in_state_clause() && Self::holds_references(element),
-            ValueType::Collection(collection) => {
-                self.in_state_clause() && Self::holds_references(collection.element())
-            }
-            ValueType::Population(_) => self.in_state_clause(),
+            ValueType::Option(element) => Self::holds_references(element),
+            ValueType::Collection(collection) => Self::holds_references(collection.element()),
+            ValueType::Population(_) => true,
             ValueType::Boolean
             | ValueType::Int(_)
             | ValueType::Integer
