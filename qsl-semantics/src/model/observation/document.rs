@@ -1692,6 +1692,8 @@ fn collect_references(raw: &SnapshotValue, into: &mut Vec<(String, String)>) {
 /// 6 to 8 before starting the other's check 6 (SR-750 FND-005).
 pub(super) struct PopulationValues<'t> {
     objects: Vec<(ObjectReference, Vec<(&'t str, FieldValue)>)>,
+    /// The wire population that lists each object of `objects`, in step.
+    holders: Vec<String>,
     pub(super) completeness: BTreeMap<String, bool>,
     pub(super) keys_by_population: BTreeMap<String, BTreeSet<String>>,
     /// The entries of the snapshot's `relationships` member that passed
@@ -1705,6 +1707,21 @@ pub(super) struct PopulationValues<'t> {
     /// Each post-state integer admitted outside its declared range, in
     /// walk order.
     out_of_range: Vec<OutOfRange>,
+}
+
+impl PopulationValues<'_> {
+    /// The populations that list an object equal to one of `references`
+    /// (FR-098 step 3: the populations an argument's reference key names),
+    /// in the document's population order.
+    pub(super) fn populations_holding(&self, references: &[ObjectReference]) -> Vec<String> {
+        let mut held: Vec<String> = Vec::new();
+        for ((object, _), population) in self.objects.iter().zip(&self.holders) {
+            if references.contains(object) && !held.contains(population) {
+                held.push(population.clone());
+            }
+        }
+        held
+    }
 }
 
 /// FR-106 check 6: admit every population's every object's every field, in
@@ -1723,6 +1740,7 @@ pub(super) fn admit_population_values<'t>(
     ancestor_steps: u64,
 ) -> Result<PopulationValues<'t>, AdmissionFailure> {
     let mut objects: Vec<(ObjectReference, Vec<(&str, FieldValue)>)> = Vec::new();
+    let mut holders: Vec<String> = Vec::new();
     let mut listed = super::relationships::Listed::new();
     let mut completeness = BTreeMap::new();
     let mut keys_by_population: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
@@ -1903,6 +1921,7 @@ pub(super) fn admit_population_values<'t>(
                 observed: breach.observed,
                 steps: breach.steps,
             }));
+            holders.push(entry.population.clone());
             objects.push((reference, attributes));
         }
     }
@@ -1913,6 +1932,7 @@ pub(super) fn admit_population_values<'t>(
 
     Ok(PopulationValues {
         objects,
+        holders,
         completeness,
         keys_by_population,
         extents,
@@ -2397,6 +2417,43 @@ pub(super) fn admit_populations(
         &values.completeness,
         self_population,
         &[],
+        &values.extents,
+    )?;
+    check_population_closure(
+        populations,
+        &values.completeness,
+        &values.keys_by_population,
+        &values.extents,
+    )?;
+    finish_populations(types, values)
+}
+
+/// FR-098 step 3: FR-106 checks 6 to 8 over a function's one environment
+/// document. The populations holding an object that equals one of the
+/// converted `arguments` are required (check 7), and so is, repeatedly, what
+/// their reference fields and relationship ends name.
+pub(super) fn admit_argument_populations(
+    views: &[ModelView],
+    types: &TypeEnvironment,
+    populations: &[RawPopulation],
+    relationships: &[super::relationships::RawEntry],
+    arguments: &[ObjectReference],
+    ancestor_steps: u64,
+) -> Result<AdmittedEnvironment, AdmissionFailure> {
+    let values = admit_population_values(
+        views,
+        types,
+        populations,
+        relationships,
+        PostStateRange::Refuse,
+        ancestor_steps,
+    )?;
+    let required = values.populations_holding(arguments);
+    check_population_completeness(
+        populations,
+        &values.completeness,
+        None,
+        &required,
         &values.extents,
     )?;
     check_population_closure(

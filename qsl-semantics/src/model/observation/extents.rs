@@ -24,6 +24,7 @@ use quire_semantic_value::relationship_extent::{
 use super::document::ObservationRole;
 use super::{fault, refuse, AdmissionFailure, AdmissionRecord};
 use crate::model::key::DeclarationKey;
+use crate::model::object_environment::ObjectEnvironment;
 
 /// Why the population enumerator stopped before normal exhaustion: it could
 /// not read the population declaration `declaration`. This is the only way a
@@ -383,6 +384,37 @@ impl<'a, 't> ResolveBundle<'a, 't> {
         })
     }
 
+    /// The bundle of `environment`'s own manifest, closure and `types`, all
+    /// bound to `key`.
+    ///
+    /// # Errors
+    ///
+    /// A `Fault` when the environment holds no extents or the manifest
+    /// cannot be rebuilt.
+    pub fn over(
+        environment: &'a ObjectEnvironment,
+        key: &BundleKey,
+        types: &'t TypeEnvironment,
+    ) -> Result<Self, AdmissionFailure> {
+        let extents = environment
+            .extents()
+            .ok_or_else(|| fault("bundle-extents-missing"))?;
+        let manifest = Keyed {
+            key: key.clone(),
+            part: extents.manifest(types)?,
+        };
+        let closure = Keyed {
+            key: key.clone(),
+            part: environment.objects(),
+        };
+        let held_types = Keyed {
+            key: key.clone(),
+            part: types,
+        };
+        Self::new(key, manifest, closure, held_types)
+            .map_err(|_| fault("bundle-key-disagrees-with-itself"))
+    }
+
     /// FR-364 `resolve(x)`: `present` when the observation holds the object;
     /// otherwise `dangling` or `undecidable` by the manifest alone.
     pub fn resolve(&self, reference: &ObjectReference) -> Resolution {
@@ -410,10 +442,6 @@ impl super::AdmittedObservations {
             ObservationRole::Post => self.post.as_ref(),
         }
         .ok_or_else(|| fault("bundle-observation-missing"))?;
-        let extents = observation
-            .environment
-            .extents()
-            .ok_or_else(|| fault("bundle-extents-missing"))?;
         let key = BundleKey {
             source: source.clone(),
             clause: self.clause,
@@ -425,19 +453,6 @@ impl super::AdmittedObservations {
             role,
             origin: ObservationOrigin::Document(observation.identity.digest),
         };
-        let manifest = Keyed {
-            key: key.clone(),
-            part: extents.manifest(types)?,
-        };
-        let closure = Keyed {
-            key: key.clone(),
-            part: observation.environment.objects(),
-        };
-        let held_types = Keyed {
-            key: key.clone(),
-            part: types,
-        };
-        ResolveBundle::new(&key, manifest, closure, held_types)
-            .map_err(|_| fault("bundle-key-disagrees-with-itself"))
+        ResolveBundle::over(&observation.environment, &key, types)
     }
 }

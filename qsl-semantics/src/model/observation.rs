@@ -1515,6 +1515,34 @@ pub fn admit_current_snapshot(
     selected: &DocumentRef,
     limits: ObservationLimits,
 ) -> Result<(ObjectEnvironment, AdmissionUsage), AdmissionFailure> {
+    admit_object_environment(
+        model_selections,
+        types,
+        packages,
+        model_limits,
+        provision,
+        selected,
+        limits,
+        &[],
+    )
+}
+
+/// FR-098 step 3: a replayed function's object environment, admitted as
+/// [`admit_current_snapshot`] admits it, except that the populations holding
+/// an object that equals one of the converted `arguments` are required to be
+/// complete (FR-106 check 7), repeatedly through their reference fields and
+/// relationship ends.
+#[allow(clippy::too_many_arguments)]
+pub fn admit_object_environment(
+    model_selections: &[DomainPackageRef],
+    types: &TypeEnvironment,
+    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    model_limits: ModelNormalizationLimits,
+    provision: &BTreeMap<[u8; 32], Vec<u8>>,
+    selected: &DocumentRef,
+    limits: ObservationLimits,
+    arguments: &[ObjectReference],
+) -> Result<(ObjectEnvironment, AdmissionUsage), AdmissionFailure> {
     let views = model_views(model_selections, packages, model_limits)?;
     let read = read_document(DocumentKind::Snapshot, provision, selected, limits)?;
     let snapshot = read
@@ -1527,15 +1555,29 @@ pub fn admit_current_snapshot(
         )));
     }
     check_model_any(&views, &snapshot.model)?;
-    let admitted = document::admit_populations(
+    let admitted = document::admit_argument_populations(
         &views,
         types,
         &snapshot.populations,
         &snapshot.relationships,
-        None,
+        arguments,
         model_limits.ancestor_steps,
     )?;
     Ok((admitted.environment, read.usage))
+}
+
+/// The `sha256-jcs` digest of the document `bytes`, the one FR-106 check 1.3
+/// compares with the selected digest.
+///
+/// # Errors
+///
+/// A `Fault` when `bytes` are not a document with an RFC 8785 form.
+pub fn snapshot_document_digest(bytes: &[u8]) -> Result<[u8; 32], AdmissionFailure> {
+    let document = quire_canonical::read(bytes, u64::MAX)
+        .map_err(|_| fault("document-bytes-read-as-a-document"))?;
+    quire_canonical::sha256(&document, quire_canonical::Limits::new(u64::MAX))
+        .map(|digest| *digest.as_bytes())
+        .map_err(|_| fault("document-has-a-canonical-form"))
 }
 
 /// FR-109's `Function` selection: `type_identity`'s own [`UniverseId`],
@@ -1702,6 +1744,7 @@ mod extents;
 mod frame;
 mod relationships;
 mod tree;
+mod write;
 
 pub use document::ObservationRole;
 use document::{read_document, DocumentKind};
@@ -1709,6 +1752,10 @@ pub use encode::ValueEncoder;
 pub use extents::{
     BundleKey, BundlePart, BundleRefusal, Keyed, ObservationOrigin, PopulationEnumerationFailure,
     PopulationManifest, RelationshipExtents, ResolveBundle,
+};
+pub use write::{
+    write_environment_document, EnvironmentLabels, EnvironmentModel, EnvironmentObject,
+    EnvironmentPopulation,
 };
 
 #[allow(clippy::too_many_arguments)]

@@ -29,6 +29,9 @@
 use qsl_foundation::diagnostic::InternalFault;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::NominalNode;
+use qsl_semantics::model::accounting::ModelNormalizationLimits;
+use qsl_semantics::model::domain_package::DomainPackageRef;
+use qsl_semantics::model::observation::population_universe_for;
 use qsl_semantics::value::enumeration::mint_variant_id;
 use qsl_semantics::value::supplied::{
     AttemptedCount, SuppliedCause, SuppliedContext, SuppliedEvent, SuppliedFailure, SuppliedLimit,
@@ -36,13 +39,13 @@ use qsl_semantics::value::supplied::{
 };
 use quire_exact::{
     admit_text, form, from_admitted_slots, CollectionKind, CollectionType, ConstructionRefusal,
-    Decimal, EnumMember, FieldValue, IeeeValue, IeeeWidth, Integer, Meter, NodeKey,
+    Decimal, EffectiveId, EnumMember, FieldValue, IeeeValue, IeeeWidth, Integer, Meter, NodeKey,
     NumericMembershipFailure, ObjectId, ObjectReference, OptionValue, Outcome, Presence, Quantity,
     Rational, ScalarLimits, TextPayload, Timestamp, UniverseId, Uuid, Value, ValueType,
 };
 use quire_semantic_value::call::InputRefusal;
 use quire_semantic_value::declaration::{CompositeDeclaration, CompositeShape, TypeEnvironment};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use super::ReplayRefusal;
 use crate::witness::{QuantityMagnitude, WitnessSlot, WitnessValue};
@@ -93,6 +96,10 @@ impl From<Box<SuppliedStop>> for Stopped {
 pub(super) struct Converted {
     /// One kernel value per argument, in parameter order.
     pub(super) values: Vec<Value>,
+    /// Every reference the arguments hold, as `(parameter position,
+    /// reference)`, in parameter order and, within an argument, in the
+    /// conversion's walk order.
+    pub(super) references: Vec<(usize, ObjectReference)>,
 }
 
 /// An enum declaration of the checked graph: its node key and its members.
@@ -217,6 +224,50 @@ struct Converter<'a, 'r> {
     composites: HashMap<[u8; 32], &'a CompositeDeclaration>,
     enums: Vec<EnumDeclaration>,
     limits: &'a ScalarLimits,
+    /// Where a reference's universe is read from.
+    model: &'a ReferenceModel<'a>,
+    /// The references converted so far, with their parameter positions.
+    references: Vec<(usize, ObjectReference)>,
+}
+
+/// The selected models a reference argument's universe is read from
+/// (FR-098: the universe of the declared `Reference<T>`'s object type).
+pub(crate) struct ReferenceModel<'a> {
+    selections: &'a [DomainPackageRef],
+    packages: &'a BTreeMap<[u8; 32], Vec<u8>>,
+    limits: ModelNormalizationLimits,
+}
+
+impl<'a> ReferenceModel<'a> {
+    /// The models `package` selects, over the domain `packages` the request
+    /// carries.
+    pub(crate) fn new(
+        package: &'a CheckedPackage,
+        packages: &'a BTreeMap<[u8; 32], Vec<u8>>,
+        limits: ModelNormalizationLimits,
+    ) -> Self {
+        Self {
+            selections: package.graph().model_selections(),
+            packages,
+            limits,
+        }
+    }
+
+    /// A call that selects no model: no reference type can be declared.
+    #[cfg(test)]
+    pub(super) fn unselected() -> Self {
+        const NONE: &BTreeMap<[u8; 32], Vec<u8>> = &BTreeMap::new();
+        Self {
+            selections: &[],
+            packages: NONE,
+            limits: crate::spine::SpineLimits::default().model,
+        }
+    }
+
+    fn universe(&self, object_type: EffectiveId) -> Result<UniverseId, Stopped> {
+        population_universe_for(self.selections, self.packages, self.limits, object_type)
+            .map_err(|failure| ReplayRefusal::Admission(failure).into())
+    }
 }
 
 /// `values[i]` as a kernel value of `declared[i]`, for every parameter, under
@@ -227,6 +278,7 @@ pub(super) fn convert_arguments(
     values: &[WitnessValue],
     limits: &ScalarLimits,
     run: &mut SuppliedRun,
+    model: &ReferenceModel<'_>,
 ) -> Result<Converted, Stopped> {
     let enums = enum_declarations(package);
     let types = package.graph().scope().types();
@@ -242,6 +294,8 @@ pub(super) fn convert_arguments(
             .collect(),
         enums,
         limits,
+        model,
+        references: Vec::new(),
     };
     let mut converted = Vec::with_capacity(values.len());
     for (parameter, (value, declared)) in values.iter().zip(declared).enumerate() {
@@ -251,7 +305,10 @@ pub(super) fn convert_arguments(
         converter.check_occurrences(parameter, &value)?;
         converted.push(value);
     }
-    Ok(Converted { values: converted })
+    Ok(Converted {
+        values: converted,
+        references: converter.references,
+    })
 }
 
 fn invariant(what: &'static str) -> Stopped {
@@ -694,17 +751,37 @@ impl<'a> Converter<'a, '_> {
                     identity,
                 },
             ) => {
-                if wire_type != object_type.as_bytes() {
+                // FR-098: value shape (matched above), then universe
+                // correspondence, then conformance, as FR-100 orders them.
+                let required = self.model.universe(*object_type)?;
+                if required.as_bytes() != universe {
+                    return Err(ReplayRefusal::ForeignReference {
+                        position: parameter,
+                        required: *required.as_bytes(),
+                        supplied: *universe,
+                    }
+                    .into());
+                }
+                // The supplied type is the model's object type of that id, if
+                // the model has one; it is never minted from the wire digest.
+                let supplied_type = self
+                    .types
+                    .object_types()
+                    .map(|declaration| declaration.key())
+                    .find(|key| key.as_bytes() == wire_type);
+                let Some(supplied_type) = supplied_type else {
+                    return Err(self.wrong(parameter));
+                };
+                if !self.types.conforms(supplied_type, *object_type) {
                     return Err(self.wrong(parameter));
                 }
                 let identity =
                     String::from_utf8(identity.clone()).map_err(|_| self.wrong(parameter))?;
                 let object = ObjectId::new(identity).map_err(|_| self.wrong(parameter))?;
-                values.push(Value::Reference(ObjectReference::new(
-                    UniverseId::from_digest(*universe),
-                    *object_type,
-                    object,
-                )));
+                let reference =
+                    ObjectReference::new(UniverseId::from_digest(*universe), supplied_type, object);
+                self.references.push((parameter, reference.clone()));
+                values.push(Value::Reference(reference));
             }
             (ValueType::Option(payload_type), WitnessValue::Option(inner)) => {
                 pending.push(Step::Option {

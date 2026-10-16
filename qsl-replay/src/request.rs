@@ -20,6 +20,7 @@ use crate::identity::{
     SourceDigestWire,
 };
 use crate::limits::CallerLimits;
+use crate::object_environment::ObjectEnvironmentRef;
 use crate::witness::ReplaySource;
 use qsl_foundation::diagnostic::JsonPointer;
 use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord, InvalidDigestRecord};
@@ -224,6 +225,7 @@ pub struct ReplayRequest {
     accounting_limits: ScalarLimits,
     stage_limits: StageLimits,
     supplied_limits: SuppliedLimits,
+    object_environment: Option<ObjectEnvironmentRef>,
     declared_domains: Vec<DeclaredDomain>,
     byte_provision: ByteProvision,
 }
@@ -290,6 +292,12 @@ impl ReplayRequest {
     /// defaults are the same request.
     pub fn supplied_limits(&self) -> SuppliedLimits {
         self.supplied_limits
+    }
+    /// The snapshot document that supplies the call's object environment
+    /// (FR-071, FR-098), when the request names one. The request never
+    /// reads it: the executor admits it by FR-106.
+    pub fn object_environment(&self) -> Option<&ObjectEnvironmentRef> {
+        self.object_environment.as_ref()
     }
     /// The declared domains of the proving run: the caller-substituted
     /// ADR-014 B-4 bounds the obligation was proved over (FR-071).
@@ -366,6 +374,9 @@ pub struct ReplayRequestWire {
     /// wire object that names only one ceiling, an unknown member or a
     /// value past `u64` never reaches here: see [`crate::read_supplied_limits`].
     pub supplied_limits: Option<SuppliedLimits>,
+    /// The snapshot document that supplies the call's object environment
+    /// (FR-071), or `None` for a request that supplies none.
+    pub object_environment: Option<ObjectEnvironmentRef>,
     /// The declared domains of the proving run: the caller-substituted
     /// ADR-014 B-4 bounds the obligation was proved over.
     pub declared_domains: Vec<DeclaredDomain>,
@@ -661,6 +672,14 @@ fn measured_encoded_bytes(wire: &ReplayRequestWire) -> usize {
             .map(|declared| crate::witness::finite_bound_bytes(declared.bound()))
             .sum::<usize>()
         + wire.source.measured_bytes()
+        + wire.object_environment.as_ref().map_or(0, |environment| {
+            let labels = environment.identity();
+            labels.authority.len()
+                + labels.identity.len()
+                + labels.revision_namespace.len()
+                + labels.revision.len()
+                + environment.digest().hex().len()
+        })
 }
 
 impl ReplayRequest {
@@ -804,6 +823,7 @@ impl ReplayRequest {
             accounting_limits,
             stage_limits,
             supplied_limits,
+            object_environment: wire.object_environment,
             declared_domains: wire.declared_domains,
             byte_provision,
         })
@@ -844,6 +864,7 @@ impl ReplayRequest {
             accounting_limits: self.accounting_limits,
             stage_limits: self.stage_limits.to_wire(),
             supplied_limits: Some(self.supplied_limits),
+            object_environment: self.object_environment.clone(),
             declared_domains: self.declared_domains.clone(),
             byte_provision: self
                 .byte_provision
@@ -931,6 +952,7 @@ mod tests {
             accounting_limits: scalar_limits(128),
             stage_limits: stage_limits(stage_seed),
             supplied_limits: None,
+            object_environment: None,
             declared_domains: Vec::new(),
             byte_provision: vec![(
                 Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
