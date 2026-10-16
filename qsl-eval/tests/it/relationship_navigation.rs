@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! TC-1034 / TC-1041 (FR-364, FR-152-AC-7): `r.role` over a relationship end
+//! TC-1034 / TC-1041 (FR-364): `r.role` over a relationship end
 //! evaluated through the checked-expression entry against an observation's
 //! relationship extents and population manifest, with `resolve` deciding
 //! each missing target as present, dangling or undecidable.
@@ -432,7 +432,7 @@ fn composition_links(orders: &Orders, pumps: &[&str]) -> Vec<Link> {
 /// TC-1034 row 1: the set in reference-key order, the exact schedule, and a
 /// work limit equal to the schedule completes while one fewer is incomplete
 /// at `collection.result-retain`.
-#[trace("TC-1034", "FR-364-AC-5", "FR-152-AC-7")]
+#[trace("TC-1034", "FR-364-AC-5")]
 #[test]
 fn a_multi_valued_end_returns_the_set_after_the_navigate_visit_bound_retain_schedule() {
     let orders = Orders::new(Shape::BASE);
