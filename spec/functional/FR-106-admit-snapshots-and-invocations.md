@@ -404,7 +404,7 @@ is read as an `Invocation` selection of a postcondition reads it: its `pre` and
 `post` snapshots, the `contexts` they hold, the parameters and the result,
 admitted by the same checks. Checks that name the selected clause do not apply to it: check 4 compares
 the document's model with the package's model, since there is no clause alias;
-checks 5 and 9 have no clause receiver and no `self` to test; and check 7's
+check 5 has no clause receiver, and check 9's `self` tests do not apply, there being no `self`, but its context rule does: each `pre` and `post` snapshot of the invocation holds exactly one context for every state machine that has an effective invariant, else `invalid_model_binding`/`wrong-context` or `invalid_runtime_input`/`duplicate-member` as there; check 11's frame check runs on the invocation as it does for a postcondition; and check 7's
 required population is every population of the snapshot, there being no
 population holding `self`. The invocation's `context` and `operation` are
 checked only against the package. The admitted value holds no clause

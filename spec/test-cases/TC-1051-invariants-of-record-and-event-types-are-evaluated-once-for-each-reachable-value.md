@@ -68,12 +68,17 @@ unlimited meter unless a step says otherwise. Tag the tests
 10. **F** plus `Money/Stable`, an `ocl` clause (FR-366-AC-8).
 11. The M16 process `Fulfilment` with the type-level invariant
     `NonNegativeAttempts` (`self.attempts >= 0`), observation `s1` holding the
-    runs `r1` `{attempts: 0}` and `r2` `{attempts: -1}`; and the state machine
-    `OrderLifecycle` with invariant `Extra` (`self.placed or not self.placed`),
-    invocation `i1` of `place` with `pre` context `{placed: false, cancelled:
-    false}` and `post` context `{placed: true, cancelled: true}`. Evaluate each
-    by `evaluate_value_invariants`, then call `evaluate_clause` named
-    `NonNegativeAttempts` (FR-366-AC-9).
+    runs `r1` `{attempts: 0}` and `r2` `{attempts: -1}`; and TC-1045's
+    `Orders` fixture (state machine `OrderLifecycle` with the fields `placed`
+    and `cancelled`, `place(flags: Flags)` modifying both) plus the type-level
+    invariant `Extra` (`self.placed or not self.placed`) of `OrderLifecycle`,
+    with TC-1045's invocation `i1` of `place` (`flags` `{placed: true}`), its
+    `pre` snapshot `P1` with context `{placed: false, cancelled: false}`
+    labelled `s2` and its `post` snapshot `Q2` with context `{placed: true,
+    cancelled: true}` labelled `s3`. Neither unit declares a state clause named
+    `NonNegativeAttempts`. Evaluate each by `evaluate_value_invariants`, then
+    call `evaluate_clause` named `NonNegativeAttempts` over the `Orders` unit
+    (FR-366-AC-9).
 
 ## Expected Results
 

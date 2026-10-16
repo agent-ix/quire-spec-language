@@ -92,3 +92,58 @@ Recorded, non-blocking:
   clause from `ScalarLimits`. Say that the difference is deliberate.
 - low: FR-366 cites FR-107's clause-set combination, which also has
   `Undecided`. Say why an invariant cannot reach it (Linked checking).
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | high | The state-machine half of the new FR-366-AC-9 and TC-1051 step 11 cannot be reached over K2, the only base fixture TC-1051 names. The step evaluates `Extra` of `OrderLifecycle` over `i1` of `place`, with `pre` context `{placed: false, cancelled: false}` and `post` context `{placed: true, cancelled: true}`, and expects two `Completed(true)` results. K2's `OrderLifecycle` declares only the field `placed` (tc235_k2.rs), so FR-106 check 6.12 refuses `cancelled` as `unknown-member`. K2's `place` has an empty frame (`modifies: []`), so even without `cancelled`, check 11 (which FR-106 now applies to a `ValueInvariants` invocation "as an `Invocation` selection of a postcondition reads it") refuses the change to `placed` as `frame_violation`. The contexts match TC-1045's fixture: `cancelled` field, `place(flags: Flags)` modifying both fields. That fixture also needs a `flags` parameter, and the step names neither. Fix: name the fixture (TC-1045's, plus `Extra`, with `i1` binding `flags`), or use K2 with `place` modifying `placed` and contexts holding only `placed`. | spec/functional/FR-366-classify-check-and-evaluate-the-invariant-clauses-of-a-model-type.md:209; spec/test-cases/TC-1051-invariants-of-record-and-event-types-are-evaluated-once-for-each-reachable-value.md:69-75,112-117 |
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 993a787fa1229ca708753d948b2a236d217449a3 |
+| FND-002 | fixed | 993a787fa1229ca708753d948b2a236d217449a3 |
+| FND-003 | fixed | 993a787fa1229ca708753d948b2a236d217449a3 |
+| FND-004 | fixed | 993a787fa1229ca708753d948b2a236d217449a3 |
+| FND-005 | fixed | 993a787fa1229ca708753d948b2a236d217449a3 |
+
+Round 1 verification notes (reviewed at 993a787fa1229ca708753d948b2a236d217449a3):
+- FND-001: quire-exact at the locked rev 37aa172 `numeric.rs` `order` makes
+  three charges for integers: `OrderingOperands`, `OrderingArithmetic`, then
+  `OrderingResultRetain` (line 163). The merged D01 test
+  (`qsl-eval/tests/it/dispatch_calls.rs`) logs exactly these three after the
+  call charges. The `Field` arm and literals charge nothing, so each value
+  costs 3 charges. `discount` is first in key order. Denying charge 4 leaves one
+  result, and denying charge 3 leaves none. Both are correct. (My round-0 count
+  of 2 missed `result-retain`; the conclusion that the old row was wrong
+  stands.)
+- FND-003: `evaluate_clause` is now stated as unit-clause only, which matches
+  `ClauseSetup::of`. AC-9's process truth values are right: the merged M16
+  test evaluates a unit clause, `invariant NonNegativeAttempts using v on
+  M::Fulfilment at current`, and gets `r1` true and `r2` false, located at
+  `(s1, object r2)` with no steps. Its `process_document` also adds the
+  package clause of the same name.
+- FND-005: QSpec FR-207 key order compares the observation key first, then
+  subject kind (object before invocation binding), then steps by kind and
+  name, with index steps compared numerically. The labelled `s1` < `s2` gives
+  exactly discount, history[0], history[1], quoted, total, then the parameter
+  at `s2`. This is consistent.
+
+Recorded, non-blocking (round 1):
+- medium: For a machine snapshot with no context, FR-366 says it is
+  `wrong-context` "as FR-106 check 6.10 refuses it". Check 6.10 is the
+  `contexts`-on-a-`current`-snapshot rule. `wrong-context` comes from check 9,
+  which FR-106 now says does not apply to `ValueInvariants`. Cite the check
+  that applies, or say that check 9's context half applies.
+- medium: AC-9 and TC-1051 step 11 expect `evaluate_clause("NonNegativeAttempts")`
+  to return `UnknownClause`. This holds only if the step's unit declares no
+  unit invariant of that name, but the merged M16 fixture declares one. State
+  that the unit declares no such invariant.
+- low: `ac:non-canonical-shape` warning at FR-366 line 204 (AC-4). The
+  criterion asserts the outcome directly. The "with ..." preamble trips the
+  heuristic, so it is not a defect.
+- The earlier mediums are fixed: FR-056-AC-35 is now cited, FR-106 now states
+  which checks apply to `ValueInvariants`, the shared meter is stated as
+  deliberate, and `Undecided` is excluded.
