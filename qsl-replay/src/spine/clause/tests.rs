@@ -426,7 +426,8 @@ fn no_cycle_observations(
         pre: None,
         post: None,
         self_object,
-        receiver_invocation: None,
+        invocation: None,
+        self_kind: qsl_semantics::model::observation::SelfKind::Object,
         receiver_pre: None,
         receiver_post: None,
         parameters: Vec::new(),
@@ -5140,6 +5141,8 @@ fn s4_state_package_reads_back_through_i2() {
 }
 
 mod call_site;
+mod clause_paths;
+mod clause_set;
 mod frame;
 mod frame_replay;
 mod invocation_parameters;
