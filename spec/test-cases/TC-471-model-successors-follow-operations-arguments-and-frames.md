@@ -60,8 +60,8 @@ Tag the tests `#[trace("TC-471", "FR-120-AC-n")]`.
   every (`value`, `label`, `next`) in {0, 1, 2} × {0, 1} × {absent, `c1`,
   `c2`}. `remove` gives, per receiver, three successors: deletion sets {},
   {`c1`} and {`c1`, `c2`}; none deletes `c2` alone. Each successor's
-  created and deleted sets equal the delta `StateModel::check_frame`
-  returns.
+  created and deleted sets equal the delta the frame decision
+  (FR-120 "The frame decision") returns.
 - Step 4: `semantic` is exactly FR-120-AC-4's JCS value, with `<U>` and
   `<E>` the universe and effective type, each as 64 lowercase hex digits,
   of the `ObjectReference` that FR-106 admission (`StateModel::
