@@ -37,7 +37,7 @@ of the `Counter` object type node, and `<Gauge>` for `Gauge`'s. Every frame
 body is written with its members in canonical JCS order. Tag the tests
 `#[trace("TC-1043", "FR-154-AC-n")]`, `#[trace("TC-1043", "FR-105-AC-7")]` and `#[trace("TC-1043", "FR-115-AC-11")]`.
 
-Operations and their model-document `frame` (FR-154 "Inputs"). The three arrays `modifies`, `creates` and `deletes` are always present. The rows that use a scoped member (`modifies_receiver`, `deletes_receiver`, `deletes_parameters`) depend on the filament-core-data semantic-IR frame schema admitting them; the rows that use only the three arrays are reachable today:
+Operations and their model-document `frame` (FR-154 "Inputs"). The three arrays `modifies`, `creates` and `deletes` are always present. The rows that use a scoped member (`modifies_receiver`, `deletes_receiver`, `deletes_parameters`) depend on the filament-core-data semantic-IR frame schema admitting them. That schema runs on the whole model document before intake, so every package, intake row and read built from this fixture, which declares scoped operations, depends on it (steps 1 to 4); only step 2b, which has its own fixture, is reachable today. `go` of `Flow` has no base `frame` and reads as the empty effect (FR-103):
 
 | Operation | Parameters | `frame` |
 | --- | --- | --- |
@@ -57,11 +57,15 @@ Meaning in surface text: `bump` is `modifies value`, `modifies self.step`,
 2. Compare the node ids of `own` and `all`, and of `drop` and `noop`. Emit
    package B1, the fixture without `all`, and package B2, B1 with `own`'s
    frame replaced by `{"modifies":["Counter/value"],"creates":[],"deletes":[]}`; compare their
-   `package_id`s. (B2 holds no second operation with an equal frame.) Emit
-   package B3, the fixture with `own`'s frame replaced by that same frame, so
-   that `own` and `all` have equal frames, read the package's `state`/`frame`
-   and `state`/`operation_anchor` nodes for the two operations, and read it
-   with the I2 reader.
+   `package_id`s. (B2 holds no second operation with an equal frame.)
+
+   2b. Fixture R: FR-120's `test/counters` package with the operations `noop`
+   and `all` above and `same`, whose frame equals `all`'s
+   (`{"modifies":["Counter/value"],"creates":[],"deletes":[]}`); each is named
+   by its own postcondition clause (`DoneNoop`, `DoneAll`, `DoneSame`, each
+   `{ true }`), and no operation uses a scoped member. Emit package B3 from
+   fixture R, read its `state`/`frame` and `state`/`operation_anchor` nodes
+   for `all` and `same`, and read it with the I2 reader.
 3. Intake the package once per row of this table, each row replacing the
    `frame` of an operation `t(n: Integer, a: Reference<Counter>)` of
    `Counter` (of `Sub` in I7):
@@ -88,8 +92,8 @@ Meaning in surface text: `bump` is `modifies value`, `modifies self.step`,
 
    Rows I1 to I17 and the operations `bump`, `merge`, `own`, `drop` and
    `dispose` use a scoped member or its refusal, so they depend on the
-   semantic-IR frame schema admitting the scoped members. `noop`, `all`, B1 and
-   B2 use only the three arrays and are reachable today.
+   semantic-IR frame schema admitting the scoped members, as do steps 1, 2 and 4 (they
+   build from the one fixture). Step 2b uses fixture R, which holds no scoped member, and is reachable today.
 
 4. For each of X1 to X9, copy the emitted package, edit the named frame node
    body, and re-key it: compute the edited frame node's key, replace the key
@@ -142,11 +146,13 @@ Results:
   entries add no other.
 - Step 2: `own` and `all` have different node ids (W4 and W5 differ in one
   `scope`); `drop` and `noop` have different node ids (W6 and W3 differ only in
-  `deletes_scoped`); B1 and B2 have different `package_id`s. B3 holds one `state`/`frame` node,
-  whose body is W5, with a `generated` occurrence for `all` and then one for
-  `own` (ascending operation name), and two `state`/`operation_anchor`
-  nodes, one per operation, both with context `Counter` and both with the
-  `frame` binding referencing that node; the I2 reader admits B3 (QSpec
+  `deletes_scoped`); B1 and B2 have different `package_id`s.
+- Step 2b: B3 holds one `state`/`frame` node for `all` and `same`, whose body
+  is W5, with a `generated` occurrence for `all` and then one for `same`
+  (ascending operation name), and two `state`/`operation_anchor` nodes, one
+  per operation, both with context `Counter` and both with the `frame`
+  binding referencing that node; `DoneAll` and `DoneSame` reference different
+  anchors, so B3 holds two clause nodes; the I2 reader admits B3 (QSpec
   FR-342-AC-6).
 - Step 3: I1 refuses `missing_declaration`/`missing-name` at the entry. I2
   and I3 refuse `invalid_model_binding`/`malformed-declaration` at the entry

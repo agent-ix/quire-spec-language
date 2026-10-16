@@ -122,7 +122,9 @@ impl StateModel {
     `invalid_model_binding`/`malformed-declaration` at that member
     (`modifies_receiver` first), before any entry is read (QSpec FR-013). An
     empty `modifies_receiver`, `deletes_receiver: false` and
-    `deletes_parameters` read as for an object type.
+    `deletes_parameters` read as for an object type. QSL FR-103 admits
+    operations only on object types and processes, so no state-machine
+    operation reaches this rule.
   - A `modifies_receiver` entry SHALL name a field among the fields, own and inherited, of the
     operation's declaring object type. An entry that names
     no declaration of the package refuses `missing_declaration`/`missing-name`
