@@ -56,3 +56,22 @@ Recorded, not blocking:
 - low: I15/I16 assert admission only, not the resulting effect (for I16,
   `deletes_arguments == ["a"]` on `go`).
 - low: I1 to I5 assert the entry string but not the entry's member path.
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 7bef089e7c096791e8616b76d5ec359d55ed0114 |
+| FND-002 | fixed | 7bef089e7c096791e8616b76d5ec359d55ed0114 |
+
+Round 1 (reviewed `agent-ix/quire-spec-language@7bef089e7c096791e8616b76d5ec359d55ed0114`).
+FND-001: the I13/I14/I17 test now destructures the cause as
+`IntakeMalformedDeclaration` and panics otherwise, and asserts the member
+path ends at `Name("frame"), Name("<member>")` with no index. `MemberPath::child`
+splits the dotted `frame.<member>`, so the path matches. With the receiver
+rule removed, I13/I17 refuse `FrameEntryMalformed` (the let-else panics) and
+I14 admits (`sole_refusal` fails), so the test can no longer pass without the
+rule. FND-002: the I9 tag is now `#[trace("TC-1043", "FR-154-AC-8")]`. The
+PR body now states that an admitted receiver-scoped frame lowers without the
+scope and `deletes_scoped` until the emission slice lands. Production code is
+unchanged by the fix commit.
