@@ -763,7 +763,7 @@ fn an_incomplete_or_unlisted_extent_is_incomplete_scope_and_an_empty_one_is_empt
 /// population covering Pump does not hold complete is undecidable, so the
 /// outcome is incomplete, not dangling, and never the cardinality refusal
 /// the count (4 above 3) would give.
-#[trace("TC-1034", "FR-364-AC-8")]
+#[trace("TC-1034", "FR-364-AC-8", "FR-364-AC-12")]
 #[test]
 fn an_undecidable_target_is_incomplete_scope_before_the_count_bound() {
     let orders = Orders::new(Shape::BASE);
