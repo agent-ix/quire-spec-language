@@ -167,10 +167,11 @@ outright before the target-kind charge.
   resolves a plain object-to-object relationship's ends; this requirement's
   Connection classification applies only once both ends already resolve to
   declared endpoints.
-- Systems-model records receive no effective-declaration identity under
-  [FR-081](FR-081-preserve-model-correspondence-and-declaration-identity.md):
-  this requirement resolves each record's own original declaration key and
-  kind only, consistent with AD-006's export table, which names no export
+- This requirement resolves each record's own original declaration key and
+  kind only; the effective declaration of a systems record under
+  [FR-081](FR-081-preserve-model-correspondence-and-declaration-identity.md)
+  is read from the effective view by the qualified-name binder
+  (`qsl-semantics/src/model/qualified.rs`). This is consistent with AD-006's export table, which names no export
   record for the five systems meanings beyond binding to their FR-152 kind.
 - `ComponentRecord::has_part_signature` (`qsl-semantics/src/model/domain_package.rs`) and
   `classify`'s `unsupplied("part-signature", ...)` refusal arm for it are
