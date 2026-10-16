@@ -134,12 +134,12 @@ none:
 
 The observation of a state machine's invariant over an invocation (QSpec
 FR-208 "State-machine context anchors" and AC-10, which bind it to the
-invocation's pre and post contexts) is constructed at the model layer from the
-invocation's identity and its pre and post contexts. FR-106 admits an
-invariant only from a current snapshot, which names no invocation, so
-admitting that observation from a snapshot document is a separate requirement
-not yet specified; the receiver-path rule above and AC-7 and AC-11 are stated
-against the model-layer observation.
+invocation's pre and post contexts) is admitted by FR-106 from the invocation
+document and its `pre` and `post` snapshots, which carry the machine's context
+as `contexts`, selected by `Context` with `side` `pre` or `post`. Each
+selection gives one evaluation, over the context of the selected side, and the
+path's observation is that side's snapshot. The receiver-path rule above and
+AC-7 and AC-11 hold for an observation so admitted.
 
 `AdmittedObservations` (FR-106) carries the selected invocation's identity,
 whatever kind `self` is, or none; a receiver, parameter or result binding is

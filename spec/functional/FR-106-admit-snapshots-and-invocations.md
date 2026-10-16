@@ -80,7 +80,8 @@ that compares only reference-valued fields (`PopulationMember::field_values`,
   none, and the admitted invocation delta. The value also names the selected
   invocation by its four identity labels, whatever kind `self` is, for a
   postcondition and for a precondition selected by `Invocation`, and none for
-  an invariant and for a precondition selected by `PreCall`. FR-107 roots
+  an invariant over a current snapshot and for a precondition selected by
+`PreCall`. FR-107 roots
   value paths at it. Each observation
   holds its `PopulationBinding`s and an `ObjectEnvironment` with every field
   value of every object and the relationship extents of the snapshot
@@ -91,6 +92,17 @@ that compares only reference-valued fields (`PopulationMember::field_values`,
   the snapshot does not list is an incomplete row; the manifest is closed by
   exhausting that traversal of the package's declarations and by nothing the
   document says.
+- For an invariant of a state machine, selected by `Context` (below): the
+  machine's one context in the selected side of the invocation (its `pre` or
+  its `post` snapshot), the invocation's identity labels, and no self object,
+  parameter values or result. A state machine's context has no object identity
+  (QSpec FR-208, State-machine context anchors), so an observation holds it as
+  a value of the machine's effective fields next to its objects and
+  relationships; for a precondition or postcondition of a state machine
+  operation the same context stands where the self object stands for an object
+  operation, and the self object is none. The context is not an object of the
+  `ObjectEnvironment`, has no `PopulationBinding` and is never the target of a
+  `reference`.
 - Or an `AdmissionFailure`: `Refused(RefusalRecord)` or
   `Incomplete(RefusalRecord)`, each with a catalog code, a cause and the input
   path (document identity, population, object key, field) it names.
@@ -165,6 +177,32 @@ Snapshot, format `quire.state.snapshot/v1`:
       {"source": {"population": "ix://test/orders/Q", "key": "s1"},
        "target": {"population": "ix://test/orders/Q", "key": "p1"}}
     ]
+  }]
+  ```
+- `contexts` is optional on a `pre` or `post` snapshot and is not a member of
+  a `current` snapshot. A **context** is the state of one instance of a state
+  machine in this observation: the values of the machine's effective fields,
+  which is all QSpec binds (FR-208: no member binds the machine's current
+  state, so the document carries no `state`, `states` or `transitions`
+  member; a machine's declared states, transitions and guards are model
+  declarations and a snapshot restates none of them). Each entry has exactly
+  `machine` and `fields`. `machine` is the declaration identity of the
+  most-specific state machine of the package the instance is of, and
+  `fields` has exactly one entry for every effective field of that machine,
+  own and inherited, in the exposed effective field order, keyed by the exact
+  field name, each a value of the closed grammar below (an optional field is
+  `{"absent": {}}` or `{"present": <value>}`, never omitted). The entries'
+  order and the members' order carry no meaning. A context carries no key and
+  no population, and its presence in a snapshot says nothing about any
+  population. A snapshot without `contexts` holds no context of any machine,
+  which is not an empty or default context.
+
+  A `pre` snapshot of TC-1045's `OrderLifecycle` machine holds its context as:
+
+  ```json
+  "contexts": [{
+    "machine": "ix://test/orders/OrderLifecycle",
+    "fields": {"placed": {"boolean": false}, "cancelled": {"boolean": false}}
   }]
   ```
 - A value is exactly one of `{"boolean": true|false}`,
@@ -339,14 +377,25 @@ Invocation, format `quire.state.invocation/v1`:
 
 - `result` is a value or JSON `null`; `created` and `deleted` list
   `{population, key}` object references.
+- `self` is an object reference for an operation of an object type, and JSON
+  `null` for an operation of a state machine, whose receiver is the machine's
+  context and has no object identity. The context is the one the `pre` and
+  `post` snapshots hold (`contexts`), so the invocation names no instance.
 
 `ClauseSelection` names the clause by its `QualifiedName` and one
 observation: `Current { snapshot: DocumentRef, anchor, self: ObjectRef }`,
 `PreCall { snapshot: DocumentRef, self: ObjectRef, parameters }` or
-`Invocation { invocation: DocumentRef }`, where `DocumentRef` is the four
-FR-001 labels and the `sha256-jcs` digest, `anchor` is `{kind, name}`, and
+`Invocation { invocation: DocumentRef }` or `Context { invocation:
+DocumentRef, side }`, where `DocumentRef` is the four
+FR-001 labels and the `sha256-jcs` digest, `side` is `pre` or `post`, `anchor` is `{kind, name}`, and
 `parameters` maps each declared parameter name to a value in the snapshot
-value form, as an invocation's `parameters` member does. `PreCall` is the
+value form, as an invocation's `parameters` member does. `Context` selects the
+invariant of a state machine over one side of an invocation: QSpec FR-208-AC-10
+holds that invariant in the pre observation and separately in the post
+observation of every invocation of the machine's operations, so a caller
+selects each side and gets one verdict per selection. For a clause whose
+receiver is a state machine's context, `self` of `Current` and of `PreCall` is
+none. `PreCall` is the
 observation of a call before the operation runs: the snapshot is the
 operation's pre state, and a precondition reads only that state, `self` and
 the parameters (FR-104, FR-107), so it has no post snapshot, result or
@@ -360,12 +409,26 @@ order listed. Where a check walks the document, it walks populations in
 document order, objects in document order within a population, and fields in
 the object type's declared field order, and it reports the first failing
 object and field. After the last object, it walks a snapshot's `relationships`
-entries in document order, and the instances of each entry in document order.
+entries in document order, and the instances of each entry in document order,
+and then a `pre` or `post` snapshot's `contexts` entries in document order, each
+entry's fields in the machine's exposed effective field order.
 For each entry it runs checks 6.6 and 6.7, then for each instance of the entry
 it runs checks 6.8 and 6.9, and it stops at the first failing condition with
 its relationship and zero-based instance index. A defect of an earlier
 instance or entry is therefore reported before one of a later instance or
 entry, whatever check number each has.
+
+A `Context` selection with `side` `pre` reads the same documents as a
+precondition selected by `Invocation` (the invocation and its `pre` snapshot)
+and skips the same members and checks, and additionally skips the invocation's
+`parameters` (an invariant binds no operation parameter, QSpec FR-208): check
+10 does not run for it. A `Context` selection with `side` `post` reads the
+documents of a postcondition (the invocation and its `pre` and `post`
+snapshots) and runs every check including check 11, because the post side is
+evidence only of an invocation whose frame and delta hold. Its parameters and
+`result` are validated as for a postcondition, and the clause reads neither.
+Its observation is the selected side's snapshot, which roots the clause's
+value paths (FR-107).
 
 A precondition's input is the pre-call observation (QSpec FR-046-AC-7,
 FR-208-AC-13). For a precondition selected by `Invocation`, the selected
@@ -392,8 +455,9 @@ required; check 10 settles it.
 
 1. Read check. For each selected document (the snapshot of `Current` or
    `PreCall`; the invocation and then its `pre` and `post` snapshots for a
-   postcondition; the invocation and then its `pre` snapshot for a
-   precondition selected by `Invocation`):
+   postcondition and for `Context` with `side` `post`; the invocation and then
+   its `pre` snapshot for a precondition selected by `Invocation` and for
+   `Context` with `side` `pre`):
    1. If no document is in its provision under the selected digest, then
       admission SHALL return `Incomplete` with `unavailable_observation`/
       `missing-required-artifact` (missing observation evidence is
@@ -424,8 +488,9 @@ required; check 10 settles it.
    4. If `format` is not the expected format, then admission SHALL refuse
       `unknown_wire`/`unsupported-wire`.
    5. If a required member is missing (for a precondition selected by
-      `Invocation`, `post`, `result`, `created` and `deleted` are not
-      required), then admission SHALL refuse
+      `Invocation` and for `Context` with `side` `pre`, `post`, `result`,
+      `created` and `deleted` are not required, and for the latter
+      `parameters` is not either), then admission SHALL refuse
       `invalid_runtime_input`/`missing-member`, naming the first missing
       member in the member order above.
    6. If an unknown member is present, then admission SHALL refuse
@@ -439,11 +504,16 @@ required; check 10 settles it.
 2. Selection form check. If `Current` selects a precondition or postcondition,
    `PreCall` selects an invariant or a postcondition, or `Invocation` an
    invariant, then admission SHALL refuse `wrong_snapshot`/
-   `wrong-observation`.
+   `wrong-observation`. A `Context` selection of anything but an invariant
+   whose receiver is a state machine's context, an invariant of a state
+   machine selected by `Current`, `PreCall` or `Invocation`, a `Current` or
+   `PreCall` selection that names a `self` for a machine clause, and a `Current`
+   or `PreCall` selection of an object-receiver clause that names none, each
+   refuse `wrong_snapshot`/`wrong-observation`.
 3. Observation role and anchor check. If the current snapshot does not say
    `current`, a `PreCall` snapshot does not say `pre`, an invocation's
-   `pre` snapshot does not say `pre`, or (for a postcondition) its `post`
-   snapshot does not say `post`, then admission SHALL refuse `wrong_snapshot`/
+   `pre` snapshot does not say `pre`, or (for a postcondition, or a `Context`
+   selection with `side` `post`) its `post` snapshot does not say `post`, then admission SHALL refuse `wrong_snapshot`/
    `wrong-observation`. If the current snapshot's `anchor` differs from the
    selection's, then admission SHALL refuse `wrong_snapshot`/`wrong-anchor`,
    naming both.
@@ -547,10 +617,47 @@ required; check 10 settles it.
       at the later instance (FR-364 condition 4). No instance count is
       compared with an end's multiplicity bounds: a count outside `[lower,
       upper]` admits, and navigation refuses it (FR-364).
+   10. If a snapshot says `current` and holds `contexts`, then admission SHALL
+       refuse `invalid_runtime_input`/`unknown-member` naming `contexts`: a
+       current observation names no invocation, so it holds no context. For
+       a `contexts` entry of a `pre` or `post` snapshot, in document order:
+       if `contexts` is not an array, or `machine` is not a string or `fields`
+       not an object, then admission SHALL refuse `wrong-value-kind`; if
+       `machine` or `fields` is missing, `missing-member`, naming the first
+       missing in that order; if another member is present, `unknown-member`.
+   11. For each entry: if `machine` names no state machine of the package (an
+       object type, a process, a record value type or an unknown identity
+       included), then admission SHALL refuse `invalid_runtime_input`/
+       `wrong-role-mapping`; if an earlier entry of the snapshot names the
+       same machine, then admission SHALL refuse `invalid_runtime_input`/
+       `duplicate-member` at the later entry (QSpec FR-208: one context per
+       machine in an observation).
+   12. For each entry, over the machine's effective fields in exposed
+       effective field order: if the machine declares a set, bag or
+       ordered-set field, then admission SHALL refuse `unknown_required_feature`/
+       `unsupported-feature` at that field; if a declared field is missing,
+       `invalid_runtime_input`/`missing-member` naming it; if a field of
+       `fields` is not an effective field of the machine, `unknown-member`
+       naming the first in document order (a member named `state` or
+       `transitions` is such a field unless the machine declares it); and,
+       for each field in order, the value rules of check 6.5 apply to its
+       value unchanged: kind fit, integer spelling and range, a record's
+       effective fields, the payload order for String, UUID, Timestamp and Text
+       objects, and the nested path, which here starts at the context (root
+       the machine, then the field). A reference value fits a `Reference<T>`
+       field by the conformance rule of 6.5, and its target is resolved in
+       check 8 against the objects of the same snapshot. The post-state
+       range witness of 6.5 applies to a context field of a `post` snapshot
+       exactly as to an object field, and `OutOfRange` names the machine, the
+       field, the declared range and the observed value.
 7. Completeness check. If a required population is not marked `complete`, then
    admission SHALL return `Incomplete` with `incomplete_population`/
    `incomplete-scope`, naming the first such population in walk order.
    Admission SHALL skip the dangling check over an incomplete population.
+   A `reference` value in a field of the context the clause reads (check 9)
+   also makes the population it names required, as a reference value in an
+   object field does, because a context has no population of its own to mark
+   complete or incomplete.
    An instance end that names a key its population does not list, where the
    population is not marked `complete`, also returns `Incomplete` with
    `incomplete_population`/`incomplete-scope` naming that population, because
@@ -568,17 +675,37 @@ required; check 10 settles it.
    end that names a key absent from its complete population refuses the same
    way, naming the relationship, the instance index, the end and the key and
    population; instances are walked as in check 6 and the ends of one instance
-   are checked `source` before `target`. With check 7's rule for an end in an
+   are checked `source` before `target`. After the instance ends, a `reference` value in a field of the context the
+   clause reads (check 9), `pre` before `post`, refuses the same way, naming
+   the machine, the field path and the key and population, in effective field
+   order. With check 7's rule for an end in an
    incomplete population, no stored end lacks an object: every admitted
    instance is a triple of full references, because only the object supplies
    the type component of its reference key (FR-364). The `resolve` of every
    stored end is therefore `present`; `dangling` and `undecidable` belong to
    model-layer extents. Checks 7 and 8 read the same `complete` flags the
    manifest rows carry.
-9. Self check. If the selected self object is absent from the current
-   snapshot, from the pre snapshot, or (for a postcondition) from the post
-   snapshot, then admission SHALL refuse `invalid_runtime_input`/
-   `wrong-role-mapping`.
+9. Self and context check. If the clause's receiver is an object and the
+   selected self object is absent from the current snapshot, from the pre
+   snapshot, or (for a postcondition) from the post snapshot, then
+   admission SHALL refuse `invalid_runtime_input`/`wrong-role-mapping`. If
+   an invocation's `self` is `null`, then admission SHALL refuse
+   `invalid_runtime_input`/`wrong-value-kind`. For a clause whose receiver is a state machine's
+   context, admission checks first that the invocation's `self` is JSON
+   `null`, else refuses `invalid_runtime_input`/`wrong-value-kind`; then, for
+   each observation the clause reads (the `pre` snapshot of a precondition and
+   of a `Context` selection with `side` `pre`; the `pre` and then the `post`
+   snapshot of a postcondition and of a `Context` selection with `side`
+   `post`), the contexts of that snapshot whose machine is the clause's
+   machine or specializes it: if there is none, then admission SHALL refuse
+   `invalid_model_binding`/`wrong-context` naming the machine and the
+   snapshot; if there are two (a machine and one of its specializations both
+   listed), then admission SHALL refuse `invalid_runtime_input`/
+   `duplicate-member` at the later entry (QSpec FR-208: exactly one context in
+   each observation). The context found is the clause's `self`; a context of
+   another machine in the snapshot is validated by check 6 and then ignored.
+   A context is never marked incomplete: a snapshot that lists no context of
+   the machine is refused here, not returned `Incomplete`.
 10. Parameters and result check. If an invocation's or a `PreCall`
     selection's `parameters` lack a declared
     parameter or hold an undeclared one, then admission SHALL refuse
@@ -597,8 +724,8 @@ required; check 10 settles it.
     admission SHALL refuse `dangling_reference`/
     `absent-target-in-complete-population`, naming it and its population
     (check 8's closure rule).
-11. Frame and delta check. For an invocation selected for a postcondition,
-    admission SHALL run the frame
+11. Frame and delta check. For an invocation selected for a postcondition or
+    by `Context` with `side` `post`, admission SHALL run the frame
     check (`enforce_frame` through `admit_invocation`, with the operation's
     `OperationEffect`, FR-103) once per population, in the pre snapshot's
     population document order and then any population only in the post
@@ -664,6 +791,15 @@ required; check 10 settles it.
        its other end navigates to, and `creates` grants only the new object. A
        relationship that is not listed complete in both snapshots is not
        compared, because the snapshots do not say whether it changed.
+    6. once, after the relationships, for a state machine clause: the pre
+       and the post context (check 9) are compared field by field in the
+       machine's exposed effective field order, as admitted typed values under
+       the equality of the field's declared type, as an object's fields are. A
+       changed field that the operation's frame does not grant in `modifies`
+       (QSpec FR-013 and FR-340) refuses `frame_violation`/
+       `unauthorized-change`, naming the machine and the field. A context
+       needs no `creates` or `deletes` grant and has no entry in `created` or
+       `deleted`.
 
 - Admission SHALL read no path, environment variable, clock or search
   location. The same package, provisions, selection and limits SHALL give
@@ -673,11 +809,13 @@ required; check 10 settles it.
   once, at read, to closed enums or typed identities.
 - Value validation SHALL use an explicit work stack, walking populations
   and objects in document order, then relationship entries and their
-  instances in document order, record fields in exposed effective field
+  instances in document order, then context entries and their fields in
+  that order, record fields in exposed effective field
   order and sequence
   elements by ascending index. It SHALL count the record, each option
   wrapper, each sequence and each contained value against the
-  declared values-per-document setting, and stop at that limit before the next
+  declared values-per-document setting (a context entry counts as one value,
+  and each of its field values as it would in an object), and stop at that limit before the next
   value with `stage_limit_exceeded`/`node-count-exceeded`, naming the
   setting `observation.values`, the bound and the count the next value would
   have reached (FR-255); finite recursive record
@@ -736,6 +874,14 @@ required; check 10 settles it.
 | FR-106-AC-38 | A `title` text holding a lone high surrogate escape `\ud800`, a lone low surrogate escape `\udc00` or the byte `0xC0` refuses `stale_dependency`/`byte-digest-mismatch` at check 1.3 carrying the selected digest and the raw bytes' own digest, before any value is read: the same document with a wrong-kind `token` elsewhere gives that refusal and not `wrong-value-kind`. A `title` text that brings the document over the byte limit refuses `stage_limit_exceeded`/`input-bytes-exceeded` naming `observation.input_bytes` at check 1.2, not `invalid-value`. | Test (TC-1038) |
 | FR-106-AC-39 | Over TC-1035's base snapshot **B** in a package that also declares population `Spare` (member type `Pump`), which **B** does not list, admission issues a closed manifest with the rows `Q` complete and `Spare` incomplete in ascending declaration-key order; with `Spare` listed `"complete": false` the rows are the same, and listed `"complete": true` both rows are complete. The admitted observation's `resolve` for each stored instance end is `present`. | Test (TC-1041) |
 | FR-106-AC-40 | Over TC-1044's fixture, the frame check decides each declared type by its own equality: a `String` changed from U+00E9 to U+0065 U+0301 is a change; a `Text[0, 8; nfc]` changed so is no change and a `Text[0, 8; unicode-scalars]` changed so is a change; a `Text[0, 8; nfc]` changed from `a` to `b` is a change; a `UUID` changed to another canonical payload is a change; an `Option` changed from absent to present is a change and present to present with equal contents is none; a `Sequence` reordered is a change and the same elements in the same order with the document's whitespace changed is none; the members of an object written in another order are no change. A change not covered by the grant refuses `frame_violation`/`unauthorized-change` naming the object and the field, and an unchanged field admits without any grant. The Text rows depend on the validator applicability change of FR-056's Text paragraph. | Test (TC-1044) |
+| FR-106-AC-41 | Over TC-1045's `Orders` fixture, the invocation `i1` of `place` (`self` `null`, `flags` `{placed: true}`) with `pre` context `{placed: false, cancelled: false}` and `post` context `{placed: true, cancelled: false}`, selected by `Context` side `pre` for the invariant `Consistent`, admits one observation holding the pre context, the identity labels of `i1`, no self object, no parameter and no result; selected side `post` it admits the post context. Both runs give `Completed(true)`. Reordering the `fields` members, the `contexts` entries and the document whitespace gives the same typed observation and digest. | Test (TC-1045) |
+| FR-106-AC-42 | The same invocation with a `post` context `{placed: true, cancelled: true}` admits side `post` and `Consistent` evaluates `Completed(false)`: a false invariant is a logical violation after admission, never an input refusal. Side `pre` over the same invocation still gives `Completed(true)`, and gives it with the `post` snapshot absent from the provision or malformed, with `parameters` ill-formed and with `result`, `created` and `deleted` removed. Side `post` with the `post` snapshot absent returns `Incomplete` with `unavailable_observation`/`missing-required-artifact`. | Test (TC-1045) |
+| FR-106-AC-43 | A snapshot holding no `contexts` member, or none for `OrderLifecycle`, refuses `invalid_model_binding`/`wrong-context` naming `OrderLifecycle` and that snapshot, for the invariant on side `pre` (the `pre` snapshot), on side `post` (the `pre` snapshot first, then the `post`), for the precondition `PlaceRequires` selected by `Invocation` or `PreCall`, and for the postcondition `FlagsPlaced`. No empty or default context is made, and the result is never `Incomplete`. Two entries naming `OrderLifecycle` in one snapshot refuse `invalid_runtime_input`/`duplicate-member` at the second; an entry for `OrderLifecycle` and one for its specialization `ExpressLifecycle` in one snapshot refuse the same way at check 9. A context of the unrelated machine `Billing` in a snapshot is validated and ignored. | Test (TC-1045) |
+| FR-106-AC-44 | Each condition of checks 6.10 to 6.12 has one case that fails only it and returns exactly its code and cause, naming the snapshot and the entry: `contexts` on a snapshot that says `current` (`unknown-member` naming `contexts`); `contexts` as an object (`wrong-value-kind`); an entry without `machine`, without `fields`, with an extra member, with a numeric `machine`, with an array `fields`; a `machine` naming the object type `Pump`, the process `Fulfilment` and the unknown identity `ix://test/orders/Missing` (`wrong-role-mapping`); a field missing from `fields` (`missing-member` naming it); an undeclared field, a `state` member and a `transitions` member among them (`unknown-member` naming the first in document order); `placed` as `{"integer": "1"}` (`wrong-value-kind` at the context path `OrderLifecycle`, `placed`). Defects in two entries report the first entry's, and a defect in a context after a bad object reports the object's (objects, relationships, then contexts). | Test (TC-1045) |
+| FR-106-AC-45 | The post-state range witness reaches a context: over `ExpressLifecycle` with a field `retries: Int[0, 5]`, a `post` context holding `-1` under `PostStateRange::Witness` admits side `post` and reports one `OutOfRange` naming the machine `ExpressLifecycle`, the field `retries`, the range `[0, 5]` and the observed `-1`; the same value in a `pre` context, and in a post context under `Refuse`, refuses `invalid_runtime_input`/`invalid-value` at `ExpressLifecycle`, `retries`. A context field of a record, String, UUID, Timestamp or Text type follows the value rules and payload order of the object fields. | Test (TC-1045) |
+| FR-106-AC-46 | The frame check compares contexts: with `place` modifying `placed` and `cancelled`, a post context changing both admits; with `place` modifying only `placed`, a post context that also changes `cancelled` refuses `frame_violation`/`unauthorized-change` naming `OrderLifecycle` and `cancelled`, for the postcondition and for the invariant on side `post`, and side `pre` runs no frame check and admits. A `post` context equal to the `pre` context in every field, written in another member order, is no change. An invocation whose `self` is an object reference for a state-machine operation, and one whose `self` is `null` for an object operation, refuse `invalid_runtime_input`/`wrong-value-kind`. A machine invariant selected by `Current`, `PreCall` or `Invocation`, an object invariant selected by `Context`, and a `Current` selection naming a `self` for a machine precondition refuse `wrong_snapshot`/`wrong-observation`. | Test (TC-1045) |
+| FR-106-AC-47 | A context field `owner: Reference<Pump>` of the machine `Owned` naming `p9`, absent from the complete population `Q` of the same snapshot, refuses `dangling_reference`/`absent-target-in-complete-population` naming `Owned`, `owner`, `p9` and `Q`; with `Q` marked `"complete": false` it returns `Incomplete` with `incomplete_population`/`incomplete-scope` naming `Q`, and the same field naming a listed key of `Q` admits. A snapshot that lists `Q` incomplete and holds a context with no reference to `Q` admits. Each context entry and each of its field values counts toward `observation.values`: a document at the exact bound admits and one more value returns `stage_limit_exceeded`/`node-count-exceeded` naming `observation.values`. A `quire.state.snapshot/v1` environment document supplied to replay (FR-098) that holds `contexts` refuses `invalid_runtime_input`/`unknown-member` naming `contexts`, because an environment document is a current snapshot. | Test (TC-1045) |
+
 
 ## Dependencies
 
@@ -743,6 +889,12 @@ required; check 10 settles it.
   effect), FR-001 (the two labels; QSpec STD-150), FR-056 (the `sha256-jcs` rule and its
   digest-first order; the K2 String, UUID and Timestamp payloads and their runtime-input
   refusals), FR-038 (integer spelling).
+- QSpec FR-208 (State-machine context anchors: the context, exactly one per
+  machine in each observation, `wrong-context` and `duplicate-member`; AC-10:
+  the invariant in the pre and post observation of every invocation), FR-207
+  (the receiver binding path), FR-013 and FR-340 (frame grants). FR-107
+  (receiver path of a context) and FR-098 (the environment document is a
+  current snapshot).
 - FR-364 (relationship extents: the instance model, its admission conditions
   and the read contract navigation uses).
 - QSpec FR-141 and FR-149 (the `Text[min, max; profile]` retained sequence, its
