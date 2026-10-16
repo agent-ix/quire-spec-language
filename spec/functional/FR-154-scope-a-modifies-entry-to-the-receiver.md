@@ -121,9 +121,9 @@ impl StateModel {
     `modifies_receiver` and `deletes_receiver: true` with
     `invalid_model_binding`/`malformed-declaration` at that member
     (`modifies_receiver` first), before any entry is read (QSpec FR-013). A
-    unit state clause never names a process operation (FR-104), so its `self`
-    is always an object; a process operation's own `requires`/`ensures` bind
-    `self` as FR-103 states. An
+    clause that names a process operation binds its `self` to the run
+    (FR-104), and the frame it takes holds no receiver-scoped entry because
+    intake refused one here. An
     empty `modifies_receiver`, `deletes_receiver: false` and
     `deletes_parameters` read as for an object type. QSpec's Frames row refuses
     the same forms on a state machine's operation, and that row is its

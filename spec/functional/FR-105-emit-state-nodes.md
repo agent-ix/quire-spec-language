@@ -104,11 +104,16 @@ source map (FR-095).
   two object types, because its `semantic_type` is the anchor's context
   (QSpec FR-342).
   An operation inherited from `M::Base` and named as `M::Sub::op` anchors at
-  `M::Base`. The anchor's context is always a `model`/`object_type` node: an
-  operation that a process declares is named by no clause or attempt
-  (FR-104, FR-114 refuse it), so it gets no anchor, no frame node and no
-  frame record, and its frame lives only in its `OperationEffect` (FR-103,
-  FR-154).
+  `M::Base`. The anchor's context is the node of the declaring type: a
+  `model`/`object_type` node for an object type, a `model`/`process` node for
+  a process and a `model`/`state_machine` node for a state machine. An
+  operation that a process declares and a clause or attempt names gets its
+  anchor, its frame node and its frame record as any operation does, built
+  from its `OperationEffect` (FR-103, FR-154), and the frame's
+  `semantic_type` is the process node. A process operation's frame holds no
+  receiver-scoped entry (FR-154), so its node holds `every-object` `modifies`
+  entries and an empty or parameter-only `deletes_scoped`. An invariant on a
+  process is anchored at the process node.
 - The checker SHALL add `Invariant`, `Precondition` and `Postcondition` to
   `CheckedClauseKind` (FR-088, as amended), each spelled with the node pair
   (`state`, `state_clause`), the clause operation `quire.op.state.clause` and
@@ -153,6 +158,7 @@ source map (FR-095).
 | FR-105-AC-5 | `CheckedClauseKind`'s mapping is total over all seven variants: forward, each variant gives one (node pair, clause operation, kind member) triple and no two variants give the same triple; backward, each triple decodes to its variant; (`state`, `frame`) decodes to no variant; `StateTransition` gives (`state`, `transition`). A mutant that swaps two kind members, or deletes an arm, fails the test. | Test (TC-462); covered |
 | FR-105-AC-6 | When the emitter cannot emit one of a clause's nodes (fault injected at the `frame` node), the compile refuses and emits no `state` node and no package bytes. | Test (TC-463 step 4); covered: `qsl-package`'s `a_fault_injected_partway_through_node_emission_writes_nothing` proves the all-or-nothing mechanism generically over the node-emission loop, and `qsl-replay`'s `a_fault_on_the_frame_node_refuses_the_whole_config_version_package` drives it at the ConfigVersion state clause's own `frame` node |
 | FR-105-AC-7 | Over TC-1043's fixture R, where `all` and `same` have equal frames, the package holds one `state`/`frame` node for the two operations, whose body is vector W5 and which carries a `generated` occurrence for `all` and then one for `same`, and two `operation_anchor` nodes, one per operation, whose `frame` bindings reference that node; the package passes QSL's I2 read. | Test (TC-1043 step 2b) |
+| FR-105-AC-8 | Compiling FR-104-AC-10's `P` and `Q` yields exactly one `operation_anchor` node for `go`, whose `context` is the `Flow` `model`/`process` node and whose operation is the text literal `"go"`, one `frame` node whose `modifies` is exactly (`Flow` node, `n`, scope `every-object`) with `creates`, `deletes` and `deletes_scoped` empty, one `operation-contract` frame record for `go`, and one `anchor` occurrence of the anchor per clause; `I` is anchored at the `Flow` node. A package with no clause or attempt naming `go` holds no anchor, frame node or frame record for `go`. | Test (TC-462) |
 
 ## Dependencies
 

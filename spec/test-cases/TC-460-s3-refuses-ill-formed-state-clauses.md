@@ -18,7 +18,7 @@ Scope: FR-104-AC-3, FR-104-AC-4, FR-104-AC-9, FR-104-AC-10.
 
 ## Test Procedure
 
-For rows 1-10, use TC-458's fixture package; rows 13-16 add the process shown. For rows 11-12, use the
+For rows 1-10, use TC-458's fixture package; row 13 adds the process shown. For rows 11-12, use the
 specified model variants. Check one unit per row; each unit holds only the
 clause shown (plus `ParentOrder` for the duplicate case).
 
@@ -36,10 +36,7 @@ clause shown (plus `ParentOrder` for the duplicate case).
 | 10 | `function r using v(x: Config::ConfigVersion, y: Config::ConfigVersion): Boolean pure { reaches(x, y, parent) }` |
 | 11 | Under `quire.model.complete/v1`, the precondition on `ArchivedConfigVersion::probe` from TC-459 step 6, but declare `target: UnrelatedVersion` where `UnrelatedVersion` does not conform to the `ConfigVersion` edge owner. |
 | 12 | At the S3 checker seam with the same admitted subtype/edge type environment and precondition as TC-459 step 6, select an otherwise admitted model definition other than `quire.model.complete/v1`; the operands have different exact reference types. |
-| 13 | With a process `Flow` (identity field `x`) declaring operation `go` with an empty frame added to the fixture package: `pre J using v on Config::Flow::go { true }` |
-| 14 | The same package: `post K using v on Config::Flow::go { true }` and `invariant L using v on Config::Flow at current { true }`, one unit each |
-| 15 | The same package: `pre M using v on Config::Flow::missing { true }` |
-| 16 | The same package with no clause naming `go` (only `ParentOrder`); compile |
+| 13 | With a process `Flow` (identity field `x`, field `n: Integer`) declaring operation `go` added to the fixture package: `pre M using v on Config::Flow::missing { true }` |
 
 Tag the tests `#[trace("TC-460", "FR-104-AC-n")]`.
 
@@ -60,11 +57,6 @@ Tag the tests `#[trace("TC-460", "FR-104-AC-n")]`.
     conform to the edge owner under QSpec FR-043.
 12. `ill_typed`/`operator-ineligible` at the `reaches`: the complete/v1
     conformance rule is not selected and the exact-type rule applies.
-13. `invalid_model_binding`/`malformed-declaration` at `Flow`.
-14. `invalid_model_binding`/`malformed-declaration` at `Flow`, in each unit.
-15. `invalid_model_binding`/`malformed-declaration` at `Flow`, not
-    `missing-name`: `op` is not resolved.
-16. The package compiles and holds no anchor node, frame node or
-    `operation-contract` record for `go`.
+13. `missing_declaration`/`missing-name` at `missing`: `Flow` is resolved as a context and `go` is its only operation.
 
 No row yields a checked clause or function.
