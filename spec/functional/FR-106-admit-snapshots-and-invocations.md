@@ -76,12 +76,10 @@ that compares only reference-valued fields (`PopulationMember::field_values`,
   the invocation's pre snapshot, `self` and parameters; for a postcondition
   selected by `Invocation`, the pre and post observations, the self object, the parameter values, the result value or
   none, and the admitted invocation delta. The value also names the selected
-  invocation by its four identity labels, whatever kind `self` is, whenever
-  the admission selected one: for a postcondition, for a precondition selected
-  by `Invocation`, and for the invariant of a state machine, whose context is
-  the invocation's (QSpec FR-208 "State-machine context anchors"); and none
-  for any other invariant and for a precondition selected by `PreCall`.
-  FR-107 roots value paths at it. Each observation
+  invocation by its four identity labels, whatever kind `self` is, for a
+  postcondition and for a precondition selected by `Invocation`, and none for
+  an invariant and for a precondition selected by `PreCall`. FR-107 roots
+  value paths at it. Each observation
   holds its `PopulationBinding`s and an `ObjectEnvironment` with every field
   value of every object and the relationship extents of the snapshot
   (FR-364), and keeps its document identity and digest. Admission also

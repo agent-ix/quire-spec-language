@@ -16,7 +16,7 @@ observation, the object, receiver, parameter or built-collection subject, and
 the member, field, option-value, reference and index steps.
 
 Scope: FR-107-AC-7, FR-107-AC-8, FR-107-AC-9, FR-107-AC-10, FR-107-AC-11,
-FR-107-AC-12.
+FR-107-AC-12, FR-107-AC-17.
 
 ## Test Procedure
 
@@ -46,7 +46,10 @@ Tag the tests `#[trace("TC-1040", "FR-107-AC-n")]`.
 5. FR-265's `witness` unit, snapshot `high` (`root` 0, `mid` 600 with parent
    `root`, `leaf` 700), `GuardedAll` with `self` `mid`: `reads()`.
 
-**State machine (the `Orders` fixture).** State machine `OrderLifecycle` with
+**State machine (the `Orders` fixture, built as the TC-235 runtime tests'
+business-model package with these declarations).** The frame of `place`
+modifies both `placed` and `cancelled`, because admission refuses the post
+state of `i1` otherwise. State machine `OrderLifecycle` with
 the context fields `placed` and `cancelled`, both `Boolean`; the record value
 type `Flags` with the field `placed: Boolean`; the operation `place(flags:
 Flags)` with no result; and the clauses
@@ -61,8 +64,10 @@ The invocation `i1` of `place` binds `flags` to `{placed: true}`; its pre
 snapshot `p1` holds the context `{placed: false, cancelled: false}` and its post
 snapshot `q1` the context `{placed: true, cancelled: true}`.
 
-6. `Consistent` at `q1` with `i1` selected: `receiver_path()`; `reads()`.
-7. `FlagsPlaced` over `i1`: `reads()`; then compare its path with the path of
+6. `Consistent`, its observation constructed at the model layer (FR-107
+   "The receiver path") from the invocation `i1` and its pre context `p1` and
+   post context `q1`, not admitted from a snapshot document: `receiver_path()`; `reads()`.
+7. `FlagsPlaced`, admitted by FR-106 over `i1`: `reads()`; then compare its path with the path of
    the `Consistent` read of `self.placed`, and serialize both by QSpec FR-207's
    wire form.
 8. `PlaceRequires` over `i1` (pre snapshot `p1`), then over a pre-call

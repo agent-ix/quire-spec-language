@@ -132,6 +132,15 @@ none:
 - The path's observation SHALL be the clause's own observation (`current` for
   an invariant, `pre` for a precondition, `post` for a postcondition).
 
+The observation of a state machine's invariant over an invocation (QSpec
+FR-208 "State-machine context anchors" and AC-10, which bind it to the
+invocation's pre and post contexts) is constructed at the model layer from the
+invocation's identity and its pre and post contexts. FR-106 admits an
+invariant only from a current snapshot, which names no invocation, so
+admitting that observation from a snapshot document is a separate requirement
+not yet specified; the receiver-path rule above and AC-7 and AC-11 are stated
+against the model-layer observation.
+
 `AdmittedObservations` (FR-106) carries the selected invocation's identity,
 whatever kind `self` is, or none; a receiver, parameter or result binding is
 rooted at it.
@@ -208,7 +217,9 @@ it, with a fresh meter built from `limits` (FR-120).
 - `outcome` SHALL be `Incomplete` when a clause evaluated to `Incomplete`; the
   set stops at that clause, which is its last entry. Otherwise it is
   `False` when any entry is `Completed(false)`, `Undecided` when none is and
-  one or more are `Undefined` or `Refused`, and `True` otherwise, including
+  one or more are `Undefined`, `Refused` or a family result other than a
+  completed Boolean (both the kernel `Outcome` arms and the `FamilyResult`
+  arms), and `True` only when every entry is `Completed(true)`, including
   for an empty set (FR-120's conjunction).
 - A clause named twice in the slice SHALL be refused
   `CallFailure::Input(InputRefusal::DuplicateClause)` naming it. An unknown
@@ -231,11 +242,13 @@ it, with a fresh meter built from `limits` (FR-120).
 | FR-107-AC-9 | The paths of those four entries are: `[member parent]` twice, `[member parent, option_value, reference root, member versionNumber]` and `[member versionNumber]`, all rooted at the declared object identity of `child`; and `VersionUnchanged` over changed-version has two entries, both `[member versionNumber]` of `child`, the first rooted at the post observation and the second, read under `pre`, at the pre observation. | Test (TC-1040) |
 | FR-107-AC-10 | In `ProbeOrdered`, `target.versionNumber` over an invocation is located at the parameter binding `target` of that invocation with steps `[reference b, member versionNumber]`, and `self.versionNumber` at the declared object identity of `a`; over a pre-call observation the first has no path and the second the same path as before. | Test (TC-1040) |
 | FR-107-AC-11 | `Consistent`'s reads of `self.placed` and `self.cancelled` are located at the receiver binding of `i1` with the steps `[field placed]` and `[field cancelled]`, `FlagsPlaced`'s read of `flags.placed` at the parameter binding `flags` of `i1` with `[field placed]`; the two `placed` paths compare unequal, the parameter path orders first, and their wire forms are the objects TC-1040 lists. | Test (TC-1040) |
-| FR-107-AC-12 | The elements of the list `[value(self.parent), self]` built inside `GuardedAll` are read at the built-list subject with the steps `[index 0, reference root, member versionNumber]` and `[index 1, reference mid, member versionNumber]`; a selection on `self.home`, a navigation, is located at the declared object identity of the tank `t1` with the step `[member level]` and the navigation records no entry. | Test (TC-1040) |
+| FR-107-AC-12 | The elements of the list `[value(self.parent), self]` built inside `GuardedAll` are read at the built-list subject with the steps `[index 0, reference root, member versionNumber]` and `[index 1, reference mid, member versionNumber]`. | Test (TC-1040) |
 | FR-107-AC-13 | `evaluate_clause_set` over `UpdateAllowed` and `UpdateRaises` gives two results, both `Completed(true)` and outcome `True`, for a call from version 1 to 2, and exactly one result, `UpdateAllowed` `Completed(false)`, and outcome `False` for a call from version 3 to 4; the slice order does not change a result. | Test (TC-1039) |
 | FR-107-AC-14 | With `UpdateNotMax` added, the call from 3 to 4 gives the two results `UpdateAllowed` `Completed(false)` and `UpdateNotMax` `Completed(true)`, in that order, and no result for `UpdateRaises`; with the invariant `NoCycle` over its own observation added instead, the results are `NoCycle` `Completed(true)` then `UpdateAllowed` `Completed(false)`, and still none for `UpdateRaises`. | Test (TC-1039) |
 | FR-107-AC-15 | With `limits` whose work budget is zero the call from 1 to 2 gives one result, `UpdateAllowed` `Incomplete`, and outcome `Incomplete`; an empty set gives no result and outcome `True`; the same set evaluated twice gives equal results. | Test (TC-1039) |
 | FR-107-AC-16 | A set naming `UpdateAllowed` twice is refused `InputRefusal::DuplicateClause`; a set naming the function `sameIdentity` is refused `InputRefusal::UnknownClause`; a set pairing `UpdateAllowed`'s name with observations admitted for `UpdateRaises` is refused `InputRefusal::ObservationsMismatch`; none returns a result. | Test (TC-1039) |
+| FR-107-AC-17 | A selection on `self.home`, a relationship navigation, is located at the declared object identity of the tank `t1` with the step `[member level]` and the navigation records no entry. This criterion depends on clause-level navigation evaluation (FR-364) and is built when that lands. | Test (TC-1040) |
+| FR-107-AC-18 | With `UpdateDivides` (`100 / self.versionNumber > 0`) over a call from version 0 to 1, the set {`UpdateDivides`, `UpdateRaises`} gives one entry, `UpdateDivides` not a completed Boolean, outcome `Undecided`, and no entry for `UpdateRaises`; the set {`UpdateAllowed`, `UpdateDivides`} gives both entries and outcome `Undecided`. | Test (TC-1039) |
 
 ## Dependencies
 
