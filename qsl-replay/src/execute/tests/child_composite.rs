@@ -107,6 +107,7 @@ fn converted(value: WitnessValue, declared: ValueType) -> Result<Value, usize> {
         &[value],
         &UNLIMITED,
         &mut default_run(),
+        &crate::execute::argument::ReferenceModel::unselected(),
     ) {
         Ok(mut converted) => Ok(converted.values.remove(0)),
         Err(stopped) => Err(refused_parameter(&stopped)
