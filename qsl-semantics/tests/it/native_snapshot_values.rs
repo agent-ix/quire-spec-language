@@ -1734,7 +1734,10 @@ fn a_field_typed_by_a_text_value_type_is_that_text() {
     };
     assert_eq!(declared("title"), text(1, 8, TextProfile::Nfc));
     assert_eq!(declared("code"), text(0, 4, TextProfile::BinaryUtf8));
-    assert_eq!(declared("subtitle"), text(0, 4, TextProfile::UnicodeScalars));
+    assert_eq!(
+        declared("subtitle"),
+        text(0, 4, TextProfile::UnicodeScalars)
+    );
     assert_eq!(declared("label"), ValueType::String);
 }
 
@@ -1889,7 +1892,11 @@ fn a_witness_post_snapshot_still_refuses_a_wrong_text() {
     for (value, cause, member) in [
         (string("Ready"), "wrong-value-kind", None),
         (text(""), "invalid-value", Some("text")),
-        (json!({"kind": "text", "text": 5}), "wrong-value-kind", Some("text")),
+        (
+            json!({"kind": "text", "text": 5}),
+            "wrong-value-kind",
+            Some("text"),
+        ),
     ] {
         let post = with(replay.base.clone(), "title", value.clone());
         assert_eq!(
@@ -1914,7 +1921,10 @@ fn a_text_object_counts_as_one_value() {
     );
     assert_eq!(replay.values_used(&fields), 15);
     replay
-        .admit(&fields, ObservationLimits::default().with_values_per_document(15))
+        .admit(
+            &fields,
+            ObservationLimits::default().with_values_per_document(15),
+        )
         .expect("the exact count admits");
     assert_values_limit(
         replay.admit(

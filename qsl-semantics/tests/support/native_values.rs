@@ -116,12 +116,15 @@ fn build(text: bool) -> Value {
     let mut types = vec![];
     if text {
         let (title, tag, code) = (id("Title"), id("Tag"), id("Code"));
-        item["fields"].as_array_mut().expect("Item has fields").extend([
-            variants::field("Item", "title", &title),
-            variants::optional("Item", "subtitle", &tag),
-            variants::field("Item", "code", &code),
-            variants::many("Item", "aliases", &tag, true, false),
-        ]);
+        item["fields"]
+            .as_array_mut()
+            .expect("Item has fields")
+            .extend([
+                variants::field("Item", "title", &title),
+                variants::optional("Item", "subtitle", &tag),
+                variants::field("Item", "code", &code),
+                variants::many("Item", "aliases", &tag, true, false),
+            ]);
         let mut retitle =
             variants::operation_with("Item", "retitle", &[("name", title.clone())], &title);
         retitle["frame"]["modifies"] = json!([id("Item/title")]);

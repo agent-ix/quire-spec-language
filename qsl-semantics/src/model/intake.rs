@@ -3383,7 +3383,8 @@ fn read_text_value_type(
     at: &str,
 ) -> Result<ScalarTypeRecord, ModelRefusal> {
     const PROFILE_PREFIX: &str = "text-profile:";
-    let form = |what: String| unsupported_at(ctx.value, at, format!("{}:{what}", meaning::VALUE_TYPE));
+    let form =
+        |what: String| unsupported_at(ctx.value, at, format!("{}:{what}", meaning::VALUE_TYPE));
     let constraints = ctx.array_field("constraints")?;
     let mut min: Option<&Value> = None;
     let mut max: Option<&Value> = None;
@@ -3458,8 +3459,8 @@ fn read_text_value_type(
     let Some(profile) = TextProfile::from_code(profile_name) else {
         return Err(form(format!("profile={profile_name}")));
     };
-    let text = TextType::new(min, max, profile)
-        .map_err(|_| form(format!("bounds={min}..{max}")))?;
+    let text =
+        TextType::new(min, max, profile).map_err(|_| form(format!("bounds={min}..{max}")))?;
     Ok(ScalarTypeRecord {
         key: declaration_key(package, node),
         domain: ScalarValueDomain::Text(text),
@@ -6662,7 +6663,8 @@ mod tests {
         assert_eq!(text_domain(&record), (1, 8, TextProfile::Nfc));
         for profile in TextProfile::ALL {
             let mut constraints = base_title();
-            constraints[2].1 = serde_json::json!({"name": format!("text-profile:{}", profile.as_str())});
+            constraints[2].1 =
+                serde_json::json!({"name": format!("text-profile:{}", profile.as_str())});
             let record = read_title(&constraints).expect("each profile reads");
             assert_eq!(text_domain(&record), (1, 8, profile));
         }
@@ -6799,9 +6801,13 @@ mod tests {
             "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
             "textProfile": "nfc",
         });
-        let refusal =
-            read_field_member("acme/orders", "ix://acme/orders/Note", &field, "$.fields[0]")
-                .expect_err("textProfile on a String member");
+        let refusal = read_field_member(
+            "acme/orders",
+            "ix://acme/orders/Note",
+            &field,
+            "$.fields[0]",
+        )
+        .expect_err("textProfile on a String member");
         assert_eq!(refusal.code, Code::UnsupportedConstruct);
         let ModelRefusalCause::UnsupportedDeclarationForm { what, member, .. } = &refusal.cause
         else {
