@@ -37,8 +37,8 @@ Tag the tests `#[trace("TC-1034", "FR-364-AC-n")]`.
 Base extents: composition `s1`-`p2`, `s1`-`p1`; housing `p1`-`t1`, `p2`-`t1`.
 Rows 4 and 10 build their extents through the model-layer entry, which makes
 no closure check, so that a dangling end (row 4) and an end of a population
-not held complete (row 10) exist to be navigated; a snapshot refuses row 4
-at check 8 and returns `Incomplete` for row 10 at check 7. Every other row's
+not held complete (row 10) exist to be navigated; a snapshot refuses rows 4
+and 10 at check 8, an end naming an unlisted key of a complete population. Every other row's
 extents would also admit from a snapshot.
 
 | # | Input | Expected |

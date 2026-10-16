@@ -194,10 +194,12 @@ observation and the model layer's observation builder for a model-layer one.
 Its evidence is an authenticated population enumerator that yields one row per
 population declaration of the admitted package and reads the observation's own
 bindings or listing for each row's `complete`, and nothing a caller supplies. The
-manifest is `closed` exactly when the enumerator reports normal exhaustion
-within its row limit. An enumerator that stops for any other reason (the row
-limit, a failure) leaves the manifest `partial`, with the rows read and the
-stop reason. No operation accepts a `closed` flag, builds a closed manifest
+manifest is `closed` exactly when the enumerator reports normal exhaustion.
+The row limit passed to the store is the number of population declarations of
+the admitted package, so it is a count the package fixes, not a configurable
+limit with a setting, and a limit stop cannot occur. An enumerator that
+fails (it cannot read a declaration) leaves the manifest `partial`, with the
+rows read and the failure; failure is the only way a manifest is partial. No operation accepts a `closed` flag, builds a closed manifest
 from supplied rows, converts a partial manifest into a closed one or closes a
 manifest before the enumerator is exhausted. The semantic-value store builds
 the manifest from the enumerator and keeps its state private
@@ -227,9 +229,12 @@ manifest is closed. The rules read no population member list and no field.
 The producer issues one bundle of the manifest, the observation's object
 closure and the type environment, all bound to one key: the checked unit's
 source reference as a whole (authority, identity and the `quire.source.bytes/v1`
-digest, [FR-362](FR-362-bind-a-checked-unit-to-its-source-by-digest.md)) and the
+digest, [FR-362](FR-362-bind-a-checked-unit-to-its-source-by-digest.md)) the
 selection (the selected clause and, for a snapshot-built observation, the
-digest of each selected document). Keys are equal only when every component is
+digest of each selected document), and the observation's identity: its role
+(`current`, `pre` or `post`) and, snapshot-built, its own document digest,
+or, model-layer, the label the producer issued for that observation. A `pre`
+manifest never pairs with a `post` closure. Keys are equal only when every component is
 equal: equal labels with a different digest are different keys. `resolve` is
 read only through the bundle. A constructor that takes the selected key and
 the three parts separately SHALL refuse the first part, in the order
@@ -350,11 +355,12 @@ FR-363; a navigation site reaches the evaluator already resolved.
 | FR-364-AC-7 | A single-valued end returns its `Reference<U>`, and for `[0,1]` the present `Option` or `none`, after `model.navigate` alone; a traversal from the target end returns the `sources` of the same extent. | Test (TC-1034) |
 | FR-364-AC-8 | A dangling target of a model-layer extent refuses `dangling_reference`/`absent-target-in-complete-population` before the count bound: with four selected targets through `{0,3}` the fourth absent, the refusal comes after `model.navigate` and three `collection.visit` and no cardinality refusal is returned. A target absent from a population not held complete gives `incomplete_population`/`incomplete-scope`. | Test (TC-1034) |
 | FR-364-AC-9 | Navigating through an unlisted extent and through an incomplete extent each give `incomplete_population`/`incomplete-scope` after `model.navigate` and no later charge, while the complete empty extent returns the empty collection or `none`. | Test (TC-1034) |
-| FR-364-AC-10 | The manifest has one row per declared population in ascending declaration-key order, with the declared member types as covered types: a bound population and a population listed complete are complete rows, and a declared population the observation does not bind or list, and one listed incomplete, are incomplete rows. An enumerator that reports normal exhaustion, including exactly at its row limit, gives a closed manifest, and one stopped by the row limit or by a failure gives a partial manifest that holds the rows read. No operation closes a manifest from supplied rows, from a partial manifest or on request. | Test (TC-1038) |
-| FR-364-AC-11 | `resolve` of a missing reference gives `dangling` only from a closed manifest in which every row covering its type is complete and at least one row covers it. It gives `undecidable` when a covering row is incomplete (even beside a complete covering row), when no row covers the type (a type no declared population names, and a parent type whose declared children are covered), and under a partial manifest. A held object is `present` under any manifest. | Test (TC-1038) |
-| FR-364-AC-12 | Navigation over a model-layer extent whose target is missing and undecidable gives `incomplete_population`/`incomplete-scope` after `model.navigate` and the `collection.visit` of the targets before it, and no cardinality refusal even when the count is above `upper`; the first selected target that is not present decides between `dangling` and `undecidable`. | Test (TC-1038) |
-| FR-364-AC-13 | Condition 3 checks the type of every end of a model-layer extent whether the object is held or not: a missing `Tank` at the `Pump` end refuses `wrong-value-kind` naming the end, `Tank` and `Pump`; a missing `Pump` at that end admits and is decided by `resolve`; a reference whose type is no object type of the model refuses `wrong-value-kind`. A snapshot document end naming an unlisted key skips condition 3 and is decided by the closure rule. | Test (TC-1038) |
-| FR-364-AC-14 | A bundle whose manifest, closure or type environment carries a key other than the others' (another source digest under the same authority and identity, another selected clause, another selected document digest) is refused `invalid_runtime_input`/`conflicting-identity` naming the part, the selected key and the differing one; a bundle of one key resolves a missing reference by its manifest. | Test (TC-1038) |
+| FR-364-AC-10 | The manifest has one row per declared population in ascending declaration-key order, with the declared member types as covered types: a bound population and a population listed complete are complete rows, and a declared population the observation does not bind or list, and one listed incomplete, are incomplete rows. An enumerator that reports normal exhaustion, including exactly at its row limit, gives a closed manifest, and one stopped by a failure gives a partial manifest that holds the rows read. The row limit is the package's declaration count, so a partial manifest arises only from an enumerator failure. | Test (TC-1040) |
+ |
+| FR-364-AC-11 | `resolve` of a missing reference gives `dangling` only from a closed manifest in which every row covering its type is complete and at least one row covers it. It gives `undecidable` when a covering row is incomplete (even beside a complete covering row), when no row covers the type (a type no declared population names, and a parent type whose declared children are covered), and under a partial manifest. A held object is `present` under any manifest. | Test (TC-1040) |
+| FR-364-AC-12 | Navigation over a model-layer extent whose target is missing and undecidable gives `incomplete_population`/`incomplete-scope` after `model.navigate` and the `collection.visit` of the targets before it, and no cardinality refusal even when the count is above `upper`; the first selected target that is not present decides between `dangling` and `undecidable`. | Test (TC-1040) |
+| FR-364-AC-13 | Condition 3 checks the type of every end of a model-layer extent whether the object is held or not: a missing `Tank` at the `Pump` end refuses `wrong-value-kind` naming the end, `Tank` and `Pump`; a missing `Pump` at that end admits and is decided by `resolve`; a reference whose type is no object type of the model refuses `wrong-value-kind`. A snapshot document end naming an unlisted key skips condition 3 and is decided by the closure rule. | Test (TC-1040) |
+| FR-364-AC-14 | A bundle is refused `invalid_runtime_input`/`conflicting-identity`, naming the first part (`manifest`, `closure`, `types`) whose key differs from the selected key, the selected key and the differing one, when that part carries another source digest under the same authority and identity, another selected clause, another selected document digest, or another observation (a `pre` manifest with a `post` closure of one source and clause); a bundle whose parts all carry the selected key resolves a missing reference by its manifest. | Test (TC-1040) |
 
 ## Dependencies
 
