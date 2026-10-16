@@ -94,8 +94,8 @@ impl Typer<'_> {
                 } else {
                     magnitude.to_string()
                 };
-                let timestamp = Timestamp::from_canonical_text(&count)
-                    .map_err(|_| mismatch(location))?;
+                let timestamp =
+                    Timestamp::from_canonical_text(&count).map_err(|_| mismatch(location))?;
                 Ok(node(
                     NodeKind::Literal(CheckedLiteral(Value::Timestamp(timestamp))),
                     ValueType::Timestamp,

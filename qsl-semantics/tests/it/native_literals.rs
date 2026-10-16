@@ -200,7 +200,9 @@ fn a_non_canonical_uuid_literal_refuses_with_its_argument() {
             (refusal.cause.code().as_str(), refusal.cause.cause()),
             ("ill_typed", Some("type-mismatch"))
         );
-        assert!(matches!(&refusal.location.origin, Origin::Body { function, .. } if function == "f"));
+        assert!(
+            matches!(&refusal.location.origin, Origin::Body { function, .. } if function == "f")
+        );
         assert!(refusal.location.path().is_empty(), "at the call");
     }
 }
@@ -320,9 +322,7 @@ fn a_literal_never_adapts_to_a_slot_of_another_type() {
         format!("UUID(\"{U1}\") <= UUID(\"{U2}\")"),
         "Timestamp(1) > Timestamp(2)".to_owned(),
     ] {
-        let refusal = refused(&format!(
-            "function f using v(): Boolean pure {{ {body} }}"
-        ));
+        let refusal = refused(&format!("function f using v(): Boolean pure {{ {body} }}"));
         assert_eq!(
             refusal.cause,
             CheckCause::IllTyped(IllTypedCause::OperatorIneligible),

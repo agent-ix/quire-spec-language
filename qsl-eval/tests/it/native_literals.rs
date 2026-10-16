@@ -119,7 +119,11 @@ fn a_string_parameter_compares_with_a_string_literal() {
     let fixture = fixture();
     for (text, equal) in [("abc", true), ("ABC", false), ("abc ", false), ("", false)] {
         assert_eq!(truth(&fixture, "s", vec![string(text)]), equal, "{text:?}");
-        assert_eq!(truth(&fixture, "ns", vec![string(text)]), !equal, "{text:?}");
+        assert_eq!(
+            truth(&fixture, "ns", vec![string(text)]),
+            !equal,
+            "{text:?}"
+        );
     }
 }
 

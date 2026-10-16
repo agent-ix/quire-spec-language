@@ -437,7 +437,11 @@ fn tc_1052_a_string_literal_comparison_runs_through_replay() {
                     result.disagreement()
                 );
             } else {
-                assert_eq!(result.category(), Category::Violation, "{text:?} {function}");
+                assert_eq!(
+                    result.category(),
+                    Category::Violation,
+                    "{text:?} {function}"
+                );
                 assert_eq!(
                     result.settlement(),
                     InputSettlement::ReproducedWithoutWitness,

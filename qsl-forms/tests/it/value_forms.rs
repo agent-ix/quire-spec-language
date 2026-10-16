@@ -1104,11 +1104,7 @@ fn a_quoted_literal_builds_one_string_form_with_the_decoded_scalars() {
     ] {
         assert_eq!(body_root(source), scalars(expected), "{source}");
     }
-    assert_ne!(
-        body_root(r#""é""#),
-        body_root(r#""é""#),
-        "no normalization"
-    );
+    assert_ne!(body_root(r#""é""#), body_root(r#""é""#), "no normalization");
 }
 
 /// FR-091-AC-41, TC-1052 step 1: `UUID("...")` and `Timestamp(n)` build the

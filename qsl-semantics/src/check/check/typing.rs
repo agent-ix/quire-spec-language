@@ -931,8 +931,7 @@ impl<'a> Typer<'a> {
                 if let Some(constructor) = NativeConstructor::named(name) {
                     self.native_literal(constructor, name, expression, arguments, &location)?
                 } else {
-                    let application =
-                        Application::resolve(self, name, arguments.len(), &location)?;
+                    let application = Application::resolve(self, name, arguments.len(), &location)?;
                     return Ok(Self::application(
                         Box::new(ApplicationFrame {
                             application,
