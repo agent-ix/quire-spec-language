@@ -16,6 +16,8 @@ use qsl_semantics::model::observation::{
     ClauseSelectionInput, ContextSide, DocumentRef, ObservationLimits, PostStateRange,
     SelectedAnchor, SelectedObject, SelfKind, SnapshotValue,
 };
+use quire_exact::{FieldValue, Value as Datum};
+use quire_semantic_value::declaration::FieldRef;
 
 use crate::tc235_business_meaning_runtime::{
     lifecycle_document_ref, lifecycle_document_with, lifecycle_identity, lifecycle_selection,
@@ -107,6 +109,7 @@ fn owned(owner: Json, label: Json) -> Json {
         "fields": {
             "owner": owner,
             "label": label,
+            "title": text_value("Ready"),
             "token": {"kind": "uuid", "text": "00112233-4455-6677-8899-aabbccddeeff"},
             "stamp": {"kind": "timestamp", "nanoseconds": "0"},
             "flags": {"record": {"type": id("Flags"), "fields": {"placed": boolean(true)}}},
@@ -120,6 +123,37 @@ fn pump_reference(key: &str) -> Json {
 
 fn string_value(text: &str) -> Json {
     json!({"kind": "string", "text": text})
+}
+
+fn text_value(text: &str) -> Json {
+    json!({"kind": "text", "text": text})
+}
+
+/// The Text value type `Title`: one to eight characters under `nfc`.
+fn title_type() -> Json {
+    let constraint = |keyword: &str, operands: Json| {
+        let identity = id(&format!("constraint/Title/{keyword}"));
+        json!({
+            "identity": identity,
+            "keyword": keyword,
+            "operands": operands,
+            "appliesTo": id("Title"),
+            "diagnosticCode": format!("K.TITLE_{}", keyword.to_uppercase()),
+            "origin": origin(&format!("constraint/Title/{keyword}")),
+        })
+    };
+    declaration(
+        "Title",
+        "scalar",
+        json!({
+            "scalar": "string",
+            "constraints": [
+                constraint("minLength", json!({"value": 1})),
+                constraint("maxLength", json!({"value": 8})),
+                constraint("format", json!({"name": "text-profile:nfc"})),
+            ],
+        }),
+    )
 }
 
 fn pump_object(key: &str) -> Json {
@@ -211,10 +245,12 @@ impl Orders {
                     operation("Billing", "pay"),
                 ),
             ));
+            types.push(title_type());
             let mut claim = operation("Owned", "claim");
             claim["frame"]["modifies"] = json!([
                 id("Owned/owner"),
                 id("Owned/label"),
+                id("Owned/title"),
                 id("Owned/token"),
                 id("Owned/stamp"),
                 id("Owned/flags"),
@@ -228,6 +264,7 @@ impl Orders {
                     vec![
                         field("Owned", "owner", &id("Pump")),
                         field("Owned", "label", &format!("{NATIVE}/String")),
+                        field("Owned", "title", &id("Title")),
                         field("Owned", "token", &format!("{NATIVE}/UUID")),
                         field("Owned", "stamp", &format!("{NATIVE}/Timestamp")),
                         field("Owned", "flags", &id("Flags")),
@@ -395,10 +432,40 @@ impl Orders {
     fn verdict(&self, clause: &str, admitted: &AdmittedObservations) -> bool {
         truth(&self.package, clause, admitted)
     }
+
+    /// The Boolean `fields` of the admitted context of `machine`, as admitted.
+    fn booleans(
+        &self,
+        admitted: &AdmittedObservations,
+        machine: &str,
+        fields: &[&str],
+    ) -> Vec<bool> {
+        let types = self.package.graph().scope().types();
+        let owner = types
+            .object_types()
+            .find(|declared| declared.name() == format!("M::{machine}"))
+            .expect("the machine is declared")
+            .key();
+        let observation = admitted.current.as_ref().expect("one observation");
+        fields
+            .iter()
+            .map(|name| {
+                let slot = observation.environment.objects().attribute(
+                    types,
+                    &admitted.self_object,
+                    &FieldRef::new(owner, *name),
+                );
+                match slot {
+                    Some(FieldValue::Present(Datum::Boolean(held))) => *held,
+                    other => panic!("{name} holds a Boolean, not {other:?}"),
+                }
+            })
+            .collect()
+    }
 }
 
 /// `normalize.record` charges of the fixture's normalization.
-const CHARGES: usize = 46;
+const CHARGES: usize = 48;
 
 /// A state machine `owner` of one state and one transition on its operation
 /// `trigger`, with `fields` and `operation`.
@@ -484,8 +551,23 @@ fn a_context_selection_admits_one_side_of_the_invocation() {
         assert!(orders.verdict("Consistent", &admitted), "{side:?}");
     }
 
-    // Reordered `fields` members and `contexts` entries: the same verdicts,
-    // and for `fields` alone the same digest.
+    // Reordered `fields` members and `contexts` entries admit the same typed
+    // observation on each side, and the same verdicts; `fields` order alone
+    // leaves the digest unchanged, and so does the whitespace of the document.
+    let held = |docs: &Docs, invocation: &DocumentRef, side: ContextSide| {
+        let admitted = orders
+            .context(docs, "Consistent", invocation, side)
+            .unwrap();
+        assert!(orders.verdict("Consistent", &admitted));
+        let observation = admitted.current.as_ref().expect("one observation");
+        (
+            orders.booleans(&admitted, "OrderLifecycle", &["placed", "cancelled"]),
+            observation.identity.identity.clone(),
+            observation.populations.clone(),
+            admitted.self_kind,
+            admitted.usage,
+        )
+    };
     let reversed = |placed: bool| {
         json!({
             "machine": id("OrderLifecycle"),
@@ -497,7 +579,7 @@ fn a_context_selection_admits_one_side_of_the_invocation() {
         reordered.snapshot(&orders.snapshot("p1", "pre", vec![reversed(false), billing(true)]));
     let post =
         reordered.snapshot(&orders.snapshot("q1", "post", vec![billing(true), reversed(true)]));
-    let i1 = reordered.invocation(&orders.invocation(
+    let reordered_i1 = reordered.invocation(&orders.invocation(
         "i1",
         "OrderLifecycle",
         "place",
@@ -506,9 +588,37 @@ fn a_context_selection_admits_one_side_of_the_invocation() {
         &post,
         flags_parameter(),
     ));
-    for side in [ContextSide::Pre, ContextSide::Post] {
-        let admitted = orders.context(&reordered, "Consistent", &i1, side).unwrap();
-        assert!(orders.verdict("Consistent", &admitted));
+    let mut respaced = reordered.clone();
+    for bytes in respaced.snapshots.values_mut() {
+        let text = String::from_utf8(std::mem::take(bytes)).unwrap();
+        *bytes = text
+            .replace("\",\"", "\" , \"")
+            .replace(":{", ": {")
+            .into_bytes();
+    }
+    for (side, expected) in [
+        (ContextSide::Pre, [false, false]),
+        (ContextSide::Post, [true, false]),
+    ] {
+        let (fields, label, populations, kind, usage) = held(&reordered, &reordered_i1, side);
+        assert_eq!(fields, expected, "{side:?}");
+        assert_eq!(kind, SelfKind::Context);
+        let (spaced_fields, spaced_label, spaced_populations, _, spaced_usage) =
+            held(&respaced, &reordered_i1, side);
+        assert_eq!(
+            (spaced_fields, spaced_label, spaced_populations),
+            (fields, label, populations),
+            "{side:?}: whitespace changes no admitted value"
+        );
+        assert_eq!(
+            (spaced_usage.objects, spaced_usage.values),
+            (usage.objects, usage.values)
+        );
+        let (plain_fields, ..) = held(&docs, &i1, side);
+        assert_eq!(
+            plain_fields, expected,
+            "{side:?}: member order changes no value"
+        );
     }
     let digest_of = |document: &Json| {
         let mut docs = Docs::default();
@@ -1357,7 +1467,10 @@ fn a_context_reference_closes_against_the_snapshot() {
 
     // The value bound: the exact count admits, one less refuses.
     let (docs, i3) = claim(string_value("x"), populations, pump_reference("p1"));
-    let exact = owner(&docs, &i3).unwrap().usage.values;
+    // One context entry, its six fields and the one nested `Flags` member,
+    // and the one `pump_id` of the listed `p1`.
+    let exact = 9;
+    assert_eq!(owner(&docs, &i3).unwrap().usage.values, exact);
     let at = |bound: u64| {
         lifecycle_selection_with(
             &orders.package,
@@ -1374,9 +1487,11 @@ fn a_context_reference_closes_against_the_snapshot() {
     };
     assert!(at(exact).is_ok());
     let record = refused(at(exact - 1));
-    assert_eq!(
-        (record.code, record.cause),
-        (Code::StageLimitExceeded, "node-count-exceeded")
+    assert_refusal(
+        &record,
+        Code::StageLimitExceeded,
+        "node-count-exceeded",
+        &[("setting", "observation.values")],
     );
 
     // An environment document is a current snapshot: `contexts` refuse.
@@ -1403,7 +1518,7 @@ fn a_context_reference_closes_against_the_snapshot() {
     );
 }
 
-/// TC-1045 step 5 (FR-106-AC-45): a context field of a record, String, UUID or
+/// TC-1045 step 5 (FR-106-AC-45): a context field of a record, String, Text, UUID or
 /// Timestamp type follows the value rules of an object field: a payload
 /// defect refuses in the payload order at the context path, and a record
 /// refuses at its nested path.
@@ -1443,6 +1558,32 @@ fn a_context_field_follows_the_value_rules_of_an_object_field() {
             ("field", "label"),
             ("member", "text"),
         ],
+    );
+    admit("title", text_value("Steady")).expect("a Text within its bounds admits");
+    let record = refusal("title", json!({"kind": "text", "text": 5}));
+    assert_refusal(
+        &record,
+        Code::InvalidRuntimeInput,
+        "wrong-value-kind",
+        &[
+            ("machine", &id("Owned")),
+            ("field", "title"),
+            ("member", "text"),
+        ],
+    );
+    let record = refusal("title", string_value("Steady"));
+    assert_refusal(
+        &record,
+        Code::InvalidRuntimeInput,
+        "wrong-value-kind",
+        &[("machine", &id("Owned")), ("field", "title")],
+    );
+    let record = refusal("title", text_value("far too long"));
+    assert_refusal(
+        &record,
+        Code::InvalidRuntimeInput,
+        "invalid-value",
+        &[("machine", &id("Owned")), ("field", "title")],
     );
     let record = refusal("token", json!({"kind": "uuid", "text": "not-a-uuid"}));
     assert_refusal(
