@@ -556,9 +556,6 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
         AssemblyCause::AmbiguousOperation { context, operation } => {
             format!("`{context}` inherits more than one operation `{operation}`")
         }
-        AssemblyCause::ProcessAnchorContext { context } => format!(
-            "`{context}` names a process, which no state clause or attempt takes as its context"
-        ),
         AssemblyCause::DuplicateOperationBody { operation, bodies } => format!(
             "{} operation-body declarations resolve to the operation `{}`",
             bodies.len(),
