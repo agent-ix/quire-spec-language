@@ -131,6 +131,13 @@ spelled by its `value_kind`:
   `"0/1"` for zero;
 - `boolean`: a JSON boolean;
 - `text`: the text as a JSON string;
+- `string`: the exact Unicode scalar sequence as a JSON string, with no
+  normalization;
+- `uuid`: the canonical lowercase `8-4-4-4-12` text;
+- `timestamp`: the canonical decimal string of the signed 128-bit nanosecond
+  count, `0` or an optional `-` before a nonzero digit and further digits, as
+  for `integer`;
+  QSpec FR-322 "Scalar literal values" fixes these three spellings;
 - `none`: `null`.
 
 Building a type node and lowering a checked expression each walk a tree of
