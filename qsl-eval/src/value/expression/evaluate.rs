@@ -12,7 +12,7 @@ use std::collections::{BTreeSet, VecDeque};
 use std::sync::Arc;
 
 use super::causes::{
-    identity_string, ModelQueryRefusal, NavigateUnsupported, PreconditionFailure,
+    identity_string, ModelQueryRefusal, NavigationRefusal, PreconditionFailure,
     ProtocolClauseSnapshot, ProtocolClauseUnsupported, ProtocolReferenceUnsupported,
     ReferenceUnresolved, StateModelUndefined,
 };
@@ -22,11 +22,12 @@ use super::s6a::separation::{
 };
 use qsl_foundation::diagnostic::{kernel_refusal_record, InternalFault, Locus, RefusalRecord};
 use qsl_semantics::check::{
-    Arithmetic, CheckedGraph, CheckedLiteral, CheckedNode, Connective, DispatchTable,
+    Arithmetic, CheckedGraph, CheckedLiteral, CheckedNode, Connective, DispatchTable, EndSide,
     IntegerDivisionOperator, NodeKind, Operator, OrderedKind, RecordSlot, Scope, Slot, Visit,
 };
 use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::family::FamilyResult;
+use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::population::PopulationBinding;
 use qsl_semantics::value::model_query::{evaluate_all_instances, evaluate_lookup, ModelQueryHalt};
@@ -45,8 +46,8 @@ use quire_exact::{
 use quire_exact::{evaluate_decimal, Decimal, DecimalOperation, DecimalType};
 use quire_exact::{evaluate_ieee, ieee_to_exact, IeeeFlags, IeeeOperation};
 use quire_exact::{
-    Charge, ChargePoint, CollectionKind, Incomplete, Integer, IntegerInterval, LimitKind, Meter,
-    PopulationId,
+    BoundViolation, CardinalityBound, Charge, ChargePoint, CollectionKind, Incomplete, Integer,
+    IntegerInterval, LimitKind, Meter, PopulationId,
 };
 use quire_exact::{DivisionMember, IntegerDomain};
 use quire_exact::{Outcome, Refusal, Undefined};
@@ -60,6 +61,7 @@ use quire_semantic_value::loss::{LocatedLoss, ValueLoss};
 use quire_semantic_value::quantity::{
     compare_quantity, evaluate_quantity_unit, QuantityOperation, UnitScope,
 };
+use quire_semantic_value::relationship_extent::Resolution;
 use quire_semantic_value::stop::{outcome_from_stop, outcome_into_stop, Stop};
 
 /// A completed, undefined, refused, incomplete or family-owned evaluation
@@ -277,6 +279,32 @@ fn completed(evaluation: Evaluation) -> Result<Value, Box<Evaluation>> {
 /// A QSL-owned invariant at its detecting producer (FR-090).
 fn invariant(identifier: &'static str) -> Halt {
     Halt::Fault(InternalFault::new("S6a", identifier))
+}
+
+/// The one target of a single-valued navigation end `[lower, upper]` (FR-364
+/// step 4): the count is decided with no charge, and a count outside the
+/// bound is the kernel's `cardinality_out_of_bound` refusal over the
+/// end's one-element `Set`.
+fn single_target(mut elements: Vec<Value>, lower: u64, upper: u64) -> Result<Option<Value>, Halt> {
+    let count = u64::try_from(elements.len()).unwrap_or(u64::MAX);
+    let violation = if count < lower {
+        Some(BoundViolation::BelowMinimum)
+    } else if count > upper {
+        Some(BoundViolation::AboveMaximum)
+    } else {
+        None
+    };
+    if let Some(violation) = violation {
+        let bound = CardinalityBound::new(lower, upper)
+            .map_err(|_| invariant("navigate-single-valued-bound-invalid"))?;
+        return Err(Halt::Stop(Stop::Refused(Refusal::CardinalityOutOfBound {
+            violation,
+            kind: CollectionKind::Set,
+            bound,
+            count,
+        })));
+    }
+    Ok(elements.pop())
 }
 
 /// `function.call`: one work unit per checked call.
@@ -1753,11 +1781,9 @@ impl<'a, 'm> Machine<'a, 'm> {
                 }
                 retain_scalar(Value::Boolean(found), self.meter)?
             }
-            NodeKind::Navigate { .. } => {
-                return Err(Halt::Family(FamilyResult::Refused(Box::new(
-                    NavigateUnsupported,
-                ))));
-            }
+            NodeKind::Navigate {
+                relationship, near, ..
+            } => self.navigate(node, relationship, *near)?,
             NodeKind::AllInstances { population } => {
                 if self.is_protocol_clause() {
                     return Err(Halt::Family(FamilyResult::Refused(Box::new(
@@ -1938,6 +1964,90 @@ impl<'a, 'm> Machine<'a, 'm> {
                 })
             }
             _ => Ok(self.objects),
+        }
+    }
+
+    /// FR-364 "Runtime navigation reads only the extent of its relationship":
+    /// `r.role` over the relationship end nearest `r` (`near`), stopping at
+    /// the first outcome. Charges `model.navigate`; an extent that is not
+    /// complete is `incomplete_population`/`incomplete-scope` with no further
+    /// charge; each selected reference, in reference-key order, is decided
+    /// by `resolve` (present, dangling or undecidable, over the observation's
+    /// own manifest and closure) before its `collection.visit`, so a missing
+    /// target decides before the count bound; then the multiplicity-
+    /// determined value is bounded and retained.
+    fn navigate(
+        &mut self,
+        node: CheckedNode<'_>,
+        relationship: &DeclarationKey,
+        near: EndSide,
+    ) -> Result<Value, Halt> {
+        let Value::Reference(receiver) = self.pop()? else {
+            return Err(invariant("navigate-reference-value-expected"));
+        };
+        charge_named(self.meter, ChargePoint::ModelNavigate)?;
+        let objects = self.objects_for(node)?;
+        let refuse =
+            |cause: NavigationRefusal| Halt::Family(FamilyResult::Refused(Box::new(cause)));
+        let Some(extents) = objects
+            .extents()
+            .filter(|extents| extents.complete(relationship))
+        else {
+            return Err(refuse(NavigationRefusal::ExtentIncomplete {
+                relationship: relationship.clone(),
+                receiver,
+            }));
+        };
+        let selected: Vec<&ObjectReference> = match near {
+            EndSide::Source => extents.targets(relationship, &receiver).collect(),
+            EndSide::Target => extents.sources(relationship, &receiver).collect(),
+        };
+        let types = self.scope.types();
+        let manifest = extents
+            .manifest(types)
+            .map_err(|_| invariant("navigate-manifest-unavailable"))?;
+        let multi_valued = matches!(node.value_type(), ValueType::Collection(_));
+        let mut elements = Vec::with_capacity(selected.len());
+        for target in selected {
+            match objects.objects().resolve(target, types, &manifest) {
+                Resolution::Present => {}
+                Resolution::Dangling => {
+                    return Err(refuse(NavigationRefusal::TargetDangling {
+                        relationship: relationship.clone(),
+                        reference: target.clone(),
+                    }));
+                }
+                Resolution::Undecidable => {
+                    return Err(refuse(NavigationRefusal::TargetUndecidable {
+                        relationship: relationship.clone(),
+                        reference: target.clone(),
+                    }));
+                }
+            }
+            if multi_valued {
+                charge_visit(self.meter)?;
+            }
+            elements.push(Value::Reference(target.clone()));
+        }
+        match node.value_type() {
+            ValueType::Collection(collection_type) => Ok(outcome_into_stop(form_grouped(
+                collection_type,
+                elements,
+                self.meter,
+            ))?),
+            ValueType::Reference(_) => {
+                let reference = single_target(elements, 1, 1)?;
+                reference.ok_or_else(|| invariant("navigate-required-target-absent"))
+            }
+            ValueType::Option(payload) => {
+                let target = single_target(elements, 0, 1)?;
+                Ok(OptionValue::from_admitted((**payload).clone(), target))
+            }
+            // The checker types a navigation to exactly the three shapes
+            // above (`state_model::navigation`); any other type is an
+            // invariant break, not a closed enum's missing arm.
+            #[allow(clippy::wildcard_enum_match_arm)]
+            _ => Err(invariant("navigate-result-type-unexpected")),
         }
     }
 

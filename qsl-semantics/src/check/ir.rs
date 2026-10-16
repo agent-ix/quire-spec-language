@@ -2,6 +2,7 @@
 //! The typed, name-resolved expression tree that checking produces and the
 //! evaluator runs.
 
+use super::navigation::EndSide;
 use crate::model::key::DeclarationKey;
 use qsl_foundation::absence::AbsenceMode;
 use quire_exact::DecimalType;
@@ -823,6 +824,9 @@ pub enum NodeKind {
         relationship: DeclarationKey,
         /// The role of the end nearest the reference, which the source named.
         role: String,
+        /// The relationship end nearest the reference: `Source` reads the
+        /// relationship's targets, `Target` its sources (FR-364).
+        near: EndSide,
     },
     /// Whether an `Option` operand holds a value.
     Present(NodeId),
