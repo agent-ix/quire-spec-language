@@ -362,8 +362,8 @@ fn tc_1044_eight_retained_scalars_are_admitted_on_input_and_witness() {
 fn tc_1044_a_text_outside_its_length_bounds_is_refused_before_the_call() {
     for (id, text) in [("nine pairs", pairs(9)), ("empty", String::new())] {
         for (arm, wire) in text_calls("title", &text) {
-            let refusal = replay(wire, ReplayLimits::default())
-                .expect_err(&format!("{id} {arm}: refused"));
+            let refusal =
+                replay(wire, ReplayLimits::default()).expect_err(&format!("{id} {arm}: refused"));
             assert_eq!(refusal.code(), Code::InvalidRuntimeInput, "{id} {arm}");
             assert_eq!(
                 refusal.input_refusal(),
