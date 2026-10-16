@@ -112,6 +112,18 @@ impl<'a> UnionRef<'a> {
         })
     }
 
+    /// The union declared as `declaration`, or `None` when that is no union.
+    pub(crate) fn declared(types: &'a TypeEnvironment, declaration: NodeKey) -> Option<Self> {
+        Self::of(types, &ValueType::Composite(declaration))
+    }
+
+    /// The position of the member named exactly `member`.
+    pub(crate) fn position_of(&self, member: &str) -> Option<usize> {
+        self.members
+            .iter()
+            .position(|declared| declared.identifier().as_str() == member)
+    }
+
     /// The position of the member an arm head spells, bare `m` or qualified
     /// `U::m`. A qualifier other than this union's name names no member.
     fn member(&self, spelled: &str) -> Option<usize> {
@@ -130,6 +142,68 @@ impl<'a> UnionRef<'a> {
         self.members
             .get(position)
             .map_or(&[], UnionMemberDeclaration::positions)
+    }
+}
+
+/// One member of a declared union, named by a construction `U::m` or
+/// `U::m(a, b)` (FR-317): the `SumCase` family's side of the call-target
+/// seam.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct UnionMember<'a> {
+    declaration: NodeKey,
+    /// The member's position in the union's declared member order.
+    position: usize,
+    /// The member's payload types, in declared position order.
+    payload: &'a [ValueType],
+}
+
+impl<'a> UnionMember<'a> {
+    /// The member at `position` of `union`, or `None` when it has none.
+    pub(crate) fn of(union: UnionRef<'a>, position: usize) -> Option<Self> {
+        Some(Self {
+            declaration: union.declaration,
+            position,
+            payload: union.members.get(position)?.positions(),
+        })
+    }
+
+    /// The type payload argument `index` is checked against.
+    pub(crate) fn parameter(&self, index: usize) -> Option<&'a ValueType> {
+        self.payload.get(index)
+    }
+
+    /// Admit the shape of a construction at `location`: a nullary member is
+    /// written bare (or with no arguments) and a member that declares a
+    /// payload is called with exactly its arity (QSpec FR-143). `supplied` is
+    /// the call's argument count, `None` for a bare name.
+    pub(crate) fn admit_shape(
+        &self,
+        supplied: Option<usize>,
+        location: &Location,
+    ) -> Result<(), CheckRefusal> {
+        let admitted =
+            supplied.map_or(self.payload.is_empty(), |count| count == self.payload.len());
+        if admitted {
+            Ok(())
+        } else {
+            Err(CheckRefusal::ill_typed(
+                location,
+                quire_exact::IllTypedCause::TypeMismatch,
+            ))
+        }
+    }
+
+    /// The construction node over its checked payload `arguments`.
+    pub(crate) fn finish(self, arguments: Vec<NodeId>, location: &Location) -> super::ir::Node {
+        super::ir::Node {
+            kind: super::ir::NodeKind::UnionValue {
+                declaration: self.declaration,
+                member: self.position,
+                arguments,
+            },
+            value_type: ValueType::Composite(self.declaration),
+            location: location.clone(),
+        }
     }
 }
 

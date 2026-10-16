@@ -1010,6 +1010,15 @@ pub enum NodeKind {
         /// The arms, one per member, in declared member order.
         arms: Vec<CaseArm>,
     },
+    /// A construction of a union member (FR-317): `U::m` or `U::m(a, b)`.
+    UnionValue {
+        /// The union's declaration.
+        declaration: NodeKey,
+        /// The member's position in the union's declared member order.
+        member: usize,
+        /// The payload arguments, in the member's declared position order.
+        arguments: Vec<NodeId>,
+    },
     /// FR-063/S3: exists only so `--cfg seam_probe` makes every
     /// match over `NodeKind` outside this module non-exhaustive. Never
     /// constructed outside the probe build.
@@ -1093,7 +1102,8 @@ impl NodeKind {
             } => vec![*left, *right],
             NodeKind::Call { arguments, .. }
             | NodeKind::ImportedCall { arguments, .. }
-            | NodeKind::Tuple { arguments, .. } => arguments.clone(),
+            | NodeKind::Tuple { arguments, .. }
+            | NodeKind::UnionValue { arguments, .. } => arguments.clone(),
             NodeKind::Record { slots, .. } => slots
                 .iter()
                 .filter_map(|slot| match slot {

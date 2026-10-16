@@ -11,14 +11,21 @@ use ix_trace_rs::trace;
 use qsl_forms::{build_unit, ClauseKind};
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::SourceIdentity;
-use quire_exact::{IllTypedCause, NodeKey, ValueType};
+use quire_exact::{Identifier, IllTypedCause, NodeKey, UnionMember, ValueType};
 use quire_semantic_value::checking::CheckingLimits;
+use quire_semantic_value::declaration::{
+    CompositeDeclaration, CompositeShape, TypeEnvironment, UnionMemberDeclaration,
+};
 use quire_semantic_value::location::{Location, Origin};
 
 use super::{ExhaustivenessObligation, SumCaseCause};
 use crate::check::check::{bind_parameters, Scope, Signatures, Typer};
 use crate::check::ir::{CheckedBody, CheckedNode, NodeKind, Slot};
-use crate::check::{CheckCause, CheckRefusal, CheckingLimitKind, PackageDeclarations};
+use crate::check::{
+    CheckCause, CheckRefusal, CheckingLimitKind, EnumBinding, PackageDeclarations,
+    QualifiedCandidate,
+};
+use crate::value::enumeration::{mint_union_member_key, mint_union_variant_id, mint_variant_id};
 
 const SHAPE: &str = "union Shape { Empty, Circle(Integer), Rect(Integer, Integer) }\n\
                      union Other { X }\n\
@@ -86,8 +93,13 @@ impl Unit {
         clause: ClauseKind,
         limits: CheckingLimits,
     ) -> (Result<CheckedBody, CheckRefusal>, u64) {
+        self.type_body_in(&self.scope(), clause, limits)
+    }
+
+    /// The scope the package's own declarations give.
+    fn scope(&self) -> Scope {
         let package = &self.package;
-        let scope = Scope::new(
+        Scope::new(
             package.types.clone(),
             package.operations.clone(),
             package.enums.clone(),
@@ -95,7 +107,17 @@ impl Unit {
             package.model_operations.clone(),
             package.ieee_profile.clone(),
             Vec::new(),
-        );
+        )
+    }
+
+    /// [`Self::type_body`] over a hand-built `scope`.
+    fn type_body_in(
+        &self,
+        scope: &Scope,
+        clause: ClauseKind,
+        limits: CheckingLimits,
+    ) -> (Result<CheckedBody, CheckRefusal>, u64) {
+        let package = &self.package;
         let (parameters, result) = package
             .resolved_signatures
             .get(0)
@@ -104,7 +126,7 @@ impl Unit {
         let function = &package.functions[0];
         let signatures = Signatures::default();
         let mut nodes = 0;
-        let mut typer = Typer::new(&scope, &signatures, limits, &mut nodes, clause);
+        let mut typer = Typer::new(scope, &signatures, limits, &mut nodes, clause);
         let location = Self::body();
         let typed = bind_parameters(&mut typer, &parameters, &location)
             .and_then(|()| typer.check_as(&function.body, &result, &location));
@@ -496,4 +518,442 @@ fn a_keyed_collection_of_an_ieee_bearing_union_is_refused() {
             "{collection}"
         );
     }
+}
+
+/// The payload arguments of a `UnionValue` node, and its member position.
+fn union_value(body: &CheckedBody) -> (NodeKey, usize, Vec<(&NodeKind, ValueType)>) {
+    let root = body.root();
+    let NodeKind::UnionValue {
+        declaration,
+        member,
+        arguments,
+    } = root.kind()
+    else {
+        panic!("one UnionValue node, not {:?}", root.kind())
+    };
+    let arguments = arguments
+        .iter()
+        .map(|id| (root.at(*id).kind(), root.at(*id).value_type().clone()))
+        .collect();
+    (*declaration, *member, arguments)
+}
+
+#[trace("FR-317-AC-1", "TC-819")]
+#[test]
+fn a_union_construction_checks_as_the_member_over_its_union() {
+    let (unit, typed) = check("Shape", "Shape::Empty");
+    let body = typed.expect("a nullary member checks bare");
+    assert_eq!(
+        body.root().value_type(),
+        &ValueType::Composite(unit.key("Shape"))
+    );
+    let (declaration, member, arguments) = union_value(&body);
+    assert_eq!((declaration, member), (unit.key("Shape"), 0));
+    assert!(arguments.is_empty());
+
+    let (unit, typed) = check("Shape", "Shape::Rect(2, 3)");
+    let body = typed.expect("a payload member checks with its arguments");
+    assert_eq!(
+        body.root().value_type(),
+        &ValueType::Composite(unit.key("Shape"))
+    );
+    let (declaration, member, arguments) = union_value(&body);
+    assert_eq!((declaration, member), (unit.key("Shape"), 2));
+    let types: Vec<ValueType> = arguments.into_iter().map(|(_, ty)| ty).collect();
+    assert_eq!(types, [ValueType::Integer, ValueType::Integer]);
+
+    // The member is also the one of the `Other` union when written there.
+    let (unit, typed) = check("Other", "Other::X");
+    let (declaration, member, _) = union_value(&typed.expect("another union's member"));
+    assert_eq!((declaration, member), (unit.key("Other"), 0));
+
+    // A payload is checked against its declared position type.
+    let (_, bad) = refused("Shape", "Shape::Rect(2, true)");
+    assert_eq!(bad.cause, CheckCause::IllTyped(IllTypedCause::TypeMismatch));
+    assert_eq!(bad.location, Unit::body().child(1), "at `true`");
+}
+
+#[trace("FR-317-AC-2", "TC-819")]
+#[test]
+fn a_construction_of_the_wrong_shape_refuses_at_the_construction() {
+    for body in [
+        "Shape::Square(1)",
+        "Shape::Empty(1)",
+        "Shape::Circle",
+        "Shape::Rect(1)",
+    ] {
+        let (_, bad) = refused("Shape", body);
+        assert_eq!(
+            bad.cause,
+            CheckCause::IllTyped(IllTypedCause::TypeMismatch),
+            "{body}"
+        );
+        assert_eq!(bad.location, Unit::body(), "{body}");
+    }
+    // A union name is a type, so an unknown qualifier is an unresolved name.
+    let (_, bad) = refused("Shape", "Missing::Empty");
+    assert_eq!(bad.cause, CheckCause::MissingName("Missing::Empty".into()));
+}
+
+/// Type `Shape::Rect(2, 3)` (and the one-argument `Shape::Rect(1)`) as a
+/// `decreases` measure, under the clause kind a measure is typed in.
+fn measure_unit(measure: &str) -> Unit {
+    unit(&format!(
+        "{SHAPE}function f using v(): Integer pure decreases({measure}) {{ 0 }}"
+    ))
+}
+
+fn type_measure(unit: &Unit) -> Result<CheckedBody, CheckRefusal> {
+    let scope = unit.scope();
+    let function = &unit.package.functions[0];
+    let signatures = Signatures::default();
+    let mut nodes = 0;
+    let mut typer = Typer::new(
+        &scope,
+        &signatures,
+        CheckingLimits::default(),
+        &mut nodes,
+        ClauseKind::Body,
+    );
+    let measure = function.measure.as_ref().expect("f has a measure");
+    typer.check_as(measure, &ValueType::Integer, &Unit::body())
+}
+
+#[trace("FR-317-AC-4", "TC-819")]
+#[test]
+fn a_construction_checks_the_same_under_every_clause_kind() {
+    let good = unit(&format!(
+        "{SHAPE}{}",
+        function(
+            "Integer",
+            "case Shape::Rect(2, 3) { Empty: 0; Circle(r): r; Rect(w, h): w; }"
+        )
+    ));
+    let bad = unit(&format!(
+        "{SHAPE}{}",
+        function(
+            "Integer",
+            "case Shape::Rect(1) { Empty: 0; Circle(r): r; Rect(w, h): w; }"
+        )
+    ));
+    for clause in [
+        ClauseKind::Body,
+        ClauseKind::Invariant,
+        ClauseKind::Precondition,
+        ClauseKind::Postcondition,
+    ] {
+        let (typed, _) = good.type_body(clause, CheckingLimits::default());
+        assert!(typed.is_ok(), "{clause:?}: {typed:?}");
+        let (typed, _) = bad.type_body(clause, CheckingLimits::default());
+        let refusal = typed.expect_err("Shape::Rect(1) is refused");
+        assert_eq!(
+            refusal.cause,
+            CheckCause::IllTyped(IllTypedCause::TypeMismatch),
+            "{clause:?}"
+        );
+        assert_eq!(refusal.location, Unit::body().child(0), "{clause:?}");
+    }
+
+    // A `decreases` measure.
+    let measure = "case Shape::Rect(2, 3) { Empty: 0; Circle(r): r; Rect(w, h): w; }";
+    type_measure(&measure_unit(measure)).expect("the measure checks");
+    let measure = "case Shape::Rect(1) { Empty: 0; Circle(r): r; Rect(w, h): w; }";
+    let refusal = type_measure(&measure_unit(measure)).expect_err("Shape::Rect(1) is refused");
+    assert_eq!(
+        refusal.cause,
+        CheckCause::IllTyped(IllTypedCause::TypeMismatch)
+    );
+    assert_eq!(refusal.location, Unit::body().child(0));
+}
+
+/// A union named `q` with the given members, under `key`'s digest byte.
+fn union_q(key: u8, members: &[(&str, Vec<ValueType>)]) -> CompositeDeclaration {
+    CompositeDeclaration::new(
+        NodeKey::from_digest([key; 32]),
+        "q",
+        CompositeShape::Union(
+            members
+                .iter()
+                .map(|(name, payload)| {
+                    UnionMemberDeclaration::resolved(
+                        Identifier::new(*name).expect("an identifier"),
+                        payload.clone(),
+                    )
+                })
+                .collect(),
+        ),
+    )
+}
+
+/// The scope of `unit` with `extra` composites and `enums` added to it.
+fn scope_over(unit: &Unit, extra: Vec<CompositeDeclaration>, enums: Vec<EnumBinding>) -> Scope {
+    let package = &unit.package;
+    let declared: Vec<CompositeDeclaration> =
+        package.types.composites().cloned().chain(extra).collect();
+    Scope::new(
+        TypeEnvironment::new(declared, []).expect("the composites are admitted"),
+        package.operations.clone(),
+        package.enums.iter().cloned().chain(enums).collect(),
+        package.aliases.clone(),
+        package.model_operations.clone(),
+        package.ieee_profile.clone(),
+        Vec::new(),
+    )
+}
+
+const Q: &str = "union q { m(Integer) }\nenum E { m, z }\n";
+
+fn ambiguity(refusal: &CheckRefusal) -> (&str, &[QualifiedCandidate]) {
+    let CheckCause::AmbiguousQualified(ambiguous) = &refusal.cause else {
+        panic!("an ambiguous qualified reference, not {:?}", refusal.cause)
+    };
+    (&ambiguous.name, &ambiguous.candidates)
+}
+
+#[trace("FR-317-AC-3", "TC-820")]
+#[test]
+fn a_qualified_member_with_two_candidates_is_ambiguous_and_names_each() {
+    for call in ["q::m(1)", "q::m"] {
+        let unit = unit(&format!("{Q}function f using v(): q pure {{ {call} }}"));
+        let first = unit.key("q");
+        let located = |refusal: &CheckRefusal| {
+            assert_eq!(refusal.cause.code(), Code::AmbiguousDeclaration);
+            assert_eq!(refusal.cause.cause(), Some("ambiguous-name"));
+            assert_eq!(refusal.location, Unit::body(), "{call}");
+        };
+
+        // Two unions named `q` that both declare `m`.
+        let other = union_q(9, &[("m", vec![ValueType::Integer])]);
+        let scope = scope_over(&unit, vec![other], Vec::new());
+        let (typed, _) = unit.type_body_in(&scope, ClauseKind::Body, CheckingLimits::default());
+        let refusal = typed.expect_err("two unions declare q::m");
+        located(&refusal);
+        let (name, candidates) = ambiguity(&refusal);
+        assert_eq!(name, call.split('(').next().unwrap());
+        assert_eq!(candidates.len(), 2, "{call}");
+        for key in [first, NodeKey::from_digest([9; 32])] {
+            assert!(
+                candidates.contains(&QualifiedCandidate::Union(key)),
+                "{call}: {candidates:?}"
+            );
+        }
+
+        // A union and an enum named `q` that both declare `m`.
+        let mut renamed = unit.package.enums[0].clone();
+        renamed.name = "q".to_owned();
+        let enum_key = renamed.declaration.key();
+        let scope = scope_over(&unit, Vec::new(), vec![renamed]);
+        let (typed, _) = unit.type_body_in(&scope, ClauseKind::Body, CheckingLimits::default());
+        let refusal = typed.expect_err("a union and an enum declare q::m");
+        located(&refusal);
+        assert_eq!(
+            ambiguity(&refusal).1,
+            [
+                QualifiedCandidate::Union(first),
+                QualifiedCandidate::Enum(enum_key)
+            ],
+            "{call}"
+        );
+    }
+}
+
+#[trace("FR-317-AC-3", "TC-820")]
+#[test]
+fn a_qualified_member_with_one_candidate_resolves_to_it() {
+    // Two unions named `q`, only the second declares `m`: it resolves there.
+    let unit = unit("union q { n }\nfunction f using v(): q pure { q::n }");
+    let first = unit.key("q");
+    let other = union_q(9, &[("m", vec![])]);
+    let scope = scope_over(&unit, vec![other], Vec::new());
+    let (typed, _) = unit.type_body_in(&scope, ClauseKind::Body, CheckingLimits::default());
+    let (declaration, member, _) = union_value(&typed.expect("one union declares q::n"));
+    assert_eq!((declaration, member), (first, 0));
+
+    // The union `q` alone.
+    let (unit, typed) = check("Shape", "Shape::Circle(4)");
+    let (declaration, member, _) = union_value(&typed.expect("the union alone"));
+    assert_eq!((declaration, member), (unit.key("Shape"), 1));
+}
+
+#[trace("FR-317-AC-3", "TC-820")]
+#[test]
+fn an_enum_member_and_a_tuple_constructor_resolve_as_before_unions() {
+    let (_, typed) = check("Kind", "Kind::A");
+    let body = typed.expect("an enum member checks");
+    assert!(
+        matches!(body.root().kind(), NodeKind::Literal(_)),
+        "{:?}",
+        body.root().kind()
+    );
+
+    let unit = unit(&format!(
+        "{SHAPE}tuple Pair(Integer, Integer);\n\
+         function f using v(): Pair pure {{ Pair(1, 2) }}"
+    ));
+    let (typed, _) = unit.type_body(ClauseKind::Body, CheckingLimits::default());
+    let body = typed.expect("a tuple constructor checks");
+    let NodeKind::Tuple {
+        declaration,
+        arguments,
+    } = body.root().kind()
+    else {
+        panic!("a Tuple node, not {:?}", body.root().kind())
+    };
+    assert_eq!(*declaration, unit.key("Pair"));
+    assert_eq!(arguments.len(), 2);
+}
+
+/// QSpec FR-441's member key, computed here from its preimage text rather
+/// than by the producer under test: the SHA-256 of the RFC 8785 bytes of
+/// `{declaration_node_id, member, version}`, member keys sorted.
+fn member_key_hex(declaration: NodeKey, member: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let preimage = format!(
+        "{{\"declaration_node_id\":{{\"digest\":\"{declaration}\",\
+         \"domain\":\"quire.checked-semantic-node/v1\"}},\
+         \"member\":\"{member}\",\"version\":\"quire.union-member-node/v1\"}}"
+    );
+    Sha256::digest(preimage.as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+/// The scope of `unit` over `types`.
+fn scope_of_types(unit: &Unit, types: TypeEnvironment) -> Scope {
+    let package = &unit.package;
+    Scope::new(
+        types,
+        package.operations.clone(),
+        package.enums.clone(),
+        package.aliases.clone(),
+        package.model_operations.clone(),
+        package.ieee_profile.clone(),
+        Vec::new(),
+    )
+}
+
+/// `unit`'s types with every union sealed under the final key `final_key`
+/// gives it, each member bound to the key `mint_union_member_key` mints over
+/// that final key. The final declaration key of a union is the checked node
+/// id of its type node (FR-319), which lowering owns; a test chooses one.
+fn sealed_types(unit: &Unit, final_key: impl Fn(NodeKey) -> NodeKey) -> TypeEnvironment {
+    let mut types = unit.package.types.clone();
+    let unions: Vec<(NodeKey, Vec<Identifier>)> = types
+        .composites()
+        .filter_map(|declaration| match declaration.shape() {
+            CompositeShape::Union(members) => Some((
+                declaration.key(),
+                members
+                    .iter()
+                    .map(|member| member.identifier().clone())
+                    .collect(),
+            )),
+            CompositeShape::Record(_) | CompositeShape::Tuple(_) => None,
+        })
+        .collect();
+    for (handle, members) in unions {
+        let key = final_key(handle);
+        let bindings = members
+            .into_iter()
+            .map(|member| {
+                UnionMember::from_admitted(key, mint_union_member_key(key, member.as_str()), member)
+            })
+            .collect();
+        types
+            .seal_union_verified(handle, key, bindings)
+            .expect("the union seals under its final key");
+    }
+    types
+}
+
+#[trace("FR-319-AC-2", "TC-826")]
+#[test]
+fn a_union_member_variant_id_is_its_member_key_and_selects_only_its_union() {
+    let unit = unit(
+        "union A { X }\nunion B { X }\nenum E { X }\n\
+         union Shape { Empty, Circle(Integer), Rect(Integer, Integer) }\n\
+         function f using v(): Integer pure { 0 }",
+    );
+    // A final key distinct from the handle, so a test cannot confuse them.
+    let final_of = |handle: NodeKey| {
+        let mut digest = *handle.as_bytes();
+        digest[0] ^= 0xff;
+        NodeKey::from_digest(digest)
+    };
+    let types = sealed_types(&unit, final_of);
+
+    // Each member's `VariantId` is its FR-441 member key, computed here from
+    // the preimage text.
+    let shape = final_of(unit.key("Shape"));
+    for (position, member) in ["Empty", "Circle", "Rect"].into_iter().enumerate() {
+        let variant = mint_union_variant_id(shape, member);
+        assert_eq!(
+            variant.to_string(),
+            member_key_hex(shape, member),
+            "{member}"
+        );
+        assert_eq!(
+            mint_union_member_key(shape, member).to_string(),
+            variant.to_string(),
+            "the VariantId is the member key retyped"
+        );
+        let (found, declared) = types
+            .union_member(unit.key("Shape"), variant)
+            .expect("the sealed union resolves its member");
+        assert_eq!(found, position);
+        assert_eq!(declared.identifier().as_str(), member);
+    }
+
+    // `A::X`, `B::X` and an enum `E::X` are three different identities.
+    let (a, b) = (final_of(unit.key("A")), final_of(unit.key("B")));
+    let enum_key = unit.package.enums[0].declaration.key();
+    let ids = [
+        mint_union_variant_id(a, "X"),
+        mint_union_variant_id(b, "X"),
+        mint_variant_id(enum_key, "X"),
+    ];
+    assert!(ids[0] != ids[1] && ids[0] != ids[2] && ids[1] != ids[2]);
+
+    // A `VariantId` selects only its own union's member.
+    assert!(types.union_member(unit.key("A"), ids[0]).is_some());
+    assert!(types.union_member(unit.key("A"), ids[1]).is_none());
+    assert!(types.union_member(unit.key("A"), ids[2]).is_none());
+    assert!(types.union_member(unit.key("B"), ids[0]).is_none());
+}
+
+#[trace("FR-319-AC-3", "TC-826")]
+#[test]
+fn union_equality_compares_one_union_and_refuses_two() {
+    for body in [
+        "Shape::Rect(2, 3) = Shape::Rect(2, 3)",
+        "Shape::Rect(2, 3) = Shape::Rect(3, 2)",
+        "Shape::Empty = Shape::Circle(0)",
+    ] {
+        let unit = unit(&format!(
+            "{SHAPE}function f using v(): Boolean pure {{ {body} }}"
+        ));
+        let scope = scope_of_types(&unit, sealed_types(&unit, |handle| handle));
+        let (typed, _) = unit.type_body_in(&scope, ClauseKind::Body, CheckingLimits::default());
+        let typed = typed.unwrap_or_else(|refusal| panic!("{body}: {refusal:?}"));
+        assert!(
+            matches!(typed.root().kind(), NodeKind::Equality(..)),
+            "{body}: {:?}",
+            typed.root().kind()
+        );
+    }
+
+    // Two unions of the same member name are different types.
+    let unit = unit(
+        "union A { X(Integer) }\nunion B { X(Integer) }\n\
+         function f using v(): Boolean pure { A::X(1) = B::X(1) }",
+    );
+    let scope = scope_of_types(&unit, sealed_types(&unit, |handle| handle));
+    let (typed, _) = unit.type_body_in(&scope, ClauseKind::Body, CheckingLimits::default());
+    let refusal = typed.expect_err("A::X(1) = B::X(1) is refused");
+    assert_eq!(
+        refusal.cause,
+        CheckCause::IllTyped(IllTypedCause::TypeMismatch)
+    );
+    assert_eq!(refusal.location, Unit::body());
 }
