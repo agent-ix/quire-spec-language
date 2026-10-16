@@ -26,6 +26,7 @@ mod kernel_refusal_payloads;
 mod model_reference_queries;
 mod native_scalar_equality;
 mod protocol_reference;
+mod relationship_navigation;
 mod source_call;
 mod state_model_family;
 mod supplied_phases;

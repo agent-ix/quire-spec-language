@@ -3292,6 +3292,7 @@ impl<'a> Lowering<'a> {
                 reference,
                 relationship,
                 role,
+                ..
             } => {
                 // FR-093/FR-094 (FR-363): one `quire.op.model.navigate` over
                 // the reference, naming the end by the relationship's model
