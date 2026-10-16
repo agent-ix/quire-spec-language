@@ -203,6 +203,18 @@ pub enum ReplayRefusal {
     /// `StageFailure::Refused` cause.
     #[error("{code} ({cause}): {refusal}", code = input_refusal_code(&.0).as_str(), cause = .0.cause(), refusal = .0)]
     Input(InputRefusal),
+    /// FR-056: a UUID or Timestamp argument whose payload text the kernel's
+    /// canonical constructor refuses, `invalid_runtime_input`/`invalid-value`
+    /// with the kernel's class beneath it (`refusal.cause`): noncanonical
+    /// UUID text, noncanonical Timestamp text, or a canonical Timestamp
+    /// outside the signed 128-bit domain. No value is built.
+    #[error("invalid_runtime_input (invalid-value): the argument at position {parameter} is refused: {refusal}")]
+    NativePayload {
+        /// The parameter's zero-based declared position.
+        parameter: usize,
+        /// The kernel's typed refusal.
+        refusal: quire_exact::ConstructionRefusal,
+    },
     /// An argument's membership in its parameter's declared type was not
     /// decided because the type environment could not reserve storage:
     /// `resource_exhausted`, never an [`Self::Input`] wrong-value-kind
@@ -341,6 +353,7 @@ impl ReplayRefusal {
             | Self::NotAPredicate { .. }
             | Self::NotAValueFunction { .. } => Code::InvalidRuntimeInput,
             Self::Input(refusal) => input_refusal_code(refusal),
+            Self::NativePayload { .. } => Code::InvalidRuntimeInput,
             Self::Storage { failure, .. } => membership_failure_code(failure),
             Self::Supplied(stop) => supplied_stop_code(stop),
             Self::UnsupportedHelper(_) => Code::UnsupportedConstruct,
@@ -367,6 +380,7 @@ impl ReplayRefusal {
             }
             Self::WrongObservation { .. } => Some("wrong-observation"),
             Self::Input(refusal) => Some(refusal.cause()),
+            Self::NativePayload { .. } => Some("invalid-value"),
             Self::Storage { failure, .. } => membership_failure_cause(failure),
             Self::Supplied(stop) => supplied_stop_cause(stop),
             Self::Admission(
@@ -1196,7 +1210,8 @@ fn arguments(
 
 /// The witness type a parameter of `value_type` is read as: `Boolean` for
 /// `Boolean`, `I128` for an integer type, and `Canonical` (a witness value
-/// text) for every other value type. A `Population<T>` is not a value, so it
+/// text) for every other value type, the native `UUID` and `Timestamp`
+/// included. A `Population<T>` is not a value, so it
 /// has no witness form and refuses `WrongValueKind` before the call.
 fn witness_type(
     parameter: usize,
@@ -1215,12 +1230,12 @@ fn witness_type(
         | ValueType::Option(_)
         | ValueType::Composite(_)
         | ValueType::Collection(_)
-        | ValueType::Reference(_) => Ok(WitnessValueType::Canonical),
-        ValueType::Population(_) | ValueType::Uuid | ValueType::Timestamp => {
-            Err(ReplayRefusal::Input(InputRefusal::WrongValueKind {
-                parameter,
-            }))
-        }
+        | ValueType::Reference(_)
+        | ValueType::Uuid
+        | ValueType::Timestamp => Ok(WitnessValueType::Canonical),
+        ValueType::Population(_) => Err(ReplayRefusal::Input(InputRefusal::WrongValueKind {
+            parameter,
+        })),
     }
 }
 

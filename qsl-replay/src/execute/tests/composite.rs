@@ -12,7 +12,7 @@ use quire_exact::{Integer, ValueType};
 use quire_semantic_value::call::InputRefusal;
 
 use super::*;
-use crate::witness::{QuantityMagnitude, WitnessField, WitnessSlot};
+use crate::witness::{QuantityMagnitude, WitnessBinding, WitnessField, WitnessSlot};
 
 /// A compiled unit under test.
 struct Fixture {
@@ -838,4 +838,211 @@ fn tc_906_a_reference_replays_by_identity_and_a_dereference_completes_no_value()
         ),
         "an empty identity",
     );
+}
+
+const UUID_TEXT: &str = "00112233-4455-6677-8899-aabbccddeeff";
+const TIMESTAMP_MAX: &str = "170141183460469231731687303715884105727";
+const TIMESTAMP_MIN: &str = "-170141183460469231731687303715884105728";
+
+fn uuid(text: &str) -> WitnessValue {
+    WitnessValue::Uuid(text.to_owned())
+}
+
+fn timestamp(text: &str) -> WitnessValue {
+    WitnessValue::Timestamp(text.to_owned())
+}
+
+/// `value` as read from a witness transcript entry bound to a parameter of
+/// `declared`: the binding type `witness_type` gives, the entry written as
+/// value text, decoded, and then converted. The checked-package wire has no
+/// `uuid` or `timestamp` scalar form yet, so a unit function over them does
+/// not reach replay through the spine; this is the same path an argument
+/// takes below it.
+fn convert_via_witness(
+    declared: &ValueType,
+    value: &WitnessValue,
+) -> Result<quire_exact::Value, argument::Stopped> {
+    let parameter = WireNodeId::from_digest([1; 32]);
+    let binding = WitnessBinding {
+        parameter,
+        value_type: witness_type(0, declared).expect("a UUID or Timestamp has a witness form"),
+    };
+    let transcript = format!(
+        "<<<assertion|h|c|{parameter}={}>>>",
+        value.to_value_text().unwrap()
+    );
+    let decoded = Witness::parse(transcript)
+        .unwrap()
+        .decode(&[binding])
+        .expect("the entry decodes");
+    convert_one(declared, &decoded[0], &UNLIMITED)
+}
+
+/// The typed refusal a native payload carries: its parameter, its catalog
+/// code and cause, and the kernel class beneath.
+fn payload_refusal(
+    stopped: argument::Stopped,
+) -> (
+    usize,
+    Code,
+    Option<&'static str>,
+    quire_exact::ConstructionCause,
+) {
+    match stopped {
+        argument::Stopped::Refusal(refusal) => match *refusal {
+            ReplayRefusal::NativePayload {
+                parameter,
+                refusal: ref kernel,
+            } => (parameter, refusal.code(), refusal.cause(), kernel.cause),
+            other => panic!("expected a native payload refusal, got {other:?}"),
+        },
+        other @ argument::Stopped::Supplied(_) => {
+            panic!("expected a native payload refusal, got {other:?}")
+        }
+    }
+}
+
+/// Both arms an argument takes: converted directly, and decoded from a
+/// witness transcript first.
+fn both_arms(
+    declared: &ValueType,
+    value: &WitnessValue,
+) -> [Result<quire_exact::Value, argument::Stopped>; 2] {
+    [
+        convert_one(declared, value, &UNLIMITED),
+        convert_via_witness(declared, value),
+    ]
+}
+
+/// FR-056: a canonical UUID or Timestamp binds to its parameter on both
+/// arms, as the kernel's native value of exactly that payload; the Nil and
+/// Max UUIDs and both Timestamp endpoints included.
+#[trace("TC-1028")]
+#[test]
+fn tc_1028_canonical_uuid_and_timestamp_arguments_convert() {
+    for text in [
+        UUID_TEXT,
+        "00000000-0000-0000-0000-000000000000",
+        "ffffffff-ffff-ffff-ffff-ffffffffffff",
+    ] {
+        for converted in both_arms(&ValueType::Uuid, &uuid(text)) {
+            let Ok(quire_exact::Value::Uuid(bound)) = converted else {
+                panic!("{text}: expected a native UUID, got {converted:?}");
+            };
+            assert_eq!(bound, quire_exact::Uuid::from_canonical_text(text).unwrap());
+        }
+    }
+    for (text, nanoseconds) in [
+        ("0", 0_i128),
+        ("1", 1),
+        ("-1", -1),
+        (TIMESTAMP_MAX, i128::MAX),
+        (TIMESTAMP_MIN, i128::MIN),
+    ] {
+        for converted in both_arms(&ValueType::Timestamp, &timestamp(text)) {
+            let Ok(quire_exact::Value::Timestamp(bound)) = converted else {
+                panic!("{text}: expected a native Timestamp, got {converted:?}");
+            };
+            assert_eq!(bound.nanoseconds(), nanoseconds);
+        }
+    }
+}
+
+/// FR-056-AC-35, TC-1028 E8 at the wire: an uppercase UUID at a unit input
+/// is refused `invalid_runtime_input`/`invalid-value` over the kernel's
+/// noncanonical UUID class, naming the parameter, so no comparison runs.
+/// Every other noncanonical spelling refuses the same way.
+#[trace("FR-056-AC-35", "TC-1028")]
+#[test]
+fn tc_1028_noncanonical_uuid_is_refused_at_the_input() {
+    for text in [
+        "00112233-4455-6677-8899-AABBCCDDEEFF",
+        "00112233-4455-6677-8899-aabbccddeeFf",
+        "00112233445566778899aabbccddeeff",
+        "{00112233-4455-6677-8899-aabbccddeeff}",
+        "urn:uuid:00112233-4455-6677-8899-aabbccddeeff",
+        "0011223-34455-6677-8899-aabbccddeeff",
+        "00112233-4455-6677-8899-aabbccddeefg",
+        "00112233-4455-6677-8899-aabbccddeef",
+        " 00112233-4455-6677-8899-aabbccddeeff",
+        "",
+    ] {
+        for converted in both_arms(&ValueType::Uuid, &uuid(text)) {
+            let Err(stopped) = converted else {
+                panic!("{text:?}: expected a refusal");
+            };
+            assert_eq!(
+                payload_refusal(stopped),
+                (
+                    0,
+                    Code::InvalidRuntimeInput,
+                    Some("invalid-value"),
+                    quire_exact::ConstructionCause::UuidNoncanonical
+                ),
+                "{text:?}"
+            );
+        }
+    }
+}
+
+/// TC-1028: a noncanonical Timestamp is refused `invalid-value` over the
+/// kernel's noncanonical class, and a canonical one outside the signed
+/// 128-bit domain over the out-of-domain class.
+#[trace("TC-1028")]
+#[test]
+fn tc_1028_noncanonical_timestamp_is_refused_at_the_input() {
+    use quire_exact::ConstructionCause::{TimestampNoncanonical, TimestampOutOfDomain};
+    let cases = [
+        ("-0", TimestampNoncanonical),
+        ("+1", TimestampNoncanonical),
+        ("01", TimestampNoncanonical),
+        ("-01", TimestampNoncanonical),
+        ("", TimestampNoncanonical),
+        (" 1", TimestampNoncanonical),
+        ("1.0", TimestampNoncanonical),
+        ("1e0", TimestampNoncanonical),
+        ("1970-01-01T00:00:00Z", TimestampNoncanonical),
+        (
+            "170141183460469231731687303715884105728",
+            TimestampOutOfDomain,
+        ),
+        (
+            "-170141183460469231731687303715884105729",
+            TimestampOutOfDomain,
+        ),
+    ];
+    for (text, cause) in cases {
+        for converted in both_arms(&ValueType::Timestamp, &timestamp(text)) {
+            let Err(stopped) = converted else {
+                panic!("{text:?}: expected a refusal");
+            };
+            assert_eq!(
+                payload_refusal(stopped),
+                (0, Code::InvalidRuntimeInput, Some("invalid-value"), cause),
+                "{text:?}"
+            );
+        }
+    }
+}
+
+/// FR-056: a value of another kind at a UUID or Timestamp parameter, or a
+/// UUID where a Timestamp is declared, is `wrong-value-kind` naming the
+/// parameter; and a UUID or Timestamp where another type is declared is too.
+#[trace("TC-1028")]
+#[test]
+fn tc_1028_another_kind_at_a_native_parameter_is_wrong_value_kind() {
+    for (declared, value) in [
+        (ValueType::Uuid, WitnessValue::Text(UUID_TEXT.to_owned())),
+        (ValueType::Uuid, timestamp("0")),
+        (ValueType::Uuid, int(0)),
+        (ValueType::Timestamp, uuid(UUID_TEXT)),
+        (ValueType::Timestamp, int(0)),
+        (ValueType::Integer, timestamp("0")),
+        (ValueType::Boolean, uuid(UUID_TEXT)),
+    ] {
+        let Err(stopped) = convert_one(&declared, &value, &UNLIMITED) else {
+            panic!("{declared:?}: expected a refusal");
+        };
+        assert_eq!(refused_parameter(&stopped), Some(0), "{declared:?}");
+    }
 }
