@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-197: systems-model typed binding (FR-152), the kind-mapping,
-//! connection and allocation slice this rung builds. Y01-Y06 only —
-//! Y07-Y09 exercise `model.navigate`/`self.<field>` traversal over a
-//! runtime population, which `src/model/systems.rs`'s module doc records
-//! as out of scope (no qualified-name binder, no object population).
+//! connection and allocation slice this rung builds. Y02-Y06 only; Y01 is
+//! `model_systems_resolve.rs`. Y07-Y09 exercise `model.navigate`/`self.<field>`
+//! traversal over a runtime population, which `src/model/systems.rs`'s module
+//! doc records as out of scope (no object population).
 //!
 //! Fixture Y is TC-197's own fixture, transcribed field-for-field; every
 //! assertion below is checked against TC-197's table, not against this
@@ -29,7 +29,7 @@ use qsl_semantics::model::systems::{
     ConditionFailure, ConnectionCheckOutcome, ConnectionOutcome, Kind,
 };
 
-fn mult(lower: u64, upper: Option<u64>) -> Multiplicity {
+pub(crate) fn mult(lower: u64, upper: Option<u64>) -> Multiplicity {
     Multiplicity {
         lower,
         upper,
@@ -38,11 +38,11 @@ fn mult(lower: u64, upper: Option<u64>) -> Multiplicity {
     }
 }
 
-fn one() -> Multiplicity {
+pub(crate) fn one() -> Multiplicity {
     mult(1, Some(1))
 }
 
-fn object_type(
+pub(crate) fn object_type(
     identity: &str,
     interface_features: Option<Vec<&str>>,
     supertypes: Vec<&str>,
@@ -59,14 +59,14 @@ fn object_type(
     })
 }
 
-fn scalar_type(identity: &str, lower: i128, upper: i128) -> DomainPackageRecord {
+pub(crate) fn scalar_type(identity: &str, lower: i128, upper: i128) -> DomainPackageRecord {
     DomainPackageRecord::ScalarType(ScalarTypeRecord {
         key: DeclarationKey::fixture(identity),
         domain: ScalarValueDomain::Integer { lower, upper },
     })
 }
 
-fn field_member(
+pub(crate) fn field_member(
     identity: &str,
     owner: &str,
     value_type: &str,
@@ -85,7 +85,7 @@ fn field_member(
     })
 }
 
-fn component(
+pub(crate) fn component(
     identity: &str,
     owning_type: &str,
     value_type: &str,
@@ -100,7 +100,7 @@ fn component(
     })
 }
 
-fn endpoint(
+pub(crate) fn endpoint(
     identity: &str,
     owning_component: &str,
     value_type: &str,
@@ -116,7 +116,7 @@ fn endpoint(
     })
 }
 
-fn relationship(
+pub(crate) fn relationship(
     identity: &str,
     source: &str,
     source_m: Multiplicity,
@@ -141,7 +141,11 @@ fn relationship(
     })
 }
 
-fn allocation(identity: &str, source_element: &str, target_element: &str) -> DomainPackageRecord {
+pub(crate) fn allocation(
+    identity: &str,
+    source_element: &str,
+    target_element: &str,
+) -> DomainPackageRecord {
     DomainPackageRecord::Allocation(AllocationRecord {
         key: DeclarationKey::fixture(identity),
         source_element: DeclarationKey::fixture(source_element),
@@ -294,10 +298,7 @@ fn find_component<'a>(
         .unwrap_or_else(|| panic!("fixture Y has no component {identity}"))
 }
 
-// FR-152-AC-1 dropped (retagged, PR #144 review finding #1): AC-1 requires
-// resolving "exact producer AND effective-declaration identity," and this
-// module computes no effective-declaration identity at all (see the module
-// doc's own scope note) — nothing here can honestly claim AC-1.
+// FR-152-AC-1 is backed in `model_systems_resolve.rs` (qualified-name binder).
 /// FR-208-AC-9: a relationship end naming a record value type refuses
 /// `invalid_model_binding`/`malformed-declaration`, not as a dangling end:
 /// the end names a declared type of the wrong meaning.
