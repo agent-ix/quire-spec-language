@@ -92,7 +92,7 @@ Meaning in surface text: `bump` is `modifies value`, `modifies self.step`,
 
    Rows I1 to I17 and the operations `bump`, `merge`, `own`, `drop` and
    `dispose` use a scoped member or its refusal, so they depend on the
-   semantic-IR frame schema admitting the scoped members, as do steps 1, 2 and 4 (they
+   semantic-IR frame schema admitting the scoped members. Rows I10 to I12 are member-shape rows: the schema refuses a wrong-typed member, an unnamed member and an element of the wrong type at the member, and refuses a frame with no `deletes` (required before and after the change), with its own schema diagnostic before intake; the stated `malformed-declaration` is the intake reader's contract where the schema has not run. Steps 1, 2 and 4 also depend on it (they
    build from the one fixture). Step 2b uses fixture R, which holds no scoped member, and is reachable today.
 
 4. For each of X1 to X9, copy the emitted package, edit the named frame node
@@ -170,7 +170,7 @@ Results:
   at `deletes_receiver` (the receiver of `go` is a run; `Flow/x` is not
   read). I15 and I16 admit. I17 refuses at `modifies_receiver` alone.
 - Step 4: X1, X2 and X3 are refused as schema failures of the frame body. X4
-  and X5 refuse `invalid_semantic_graph`. X6 refuses `missing_declaration`/
+  and X5 refuse `invalid_semantic_graph`. X6 refuses, in the state step at `merge`'s anchor and not in the frame step, `missing_declaration`/
   `missing-name`. X7 is admitted. X8 and X9 each refuse
   `invalid_model_binding`/`conflicting-binding` naming both `step` entries:
   every entry resolves, so no other meaning-join defect exists, and the
