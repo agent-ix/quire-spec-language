@@ -2552,6 +2552,26 @@ pub(super) enum OperationReceiver {
     NoObject,
 }
 
+/// Which declaration the shared object reader reads (FR-154).
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub(super) enum ObjectShape {
+    /// An object type.
+    Object,
+    /// An object type that declares `interfaceFeatures`.
+    Interface,
+    /// A process, whose receiver is a run.
+    Process,
+}
+
+impl ObjectShape {
+    fn receiver(self) -> OperationReceiver {
+        match self {
+            Self::Object | Self::Interface => OperationReceiver::Object,
+            Self::Process => OperationReceiver::NoObject,
+        }
+    }
+}
+
 /// The members a frame object may carry (FR-154 "Inputs").
 const FRAME_MEMBERS: [&str; 6] = [
     "modifies",
@@ -3033,8 +3053,7 @@ pub(super) fn read_object_type(
     type_value: &Value,
     node: &str,
     at: &str,
-    is_interface: bool,
-    receiver: OperationReceiver,
+    shape: ObjectShape,
     records: &mut Vec<DomainPackageRecord>,
     pending: &mut Vec<PendingFrame>,
 ) -> Result<(), ModelRefusal> {
@@ -3050,7 +3069,8 @@ pub(super) fn read_object_type(
             .as_bool()
             .ok_or_else(|| ctx.malformed_in("abstract", "not a boolean"))?,
     };
-    let interface_features = if is_interface {
+    let receiver = shape.receiver();
+    let interface_features = if shape == ObjectShape::Interface {
         Some(ctx.identity_keys(package, "featureOrder")?)
     } else {
         None
@@ -4228,8 +4248,7 @@ fn read_type_node(
                 type_value,
                 node,
                 at,
-                false,
-                OperationReceiver::Object,
+                ObjectShape::Object,
                 &mut records,
                 pending,
             )?;
@@ -4241,8 +4260,7 @@ fn read_type_node(
                 type_value,
                 node,
                 at,
-                true,
-                OperationReceiver::Object,
+                ObjectShape::Interface,
                 &mut records,
                 pending,
             )?;
@@ -4382,10 +4400,10 @@ fn resolve_frame_array(
 struct FrameIndex<'a> {
     /// What each record names, by node identity.
     classification: HashMap<&'a str, FrameEntryKind>,
-    /// Each field's owning object type, by the field's node identity.
-    field_owners: HashMap<&'a str, &'a DeclarationKey>,
-    /// Each object type's declared supertypes, by the type's node identity.
-    supertypes: HashMap<&'a str, &'a [DeclarationKey]>,
+    /// Each field's owning object type, by the field's key.
+    field_owners: HashMap<&'a DeclarationKey, &'a DeclarationKey>,
+    /// Each object type's declared supertypes, by the type's key.
+    supertypes: HashMap<&'a DeclarationKey, &'a [DeclarationKey]>,
 }
 
 impl<'a> FrameIndex<'a> {
@@ -4401,14 +4419,12 @@ impl<'a> FrameIndex<'a> {
                 .insert(record.key().node.as_str(), frame_entry_kind(record));
             match record {
                 DomainPackageRecord::FieldMember(field) => {
-                    index
-                        .field_owners
-                        .insert(field.key.node.as_str(), &field.owner);
+                    index.field_owners.insert(&field.key, &field.owner);
                 }
                 DomainPackageRecord::ObjectType(object) => {
                     index
                         .supertypes
-                        .insert(object.key.node.as_str(), object.supertypes.as_slice());
+                        .insert(&object.key, object.supertypes.as_slice());
                 }
                 _ => {}
             }
@@ -4419,18 +4435,18 @@ impl<'a> FrameIndex<'a> {
     /// Whether object type `declaring` is `ancestor` or inherits from it,
     /// through the declared `supertypes` (each type visited once).
     fn conforms(&self, declaring: &DeclarationKey, ancestor: &DeclarationKey) -> bool {
-        let mut visited: Vec<&str> = Vec::new();
-        let mut pending: Vec<&str> = vec![declaring.node.as_str()];
-        while let Some(node) = pending.pop() {
-            if node == ancestor.node {
+        let mut visited: Vec<&DeclarationKey> = Vec::new();
+        let mut pending: Vec<&DeclarationKey> = vec![declaring];
+        while let Some(key) = pending.pop() {
+            if key == ancestor {
                 return true;
             }
-            if visited.contains(&node) {
+            if visited.contains(&key) {
                 continue;
             }
-            visited.push(node);
-            if let Some(supertypes) = self.supertypes.get(node) {
-                pending.extend(supertypes.iter().map(|key| key.node.as_str()));
+            visited.push(key);
+            if let Some(supertypes) = self.supertypes.get(key) {
+                pending.extend(supertypes.iter());
             }
         }
         false
@@ -4462,7 +4478,7 @@ fn resolve_receiver_modifies(
             }
             Some(FrameEntryKind::Field) => index
                 .field_owners
-                .get(entry.as_str())
+                .get(&declaration_key(package, entry))
                 .zip(frame.receiver_type.as_ref())
                 .is_some_and(|(owner, declaring)| index.conforms(declaring, owner)),
             Some(_) => false,
@@ -6445,8 +6461,7 @@ mod tests {
             &type_value,
             "ix://acme/orders/Flow2",
             "$.types[0]",
-            true,
-            OperationReceiver::Object,
+            ObjectShape::Interface,
             &mut records,
             &mut Vec::new(),
         )
@@ -6532,8 +6547,7 @@ mod tests {
             &type_value,
             "ix://acme/orders/Widget",
             "$.types[0]",
-            false,
-            OperationReceiver::Object,
+            ObjectShape::Object,
             &mut records,
             &mut Vec::new(),
         )
@@ -6583,8 +6597,7 @@ mod tests {
             &type_value,
             "ix://acme/orders/Flow2",
             "$.types[0]",
-            false,
-            OperationReceiver::Object,
+            ObjectShape::Object,
             &mut records,
             &mut Vec::new(),
         )
@@ -6639,8 +6652,7 @@ mod tests {
             &type_value,
             "ix://acme/orders/Flow2",
             "$.types[0]",
-            false,
-            OperationReceiver::Object,
+            ObjectShape::Object,
             &mut records,
             &mut Vec::new(),
         )
@@ -6686,8 +6698,7 @@ mod tests {
             &type_value,
             "ix://acme/orders/Flow2",
             "$.types[0]",
-            false,
-            OperationReceiver::Object,
+            ObjectShape::Object,
             &mut records,
             &mut Vec::new(),
         )
@@ -6734,8 +6745,7 @@ mod tests {
             &type_value,
             "ix://acme/orders/Flow2",
             "$.types[0]",
-            false,
-            OperationReceiver::Object,
+            ObjectShape::Object,
             &mut records,
             &mut Vec::new(),
         )

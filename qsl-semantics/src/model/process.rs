@@ -14,7 +14,7 @@ use crate::model::domain_package::{
 };
 use crate::model::intake::{
     malformed_on, meaning, member_identity_name, read_clauses, read_object_type, NodeCtx,
-    OperationReceiver,
+    ObjectShape,
 };
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::{MemberPath, ModelRefusal, ModelRefusalCause};
@@ -132,8 +132,7 @@ pub(super) fn bind(context: &mut MeaningBindingContext<'_, '_>) -> Result<(), Mo
         &shared,
         context.node,
         context.at,
-        false,
-        OperationReceiver::NoObject,
+        ObjectShape::Process,
         context.records,
         context.pending,
     )?;
