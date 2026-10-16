@@ -567,7 +567,7 @@ pub(super) const PACKAGE_IDENTITY: &str = "example/config-version";
 const PLACEHOLDER_DIGEST: &str =
     "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 
-fn wire_envelope(constructs: Value, types: Value, populations: Value) -> Value {
+pub(super) fn wire_envelope(constructs: Value, types: Value, populations: Value) -> Value {
     json!({
         "contractVersion": "2.0.0",
         "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
@@ -593,7 +593,7 @@ fn wire_envelope(constructs: Value, types: Value, populations: Value) -> Value {
     })
 }
 
-fn wire_construct(name: &str, meaning: &str, members: Value) -> Value {
+pub(super) fn wire_construct(name: &str, meaning: &str, members: Value) -> Value {
     json!({
         "kind": {"module": PACKAGE_IDENTITY, "name": name},
         "moduleVersion": "1.0.0",
@@ -607,7 +607,7 @@ fn wire_construct(name: &str, meaning: &str, members: Value) -> Value {
     })
 }
 
-fn wire_type(identity: &str, kind_name: &str, extra: Value) -> Value {
+pub(super) fn wire_type(identity: &str, kind_name: &str, extra: Value) -> Value {
     let mut node = json!({
         "identity": identity,
         "displayName": identity,
@@ -632,7 +632,13 @@ fn wire_type(identity: &str, kind_name: &str, extra: Value) -> Value {
     node
 }
 
-fn wire_field(identity: &str, name: &str, type_ref: &str, presence: &str, lower: u64) -> Value {
+pub(super) fn wire_field(
+    identity: &str,
+    name: &str,
+    type_ref: &str,
+    presence: &str,
+    lower: u64,
+) -> Value {
     json!({
         "identity": identity,
         "name": name,
@@ -889,7 +895,7 @@ fn frame_key_of(owner: &str, name: &str) -> DeclarationKey {
 /// The unit text selecting `document` as model alias `Config`, plus its
 /// package input map (`model::intake::unit::package_input`'s own digest
 /// keying).
-fn config_unit(document: &[u8]) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
+pub(super) fn config_unit(document: &[u8]) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
     let packages = package_input([document]);
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
         panic!("one supplied document");
@@ -1353,7 +1359,7 @@ pub(super) fn parse_and_build(unit: &str) -> qsl_forms::ParsedUnit {
 /// Admits `document`'s one model selection through I1
 /// (`model::intake::unit::admit_unit`).
 #[allow(clippy::result_large_err)] // mirrors `admit_unit`'s own signature exactly
-fn admit(
+pub(super) fn admit(
     document: &[u8],
 ) -> Result<
     qsl_semantics::model::intake::SelectedModels,
@@ -1371,7 +1377,7 @@ fn admit(
 /// Admits and assembles `document` into `PackageDeclarations`, over a unit
 /// with no declarations of its own besides the `model Config = ...`
 /// selection.
-fn admit_and_assemble(document: &[u8]) -> Result<PackageDeclarations, String> {
+pub(super) fn admit_and_assemble(document: &[u8]) -> Result<PackageDeclarations, String> {
     let (unit, packages) = config_unit(document);
     let built = parse_and_build(&unit);
     let models = admit_unit(
