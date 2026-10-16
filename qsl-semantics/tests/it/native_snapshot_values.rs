@@ -1549,11 +1549,10 @@ fn the_document_edge_refuses_before_any_value_is_read() {
     );
 }
 
-/// TC-1038 / FR-106-AC-34, FR-106-AC-35 (the part reachable without Text-slot
-/// admission): `text` is a known kind, so a Text object runs the envelope
-/// (missing member, unknown member, non-text payload) and then refuses
-/// `wrong-value-kind` in every slot this fixture declares. Admitting a Text
-/// object into a Text slot is the Text code slice's; no vector here needs it.
+/// TC-1038 / FR-106-AC-34, FR-106-AC-35 (the part this fixture reaches): a
+/// Text object runs the envelope (missing member, unknown member, non-text
+/// payload) and then refuses `wrong-value-kind` in every slot this fixture
+/// declares, none of which is a Text slot.
 #[trace("TC-1038", "FR-106-AC-34", "FR-106-AC-35")]
 #[test]
 fn a_text_object_is_a_known_kind_refused_outside_a_text_slot() {

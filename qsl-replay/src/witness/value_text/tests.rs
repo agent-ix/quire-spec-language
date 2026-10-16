@@ -648,3 +648,116 @@ fn tc_1028_malformed_native_wire_objects_refuse_as_shape() {
         assert_eq!(fault(text), EntryFault::Shape, "{text}");
     }
 }
+
+/// FR-070-AC-14 (TC-905 step 7): each String and Text shape decodes exactly
+/// as written, with the entry escaped as FR-070 states.
+#[trace("TC-905", "FR-070-AC-14")]
+#[test]
+fn tc_905_string_and_text_entries_decode_exactly() {
+    let decoded = |entry: &str| {
+        let mut values = witness(&[(id(1), entry)])
+            .decode(&[canonical(id(1))])
+            .unwrap();
+        assert_eq!(values.len(), 1, "{entry}");
+        values.remove(0)
+    };
+    for (entry, expected) in [
+        (
+            r#"{"kind":"string","text":"a%3Bb%3E%3E%3Ec"}"#,
+            WitnessValue::String("a;b>>>c".to_owned()),
+        ),
+        (
+            r#"{"kind":"string","text":""}"#,
+            WitnessValue::String(String::new()),
+        ),
+        (
+            "{\"kind\":\"string\",\"text\":\"\u{e9}\"}",
+            WitnessValue::String("\u{e9}".to_owned()),
+        ),
+        (
+            "{\"kind\":\"string\",\"text\":\"e\u{301}\"}",
+            WitnessValue::String("e\u{301}".to_owned()),
+        ),
+        (
+            r#"{"kind":"string","text":"say \"hi\"\\x%3B"}"#,
+            WitnessValue::String("say \"hi\"\\x;".to_owned()),
+        ),
+        (
+            r#"{"kind":"string","text":"100%25%3C"}"#,
+            WitnessValue::String("100%<".to_owned()),
+        ),
+        (
+            r#"{"type":"text","value":"a%3Bb%3E%3E%3Ec"}"#,
+            WitnessValue::Text("a;b>>>c".to_owned()),
+        ),
+        (
+            r#"{"type":"text","value":""}"#,
+            WitnessValue::Text(String::new()),
+        ),
+    ] {
+        assert_eq!(decoded(entry), expected, "{entry}");
+    }
+    // The two spellings of the letter are two unequal Strings.
+    assert_ne!(
+        WitnessValue::String("\u{e9}".to_owned()),
+        WitnessValue::String("e\u{301}".to_owned())
+    );
+    // A `string` and a `text` of the same scalars are two unequal values.
+    assert_ne!(
+        WitnessValue::String("x".to_owned()),
+        WitnessValue::Text("x".to_owned())
+    );
+    // `P` then `Q`, each the String `a;b>>>c`: one block, two values.
+    let entry = r#"{"kind":"string","text":"a%3Bb%3E%3E%3Ec"}"#;
+    let pair = witness(&[(id(1), entry), (id(2), entry)])
+        .decode(&[canonical(id(1)), canonical(id(2))])
+        .unwrap();
+    assert_eq!(pair, vec![WitnessValue::String("a;b>>>c".to_owned()); 2]);
+}
+
+/// FR-070-AC-14: a String encodes to its entry, escaped and its length
+/// counted, and reads back unchanged.
+#[trace("TC-905", "FR-070-AC-14")]
+#[test]
+fn tc_905_a_string_encodes_to_its_escaped_entry() {
+    for (value, entry) in [
+        ("a;b>>>c", r#"{"kind":"string","text":"a%3Bb%3E%3E%3Ec"}"#),
+        ("100%<", r#"{"kind":"string","text":"100%25%3C"}"#),
+        (
+            "say \"hi\"\\x;",
+            r#"{"kind":"string","text":"say \"hi\"\\x%3B"}"#,
+        ),
+    ] {
+        let string = WitnessValue::String(value.to_owned());
+        let text = string.to_value_text().unwrap();
+        assert_eq!(text, entry);
+        assert_eq!(string.value_text_len(), entry.len());
+        assert_eq!(round_trip(&string), string);
+    }
+}
+
+/// FR-070-AC-15 (TC-905 step 8): each malformed String entry refuses
+/// `Malformed` naming the parameter, with no value.
+#[trace("TC-905", "FR-070-AC-15")]
+#[test]
+fn tc_905_each_malformed_string_entry_refuses_naming_the_parameter() {
+    for (entry, expected) in [
+        (r#"{"kind":"string"}"#, EntryFault::Shape),
+        (r#"{"kind":"string","nanoseconds":"0"}"#, EntryFault::Shape),
+        (
+            r#"{"extra":"y","kind":"string","text":"x"}"#,
+            EntryFault::Shape,
+        ),
+        (r#"{"kind":"string","text":5}"#, EntryFault::Shape),
+        (r#"{"kind":"string","text":null}"#, EntryFault::Shape),
+        (r#"{"kind":"String","text":"x"}"#, EntryFault::Shape),
+        (r#"{"kind":"blob","text":"x"}"#, EntryFault::Shape),
+        (r#"{"text":"x","kind":"string"}"#, EntryFault::NotJcs),
+        (r#"{"kind":"string","text":"\u00e9"}"#, EntryFault::NotJcs),
+        (r#"{"kind":"string","text":"100%zz"}"#, EntryFault::Escape),
+    ] {
+        assert_eq!(fault(entry), expected, "{entry}");
+    }
+    // A lone surrogate escape is no scalar sequence: no value is read.
+    fault(r#"{"kind":"string","text":"\ud800"}"#);
+}

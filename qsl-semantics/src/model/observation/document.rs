@@ -1279,8 +1279,9 @@ fn native_payload(native: RawNative<'_>) -> Result<(NativeKind, &str), Admission
 /// native order): the envelope ([`native_payload`]), then the slot's fit
 /// (`wrong-value-kind`), then, for a UUID or a Timestamp, the kernel's
 /// canonical constructor (`invalid-value` naming the payload member, with
-/// the kernel's class). A String has every Unicode scalar sequence as a
-/// value, so it has no payload refusal.
+/// the kernel's class) and, for a Text, its profile length ([`admit_text`]).
+/// A String has every Unicode scalar sequence as a value, so it has no
+/// payload refusal.
 fn admit_native(
     native: RawNative<'_>,
     value_type: &quire_exact::ValueType,
@@ -1305,8 +1306,8 @@ fn admit_native(
                 .map(Value::Timestamp)
                 .map_err(|refusal| invalid(refusal, "nanoseconds"))
         }
-        // A Text object's envelope is judged above; admitting it into a Text
-        // slot is the Text code slice's, so every slot refuses it here.
+        (NativeKind::Text, quire_exact::ValueType::Text(declared)) => admit_text(payload, declared),
+        // Type fit (check 6) refuses every other pairing before any length.
         (
             NativeKind::String | NativeKind::Uuid | NativeKind::Timestamp | NativeKind::Text,
             quire_exact::ValueType::Boolean
@@ -1331,6 +1332,45 @@ fn admit_native(
             "wrong-value-kind",
         )),
     }
+}
+
+/// A Text payload admitted into `declared` (FR-106 check 7): the kernel
+/// retains the sequence under the declared profile, and a profile length
+/// outside `[min, max]`, measured on the retained sequence, refuses
+/// `invalid-value` naming `text`, the declared type (`expected`) and the
+/// measured length (`actual`). Nothing is trimmed, truncated or repaired.
+#[qsl_attrs::string_edge]
+fn admit_text(payload: &str, declared: &quire_exact::TextType) -> Result<Value, AdmissionRecord> {
+    let profile = declared.profile();
+    let retained: String = match profile.normalization() {
+        Some(form) => form.apply(payload).collect(),
+        None => payload.to_owned(),
+    };
+    let measured = profile.length(&retained);
+    if !(declared.min()..=declared.max()).contains(&measured) {
+        return Err(admission_record(Code::InvalidRuntimeInput, "invalid-value")
+            .with("member", "text")
+            .with(
+                "expected",
+                format!(
+                    "Text[{}, {}; {}]",
+                    declared.min(),
+                    declared.max(),
+                    profile.as_str()
+                ),
+            )
+            .with("actual", measured.to_string()));
+    }
+    let mut meter = quire_exact::Meter::new(crate::check::UNBOUNDED_SCALAR_LIMITS);
+    quire_exact::admit_text(
+        &quire_exact::TextPayload::from_utf8(payload.as_bytes())
+            .map_err(|_| admission_record(Code::InvalidRuntimeInput, "invalid-value"))?,
+        declared,
+        &mut meter,
+    )
+    .completed()
+    .map(Value::Text)
+    .ok_or_else(|| admission_record(Code::InvalidRuntimeInput, "invalid-value"))
 }
 
 /// A `variant` form admitted as a value of the enum type `slot` (FR-360
@@ -2831,5 +2871,231 @@ mod tests {
         let mut found = Vec::new();
         collect_references(&raw, &mut found);
         assert_eq!(found, [("p".to_owned(), "k".to_owned())]);
+    }
+
+    /// A `Text[min, max; profile]` slot.
+    fn text_slot(min: u64, max: u64, profile: quire_exact::TextProfile) -> quire_exact::ValueType {
+        quire_exact::ValueType::Text(
+            quire_exact::TextType::new(min, max, profile).expect("the bounds are not empty"),
+        )
+    }
+
+    fn title() -> quire_exact::ValueType {
+        text_slot(1, 8, quire_exact::TextProfile::Nfc)
+    }
+
+    fn tag() -> quire_exact::ValueType {
+        text_slot(0, 4, quire_exact::TextProfile::UnicodeScalars)
+    }
+
+    fn code() -> quire_exact::ValueType {
+        text_slot(0, 4, quire_exact::TextProfile::BinaryUtf8)
+    }
+
+    /// The Text object of `text`, admitted into `slot`.
+    fn admit_text_object(
+        text: &str,
+        slot: &quire_exact::ValueType,
+    ) -> Result<Value, AdmissionRecord> {
+        let object = snapshot(&serde_json::json!({"kind": "text", "text": text}).to_string());
+        let RawForm::Native(native) = object.form() else {
+            panic!("a native object");
+        };
+        admit_native(native, slot)
+    }
+
+    /// The retained sequence of an admitted Text value.
+    fn retained(admitted: Result<Value, AdmissionRecord>) -> String {
+        match admitted {
+            Ok(Value::Text(text)) => text.retained().to_owned(),
+            other => panic!("a Text value, not {other:?}"),
+        }
+    }
+
+    /// TC-1038 step 2 (FR-106-AC-33): each text admits into its declared
+    /// type; under `nfc` U+00E9 and U+0065 U+0301 retain one sequence and
+    /// sixteen supplied scalars retain eight.
+    #[trace("TC-1038", "FR-106-AC-33")]
+    #[test]
+    fn a_text_object_admits_into_a_text_slot_under_its_profile() {
+        for text in ["a", "abcdefgh", "a;b>>>c", "\u{e9}", "\u{0}", "\u{1f600}"] {
+            assert_eq!(retained(admit_text_object(text, &title())), text);
+        }
+        assert_eq!(retained(admit_text_object("e\u{301}", &title())), "\u{e9}");
+        assert_eq!(
+            retained(admit_text_object(&"e\u{301}".repeat(8), &title())),
+            "\u{e9}".repeat(8)
+        );
+        // Unicode scalars and bytes retain what was supplied.
+        assert_eq!(
+            retained(admit_text_object(&"\u{e9}".repeat(4), &tag())),
+            "\u{e9}".repeat(4)
+        );
+        assert_eq!(retained(admit_text_object("", &tag())), "");
+        for text in ["abcd", "\u{e9}\u{e9}", "\u{1f600}"] {
+            assert_eq!(retained(admit_text_object(text, &code())), text);
+        }
+    }
+
+    /// TC-1038 step 4 (FR-106-AC-34): each object defect refuses in the
+    /// payload order, the first defect naming its member.
+    #[trace("TC-1038", "FR-106-AC-34")]
+    #[test]
+    fn a_defective_text_object_refuses_in_the_payload_order() {
+        for (object, cause, member) in [
+            (r#"{"kind":1}"#, "wrong-value-kind", Some("kind")),
+            (r#"{"kind":null}"#, "wrong-value-kind", Some("kind")),
+            (r#"{"kind":{}}"#, "wrong-value-kind", Some("kind")),
+            (
+                r#"{"kind":"Text","text":"x"}"#,
+                "invalid-value",
+                Some("kind"),
+            ),
+            (
+                r#"{"kind":"TEXT","text":"x"}"#,
+                "invalid-value",
+                Some("kind"),
+            ),
+            (
+                r#"{"kind":"blob","value":"x"}"#,
+                "invalid-value",
+                Some("kind"),
+            ),
+            (
+                r#"{"kind":"blob","text":"x"}"#,
+                "invalid-value",
+                Some("kind"),
+            ),
+            (r#"{"kind":"text"}"#, "missing-member", Some("text")),
+            (
+                r#"{"kind":"text","nanoseconds":"0"}"#,
+                "missing-member",
+                Some("text"),
+            ),
+            (
+                r#"{"kind":"text","text":"Ready","extra":1}"#,
+                "unknown-member",
+                Some("extra"),
+            ),
+            (
+                r#"{"kind":"text","text":"Ready","nanoseconds":"0"}"#,
+                "unknown-member",
+                Some("nanoseconds"),
+            ),
+            (
+                r#"{"kind":"text","text":5}"#,
+                "wrong-value-kind",
+                Some("text"),
+            ),
+            (
+                r#"{"kind":"text","text":null}"#,
+                "wrong-value-kind",
+                Some("text"),
+            ),
+            (
+                r#"{"kind":"text","text":true}"#,
+                "wrong-value-kind",
+                Some("text"),
+            ),
+            (
+                r#"{"kind":"text","text":["x"]}"#,
+                "wrong-value-kind",
+                Some("text"),
+            ),
+            (
+                r#"{"kind":"text","text":{}}"#,
+                "wrong-value-kind",
+                Some("text"),
+            ),
+            (
+                r#"{"extra":1,"kind":"text","text":5}"#,
+                "unknown-member",
+                Some("extra"),
+            ),
+        ] {
+            let object_value = snapshot(object);
+            let RawForm::Native(native) = object_value.form() else {
+                panic!("a native object: {object}");
+            };
+            let Err(record) = admit_native(native, &title()) else {
+                panic!("a refusal: {object}");
+            };
+            assert_eq!(record.code, Code::InvalidRuntimeInput, "{object}");
+            assert_eq!(record.cause, cause, "{object}");
+            assert_eq!(
+                record.fields.get("member").map(String::as_str),
+                member,
+                "{object}"
+            );
+        }
+    }
+
+    /// TC-1038 step 5 (FR-106-AC-35): a String object in a Text slot and a
+    /// Text object in any other native slot refuse `wrong-value-kind`
+    /// naming no member, and a Text object longer than the Text slot's
+    /// maximum placed in a String slot refuses fit, not length.
+    #[trace("TC-1038", "FR-106-AC-35")]
+    #[test]
+    fn text_and_string_objects_fit_only_their_own_slots() {
+        let string_object = snapshot(r#"{"kind":"string","text":"Ready"}"#);
+        let RawForm::Native(native) = string_object.form() else {
+            panic!("a native object");
+        };
+        let refusal = admit_native(native, &title()).expect_err("a String fits no Text slot");
+        assert_eq!(refusal.code, Code::InvalidRuntimeInput);
+        assert_eq!(refusal.cause, "wrong-value-kind");
+        assert!(!refusal.fields.contains_key("member"));
+        for slot in [
+            quire_exact::ValueType::String,
+            quire_exact::ValueType::Uuid,
+            quire_exact::ValueType::Timestamp,
+            quire_exact::ValueType::Integer,
+        ] {
+            for text in ["Ready", "00112233-4455-6677-8899-aabbccddeeff", "aaaaaaaaa"] {
+                let refusal = admit_text_object(text, &slot).expect_err("a Text fits no such slot");
+                assert_eq!(refusal.cause, "wrong-value-kind", "{slot:?} {text}");
+                assert!(!refusal.fields.contains_key("member"), "{slot:?} {text}");
+            }
+        }
+        // A defect before type fit still wins: `text` 5 in a UUID slot.
+        let broken = snapshot(r#"{"kind":"text","text":5}"#);
+        let RawForm::Native(native) = broken.form() else {
+            panic!("a native object");
+        };
+        let refusal = admit_native(native, &quire_exact::ValueType::Uuid).expect_err("refused");
+        assert_eq!(refusal.cause, "wrong-value-kind");
+        assert_eq!(
+            refusal.fields.get("member").map(String::as_str),
+            Some("text")
+        );
+    }
+
+    /// TC-1038 step 6 (FR-106-AC-36): the length is the profile length of the
+    /// retained sequence; a text outside the declared bounds refuses
+    /// `invalid-value` naming `text`, the declared type and the measured
+    /// length.
+    #[trace("TC-1038", "FR-106-AC-36")]
+    #[test]
+    fn a_text_outside_its_declared_length_refuses_with_the_measured_length() {
+        let long = "a".repeat(65_536);
+        let pairs = |count: usize| "e\u{301}".repeat(count);
+        for (text, slot, expected, measured) in [
+            ("", title(), "Text[1, 8; nfc]", 0),
+            ("abcdefghi", title(), "Text[1, 8; nfc]", 9),
+            (pairs(9).as_str(), title(), "Text[1, 8; nfc]", 9),
+            (long.as_str(), title(), "Text[1, 8; nfc]", 65_536),
+            ("abcde", tag(), "Text[0, 4; unicode-scalars]", 5),
+            (pairs(3).as_str(), tag(), "Text[0, 4; unicode-scalars]", 6),
+            ("\u{e9}\u{e9}\u{e9}", code(), "Text[0, 4; binary-utf8]", 6),
+            ("\u{1f600}\u{1f600}", code(), "Text[0, 4; binary-utf8]", 8),
+        ] {
+            let refusal = admit_text_object(text, &slot).expect_err("outside the bounds");
+            assert_eq!(refusal.code, Code::InvalidRuntimeInput);
+            assert_eq!(refusal.cause, "invalid-value");
+            let field = |name: &str| refusal.fields.get(name).map(String::as_str);
+            assert_eq!(field("member"), Some("text"));
+            assert_eq!(field("expected"), Some(expected));
+            assert_eq!(field("actual"), Some(measured.to_string().as_str()));
+        }
     }
 }

@@ -78,6 +78,9 @@ mod dispatch_link;
 pub use dispatch_link::PendingLinks;
 mod facts;
 mod family;
+// The scalar limits of a caller that bounds nothing itself, for the model
+// layer's kernel admissions (a Text snapshot value's retention).
+pub(crate) use family::SCALAR_LIMITS_UNLIMITED as UNBOUNDED_SCALAR_LIMITS;
 mod field_refinement;
 mod identity;
 mod model_conformance;
