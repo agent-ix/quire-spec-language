@@ -15,6 +15,7 @@ use qsl_foundation::diagnostic::{
 use quire_exact::ObjectReference;
 
 use qsl_semantics::check::WrongSnapshotCause;
+use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::normalize::{ModelRefusal, ModelRefusalCause};
 use qsl_semantics::model::observation::AdmissionRecord;
 
@@ -169,23 +170,70 @@ impl CatalogCoded for ProtocolClauseUnsupported {
     }
 }
 
-/// A relationship-end navigation `r.name` (FR-363) reached evaluation. Its
-/// static typing and lowering are checked, but no stage resolves a
-/// relationship's population at run time yet, so it refuses, typed, rather
-/// than answer with a value no relationship supplied.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub(crate) struct NavigateUnsupported;
+/// FR-364 "Runtime navigation reads only the extent of its relationship":
+/// the refusals a navigation decides itself, each retaining the relationship
+/// by its declaration key and the receiver or target reference by its object
+/// identity.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum NavigationRefusal {
+    /// `incomplete_population`/`incomplete-scope`: the relationship's extent
+    /// is unlisted or incomplete, so it states nothing about the receiver's
+    /// links.
+    ExtentIncomplete {
+        /// The navigated relationship.
+        relationship: DeclarationKey,
+        /// The receiver reference.
+        receiver: ObjectReference,
+    },
+    /// `incomplete_population`/`incomplete-scope`: a selected target is
+    /// missing and the manifest cannot decide whether it is dangling.
+    TargetUndecidable {
+        /// The navigated relationship.
+        relationship: DeclarationKey,
+        /// The first selected reference that is not present.
+        reference: ObjectReference,
+    },
+    /// `dangling_reference`/`absent-target-in-complete-population`: a
+    /// selected target is missing from populations the manifest closes.
+    TargetDangling {
+        /// The navigated relationship.
+        relationship: DeclarationKey,
+        /// The first selected reference that is not present.
+        reference: ObjectReference,
+    },
+}
 
-impl CatalogCoded for NavigateUnsupported {
-    /// `unknown_required_feature`/`unsupported-feature`, naming the
-    /// construct, as [`ProtocolClauseUnsupported`] does for its own scoped
-    /// gap.
+impl CatalogCoded for NavigationRefusal {
     fn catalog_code(&self) -> CatalogCode {
-        CatalogCode::new("unknown_required_feature", "unsupported-feature")
+        match self {
+            Self::ExtentIncomplete { .. } | Self::TargetUndecidable { .. } => {
+                CatalogCode::new("incomplete_population", "incomplete-scope")
+            }
+            Self::TargetDangling { .. } => {
+                CatalogCode::new("dangling_reference", "absent-target-in-complete-population")
+            }
+        }
     }
 
     fn catalog_fields(&self) -> Option<BTreeMap<&'static str, String>> {
-        Some(BTreeMap::from([("construct", "navigate".to_owned())]))
+        let (relationship, name, object) = match self {
+            Self::ExtentIncomplete {
+                relationship,
+                receiver,
+            } => (relationship, "receiver", receiver),
+            Self::TargetUndecidable {
+                relationship,
+                reference,
+            }
+            | Self::TargetDangling {
+                relationship,
+                reference,
+            } => (relationship, "reference", reference),
+        };
+        Some(BTreeMap::from([
+            ("relationship", relationship.node.clone()),
+            (name, identity_string(object.object().as_str().as_bytes())),
+        ]))
     }
 }
 

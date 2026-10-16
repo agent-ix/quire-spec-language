@@ -1653,6 +1653,27 @@ pub fn population_universe_for(
     population_universe(&views, type_identity)
 }
 
+/// The effective identity of the declared type `declaration` and its
+/// [`UniverseId`], derived through `population_universe` exactly as
+/// [`population_universe_for`] resolves an object argument. `None` when no
+/// selected model declares `declaration`.
+pub fn declared_type_universe_for(
+    model_selections: &[DomainPackageRef],
+    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    model_limits: ModelNormalizationLimits,
+    declaration: &DeclarationKey,
+) -> Result<Option<(EffectiveId, UniverseId)>, AdmissionFailure> {
+    let views = model_views(model_selections, packages, model_limits)?;
+    let Some(effective) = views
+        .iter()
+        .find_map(|view| view.view.type_identities().get(declaration).copied())
+    else {
+        return Ok(None);
+    };
+    let universe = population_universe(&views, effective)?;
+    Ok(Some((effective, universe)))
+}
+
 // ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
