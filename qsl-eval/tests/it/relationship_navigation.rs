@@ -30,7 +30,7 @@ use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::observation::{PopulationEnumerationFailure, RelationshipExtents};
 use quire_exact::{
     from_admitted, BoundViolation, ChargePoint, CollectionKind, CollectionType, EffectiveId,
-    LimitKind, Meter, ObjectId, ObjectReference, Outcome, OptionValue, Refusal, ScalarLimits,
+    LimitKind, Meter, ObjectId, ObjectReference, OptionValue, Outcome, Refusal, ScalarLimits,
     UniverseId, Value, ValueType,
 };
 use quire_semantic_value::checking::{CheckMode, CheckingLimits};
@@ -43,7 +43,7 @@ use quire_semantic_value::relationship_extent::{
 use crate::support::admitted_charge_points;
 
 fn key(node: &str) -> DeclarationKey {
-    DeclarationKey::fixture(node)
+    DeclarationKey::fixture(format!("ix://test/orders/{node}"))
 }
 
 fn composition() -> DeclarationKey {
@@ -142,7 +142,8 @@ fn orders_package(shape: Shape) -> CheckedPackage {
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
-         model M = {identity:?} version \"1\" digest \"sha256-jcs:{digest}\";\n"
+         model M = {identity:?} version \"1\" digest \"sha256-jcs:{digest}\";\n\
+         function Unit using v(): Boolean pure {{ true }}\n"
     );
     let selected = SelectedModels::fixture(
         "M",
@@ -343,29 +344,35 @@ impl Orders {
         (evaluation, meter)
     }
 
-    fn set_of_pumps(&self, bounds: (u64, u64), kind: CollectionKind, pumps: &[&str]) -> Value {
+    fn set_of_pumps(&self, bounds: (u64, u64), kind: CollectionKind, pumps: &[&str]) -> String {
         let element = ValueType::Reference(self.id("Pump"));
         let bound = quire_exact::CardinalityBound::new(bounds.0, bounds.1).expect("a bound");
-        from_admitted(
+        shown(from_admitted(
             CollectionType::new(kind, element, Some(bound)),
             pumps
                 .iter()
                 .map(|pump| Value::Reference(self.at("Pump", pump)))
                 .collect(),
-        )
+        ))
     }
 
-    fn option_of_tank(&self, tank: Option<&str>) -> Value {
-        OptionValue::from_admitted(
+    fn option_of_tank(&self, tank: Option<&str>) -> String {
+        shown(OptionValue::from_admitted(
             ValueType::Reference(self.id("Tank")),
             tank.map(|tank| Value::Reference(self.at("Tank", tank))),
-        )
+        ))
     }
 }
 
-fn completed(evaluation: Evaluation) -> Value {
+/// `Value` has no equality; two values are the same when their canonical
+/// debug renderings are (references, kinds, bounds and element order).
+fn shown(value: Value) -> String {
+    format!("{value:?}")
+}
+
+fn completed(evaluation: Evaluation) -> String {
     match evaluation.outcome {
-        FamilyOutcome::Evaluated(Outcome::Completed(value)) => value,
+        FamilyOutcome::Evaluated(Outcome::Completed(value)) => shown(value),
         other => panic!("expected a completed value, got {other:?}"),
     }
 }
@@ -484,15 +491,11 @@ fn a_count_above_the_upper_bound_refuses_after_the_bound_charge_with_no_retain()
         )],
         vec![orders.q()],
     );
-    let (evaluation, meter) = orders.navigate("parts", &orders.at("Sys", "s1"), &objects, UNLIMITED);
+    let (evaluation, meter) =
+        orders.navigate("parts", &orders.at("Sys", "s1"), &objects, UNLIMITED);
     assert_eq!(
         cardinality(evaluation),
-        (
-            BoundViolation::AboveMaximum,
-            CollectionKind::Set,
-            (0, 3),
-            4
-        )
+        (BoundViolation::AboveMaximum, CollectionKind::Set, (0, 3), 4)
     );
     assert_charges(&meter, &[NAVIGATE, VISIT, VISIT, VISIT, VISIT, BOUND], 6, 0);
 }
@@ -512,7 +515,8 @@ fn a_dangling_target_refuses_before_the_count_bound_after_the_visits_before_it()
         )],
         vec![orders.q()],
     );
-    let (evaluation, meter) = orders.navigate("parts", &orders.at("Sys", "s1"), &objects, UNLIMITED);
+    let (evaluation, meter) =
+        orders.navigate("parts", &orders.at("Sys", "s1"), &objects, UNLIMITED);
     let (code, cause, fields) = refusal(evaluation);
     assert_eq!(
         (code.as_str(), cause.as_str()),
@@ -522,7 +526,10 @@ fn a_dangling_target_refuses_before_the_count_bound_after_the_visits_before_it()
         fields,
         std::collections::BTreeMap::from([
             ("reference", "p4".to_owned()),
-            ("relationship", "relationship/Sys-composition-Pump".to_owned()),
+            (
+                "relationship",
+                "ix://test/orders/relationship/Sys-composition-Pump".to_owned()
+            ),
         ])
     );
     assert_charges(&meter, &[NAVIGATE, VISIT, VISIT, VISIT], 4, 0);
@@ -550,7 +557,7 @@ fn a_single_valued_end_returns_its_reference_after_model_navigate_alone() {
             orders.navigate("home", &orders.at("Pump", pump), &objects, UNLIMITED);
         assert_eq!(
             completed(evaluation),
-            Value::Reference(orders.at("Tank", "t1"))
+            shown(Value::Reference(orders.at("Tank", "t1")))
         );
         assert_charges(&meter, &[NAVIGATE], 1, 0);
     }
@@ -578,12 +585,7 @@ fn a_traversal_from_the_target_end_reads_the_sources_of_the_extent() {
     let (evaluation, meter) = orders.navigate("pump", &t1, &both, UNLIMITED);
     assert_eq!(
         cardinality(evaluation),
-        (
-            BoundViolation::AboveMaximum,
-            CollectionKind::Set,
-            (1, 1),
-            2
-        )
+        (BoundViolation::AboveMaximum, CollectionKind::Set, (1, 1), 2)
     );
     assert_charges(&meter, &[NAVIGATE], 1, 0);
 
@@ -599,7 +601,7 @@ fn a_traversal_from_the_target_end_reads_the_sources_of_the_extent() {
     let (evaluation, meter) = orders.navigate("pump", &t1, &one, UNLIMITED);
     assert_eq!(
         completed(evaluation),
-        Value::Reference(orders.at("Pump", "p1"))
+        shown(Value::Reference(orders.at("Pump", "p1")))
     );
     assert_charges(&meter, &[NAVIGATE], 1, 0);
 }
@@ -615,15 +617,11 @@ fn a_count_below_the_lower_bound_refuses_below_minimum_at_the_same_point() {
         vec![Orders::extent(housing(), true, vec![])],
         vec![orders.q()],
     );
-    let (evaluation, meter) = orders.navigate("home", &orders.at("Pump", "p3"), &objects, UNLIMITED);
+    let (evaluation, meter) =
+        orders.navigate("home", &orders.at("Pump", "p3"), &objects, UNLIMITED);
     assert_eq!(
         cardinality(evaluation),
-        (
-            BoundViolation::BelowMinimum,
-            CollectionKind::Set,
-            (1, 1),
-            0
-        )
+        (BoundViolation::BelowMinimum, CollectionKind::Set, (1, 1), 0)
     );
     assert_charges(&meter, &[NAVIGATE], 1, 0);
 
@@ -643,12 +641,7 @@ fn a_count_below_the_lower_bound_refuses_below_minimum_at_the_same_point() {
     let (evaluation, meter) = min.navigate("parts", &min.at("Sys", "s1"), &objects, UNLIMITED);
     assert_eq!(
         cardinality(evaluation),
-        (
-            BoundViolation::BelowMinimum,
-            CollectionKind::Set,
-            (2, 3),
-            1
-        )
+        (BoundViolation::BelowMinimum, CollectionKind::Set, (2, 3), 1)
     );
     assert_charges(&meter, &[NAVIGATE, VISIT, BOUND], 3, 0);
 }
@@ -671,11 +664,13 @@ fn an_optional_end_is_none_for_no_instance_and_the_present_option_for_one() {
         )],
         vec![orders.q()],
     );
-    let (evaluation, meter) = orders.navigate("home", &orders.at("Pump", "p3"), &objects, UNLIMITED);
+    let (evaluation, meter) =
+        orders.navigate("home", &orders.at("Pump", "p3"), &objects, UNLIMITED);
     assert_eq!(completed(evaluation), orders.option_of_tank(None));
     assert_charges(&meter, &[NAVIGATE], 1, 0);
 
-    let (evaluation, meter) = orders.navigate("home", &orders.at("Pump", "p1"), &objects, UNLIMITED);
+    let (evaluation, meter) =
+        orders.navigate("home", &orders.at("Pump", "p1"), &objects, UNLIMITED);
     assert_eq!(completed(evaluation), orders.option_of_tank(Some("t1")));
     assert_charges(&meter, &[NAVIGATE], 1, 0);
 }
@@ -689,7 +684,10 @@ fn an_incomplete_or_unlisted_extent_is_incomplete_scope_and_an_empty_one_is_empt
     let s1 = orders.at("Sys", "s1");
     let expected_fields = std::collections::BTreeMap::from([
         ("receiver", "s1".to_owned()),
-        ("relationship", "relationship/Sys-composition-Pump".to_owned()),
+        (
+            "relationship",
+            "ix://test/orders/relationship/Sys-composition-Pump".to_owned(),
+        ),
     ]);
 
     let incomplete = orders.observe(
@@ -757,7 +755,8 @@ fn an_undecidable_target_is_incomplete_scope_before_the_count_bound() {
         )],
         vec![orders.q(), orders.row("Spare", &["Pump"], false)],
     );
-    let (evaluation, meter) = orders.navigate("parts", &orders.at("Sys", "s1"), &objects, UNLIMITED);
+    let (evaluation, meter) =
+        orders.navigate("parts", &orders.at("Sys", "s1"), &objects, UNLIMITED);
     let (code, cause, fields) = refusal(evaluation);
     assert_eq!(
         (code.as_str(), cause.as_str()),
@@ -767,7 +766,10 @@ fn an_undecidable_target_is_incomplete_scope_before_the_count_bound() {
         fields,
         std::collections::BTreeMap::from([
             ("reference", "p9".to_owned()),
-            ("relationship", "relationship/Sys-composition-Pump".to_owned()),
+            (
+                "relationship",
+                "ix://test/orders/relationship/Sys-composition-Pump".to_owned()
+            ),
         ])
     );
     assert_charges(&meter, &[NAVIGATE, VISIT, VISIT, VISIT], 4, 0);
@@ -791,7 +793,8 @@ fn a_non_unique_end_returns_the_bag_with_a_repeated_target_twice() {
         )],
         vec![orders.q()],
     );
-    let (evaluation, meter) = orders.navigate("parts", &orders.at("Sys", "s1"), &objects, UNLIMITED);
+    let (evaluation, meter) =
+        orders.navigate("parts", &orders.at("Sys", "s1"), &objects, UNLIMITED);
     assert_eq!(
         completed(evaluation),
         orders.set_of_pumps((0, 3), CollectionKind::Bag, &["p1", "p1"])
@@ -828,7 +831,9 @@ fn navigating_twice_gives_equal_results_and_leaves_the_observation_unchanged() {
         let held = environment.extents().expect("extents");
         (
             held.state(&composition()),
-            held.targets(&composition(), &s1).cloned().collect::<Vec<_>>(),
+            held.targets(&composition(), &s1)
+                .cloned()
+                .collect::<Vec<_>>(),
             held.manifest(types).expect("a manifest").rows().count(),
         )
     };
