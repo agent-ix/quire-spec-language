@@ -78,7 +78,13 @@ that compares only reference-valued fields (`PopulationMember::field_values`,
   none, and the admitted invocation delta. Each observation
   holds its `PopulationBinding`s and an `ObjectEnvironment` with every field
   value of every object and the relationship extents of the snapshot
-  (FR-364), and keeps its document identity and digest.
+  (FR-364), and keeps its document identity and digest. Admission also
+  issues each observation's population manifest and bundle (FR-364): one row
+  per population declaration of the package, `complete` exactly when the
+  snapshot lists the population `"complete": true`, so a declared population
+  the snapshot does not list is an incomplete row; the manifest is closed by
+  exhausting that traversal of the package's declarations and by nothing the
+  document says.
 - Or an `AdmissionFailure`: `Refused(RefusalRecord)` or
   `Incomplete(RefusalRecord)`, each with a catalog code, a cause and the input
   path (document identity, population, object key, field) it names.
@@ -519,7 +525,10 @@ required; check 10 settles it.
    are checked `source` before `target`. With check 7's rule for an end in an
    incomplete population, no stored end lacks an object: every admitted
    instance is a triple of full references, because only the object supplies
-   the type component of its reference key (FR-364).
+   the type component of its reference key (FR-364). The `resolve` of every
+   stored end is therefore `present`; `dangling` and `undecidable` belong to
+   model-layer extents. Checks 7 and 8 read the same `complete` flags the
+   manifest rows carry.
 9. Self check. If the selected self object is absent from the current
    snapshot, from the pre snapshot, or (for a postcondition) from the post
    snapshot, then admission SHALL refuse `invalid_runtime_input`/
@@ -658,6 +667,7 @@ required; check 10 settles it.
 | FR-106-AC-30 | A String object in the UUID field `token`, the Timestamp field `stamp`, the integer field `versionNumber`, the `Reference` field `parent`, a `{"present": ...}` of the optional UUID `prior` and as an element of `seen`; a UUID object, a Timestamp object, `{"integer":"5"}`, `{"boolean":true}`, `{"absent":{}}` and the bare JSON string `"ready"` in the String field `label`; and a String object whose text is a canonical UUID in `token` each refuse `invalid_runtime_input`/`wrong-value-kind` at the nested path (the sequence element with its index) and read the text as no other kind. `{"kind":"string","text":5}` in `token` refuses `wrong-value-kind` naming `text`, and `{"kind":"string","text":"x","extra":1}` in `versionNumber` refuses `unknown-member`, because both defects come before type fit. The same cases in a parameter or result use the invocation binding as the path root. | Test (TC-1036) |
 | FR-106-AC-31 | An invocation changing `label` between two admitted payloads admits its frame when the selected `modifies` grant covers the field and refuses `frame_violation`/`unauthorized-change` naming `child` and `label` without it, including a change from U+00E9 to U+0065 U+0301 and from `ready` to `Ready`; one whose post holds the same payload with differently ordered members, or written `"\u0072eady"`, is no change. Under `PostStateRange::Witness`, a post snapshot holding a `label` of the wrong kind still refuses `wrong-value-kind`. With `observation.values` set to the exact count of a document whose `child` holds a present `note` as its last value in walk order, the document admits; one less returns `stage_limit_exceeded`/`node-count-exceeded` naming `observation.values`, the bound and the count the String object inside `note` would have reached. | Test (TC-1036) |
 | FR-106-AC-32 | A `label` text holding a lone high surrogate escape `\ud800`, a lone low surrogate escape `\udc00` or the byte `0xC0` refuses `stale_dependency`/`byte-digest-mismatch` at check 1.3 carrying the selected digest and the raw bytes' own digest, before any value is read: the same document with a wrong-kind `token` elsewhere gives that refusal and not `wrong-value-kind`. A `label` text that brings the document over the byte limit refuses `stage_limit_exceeded`/`input-bytes-exceeded` naming `observation.input_bytes` at check 1.2. | Test (TC-1036) |
+| FR-106-AC-39 | Over TC-1035's base snapshot **B** in a package that also declares population `Spare` (member type `Pump`), which **B** does not list, admission issues a closed manifest with the rows `Q` complete and `Spare` incomplete in ascending declaration-key order; with `Spare` listed `"complete": false` the rows are the same, and listed `"complete": true` both rows are complete. The admitted observation's `resolve` for each stored instance end is `present`. | Test (TC-1041) |
 
 ## Dependencies
 
