@@ -1,16 +1,16 @@
 ---
 id: TC-572
-title: "A receiver-scoped modifies entry limits candidates and check_frame to the receiver"
+title: "A receiver-scoped modifies entry limits candidates and the frame decision to the receiver"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-154
     type: verifies
 ---
-# TC-572: A receiver-scoped modifies entry limits candidates and check_frame to the receiver
+# TC-572: A receiver-scoped modifies entry limits candidates and the frame decision to the receiver
 
 ## Description
 
-Verify candidate generation and `check_frame` under `modifies self.value` and `modifies value`.
+Verify candidate generation and `decide_frame` under `modifies self.value` and `modifies value`.
 
 Scope: FR-154-AC-1, FR-154-AC-2, FR-154-AC-5.
 
@@ -19,11 +19,11 @@ Scope: FR-154-AC-1, FR-154-AC-2, FR-154-AC-5.
 Fixtures: FR-120's `test/counters` package; state `w` with `c1` and `c2` at `value` 0.
 
 1. Expand `increment` on `c1` from `w` under each frame.
-2. Call `check_frame` with each effect and receivers `c1` and `c2` on a post with `c2.value` 1.
+2. Call `decide_frame` with each effect and receivers `c1` and `c2` on a post with `c2.value` 1.
 
 Tag the tests `#[trace("TC-572", "FR-154-AC-n")]`.
 
-3. Add `drop()` framed `deletes self`, then `deletes Counter`; call `check_frame` with receiver `c1` on posts without `c1`, without `c2`, and without either, and emit both frame nodes.
+3. Add `drop()` framed `deletes self`, then `deletes Counter`; call `decide_frame` with receiver `c1` on posts without `c1`, without `c2`, and without either, and emit both frame nodes.
 
 ## Expected Results
 

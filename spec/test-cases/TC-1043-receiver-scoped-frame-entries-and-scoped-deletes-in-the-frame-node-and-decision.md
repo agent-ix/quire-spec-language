@@ -14,7 +14,7 @@ relationships:
 
 Verify the frame node body S4 emits for scoped `modifies` and `deletes` entries
 (QSpec FR-340's `scope` and `deletes_scoped`), the intake refusals, the I2
-reader's frame step, and the decision `check_frame` and the `Frame` run take
+reader's frame step, and the decision `decide_frame` and the `Frame` run take
 from the scopes.
 
 Scope: FR-105-AC-7, FR-154-AC-6 to FR-154-AC-10 and FR-115-AC-11.
@@ -25,7 +25,7 @@ Fixture: FR-120's `test/counters` package, selected as `Counters`, extended
 with: field `step: Int[0, 2]` on `Counter`; object type `Sub` specializing
 `Counter`; object type `Gauge` with field `d`; process `Flow` (identity field
 `id` typed `Integer`, field `x`, one step `begin` of kind `command` consuming
-and emitting nothing) with an operation `go(a: Reference<Counter>)`; relationship `Supersedes`
+and emitting nothing) with an operation `go(a: Reference<Counter>)`; persistence interface `Store` with an operation `put(a: Reference<Counter>)`; relationship `Supersedes`
 between `Counter` objects; and the operations below. Each operation is also
 named by its own postcondition clause (`DoneBump`, `DoneMerge`, `DoneNoop`,
 `DoneOwn`, `DoneAll`, `DoneDrop`, `DoneDispose`, each `{ true }`) so that the
@@ -37,7 +37,7 @@ of the `Counter` object type node, and `<Gauge>` for `Gauge`'s. Every frame
 body is written with its members in canonical JCS order. Tag the tests
 `#[trace("TC-1043", "FR-154-AC-n")]`, `#[trace("TC-1043", "FR-105-AC-7")]` and `#[trace("TC-1043", "FR-115-AC-11")]`.
 
-Operations and their model-document `frame` (FR-154 "Inputs"). The three arrays `modifies`, `creates` and `deletes` are always present. The rows that use a scoped member (`modifies_receiver`, `deletes_receiver`, `deletes_parameters`) depend on the filament-core-data semantic-IR frame schema admitting them. That schema runs on the whole model document before intake, so every package, intake row and read built from this fixture, which declares scoped operations, depends on it (steps 1 to 4); only step 2b, which has its own fixture, is reachable today. `go` of `Flow` has no base `frame` and reads as the empty effect (FR-103):
+Operations and their model-document `frame` (FR-154 "Inputs"). The three arrays `modifies`, `creates` and `deletes` are always present. The rows that use a scoped member (`modifies_receiver`, `deletes_receiver`, `deletes_parameters`) depend on the filament-core-data semantic-IR frame schema admitting them. That schema runs on the whole model document before intake, so every package, intake row and read built from this fixture, which declares scoped operations, depends on it (steps 1 to 4); only step 2b, which has its own fixture, is reachable today. `go` of `Flow` and `put` of `Store` have no base `frame` and reads as the empty effect (FR-103):
 
 | Operation | Parameters | `frame` |
 | --- | --- | --- |
@@ -68,7 +68,7 @@ Meaning in surface text: `bump` is `modifies value`, `modifies self.step`,
    for `all` and `same`, and read it with the I2 reader.
 3. Intake the package once per row of this table, each row replacing the
    `frame` of an operation `t(n: Integer, a: Reference<Counter>)` of
-   `Counter` (of `Sub` in I7):
+   `Counter` (of `Sub` in I7; rows I13 to I17 and I18 to I22 name their operation):
 
    | Row | `frame` |
    | --- | --- |
@@ -89,8 +89,13 @@ Meaning in surface text: `bump` is `modifies value`, `modifies self.step`,
    | I15 | `go` of `Flow`: `{"modifies":[],"creates":[],"deletes":[],"modifies_receiver":[],"deletes_receiver":false}` |
    | I16 | `go` of `Flow`: `{"modifies":[],"creates":[],"deletes":[],"deletes_parameters":["a"]}` |
    | I17 | `go` of `Flow`: `{"modifies":[],"creates":[],"deletes":[],"modifies_receiver":["Flow/x"],"deletes_receiver":true}` |
+   | I18 | `put` of `Store`: `{"modifies":[],"creates":[],"deletes":[],"modifies_receiver":["Counter/value"]}` |
+   | I19 | `put` of `Store`: `{"modifies":[],"creates":[],"deletes":[],"deletes_receiver":true}` |
+   | I20 | `put` of `Store`: `{"modifies":[],"creates":[],"deletes":[],"modifies_receiver":[],"deletes_receiver":false}` |
+   | I21 | `put` of `Store`: `{"modifies":[],"creates":[],"deletes":[],"deletes_parameters":["a"]}` |
+   | I22 | `put` of `Store`: `{"modifies":[],"creates":[],"deletes":[],"modifies_receiver":["Counter/value"],"deletes_receiver":true}` |
 
-   Rows I1 to I17 and the operations `bump`, `merge`, `own`, `drop` and
+   Rows I1 to I22 and the operations `bump`, `merge`, `own`, `drop` and
    `dispose` use a scoped member or its refusal, so they depend on the
    semantic-IR frame schema admitting the scoped members. Rows I10 to I12 are member-shape rows: the schema refuses a wrong-typed member, an unnamed member and an element of the wrong type at the member, and refuses a frame with no `deletes` (required before and after the change), with its own schema diagnostic before intake; the stated `malformed-declaration` is the intake reader's contract where the schema has not run. Steps 1, 2 and 4 also depend on it (they
    build from the one fixture). Step 2b uses fixture R, which holds no scoped member, and is reachable today.
@@ -110,16 +115,20 @@ Meaning in surface text: `bump` is `modifies value`, `modifies self.step`,
    after the `receiver` one (`step` receiver, `step` every-object, `value`
    every-object); X9 is W1 with that second entry listed before it (`step`
    every-object, `step` receiver, `value` every-object).
-5. `check_frame` over state `w` holding `c1`, `c2` and `c3` of `Counter`, all
-   `value` 0 and `step` 0, with these effects, receivers and posts:
+5. `decide_frame` over the population of `w`, which holds `c1`, `c2` and `c3`
+   of `Counter`, all `value` 0 and `step` 0, with these effects, receivers,
+   arguments and posts. The effect names the `OperationEffect` members
+   (`receiver_modifies`, `modifies`, `deletes_receiver`, `deletes_arguments`)
+   the rows' surface entries land in; the declared created list is empty and
+   the declared deleted list is the identities the post lacks:
 
    | Row | Effect | Receiver, arguments | Post |
    | --- | --- | --- | --- |
-   | D1 | `modifies self.value`, `modifies step` | `c1` | `c1.value` 1, `c2.step` 1 |
+   | D1 | `receiver_modifies` `value`, `modifies` `step` | `c1` | `c1.value` 1, `c2.step` 1 |
    | D2 | as D1 | `c1` | `c2.value` 1 |
-   | D3 | `deletes self`, `deletes a` | `c1`, `a` = `c2` | without `c1` and `c2` |
+   | D3 | `deletes_receiver`, `deletes_arguments` `a` | `c1`, `a` = `c2` | without `c1` and `c2` |
    | D4 | as D3 | `c1`, `a` = `c2` | without `c3` |
-   | D5 | `deletes a` | `c1`, `a` = `c2` | without `c1` |
+   | D5 | `deletes_arguments` `a` | `c1`, `a` = `c2` | without `c1` |
 
 6. `Frame` runs over invocations with `self` `c1` and pre snapshot `w`:
    F1 runs `own` with a post that sets `c2.value` to 1; F2 runs `all` with
@@ -168,7 +177,11 @@ Results:
   `deletes`, before any entry is read. I13 and I14 refuse
   `invalid_model_binding`/`malformed-declaration` at `modifies_receiver` and
   at `deletes_receiver` (the receiver of `go` is a run; `Flow/x` is not
-  read). I15 and I16 admit. I17 refuses at `modifies_receiver` alone.
+  read). I15 and I16 admit. I17 refuses at `modifies_receiver` alone. I18 and I19
+  refuse `invalid_model_binding`/`malformed-declaration` at `modifies_receiver`
+  and at `deletes_receiver` (a persistence interface has no object receiver;
+  `Counter/value` is a field `Counter` has and is not read). I20 and I21 admit.
+  I22 refuses at `modifies_receiver` alone.
 - Step 4: X1, X2 and X3 are refused as schema failures of the frame body. X4
   and X5 refuse `invalid_semantic_graph`. X6 refuses, in the state step at `merge`'s anchor and not in the frame step, `missing_declaration`/
   `missing-name`. X7 is admitted. X8 and X9 each refuse
@@ -176,12 +189,13 @@ Results:
   every entry resolves, so no other meaning-join defect exists, and the
   conflict outranks X8's misordered array, so X8 is not reported
   `invalid_semantic_graph` (QSpec FR-340).
-- Step 5: D1 returns a delta with no creation or deletion (`c1.value` is
-  granted by the receiver entry, `c2.step` by the every-object entry). D2 is
-  `frame_violation`/`unauthorized-change` naming `c2` and `value`. D3 returns
-  a delta whose deleted keys are `c1` and `c2` (`c1` by `deletes self`, `c2`
-  by `deletes a`). D4 is `frame_violation`/`unauthorized-change` naming `c3`.
-  D5 is `frame_violation`/`unauthorized-change` naming `c1`.
+- Step 5: D1 returns a `FrameDelta` with empty `created` and `deleted`
+  (`c1.value` is granted by the receiver entry, `c2.step` by the every-object
+  entry). D2 is `frame_violation`/`unauthorized-change` naming `c2` and
+  `value`. D3 returns a `FrameDelta` whose `deleted` is {`c1`, `c2`} (`c1` by
+  `deletes self`, `c2` by `deletes a`). D4 is
+  `frame_violation`/`unauthorized-change` naming `c3`. D5 is
+  `frame_violation`/`unauthorized-change` naming `c1`.
 - Step 6: F1 reports `violation` with the `FieldWrite` change naming `c2`,
   `value` and `modifies` holding the key of `value`, cause
   `frame_violation`/`unauthorized-change`; F2 reports `success`. F3 reports
