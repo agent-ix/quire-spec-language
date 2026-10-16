@@ -9,6 +9,8 @@ relationships:
     type: verifies
   - target: "ix://agent-ix/quire-spec-language/FR-093"
     type: verifies
+  - target: "ix://agent-ix/quire-spec-language/FR-098"
+    type: verifies
 ---
 # TC-1028: Compare native String, UUID and Timestamp with = and != in the unit language
 
@@ -68,6 +70,25 @@ fields; the unit language has no literal for these types.
 | F6 | `function fl using v(x: Event, y: Event): Boolean pure { let p = x.id in let q = y.id in p = q }` | the same `id` twice | `true` (let bindings) |
 | F7 | `function fm using v(x: Event, y: Event): Boolean pure { x.moment = y.id }` | n/a | `ill_typed`/`type-mismatch` |
 
+6. Replay E1 to E5 and their `!=` counterparts through the real spine: compose
+   the unit holding `eqs`, its `!=` counterpart `nes`, `equ` and the
+   Text-parameter predicate of FR-098-AC-10, then call `replay()` with an
+   `Input` source whose assignments carry each operand as the String wire
+   object `{"kind":"string","text":...}`, the text spelled by its scalars
+   (E3's operands are the one scalar U+00E9 and the two scalars U+0065 U+0301).
+   Read the replay result's evaluated value.
+7. Replay the through-replay refusal rows below, each from an `Input`
+   assignment and again from a `Witness` entry in FR-070's witness value text
+   (the entry holds the JCS text of the object, escaped as FR-070 states):
+
+   | Vector | Function | Operand | Expected |
+   | --- | --- | --- | --- |
+   | W1 | `equ` | position 0 the String object with text `00112233-4455-6677-8899-aabbccddeeff`, position 1 a valid UUID object | `WrongValueKind` at position 0, no call |
+   | W2 | `eqs` | position 0 a valid String object, position 1 a UUID object | `WrongValueKind` at position 1, no call |
+   | W3 | `eqs` | position 0 a Timestamp object `{"kind":"timestamp","nanoseconds":"0"}` | `WrongValueKind` at position 0, no call |
+   | W4 | `eqs` | position 0 `{"type":"text","value":"abc"}` | `WrongValueKind` at position 0, no call |
+   | W5 | the Text-parameter predicate | position 0 a String object | `WrongValueKind` at position 0, no call |
+
 ## Expected Results
 
 - Step 1: every function checks; each E-row gives its stated result, and E8
@@ -86,3 +107,12 @@ fields; the unit language has no literal for these types.
 - Step 5: each F-row gives its stated result; the field, call-result and `let`
   operands compare by the native rules, and the uppercase-UUID, Timestamp
   field mapping and F7 refusal hold as in Steps 1 and 2.
+- Step 6: the replay completes without a refusal and its evaluated value is the
+  Boolean of the row: E1 `true`, E2 `true`, E3 `false`, E4 `false`, E5 `true`,
+  and for `nes` the negation of each (`false`, `false`, `true`, `true`,
+  `false`). E3 and E4 are `false` because the scalar sequences differ: nothing
+  is normalized or case-folded on the way in.
+- Step 7: each row refuses `WrongValueKind` (`invalid_runtime_input`) naming
+  the stated position, before the call and with no charge, from both sources.
+  No String payload is read as a UUID, Timestamp or Text, and no UUID,
+  Timestamp or Text object is read as a String.

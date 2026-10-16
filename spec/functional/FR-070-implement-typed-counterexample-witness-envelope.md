@@ -110,8 +110,8 @@ scalar entry: `0`/`1`, or a decimal `i64` that decodes to
 `WitnessValue::Integer(i64)`, as before. An integer leaf inside a witness
 value text decodes to `WitnessValue::ExactInteger(Integer)` instead, so the
 form of each integer follows from where it appears. Every other parameter's entry is a witness value text: a leaf
-of any value family (enum, text, rational, decimal, float, quantity or
-reference), or a composite (an `Option`, a record, a tuple, a union, or a
+of any value family (enum, text, String, UUID, Timestamp, rational, decimal,
+float, quantity or reference), or a composite (an `Option`, a record, a tuple, a union, or a
 `Sequence`, `Set`, `Bag` or `OrderedSet` collection) whose leaves may be of
 any value family, `Boolean` and integer included. A composite can nest to
 any depth. The language has no map value type, so no map value has a form
@@ -145,7 +145,8 @@ last field.
 | Boolean | `{"type":"boolean","value":true}` or `false` |
 | integer | `{"type":"integer","value":"<decimal>"}`: the exact value as FR-181's decimal string (`0`, or an optional `-` then `[1-9][0-9]*`), unbounded. It decodes to `WitnessValue::ExactInteger`, which holds a kernel `Integer`, whether or not the value fits `i64` |
 | enum | `{"type":"enum","name":"<declaration>","member":"<member>"}` |
-| text | `{"type":"text","value":"<string>"}`: the text's Unicode scalars as a JSON string |
+| text | `{"type":"text","value":"<string>"}`: QSpec FR-181's form of a value of a `Text[min, max; profile]` type, holding the value's retained Unicode scalars as a JSON string, the empty string included. It is not a `String` value and fits only a `Text` parameter. Decode reads the form only; FR-098 converts the scalars to the declared text type, which applies its profile and length bound |
+| String | FR-056's closed wire object `{"kind":"string","text":"<string>"}`, the one spelling of a native String input. It is not a QSpec FR-181 form. The `text` is the String's Unicode scalars as a JSON string, the empty string included. Every Unicode scalar sequence is a String, so decode and FR-098 refuse no `text` for its content, and a String object fits only a `String` parameter ([FR-056](FR-056-admit-domain-package-model-declarations.md)) |
 | UUID | FR-056's closed wire object `{"kind":"uuid","text":"<text>"}`, the one spelling of a native UUID input. It is not a QSpec FR-181 form. Decode reads the form only; FR-098 admits the text through the kernel's canonical constructor and refuses a noncanonical spelling `invalid_runtime_input`/`invalid-value` ([FR-056](FR-056-admit-domain-package-model-declarations.md)) |
 | Timestamp | FR-056's closed wire object `{"kind":"timestamp","nanoseconds":"<decimal>"}`, read and admitted the same way |
 | rational | `{"type":"rational","numerator":"<decimal>","denominator":"<decimal>"}`: reduced (the greatest common divisor is 1), with a positive denominator; zero is `0`/`1` |
@@ -189,6 +190,10 @@ parameter, when the entry:
   exactly one value text;
 - uses a `type` tag outside the table, or a shape with a missing, extra or
   mistyped member;
+- is an object with a `kind` member that is not exactly one of FR-056's three
+  wire objects: a `kind` other than `string`, `uuid` and `timestamp`, a member
+  set other than its kind's (`text`, or `nanoseconds` for a Timestamp), or a
+  payload member that is not a JSON string;
 - holds a decimal string not in FR-181's spelling, a rational that is not
   reduced or whose denominator is not positive, a `bits` string of the
   wrong length or not lowercase hex, or an `identity` that is not
@@ -245,6 +250,8 @@ length of its escaped value text.
 | FR-070-AC-11 | One `Canonical` entry per leaf family decodes exactly as written: an integer `-170141183460469231731687303715884105728` (outside `i64`); an enum member; the text `a;b=c<<<d>>>e%f` (its entry holds `a%3Bb=c%3C%3C%3Cd%3E%3E%3Ee%25f`, and its escaped bytes count toward `replay.input_bytes`), which parses as one block whose entry splits only at its own delimiters; the rational `-3`/`4`; the decimal with coefficient `1050` and scale `2`; a `float32` NaN with payload `7fc00001` and a `float64` negative zero `8000000000000000`; a quantity `{"type":"decimal","coefficient":"15","scale":"1","unit":"<unit>"}`; and a reference. A sequence of text values holding `;` and `>` decodes in order. | Test (TC-905) |
 | FR-070-AC-12 | A transcript with entries for node ids `0a…` and `0b…` in that order decodes. The same entries with `0b…` first refuse `DecodeRefusal::EntryOrder` naming the `0a…` entry, with no partial result. | Test (TC-905) |
 | FR-070-AC-13 | Encoding a witness value does work proportional to its output at any depth. The counted work is the number of bytes the encoder's JCS writer produces plus the number of bytes compared while ordering set and bag elements; the output is the value's JCS bytes before transcript escaping. Each value's bytes are produced once and set and bag elements are ordered by comparing finished bytes in place, so for nested sets (each level a set of the next level and a text), nested options and nested sequences (each level a sequence of the next level and an integer), doubling the depth from 5,000 to 10,000 at most triples the counted work (a subtree copied into every ancestor quadruples it); at depth 5,000 the counted work is at least the output's bytes, and at depth 10,000 it is at most three times the output's bytes. The value text's length is counted from the encoder's finished bytes: for a text value of 1,000,000 `;` characters, `value_text_len` returns 3,000,026, the length of the text `to_value_text` returns, and the encoder holds that value as one finished value whose buffers together hold at least its 1,000,026 JCS bytes, each buffer's capacity smaller than 3,000,026 bytes. | Test (TC-905) |
+| FR-070-AC-14 | One `Canonical` entry per String and Text shape decodes exactly as written: the String `a;b>>>c` (its entry holds `{"kind":"string","text":"a%3Bb%3E%3E%3Ec"}`), the empty String, the String of the scalar U+00E9, the String of the scalars U+0065 U+0301 (two unequal values), the String `say "hi"\x;` with a quote, a backslash and a semicolon (its entry holds `{"kind":"string","text":"say \"hi\"\\x%3B"}`), and the String `100%<` (its entry holds `{"kind":"string","text":"100%25%3C"}`). The Text `a;b>>>c` (its entry holds `{"type":"text","value":"a%3Bb%3E%3E%3Ec"}`) and the empty Text decode as Text values. A `string` value and a `text` value of the same scalars decode to two unequal `WitnessValue`s. A two-entry transcript `P` then `Q`, each holding the String `a;b>>>c`, parses as one assertion block and decodes both entries, so a `;` or `>` left unescaped inside either value would split or end the block. The escaped bytes of each count toward `replay.input_bytes`. | Test (TC-905) |
+| FR-070-AC-15 | Each of these entries refuses `DecodeRefusal::Malformed` naming the parameter, with no partial result: `{"kind":"string"}` and `{"kind":"string","nanoseconds":"0"}` (a missing member); `{"kind":"string","text":"x","extra":"y"}` (an extra member); `{"kind":"string","text":5}` and `{"kind":"string","text":null}` (a payload that is not a JSON string); `{"kind":"String","text":"x"}` and `{"kind":"blob","text":"x"}` (a `kind` outside the three); `{"text":"x","kind":"string"}` (members out of JCS order); a String whose JSON text writes U+00E9 as the escape `\u00e9` where JCS writes the literal scalar; a String whose JSON text holds the lone surrogate escape `\ud800`; and a raw `%` that does not begin one of the four escapes inside a String. | Test (TC-905) |
 
 ## Dependencies
 
