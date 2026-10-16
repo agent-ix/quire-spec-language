@@ -74,3 +74,4 @@ Recorded, not blocking (pass 1):
 | --- | --- | --- |
 | FND-001 | fixed | 8a3303bd064d9691510514f52a7f00952a145eef |
 | FND-002 | fixed | 8a3303bd064d9691510514f52a7f00952a145eef |
+| FND-003 | fixed | ca79032ef291dcbb71d52e650f955c73cd7f4f08 |
