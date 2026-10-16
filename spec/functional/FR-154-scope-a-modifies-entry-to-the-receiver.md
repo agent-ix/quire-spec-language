@@ -123,8 +123,9 @@ impl StateModel {
     (`modifies_receiver` first), before any entry is read (QSpec FR-013). An
     empty `modifies_receiver`, `deletes_receiver: false` and
     `deletes_parameters` read as for an object type. QSL FR-103 admits
-    operations only on object types and processes, so no state-machine
-    operation reaches this rule.
+    operations only on object types and processes, so QSL has no
+    state-machine operations and none reaches this rule; QSpec's Frames row,
+    which refuses the same forms on them, is their contract.
   - A `modifies_receiver` entry SHALL name a field among the fields, own and inherited, of the
     operation's declaring object type. An entry that names
     no declaration of the package refuses `missing_declaration`/`missing-name`
