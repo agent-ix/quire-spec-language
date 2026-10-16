@@ -63,7 +63,7 @@ use qsl_foundation::diagnostic::{Code, JsonPointer};
 use qsl_foundation::source::{LocatedSpan, Position};
 use qsl_foundation::IntakeLimits;
 use quire_canonical::Node;
-use quire_exact::Presence;
+use quire_exact::{Presence, TextProfile, TextType};
 
 mod unit;
 pub use unit::{
@@ -3272,6 +3272,9 @@ fn read_value_type(
         });
     }
     let scalar = ctx.str_field("scalar")?;
+    if scalar == "string" {
+        return read_text_value_type(package, node, &ctx, at);
+    }
     if scalar != "integer" {
         return Err(unsupported_at(
             type_value,
@@ -3352,6 +3355,104 @@ fn read_value_type(
     Ok(ScalarTypeRecord {
         key: declaration_key(package, node),
         domain: ScalarValueDomain::Integer { lower, upper },
+    })
+}
+
+/// A `value-type/v1` whose `scalar` is `string` as a Text value type
+/// (FR-056's Text paragraph): `constraints` hold a `minLength`, a `maxLength`
+/// and a `format` named `text-profile:<profile>`, each once. The first defect
+/// refuses in the paragraph's order: a constraint outside those three or a
+/// `format` that is no text profile; a keyword given twice; no `format`; no
+/// `minLength`, then no `maxLength`; a profile outside the six; bounds outside
+/// `0 <= min <= max`.
+#[qsl_attrs::string_edge]
+fn read_text_value_type(
+    package: &str,
+    node: &str,
+    ctx: &NodeCtx<'_>,
+    at: &str,
+) -> Result<ScalarTypeRecord, ModelRefusal> {
+    const PROFILE_PREFIX: &str = "text-profile:";
+    let form = |what: String| unsupported_at(ctx.value, at, format!("{}:{what}", meaning::VALUE_TYPE));
+    let constraints = ctx.array_field("constraints")?;
+    let mut min: Option<&Value> = None;
+    let mut max: Option<&Value> = None;
+    let mut profile: Option<&str> = None;
+    let mut seen = Vec::new();
+    for (position, constraint) in constraints.iter().enumerate() {
+        let constraint_at = format!("{at}.constraints[{position}]");
+        let constraint_ctx = NodeCtx::new(constraint, constraint_at.clone());
+        let keyword = constraint_ctx.str_field("keyword")?;
+        let operands = constraint.get("operands");
+        match keyword {
+            "minLength" | "maxLength" => {}
+            "format" => {
+                let name = operands
+                    .and_then(|operands| operands.get("name"))
+                    .and_then(Value::as_str)
+                    .and_then(|name| name.strip_prefix(PROFILE_PREFIX));
+                if name.is_none() {
+                    return Err(unsupported_at(
+                        constraint,
+                        &constraint_at,
+                        format!("{}:constraints:format", meaning::VALUE_TYPE),
+                    ));
+                }
+            }
+            other => {
+                return Err(unsupported_at(
+                    constraint,
+                    &constraint_at,
+                    format!("{}:constraints:{other}", meaning::VALUE_TYPE),
+                ))
+            }
+        }
+        seen.push((keyword, constraint_ctx, operands));
+    }
+    let mut taken = std::collections::BTreeSet::new();
+    for (keyword, constraint_ctx, operands) in &seen {
+        if !taken.insert(*keyword) {
+            return Err(
+                constraint_ctx.malformed_in("keyword", format!("{keyword:?} is declared twice"))
+            );
+        }
+        match *keyword {
+            "minLength" => min = operands.and_then(|operands| operands.get("value")),
+            "maxLength" => max = operands.and_then(|operands| operands.get("value")),
+            _ => {
+                profile = operands
+                    .and_then(|operands| operands.get("name"))
+                    .and_then(Value::as_str)
+                    .and_then(|name| name.strip_prefix(PROFILE_PREFIX));
+            }
+        }
+    }
+    let Some(profile_name) = profile else {
+        return Err(form("profile".to_owned()));
+    };
+    let bound = |keyword: &'static str, operand: Option<&Value>| {
+        let missing = || ctx.malformed_in("constraints", format!("{keyword}: missing"));
+        let operand = operand.ok_or_else(missing)?;
+        bound_operand(operand, keyword)
+            .ok()
+            .and_then(|value| u64::try_from(value).ok())
+            .ok_or_else(|| {
+                ctx.malformed_in(
+                    "constraints",
+                    format!("{keyword}: not a non-negative integer"),
+                )
+            })
+    };
+    let min = bound("minLength", min)?;
+    let max = bound("maxLength", max)?;
+    let Some(profile) = TextProfile::from_code(profile_name) else {
+        return Err(form(format!("profile={profile_name}")));
+    };
+    let text = TextType::new(min, max, profile)
+        .map_err(|_| form(format!("bounds={min}..{max}")))?;
+    Ok(ScalarTypeRecord {
+        key: declaration_key(package, node),
+        domain: ScalarValueDomain::Text(text),
     })
 }
 
@@ -6468,9 +6569,7 @@ mod tests {
     fn integer_bounds(record: &ScalarTypeRecord) -> (i128, i128) {
         match &record.domain {
             ScalarValueDomain::Integer { lower, upper } => (*lower, *upper),
-            ScalarValueDomain::Native(native) => {
-                panic!("expected integer scalar domain, got {native:?}")
-            }
+            other => panic!("expected integer scalar domain, got {other:?}"),
         }
     }
 
