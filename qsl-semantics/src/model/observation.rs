@@ -347,6 +347,10 @@ pub struct AdmissionRecord {
     /// field, parameter or result down to it, outermost first (QSpec FR-207);
     /// empty when the defect is at the checked value itself.
     pub path: Vec<PathStep>,
+    /// For a native UUID or Timestamp payload the kernel's canonical
+    /// constructor refused (FR-106 native order, step 7), the kernel's own
+    /// class beneath `invalid-value`; `None` for every other refusal.
+    pub kernel: Option<quire_exact::ConstructionCause>,
 }
 
 /// One typed step of a nested value path (QSpec FR-207): never a rendered
@@ -369,6 +373,7 @@ impl AdmissionRecord {
             cause,
             fields: BTreeMap::new(),
             path: Vec::new(),
+            kernel: None,
         }
     }
 
@@ -383,6 +388,13 @@ impl AdmissionRecord {
     #[must_use]
     fn at(mut self, path: Vec<PathStep>) -> Self {
         self.path = path;
+        self
+    }
+
+    /// This record carrying the kernel class beneath it.
+    #[must_use]
+    fn kernel_class(mut self, class: quire_exact::ConstructionCause) -> Self {
+        self.kernel = Some(class);
         self
     }
 }
@@ -534,6 +546,9 @@ pub struct SnapshotValue {
 enum RawNode {
     Boolean(bool),
     Integer(String),
+    /// A value object with a `kind` member, kept as read so admission judges
+    /// it in the native payload order.
+    Native(NativeObject),
     Absent,
     Present(usize),
     Reference(SelectedObject),
@@ -563,6 +578,10 @@ pub enum RawForm<'v> {
     Boolean(bool),
     /// `{"integer": "<decimal>"}`.
     Integer(&'v str),
+    /// A value object with a `kind` member: `{"kind": "string", "text": ..}`,
+    /// `{"kind": "uuid", "text": ..}` or `{"kind": "timestamp",
+    /// "nanoseconds": ..}`, or a defective one, as read.
+    Native(RawNative<'v>),
     /// `{"absent": {}}`.
     Absent,
     /// `{"present": <value>}`.
@@ -605,6 +624,65 @@ impl<'v> RawVariant<'v> {
     #[must_use]
     pub fn has_extra_member(self) -> bool {
         self.extra_member
+    }
+}
+
+/// The kind of a native payload value (FR-056's K2 canonical native
+/// payloads).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NativeKind {
+    /// `"string"`.
+    String,
+    /// `"uuid"`.
+    Uuid,
+    /// `"timestamp"`.
+    Timestamp,
+    /// `"text"`: a known kind, so its envelope is judged like the others; its
+    /// admission into a Text slot belongs to the Text code slice, and every
+    /// other slot refuses it `wrong-value-kind` (FR-106-AC-35).
+    Text,
+}
+
+/// A native payload object's `kind` member as read.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RawNativeKind {
+    /// Not a JSON string.
+    NotText,
+    /// A string that names no native kind.
+    Unknown,
+    /// A native kind.
+    Known(NativeKind),
+}
+
+/// A native payload object as read, outside its `kind` member: every other
+/// member in document order, its text or `None` where it is not a JSON
+/// string.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct NativeObject {
+    kind: RawNativeKind,
+    members: Vec<(String, Option<String>)>,
+}
+
+/// A native payload object as read (see [`RawForm::Native`]).
+#[derive(Clone, Copy, Debug)]
+pub struct RawNative<'v> {
+    kind: RawNativeKind,
+    members: &'v [(String, Option<String>)],
+}
+
+impl<'v> RawNative<'v> {
+    /// The `kind` member.
+    #[must_use]
+    pub fn kind(self) -> RawNativeKind {
+        self.kind
+    }
+
+    /// Every member other than `kind`, in document order: its name and its
+    /// text, `None` where it is not a JSON string.
+    pub fn members(self) -> impl Iterator<Item = (&'v str, Option<&'v str>)> {
+        self.members
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_deref()))
     }
 }
 
@@ -678,6 +756,15 @@ impl SnapshotValue {
     #[must_use]
     pub fn integer(spelling: impl Into<String>) -> Self {
         Self::single(RawNode::Integer(spelling.into()))
+    }
+
+    /// A native payload object: its `kind` and every other member in
+    /// document order, each with its text or `None` where it is not a JSON
+    /// string. Admission judges it in the native payload order, so a defective
+    /// object is held as read.
+    #[must_use]
+    pub fn native(kind: RawNativeKind, members: Vec<(String, Option<String>)>) -> Self {
+        Self::single(RawNode::Native(NativeObject { kind, members }))
     }
 
     /// `{"absent": {}}`.
@@ -772,6 +859,10 @@ impl SnapshotValue {
         match &self.nodes[index] {
             RawNode::Boolean(value) => RawForm::Boolean(*value),
             RawNode::Integer(spelling) => RawForm::Integer(spelling),
+            RawNode::Native(native) => RawForm::Native(RawNative {
+                kind: native.kind,
+                members: &native.members,
+            }),
             RawNode::Absent => RawForm::Absent,
             RawNode::Present(inner) => RawForm::Present(RawValue {
                 arena: self,
@@ -810,6 +901,8 @@ impl PartialEq for SnapshotValue {
             match pair {
                 (RawForm::Boolean(left), RawForm::Boolean(right)) if left == right => {}
                 (RawForm::Integer(left), RawForm::Integer(right)) if left == right => {}
+                (RawForm::Native(left), RawForm::Native(right))
+                    if left.kind == right.kind && left.members == right.members => {}
                 (RawForm::Absent, RawForm::Absent) => {}
                 (RawForm::Reference(left), RawForm::Reference(right)) if left == right => {}
                 (RawForm::Present(left), RawForm::Present(right)) => {
@@ -870,6 +963,7 @@ impl RawNode {
             },
             other @ (Self::Boolean(_)
             | Self::Integer(_)
+            | Self::Native(_)
             | Self::Absent
             | Self::Reference(_)
             | Self::Variant { .. }) => other,

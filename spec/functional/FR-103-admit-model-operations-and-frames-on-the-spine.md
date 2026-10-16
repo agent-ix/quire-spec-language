@@ -11,6 +11,8 @@ relationships:
     type: traces_to
   - target: ix://agent-ix/quire-spec-language/ADR-012
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-154
+    type: depends_on
   - target: ix://agent-ix/quire-specification/FR-154
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-340
@@ -71,6 +73,11 @@ operation `pre`/`post` text is shape-checked and not kept (QSL-726).
   declaration, under QSpec `model-complete.md`'s Frames row, checking the
   entries of `modifies`, then `creates`, then `deletes`, each in document
   order, and reporting the first that fails.
+- A `modifies` entry has a scope and a `deletes` entry has a scope (QSpec
+  FR-013). FR-154 states how intake reads them, which entries a scope admits,
+  and the refusals a scoped entry gives; the scoped members are
+  checked in the order FR-154 states, in document order within each member, and a conflict between
+  two scopes of one field is reported only after every entry resolves.
 - If a frame entry names no declaration of the package, then intake SHALL
   refuse `missing_declaration`/`missing-name` at the entry, retaining the
   operation's IR node identity, the entry, the artifact id and the span.
