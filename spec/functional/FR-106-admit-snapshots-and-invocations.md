@@ -611,7 +611,22 @@ required; check 10 settles it.
     surviving object, scalar, reference and record alike. The frame check SHALL
     compare a changed record value by its most-specific type and the fields
     exposed after QSpec FR-150 normalization, under QSpec FR-208. The frame
-    check SHALL apply the selected QSpec FR-013 and FR-340 frame grant to
+    check SHALL decide whether a field changed by comparing the pre and post
+    values as admitted typed values under the equality of the field's
+    declared type, never the document's raw JSON: JSON member order,
+    whitespace, escape spelling and a supplied spelling that admission
+    normalizes are no change. The equality of each declared type is: `Boolean`
+    the same truth value; `Int[lo, hi]` the same integer; `String` the same
+    scalar sequence, with no normalization; `Text[min, max; profile]` the same
+    retained sequence under that profile (QSpec FR-141), so U+00E9 and U+0065
+    U+0301 are one value under `nfc`, `nfd`, `nfkc` and `nfkd` and two under
+    `unicode-scalars` and `binary-utf8`; `UUID` and `Timestamp` the same
+    canonical payload; `Reference<T>` the same population and key; `Option<T>`
+    both absent, or both present with equal contents; `Sequence<T>` the same
+    length with equal elements in order; a record the same most-specific type
+    and equal effective fields; a variant the same case and, where it carries
+    one, an equal payload. The frame check SHALL apply the
+    selected QSpec FR-013 and FR-340 frame grant to
     the changed declared object field. A record value's member comparison
     detects changes to that field without introducing another frame grant.
     Within one population it SHALL report the first violation in this
@@ -720,6 +735,7 @@ required; check 10 settles it.
 | FR-106-AC-37 | An invocation changing `title` between two admitted payloads admits its frame when the selected `modifies` grant covers the field and refuses `frame_violation`/`unauthorized-change` naming `child` and `title` without it; one whose post holds the same text with differently ordered members, written `"\u0052eady"`, or changed from U+00E9 to U+0065 U+0301 under `nfc`, is no change and admits without the grant. A change of `subtitle` from U+00E9 to U+0065 U+0301 under `unicode-scalars` is a change and refuses naming `child` and `subtitle` when `retitle`'s frame does not grant it. With `observation.values` set to the exact count of a document whose `aliases` holds one Text element as the last value in walk order, the document admits; one less returns `stage_limit_exceeded`/`node-count-exceeded` naming `observation.values`, the bound and the count the Text object inside `aliases` would have reached. | Test (TC-1038) |
 | FR-106-AC-38 | A `title` text holding a lone high surrogate escape `\ud800`, a lone low surrogate escape `\udc00` or the byte `0xC0` refuses `stale_dependency`/`byte-digest-mismatch` at check 1.3 carrying the selected digest and the raw bytes' own digest, before any value is read: the same document with a wrong-kind `token` elsewhere gives that refusal and not `wrong-value-kind`. A `title` text that brings the document over the byte limit refuses `stage_limit_exceeded`/`input-bytes-exceeded` naming `observation.input_bytes` at check 1.2, not `invalid-value`. | Test (TC-1038) |
 | FR-106-AC-39 | Over TC-1035's base snapshot **B** in a package that also declares population `Spare` (member type `Pump`), which **B** does not list, admission issues a closed manifest with the rows `Q` complete and `Spare` incomplete in ascending declaration-key order; with `Spare` listed `"complete": false` the rows are the same, and listed `"complete": true` both rows are complete. The admitted observation's `resolve` for each stored instance end is `present`. | Test (TC-1041) |
+| FR-106-AC-40 | Over TC-1044's fixture, the frame check decides each declared type by its own equality: a `String` changed from U+00E9 to U+0065 U+0301 is a change; a `Text[0, 8; nfc]` changed so is no change and a `Text[0, 8; unicode-scalars]` changed so is a change; a `Text[0, 8; nfc]` changed from `a` to `b` is a change; a `UUID` changed to another canonical payload is a change; an `Option` changed from absent to present is a change and present to present with equal contents is none; a `Sequence` reordered is a change and the same elements in the same order with the document's whitespace changed is none; the members of an object written in another order are no change. A change not covered by the grant refuses `frame_violation`/`unauthorized-change` naming the object and the field, and an unchanged field admits without any grant. The Text rows depend on the validator applicability change of FR-056's Text paragraph. | Test (TC-1044) |
 
 ## Dependencies
 
