@@ -19,7 +19,9 @@ const UNIT: &str = "language \"ix:native\" edition \"1-draft\";\n\
     function net using v(a: Timestamp, b: Timestamp): Boolean pure { a != b }\n\
     function eqs using v(a: String, b: String): Boolean pure { a = b }\n\
     function nes using v(a: String, b: String): Boolean pure { a != b }\n\
-    function txt using v(t: Text[0, 8; nfc]): Boolean pure { false }\n";
+    function txt using v(t: Text[0, 8; nfc]): Boolean pure { false }\n\
+    function title using v(t: Text[1, 8; nfc]): Boolean pure { false }\n\
+    function raw using v(t: Text[1, 8; unicode-scalars]): Boolean pure { false }\n";
 
 const UUID_F: &str = "00112233-4455-6677-8899-aabbccddeeff";
 const UUID_E: &str = "00112233-4455-6677-8899-aabbccddeefe";
@@ -306,5 +308,88 @@ fn tc_1028_a_wrong_native_kind_is_refused_before_the_call() {
                 "{id} {arm}"
             );
         }
+    }
+}
+
+/// `n` pairs of U+0065 U+0301: `2n` supplied scalars, `n` once NFC composes
+/// them.
+fn pairs(n: usize) -> String {
+    "e\u{301}".repeat(n)
+}
+
+/// A request replaying `function` over one `Text` argument from the `Input`
+/// arm and from the `Witness` arm.
+fn text_calls(function: &str, text: &str) -> [(&'static str, ReplayRequestWire); 2] {
+    let value = WitnessValue::Text(text.to_owned());
+    let compiled = spine(UNIT, &BTreeMap::new());
+    let from_input = request(
+        UNIT.as_bytes(),
+        compiled.emitted.package_id(),
+        name(&[function]),
+        ReplaySource::Input(vec![CanonicalAssignment {
+            parameter: parameter(&compiled, function, 0),
+            value: value.clone(),
+        }]),
+    );
+    [
+        ("Input", from_input),
+        ("Witness", witness_call(function, &[value])),
+    ]
+}
+
+/// TC-1044 step 3 (FR-056-AC-39): a `Text[1, 8; nfc]` parameter admits eight
+/// pairs of U+0065 U+0301 (eight retained scalars, sixteen supplied) from an
+/// `Input` assignment and from a `Witness` entry, and the call runs.
+#[trace("TC-1044", "FR-056-AC-39")]
+#[test]
+fn tc_1044_eight_retained_scalars_are_admitted_on_input_and_witness() {
+    for (arm, wire) in text_calls("title", &pairs(8)) {
+        let result = replay(wire, ReplayLimits::default())
+            .unwrap_or_else(|refusal| panic!("{arm}: {refusal:?}"));
+        let evaluated = match result {
+            ReplayResult::Input(result) => result.value(),
+            ReplayResult::Witness(result) => result.value(),
+        };
+        assert_eq!(evaluated, Some(EvaluatedValue::Boolean(false)), "{arm}");
+    }
+}
+
+/// TC-1044 step 3 (FR-056-AC-39): nine pairs (nine retained scalars) and the
+/// empty text are outside `[1, 8]` and refuse `WrongValueKind` at the
+/// parameter's position before the call, from `Input` and from `Witness`.
+#[trace("TC-1044", "FR-056-AC-39")]
+#[test]
+fn tc_1044_a_text_outside_its_length_bounds_is_refused_before_the_call() {
+    for (id, text) in [("nine pairs", pairs(9)), ("empty", String::new())] {
+        for (arm, wire) in text_calls("title", &text) {
+            let refusal = replay(wire, ReplayLimits::default())
+                .expect_err(&format!("{id} {arm}: refused"));
+            assert_eq!(refusal.code(), Code::InvalidRuntimeInput, "{id} {arm}");
+            assert_eq!(
+                refusal.input_refusal(),
+                Some(&InputRefusal::WrongValueKind { parameter: 0 }),
+                "{id} {arm}"
+            );
+        }
+    }
+}
+
+/// TC-1044 step 3 (FR-056-AC-39): the length is measured in the slot's
+/// profile. Eight pairs are sixteen scalars under `unicode-scalars` and
+/// refuse; four pairs are eight and admit.
+#[trace("TC-1044", "FR-056-AC-39")]
+#[test]
+fn tc_1044_the_length_is_measured_in_the_slots_profile() {
+    for (arm, wire) in text_calls("raw", &pairs(8)) {
+        let refusal = replay(wire, ReplayLimits::default()).expect_err(arm);
+        assert_eq!(
+            refusal.input_refusal(),
+            Some(&InputRefusal::WrongValueKind { parameter: 0 }),
+            "{arm}"
+        );
+    }
+    for (arm, wire) in text_calls("raw", &pairs(4)) {
+        replay(wire, ReplayLimits::default())
+            .unwrap_or_else(|refusal| panic!("{arm}: {refusal:?}"));
     }
 }
