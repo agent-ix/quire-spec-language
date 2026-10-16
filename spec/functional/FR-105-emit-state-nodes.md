@@ -91,10 +91,16 @@ source map (FR-095).
 - S4 SHALL emit one `state_clause` node per distinct clause node id. Two
   declarations that check to one node id (FR-104-AC-6) SHALL give one node
   with two `claim` occurrences, never two nodes with one id.
-- S4 SHALL emit one `operation_anchor` and one `frame` per (declaring object
-  type, operation name), however many clauses name the operation and from
-  whichever subtype they name it, and none for an operation no clause and no
-  protocol attempt (FR-114) names.
+- S4 SHALL emit one `operation_anchor` per (declaring object type, operation
+  name), however many clauses name the operation and from whichever subtype
+  they name it, and none for an operation no clause and no protocol attempt
+  (FR-114) names. The anchor's `frame` is the node of that operation's
+  frame. A frame node's key hashes its body and its `semantic_type`, so
+  operations of one declaring object type whose frames are equal have one
+  frame node, referenced by each of their anchors and holding one `generated`
+  occurrence per operation; a frame node is never referenced by the anchors of
+  two object types, because its `semantic_type` is the anchor's context
+  (QSpec FR-342).
   An operation inherited from `M::Base` and named as `M::Sub::op` anchors at
   `M::Base`.
 - The checker SHALL add `Invariant`, `Precondition` and `Postcondition` to
@@ -114,7 +120,8 @@ source map (FR-095).
   application, so a frame under an `operation_anchor` never decodes as
   `StateTransition` or any other clause kind.
 - S4 SHALL list a frame's `modifies`, `creates` and `deletes` entries in
-  ascending order of (object type node digest, field name), and SHALL list
+  ascending order of (object type node digest, field name, scope with
+  `every-object` first), and SHALL list
   each entry's object type node in the frame's `dependencies` (QSpec FR-340's
   dependency rule).
 - S4 SHALL emit every field `modifies` entry with its `scope`, `receiver` or
@@ -139,6 +146,7 @@ source map (FR-095).
 | FR-105-AC-4 | Compiling the unit twice gives identical bytes. Renaming `ParentOrder` changes no node id; changing its `<` to `<=` changes its `state_clause` node id and the `package_id`; adding `ParentOrder2` with `ParentOrder`'s body adds no node and a second `claim` occurrence (ordinal 1) to `ParentOrder`'s node; adding a second `post` clause on `attemptUpdate` adds one `state_clause` node and no second anchor or frame. Over a package where `Sub` specializes `ConfigVersion`, `pre A ... on Config::ConfigVersion::attemptUpdate` and `pre B ... on Config::Sub::attemptUpdate` share one anchor whose context is `ConfigVersion`. | Test (TC-463); covered |
 | FR-105-AC-5 | `CheckedClauseKind`'s mapping is total over all seven variants: forward, each variant gives one (node pair, clause operation, kind member) triple and no two variants give the same triple; backward, each triple decodes to its variant; (`state`, `frame`) decodes to no variant; `StateTransition` gives (`state`, `transition`). A mutant that swaps two kind members, or deletes an arm, fails the test. | Test (TC-462); covered |
 | FR-105-AC-6 | When the emitter cannot emit one of a clause's nodes (fault injected at the `frame` node), the compile refuses and emits no `state` node and no package bytes. | Test (TC-463 step 4); covered: `qsl-package`'s `a_fault_injected_partway_through_node_emission_writes_nothing` proves the all-or-nothing mechanism generically over the node-emission loop, and `qsl-replay`'s `a_fault_on_the_frame_node_refuses_the_whole_config_version_package` drives it at the ConfigVersion state clause's own `frame` node |
+| FR-105-AC-7 | Over TC-1043's fixture with `own`'s frame replaced by `all`'s, the package holds one `state`/`frame` node for the two operations, whose body is vector W5 and which carries a `generated` occurrence for `all` and then one for `own`, and two `operation_anchor` nodes, one per operation, whose `frame` bindings reference that node; the package passes QSL's I2 read. | Test (TC-1043 step 2) |
 
 ## Dependencies
 
