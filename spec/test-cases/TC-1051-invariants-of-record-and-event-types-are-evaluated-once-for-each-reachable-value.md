@@ -1,5 +1,5 @@
 ---
-id: TC-1050
+id: TC-1051
 title: "The invariants of a record value type and an event type are evaluated once for each reachable value, and a false result is located by its runtime value path"
 type: TC
 relationships:
@@ -8,7 +8,7 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-106
     type: verifies
 ---
-# TC-1050: The invariants of a record value type and an event type are evaluated once for each reachable value, and a false result is located by its runtime value path
+# TC-1051: The invariants of a record value type and an event type are evaluated once for each reachable value, and a false result is located by its runtime value path
 
 ## Description
 
@@ -36,7 +36,7 @@ holds one `Order` object `o1` with `total` `{amount_minor: 5, currency:
 `discount` present as `{-1, "EUR"}`. Invocation `i1` of `Order/requote` on
 `o1` binds `amount` to `{-7, "EUR"}`. Admit by `ValueInvariants { snapshot:
 s1, invocation: i1 }` and evaluate with an unlimited meter unless a step says
-otherwise. Tag the tests `#[trace("TC-1050", "FR-366-AC-n")]`.
+otherwise. Tag the tests `#[trace("TC-1051", "FR-366-AC-n")]`.
 
 1. Admit and evaluate (FR-106-AC-48, FR-366-AC-4).
 2. List `o1`'s fields in another order, `i1`'s parameters in another order and

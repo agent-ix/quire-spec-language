@@ -1,12 +1,12 @@
 ---
-id: TC-1049
+id: TC-1050
 title: "A type-level clause is classified as an invariant, a guard or an unevaluated clause, and an invariant is parsed and checked"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-366
     type: verifies
 ---
-# TC-1049: A type-level clause is classified as an invariant, a guard or an unevaluated clause, and an invariant is parsed and checked
+# TC-1050: A type-level clause is classified as an invariant, a guard or an unevaluated clause, and an invariant is parsed and checked
 
 ## Description
 
@@ -27,7 +27,7 @@ and an `ocl` clause that is parsed.
 Admit TC-235's K2 package (21 charges) with the changes below, compile it in a
 `1-draft` unit with the spine driver passing the FR-146 parser to
 `with_parsed_type_invariants`, and read each clause's role and each type's
-effective invariants. Tag the tests `#[trace("TC-1049", "FR-366-AC-n")]`.
+effective invariants. Tag the tests `#[trace("TC-1050", "FR-366-AC-n")]`.
 
 1. K2 plus the `quire` clause `Extra` (`self.placed or not self.placed`) on
    `OrderLifecycle`, which no transition names (M06 run 4). Read the roles of
