@@ -13,6 +13,7 @@ mod tc235_k2;
 mod call_verdicts;
 mod checked_package_call;
 mod child_composite;
+mod clause_read_paths;
 mod collection_algebra;
 mod collection_queries;
 mod composite_values;
