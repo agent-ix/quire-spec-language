@@ -6624,7 +6624,9 @@ mod tests {
         })
     }
 
-    fn base_title() -> Vec<(&'static str, Value)> {
+    type TitleConstraints = Vec<(&'static str, Value)>;
+
+    fn base_title() -> TitleConstraints {
         vec![
             ("minLength", serde_json::json!({"value": 1})),
             ("maxLength", serde_json::json!({"value": 8})),
@@ -6632,7 +6634,7 @@ mod tests {
         ]
     }
 
-    fn read_title(constraints: &[(&str, Value)]) -> Result<ScalarTypeRecord, ModelRefusal> {
+    fn read_title(constraints: &[(&'static str, Value)]) -> Result<ScalarTypeRecord, ModelRefusal> {
         read_value_type(
             "acme/orders",
             &title(constraints),
@@ -6689,19 +6691,19 @@ mod tests {
     #[trace("TC-1044", "FR-056-AC-38")]
     #[test]
     fn refuses_a_defective_text_value_type_in_the_reader_order() {
-        let with = |edit: &dyn Fn(&mut Vec<(&'static str, Value)>)| {
+        let with = |edit: &dyn Fn(&mut TitleConstraints)| {
             let mut constraints = base_title();
             edit(&mut constraints);
             constraints
         };
         let profile = |name: &str| serde_json::json!({"name": format!("text-profile:{name}")});
         let bounds = |min: u64, max: u64| {
-            move |constraints: &mut Vec<(&'static str, Value)>| {
+            move |constraints: &mut TitleConstraints| {
                 constraints[0].1 = serde_json::json!({"value": min});
                 constraints[1].1 = serde_json::json!({"value": max});
             }
         };
-        let cases: Vec<(&str, Vec<(&str, Value)>, Code, &str)> = vec![
+        let cases: Vec<(&str, TitleConstraints, Code, &str)> = vec![
             (
                 "(b) pattern",
                 with(&|c| {
