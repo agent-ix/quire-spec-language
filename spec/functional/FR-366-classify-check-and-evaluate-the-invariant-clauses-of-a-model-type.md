@@ -134,11 +134,18 @@ The *values* an evaluation ranges over are these:
   values of that object, reached once as a member of its population.
 - For an object type or a process: every object of the observation whose type
   conforms to the type, with `self` the object's reference.
-- For a state machine: the machine's one context in the `pre` snapshot and the
-  one in the `post` snapshot of the selected invocation, each a separate value
-  (QSpec FR-208-AC-10), with `self` the context. An observation with no
-  invocation has no context value; a snapshot with no context for the machine
-  is refused `invalid_model_binding`/`wrong-context` at admission, by the context rule of FR-106 check 9 applied to each state machine that has an effective invariant.
+- For a state machine: the one machine the selected invocation's `context`
+  names, and only it. Its values are its one context in the `pre` snapshot and
+  its one in the `post` snapshot of the invocation, each a separate value
+  (QSpec FR-208-AC-10), with `self` the context; the invariants evaluated for
+  each are the effective invariants of that machine, its own and those it
+  inherits from its supertypes. A machine the invocation does not name has no
+  value, whatever invariants it has or inherits, and no context is required of
+  it. An observation with no invocation has no context value. A snapshot that
+  holds no context entry for the invoked machine is refused
+  `invalid_model_binding`/`wrong-context`, and one that holds two,
+  `invalid_runtime_input`/`duplicate-member`, at admission (FR-106 check 9's
+  context rule applied to the invoked machine).
 
 Evaluation rules:
 
@@ -206,7 +213,7 @@ Evaluation rules:
 | FR-366-AC-6 | TC-235 M14 run 1: `OrderPlaced/Occurred` (`self.occurred_at = self.occurred_at`) is checked as an invariant over every `OrderPlaced` value, and over an observation holding one `Order` object and no `OrderPlaced` value `evaluate_value_invariants` has no result for `Occurred` and outcome `True`. | Test (TC-1051) |
 | FR-366-AC-7 | A `TaxedMoney` value at the `Money` slot `quoted` is evaluated against `TaxedMoney`'s effective invariants; a `Money` record nested in a record `Pair { first: Money; second: Money }` field `pair` of an object is located by `[member pair, field first]` and `[member pair, field second]`, each evaluated; an `OrderPlaced` value passed as a parameter is evaluated at the parameter binding with no steps; a `Reference<Order>` field `buddy` is not followed: the referenced object's `Money` fields are reached once, at the referenced object's own declared identity, and not again under `buddy`. | Test (TC-1051) |
 | FR-366-AC-8 | With a meter that denies the fourth charge, the evaluation of AC-4 returns the one result for `discount` (its three charges: `ordering.operands`, `ordering.arithmetic`, `ordering.result-retain`) and `Incomplete` with `resource_exhausted`/`insufficient-next-charge`: the fourth charge is the `ordering.operands` of the value at `[member history, index 0]`, whose evaluation is not reported, and no later value has a result. A meter that denies the third charge returns no result and `Incomplete`. A `Guard` and an `Unevaluated` clause have no result. | Test (TC-1051) |
-| FR-366-AC-9 | An object-type or process invariant over the object `r2` of an observation `s1` holding the runs `r1` `{attempts: 0}` and `r2` `{attempts: -1}` (TC-235 M16 run 1, the clause `NonNegativeAttempts` as a type-level invariant `self.attempts >= 0` of the process `Fulfilment`) has two results, `Completed(true)` at `(s1, object r1)` and `Completed(false)` at `(s1, object r2)`, each with no steps, and outcome `False`; the state-machine invariant `Extra` of `OrderLifecycle` over TC-1045's `Orders` fixture and its invocation `i1` of `place` (`flags` `{placed: true}`) with the `pre` context `{placed: false, cancelled: false}` and the `post` context `{placed: true, cancelled: true}` has two results, one at `(pre snapshot of i1, invocation i1 binding receiver)` and one at `(post snapshot of i1, invocation i1 binding receiver)`, each `Completed(true)` with no steps; `evaluate_clause` named `NonNegativeAttempts`, over a unit that declares no state clause of that name, returns `UnknownClause`. | Test (TC-1051) |
+| FR-366-AC-9 | An object-type or process invariant over the object `r2` of an observation `s1` holding the runs `r1` `{attempts: 0}` and `r2` `{attempts: -1}` (TC-235 M16 run 1, the clause `NonNegativeAttempts` as a type-level invariant `self.attempts >= 0` of the process `Fulfilment`) has two results, `Completed(true)` at `(s1, object r1)` and `Completed(false)` at `(s1, object r2)`, each with no steps, and outcome `False`; the state-machine invariant `Extra` of `OrderLifecycle` over TC-1045's `Orders` fixture and its invocation `i1` of `place` (`flags` `{placed: true}`) with the `pre` context `{placed: false, cancelled: false}` and the `post` context `{placed: true, cancelled: true}` has two results, one at `(pre snapshot of i1, invocation i1 binding receiver)` and one at `(post snapshot of i1, invocation i1 binding receiver)`, each `Completed(true)` with no steps, and the snapshots, which hold no `ExpressLifecycle` context, admit though `ExpressLifecycle` specializes `OrderLifecycle` and so inherits `Extra`; a `pre` snapshot with no `OrderLifecycle` context refuses `invalid_model_binding`/`wrong-context`; `evaluate_clause` named `NonNegativeAttempts`, over a unit that declares no state clause of that name, returns `UnknownClause`. | Test (TC-1051) |
 
 ## Dependencies
 

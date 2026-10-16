@@ -108,6 +108,7 @@ Recorded, non-blocking:
 | FND-003 | fixed | 993a787fa1229ca708753d948b2a236d217449a3 |
 | FND-004 | fixed | 993a787fa1229ca708753d948b2a236d217449a3 |
 | FND-005 | fixed | 993a787fa1229ca708753d948b2a236d217449a3 |
+| FND-006 | fixed | 384554bb12615915da14e89802e0d4c6fe057297 |
 
 Round 1 verification notes (reviewed at 993a787fa1229ca708753d948b2a236d217449a3):
 - FND-001: quire-exact at the locked rev 37aa172 `numeric.rs` `order` makes
@@ -147,3 +148,18 @@ Recorded, non-blocking (round 1):
 - The earlier mediums are fixed: FR-056-AC-35 is now cited, FR-106 now states
   which checks apply to `ValueInvariants`, the shared meter is stated as
   deliberate, and `Undecided` is excluded.
+
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | high | The new `ValueInvariants` context rule in FR-106 contradicts machine specialization, and with it TC-1051 step 11's expected results. The rule says each `pre` and `post` snapshot holds "exactly one context for every state machine that has an effective invariant", else `wrong-context` or `duplicate-member` "as there" (check 9). A specialization inherits its ancestor's invariants (FR-366 effective invariants), and check 9 defines a machine's read contexts as the entries whose machine is that machine or specializes it. TC-1045's fixture, which FR-106-AC-41 and TC-1051 step 11 name, adds `ExpressLifecycle` specializing `OrderLifecycle`. Its effective invariants therefore include `Extra`, and `P1` and `Q2` hold only an `OrderLifecycle` context. That leaves `ExpressLifecycle` with no read context, so admission refuses `wrong-context` instead of yielding the two `Completed(true)` results. In general, a package with a specialized machine can only admit a snapshot that holds a specialization's context, so a plain `OrderLifecycle` invocation is never admitted. Fix: require and evaluate only the invoked machine's context (the invocation's `context`, evaluated against its most-specific machine's effective invariants), or bind step 11 to TC-1040's base `Orders` fixture and narrow the rule. | spec/functional/FR-106-admit-snapshots-and-invocations.md:407; spec/functional/FR-366-classify-check-and-evaluate-the-invariant-clauses-of-a-model-type.md:136-141,209; spec/test-cases/TC-1051-invariants-of-record-and-event-types-are-evaluated-once-for-each-reachable-value.md:71-81 |
+
+Round 2 verification notes (reviewed at 8a59e4a9451468a249cd0d482eb3a1711e223fa6):
+- FND-006: step 11 now names TC-1045's fixture, which declares `placed` and
+  `cancelled`, has `place(flags: Flags)` modifying both, and has `i1` with
+  `flags` `{placed: true}`. FR-106-AC-41 and AC-42 already admit the same
+  `P1`/`Q2` input for `Context` side `post`, with check 11 passing. The K2
+  defects are gone. FND-007 is a separate defect in the new context rule.
+- Round-1 mediums are fixed: the check 9 context rule is now cited, and the
+  `Orders` unit declares no `NonNegativeAttempts`.

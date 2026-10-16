@@ -75,10 +75,10 @@ unlimited meter unless a step says otherwise. Tag the tests
     with TC-1045's invocation `i1` of `place` (`flags` `{placed: true}`), its
     `pre` snapshot `P1` with context `{placed: false, cancelled: false}`
     labelled `s2` and its `post` snapshot `Q2` with context `{placed: true,
-    cancelled: true}` labelled `s3`. Neither unit declares a state clause named
+    cancelled: true}` labelled `s3`; the fixture's `ExpressLifecycle` specializes `OrderLifecycle`, and `P1` and `Q2` hold no `ExpressLifecycle` context. Neither unit declares a state clause named
     `NonNegativeAttempts`. Evaluate each by `evaluate_value_invariants`, then
     call `evaluate_clause` named `NonNegativeAttempts` over the `Orders` unit
-    (FR-366-AC-9).
+    (FR-366-AC-9). Then remove the `OrderLifecycle` context from `P1`.
 
 ## Expected Results
 
@@ -118,5 +118,5 @@ unlimited meter unless a step says otherwise. Tag the tests
     r1)` and `Completed(false)` at `(s1, object r2)`, no steps, and outcome
     `False`. `Extra` has two results, both `Completed(true)`, at `(s2, invocation
     i1 binding receiver)` and `(s3, invocation i1 binding receiver)`, no
-    steps. `evaluate_clause` named `NonNegativeAttempts` returns
+    steps; the snapshots admit with `ExpressLifecycle` present, since only the invoked machine's context is required. `P1` without its `OrderLifecycle` context refuses `invalid_model_binding`/`wrong-context` naming `OrderLifecycle` and `P1`. `evaluate_clause` named `NonNegativeAttempts` returns
     `CallFailure::Input(InputRefusal::UnknownClause)`.
