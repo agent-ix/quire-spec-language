@@ -1015,6 +1015,53 @@ pub(super) fn empty_frame() -> Value {
     json!({"modifies": [], "creates": [], "deletes": []})
 }
 
+/// TC-460 row 13: a process `Flow` (identity field `x`) declaring operation
+/// `go` with an empty frame, as the `extra_constructs` and `extra_types` of
+/// [`config_version_document`].
+pub(super) fn flow_process_parts() -> (Vec<Value>, Vec<Value>) {
+    let flow = format!("ix://{PACKAGE_IDENTITY}/Flow");
+    let mut go = operation("go", json!([]), None, empty_frame());
+    go["identity"] = json!(format!("{flow}/go"));
+    let step = format!("{flow}/begin");
+    let process = wire_type(
+        &flow,
+        "process",
+        json!({
+            "identityFields": [format!("{flow}/x")],
+            "fields": [wire_field(
+                &format!("{flow}/x"),
+                "x",
+                "ix://quire/native/Boolean",
+                "required",
+                1,
+            )],
+            "operations": [go],
+            "steps": [{
+                "identity": step,
+                "name": "begin",
+                "stepKind": "command",
+                "consumes": [],
+                "emits": [],
+                "origin": {
+                    "generated": {
+                        "generatorIdentity": step,
+                        "generatorVersion": "1.0.0",
+                        "inputIdentities": [step],
+                    }
+                },
+            }],
+        }),
+    );
+    (
+        vec![wire_construct(
+            "process",
+            meaning::PROCESS,
+            json!({"identityFields": "required", "steps": "required"}),
+        )],
+        vec![process],
+    )
+}
+
 /// A second population over `ConfigVersion` named `archive` (TC-461 step
 /// 5), beside `config_history`.
 pub(super) fn archive_population() -> Value {
