@@ -142,9 +142,7 @@ fn entries(evaluation: &ClauseSetEvaluation) -> Vec<(String, Option<bool>)> {
         .iter()
         .map(|entry| {
             let completed = match &entry.evaluation.evaluation.outcome {
-                FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(value))) => {
-                    Some(*value)
-                }
+                FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(value))) => Some(*value),
                 _ => None,
             };
             (entry.name.to_string(), completed)
@@ -178,7 +176,10 @@ fn a_set_reports_both_results_when_the_precondition_holds_and_one_when_it_does_n
     assert_eq!(held.outcome, ClauseSetOutcome::True);
 
     let refused = evaluate(&unit, &over(&unit, &docs, &up34, &names), UNLIMITED).unwrap();
-    assert_eq!(entries(&refused), expected(&[("UpdateAllowed", Some(false))]));
+    assert_eq!(
+        entries(&refused),
+        expected(&[("UpdateAllowed", Some(false))])
+    );
     assert_eq!(refused.outcome, ClauseSetOutcome::False);
 
     // The slice order does not change a result.

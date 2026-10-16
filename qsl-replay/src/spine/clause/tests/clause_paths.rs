@@ -6,8 +6,8 @@
 use super::clause_set::{admit, documents, Documents};
 use super::frame_replay::{config_version_unit, unit_for, Unit};
 use super::*;
-use qsl_eval::value::{ClauseEvaluation, ObservationIdentity, RuntimeValuePath, ValuePathStep};
 use qsl_eval::value::ValuePathSubject;
+use qsl_eval::value::{ClauseEvaluation, ObservationIdentity, RuntimeValuePath, ValuePathStep};
 
 const UNLIMITED: u64 = 1_000_000;
 

@@ -7,7 +7,9 @@ use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::model::observation::AdmittedObservations;
 use quire_exact::{Meter, Outcome, ScalarLimits, Value};
 
-use super::{resolve_clause, CallFailure, CheckedPackageEvaluation, ClauseEvaluation, QualifiedName};
+use super::{
+    resolve_clause, CallFailure, CheckedPackageEvaluation, ClauseEvaluation, QualifiedName,
+};
 use qsl_package::CheckedPackage;
 
 /// One clause a set evaluated.

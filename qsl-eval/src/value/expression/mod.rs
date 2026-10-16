@@ -34,8 +34,8 @@ pub use clause_set::{ClauseSetEntry, ClauseSetEvaluation, ClauseSetOutcome};
 pub use evaluate::Evaluation;
 pub use family::{InvalidQualifiedName, QualifiedName};
 pub use s6a::separation::{
-    ClauseEvaluation, ClauseRead, InvocationBinding, ObservationIdentity, RuntimeValuePath, Separation,
-    SeparationStep, StopReport, ValuePathStep, ValuePathSubject, WitnessClaim,
+    ClauseEvaluation, ClauseRead, InvocationBinding, ObservationIdentity, RuntimeValuePath,
+    Separation, SeparationStep, StopReport, ValuePathStep, ValuePathSubject, WitnessClaim,
 };
 
 // `CheckedExpression` is `check`'s own checked-output type; this module
@@ -514,7 +514,10 @@ pub trait CheckedPackageEvaluation: family::sealed::Sealed {
     /// observations, before evaluating any clause.
     fn evaluate_clause_set(
         &self,
-        clauses: &[(QualifiedName, &qsl_semantics::model::observation::AdmittedObservations)],
+        clauses: &[(
+            QualifiedName,
+            &qsl_semantics::model::observation::AdmittedObservations,
+        )],
         limits: quire_exact::ScalarLimits,
     ) -> Result<ClauseSetEvaluation, CallFailure>;
 
@@ -892,7 +895,10 @@ impl CheckedPackageEvaluation for CheckedPackage {
 
     fn evaluate_clause_set(
         &self,
-        clauses: &[(QualifiedName, &qsl_semantics::model::observation::AdmittedObservations)],
+        clauses: &[(
+            QualifiedName,
+            &qsl_semantics::model::observation::AdmittedObservations,
+        )],
         limits: quire_exact::ScalarLimits,
     ) -> Result<ClauseSetEvaluation, CallFailure> {
         clause_set::evaluate(self, clauses, limits)

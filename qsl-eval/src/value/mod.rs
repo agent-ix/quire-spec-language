@@ -18,7 +18,7 @@ mod expression;
 pub use expression::{
     evaluate_closed, input_refusal_code, supplied_stop_cause, supplied_stop_code, CallFailure,
     CheckedPackageEvaluation, ClauseEvaluation, ClauseRead, ClauseSetEntry, ClauseSetEvaluation,
-    ClauseSetOutcome, Evaluation, FrameEvaluation, InvalidQualifiedName,
-    InvocationBinding, ObservationIdentity, QualifiedName, RuntimeValuePath, Separation,
-    SeparationStep, StopReport, ValuePathStep, ValuePathSubject, WitnessClaim,
+    ClauseSetOutcome, Evaluation, FrameEvaluation, InvalidQualifiedName, InvocationBinding,
+    ObservationIdentity, QualifiedName, RuntimeValuePath, Separation, SeparationStep, StopReport,
+    ValuePathStep, ValuePathSubject, WitnessClaim,
 };

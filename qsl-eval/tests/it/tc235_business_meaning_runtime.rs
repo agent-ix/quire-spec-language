@@ -9,8 +9,8 @@ use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
 use qsl_eval::value::{
-    CheckedPackageEvaluation, InvocationBinding, ObservationIdentity, QualifiedName,
-    RuntimeValuePath, ValuePathSubject,
+    CheckedPackageEvaluation, ClauseSetOutcome, InvocationBinding, ObservationIdentity,
+    QualifiedName, RuntimeValuePath, ValuePathStep, ValuePathSubject,
 };
 use qsl_forms::{BinaryOperator, ClauseKind, Expression, FunctionDeclaration, TypeForm};
 use qsl_foundation::selection::ProfileSelection;
@@ -77,6 +77,14 @@ fn k2_order_with(fields: serde_json::Value, clauses: serde_json::Value) -> serde
 }
 
 fn lifecycle_document(requires: &str) -> serde_json::Value {
+    lifecycle_document_with(requires, |_| {})
+}
+
+/// [`lifecycle_document`] with `extra` applied before the digests are taken.
+fn lifecycle_document_with(
+    requires: &str,
+    extra: impl FnOnce(&mut serde_json::Value),
+) -> serde_json::Value {
     let mut document = crate::tc235_k2::k2();
     let lifecycle = document["types"]
         .as_array_mut()
@@ -124,6 +132,7 @@ fn lifecycle_document(requires: &str) -> serde_json::Value {
         crate::tc235_k2::id("OrderLifecycle/placed"),
         crate::tc235_k2::id("OrderLifecycle/cancelled"),
     ]);
+    extra(&mut document);
     let digest = crate::tc235_k2::jcs_digest(&document["types"]);
     document["source"]["digest"] = serde_json::json!(digest);
     document["package"]["manifestDigest"] = serde_json::json!(digest);
@@ -301,6 +310,15 @@ fn lifecycle_invocation(
     pre: &DocumentRef,
     post: &DocumentRef,
 ) -> (DocumentRef, Vec<u8>) {
+    lifecycle_invocation_with(model_digest, pre, post, serde_json::json!({}))
+}
+
+fn lifecycle_invocation_with(
+    model_digest: &[u8; 32],
+    pre: &DocumentRef,
+    post: &DocumentRef,
+    parameters: serde_json::Value,
+) -> (DocumentRef, Vec<u8>) {
     let identity = DocumentRef {
         authority: "test".to_owned(),
         identity: "i1".to_owned(),
@@ -327,7 +345,7 @@ fn lifecycle_invocation(
         "self": {"population": crate::tc235_k2::id("OrderLifecycle"), "key": "i1"},
         "pre": document_ref(pre),
         "post": document_ref(post),
-        "parameters": {},
+        "parameters": parameters,
         "result": null,
         "created": [],
         "deleted": [],
@@ -1472,9 +1490,8 @@ fn truth(package: &CheckedPackage, clause: &str, observations: &AdmittedObservat
 /// flips run 2's postcondition to `false`; dropping the precondition's
 /// observation selection flips run 3's precondition; reporting no receiver
 /// path for an object receiver (or the invocation receiver binding) flips the
-/// located-violation assertion. Run 3's "exactly one result" outcome and the
-/// per-read paths of M22 are not asserted here: no evaluator API reports a
-/// clause set's results together or a path per read.
+/// located-violation assertion. Run 3's one-result outcome is
+/// `tc235_m16_run3_a_clause_set_reports_one_result_for_a_false_precondition`.
 #[trace(
     "QSpec-TC-235",
     "QSpec-FR-208-AC-6",
@@ -1575,4 +1592,337 @@ fn tc235_m16_process_invariant_and_operation_clauses_evaluate_per_run() {
     };
     assert_eq!(restart(0, 1), (true, true));
     assert!(!restart(3, 4).0, "attempts 3 does not satisfy attempts < 3");
+}
+
+/// TC-235 M16 run 3 (FR-107-AC-13, AC-14): the clause set of `restart` over
+/// `r1` from `{attempts: 0}` to `{attempts: 1}` reports both results, each
+/// `true`, outcome `True`; from `{attempts: 3}` to `{attempts: 4}` it reports
+/// exactly one result, the precondition `RestartRequires` `false`, outcome
+/// `False`, and no result for the postcondition `RestartEnsures`.
+#[trace("QSpec-TC-235", "FR-107-AC-13", "FR-107-AC-14")]
+#[test]
+fn tc235_m16_run3_a_clause_set_reports_one_result_for_a_false_precondition() {
+    let (package, view, _) = model_package(
+        &process_document(),
+        "invariant NonNegativeAttempts using v on M::Fulfilment at current { self.attempts >= 0 }\n\
+         pre RestartRequires using v on M::Fulfilment::restart { self.attempts < 3 }\n\
+         post RestartEnsures using v on M::Fulfilment::restart { self.attempts = pre(self.attempts) + 1 }",
+        25,
+    )
+    .expect("M16 checks");
+    let set = |from: i64, to: i64| {
+        let (pre, runs) = process_observation(&package, &view, "p1", &[("r1", from)]);
+        let (post, _) = process_observation(&package, &view, "q1", &[("r1", to)]);
+        let required = process_observations(
+            &package,
+            "RestartRequires",
+            None,
+            Some(pre.clone()),
+            None,
+            runs[0].clone(),
+        );
+        let ensured = process_observations(
+            &package,
+            "RestartEnsures",
+            None,
+            Some(pre),
+            Some(post),
+            runs[0].clone(),
+        );
+        // Listed postcondition first: the set orders its own entries.
+        let clauses = [
+            (
+                QualifiedName::unqualified("RestartEnsures").unwrap(),
+                &ensured,
+            ),
+            (
+                QualifiedName::unqualified("RestartRequires").unwrap(),
+                &required,
+            ),
+        ];
+        let evaluation = package
+            .evaluate_clause_set(&clauses, UNLIMITED)
+            .expect("admitted observations evaluate");
+        let entries: Vec<_> = evaluation
+            .results
+            .iter()
+            .map(|entry| {
+                let truth = match entry.evaluation.evaluation.outcome {
+                    qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(
+                        Value::Boolean(value),
+                    )) => value,
+                    ref other => panic!("expected a completed Boolean, got {other:?}"),
+                };
+                (entry.name.to_string(), truth)
+            })
+            .collect();
+        (entries, evaluation.outcome)
+    };
+    assert_eq!(
+        set(0, 1),
+        (
+            vec![
+                ("RestartRequires".to_owned(), true),
+                ("RestartEnsures".to_owned(), true)
+            ],
+            ClauseSetOutcome::True
+        )
+    );
+    assert_eq!(
+        set(3, 4),
+        (
+            vec![("RestartRequires".to_owned(), false)],
+            ClauseSetOutcome::False
+        )
+    );
+}
+
+/// The M15 lifecycle package with `place(flags: Flags)` and the TC-235 M22
+/// clauses, and the invocation `i1` of `place` binding `flags` to
+/// `{placed: true}` between `p1` `{placed: false, cancelled: false}` and `q1`
+/// `{placed: true, cancelled: true}`.
+fn orders_fixture() -> (
+    CheckedPackage,
+    BTreeMap<[u8; 32], Vec<u8>>,
+    BTreeMap<[u8; 32], Vec<u8>>,
+    BTreeMap<[u8; 32], Vec<u8>>,
+    DocumentRef,
+) {
+    use crate::tc235_k2::{declaration, field, id, origin};
+    let flags_type = id("Flags");
+    let document = lifecycle_document_with("not self.placed", |document| {
+        document["types"].as_array_mut().unwrap().push(declaration(
+            "Flags",
+            "money",
+            serde_json::json!({
+                "fields": [field("Flags", "placed", "ix://quire/native/Boolean")],
+                "operations": [],
+            }),
+        ));
+        let lifecycle = crate::tc235_k2::type_named_mut(document, "OrderLifecycle");
+        lifecycle["operations"][0]["params"] = serde_json::json!([{
+            "identity": id("OrderLifecycle/place/flags"),
+            "origin": origin("OrderLifecycle/place/flags"),
+            "name": "flags",
+            "typeRef": flags_type,
+            "presence": "required",
+            "nullable": false,
+            "defaultKind": "none",
+            "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
+        }]);
+    });
+    let (package, _, packages) = model_package(
+        &document,
+        "invariant Consistent using v on M::OrderLifecycle at current { not (self.placed and self.cancelled) }\n\
+         pre PlaceRequires using v on M::OrderLifecycle::place { not self.placed }\n\
+         post FlagsPlaced using v on M::OrderLifecycle::place { flags.placed }",
+        25,
+    )
+    .expect("M22 checks");
+    let model_digest = packages.keys().next().expect("M22 package");
+    let (pre_ref, pre_bytes) = lifecycle_observation(model_digest, "p1", "pre", &[(false, false)]);
+    let (post_ref, post_bytes) = lifecycle_observation(model_digest, "q1", "post", &[(true, true)]);
+    let (invocation_ref, invocation_bytes) = lifecycle_invocation_with(
+        model_digest,
+        &pre_ref,
+        &post_ref,
+        serde_json::json!({"flags": {"record": {
+            "type": flags_type,
+            "fields": {"placed": {"boolean": true}},
+        }}}),
+    );
+    (
+        package,
+        packages,
+        BTreeMap::from([(pre_ref.digest, pre_bytes), (post_ref.digest, post_bytes)]),
+        BTreeMap::from([(invocation_ref.digest, invocation_bytes)]),
+        invocation_ref,
+    )
+}
+
+fn identity_of(label: &str) -> ObservationIdentity {
+    ObservationIdentity {
+        authority: "test".to_owned(),
+        identity: label.to_owned(),
+        revision_namespace: "tc235".to_owned(),
+        revision: "1".to_owned(),
+    }
+}
+
+/// A path rooted at `i1`'s `binding` under observation `label`.
+fn invocation_path(
+    label: &str,
+    binding: InvocationBinding,
+    steps: Vec<ValuePathStep>,
+) -> RuntimeValuePath {
+    RuntimeValuePath {
+        observation: identity_of(label),
+        subject: ValuePathSubject::Invocation {
+            invocation: identity_of("i1"),
+            binding,
+        },
+        steps,
+    }
+}
+
+fn reads_of(evaluation: &qsl_eval::value::ClauseEvaluation) -> Vec<Option<RuntimeValuePath>> {
+    evaluation
+        .reads()
+        .iter()
+        .map(|read| read.path.clone())
+        .collect()
+}
+
+/// TC-235 M22 (TC-1040 steps 6 to 8, FR-107-AC-7 and AC-11): the receiver
+/// and parameter reads of the `Orders` lifecycle are located at the
+/// invocation's receiver and parameter bindings.
+///
+/// The invariant's observation is built at the model layer from `i1` and its
+/// post context `q1` (FR-107 "The receiver path"). The wire serialization of
+/// the two `placed` paths is asserted in qsl-replay
+/// (`result::wire::tests`), whose `PathWire` is private to that crate.
+#[trace("QSpec-TC-235", "TC-1040", "FR-107-AC-7", "FR-107-AC-11")]
+#[test]
+fn tc235_m22_receiver_and_parameter_reads_are_located_at_their_bindings() {
+    use qsl_semantics::model::observation::{SelectedObject, SnapshotValue};
+    let (package, packages, snapshots, invocations, i1) = orders_fixture();
+    let admit = |clause: &str, invocation: DocumentRef| {
+        lifecycle_observations(
+            &package,
+            &packages,
+            clause,
+            &snapshots,
+            &invocations,
+            invocation,
+        )
+        .expect("the observations admit")
+    };
+    let evaluate = |clause: &str, observations: &AdmittedObservations| {
+        package
+            .evaluate_clause(
+                &QualifiedName::unqualified(clause).unwrap(),
+                observations,
+                &mut Meter::new(UNLIMITED),
+            )
+            .expect("admitted observations evaluate")
+    };
+    let field_step = |name: &str| ValuePathStep::Field(name.to_owned());
+    let receiver = InvocationBinding::Receiver;
+    let flags = InvocationBinding::Parameter("flags".to_owned());
+
+    // Step 6: `Consistent` at `q1`.
+    let post = admit("FlagsPlaced", i1.clone());
+    let consistent = evaluate(
+        "Consistent",
+        &lifecycle_invariant_observations(&package, &post, true),
+    );
+    assert!(matches!(
+        consistent.evaluation.outcome,
+        qsl_semantics::family::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(false)))
+    ));
+    assert_eq!(
+        consistent.receiver_path(),
+        Some(&invocation_path("q1", receiver.clone(), vec![]))
+    );
+    let placed = invocation_path("q1", receiver.clone(), vec![field_step("placed")]);
+    assert_eq!(
+        reads_of(&consistent),
+        vec![
+            Some(placed.clone()),
+            Some(invocation_path(
+                "q1",
+                receiver.clone(),
+                vec![field_step("cancelled")]
+            )),
+        ]
+    );
+
+    // Step 7: `FlagsPlaced` reads the parameter `flags`.
+    let flags_placed = evaluate("FlagsPlaced", &post);
+    let parameter = invocation_path("q1", flags, vec![field_step("placed")]);
+    assert_eq!(reads_of(&flags_placed), vec![Some(parameter.clone())]);
+    assert_ne!(parameter, placed);
+    assert!(parameter < placed, "the parameter path orders first");
+
+    // Step 8: `PlaceRequires` over `i1`, then over a pre-call observation.
+    let required = admit("PlaceRequires", i1);
+    let by_invocation = evaluate("PlaceRequires", &required);
+    assert_eq!(
+        by_invocation.receiver_path(),
+        Some(&invocation_path("p1", receiver.clone(), vec![]))
+    );
+    assert_eq!(
+        reads_of(&by_invocation),
+        vec![Some(invocation_path(
+            "p1",
+            receiver,
+            vec![field_step("placed")]
+        ))]
+    );
+
+    let model_digest = packages.keys().next().expect("M22 package");
+    let (pre_ref, pre_bytes) = lifecycle_observation(model_digest, "p1", "pre", &[(false, false)]);
+    let mut snapshots = snapshots;
+    snapshots.insert(pre_ref.digest, pre_bytes);
+    let pre_call = lifecycle_pre_call(
+        &package,
+        &packages,
+        &snapshots,
+        ClauseSelectionInput::PreCall {
+            snapshot: pre_ref,
+            self_object: SelectedObject {
+                population: crate::tc235_k2::id("OrderLifecycle"),
+                key: "i1".to_owned(),
+            },
+            parameters: BTreeMap::from([(
+                quire_exact::Identifier::new("flags").unwrap(),
+                SnapshotValue::record(
+                    crate::tc235_k2::id("Flags"),
+                    vec![("placed".to_owned(), SnapshotValue::boolean(true))],
+                ),
+            )]),
+        },
+    );
+    let evaluation = evaluate("PlaceRequires", &pre_call);
+    assert_eq!(evaluation.receiver_path(), None);
+    assert_eq!(reads_of(&evaluation), vec![None]);
+}
+
+/// `PlaceRequires` admitted from a pre-call `input`.
+fn lifecycle_pre_call(
+    package: &CheckedPackage,
+    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: &BTreeMap<[u8; 32], Vec<u8>>,
+    input: ClauseSelectionInput,
+) -> AdmittedObservations {
+    let checked = package
+        .graph()
+        .state_clause("PlaceRequires")
+        .expect("clause");
+    let facts = ClauseFacts {
+        identity: checked.identity(),
+        kind: checked.kind(),
+        context: checked.context(),
+        operation: checked.operation().map(|operation| OperationFacts {
+            declaring: operation.declaring,
+            declaration: operation.declaration.clone(),
+        }),
+    };
+    admit_observations(
+        package.graph().model_selections(),
+        package.graph().scope().types(),
+        &facts,
+        packages,
+        ModelNormalizationLimits::default(),
+        &Provisions {
+            snapshots,
+            invocations: &BTreeMap::new(),
+        },
+        &ClauseSelection {
+            name: "PlaceRequires".to_owned(),
+            input,
+        },
+        ObservationLimits::default(),
+    )
+    .expect("the pre-call observation admits")
 }

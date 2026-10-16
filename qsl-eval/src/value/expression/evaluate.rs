@@ -23,7 +23,8 @@ use super::s6a::separation::{
 use qsl_foundation::diagnostic::{kernel_refusal_record, InternalFault, Locus, RefusalRecord};
 use qsl_semantics::check::{
     Arithmetic, CheckedGraph, CheckedLiteral, CheckedNode, Connective, DispatchTable,
-    IntegerDivisionOperator, NodeId, NodeKind, Operator, OrderedKind, RecordSlot, Scope, Slot, Visit,
+    IntegerDivisionOperator, NodeId, NodeKind, Operator, OrderedKind, RecordSlot, Scope, Slot,
+    Visit,
 };
 use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::family::FamilyResult;
