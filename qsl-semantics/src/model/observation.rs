@@ -2497,6 +2497,29 @@ pub enum FrameChange {
         /// Its post most-specific type.
         post_type: DeclarationKey,
     },
+    /// A relationship instance was added or removed, and the frame's
+    /// `modifies` does not name the relationship (FR-115 step 5).
+    Link {
+        /// The relationship node's key.
+        relationship: DeclarationKey,
+        /// Whether the instance is in the post extent only or the pre only.
+        difference: LinkDifference,
+        /// The instance's source end.
+        source: SelectedObject,
+        /// The instance's target end.
+        target: SelectedObject,
+        /// The frame's checked `modifies`, in declared order.
+        modifies: Vec<DeclarationKey>,
+    },
+}
+
+/// FR-115: which extent a changed relationship instance is in.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LinkDifference {
+    /// The instance is in the post extent and not in the pre extent.
+    Added,
+    /// The instance is in the pre extent and not in the post extent.
+    Removed,
 }
 
 impl AdmittedInvocation<'_> {

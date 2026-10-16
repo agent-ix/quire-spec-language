@@ -17,7 +17,9 @@ use super::call::{CallOutcome, CallRefusal, CallValue};
 use super::{ClauseDisposition, ClauseRunReport};
 use crate::result::RecordWire;
 use qsl_semantics::model::key::DeclarationKey;
-use qsl_semantics::model::observation::{DocumentRef, FrameChange, FrameWitness};
+use qsl_semantics::model::observation::{
+    DocumentRef, FrameChange, FrameWitness, LinkDifference, SelectedObject,
+};
 use qsl_semantics::value::environment_stage::membership_failure_cause;
 
 /// Why a clause-run report could not be written as a canonical document.
@@ -684,6 +686,36 @@ enum FrameChangeRead {
         pre_type: DeclarationKeyRead,
         post_type: DeclarationKeyRead,
     },
+    Link {
+        relationship: DeclarationKeyRead,
+        difference: LinkDifferenceRead,
+        source: ObjectRefRead,
+        target: ObjectRefRead,
+        modifies: Vec<DeclarationKeyRead>,
+    },
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum LinkDifferenceRead {
+    Added,
+    Removed,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ObjectRefRead {
+    population: String,
+    key: String,
+}
+
+impl ObjectRefRead {
+    fn typed(&self) -> SelectedObject {
+        SelectedObject {
+            population: self.population.clone(),
+            key: self.key.clone(),
+        }
+    }
 }
 
 impl FrameChangeRead {
@@ -725,6 +757,22 @@ impl FrameChangeRead {
                 pre_type: pre_type.typed(),
                 post_type: post_type.typed(),
             },
+            Self::Link {
+                relationship,
+                difference,
+                source,
+                target,
+                modifies,
+            } => FrameChange::Link {
+                relationship: relationship.typed(),
+                difference: match difference {
+                    LinkDifferenceRead::Added => LinkDifference::Added,
+                    LinkDifferenceRead::Removed => LinkDifference::Removed,
+                },
+                source: source.typed(),
+                target: target.typed(),
+                modifies: modifies.iter().map(DeclarationKeyRead::typed).collect(),
+            },
         }
     }
 }
@@ -737,6 +785,14 @@ impl FrameWitnessRead {
                 member: "disposition.refusal.frame_witness",
                 reason: "frame witness code or cause disagrees with catalog",
             });
+        }
+        if let FrameChangeRead::Link { source, .. } = &self.change {
+            if source.population != self.population {
+                return Err(NativeRunReadError::Invalid {
+                    member: "disposition.refusal.frame_witness.population",
+                    reason: "link witness population is not its source end's population",
+                });
+            }
         }
         Ok(FrameWitness {
             code: Code::FrameViolation,
@@ -1886,6 +1942,28 @@ enum FrameChangeWire {
         pre_type: DeclarationKeyWire,
         post_type: DeclarationKeyWire,
     },
+    Link {
+        relationship: DeclarationKeyWire,
+        difference: &'static str,
+        source: ObjectRefWire,
+        target: ObjectRefWire,
+        modifies: Vec<DeclarationKeyWire>,
+    },
+}
+
+#[derive(Serialize)]
+struct ObjectRefWire {
+    population: String,
+    key: String,
+}
+
+impl From<&SelectedObject> for ObjectRefWire {
+    fn from(value: &SelectedObject) -> Self {
+        Self {
+            population: value.population.clone(),
+            key: value.key.clone(),
+        }
+    }
 }
 
 impl From<&FrameChange> for FrameChangeWire {
@@ -1926,6 +2004,22 @@ impl From<&FrameChange> for FrameChangeWire {
                 object: object.clone(),
                 pre_type: DeclarationKeyWire::from(pre_type),
                 post_type: DeclarationKeyWire::from(post_type),
+            },
+            FrameChange::Link {
+                relationship,
+                difference,
+                source,
+                target,
+                modifies,
+            } => Self::Link {
+                relationship: DeclarationKeyWire::from(relationship),
+                difference: match difference {
+                    LinkDifference::Added => "added",
+                    LinkDifference::Removed => "removed",
+                },
+                source: ObjectRefWire::from(source),
+                target: ObjectRefWire::from(target),
+                modifies: modifies.iter().map(DeclarationKeyWire::from).collect(),
             },
         }
     }

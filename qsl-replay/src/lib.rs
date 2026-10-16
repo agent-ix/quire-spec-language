@@ -181,7 +181,8 @@ pub use witness::{
 // `Identifier` re-exported above.
 pub use qsl_semantics::model::key::DeclarationKey;
 pub use qsl_semantics::model::observation::{
-    AdmissionFailure, AdmissionRecord, DocumentRef, FrameChange, FrameWitness, SelectedObject,
+    AdmissionFailure, AdmissionRecord, DocumentRef, FrameChange, FrameWitness, LinkDifference,
+    SelectedObject,
 };
 
 // FR-122: the state-clause counterexample's replay entry, payload and
