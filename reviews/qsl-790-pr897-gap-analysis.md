@@ -89,3 +89,25 @@ Clean (each test asserts what its row states):
   no result for `RestartEnsures`.
 - QSpec FR-207-AC-10, the `reference` step wire form: the round trip and the
   malformed-universe refusal.
+
+## Dispositions
+
+Round 1, reviewed at `b44ad734dc3416d4270a432dfadf7d551e3d89c5`.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | b44ad734d |
+
+FND-001: the AC-16 tag was dropped (`#[trace("TC-1039")]`). The duplicate
+refusal itself stays unbuilt until `InputRefusal::DuplicateClause` lands in
+quire-semantic-value, and QSL-790 stays open for it. Also in the fix round:
+the M16 run-3 test is retagged `QSpec-TC-235` only, and the AC-15 zero-budget
+test now asserts the `Incomplete` denial's `LimitKind::WorkUnits` and limit 0.
+
+Scope note, round 1: main has moved since this head. #899 rewrites
+FR-107-AC-18 (the verdict-combination table, called directly) and adds AC-19
+and AC-20 (a `precondition-false` family result through `evaluate_clause_set`,
+and postconditions skipped after it). The code's `combine` and skip rule
+already match. The untagged `combine` unit test covers 5 of AC-18's sets.
+AC-18 (as rewritten), AC-19 and AC-20 have no tagged tests yet. They belong
+to this ticket's clause-set outcome.

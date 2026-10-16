@@ -83,3 +83,46 @@ Clean:
   vendoring, compatibility shim or tracking ceremony.
 - The `Cargo.lock` bump of `quire-semantic-value` to `ad6e975` follows main
   of a `branch=main` dependency.
+
+## Dispositions
+
+Round 1, reviewed at `b44ad734dc3416d4270a432dfadf7d551e3d89c5`. Fix commit
+`b44ad734d`; merge of main `5c108b057` (one import conflict, resolved cleanly).
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | b44ad734d |
+| FND-002 | fixed | b44ad734d |
+
+FND-001: `Trail::receiver_unlocated` is set only for a `Context` with no
+invocation. `note_member` records no provenance for that receiver, and
+`note_element` gives no path to an element of a selected collection that has
+no provenance. An invocation-selected receiver is unaffected, because the flag
+is false there. `a_context_collection_read_under_pre_call_has_no_path` asserts
+`[None, None, None]` under `PreCall` and `(p1, receiver i1, [field items])`
+by invocation.
+
+FND-002: `read_path` roots a selection whose operand is a navigation (seen
+through `value`, `pre` and coercions) at `Object(<reference read>)`, with the
+`member` step alone. `a_selection_on_a_navigation_is_located_at_the_referenced_object`
+builds TC-1040 step 9 and asserts exactly one read,
+`(N, object(t1), [member level])`.
+
+Recorded in round 1, not blocking:
+- medium: the "selected collection with no provenance gives none" branch also
+  applies to a located owner's stored collection when it is selected inside a
+  quantifier body. Provenance is recorded only at claim level
+  (`iterations == 0`). Such elements now get no path where FR-107 names the
+  stored location. Before the fix they got a wrong `built` subject, so this
+  is absent rather than wrong. A path from `trail.selection_path(source)` plus
+  `Index(position)` would give the right location in both cases.
+- medium: `selected()` does not look through `value`/`pre`/coercion, unlike
+  `navigated()`. So an unlocated context's collection under one of those
+  wrappers still falls back to a `built` subject.
+- medium: the element-of-navigation branch in `note_element` (a multi-valued
+  navigation as a quantifier domain) has no test. No FR-107 AC names that
+  case.
+- low: the new PreCall test is tagged `TC-1040`/`FR-107-AC-7`, but TC-1040 has
+  no `items` step. AC-7 is fully covered elsewhere, so no coverage is
+  invented. The AC-17 test builds its observations by hand rather than
+  admitting them by FR-106.
