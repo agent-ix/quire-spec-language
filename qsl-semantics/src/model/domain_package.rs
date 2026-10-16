@@ -16,7 +16,7 @@ use crate::model::normalize::ModelRefusal;
 use crate::model::origin::JsonValue;
 use qsl_forms::Expression;
 use quire_canonical::FixedShape;
-use quire_exact::Presence;
+use quire_exact::{Presence, TextType};
 use quire_semantic_value::location::OperationClauseKind;
 
 /// A field or association-end multiplicity (FCD FR-113).
@@ -405,6 +405,8 @@ pub enum ScalarValueDomain {
         /// Inclusive upper bound.
         upper: i128,
     },
+    /// A bounded text `Text[min, max; profile]` (FR-056's Text value type).
+    Text(TextType),
     /// An alias for a native value type.
     Native(NativeValueType),
 }

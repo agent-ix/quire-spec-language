@@ -895,25 +895,84 @@ impl SnapshotValue {
 /// built in.
 impl PartialEq for SnapshotValue {
     fn eq(&self, other: &Self) -> bool {
-        let mut work = vec![(self.form(), other.form())];
-        while let Some(pair) = work.pop() {
-            match pair {
+        self.equals_by(other, None)
+    }
+}
+
+/// The retained sequence of a Text payload under `declared`'s profile
+/// (FR-141): the payload itself, or its normalization.
+#[qsl_attrs::string_edge]
+pub(super) fn retained_text(declared: &quire_exact::TextType, payload: &str) -> String {
+    match declared.profile().normalization() {
+        Some(form) => form.apply(payload).collect(),
+        None => payload.to_owned(),
+    }
+}
+
+/// A Text object's `text` member, if it is a string.
+#[qsl_attrs::string_edge]
+fn text_member(native: RawNative<'_>) -> Option<&str> {
+    native
+        .members()
+        .find_map(|(name, text)| (name == "text").then_some(text).flatten())
+}
+
+impl SnapshotValue {
+    /// Whether the two values are equal, a value of a declared Text type
+    /// comparing by its retained sequence (FR-106-AC-40, FR-141): `declared`
+    /// is this value's slot type, `None` where it is not known. Every other
+    /// form compares as read.
+    pub(super) fn equals_by(
+        &self,
+        other: &Self,
+        declared: Option<&quire_exact::ValueType>,
+    ) -> bool {
+        use quire_exact::ValueType;
+        let mut work = vec![(declared, self.form(), other.form())];
+        while let Some((declared, left, right)) = work.pop() {
+            match (left, right) {
                 (RawForm::Boolean(left), RawForm::Boolean(right)) if left == right => {}
                 (RawForm::Integer(left), RawForm::Integer(right)) if left == right => {}
-                (RawForm::Native(left), RawForm::Native(right))
-                    if left.kind == right.kind && left.members == right.members => {}
+                (RawForm::Native(left), RawForm::Native(right)) => {
+                    let equal = match (declared, left.kind, right.kind) {
+                        (
+                            Some(ValueType::Text(text_type)),
+                            RawNativeKind::Known(NativeKind::Text),
+                            RawNativeKind::Known(NativeKind::Text),
+                        ) => match (text_member(left), text_member(right)) {
+                            (Some(left), Some(right)) => {
+                                retained_text(text_type, left) == retained_text(text_type, right)
+                            }
+                            _ => false,
+                        },
+                        _ => left.kind == right.kind && left.members == right.members,
+                    };
+                    if !equal {
+                        return false;
+                    }
+                }
                 (RawForm::Absent, RawForm::Absent) => {}
                 (RawForm::Reference(left), RawForm::Reference(right)) if left == right => {}
                 (RawForm::Present(left), RawForm::Present(right)) => {
-                    work.push((left.form(), right.form()));
+                    // A field's declared type is its bare type: `Option` only
+                    // wraps an operation parameter or result.
+                    let inner = match declared {
+                        Some(ValueType::Option(payload)) => Some(&**payload),
+                        other => other,
+                    };
+                    work.push((inner, left.form(), right.form()));
                 }
                 (RawForm::Sequence(left), RawForm::Sequence(right))
                     if left.iter().len() == right.iter().len() =>
                 {
+                    let element = match declared {
+                        Some(ValueType::Collection(collection)) => Some(collection.element()),
+                        _ => None,
+                    };
                     work.extend(
                         left.iter()
                             .zip(right.iter())
-                            .map(|(left, right)| (left.form(), right.form())),
+                            .map(|(left, right)| (element, left.form(), right.form())),
                     );
                 }
                 (RawForm::Record(left), RawForm::Record(right))
@@ -926,7 +985,7 @@ impl PartialEq for SnapshotValue {
                         if left_name != right_name {
                             return false;
                         }
-                        work.push((left.form(), right.form()));
+                        work.push((None, left.form(), right.form()));
                     }
                 }
                 (RawForm::Variant(left), RawForm::Variant(right))
