@@ -1595,7 +1595,7 @@ pub fn population_universe_for(
 }
 
 /// The effective identity of the declared type `declaration` and its
-/// [`UniverseId`], derived through [`population_universe`] exactly as
+/// [`UniverseId`], derived through `population_universe` exactly as
 /// [`population_universe_for`] resolves an object argument. `None` when no
 /// selected model declares `declaration`.
 pub fn declared_type_universe_for(
