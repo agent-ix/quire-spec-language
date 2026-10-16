@@ -283,9 +283,15 @@ fn invariant(identifier: &'static str) -> Halt {
 
 /// The one target of a single-valued navigation end `[lower, upper]` (FR-364
 /// step 4): the count is decided with no charge, and a count outside the
-/// bound is the kernel's `cardinality_out_of_bound` refusal over the
-/// end's one-element `Set`.
-fn single_target(mut elements: Vec<Value>, lower: u64, upper: u64) -> Result<Option<Value>, Halt> {
+/// bound is the kernel's `cardinality_out_of_bound` refusal, whose
+/// collection kind is `Set` for a `unique` end and `Bag` otherwise, with a
+/// repeated instance of a non-unique end counted once per instance.
+fn single_target(
+    mut elements: Vec<Value>,
+    lower: u64,
+    upper: u64,
+    unique: bool,
+) -> Result<Option<Value>, Halt> {
     let count = u64::try_from(elements.len()).unwrap_or(u64::MAX);
     let violation = if count < lower {
         Some(BoundViolation::BelowMinimum)
@@ -299,7 +305,11 @@ fn single_target(mut elements: Vec<Value>, lower: u64, upper: u64) -> Result<Opt
             .map_err(|_| invariant("navigate-single-valued-bound-invalid"))?;
         return Err(Halt::Stop(Stop::Refused(Refusal::CardinalityOutOfBound {
             violation,
-            kind: CollectionKind::Set,
+            kind: if unique {
+                CollectionKind::Set
+            } else {
+                CollectionKind::Bag
+            },
             bound,
             count,
         })));
@@ -1782,8 +1792,11 @@ impl<'a, 'm> Machine<'a, 'm> {
                 retain_scalar(Value::Boolean(found), self.meter)?
             }
             NodeKind::Navigate {
-                relationship, near, ..
-            } => self.navigate(node, relationship, *near)?,
+                relationship,
+                near,
+                unique,
+                ..
+            } => self.navigate(node, relationship, *near, *unique)?,
             NodeKind::AllInstances { population } => {
                 if self.is_protocol_clause() {
                     return Err(Halt::Family(FamilyResult::Refused(Box::new(
@@ -1981,6 +1994,7 @@ impl<'a, 'm> Machine<'a, 'm> {
         node: CheckedNode<'_>,
         relationship: &DeclarationKey,
         near: EndSide,
+        unique: bool,
     ) -> Result<Value, Halt> {
         let Value::Reference(receiver) = self.pop()? else {
             return Err(invariant("navigate-reference-value-expected"));
@@ -2036,11 +2050,11 @@ impl<'a, 'm> Machine<'a, 'm> {
                 self.meter,
             ))?),
             ValueType::Reference(_) => {
-                let reference = single_target(elements, 1, 1)?;
+                let reference = single_target(elements, 1, 1, unique)?;
                 reference.ok_or_else(|| invariant("navigate-required-target-absent"))
             }
             ValueType::Option(payload) => {
-                let target = single_target(elements, 0, 1)?;
+                let target = single_target(elements, 0, 1, unique)?;
                 Ok(OptionValue::from_admitted((**payload).clone(), target))
             }
             // The checker types a navigation to exactly the three shapes
