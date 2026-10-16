@@ -524,6 +524,25 @@ fn a_construct_no_variant_represents_refuses_the_unit() {
     }
 }
 
+/// TC-1046 C14 (FR-365 Inputs): a qualified third argument stays refused at
+/// the form's build, at the qualified name itself, in a state clause.
+#[trace("TC-1046", "FR-102-AC-3")]
+#[test]
+fn a_qualified_reachability_end_is_refused_at_the_form_build() {
+    let edge = "M::Order::next";
+    let (text, cause, span) = refusal(&format!(
+        "invariant I using v on M::Order at current {{ reaches(self, self, {edge}) }}"
+    ));
+    assert_eq!(
+        cause,
+        FormsCause::UnrepresentedConstruct {
+            production: Production::QualifiedName
+        }
+    );
+    assert_eq!(cause.catalog_code(), Code::UnsupportedConstruct);
+    assert_eq!(span, Some(span_of(&text, edge)));
+}
+
 #[trace("FR-091-AC-8", "TC-396")]
 #[test]
 fn nested_constructs_of_other_families_are_built_where_written() {

@@ -28,10 +28,11 @@ Reference<M::Order>)` in a `pre` or `post` clause. Compare the checked node's
 static type or the refusal's code, cause, family and location with the vector.
 
 Fixture **R** (domain package `test/orders`) declares object types `Order`,
-`Rush` (supertype `Order`) and `Person`; `Order` declares the field `via` typed
+`Rush` (supertype `Order`) and `Person`; `Order` declares the field `trail` typed
 `Option<Reference<Order>>` and the field `parent` typed
 `Option<Reference<Order>>`; a population `orders` with member type `Order` and no
-maximum, and a population `people` with member type `Person`. Each relationship
+maximum, and a population `people` with member type `Person`. `Rush` declares the operations `hop(target: Reference<Order>)` and
+`hopRush(target: Reference<Rush>)`. Each relationship
 is declared by its source type; the end names type, role and multiplicity
 `{lower,upper}`, with `unique: true` and `ordered: false` unless stated:
 
@@ -55,11 +56,11 @@ is declared by its source type; the end names type, role and multiplicity
 | --- | --- | --- |
 | C01 | `not reaches(self, self, next)` as an `invariant` on `M::Order` | admitted, type `Boolean`; the node holds relationship `Order/next` and role `next` |
 | C02 | `reaches(self, target, next)` as a `pre` clause, and as a `post` clause, of `reroute` | admitted, `Boolean` each |
-| C03 | `reaches(self, target, next)` as an invariant on `M::Rush` with `target: Reference<M::Order>`, and with `target` a `Reference<M::Rush>` | admitted: each operand conforms to the near end's type `Order` |
+| C03 | `reaches(self, target, next)` as a `pre` clause of `M::Rush::hop(target: Reference<M::Order>)`, and of `M::Rush::hopRush(target: Reference<M::Rush>)`; and `reaches(self, self, next)` as an invariant on `M::Rush` | admitted: each operand conforms to the near end's type `Order` |
 | C04 | `reaches(self, self, incoming)` on `M::Order` (`bidirectional`); `reaches(self, self, mateOf)` (`undirected`); `reaches(self, self, outgoing)` | admitted, `Boolean` each |
-| C05 | `reaches(self, self, via)` on `M::Order` | admitted: the field-edge form checks as FR-104 states |
-| C06 | `reaches(self, self, parent)` on `M::Order` (the field `parent` and the end `parent`); `reaches(self, self, twin)` (two ends) | `ambiguous_declaration`/`ambiguous-name` at the third argument, naming both candidates, each |
-| C07 | `reaches(self, self, nothing)` | `missing_declaration`/`missing-name` at the third argument |
+| C05 | `reaches(self, self, trail)` on `M::Order` | admitted: the field-edge form checks as FR-104 states |
+| C06 | `reaches(self, self, parent)` on `M::Order` (the field `parent` and the end `parent`); `reaches(self, self, twin)` (two ends) | `ambiguous_declaration`/`ambiguous-name` located at the form, naming both candidates, each |
+| C07 | `reaches(self, self, nothing)` | `missing_declaration`/`missing-name` located at the form |
 | C08 | `reaches(self, target, next)` with `target: Reference<M::Person>`; and with `target: Int[0,9]` | `ill_typed`/`operator-ineligible` at the form, each |
 | C09 | `reaches(self, self, previous)` on `M::Order` (the inverse of `source-to-target`) | `ill_typed`/`operator-ineligible`: direction |
 | C10 | `reaches(self, self, kids)` (finite multi-valued destination); `reaches(self, self, owner)` (destination `Person`) | `ill_typed`/`operator-ineligible`, each |

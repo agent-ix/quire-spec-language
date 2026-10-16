@@ -28,6 +28,7 @@ mod model_reference_queries;
 mod native_scalar_equality;
 mod protocol_reference;
 mod relationship_navigation;
+mod relationship_reachability;
 mod source_call;
 mod state_model_family;
 mod supplied_phases;

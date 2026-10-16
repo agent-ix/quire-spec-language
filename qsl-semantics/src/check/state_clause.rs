@@ -394,6 +394,17 @@ pub(crate) fn population_of(
     }
 }
 
+/// `refusal`'s cause attributed to the `StateModel` family.
+fn state_model_refusal(refusal: CheckRefusal) -> CheckRefusal {
+    CheckRefusal {
+        location: refusal.location,
+        cause: CheckCause::StateModel(Box::new(super::state_model::StateModelRefusal {
+            cause: refusal.cause,
+            receiver: None,
+        })),
+    }
+}
+
 /// The ambiguous-population refusal at `location`: `object`'s population
 /// cannot be named exactly once (FR-104 "Requirements").
 fn ambiguous_population(
@@ -543,14 +554,32 @@ pub(crate) fn check_clause(
     let mut clause_populations = BTreeSet::new();
     clause_populations.extend(form.context_population);
     for node in body.root().descendants() {
-        if let NodeKind::Reaches { source, .. } = node.kind() {
-            if let ValueType::Reference(object) = node.at(*source).value_type() {
-                let walked =
-                    population_of(input.models, *object, input.scope.types()).map_err(|keys| {
-                        ambiguous_population(input.scope, *object, &keys, node.location())
-                    })?;
-                clause_populations.extend(walked);
-            }
+        // The objects walked: a field edge's operand type, and an end's near
+        // end type `E` (FR-365 "The population a reachability walks").
+        let walked_object = match node.kind() {
+            NodeKind::Reaches { source, .. } => match node.at(*source).value_type() {
+                ValueType::Reference(object) => Some(*object),
+                _ => None,
+            },
+            NodeKind::ReachesEnd {
+                relationship, near, ..
+            } => input.scope.relationships().end_object(relationship, *near),
+            _ => None,
+        };
+        if let Some(object) = walked_object {
+            let end_form = matches!(node.kind(), NodeKind::ReachesEnd { .. });
+            let walked =
+                population_of(input.models, object, input.scope.types()).map_err(|keys| {
+                    let refusal = ambiguous_population(input.scope, object, &keys, node.location());
+                    // FR-365: a reachability over an end refuses as a
+                    // `StateModel` form; the field form's refusal is unchanged.
+                    if end_form {
+                        state_model_refusal(refusal)
+                    } else {
+                        refusal
+                    }
+                })?;
+            clause_populations.extend(walked);
         }
     }
     let mut claims = vec![ClauseClaim {
