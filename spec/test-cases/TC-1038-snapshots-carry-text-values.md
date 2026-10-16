@@ -22,7 +22,7 @@ FR-106-AC-38.
 
 ## Preconditions
 
-- TC-1036's package, with scalar types `Title` (`Text[1, 8; nfc]`), `Tag`
+- TC-1036's package, with Text value types, declared in the form of FR-056-AC-37, `Title` (`Text[1, 8; nfc]`), `Tag`
   (`Text[0, 4; unicode-scalars]`) and `Code` (`Text[0, 4; binary-utf8]`), and
   `ConfigVersion` also gaining, after its other fields and in this declared
   order, `title: Title`, `subtitle?: Tag`, `code: Code` and `aliases:

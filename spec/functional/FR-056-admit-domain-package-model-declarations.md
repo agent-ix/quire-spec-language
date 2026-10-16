@@ -714,21 +714,69 @@ A `typeRef` under `ix://quire/native/` names a domain native value type,
 including K2's natives above and the QSpec shared-grammar spellings
 `Boolean`, `Integer`, `Rational`, `Decimal`, `Float32`, `Float64` and `Text`.
 Admission of a domain native does not add a QSL source-grammar production.
-Text is `Text`, the QSpec grammar's `Text[min, max; profile]` and the native name
-QSpec's checked-package vectors write. A scalar type bound to `Text` with
-bounds `0 <= min <= max` and a profile gives the value type
-`Text[min, max; profile]`. The profile is one of the six QSpec FR-141 defines
-(`unicode-scalars`, `nfc`, `nfd`, `nfkc`, `nfkd` and `binary-utf8`), and it
-selects how the text is compared, measured and bounded, as FR-141's "Text and
-enumeration profiles" states. If a scalar type bound to `Text` has bounds
-outside `0 <= min <= max`, then intake SHALL refuse it with
-`unsupported_construct`/`declaration-form` at the scalar type, naming the
-bounds. If it names any other profile, then intake SHALL refuse it with
-`unsupported_construct`/`declaration-form` at the scalar type, naming the
-profile. A member whose `typeRef` is
-`ix://quire/native/Text` itself carries no bounds or profile, which QSpec's
-`Text[min, max; profile]` requires, so intake SHALL refuse it with
-`unsupported_construct`/`declaration-form` at the member, naming `profile`.
+Text is the QSpec grammar's `Text[min, max; profile]`. The model document
+declares one as a **Text value type**, the form QSpec's checked-package
+vectors write: a value-type definition (meaning
+`quire.meaning.model.value-type/v1`) whose `scalar` is `string` and whose
+`constraints` hold a `minLength`, a `maxLength` and a `format`, each once, in
+any order. Each constraint's `appliesTo` is the value type itself. A bound's
+`operands.value` is a non-negative JSON integer, and the `format`'s
+`operands.name` is `text-profile:<profile>`. A value type is bound as `Text`
+by these constraints, never by a `target` alias: a `target` alias of
+`ix://quire/native/String` stays a `String`, and a `target` alias carries no
+constraint. A field, parameter or result typed by a Text value type has the
+value type `Text[min, max; profile]`. The profile is one of the six QSpec
+FR-141 defines (`unicode-scalars`, `nfc`, `nfd`, `nfkc`, `nfkd` and
+`binary-utf8`), and it selects how the text is compared, measured and
+bounded, as FR-141's "Text and enumeration profiles" states.
+
+The semantic-IR validator decides the document first and refuses a
+malformed constraint as `invalid_model_binding`/`malformed-declaration` at
+the value type, so a negative or non-integer bound, a `format` name that does
+not match the semantic-IR pattern and a `textProfile` that is not one of the
+six never reach the Text reader. The Text reader then refuses the first
+defect in this order, each at the value type and naming what the row names:
+
+1. a `textProfile` member on the value type, or a constraint whose keyword is
+   not `minLength`, `maxLength` or `format`, or a `format` whose name does not
+   begin `text-profile:`, in constraint order: `unsupported_construct`/
+   `declaration-form`, naming `textProfile`, the keyword or `format`;
+2. a keyword given twice, in constraint order:
+   `invalid_model_binding`/`malformed-declaration`, naming the keyword;
+3. no `format`: `unsupported_construct`/`declaration-form`, naming `profile`;
+4. no `minLength`, then no `maxLength`:
+   `invalid_model_binding`/`malformed-declaration`, naming the keyword;
+5. a profile name outside the six: `unsupported_construct`/
+   `declaration-form`, naming the profile;
+6. bounds outside `0 <= min <= max`: `unsupported_construct`/
+   `declaration-form`, naming the bounds.
+
+A field or parameter carrying a `textProfile` member refuses
+`unsupported_construct`/`declaration-form` at that member, naming
+`textProfile`: a profile belongs to the Text value type, and QSL reads no second
+spelling of it.
+
+The Text value type's domain is every Unicode scalar sequence whose retained
+length lies in `[min, max]`. The retained sequence is the scalar sequence
+itself under `unicode-scalars`, its normalization under `nfc`, `nfd`, `nfkc`
+and `nfkd`, and its UTF-8 bytes under `binary-utf8`; the length is the scalar
+count, or the byte count under `binary-utf8`. Every surface that supplies a
+value to a Text slot decides that domain on the retained sequence and never
+repairs, truncates or case-folds it: a snapshot or invocation value refuses
+`invalid_runtime_input`/`invalid-value` (FR-106); a replayed call argument,
+`Input` assignment or `Witness` entry refuses before the call with
+`text_length_out_of_domain`/`outside-domain` (FR-098, FR-100); a Text value
+that a function produces is checked by the same kernel domain. A state clause
+compares two Text values under the profile of their declared type and builds
+none. A String never enters a Text slot and a Text never enters a String slot.
+
+A member whose `typeRef` is `ix://quire/native/Text` itself carries no bounds
+or profile, which QSpec's `Text[min, max; profile]` requires, so intake SHALL
+refuse it with `unsupported_construct`/`declaration-form` at the member,
+naming `profile`. This row depends on the semantic-IR validator's native
+vocabulary naming `Text`: at a validator whose native set has no `Text`, the
+validator refuses the reference first, as `invalid_model_binding`/
+`malformed-declaration` at the member, as it does an undeclared native name.
 If a `typeRef` names an undeclared native name, then intake SHALL refuse it with
 `invalid_model_binding`/`malformed-declaration` at the member, naming the
 `typeRef`. If it names `Rational` or `Decimal`, whose required `dmin` and
@@ -815,7 +863,7 @@ the assembler SHALL refuse it with `missing_declaration` at the name.
 | FR-056-AC-7 | The same selection, package input, definition and limits yield byte-identical results from the intake seam and from the bundle entry point, and a domain package digest offered in a raw-byte or compiled-artifact digest slot refuses. | Test (TC-145, TC-147) |
 | FR-056-AC-9 | A `1-draft` unit selecting a domain package by its `sha256-jcs` digest assembles with each of the package's object types declared as `M::<artifact id>` with its declared supertypes and fields, a subtype conforming to its declared supertype, and checks with functions over `M::T` and `Reference<M::T>`; inherited field access checks (`deref(g).code` over a `Gadget` whose supertype `Widget` declares `code`), and `deref(g).nope` and `g = r` over an unrelated `Rock` refuse `ill_typed` at check. A `model` declaration with no admitted package refuses at the assembler as `missing_import`. `Reference<M::Nope>` refuses at the assembler as `missing_declaration` at `M::Nope`; with no package supplied the declaration refuses at intake as `missing_import`, and a `sha256:` digest refuses at intake as `invalid_model_binding`, each at the `model` declaration. Past the I2 read, a package holding the field access resolves the model member through the lock-selected domain package (IR-285, QSpec STD-100) and returns Verified exporting `code`; one holding `g = w` over conforming references returns Verified exporting `same`, admitted by IR-285's QVC checked-operation catalog (STD-101/102) for `quire.op.reference.eq`; TC-442 verifies both. | Test |
 | FR-056-AC-10 | A field's multiplicity `[1, 1]` gives its declared value type outright; any other multiplicity gives the `ordered`/`unique`-selected collection (`Set`, `Bag`, `Sequence` or `OrderedSet`) bounded by it, unbounded only at a lower bound of `0`, and an unbounded upper bound with a lower bound above `0` has no kernel type (QSpec FR-322's "Model-owned members" step 4). The field's own declared `presence` -- never a multiplicity lower bound of `0` -- decides whether it is optional (QSpec's `model-complete.md` Presence row): `required`/`optional` map to the assembled declaration's own presence one to one, and any other value refuses `invalid_model_binding`/`malformed-declaration` at intake, naming the offending value. | Test |
-| FR-056-AC-11 | A domain package whose field `label` is typed by a scalar type `Label` bound to `Text` with bounds `0` and `64` and profile `nfc` is admitted, and `label`'s value type is `Text[0, 64; nfc]`; each of the other five QSpec FR-141 profiles is admitted the same way. Bounds satisfy `0 <= min <= max`: with `Label`'s bounds `-1` and `64`, or `65` and `64`, intake refuses `unsupported_construct`/`declaration-form` at `Label`, naming the bounds. With `Label`'s profile `nfx`, intake refuses `unsupported_construct`/`declaration-form` at `Label`, naming `nfx`. With `label`'s `typeRef` `ix://quire/native/Text`, it refuses `unsupported_construct`/`declaration-form` at `label`, naming `profile`; with undeclared `ix://quire/native/UnknownText`, it refuses `invalid_model_binding`/`malformed-declaration` at `label`, naming `ix://quire/native/UnknownText`. K2's declared native `String` is not this unknown-name case and is not substituted by a parameterized `Text` alias. The same outcomes hold for an operation parameter and an operation result. | Test |
+| FR-056-AC-11 | A domain package whose field `label` is typed by a Text value type `Label` (the form of FR-056-AC-37) with bounds `0` and `64` and profile `nfc` is admitted, and `label`'s value type is `Text[0, 64; nfc]`; each of the other five QSpec FR-141 profiles is admitted the same way. Bounds satisfy `0 <= min <= max`: with `Label`'s bounds `65` and `64`, intake refuses `unsupported_construct`/`declaration-form` at `Label`, naming the bounds; with `minLength` `-1`, the semantic-IR validator refuses `invalid_model_binding`/`malformed-declaration` at `Label` before the Text reader runs. With `Label`'s profile `nfx`, intake refuses `unsupported_construct`/`declaration-form` at `Label`, naming `nfx`. With `label`'s `typeRef` `ix://quire/native/Text`, it refuses `unsupported_construct`/`declaration-form` at `label`, naming `profile` (a row that depends on the native vocabulary of the semantic-IR validator, as the Text paragraph above states); with undeclared `ix://quire/native/UnknownText`, it refuses `invalid_model_binding`/`malformed-declaration` at `label`, naming `ix://quire/native/UnknownText`. K2's declared native `String` is not this unknown-name case and is not substituted by a parameterized `Text` alias. The same outcomes hold for an operation parameter and an operation result. | Test |
 | FR-056-AC-12 | The one parse refuses a document that repeats a member name within one object, at the repeated name's byte offset, and a document that begins with a byte order mark, at byte 0. A document repeating a member name, offered under the `sha256-jcs` digest of its last-wins value, refuses `stale_dependency`/`byte-digest-mismatch` with its raw digest as the recomputed digest. | Test (TC-145) |
 | FR-056-AC-13 | The one parse refuses a document holding `18446744073709551616`, `-18446744073709551616`, `1e20`, `9.007199254740993e15`, `9007199254740993` or `-9007199254740993` at `/package/count` with `noncanonical_wire`/`inexact-integer` and `document_pointer` `/package/count`; one holding `1e20` at member `c~d` of the first element of member `a/b` names `/a~1b/0/c~0d`, and one holding such numbers at `/b` and then `/a/0` names `/b`. The same document holding `9007199254740992` or `-9007199254740992` at `/package/count` is admitted. Documents that differ only in holding `18446744073709551615` or `18446744073709551616`, each offered under the `sha256-jcs` digest of the same document holding `18446744073709552000`, which they shared before this rule, refuse `noncanonical_wire`/`inexact-integer` at `/package/count`, never `stale_dependency`/`byte-digest-mismatch`; a field whose multiplicity `upper` is 2^60 + 1 refuses the same way at that bound's pointer under the digest it used to admit under and under its raw digest. | Test (TC-145) |
 | FR-056-AC-14 | The one parse refuses a document holding `9007199254740993.5`, `0.1000000000000000000001`, `1e-400`, `-1e-400` or `4.9e-324` at `/package/count` with `noncanonical_wire`/`inexact-number` and `document_pointer` `/package/count`; the same document holding `9007199254740993`, which fits both cases, refuses `inexact-integer`, as does `1e20`; and a document holding `0.5` at `/a/0` and `1e-400` at `/a/1` names `/a/1`. The same document holding `0.1`, `1.0`, `-0`, `-0.0`, `5e-324`, `1e15` or `9007199254740991` at `/package/count` is admitted, with the digest of the RFC 8785 text of the same value. A document holding `0.1000000000000000000001` at `/package/count`, offered under the `sha256-jcs` digest of the same document holding `0.1`, refuses `noncanonical_wire`/`inexact-number`, and the document holding `0.1` admits under it. The double nearest `1125899906842624.25` has two equally close shortest texts: a document holding `1125899906842624.2` (the even digit, RFC 8785's text) at `/package/count` is admitted, as are `1500000000000000.2` and `2.9802322387695312e-8`, and one holding `1125899906842624.3`, `1500000000000000.3` or `2.9802322387695313e-8` refuses `noncanonical_wire`/`inexact-number`. | Test (TC-145) |
@@ -841,6 +889,9 @@ the assembler SHALL refuse it with `missing_declaration` at the name.
 | FR-056-AC-34 | The complete-V1 type environment maps native `String` and `UUID` fields to distinct first-class value leaves, never to `Text` or `Reference`; it maps TC-235's `Money.currency` to `String`, `Order.order_id` and `Fulfilment.correlation_id` (the two identity slots) to `UUID`, and `OrderPlaced.order_id` (an ordinary event payload field) to `UUID`. String equality compares the exact Unicode scalar sequence without normalization (NFC `é` differs from `e` plus combining acute), UUID equality compares the canonical 128 bits, and mixed String/UUID equality is `ill_typed` during static checking with no Boolean result. Supplying a runtime value of the wrong native kind to either typed member is refused as `invalid_runtime_input`/`wrong-value-kind` at its member input path, with no value produced. Checked type display distinguishes `String`, `UUID`, `Text` and `Reference`; UUID value display is canonical lowercase text and String value display preserves its scalar sequence. Existing parameterized Text bounds/profile and UUID canonical-payload controls remain unchanged. | Test |
 | FR-056-AC-35 | In the unit language, `=` and `!=` over two `String`, two `UUID` or two `Timestamp` operands check to `Boolean`, with operand values supplied as parameters or fields, not literals. String: any String value equals itself, the empty String equals only the empty String, NFC `é` (U+00E9) differs from `e` plus U+0301, and `A` differs from `a`. UUID: `00112233-4455-6677-8899-aabbccddeeff` equals itself and differs from `00112233-4455-6677-8899-aabbccddeefe`; the uppercase spelling of the first is refused at a unit input by FR-056's runtime-input adapter as `invalid_runtime_input`/`invalid-value`, over the kernel's `noncanonical-payload` class, so no value of it reaches `=`. Timestamp: `0` equals `0`, differs from `1` and from `-1`, and both signed-128 endpoints equal themselves and differ from each other. `!=` gives the negation of each result. | Test (TC-1028) |
 | FR-056-AC-36 | `=` or `!=` over `String` and `UUID`, `UUID` and `Timestamp`, `String` and `Timestamp`, `String` and `Text[0, 8; nfc]`, `Timestamp` and `Integer`, or `UUID` and `Reference<T>` refuses `ill_typed`/`type-mismatch` at the comparison, with no Boolean result and no coercion, including a `String` that holds a UUID's canonical text. `<`, `<=`, `>` and `>=` over two `String`, two `UUID` or two `Timestamp` operands each refuse `ill_typed`/`operator-ineligible`. | Test (TC-1028) |
+| FR-056-AC-37 | A domain package declaring the value type `Title`, `scalar` `string`, with constraints `minLength` `1`, `maxLength` `8` and `format` `text-profile:nfc`, each `appliesTo` `Title`, is admitted, and a field, an operation parameter and an operation result typed `Title` have the value type `Text[1, 8; nfc]`. The same value type with its three constraints in any order, with each of the other five profiles, with bounds `0` and `0`, and with bounds `3` and `3` is admitted with the matching `Text[min, max; profile]`. A value type `Tag` with `target` `ix://quire/native/String` stays `String`, and a `String` field is no `Text[..]`. | Test (TC-1044) |
+| FR-056-AC-38 | Over `Title`, the Text reader refuses the first defect in the order of the Text paragraph, each at `Title` with `invalid_model_binding`/`malformed-declaration` or `unsupported_construct`/`declaration-form` as that paragraph lists. A `textProfile` member `nfc` on `Title` refuses `declaration-form` naming `textProfile`. A `pattern` constraint refuses `declaration-form` naming `pattern`, and a `format` named `email:rfc` refuses `declaration-form` naming `format`. A second `minLength` refuses `malformed-declaration` naming `minLength`. No `format` refuses `declaration-form` naming `profile`; no `minLength` refuses `malformed-declaration` naming `minLength`, and no `maxLength` the same naming `maxLength`. `text-profile:nfx` and `text-profile:NFC` refuse `declaration-form` naming the profile; bounds `5` and `2` refuse `declaration-form` naming the bounds; bounds `5` and `2` with `nfx` name the profile. A `minLength` of `-1`, a `maxLength` of `1.5` and a `format` named `text-profile:` are refused by the validator as `malformed-declaration` at `Title`. A field carrying `textProfile` refuses `declaration-form` at the field naming `textProfile`. No refusal admits the type or leaves a partial declaration. | Test (TC-1044) |
+| FR-056-AC-39 | A Text slot admits the retained sequence whose profile length is in `[min, max]` by every surface: over `Title` (`Text[1, 8; nfc]`), a snapshot value, a replayed call argument and a `Witness` entry holding U+0065 U+0301 eight times (eight retained scalars) admit; the same holding nine, or an empty text, refuse by the surface's own code (`invalid-value`; `text_length_out_of_domain`/`outside-domain`) before any value, call or clause runs; under `binary-utf8` the length is bytes. A String in a Text slot and a Text in a String slot refuse as FR-106 states. | Test (TC-1044) |
 | FR-056-AC-8 | End to end, the filament-core-data#173 architecture fixture runs bundle → quire-rs → lift → intake seam; its ports resolve with owning part, direction, interface type and multiplicity, a connection between them is admitted under FR-152, and the model linker binds a native package's references to those declarations. | Test (TC-148) |
 
 ### FR-056-AC-17
