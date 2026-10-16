@@ -176,6 +176,7 @@ struct Variant {
     anchor: Option<&'static str>,
     model_digest: Option<[u8; 32]>,
     duplicate_a: bool,
+    a_type: Option<&'static str>,
     a_items: Option<Value>,
     a_next: Option<Value>,
     incomplete: bool,
@@ -270,7 +271,7 @@ impl Graph {
         let mut objects = vec![
             object(
                 "a",
-                &node,
+                variant.a_type.unwrap_or(&node),
                 variant.a_items.clone().unwrap_or_else(|| numbers(&[3, 7])),
                 variant.a_next.clone().unwrap_or_else(absent),
             ),
@@ -1294,4 +1295,27 @@ fn an_admission_fault_stays_a_fault() {
         kernel: None,
     }));
     assert!(matches!(refused, ReplayRefusal::ObjectEnvironment(_)));
+}
+
+/// FR-106 check 6.1: an object whose type is not an object type of the
+/// selected model (here a type of another package) refuses
+/// `invalid_runtime_input`/`wrong-role-mapping`, naming the object.
+#[test]
+fn an_object_of_a_type_the_model_does_not_declare_is_refused() {
+    let graph = graph();
+    let failure = admit_variant(
+        &graph,
+        Variant {
+            a_type: Some("ix://other/package/Node"),
+            ..Variant::default()
+        },
+        graph.node("a"),
+    );
+    let record = admission(
+        &failure,
+        false,
+        Code::InvalidRuntimeInput,
+        "wrong-role-mapping",
+    );
+    assert_eq!(record.fields.get("object").map(String::as_str), Some("a"));
 }
