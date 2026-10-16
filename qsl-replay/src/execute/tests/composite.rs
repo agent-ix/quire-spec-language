@@ -587,6 +587,7 @@ fn convert_one(
         std::slice::from_ref(value),
         limits,
         &mut default_run(),
+        &argument::ReferenceModel::unselected(),
     );
     converted.map(|mut converted| converted.values.remove(0))
 }
@@ -650,6 +651,7 @@ fn tc_906_a_decimal_magnitude_scale_stops_at_the_request_limit() {
         &[value],
         &limits,
         &mut default_run(),
+        &argument::ReferenceModel::unselected(),
     );
     let Err(argument::Stopped::Supplied(qsl_semantics::value::supplied::SuppliedFailure::Stop(
         stop,
@@ -801,8 +803,26 @@ fn tc_906_a_reference_replays_by_identity_and_a_dereference_completes_no_value()
         };
         *object_type.as_bytes()
     };
+    // The universe of the declared `Reference<M::Widget>`; a reference is
+    // foreign when its universe is not that one (FR-098).
+    let universe = *qsl_semantics::model::observation::population_universe_for(
+        fixture.compiled.package.graph().model_selections(),
+        &package_input([std::fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../tests/fixtures/spine-model.semantic-ir.json"
+        ))
+        .unwrap()
+        .as_slice()]),
+        SpineLimits::default().model,
+        match fixture.declared("rw") {
+            ValueType::Reference(object_type) => object_type,
+            other => panic!("rw takes a reference, not {other:?}"),
+        },
+    )
+    .expect("the declared object type has a universe")
+    .as_bytes();
     let reference = |object_type: [u8; 32], identity: &[u8]| WitnessValue::Reference {
-        universe: [1; 32],
+        universe,
         object_type,
         identity: identity.to_vec(),
     };

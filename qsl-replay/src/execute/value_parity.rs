@@ -193,12 +193,18 @@ fn settle(
     let limits = request.accounting_limits();
     let mut run = SuppliedRun::new(request.supplied_limits(), Cancel::new())
         .map_err(ReplayRefusal::Supplied)?;
-    let converted =
-        match argument::convert_arguments(package, &call.types, &joined, &limits, &mut run) {
-            Ok(converted) => converted,
-            Err(Stopped::Refusal(refusal)) => return Err(*refusal),
-            Err(Stopped::Supplied(failure)) => return pre_call(failure),
-        };
+    let converted = match argument::convert_arguments(
+        package,
+        &call.types,
+        &joined,
+        &limits,
+        &mut run,
+        &compiled.reference_model(),
+    ) {
+        Ok(converted) => converted,
+        Err(Stopped::Refusal(refusal)) => return Err(*refusal),
+        Err(Stopped::Supplied(failure)) => return pre_call(failure),
+    };
     let mut meter = Meter::new(limits);
     let evaluation = match package.call_supplied(
         &call.name,

@@ -2129,12 +2129,12 @@ fn a_creates_entry_naming_a_field_refuses_malformed_declaration() {
     assert_eq!(entry, &version_number);
 }
 
-/// FR-103-AC-2 (TC-458 step 2, part 4): `modifies` naming a declared
-/// relationship refuses `unknown_required_feature`/`unsupported-feature` at
-/// that entry.
+/// FR-103-AC-2 (TC-458 step 2, part 4): with a relationship `Supersedes`
+/// declared, `modifies [Supersedes]` admits and the operation's effect
+/// modifies `Supersedes`.
 #[trace("TC-458", "FR-103-AC-2")]
 #[test]
-fn a_modifies_entry_naming_a_relationship_refuses_unsupported_feature() {
+fn a_modifies_entry_naming_a_relationship_admits_as_a_grant() {
     let supersedes = supersedes_identity();
     let document = config_version_document(
         attempt_update(
@@ -2149,18 +2149,68 @@ fn a_modifies_entry_naming_a_relationship_refuses_unsupported_feature() {
         Vec::new(),
         json!([supersedes_relationship()]),
     );
-    let refusal = admit(&document).expect_err("modifies naming a relationship refuses");
+    let declarations =
+        admit_and_assemble(&document).expect("modifies naming a relationship admits and assembles");
+    let (unit, packages) = config_unit(&document);
+    let built = parse_and_build(&unit);
+    let views = admit_unit(
+        &built.selections().models,
+        &packages,
+        ModelNormalizationLimits::default(),
+    )
+    .expect("the package admits");
+    let owner = DeclarationKey {
+        package: PACKAGE_IDENTITY.to_owned(),
+        node: format!("ix://{PACKAGE_IDENTITY}/ConfigVersion"),
+    };
+    let owner_id = views[0].view.type_identities()[&owner];
+    let operation = declarations
+        .operations
+        .declared_by(owner_id)
+        .iter()
+        .find(|operation| operation.name() == "attemptUpdate")
+        .expect("attemptUpdate is declared on ConfigVersion");
+    assert_eq!(
+        operation.effect().modifies,
+        vec![DeclarationKey {
+            package: PACKAGE_IDENTITY.to_owned(),
+            node: supersedes,
+        }]
+    );
+    assert!(operation.effect().creates.is_empty() && operation.effect().deletes.is_empty());
+}
+
+/// FR-103-AC-2 (TC-458 step 2, part 5a): `creates` naming the relationship
+/// refuses `invalid_model_binding`/`malformed-declaration` at that entry.
+#[trace("TC-458", "FR-103-AC-2")]
+#[test]
+fn a_creates_entry_naming_a_relationship_refuses_malformed_declaration() {
+    let supersedes = supersedes_identity();
+    let document = config_version_document(
+        attempt_update(
+            json!([]),
+            json!({
+                "modifies": [],
+                "creates": [supersedes.clone()],
+                "deletes": [],
+            }),
+        ),
+        Vec::new(),
+        Vec::new(),
+        json!([supersedes_relationship()]),
+    );
+    let refusal = admit(&document).expect_err("creates naming a relationship refuses");
     let UnitIntakeCause::Refused(refusals) = refusal.cause else {
         panic!("{refusal:?}: expected a Refused cause");
     };
     assert_eq!(refusals.len(), 1, "{refusals:?}");
-    assert_eq!(refusals[0].code.as_str(), "unknown_required_feature");
-    assert_eq!(refusals[0].cause.as_str(), "unsupported-feature");
-    let qsl_semantics::model::refusal::ModelRefusalCause::FrameEntryUnsupported {
+    assert_eq!(refusals[0].code.as_str(), "invalid_model_binding");
+    assert_eq!(refusals[0].cause.as_str(), "malformed-declaration");
+    let qsl_semantics::model::refusal::ModelRefusalCause::FrameEntryMalformed {
         node, entry, ..
     } = &refusals[0].cause
     else {
-        panic!("{:?}: expected FrameEntryUnsupported", refusals[0].cause);
+        panic!("{:?}: expected FrameEntryMalformed", refusals[0].cause);
     };
     assert_eq!(node, &config_version_identity("attemptUpdate"));
     assert_eq!(entry, &supersedes);

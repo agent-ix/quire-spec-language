@@ -4266,7 +4266,7 @@ fn named_nodes(node: &SemanticNode) -> Vec<NodeKey> {
     match body {
         BodyTerm::Application(application) => named.push(application.result_type.0),
         BodyTerm::Frame(frame) => {
-            named.extend(frame.modifies.iter().map(|field| field.declaration().0));
+            named.extend(frame.modifies.iter().map(|entry| entry.declaration().0));
             named.extend(
                 frame
                     .creates

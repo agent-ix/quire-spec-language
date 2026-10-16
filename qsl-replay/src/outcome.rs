@@ -1014,6 +1014,9 @@ fn replay_stage(refusal: &ReplayRefusal) -> Option<OutcomeStage> {
         | ReplayRefusal::UnknownClause { .. }
         | ReplayRefusal::WrongObservation { .. }
         | ReplayRefusal::Admission(_)
+        | ReplayRefusal::UnusedObjectEnvironment
+        | ReplayRefusal::ForeignReference { .. }
+        | ReplayRefusal::ObjectEnvironment(_)
         | ReplayRefusal::UnknownParameter(_)
         | ReplayRefusal::DuplicateArgument(_)
         | ReplayRefusal::UnboundParameter(_)

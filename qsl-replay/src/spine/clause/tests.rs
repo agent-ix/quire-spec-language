@@ -3935,7 +3935,7 @@ fn s4_emits_exactly_the_fr_105_state_nodes() {
     let [only] = modifies.as_slice() else {
         panic!("exactly one modifies entry, got {modifies:?}");
     };
-    assert_eq!(only.name(), "versionNumber");
+    assert_eq!(only.field_name(), Some("versionNumber"));
     assert_eq!(
         only.declaration().0,
         context_ref.0,
