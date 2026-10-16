@@ -45,7 +45,8 @@ pub(crate) fn document() -> Value {
 /// nfc]`), `Tag` (`Text[0, 4; unicode-scalars]`) and `Code` (`Text[0, 4;
 /// binary-utf8]`), declared in the form of FR-056-AC-37, and `Item` also
 /// holding, after its other fields, `title: Title`, `subtitle?: Tag`, `code:
-/// Code` and `aliases: Sequence<Tag>`. `retitle(name: Title): Title` modifies
+/// Code`, `address: Address` (record `Address { street: Title }`) and
+/// `aliases: Sequence<Tag>`. `retitle(name: Title): Title` modifies
 /// `title`; `rekeep` is the same signature granting nothing.
 pub(crate) fn text_document() -> Value {
     build(true)
@@ -123,6 +124,7 @@ fn build(text: bool) -> Value {
                 variants::field("Item", "title", &title),
                 variants::optional("Item", "subtitle", &tag),
                 variants::field("Item", "code", &code),
+                variants::field("Item", "address", &id("Address")),
                 variants::many("Item", "aliases", &tag, true, false),
             ]);
         let mut retitle =
@@ -137,6 +139,12 @@ fn build(text: bool) -> Value {
             text_value_type("Title", 1, 8, "nfc"),
             text_value_type("Tag", 0, 4, "unicode-scalars"),
             text_value_type("Code", 0, 4, "binary-utf8"),
+            // FR-056-AC-21: the record value type `Address { street: Title }`.
+            base::declaration(
+                "Address",
+                "money",
+                json!({"fields": [variants::field("Address", "street", &title)]}),
+            ),
         ]);
     }
     types.push(item);

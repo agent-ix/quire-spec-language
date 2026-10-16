@@ -1044,26 +1044,7 @@ impl<'a> References<'a> {
     fn record_type(&mut self, identity: &str) -> Option<quire_exact::NodeKey> {
         let views = self.views;
         self.record_keys
-            .get_or_insert_with(|| {
-                let unbounded = qsl_foundation::IdentityLimits {
-                    input_bytes: u64::MAX,
-                };
-                let mut keys = BTreeMap::new();
-                for view in views {
-                    for record in &view.view.domain_package().records {
-                        let crate::model::domain_package::DomainPackageRecord::RecordValueType(
-                            declared,
-                        ) = record
-                        else {
-                            continue;
-                        };
-                        if let Ok(Some(key)) = crate::check::record_node_key(record, unbounded) {
-                            keys.entry(declared.key.node.clone()).or_insert(key);
-                        }
-                    }
-                }
-                keys
-            })
+            .get_or_insert_with(|| record_keys(views))
             .get(identity)
             .copied()
     }
@@ -1691,6 +1672,48 @@ fn admit_value<'a: 'w, 'w>(
     }
     done.pop()
         .ok_or_else(|| admission_record(Code::InvalidRuntimeInput, "wrong-value-kind"))
+}
+
+/// The declaration key of each selected record value type by its IR node
+/// identity (FR-359 item 9). The keys are computed with no byte bound: a
+/// record the unit assembled had already keyed under the unit's own identity
+/// limits, and the key does not depend on the limit.
+pub(super) fn record_keys(views: &[ModelView]) -> BTreeMap<String, quire_exact::NodeKey> {
+    let unbounded = qsl_foundation::IdentityLimits {
+        input_bytes: u64::MAX,
+    };
+    let mut keys = BTreeMap::new();
+    for view in views {
+        for record in &view.view.domain_package().records {
+            let crate::model::domain_package::DomainPackageRecord::RecordValueType(declared) =
+                record
+            else {
+                continue;
+            };
+            if let Ok(Some(key)) = crate::check::record_node_key(record, unbounded) {
+                keys.entry(declared.key.node.clone()).or_insert(key);
+            }
+        }
+    }
+    keys
+}
+
+/// The declared value type of field `field` of the record value type the IR
+/// node identity `identity` names, or `None` when `keys` holds no such
+/// record or it declares no such field.
+pub(super) fn record_field_type<'t>(
+    types: &'t TypeEnvironment,
+    keys: &BTreeMap<String, quire_exact::NodeKey>,
+    identity: &str,
+    field: &str,
+) -> Option<&'t quire_exact::ValueType> {
+    let CompositeShape::Record(declared) = types.composite(*keys.get(identity)?)?.shape() else {
+        return None;
+    };
+    declared
+        .iter()
+        .find(|declared| declared.name() == field)
+        .map(|declared| declared.value_type())
 }
 
 /// Every `(population, key)` a reference value inside `raw` names (a

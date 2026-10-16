@@ -231,11 +231,6 @@ pub struct StateObject {
     pub fields: BTreeMap<DeclarationKey, Value>,
 }
 
-pub struct StateDelta {
-    pub created: Vec<ObjectReference>,
-    pub deleted: Vec<ObjectReference>,
-}
-
 impl StateModel {
     pub fn new(
         model_selections: &[DomainPackageRef],
@@ -249,14 +244,6 @@ impl StateModel {
         selected: &DocumentRef,
         limits: ObservationLimits,
     ) -> Result<(ModelState, SelectedAnchor), AdmissionFailure>;
-    pub fn check_frame(
-        &self,
-        effect: &OperationEffect,
-        receiver: &ObjectReference,
-        arguments: &BoundArguments,
-        pre: &ModelState,
-        post: &ModelState,
-    ) -> Result<StateDelta, AdmissionFailure>;
     pub fn observation(
         &self,
         state: &ModelState,
@@ -265,20 +252,27 @@ impl StateModel {
 }
 ```
 
-- `check_frame` is FR-106 check 11 over two in-memory states. Per
-  population, in ascending population `DeclarationKey` order, it first
-  computes the delta from the two states: the created keys are the post
-  state's keys absent from the pre state, and the deleted keys the pre
-  state's keys absent from the post state. It then builds the population's
-  `FrameObject`s and calls `population::decide_frame`, the one frame
-  decision `enforce_frame` and FR-106's `observation::frame::enforce` also
-  call, passing those created and deleted keys as
-  `FrameDecision.declared_created` and `declared_deleted`. It returns the
-  computed delta, or check 11's first finding as `AdmissionFailure::Refused`
-  (`frame_violation`/`unauthorized-change` or `population_delta_mismatch`/
-  `delta-disagreement`). It takes the application's receiver and its reference
-  arguments so that a scoped `modifies` or `deletes` entry is decided as
-  FR-154 states. Its verdicts are the ones FR-115 reports.
+- **The frame decision.** `ModelSystem` decides whether a candidate stays
+  inside its operation's frame by FR-106 check 11 over two in-memory states,
+  with no `StateModel` method between: per population, in ascending
+  population `DeclarationKey` order, it computes the created keys (the post
+  state's keys absent from the pre state) and the deleted keys (the pre
+  state's keys absent from the post state), builds the population's pre and
+  post `FrameObject`s, and calls `population::decide_frame` (FR-154 "One
+  decision"), the one frame decision that `enforce_frame` and FR-106's
+  `observation::frame::enforce` also call. It passes those created and deleted
+  keys as `FrameDecision.declared_created` and `declared_deleted`, the
+  application's `OperationEffect`, the application's receiver as
+  `FrameDecision.receiver` when the receiver lies in that population, and
+  each reference argument of the application as a `(parameter name, object)`
+  pair in `FrameDecision.arguments` when the object lies in it, so that a
+  scoped `modifies` or `deletes` entry is decided as FR-154 states. The
+  step's frame delta is the union over populations of the returned
+  `FrameDelta`s (`created` and `deleted` identity sets). A refusal from
+  `decide_frame` is check 11's first finding
+  (`frame_violation`/`unauthorized-change`, or
+  `population_delta_mismatch`/`delta-disagreement`), and its verdicts are the
+  ones FR-115 reports.
 - `observation` builds FR-106's `Observation` for a state: `identity` is the
   given `DocumentRef`; `environment` is the `ObjectEnvironment` of every
   object with every field value, built by FR-106's builder; `populations`
@@ -293,7 +287,7 @@ impl StateModel {
   observation; for a precondition, `pre` is the state's observation and
   `post` is none (FR-107 reads `pre` only); for a postcondition, `pre` is
   the state's and `post` the candidate's observation, `created` and
-  `deleted` are `check_frame`'s delta; `self_object` is the receiver, or
+  `deleted` are the frame delta; `self_object` is the receiver, or
   the invariant's object; `parameters` are the arguments by declared name;
   `result` is the candidate result or none.
 
@@ -383,10 +377,10 @@ closed population state built from the state by:
 
 Every reference of a candidate names an object of the candidate.
 
-Each candidate goes through `StateModel::check_frame` with the state as
-`pre` and the candidate as `post`. A candidate is within the frame exactly
-when the check returns a delta, the case FR-115 reports as `success`, and
-that delta is the step's `created` and `deleted`. The construction yields
+Each candidate goes through the frame decision ("The frame decision" above)
+with the state as `pre` and the candidate as `post`. A candidate is within the
+frame exactly when `decide_frame` returns a delta for every population, the
+case FR-115 reports as `success`, and that delta is the step's `created` and `deleted`. The construction yields
 only such candidates, so a finding from the check stops the expansion with
 `runtime_invariant`/`established-invariant-broken`.
 
@@ -497,7 +491,7 @@ identity text of operation `op`.
 |----|----------|--------------|
 | FR-120-AC-1 | With operation `increment()` (frame `modifies value`) and no clause, `s0` has three successors, `v0`, `v1` and `v2`, all with transition identity `{"type":"transition","operation":"{\"digest_domain\":\"sha256-jcs\",\"node\":\"test/counters/Counter/increment\",\"package\":\"test/counters\"}","arguments":[<c1's reference>]}`; `label` and `next` keep their values in each. Adding `post Inc on Counters::Counter::increment { self.value = pre(self.value) + 1 }` leaves one successor, `v1`. With `pre CanInc … { self.value < 2 }` and no `post` clause, `v0` and `v1` each have the three successors and `v2` has no `increment` successor. | Test (TC-471) |
 | FR-120-AC-2 | With `setTo(n: Int[0, 2])` (frame `modifies value`, post `self.value = n`), `s0` has one successor per `n`, with arguments `[<c1>, {"type":"integer","value":"0"}]` to `…"2"}]`. With `c2` added to `s0`, each receiver gives its own identity. With `pre A { self.value >= 1 }` and `pre B { self.value <= 1 }` on `setTo`, both must hold: it is enabled at `v1` and not at `v0` or `v2`. | Test (TC-471) |
-| FR-120-AC-3 | With `spawn()` (frame `creates Counter`) and no clause, `s0` has 1 + 18 successors: `s0` itself, and `c2` created with each (`value`, `label`, `next`) in 3 × 2 × 3 (absent, `c1`, `c2`). With `remove()` (frame `deletes Counter`) over `c1` and `c2`, where `c1.next` names `c2`, each receiver's successors are the deletion sets {}, {`c1`} and {`c1`, `c2`}; deleting `c2` alone leaves `c1.next` dangling and is not a candidate. Each successor's delta is the one `StateModel::check_frame` returns. | Test (TC-471) |
+| FR-120-AC-3 | With `spawn()` (frame `creates Counter`) and no clause, `s0` has 1 + 18 successors: `s0` itself, and `c2` created with each (`value`, `label`, `next`) in 3 × 2 × 3 (absent, `c1`, `c2`). With `remove()` (frame `deletes Counter`) over `c1` and `c2`, where `c1.next` names `c2`, each receiver's successors are the deletion sets {}, {`c1`} and {`c1`, `c2`}; deleting `c2` alone leaves `c1.next` dangling and is not a candidate. Each successor's delta is the one the frame decision returns. | Test (TC-471) |
 | FR-120-AC-4 | `s0`'s state key has `semantic` equal to `{"type":"map","entries":[{"key":{"type":"text","value":"{\"digest_domain\":\"sha256-jcs\",\"node\":\"test/counters/counters\",\"package\":\"test/counters\"}"},"value":{"type":"map","entries":[{"key":{"type":"reference","universe":"<U>","object_type":"<E>","identity":"6331"},"value":{"type":"record","name":"{\"digest_domain\":\"sha256-jcs\",\"node\":\"test/counters/Counter\",\"package\":\"test/counters\"}","fields":[{"name":"value","value":{"type":"integer","value":"0"}},{"name":"label","value":{"type":"integer","value":"0"}},{"name":"next","value":{"type":"option","value":null}}]}}]}}]}`, where `<U>` and `<E>` are the universe and effective type of the `ObjectReference` that FR-106 admission gives `c1` in `s0`'s admitted `Observation` (`StateModel::admit_initial`, independent of the simulator's key encoding), each as 64 lowercase hex digits; `control`, `queues`, `roles`, `observations` and `bounds` are `{"type":"map","entries":[]}`. `s0` with `c1.label` 1 has a different key. | Test (TC-471) |
 | FR-120-AC-5 | With `increment`, `CanInc`, `Inc` and `invariant Small … at current { self.value < 2 }`, exploration is `Exhaustive` with 3 states, 2 transitions and depth 2, and `findings` holds exactly one entry: `v2`'s digest, depth 2, `InvariantViolated { Small, c1, {handler, <increment>} }`. Adding `reset()` (frame `modifies value`, post `self.value = 0`) makes the run `Exhaustive` with 3 states and 5 transitions, including `v2 → v0`: the violating state is expanded. `s0`'s findings, when any, carry anchor `{initialization, start}`. | Test (TC-472) |
 | FR-120-AC-6 | With `increment`, `Small`, no `pre` or `post` clause and a meter budget of zero, exploration is `Exhaustive` with 3 states, and each state has `InvariantUndetermined` for `Small` and `c1`, its evaluation `Incomplete` with `resource_exhausted`/`insufficient-next-charge`. With budget zero and `CanInc`, the run is `Outcome::Stopped` with cause `resource_exhausted`/`insufficient-next-charge`, frontier `[<s0>]`, category incomplete. With `max_candidates` 2 and `increment` with no clause, the run is `Stopped` with the same cause. | Test (TC-472) |

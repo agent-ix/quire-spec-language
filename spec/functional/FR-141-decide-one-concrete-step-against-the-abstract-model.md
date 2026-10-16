@@ -146,7 +146,7 @@ how it evaluates them and what it reports:
   canonical order. For each abstract transition identity it SHALL make the
   calls `ModelSystem` makes when it expands the pre mapped state `a`,
   applied to the one candidate post-state `a'`: the effective
-  precondition at `a`, `StateModel::check_frame` over `(a, a')`, and the
+  precondition at `a`, the frame decision (FR-120 "The frame decision") over `(a, a')`, and the
   effective postcondition over `(a, a', delta)`, binding the abstract
   result to the concrete step's result when the row has `binds_result`.
 - **`any` enabling.** An abstract transition identity SHALL count as

@@ -2392,3 +2392,50 @@ fn tc_743_long_text_or_object_identity_exceeds_the_reader_bound() {
         ));
     }
 }
+
+/// TC-1040 step 5 (FR-107-AC-12): the elements of the list built inside
+/// `GuardedAll` are read at the built-list subject, at their index.
+#[trace("TC-1040", "FR-107-AC-12")]
+#[test]
+fn tc_1040_the_elements_of_a_built_list_are_read_at_their_index() {
+    let unit = witness_unit();
+    let (mid, evaluation, _) = evaluate(&unit, "GuardedAll", Snapshot::High, "mid", 1_000_000);
+    let (root, _, _) = evaluate(&unit, "GuardedAll", Snapshot::High, "root", 1_000_000);
+    let list = occurrence(&unit, "GuardedAll", &[1, 0, 0], Operator::Collection);
+    let path = |subject: ValuePathSubject, steps| {
+        Some(RuntimeValuePath {
+            observation: observation(Snapshot::High),
+            subject,
+            steps,
+        })
+    };
+    let member = |name: &str| ValuePathStep::Member(name.to_owned());
+    let parent = path(
+        ValuePathSubject::Object(mid.self_object.clone()),
+        vec![member("parent")],
+    );
+    let reads: Vec<_> = evaluation.reads().iter().map(|r| r.path.clone()).collect();
+    assert_eq!(
+        reads,
+        vec![
+            parent.clone(),
+            parent,
+            path(
+                ValuePathSubject::Built(list.clone()),
+                vec![
+                    ValuePathStep::Index(0),
+                    ValuePathStep::Reference(root.self_object.clone()),
+                    member("versionNumber"),
+                ],
+            ),
+            path(
+                ValuePathSubject::Built(list),
+                vec![
+                    ValuePathStep::Index(1),
+                    ValuePathStep::Reference(mid.self_object.clone()),
+                    member("versionNumber"),
+                ],
+            ),
+        ]
+    );
+}

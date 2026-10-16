@@ -25,7 +25,7 @@ and writes. S3 SHALL derive each operation's read footprint from its checked
 `pre` and `post` clause bodies, with the receiver and parameters symbolic,
 and its write footprint from its frame (ADR-021 POR-1). `ModelSystem` SHALL
 instantiate both per transition identity, and SHALL enforce them on every
-step it takes for the model checker: writes through `check_frame` at entry
+step it takes for the model checker: writes through `decide_frame` at entry
 scope (FR-154), reads by evaluating each clause over an observation
 restricted to the read footprint (POR-2). A footprint is therefore a checked
 fact about the model. The locations, their meets and the derivation of
@@ -100,7 +100,7 @@ receiver's and a reference parameter's membership as `Membership` over
   location of `t.writes` meets one of `u.reads ∪ u.writes` and no location
   of `u.writes` meets one of `t.reads`.
 - **Write enforcement.** Every step the model checker takes under
-  partial-order reduction SHALL pass `check_frame` with its receiver
+  partial-order reduction SHALL pass the frame decision (`decide_frame`) with its receiver
   (FR-154), as every FR-120 step does.
 - **Read enforcement.** Under partial-order reduction, `ModelSystem` SHALL
   evaluate each `pre` and `post` clause of a transition over an observation
@@ -120,7 +120,7 @@ receiver's and a reference parameter's membership as `Membership` over
 | FR-155-AC-1 | ADR-021 §7.2's `Counter` unit (`v: Int[0, 2]`, `bump()` framed `modifies self.v`, pre `self.v < 2`, post `self.v = pre(self.v) + 1`): the symbolic footprint of `bump` has reads `{(Receiver, v), Membership{counters, Receiver}}`, writes `{(Receiver, v)}`, and enabling equal to reads; `bump(a)` instantiates to `Field{a, v}` and `Membership{counters, a}`; `bump(a)` and `bump(b)` are independent and `bump(a)` with itself is not. | Test (TC-574) |
 | FR-155-AC-2 | With `bump()` framed `modifies v` (every-object), its write footprint is `{AnyField{v}}` and `bump(a)`, `bump(b)` are dependent. An operation `copy()` framed `modifies self.v` with post `self.v = self.peer.v` reads `(Receiver, peer)` and `AnyField{v}` and is dependent with every `bump`; an operation whose pre is `forall o in counters: o.v < 2` reads `AnyField{v}` and `AnyMembership{counters}`. An operation `give(to: Counter)` framed `modifies self.v` with pre `to.v < 2` has an enabling footprint holding `(Param(to), v)`, `Membership{counters, Receiver}` and `Membership{counters, Param(to)}`, instantiating to `Field{b, v}`, `Membership{counters, a}` and `Membership{counters, b}` for `give(a, b)`, so `give(a, b)` is dependent with `bump(b)` and independent of `bump(c)`. An operation `spawn()` framed `creates Counter` writes `AnyMembership{counters}` and is dependent with every `bump`; an operation whose pre quantifies over `counters` reads `AnyMembership{counters}`. | Test (TC-574) |
 | FR-155-AC-3 | Under partial-order reduction, evaluating `bump(a)`'s post clause over an observation restricted to a footprint with `Field{a, v}` removed stops the expansion with `runtime_invariant`/`established-invariant-broken` naming `bump(a)` and `Field{a, v}`, and the item settles `failed`, category internal failure; with the derived footprint it evaluates to a value. | Test (TC-575) |
-| FR-155-AC-4 | Every step of AC-1's reduced run passes `check_frame` with its receiver; a hand-built successor of `bump(a)` that also changes `b.v` is `frame_violation`. Deriving footprints twice from the same package gives equal footprints. | Test (TC-575) |
+| FR-155-AC-4 | Every step of AC-1's reduced run passes the frame decision with its receiver; a hand-built successor of `bump(a)` that also changes `b.v` is `frame_violation`. Deriving footprints twice from the same package gives equal footprints. | Test (TC-575) |
 | FR-155-AC-5 | ADR-021 §7.6's guard-in-postcondition subject: `boom`'s enabling footprint holds `(Receiver, armed)` and `AnyField{v}` from `pre(self.cell.v)`, so `set(a)` meets it. The deleting-the-receiver subject: `cancel()` deleting its receiver writes `Membership{jobs, Receiver}`, so `cancel(j)` is dependent with `boom(j)`, which reads `Membership{jobs, j}`. The type-wide-delete subject: `cancel()` framed `deletes Job` writes `AnyMembership{jobs}`, so `cancel(m)` is dependent with `boom(j)`. The blocked-delete subject: `cancel()` framed `deletes self` reads `AnyField{peer}`, which `unlink(j)` writes. The navigation subject: `boom`'s read footprint holds `(Receiver, cell)`, which `point()` writes. | Test (TC-589) |
 | FR-155-AC-6 | ADR-021 §7.6's result subject: `pick(): Reference<Cell>` with post `self.alarm and result.v = 1` has an enabling footprint holding `AnyField{v}` and `AnyMembership{cells}`, so `set(a)` meets it, and the reduced run returns `Violated` by `set, pick` over 6 states, as the unreduced run does. | Test (TC-589) |
 
@@ -131,7 +131,7 @@ receiver's and a reference parameter's membership as `Membership` over
   [FR-107](FR-107-evaluate-state-clauses-at-s6a.md) (the evaluator),
   [FR-120](FR-120-simulate-a-checked-package-s-state-family.md)
   (`ModelSystem`, observations), [FR-154](FR-154-scope-a-modifies-entry-to-the-receiver.md)
-  (scoped frames and `check_frame`).
+  (scoped frames and the frame decision).
 - ADR-027 FT-1 to FT-4 give the protocol locations and `ProtocolSystem`'s
   footprints.
 - QSpec FR-383 owns locations, meets and footprint derivation as normative

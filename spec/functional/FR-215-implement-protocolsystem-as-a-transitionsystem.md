@@ -119,7 +119,7 @@ compiler produces it and CG reads it in counterexamples; it serializes as
 
 - An `attempt` or `cattempt` SHALL call the same function `ModelSystem`
   uses to expand one application (effective precondition, frame
-  post-states, postconditions, `check_frame`'s delta), passing the clauses
+  post-states, postconditions, the frame decision's delta), passing the clauses
   its attempt selects and the observation the memory model gives. The
   protocol system SHALL have no second contract evaluator.
 - Each expanded state SHALL carry FR-120's invariant findings for its model

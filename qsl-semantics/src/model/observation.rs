@@ -480,6 +480,25 @@ impl AdmissionUsage {
     }
 }
 
+/// What `self` is in an admitted observation set (FR-107 "The receiver path").
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SelfKind {
+    /// An object with a declared object identity (QSpec FR-204).
+    Object,
+    /// A state machine's context, with no declared object identity.
+    Context,
+}
+
+impl SelfKind {
+    fn of(state_machine: bool) -> Self {
+        if state_machine {
+            Self::Context
+        } else {
+            Self::Object
+        }
+    }
+}
+
 /// FR-106 Outputs: one typed observation set admitted for S6a.
 #[derive(Clone, Debug)]
 pub struct AdmittedObservations {
@@ -500,9 +519,14 @@ pub struct AdmittedObservations {
     pub post: Option<Observation>,
     /// The selected self object's reference.
     pub self_object: ObjectReference,
-    /// The selected invocation when `self` is a context with no declared
-    /// object identity. Evaluators use it to root receiver value paths.
-    pub receiver_invocation: Option<DocumentRef>,
+    /// The selected invocation, whatever kind `self` is: some for a
+    /// postcondition and for a precondition selected by `Invocation`, none
+    /// for an invariant and for a precondition selected by `PreCall`.
+    /// Evaluators root receiver, parameter and result value paths at it.
+    pub invocation: Option<DocumentRef>,
+    /// Whether `self` is an object with a declared object identity or a
+    /// state machine's context, which has none (QSpec FR-208).
+    pub self_kind: SelfKind,
     /// The pre-observation receiver context's evaluator reference, when
     /// this is a state-machine invocation.
     pub receiver_pre: Option<ObjectReference>,
@@ -895,7 +919,7 @@ impl SnapshotValue {
 /// built in.
 impl PartialEq for SnapshotValue {
     fn eq(&self, other: &Self) -> bool {
-        self.equals_by(other, None)
+        self.equals_by(other, None, &|_, _| None)
     }
 }
 
@@ -921,11 +945,14 @@ impl SnapshotValue {
     /// Whether the two values are equal, a value of a declared Text type
     /// comparing by its retained sequence (FR-106-AC-40, FR-141): `declared`
     /// is this value's slot type, `None` where it is not known. Every other
-    /// form compares as read.
-    pub(super) fn equals_by(
+    /// form compares as read. `field_type` gives the declared type of a
+    /// record's field by the record's type identity and the field's name, so
+    /// a Text inside a record compares by its retained sequence too.
+    pub(super) fn equals_by<'t>(
         &self,
         other: &Self,
-        declared: Option<&quire_exact::ValueType>,
+        declared: Option<&'t quire_exact::ValueType>,
+        field_type: &dyn Fn(&str, &str) -> Option<&'t quire_exact::ValueType>,
     ) -> bool {
         use quire_exact::ValueType;
         let mut work = vec![(declared, self.form(), other.form())];
@@ -975,17 +1002,21 @@ impl SnapshotValue {
                             .map(|(left, right)| (element, left.form(), right.form())),
                     );
                 }
-                (RawForm::Record(left), RawForm::Record(right))
-                    if left.type_identity() == right.type_identity()
-                        && left.fields().len() == right.fields().len() =>
+                (RawForm::Record(left_record), RawForm::Record(right_record))
+                    if left_record.type_identity() == right_record.type_identity()
+                        && left_record.fields().len() == right_record.fields().len() =>
                 {
                     for ((left_name, left), (right_name, right)) in
-                        left.fields().zip(right.fields())
+                        left_record.fields().zip(right_record.fields())
                     {
                         if left_name != right_name {
                             return false;
                         }
-                        work.push((None, left.form(), right.form()));
+                        work.push((
+                            field_type(left_record.type_identity(), left_name),
+                            left.form(),
+                            right.form(),
+                        ));
                     }
                 }
                 (RawForm::Variant(left), RawForm::Variant(right))
@@ -1925,7 +1956,8 @@ fn admit_invariant(
         pre: None,
         post: None,
         self_object: self_reference,
-        receiver_invocation: None,
+        invocation: None,
+        self_kind: SelfKind::Object,
         receiver_pre: None,
         receiver_post: None,
         parameters: Vec::new(),
@@ -2018,7 +2050,8 @@ struct InvocationAdmission {
     pre: document::AdmittedEnvironment,
     post: document::AdmittedEnvironment,
     self_reference: ObjectReference,
-    receiver_invocation: Option<DocumentRef>,
+    invocation: DocumentRef,
+    self_kind: SelfKind,
     receiver_pre: Option<ObjectReference>,
     receiver_post: Option<ObjectReference>,
     parameters: Vec<(String, Value)>,
@@ -2291,7 +2324,8 @@ fn admit_invocation_documents(
         pre: pre_admitted,
         post: post_admitted,
         self_reference,
-        receiver_invocation: state_machine.then(|| selected.clone()),
+        invocation: selected.clone(),
+        self_kind: SelfKind::of(state_machine),
         receiver_pre,
         receiver_post,
         parameters,
@@ -2510,7 +2544,8 @@ fn admit_pre_call(
         }),
         post: None,
         self_object: self_reference,
-        receiver_invocation: state_machine.then_some(receiver_identity),
+        invocation: input.receiver_invocation.cloned(),
+        self_kind: SelfKind::of(state_machine),
         receiver_pre,
         receiver_post: None,
         parameters,
@@ -2584,7 +2619,8 @@ fn admit_operation(
             out_of_range: admitted.post.out_of_range,
         }),
         self_object: admitted.self_reference,
-        receiver_invocation: admitted.receiver_invocation,
+        invocation: Some(admitted.invocation),
+        self_kind: admitted.self_kind,
         receiver_pre: admitted.receiver_pre,
         receiver_post: admitted.receiver_post,
         parameters: admitted.parameters,

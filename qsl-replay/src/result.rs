@@ -408,6 +408,7 @@ impl SeparatingWitnessRecord {
                 ValuePathStep::Field(name) | ValuePathStep::Member(name) => name.len(),
                 ValuePathStep::Index(_) => 8,
                 ValuePathStep::OptionValue => 1,
+                ValuePathStep::Reference(object) => 64 + object.object().as_str().len(),
             })
             .sum();
         32 + self.quantifier.origin().role().as_str().len()
