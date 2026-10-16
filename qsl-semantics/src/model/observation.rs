@@ -1531,6 +1531,7 @@ pub fn admit_current_snapshot(
         &views,
         types,
         &snapshot.populations,
+        &snapshot.relationships,
         None,
         model_limits.ancestor_steps,
     )?;
@@ -1697,11 +1698,18 @@ pub fn admit_observations(
 
 mod document;
 mod encode;
+mod extents;
 mod frame;
+mod relationships;
 mod tree;
 
+pub use document::ObservationRole;
 use document::{read_document, DocumentKind};
 pub use encode::ValueEncoder;
+pub use extents::{
+    BundleKey, BundlePart, BundleRefusal, Keyed, ObservationOrigin, PopulationEnumerationFailure,
+    PopulationManifest, RelationshipExtents, ResolveBundle,
+};
 
 #[allow(clippy::too_many_arguments)]
 fn admit_invariant(
@@ -1764,6 +1772,7 @@ fn admit_invariant(
         views,
         types,
         &snapshot.populations,
+        &snapshot.relationships,
         Some(&self_object.population),
         ancestor_steps,
     )?;
@@ -2020,6 +2029,7 @@ fn admit_invocation_documents(
             context_view,
             context_name,
             &pre_snapshot.populations,
+            &pre_snapshot.relationships,
             &documents.pre.identity,
             selected,
             PostStateRange::Refuse,
@@ -2031,6 +2041,7 @@ fn admit_invocation_documents(
             context_view,
             context_name,
             &post_snapshot.populations,
+            &post_snapshot.relationships,
             &documents.post.identity,
             selected,
             post_range,
@@ -2043,6 +2054,7 @@ fn admit_invocation_documents(
                 views,
                 types,
                 &pre_snapshot.populations,
+                &pre_snapshot.relationships,
                 PostStateRange::Refuse,
                 ancestor_steps,
             )?,
@@ -2051,6 +2063,7 @@ fn admit_invocation_documents(
                 views,
                 types,
                 &post_snapshot.populations,
+                &post_snapshot.relationships,
                 post_range,
                 ancestor_steps,
             )?,
@@ -2069,22 +2082,26 @@ fn admit_invocation_documents(
             &operation.declaration,
             &invocation.call.parameters,
         ),
+        &pre_values.extents,
     )?;
     document::check_population_completeness(
         &post_snapshot.populations,
         &post_values.completeness,
         post_self_population,
         &[],
+        &post_values.extents,
     )?;
     document::check_population_closure(
         &pre_snapshot.populations,
         &pre_values.completeness,
         &pre_values.keys_by_population,
+        &pre_values.extents,
     )?;
     document::check_population_closure(
         &post_snapshot.populations,
         &post_values.completeness,
         &post_values.keys_by_population,
+        &post_values.extents,
     )?;
     let pre_admitted = document::finish_populations(types, pre_values)?;
     let post_admitted = document::finish_populations(types, post_values)?;
@@ -2291,6 +2308,7 @@ fn admit_pre_call(
             context.context_view,
             context.context_name,
             &snapshot.populations,
+            &snapshot.relationships,
             &input.pre.identity,
             &receiver_identity,
             PostStateRange::Refuse,
@@ -2303,6 +2321,7 @@ fn admit_pre_call(
                 context.views,
                 context.types,
                 &snapshot.populations,
+                &snapshot.relationships,
                 PostStateRange::Refuse,
                 context.ancestor_steps,
             )?,
@@ -2318,11 +2337,13 @@ fn admit_pre_call(
             &context.operation.declaration,
             input.parameters,
         ),
+        &values.extents,
     )?;
     document::check_population_closure(
         &snapshot.populations,
         &values.completeness,
         &values.keys_by_population,
+        &values.extents,
     )?;
     let admitted = document::finish_populations(context.types, values)?;
 
@@ -2413,8 +2434,8 @@ fn admit_operation(
     let (created, deleted) = frame::enforce(
         &frame_context,
         &binding,
-        &admitted.documents.pre()?.populations,
-        &admitted.documents.post()?.populations,
+        frame_snapshot(admitted.documents.pre()?),
+        frame_snapshot(admitted.documents.post()?),
         &invocation.created,
         &invocation.deleted,
     )?;
@@ -2494,6 +2515,14 @@ impl std::fmt::Debug for AdmittedInvocation<'_> {
             .field("pre", &self.pre)
             .field("post", &self.post)
             .finish_non_exhaustive()
+    }
+}
+
+/// `snapshot` as check 11 reads it.
+fn frame_snapshot(snapshot: &document::SnapshotDocument) -> frame::FrameSnapshot<'_> {
+    frame::FrameSnapshot {
+        populations: &snapshot.populations,
+        relationships: &snapshot.relationships,
     }
 }
 
@@ -2648,8 +2677,8 @@ impl AdmittedInvocation<'_> {
                 pre: &self.pre,
                 post: &self.post,
             },
-            &self.documents.pre().map_err(as_fault)?.populations,
-            &self.documents.post().map_err(as_fault)?.populations,
+            frame_snapshot(self.documents.pre().map_err(as_fault)?),
+            frame_snapshot(self.documents.post().map_err(as_fault)?),
             &invocation.created,
             &invocation.deleted,
         )

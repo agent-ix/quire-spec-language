@@ -94,7 +94,7 @@ pub(super) struct RawPopulation {
 /// pattern) converts it once, at read (`read_snapshot_body`), so no caller
 /// compares `SnapshotDocument::observation` against a string literal.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum ObservationRole {
+pub enum ObservationRole {
     /// `current`.
     Current,
     /// `pre`.
@@ -111,6 +111,8 @@ pub(super) struct SnapshotDocument {
     pub(super) invocation: Option<InvocationLabels>,
     pub(super) model: ModelHeader,
     pub(super) populations: Vec<RawPopulation>,
+    /// The snapshot's `relationships` entries, in document order (FR-106).
+    pub(super) relationships: Vec<super::relationships::RawEntry>,
 }
 
 /// The four FR-001 labels of an invocation document's own `identity`: how
@@ -343,6 +345,7 @@ pub(super) fn read_document(
             "invocation",
             "model",
             "populations",
+            "relationships",
         ],
         DocumentKind::Invocation | DocumentKind::InvocationCall => INVOCATION_MEMBERS,
     };
@@ -620,12 +623,14 @@ fn read_snapshot_body(
         None => None,
     };
     let populations = read_populations(object, meter)?;
+    let relationships = super::relationships::read_relationships(object, meter)?;
     Ok(SnapshotDocument {
         observation,
         anchor,
         invocation,
         model,
         populations,
+        relationships,
     })
 }
 
@@ -1689,6 +1694,11 @@ pub(super) struct PopulationValues<'t> {
     objects: Vec<(ObjectReference, Vec<(&'t str, FieldValue)>)>,
     pub(super) completeness: BTreeMap<String, bool>,
     pub(super) keys_by_population: BTreeMap<String, BTreeSet<String>>,
+    /// The entries of the snapshot's `relationships` member that passed
+    /// checks 6.6 to 6.9 (FR-364).
+    pub(super) extents: Vec<super::relationships::CheckedExtent>,
+    /// The package facts the extent store is built from.
+    facts: super::relationships::ModelFacts,
     /// Each reference that named no object of this snapshot, with the wire
     /// population it named ([`References`]).
     unresolved: Vec<(String, ObjectReference)>,
@@ -1708,10 +1718,12 @@ pub(super) fn admit_population_values<'t>(
     views: &[ModelView],
     types: &'t TypeEnvironment,
     populations: &[RawPopulation],
+    relationships: &[super::relationships::RawEntry],
     range: PostStateRange,
     ancestor_steps: u64,
 ) -> Result<PopulationValues<'t>, AdmissionFailure> {
     let mut objects: Vec<(ObjectReference, Vec<(&str, FieldValue)>)> = Vec::new();
+    let mut listed = super::relationships::Listed::new();
     let mut completeness = BTreeMap::new();
     let mut keys_by_population: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     let mut references = References::over(views, types, populations);
@@ -1877,6 +1889,12 @@ pub(super) fn admit_population_values<'t>(
             // own `invalid-value` (SR-750 FND-004 round 2): propagated
             // directly, never re-mapped to a `Fault`.
             let reference = object_reference(views, effective_type, &object.key)?;
+            if !listed.contains_key(&entry.population) {
+                listed.insert(entry.population.clone(), BTreeMap::new());
+            }
+            if let Some(objects) = listed.get_mut(&entry.population) {
+                objects.insert(object.key.clone(), reference.clone());
+            }
             out_of_range.extend(breaches.into_iter().map(|(field, breach)| OutOfRange {
                 object: reference.clone(),
                 field,
@@ -1889,10 +1907,16 @@ pub(super) fn admit_population_values<'t>(
         }
     }
 
+    // 6.6 to 6.9: the `relationships` entries, after the last object.
+    let facts = super::relationships::model_facts(views, types);
+    let extents = super::relationships::check_entries(types, &facts, relationships, &listed)?;
+
     Ok(PopulationValues {
         objects,
         completeness,
         keys_by_population,
+        extents,
+        facts,
         unresolved: references.unresolved,
         out_of_range,
     })
@@ -1910,6 +1934,7 @@ pub(super) fn admit_state_machine_context_values<'t>(
     context_view: &ModelView,
     context_name: &str,
     populations: &[RawPopulation],
+    relationships: &[super::relationships::RawEntry],
     observation: &DocumentRef,
     invocation: &DocumentRef,
     range: PostStateRange,
@@ -2050,7 +2075,14 @@ pub(super) fn admit_state_machine_context_values<'t>(
         effective_type,
         object,
     );
-    let mut values = admit_population_values(views, types, &ordinary, range, ancestor_steps)?;
+    let mut values = admit_population_values(
+        views,
+        types,
+        &ordinary,
+        relationships,
+        range,
+        ancestor_steps,
+    )?;
     values
         .out_of_range
         .extend(breaches.into_iter().map(|(field, breach)| OutOfRange {
@@ -2142,6 +2174,7 @@ pub(super) fn check_population_completeness(
     completeness: &BTreeMap<String, bool>,
     self_population: Option<&str>,
     parameter_populations: &[String],
+    extents: &[super::relationships::CheckedExtent],
 ) -> Result<(), AdmissionFailure> {
     // Built from the wire-declared `reference.population` (SR-750 FND-001):
     // a dangling reference (whose target this call never admits into
@@ -2173,6 +2206,8 @@ pub(super) fn check_population_completeness(
                 }
             }
         }
+        // An instance end makes the population of its other end required.
+        grew |= super::relationships::extend_required(&mut required, extents);
         if !grew {
             break;
         }
@@ -2194,6 +2229,13 @@ pub(super) fn check_population_completeness(
             walk_order.push(name);
         }
     }
+    // A declared population only an instance end made required follows them
+    // all (check 6.8 admitted only declared populations at instance ends).
+    for name in super::relationships::end_populations(extents) {
+        if required.contains(name) && !walk_order.contains(&name) {
+            walk_order.push(name);
+        }
+    }
     for name in walk_order {
         if required.contains(name) && completeness.get(name).copied() != Some(true) {
             return Err(incomplete(
@@ -2202,7 +2244,7 @@ pub(super) fn check_population_completeness(
             ));
         }
     }
-    Ok(())
+    super::relationships::check_unlisted_ends(extents, completeness)
 }
 
 /// FR-106 check 8: closure, skipped over an incomplete population, over
@@ -2213,6 +2255,7 @@ pub(super) fn check_population_closure(
     populations: &[RawPopulation],
     completeness: &BTreeMap<String, bool>,
     keys_by_population: &BTreeMap<String, BTreeSet<String>>,
+    extents: &[super::relationships::CheckedExtent],
 ) -> Result<(), AdmissionFailure> {
     for entry in populations {
         for object in &entry.objects {
@@ -2241,7 +2284,8 @@ pub(super) fn check_population_closure(
             }
         }
     }
-    Ok(())
+    // After the `reference` values: the instance ends.
+    super::relationships::check_dangling_ends(extents)
 }
 
 /// Builds the final [`AdmittedEnvironment`] from `values`, once checks 6, 7
@@ -2276,11 +2320,18 @@ pub(super) fn finish_populations(
         widened = widen_ranges(types)?;
         &widened
     };
+    let extents = super::relationships::build_extents(
+        types,
+        values.facts,
+        &values.extents,
+        &values.completeness,
+    )?;
     let environment = ObjectEnvironment::new(
         ObjectClosure::new(closure_types, values.objects, &tolerated)
             .map_err(map_environment_refusal)?,
     )
-    .with_out_of_range(out_of_range.clone());
+    .with_out_of_range(out_of_range.clone())
+    .with_extents(extents);
     Ok(AdmittedEnvironment {
         environment,
         completeness: values.completeness,
@@ -2329,6 +2380,7 @@ pub(super) fn admit_populations(
     views: &[ModelView],
     types: &TypeEnvironment,
     populations: &[RawPopulation],
+    relationships: &[super::relationships::RawEntry],
     self_population: Option<&str>,
     ancestor_steps: u64,
 ) -> Result<AdmittedEnvironment, AdmissionFailure> {
@@ -2336,14 +2388,22 @@ pub(super) fn admit_populations(
         views,
         types,
         populations,
+        relationships,
         PostStateRange::Refuse,
         ancestor_steps,
     )?;
-    check_population_completeness(populations, &values.completeness, self_population, &[])?;
+    check_population_completeness(
+        populations,
+        &values.completeness,
+        self_population,
+        &[],
+        &values.extents,
+    )?;
     check_population_closure(
         populations,
         &values.completeness,
         &values.keys_by_population,
+        &values.extents,
     )?;
     finish_populations(types, values)
 }

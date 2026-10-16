@@ -19,10 +19,11 @@ use quire_exact::{EffectiveId, ObjectReference};
 
 use super::document::{find_declaration, raw_field, RawObject, RawPopulation};
 use super::helpers::object_reference;
+use super::relationships::{first_link_change, LinkFinding, RawEntry};
 use super::{
     caller_budget_record, fault, refuse, view_of, AdmissionFailure, AdmissionRecord, DocumentRef,
-    FrameChange, FrameVerdict, FrameWitness, ModelView, SelectedObject, SnapshotValue,
-    INSUFFICIENT_NEXT_CHARGE,
+    FrameChange, FrameVerdict, FrameWitness, LinkDifference, ModelView, SelectedObject,
+    SnapshotValue, INSUFFICIENT_NEXT_CHARGE,
 };
 use crate::model::accounting::{Charge, ChargePoint, Incomplete, Meter, ModelNormalizationLimits};
 use crate::model::domain_package::OperationEffect;
@@ -74,6 +75,16 @@ impl FrameBinding<'_> {
             .map(|(parameter, object)| (parameter.clone(), object.key.clone()))
             .collect()
     }
+}
+
+/// One snapshot of the invocation as check 11 reads it: its populations and
+/// the relationship entries it lists.
+#[derive(Clone, Copy)]
+pub(super) struct FrameSnapshot<'a> {
+    /// The snapshot's populations, in document order.
+    pub(super) populations: &'a [RawPopulation],
+    /// The snapshot's `relationships` entries, in document order.
+    pub(super) relationships: &'a [RawEntry],
 }
 
 /// What this module keeps about one wire object beside its
@@ -211,6 +222,8 @@ enum FrameStop<'a> {
     Decision(Box<Decision<'a>>),
     /// A `frame.write` or `frame.redefines-link` charge the meter denied.
     Denied(Incomplete),
+    /// Step 5's first changed relationship instance.
+    Link(Box<LinkFinding>),
 }
 
 /// [`decide_frame`]'s first finding, in `population`, with the pre side it
@@ -239,11 +252,12 @@ type AdmittedDelta = (Vec<ObjectReference>, Vec<ObjectReference>);
 fn run<'a>(
     context: &FrameContext<'a>,
     binding: &FrameBinding<'_>,
-    pre_populations: &'a [RawPopulation],
-    post_populations: &'a [RawPopulation],
+    pre: FrameSnapshot<'a>,
+    post: FrameSnapshot<'a>,
     declared_created: &'a [SelectedObject],
     declared_deleted: &'a [SelectedObject],
 ) -> Result<AdmittedDelta, FrameStop<'a>> {
+    let (pre_populations, post_populations) = (pre.populations, post.populations);
     let mut order: Vec<&str> = Vec::new();
     let names = pre_populations
         .iter()
@@ -323,6 +337,17 @@ fn run<'a>(
             }
         }
     }
+    // Step 5, once, after every population: the relationship instances.
+    if let Some(link) = first_link_change(
+        context.views,
+        context.types,
+        (pre.populations, pre.relationships),
+        (post.populations, post.relationships),
+        context.effect,
+        declared_deleted,
+    )? {
+        return Err(FrameStop::Link(Box::new(link)));
+    }
     Ok((created, deleted))
 }
 
@@ -332,16 +357,16 @@ fn run<'a>(
 pub(super) fn enforce(
     context: &FrameContext<'_>,
     binding: &FrameBinding<'_>,
-    pre_populations: &[RawPopulation],
-    post_populations: &[RawPopulation],
+    pre: FrameSnapshot<'_>,
+    post: FrameSnapshot<'_>,
     declared_created: &[SelectedObject],
     declared_deleted: &[SelectedObject],
 ) -> Result<AdmittedDelta, AdmissionFailure> {
     run(
         context,
         binding,
-        pre_populations,
-        post_populations,
+        pre,
+        post,
         declared_created,
         declared_deleted,
     )
@@ -353,7 +378,22 @@ pub(super) fn enforce(
             &decision.pre,
         )),
         FrameStop::Denied(incomplete) => refuse(budget_record(&incomplete)),
+        FrameStop::Link(link) => refuse(
+            AdmissionRecord::new(Code::FrameViolation, "unauthorized-change")
+                .with("population", link.source.population.clone())
+                .with("relationship", link.relationship.node.clone())
+                .with("source", link.source.key.clone())
+                .with("target", link.target.key.clone())
+                .with("difference", link_difference_name(link.difference)),
+        ),
     })
+}
+
+fn link_difference_name(difference: LinkDifference) -> &'static str {
+    match difference {
+        LinkDifference::Added => "added",
+        LinkDifference::Removed => "removed",
+    }
 }
 
 /// The three documents a Frame run's witness names.
@@ -372,16 +412,16 @@ pub(super) fn verdict(
     context: &FrameContext<'_>,
     binding: &FrameBinding<'_>,
     documents: &WitnessDocuments<'_>,
-    pre_populations: &[RawPopulation],
-    post_populations: &[RawPopulation],
+    pre: FrameSnapshot<'_>,
+    post: FrameSnapshot<'_>,
     declared_created: &[SelectedObject],
     declared_deleted: &[SelectedObject],
 ) -> Result<FrameVerdict, InternalFault> {
     let stop = match run(
         context,
         binding,
-        pre_populations,
-        post_populations,
+        pre,
+        post,
         declared_created,
         declared_deleted,
     ) {
@@ -403,6 +443,35 @@ pub(super) fn verdict(
         // record and no frame verdict.
         FrameStop::Denied(incomplete) => {
             return Ok(FrameVerdict::Refused(budget_record(&incomplete)))
+        }
+        FrameStop::Link(link) => {
+            let LinkFinding {
+                relationship,
+                difference,
+                source,
+                target,
+            } = *link;
+            return Ok(FrameVerdict::Violation(Box::new(FrameWitness {
+                code: Code::FrameViolation,
+                cause: "unauthorized-change",
+                invocation: documents.invocation.clone(),
+                pre: documents.pre.clone(),
+                post: documents.post.clone(),
+                population: source.population.clone(),
+                change: FrameChange::Link {
+                    relationship,
+                    difference,
+                    source,
+                    target,
+                    modifies: context
+                        .effect
+                        .modifies
+                        .iter()
+                        .chain(&context.effect.receiver_modifies)
+                        .cloned()
+                        .collect(),
+                },
+            })));
         }
         FrameStop::Decision(decision) => *decision,
     };
