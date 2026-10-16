@@ -93,6 +93,19 @@ fn run_group(
     Ok(true)
 }
 
+/// FR-107 "Clause sets": the set's outcome from its entries' verdicts.
+fn combine(verdicts: &[Verdict]) -> ClauseSetOutcome {
+    if verdicts.contains(&Verdict::Incomplete) {
+        ClauseSetOutcome::Incomplete
+    } else if verdicts.contains(&Verdict::False) {
+        ClauseSetOutcome::False
+    } else if verdicts.contains(&Verdict::Undecided) {
+        ClauseSetOutcome::Undecided
+    } else {
+        ClauseSetOutcome::True
+    }
+}
+
 pub(super) fn evaluate(
     package: &CheckedPackage,
     clauses: &[(QualifiedName, &AdmittedObservations)],
@@ -131,14 +144,25 @@ pub(super) fn evaluate(
     if preconditions_done && preconditions_true {
         run_group(package, &postconditions, limits, &mut results, &mut seen)?;
     }
-    let outcome = if seen.contains(&Verdict::Incomplete) {
-        ClauseSetOutcome::Incomplete
-    } else if seen.contains(&Verdict::False) {
-        ClauseSetOutcome::False
-    } else if seen.contains(&Verdict::Undecided) {
-        ClauseSetOutcome::Undecided
-    } else {
-        ClauseSetOutcome::True
-    };
+    let outcome = combine(&seen);
     Ok(ClauseSetEvaluation { results, outcome })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{combine, ClauseSetOutcome, Verdict};
+
+    /// FR-107 "Clause sets": `outcome` is `Incomplete` over everything,
+    /// `False` over `Undecided`, `Undecided` over `True`, and `True` for an
+    /// empty set. The `Undecided` entries are given here directly
+    /// (TC-1039 step 6's clause does not check).
+    #[test]
+    fn the_outcome_combines_verdicts_by_precedence() {
+        use Verdict::{False, Incomplete, True, Undecided};
+        assert_eq!(combine(&[]), ClauseSetOutcome::True);
+        assert_eq!(combine(&[True, True]), ClauseSetOutcome::True);
+        assert_eq!(combine(&[True, Undecided]), ClauseSetOutcome::Undecided);
+        assert_eq!(combine(&[Undecided, False]), ClauseSetOutcome::False);
+        assert_eq!(combine(&[False, Incomplete]), ClauseSetOutcome::Incomplete);
+    }
 }
