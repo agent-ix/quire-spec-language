@@ -177,8 +177,8 @@ depends on STD-113.
   and typed integration qualify it, the Decimal path is an implementation
   qualification blocker, not a substituted runtime outcome or omitted family.
   Each defect refuses `WrongValueKind` naming position 0, before the call.
-  `deref` settles `inconclusive` with cause `NoValue`, since a replayed
-  function has no object environment.
+  `deref` settles `inconclusive` with cause `NoValue`, since this request
+  supplies no `object_environment`.
 - Step 5: the unchanged full Tree completes by default and at the exact
   occurrence, helper and evaluation bounds. At C-1 conversion denies; at C
   conversion admits and the evaluator stops `Incomplete` at its actual

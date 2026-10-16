@@ -15,8 +15,9 @@ use super::helpers::{admission_record, object_reference};
 use super::tree::{read_raw_value, Json, Object};
 use super::{
     check_document_digest, fault, incomplete, population_universe, refuse, AdmissionFailure,
-    AdmissionRecord, DocumentRef, ModelView, ObservationLimits, OutOfRange, PathStep,
-    PostStateRange, RawForm, RawValue, ReadMeter, SelectedObject, SnapshotValue,
+    AdmissionRecord, DocumentRef, ModelView, NativeKind, ObservationLimits, OutOfRange, PathStep,
+    PostStateRange, RawForm, RawNative, RawNativeKind, RawValue, ReadMeter, SelectedObject,
+    SnapshotValue,
 };
 use crate::model::key::DeclarationKey;
 use crate::model::object_environment::ObjectEnvironment;
@@ -891,7 +892,7 @@ fn field_kind_matches(raw: &SnapshotValue, value_type: &quire_exact::ValueType) 
             | (RawForm::Sequence(_), quire_exact::ValueType::Collection(_))
             | (RawForm::Record(_), quire_exact::ValueType::Composite(_))
             | (RawForm::Variant(_), quire_exact::ValueType::Enum(_))
-    )
+    ) || matches!(raw.form(), RawForm::Native(_))
 }
 
 /// An object type's own field's raw kind test: presence
@@ -909,6 +910,11 @@ fn object_field_kind_matches(
     value_type: &quire_exact::ValueType,
     presence: quire_exact::Presence,
 ) -> bool {
+    // A native payload object is judged by `admit_native`, whose order puts
+    // its own envelope defects before declared-type fit.
+    if matches!(raw, RawForm::Native(_)) {
+        return true;
+    }
     if presence == quire_exact::Presence::Optional {
         return matches!(raw, RawForm::Absent | RawForm::Present(_));
     }
@@ -1229,7 +1235,98 @@ fn admit_leaf(
         (RawForm::Variant(variant), quire_exact::ValueType::Enum(slot)) => {
             admit_variant(references, variant, slot)
         }
+        (RawForm::Native(native), value_type) => admit_native(native, value_type),
         _ => Err(admission_record(
+            Code::InvalidRuntimeInput,
+            "wrong-value-kind",
+        )),
+    }
+}
+
+/// A native payload object's kind and payload text, once its envelope is
+/// sound. The first defect refuses, in FR-106's native order: a `kind` that
+/// is not text (`wrong-value-kind`), a `kind` that names no native kind
+/// (`invalid-value`, the members unexamined), a missing payload member
+/// (`missing-member`), an unknown member (`unknown-member`, the first in
+/// document order), and a payload that is not text (`wrong-value-kind`).
+/// Each names the member.
+#[qsl_attrs::string_edge]
+fn native_payload(native: RawNative<'_>) -> Result<(NativeKind, &str), AdmissionRecord> {
+    let refuse = |cause: &'static str, member: &str| {
+        admission_record(Code::InvalidRuntimeInput, cause).with("member", member.to_owned())
+    };
+    let kind = match native.kind() {
+        RawNativeKind::NotText => return Err(refuse("wrong-value-kind", "kind")),
+        RawNativeKind::Unknown => return Err(refuse("invalid-value", "kind")),
+        RawNativeKind::Known(kind) => kind,
+    };
+    let member = match kind {
+        NativeKind::String | NativeKind::Uuid | NativeKind::Text => "text",
+        NativeKind::Timestamp => "nanoseconds",
+    };
+    let Some((_, payload)) = native.members().find(|(name, _)| *name == member) else {
+        return Err(refuse("missing-member", member));
+    };
+    if let Some((unknown, _)) = native.members().find(|(name, _)| *name != member) {
+        return Err(refuse("unknown-member", unknown));
+    }
+    payload
+        .map(|text| (kind, text))
+        .ok_or_else(|| refuse("wrong-value-kind", member))
+}
+
+/// A native payload object admitted as a value of `value_type` (FR-106's
+/// native order): the envelope ([`native_payload`]), then the slot's fit
+/// (`wrong-value-kind`), then, for a UUID or a Timestamp, the kernel's
+/// canonical constructor (`invalid-value` naming the payload member, with
+/// the kernel's class). A String has every Unicode scalar sequence as a
+/// value, so it has no payload refusal.
+fn admit_native(
+    native: RawNative<'_>,
+    value_type: &quire_exact::ValueType,
+) -> Result<Value, AdmissionRecord> {
+    let (kind, payload) = native_payload(native)?;
+    let invalid = |refusal: quire_exact::ConstructionRefusal, member: &'static str| {
+        admission_record(Code::InvalidRuntimeInput, "invalid-value")
+            .with("member", member)
+            .kernel_class(refusal.cause)
+    };
+    match (kind, value_type) {
+        (NativeKind::String, quire_exact::ValueType::String) => {
+            Ok(Value::String(payload.to_owned()))
+        }
+        (NativeKind::Uuid, quire_exact::ValueType::Uuid) => {
+            quire_exact::Uuid::from_canonical_text(payload)
+                .map(Value::Uuid)
+                .map_err(|refusal| invalid(refusal, "text"))
+        }
+        (NativeKind::Timestamp, quire_exact::ValueType::Timestamp) => {
+            quire_exact::Timestamp::from_canonical_text(payload)
+                .map(Value::Timestamp)
+                .map_err(|refusal| invalid(refusal, "nanoseconds"))
+        }
+        // A Text object's envelope is judged above; admitting it into a Text
+        // slot is the Text code slice's, so every slot refuses it here.
+        (
+            NativeKind::String | NativeKind::Uuid | NativeKind::Timestamp | NativeKind::Text,
+            quire_exact::ValueType::Boolean
+            | quire_exact::ValueType::Integer
+            | quire_exact::ValueType::Int(_)
+            | quire_exact::ValueType::Rational(_)
+            | quire_exact::ValueType::Decimal(_)
+            | quire_exact::ValueType::Float(_)
+            | quire_exact::ValueType::Quantity(_)
+            | quire_exact::ValueType::Text(_)
+            | quire_exact::ValueType::String
+            | quire_exact::ValueType::Uuid
+            | quire_exact::ValueType::Timestamp
+            | quire_exact::ValueType::Enum(_)
+            | quire_exact::ValueType::Option(_)
+            | quire_exact::ValueType::Composite(_)
+            | quire_exact::ValueType::Collection(_)
+            | quire_exact::ValueType::Reference(_)
+            | quire_exact::ValueType::Population(_),
+        ) => Err(admission_record(
             Code::InvalidRuntimeInput,
             "wrong-value-kind",
         )),
@@ -1427,6 +1524,14 @@ fn admit_value<'a: 'w, 'w>(
                             });
                             work.push(Admit::Enter(PathStep::OptionValue));
                         }
+                        // The native order refuses an envelope defect before
+                        // the slot's fit.
+                        RawForm::Native(native) => {
+                            return Err(match native_payload(native) {
+                                Err(record) => record.at(path.clone()),
+                                Ok(_) => refuse_at("wrong-value-kind", &path),
+                            });
+                        }
                         _ => return Err(refuse_at("wrong-value-kind", &path)),
                     }
                     continue;
@@ -1565,7 +1670,11 @@ fn collect_references(raw: &SnapshotValue, into: &mut Vec<(String, String)>) {
             RawForm::Record(record) => {
                 pending.extend(record.fields().rev().map(|(_, value)| value.form()));
             }
-            RawForm::Boolean(_) | RawForm::Integer(_) | RawForm::Absent | RawForm::Variant(_) => {}
+            RawForm::Boolean(_)
+            | RawForm::Integer(_)
+            | RawForm::Native(_)
+            | RawForm::Absent
+            | RawForm::Variant(_) => {}
         }
     }
 }

@@ -217,20 +217,24 @@ condition is false; the reader refuses `null` or a default in its place.
 | Frame witness | `invocation` | FR-115 | FR-106 document reference | Restore invocation selection |
 | Frame witness | `pre` | FR-115 | FR-106 document reference | Restore pre selection |
 | Frame witness | `post` | FR-115 | FR-106 document reference | Restore post selection |
-| Frame witness | `population` | FR-115 | Declaration identity | Restore population |
+| Frame witness | `population` | FR-115 | Declaration identity; a link change's is its `source` population | Restore population |
 | Frame witness | `change` | FR-115 | One tagged change from table above | Restore exact change and permission |
 | Document reference | `authority` | FR-106 | FR-001 label | Restore label |
 | Document reference | `identity` | FR-106 | FR-001 label | Restore label |
 | Document reference | `revision_namespace` | FR-106 | FR-001 label | Restore label |
 | Document reference | `revision` | FR-106 | FR-001 label | Restore label |
 | Document reference | `digest` | FR-106 | `sha256-jcs` digest | Restore digest |
-| Change | `kind` | FR-115 | One of four tags above | Select typed variant |
+| Change | `kind` | FR-115 | One of five tags above | Select typed variant |
 | Change | `object` | FR-115 | Object key | Restore key |
 | Change | `field` | FR-115 | Declared field name on field write | Restore field |
 | Change | `type_name` | FR-115 | Declaration key on create or delete | Restore type |
 | Change | `pre_type` | FR-115 | Declaration key on retype | Restore pre type |
 | Change | `post_type` | FR-115 | Declaration key on retype | Restore post type |
-| Change | `modifies` | FR-115 | Ordered declaration-key array on field write | Restore checked grant |
+| Change | `relationship` | FR-115 | Declaration key on link | Restore relationship |
+| Change | `difference` | FR-115 | `added` or `removed` on link | Restore difference |
+| Change | `source` | FR-115 | Object reference `{population, key}` on link | Restore source end |
+| Change | `target` | FR-115 | Object reference `{population, key}` on link | Restore target end |
+| Change | `modifies` | FR-115 | Ordered declaration-key array on field write or link | Restore checked grant |
 | Change | `creates` | FR-115 | Ordered declaration-key array on creation | Restore checked grant |
 | Change | `deletes` | FR-115 | Ordered declaration-key array on deletion | Restore checked grant |
 | Declaration key | `package` | FR-056, FR-115 | Package identity | Restore key package |
