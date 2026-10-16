@@ -183,7 +183,7 @@ Results:
   `Counter/value` is a field `Counter` has and is not read). I20 and I21 admit.
   I22 refuses at `modifies_receiver` alone.
 - Step 4: X1, X2 and X3 are refused as schema failures of the frame body. X4
-  and X5 refuse `invalid_semantic_graph`. X6 refuses, in the state step at `merge`'s anchor and not in the frame step, `missing_declaration`/
+  and X5 refuse `invalid_semantic_graph`. X6 refuses, in the state step and not in the frame step, located at the frame node and checked against each anchor's operation of a shared frame, `missing_declaration`/
   `missing-name`. X7 is admitted. X8 and X9 each refuse
   `invalid_model_binding`/`conflicting-binding` naming both `step` entries:
   every entry resolves, so no other meaning-join defect exists, and the
