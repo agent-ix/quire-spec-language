@@ -1705,7 +1705,8 @@ fn a_deleted_objects_links_and_an_uncompared_relationship_find_nothing() {
 fn snapshots_listing_no_relationship_leave_check_11_5_with_nothing_to_compare() {
     use qsl_semantics::model::observation::FrameVerdict;
     let admission = checked(&Variant::orders());
-    let documents = admission.documents(side("pre", &[], vec![]), side("post", &[], vec![]), |_| {});
+    let documents =
+        admission.documents(side("pre", &[], vec![]), side("post", &[], vec![]), |_| {});
     assert_eq!(
         admission
             .check_frame(&documents, &effect(&[], &[], &[]))
