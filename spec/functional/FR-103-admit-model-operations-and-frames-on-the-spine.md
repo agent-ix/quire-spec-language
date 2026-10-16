@@ -98,6 +98,10 @@ operation `pre`/`post` text is shape-checked and not kept (QSL-726).
   environment cannot hold SHALL refuse
   `unknown_required_feature`/`unsupported-feature` at the `model`
   declaration, as a field of that type does.
+- A `pre` or `post` clause and a protocol attempt name an operation of an
+  object type only (FR-104, FR-114): an operation declared by a process is
+  admitted, with its frame, into the process's declaration and is named by no
+  clause, so it takes no clause frame.
 - The assembler SHALL declare an operation on the object type or process that
   owns it. The operation is visible on a subtype through FR-081's effective
   view, as a field is, and keeps its declaring type as its owner (FR-105
