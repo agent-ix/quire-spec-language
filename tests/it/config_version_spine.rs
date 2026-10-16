@@ -272,7 +272,7 @@ fn clause_run_command_uses_explicit_current_self_and_anchor() {
         else {
             panic!("the current snapshot must retain its current role");
         };
-        assert_eq!(self_object.key, "child");
+        assert_eq!(self_object.expect("a named self").key, "child");
         assert_eq!(anchor.name, "validate");
         let driver = quire_spec_language::command::run(&path.join("request.json")).unwrap();
         assert_eq!(output.stdout, format!("{}\n", driver.value).into_bytes());
@@ -754,7 +754,7 @@ fn clause_run_reader_distinguishes_pre_and_invocation_roles() {
     else {
         panic!("pre snapshot must yield PreCall");
     };
-    assert_eq!(self_object.key, "child");
+    assert_eq!(self_object.expect("a named self").key, "child");
     assert!(parameters.is_empty());
 
     request["request"]["clause"]["selection"]["clause"]["anchor"] =

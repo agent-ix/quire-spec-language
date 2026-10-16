@@ -488,6 +488,7 @@ impl Admission {
             kind: clause.kind(),
             context: clause.context(),
             operation: None,
+            operations: Default::default(),
         };
         let admitted = admit_observations(
             self.graph.model_selections(),
@@ -507,10 +508,10 @@ impl Admission {
                         kind: AnchorKind::Handler,
                         name: "validate".to_owned(),
                     },
-                    self_object: SelectedObject {
+                    self_object: Some(SelectedObject {
                         population: identity("Q"),
                         key: "s1".to_owned(),
-                    },
+                    }),
                 },
             },
             limits,
@@ -1265,6 +1266,7 @@ impl Admission {
                 // with, to vary it without a package per row.
                 declaration: OperationDeclaration::new("rehome", Vec::new(), None, effect.clone()),
             }),
+            operations: Default::default(),
         };
         admit_observations(
             self.graph.model_selections(),

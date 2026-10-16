@@ -543,6 +543,7 @@ impl Replay {
                 kind,
                 context: self.item(),
                 operation: Some(self.operation(operation)),
+                operations: Default::default(),
             },
             &self.packages,
             ModelNormalizationLimits::default(),
@@ -577,10 +578,10 @@ impl Replay {
             &BTreeMap::new(),
             ClauseSelectionInput::PreCall {
                 snapshot: reference,
-                self_object: SelectedObject {
+                self_object: Some(SelectedObject {
                     population: id("items"),
                     key: OBJECT.to_owned(),
-                },
+                }),
                 parameters,
             },
             ObservationLimits::default(),
@@ -1886,10 +1887,11 @@ fn the_frame_compares_a_text_by_its_retained_sequence() {
     assert!(writes(&witness.change, "subtitle"), "{:?}", witness.change);
 }
 
-/// FR-106 check 11: a record `Address { street: Text[1, 8; nfc] }`
-/// held by `Item.address` compares its `street` by the retained sequence, so
-/// U+00E9 against U+0065 U+0301 is no change under a frame granting nothing,
-/// and a different street is a change.
+/// TC-1044 step 4 (FR-106-AC-49): a record `Address { street: Text[1, 8;
+/// nfc] }` held by `Item.address` compares its `street` by the retained
+/// sequence, so U+00E9 against U+0065 U+0301 is no change under a frame
+/// granting nothing, and a different street is a change.
+#[trace("TC-1044", "FR-106-AC-49")]
 #[test]
 fn the_frame_compares_a_record_fields_text_by_its_retained_sequence() {
     let replay = text_replay();

@@ -277,9 +277,11 @@ fn selection(
                     }
                     ClauseSelectionInput::Current {
                         snapshot: document.reference.clone(),
-                        self_object: clause
-                            .self_object
-                            .ok_or_else(|| invalid("self", "required for current snapshot"))?,
+                        self_object: Some(
+                            clause
+                                .self_object
+                                .ok_or_else(|| invalid("self", "required for current snapshot"))?,
+                        ),
                         anchor: clause
                             .anchor
                             .ok_or_else(|| invalid("anchor", "required for current snapshot"))?,
@@ -303,9 +305,11 @@ fn selection(
                         .collect::<Result<BTreeMap<_, _>, ClauseRequestReadError>>()?;
                     ClauseSelectionInput::PreCall {
                         snapshot: document.reference.clone(),
-                        self_object: clause
-                            .self_object
-                            .ok_or_else(|| invalid("self", "required for pre snapshot"))?,
+                        self_object: Some(
+                            clause
+                                .self_object
+                                .ok_or_else(|| invalid("self", "required for pre snapshot"))?,
+                        ),
                         parameters,
                     }
                 }
