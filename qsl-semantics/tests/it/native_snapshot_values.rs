@@ -186,11 +186,17 @@ fn text_fields() -> Vec<(String, Value)> {
             ("subtitle", json!({"absent": {}})),
             ("code", text("abc")),
             ("aliases", json!({"sequence": []})),
+            ("address", address("Main")),
         ]
         .into_iter()
         .map(|(name, value)| (name.to_owned(), value)),
     );
     fields
+}
+
+/// `{"record": {"type": Address, "fields": {"street": <Text>}}}`.
+fn address(street: &str) -> Value {
+    json!({"record": {"type": fixture::id("Address"), "fields": {"street": text(street)}}})
 }
 
 fn with(mut fields: Vec<(String, Value)>, name: &str, value: Value) -> Vec<(String, Value)> {
@@ -1880,6 +1886,29 @@ fn the_frame_compares_a_text_by_its_retained_sequence() {
     assert!(writes(&witness.change, "subtitle"), "{:?}", witness.change);
 }
 
+/// FR-056-AC-21 and FR-106-AC-37: a record `Address { street: Text[1, 8; nfc] }`
+/// held by `Item.address` compares its `street` by the retained sequence, so
+/// U+00E9 against U+0065 U+0301 is no change under a frame granting nothing,
+/// and a different street is a change.
+#[trace("FR-056-AC-21", "FR-106-AC-37")]
+#[test]
+fn the_frame_compares_a_record_fields_text_by_its_retained_sequence() {
+    let replay = text_replay();
+    let composed = with(replay.base.clone(), "address", address("\u{e9}"));
+    let decomposed = with(replay.base.clone(), "address", address("e\u{301}"));
+    assert_eq!(
+        replay.frame_from("rekeep", &composed, &decomposed),
+        FrameVerdict::Holds,
+        "U+00E9 and U+0065 U+0301 are one street under nfc"
+    );
+    let other = with(replay.base.clone(), "address", address("Side"));
+    let FrameVerdict::Violation(witness) = replay.frame_from("rekeep", &composed, &other) else {
+        panic!("a different street violates the frame");
+    };
+    assert_eq!(witness.cause, "unauthorized-change");
+    assert!(writes(&witness.change, "address"), "{:?}", witness.change);
+}
+
 /// TC-1038 step 8 (FR-106-AC-36): under `PostStateRange::Witness` a post
 /// snapshot holding a String object in `title` refuses `wrong-value-kind`, an
 /// empty `title` refuses `invalid-value` naming `text`, and a `text` of `5`
@@ -1910,9 +1939,9 @@ fn a_witness_post_snapshot_still_refuses_a_wrong_text() {
     }
 }
 
-/// TC-1038 step 9 (FR-106-AC-37): a Text element inside `aliases`, the last
-/// value in walk order, counts as one value; the exact count admits and one
-/// less refuses `node-count-exceeded` naming `observation.values`.
+/// TC-1038 step 9 (FR-106-AC-37): a Text element inside `aliases` counts as
+/// one value; the exact count admits and one less refuses
+/// `node-count-exceeded` naming `observation.values`.
 #[trace("TC-1038", "FR-106-AC-37")]
 #[test]
 fn a_text_object_counts_as_one_value() {
@@ -1922,19 +1951,19 @@ fn a_text_object_counts_as_one_value() {
         "aliases",
         json!({"sequence": [text("x")]}),
     );
-    assert_eq!(replay.values_used(&fields), 15);
+    assert_eq!(replay.values_used(&fields), 17);
     replay
         .admit(
             &fields,
-            ObservationLimits::default().with_values_per_document(15),
+            ObservationLimits::default().with_values_per_document(17),
         )
         .expect("the exact count admits");
     assert_values_limit(
         replay.admit(
             &fields,
-            ObservationLimits::default().with_values_per_document(14),
+            ObservationLimits::default().with_values_per_document(16),
         ),
-        14,
+        16,
     );
 }
 

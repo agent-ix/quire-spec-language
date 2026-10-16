@@ -385,8 +385,6 @@ FR-363; a navigation site reaches the evaluator already resolved.
   completeness rules for it. The checker's typing of a relationship end, its
   direction, ambiguity and `unbounded` or `ordered` refusals, and the
   `quire.op.model.navigate` lowering are FR-363's.
-- [FR-365](FR-365-reach-an-object-over-a-relationship-end-in-a-state-clause.md)
-  reads the same extents and `resolve` for `reaches` over a relationship end.
 - [FR-362](FR-362-bind-a-checked-unit-to-its-source-by-digest.md) supplies the
   source reference the bundle key compares as a whole. quire-semantic-value
   [FR-119](ix://agent-ix/quire-semantic-value/FR-119) is the store this

@@ -895,7 +895,7 @@ impl SnapshotValue {
 /// built in.
 impl PartialEq for SnapshotValue {
     fn eq(&self, other: &Self) -> bool {
-        self.equals_by(other, None)
+        self.equals_by(other, None, &|_, _| None)
     }
 }
 
@@ -921,11 +921,14 @@ impl SnapshotValue {
     /// Whether the two values are equal, a value of a declared Text type
     /// comparing by its retained sequence (FR-106-AC-40, FR-141): `declared`
     /// is this value's slot type, `None` where it is not known. Every other
-    /// form compares as read.
-    pub(super) fn equals_by(
+    /// form compares as read. `field_type` gives the declared type of a
+    /// record's field by the record's type identity and the field's name, so
+    /// a Text inside a record compares by its retained sequence too.
+    pub(super) fn equals_by<'t>(
         &self,
         other: &Self,
-        declared: Option<&quire_exact::ValueType>,
+        declared: Option<&'t quire_exact::ValueType>,
+        field_type: &dyn Fn(&str, &str) -> Option<&'t quire_exact::ValueType>,
     ) -> bool {
         use quire_exact::ValueType;
         let mut work = vec![(declared, self.form(), other.form())];
@@ -975,17 +978,21 @@ impl SnapshotValue {
                             .map(|(left, right)| (element, left.form(), right.form())),
                     );
                 }
-                (RawForm::Record(left), RawForm::Record(right))
-                    if left.type_identity() == right.type_identity()
-                        && left.fields().len() == right.fields().len() =>
+                (RawForm::Record(left_record), RawForm::Record(right_record))
+                    if left_record.type_identity() == right_record.type_identity()
+                        && left_record.fields().len() == right_record.fields().len() =>
                 {
                     for ((left_name, left), (right_name, right)) in
-                        left.fields().zip(right.fields())
+                        left_record.fields().zip(right_record.fields())
                     {
                         if left_name != right_name {
                             return false;
                         }
-                        work.push((None, left.form(), right.form()));
+                        work.push((
+                            field_type(left_record.type_identity(), left_name),
+                            left.form(),
+                            right.form(),
+                        ));
                     }
                 }
                 (RawForm::Variant(left), RawForm::Variant(right))

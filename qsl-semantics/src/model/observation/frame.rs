@@ -17,7 +17,9 @@ use std::collections::BTreeMap;
 
 use quire_exact::{EffectiveId, ObjectReference, ValueType};
 
-use super::document::{find_declaration, raw_field, RawObject, RawPopulation};
+use super::document::{
+    find_declaration, raw_field, record_field_type, record_keys, RawObject, RawPopulation,
+};
 use super::helpers::object_reference;
 use super::relationships::{first_link_change, LinkFinding, RawEntry};
 use super::{
@@ -289,6 +291,7 @@ fn run<'a>(
             .collect()
     };
 
+    let record_keys = record_keys(context.views);
     let mut meter = Meter::new(context.limits);
     let mut created = Vec::new();
     let mut deleted = Vec::new();
@@ -311,7 +314,11 @@ fn run<'a>(
             &frame,
             &pre.frame,
             &post.frame,
-            |_, left, right| typed_values_equal(left, right),
+            |_, left, right| {
+                typed_values_equal(left, right, &|identity, field| {
+                    record_field_type(context.types, &record_keys, identity, field)
+                })
+            },
             &mut |charge| {
                 let point = match charge {
                     FrameCharge::Write => ChargePoint::FrameWrite,
@@ -565,10 +572,17 @@ struct TypedRaw<'a> {
 /// Whether a field is unchanged (FR-106 check 11, FR-106-AC-40): each value
 /// compares by its declared type's own equality, so a Text compares by its
 /// retained sequence under its profile and every other type as written.
-fn typed_values_equal(left: Option<&TypedRaw<'_>>, right: Option<&TypedRaw<'_>>) -> bool {
+fn typed_values_equal<'t>(
+    left: Option<&TypedRaw<'t>>,
+    right: Option<&TypedRaw<'t>>,
+    field_type: &dyn Fn(&str, &str) -> Option<&'t ValueType>,
+) -> bool {
     match (left, right) {
         (None, None) => true,
-        (Some(left), Some(right)) => left.value.equals_by(right.value, Some(left.declared)),
+        (Some(left), Some(right)) => {
+            left.value
+                .equals_by(right.value, Some(left.declared), field_type)
+        }
         _ => false,
     }
 }
