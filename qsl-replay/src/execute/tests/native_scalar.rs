@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! TC-1028 E6 to E14 through the real spine: a unit-language source is
+//! TC-1028 E1 to E14 and W1 to W5 through the real spine: a unit-language source is
 //! composed (parse, check, emit), then `replay` recompiles it and binds native
-//! `UUID` and `Timestamp` arguments. Neither compose nor `replay` reads the
+//! `UUID`, `Timestamp` and `String` arguments. Neither compose nor `replay` reads the
 //! unit's own package back through IR; IR's admission of the new forms is
 //! asserted only by the admission-corpus rows in `qsl-package`.
 //!
@@ -16,7 +16,10 @@ const UNIT: &str = "language \"ix:native\" edition \"1-draft\";\n\
     function equ using v(a: UUID, b: UUID): Boolean pure { a = b }\n\
     function neu using v(a: UUID, b: UUID): Boolean pure { a != b }\n\
     function eqt using v(a: Timestamp, b: Timestamp): Boolean pure { a = b }\n\
-    function net using v(a: Timestamp, b: Timestamp): Boolean pure { a != b }\n";
+    function net using v(a: Timestamp, b: Timestamp): Boolean pure { a != b }\n\
+    function eqs using v(a: String, b: String): Boolean pure { a = b }\n\
+    function nes using v(a: String, b: String): Boolean pure { a != b }\n\
+    function txt using v(t: Text[0, 8; nfc]): Boolean pure { false }\n";
 
 const UUID_F: &str = "00112233-4455-6677-8899-aabbccddeeff";
 const UUID_E: &str = "00112233-4455-6677-8899-aabbccddeefe";
@@ -161,5 +164,147 @@ fn tc_1028_noncanonical_and_out_of_domain_timestamps_are_refused_through_replay(
             panic!("expected a native payload refusal, got {refusal:?}");
         };
         assert_eq!((parameter, refusal.cause), (1, class), "{text}");
+    }
+}
+
+fn string(text: &str) -> WitnessValue {
+    WitnessValue::String(text.to_owned())
+}
+
+/// A request replaying `function` over `values` as a `Witness` entry per
+/// position, the entries in ascending parameter node id as FR-070 requires,
+/// each the value's escaped JCS text.
+fn witness_call(function: &str, values: &[WitnessValue]) -> ReplayRequestWire {
+    let compiled = spine(UNIT, &BTreeMap::new());
+    let mut entries: Vec<String> = values
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            format!(
+                "{}={}",
+                parameter(&compiled, function, index),
+                value.to_value_text().expect("the value encodes")
+            )
+        })
+        .collect();
+    entries.sort();
+    request(
+        UNIT.as_bytes(),
+        compiled.emitted.package_id(),
+        name(&[function]),
+        ReplaySource::Witness(
+            Witness::parse(format!(
+                "<<<assertion|{function}|c|{}>>>",
+                entries.join(";")
+            ))
+            .expect("the transcript parses"),
+        ),
+    )
+}
+
+/// TC-1028 step 6 (FR-098-AC-13): E1 to E5 and their `!=` counterparts replay
+/// through the real spine from String wire objects. The replay completes with
+/// the row's Boolean; the proved verdict is `violation`, so a `true` row
+/// settles `inconclusive` with cause `Verdicts` and a `false` row
+/// `reproduced-without-witness`.
+#[trace("TC-1028", "FR-098-AC-13")]
+#[test]
+fn tc_1028_string_equality_runs_through_replay() {
+    for (id, a, b, equal) in [
+        ("E1", "", "", true),
+        ("E2", "abc", "abc", true),
+        ("E3", "\u{e9}", "e\u{301}", false),
+        ("E4", "A", "a", false),
+        ("E5", UUID_F, UUID_F, true),
+    ] {
+        for (function, expected) in [("eqs", equal), ("nes", !equal)] {
+            let ReplayResult::Input(result) = replay(
+                call(function, string(a), string(b)),
+                ReplayLimits::default(),
+            )
+            .unwrap_or_else(|refusal| panic!("{id} {function}: {refusal:?}")) else {
+                panic!("an Input-sourced request settles on the Input arm");
+            };
+            assert_eq!(
+                result.value(),
+                Some(EvaluatedValue::Boolean(expected)),
+                "{id} {function}"
+            );
+            if expected {
+                assert_eq!(result.category(), Category::Success, "{id} {function}");
+                assert_eq!(result.settlement(), InputSettlement::Inconclusive);
+                assert!(
+                    matches!(
+                        result.disagreement(),
+                        Some(crate::DisagreementCause::Verdicts { .. })
+                    ),
+                    "{id} {function}: {:?}",
+                    result.disagreement()
+                );
+            } else {
+                assert_eq!(result.category(), Category::Violation, "{id} {function}");
+                assert_eq!(
+                    result.settlement(),
+                    InputSettlement::ReproducedWithoutWitness,
+                    "{id} {function}"
+                );
+                assert_eq!(result.disagreement(), None, "{id} {function}");
+            }
+        }
+    }
+}
+
+/// TC-1028 step 7 (FR-098-AC-13): a value of another native kind is refused
+/// `WrongValueKind` at its position before the call, from an `Input`
+/// assignment and from a `Witness` entry; no String is read as a UUID,
+/// Timestamp or Text and none of those as a String.
+#[trace("TC-1028", "FR-098-AC-13")]
+#[test]
+fn tc_1028_a_wrong_native_kind_is_refused_before_the_call() {
+    for (id, function, values, position) in [
+        ("W1", "equ", vec![string(UUID_F), uuid(UUID_F)], 0),
+        ("W2", "eqs", vec![string("abc"), uuid(UUID_F)], 1),
+        ("W3", "eqs", vec![timestamp("0"), string("abc")], 0),
+        (
+            "W4",
+            "eqs",
+            vec![WitnessValue::Text("abc".to_owned()), string("abc")],
+            0,
+        ),
+        ("W5", "txt", vec![string("abc")], 0),
+    ] {
+        let assignments = |compiled: &ComposedUnit| {
+            values
+                .iter()
+                .cloned()
+                .enumerate()
+                .map(|(index, value)| CanonicalAssignment {
+                    parameter: parameter(compiled, function, index),
+                    value,
+                })
+                .collect::<Vec<_>>()
+        };
+        let compiled = spine(UNIT, &BTreeMap::new());
+        let from_input = request(
+            UNIT.as_bytes(),
+            compiled.emitted.package_id(),
+            name(&[function]),
+            ReplaySource::Input(assignments(&compiled)),
+        );
+        for (arm, wire) in [
+            ("Input", from_input),
+            ("Witness", witness_call(function, &values)),
+        ] {
+            let refusal =
+                replay(wire, ReplayLimits::default()).expect_err(&format!("{id} {arm}: refused"));
+            assert_eq!(refusal.code(), Code::InvalidRuntimeInput, "{id} {arm}");
+            assert_eq!(
+                refusal.input_refusal(),
+                Some(&InputRefusal::WrongValueKind {
+                    parameter: position
+                }),
+                "{id} {arm}"
+            );
+        }
     }
 }

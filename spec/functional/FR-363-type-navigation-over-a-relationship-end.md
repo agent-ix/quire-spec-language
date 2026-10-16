@@ -81,9 +81,9 @@ to the one candidate; otherwise:
   `ambiguous_declaration`/`ambiguous-name` at the form, naming every
   candidate.
 
-A receiver that is not a `Reference<T>` (an `Option`, a collection or a
-population) refuses `ill_typed`/`type-mismatch` at the receiver operand, as it
-does for a field. `deref(r).name` over a relationship end refuses
+In a `Value` function body as in a state clause, a receiver that is not a
+`Reference<T>` (an `Option`, a collection or a population) refuses
+`ill_typed`/`type-mismatch` at the receiver operand, as it does for a field. `deref(r).name` over a relationship end refuses
 `ill_typed`/`type-mismatch` at the form: a relationship end is not a member of
 the dereferenced object, and only `r.name` navigates.
 

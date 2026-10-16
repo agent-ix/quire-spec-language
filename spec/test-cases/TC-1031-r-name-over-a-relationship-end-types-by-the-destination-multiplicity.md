@@ -24,8 +24,9 @@ every refusal.
 Compile one unit per vector over fixture **N** with model alias `M` and
 profile alias `V`, writing the expression in
 `invariant I using V on M::<owner> at current { ... }` with `self` the
-receiver. Compare the checked node's static type, or the refusal's code,
-cause and family, with the vector.
+receiver, except N13 and N14, which are function declarations as written.
+Compare the checked node's static type, or the refusal's code, cause and
+family, with the vector.
 
 Fixture **N** (domain package `test/orders`) declares object types `Order`,
 `Fulfilment`, `Rush` (supertype `Fulfilment`), `Line`, `Tag`, `Person`, `Step`,
@@ -64,6 +65,8 @@ the field `code` typed `Int[0,9]`.
 | N10 | `self.watchers` on `M::Order`; `self.steps` on `M::Order`; `self.notes` on `M::Order` | each `refused { code: unsupported_construct, cause: expression-form }` |
 | N11 | `Order/watchers` changed to direction `target-to-source`, then `self.watchers` on `M::Order` | `refused { code: ill_typed, cause: operator-ineligible }`: the direction refusal precedes the unbounded-bound refusal |
 | N12 | `deref(self).order` on `M::Fulfilment`; `self.order.order` on `M::Fulfilment`, whose receiver `self.order` is an `Option<Reference<M::Order>>` | `refused { code: ill_typed, cause: type-mismatch }` at the form; `refused { code: ill_typed, cause: type-mismatch }` at the receiver operand `self.order` |
+| N13 | `function f using V(o: Option<Reference<M::Order>>): Boolean pure { o.lines = o.lines }`; the same with `o: Set<Reference<M::Order>>[0, 2]` | each `refused { code: ill_typed, cause: type-mismatch }` at the receiver operand `o`, as in an invariant |
+| N14 | `function f using V(o: Reference<M::Order>): Boolean pure { size(o.lines) >= 0 }` | admitted: a `Reference` receiver navigates in a function body |
 
 Each refusal's family is `StateModel` and its catalog code carries the
 `state-model` prefix (FR-300).
@@ -72,4 +75,5 @@ Each refusal's family is `StateModel` and its catalog code carries the
 
 Every vector gives exactly its type or refusal. A mutant that removes the
 relationship-end typing fails N01 to N06; a mutant that skips the direction
-check fails N09 and N11; a mutant that skips the bound check fails N10.
+check fails N09 and N11; a mutant that skips the bound check fails N10; a mutant that types a non-`Reference` receiver by context fails
+N13.

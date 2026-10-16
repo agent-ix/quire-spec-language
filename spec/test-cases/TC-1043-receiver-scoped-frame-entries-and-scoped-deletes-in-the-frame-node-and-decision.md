@@ -17,25 +17,27 @@ Verify the frame node body S4 emits for scoped `modifies` and `deletes` entries
 reader's frame step, and the decision `check_frame` and the `Frame` run take
 from the scopes.
 
-Scope: FR-154-AC-6 to FR-154-AC-10 and FR-115-AC-11.
+Scope: FR-105-AC-7, FR-154-AC-6 to FR-154-AC-10 and FR-115-AC-11.
 
 ## Test Procedure
 
 Fixture: FR-120's `test/counters` package, selected as `Counters`, extended
 with: field `step: Int[0, 2]` on `Counter`; object type `Sub` specializing
-`Counter`; object type `Gauge` with field `d`; relationship `Supersedes`
+`Counter`; object type `Gauge` with field `d`; process `Flow` (identity field
+`id` typed `Integer`, field `x`, one step `begin` of kind `command` consuming
+and emitting nothing) with an operation `go(a: Reference<Counter>)`; relationship `Supersedes`
 between `Counter` objects; and the operations below. Each operation is also
 named by its own postcondition clause (`DoneBump`, `DoneMerge`, `DoneNoop`,
 `DoneOwn`, `DoneAll`, `DoneDrop`, `DoneDispose`, each `{ true }`) so that the
 package holds its frame node. Node identity strings are written with the prefix
-`ix://test/counters/` as `Counter/value`, `Counter/step`, `Gauge/d`, `Counter`,
+`ix://test/counters/` as `Counter/value`, `Counter/step`, `Gauge/d`, `Flow/x`, `Counter`,
 `Gauge` and `Supersedes`. In the wire vectors `<Counter>` stands for the NodeRef
 object `{"digest":"<digest of Counter>","domain":"quire.checked-semantic-node/v1"}`
 of the `Counter` object type node, and `<Gauge>` for `Gauge`'s. Every frame
 body is written with its members in canonical JCS order. Tag the tests
-`#[trace("TC-1043", "FR-154-AC-n")]` and `#[trace("TC-1043", "FR-115-AC-11")]`.
+`#[trace("TC-1043", "FR-154-AC-n")]`, `#[trace("TC-1043", "FR-105-AC-7")]` and `#[trace("TC-1043", "FR-115-AC-11")]`.
 
-Operations and their model-document `frame` (FR-154 "Inputs"). The three arrays `modifies`, `creates` and `deletes` are always present. The rows that use a scoped member (`modifies_receiver`, `deletes_receiver`, `deletes_parameters`) depend on the amended model-contract and semantic-IR frame schema; the rows that use only the three arrays are reachable today:
+Operations and their model-document `frame` (FR-154 "Inputs"). The three arrays `modifies`, `creates` and `deletes` are always present. The rows that use a scoped member (`modifies_receiver`, `deletes_receiver`, `deletes_parameters`) depend on the filament-core-data semantic-IR frame schema admitting them. That schema runs on the whole model document before intake, so every package, intake row and read built from this fixture, which declares scoped operations, depends on it (steps 1 to 4); only step 2b, which has its own fixture, is reachable today. `go` of `Flow` has no base `frame` and reads as the empty effect (FR-103):
 
 | Operation | Parameters | `frame` |
 | --- | --- | --- |
@@ -56,6 +58,14 @@ Meaning in surface text: `bump` is `modifies value`, `modifies self.step`,
    package B1, the fixture without `all`, and package B2, B1 with `own`'s
    frame replaced by `{"modifies":["Counter/value"],"creates":[],"deletes":[]}`; compare their
    `package_id`s. (B2 holds no second operation with an equal frame.)
+
+   2b. Fixture R: FR-120's `test/counters` package with the operations `noop`
+   and `all` above and `same`, whose frame equals `all`'s
+   (`{"modifies":["Counter/value"],"creates":[],"deletes":[]}`); each is named
+   by its own postcondition clause (`DoneNoop`, `DoneAll`, `DoneSame`, each
+   `{ true }`), and no operation uses a scoped member. Emit package B3 from
+   fixture R, read its `state`/`frame` and `state`/`operation_anchor` nodes
+   for `all` and `same`, and read it with the I2 reader.
 3. Intake the package once per row of this table, each row replacing the
    `frame` of an operation `t(n: Integer, a: Reference<Counter>)` of
    `Counter` (of `Sub` in I7):
@@ -74,13 +84,18 @@ Meaning in surface text: `bump` is `modifies value`, `modifies self.step`,
    | I10 | `{"modifies":[],"creates":[],"deletes":[],"deletes_receiver":"yes"}` |
    | I11 | `{"modifies":[],"creates":[],"deletes":[],"modifies_self":[]}` |
    | I12 | `{"modifies":[],"creates":[]}` |
+   | I13 | `go` of `Flow`: `{"modifies":[],"creates":[],"deletes":[],"modifies_receiver":["Flow/x"]}` |
+   | I14 | `go` of `Flow`: `{"modifies":[],"creates":[],"deletes":[],"deletes_receiver":true}` |
+   | I15 | `go` of `Flow`: `{"modifies":[],"creates":[],"deletes":[],"modifies_receiver":[],"deletes_receiver":false}` |
+   | I16 | `go` of `Flow`: `{"modifies":[],"creates":[],"deletes":[],"deletes_parameters":["a"]}` |
+   | I17 | `go` of `Flow`: `{"modifies":[],"creates":[],"deletes":[],"modifies_receiver":["Flow/x"],"deletes_receiver":true}` |
 
-   Rows I1 to I12 and the operations `bump`, `merge`, `own`, `drop` and
+   Rows I1 to I17 and the operations `bump`, `merge`, `own`, `drop` and
    `dispose` use a scoped member or its refusal, so they depend on the
-   amended model-contract and semantic-IR frame schema. `noop`, `all`, B1 and
-   B2 use only the three arrays and are reachable today.
+   semantic-IR frame schema admitting the scoped members. Rows I10 to I12 are member-shape rows: the schema refuses a wrong-typed member, an unnamed member and an element of the wrong type at the member, and refuses a frame with no `deletes` (required before and after the change), with its own schema diagnostic before intake; the stated `malformed-declaration` is the intake reader's contract where the schema has not run. Steps 1, 2 and 4 also depend on it (they
+   build from the one fixture). Step 2b uses fixture R, which holds no scoped member, and is reachable today.
 
-4. For each of X1 to X8, copy the emitted package, edit the named frame node
+4. For each of X1 to X9, copy the emitted package, edit the named frame node
    body, and re-key it: compute the edited frame node's key, replace the key
    in the `state`/`operation_anchor` node body that references it, re-key that
    anchor and every node that depends on the anchor, and recompute the
@@ -91,7 +106,10 @@ Meaning in surface text: `bump` is `modifies value`, `modifies self.step`,
    `deletes_scoped`; X4 is W2 with `deletes_scoped` `[parameter a, receiver,
    parameter b]`; X5 is W2 with `deletes_scoped` `[receiver, parameter b,
    parameter a]`; X6 is W2 with a `parameter` entry `c` added last, `merge`
-   having no parameter `c`; X7 is W1.
+   having no parameter `c`; X7 is W1; X8 is W1 with a second `step` entry, scope `every-object`, listed
+   after the `receiver` one (`step` receiver, `step` every-object, `value`
+   every-object); X9 is W1 with that second entry listed before it (`step`
+   every-object, `step` receiver, `value` every-object).
 5. `check_frame` over state `w` holding `c1`, `c2` and `c3` of `Counter`, all
    `value` 0 and `step` 0, with these effects, receivers and posts:
 
@@ -129,6 +147,13 @@ Results:
 - Step 2: `own` and `all` have different node ids (W4 and W5 differ in one
   `scope`); `drop` and `noop` have different node ids (W6 and W3 differ only in
   `deletes_scoped`); B1 and B2 have different `package_id`s.
+- Step 2b: B3 holds one `state`/`frame` node for `all` and `same`, whose body
+  is W5, with a `generated` occurrence for `all` and then one for `same`
+  (ascending operation name), and two `state`/`operation_anchor` nodes, one
+  per operation, both with context `Counter` and both with the `frame`
+  binding referencing that node; `DoneAll` and `DoneSame` reference different
+  anchors, so B3 holds two clause nodes; the I2 reader admits B3 (QSpec
+  FR-342-AC-6).
 - Step 3: I1 refuses `missing_declaration`/`missing-name` at the entry. I2
   and I3 refuse `invalid_model_binding`/`malformed-declaration` at the entry
   (`d` is a field of `Gauge`, to which `Counter` does not conform;
@@ -140,10 +165,17 @@ Results:
   I9 refuses `invalid_model_binding`/`conflicting-binding` naming both
   entries and `t`. I10 refuses `invalid_model_binding`/`malformed-declaration`
   at `deletes_receiver`, I11 at `modifies_self`, and I12 at the absent
-  `deletes`, before any entry is read.
+  `deletes`, before any entry is read. I13 and I14 refuse
+  `invalid_model_binding`/`malformed-declaration` at `modifies_receiver` and
+  at `deletes_receiver` (the receiver of `go` is a run; `Flow/x` is not
+  read). I15 and I16 admit. I17 refuses at `modifies_receiver` alone.
 - Step 4: X1, X2 and X3 are refused as schema failures of the frame body. X4
-  and X5 refuse `invalid_semantic_graph`. X6 refuses `missing_declaration`/
-  `missing-name`. X7 is admitted.
+  and X5 refuse `invalid_semantic_graph`. X6 refuses, in the state step at `merge`'s anchor and not in the frame step, `missing_declaration`/
+  `missing-name`. X7 is admitted. X8 and X9 each refuse
+  `invalid_model_binding`/`conflicting-binding` naming both `step` entries:
+  every entry resolves, so no other meaning-join defect exists, and the
+  conflict outranks X8's misordered array, so X8 is not reported
+  `invalid_semantic_graph` (QSpec FR-340).
 - Step 5: D1 returns a delta with no creation or deletion (`c1.value` is
   granted by the receiver entry, `c2.step` by the every-object entry). D2 is
   `frame_violation`/`unauthorized-change` naming `c2` and `value`. D3 returns

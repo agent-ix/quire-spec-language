@@ -480,6 +480,10 @@ fn value_steps<'v>(value: &'v WitnessValue, order: Option<&[usize]>) -> Vec<Task
             vec![("kind", Task::Str("uuid")), ("text", Task::Str(text))],
             vec![],
         ),
+        WitnessValue::String(text) => object(
+            vec![("kind", Task::Str("string")), ("text", Task::Str(text))],
+            vec![],
+        ),
         WitnessValue::Timestamp(text) => object(
             vec![
                 ("kind", Task::Str("timestamp")),
@@ -1100,8 +1104,8 @@ fn build(root: NodeRef<'_>) -> Result<WitnessValue, EntryFault> {
     }
 }
 
-/// FR-056's closed native wire object at `node`: `{"kind":"uuid","text":..}`
-/// or `{"kind":"timestamp","nanoseconds":..}`. The form is read; the payload
+/// FR-056's closed native wire object at `node`: `{"kind":"uuid","text":..}`,
+/// `{"kind":"string","text":..}` or `{"kind":"timestamp","nanoseconds":..}`. The form is read; the payload
 /// text is admitted when the executor converts the argument.
 #[qsl_attrs::string_edge]
 fn visit_native<'d>(
@@ -1120,6 +1124,12 @@ fn visit_native<'d>(
         "uuid" => {
             let members = exact_object(node, &["kind", "text"])?;
             values.push(WitnessValue::Uuid(
+                string_member(&members, "text")?.to_owned(),
+            ));
+        }
+        "string" => {
+            let members = exact_object(node, &["kind", "text"])?;
+            values.push(WitnessValue::String(
                 string_member(&members, "text")?.to_owned(),
             ));
         }

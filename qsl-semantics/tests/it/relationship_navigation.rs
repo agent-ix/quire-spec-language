@@ -387,10 +387,27 @@ fn assert_refused(
     cause: &str,
     path: Vec<usize>,
 ) -> CheckRefusal {
-    let Err(mut refusals) = compile(links, owner, body) else {
-        panic!("{body} on M::{owner} is refused")
+    assert_refusal(
+        compile(links, owner, body),
+        &format!("{body} on M::{owner}"),
+        code,
+        cause,
+        path,
+    )
+}
+
+/// `result` is one `StateModel` refusal with `code`, `cause` and `path`.
+fn assert_refusal(
+    result: Result<CheckedGraph, Vec<CheckRefusal>>,
+    body: &str,
+    code: Code,
+    cause: &str,
+    path: Vec<usize>,
+) -> CheckRefusal {
+    let Err(mut refusals) = result else {
+        panic!("{body} is refused")
     };
-    assert_eq!(refusals.len(), 1, "{body} on M::{owner}: {refusals:?}");
+    assert_eq!(refusals.len(), 1, "{body}: {refusals:?}");
     let refusal = refusals.remove(0);
     assert_eq!(refusal.cause.code(), code, "{body}: {refusal:?}");
     assert_eq!(refusal.cause.cause(), Some(cause), "{body}: {refusal:?}");
@@ -792,4 +809,37 @@ fn n12_a_deref_or_a_non_reference_receiver_is_a_type_mismatch() {
         "type-mismatch",
         vec![0, 0],
     );
+}
+
+/// FR-363-AC-5 (N13): in a function body, `o.lines` over an `Option` or a
+/// collection of references refuses `type-mismatch` at the receiver operand
+/// `o`, as it does in an invariant; the receiver's type, not the context,
+/// decides.
+#[trace("TC-1031", "FR-363-AC-5")]
+#[test]
+fn n13_a_non_reference_receiver_in_a_function_body_is_a_type_mismatch() {
+    for parameter in [
+        "Option<Reference<M::Order>>",
+        "Set<Reference<M::Order>>[0, 2]",
+    ] {
+        let declarations =
+            format!("function f using v(o: {parameter}): Boolean pure {{ o.lines = o.lines }}");
+        assert_refusal(
+            check_declarations(package(&links()), &declarations),
+            &declarations,
+            Code::IllTyped,
+            "type-mismatch",
+            vec![0, 0],
+        );
+    }
+}
+
+/// FR-363-AC-1 (N14): a `Reference` receiver navigates in a function body.
+#[trace("TC-1031", "FR-363-AC-1")]
+#[test]
+fn n14_a_reference_receiver_navigates_in_a_function_body() {
+    let declarations =
+        "function f using v(o: Reference<M::Order>): Boolean pure { size(o.lines) >= 0 }";
+    check_declarations(package(&links()), declarations)
+        .unwrap_or_else(|refusals| panic!("{declarations} checks: {refusals:?}"));
 }

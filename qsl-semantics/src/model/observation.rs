@@ -637,8 +637,7 @@ pub enum NativeKind {
     Uuid,
     /// `"timestamp"`.
     Timestamp,
-    /// `"text"`: a known kind, so its envelope is judged like the others; its
-    /// admission into a Text slot belongs to the Text code slice, and every
+    /// `"text"`: admitted only into a `Text[min, max; profile]` slot; every
     /// other slot refuses it `wrong-value-kind` (FR-106-AC-35).
     Text,
 }
