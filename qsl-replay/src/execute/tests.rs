@@ -27,6 +27,7 @@ use admitted_charge::admitted_charge_points;
 mod child_composite;
 mod composite;
 mod composite_parity;
+mod native_scalar;
 mod supplied;
 mod variant_fields;
 
