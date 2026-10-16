@@ -827,6 +827,10 @@ pub enum NodeKind {
         /// The relationship end nearest the reference: `Source` reads the
         /// relationship's targets, `Target` its sources (FR-364).
         near: EndSide,
+        /// Whether the destination end is `unique: true`: the collection kind
+        /// a single-valued end's cardinality refusal retains, `Set` when
+        /// unique and `Bag` otherwise (FR-364-AC-6).
+        unique: bool,
     },
     /// Whether an `Option` operand holds a value.
     Present(NodeId),
