@@ -75,7 +75,7 @@ FR-106-AC-38.
    `versionNumber`. Repeat the String-object row as the `name` argument of
    `retitle`, and a UUID object as its `result`.
 6. Mutate for length, one per row. `title`: `""`; `"abcdefghi"`; nine pairs of
-   U+0065 U+0301; a text of 65,536 `a`. `subtitle`: `"abcde"`; three pairs of
+   U+0065 U+0301; a text of 65,536 `a`. `subtitle`, each as `{"present":<Text object>}`: `"abcde"`; three pairs of
    U+0065 U+0301. `code`: three U+00E9; two U+1F600. Repeat the empty text as
    the `name` argument of `retitle` and as its `result`.
 7. Admit an invocation of `retitle` changing `child.title` from `"Ready"` to
@@ -89,7 +89,8 @@ FR-106-AC-38.
 8. Under `PostStateRange::Witness`, admit an invocation whose post snapshot
    holds a String object in `title`, one whose post `title` is `""`, and one
    whose post `title` has `text` `5`.
-9. Mutate `aliases` to `{"sequence":[{"kind":"text","text":"x"}]}` and admit
+9. Mutate `child`'s `aliases` (`child` follows `root` in document order, so it
+   is the last object walked) to `{"sequence":[{"kind":"text","text":"x"}]}` and admit
    the document with `observation.values` set to its exact value count, then
    to one less.
 10. Select each of these documents under the base snapshot's digest (the
@@ -137,7 +138,7 @@ FR-106-AC-38.
   length check.
 - Step 6 refuses every row `invalid_runtime_input`/`invalid-value` naming
   `text`, the declared bounds, the profile and the measured length, at the
-  field (`name` and `result` at the `retitle` binding root): the lengths are
+  field (`subtitle` with its option-value step; `name` and `result` at the `retitle` binding root): the lengths are
   0, 9, 9 retained scalars and 65,536 for `title`, 5 and 6 for `subtitle`, and
   6 and 8 bytes for `code`. No row is `input-bytes-exceeded`.
 - Step 7 admits the first with the grant, and refuses it without as

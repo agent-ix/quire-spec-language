@@ -80,7 +80,13 @@ that compares only reference-valued fields (`PopulationMember::field_values`,
   none, and the admitted invocation delta. Each observation
   holds its `PopulationBinding`s and an `ObjectEnvironment` with every field
   value of every object and the relationship extents of the snapshot
-  (FR-364), and keeps its document identity and digest.
+  (FR-364), and keeps its document identity and digest. Admission also
+  issues each observation's population manifest and bundle (FR-364): one row
+  per population declaration of the package, `complete` exactly when the
+  snapshot lists the population `"complete": true`, so a declared population
+  the snapshot does not list is an incomplete row; the manifest is closed by
+  exhausting that traversal of the package's declarations and by nothing the
+  document says.
 - Or an `AdmissionFailure`: `Refused(RefusalRecord)` or
   `Incomplete(RefusalRecord)`, each with a catalog code, a cause and the input
   path (document identity, population, object key, field) it names.
@@ -561,7 +567,10 @@ required; check 10 settles it.
    are checked `source` before `target`. With check 7's rule for an end in an
    incomplete population, no stored end lacks an object: every admitted
    instance is a triple of full references, because only the object supplies
-   the type component of its reference key (FR-364).
+   the type component of its reference key (FR-364). The `resolve` of every
+   stored end is therefore `present`; `dangling` and `undecidable` belong to
+   model-layer extents. Checks 7 and 8 read the same `complete` flags the
+   manifest rows carry.
 9. Self check. If the selected self object is absent from the current
    snapshot, from the pre snapshot, or (for a postcondition) from the post
    snapshot, then admission SHALL refuse `invalid_runtime_input`/
@@ -706,6 +715,7 @@ required; check 10 settles it.
 | FR-106-AC-36 | Text length is measured on the retained sequence under the declared profile and refuses `invalid_runtime_input`/`invalid-value` naming `text`, the declared bounds, the profile and the measured length, nested at the field. Over `title` (`Text[1, 8; nfc]`): `""` (length 0), `"abcdefghi"` (9), nine pairs of U+0065 U+0301 (nine retained scalars) and a text of 65,536 `a` refuse, while eight pairs of U+0065 U+0301 admit. Over `subtitle` (`Text[0, 4; unicode-scalars]`): `"abcd"` and four U+00E9 admit; `"abcde"` and three pairs of U+0065 U+0301 (six scalars, nothing normalized) refuse. Over `code` (`Text[0, 4; binary-utf8]`, length in bytes): `"abcd"`, two U+00E9 and one U+1F600 admit; three U+00E9 (six bytes) and two U+1F600 refuse. The same refusals hold for the `name` argument and the `result` of `retitle`, and under `PostStateRange::Witness` a post snapshot holding an over-length Text still refuses `invalid-value` and one holding a String object in `title` still refuses `wrong-value-kind`. | Test (TC-1038) |
 | FR-106-AC-37 | An invocation changing `title` between two admitted payloads admits its frame when the selected `modifies` grant covers the field and refuses `frame_violation`/`unauthorized-change` naming `child` and `title` without it; one whose post holds the same text with differently ordered members, written `"\u0052eady"`, or changed from U+00E9 to U+0065 U+0301 under `nfc`, is no change and admits without the grant. A change of `subtitle` from U+00E9 to U+0065 U+0301 under `unicode-scalars` is a change and refuses naming `child` and `subtitle` when `retitle`'s frame does not grant it. With `observation.values` set to the exact count of a document whose `aliases` holds one Text element as the last value in walk order, the document admits; one less returns `stage_limit_exceeded`/`node-count-exceeded` naming `observation.values`, the bound and the count the Text object inside `aliases` would have reached. | Test (TC-1038) |
 | FR-106-AC-38 | A `title` text holding a lone high surrogate escape `\ud800`, a lone low surrogate escape `\udc00` or the byte `0xC0` refuses `stale_dependency`/`byte-digest-mismatch` at check 1.3 carrying the selected digest and the raw bytes' own digest, before any value is read: the same document with a wrong-kind `token` elsewhere gives that refusal and not `wrong-value-kind`. A `title` text that brings the document over the byte limit refuses `stage_limit_exceeded`/`input-bytes-exceeded` naming `observation.input_bytes` at check 1.2, not `invalid-value`. | Test (TC-1038) |
+| FR-106-AC-39 | Over TC-1035's base snapshot **B** in a package that also declares population `Spare` (member type `Pump`), which **B** does not list, admission issues a closed manifest with the rows `Q` complete and `Spare` incomplete in ascending declaration-key order; with `Spare` listed `"complete": false` the rows are the same, and listed `"complete": true` both rows are complete. The admitted observation's `resolve` for each stored instance end is `present`. | Test (TC-1041) |
 
 ## Dependencies
 

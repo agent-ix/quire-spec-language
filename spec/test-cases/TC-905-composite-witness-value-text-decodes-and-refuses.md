@@ -102,7 +102,7 @@ otherwise.
    value of the same scalars.
 8. For each malformed String entry below, decode a transcript whose `P` entry
    holds it: `{"kind":"string"}`; `{"kind":"string","nanoseconds":"0"}`;
-   `{"kind":"string","text":"x","extra":"y"}`; `{"kind":"string","text":5}`;
+   `{"extra":"y","kind":"string","text":"x"}`; `{"kind":"string","text":5}`;
    `{"kind":"string","text":null}`; `{"kind":"String","text":"x"}`;
    `{"kind":"blob","text":"x"}`; `{"text":"x","kind":"string"}`; a String whose
    text is written with the escape `\u00e9` (ASCII backslash, `u`, `0`, `0`,

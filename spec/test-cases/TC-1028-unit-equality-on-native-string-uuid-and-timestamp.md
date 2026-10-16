@@ -76,7 +76,7 @@ fields; the unit language has no literal for these types.
    `Input` source whose assignments carry each operand as the String wire
    object `{"kind":"string","text":...}`, the text spelled by its scalars
    (E3's operands are the one scalar U+00E9 and the two scalars U+0065 U+0301).
-   Read the replay result's evaluated value.
+   Read the replay result's evaluated value and settlement.
 7. Replay the through-replay refusal rows below, each from an `Input`
    assignment and again from a `Witness` entry in FR-070's witness value text
    (the entry holds the JCS text of the object, escaped as FR-070 states):
@@ -110,7 +110,10 @@ fields; the unit language has no literal for these types.
 - Step 6: the replay completes without a refusal and its evaluated value is the
   Boolean of the row: E1 `true`, E2 `true`, E3 `false`, E4 `false`, E5 `true`,
   and for `nes` the negation of each (`false`, `false`, `true`, `true`,
-  `false`). E3 and E4 are `false` because the scalar sequences differ: nothing
+  `false`). The proved verdict is `violation`, so each `true` row (E1, E2, E5
+  and the `nes` negations of E3 and E4) settles `inconclusive` with cause
+  `Verdicts`, and each `false` row (E3, E4 and the `nes` negations of E1, E2
+  and E5) settles `reproduced-without-witness`. E3 and E4 are `false` because the scalar sequences differ: nothing
   is normalized or case-folded on the way in.
 - Step 7: each row refuses `WrongValueKind` (`invalid_runtime_input`) naming
   the stated position, before the call and with no charge, from both sources.
