@@ -35,10 +35,10 @@ use qsl_semantics::value::supplied::{
     SuppliedLimitKind, SuppliedLocus, SuppliedPhase, SuppliedRun, SuppliedStop,
 };
 use quire_exact::{
-    admit_text, form, from_admitted_slots, CollectionKind, CollectionType, Decimal, EnumMember,
-    FieldValue, IeeeValue, IeeeWidth, Integer, Meter, NodeKey, NumericMembershipFailure, ObjectId,
-    ObjectReference, OptionValue, Outcome, Presence, Quantity, Rational, ScalarLimits, TextPayload,
-    UniverseId, Value, ValueType,
+    admit_text, form, from_admitted_slots, CollectionKind, CollectionType, ConstructionRefusal,
+    Decimal, EnumMember, FieldValue, IeeeValue, IeeeWidth, Integer, Meter, NodeKey,
+    NumericMembershipFailure, ObjectId, ObjectReference, OptionValue, Outcome, Presence, Quantity,
+    Rational, ScalarLimits, TextPayload, Timestamp, UniverseId, Uuid, Value, ValueType,
 };
 use quire_semantic_value::call::InputRefusal;
 use quire_semantic_value::declaration::{CompositeDeclaration, CompositeShape, TypeEnvironment};
@@ -265,6 +265,12 @@ fn integer_of(value: &WitnessValue) -> Option<Integer> {
         WitnessValue::ExactInteger(number) => Some(number.clone()),
         _ => None,
     }
+}
+
+/// The refusal of a native payload the kernel's canonical constructor
+/// refused, at the argument `parameter`.
+fn native_payload(parameter: usize, refusal: ConstructionRefusal) -> Stopped {
+    ReplayRefusal::NativePayload { parameter, refusal }.into()
 }
 
 /// A decimal scale as the kernel's `u32`.
@@ -631,6 +637,19 @@ impl<'a> Converter<'a, '_> {
                 }
                 let magnitude = self.magnitude(parameter, magnitude)?;
                 values.push(Value::Quantity(Quantity::new(magnitude, *unit)));
+            }
+            // FR-056: the kernel's canonical constructor decides the payload
+            // text; its typed refusal is the cause beneath
+            // `invalid_runtime_input`/`invalid-value`.
+            (ValueType::Uuid, WitnessValue::Uuid(text)) => {
+                let bound = Uuid::from_canonical_text(text)
+                    .map_err(|refusal| native_payload(parameter, refusal))?;
+                values.push(Value::Uuid(bound));
+            }
+            (ValueType::Timestamp, WitnessValue::Timestamp(text)) => {
+                let bound = Timestamp::from_canonical_text(text)
+                    .map_err(|refusal| native_payload(parameter, refusal))?;
+                values.push(Value::Timestamp(bound));
             }
             (ValueType::Text(text_type), WitnessValue::Text(text)) => {
                 let payload =

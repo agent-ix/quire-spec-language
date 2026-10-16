@@ -605,3 +605,46 @@ fn tc_905_the_element_order_check_reads_spans() {
     assert_eq!(decodes(&sound), Ok(()));
     assert_eq!(decodes(&outer), Err(EntryFault::Elements));
 }
+
+/// TC-1028: a native UUID and Timestamp are written as their payload text
+/// under their own tags and read back unchanged, noncanonical text
+/// included: the payload's spelling is admitted when the executor converts
+/// it, not by the form.
+#[trace("TC-1028")]
+#[test]
+fn tc_1028_native_payloads_round_trip_in_the_value_text() {
+    let uuid = WitnessValue::Uuid("00112233-4455-6677-8899-aabbccddeeff".to_owned());
+    assert_eq!(
+        uuid.to_value_text().unwrap(),
+        r#"{"kind":"uuid","text":"00112233-4455-6677-8899-aabbccddeeff"}"#
+    );
+    let timestamp = WitnessValue::Timestamp("-1".to_owned());
+    assert_eq!(
+        timestamp.to_value_text().unwrap(),
+        r#"{"kind":"timestamp","nanoseconds":"-1"}"#
+    );
+    let uppercase = WitnessValue::Uuid("00112233-4455-6677-8899-AABBCCDDEEFF".to_owned());
+    for value in [uuid, timestamp, uppercase] {
+        assert_eq!(round_trip(&value), value);
+    }
+}
+
+/// TC-1028: the closed native wire objects refuse an unknown kind, an extra
+/// or missing member, the other kind's payload member, a non-string payload
+/// and the `type` spelling.
+#[trace("TC-1028")]
+#[test]
+fn tc_1028_malformed_native_wire_objects_refuse_as_shape() {
+    for text in [
+        r#"{"kind":"guid","text":"x"}"#,
+        r#"{"extra":"x","kind":"uuid","text":"x"}"#,
+        r#"{"kind":"uuid"}"#,
+        r#"{"kind":"uuid","nanoseconds":"0"}"#,
+        r#"{"kind":"timestamp","text":"0"}"#,
+        r#"{"kind":"timestamp","nanoseconds":0}"#,
+        r#"{"kind":7,"text":"x"}"#,
+        r#"{"type":"uuid","value":"00112233-4455-6677-8899-aabbccddeeff"}"#,
+    ] {
+        assert_eq!(fault(text), EntryFault::Shape, "{text}");
+    }
+}

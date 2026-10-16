@@ -350,7 +350,9 @@ fn admit(prepared: &Prepared, operands: &[WitnessValue; 2]) -> Result<Admission,
         ) {
             Ok(converted) => converted,
             Err(Stopped::Refusal(refusal)) => match *refusal {
-                ReplayRefusal::Input(_) => return Ok(Admission::Refused(index)),
+                ReplayRefusal::Input(_) | ReplayRefusal::NativePayload { .. } => {
+                    return Ok(Admission::Refused(index));
+                }
                 other => return Err(other),
             },
             Err(Stopped::Supplied(failure)) => return stopped(index, failure),
