@@ -18,7 +18,7 @@ Catches an implementation that exposes only the machine's own states and transit
 
 1. Normalize K2 plus `ExpressLifecycle` (kind `lifecycle`, supertype `OrderLifecycle`, operation `expedite`, state `Expedited`, transition `[0]` `Placed` to `Expedited` on `expedite`); read `state_machine(ExpressLifecycle)` and `state_machine(OrderLifecycle)`.
 2. Call `state_machine` on `Order` (an object type) and on a key absent from the package.
-3. Call `conforms` for `(ExpressLifecycle, OrderLifecycle)`, `(ExpressLifecycle, ExpressLifecycle)`, `(OrderLifecycle, ExpressLifecycle)` and `(ExpressLifecycle, Fulfilment)`.
+3. Call `conforms` for `(ExpressLifecycle, OrderLifecycle)`, `(ExpressLifecycle, ExpressLifecycle)`, `(OrderLifecycle, ExpressLifecycle)` and `(ExpressLifecycle, Fulfilment)`. Then add a second state machine `ExpressLifecycleCopy` (kind `lifecycle`, key `ix://test/orders/ExpressLifecycleCopy`, display name `ExpressLifecycle`, no `supertypes`, operation `expedite`, state `Expedited`, transition `[0]` `Expedited` to `Expedited` on `expedite`), a full machine shape, and call `conforms` for `(ExpressLifecycleCopy, ExpressLifecycle)`, `(ExpressLifecycleCopy, OrderLifecycle)` and `(ExpressLifecycle, ExpressLifecycleCopy)`.
 4. Compare `declarations()`, `type_identities()` and the view identity with and without steps 1 to 3's calls, and the declaration set for any state or transition entry.
 5. Repeat step 1 with `ExpressLifecycle` transition `[0]` given guard `NotYetPlaced`.
 6. Normalize with `ExpressLifecycle` states `[Expedited, Placed]`, and separately with `OrderLifecycle` transition `[3]` whose `to` names `ix://test/orders/ExpressLifecycle/Expedited`, a state of another machine.
