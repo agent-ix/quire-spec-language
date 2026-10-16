@@ -409,7 +409,7 @@ pub fn mint_variant_id(declaration: NodeKey, case: &str) -> VariantId {
 /// The digest of QSpec FR-441's union-member preimage
 /// `{version: quire.union-member-node/v1, declaration_node_id, member}` of
 /// `member` of the union whose declaration node id is `declaration`.
-fn union_member_digest(declaration: NodeKey, member: &str) -> [u8; 32] {
+pub(crate) fn union_member_digest(declaration: NodeKey, member: &str) -> [u8; 32] {
     preimage_digest(
         &CanonicalUnionMember {
             declaration_node_id: declaration.into(),
@@ -422,14 +422,6 @@ fn union_member_digest(declaration: NodeKey, member: &str) -> [u8; 32] {
         "a declaration NodeKey and a member name are always representable as \
          canonical JSON under an unbounded input limit",
     )
-}
-
-/// Mint the FR-319 node key of `member` of the union whose declaration node
-/// id is `declaration` (QSpec FR-441), the key a verified union binding
-/// retains. `declaration` is the union's checked node id, not a temporary
-/// declaration handle.
-pub fn mint_union_member_key(declaration: NodeKey, member: &str) -> NodeKey {
-    NodeKey::from_digest(union_member_digest(declaration, member))
 }
 
 /// The `VariantId` of the same member: its key's bytes retyped with no

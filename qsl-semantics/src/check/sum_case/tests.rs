@@ -18,6 +18,7 @@ use quire_semantic_value::declaration::{
 };
 use quire_semantic_value::location::{Location, Origin};
 
+use super::mint_union_member_key;
 use super::{ExhaustivenessObligation, SumCaseCause};
 use crate::check::check::{bind_parameters, Scope, Signatures, Typer};
 use crate::check::ir::{CheckedBody, CheckedNode, NodeKind, Slot};
@@ -25,7 +26,7 @@ use crate::check::{
     CheckCause, CheckRefusal, CheckingLimitKind, EnumBinding, PackageDeclarations,
     QualifiedCandidate,
 };
-use crate::value::enumeration::{mint_union_member_key, mint_union_variant_id, mint_variant_id};
+use crate::value::enumeration::{mint_union_variant_id, mint_variant_id};
 
 const SHAPE: &str = "union Shape { Empty, Circle(Integer), Rect(Integer, Integer) }\n\
                      union Other { X }\n\

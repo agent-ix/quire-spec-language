@@ -115,7 +115,7 @@ mod state_clause;
 mod state_model;
 mod sum_case;
 pub use state_model::StateModelRefusal;
-pub use sum_case::{ExhaustivenessObligation, SumCaseCause};
+pub use sum_case::{mint_union_member_key, ExhaustivenessObligation, SumCaseCause};
 #[cfg(any(test, feature = "test-support"))]
 pub mod stratum;
 mod termination;

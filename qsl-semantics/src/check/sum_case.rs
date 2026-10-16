@@ -145,6 +145,19 @@ impl<'a> UnionRef<'a> {
     }
 }
 
+/// Mint the FR-319 node key of `member` of the union whose declaration node
+/// id is `declaration` (QSpec FR-441), the key a verified union binding
+/// retains; only `check` mints a node key. `declaration` is the union's
+/// checked node id, not a temporary declaration handle. The member's
+/// `VariantId` is these bytes retyped
+/// ([`crate::value::enumeration::mint_union_variant_id`]).
+pub fn mint_union_member_key(declaration: NodeKey, member: &str) -> NodeKey {
+    NodeKey::from_digest(crate::value::enumeration::union_member_digest(
+        declaration,
+        member,
+    ))
+}
+
 /// One member of a declared union, named by a construction `U::m` or
 /// `U::m(a, b)` (FR-317): the `SumCase` family's side of the call-target
 /// seam.
