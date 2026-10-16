@@ -465,8 +465,9 @@ pub struct AggregateTerm {
 #[serde(tag = "term", rename = "frame")]
 pub struct FrameTerm {
     /// Every field or relationship the operation may write, ascending by
-    /// (declaring node digest, field name) (FR-340).
-    pub modifies: Vec<FrameField>,
+    /// (declaring node digest, field name), a relationship's name being
+    /// empty (FR-340).
+    pub modifies: Vec<FrameModifies>,
     /// Every object type or process the operation may create, ascending by
     /// node digest.
     pub creates: Vec<NodeRef>,
@@ -493,15 +494,83 @@ pub enum BodyTerm {
     Frame(FrameTerm),
 }
 
-/// One `modifies` entry of a `state`/`frame` node's body (QSpec FR-340): a
-/// field this operation may write, named by its declaring node and the
-/// field's own name. The schema's `FrameModifiesEntry` union also admits a
-/// bare relationship entry (`{kind: "relationship", declaration}`); QSL's
-/// checker records no relationship modifies yet (FR-104's own scope is field
-/// effects only), so this type carries only the field form its one producer
-/// (the checker's own `frame_node` lowering step) ever builds -- adding
-/// relationship modifies later is a new constructor here, not a wire-shape
-/// change.
+/// One `modifies` entry of a `state`/`frame` node's body (QSpec FR-340's
+/// `FrameModifiesEntry`): a field or a navigation relationship the
+/// operation may write.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum FrameModifies {
+    /// `{kind: "field", declaration, name}`.
+    Field(FrameField),
+    /// `{kind: "relationship", declaration}`: the node key of the declared
+    /// `relation`/`relationship` node, standing for every link of it.
+    Relationship(NodeRef),
+}
+
+impl FrameModifies {
+    /// The node this entry names: a field's declaring node, or the
+    /// relationship's own node.
+    pub fn declaration(&self) -> NodeRef {
+        match self {
+            Self::Field(field) => field.declaration,
+            Self::Relationship(declaration) => *declaration,
+        }
+    }
+
+    /// The field's own name; `None` for a relationship.
+    pub fn field_name(&self) -> Option<&str> {
+        match self {
+            Self::Field(field) => Some(field.name()),
+            Self::Relationship(_) => None,
+        }
+    }
+}
+
+impl Serialize for FrameModifies {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Field(field) => field.serialize(serializer),
+            Self::Relationship(declaration) => FrameRelationshipWire {
+                kind: "relationship",
+                declaration: *declaration,
+            }
+            .serialize(serializer),
+        }
+    }
+}
+
+/// The deeper of the two entry shapes, so a [`FrameModifies`] nests as deep.
+impl FixedShape for FrameModifies {
+    const DEPTH: usize = {
+        let field = <FrameField as FixedShape>::DEPTH;
+        let relationship = <FrameRelationshipWire as FixedShape>::DEPTH;
+        if field > relationship {
+            field
+        } else {
+            relationship
+        }
+    };
+}
+
+/// `{kind: "relationship", declaration}`.
+#[derive(Serialize, FixedShape)]
+struct FrameRelationshipWire {
+    kind: &'static str,
+    declaration: NodeRef,
+}
+
+// Test-only, matching `LiteralValue`'s own pattern: QSpec's operation
+// vectors carry no frame body, so the conformance decoder never needs one.
+#[cfg(test)]
+impl<'de> serde::Deserialize<'de> for FrameModifies {
+    fn deserialize<D: serde::Deserializer<'de>>(_: D) -> Result<Self, D::Error> {
+        Err(serde::de::Error::custom(
+            "frame entries are not decoded from vectors",
+        ))
+    }
+}
+
+/// A `modifies` entry naming a field: the field's declaring node and its
+/// own name.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct FrameField {
     declaration: NodeRef,
@@ -550,19 +619,6 @@ struct FrameFieldWire<'a> {
     kind: &'static str,
     declaration: NodeRef,
     name: &'a str,
-}
-
-// Test-only, matching `LiteralValue`'s own pattern: QSpec's operation
-// vectors carry no frame body (a frame's modifies/creates/deletes are the
-// `node-identity-vectors.json` fixture's own, separate shape), so the
-// conformance decoder never needs one.
-#[cfg(test)]
-impl<'de> serde::Deserialize<'de> for FrameField {
-    fn deserialize<D: serde::Deserializer<'de>>(_: D) -> Result<Self, D::Error> {
-        Err(serde::de::Error::custom(
-            "frame fields are not decoded from vectors",
-        ))
-    }
 }
 
 /// A dependency's `package_id` as a term writes it: a
@@ -880,7 +936,7 @@ impl BodyTerm {
     /// `creates` and `deletes` are each an ascending-by-digest list of
     /// object type or process node keys.
     pub(crate) fn frame(
-        modifies: Vec<FrameField>,
+        modifies: Vec<FrameModifies>,
         creates: Vec<NodeKey>,
         deletes: Vec<NodeKey>,
     ) -> Self {
@@ -934,8 +990,8 @@ impl BodyTerm {
                 creates,
                 deletes,
             }) => {
-                for field in modifies {
-                    visit(field.declaration.0);
+                for entry in modifies {
+                    visit(entry.declaration().0);
                 }
                 for reference in creates.iter().chain(deletes) {
                     visit(reference.0);
@@ -980,9 +1036,14 @@ impl BodyTerm {
             }) => Self::Frame(FrameTerm {
                 modifies: modifies
                     .iter()
-                    .map(|field| FrameField {
-                        declaration: NodeRef(map(field.declaration.0)),
-                        name: field.name.clone(),
+                    .map(|entry| match entry {
+                        FrameModifies::Field(field) => FrameModifies::Field(FrameField {
+                            declaration: NodeRef(map(field.declaration.0)),
+                            name: field.name.clone(),
+                        }),
+                        FrameModifies::Relationship(declaration) => {
+                            FrameModifies::Relationship(NodeRef(map(declaration.0)))
+                        }
                     })
                     .collect(),
                 creates: creates.iter().map(|node| NodeRef(map(node.0))).collect(),
@@ -1954,7 +2015,7 @@ enum PreimageLeaf<'a> {
         node: WireNodeRef,
     },
     Frame {
-        modifies: &'a [FrameField],
+        modifies: &'a [FrameModifies],
         creates: &'a [NodeRef],
         deletes: &'a [NodeRef],
     },

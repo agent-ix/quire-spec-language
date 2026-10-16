@@ -865,30 +865,13 @@ pub enum ModelRefusalCause {
         /// The frame entry identity string that resolved to nothing.
         entry: String,
     },
-    /// FR-103: an operation's `modifies` entry names a relationship, or its
-    /// `creates`/`deletes` entry names a process. QSpec's Frames row admits
-    /// both, but no FR-106 observation carries a relationship link or a
-    /// process instance, so a grant over either could never be enforced.
-    FrameEntryUnsupported {
-        /// The operation's own identity string.
-        node: String,
-        /// The operation's source artifact, as
-        /// [`Self::IntakeMalformedDeclaration`]'s own field.
-        artifact: Option<String>,
-        /// The operation's source position, as
-        /// [`Self::IntakeMalformedDeclaration`]'s own field.
-        span: Option<LocatedSpan>,
-        /// The frame entry identity string that names the relationship or
-        /// process.
-        entry: String,
-    },
     /// FR-103: an operation's `modifies`/`creates`/`deletes` entry names a
     /// declaration of this domain package, but of the wrong meaning for
     /// that member (e.g. `modifies` naming an object type, `creates`
     /// naming a field). Shares [`Self::IntakeMalformedDeclaration`]'s tag
-    /// (`malformed-declaration`) but, like [`Self::FrameEntryMissing`] and
-    /// [`Self::FrameEntryUnsupported`], carries the entry itself in a
-    /// structured field rather than only in free-text `detail`.
+    /// (`malformed-declaration`) but, like [`Self::FrameEntryMissing`],
+    /// carries the entry itself in a structured field rather than only in
+    /// free-text `detail`.
     FrameEntryMalformed {
         /// The operation's own identity string.
         node: String,
@@ -1316,7 +1299,6 @@ impl ModelRefusalCause {
             | Self::IntakeMissingDeclaration { .. }
             | Self::UnsupportedDeclarationForm { .. }
             | Self::FrameEntryMissing { .. }
-            | Self::FrameEntryUnsupported { .. }
             | Self::FrameEntryMalformed { .. }
             | Self::DigestDomainMismatch { .. }
             | Self::MissingSelection { .. }
@@ -1410,7 +1392,6 @@ impl ModelRefusalCause {
             Self::FrameEntryMissing { .. } | Self::IntakeMissingDeclaration { .. } => {
                 "missing-name"
             }
-            Self::FrameEntryUnsupported { .. } => "unsupported-feature",
             Self::DigestDomainMismatch { .. } => "digest-domain-mismatch",
             Self::MissingSelection { .. } => "missing-selection",
             Self::ContentMismatch { .. } => "content-mismatch",
@@ -1509,7 +1490,6 @@ impl ModelRefusalCause {
             | Self::IntakeMissingDeclaration { .. } => "missing_declaration",
             Self::AboveMaximum { .. } => "cardinality_out_of_bound",
             Self::UnsupportedDeclarationForm { .. } => "unsupported_construct",
-            Self::FrameEntryUnsupported { .. } => "unknown_required_feature",
             Self::DigestDomainMismatch { .. }
             | Self::ContentMismatch { .. }
             | Self::ByteDigestMismatch { .. } => "stale_dependency",
@@ -1824,23 +1804,6 @@ pub mod fixtures {
             }),
             entry: String::new(),
         },
-        FrameEntryUnsupported => ModelRefusalCause::FrameEntryUnsupported {
-            node: String::new(),
-            artifact: Some(String::new()),
-            span: Some(LocatedSpan {
-                start: Position {
-                    byte: 0,
-                    line: 1,
-                    column: 1,
-                },
-                end: Position {
-                    byte: 0,
-                    line: 1,
-                    column: 1,
-                },
-            }),
-            entry: String::new(),
-        },
         FrameEntryMalformed => ModelRefusalCause::FrameEntryMalformed {
             member: super::MemberPath::type_definition(),
             node: String::new(),
@@ -2083,7 +2046,6 @@ pub(crate) mod tests {
             ModelRefusalCause::UnsupportedDeclarationForm { .. } => "declaration-form",
             ModelRefusalCause::FrameEntryMissing { .. }
             | ModelRefusalCause::IntakeMissingDeclaration { .. } => "missing-name",
-            ModelRefusalCause::FrameEntryUnsupported { .. } => "unsupported-feature",
             ModelRefusalCause::DigestDomainMismatch { .. } => "digest-domain-mismatch",
             ModelRefusalCause::MissingSelection { .. } => "missing-selection",
             ModelRefusalCause::ContentMismatch { .. } => "content-mismatch",
@@ -2187,7 +2149,6 @@ pub(crate) mod tests {
             | ModelRefusalCause::IntakeMissingDeclaration { .. } => "missing_declaration",
             ModelRefusalCause::AboveMaximum { .. } => "cardinality_out_of_bound",
             ModelRefusalCause::UnsupportedDeclarationForm { .. } => "unsupported_construct",
-            ModelRefusalCause::FrameEntryUnsupported { .. } => "unknown_required_feature",
             ModelRefusalCause::DigestDomainMismatch { .. } => "stale_dependency",
             ModelRefusalCause::ContentMismatch { .. } => "stale_dependency",
             ModelRefusalCause::ByteDigestMismatch { .. } => "stale_dependency",

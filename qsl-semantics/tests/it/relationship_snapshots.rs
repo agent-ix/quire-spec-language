@@ -58,6 +58,10 @@ struct Variant {
     /// Whether the unit declares the `rehome` clauses; a second population
     /// over `Pump` makes their population ambiguous.
     clauses: bool,
+    /// The identities `rehome`'s frame declares in `modifies`.
+    rehome_modifies: Vec<String>,
+    /// The identities `rehome`'s frame declares in `creates`.
+    rehome_creates: Vec<String>,
 }
 
 impl Variant {
@@ -66,6 +70,17 @@ impl Variant {
             composition_unique: (true, true),
             populations: vec![("Q", vec!["Sys", "Pump", "Tank"])],
             clauses: true,
+            rehome_modifies: Vec::new(),
+            rehome_creates: Vec::new(),
+        }
+    }
+
+    /// `orders` whose `rehome` frame declares `modifies` and `creates`.
+    fn declaring(modifies: &[String], creates: &[&str]) -> Self {
+        Self {
+            rehome_modifies: modifies.to_vec(),
+            rehome_creates: creates.iter().map(|name| identity(name)).collect(),
+            ..Self::orders()
         }
     }
 
@@ -193,7 +208,7 @@ fn relationship(name: &str, source: Value, target: Value) -> Value {
     })
 }
 
-fn rehome() -> Value {
+fn rehome(variant: &Variant) -> Value {
     json!({
         "identity": identity("Pump/rehome"),
         "name": "rehome",
@@ -204,7 +219,11 @@ fn rehome() -> Value {
             "sourceIdentity": identity("spec"), "path": "spec.qspec",
             "startLine": 1, "startColumn": 1,
         }},
-        "frame": {"modifies": [], "creates": [], "deletes": []},
+        "frame": {
+            "modifies": variant.rehome_modifies,
+            "creates": variant.rehome_creates,
+            "deletes": [],
+        },
     })
 }
 
@@ -227,7 +246,7 @@ fn package(variant: &Variant) -> Vec<u8> {
                 "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
                 "origin": provenance(&backup),
             }],
-            "operations": [rehome()],
+            "operations": [rehome(variant)],
             "relationships": [relationship(
                 "Pump-housing-Tank",
                 end("Pump", "home", 1, 1, true),
@@ -1242,8 +1261,8 @@ impl Admission {
             context: checked_clause.context(),
             operation: Some(qsl_semantics::model::observation::OperationFacts {
                 declaring: operation.declaring,
-                // The package cannot yet declare a relationship grant, so
-                // the test supplies the frame the operation is checked with.
+                // The test supplies the frame the operation is checked
+                // with, to vary it without a package per row.
                 declaration: OperationDeclaration::new("rehome", Vec::new(), None, effect.clone()),
             }),
         };
@@ -1272,6 +1291,24 @@ impl Admission {
         &self,
         documents: &Documents,
         effect: &qsl_semantics::model::domain_package::OperationEffect,
+    ) -> Result<qsl_semantics::model::observation::FrameVerdict, AdmissionFailure> {
+        self.run_frame(documents, Some(effect))
+    }
+
+    /// FR-115 over the frame the package itself declares for `rehome`.
+    fn check_declared_frame(
+        &self,
+        documents: &Documents,
+    ) -> Result<qsl_semantics::model::observation::FrameVerdict, AdmissionFailure> {
+        self.run_frame(documents, None)
+    }
+
+    /// Checks the frame against `supplied`, or against the effect the
+    /// package declares for the operation when `None`.
+    fn run_frame(
+        &self,
+        documents: &Documents,
+        supplied: Option<&qsl_semantics::model::domain_package::OperationEffect>,
     ) -> Result<qsl_semantics::model::observation::FrameVerdict, AdmissionFailure> {
         use qsl_semantics::model::observation::{
             admit_frame_invocation, FrameFacts, OperationFacts,
@@ -1306,6 +1343,7 @@ impl Admission {
             &documents.invocation,
             ObservationLimits::default(),
         )?;
+        let effect = supplied.unwrap_or_else(|| frame.operation().declaration.effect());
         Ok(admitted
             .check_frame(effect)
             .expect("check 11 does not fault"))
@@ -1712,5 +1750,109 @@ fn snapshots_listing_no_relationship_leave_check_11_5_with_nothing_to_compare() 
             .check_frame(&documents, &effect(&[], &[], &[]))
             .expect("admits"),
         FrameVerdict::Holds
+    );
+}
+
+/// FR-103-AC-2, FR-115-AC-8 and TC-1037 rows 1 and 5: a package whose
+/// `rehome` frame declares `modifies [Pump-housing-Tank]` grants the changed
+/// link, with no effect supplied by the test; the checked frame node carries
+/// the relationship beside its fields.
+#[trace("TC-1037", "FR-115-AC-8")]
+#[test]
+fn a_frame_a_package_declares_with_modifies_of_a_relationship_grants_its_links() {
+    use qsl_semantics::check::{BodyTerm, FrameModifies, NodeTag};
+    use qsl_semantics::model::observation::FrameVerdict;
+    let admission = checked(&Variant::declaring(
+        &[identity(&format!("relationship/{HOUSING}"))],
+        &[],
+    ));
+    // Row 1.
+    let documents = admission.documents(pre_of_i(), post_of_i(), |_| {});
+    assert_eq!(
+        admission.check_declared_frame(&documents).expect("admits"),
+        FrameVerdict::Holds
+    );
+    // The declared effect names the relationship.
+    let identifier = |text: &str| quire_exact::Identifier::new(text).expect("an identifier");
+    let selection = admission
+        .graph
+        .resolve_operation(&identifier("M"), &identifier("Pump"), &identifier("rehome"))
+        .expect("the operation resolves");
+    let (_, frame) = admission
+        .graph
+        .operation_frame(&selection)
+        .expect("a frame");
+    assert_eq!(
+        frame.operation().declaration.effect().modifies,
+        vec![housing_key()]
+    );
+    // The frame node carries one relationship entry and no field entry.
+    let node = admission
+        .graph
+        .semantic_graph()
+        .node(frame.frame())
+        .expect("the frame node is in the graph");
+    assert_eq!(node.node_tag(), NodeTag::State);
+    let BodyTerm::Frame(term) = node.body() else {
+        panic!("a frame body, not {:?}", node.body());
+    };
+    let [FrameModifies::Relationship(declaration)] = term.modifies.as_slice() else {
+        panic!("exactly one relationship entry, got {:?}", term.modifies);
+    };
+    let relation = admission
+        .graph
+        .semantic_graph()
+        .node(declaration.0)
+        .expect("the entry names a node of the package");
+    assert_eq!(relation.node_tag(), NodeTag::Relation);
+    assert_eq!(relation.semantic_form(), "relationship");
+
+    // Row 5: the grant covers the link at a created object.
+    let granting = checked(&Variant::declaring(
+        &[identity(&format!("relationship/{HOUSING}"))],
+        &["Pump"],
+    ));
+    let documents = granting.documents(
+        pre_with_housing(&[("p1", "t1"), ("p2", "t1")]),
+        post_with_p3(),
+        created(&["p3"]),
+    );
+    assert_eq!(
+        granting.check_declared_frame(&documents).expect("admits"),
+        FrameVerdict::Holds
+    );
+}
+
+/// TC-1037 rows 2 and 3 over declared frames: a package whose `rehome`
+/// declares no relationship grant, and one that declares a field only, both
+/// report the first changed link, carrying the declared `modifies`.
+#[trace("TC-1037", "FR-115-AC-8")]
+#[test]
+fn a_frame_without_the_relationship_declared_reports_the_link_with_its_declared_modifies() {
+    use qsl_semantics::model::observation::LinkDifference;
+    let nothing = checked(&Variant::orders());
+    let documents = nothing.documents(pre_of_i(), post_of_i(), |_| {});
+    let (population, change) =
+        violation_change(nothing.check_declared_frame(&documents).expect("admits"));
+    assert_eq!(population, identity("Q"));
+    assert_eq!(
+        change,
+        link_change(housing_key(), LinkDifference::Removed, "p1", "t1", vec![])
+    );
+
+    let field = key("Pump/backup");
+    let field_only = checked(&Variant::declaring(std::slice::from_ref(&field.node), &[]));
+    let documents = field_only.documents(pre_of_i(), post_of_i(), |_| {});
+    let (_, change) =
+        violation_change(field_only.check_declared_frame(&documents).expect("admits"));
+    assert_eq!(
+        change,
+        link_change(
+            housing_key(),
+            LinkDifference::Removed,
+            "p1",
+            "t1",
+            vec![field]
+        )
     );
 }

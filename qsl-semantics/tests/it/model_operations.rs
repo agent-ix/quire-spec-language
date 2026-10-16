@@ -732,16 +732,12 @@ pub(super) fn version_number_value_type() -> (Value, Value, String) {
     // `validate_with_semantic_ir` schema check, not just this reader's own
     // hand-rolled one), unlike `intake.rs`'s own direct-reader unit tests.
     // `appliesTo` names the native scalar the value type binds
-    // (`ix://quire/native/Integer`), not `VersionNumber`'s own identity:
-    // `agent-ix-semantic-ir`'s own applicability table (`rules.rs::applies_to`)
-    // only ever resolves a construct-kind node's own `kind`/`shape` to
-    // `"construct"`, never `"scalar"` (no `Shape` variant means "scalar" at
-    // this pinned rev) -- a constraint whose `appliesTo` named `VersionNumber`
-    // itself would refuse `CONSTRAINT_NOT_APPLICABLE` even though this is
-    // exactly the bound `VersionNumber` names. Naming the native scalar
-    // directly is what actually resolves to `Resolved::Native("integer")`,
-    // and is what `VALUE_TYPE`'s own meaning describes: "naming the value
-    // type and its bound native value type".
+    // (`ix://quire/native/Integer`), which is what `VALUE_TYPE`'s own
+    // meaning describes: "naming the value type and its bound native value
+    // type". FCD also judges a constraint applied to a value type carrying
+    // `scalar` by that scalar's keyword table, so naming `VersionNumber`
+    // itself is no longer refused `CONSTRAINT_NOT_APPLICABLE`; this form
+    // stays valid.
     let constraint = |keyword: &str, value: &str| {
         json!({
             "identity": format!("{identity}/constraints/{keyword}"),
@@ -2133,12 +2129,12 @@ fn a_creates_entry_naming_a_field_refuses_malformed_declaration() {
     assert_eq!(entry, &version_number);
 }
 
-/// FR-103-AC-2 (TC-458 step 2, part 4): `modifies` naming a declared
-/// relationship refuses `unknown_required_feature`/`unsupported-feature` at
-/// that entry.
+/// FR-103-AC-2 (TC-458 step 2, part 4): with a relationship `Supersedes`
+/// declared, `modifies [Supersedes]` admits and the operation's effect
+/// modifies `Supersedes`.
 #[trace("TC-458", "FR-103-AC-2")]
 #[test]
-fn a_modifies_entry_naming_a_relationship_refuses_unsupported_feature() {
+fn a_modifies_entry_naming_a_relationship_admits_as_a_grant() {
     let supersedes = supersedes_identity();
     let document = config_version_document(
         attempt_update(
@@ -2153,18 +2149,68 @@ fn a_modifies_entry_naming_a_relationship_refuses_unsupported_feature() {
         Vec::new(),
         json!([supersedes_relationship()]),
     );
-    let refusal = admit(&document).expect_err("modifies naming a relationship refuses");
+    let declarations =
+        admit_and_assemble(&document).expect("modifies naming a relationship admits and assembles");
+    let (unit, packages) = config_unit(&document);
+    let built = parse_and_build(&unit);
+    let views = admit_unit(
+        &built.selections().models,
+        &packages,
+        ModelNormalizationLimits::default(),
+    )
+    .expect("the package admits");
+    let owner = DeclarationKey {
+        package: PACKAGE_IDENTITY.to_owned(),
+        node: format!("ix://{PACKAGE_IDENTITY}/ConfigVersion"),
+    };
+    let owner_id = views[0].view.type_identities()[&owner];
+    let operation = declarations
+        .operations
+        .declared_by(owner_id)
+        .iter()
+        .find(|operation| operation.name() == "attemptUpdate")
+        .expect("attemptUpdate is declared on ConfigVersion");
+    assert_eq!(
+        operation.effect().modifies,
+        vec![DeclarationKey {
+            package: PACKAGE_IDENTITY.to_owned(),
+            node: supersedes,
+        }]
+    );
+    assert!(operation.effect().creates.is_empty() && operation.effect().deletes.is_empty());
+}
+
+/// FR-103-AC-2 (TC-458 step 2, part 5a): `creates` naming the relationship
+/// refuses `invalid_model_binding`/`malformed-declaration` at that entry.
+#[trace("TC-458", "FR-103-AC-2")]
+#[test]
+fn a_creates_entry_naming_a_relationship_refuses_malformed_declaration() {
+    let supersedes = supersedes_identity();
+    let document = config_version_document(
+        attempt_update(
+            json!([]),
+            json!({
+                "modifies": [],
+                "creates": [supersedes.clone()],
+                "deletes": [],
+            }),
+        ),
+        Vec::new(),
+        Vec::new(),
+        json!([supersedes_relationship()]),
+    );
+    let refusal = admit(&document).expect_err("creates naming a relationship refuses");
     let UnitIntakeCause::Refused(refusals) = refusal.cause else {
         panic!("{refusal:?}: expected a Refused cause");
     };
     assert_eq!(refusals.len(), 1, "{refusals:?}");
-    assert_eq!(refusals[0].code.as_str(), "unknown_required_feature");
-    assert_eq!(refusals[0].cause.as_str(), "unsupported-feature");
-    let qsl_semantics::model::refusal::ModelRefusalCause::FrameEntryUnsupported {
+    assert_eq!(refusals[0].code.as_str(), "invalid_model_binding");
+    assert_eq!(refusals[0].cause.as_str(), "malformed-declaration");
+    let qsl_semantics::model::refusal::ModelRefusalCause::FrameEntryMalformed {
         node, entry, ..
     } = &refusals[0].cause
     else {
-        panic!("{:?}: expected FrameEntryUnsupported", refusals[0].cause);
+        panic!("{:?}: expected FrameEntryMalformed", refusals[0].cause);
     };
     assert_eq!(node, &config_version_identity("attemptUpdate"));
     assert_eq!(entry, &supersedes);
@@ -2227,19 +2273,10 @@ fn only_the_modifies_refusal_is_reported_when_both_members_are_invalid() {
 /// arm (`qsl-semantics/src/check/assemble.rs`) is unreachable dead code for
 /// a package-declared operation parameter/result.
 ///
-/// `Text` itself cannot be used through the real pipeline at all: the
-/// pinned FCD schema validator's own native-scalar vocabulary
-/// (`agent-ix-semantic-ir`,
-/// `crates/semantic-ir/src/rules.rs`'s `NATIVE_SCALARS`) has no `Text`
-/// entry -- it spells the same concept `String` -- so
-/// `validate_with_semantic_ir` refuses any `ix://quire/native/Text`
-/// `typeRef` as `UNRESOLVED_TYPE_REF` before this reader's own
-/// `read_value_type_ref` ever runs; `ix://quire/native/String` does resolve
-/// at FCD's layer, but QSL's own `NativeValueType::from_str` has no
-/// `String` variant (only `Text`), so it would refuse there instead, with a
-/// different cause (`malformed-declaration`). That cross-repo vocabulary
-/// gap is **QSL-290**, not fixed by this ticket; `Decimal` is the closest
-/// substitute both vocabularies recognize by the same name.
+/// `ix://quire/native/Text` resolves at FCD's layer (its native vocabulary
+/// admits `Text`), so a `Text` parameter now reaches this reader; QSL's
+/// Text intake is the next slice (QSL-806). `Decimal` remains the native
+/// type this test uses.
 #[trace("TC-458", "FR-103-AC-3")]
 #[test]
 fn a_decimal_typed_parameter_refuses_at_intake_not_assembly() {

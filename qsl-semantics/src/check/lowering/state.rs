@@ -24,7 +24,8 @@ use crate::check::claims::BinderSite;
 use crate::check::family::OccurrenceRole;
 use crate::check::ir::CheckedNode;
 use crate::check::node_key::{
-    BodyTerm, FrameField, GroupTerm, LeafTerm, MemberTerm, NodeTag, Operation, Operator,
+    BodyTerm, FrameField, FrameModifies, GroupTerm, LeafTerm, MemberTerm, NodeRef, NodeTag,
+    Operation, Operator,
 };
 use crate::check::refusal::{CheckRefusal, KeyFault};
 use crate::check::state_clause::PopulationDomain;
@@ -319,20 +320,23 @@ impl Lowering<'_> {
         let declaring = self.object_node(anchor.declaring, location)?;
         let effect = anchor.operation.effect();
         let mut modifies = Vec::with_capacity(effect.modifies.len());
-        for field in &effect.modifies {
-            modifies.push(self.frame_field(field, location)?);
+        for entry in &effect.modifies {
+            modifies.push(self.frame_modifies_entry(entry, location)?);
         }
         // FR-340: entries ascending by (declaring node digest, field name),
-        // and no member holds a duplicate entry -- two clauses naming the
-        // same field twice (or a domain package listing it twice) still
-        // produce one `modifies` entry, so the frame's node id matches the
-        // deduplicated frame's and IR's reader (which rejects a repeated
-        // entry) never sees one.
+        // a relationship's name sorting as empty, and no member holds a
+        // duplicate entry -- two clauses naming the same field twice (or a
+        // domain package listing it twice) still produce one `modifies`
+        // entry, so the frame's node id matches the deduplicated frame's and
+        // IR's reader (which rejects a repeated entry) never sees one.
         modifies.sort();
         modifies.dedup();
-        let modifies: Vec<FrameField> = modifies
+        let modifies: Vec<FrameModifies> = modifies
             .into_iter()
-            .map(|(object, name)| FrameField::new(object, name))
+            .map(|(declaration, name)| match name {
+                Some(name) => FrameModifies::Field(FrameField::new(declaration, name)),
+                None => FrameModifies::Relationship(NodeRef(declaration)),
+            })
             .collect();
         let creates = self.frame_objects(&effect.creates, location)?;
         let deletes = self.frame_objects(&effect.deletes, location)?;
@@ -388,7 +392,25 @@ impl Lowering<'_> {
         Ok(())
     }
 
-    /// A frame `modifies` entry: the field member `field`'s declaring
+    /// A frame `modifies` entry as its sort key: the node it names and, for
+    /// a field member, its member name (a relationship has none).
+    fn frame_modifies_entry(
+        &mut self,
+        entry: &DeclarationKey,
+        location: &Location,
+    ) -> Result<(NodeKey, Option<String>), CheckRefusal> {
+        let (_, model) = self.model_owner(entry, location)?;
+        match model.record(entry) {
+            Some(DomainPackageRecord::Relationship(_)) => {
+                Ok((self.model_node(entry, location)?, None))
+            }
+            _ => self
+                .frame_field(entry, location)
+                .map(|(object, name)| (object, Some(name))),
+        }
+    }
+
+    /// A frame `modifies` field entry: the field member `field`'s declaring
     /// object type node and its member name.
     fn frame_field(
         &mut self,

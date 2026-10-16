@@ -28,6 +28,7 @@ mod child_composite;
 mod composite;
 mod composite_parity;
 mod native_scalar;
+mod object_environment;
 mod supplied;
 mod variant_fields;
 
@@ -171,6 +172,7 @@ fn request(
         accounting_limits: UNLIMITED,
         stage_limits: BTreeMap::new(),
         supplied_limits: None,
+        object_environment: None,
         declared_domains: Vec::new(),
         byte_provision: vec![(
             Some(DigestDomain::SourceBytesV1.as_str().to_owned()),

@@ -278,6 +278,7 @@ pub(super) fn request(
         accounting_limits: default_accounting(1_000_000),
         stage_limits: std::collections::BTreeMap::new(),
         supplied_limits: None,
+        object_environment: None,
         declared_domains: Vec::new(),
         byte_provision,
     }

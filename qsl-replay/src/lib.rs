@@ -43,6 +43,7 @@ mod composite;
 mod execute;
 mod identity;
 mod limits;
+mod object_environment;
 mod outcome;
 mod proof_result;
 mod request;
@@ -141,6 +142,12 @@ pub use quire_semantic_value::call::InputRefusal;
 // `FiniteBound::cardinality`/`integer_range`/`depth`, `IntegerInterval::new` and `Integer`'s `From`
 // conversions -- and the refusals they return. None is a T-12-governed
 // constructor (ADR-011 §3 FB-05).
+pub use execute::{ObjectEnvironmentFailure, Unresolved};
+pub use object_environment::{
+    read_object_environment, write_object_environment, EnvironmentLabels, EnvironmentModel,
+    EnvironmentObject, EnvironmentPopulation, ObjectEnvironmentDocument, ObjectEnvironmentRef,
+    ObjectEnvironmentRefusal, ObjectEnvironmentWriteError,
+};
 pub use qsl_foundation::bound::{
     DomainKey, DomainKind, EmptyFiniteBound, FiniteBound, FiniteBoundKind, ProofBound,
     ProofBoundRefusal,
@@ -260,6 +267,7 @@ mod redaction_tests {
             accounting_limits: scalar_limits(1),
             stage_limits: std::collections::BTreeMap::new(),
             supplied_limits: None,
+            object_environment: None,
             declared_domains: Vec::new(),
             byte_provision: vec![(
                 Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
@@ -301,6 +309,7 @@ mod redaction_tests {
             accounting_limits: scalar_limits(1),
             stage_limits: std::collections::BTreeMap::new(),
             supplied_limits: None,
+            object_environment: None,
             declared_domains: Vec::new(),
             byte_provision: vec![(
                 Some(DigestDomain::SourceBytesV1.as_str().to_owned()),

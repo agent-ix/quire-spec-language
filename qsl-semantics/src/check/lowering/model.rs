@@ -775,9 +775,9 @@ impl<'a> Lowering<'a> {
     }
 
     /// Key every relationship declaration selected by this unit. Unlike an
-    /// object type, a relationship is not named by a value type or operation
-    /// frame yet, so it must be rooted explicitly for the checked package to
-    /// carry the model graph's relation nodes into emission.
+    /// object type, a relationship is named only by a frame that modifies
+    /// it, so it must be rooted explicitly for the checked package to carry
+    /// the model graph's relation nodes into emission.
     pub(crate) fn relationship_nodes(
         &mut self,
         locations: &BTreeMap<String, Location>,
