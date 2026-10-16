@@ -344,10 +344,10 @@ fn an_unresolved_entry_is_reported_before_a_scope_conflict() {
     assert_eq!(entry, &id("Counter/nope"));
 }
 
-/// I9 (and FR-154-AC-4): both scopes for one field refuse
+/// I9: both scopes for one field refuse
 /// `conflicting-binding` naming both entries and the operation, and no
 /// package is built.
-#[trace("TC-1043", "FR-154-AC-8", "FR-154-AC-4")]
+#[trace("TC-1043", "FR-154-AC-8")]
 #[test]
 fn both_scopes_of_one_field_refuse_conflicting_binding() {
     let refusal = sole_refusal(&document(
@@ -401,10 +401,19 @@ fn a_process_operation_refuses_receiver_scoped_members_at_the_member() {
         let refusal = sole_refusal(&document(&ok, false, Some(&frame(members))));
         assert_eq!(refusal.code.as_str(), "invalid_model_binding", "{member}");
         assert_eq!(refusal.cause.as_str(), "malformed-declaration", "{member}");
+        // At the member itself, before any entry is read: the typed cause is
+        // the node's malformed-declaration and its member path ends at the
+        // member with no entry index.
+        let ModelRefusalCause::IntakeMalformedDeclaration { member: at, .. } = &refusal.cause
+        else {
+            panic!(
+                "{member}: expected IntakeMalformedDeclaration, got {:?}",
+                refusal.cause
+            );
+        };
         assert!(
-            refusal.detail.contains(&format!("frame.{member}")),
-            "{member}: {}",
-            refusal.detail
+            format!("{at:?}").ends_with(&format!("Name(\"frame\"), Name(\"{member}\")] }}")),
+            "{member}: {at:?}"
         );
     }
 }
