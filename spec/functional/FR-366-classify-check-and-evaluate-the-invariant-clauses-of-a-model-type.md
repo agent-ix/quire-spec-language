@@ -15,8 +15,6 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-107
     type: depends_on
-  - target: ix://agent-ix/quire-spec-language/FR-091
-    type: references
   - target: ix://agent-ix/quire-spec-language/FR-359
     type: references
   - target: ix://agent-ix/quire-specification/FR-208
@@ -55,8 +53,8 @@ invariant "evaluates nothing" is replaced by this requirement.
   operation's kept clauses (FR-103). The assembler consumes parsed
   expressions and parses no text, so the semantics layer takes no dependency
   on the S1 parser.
-- For evaluation: an `AdmittedObservations` value for a value-invariant
-  selection (below), and a `Meter`.
+- For evaluation: an `AdmittedObservations` value for FR-106's `ValueInvariants`
+  selection, and a `Meter`.
 
 ## Outputs
 
@@ -110,56 +108,89 @@ invariant "evaluates nothing" is replaced by this requirement.
 - A checked invariant SHALL be typed under the typer's profile-independent
   defaults, as a kept operation clause is (FR-103): no unit profile selection
   applies to it. Equality of two operands of a native `String`, `UUID` or
-  `Timestamp` type is admitted as FR-091 states.
+  `Timestamp` type is admitted as FR-056 states (FR-056-AC-35).
 - A checked invariant adds no declaration, claim or requirement record.
 
 ### Evaluation per reachable value
 
-A value-invariant selection admits one current observation and, optionally,
-one invocation (FR-106). `evaluate_value_invariants` takes the
-`AdmittedObservations` of that selection.
+A type-level invariant is selected by its owning type and its clause key: an
+invariant is identified by the declaration key of its clause
+(`ix://.../Money/NonNegative`), which names its owner. The entry point is
+`evaluate_value_invariants`, over the `AdmittedObservations` of FR-106's
+`ValueInvariants` selection, which names no clause: it admits one current
+observation and, optionally, one invocation. `evaluate_clause` and
+`evaluate_clause_set` (FR-107) evaluate unit state clauses only; they resolve a
+unit clause's name and refuse every other name `UnknownClause`, so a type-level
+invariant is never evaluated through them.
 
-- A value of a record value type or event type is *reachable* when it is the
-  value of a field of an object of the observation, the value of an
-  operation parameter or result of the selected invocation, or a value
-  contained in a reachable value: an element of a collection, the contained
-  value of a present optional, a field of a reachable record value. An object
-  reached by a `reference` is not followed: its own fields are read as that
-  object's, once, in the observation.
+The *values* an evaluation ranges over are these:
+
+- For a record value type or an event type: every value of the type that is
+  *reachable*, that is the value of a field of an object of the observation,
+  the value of a parameter or the result of the selected invocation, or a value
+  contained in a reachable value (an element of a collection, the contained
+  value of a present optional, a field of a reachable record value). A
+  `reference` field is not followed: the referenced object's own fields are
+  values of that object, reached once as a member of its population.
+- For an object type or a process: every object of the observation whose type
+  conforms to the type, with `self` the object's reference.
+- For a state machine: the machine's one context in the `pre` snapshot and the
+  one in the `post` snapshot of the selected invocation, each a separate value
+  (QSpec FR-208-AC-10), with `self` the context. An observation with no
+  invocation has no context value; a snapshot with no context for the machine
+  is `invalid_model_binding`/`wrong-context` as FR-106 check 6.10 refuses it.
+
+Evaluation rules:
+
 - The evaluator SHALL evaluate each effective invariant of the value's
-  most-specific type once for every reachable value, with `self` bound to that
-  value and no object universe. A value reached at two locations is evaluated
-  at each. The result for a value depends only on that value.
-- A result SHALL be the FR-107 `Evaluation` of the invariant: `Completed(true)`
-  or `Completed(false)`. A false result is a logical violation, a Boolean
-  `false` with no diagnostic code or cause, never a refusal.
-- Each result SHALL carry the QSpec FR-207 runtime value path of the value it
-  was evaluated for:
-  - a value under an object: the root observation is the selected current
-    observation and the subject the declared object identity of the object
-    (QSpec FR-204); the steps are `member` for the field, then `option_value`
-    for a present optional, `index` for a collection element and `field` for
-    a field of a record value;
+  most-specific type once for every value, with `self` bound to that value and
+  no object universe for a record or event value. A value reached at two
+  locations is evaluated at each. The result for a value depends only on that
+  value.
+- A result SHALL be the FR-107 `Evaluation` of the invariant. A linked
+  invariant evaluates to `Completed(true)` or `Completed(false)` and, as
+  FR-107 states for a clause checked in `CheckMode::Linked`, to no `Undefined`
+  or `Refused`, so a result never reaches `Undecided`. A false result is a
+  logical violation, a Boolean `false` with no diagnostic code or cause, never
+  a refusal.
+- Each result SHALL carry the QSpec FR-207 runtime value path of its value:
+  - a record or event value under an object: the root observation is the
+    selected current observation and the subject the declared object identity
+    of the object (QSpec FR-204); the steps are `member` for the field, then
+    `option_value` for a present optional, `index` for a collection element and
+    `field` for a field of a record value;
+  - an object or a run: the subject is its declared object identity and the
+    steps are empty, in the current observation;
+  - a state machine's context: the subject is the invocation's receiver
+    binding, rooted at the `pre` or `post` snapshot of the invocation, with no
+    steps;
   - a value of a parameter of the invocation: the root observation is the
-    invocation's pre observation, the subject the invocation binding of the
-    parameter, and the steps start empty;
-  - a value of the result: the root observation is the invocation's post
-    observation and the subject the result binding.
-- The results SHALL be ordered by the FR-207 key order of their paths, then by
-  clause key, whatever order the observation lists its objects or the
-  invocation its parameters.
-- `outcome` SHALL combine the verdicts as FR-107's clause set does: `False`
-  when any result is `Completed(false)`, `True` when every result is
-  `Completed(true)` and for an empty result list, and `Incomplete` when a
-  charge is denied, the evaluation stopping at that result, which is its last.
-  A denied charge is `resource_exhausted`/`insufficient-next-charge`.
+    invocation's `pre` observation, the subject the invocation binding of the
+    parameter and the steps start empty; a value of the result: the root
+    observation is the invocation's `post` observation and the subject the
+    result binding.
+- The results SHALL be ordered by the FR-207 key order of their paths (the
+  observation key first, as QSpec FR-207 compares it), then by clause key.
+  Values are evaluated in that order, whatever order the observation lists
+  its objects or the invocation its parameters.
+- `outcome` SHALL be `False` when any result is `Completed(false)`, `True` when
+  every result is `Completed(true)` and for an empty result list, and
+  `Incomplete` when a charge is denied, the evaluation stopping at the result
+  whose evaluation was denied, which is not reported. A denied charge is
+  `resource_exhausted`/`insufficient-next-charge`.
+- The evaluation SHALL use the one `Meter` the caller gives it for all of its
+  values, so a budget is shared across them. This differs from
+  `evaluate_clause_set`, which builds a fresh meter from `ScalarLimits` for
+  each clause (FR-107); the difference is deliberate, because the values of one
+  observation are one evaluation, not independent clauses. No charge is made
+  for visiting a value or reading a field of a record (FR-107 charges
+  `model.navigate` and `model.deref` for object-field reads only); the charges
+  are the ones the invariant's body makes. A comparison `a >= b` over two
+  integers charges `ordering.operands`, `ordering.arithmetic` and
+  `ordering.result-retain`, in that order, as `quire-exact` states.
 - A type none of whose values the observation reaches has no result. A
   well-formed invariant of such a type is checked and reports nothing.
-- An invariant of an object type, a state machine or a process is evaluated
-  as a unit invariant on that context is: over the `Current` or `Context`
-  selection of FR-106 by FR-107's `evaluate_clause`, `self` and the receiver
-  path as FR-107 states. A `Guard` and an `Unevaluated` clause have no result
-  in either evaluation.
+- A `Guard` and an `Unevaluated` clause have no result.
 - The evaluation SHALL be deterministic: the same package, observations and
   meter budget give the same results and the same charge log.
 
@@ -167,14 +198,15 @@ one invocation (FR-106). `evaluate_value_invariants` takes the
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-366-AC-1 | Over K2 plus the `quire` clause `Extra` (`self.placed or not self.placed`) on `OrderLifecycle`, no transition naming it: `Extra` is `Invariant`, `NotYetPlaced` is `Guard` (of transition `[0]`) and in no effective-invariant list, and the effective invariants of `OrderLifecycle` are `[Extra]`. `Money/NonNegative` in `ocl` is `Unevaluated`. `ExpressLifecycle` (supertype `OrderLifecycle`) has `NotYetPlaced` as `Guard` and effective invariants `[Extra]`; `TaxedMoney` has effective invariants `[NonNegative]`. The classification is equal when the package's clause records are reordered. | Test (TC-1050) |
+| FR-366-AC-1 | Over K2 plus the `quire` clause `Extra` (`self.placed or not self.placed`) on `OrderLifecycle`, which no transition names: `Extra` is `Invariant`, `NotYetPlaced` is `Guard` of transition `[0]` and in no effective-invariant list, and the effective invariants of `OrderLifecycle` are `[Extra]`. Over K2 plus `ExpressLifecycle` (TC-235 M19 run 1) and `Extra`: `NotYetPlaced` is `Guard` for `ExpressLifecycle` and its effective invariants are `[Extra]`. Over K2 with `Money/NonNegative` in `quire` plus `TaxedMoney` (TC-235 M17 run 1): `NonNegative` is `Invariant`, and the effective invariants of `Money` and of `TaxedMoney` are each `[NonNegative]`. Over K2 with `Money/NonNegative` in `ocl`: it is `Unevaluated` and in no effective-invariant list. The classification is equal when the package's clause records are reordered. | Test (TC-1050) |
 | FR-366-AC-2 | `Money/NonNegative` as `self.amount_minor >= 0` checks; with `pre(self.amount_minor) >= 0` the compile refuses `wrong_snapshot`/`forbidden-pre-read` naming `ix://test/orders/Money/NonNegative` at `TypeDefinition.clauses[0]` and produces no checked package; `OrderPlaced/Occurred` as `self.occurred_at = self.occurred_at` checks, and as `pre(self.order_id) = self.order_id` refuses the same, naming `ix://test/orders/OrderPlaced/Occurred` at `TypeDefinition.clauses[0]`. | Test (TC-1050) |
 | FR-366-AC-3 | `NonNegative` as `self.amount_minor` refuses `ill_typed`/`non-boolean-root` at `TypeDefinition.clauses[0]`; as `self.amount_minor >=` the parser's refusal is returned at `TypeDefinition.clauses[0]`; a clause in `ocl` is not parsed whatever its text. An invariant in a second position of a type with two clauses is located at `TypeDefinition.clauses[1]`. | Test (TC-1050) |
-| FR-366-AC-4 | TC-235 M13 run 1: with `Money/NonNegative` (`self.amount_minor >= 0`) and `Order` given `quoted: Money`, `history: Money {0, 3}`, optional `discount: Money` and operation `requote(amount: Money)`, `evaluate_value_invariants` over observation `s1` (`o1` with `total` 5, `quoted` -5, `history` [1, -2], `discount` present -1) and invocation `i1` of `requote` with `amount` -7 reports six results of `NonNegative`, `Completed(true)` at `o1.total` and at `o1.history[0]`, and `Completed(false)`, a Boolean with no code or cause, at exactly: `(s1, object o1)` `[member discount, option_value]`; `(s1, object o1)` `[member history, index 1]`; `(s1, object o1)` `[member quoted]`; `(pre observation of i1, invocation i1 parameter amount)` with no steps. The outcome is `False`. | Test (TC-1051) |
-| FR-366-AC-5 | In AC-4 the six results are in the FR-207 key order of their paths, and listing `o1`'s fields or `i1`'s parameters in another order gives equal results; the result for a value is equal when the rest of the observation changes; two evaluations give equal results and charge logs. | Test (TC-1051) |
+| FR-366-AC-4 | TC-235 M13 run 1: with `Money/NonNegative` (`self.amount_minor >= 0`) and `Order` given `quoted: Money`, `history: Money {0, 3}`, optional `discount: Money` and operation `requote(amount: Money)`, `evaluate_value_invariants` over current observation `s1` (`o1` with `total` 5, `quoted` -5, `history` [1, -2], `discount` present -1) and invocation `i1` of `requote` whose `pre` snapshot is `s2`, with `amount` -7, reports six results of `NonNegative`, in this order (observation `s1` orders before `s2`; within `s1` the steps order by member name bytes, then index): `Completed(false)`, a Boolean with no code or cause, at `(s1, object o1)` `[member discount, option_value]`; `Completed(true)` at `[member history, index 0]`; `Completed(false)` at `[member history, index 1]`; `Completed(false)` at `[member quoted]`; `Completed(true)` at `[member total]`; and `Completed(false)` at `(s2, invocation i1 parameter amount)` with no steps. The outcome is `False`. | Test (TC-1051) |
+| FR-366-AC-5 | In AC-4 listing `o1`'s fields or `i1`'s parameters in another order gives equal results in the same order; the result for a value is equal when the rest of the observation changes; two evaluations give equal results and charge logs. | Test (TC-1051) |
 | FR-366-AC-6 | TC-235 M14 run 1: `OrderPlaced/Occurred` (`self.occurred_at = self.occurred_at`) is checked as an invariant over every `OrderPlaced` value, and over an observation holding one `Order` object and no `OrderPlaced` value `evaluate_value_invariants` has no result for `Occurred` and outcome `True`. | Test (TC-1051) |
-| FR-366-AC-7 | A `TaxedMoney` value at the `Money` slot `quoted` is evaluated against `TaxedMoney`'s effective invariants; a `Money` record nested in a record `Pair { first: Money; second: Money }` field of an object is located by `[member pair, field first]` and `[member pair, field second]`, each evaluated; a value of an event type reached through a parameter is evaluated at the parameter binding. A `reference` field is not followed: the referenced object's values are reached once, as a member of its population. | Test (TC-1051) |
-| FR-366-AC-8 | With a work budget that denies the third charge, the evaluation returns the results for the values before it and `Incomplete` with `resource_exhausted`/`insufficient-next-charge`, and no result for the later values. An evaluation of a `Guard` or an `Unevaluated` clause is not an `evaluate_value_invariants` result. | Test (TC-1051) |
+| FR-366-AC-7 | A `TaxedMoney` value at the `Money` slot `quoted` is evaluated against `TaxedMoney`'s effective invariants; a `Money` record nested in a record `Pair { first: Money; second: Money }` field `pair` of an object is located by `[member pair, field first]` and `[member pair, field second]`, each evaluated; an `OrderPlaced` value passed as a parameter is evaluated at the parameter binding with no steps; a `Reference<Order>` field `buddy` is not followed: the referenced object's `Money` fields are reached once, at the referenced object's own declared identity, and not again under `buddy`. | Test (TC-1051) |
+| FR-366-AC-8 | With a meter that denies the fourth charge, the evaluation of AC-4 returns the one result for `discount` (its three charges: `ordering.operands`, `ordering.arithmetic`, `ordering.result-retain`) and `Incomplete` with `resource_exhausted`/`insufficient-next-charge`: the fourth charge is the `ordering.operands` of the value at `[member history, index 0]`, whose evaluation is not reported, and no later value has a result. A meter that denies the third charge returns no result and `Incomplete`. A `Guard` and an `Unevaluated` clause have no result. | Test (TC-1051) |
+| FR-366-AC-9 | An object-type or process invariant over the object `r2` of an observation `s1` holding the runs `r1` `{attempts: 0}` and `r2` `{attempts: -1}` (TC-235 M16 run 1, the clause `NonNegativeAttempts` as a type-level invariant `self.attempts >= 0` of the process `Fulfilment`) has two results, `Completed(true)` at `(s1, object r1)` and `Completed(false)` at `(s1, object r2)`, each with no steps, and outcome `False`; the state-machine invariant `Extra` of `OrderLifecycle` over invocation `i1` with the `pre` context `{placed: false, cancelled: false}` and the `post` context `{placed: true, cancelled: true}` has two results, one at `(pre snapshot of i1, invocation i1 binding receiver)` and one at `(post snapshot of i1, invocation i1 binding receiver)`, each `Completed(true)` with no steps; `evaluate_clause` named `NonNegativeAttempts` returns `UnknownClause`. | Test (TC-1051) |
 
 ## Dependencies
 
@@ -182,7 +214,7 @@ one invocation (FR-106). `evaluate_value_invariants` takes the
   parser seam this reuses), FR-104 (the invariant rules and receiver
   binding), FR-106 (admission of the current observation and the
   invocation), FR-107 (the `Evaluation`, the clause-set combination and the
-  receiver path of an object, state machine or process invariant), FR-091
+  receiver path of an object, state machine or process invariant), FR-056
   (equality on native `String`, `UUID` and `Timestamp`) and FR-359 (a subtype
   value at an ancestor slot).
 - QSpec FR-208 and FR-208-AC-10 (invariant meaning), FR-207 (the runtime value

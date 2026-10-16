@@ -397,12 +397,20 @@ selects each side and gets one verdict per selection. For a clause whose
 receiver is a state machine's context, `self` of `Current` and of `PreCall` is
 none. `ValueInvariants { snapshot: DocumentRef, invocation: Option<DocumentRef> }`
 selects no clause: it admits one current snapshot and, when given, one
-invocation, for the evaluation of the invariants of record value types and
-event types over every value they reach (FR-366). The snapshot is read as a
-`Current` snapshot is, and its anchor is not compared with any clause's. The
-invocation is read as an `Invocation` selection of a postcondition reads it,
-its `pre` and `post` snapshots, parameters and result admitted by the same
-checks. `PreCall` is the
+invocation, for the evaluation of the type-level invariants of every type over
+every value they range over (FR-366). The snapshot is read as a `Current`
+snapshot is, and its anchor is not compared with any clause's. The invocation
+is read as an `Invocation` selection of a postcondition reads it: its `pre` and
+`post` snapshots, the `contexts` they hold, the parameters and the result,
+admitted by the same checks. Checks that name the selected clause do not apply to it: check 4 compares
+the document's model with the package's model, since there is no clause alias;
+checks 5 and 9 have no clause receiver and no `self` to test; and check 7's
+required population is every population of the snapshot, there being no
+population holding `self`. The invocation's `context` and `operation` are
+checked only against the package. The admitted value holds no clause
+identity and no `self` object; it holds the current observation and, for an
+invocation, the observations, parameters, result and contexts as an `Invocation`
+selection admits them. `PreCall` is the
 observation of a call before the operation runs: the snapshot is the
 operation's pre state, and a precondition reads only that state, `self` and
 the parameters (FR-104, FR-107), so it has no post snapshot, result or
