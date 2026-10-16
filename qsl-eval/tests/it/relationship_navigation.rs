@@ -933,3 +933,107 @@ fn the_first_missing_target_in_key_order_decides_between_dangling_and_undecidabl
         "both results occur across variants"
     );
 }
+
+/// A reference to `object` of `type_name` in `universe` (the fixture's one
+/// universe is 9).
+fn in_universe(orders: &Orders, universe: u8, type_name: &str, object: &str) -> ObjectReference {
+    ObjectReference::new(
+        UniverseId::from_digest([universe; 32]),
+        orders.id(type_name),
+        ObjectId::new(object.to_owned()).expect("a nonempty object id"),
+    )
+}
+
+/// FR-364 "The read contract" (reference equality is the whole reference
+/// key, never the object identity alone): the extent links `s1` to `p1` of
+/// universe 7, while the observation holds only `p1` of universe 9, the same
+/// object identity text. Navigation follows the whole key, so the held `p1`
+/// is not substituted: the target is dangling. A receiver `s1` of universe 7
+/// is a different receiver from `s1` of universe 9 and has no link.
+#[trace("TC-1034", "FR-364-AC-3")]
+#[test]
+fn navigation_follows_the_whole_reference_key_never_the_object_identity_alone() {
+    let orders = Orders::new(Shape::BASE);
+    let s1 = orders.at("Sys", "s1");
+    let foreign_p1 = in_universe(&orders, 7, "Pump", "p1");
+    let objects = orders.observe(
+        &orders.held(),
+        vec![Orders::extent(
+            composition(),
+            true,
+            vec![(s1.clone(), foreign_p1)],
+        )],
+        vec![orders.q()],
+    );
+    let (evaluation, meter) = orders.navigate("parts", &s1, &objects, UNLIMITED);
+    let (code, cause, fields) = refusal(evaluation);
+    assert_eq!(
+        (code.as_str(), cause.as_str()),
+        ("dangling_reference", "absent-target-in-complete-population")
+    );
+    assert_eq!(fields["reference"], "p1");
+    assert_charges(&meter, &[NAVIGATE], 1, 0);
+
+    let other_s1 = in_universe(&orders, 7, "Sys", "s1");
+    let mut held = orders.held();
+    held.push(other_s1.clone());
+    let objects = orders.observe(
+        &held,
+        vec![Orders::extent(
+            composition(),
+            true,
+            vec![(s1.clone(), orders.at("Pump", "p1"))],
+        )],
+        vec![orders.q()],
+    );
+    let (evaluation, meter) = orders.navigate("parts", &other_s1, &objects, UNLIMITED);
+    assert_eq!(
+        completed(evaluation),
+        orders.set_of_pumps((0, 3), CollectionKind::Set, &[])
+    );
+    assert_charges(&meter, &[NAVIGATE, BOUND, RETAIN], 3, 1);
+}
+
+/// FR-364 "One bundle binds the manifest, the observation and the type
+/// environment": a missing target is classified by this observation's own
+/// closure and manifest alone. `p4` is held by another observation, which
+/// never makes it present here: it is dangling when this manifest closes
+/// every covering population, and undecidable when one is incomplete.
+#[trace("TC-1041", "FR-364-AC-11")]
+#[test]
+fn a_target_held_only_by_another_observation_is_never_found() {
+    let orders = Orders::new(Shape::BASE);
+    let s1 = orders.at("Sys", "s1");
+    let p4 = orders.at("Pump", "p4");
+    let link = vec![Orders::extent(
+        composition(),
+        true,
+        vec![(s1.clone(), p4.clone())],
+    )];
+    let mut other_held = orders.held();
+    other_held.push(p4);
+    let _other = orders.observe(&other_held, vec![], vec![orders.q()]);
+
+    let closed = orders.observe(&orders.held(), link.clone(), vec![orders.q()]);
+    let (evaluation, meter) = orders.navigate("parts", &s1, &closed, UNLIMITED);
+    let (code, cause, fields) = refusal(evaluation);
+    assert_eq!(
+        (code.as_str(), cause.as_str()),
+        ("dangling_reference", "absent-target-in-complete-population")
+    );
+    assert_eq!(fields["reference"], "p4");
+    assert_charges(&meter, &[NAVIGATE], 1, 0);
+
+    let open = orders.observe(
+        &orders.held(),
+        link,
+        vec![orders.q(), orders.row("Spare", &["Pump"], false)],
+    );
+    let (evaluation, meter) = orders.navigate("parts", &s1, &open, UNLIMITED);
+    let (code, cause, _) = refusal(evaluation);
+    assert_eq!(
+        (code.as_str(), cause.as_str()),
+        ("incomplete_population", "incomplete-scope")
+    );
+    assert_charges(&meter, &[NAVIGATE], 1, 0);
+}
