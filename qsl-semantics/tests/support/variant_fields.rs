@@ -77,13 +77,13 @@ pub(crate) fn variant_type(name: &str, cases: &[&str]) -> Value {
     base::declaration(name, "tier", json!({"variants": cases}))
 }
 
-fn optional(owner: &str, name: &str, type_ref: &str) -> Value {
+pub(crate) fn optional(owner: &str, name: &str, type_ref: &str) -> Value {
     let mut field = base::field(owner, name, type_ref);
     field["presence"] = json!("optional");
     field
 }
 
-fn many(owner: &str, name: &str, type_ref: &str, ordered: bool, unique: bool) -> Value {
+pub(crate) fn many(owner: &str, name: &str, type_ref: &str, ordered: bool, unique: bool) -> Value {
     let mut field = base::field(owner, name, type_ref);
     field["multiplicity"] = json!({"lower": 0, "upper": 3, "ordered": ordered, "unique": unique});
     field
@@ -91,7 +91,12 @@ fn many(owner: &str, name: &str, type_ref: &str, ordered: bool, unique: bool) ->
 
 /// An operation `owner/name` taking `parameters` (name, type) and returning
 /// `result`.
-fn operation_with(owner: &str, name: &str, parameters: &[(&str, String)], result: &str) -> Value {
+pub(crate) fn operation_with(
+    owner: &str,
+    name: &str,
+    parameters: &[(&str, String)],
+    result: &str,
+) -> Value {
     let node = format!("{owner}/{name}");
     let params: Vec<Value> = parameters
         .iter()
@@ -131,7 +136,7 @@ fn variant_construct() -> Value {
 
 /// `types` and the constructs the FR-360 fixture needs, as a package
 /// document.
-fn package(types: Vec<Value>, populated: bool) -> Value {
+pub(crate) fn package(types: Vec<Value>, populated: bool) -> Value {
     // The schema refuses a construct no type is of.
     let used = |kind: &str| types.iter().any(|ty| ty["kind"]["name"] == kind);
     let constructs = [

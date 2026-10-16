@@ -672,6 +672,7 @@ fn refusal_of(result: Result<(), AdmissionFailure>) -> Refusal {
         cause,
         fields,
         path,
+        ..
     })) = result
     else {
         panic!("a refusal, not {result:?}");
