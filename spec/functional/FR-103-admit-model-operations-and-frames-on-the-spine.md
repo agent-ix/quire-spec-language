@@ -161,12 +161,9 @@ evaluates it; it is not discarded and it is not shape-checked only.
   and, for `ensures`, `result` bind as FR-104's state contract states. A
   clause in a language other than `quire` is kept verbatim and is not
   parsed or checked.
-- A kept clause names no `using` profile, so none is selected for it. The
-  existing path for a domain-package invariant written `language: quire`
-  (TC-235 M13 and M14) has no profile concept either: it retains the clause
-  text and evaluates nothing (`read_clauses`,
-  `qsl-semantics/src/model/intake.rs:2926`; `sorted_direct_clauses`,
-  `qsl-semantics/src/model/index.rs:602`; `qsl-semantics/src/model/normalize.rs:2473`).
+- A kept clause names no `using` profile, so none is selected for it. A
+  domain-package invariant written `language: quire` (TC-235 M13 and M14) has
+  no profile concept either; FR-366 classifies, checks and evaluates it.
   A kept operation clause is therefore checked under the typer's
   profile-independent defaults, with the unit's profile selections playing no
   part. In particular `complete_value` is off, so integer `div`, `rem`, `mod`
