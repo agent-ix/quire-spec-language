@@ -74,6 +74,24 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
 - If `M` names no `model` declaration of the unit, or `T` no object type of
   its package, then the assembler SHALL refuse `missing_declaration`/
   `missing-name` at the name.
+- The anchor context of a state clause is an object type (QSpec FR-342). If
+  `T` names a process of its package, then the assembler
+  SHALL refuse `invalid_model_binding`/`malformed-declaration` at `T`, for an
+  invariant as for a `pre` or `post` clause, and SHALL NOT resolve `op`. So
+  an operation a process declares (FR-103) cannot be named by a clause and
+  has no anchor: a clause takes no frame of it, and its frame is read into
+  its `OperationEffect` as FR-103 and FR-154 state, with no `state`/`frame`
+  node, no `operation_anchor` node and no `operation-contract` record (FR-105).
+  The refusal is the one QSpec FR-342 gives a `context` that is no
+  `model`/`object_type` node; QSL gives it at the name, before any anchor is
+  built. The `self` of a unit state clause (an invariant, `pre` or `post`
+  clause) is a `Reference` to an object, never a run. A state machine stays a
+  valid anchor context (FR-107). A process operation's own `requires` and
+  `ensures` clauses are not unit state clauses: they bind `self` as FR-103
+  states, the operation's receiver, which for a process is its run (QSpec
+  FR-208), and they carry no anchor or frame. A `T` that names an object type is unchanged, and a `T` that names
+  no declaration or a declaration of any other meaning refuses
+  `missing_declaration`/`missing-name` as above.
 - If a `pre` or `post` clause's `op` names no operation of `M::T`'s effective
   view (FR-103), then the assembler SHALL refuse `missing_declaration`/
   `missing-name` at `op`.
@@ -254,6 +272,7 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
 | FR-104-AC-7 | In postconditions of `attemptUpdate` over a package whose frame modifies `parent`: `present(pre(self.parent)) implies deref(value(self.parent)).versionNumber > 0` refuses `undefined_expression`/`unproved-presence` at `value(self.parent)`; `pre(present(self.parent) implies deref(value(self.parent)).versionNumber > 0)` checks; `let v = self.versionNumber in pre(v) = 1` and `let s = self in pre(s.versionNumber) = 1` each refuse `wrong_snapshot`/`forbidden-pre-read` at the `pre`; `let s = pre(self) in s.versionNumber = 1` checks with its read `pre`. | Test (TC-459) |
 | FR-104-AC-8 | Over a package that adds operation `probe(target: ConfigVersion)` on `ConfigVersion` with no result and an empty frame: the postcondition `deref(target).versionNumber = 1` checks with its read `post`; the precondition `deref(target).versionNumber = 1` checks with its read `pre`; the postcondition `pre(deref(target).versionNumber) = 1` checks with its read `pre`; the postcondition `pre(target) = target` refuses `wrong_snapshot`/`forbidden-pre-read` at the `pre`. | Test (TC-459) |
 | FR-104-AC-9 | Under `quire.model.complete/v1`, `reaches(self, target, parent)` on a `ConfigVersion` subtype with its inherited `parent: Option<Reference<ConfigVersion>>` field checks with `self` retained as the subtype reference and `target` as the base reference, without erasing the operand identity FR-043 evaluates; a target type not conforming to the edge owner refuses `ill_typed`/`operator-ineligible`. The subtype/base operands under any other admitted model selection refuse `ill_typed`/`operator-ineligible` by the exact-type rule. | Test |
+| FR-104-AC-10 | Over the ConfigVersion package (TC-458's) with a process `Flow` that declares operation `go` with an empty frame, `pre P using v on Config::Flow::go { true }`, `post Q using v on Config::Flow::go { true }` and `invariant I using v on Config::Flow at current { true }` each refuse `invalid_model_binding`/`malformed-declaration` at `Flow`, and `on Config::Flow::missing` refuses the same, not `missing_declaration`/`missing-name`. Compiling the package with no clause naming `go` holds no anchor node, frame node or `operation-contract` record for `go`. | Test (TC-460) |
 
 ## Dependencies
 

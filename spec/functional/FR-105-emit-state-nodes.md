@@ -104,7 +104,11 @@ source map (FR-095).
   two object types, because its `semantic_type` is the anchor's context
   (QSpec FR-342).
   An operation inherited from `M::Base` and named as `M::Sub::op` anchors at
-  `M::Base`.
+  `M::Base`. The anchor's context is always a `model`/`object_type` node: an
+  operation that a process declares is named by no clause or attempt
+  (FR-104, FR-114 refuse it), so it gets no anchor, no frame node and no
+  frame record, and its frame lives only in its `OperationEffect` (FR-103,
+  FR-154).
 - The checker SHALL add `Invariant`, `Precondition` and `Postcondition` to
   `CheckedClauseKind` (FR-088, as amended), each spelled with the node pair
   (`state`, `state_clause`), the clause operation `quire.op.state.clause` and

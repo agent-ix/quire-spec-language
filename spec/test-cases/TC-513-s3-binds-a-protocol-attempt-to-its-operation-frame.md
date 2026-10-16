@@ -13,7 +13,7 @@ relationships:
 Verify that an `attempt` binds its operation's anchor and frame by identity,
 adds no second frame node or frame record, and checks its `contracts` list.
 
-Scope: FR-114-AC-1 to FR-114-AC-4.
+Scope: FR-114-AC-1 to FR-114-AC-5.
 
 ## Test Procedure
 
@@ -34,6 +34,10 @@ Boolean literal, so that FR-113 Status's content check passes.
 4. Over a package where `Sub` specializes `ConfigVersion`, attempt on
    `Config::Sub::attemptUpdate` beside `VersionUnchanged`; compile.
 
+5. Add a process `Flow` declaring `go` with an empty frame (TC-460 row 13's
+   package): check `attempt U by R on Config::Flow::go contracts []`, and
+   again with `contracts [Absent]`.
+
 Tag the tests `#[trace("TC-513", "FR-114-AC-n")]`.
 
 ## Expected Results
@@ -47,5 +51,7 @@ Tag the tests `#[trace("TC-513", "FR-114-AC-n")]`.
   entry `Absent`; `wrong_snapshot`/`wrong-anchor` at `ParentOrder` and at
   `ProbePre`, each naming both anchors.
 - Step 4: one anchor and one frame, context `ConfigVersion`.
+- Step 5: `invalid_model_binding`/`malformed-declaration` at `Flow` both
+  times.
 - Steps 1, 2 and 4's emitted-node assertions wait on STD-111, as TC-462's do;
   the checked-graph assertions do not.
