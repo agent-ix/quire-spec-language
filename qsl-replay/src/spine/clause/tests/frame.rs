@@ -5,7 +5,9 @@
 
 use super::*;
 use crate::spine::{CallOutcome, CallRefusal, OperationName};
-use qsl_semantics::model::observation::{AdmissionFailure, AdmissionRecord, FrameChange};
+use qsl_semantics::model::observation::{
+    AdmissionFailure, AdmissionRecord, FrameChange, FrameWitness,
+};
 use quire_exact::Identifier;
 
 /// `text` as an identifier.
@@ -431,6 +433,200 @@ fn native_result_two_refuses_broken_frame_witness_members() {
             .to_string()
             .contains("disposition.outcome")
     );
+}
+
+/// TC-1037 row 2's finding as a check-time witness: the evaluated `Link`
+/// of `Pump-housing-Tank` at `p1`-`t1`, `removed`, in population `Q`.
+fn link_witness(difference: qsl_semantics::model::observation::LinkDifference) -> FrameWitness {
+    use qsl_semantics::model::key::DeclarationKey;
+    use qsl_semantics::model::observation::SelectedObject;
+
+    let [invocation, pre, post] = ["invocation", "pre", "post"].map(|name| DocumentRef {
+        authority: "test".to_owned(),
+        identity: name.to_owned(),
+        revision_namespace: "ns".to_owned(),
+        revision: "1".to_owned(),
+        digest: [7; 32],
+    });
+    let end = |key: &str| SelectedObject {
+        population: "Q".to_owned(),
+        key: key.to_owned(),
+    };
+    FrameWitness {
+        code: qsl_foundation::diagnostic::Code::FrameViolation,
+        cause: "unauthorized-change",
+        invocation,
+        pre,
+        post,
+        population: "Q".to_owned(),
+        change: FrameChange::Link {
+            relationship: DeclarationKey {
+                package: "orders".to_owned(),
+                node: "Pump-housing-Tank".to_owned(),
+            },
+            difference,
+            source: end("p1"),
+            target: end("t1"),
+            modifies: vec![DeclarationKey {
+                package: "orders".to_owned(),
+                node: "Pump/backup".to_owned(),
+            }],
+        },
+    }
+}
+
+fn link_report(
+    difference: qsl_semantics::model::observation::LinkDifference,
+) -> super::super::ClauseRunReport {
+    let mut report = run(changed_version());
+    report.disposition = ClauseDisposition::FrameViolation(Box::new(link_witness(difference)));
+    report
+}
+
+/// Routing pin (no criterion claimed): a link finding is a violation at `evaluate`, exit 10,
+/// carrying its witness (TC-1037 row 2).
+#[test]
+fn a_link_finding_routes_to_a_violation_with_exit_ten() {
+    use qsl_semantics::model::observation::LinkDifference;
+
+    let report = link_report(LinkDifference::Removed);
+    assert_eq!(report.disposition.stage(), ClauseRunStage::Evaluate);
+    assert_eq!(
+        report.disposition.category(),
+        qsl_foundation::diagnostic::Category::Violation
+    );
+    assert_eq!(report.disposition.truth(), Some(false));
+    assert_eq!(report.disposition.category().exit_code(), 10);
+}
+
+/// FR-267-AC-12 (TC-1037 row 13): a link finding writes the `link` change
+/// with its closed members and reads back to the equal witness, for
+/// `removed` and `added`.
+#[trace("TC-1037", "FR-267-AC-12")]
+#[test]
+fn native_result_two_round_trips_a_link_change() {
+    use qsl_semantics::model::observation::LinkDifference;
+
+    for (difference, spelling) in [
+        (LinkDifference::Removed, "removed"),
+        (LinkDifference::Added, "added"),
+    ] {
+        let report = link_report(difference);
+        let ClauseDisposition::FrameViolation(expected) = &report.disposition else {
+            panic!("frame violation")
+        };
+        let bytes = crate::spine::write_clause_run_result(&report).unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(value["disposition"]["category"], "violation");
+        assert_eq!(value["disposition"]["truth"], false);
+        assert_eq!(value["basis"], "closed-scope");
+        assert!(value.get("witness").is_none());
+        assert!(value["disposition"].get("outcome").is_none());
+        let wire = &value["disposition"]["refusal"]["frame_witness"];
+        assert_eq!(wire["population"], "Q");
+        assert_eq!(
+            wire["change"],
+            json!({
+                "kind": "link",
+                "relationship": {"package": "orders", "node": "Pump-housing-Tank"},
+                "difference": spelling,
+                "source": {"population": "Q", "key": "p1"},
+                "target": {"population": "Q", "key": "t1"},
+                "modifies": [{"package": "orders", "node": "Pump/backup"}],
+            })
+        );
+        let crate::spine::NativeRunResult::Clause(read) =
+            crate::spine::read_native_run_result(&bytes).unwrap()
+        else {
+            panic!("clause result")
+        };
+        assert_eq!(read.frame_witness(), Some(expected.as_ref()));
+    }
+}
+
+/// FR-267-AC-12 (TC-1037 row 14): each independent edit of the `link`
+/// document refuses with a diagnostic located at the frame witness.
+#[trace("TC-1037", "FR-267-AC-12")]
+#[test]
+fn native_result_two_refuses_broken_link_changes() {
+    use qsl_semantics::model::observation::LinkDifference;
+
+    let bytes =
+        crate::spine::write_clause_run_result(&link_report(LinkDifference::Removed)).unwrap();
+    let valid: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    type Edit = (String, Box<dyn Fn(&mut serde_json::Value)>);
+    let mut edits: Vec<Edit> = Vec::new();
+    for member in ["relationship", "difference", "source", "target", "modifies"] {
+        edits.push((
+            format!("remove {member}"),
+            Box::new(move |v| {
+                v["disposition"]["refusal"]["frame_witness"]["change"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove(member);
+            }),
+        ));
+    }
+    edits.push((
+        "source without population".to_owned(),
+        Box::new(|v| {
+            v["disposition"]["refusal"]["frame_witness"]["change"]["source"]
+                .as_object_mut()
+                .unwrap()
+                .remove("population");
+        }),
+    ));
+    edits.push((
+        "target without key".to_owned(),
+        Box::new(|v| {
+            v["disposition"]["refusal"]["frame_witness"]["change"]["target"]
+                .as_object_mut()
+                .unwrap()
+                .remove("key");
+        }),
+    ));
+    edits.push((
+        "unknown member".to_owned(),
+        Box::new(|v| {
+            v["disposition"]["refusal"]["frame_witness"]["change"]["extra"] = json!(true);
+        }),
+    ));
+    edits.push((
+        "difference moved".to_owned(),
+        Box::new(|v| {
+            v["disposition"]["refusal"]["frame_witness"]["change"]["difference"] = json!("moved");
+        }),
+    ));
+    edits.push((
+        "difference null".to_owned(),
+        Box::new(|v| {
+            v["disposition"]["refusal"]["frame_witness"]["change"]["difference"] =
+                serde_json::Value::Null;
+        }),
+    ));
+    edits.push((
+        "bare-key source".to_owned(),
+        Box::new(|v| {
+            v["disposition"]["refusal"]["frame_witness"]["change"]["source"] = json!("p1");
+        }),
+    ));
+    edits.push((
+        "population is not the source's".to_owned(),
+        Box::new(|v| {
+            v["disposition"]["refusal"]["frame_witness"]["population"] = json!("Other");
+        }),
+    ));
+    for (name, edit) in &edits {
+        let mut edited = valid.clone();
+        edit(&mut edited);
+        let error = crate::spine::read_native_run_result(&serde_json::to_vec(&edited).unwrap())
+            .err()
+            .expect("a broken link change must refuse");
+        assert!(
+            error.to_string().contains("frame_witness"),
+            "{name}: {error}"
+        );
+    }
 }
 
 /// TC-514 step 2 (FR-115-AC-2): a post that adds `c2` to `config_history`
