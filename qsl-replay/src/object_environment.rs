@@ -8,13 +8,21 @@
 //! byte-provision entry: the executor admits the document by FR-106
 //! (FR-098).
 
+use crate::witness::WitnessValue;
 use qsl_foundation::digest::{DigestDomain, DigestRecord};
 use qsl_foundation::Code;
-use qsl_semantics::model::observation::{snapshot_document_digest, write_environment_document};
+use qsl_semantics::model::accounting::ModelNormalizationLimits;
+use qsl_semantics::model::domain_package::DomainPackageRef;
+use qsl_semantics::model::key::DeclarationKey;
+use qsl_semantics::model::observation::{
+    declared_type_universe_for, snapshot_document_digest, write_environment_document,
+    AdmissionFailure,
+};
 pub use qsl_semantics::model::observation::{
     EnvironmentLabels, EnvironmentModel, EnvironmentObject, EnvironmentPopulation,
 };
 use serde_json::{Map, Value};
+use std::collections::BTreeMap;
 
 const MEMBER: &str = "object_environment";
 const LABELS: [&str; 4] = ["authority", "identity", "revision_namespace", "revision"];
@@ -320,4 +328,56 @@ pub fn write_object_environment(
         digest: DigestRecord::mint(DigestDomain::Sha256Jcs, digest),
     };
     Ok(ObjectEnvironmentDocument { bytes, member })
+}
+
+/// Why a reference witness could not be built.
+#[derive(Debug, thiserror::Error)]
+pub enum ObjectReferenceError {
+    /// No selected model declares the object's type.
+    #[error("no selected model declares the object type `{}`", .0.node)]
+    UndeclaredType(DeclarationKey),
+    /// The selected models did not re-resolve (FR-106).
+    #[error("the object type could not be resolved: {0}")]
+    Admission(AdmissionFailure),
+}
+
+/// The `Reference` witness of the environment object `key` of
+/// `type_identity` (FR-070, FR-098): the universe the replay requires of a
+/// `Reference<T>` argument, the object's effective type and its key,
+/// resolved by the code the replay itself resolves an argument with.
+/// `model_selections`, `packages` and `model_limits` are those the request
+/// compiles under.
+///
+/// ```
+/// use std::collections::BTreeMap;
+/// use qsl_replay::{object_reference_witness, DeclarationKey, ObjectReferenceError, ModelNormalizationLimits};
+///
+/// let limits = ModelNormalizationLimits::default();
+/// let node = DeclarationKey { package: "test/graph".to_owned(), node: "ix://test/graph/Node".to_owned() };
+/// // No model is selected, so no model declares `Node`.
+/// let refusal = object_reference_witness(&[], &BTreeMap::new(), limits, &node, "a");
+/// assert!(matches!(refusal, Err(ObjectReferenceError::UndeclaredType(_))));
+/// ```
+///
+/// # Errors
+///
+/// [`ObjectReferenceError::UndeclaredType`] when no selected model declares
+/// `type_identity`; [`ObjectReferenceError::Admission`] when the models do
+/// not re-resolve.
+pub fn object_reference_witness(
+    model_selections: &[DomainPackageRef],
+    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    model_limits: ModelNormalizationLimits,
+    type_identity: &DeclarationKey,
+    key: &str,
+) -> Result<WitnessValue, ObjectReferenceError> {
+    let (object_type, universe) =
+        declared_type_universe_for(model_selections, packages, model_limits, type_identity)
+            .map_err(ObjectReferenceError::Admission)?
+            .ok_or_else(|| ObjectReferenceError::UndeclaredType(type_identity.clone()))?;
+    Ok(WitnessValue::Reference {
+        universe: *universe.as_bytes(),
+        object_type: *object_type.as_bytes(),
+        identity: key.as_bytes().to_vec(),
+    })
 }
