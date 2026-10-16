@@ -185,6 +185,7 @@ impl SnapshotValue {
                             RawNativeKind::Known(NativeKind::String) => json!("string"),
                             RawNativeKind::Known(NativeKind::Uuid) => json!("uuid"),
                             RawNativeKind::Known(NativeKind::Timestamp) => json!("timestamp"),
+                            RawNativeKind::Known(NativeKind::Text) => json!("text"),
                             RawNativeKind::Unknown | RawNativeKind::NotText => Json::Null,
                         },
                     );

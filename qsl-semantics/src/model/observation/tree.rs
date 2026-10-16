@@ -208,6 +208,7 @@ pub(super) fn read_raw_value<E>(
                 Some("string") => RawNativeKind::Known(NativeKind::String),
                 Some("uuid") => RawNativeKind::Known(NativeKind::Uuid),
                 Some("timestamp") => RawNativeKind::Known(NativeKind::Timestamp),
+                Some("text") => RawNativeKind::Known(NativeKind::Text),
                 Some(_) => RawNativeKind::Unknown,
             };
             let members = object

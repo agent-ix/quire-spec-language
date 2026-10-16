@@ -152,6 +152,7 @@ fn snapshot_value(value: NodeRef<'_>) -> Result<SnapshotValue, ClauseRequestRead
                         Node::String("string") => RawNativeKind::Known(NativeKind::String),
                         Node::String("uuid") => RawNativeKind::Known(NativeKind::Uuid),
                         Node::String("timestamp") => RawNativeKind::Known(NativeKind::Timestamp),
+                        Node::String("text") => RawNativeKind::Known(NativeKind::Text),
                         Node::String(_) => RawNativeKind::Unknown,
                         _ => RawNativeKind::NotText,
                     };

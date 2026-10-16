@@ -1261,7 +1261,7 @@ fn native_payload(native: RawNative<'_>) -> Result<(NativeKind, &str), Admission
         RawNativeKind::Known(kind) => kind,
     };
     let member = match kind {
-        NativeKind::String | NativeKind::Uuid => "text",
+        NativeKind::String | NativeKind::Uuid | NativeKind::Text => "text",
         NativeKind::Timestamp => "nanoseconds",
     };
     let Some((_, payload)) = native.members().find(|(name, _)| *name == member) else {
@@ -1305,8 +1305,10 @@ fn admit_native(
                 .map(Value::Timestamp)
                 .map_err(|refusal| invalid(refusal, "nanoseconds"))
         }
+        // A Text object's envelope is judged above; admitting it into a Text
+        // slot is the Text code slice's, so every slot refuses it here.
         (
-            NativeKind::String | NativeKind::Uuid | NativeKind::Timestamp,
+            NativeKind::String | NativeKind::Uuid | NativeKind::Timestamp | NativeKind::Text,
             quire_exact::ValueType::Boolean
             | quire_exact::ValueType::Integer
             | quire_exact::ValueType::Int(_)

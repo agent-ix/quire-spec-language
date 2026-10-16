@@ -1276,15 +1276,16 @@ fn a_defective_string_object_refuses_in_the_native_order() {
     let invalid = "invalid-value";
     let missing = "missing-member";
     let unknown = "unknown-member";
-    let rows: [(Value, &str, &str); 18] = [
+    let rows: [(Value, &str, &str); 19] = [
         (json!({"kind": 1, "text": "x"}), wrong, "kind"),
         (json!({"kind": null, "text": "x"}), wrong, "kind"),
         (json!({"kind": {}, "text": "x"}), wrong, "kind"),
         (json!({"kind": 1}), wrong, "kind"),
         (json!({"kind": "String", "text": "x"}), invalid, "kind"),
         (json!({"kind": "STRING", "text": "x"}), invalid, "kind"),
-        (json!({"kind": "text", "value": "x"}), invalid, "kind"),
-        (json!({"kind": "text", "text": "x"}), invalid, "kind"),
+        (json!({"kind": "Text", "text": "x"}), invalid, "kind"),
+        (json!({"kind": "blob", "value": "x"}), invalid, "kind"),
+        (json!({"kind": "blob", "text": "x"}), invalid, "kind"),
         (json!({"kind": "string"}), missing, "text"),
         (
             json!({"kind": "string", "nanoseconds": "0"}),
@@ -1545,5 +1546,113 @@ fn the_document_edge_refuses_before_any_value_is_read() {
     assert_eq!(
         record.fields.get("setting").map(String::as_str),
         Some("observation.input_bytes")
+    );
+}
+
+/// TC-1038 / FR-106-AC-34, FR-106-AC-35 (the part reachable without Text-slot
+/// admission): `text` is a known kind, so a Text object runs the envelope
+/// (missing member, unknown member, non-text payload) and then refuses
+/// `wrong-value-kind` in every slot this fixture declares. Admitting a Text
+/// object into a Text slot is the Text code slice's; no vector here needs it.
+#[trace("TC-1038", "FR-106-AC-34", "FR-106-AC-35")]
+#[test]
+fn a_text_object_is_a_known_kind_refused_outside_a_text_slot() {
+    let replay = replay();
+    let text = json!({"kind": "text", "text": "Ready"});
+    for (field, value, path) in [
+        ("label", text.clone(), vec![]),
+        ("token", text.clone(), vec![]),
+        ("stamp", text.clone(), vec![]),
+        ("versionNumber", text.clone(), vec![]),
+        ("parent", text.clone(), vec![]),
+        (
+            "parent",
+            json!({"present": text.clone()}),
+            vec![PathStep::OptionValue],
+        ),
+        (
+            "note",
+            json!({"present": text.clone()}),
+            vec![PathStep::OptionValue],
+        ),
+        (
+            "tags",
+            json!({"sequence": [string("a"), text.clone()]}),
+            vec![PathStep::Index(1)],
+        ),
+        ("token", json!({"kind": "text", "text": UUID_TEXT}), vec![]),
+    ] {
+        assert_eq!(
+            refused_field(&replay, field, value.clone()),
+            expect("wrong-value-kind", field, &path, None, None),
+            "{field}: {value}"
+        );
+    }
+    for (value, cause, member) in [
+        (json!({"kind": "text"}), "missing-member", "text"),
+        (
+            json!({"kind": "text", "nanoseconds": "0"}),
+            "missing-member",
+            "text",
+        ),
+        (
+            json!({"kind": "text", "text": "Ready", "extra": 1}),
+            "unknown-member",
+            "extra",
+        ),
+        (
+            json!({"kind": "text", "text": "Ready", "nanoseconds": "0"}),
+            "unknown-member",
+            "nanoseconds",
+        ),
+        (
+            json!({"kind": "text", "extra": 1, "text": 5}),
+            "unknown-member",
+            "extra",
+        ),
+        (
+            json!({"kind": "text", "text": 5}),
+            "wrong-value-kind",
+            "text",
+        ),
+        (
+            json!({"kind": "text", "text": null}),
+            "wrong-value-kind",
+            "text",
+        ),
+        (
+            json!({"kind": "text", "text": ["x"]}),
+            "wrong-value-kind",
+            "text",
+        ),
+    ] {
+        for field in ["label", "token", "versionNumber"] {
+            assert_eq!(
+                refused_field(&replay, field, value.clone()),
+                expect(cause, field, &[], Some(member), None),
+                "{field}: {value}"
+            );
+        }
+    }
+}
+
+/// FR-106-AC-29, FR-106-AC-20: an envelope defect directly in an optional
+/// slot (not under `present`) is judged before the slot's fit, and a sound
+/// native object there is `wrong-value-kind`.
+#[trace("FR-106-AC-29")]
+#[test]
+fn a_native_object_directly_in_an_optional_slot_is_judged_in_order() {
+    let replay = replay();
+    assert_eq!(
+        refused_field(&replay, "note", json!({"kind": "string"})),
+        expect("missing-member", "note", &[], Some("text"), None)
+    );
+    assert_eq!(
+        refused_field(&replay, "note", json!({"kind": "string", "text": 5})),
+        expect("wrong-value-kind", "note", &[], Some("text"), None)
+    );
+    assert_eq!(
+        refused_field(&replay, "note", string("n")),
+        expect("wrong-value-kind", "note", &[], None, None)
     );
 }
