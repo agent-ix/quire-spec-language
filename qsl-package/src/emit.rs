@@ -257,6 +257,13 @@ impl Emission {
     pub fn omitted(&self) -> &[OmittedNode] {
         &self.omitted
     }
+
+    /// The evidence IR's reader needs to read these bytes: the artifacts the
+    /// emission compiled against and its required features. A caller that
+    /// reads the bytes itself adds the domain package documents.
+    pub fn evidence(&self) -> &CheckedPackageEvidence {
+        &self.evidence
+    }
 }
 
 /// IR's closed node family for `tag`. Exhaustive: a new QSL node tag does
