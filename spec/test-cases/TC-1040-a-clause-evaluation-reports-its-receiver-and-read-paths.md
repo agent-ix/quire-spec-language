@@ -64,9 +64,9 @@ The invocation `i1` of `place` binds `flags` to `{placed: true}`; its pre
 snapshot `p1` holds the context `{placed: false, cancelled: false}` and its post
 snapshot `q1` the context `{placed: true, cancelled: true}`.
 
-6. `Consistent`, its observation constructed at the model layer (FR-107
-   "The receiver path") from the invocation `i1` and its pre context `p1` and
-   post context `q1`, not admitted from a snapshot document: `receiver_path()`; `reads()`.
+6. `Consistent`, admitted by FR-106 from `i1` and its snapshots `p1` and `q1`
+   (TC-1045 lists the documents) selected by `Context` side `post`:
+   `receiver_path()`; `reads()`.
 7. `FlagsPlaced`, admitted by FR-106 over `i1`: `reads()`; then compare its path with the path of
    the `Consistent` read of `self.placed`, and serialize both by QSpec FR-207's
    wire form.
