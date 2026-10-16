@@ -70,6 +70,8 @@ struct Shape {
     parts_unique: bool,
     /// The housing's Tank end: `{1,1}` by default.
     home: (u64, u64),
+    /// Whether the housing's two ends are `unique`.
+    home_unique: bool,
 }
 
 impl Shape {
@@ -77,6 +79,7 @@ impl Shape {
         parts: (0, 3),
         parts_unique: true,
         home: (1, 1),
+        home_unique: true,
     };
 }
 
@@ -136,8 +139,8 @@ fn orders_package(shape: Shape) -> CheckedPackage {
         ),
         relationship(
             housing(),
-            declared_end("Pump", Some("home"), mult((1, 1), true)),
-            declared_end("Tank", Some("pump"), mult(shape.home, true)),
+            declared_end("Pump", Some("home"), mult((1, 1), shape.home_unique)),
+            declared_end("Tank", Some("pump"), mult(shape.home, shape.home_unique)),
         ),
         relationship(
             holds(),
@@ -283,11 +286,11 @@ impl Orders {
                 key: housing(),
                 source: RelationshipEnd {
                     object_type: self.id("Pump"),
-                    unique: true,
+                    unique: self.shape.home_unique,
                 },
                 target: RelationshipEnd {
                     object_type: self.id("Tank"),
-                    unique: true,
+                    unique: self.shape.home_unique,
                 },
             },
             NavigationRelationship {
@@ -821,6 +824,40 @@ fn a_non_unique_end_returns_the_bag_with_a_repeated_target_twice() {
         orders.set_of_pumps((0, 3), CollectionKind::Bag, &["p1", "p1"])
     );
     assert_charges(&meter, &[NAVIGATE, VISIT, VISIT, BOUND, RETAIN], 5, 3);
+}
+
+/// TC-1034 row 13: a non-unique single-valued end refuses with the `Bag`
+/// kind, counting a repeated instance once per instance, for `[1,1]` and
+/// `[0,1]`, after one `model.navigate` and no other charge.
+#[trace("TC-1034", "FR-364-AC-6")]
+#[test]
+fn a_non_unique_single_valued_end_refuses_with_the_bag_kind_counting_each_instance() {
+    for bound in [(1, 1), (0, 1)] {
+        let orders = Orders::new(Shape {
+            home: bound,
+            home_unique: false,
+            ..Shape::BASE
+        });
+        let objects = orders.observe(
+            &orders.held(),
+            vec![Orders::extent(
+                housing(),
+                true,
+                vec![
+                    (orders.at("Pump", "p1"), orders.at("Tank", "t1")),
+                    (orders.at("Pump", "p1"), orders.at("Tank", "t1")),
+                ],
+            )],
+            vec![orders.q()],
+        );
+        let (evaluation, meter) =
+            orders.navigate("home", &orders.at("Pump", "p1"), &objects, UNLIMITED);
+        assert_eq!(
+            cardinality(evaluation),
+            (BoundViolation::AboveMaximum, CollectionKind::Bag, bound, 2)
+        );
+        assert_charges(&meter, &[NAVIGATE], 1, 0);
+    }
 }
 
 /// TC-1034 row 12: two evaluations of one navigation give equal results and
