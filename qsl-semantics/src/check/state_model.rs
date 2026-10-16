@@ -158,6 +158,7 @@ fn navigation(end: &Navigable<'_>, reference: NodeId) -> Result<(NodeKind, Value
         relationship: end.relationship.key.clone(),
         role: end.role.to_owned(),
         near: end.near,
+        unique: multiplicity.unique,
     };
     Ok((kind, value_type))
 }
