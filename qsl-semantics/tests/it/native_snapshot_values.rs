@@ -185,8 +185,8 @@ fn text_fields() -> Vec<(String, Value)> {
             ("title", text("Ready")),
             ("subtitle", json!({"absent": {}})),
             ("code", text("abc")),
-            ("aliases", json!({"sequence": []})),
             ("address", address("Main")),
+            ("aliases", json!({"sequence": []})),
         ]
         .into_iter()
         .map(|(name, value)| (name.to_owned(), value)),
@@ -1886,11 +1886,10 @@ fn the_frame_compares_a_text_by_its_retained_sequence() {
     assert!(writes(&witness.change, "subtitle"), "{:?}", witness.change);
 }
 
-/// FR-056-AC-21 and FR-106-AC-37: a record `Address { street: Text[1, 8; nfc] }`
+/// FR-106 check 11: a record `Address { street: Text[1, 8; nfc] }`
 /// held by `Item.address` compares its `street` by the retained sequence, so
 /// U+00E9 against U+0065 U+0301 is no change under a frame granting nothing,
 /// and a different street is a change.
-#[trace("FR-056-AC-21", "FR-106-AC-37")]
 #[test]
 fn the_frame_compares_a_record_fields_text_by_its_retained_sequence() {
     let replay = text_replay();
@@ -1939,9 +1938,9 @@ fn a_witness_post_snapshot_still_refuses_a_wrong_text() {
     }
 }
 
-/// TC-1038 step 9 (FR-106-AC-37): a Text element inside `aliases` counts as
-/// one value; the exact count admits and one less refuses
-/// `node-count-exceeded` naming `observation.values`.
+/// TC-1038 step 9 (FR-106-AC-37): a Text element inside `aliases`, the last
+/// value in walk order, counts as one value; the exact count admits and one
+/// less refuses `node-count-exceeded` naming `observation.values`.
 #[trace("TC-1038", "FR-106-AC-37")]
 #[test]
 fn a_text_object_counts_as_one_value() {

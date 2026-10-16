@@ -78,7 +78,9 @@ source map (FR-095).
   `{kind: "field", declaration: <object_type node>, name: "<field>"}`.
   `pre(e)` lowers as `quire.op.state.pre`. `reaches(a, b, edge)` lowers as a
   `quire.op.model.reaches_field` application whose member is
-  `{kind: "field", declaration: <object_type node>, name: "<edge>"}`.
+  `{kind: "field", declaration: <object_type node>, name: "<edge>"}`. A `reaches`
+  over a relationship end lowers by FR-365 as a `quire.op.model.reaches`
+  application whose member is a `relationship_end`.
 - The text literal's `type` is the `text` scalar type node.
 
 ## Behavior
