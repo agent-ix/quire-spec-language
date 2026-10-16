@@ -423,10 +423,7 @@ fn retarget(
         }
     };
     let (from, to) = (population(first.bound)?, population(second.bound)?);
-    let mut typed_by_first = nodes
-        .iter_mut()
-        .filter(|node| &*node.node_tag == "value" && &*node.semantic_form == "parameter")
-        .filter(|node| node.semantic_type == from);
+    let mut typed_by_first = nodes.iter_mut().filter(|node| node.semantic_type == from);
     let (Some(parameter), None) = (typed_by_first.next(), typed_by_first.next()) else {
         let found = nodes
             .iter()
