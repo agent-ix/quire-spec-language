@@ -23,3 +23,14 @@ Recorded, not blocking: `a_denied_systems_resolve_charge_is_incomplete` carries 
 | --- | --- | --- | --- |
 | FND-001 | high | `an_unresolvable_name_refuses_without_ambient_lookup` (tagged FR-152-AC-3) claims the mutation "falling back to any entry whose original matches regardless of owner resolves `pump_alloc` through `Sys`'s entry and fails the refusal". It does not: the third case builds the view from Y without `pump_alloc`, so the view holds NO `pump_alloc` entry under any owner, and that fallback also finds nothing and still refuses. No test has a view holding only another owner's entry, so the "without ambient lookup" property this test is tagged for survives the named mutation. Fix: view a package where `pump_alloc`'s only entry is under `Sys` (e.g. viewed package with the allocation's source moved to a `Sys`-owned element) and assert the refusal. | qsl-semantics/tests/it/model_systems_resolve.rs:296-337 |
 | FND-002 | high | `a_name_resolving_to_another_kind_is_wrong_export` is tagged FR-152-AC-5 but asserts only AC-2 content (a Part requested as a Port and a Connection as an Allocation refuse `wrong-export`). AC-5's display-name half needs two declarations sharing a display name; none is built, and the half is reported blocked. This is the same tag PR #144's review dropped from model_systems.rs for the same reason. Fix: drop FR-152-AC-5 from this test (keep AC-2). | qsl-semantics/tests/it/model_systems_resolve.rs:409-424 |
+
+## Dispositions
+
+Round 1, reviewed at agent-ix/quire-spec-language@49bb6fbdd37f2836e5b4936b39f547e32a838bf4.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 99faa8b21: new test a_view_holding_only_another_owners_entry_refuses views a package whose only `pump_alloc` entry is under `Sys` (asserted count 1) while the admitted source end-owner is `Pump`; an owner-agnostic fallback would resolve it, so the named mutation now fails. |
+| FND-002 | fixed | 99faa8b21: FR-152-AC-5 removed from a_name_resolving_to_another_kind_is_wrong_export; it keeps TC-197 and FR-152-AC-2. |
+
+Recorded, not blocking (round 1): an_unresolvable_name_refuses_without_ambient_lookup still carries the old, false mutation sentence in its doc comment (the new test is the one that catches it). qsl60-mutation.log predates the fix round and covers only the round-0 mutations; the fix-round tests were judged by reading (each named mutation flips its assertion). The PR body's done/not-done split matches the code, and the blocked rows point at QSL-795.

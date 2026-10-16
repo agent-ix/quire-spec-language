@@ -23,3 +23,14 @@ Recorded, not blocking: the wrong-export refusal from `resolve_kind` is the unit
 | --- | --- | --- | --- |
 | FND-001 | high | `resolve_systems` exposes a Connection or Allocation that its admission rule refuses. It calls `resolve_kind` only, and kind mapping gives every allocation `Kind::Allocation` and every connection with Port ends `Kind::Connection`; the connection conditions and the allocation rule are never consulted. So `resolve(Connection, M::pipe)` on the TC-197 Y05 or Y03(a) package (FR-152-AC-4 refusals) returns a resolved Connection, and `resolve(Allocation, M::pump_alloc)` with the target replaced by `pump_out` (Y02) returns a resolved Allocation. Fix: refuse (or require an admitted-connections/allocations input) when the construct failed `check_connection`/`check_allocation`, and test Y05 through the binder. | qsl-semantics/src/model/qualified.rs:140-141; qsl-semantics/src/model/systems.rs:384-391 |
 | FND-002 | high | The owner of a Connection/Allocation is "the first element of `record_member_owners`", which is the source end-owner only when the source end has one. For an Allocation `record_member_owners` is `element_owner(source).chain(element_owner(target))`; when the source has no owner (a Port whose `owner` is not a Part, or a source that is not a Part, Port or operation, none of which kind mapping refuses for an allocation) the first element is the TARGET end-owner, and the binder silently returns the target-owned member (e.g. `(Sys, alloc)`) as if it were the source end-owner's. FR-152 and TC-197 Y01 require the source end-owner's member. Fix: compute the source end-owner explicitly (`element_owner` of the source end) and refuse when it is absent; add a test. | qsl-semantics/src/model/qualified.rs:165-190; qsl-semantics/src/model/normalize.rs:2571-2576 |
+
+## Dispositions
+
+Round 1, reviewed at agent-ix/quire-spec-language@49bb6fbdd37f2836e5b4936b39f547e32a838bf4.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 99faa8b21: `admit_construct` runs `check_connection` / `check_allocation` before the effective lookup; Y02, Y03(a) and Y05 now refuse through the binder (tests y02_*, y03a_*, y05_*). |
+| FND-002 | fixed | 99faa8b21 (+41a08f513 for the refusal name): `effective_owner` computes the source end's owner on its own and refuses `wrong-export` when absent; test an_allocation_without_a_source_owner_never_takes_the_target_owner (source `Count`, view holds only the target `Sys` entry). |
+
+Recorded, not blocking (round 1): the binder now charges the three `systems.connection-condition` (or one `systems.allocation`) on every resolve of a Connection/Allocation. No production path runs the admission rules today, so nothing is charged twice yet; once admission applies them per the value-accounting schedule, resolution should reuse that outcome instead of re-charging.
