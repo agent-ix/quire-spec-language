@@ -33,6 +33,7 @@ pub mod origin;
 mod persistence_interface;
 pub mod population;
 mod process;
+pub mod qualified;
 mod record_value;
 pub mod refusal;
 mod state_machine;

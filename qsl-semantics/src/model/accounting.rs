@@ -291,10 +291,10 @@ impl LimitKind {
 /// where FR-151's exact prose figures depend on authored operation bodies
 /// this rung does not model. FR-152 adds `systems.kind`,
 /// `systems.connection-condition` and `systems.allocation`
-/// (`crate::model::systems`); its own module docs record that this rung
-/// does not implement `systems.resolve`/`model.navigate` (static/runtime
-/// navigation), which need a qualified-name binder and an object
-/// population this crate does not build. FR-013 adds `frame.write` and
+/// (`crate::model::systems`) and `systems.resolve`
+/// (`crate::model::qualified`); this rung does not charge `model.navigate`
+/// (runtime navigation), which needs an object population this crate does
+/// not build. FR-013 adds `frame.write` and
 /// `frame.redefines-link` (`crate::model::population::decide_frame`), one
 /// `work_units` unit each.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -329,6 +329,8 @@ pub enum ChargePoint {
     SystemsConnectionCondition,
     /// `systems.allocation`.
     SystemsAllocation,
+    /// `systems.resolve`.
+    SystemsResolve,
     /// `frame.write`.
     FrameWrite,
     /// `frame.redefines-link`.
@@ -337,7 +339,7 @@ pub enum ChargePoint {
 
 impl ChargePoint {
     /// Every named point this rung charges, in first-use order.
-    pub const ALL: [Self; 17] = [
+    pub const ALL: [Self; 18] = [
         Self::NormalizeRecord,
         Self::NormalizeFact,
         Self::NormalizeCycleCheck,
@@ -353,6 +355,7 @@ impl ChargePoint {
         Self::SystemsKind,
         Self::SystemsConnectionCondition,
         Self::SystemsAllocation,
+        Self::SystemsResolve,
         Self::FrameWrite,
         Self::FrameRedefinesLink,
     ];
@@ -375,6 +378,7 @@ impl ChargePoint {
             Self::SystemsKind => "systems.kind",
             Self::SystemsConnectionCondition => "systems.connection-condition",
             Self::SystemsAllocation => "systems.allocation",
+            Self::SystemsResolve => "systems.resolve",
             Self::FrameWrite => "frame.write",
             Self::FrameRedefinesLink => "frame.redefines-link",
         }
