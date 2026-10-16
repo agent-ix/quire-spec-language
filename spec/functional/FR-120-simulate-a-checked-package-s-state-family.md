@@ -252,6 +252,8 @@ impl StateModel {
     pub fn check_frame(
         &self,
         effect: &OperationEffect,
+        receiver: &ObjectReference,
+        arguments: &BoundArguments,
         pre: &ModelState,
         post: &ModelState,
     ) -> Result<StateDelta, AdmissionFailure>;
@@ -274,7 +276,9 @@ impl StateModel {
   `FrameDecision.declared_created` and `declared_deleted`. It returns the
   computed delta, or check 11's first finding as `AdmissionFailure::Refused`
   (`frame_violation`/`unauthorized-change` or `population_delta_mismatch`/
-  `delta-disagreement`). Its verdicts are the ones FR-115 reports.
+  `delta-disagreement`). It takes the application's receiver and its reference
+  arguments so that a scoped `modifies` or `deletes` entry is decided as
+  FR-154 states. Its verdicts are the ones FR-115 reports.
 - `observation` builds FR-106's `Observation` for a state: `identity` is the
   given `DocumentRef`; `environment` is the `ObjectEnvironment` of every
   object with every field value, built by FR-106's builder; `populations`
