@@ -734,6 +734,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-365
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-366
+    type: contains
   - target: ix://agent-ix/quire-spec-language/US-027
     type: contains
 ---
@@ -1253,6 +1255,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-363](functional/FR-363-type-navigation-over-a-relationship-end.md) | FR |
 | [FR-364](functional/FR-364-carry-relationship-instances-in-an-observation-and-read-them-for-navigation.md) | FR |
 | [FR-365](functional/FR-365-reach-an-object-over-a-relationship-end-in-a-state-clause.md) | FR |
+| [FR-366](functional/FR-366-classify-check-and-evaluate-the-invariant-clauses-of-a-model-type.md) | FR |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR |
 | [NFR-013](non-functional/NFR-013-isolate-native-ci-feature-artifacts.md) | NFR |
 | [ADR-014](decisions/ADR-014-temporal-trace-and-boundedness-architecture.md) | ADR |
