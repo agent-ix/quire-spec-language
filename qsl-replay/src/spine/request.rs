@@ -521,7 +521,8 @@ mod tests {
             (r#"{"kind":"String"}"#, RawNativeKind::Unknown),
             (r#"{"kind":1}"#, RawNativeKind::NotText),
         ] {
-            let RawForm::Native(native) = read(text).form() else {
+            let value = read(text);
+            let RawForm::Native(native) = value.form() else {
                 panic!("{text}: expected a native object");
             };
             assert_eq!(native.kind(), kind, "{text}");
