@@ -1608,21 +1608,22 @@ fn a_link_at_a_created_object_is_added_unless_the_relationship_is_modified() {
 fn links_are_walked_by_relationship_key_then_by_source_then_target() {
     use qsl_semantics::model::observation::LinkDifference;
     let admission = checked(&Variant::orders());
-    // Row 6: composition also differs, but housing precedes it.
+    // Row 6: composition is listed first and also differs, but housing
+    // precedes it in DeclarationKey order, not document order.
     let pre = side(
         "pre",
         &[],
         vec![
-            housing(&[("p1", "t1"), ("p2", "t1")]),
             entry(COMPOSITION, true, vec![link("s1", "p1")]),
+            housing(&[("p1", "t1"), ("p2", "t1")]),
         ],
     );
     let post = side(
         "post",
         &[],
         vec![
-            housing(&[("p1", "t2"), ("p2", "t1")]),
             entry(COMPOSITION, true, vec![]),
+            housing(&[("p1", "t2"), ("p2", "t1")]),
         ],
     );
     let documents = admission.documents(pre, post, |_| {});
@@ -1688,6 +1689,23 @@ fn a_deleted_objects_links_and_an_uncompared_relationship_find_nothing() {
     let mut incomplete_post = post_of_i();
     entry_mut(&mut incomplete_post, HOUSING)["complete"] = json!(false);
     let documents = admission.documents(pre_of_i(), incomplete_post, |_| {});
+    assert_eq!(
+        admission
+            .check_frame(&documents, &effect(&[], &[], &[]))
+            .expect("admits"),
+        FrameVerdict::Holds
+    );
+}
+
+/// Snapshots that list no relationship have no link to compare: check 11.5
+/// reads no object, so a Frame run holds (a state-machine context object has
+/// no object universe to build a reference from).
+#[trace("TC-1037")]
+#[test]
+fn snapshots_listing_no_relationship_leave_check_11_5_with_nothing_to_compare() {
+    use qsl_semantics::model::observation::FrameVerdict;
+    let admission = checked(&Variant::orders());
+    let documents = admission.documents(side("pre", &[], vec![]), side("post", &[], vec![]), |_| {});
     assert_eq!(
         admission
             .check_frame(&documents, &effect(&[], &[], &[]))

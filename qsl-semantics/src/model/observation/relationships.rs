@@ -759,7 +759,7 @@ fn side_extents(
     populations: &[RawPopulation],
     entries: &[RawEntry],
 ) -> Result<Extents, AdmissionFailure> {
-    let mut listed: BTreeMap<(&str, &str), ObjectReference> = BTreeMap::new();
+    let mut listed: BTreeMap<(&str, &str), EffectiveId> = BTreeMap::new();
     for population in populations {
         for object in &population.objects {
             let (view, declaration) = find_declaration(views, object.type_identity.as_str())
@@ -771,15 +771,20 @@ fn side_extents(
                 .ok_or_else(|| fault("frame-link-object-type-has-no-effective-id"))?;
             listed.insert(
                 (population.population.as_str(), object.key.as_str()),
-                object_reference(views, effective_type, &object.key)?,
+                effective_type,
             );
         }
     }
     let end = |raw: &RawEnd| -> Result<(ObjectReference, SelectedObject), AdmissionFailure> {
-        let reference = listed
+        // Only an object an instance end names needs a reference: a
+        // state-machine context object has no object universe.
+        let effective_type = *listed
             .get(&(raw.population.as_str(), raw.key.as_str()))
             .ok_or_else(|| fault("frame-link-end-unlisted"))?;
-        Ok((reference.clone(), raw.clone()))
+        Ok((
+            object_reference(views, effective_type, &raw.key)?,
+            raw.clone(),
+        ))
     };
     let mut extents = Extents::new();
     for entry in entries {
@@ -820,6 +825,10 @@ pub(super) fn first_link_change(
     effect: &OperationEffect,
     deleted: &[SelectedObject],
 ) -> Result<Option<LinkFinding>, AdmissionFailure> {
+    // A pair of snapshots that list no relationship has no link to compare.
+    if pre.1.is_empty() && post.1.is_empty() {
+        return Ok(None);
+    }
     let facts = model_facts(views, types);
     let pre = side_extents(views, &facts, pre.0, pre.1)?;
     let post = side_extents(views, &facts, post.0, post.1)?;
