@@ -6,27 +6,18 @@
 //!
 //! Scope decisions, recorded rather than left implicit:
 //!
-//! - This module resolves a systems-model element **by [`DeclarationKey`]
-//!   directly**, not by FR-152's own `resolve(kind, name)` binder request
-//!   over a qualified, aliased name (`M::Sys::pump`). Qualified-name
-//!   resolution needs the profile/model-alias binder this crate's
-//!   expression-grammar layer owns, not `crate::model` (the same "pure
-//!   function of a caller-supplied value" boundary every other module in
-//!   this crate keeps) — a caller that already has that binder can still
-//!   use this module's kind mapping as the last step.
-//! - **Navigation is entirely out of scope.** FR-152's "Navigation" section
-//!   (`systems.resolve`, `model.navigate`, runtime traversal returning
+//! - This module resolves a systems-model element **by [`DeclarationKey`]**.
+//!   FR-152's `resolve(kind, name)` request over a qualified, aliased name
+//!   (`M::pump_out`) is [`crate::model::qualified`], which resolves the name
+//!   to a key and then calls [`resolve_kind`] and reads the effective
+//!   declaration from the [`crate::model::normalize::EffectiveView`].
+//! - **Runtime navigation is entirely out of scope.** FR-152's "Navigation"
+//!   section (`model.navigate`, runtime traversal returning
 //!   `Option<Reference<U>>`/`Set<Reference<U>>`/`Bag<Reference<U>>`,
 //!   canonical reference-key ordering, `cardinality_out_of_bound`) needs an
 //!   object population to traverse. Nothing in `crate::model` builds one
 //!   yet (that is FR-153's own territory); this module resolves and admits
 //!   *declarations*, never runtime references.
-//! - This module does not compute an effective-declaration identity for any
-//!   systems-model kind: `crate::model::normalize` does not fold
-//!   components/endpoints/relationships into its `EffectiveView` (see its
-//!   own module docs' exhaustive per-variant no-op arms for these three
-//!   `DomainPackageRecord` variants). What this module resolves is the original
-//!   producer identity and its kind only.
 //! - Work-unit costs mirror the flat-one-per-charge choice
 //!   [`crate::model::conformance`]/[`crate::model::dispatch`] already
 //!   record, for the same reason: FR-152's own worked figures (e.g. Y04's
@@ -154,7 +145,7 @@ impl SystemsClassification {
     }
 }
 
-fn wrong_export(required: Kind, actual: Kind, item: &str) -> ModelRefusal {
+pub(crate) fn wrong_export(required: Kind, actual: Kind, item: &str) -> ModelRefusal {
     ModelRefusal {
         code: Code::InvalidModelBinding,
         cause: ModelRefusalCause::WrongExport,
