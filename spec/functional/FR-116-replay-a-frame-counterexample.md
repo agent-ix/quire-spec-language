@@ -22,8 +22,9 @@ relationships:
 
 ## Description
 
-A frame counterexample is an invocation that writes, creates or deletes
-outside its operation's frame. QSL SHALL replay one through the layer-6
+A frame counterexample is an invocation that writes, creates, deletes or
+retypes an object, or adds or removes a relationship link, outside its
+operation's frame. QSL SHALL replay one through the layer-6
 `replay` facade (FR-098) and the `ProtocolClause` S6a `evaluate` arm
 (FR-115), keeping the clause, frame, anchor and occurrence identity and the
 witness's values through replay, and SHALL settle an FR-072 replay result
