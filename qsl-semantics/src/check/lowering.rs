@@ -4089,10 +4089,9 @@ impl<'a> Lowering<'a> {
             | Value::Reference(_)
             | Value::Population(_)
             | Value::Union(_) => return Err(fault(node.location(), KeyFault::UnbuiltLiteral)),
-            Value::Uuid(_) | Value::Timestamp(_) => {
-                return Err(fault(node.location(), KeyFault::UnbuiltLiteral))
-            }
-            Value::String(_) => return Err(fault(node.location(), KeyFault::UnbuiltLiteral)),
+            Value::Uuid(value) => LiteralValue::Uuid(*value),
+            Value::Timestamp(value) => LiteralValue::Timestamp(*value),
+            Value::String(value) => LiteralValue::String(value.clone()),
         };
         let semantic_type = self.type_node(node.value_type(), node.location())?;
         self.value_node(

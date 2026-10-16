@@ -19,6 +19,8 @@ const UNIT: &str = "language \"ix:native\" edition \"1-draft\";\n\
     function net using v(a: Timestamp, b: Timestamp): Boolean pure { a != b }\n\
     function eqs using v(a: String, b: String): Boolean pure { a = b }\n\
     function nes using v(a: String, b: String): Boolean pure { a != b }\n\
+    function s using v(x: String): Boolean pure { x = \"abc\" }\n\
+    function ns using v(x: String): Boolean pure { x != \"abc\" }\n\
     function txt using v(t: Text[0, 8; nfc]): Boolean pure { false }\n\
     function title using v(t: Text[1, 8; nfc]): Boolean pure { false }\n\
     function raw using v(t: Text[1, 8; unicode-scalars]): Boolean pure { false }\n";
@@ -391,5 +393,58 @@ fn tc_1044_the_length_is_measured_in_the_slots_profile() {
     for (arm, wire) in text_calls("raw", &pairs(4)) {
         replay(wire, ReplayLimits::default())
             .unwrap_or_else(|refusal| panic!("{arm}: {refusal:?}"));
+    }
+}
+
+/// TC-1052 step 6 (FR-056-AC-40): `x = "abc"` and its `!=` counterpart replay
+/// through the real spine from an `Input` String assignment. A `true` row
+/// settles `inconclusive` with cause `Verdicts`, a `false` row
+/// `reproduced-without-witness`.
+#[trace("TC-1052", "FR-056-AC-40")]
+#[test]
+fn tc_1052_a_string_literal_comparison_runs_through_replay() {
+    for (text, equal) in [("abc", true), ("ABC", false), ("", false)] {
+        for (function, expected) in [("s", equal), ("ns", !equal)] {
+            let compiled = spine(UNIT, &BTreeMap::new());
+            let request = request(
+                UNIT.as_bytes(),
+                compiled.emitted.package_id(),
+                name(&[function]),
+                ReplaySource::Input(vec![CanonicalAssignment {
+                    parameter: parameter(&compiled, function, 0),
+                    value: string(text),
+                }]),
+            );
+            let ReplayResult::Input(result) = replay(request, ReplayLimits::default())
+                .unwrap_or_else(|refusal| panic!("{text:?} {function}: {refusal:?}"))
+            else {
+                panic!("an Input-sourced request settles on the Input arm");
+            };
+            assert_eq!(
+                result.value(),
+                Some(EvaluatedValue::Boolean(expected)),
+                "{text:?} {function}"
+            );
+            if expected {
+                assert_eq!(result.category(), Category::Success, "{text:?} {function}");
+                assert_eq!(result.settlement(), InputSettlement::Inconclusive);
+                assert!(
+                    matches!(
+                        result.disagreement(),
+                        Some(crate::DisagreementCause::Verdicts { .. })
+                    ),
+                    "{text:?} {function}: {:?}",
+                    result.disagreement()
+                );
+            } else {
+                assert_eq!(result.category(), Category::Violation, "{text:?} {function}");
+                assert_eq!(
+                    result.settlement(),
+                    InputSettlement::ReproducedWithoutWitness,
+                    "{text:?} {function}"
+                );
+                assert_eq!(result.disagreement(), None, "{text:?} {function}");
+            }
+        }
     }
 }

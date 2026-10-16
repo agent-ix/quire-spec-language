@@ -3,7 +3,7 @@
 //! evaluated from source text (TC-1028 E1 to E14 and F1 to F6).
 //!
 //! Operand values are supplied as call arguments or read from a record's
-//! fields; the unit language has no literal for these types.
+//! fields; `native_literals` covers the literal forms.
 
 use ix_trace_rs::trace;
 use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
