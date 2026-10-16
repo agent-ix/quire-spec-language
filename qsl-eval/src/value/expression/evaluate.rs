@@ -339,6 +339,26 @@ fn charge_named(meter: &mut Meter, point: ChargePoint) -> Result<(), Stop> {
     Ok(meter.charge(Charge::new(point))?)
 }
 
+/// The `discovered`th `graph.expand` of one `reaches` walk (`value-accounting.md`:
+/// `value_occurrences=k`, the distinct nodes discovered including this one;
+/// one work unit).
+fn charge_graph_expand(meter: &mut Meter, discovered: u64) -> Result<(), Stop> {
+    Ok(meter.charge(
+        Charge::new(ChargePoint::GraphExpand).size(LimitKind::ValueOccurrences, discovered),
+    )?)
+}
+
+/// The number of nodes a walk has discovered, as a charge size.
+fn discovered_count(discovered: &BTreeSet<ObjectReference>) -> u64 {
+    u64::try_from(discovered.len()).unwrap_or(u64::MAX)
+}
+
+/// `graph.result-retain`: the walk's Boolean (`value-accounting.md`: one work
+/// unit and one result unit).
+fn charge_graph_result_retain(meter: &mut Meter) -> Result<(), Stop> {
+    Ok(meter.charge(Charge::new(ChargePoint::GraphResultRetain).results(1))?)
+}
+
 /// `dispatch.select`: one dispatched `receiver.member(args)` call, sized by
 /// `candidates`, the table's total distinct-candidate count
 /// (`value-accounting.md`: `value_occurrences=c`; `work_units += c`).
@@ -1229,6 +1249,25 @@ impl<'a, 'm> Machine<'a, 'm> {
                 };
                 Value::Boolean(self.evaluate_reaches(node, &source, &target, edge)?)
             }
+            // FR-365: `reaches(source, target, name)` over a relationship end,
+            // read from the clause observation's extent of the relationship.
+            NodeKind::ReachesEnd {
+                relationship, near, ..
+            } => {
+                let Value::Reference(target) = self.pop()? else {
+                    return Err(invariant("reaches-reference-value-expected"));
+                };
+                let Value::Reference(source) = self.pop()? else {
+                    return Err(invariant("reaches-reference-value-expected"));
+                };
+                Value::Boolean(self.evaluate_reaches_end(
+                    node,
+                    &source,
+                    &target,
+                    relationship,
+                    *near,
+                )?)
+            }
             // FR-308: the value of a protocol reference is the value of its
             // protocol clause, which nothing evaluates.
             NodeKind::ProtocolReference { .. } => {
@@ -2111,6 +2150,83 @@ impl<'a, 'm> Machine<'a, 'm> {
             }
         }
         charge_named(self.meter, ChargePoint::GraphResultRetain)?;
+        Ok(found)
+    }
+
+    /// FR-365 "Evaluation": `reaches(source, target, name)` over the extent of
+    /// `relationship` in the clause's observation, reading only `complete`,
+    /// `targets` (a forward role) or `sources` (an inverse role) and
+    /// `resolve`, stopping at the first outcome. `source` is decided by
+    /// `resolve` with no charge; `graph.expand` is charged for it; an extent
+    /// that is not complete is `incomplete_population`/`incomplete-scope`; each
+    /// dequeued node's neighbours, in the order the read returns them, are
+    /// decided by `resolve` before their `graph.edge`; the target is compared
+    /// by whole-key identity and need not be held; `graph.result-retain` is
+    /// charged last. No neighbour count is compared with a multiplicity.
+    fn evaluate_reaches_end(
+        &mut self,
+        node: CheckedNode<'a>,
+        source: &ObjectReference,
+        target: &ObjectReference,
+        relationship: &DeclarationKey,
+        near: EndSide,
+    ) -> Result<bool, Halt> {
+        let objects = self.objects_for(node)?;
+        let refuse =
+            |cause: NavigationRefusal| Halt::Family(FamilyResult::Refused(Box::new(cause)));
+        let extents = objects.extents();
+        let types = self.scope.types();
+        let manifest = extents
+            .map(|extents| extents.manifest(types))
+            .transpose()
+            .map_err(|_| invariant("reaches-manifest-unavailable"))?;
+        // A neighbour or the start decided as `navigate` decides a target.
+        let decide = |reference: &ObjectReference| match &manifest {
+            Some(manifest) => match objects.objects().resolve(reference, types, manifest) {
+                Resolution::Present => Ok(()),
+                Resolution::Dangling => Err(refuse(NavigationRefusal::TargetDangling {
+                    relationship: relationship.clone(),
+                    reference: reference.clone(),
+                })),
+                Resolution::Undecidable => Err(refuse(NavigationRefusal::TargetUndecidable {
+                    relationship: relationship.clone(),
+                    reference: reference.clone(),
+                })),
+            },
+            None => Ok(()),
+        };
+        decide(source)?;
+        charge_graph_expand(self.meter, 1)?;
+        let Some(extents) = extents.filter(|extents| extents.complete(relationship)) else {
+            return Err(refuse(NavigationRefusal::ExtentIncomplete {
+                relationship: relationship.clone(),
+                receiver: source.clone(),
+            }));
+        };
+        let mut discovered: BTreeSet<ObjectReference> = BTreeSet::new();
+        discovered.insert(source.clone());
+        let mut queue: VecDeque<ObjectReference> = VecDeque::new();
+        queue.push_back(source.clone());
+        let mut found = false;
+        'walk: while let Some(current) = queue.pop_front() {
+            let neighbours: Vec<&ObjectReference> = match near {
+                EndSide::Source => extents.targets(relationship, &current).collect(),
+                EndSide::Target => extents.sources(relationship, &current).collect(),
+            };
+            for next in neighbours {
+                decide(next)?;
+                charge_named(self.meter, ChargePoint::GraphEdge)?;
+                if next == target {
+                    found = true;
+                    break 'walk;
+                }
+                if discovered.insert(next.clone()) {
+                    charge_graph_expand(self.meter, discovered_count(&discovered))?;
+                    queue.push_back(next.clone());
+                }
+            }
+        }
+        charge_graph_result_retain(self.meter)?;
         Ok(found)
     }
 

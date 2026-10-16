@@ -77,10 +77,10 @@ candidates are the field `name` of `S`'s effective view and every relationship
 end navigable from `S` under that role. The form resolves to the one
 candidate; otherwise:
 
-- no candidate: `missing_declaration`/`missing-name` at the third argument, the
+- no candidate: `missing_declaration`/`missing-name`, located at the form, the
   refusal a name that is no field already gets;
 - two or more candidates (a field and an end, or two ends):
-  `ambiguous_declaration`/`ambiguous-name` at the third argument, naming every
+  `ambiguous_declaration`/`ambiguous-name`, located at the form, naming every
   candidate.
 
 When the candidate is a field, FR-104's field-edge rules apply and this
@@ -228,7 +228,7 @@ changes the observation or a later run's result.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-365-AC-1 | `reaches(a, b, name)` over a relationship end whose destination is `[0,1]` or `[1,1]` of the near end's own type checks as `Boolean` in an invariant, a precondition and a postcondition; a receiver of a subtype of the near end's type, an inverse end under `bidirectional` and under `undirected`, and a subtype operand beside a base operand each check; the field-edge form `reaches(self, self, via)` still checks and lowers as before. | Test (TC-1046) |
+| FR-365-AC-1 | `reaches(a, b, name)` over a relationship end whose destination is `[0,1]` or `[1,1]` of the near end's own type checks as `Boolean` in an invariant, a precondition and a postcondition; a receiver of a subtype of the near end's type, an inverse end under `bidirectional` and under `undirected`, and a subtype operand beside a base operand each check; the field-edge form `reaches(self, self, trail)` still checks and lowers as before. | Test (TC-1046) |
 | FR-365-AC-2 | A name matching a field and a relationship end, or two ends, refuses `ambiguous_declaration`/`ambiguous-name`; a name matching neither refuses `missing_declaration`/`missing-name`. | Test (TC-1046) |
 | FR-365-AC-3 | An operand of a type that does not conform to the near end's type, a forward traversal against `target-to-source`, an inverse traversal against `source-to-target`, a finite multi-valued destination end, a destination end of another type and `reaches` in a function body each refuse `ill_typed`/`operator-ineligible`; an unbounded, ordered or multiplicity-less destination end refuses `unsupported_construct`/`expression-form`; direction is reported ahead of multiplicity and multiplicity ahead of destination type. | Test (TC-1046) |
 | FR-365-AC-4 | A reachability over `E` whose type is a member type of two populations with no maximum refuses `ambiguous_declaration`/`ambiguous-name` at the form, naming both populations; with one covering population the requirements record adds that domain once and none when it is the context population. | Test (TC-1046) |

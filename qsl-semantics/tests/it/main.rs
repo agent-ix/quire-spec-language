@@ -57,6 +57,8 @@ mod relationship_extents;
 #[cfg(feature = "test-support")]
 mod relationship_navigation;
 #[cfg(feature = "test-support")]
+mod relationship_reachability;
+#[cfg(feature = "test-support")]
 mod relationship_snapshots;
 mod state_clauses;
 #[cfg(feature = "test-support")]
