@@ -3385,6 +3385,15 @@ fn read_text_value_type(
     const PROFILE_PREFIX: &str = "text-profile:";
     let form =
         |what: String| unsupported_at(ctx.value, at, format!("{}:{what}", meaning::VALUE_TYPE));
+    // A refusal at the value type, the constraint's location its member.
+    let at_constraint = |constraint_at: &str, what: &str| {
+        unsupported_member(
+            ctx.value,
+            at,
+            MemberPath::from_document_location(constraint_at),
+            format!("{}:{what}", meaning::VALUE_TYPE),
+        )
+    };
     let constraints = ctx.array_field("constraints")?;
     let mut min: Option<&Value> = None;
     let mut max: Option<&Value> = None;
@@ -3392,8 +3401,7 @@ fn read_text_value_type(
     let mut seen = Vec::new();
     for (position, constraint) in constraints.iter().enumerate() {
         let constraint_at = format!("{at}.constraints[{position}]");
-        let constraint_ctx = NodeCtx::new(constraint, constraint_at.clone());
-        let keyword = constraint_ctx.str_field("keyword")?;
+        let keyword = NodeCtx::new(constraint, constraint_at.clone()).str_field("keyword")?;
         let operands = constraint.get("operands");
         match keyword {
             "minLength" | "maxLength" => {}
@@ -3403,29 +3411,28 @@ fn read_text_value_type(
                     .and_then(Value::as_str)
                     .and_then(|name| name.strip_prefix(PROFILE_PREFIX));
                 if name.is_none() {
-                    return Err(unsupported_at(
-                        constraint,
-                        &constraint_at,
-                        format!("{}:constraints:format", meaning::VALUE_TYPE),
-                    ));
+                    return Err(at_constraint(&constraint_at, "constraints:format"));
                 }
             }
             other => {
-                return Err(unsupported_at(
-                    constraint,
+                return Err(at_constraint(
                     &constraint_at,
-                    format!("{}:constraints:{other}", meaning::VALUE_TYPE),
+                    &format!("constraints:{other}"),
                 ))
             }
         }
-        seen.push((keyword, constraint_ctx, operands));
+        seen.push((keyword, constraint_at, operands));
     }
     let mut taken = std::collections::BTreeSet::new();
-    for (keyword, constraint_ctx, operands) in &seen {
+    for (keyword, constraint_at, operands) in &seen {
         if !taken.insert(*keyword) {
-            return Err(
-                constraint_ctx.malformed_in("keyword", format!("{keyword:?} is declared twice"))
-            );
+            // At the value type, the constraint's `keyword` member the path.
+            return Err(malformed_member(
+                ctx.value,
+                at,
+                MemberPath::from_document_location(constraint_at).child("keyword"),
+                format_args!("keyword: {keyword:?} is declared twice"),
+            ));
         }
         match *keyword {
             "minLength" => min = operands.and_then(|operands| operands.get("value")),
@@ -6609,8 +6616,10 @@ mod tests {
     fn title(constraints: &[(&str, Value)]) -> Value {
         let constraints: Vec<Value> = constraints
             .iter()
-            .map(|(keyword, operands)| {
+            .enumerate()
+            .map(|(position, (keyword, operands))| {
                 serde_json::json!({
+                    "identity": format!("ix://acme/orders/constraint/Title/{keyword}-{position}"),
                     "keyword": keyword,
                     "operands": operands,
                     "appliesTo": "ix://acme/orders/Title",
@@ -6782,6 +6791,12 @@ mod tests {
         for (row, constraints, code, naming) in cases {
             let refusal = read_title(&constraints).expect_err(row);
             assert_eq!(refusal.code, code, "{row}");
+            let (ModelRefusalCause::IntakeMalformedDeclaration { node, .. }
+            | ModelRefusalCause::UnsupportedDeclarationForm { node, .. }) = &refusal.cause
+            else {
+                panic!("{row}: {:?}", refusal.cause);
+            };
+            assert_eq!(node, "ix://acme/orders/Title", "{row}: at the value type");
             assert!(
                 refusal.detail.starts_with("$.types[0]") && refusal.detail.contains(naming),
                 "{row}: {}",

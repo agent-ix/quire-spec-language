@@ -33,6 +33,9 @@ mod fixture;
 
 use fixture::id;
 
+/// The fixture object `Item` snapshots hold (TC-1038 calls it `child`).
+const OBJECT: &str = "child";
+
 const UUID_TEXT: &str = "00112233-4455-6677-8899-aabbccddeeff";
 const OTHER_UUID: &str = "ffeeddcc-bbaa-9988-7766-554433221100";
 
@@ -227,7 +230,7 @@ fn snapshot_text(
         "model": replay.model,
         "populations": [{
             "population": id("items"), "complete": true,
-            "objects": [{"key": "i1", "type": id("Item"), "fields": "FIELDS"}],
+            "objects": [{"key": OBJECT, "type": id("Item"), "fields": "FIELDS"}],
         }],
     });
     document
@@ -377,7 +380,7 @@ impl Replay {
             item,
         )
         .expect("the Item universe");
-        let reference = closure.find(universe, "i1").expect("the admitted object");
+        let reference = closure.find(universe, OBJECT).expect("the admitted object");
         closure
             .attribute(
                 self.graph.scope().types(),
@@ -433,7 +436,7 @@ impl Replay {
             "model": self.model,
             "context": id("Item"),
             "operation": operation,
-            "self": {"population": id("items"), "key": "i1"},
+            "self": {"population": id("items"), "key": OBJECT},
             "pre": reference(&pre),
             "post": reference(&post),
             "parameters": parameters,
@@ -570,7 +573,7 @@ impl Replay {
                 snapshot: reference,
                 self_object: SelectedObject {
                     population: id("items"),
-                    key: "i1".to_owned(),
+                    key: OBJECT.to_owned(),
                 },
                 parameters,
             },
@@ -657,7 +660,7 @@ fn is_string(value: &Datum, text: &str) -> bool {
 
 fn writes(change: &FrameChange, field: &str) -> bool {
     matches!(change, FrameChange::FieldWrite { object, field: found, .. }
-        if object == "i1" && found == field)
+        if object == OBJECT && found == field)
 }
 
 /// The refusal an admitted document gives where `field` holds `value`.
@@ -1991,4 +1994,81 @@ fn the_document_edge_refuses_a_title_before_any_value_is_read() {
         record.fields.get("setting").map(String::as_str),
         Some("observation.input_bytes")
     );
+}
+
+/// TC-1044 step 4 (FR-106-AC-40): the frame check decides each declared type
+/// by its own equality, over an invocation granting nothing. A change
+/// refuses `frame_violation`/`unauthorized-change` naming the object and the
+/// field; an equal value admits.
+#[trace("TC-1044", "FR-106-AC-40")]
+#[test]
+fn the_frame_decides_each_declared_type_by_its_own_equality() {
+    let replay = text_replay();
+    let pre = with(
+        replay.base.clone(),
+        "aliases",
+        json!({"sequence": [text("a"), text("b")]}),
+    );
+    let present = |value: &str| json!({"present": text(value)});
+    let changed = |pre: &[(String, Value)], field: &str, value: Value| {
+        replay.frame_from("rekeep", pre, &with(pre.to_vec(), field, value))
+    };
+    let assert_violation = |verdict: FrameVerdict, field: &str| {
+        let FrameVerdict::Violation(witness) = verdict else {
+            panic!("{field}: a change outside the frame violates it");
+        };
+        assert_eq!(witness.code, Code::FrameViolation, "{field}");
+        assert_eq!(witness.cause, "unauthorized-change", "{field}");
+        assert!(
+            writes(&witness.change, field),
+            "{field}: {:?}",
+            witness.change
+        );
+    };
+
+    // A String compares as written.
+    let label = with(pre.clone(), "label", string("\u{e9}"));
+    assert_violation(changed(&label, "label", string("e\u{301}")), "label");
+    // A Text compares by its retained sequence.
+    assert_eq!(
+        changed(
+            &with(pre.clone(), "title", text("\u{e9}")),
+            "title",
+            text("e\u{301}")
+        ),
+        FrameVerdict::Holds
+    );
+    assert_violation(changed(&pre, "title", text("Steady")), "title");
+    // Inside a present option, under unicode-scalars.
+    let subtitle = with(pre.clone(), "subtitle", present("\u{e9}"));
+    assert_violation(
+        changed(&subtitle, "subtitle", present("e\u{301}")),
+        "subtitle",
+    );
+    // Absent to present is a change; the same present value with its members
+    // written in another order is none.
+    assert_violation(changed(&pre, "subtitle", present("a")), "subtitle");
+    let subtitle = with(pre.clone(), "subtitle", present("a"));
+    assert_eq!(
+        changed(
+            &subtitle,
+            "subtitle",
+            json!({"present": {"text": "a", "kind": "text"}})
+        ),
+        FrameVerdict::Holds
+    );
+    // A sequence reordered is a change; the same elements with only the
+    // document's whitespace changed are none.
+    assert_violation(
+        changed(&pre, "aliases", json!({"sequence": [text("b"), text("a")]})),
+        "aliases",
+    );
+    let pre_text = snapshot_text(&replay, "pre", "pre", &pre);
+    let spaced = snapshot_text(&replay, "post", "post", &pre).replace("\",\"", "\" , \"");
+    assert_eq!(
+        replay.frame_over("rekeep", &pre_text, &spaced),
+        FrameVerdict::Holds
+    );
+    // A UUID changed to another canonical payload is a change.
+    assert_violation(changed(&pre, "token", uuid(OTHER_UUID)), "token");
 }
