@@ -144,17 +144,17 @@ pub use quire_semantic_value::call::InputRefusal;
 // constructor (ADR-011 §3 FB-05).
 pub use execute::{ObjectEnvironmentFailure, Unresolved};
 pub use object_environment::{
-    object_reference_witness, read_object_environment, write_object_environment,
-    EnvironmentLabels, EnvironmentModel, EnvironmentObject, EnvironmentPopulation,
-    ObjectEnvironmentDocument, ObjectEnvironmentRef, ObjectEnvironmentRefusal,
-    ObjectEnvironmentWriteError, ObjectReferenceError,
+    object_reference_witness, read_object_environment, write_object_environment, EnvironmentLabels,
+    EnvironmentModel, EnvironmentObject, EnvironmentPopulation, ObjectEnvironmentDocument,
+    ObjectEnvironmentRef, ObjectEnvironmentRefusal, ObjectEnvironmentWriteError,
+    ObjectReferenceError,
 };
-pub use qsl_semantics::model::accounting::ModelNormalizationLimits;
-pub use qsl_semantics::model::domain_package::DomainPackageRef;
 pub use qsl_foundation::bound::{
     DomainKey, DomainKind, EmptyFiniteBound, FiniteBound, FiniteBoundKind, ProofBound,
     ProofBoundRefusal,
 };
+pub use qsl_semantics::model::accounting::ModelNormalizationLimits;
+pub use qsl_semantics::model::domain_package::DomainPackageRef;
 pub use quire_exact::{EmptyInterval, Incomplete, Integer, IntegerInterval};
 pub use request::{
     ByteProvision, DependencyEntry, DependencyEntryWire, ReplayRequest, ReplayRequestRefusal,

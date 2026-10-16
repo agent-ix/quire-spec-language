@@ -14,14 +14,14 @@ use serde_json::{json, Value};
 
 use super::*;
 use crate::object_environment::{
-    read_object_environment, write_object_environment, EnvironmentLabels, EnvironmentModel,
-    object_reference_witness, EnvironmentObject, EnvironmentPopulation, ObjectEnvironmentRef,
+    object_reference_witness, read_object_environment, write_object_environment, EnvironmentLabels,
+    EnvironmentModel, EnvironmentObject, EnvironmentPopulation, ObjectEnvironmentRef,
     ObjectEnvironmentRefusal, ObjectReferenceError,
 };
-use qsl_semantics::model::key::DeclarationKey;
 use crate::result::{DisagreementCause, Verdict};
 use crate::witness::{DecodeRefusal, WitnessBinding, WitnessField, WitnessSlot, WitnessValueType};
 use crate::SnapshotValue;
+use qsl_semantics::model::key::DeclarationKey;
 
 const PACKAGE: &str = "test/graph";
 const PLACEHOLDER: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";

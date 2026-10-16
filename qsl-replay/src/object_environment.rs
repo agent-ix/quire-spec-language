@@ -8,9 +8,9 @@
 //! byte-provision entry: the executor admits the document by FR-106
 //! (FR-098).
 
+use crate::witness::WitnessValue;
 use qsl_foundation::digest::{DigestDomain, DigestRecord};
 use qsl_foundation::Code;
-use crate::witness::WitnessValue;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::domain_package::DomainPackageRef;
 use qsl_semantics::model::key::DeclarationKey;
@@ -18,11 +18,11 @@ use qsl_semantics::model::observation::{
     declared_type_universe_for, snapshot_document_digest, write_environment_document,
     AdmissionFailure,
 };
-use std::collections::BTreeMap;
 pub use qsl_semantics::model::observation::{
     EnvironmentLabels, EnvironmentModel, EnvironmentObject, EnvironmentPopulation,
 };
 use serde_json::{Map, Value};
+use std::collections::BTreeMap;
 
 const MEMBER: &str = "object_environment";
 const LABELS: [&str; 4] = ["authority", "identity", "revision_namespace", "revision"];
