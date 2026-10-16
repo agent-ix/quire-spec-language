@@ -104,7 +104,9 @@ call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
 - A present `object_environment` member SHALL be a closed object with exactly
   `identity` and `digest`, in the form FR-106's invocation uses for its `pre`
   and `post` members: the identity labels of a snapshot document and its
-  `sha256-jcs` digest. The member names the document, whose bytes are a
+  `sha256-jcs` digest. The `identity` is the label set the result retains with the
+  digest (FR-122); admission selects the document by digest alone and does not
+  compare it with the document's own `identity`. The member names the document, whose bytes are a
   `sha256-jcs` entry of the byte provision like every other recompilation
   input. A request without the member carries no object environment.
 - The request reader SHALL NOT read the `object_environment` document nor

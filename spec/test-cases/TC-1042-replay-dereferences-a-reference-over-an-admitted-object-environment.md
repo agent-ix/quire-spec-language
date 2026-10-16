@@ -44,6 +44,7 @@ and `Lone` has the universe `V`. `TN`, `TH` and `TL` are the 64-hex node ids of
 - `function fa using v(n: Reference<M::Node>): Boolean pure { forall(x in deref(n).items: x < 5) }`
 - `function fb using v(n: Reference<M::Node>): Boolean pure { n = n }`
 - `function fc using v(x: Int[0, 9]): Boolean pure { x < 5 }`
+- `function fh using v(n: Reference<M::Hub>): Boolean pure { forall(x in deref(n).items: x < 5) }`
 - `function fe using v(p: Sequence<Reference<M::Node>>[0, 2]): Boolean pure { forall(r in p: forall(x in deref(r).items: x < 5)) }`
 
 The proved verdict of every request is `violation`. `P` is the parameter node
@@ -101,7 +102,7 @@ Tag the tests `#[trace("TC-1042", "FR-098-AC-n")]` with the AC each backs.
 | 10 | `fa`, `ref(b, TN)`, S1 | completes `true` (`[1, 2]`); `inconclusive`, cause `Verdicts` holding `violation` and `success` |
 | 11 | `fa`, `ref(h, TH)`, S1 | `h`'s `object_type` `TH` conforms to `Node`; completes `false` (`9 < 5` is false); `reproduced-without-witness` |
 | 12 | `fa`, `ref(a, TN)`, **S1-anchor** | the same result as row 8: the anchor is not compared |
-| 13 | `fe`, `p` = `{"elements":[ref(a, TN), ref(b, TN)],"type":"sequence"}`, S1 | completes `false` (the element `a` has `7`); `reproduced-without-witness` |
+| 13 | `fe`, `p` = `{"elements":[ref(b, TN), ref(a, TN)],"type":"sequence"}`, S1 | completes `false` after two reference reads: `b`'s items hold, then `a` has `7`; `reproduced-without-witness` |
 | 14 | `fa`, `ref(a, TN)`, no `object_environment` | `inconclusive`, cause `NoValue`, on `unknown_required_feature`/`unsupported-feature` with construct `dereference` |
 | 15 | `fb`, `ref(a, TN)`, no `object_environment`; then with S1 | completes `true` both times; `inconclusive`, cause `Verdicts` |
 | 16 | `fa`, `n` the Witness entry `P={"fields":[{"name":"items","value":{"elements":[],"type":"sequence"}},{"name":"next","value":null}],"name":"<TN>","type":"record"}`, S1 | the entry decodes; `WrongValueKind` naming position 0 before the call: a record is not a `Reference`'s kind |
@@ -114,7 +115,7 @@ never read.
 
 | # | Step | Expected |
 | --- | --- | --- |
-| 17 | `fa`, `ref(z, TL)` | `WrongValueKind` naming position 0: `Lone` neither is `Node` nor conforms to it |
+| 17 | `fa`, `ref(z, TL)` (universe `V`, `Node`'s is `U`); then `fh`, `ref(a, TN)` | `ReplayRefusal::ForeignReference`, `foreign_reference`/`foreign-universe` naming position 0, required `U` and supplied `V` as lowercase hex, although `Lone` also does not conform to `Node` (the universe is decided first); then `WrongValueKind` naming position 0: same universe, and `Node` does not conform to `Hub` |
 | 18 | `fa`, a reference whose `object_type` is 64 digits `0` | `WrongValueKind` naming position 0: no object type of the model has that id |
 | 19 | `fa`, `ref(a, TN)` with `"identity":""`; then with `"identity":"ff"` | `WrongValueKind` naming position 0, twice: no kernel object identity is empty or not UTF-8 |
 
@@ -148,7 +149,7 @@ reference, and makes no call.
 | # | Step | Expected |
 | --- | --- | --- |
 | 29 | `fa`, `ref(n9, TN)`, S1 | `dangling_reference`/`absent-target-in-complete-population` for `n9`, which `G` does not list: the manifest is closed and `G`, the one row covering `Node`, is complete (FR-364 rule 5) |
-| 30 | `fa`, `ref(a, TN)` with universe `V`; then `ref(a, TH)`, both S1 | `dangling_reference`/`absent-target-in-complete-population`, twice: the held `a` has the key (`U`, `TN`, `a`), and a key differing in universe or type is another reference; `G` covers `Hub` |
+| 30 | `fa`, `ref(a, TH)`, S1 | `dangling_reference`/`absent-target-in-complete-population`: the held `a` has the key (`U`, `TN`, `a`), a key differing in type is another reference, and `G` covers `Hub`; a key differing in universe never reaches this step (row 17) |
 | 31 | `fa`, `ref(n9, TN)`, **S2** | `Incomplete`, `incomplete_population`/`incomplete-scope` for `n9`: no held object names a required population, so admission succeeds, and the covering row `G` is not complete (`undecidable`, FR-364 rule 4) |
 | 32 | `fe`, `p` = `[ref(n9, TN), ref(n8, TN)]`, S1 | `dangling_reference` naming position 0 and `n9`, not `n8` |
 | 33 | `fe`, `p` = `[ref(a, TN), ref(n9, TN)]`, S1 | `dangling_reference` naming position 0 and `n9`; `a` is present and not named |
@@ -162,5 +163,5 @@ with FR-106's records, then resolves each reference argument by FR-364's
 `undecidable` one as `incomplete-scope`, then calls the function over the
 admitted environment. A held reference dereferences to its stored field and
 the call completes; with no environment the same call completes no value. A
-reference is held only by its whole key, and a conversion refusal or an unused
+reference is held only by its whole key, and a foreign universe, any other conversion refusal or an unused
 environment is decided before the document is read.
