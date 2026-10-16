@@ -116,3 +116,16 @@ Recorded (not blocking):
   duplicate population or an unknown covered type (QSV `ManifestFailure`).
 - low: the store-boundary section does not list the type environment among
   what the model layer passes.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | high | TC-1041 row 20's new third case has the wrong expected result. The row opens with "a bundle for source S, observation `pre` (selected clause C)", so the selected key is the `pre` key. With the `pre` manifest and the `post` closure, the manifest matches the selected key and the closure is the first part that differs. FR-364's constructor rule (first differing part in the order `manifest`, `closure`, `types`, retaining the part, the selected key and the differing one) therefore names part `closure`, selected `pre`, differing `post`. The row expects part `manifest`, "the `pre` key and the `post` key". That result could only come from a `post` selected key, and then the keys would be listed `post`, `pre`. Either fix works: expect `closure`, or select the `post` key and list `post` before `pre`. The row's rationale is also wrong. With `Spare` unbound in the `pre` manifest, `Spare` is an incomplete row, so the mixed pair resolves `p9` `undecidable`, not "would give `dangling`". To show the hazard, the `pre` observation must bind `Spare` (**spare-bound**) and the `post` must not. | spec/test-cases/TC-1041-population-manifest-decides-dangling-and-undecidable-for-resolve.md:71 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed 74a50768b | The row limit is the package's declaration count, so no setting is needed (FR-255) and a limit stop cannot occur. This matches QSV FR-119 item 6: `Ok(None)` after exactly `row_limit` rows gives Closed. A partial manifest now comes only from an enumerator failure. AC-10, TC-1041 rows 3, 4 and 6 and the fixture text are updated. |
+| FND-002 | fixed 74a50768b | The key now carries the observation identity: its role plus its own document digest (snapshot-built) or the producer's label (model-layer). AC-14 compares each part with the selected key and lists the observation case. The TC row that exercises it is wrong, see FND-003. |
