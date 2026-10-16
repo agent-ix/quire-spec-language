@@ -123,6 +123,14 @@ impl Relationships {
         Self { declared, by_role }
     }
 
+    /// The object type the end on `side` of the relationship `key` names.
+    pub(crate) fn end_object(&self, key: &DeclarationKey, side: EndSide) -> Option<EffectiveId> {
+        self.declared
+            .iter()
+            .find(|relationship| &relationship.key == key)
+            .map(|relationship| relationship.end(side).object)
+    }
+
     /// The relationship ends `name` names that a value of the object type
     /// `receiver` navigates: those whose near end's type `receiver` conforms
     /// to.

@@ -146,7 +146,8 @@ impl<'n> Walk<'n> {
                 children.push(visit(*reference));
                 Exit::Attribute(node.location(), ambient)
             }
-            NodeKind::Reaches { source, target, .. } => {
+            NodeKind::Reaches { source, target, .. }
+            | NodeKind::ReachesEnd { source, target, .. } => {
                 children.extend([visit(*source), visit(*target)]);
                 Exit::Collapse {
                     count: 2,

@@ -163,6 +163,56 @@ fn navigation(end: &Navigable<'_>, reference: NodeId) -> Result<(NodeKind, Value
     Ok((kind, value_type))
 }
 
+/// Every field and relationship end a name matched, field first (FR-363,
+/// FR-365).
+fn member_candidates(
+    declared: Option<quire_semantic_value::declaration::EffectiveAttribute<'_>>,
+    ends: &[Navigable<'_>],
+) -> Vec<MemberCandidate> {
+    declared
+        .map(|attribute| MemberCandidate::Field(attribute.identity()))
+        .into_iter()
+        .chain(ends.iter().map(|end| MemberCandidate::RelationshipEnd {
+            relationship: end.relationship.key.clone(),
+            side: end.near,
+        }))
+        .collect()
+}
+
+/// FR-365 "Checking" 2 to 5 for `reaches(a, b, name)` over `end`: the second
+/// operand's object type `other` conforms to the near end's type (the first
+/// operand's does by the end's resolution), then direction, destination
+/// multiplicity and destination type, stopping at the first failure.
+fn reaches_end(
+    end: &Navigable<'_>,
+    types: &quire_semantic_value::declaration::TypeEnvironment,
+    other: quire_exact::EffectiveId,
+) -> Result<(), CheckCause> {
+    let ineligible = || CheckCause::IllTyped(IllTypedCause::OperatorIneligible);
+    let near = end.relationship.end(end.near).object;
+    if !types.conforms(other, near) {
+        return Err(ineligible());
+    }
+    if !end.direction_admitted() {
+        return Err(ineligible());
+    }
+    let destination = end.destination();
+    let unsupported = CheckCause::UnsupportedNavigation;
+    let multiplicity = destination
+        .multiplicity
+        .ok_or_else(|| unsupported(NavigationBound::Undeclared))?;
+    let upper = multiplicity
+        .upper
+        .ok_or_else(|| unsupported(NavigationBound::Unbounded))?;
+    if multiplicity.ordered {
+        return Err(unsupported(NavigationBound::Ordered));
+    }
+    if upper != 1 || destination.object != near {
+        return Err(ineligible());
+    }
+    Ok(())
+}
+
 /// The sole StateModel S3 family hook. StateModel has no S6a entry.
 pub(crate) struct StateModelFamily;
 
@@ -258,14 +308,7 @@ impl FamilyContract for StateModelFamily {
                             make(kind, value_type)
                         }
                         (declared, ends) => {
-                            let candidates = declared
-                                .map(|attribute| MemberCandidate::Field(attribute.identity()))
-                                .into_iter()
-                                .chain(ends.iter().map(|end| MemberCandidate::RelationshipEnd {
-                                    relationship: end.relationship.key.clone(),
-                                    side: end.near,
-                                }))
-                                .collect();
+                            let candidates = member_candidates(declared, ends);
                             return Err(refuse(
                                 location,
                                 CheckCause::AmbiguousMember(Box::new(AmbiguousMember {
@@ -288,10 +331,38 @@ impl FamilyContract for StateModelFamily {
                     else {
                         return Err(ineligible(location));
                     };
-                    let attribute = scope
-                        .types()
-                        .attribute(*object, edge)
-                        .ok_or_else(|| missing(edge))?;
+                    let declared = scope.types().attribute(*object, edge);
+                    let ends: Vec<Navigable<'_>> = scope
+                        .relationships()
+                        .navigable(scope.types(), *object, edge)
+                        .collect();
+                    let attribute = match (declared, ends.as_slice()) {
+                        (None, []) => return Err(missing(edge)),
+                        (Some(attribute), []) => attribute,
+                        (None, [end]) => {
+                            reaches_end(end, scope.types(), *other)
+                                .map_err(|cause| refuse(location, cause))?;
+                            return Ok(make(
+                                NodeKind::ReachesEnd {
+                                    source: *source,
+                                    target: *target,
+                                    relationship: end.relationship.key.clone(),
+                                    role: end.role.to_owned(),
+                                    near: end.near,
+                                },
+                                ValueType::Boolean,
+                            ));
+                        }
+                        (declared, ends) => {
+                            return Err(refuse(
+                                location,
+                                CheckCause::AmbiguousMember(Box::new(AmbiguousMember {
+                                    name: edge.clone(),
+                                    candidates: member_candidates(declared, ends),
+                                })),
+                            ));
+                        }
+                    };
                     let owner = attribute.owner();
                     let endpoints_admitted = if scope.complete_model {
                         scope.types().conforms(*object, owner)

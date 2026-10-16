@@ -3696,6 +3696,35 @@ impl<'a> Lowering<'a> {
                     Operands::Two(source, target),
                 )
             }
+            NodeKind::ReachesEnd {
+                source,
+                target,
+                relationship,
+                role,
+                ..
+            } => {
+                // FR-365/FR-105: one `quire.op.model.reaches` over both
+                // references, naming the end by the relationship's model
+                // node and the role. No `deref` node: the references are
+                // the arguments.
+                let declaration = self.model_node(relationship, node.location())?;
+                let name = Identifier::new(role.clone()).map_err(|_| {
+                    refuse(
+                        node.location(),
+                        CheckCause::NodePreimage(NodeKeyRefusal::EmptyBindingName),
+                    )
+                })?;
+                (
+                    Keyed::Application(
+                        Operator::Reaches,
+                        Operation {
+                            member: Some(Member::RelationshipEnd { declaration, name }),
+                            ..plain("quire.op.model.reaches")
+                        },
+                    ),
+                    Operands::Two(source, target),
+                )
+            }
             NodeKind::Dispatch {
                 receiver,
                 operation,

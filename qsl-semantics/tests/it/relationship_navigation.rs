@@ -27,12 +27,12 @@ use quire_semantic_value::declaration::FieldRef;
 
 use RelationshipDirection::{Bidirectional, SourceToTarget, TargetToSource, Undirected};
 
-fn key(node: &str) -> DeclarationKey {
+pub(crate) fn key(node: &str) -> DeclarationKey {
     DeclarationKey::fixture(format!("ix://test/orders/{node}"))
 }
 
 /// A multiplicity `{lower,upper}` with `unique: true` and `ordered: false`.
-fn mult(lower: u64, upper: Option<u64>) -> Multiplicity {
+pub(crate) fn mult(lower: u64, upper: Option<u64>) -> Multiplicity {
     Multiplicity {
         lower,
         upper,
@@ -183,7 +183,7 @@ fn relationship_key(id: &str) -> DeclarationKey {
     key(&relationship_node(id))
 }
 
-fn object_type(name: &str, supertypes: &[&str]) -> DomainPackageRecord {
+pub(crate) fn object_type(name: &str, supertypes: &[&str]) -> DomainPackageRecord {
     DomainPackageRecord::ObjectType(ObjectTypeRecord {
         key: key(name),
         interface_features: None,
@@ -265,7 +265,7 @@ pub(crate) fn check_invariant(
 }
 
 /// Check `declarations` over the admitted model `package`, selected as `M`.
-fn check_declarations(
+pub(crate) fn check_declarations(
     package: DomainPackage,
     declarations: &str,
 ) -> Result<CheckedGraph, Vec<CheckRefusal>> {
@@ -397,7 +397,7 @@ fn assert_refused(
 }
 
 /// `result` is one `StateModel` refusal with `code`, `cause` and `path`.
-fn assert_refusal(
+pub(crate) fn assert_refusal(
     result: Result<CheckedGraph, Vec<CheckRefusal>>,
     body: &str,
     code: Code,
@@ -427,7 +427,7 @@ fn assert_refusal(
     refusal
 }
 
-fn candidates(refusal: &CheckRefusal) -> (&str, &[MemberCandidate]) {
+pub(crate) fn candidates(refusal: &CheckRefusal) -> (&str, &[MemberCandidate]) {
     let CheckCause::StateModel(model) = &refusal.cause else {
         panic!("a StateModel refusal: {refusal:?}");
     };
