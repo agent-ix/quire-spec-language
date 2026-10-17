@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-032: generate the named native/Markdown ConfigVersion workflow.
 
+#[path = "config-version/spine_corpus.rs"]
+mod config_version_spine;
 #[path = "config-version/fixtures.rs"]
 mod fixtures;
 
