@@ -93,10 +93,9 @@ FR-170 gives channels a queue transition system: `send`, `deliver`,
 
 **What explores it.** Nothing. FR-120's `ModelSystem` is QSL's only
 `TransitionSystem` (ADR-016 FP-4). Its successor relation interleaves every
-operation on every receiver; it has no control state. S3 checks a protocol's
-`sequence`, `attempt` and `finish` nodes and refuses the other kinds with
-`unsupported_construct`/`not-yet-implemented` (ADR-017 PF-7). S4 emits no
-protocol node.
+operation on every receiver; it has no control state. S3 checks every
+protocol construct (FR-218, FR-381). S4 emits no protocol node beyond the
+`protocol_clause` stub (FR-092).
 
 **What ADR-018 gives.** A model subject (SM-2), behaviours as maximal paths
 (SM-3), terminal stutter (SM-4), weak fairness over operations (FA-1 to
