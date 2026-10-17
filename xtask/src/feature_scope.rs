@@ -16,6 +16,15 @@
 //! with the same resolved feature set. Any difference keeps the package in
 //! the all-features lane.
 //!
+//! **Metadata only nominates.** `cargo metadata` reports one merged feature
+//! set per package across the host, the target and every platform, and
+//! resolver 2 builds those separately, so equal metadata does not prove an
+//! equal compile. The metadata comparison therefore only nominates
+//! candidates; [`settle`] then checks them against cargo's own per-unit
+//! resolve (`cargo tree`, host and target kept apart, every platform) and
+//! puts back any candidate whose absence changes the feature set of a package
+//! that stays. A skip that cannot be shown is a run.
+//!
 //! **What skipping a package changes for the others.** `cargo test
 //! --exclude P` leaves `P` out of the selection, and with it `P`'s own
 //! `[dev-dependencies]` feature requests: a feature that only `P` asked of a
@@ -134,12 +143,12 @@ impl Resolution {
         })
     }
 
-    fn name(&self, id: &str) -> &str {
+    fn name<'a>(&'a self, id: &'a str) -> &'a str {
         self.names.get(id).map_or(id, String::as_str)
     }
 
     /// The packages `root` transitively depends on, `root` included.
-    fn closure(&self, root: &str) -> BTreeSet<&str> {
+    fn closure<'a>(&'a self, root: &'a str) -> BTreeSet<&'a str> {
         let mut seen = BTreeSet::new();
         let mut pending = vec![root];
         while let Some(id) = pending.pop() {
@@ -174,6 +183,11 @@ pub enum KeepReason {
         /// The feature requested.
         feature: String,
     },
+    /// Leaving it out changes the resolved features of a package that stays
+    /// (a request further down its dependencies, `default-features`, a
+    /// `[features]` activation, a build or platform-specific edge), as
+    /// `cargo tree` shows.
+    ExclusionChangesResolve,
 }
 
 impl fmt::Display for KeepReason {
@@ -190,6 +204,9 @@ impl fmt::Display for KeepReason {
                 f,
                 "it alone requests feature {feature} of {dependency} for the remaining packages"
             ),
+            Self::ExclusionChangesResolve => {
+                f.write_str("leaving it out changes the resolved features of a remaining package")
+            }
         }
     }
 }
@@ -320,6 +337,91 @@ pub fn skipped(decisions: &[Decision]) -> Vec<String> {
         .filter(|decision| decision.verdict == Verdict::Skip)
         .map(|decision| decision.package.clone())
         .collect()
+}
+
+/// The per-unit resolved feature sets of one `cargo tree --format "{p}|{f}"`
+/// run: for each package, every distinct feature set it resolves to. Host
+/// (build script, proc-macro) and target units of one package have their own
+/// feature sets under resolver 2, and each appears as its own set.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct TreeFeatures {
+    variants: BTreeMap<String, BTreeSet<String>>,
+}
+
+impl TreeFeatures {
+    /// Read the stdout of `cargo tree --prefix none --format "{p}|{f}"`.
+    /// Lines without a `|` (blank lines, section headings) are skipped.
+    pub fn from_cargo_tree(stdout: &str) -> Self {
+        let mut variants: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for line in stdout.lines() {
+            let mut line = line.trim_end();
+            loop {
+                let stripped = [" (*)", " (proc-macro)"]
+                    .iter()
+                    .find_map(|suffix| line.strip_suffix(suffix));
+                match stripped {
+                    Some(rest) => line = rest,
+                    None => break,
+                }
+            }
+            let Some((package, features)) = line.rsplit_once('|') else {
+                continue;
+            };
+            variants
+                .entry(package.to_owned())
+                .or_default()
+                .insert(features.to_owned());
+        }
+        Self { variants }
+    }
+
+    /// The packages of `self` (a run with packages left out) whose set of
+    /// feature sets is not the one `full` has, or that `full` lacks. A
+    /// package that only the left-out packages used is absent from `self` and
+    /// is not a difference.
+    pub fn differences(&self, full: &Self) -> Vec<String> {
+        self.variants
+            .iter()
+            .filter(|(package, variants)| full.variants.get(*package) != Some(*variants))
+            .map(|(package, _)| package.clone())
+            .collect()
+    }
+}
+
+/// Reduce `candidates` to the packages that can be left out without changing
+/// the resolved features of any package that stays. `excluded_tree` runs
+/// `cargo tree` with the given packages left out; `full` is the run with none.
+///
+/// While the run differs from `full`, the candidate whose return leaves the
+/// fewest differences is put back (the first by name on a tie) and the run is
+/// repeated. With no candidates left the run is `full`, so the loop ends; in
+/// the worst case the whole workspace runs.
+pub fn settle<E>(
+    candidates: &[String],
+    full: &TreeFeatures,
+    excluded_tree: &mut impl FnMut(&[String]) -> Result<TreeFeatures, E>,
+) -> Result<Vec<String>, E> {
+    let mut skip: Vec<String> = candidates.to_vec();
+    skip.sort();
+    skip.dedup();
+    loop {
+        if skip.is_empty() || excluded_tree(&skip)?.differences(full).is_empty() {
+            return Ok(skip);
+        }
+        let mut best: Option<(usize, usize)> = None;
+        for index in 0..skip.len() {
+            let mut without = skip.clone();
+            without.remove(index);
+            let remaining = excluded_tree(&without)?.differences(full).len();
+            if best.is_none_or(|(fewest, _)| remaining < fewest) {
+                best = Some((remaining, index));
+            }
+        }
+        let Some((_, index)) = best else {
+            return Ok(skip);
+        };
+        skip.remove(index);
+    }
 }
 
 #[cfg(test)]
@@ -534,5 +636,117 @@ mod tests {
         })
         .to_string();
         assert!(Resolution::from_cargo_metadata(&dangling).is_err());
+    }
+
+    fn tree(lines: &[&str]) -> TreeFeatures {
+        TreeFeatures::from_cargo_tree(&lines.join("\n"))
+    }
+
+    #[test]
+    fn tree_lines_are_read_per_package_with_markers_and_headings_dropped() {
+        let read = tree(&[
+            "app v0.1.0 (/ws/app)|",
+            "[dev-dependencies]",
+            "",
+            "serde_core v1.0.228|alloc,std",
+            "serde_core v1.0.228|std (*)",
+            "serde_derive v1.0.228|default (proc-macro)",
+        ]);
+        assert_eq!(
+            read.variants["serde_core v1.0.228"],
+            BTreeSet::from(["alloc,std".to_owned(), "std".to_owned()])
+        );
+        assert_eq!(read.variants["serde_derive v1.0.228"].len(), 1);
+        assert_eq!(read.variants.len(), 3);
+    }
+
+    #[test]
+    fn a_changed_added_or_dropped_feature_set_is_a_difference_but_a_vanished_package_is_not() {
+        let full = tree(&["a v1|x", "b v1|", "b v1|y", "gone v1|"]);
+        assert!(tree(&["a v1|x", "b v1|", "b v1|y"])
+            .differences(&full)
+            .is_empty());
+        assert_eq!(tree(&["a v1|x,z"]).differences(&full), vec!["a v1"]);
+        // A host variant that disappears is a difference even though the
+        // remaining one also exists in the full run.
+        assert_eq!(tree(&["b v1|"]).differences(&full), vec!["b v1"]);
+        assert_eq!(tree(&["new v1|"]).differences(&full), vec!["new v1"]);
+    }
+
+    /// A fake resolver: leaving out any package of `needed` changes `serde`.
+    fn resolver<'a>(
+        needed: &'a [&'a str],
+        calls: &'a std::cell::Cell<usize>,
+    ) -> impl FnMut(&[String]) -> Result<TreeFeatures, ()> + 'a {
+        move |skip| {
+            calls.set(calls.get() + 1);
+            let changed = needed.iter().any(|n| skip.iter().any(|s| s == n));
+            Ok(tree(&[if changed {
+                "serde v1|std"
+            } else {
+                "serde v1|alloc,std"
+            }]))
+        }
+    }
+
+    fn names(names: &[&str]) -> Vec<String> {
+        names.iter().map(|name| (*name).to_owned()).collect()
+    }
+
+    #[test]
+    fn settle_keeps_every_candidate_when_nothing_changes() {
+        let full = tree(&["serde v1|alloc,std"]);
+        let calls = std::cell::Cell::new(0);
+        let skip = settle(&names(&["b", "a"]), &full, &mut resolver(&[], &calls)).unwrap();
+        assert_eq!(skip, names(&["a", "b"]));
+        assert_eq!(calls.get(), 1);
+    }
+
+    #[test]
+    fn settle_puts_back_only_the_candidate_that_changes_a_remaining_package() {
+        let full = tree(&["serde v1|alloc,std"]);
+        let calls = std::cell::Cell::new(0);
+        let skip = settle(
+            &names(&["attrs", "cst", "package"]),
+            &full,
+            &mut resolver(&["attrs"], &calls),
+        )
+        .unwrap();
+        assert_eq!(skip, names(&["cst", "package"]));
+    }
+
+    #[test]
+    fn settle_puts_back_every_candidate_that_changes_one() {
+        let full = tree(&["serde v1|alloc,std"]);
+        let calls = std::cell::Cell::new(0);
+        let skip = settle(
+            &names(&["a", "b", "c"]),
+            &full,
+            &mut resolver(&["a", "c"], &calls),
+        )
+        .unwrap();
+        assert_eq!(skip, names(&["b"]));
+    }
+
+    #[test]
+    fn settle_runs_the_whole_workspace_when_no_skip_can_be_shown() {
+        // Every candidate alone changes the resolve, and each candidate's
+        // return fixes it, so all end up back.
+        let full = tree(&["serde v1|alloc,std"]);
+        let calls = std::cell::Cell::new(0);
+        let skip = settle(
+            &names(&["a", "b"]),
+            &full,
+            &mut resolver(&["a", "b"], &calls),
+        )
+        .unwrap();
+        assert!(skip.is_empty());
+    }
+
+    #[test]
+    fn settle_passes_a_failing_resolver_on() {
+        let full = tree(&[]);
+        let mut failing = |_: &[String]| -> Result<TreeFeatures, &'static str> { Err("no tree") };
+        assert_eq!(settle(&names(&["a"]), &full, &mut failing), Err("no tree"));
     }
 }

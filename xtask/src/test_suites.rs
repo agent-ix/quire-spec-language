@@ -55,7 +55,9 @@ use std::process::{Command, Stdio};
 use qsl_attrs::string_edge;
 
 use crate::error::{Error, Result};
-use crate::feature_scope::{decide, skipped, Decision, Resolution};
+use crate::feature_scope::{
+    decide, settle, skipped, Decision, KeepReason, Resolution, TreeFeatures, Verdict,
+};
 
 /// What a suite is.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -1196,21 +1198,20 @@ fn read_artifacts(
 /// (`--locked`, `--offline`, `--frozen`) are passed on from the test
 /// arguments; nothing else is.
 fn metadata_command(workspace_root: &Path, cargo_args: &[OsString]) -> Command {
-    metadata_command_with(workspace_root, cargo_args, &["--no-deps"])
+    read_only_command(
+        workspace_root,
+        cargo_args,
+        &["metadata", "--no-deps", "--format-version", "1"],
+    )
 }
 
-/// `cargo metadata` with `scope` (`--no-deps`, `--all-features`, ...) in the
-/// form [`metadata_command`] describes.
+/// A non-compiling `cargo` query (`metadata`, `tree`) with `leading` as its
+/// arguments, in the form [`metadata_command`] describes.
 #[string_edge]
-fn metadata_command_with(
-    workspace_root: &Path,
-    cargo_args: &[OsString],
-    scope: &[&str],
-) -> Command {
+fn read_only_command(workspace_root: &Path, cargo_args: &[OsString], leading: &[&str]) -> Command {
     let mut command = Command::new(cargo());
     command
-        .args(["metadata", "--format-version", "1"])
-        .args(scope)
+        .args(leading)
         .current_dir(workspace_root)
         .stdin(Stdio::null())
         .stderr(Stdio::inherit());
@@ -1245,12 +1246,12 @@ fn read_resolution(
     cargo_args: &[OsString],
     all_features: bool,
 ) -> Result<Resolution> {
-    let scope: &[&str] = if all_features {
-        &["--all-features"]
+    let leading: &[&str] = if all_features {
+        &["metadata", "--format-version", "1", "--all-features"]
     } else {
-        &[]
+        &["metadata", "--format-version", "1"]
     };
-    let output = metadata_command_with(workspace_root, cargo_args, scope)
+    let output = read_only_command(workspace_root, cargo_args, leading)
         .output()
         .map_err(io_error("cannot spawn cargo metadata"))?;
     if !output.status.success() {
@@ -1260,15 +1261,79 @@ fn read_resolution(
         .map_err(|source| Error::TestSuitesArtifacts { source })
 }
 
-/// What the all-features lane does with each package (QSL-825), proven from
-/// the resolve of the workspace in both lanes.
+/// The per-unit feature sets `cargo tree` resolves for the all-features
+/// workspace with `skip` left out. `--target all` keeps platform-specific
+/// requests in, and the host and target units of a package stay apart.
+pub(crate) fn read_tree_features(
+    workspace_root: &Path,
+    cargo_args: &[OsString],
+    skip: &[String],
+) -> Result<TreeFeatures> {
+    let mut command = read_only_command(
+        workspace_root,
+        cargo_args,
+        &[
+            "tree",
+            "--workspace",
+            "--all-features",
+            "--target",
+            "all",
+            "-e",
+            "normal,build,dev",
+            "--prefix",
+            "none",
+            "--format",
+            "{p}|{f}",
+        ],
+    );
+    for name in skip {
+        command.args(["--exclude", name.as_str()]);
+    }
+    let output = command
+        .output()
+        .map_err(io_error("cannot spawn cargo tree"))?;
+    if !output.status.success() {
+        return Err(cargo_failed("cargo tree", output.status));
+    }
+    Ok(TreeFeatures::from_cargo_tree(&String::from_utf8_lossy(
+        &output.stdout,
+    )))
+}
+
+/// The members of `candidates` that can be left out without changing the
+/// resolved features of any package that stays, checked against cargo's own
+/// resolver.
+fn verified_skips(
+    workspace_root: &Path,
+    cargo_args: &[OsString],
+    candidates: &[String],
+) -> Result<Vec<String>> {
+    let full = read_tree_features(workspace_root, cargo_args, &[])?;
+    settle(candidates, &full, &mut |skip| {
+        read_tree_features(workspace_root, cargo_args, skip)
+    })
+}
+
+/// What the all-features lane does with each package (QSL-825). The resolve
+/// of the workspace in both lanes nominates the packages whose compile
+/// `--all-features` cannot change; cargo's per-unit resolve then confirms
+/// that leaving them out changes nothing for the packages that stay, and a
+/// nominee it cannot confirm runs.
 pub(crate) fn all_features_decisions(
     workspace_root: &Path,
     cargo_args: &[OsString],
 ) -> Result<Vec<Decision>> {
     let default = read_resolution(workspace_root, cargo_args, false)?;
     let all = read_resolution(workspace_root, cargo_args, true)?;
-    decide(&default, &all).map_err(|source| Error::TestSuitesArtifacts { source })
+    let mut decisions =
+        decide(&default, &all).map_err(|source| Error::TestSuitesArtifacts { source })?;
+    let verified = verified_skips(workspace_root, cargo_args, &skipped(&decisions))?;
+    for decision in &mut decisions {
+        if decision.verdict == Verdict::Skip && !verified.contains(&decision.package) {
+            decision.verdict = Verdict::Run(KeepReason::ExclusionChangesResolve);
+        }
+    }
+    Ok(decisions)
 }
 
 /// `cargo_args` plus one `--exclude` per skipped package, placed before any
@@ -3374,6 +3439,113 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
                 assert!(echo.contains(ran), "{ran} did not run: {echo}");
             }
             assert!(!echo.contains("leaf_unit"), "{echo}");
+        }
+
+        fn manifest(name: &str, tail: &str) -> String {
+            format!("[package]\nname = \"{name}\"\nversion = \"0.0.0\"\nedition = \"2021\"\n{tail}")
+        }
+
+        /// A workspace `ws` of `kept` and `helper` over two path crates
+        /// outside it: `shared` (features `std` and `alloc`, with
+        /// `shared_default` on by default) and `mid`, which depends on
+        /// `shared` with `alloc`. `helper` is the candidate to leave out;
+        /// what `helper_tail` asks of `shared` is the only difference between
+        /// the full resolve and the one without `helper`.
+        fn exclusion_fixture(
+            helper_tail: &str,
+            kept_tail: &str,
+            shared_default: &str,
+        ) -> tempfile::TempDir {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let root = dir.path();
+            write(
+                root,
+                "ws/Cargo.toml",
+                "[workspace]\nmembers = [\"kept\", \"helper\"]\nresolver = \"2\"\n",
+            );
+            write(
+                root,
+                "shared/Cargo.toml",
+                &manifest(
+                    "shared",
+                    &format!("\n[features]\ndefault = {shared_default}\nstd = []\nalloc = []\n"),
+                ),
+            );
+            write(
+                root,
+                "mid/Cargo.toml",
+                &manifest(
+                    "mid",
+                    "\n[dependencies]\nshared = { path = \"../shared\", features = [\"alloc\"] }\n",
+                ),
+            );
+            for (name, tail) in [("kept", kept_tail), ("helper", helper_tail)] {
+                write(
+                    root,
+                    &format!("ws/{name}/Cargo.toml"),
+                    &manifest(name, tail),
+                );
+                write(root, &format!("ws/{name}/src/lib.rs"), "");
+                if tail.contains("build-dependencies") {
+                    write(root, &format!("ws/{name}/build.rs"), "fn main() {}\n");
+                }
+            }
+            for name in ["shared", "mid"] {
+                write(root, &format!("{name}/src/lib.rs"), "");
+            }
+            dir
+        }
+
+        const SHARED: &str = "\n[dependencies]\nshared = { path = \"../../shared\" }\n";
+
+        /// The skips `verified_skips` keeps of `helper` for one fixture.
+        fn verified_helper(dir: &tempfile::TempDir) -> Vec<String> {
+            verified_skips(
+                &dir.path().join("ws"),
+                &cargo_args(&["--workspace", "--all-features"]),
+                &names(&["helper"]),
+            )
+            .expect("cargo tree resolves the fixture")
+        }
+
+        #[test]
+        fn a_candidate_that_requests_nothing_the_others_need_stays_skipped() {
+            let dir = exclusion_fixture(SHARED, SHARED, "[]");
+            assert_eq!(verified_helper(&dir), names(&["helper"]));
+        }
+
+        /// Each case: leaving `helper` out changes a feature set of `shared`
+        /// for `kept`, which no direct `features = [...]` of a member shows.
+        #[test]
+        #[trace("TC-915", "NFR-013-AC-4")]
+        fn a_candidate_whose_absence_changes_a_remaining_resolve_is_put_back() {
+            let dev_chain = "\n[dev-dependencies]\nmid = { path = \"../../mid\" }\n";
+            let through_dependency = "\n[dependencies]\nmid = { path = \"../../mid\" }\n";
+            let build_dependency = "\n[build-dependencies]\nshared = { path = \"../../shared\", features = [\"alloc\"] }\n";
+            let kept_with_build = "\n[dependencies]\nshared = { path = \"../../shared\" }\n\n[build-dependencies]\nshared = { path = \"../../shared\" }\n";
+            let platform = "\n[target.'cfg(windows)'.dependencies]\nshared = { path = \"../../shared\", features = [\"alloc\"] }\n";
+            let no_default_features =
+                "\n[dependencies]\nshared = { path = \"../../shared\", default-features = false }\n";
+            for (case, helper, kept, shared_default) in [
+                ("dev-dependency chain", dev_chain, SHARED, "[]"),
+                (
+                    "request through a dependency",
+                    through_dependency,
+                    SHARED,
+                    "[]",
+                ),
+                ("build dependency", build_dependency, kept_with_build, "[]"),
+                ("platform-specific request", platform, SHARED, "[]"),
+                (
+                    "default-features = false",
+                    SHARED,
+                    no_default_features,
+                    "[\"std\"]",
+                ),
+            ] {
+                let dir = exclusion_fixture(helper, kept, shared_default);
+                assert!(verified_helper(&dir).is_empty(), "{case}");
+            }
         }
 
         fn run_workspace(

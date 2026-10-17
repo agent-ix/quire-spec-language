@@ -9,7 +9,7 @@ use std::process::Command;
 use ix_trace_rs::trace;
 
 use crate::feature_scope::{skipped, KeepReason, Verdict};
-use crate::test_suites::all_features_decisions;
+use crate::test_suites::{all_features_decisions, read_tree_features};
 
 // Independent complete argv expectations, including standalone default checks.
 const DEFAULT_COMMANDS: &[&[&str]] = &[
@@ -587,13 +587,22 @@ fn clean_and_core_tooling_retain_their_own_target_and_features() {
 /// QSL-825: the all-features lane's package scope, from the real workspace's
 /// `cargo metadata`. Prints the decision table (`--nocapture`).
 #[test]
+#[trace("TC-915", "NFR-013-AC-4")]
 fn real_workspace_decisions_keep_every_package_whose_compile_changes() {
     let decisions = all_features_decisions(workspace(), &[OsString::from("--locked")])
         .expect("the workspace resolves in both feature selections");
     for decision in &decisions {
         println!("{decision}");
     }
-    println!("--exclude {}", skipped(&decisions).join(" --exclude "));
+    let skip = skipped(&decisions);
+    println!("--exclude {}", skip.join(" --exclude "));
+    // The invariant the exclusions rest on: with them left out, every package
+    // that stays resolves to exactly the feature sets of the full
+    // `--all-features` workspace, host and target units apart.
+    let arguments = [OsString::from("--locked")];
+    let full = read_tree_features(workspace(), &arguments, &[]).expect("full tree");
+    let without = read_tree_features(workspace(), &arguments, &skip).expect("tree without skips");
+    assert_eq!(without.differences(&full), Vec::<String>::new());
     let verdict = |name: &str| {
         &decisions
             .iter()
