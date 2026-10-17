@@ -217,20 +217,31 @@ ci-all-features:
 
 # Full-depth formatter identity checks are isolated by their exact test name
 # from root IT and remain part of the aggregate gate in this named target.
+# They run in the default lane's artifact directory with the same
+# `--workspace` feature selection as `ci-default-features`, so the test
+# executables that lane already built are reused. `--tests` selects the test
+# targets implicitly, so a target whose required features are off (qsl-source's
+# `it`) is skipped as in that lane; naming `--test it` would make it an error.
+# Nothing is recompiled in a directory of its own. The three tests run serially in one process
+# (`--test-threads=1`: deep-stack tests must not share a thread pool); each
+# name must still select exactly one ignored test.
 test-deep-format:
 	@set -eu; \
 	for test in \
 		formatter_identity::all_three_deep_source_generators_keep_format_identity \
 		formatter_identity::replay_large_source_generator_keeps_format_identity \
 		formatter_identity::dependency_chain_and_order_variants_keep_format_identity; do \
-		listing=$$(CARGO_TARGET_DIR="$${CARGO_TARGET_DIR:-target}/test-deep-format" cargo test --locked --test it "$$test" -- --ignored --exact --list); \
+		listing=$$(CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo test --locked --workspace --tests -- --ignored --exact "$$test" --list); \
 		count=$$(printf '%s\n' "$$listing" | awk -v expected="$$test: test" '$$0 == expected { count++ } END { print count+0 }'); \
 		if [ "$$count" -ne 1 ]; then \
 			echo "test-deep-format: expected exactly one ignored test for $$test, found $$count" >&2; \
 			exit 1; \
 		fi; \
-		CARGO_TARGET_DIR="$${CARGO_TARGET_DIR:-target}/test-deep-format" cargo test --locked --test it "$$test" -- --ignored --exact --test-threads=1; \
-	done
+	done; \
+	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo test --locked --workspace --tests -- --ignored --exact --test-threads=1 \
+		formatter_identity::all_three_deep_source_generators_keep_format_identity \
+		formatter_identity::replay_large_source_generator_keeps_format_identity \
+		formatter_identity::dependency_chain_and_order_variants_keep_format_identity
 
 # The no-default-features checks: a from-clean build (its own target-dir, so
 # it never reuses this build's cached artifacts) and the parse example.
