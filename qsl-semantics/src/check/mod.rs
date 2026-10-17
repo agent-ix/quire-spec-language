@@ -2561,6 +2561,45 @@ mod tests {
 
     use super::*;
 
+    /// QSL-821: `type_admission` and `pending_refusal` keep the reached
+    /// ceiling, so the refinement classifier can name it; a failure that is
+    /// no ceiling keeps none.
+    #[test]
+    fn a_type_admission_ceiling_keeps_its_limit() {
+        use quire_semantic_value::declaration::{
+            EnvironmentFailure, EnvironmentLimit, EnvironmentLimitKind, PendingFieldFailure,
+            StorageRequest, StorageUnit,
+        };
+        let ceiling = || EnvironmentLimit::new(EnvironmentLimitKind::AncestorSteps, 5, 6);
+        let expected = Some(qsl_foundation::diagnostic::LimitExceeded::new(
+            qsl_foundation::Setting::EnvironmentAncestorSteps,
+            5,
+            6,
+        ));
+
+        let CheckCause::TypeAdmission { code, limit, .. } =
+            type_admission(EnvironmentFailure::Limit(ceiling()))
+        else {
+            panic!("expected a type admission cause");
+        };
+        assert_eq!(code, Code::StageLimitExceeded);
+        assert_eq!(limit, expected);
+
+        let CheckCause::TypeAdmission { limit, .. } =
+            pending_refusal(PendingFieldFailure::Limit(ceiling()))
+        else {
+            panic!("expected a type admission cause");
+        };
+        assert_eq!(limit, expected);
+
+        let CheckCause::TypeAdmission { limit, .. } = type_admission(
+            EnvironmentFailure::Allocation(StorageRequest::new(8, StorageUnit::Bytes)),
+        ) else {
+            panic!("expected a type admission cause");
+        };
+        assert_eq!(limit, None);
+    }
+
     fn declarations(functions: Vec<FunctionDeclaration>) -> PackageDeclarations {
         PackageDeclarations {
             functions,

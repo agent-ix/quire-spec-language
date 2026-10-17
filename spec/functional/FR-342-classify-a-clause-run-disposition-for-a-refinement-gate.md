@@ -56,7 +56,7 @@ The classification SHALL be one exhaustive `match` over
 | `Evaluate(Incomplete)` | `incomplete` |
 
 - For an `incomplete` class the classification SHALL carry the limit the
-  disposition names (a model limit or FR-100's `work_units`) and its value.
+  disposition names (a model limit, FR-100's `work_units` or a type-admission ceiling) and its value.
   A cause that names no numeric limit (an admission `Incomplete` such as
   `incomplete_population`/`incomplete-scope`) carries its code and cause only.
 
