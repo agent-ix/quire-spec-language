@@ -25,7 +25,7 @@ use qsl_semantics::model::normalize::{normalize_with_meter, EffectiveView, Norma
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::observation::{
     admit_observations, AdmissionFailure, AdmittedObservations, ClauseFacts, ClauseSelection,
-    ClauseSelectionInput, DocumentRef, ObservationLimits, OperationFacts, Provisions,
+    ClauseSelectionInput, ContextSide, DocumentRef, ObservationLimits, OperationFacts, Provisions,
 };
 use qsl_semantics::model::refusal::{MemberPath, MemberRoot};
 use qsl_semantics::value::{CatalogRole, DefinitionLock};
@@ -178,25 +178,43 @@ fn lifecycle_package(
 
 /// The K2-derived `document` normalized after exactly `charges`
 /// `normalize.record` charges and checked with `body` as its unit.
-fn model_package(
+pub(crate) fn model_package(
     document: &serde_json::Value,
     body: &str,
     charges: usize,
+) -> Result<LifecycleFixture, Vec<qsl_semantics::check::CheckRefusal>> {
+    model_package_with(document, body, Some(charges))
+}
+
+/// [`model_package`] without a pinned `normalize.record` charge count.
+pub(crate) fn model_package_unpinned(
+    document: &serde_json::Value,
+    body: &str,
+) -> Result<LifecycleFixture, Vec<qsl_semantics::check::CheckRefusal>> {
+    model_package_with(document, body, None)
+}
+
+fn model_package_with(
+    document: &serde_json::Value,
+    body: &str,
+    charges: Option<usize>,
 ) -> Result<LifecycleFixture, Vec<qsl_semantics::check::CheckRefusal>> {
     let (domain, packages) = read_k2(document);
     let (outcome, meter) = normalize_with_meter(&domain, ModelNormalizationLimits::default());
     let NormalizeOutcome::Completed(view) = outcome else {
         panic!("M15 K2 normalization must admit: {outcome:?}");
     };
-    assert_eq!(
-        meter
-            .admitted_charges()
-            .iter()
-            .filter(|charge| **charge == ChargePoint::NormalizeRecord)
-            .count(),
-        charges,
-        "TC-235 normalize.record charge count"
-    );
+    if let Some(charges) = charges {
+        assert_eq!(
+            meter
+                .admitted_charges()
+                .iter()
+                .filter(|charge| **charge == ChargePoint::NormalizeRecord)
+                .count(),
+            charges,
+            "TC-235 normalize.record charge count"
+        );
+    }
     let digest = packages.keys().next().expect("lifecycle package digest");
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\nmodel M = \"test/orders\" version \"1\" digest \"sha256-jcs:{}\";\n{}\n",
@@ -267,13 +285,11 @@ pub(crate) fn lifecycle_observation(
     contexts: &[(bool, bool)],
 ) -> (DocumentRef, Vec<u8>) {
     let lifecycle = crate::tc235_k2::id("OrderLifecycle");
-    let objects: Vec<_> = contexts
+    let contexts: Vec<_> = contexts
         .iter()
-        .enumerate()
-        .map(|(index, (placed, cancelled))| {
+        .map(|(placed, cancelled)| {
             serde_json::json!({
-                "key": if index == 0 { "i1".to_owned() } else { format!("i1-{index}") },
-                "type": lifecycle,
+                "machine": lifecycle,
                 "fields": {
                     "placed": {"boolean": placed},
                     "cancelled": {"boolean": cancelled},
@@ -297,11 +313,8 @@ pub(crate) fn lifecycle_observation(
             "version": "1",
             "digest": format!("sha256-jcs:{}", qsl_semantics::model::key::hex(model_digest)),
         },
-        "populations": [{
-            "population": lifecycle,
-            "complete": true,
-            "objects": objects,
-        }],
+        "populations": [],
+        "contexts": contexts,
     }))
     .expect("lifecycle snapshot serializes");
     (lifecycle_document_ref(label, &bytes), bytes)
@@ -344,7 +357,7 @@ pub(crate) fn lifecycle_invocation_with(
         },
         "context": crate::tc235_k2::id("OrderLifecycle"),
         "operation": "place",
-        "self": {"population": crate::tc235_k2::id("OrderLifecycle"), "key": "i1"},
+        "self": null,
         "pre": document_ref(pre),
         "post": document_ref(post),
         "parameters": parameters,
@@ -364,6 +377,46 @@ pub(crate) fn lifecycle_observations(
     invocations: &BTreeMap<[u8; 32], Vec<u8>>,
     invocation: DocumentRef,
 ) -> Result<AdmittedObservations, AdmissionFailure> {
+    lifecycle_selection(
+        package,
+        packages,
+        clause,
+        snapshots,
+        invocations,
+        ClauseSelectionInput::Invocation { invocation },
+    )
+}
+
+/// `clause` admitted from `input` over the lifecycle fixture's documents.
+pub(crate) fn lifecycle_selection(
+    package: &CheckedPackage,
+    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    clause: &str,
+    snapshots: &BTreeMap<[u8; 32], Vec<u8>>,
+    invocations: &BTreeMap<[u8; 32], Vec<u8>>,
+    input: ClauseSelectionInput,
+) -> Result<AdmittedObservations, AdmissionFailure> {
+    lifecycle_selection_with(
+        package,
+        packages,
+        clause,
+        snapshots,
+        invocations,
+        input,
+        ObservationLimits::default(),
+    )
+}
+
+/// [`lifecycle_selection`] under `limits`.
+pub(crate) fn lifecycle_selection_with(
+    package: &CheckedPackage,
+    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    clause: &str,
+    snapshots: &BTreeMap<[u8; 32], Vec<u8>>,
+    invocations: &BTreeMap<[u8; 32], Vec<u8>>,
+    input: ClauseSelectionInput,
+    limits: ObservationLimits,
+) -> Result<AdmittedObservations, AdmissionFailure> {
     let checked = package.graph().state_clause(clause).expect("M15 clause");
     let facts = ClauseFacts {
         identity: checked.identity(),
@@ -373,6 +426,7 @@ pub(crate) fn lifecycle_observations(
             declaring: operation.declaring,
             declaration: operation.declaration.clone(),
         }),
+        operations: package.graph().scope().operations().clone(),
     };
     admit_observations(
         package.graph().model_selections(),
@@ -386,51 +440,34 @@ pub(crate) fn lifecycle_observations(
         },
         &ClauseSelection {
             name: clause.to_owned(),
-            input: ClauseSelectionInput::Invocation { invocation },
+            input,
         },
-        ObservationLimits::default(),
+        limits,
     )
 }
 
-fn lifecycle_invariant_observations(
+/// The invariant `Consistent` over one side of `invocation`: FR-106's
+/// `Context` selection.
+pub(crate) fn lifecycle_context(
     package: &CheckedPackage,
-    admitted: &AdmittedObservations,
-    post: bool,
+    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: &BTreeMap<[u8; 32], Vec<u8>>,
+    invocations: &BTreeMap<[u8; 32], Vec<u8>>,
+    invocation: &DocumentRef,
+    side: qsl_semantics::model::observation::ContextSide,
 ) -> AdmittedObservations {
-    AdmittedObservations {
-        usage: admitted.usage,
-        clause: package
-            .graph()
-            .state_clause("Consistent")
-            .expect("M15 Consistent clause")
-            .identity(),
-        current: Some(
-            (if post {
-                admitted.post.as_ref()
-            } else {
-                admitted.pre.as_ref()
-            })
-            .expect("M15 invocation stage")
-            .clone(),
-        ),
-        pre: None,
-        post: None,
-        self_object: if post {
-            admitted.receiver_post.as_ref()
-        } else {
-            admitted.receiver_pre.as_ref()
-        }
-        .unwrap_or(&admitted.self_object)
-        .clone(),
-        invocation: admitted.invocation.clone(),
-        self_kind: admitted.self_kind,
-        receiver_pre: admitted.receiver_pre.clone(),
-        receiver_post: admitted.receiver_post.clone(),
-        parameters: Vec::new(),
-        result: None,
-        created: Vec::new(),
-        deleted: Vec::new(),
-    }
+    lifecycle_selection(
+        package,
+        packages,
+        "Consistent",
+        snapshots,
+        invocations,
+        ClauseSelectionInput::Context {
+            invocation: invocation.clone(),
+            side,
+        },
+    )
+    .expect("the invariant's context admits")
 }
 
 fn field(name: &str, value_type: ValueType) -> FieldDeclaration {
@@ -915,7 +952,7 @@ fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
         "PlaceEnsures",
         &snapshots,
         &invocations,
-        invocation,
+        invocation.clone(),
     )
     .expect("run 1 postcondition admits");
     let both_contexts = lifecycle_observations(
@@ -958,7 +995,14 @@ fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
     assert!(matches!(
         evaluate(
             "Consistent",
-            &lifecycle_invariant_observations(&package, &pre_one, false),
+            &lifecycle_context(
+                &package,
+                &packages,
+                &snapshots,
+                &invocations,
+                &invocation,
+                ContextSide::Pre,
+            ),
         )
         .evaluation
         .outcome,
@@ -967,7 +1011,14 @@ fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
     assert!(matches!(
         evaluate(
             "Consistent",
-            &lifecycle_invariant_observations(&package, &post_one, true),
+            &lifecycle_context(
+                &package,
+                &packages,
+                &snapshots,
+                &invocations,
+                &invocation,
+                ContextSide::Post,
+            ),
         )
         .evaluation
         .outcome,
@@ -999,7 +1050,7 @@ fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
         "PlaceEnsures",
         &snapshots,
         &invocations,
-        invocation,
+        invocation.clone(),
     )
     .expect("run 3 postcondition admits");
     assert!(matches!(
@@ -1009,7 +1060,14 @@ fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
     assert!(matches!(
         evaluate(
             "Consistent",
-            &lifecycle_invariant_observations(&package, &post_three, false),
+            &lifecycle_context(
+                &package,
+                &packages,
+                &snapshots,
+                &invocations,
+                &invocation,
+                ContextSide::Pre,
+            ),
         )
         .evaluation
         .outcome,
@@ -1017,7 +1075,14 @@ fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
     ));
     let inconsistent = evaluate(
         "Consistent",
-        &lifecycle_invariant_observations(&package, &post_three, true),
+        &lifecycle_context(
+            &package,
+            &packages,
+            &snapshots,
+            &invocations,
+            &invocation,
+            ContextSide::Post,
+        ),
     );
     assert!(matches!(
         inconsistent.evaluation.outcome,
@@ -1065,10 +1130,9 @@ fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
     assert_eq!(record.cause, "wrong-context");
     assert_eq!(record.fields["document"], "p1");
     assert_eq!(
-        record.fields["required"],
-        format!("({}, i1)", crate::tc235_k2::id("OrderLifecycle"))
+        record.fields["machine"],
+        crate::tc235_k2::id("OrderLifecycle")
     );
-    assert_eq!(record.fields["actual"], "none");
 
     let (snapshots, invocations, invocation) =
         run(&[(false, false)], &[(true, false), (true, false)]);
@@ -1090,7 +1154,7 @@ fn tc235_m15_lifecycle_invariant_keeps_receiver_context() {
     );
     assert_eq!(record.cause, "duplicate-member");
     assert_eq!(record.fields["document"], "q1");
-    assert_eq!(record.fields["path"], "/populations/0/objects/1");
+    assert_eq!(record.fields["entry"], "1");
 }
 
 /// M15 run 6 (FR-103-AC-8): a model operation `requires` that reads `pre(e)`
@@ -1464,7 +1528,11 @@ fn process_observations(
 }
 
 /// A completed Boolean: the evaluation carries no diagnostic code or cause.
-fn truth(package: &CheckedPackage, clause: &str, observations: &AdmittedObservations) -> bool {
+pub(crate) fn truth(
+    package: &CheckedPackage,
+    clause: &str,
+    observations: &AdmittedObservations,
+) -> bool {
     let evaluated = package
         .evaluate_clause(
             &QualifiedName::unqualified(clause).unwrap(),
@@ -1790,7 +1858,7 @@ fn reads_of(evaluation: &qsl_eval::value::ClauseEvaluation) -> Vec<Option<Runtim
 #[trace("QSpec-TC-235", "TC-1040", "FR-107-AC-7", "FR-107-AC-11")]
 #[test]
 fn tc235_m22_receiver_and_parameter_reads_are_located_at_their_bindings() {
-    use qsl_semantics::model::observation::{SelectedObject, SnapshotValue};
+    use qsl_semantics::model::observation::SnapshotValue;
     let (package, packages, snapshots, invocations, i1) = orders_fixture();
     let admit = |clause: &str, invocation: DocumentRef| {
         lifecycle_observations(
@@ -1820,7 +1888,14 @@ fn tc235_m22_receiver_and_parameter_reads_are_located_at_their_bindings() {
     let post = admit("FlagsPlaced", i1.clone());
     let consistent = evaluate(
         "Consistent",
-        &lifecycle_invariant_observations(&package, &post, true),
+        &lifecycle_context(
+            &package,
+            &packages,
+            &snapshots,
+            &invocations,
+            &i1,
+            ContextSide::Post,
+        ),
     );
     assert!(matches!(
         consistent.evaluation.outcome,
@@ -1877,10 +1952,7 @@ fn tc235_m22_receiver_and_parameter_reads_are_located_at_their_bindings() {
         "PlaceRequires",
         ClauseSelectionInput::PreCall {
             snapshot: pre_ref,
-            self_object: SelectedObject {
-                population: crate::tc235_k2::id("OrderLifecycle"),
-                key: "i1".to_owned(),
-            },
+            self_object: None,
             parameters: BTreeMap::from([(
                 quire_exact::Identifier::new("flags").unwrap(),
                 SnapshotValue::record(
@@ -1912,6 +1984,7 @@ fn lifecycle_pre_call(
             declaring: operation.declaring,
             declaration: operation.declaration.clone(),
         }),
+        operations: Default::default(),
     };
     admit_observations(
         package.graph().model_selections(),
@@ -1980,7 +2053,7 @@ fn items_fixture() -> OrdersFixture {
                 "fields": {"placed": {"boolean": placed}},
             }})
         };
-        document["populations"][0]["objects"][0]["fields"]["items"] =
+        document["contexts"][0]["fields"]["items"] =
             serde_json::json!({"sequence": [item(true), item(false)]});
         let bytes = serde_json::to_vec(&document).unwrap();
         (lifecycle_document_ref(label, &bytes), bytes)
@@ -2014,7 +2087,7 @@ fn items_fixture() -> OrdersFixture {
 #[trace("TC-1040", "FR-107-AC-7")]
 #[test]
 fn a_context_collection_read_under_pre_call_has_no_path() {
-    use qsl_semantics::model::observation::{SelectedObject, SnapshotValue};
+    use qsl_semantics::model::observation::SnapshotValue;
     let (package, packages, snapshots, invocations, i1) = items_fixture();
     let evaluate = |observations: &AdmittedObservations| {
         package
@@ -2065,10 +2138,7 @@ fn a_context_collection_read_under_pre_call_has_no_path() {
         "ItemsPlaced",
         ClauseSelectionInput::PreCall {
             snapshot: pre_ref,
-            self_object: SelectedObject {
-                population: crate::tc235_k2::id("OrderLifecycle"),
-                key: "i1".to_owned(),
-            },
+            self_object: None,
             parameters: BTreeMap::from([(
                 quire_exact::Identifier::new("flags").unwrap(),
                 SnapshotValue::record(
