@@ -31,3 +31,9 @@ The rest is sound:
 - `decide_frame` compares the union of pre and post field keys, so omitting absent fields is safe.
 - Making the frame family public exposes only types that were already public (`ModelIndex`, `OperationEffect`, `ModelRefusal`). `StateModel` keeps its fields `pub(crate)`.
 - `population_index` and `ancestor_steps` supply `FrameDecision.index` and `.ancestor_steps`, which QSL-493's ModelSystem needs for the FR-120 frame decision. They are justified.
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 985bfb519c877d26f91d6296b4093fbd24524c81: `ModelState.extents` holds the admitted extents (`supplied_extents`) and `observe_state` admits them through `admit_supplied_extents`. The new test `a_states_observation_navigates_the_relationships_its_snapshot_listed` asserts `ExtentState::Complete` and equal `targets` against `admit_current_snapshot`, and it fails without the stored extents, because the relationship would be unlisted. |

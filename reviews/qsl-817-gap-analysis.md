@@ -22,3 +22,9 @@ Ticket: QSL-817. PR quire-spec-language#920. This is a planless gap analysis of 
 FIX, because of FND-001. Remove the AC-1, AC-4 and AC-5 tags, and the AC-7 tag on the wrong-model, dangling and incomplete test. Keep AC-7 on `an_initial_snapshot_that_is_not_a_current_initialization_refuses`, which asserts AC-7's `wrong-observation`, `wrong-anchor` and `wrong-value-kind`/`anchor` clauses exactly. AC-3's "delta is the one the frame decision returns" clause is only partly served by the seam test.
 
 Every in-scope seam behaviour has a test, and the oracles assert exact codes, causes and values: admission into typed objects and the anchor, an absent optional field, wrong observation, wrong anchor, an `other` anchor kind, wrong model, dangling, incomplete, observation against FR-106, a changed field, a missing required field faulting, frame delta and frame refusals, and the population index. The observation-equality test does not cover relationship extents (SR-12040 FND-001).
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 985bfb519c877d26f91d6296b4093fbd24524c81: the AC-1, AC-4 and AC-5 tags and the AC-7 tag on the wrong-model, dangling and incomplete test are removed. The only tags left are AC-7 on `an_initial_snapshot_that_is_not_a_current_initialization_refuses` and AC-3 on `the_public_frame_decision_returns_the_created_and_deleted_sets`. |
