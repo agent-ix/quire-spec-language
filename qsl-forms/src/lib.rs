@@ -6,7 +6,8 @@
 //! family-keyed dispatch entry table over the closed leading-token-kind
 //! enum, and the shared parsed-form contract — and the family form
 //! builders that have migrated onto it: the `Value` family's (`value`,
-//! FR-091, M-3b for `Value`). Each other family's own migration ticket adds
+//! FR-091, M-3b for `Value`) and the `TemporalTrace` family's
+//! (`temporal_clause`, FR-325, M-3b for `TemporalTrace`). Each other family's own migration ticket adds
 //! its production function and its variants when it migrates.
 //!
 //! The `Expression` arena, its `ExprNode` enum and their sibling
@@ -33,6 +34,7 @@ mod protocol_clause;
 mod spans;
 mod sum_case;
 mod syntax;
+mod temporal_clause;
 mod value;
 
 pub use clause_text::{parse_clause_text, ClauseTextRefusal};
@@ -41,15 +43,18 @@ pub use dispatch::{
 };
 pub use spans::{DeclarationSpans, ExpressionSpans, SpanId, SpanRefusal, SpansMismatch};
 pub use syntax::{
-    Accumulation, AliasForm, AnchorForm, AnchorSegment, AnchorSite, ArmForm, AttemptForm,
-    BinaryOperator, BinderForm, BinderKind, BinderQuery, BuiltinType, CaseForm, ClauseKind,
-    DeclarationForm, DeclarationKind, DeclaredClauseKind, DeclaredName, DimensionForm,
-    DimensionTermForm, EnumForm, EnumMemberForm, ExactNumberForm, ExactNumberKind, ExprId,
-    ExprNode, ExprRef, Expression, ExpressionBuilder, FieldInitializer, FunctionDeclaration,
-    NameForm, OperationBodyForm, ProtocolBodyForm, ProtocolConstructForm, ProtocolConstructKind,
-    ProtocolDeclarationForm, ProtocolNodeDeclaration, ProtocolNodeKind, RecordFieldForm,
-    RecordForm, RoleForm, ScopeEntry, ScopeId, ScopeName, ScopedAnchorForm, ShapeChanged,
-    Spellings, StateClauseForm, StateClauseKind, TermOperator, TreeRefusal, TupleForm, TypeForm,
+    Accumulation, ActivationForm, AliasForm, AnchorForm, AnchorSegment, AnchorSite, ArmForm,
+    AttemptForm, BinaryOperator, BinderForm, BinderKind, BinderQuery, BuiltinType, CaptureForm,
+    CaseForm, ClauseKind, ClockForm, DeclarationForm, DeclarationKind, DeclaredClauseKind,
+    DeclaredName, DimensionForm, DimensionTermForm, EnumForm, EnumMemberForm, ExactNumberForm,
+    ExactNumberKind, ExprId, ExprNode, ExprRef, Expression, ExpressionBuilder, ExpressionForm,
+    FairnessConstraintForm, FairnessGranularity, FairnessKind, FieldInitializer,
+    FunctionDeclaration, IntervalForm, IntervalUpper, NameForm, OperationBodyForm, ParameterForm,
+    ProtocolBodyForm, ProtocolConstructForm, ProtocolConstructKind, ProtocolDeclarationForm,
+    ProtocolNodeDeclaration, ProtocolNodeKind, RecordFieldForm, RecordForm, RoleForm, ScopeEntry,
+    ScopeId, ScopeName, ScopedAnchorForm, ShapeChanged, Spellings, StateClauseForm,
+    StateClauseKind, TemporalClauseForm, TemporalFormulaForm, TemporalNodeForm, TemporalNodeId,
+    TemporalOperator, TemporalOperatorForm, TermOperator, TreeRefusal, TupleForm, TypeForm,
     TypeFormHead, UnionForm, UnionMemberForm, UnitForm, UsingAlias,
 };
 
