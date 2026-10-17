@@ -174,7 +174,7 @@ application in its body is one claim of its own, its value validity
 | Boolean clause over pure expressions, including function application (#217) | `value-validity` |
 | Scalar operation application in a `Value` function body (FR-062): the application is defined and its result lies in its result bound (the target range of the narrow that wraps it, or its own result type), for every assignment of its extent roots under which its path condition holds | `value-validity`, one claim per occurrence |
 | Narrowing conversion (`quire.op.numeric.narrow`) in a `Value` function body | none. When it wraps a scalar operation application, its target range is that application's result bound. When it wraps anything else, `check`'s `Coerce` range obligation discharges it (FR-093) |
-| Clause containing a `case` expression over a sum type | `value-validity` |
+| State clause containing a `case` expression over a sum type | `operation-contract`, one record, the clause's own; the `case` adds none |
 | `case` exhaustiveness obligation | none; language admission discharges it (quire-specification FR-146), and an unproved obligation refuses as `undefined_expression`/`unproved-exhaustiveness` |
 | Operation precondition, postcondition or invariant | `operation-contract` |
 | Frame obligation (`modifies`, `creates`, `deletes`) | `operation-contract` |
