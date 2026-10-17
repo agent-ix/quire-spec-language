@@ -402,6 +402,59 @@ impl IntervalKey {
     }
 }
 
+/// The upper end of a [`TemporalInterval`] (FR-326).
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum TemporalUpper {
+    /// `[a, b]`: the inclusive bound `b`.
+    Finite(u64),
+    /// `[a, *]`, admitted under `quire.temporal.infinite-trace/v1` only
+    /// (ADR-018 IV-1).
+    Open,
+}
+
+/// A validated operator interval (FR-326): `lower <= upper` whenever the
+/// upper end is finite. [`Self::new`] is the only constructor.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct TemporalInterval {
+    lower: u64,
+    upper: TemporalUpper,
+}
+
+impl TemporalInterval {
+    /// The interval `[lower, upper]`, refusing a finite `upper` below
+    /// `lower` (QSpec FR-091, FR-255).
+    pub fn new(lower: u64, upper: TemporalUpper) -> Result<Self, InvertedInterval> {
+        if let TemporalUpper::Finite(upper) = upper {
+            if lower > upper {
+                return Err(InvertedInterval { lower, upper });
+            }
+        }
+        Ok(Self { lower, upper })
+    }
+
+    /// The inclusive lower offset.
+    pub fn lower(&self) -> u64 {
+        self.lower
+    }
+
+    /// The upper end.
+    pub fn upper(&self) -> TemporalUpper {
+        self.upper
+    }
+
+    /// This interval's QSpec FR-255 key under `profile` and
+    /// `clock_binding`, or `None` for an `[a, *]` interval: the key's upper
+    /// offset is a number, and QSpec FR-255 names no key for an open end.
+    pub fn key(&self, profile: DefinitionRef, clock_binding: WireNodeId) -> Option<IntervalKey> {
+        match self.upper {
+            TemporalUpper::Finite(upper) => {
+                IntervalKey::new(self.lower, upper, profile, clock_binding).ok()
+            }
+            TemporalUpper::Open => None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     /// FR-097-AC-9: a proof bound exists only with the kind its variant

@@ -447,39 +447,41 @@ fn floating_types_are_admitted_and_reference_types_are_refused() {
     );
 }
 
-/// No checker reads a `temporal` clause yet: each one refuses at its own
-/// declaration span rather than compiling into a package that silently
-/// lacks it.
-#[trace("FR-341-AC-5", "TC-861")]
+/// FR-326: the assembler keeps each `temporal` clause's form for the
+/// `TemporalTrace` check, and records the unit's temporal profile
+/// selections; it refuses a clause whose `using` alias names no profile
+/// selection at that alias.
+#[trace("FR-326-AC-4", "TC-836")]
 #[test]
-fn each_temporal_clause_refuses_as_not_yet_implemented() {
-    let first = "temporal A using v over (p: Boolean) clock \"s\" on origin { holds(true) }";
-    let second =
-        "temporal B using v over (p: Boolean) clock \"s\" on origin { eventually[0,*] holds(p) }";
-    let (text, found) = errors(&format!("{first}\n{second}"));
+fn the_assembler_keeps_temporal_clauses_and_refuses_an_undeclared_alias() {
+    let clause = |alias: &str| {
+        format!(
+            "temporal A using {alias} over (p: Boolean) clock \"s\" on origin {{ holds(true) }}"
+        )
+    };
+    let profiles = format!("{PROFILE_V}profile t = \"quire.temporal.infinite-trace/v1\";\n");
+    let text = text(&profiles, &clause("t"));
+    let assembled = assemble_as("a", "u", &text).expect("the unit assembles");
+    assert_eq!(assembled.temporal_clauses.len(), 1);
+    assert_eq!(
+        assembled
+            .temporal_selections
+            .iter()
+            .map(|selection| selection.profile)
+            .collect::<Vec<_>>(),
+        [crate::check::TemporalProfile::InfiniteTrace]
+    );
+
+    let (text, found) = errors(&clause("missing"));
     assert_eq!(
         found,
-        [
-            AssemblyError {
-                cause: AssemblyCause::UnimplementedTemporalClause { name: "A".into() },
-                span: last(&text, first),
+        [AssemblyError {
+            cause: AssemblyCause::UndeclaredAlias {
+                alias: "missing".into()
             },
-            AssemblyError {
-                cause: AssemblyCause::UnimplementedTemporalClause { name: "B".into() },
-                span: last(&text, second),
-            },
-        ]
+            span: last(&text, "missing"),
+        }]
     );
-    for error in &found {
-        assert_eq!(
-            error.cause.code(),
-            qsl_foundation::Code::UnsupportedConstruct
-        );
-        assert_eq!(
-            error.cause.catalog_code(),
-            qsl_foundation::CatalogCode::new("unsupported_construct", "not-yet-implemented")
-        );
-    }
 }
 
 #[trace("FR-091-AC-8", "TC-396")]

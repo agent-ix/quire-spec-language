@@ -118,6 +118,7 @@ mod settings;
 mod state_clause;
 mod state_model;
 mod sum_case;
+mod temporal_clause;
 pub use state_model::StateModelRefusal;
 pub use sum_case::{mint_union_member_key, ExhaustivenessObligation, SumCaseCause};
 #[cfg(any(test, feature = "test-support"))]
@@ -236,13 +237,18 @@ pub use identity::{
 pub use ir::{CollectionLoss, CollectionProperty, DispatchCandidate, DispatchTable};
 pub use model_conformance::ModelConformanceFailure;
 pub use navigation::{EndDeclaration, EndSide, RelationshipDeclaration, Relationships};
+pub use profile::TemporalProfile;
 pub use protocol_clause::{CheckedAttempt, CheckedProtocol, ProtocolNodeId};
 pub use refusal::{
     AliasKind, AmbiguousMember, AmbiguousQualified, CheckCause, CheckRefusal, CheckingLimitKind,
     CheckingStage, DispatchFunctionRole, DispatchLinkCause, DispatchSubtypeFailure,
     InvalidDispatchDeclaration, KeyFault, MeasureObligation, MemberCandidate, NavigationBound,
     Obligation, ProtocolAnchorCause, ProtocolReferenceCause, ProvedInterval, QualifiedCandidate,
-    ShadowedDeclaration, StageLimitCause, WrongSnapshotCause,
+    ShadowedDeclaration, StageLimitCause, TemporalCause, WrongSnapshotCause,
+};
+pub use temporal_clause::{
+    CheckedOperator, CheckedTemporalClause, TemporalClaim, TemporalDeclaration,
+    TemporalDeclarations, TemporalSelection, TemporalTraceFamily,
 };
 
 /// A checked function.
@@ -1409,6 +1415,48 @@ impl PackageDeclarations {
                     checked_protocols.push(checked);
                 }
                 Err(protocol_refusals) => refusals.extend(protocol_refusals),
+            }
+        }
+        // FR-326: each `temporal` clause, checked through the `TemporalTrace`
+        // family's contract under the unit's one temporal profile. No S4
+        // emission writes a temporal node yet (FR-337), so a clause that
+        // checks is refused rather than compiled and silently missing from
+        // the package (`temporal_clause::not_emitted`).
+        let temporal_declarations = temporal_clause::TemporalDeclarations {
+            scope: &scope,
+            selections: &self.temporal_selections,
+            source: &self.source,
+            embedding: self.embedding.as_deref(),
+            position_limit: limits.nodes(),
+        };
+        for clause in &self.temporal_clauses {
+            let mut contract_cx = crate::family::CheckContext::new(
+                &temporal_declarations,
+                contract_limits,
+                &mut contract_meter,
+                &mut contract_diagnostics,
+                &mut contract_scopes,
+            );
+            match temporal_clause::TemporalTraceFamily::check(clause, &mut contract_cx) {
+                Ok(staged) => refusals.push(temporal_clause::not_emitted(&staged.into_value())),
+                Err(StageFailure::Limit(limit)) => {
+                    refusals.push(CheckRefusal {
+                        location: root(Origin::Expression),
+                        cause: limit_cause(&limit),
+                    });
+                    if cancel.tripped().is_some() {
+                        return Err(refusals);
+                    }
+                }
+                Err(StageFailure::Cancelled(_)) => return Err(refusals),
+                Err(StageFailure::Fault(fault)) => {
+                    refusals.push(CheckRefusal {
+                        location: root(Origin::Expression),
+                        cause: CheckCause::InternalFault(Box::new(KeyFault::StageFault(fault))),
+                    });
+                    return Err(refusals);
+                }
+                Err(StageFailure::Refused(refusal)) => refusals.push(refusal),
             }
         }
         if !refusals.is_empty() {

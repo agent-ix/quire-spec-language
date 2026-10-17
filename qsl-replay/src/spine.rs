@@ -33,7 +33,7 @@ use qsl_package::{EmitRefusal, ImportViewRefusal, LinkRefusal, OmittedNode};
 use qsl_semantics::check::AssemblyLimits;
 use qsl_semantics::check::{
     AssemblyCause, AssemblyRefusal, CheckCause, CheckRefusal, ProfileRefusal, ProtocolAnchorCause,
-    ShadowedDeclaration,
+    ShadowedDeclaration, TemporalCause,
 };
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -581,9 +581,6 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
         AssemblyCause::UnsuppliedImport { identity } => {
             format!("`import \"{identity}\"` names a library no dependency input supplies")
         }
-        AssemblyCause::UnimplementedTemporalClause { name } => {
-            format!("the `temporal` clause `{name}` is not checked yet")
-        }
         AssemblyCause::UnadmittedModel { alias } => {
             format!("`model {alias}` names no admitted domain package")
         }
@@ -728,6 +725,34 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 ProtocolAnchorCause::BinderType { binder, fault, .. } => {
                     format!("{message}: binder `{binder}`'s type does not resolve ({fault:?})")
                 }
+            };
+        }
+        // FR-326: name what the `TemporalTrace` check refused.
+        CheckCause::Temporal(cause) => {
+            message = match cause.as_ref() {
+                TemporalCause::ProfileSelection { found, .. } if found.is_empty() => {
+                    format!("{message}: the unit selects no temporal profile")
+                }
+                TemporalCause::ProfileSelection { found, .. } => format!(
+                    "{message}: the unit selects {} temporal profiles: {}",
+                    found.len(),
+                    found.join(", ")
+                ),
+                TemporalCause::MissingInterval { .. } => {
+                    format!("{message}: the operator needs a closed interval under this profile")
+                }
+                TemporalCause::OpenInterval { .. } => {
+                    format!("{message}: this profile admits no `[a,*]` interval")
+                }
+                TemporalCause::InvertedInterval { lower, upper, .. } => {
+                    format!("{message}: the interval [{lower},{upper}] has a > b")
+                }
+                TemporalCause::ParameterType { parameter, .. } => {
+                    format!("{message}: the type of `{parameter}` does not resolve")
+                }
+                TemporalCause::NotEmitted { name, .. } => format!(
+                    "{message}: `temporal {name}` checks but is not emitted yet"
+                ),
             };
         }
         _ => {}

@@ -19,7 +19,7 @@ use qsl_semantics::check::TypeInvariantRefusal;
 use qsl_semantics::check::{AssemblyCause, AssemblyError, AssemblyRefusal};
 use qsl_semantics::check::{
     CheckCause, CheckRefusal, DispatchLinkCause, KeyFault, ProtocolAnchorCause,
-    ProtocolReferenceCause,
+    ProtocolReferenceCause, TemporalCause,
 };
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::key::DeclarationKey;
@@ -295,24 +295,69 @@ fn an_implementation_gap_is_unsupported() {
     assert_eq!(class_of(&projection), RefinementClass::Unsupported);
 }
 
-/// FR-341-AC-5: an assembly refusal of a `temporal` clause no checker reads
-/// yet is `unsupported_construct`/`not-yet-implemented`, so it classifies
-/// `unsupported` and names no limit.
-#[trace("TC-861", "FR-341-AC-5")]
+/// FR-341-AC-5, AC-6, AC-1: a `temporal` clause that checks but that no
+/// emission writes yet is `unsupported_construct`/`not-yet-implemented` and
+/// classifies `unsupported`; a profile that does not admit an operator's
+/// interval form is `unsupported_construct`/`expression-form`, `prohibited`;
+/// a wrong profile selection, an inverted interval and an unresolved
+/// parameter type are typed refusals, `refused`. None names a limit.
+#[trace("TC-861", "FR-341-AC-5", "FR-341-AC-6", "FR-341-AC-1")]
 #[test]
-fn an_unimplemented_temporal_clause_is_unsupported() {
-    let refusal = CompileRefusal::Assembly {
-        refusal: AssemblyRefusal {
-            errors: vec![AssemblyError {
-                cause: AssemblyCause::UnimplementedTemporalClause { name: "C".into() },
-                span: qsl_foundation::Span { start: 0, end: 1 },
-            }],
-        },
-        region: None,
-    };
-    let classified = classify_refusal(&refusal);
-    assert_eq!(classified.class, RefinementClass::Unsupported);
-    assert!(classified.limits().is_empty());
+fn each_temporal_clause_refusal_has_its_class() {
+    let span = qsl_foundation::Span { start: 0, end: 1 };
+    let temporal = |cause| check(vec![CheckCause::Temporal(Box::new(cause))]);
+    let cases = [
+        (
+            TemporalCause::NotEmitted {
+                name: "C".into(),
+                span,
+            },
+            RefinementClass::Unsupported,
+            cause(Code::UnsupportedConstruct, Some("not-yet-implemented")),
+        ),
+        (
+            TemporalCause::MissingInterval { span },
+            RefinementClass::Prohibited,
+            cause(Code::UnsupportedConstruct, Some("expression-form")),
+        ),
+        (
+            TemporalCause::OpenInterval { span },
+            RefinementClass::Prohibited,
+            cause(Code::UnsupportedConstruct, Some("expression-form")),
+        ),
+        (
+            TemporalCause::ProfileSelection {
+                found: Vec::new(),
+                span,
+            },
+            RefinementClass::Refused,
+            cause(Code::UnknownProfile, Some("unsupported-selection")),
+        ),
+        (
+            TemporalCause::InvertedInterval {
+                lower: 5,
+                upper: 3,
+                span,
+            },
+            RefinementClass::Refused,
+            cause(Code::IllTyped, Some("type-mismatch")),
+        ),
+        (
+            TemporalCause::ParameterType {
+                parameter: "c".into(),
+                fault: qsl_semantics::check::TypeFormFault::MissingName("T".into()),
+                span,
+            },
+            RefinementClass::Refused,
+            cause(Code::MissingDeclaration, Some("missing-name")),
+        ),
+    ];
+    for (temporal_cause, class, expected) in cases {
+        let classified = classify_refusal(&temporal(temporal_cause.clone()));
+        assert_eq!(classified.class, class, "{temporal_cause:?}");
+        assert_eq!(classified.causes, [expected], "{temporal_cause:?}");
+        assert!(classified.limits().is_empty(), "{temporal_cause:?}");
+    }
 }
 
 /// FR-341-AC-6: a refusal whose every cause is a profile-prohibited form
