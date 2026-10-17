@@ -2642,6 +2642,54 @@ fn checked_dispatch_operation_refuses_a_dispatch_target_with_a_non_empty_effect(
     }
 }
 
+/// FR-154: an effect set holding only a receiver-scoped write, `deletes
+/// self` or a deleted argument is not empty, so each is refused `NotAQuery`
+/// exactly as a type-wide `modifies` is.
+#[trace("QSpec-TC-196", "QSpec-FR-151")]
+#[test]
+fn checked_dispatch_operation_refuses_a_target_with_only_a_receiver_scoped_effect() {
+    let effects = [
+        OperationEffect {
+            receiver_modifies: vec![DeclarationKey::fixture("model.A.x")],
+            ..Default::default()
+        },
+        OperationEffect {
+            deletes_receiver: true,
+            ..Default::default()
+        },
+        OperationEffect {
+            deletes_arguments: vec!["p".to_owned()],
+            ..Default::default()
+        },
+    ];
+    for effect in effects {
+        let domain_package = not_a_query_bundle(
+            Some(OperationResult {
+                value_type: ValueTypeRef::Package(DeclarationKey::fixture("model.A")),
+                multiplicity: Multiplicity {
+                    lower: 1,
+                    upper: Some(1),
+                    ordered: false,
+                    unique: true,
+                },
+            }),
+            effect.clone(),
+        );
+        match not_a_query_refusal(&domain_package) {
+            DispatchBridgeRefusal::NotAQuery(refusal) => {
+                assert_eq!(refusal.code, Code::IllTyped, "{effect:?}");
+                assert_eq!(refusal.cause, ModelRefusalCause::OperatorIneligible);
+                assert!(
+                    refusal.detail.contains("model.A.size"),
+                    "{}",
+                    refusal.detail
+                );
+            }
+            other => panic!("{effect:?}: expected NotAQuery, got {other:?}"),
+        }
+    }
+}
+
 /// #174 (FR-151, `quire.model.dispatch.single/v1`), H3 (#204 round 1): the
 /// query-only check runs against `root.key` first, then every other
 /// distinct candidate in plain `DeclarationKey` order -- never
