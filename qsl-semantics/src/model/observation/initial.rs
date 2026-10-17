@@ -82,13 +82,8 @@ pub(crate) fn admit_initial_state(
 
     check_model_any(views, &snapshot.model)?;
 
-    let admitted_initial = admit_initial_populations(
-        views,
-        types,
-        &snapshot.populations,
-        &snapshot.relationships,
-        ancestor_steps,
-    )?;
+    let admitted_initial =
+        admit_initial_populations(views, types, snapshot, selected, ancestor_steps)?;
 
     let mut populations = BTreeMap::new();
     for population in admitted_initial.populations {

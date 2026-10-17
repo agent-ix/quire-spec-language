@@ -204,10 +204,10 @@ fn write_current(
                 kind: AnchorKind::Handler,
                 name: "validate".to_owned(),
             },
-            self_object: SelectedObject {
+            self_object: Some(SelectedObject {
                 population: population_identity(),
                 key: self_key.to_owned(),
-            },
+            }),
         },
     };
     Ok(Written {
@@ -317,6 +317,7 @@ pub fn write(directory: &Path, case: Case) -> io::Result<()> {
                 ClauseSelectionInput::Current { .. } => "current",
                 ClauseSelectionInput::PreCall { .. } => "pre-call",
                 ClauseSelectionInput::Invocation { .. } => "invocation",
+                ClauseSelectionInput::Context { .. } => "context",
             },
         }),
         ClauseRunSelection::Function {

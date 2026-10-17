@@ -198,10 +198,10 @@ fn a_parameter_read_is_rooted_at_the_invocation_and_absent_without_one() {
             name: "ProbeOrdered".to_owned(),
             input: ClauseSelectionInput::PreCall {
                 snapshot: w,
-                self_object: SelectedObject {
+                self_object: Some(SelectedObject {
                     population: config_version_population_identity(),
                     key: "a".to_owned(),
-                },
+                }),
                 parameters: BTreeMap::from([(
                     quire_exact::Identifier::new("target").unwrap(),
                     qsl_semantics::model::observation::SnapshotValue::reference(SelectedObject {

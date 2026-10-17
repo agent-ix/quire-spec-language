@@ -1188,6 +1188,7 @@ impl Replay {
                 declaring: account,
                 declaration,
             }),
+            operations: Default::default(),
         }
     }
 
