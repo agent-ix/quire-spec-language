@@ -37,4 +37,5 @@ mod state_model_family;
 mod supplied_phases;
 mod tc235_business_meaning_runtime;
 mod total_functions;
+mod type_invariants;
 mod variant_fields;

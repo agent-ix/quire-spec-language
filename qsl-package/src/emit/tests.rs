@@ -2721,7 +2721,13 @@ fn linked(imports: Vec<crate::Import>) -> CheckedPackage {
 fn read_linked(package: &CheckedPackage) {
     let emission = emit(package);
     let mut evidence = read_evidence(&emission);
-    crate::checked_v2::supply_closure(package, &mut evidence).expect("each dependency reads back");
+    crate::checked_v2::supply_closure(
+        package,
+        &std::collections::BTreeMap::new(),
+        crate::V2ReadLimits::default(),
+        &mut evidence,
+    )
+    .expect("each dependency reads back");
     let outcome = read_with(&emission, &evidence);
     assert!(matches!(outcome, Read::Verified { .. }), "{outcome:?}");
 }
@@ -3002,6 +3008,7 @@ fn config_version_model(with_sub: bool) -> qsl_semantics::model::intake::Selecte
         span: SPAN,
         view,
         operation_clauses: Vec::new(),
+        type_invariants: Vec::new(),
     }
 }
 

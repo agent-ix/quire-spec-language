@@ -437,6 +437,10 @@ pub struct PackageDeclarations {
     /// driver parsed, with its operation resolved, checked beside the state
     /// clauses. Checking yields a refusal or nothing.
     pub operation_clauses: Vec<super::OperationClauseDeclaration>,
+    /// FR-366: each type-level `Invariant` clause the driver parsed, with its
+    /// owner resolved, checked beside the state clauses. A checked invariant
+    /// adds no declaration, claim or requirement record.
+    pub type_invariants: Vec<super::TypeInvariantDeclaration>,
     /// FR-103, FR-302: the unit's `operation-body` declarations in
     /// declaration order, each resolved to its operation's `DeclarationKey`
     /// by the FR-091 assembler. At most one per key.
@@ -518,6 +522,7 @@ impl PackageDeclarations {
             protocols: Vec::new(),
             protocol_attempts: Vec::new(),
             operation_clauses: Vec::new(),
+            type_invariants: Vec::new(),
             operation_bodies: Vec::new(),
             selected_views: BTreeMap::new(),
             identity,

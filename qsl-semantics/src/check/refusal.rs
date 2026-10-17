@@ -621,6 +621,9 @@ pub enum CheckCause {
     ProfileProhibitedOperator(qsl_forms::BinaryOperator),
     /// FR-300: a nested model form retains StateModel ownership.
     StateModel(Box<super::state_model::StateModelRefusal>),
+    /// FR-366: a refusal in a type-level invariant clause, with the clause
+    /// it is about.
+    TypeInvariant(Box<super::type_invariant::TypeInvariantRefusal>),
     /// A completed model conformance stage retains every axis failure.
     ModelConformance(Box<super::model_conformance::ModelConformanceFailure>),
     /// An unfinished model stage exposes its exact five-field denial.
@@ -661,6 +664,11 @@ pub enum CheckCause {
     /// FR-363: `r.name` names a relationship end whose destination multiplicity
     /// types no navigation: `unsupported_construct` / `expression-form`.
     UnsupportedNavigation(NavigationBound),
+    /// FR-366: the invariant of a record value type or an event type reads
+    /// through a reference, navigates a relationship or ranges over a
+    /// population. A record or event value is evaluated with no object
+    /// universe, so there is nothing for the read to observe.
+    ObjectReadInValueInvariant,
     /// `ill_typed` / `type-mismatch` (FR-091): an integer literal outside
     /// `i128::MIN..=i128::MAX`, at the literal. Never a nonzero-magnitude
     /// rewrite: a literal is refused, not truncated.
@@ -1032,10 +1040,22 @@ pub enum InvalidDispatchDeclaration {
 }
 
 impl CheckCause {
+    /// This cause without the type-level invariant it was found in (FR-366):
+    /// a reader that classifies a cause by its kind (a reached limit, an
+    /// internal fault, a denied dispatch link) reads through the wrapper.
+    #[must_use]
+    pub fn unwrapped(&self) -> &Self {
+        match self {
+            Self::TypeInvariant(refusal) => refusal.cause.unwrapped(),
+            other => other,
+        }
+    }
+
     /// The attributed catalog pair for model causes, preserving raw code().
     pub fn catalog_code(&self) -> Option<qsl_foundation::diagnostic::CatalogCode> {
         match self {
             Self::StateModel(cause) => cause.catalog_code(),
+            Self::TypeInvariant(cause) => cause.cause.catalog_code(),
             Self::DispatchLink(cause) => Some(cause.catalog),
             _ => Some(qsl_foundation::diagnostic::CatalogCode::new(
                 self.code().as_str(),
@@ -1062,6 +1082,7 @@ impl CheckCause {
         match self {
             Self::ProfileProhibitedOperator(_) => Code::UnsupportedConstruct,
             Self::StateModel(cause) => cause.cause.code(),
+            Self::TypeInvariant(cause) => cause.cause.code(),
             Self::ModelConformance(failure) => failure.code,
             Self::ModelIncomplete(_) => Code::ResourceExhausted,
             Self::TypeAdmission { code, .. } => *code,
@@ -1074,7 +1095,9 @@ impl CheckCause {
             Self::AmbiguousName { .. } | Self::AmbiguousMember(_) | Self::AmbiguousQualified(_) => {
                 Code::AmbiguousDeclaration
             }
-            Self::UnsupportedNavigation(_) => Code::UnsupportedConstruct,
+            Self::UnsupportedNavigation(_) | Self::ObjectReadInValueInvariant => {
+                Code::UnsupportedConstruct
+            }
             Self::Unproved(_) | Self::UnprovedDecrease { .. } => Code::UndefinedExpression,
             Self::SumCase(cause) => cause.code(),
             Self::ResourceExhausted(_) => Code::StageLimitExceeded,
@@ -1111,6 +1134,7 @@ impl CheckCause {
     pub fn cause(&self) -> Option<&'static str> {
         match self {
             Self::StateModel(cause) => cause.cause.cause(),
+            Self::TypeInvariant(cause) => cause.cause.cause(),
             Self::ModelConformance(failure) => Some(failure.cause.as_str()),
             // The model ceilings are the caller's budget (FR-255), so a denied
             // charge is an insufficient next charge, never a stage limit.
@@ -1127,7 +1151,9 @@ impl CheckCause {
             Self::AmbiguousName { .. } | Self::AmbiguousMember(_) | Self::AmbiguousQualified(_) => {
                 Some("ambiguous-name")
             }
-            Self::UnsupportedNavigation(_) => Some("expression-form"),
+            Self::UnsupportedNavigation(_) | Self::ObjectReadInValueInvariant => {
+                Some("expression-form")
+            }
             Self::Unproved(Obligation::Nonzero) => Some("unproved-nonzero"),
             Self::Unproved(Obligation::Presence) => Some("unproved-presence"),
             Self::Unproved(

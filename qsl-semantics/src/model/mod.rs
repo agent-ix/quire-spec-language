@@ -40,4 +40,5 @@ pub mod refusal;
 pub mod state;
 mod state_machine;
 pub mod systems;
+pub mod type_invariant;
 mod variant_type;

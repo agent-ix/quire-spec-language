@@ -215,19 +215,23 @@ fn limit_of(
         CompileRefusal::Intake { .. } => None,
         CompileRefusal::Check { refusals, region } => {
             if let Some((bound, required)) =
-                refusals.iter().find_map(|refusal| match refusal.cause {
-                    CheckCause::Identity(IdentityRefusal::InputBytes { bound, required }) => {
-                        Some((bound, required))
-                    }
-                    _ => None,
-                })
+                refusals
+                    .iter()
+                    .find_map(|refusal| match refusal.cause.unwrapped() {
+                        CheckCause::Identity(IdentityRefusal::InputBytes { bound, required }) => {
+                            Some((*bound, *required))
+                        }
+                        _ => None,
+                    })
             {
                 return Some(at(identity_limit(bound, required), region.as_ref()));
             }
-            let cause = refusals.iter().find_map(|refusal| match &refusal.cause {
-                CheckCause::ResourceExhausted(cause) => Some(cause),
-                _ => None,
-            })?;
+            let cause = refusals
+                .iter()
+                .find_map(|refusal| match refusal.cause.unwrapped() {
+                    CheckCause::ResourceExhausted(cause) => Some(cause),
+                    _ => None,
+                })?;
             let locus = cause.region.as_ref().or(region.as_ref());
             Some(at(
                 LimitExceeded::new(cause.kind.setting(), cause.limit, cause.actual),
@@ -260,6 +264,7 @@ fn limit_of(
         CompileRefusal::Limit(limit) => Some(limit.clone()),
         CompileRefusal::Forms { .. }
         | CompileRefusal::OperationClause { .. }
+        | CompileRefusal::TypeInvariant { .. }
         | CompileRefusal::Profile { .. }
         | CompileRefusal::DependencyInput(_)
         | CompileRefusal::Import { .. }
@@ -273,37 +278,38 @@ fn limit_of(
 /// the input.
 fn fault_of(refusal: &CompileRefusal) -> Option<InternalFault> {
     match refusal {
-        CompileRefusal::Check { refusals, .. } => {
-            refusals.iter().find_map(|refusal| match &refusal.cause {
-                CheckCause::InternalFault(fault) => {
-                    let named = match fault.as_ref() {
-                        KeyFault::CorrespondenceConflict(conflict) => match conflict.as_ref() {
-                            CorrespondenceConflict::NodeRebound {
-                                node,
-                                recorded,
-                                offered,
-                            } => vec![
-                                ("node", format!("{node:?}")),
-                                ("recorded", format!("{recorded:?}")),
-                                ("offered", format!("{offered:?}")),
-                            ],
-                            CorrespondenceConflict::DeclarationRebound {
-                                declaration,
-                                recorded,
-                                offered,
-                            } => vec![
-                                ("declaration", format!("{declaration:?}")),
-                                ("recorded", format!("{recorded:?}")),
-                                ("offered", format!("{offered:?}")),
-                            ],
-                        },
-                        _ => Vec::new(),
-                    };
-                    Some(InternalFault::new("S3", fault.invariant()).with_named(named))
-                }
-                _ => None,
-            })
-        }
+        CompileRefusal::Check { refusals, .. } => refusals.iter().find_map(|refusal| match refusal
+            .cause
+            .unwrapped()
+        {
+            CheckCause::InternalFault(fault) => {
+                let named = match fault.as_ref() {
+                    KeyFault::CorrespondenceConflict(conflict) => match conflict.as_ref() {
+                        CorrespondenceConflict::NodeRebound {
+                            node,
+                            recorded,
+                            offered,
+                        } => vec![
+                            ("node", format!("{node:?}")),
+                            ("recorded", format!("{recorded:?}")),
+                            ("offered", format!("{offered:?}")),
+                        ],
+                        CorrespondenceConflict::DeclarationRebound {
+                            declaration,
+                            recorded,
+                            offered,
+                        } => vec![
+                            ("declaration", format!("{declaration:?}")),
+                            ("recorded", format!("{recorded:?}")),
+                            ("offered", format!("{offered:?}")),
+                        ],
+                    },
+                    _ => Vec::new(),
+                };
+                Some(InternalFault::new("S3", fault.invariant()).with_named(named))
+            }
+            _ => None,
+        }),
         CompileRefusal::Intake { refusal, .. }
             if matches!(refusal.cause, UnitIntakeCause::Invariant) =>
         {
@@ -384,6 +390,11 @@ impl AdmittedModels {
     pub fn models(&self) -> &[SelectedModel] {
         &self.models
     }
+
+    /// The supplied domain package documents, by their `sha256-jcs` digest.
+    pub(crate) fn packages(&self) -> &BTreeMap<[u8; 32], Vec<u8>> {
+        &self.packages
+    }
 }
 
 /// A unit checked and linked: the in-process checked package and the
@@ -423,6 +434,7 @@ impl CheckedUnit {
 pub struct EmittedUnit {
     package: pkg::EmittedPackage,
     sources: Vec<Source>,
+    evidence: quire_contract_model::CheckedPackageEvidence,
 }
 
 impl EmittedUnit {
@@ -435,6 +447,12 @@ impl EmittedUnit {
     /// each by its own digest ([`Source::reference`]).
     pub fn sources(&self) -> &[Source] {
         &self.sources
+    }
+
+    /// The evidence Contract IR's reader needs to read [`Self::package`]'s
+    /// bytes back.
+    pub fn evidence(&self) -> &quire_contract_model::CheckedPackageEvidence {
+        &self.evidence
     }
 }
 
@@ -559,6 +577,7 @@ pub fn package(
         Ok(EmittedUnit {
             package: emission.package().clone(),
             sources,
+            evidence: emission.evidence().clone(),
         })
     })
 }
@@ -651,7 +670,29 @@ fn select_models(
             })
         })?;
     let source_limits = parsed.syntax.effective_limits();
-    parse_operation_clauses(models, source_limits)
+    parse_type_invariants(
+        parse_operation_clauses(models, source_limits)?,
+        source_limits,
+    )
+}
+
+/// FR-366: parses the text of each type-level `Invariant` clause of `model`
+/// with the unit clause production, and hands the parsed expressions to the
+/// assembler on the model. The first clause that does not parse refuses,
+/// located at its owner's `TypeDefinition.clauses[k]` member.
+fn parse_type_invariants(
+    models: SelectedModels,
+    limits: SourceLimits,
+) -> Result<SelectedModels, Box<CompileRefusal>> {
+    models
+        .with_parsed_type_invariants(|text| parse_clause_text(text, limits))
+        .map_err(|failure| {
+            Box::new(CompileRefusal::TypeInvariant {
+                clause: failure.clause,
+                member: failure.member,
+                failure: failure.cause,
+            })
+        })
 }
 
 /// FR-103: parses each kept `quire`-language `requires` and `ensures` clause
