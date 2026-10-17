@@ -4,6 +4,7 @@
 | --- | --- | --- |
 | FND-001 | still-open | The invariant test exists now, but the two cases measured to fail (a kept package's cfg cover on the host; a nominee's own host/target split) have no fixture |
 | FND-002 | fixed | 607149779 |
+| FND-001 | fixed (round 3) | cc2792031: both fixtures added as failing-first tests tagged TC-915 with NFR-013-AC-4 and NFR-013-AC-5 |
 
 The trace tags are honest. `a_candidate_whose_absence_changes_a_remaining_resolve_is_put_back` and `real_workspace_decisions_keep_every_package_whose_compile_changes` carry TC-915 and NFR-013-AC-4, and they assert AC-4's two clauses (put-back cases; no remaining-resolve difference).
 
