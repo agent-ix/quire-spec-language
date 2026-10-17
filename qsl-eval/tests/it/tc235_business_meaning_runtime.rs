@@ -181,20 +181,38 @@ pub(crate) fn model_package(
     body: &str,
     charges: usize,
 ) -> Result<LifecycleFixture, Vec<qsl_semantics::check::CheckRefusal>> {
+    model_package_with(document, body, Some(charges))
+}
+
+/// [`model_package`] without a pinned `normalize.record` charge count.
+pub(crate) fn model_package_unpinned(
+    document: &serde_json::Value,
+    body: &str,
+) -> Result<LifecycleFixture, Vec<qsl_semantics::check::CheckRefusal>> {
+    model_package_with(document, body, None)
+}
+
+fn model_package_with(
+    document: &serde_json::Value,
+    body: &str,
+    charges: Option<usize>,
+) -> Result<LifecycleFixture, Vec<qsl_semantics::check::CheckRefusal>> {
     let (domain, packages) = read_k2(document);
     let (outcome, meter) = normalize_with_meter(&domain, ModelNormalizationLimits::default());
     let NormalizeOutcome::Completed(view) = outcome else {
         panic!("M15 K2 normalization must admit: {outcome:?}");
     };
-    assert_eq!(
-        meter
-            .admitted_charges()
-            .iter()
-            .filter(|charge| **charge == ChargePoint::NormalizeRecord)
-            .count(),
-        charges,
-        "TC-235 normalize.record charge count"
-    );
+    if let Some(charges) = charges {
+        assert_eq!(
+            meter
+                .admitted_charges()
+                .iter()
+                .filter(|charge| **charge == ChargePoint::NormalizeRecord)
+                .count(),
+            charges,
+            "TC-235 normalize.record charge count"
+        );
+    }
     let digest = packages.keys().next().expect("lifecycle package digest");
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\nmodel M = \"test/orders\" version \"1\" digest \"sha256-jcs:{}\";\n{}\n",

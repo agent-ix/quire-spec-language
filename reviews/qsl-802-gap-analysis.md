@@ -59,3 +59,13 @@ Clean:
   closure.
 - AC-49: the existing record-street test is now tagged to TC-1044/AC-49 and
   asserts both the nfc no-change and the different-street violation.
+
+## Dispositions
+
+Reviewed at 5f0bdccdc34d94dcd338da7f9085c482e709334e.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 13e2c36ca: literal `exact = 9`, asserted against `usage.values`, and the refusal asserted to name `setting` `observation.values` |
+| FND-002 | fixed | 13e2c36ca: compares the admitted `placed`/`cancelled` Booleans, label, populations and usage across original, reordered and whitespace-respaced documents |
+| FND-003 | fixed | 13e2c36ca: `Owned.title: Title` (Text, nfc, 1..8) with admit, `text: 5`, String-for-Text and over-length cases at the context path |

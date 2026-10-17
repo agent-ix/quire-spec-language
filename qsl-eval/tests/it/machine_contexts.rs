@@ -21,7 +21,7 @@ use quire_semantic_value::declaration::FieldRef;
 
 use crate::tc235_business_meaning_runtime::{
     lifecycle_document_ref, lifecycle_document_with, lifecycle_identity, lifecycle_selection,
-    lifecycle_selection_with, model_package, truth,
+    lifecycle_selection_with, model_package_unpinned, truth,
 };
 use crate::tc235_k2::{declaration, field, id, operation, origin, type_named_mut};
 
@@ -300,7 +300,7 @@ impl Orders {
                 population_declaration("Spare", "Lamp"),
             ]);
         });
-        let (package, _, packages) = model_package(
+        let (package, _, packages) = model_package_unpinned(
             &document,
             "invariant Consistent using v on M::OrderLifecycle at current { not (self.placed and self.cancelled) }\n\
              pre PlaceRequires using v on M::OrderLifecycle::place { not self.placed }\n\
@@ -309,7 +309,6 @@ impl Orders {
              invariant Owner using v on M::Owned at current { self.label = self.label }\n\
              invariant PumpKept using v on M::Pump at current { true }\n\
              post PumpServiced using v on M::Pump::service { true }",
-            CHARGES,
         )
         .expect("the Orders fixture checks");
         let digest = packages.keys().next().expect("the package");
@@ -463,9 +462,6 @@ impl Orders {
             .collect()
     }
 }
-
-/// `normalize.record` charges of the fixture's normalization.
-const CHARGES: usize = 48;
 
 /// A state machine `owner` of one state and one transition on its operation
 /// `trigger`, with `fields` and `operation`.

@@ -47,9 +47,12 @@ place of `call`. `clause` is a closed object:
   - `{"clause": {"name": N, "observation": O, ...}}`, FR-106's
     `ClauseSelection`, where `O` names the snapshot or invocation the clause
     reads by its key in `observations`. The permitted member sets are exactly
-    `{name, observation, self, anchor}` for a current snapshot,
-    `{name, observation, self, parameters}` for a pre snapshot, and
-    `{name, observation}` for an invocation. `self` is FR-106's `ObjectRef`,
+    `{name, observation, anchor}` and optionally `self` for a current
+    snapshot, `{name, observation, parameters}` and optionally `self` for a
+    pre snapshot, and `{name, observation}` for an invocation. `self` is
+    FR-106's `ObjectRef`; it is absent when the clause's receiver is a state
+    machine, which has no object identity, and an object receiver whose
+    request omits it is refused by FR-106 check 2, not by the reader.
     `anchor` is FR-106's `{kind, name}`, and `parameters` is FR-106's
     parameter map (including `{}` when empty). An invocation document
     carries its own `self` and call context;
@@ -133,7 +136,7 @@ package and dependency inputs.
 | FR-312-AC-2 | A request carrying both `call` and `clause`, one carrying neither, one whose `selection` holds both `clause` and `function`, one with an unknown member in `clause`, and one whose selection names an observation key `observations` lacks each refuse `invalid-request` at stage `request`, exit 20, empty stdout, naming the member or key. | Test |
 | FR-312-AC-3 | Observation files whose total size exceeds `dependent_bytes` refuse at the intake limit, and the same request with the limit raised to their size runs. | Test |
 | FR-312-AC-4 | A `function` selection of `sameIdentity` with object arguments, and a `frame` selection, each give the report FR-109 and FR-115 give for the same `ClauseRunRequest` built in process; a request whose `package_id` names another unit gives FR-109's stage `compile` `stale_dependency` report, exit 20, as a `/2` document, not a command-error envelope. | Test |
-| FR-312-AC-5 | A current clause request with `self` and `anchor` constructs FR-106 `Current` and checks the supplied anchor against the snapshot; a pre clause request with `self` and `parameters` constructs `PreCall`; an invocation clause request constructs `Invocation` and reads `self` from that document. Omitting a required member or adding a role-forbidden member refuses `invalid-request` at stage `request`, naming that member, before `run_clause`. Selecting a post snapshot or a document with an unrecognized format or observation role refuses `invalid-request` at stage `request`, naming `observation`. | Test |
+| FR-312-AC-5 | A current clause request with `self` and `anchor` constructs FR-106 `Current` and checks the supplied anchor against the snapshot; a pre clause request with `parameters` and, for an object receiver, `self` constructs `PreCall`; either request without `self` constructs the selection with no `self`, and admission refuses it as `wrong-observation` at stage `admit` when the receiver is an object and admits it when the receiver is a state machine; an invocation clause request constructs `Invocation` and reads `self` from that document. Omitting `anchor` from a current request or `parameters` from a pre request, or adding a role-forbidden member, refuses `invalid-request` at stage `request`, naming that member, before `run_clause`. Selecting a post snapshot or a document with an unrecognized format or observation role refuses `invalid-request` at stage `request`, naming `observation`. | Test |
 | FR-312-AC-6 | A clause request's `accounting` object accepts all ten counter names and passes their values unchanged to `ClauseRunRequest.accounting`; omitted `accounting` uses the FR-100 defaults. A direct `work_units` member of `clause` refuses `invalid-request` at stage `request`, exit 20, empty stdout. | Test (TC-891) |
 
 The existing AC-1 through AC-5 test-case association remains TC-891;

@@ -63,3 +63,18 @@ Clean:
   `macro_rules! pre_call_context` would read better as a constructor
   function. The `contexts`-on-`current` refusal names `field` where the
   other 6.10 refusals name `member`.
+
+## New findings (disposition pass 1)
+
+Reviewed at 5f0bdccdc34d94dcd338da7f9085c482e709334e, over the delta from b7769a7d7 (excluding the merge of main).
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-002 | high | FR-312 still says `self` is a required member of a current and a pre clause request (`{name, observation, self, anchor}` / `{name, observation, self, parameters}`). FR-312-AC-5 says omitting a required member refuses `invalid-request` at stage `request`, naming it. The fix makes `self` optional in the reader, so a request without `self` now reaches admission. The new test `clause_run_command_refuses_a_missing_self_of_an_object_receiver_at_admission` asserts stage `admit` / `wrong-observation`, which is the opposite of what AC-5 says. It is tagged `FR-312-AC-2`, an AC about `call`/`clause`/`selection` shape that says nothing about `self`. Fix: update FR-312's request forms and AC-5 so `self` is optional (absent for a state-machine receiver, and an object receiver without it refused at FR-106 check 2), then retag the test to the updated AC. | spec/functional/FR-312-read-a-clause-run-request-and-run-it.md:50-55, spec/functional/FR-312-read-a-clause-run-request-and-run-it.md:136, tests/it/config_version_spine.rs:336-358 |
+| FND-003 | low | `const CHARGES: usize = 48` in `machine_contexts.rs` is a fixture-size tally, not a check of any behaviour. `model_package` asserts the `normalize.record` charge count equals it, and no FR-106-AC-41..47/49 or TC-1045 row is about normalization charges. It had to go from 46 to 48 only because the fixture grew (the `Title` type). It passes whatever the charging is, provided someone re-counts. This is the count-pin antipattern. Fix: let this fixture call `model_package` without a charge count (for example `Option<usize>`, or a variant without the assertion), and delete `CHARGES`. | qsl-eval/tests/it/machine_contexts.rs:312, qsl-eval/tests/it/machine_contexts.rs:468 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 13e2c36ca, 5f0bdccdc: the reader passes `clause.self_object` through for current and pre, and admission check 2 decides `self` against the receiver |

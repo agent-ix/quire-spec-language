@@ -36,12 +36,13 @@ Scope: FR-312-AC-1 to FR-312-AC-6.
    request with `self` and `parameters: {}`, and an invocation clause request
    with neither context member. Compare each to the same FR-106 selection
    built in process. For current, change the request anchor to one that
-   disagrees with the snapshot. In independent edits omit `self` or `anchor`
-   from current, omit `self` or `parameters` from pre, add `parameters` to
+   disagrees with the snapshot. In independent edits omit `anchor`
+   from current, omit `parameters` from pre, add `parameters` to
    current, add `anchor` to pre, and add `self`, `anchor` or `parameters` to
    invocation. Select a post snapshot directly, then a document with an
    unrecognized `format`, then a snapshot with an unrecognized `observation`
-   role.
+   role. Omit `self` from a current request whose receiver is an object and
+   expect an admission refusal `wrong-observation` at stage `admit`, exit 20.
 6. Read a clause request with all ten `accounting` counters set to 1 through
    10, one with `accounting` omitted, and one with a legacy direct
    `work_units` member in `clause`.

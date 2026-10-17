@@ -336,7 +336,7 @@ fn clause_run_command_refuses_ambiguous_and_missing_selection_members() {
 /// FR-106 check 2: a current snapshot over an object receiver that names no
 /// `self` is no request defect (a state machine's has none); admission
 /// refuses it as `wrong-observation`.
-#[trace("TC-891", "FR-312-AC-2")]
+#[trace("TC-891", "FR-312-AC-5")]
 #[test]
 fn clause_run_command_refuses_a_missing_self_of_an_object_receiver_at_admission() {
     let directory = tempfile::tempdir().unwrap();
