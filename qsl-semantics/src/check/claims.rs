@@ -43,13 +43,14 @@ use qsl_foundation::bound::DomainKey;
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::InternalFault;
-use quire_exact::{IntegerInterval, NodeKey, Origin, ValueType};
+use quire_exact::{EffectiveId, IntegerInterval, NodeKey, Origin, ValueType};
 
 use super::ir::{
     coerce_builds_narrow, scalar_conversion_target, CheckedNode, NodeKind, Slot, Visit,
 };
 use super::lowering::SemanticGraph;
 use super::node_key::{ApplicationTerm, BodyTerm, LeafTerm, MemberTerm};
+use super::references::{read_object, ModelReferences};
 use super::refusal::KeyFault;
 use super::{
     family::{OccurrenceMap, OccurrenceRole},
@@ -198,6 +199,9 @@ impl ClaimSite {
 pub struct ValueClaim {
     site: ClaimSite,
     domains: BTreeMap<(BinderSite, Vec<u32>), DomainKind>,
+    /// ADR-017 AR-4: the object types the claim's operands and guards read
+    /// model members of.
+    objects: BTreeSet<EffectiveId>,
 }
 
 impl ValueClaim {
@@ -266,6 +270,7 @@ pub struct RequirementRecord {
     result_bound: ResultBound,
     conversion_context: Option<OccurrenceKey>,
     path_condition: Vec<PathGuard>,
+    references: ModelReferences,
 }
 
 impl RequirementRecord {
@@ -276,13 +281,20 @@ impl RequirementRecord {
         requirements: Requirements,
         value_type: ValueType,
         node: WireNodeId,
+        references: ModelReferences,
     ) -> Self {
         Self {
             requirements,
             result_bound: ResultBound { value_type, node },
             conversion_context: None,
             path_condition: Vec::new(),
+            references,
         }
+    }
+
+    /// The model elements the record's claim references (ADR-017 AR-4).
+    pub(crate) fn references(&self) -> &ModelReferences {
+        &self.references
     }
 
     /// The claim's capability kind and extent, each unbounded domain keyed
@@ -401,6 +413,8 @@ struct Guard {
     location: Location,
     holds: bool,
     reads: BTreeSet<BinderSite>,
+    /// The object types the guard's condition reads model members of.
+    objects: BTreeSet<EffectiveId>,
     outer: Option<usize>,
 }
 
@@ -420,6 +434,10 @@ struct Frame<'n> {
     /// The binders the first child reads, once it is finished: an `if`'s
     /// condition, a connective's left operand, a `let`'s bound value.
     first_reads: BTreeSet<BinderSite>,
+    /// The object types the node's subtree reads model members of.
+    objects: BTreeSet<EffectiveId>,
+    /// The object types the first child's subtree reads model members of.
+    first_objects: BTreeSet<EffectiveId>,
     /// Where a binder this node binds is located: its own location, or an
     /// enclosing `flatten`'s, whose `flat_map` node binds it (FR-093).
     binding: Location,
@@ -552,11 +570,15 @@ impl<'n> ClaimsWalk<'n, '_> {
         };
         let node = frame.node;
         let mut guard = frame.guard;
-        let mut guard_on = |location: &Location, holds: bool, reads: &BTreeSet<BinderSite>| {
+        let mut guard_on = |location: &Location,
+                            holds: bool,
+                            reads: &BTreeSet<BinderSite>,
+                            objects: &BTreeSet<EffectiveId>| {
             self.guards.push(Guard {
                 location: location.clone(),
                 holds,
                 reads: reads.clone(),
+                objects: objects.clone(),
                 outer: frame.guard,
             });
             guard = Some(self.guards.len() - 1);
@@ -567,11 +589,17 @@ impl<'n> ClaimsWalk<'n, '_> {
                     node.at(*condition).location(),
                     index == 1,
                     &frame.first_reads,
+                    &frame.first_objects,
                 );
             }
             (NodeKind::Connective(connective, left, _), 1) => {
                 let holds = !matches!(connective, super::ir::Connective::Or);
-                guard_on(node.at(*left).location(), holds, &frame.first_reads);
+                guard_on(
+                    node.at(*left).location(),
+                    holds,
+                    &frame.first_reads,
+                    &frame.first_objects,
+                );
             }
             (NodeKind::Let { slot, .. }, 1) => {
                 self.roots.slots.insert(*slot, frame.first_reads.clone());
@@ -633,6 +661,8 @@ impl<'n> ClaimsWalk<'n, '_> {
             return Ok(());
         };
         let mut reads = frame.reads;
+        let mut objects = frame.objects;
+        objects.extend(read_object(frame.node));
         if let NodeKind::Local(slot) = frame.node.kind() {
             let Some(read) = self.roots.slots.get(slot) else {
                 return Err(ClassifyFailure::Fault(InternalFault::new(
@@ -664,7 +694,7 @@ impl<'n> ClaimsWalk<'n, '_> {
                 position_limit: self.position_limit,
             };
             self.claims
-                .push(walk.claim(frame.node, narrow, frame.guard, &reads)?);
+                .push(walk.claim(frame.node, narrow, frame.guard, &reads, &objects)?);
         }
         for bound in bound_by(frame.node, &frame.binding) {
             reads.remove(&bound);
@@ -672,9 +702,11 @@ impl<'n> ClaimsWalk<'n, '_> {
         if let Some(parent) = self.frames.last_mut() {
             if parent.left == 0 {
                 parent.first_reads.clone_from(&reads);
+                parent.first_objects.clone_from(&objects);
             }
             parent.left += 1;
             parent.reads.extend(reads);
+            parent.objects.extend(objects);
         }
         Ok(())
     }
@@ -731,6 +763,8 @@ impl<'n> quire_walk::Walk for ClaimsWalk<'n, '_> {
             child_guard: guard,
             reads: BTreeSet::new(),
             first_reads: BTreeSet::new(),
+            objects: BTreeSet::new(),
+            first_objects: BTreeSet::new(),
             binding,
         });
         for (index, child) in kids.into_iter().enumerate() {
@@ -761,9 +795,11 @@ impl Classify<'_> {
         narrow: Option<&IntegerInterval>,
         guard: Option<usize>,
         reads: &BTreeSet<BinderSite>,
+        operand_objects: &BTreeSet<EffectiveId>,
     ) -> Result<ValueClaim, ClassifyFailure> {
         let fault = |invariant| ClassifyFailure::Fault(InternalFault::new(STAGE, invariant));
         let mut roots = reads.clone();
+        let mut objects = operand_objects.clone();
         let mut path_condition = Vec::new();
         let mut at = guard;
         while let Some(index) = at {
@@ -772,6 +808,7 @@ impl Classify<'_> {
                 .get(index)
                 .ok_or_else(|| fault("guard-in-arena"))?;
             roots.extend(guard.reads.iter().cloned());
+            objects.extend(guard.objects.iter().copied());
             path_condition.push(SiteGuard {
                 location: guard.location.clone(),
                 holds: guard.holds,
@@ -806,6 +843,7 @@ impl Classify<'_> {
                 path_condition,
             },
             domains,
+            objects,
         })
     }
 }
@@ -944,6 +982,7 @@ pub(crate) fn key_claims(
             },
             conversion_context,
             path_condition,
+            references: ModelReferences::new(claim.objects, [], None),
         };
         if records
             .insert(OccurrenceKey::new(wire(*key), origin.clone()), record)

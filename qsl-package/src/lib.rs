@@ -15,6 +15,7 @@
 mod checked;
 mod checked_v2;
 mod emit;
+mod export;
 
 pub use checked::{CheckedPackage, EmittedPackage, Import, LinkRefusal, ResolvedDependency};
 pub use checked_v2::{
@@ -25,6 +26,7 @@ pub use emit::{
     checked_node_id, checked_occurrence, emit_checked, emit_checked_with_cancel, emit_package,
     Emission, EmitRefusal, OmissionCause, OmittedNode,
 };
+pub use export::{export_bindings, BoundItem, ExportRefusal, UnboundElement};
 
 // The FR-105-AC-6 fault-injection seam. Public only under
 // `test-support` (see `emit.rs`'s doc comments and this crate's
