@@ -38,13 +38,10 @@ type, operation name), however many clauses and attempts name the operation,
 and it references the operation's frame node (FR-105); an attempt adds no
 second anchor, no second frame node and no second frame requirement record.
 
-A protocol holding the attempt compiles only when every other part of it is
-checked (FR-113 Description lists what is and what still refuses
-`unsupported_construct`/`not-yet-implemented`). The package then holds the
-attempt's anchor, frame and frame record, and no node for the protocol
-itself. So TC-513's own fixture
-body `{ updated }`, which reads the binder, still refuses until protocol
-bodies are checked. The tests use `{ true }`. The emitted spellings follow
+A protocol holding the attempt compiles when every other part of it is
+checked (FR-218, FR-381). The package then holds the attempt's anchor, frame
+and frame record, and the protocol's one `protocol_clause` node (FR-092). The
+emitted spellings follow
 FR-105's and are pending STD-111, as FR-105's are.
 
 ## Inputs
