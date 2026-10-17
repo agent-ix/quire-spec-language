@@ -85,8 +85,8 @@ beside it as a separate item.
   that abstract subject with the derived universes.
 - For FR-124's derivation the request writer SHALL count a refinement item
   as a temporal item over the concrete subject, so the request carries the
-  concrete subject's deadlock-freedom item unless the concrete model
-  declares `terminal any`. A refinement item SHALL NOT add a
+  concrete subject's deadlock-freedom item unless the concrete model's
+  package declares `terminal any` for it. A refinement item SHALL NOT add a
   deadlock-freedom item for the abstract subject (ADR-020 RS-9).
 
 ### Settlement
@@ -110,7 +110,7 @@ beside it as a separate item.
   `inconclusive` SHALL settle V-6 with `ReplayParity` (wire cause
   `replay-parity`, QSpec FR-379), a refusal V-6 with
   `ReplayRefused`, and a fault `failed`.
-- The record SHALL read neither model's `terminal` member; its value SHALL
+- The record SHALL read neither model's `terminal` declaration; its value SHALL
   be the same under every combination of them.
 - **Certificate.** A safety half that the product proves SHALL settle
   `proved` only after FR-149's checker accepts its certificate; a rejection
