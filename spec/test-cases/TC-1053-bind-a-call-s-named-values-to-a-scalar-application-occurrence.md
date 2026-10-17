@@ -35,11 +35,14 @@ Compile and emit each unit as FR-100's `run` does, then call
 1. `function sub using v(a: Int[0, 9], b: Int[0, 9]): Int[-9, 9] pure { a - b }`:
    bind arguments listed `b = 2, a = 7`, then `a = 7, b = 2`; compile
    `b - a` as a second unit and bind the same values.
-2. `a + 1`, `1 + a`, `a - a` and `-a` over `a: Int[0, 9]`, `a = 4`.
+2. `a + 1`, `1 + a`, `a - a` and `-a` over `a: Int[0, 9]`, `a = 4`; and a
+   package whose application holds an inline literal term.
 3. For `sub`: leave `b` unbound; add an extra argument `c`; bind `a` twice;
    give `a` a Boolean; give `a` the integer `10`; then leave `b` unbound and
-   give `a` a Boolean together. Run the same `Call` through `run` and compare
-   each refusal.
+   give `a` a Boolean together; and, over a model unit, give a reference
+   argument of a foreign model selection, of a foreign type, of a foreign
+   universe, and one absent from the complete population. Run the same `Call`
+   through `run` and compare each refusal.
 4. For `sub`: an occurrence key the node lacks while another exists; a node of
    a second function `other` that shares the parameter nodes of `sub`; a node
    outside `sub`'s body; a node absent from the package; a
@@ -49,9 +52,10 @@ Compile and emit each unit as FR-100's `run` does, then call
    `function n using v(a: Int[0, 9]): Int[0, 11] pure { (a + 1) + 2 }`; bind
    the inner and the outer application of `n`.
 6. `function big using v(a: Int[0, 100000000000000000000]): Int[0, 100000000000000000001] pure { a + 1 }`
-   with `a = 9223372036854775807` and `a = 9223372036854775808`.
-7. A function that divides by zero on its argument and a call with a tight
-   `work_units`: bind its `+` occurrence; then bind `a + 1` with
+   with `a = 9223372036854775807` and `a = 9223372036854775808`, and
+   `a + 9223372036854775808` over `a: Int[0, 9]`.
+7. A function whose evaluation would be undefined (`a / 0`-style) with a
+   `work_units` of 1, binding its `+` occurrence; then `a + 1` with
    `value_occurrences` below the conversion's count.
 8. Bind step 1's request twice, and the FR-357 claim for the same occurrence;
    compare `values()` with the claim's operand values.
@@ -61,19 +65,27 @@ Compile and emit each unit as FR-100's `run` does, then call
 - Step 1: `[7, 2]` for both listings, provenance argument indices `1, 0` and
   `0, 1`, parameters `a` then `b`, each with its parameter node and level;
   `b - a` gives `[2, 7]`.
-- Step 2: `[4, 1]` with an `InlineLiteral` second operand of range `(1, 1)`;
-  `[1, 4]`; `[4, 4]` from one argument index at two ordinals; `[4]`.
-- Step 3: `UnboundParameter`, `UnknownParameter`, `DuplicateArgument`,
-  `WrongValueKind`, `WrongValueKind`, and for the combined case FR-100's
-  first refusal; every one equals the refusal `run` returns, and no vector is
-  returned.
+- Step 2: `[4, 1]` with a `value`/`literal` graph-node `InlineLiteral`
+  second operand of range `(1, 1)`; `[1, 4]`; `[4, 4]` from one argument
+  index at two ordinals; `[4]`; the inline literal term binds
+  `InlineLiteral { node: None }`.
+- Step 3: `Err` with `UnboundParameter`, `UnknownParameter`,
+  `DuplicateArgument`, `WrongValueKind`, `WrongValueKind`, and for the
+  combined case FR-100's first refusal; `foreign_reference` with
+  `foreign-model-selection`, `foreign-type` and `foreign-universe`;
+  `dangling_reference`/`absent-target-in-complete-population`. Every one equals
+  the refusal `run` returns, and no vector is returned.
 - Step 4: `ScalarIdentity` with `Occurrence`, `Node`, `Node`, `Node`,
   `Function` and `Operator`, in that order; `other`'s application binds only
   under `Call.function = other`.
-- Step 5: `Operands(UnboundedRange)`; the inner binds `[a, 1]`; the outer
-  refuses `OperandNotParameter { ordinal: 0 }`.
-- Step 6: `9223372036854775807` binds; the next value refuses
-  `OperandNotNative` at ordinal 0.
-- Step 7: the first binds `[a, 1]` and the function is not called; the second
-  returns `Incomplete` and no binding.
+- Step 5: `Refused(Operands(UnboundedRange))`; the inner binds `[a, 1]`; the
+  outer returns `Refused(OperandNotParameter { ordinal: 0 })`; `lt` and its
+  quantifier variant return `Refused(OperandNotArgument)` at ordinal 0 with the
+  binder's name and level.
+- Step 6: `[9223372036854775807, 1]` binds despite the range endpoint beyond
+  `i64`; the next value and the literal `9223372036854775808` return
+  `Refused(OperandNotNative)` at their ordinals.
+- Step 7: the first returns `Bound` with `[a, 1]` and the function is not
+  called; the second returns `Incomplete(CallIncomplete)` naming
+  `value_occurrences` and no binding.
 - Step 8: equal results; `values()` equals the claim's ordered operand values.

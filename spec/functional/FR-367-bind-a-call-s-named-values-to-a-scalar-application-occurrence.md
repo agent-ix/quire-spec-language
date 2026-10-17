@@ -51,8 +51,16 @@ artifact and reports no verdict.
 
 ## Outputs
 
-`bind_scalar_operands(package, call, occurrence) -> Result<BoundScalarOperands,
-BindRefusal>`.
+`bind_scalar_operands(package, call, occurrence) -> Result<BindOutcome,
+Box<RunRefusal>>`, shaped as FR-100's `run` returns its outcome. The `Err` arm
+is FR-100's own `RunRefusal`, unchanged: the call-admission refusals of
+Behavior 1 and the internal failure (`RunRefusal::Fault`, FR-100 "Internal
+failure at S6a"). The `Ok` arm is exactly one of:
+
+- `BindOutcome::Bound(BoundScalarOperands)`;
+- `BindOutcome::Refused(BindRefusal)`, an occurrence or operand refusal below;
+- `BindOutcome::Incomplete(CallIncomplete)`, FR-100's `CallIncomplete`
+  unchanged, when the argument conversion reaches an accounting limit.
 
 `BoundScalarOperands` has accessors for these typed members:
 
@@ -69,7 +77,7 @@ BindRefusal>`.
 | --- | --- |
 | `ordinal` | Zero-based position in the application's arguments (Contract IR `CheckedScalarOperand.ordinal`) |
 | `value` | The operand's concrete `i64` |
-| `range` | The operand's inclusive range as Contract IR returns it |
+| `range` | The operand's inclusive range as Contract IR returns it (`i128` endpoints) |
 | `source` | `OperandSource`, below |
 
 `OperandSource` is exactly one of:
@@ -79,79 +87,103 @@ BindRefusal>`.
   name; `node` is the parameter node (`WireNodeId`) the operand references;
   `level` is that node's declared level as Contract IR's
   `parameter_declaration(node)` returns it (decimal text).
-- `InlineLiteral`: the operand is an inline integer literal term of the
-  application; its value is the singleton of its range and no argument fed it.
+- `InlineLiteral { node }`: the operand is an integer literal and no argument
+  fed it. `node` is `Some(WireNodeId)` of the `value`/`literal` graph node the
+  operand references (QSL lowers every integer literal to such a node, so this
+  is the form a source-compiled package yields) and `None` for an inline
+  literal term of the application. Its value is the literal's own value, which
+  equals the singleton of its range.
 
 `BindRefusal` has exactly these variants, each carrying the data named:
 
 | Variant | Carries | Code and cause |
 | --- | --- | --- |
-| `Admission` | the FR-100 `RunRefusal`, unchanged | that refusal's own: `missing_declaration`, `unsupported_construct`, or `invalid_runtime_input` for `UnknownParameter`, `DuplicateArgument`, `UnboundParameter`, `WrongValueKind`, `Admission`, `DanglingReference` |
 | `ScalarIdentity` | a cause: FR-357's `Node`, `Operator` or `Occurrence`, or this requirement's `Function` | `stale_dependency`/`content-mismatch` |
 | `Operands` | Contract IR's `CheckedScalarOperandError` | `unsupported_construct`/`expression-form` |
 | `OperandNotParameter` | `ordinal` | `unsupported_construct`/`expression-form` |
+| `OperandNotArgument` | `ordinal`, `parameter` name, `level` | `unsupported_construct`/`expression-form` |
 | `OperandNotNative` | `ordinal`, the value's decimal text | `invalid_runtime_input` |
 
-A defect the compiled package cannot produce (Contract IR's `MalformedBody`,
-or a parameter whose declared name differs from the called function's
-parameter at the joined node) is an internal failure (FR-100 "Internal
-failure at S6a"), never a `BindRefusal`.
+The call-admission refusals keep FR-100's own codes: `UnknownParameter`,
+`DuplicateArgument`, `UnboundParameter` and `WrongValueKind`/`Admission` of a
+value of the wrong kind or outside its type are `invalid_runtime_input`; an
+`Admission` carrying a foreign model selection, type or universe is
+`foreign_reference` (`foreign-model-selection`, `foreign-type`,
+`foreign-universe`); `DanglingReference` is `dangling_reference`
+(`absent-target-in-complete-population`); `MissingDeclaration` and
+`UnsupportedResult` are FR-100's. Contract IR's `MalformedBody`, and a
+parameter whose declared name differs from the called function's parameter at
+the joined node, are internal failures (`RunRefusal::Fault`), never a
+`BindRefusal`.
 
 ## Behavior
 
 1. The entry SHALL admit the call as FR-100's `run` does before the
    evaluation: it SHALL select `Call.function` (`select`), join each argument
    to the parameter of the same declared name, and convert each value to its
-   parameter's declared type. It SHALL refuse with `Admission`, carrying the
-   `RunRefusal` FR-100 states, for: an argument that names no parameter (an
-   extra argument, `UnknownParameter`); two arguments that name one parameter
-   (`DuplicateArgument`); a parameter with no argument (a missing argument,
-   `UnboundParameter`); and a value that is not of its parameter's declared
-   type, including a Boolean for an integer parameter or an integer outside a
-   bounded parameter's range (a mistyped argument, `WrongValueKind` or the
-   model-aware `Admission`). Admission refusals precede every occurrence
-   refusal.
+   parameter's declared type. It SHALL return `Err` with the `RunRefusal`
+   FR-100 states, in FR-100's order, for: an argument that names no parameter
+   (an extra argument, `UnknownParameter`); two arguments that name one
+   parameter (`DuplicateArgument`); a parameter with no argument (a missing
+   argument, `UnboundParameter`); a value that is not of its parameter's
+   declared type, including a Boolean for an integer parameter or an integer
+   outside a bounded parameter's range (a mistyped argument, `WrongValueKind`);
+   and the model-aware `Admission` and `DanglingReference` causes. Admission
+   refusals precede every occurrence refusal.
 2. The entry SHALL then check the occurrence as FR-357's operator entry
    checks a claim's scalar node, with the same typed causes: `Function` when
    `occurrence.function` differs from `Call.function`; `Node` when
    `application` is no node of the package or lies outside the called
    function's body; `Operator` when it is no application of `add`, `sub`,
    `mul` or `negate`; `Occurrence` when `occurrence` is not one of the node's
-   occurrences. Each refuses `ScalarIdentity`. A missing occurrence refuses
-   even if another occurrence of the same node exists.
+   occurrences. Each returns `Refused(ScalarIdentity)`. A missing occurrence
+   refuses even if another occurrence of the same node exists.
 3. The entry SHALL read the operands with Contract IR's
    `scalar_application_operands(application, occurrence)` in the order it
    returns them, and SHALL NOT reorder, deduplicate, sort or skip any operand:
-   `a - a` binds two operands, and `b - a` binds `b` first. Any error of that
-   accessor refuses `Operands` with the error unchanged, and no operand list is
-   returned.
-4. For a `GraphChild` operand the entry SHALL read the node with Contract IR's
-   `parameter_declaration(&node)`. If it refuses `NotParameter` (the operand
-   is a nested application or a graph-held literal), the entry SHALL refuse
-   `OperandNotParameter` with the operand's `ordinal`: this requirement
-   binds a parameter or an inline literal, and it evaluates no
-   subexpression. If it returns a declaration, the entry SHALL join the node to
-   the called function's parameter of that node id (the join FR-098-AC-2
-   states) and take the value from the `CallArgument` that supplied that
-   parameter. Two operands that reference one parameter node bind the same
-   argument twice, at their own ordinals. The `level` is carried in the
-   `source`; it is not used to choose the argument.
-5. For an `InlineLiteral` operand the entry SHALL take the value as the
-   singleton of the operand's range, with `source` `InlineLiteral`.
-6. The entry SHALL refuse `OperandNotNative` for an operand value, or an
-   endpoint of its range, that is not representable as `i64`, and SHALL check
-   the operands in ordinal order and refuse the lowest ordinal. A value
-   outside its operand's range cannot reach this step: a parameter operand's
-   range is its declared type's, which step 1 admitted, and an inline
-   literal's is its own value.
-7. The returned `values()` SHALL equal the operands' values in `operands`
+   `a - a` binds two operands, each with provenance to the same
+   `CallArgument`, and `b - a` binds `b` first. Any error of that accessor
+   returns `Refused(Operands)` with the error unchanged, and no operand list.
+4. For each operand the entry SHALL decide its source in this order.
+   - An `InlineLiteral` operand of Contract IR binds as `InlineLiteral { node:
+     None }` with the singleton of its range as its value.
+   - A `GraphChild` whose node the compiled package holds as a `value`/`literal`
+     node of an integer binds as `InlineLiteral { node: Some(..) }` with that
+     node's integer value, which the entry reads from the checked package; no
+     Contract IR accessor is added for it.
+   - Any other `GraphChild`: the entry SHALL call Contract IR's
+     `parameter_declaration(&node)`. If it refuses `NotParameter` (the operand
+     is a nested application or another non-literal node), the entry SHALL
+     return `Refused(OperandNotParameter)` with the operand's `ordinal`: this
+     requirement binds a parameter or a literal, and it evaluates no
+     subexpression.
+   - If `parameter_declaration` returns a declaration, the entry SHALL join the
+     node to the called function's parameter of that node id (the join
+     FR-098-AC-2 states) and take the value from the `CallArgument` that
+     supplied that parameter. A parameter node that is no parameter of the
+     called function, such as the binder of a `let` or quantifier (QSL lowers a
+     binder to a `value`/`parameter` node at the next level), has no supplied
+     value; the entry SHALL return `Refused(OperandNotArgument)` with the
+     `ordinal`, the declared name and the level.
+   Two operands that reference one parameter node bind the same argument
+   twice, at their own ordinals. The `level` is carried in the `source`; it is
+   not used to choose the argument.
+5. The entry SHALL return `Refused(OperandNotNative)` for an operand value
+   (an argument's or a literal's) that is not representable as `i64`, checking
+   the operands in ordinal order and refusing the lowest ordinal. An endpoint of
+   an operand's range beyond `i64` does not refuse: the check is on the value,
+   so a parameter declared `Int[0, 100000000000000000000]` binds a value up to
+   `9223372036854775807`. A value outside its operand's range cannot reach this
+   step: a parameter operand's range is its declared type's, which step 1
+   admitted, and a literal's is its own value.
+6. The returned `values()` SHALL equal the operands' values in `operands`
    order. Binding the same `Call` and occurrence twice SHALL give equal
    results. The order of `Call.arguments` SHALL NOT change `values()`; it
    changes only the `argument` indices in the provenance.
-8. The entry SHALL charge only the argument conversion FR-098 states under
-   `Call.accounting`; a conversion that reaches a limit reports the `Incomplete`
-   FR-100 reports and returns no binding.
-9. This requirement changes no catalog code, no FR-357 request member and no
+7. The entry SHALL charge only the argument conversion FR-098 states under
+   `Call.accounting`. A conversion that reaches a limit returns
+   `Incomplete(CallIncomplete)` as FR-100 reports it, and no binding.
+8. This requirement changes no catalog code, no FR-357 request member and no
    FR-100 behavior: `run` is unchanged, and the driver passes `values()` and
    `operands` unchanged to the generated oracle and its receipt.
 
@@ -159,15 +191,16 @@ failure at S6a"), never a `BindRefusal`.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-367-AC-1 | Over `function sub using v(a: Int[0, 9], b: Int[0, 9]): Int[-9, 9] pure { a - b }`, a `Call` with arguments listed `b = 2`, `a = 7` and the occurrence of the `-` application bind `values()` to `[7, 2]`; the same call with the arguments listed `a`, `b` gives `[7, 2]`. The provenance of ordinal 0 is `Argument` index 1, then 0, parameter `a`, and of ordinal 1 the reverse, parameter `b`, each with its parameter node and level. A swapped `b - a` in a separately compiled package gives `[2, 7]`. | Test (TC-1053) |
-| FR-367-AC-2 | Over `a + 1`, `values()` is `[a, 1]`, the second operand has `source` `InlineLiteral` and range `(1, 1)`; over `1 + a` it is `[1, a]`. Over `a - a` two operands bind with `Argument` sources of the one argument index, at ordinals 0 and 1. Over `-a` one operand binds. | Test (TC-1053) |
-| FR-367-AC-3 | A missing argument (parameter `b` left unbound) refuses `Admission(UnboundParameter { parameter: b })`; an extra argument naming `c` refuses `Admission(UnknownParameter { parameter: c })`; `a` bound twice refuses `Admission(DuplicateArgument)`. Each is `invalid_runtime_input`, returns no operand, and equals the refusal `run` returns for the same call. | Test (TC-1053) |
-| FR-367-AC-4 | A mistyped argument, a Boolean value for the integer `a` and an integer `10` for `a: Int[0, 9]`, refuses `Admission` with `WrongValueKind` at `a`'s declared position, `invalid_runtime_input`, and equals the refusal `run` returns. With an unbound `b` and a mistyped `a` the refusal is the one FR-100's order gives, and no occurrence refusal precedes either. | Test (TC-1053) |
-| FR-367-AC-5 | An occurrence key the application node does not have refuses `ScalarIdentity(Occurrence)` (`stale_dependency`/`content-mismatch`) even when the node has another occurrence and the arguments are valid; an `application` node of another function, a node outside the called function's body, a node absent from the package and a `ScalarOccurrence.function` that differs from `Call.function` each refuse `ScalarIdentity` with `Node` or `Function` (the cause this requirement adds for a differing function name); a `==`-style non-arithmetic application refuses `Operator`. The two functions of one package that share parameter nodes (FR-092-AC-5) bind each to its own body's application only. | Test (TC-1053) |
-| FR-367-AC-6 | `function w using v(a: Integer): Integer pure { a + 1 }` refuses `Operands(UnboundedRange)` (`unsupported_construct`/`expression-form`) with no operand list. In `function n using v(a: Int[0, 9]): Int[0, 11] pure { (a + 1) + 2 }` the inner application binds `[a, 1]`, and the outer, whose first operand is a graph child that is no parameter, refuses `OperandNotParameter { ordinal: 0 }` and binds no partial list. | Test (TC-1053) |
-| FR-367-AC-7 | For `function big using v(a: Int[0, 100000000000000000000]): Int[0, 100000000000000000001] pure { a + 1 }`, a value of `9223372036854775808` refuses `OperandNotNative` at ordinal 0 (`invalid_runtime_input`) and `9223372036854775807` binds; a range endpoint past `i64` refuses `OperandNotNative`, never a wrapped or saturated value. | Test (TC-1053) |
-| FR-367-AC-8 | Binding the same request twice gives equal results. Binding does not call the function: a call whose evaluation would be `undefined` or exceed `work_units` still binds when its arguments are admitted, and a conversion that reaches `value_occurrences` returns `Incomplete` and no binding. | Test (TC-1053) |
+| FR-367-AC-1 | Over `function sub using v(a: Int[0, 9], b: Int[0, 9]): Int[-9, 9] pure { a - b }`, a `Call` with arguments listed `b = 2`, `a = 7` and the occurrence of the `-` application bind `values()` to `[7, 2]`; the same call with the arguments listed `a`, `b` gives `[7, 2]`. The provenance of ordinal 0 is `Argument` with index 1, then 0, parameter `a`, and of ordinal 1 the reverse, parameter `b`, each with its parameter node and level. A swapped `b - a` in a separately compiled package gives `[2, 7]`. | Test (TC-1053) |
+| FR-367-AC-2 | Over `a + 1` with `a = 4`, `values()` is `[4, 1]`; the second operand is a graph child `value`/`literal` node and has `source` `InlineLiteral { node: Some(..) }` naming that node, and range `(1, 1)`; over `1 + a` it is `[1, 4]`. Over `a - a` two operands bind, `[4, 4]`, with `Argument` sources of the one argument index at ordinals 0 and 1. Over `-a` one operand binds. A Contract IR `InlineLiteral` operand, in a package that holds a literal term in the application's arguments, binds as `InlineLiteral { node: None }`. | Test (TC-1053) |
+| FR-367-AC-3 | A missing argument (parameter `b` left unbound) returns `Err(UnboundParameter { parameter: b })`; an extra argument naming `c` returns `Err(UnknownParameter { parameter: c })`; `a` bound twice returns `Err(DuplicateArgument)`. Each is `invalid_runtime_input`, returns no operand, and equals the refusal `run` returns for the same call. | Test (TC-1053) |
+| FR-367-AC-4 | A mistyped argument, a Boolean value for the integer `a` and an integer `10` for `a: Int[0, 9]`, returns `Err(WrongValueKind)` at `a`'s declared position, `invalid_runtime_input`, and equals the refusal `run` returns. A reference argument whose model selection, type or universe is foreign returns `Err(Admission)` with `foreign_reference` and its cause (`foreign-model-selection`, `foreign-type` or `foreign-universe`), and a reference absent from the complete population returns `Err(DanglingReference)` with `dangling_reference`/`absent-target-in-complete-population`; each equals the refusal `run` returns. With an unbound `b` and a mistyped `a` the refusal is the one FR-100's order gives, and no occurrence refusal precedes any of them. | Test (TC-1053) |
+| FR-367-AC-5 | An occurrence key the application node does not have returns `Refused(ScalarIdentity(Occurrence))` (`stale_dependency`/`content-mismatch`) even when the node has another occurrence and the arguments are valid; an `application` node of another function, a node outside the called function's body and a node absent from the package each return `ScalarIdentity(Node)`; a `ScalarOccurrence.function` that differs from `Call.function` returns `ScalarIdentity(Function)` (the cause this requirement adds); an equality application returns `ScalarIdentity(Operator)`. Two functions of one package that share parameter nodes (FR-092-AC-5) bind each to its own body's application only. | Test (TC-1053) |
+| FR-367-AC-6 | `function w using v(a: Integer): Integer pure { a + 1 }` returns `Refused(Operands(UnboundedRange))` (`unsupported_construct`/`expression-form`) with no operand list. In `function n using v(a: Int[0, 9]): Int[0, 12] pure { (a + 1) + 2 }` the inner application binds `[a, 1]`, and the outer, whose first operand is a graph child that is neither a literal nor a parameter, returns `Refused(OperandNotParameter { ordinal: 0 })` and binds no partial list. | Test (TC-1053) |
+| FR-367-AC-7 | For `function big using v(a: Int[0, 100000000000000000000]): Int[0, 100000000000000000001] pure { a + 1 }`, whose range endpoint exceeds `i64`, the value `9223372036854775807` binds as `[9223372036854775807, 1]` and `9223372036854775808` returns `Refused(OperandNotNative)` at ordinal 0 (`invalid_runtime_input`), never a wrapped or saturated value. A literal operand whose value exceeds `i64` (`a + 9223372036854775808`) returns `Refused(OperandNotNative)` at its ordinal. | Test (TC-1053) |
+| FR-367-AC-8 | Binding the same request twice gives equal results. Binding does not call the function: a call whose evaluation would be `undefined` or exceed `work_units` still binds when its arguments are admitted. A conversion that reaches `value_occurrences` returns `Incomplete(CallIncomplete)` naming that limit, as `run` does, and no binding. | Test (TC-1053) |
 | FR-367-AC-9 | The `BoundScalarOperands` returned for a claim equals, member for member, what FR-357's operator-level claim for the same occurrence holds as its ordered operand values, and `values()` is accepted unchanged as the `operands` of a generated oracle's native request (CG `KaniScalarNativeRequest.operands`); a differently ordered or reconstructed vector is a different binding. | Test (TC-1053) |
+| FR-367-AC-10 | Over `function lt using v(a: Int[0, 9]): Int[0, 10] pure { let x = a in x + 1 }`, the `+` occurrence returns `Refused(OperandNotArgument { ordinal: 0, parameter: x, level })` with the binder's declared name and level (`unsupported_construct`/`expression-form`) and binds no partial list; the same holds for a quantifier-bound variable operand. | Test (TC-1053) |
 
 ## Dependencies
 
