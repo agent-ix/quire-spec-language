@@ -53,6 +53,12 @@ pub use qsl_semantics::check::LockEvidence;
 #[cfg(test)]
 pub(crate) use lifecycle::{compose, ComposedUnit};
 
+mod bind;
+pub use bind::{
+    bind_scalar_operands, BindIdentityCause, BindOutcome, BindPackage, BindRefusal, BoundOperand,
+    BoundScalarOperands, OperandSource, ScalarOccurrence,
+};
+
 mod call;
 pub use call::{
     default_accounting, run, Call, CallArgument, CallIncomplete, CallLocus, CallOutcome,
