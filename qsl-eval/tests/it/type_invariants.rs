@@ -597,6 +597,7 @@ fn clause_facts(package: &CheckedPackage, name: &str) -> ClauseFacts {
             declaring: operation.declaring,
             declaration: operation.declaration.clone(),
         }),
+        operations: package.graph().scope().operations().clone(),
     }
 }
 
@@ -691,10 +692,10 @@ fn invoked(
                 kind: AnchorKind::Handler,
                 name: "validate".to_owned(),
             },
-            self_object: SelectedObject {
+            self_object: Some(SelectedObject {
                 population: population.clone(),
                 key: "o1".to_owned(),
-            },
+            }),
         },
     );
     let invoked = documents.admit("Done", ClauseSelectionInput::Invocation { invocation });
@@ -1105,7 +1106,7 @@ fn an_event_value_is_evaluated_at_the_parameter_binding_it_is_bound_to() {
 /// An invariant of a record value type that reads an object, a relationship
 /// or a population is refused at check: a record value is evaluated with no
 /// object universe (FR-366).
-#[trace("TC-1050", "FR-366-AC-2")]
+#[trace("TC-1050", "FR-366-AC-3")]
 #[test]
 fn a_record_invariant_that_reads_an_object_is_refused() {
     let document = fixture_f(|document| {
@@ -1347,10 +1348,10 @@ fn a_process_invariant_has_one_result_for_each_run() {
                 kind: AnchorKind::Handler,
                 name: "validate".to_owned(),
             },
-            self_object: SelectedObject {
+            self_object: Some(SelectedObject {
                 population,
                 key: "r1".to_owned(),
-            },
+            }),
         },
     );
     let evaluation = evaluate(&documents, &observations);
@@ -1388,16 +1389,20 @@ fn a_process_invariant_has_one_result_for_each_run() {
     );
 }
 
-/// TC-1051 step 11, the state machine half: the invariants of the one
-/// machine the invocation names are evaluated over its context in each side
-/// of the invocation, each a separate value located at the invocation's
-/// receiver binding; a guard has no result.
-#[trace("TC-1051", "FR-366-AC-9")]
-#[test]
-fn a_state_machine_invariant_is_evaluated_over_each_side_of_the_invocation() {
+type LifecycleDocuments = (
+    Documents,
+    BTreeMap<[u8; 32], Vec<u8>>,
+    BTreeMap<[u8; 32], Vec<u8>>,
+    DocumentRef,
+);
+
+/// TC-1045's `Orders` lifecycle with the type-level invariant `Extra`, the
+/// invocation `i1` of `place` between `p1` `{placed: false, cancelled:
+/// false}` and `q1` `{placed: true, cancelled: true}`, and a unit holding
+/// `unit`.
+fn lifecycle_documents(unit: &str) -> LifecycleDocuments {
     use crate::tc235_business_meaning_runtime::{
         lifecycle_document_with, lifecycle_invocation_with, lifecycle_observation,
-        lifecycle_observations,
     };
     let flags_type = id("Flags");
     let document = lifecycle_document_with("not self.placed", |document| {
@@ -1414,10 +1419,7 @@ fn a_state_machine_invariant_is_evaluated_over_each_side_of_the_invocation() {
         lifecycle["operations"][0]["params"] =
             json!([parameter("OrderLifecycle", "place", "flags", &flags_type)]);
     });
-    let documents = documents_with(
-        &document,
-        "post FlagsPlaced using v on M::OrderLifecycle::place { flags.placed }",
-    );
+    let documents = documents_with(&document, unit);
     let model = documents.model();
     let (p1, p1_bytes) = lifecycle_observation(&model, "p1", "pre", &[(false, false)]);
     let (q1, q1_bytes) = lifecycle_observation(&model, "q1", "post", &[(true, true)]);
@@ -1427,12 +1429,31 @@ fn a_state_machine_invariant_is_evaluated_over_each_side_of_the_invocation() {
         &q1,
         json!({"flags": {"record": {"type": flags_type, "fields": {"placed": {"boolean": true}}}}}),
     );
+    (
+        documents,
+        BTreeMap::from([(p1.digest, p1_bytes), (q1.digest, q1_bytes)]),
+        BTreeMap::from([(i1.digest, i1_bytes)]),
+        i1,
+    )
+}
+
+/// TC-1051 step 11, the state machine half: the invariants of the one
+/// machine the invocation names are evaluated over its context in each side
+/// of the invocation, each a separate value located at the invocation's
+/// receiver binding; a guard has no result.
+#[trace("TC-1051", "FR-366-AC-9")]
+#[test]
+fn a_state_machine_invariant_is_evaluated_over_each_side_of_the_invocation() {
+    use crate::tc235_business_meaning_runtime::lifecycle_observations;
+    let (documents, snapshots, invocations, i1) = lifecycle_documents(
+        "post FlagsPlaced using v on M::OrderLifecycle::place { flags.placed }",
+    );
     let admitted = lifecycle_observations(
         &documents.package,
         &documents.packages,
         "FlagsPlaced",
-        &BTreeMap::from([(p1.digest, p1_bytes), (q1.digest, q1_bytes)]),
-        &BTreeMap::from([(i1.digest, i1_bytes)]),
+        &snapshots,
+        &invocations,
         i1,
     )
     .expect("the invocation admits");
@@ -1472,4 +1493,120 @@ fn evaluation_true_code(
     // The unlimited run of the same observation completes.
     assert_eq!(completed.outcome, ValueInvariantOutcome::False);
     completed.outcome.catalog_code()
+}
+
+/// K2 with a record value type `Pair { a: Order; b: Order }` holding two
+/// references, the invariant `Peer` with the text `peer`, an optional edge
+/// field `parent` and the relationship `Order-chain` of `Order` to itself.
+fn pair_of_references(peer: &str) -> Value {
+    mutate_k2(|document| {
+        let mut parent = field("Order", "parent", &id("Order"));
+        parent["presence"] = json!("optional");
+        let chain = json!({
+            "identity": id("relationship/Order-chain"),
+            "sourceEnd": {"type": id("Order"), "role": "prior",
+                "multiplicity": {"lower": 0, "upper": 1, "ordered": false, "unique": true}},
+            "targetEnd": {"type": id("Order"), "role": "later",
+                "multiplicity": {"lower": 0, "upper": 1, "ordered": false, "unique": true}},
+            "category": "structural",
+            "composite": false,
+            "direction": "source-to-target",
+            "origin": {"source": {"sourceIdentity": id("spec"), "path": "spec.qspec", "startLine": 1, "startColumn": 1}},
+        });
+        let order = type_named_mut(document, "Order");
+        order["fields"].as_array_mut().unwrap().push(parent);
+        order["relationships"] = json!([chain]);
+        document["types"].as_array_mut().unwrap().push(declaration(
+            "Pair",
+            "money",
+            json!({"fields": [field("Pair", "a", &id("Order")), field("Pair", "b", &id("Order"))]}),
+        ));
+        set_clauses(document, "Pair", vec![clause("Pair", "Peer", peer)]);
+    })
+}
+
+/// FR-366: a relationship read (`reaches` over an edge field or over a
+/// relationship end) and a call that hands a reference to a function are no
+/// reads a record value can make, since it is evaluated with no object
+/// universe.
+#[trace("TC-1050", "FR-366-AC-3")]
+#[test]
+fn a_record_invariant_that_reaches_or_calls_with_a_reference_is_refused() {
+    let body = "function ok using v(o: M::Order): Boolean pure { true }";
+    for (peer, unit) in [
+        ("reaches(self.a, self.b, parent)", UNIT_BODY),
+        ("reaches(self.a, self.b, prior)", UNIT_BODY),
+        ("ok(self.a)", body),
+    ] {
+        let (compiled, _) = compile_unit(&pair_of_references(peer), unit);
+        let refusal = sole_refusal(compiled);
+        assert_eq!(
+            refusal.type_invariant_clause(),
+            Some(&key("Pair/Peer")),
+            "{peer}"
+        );
+        assert!(
+            matches!(
+                refusal.type_invariant_cause(),
+                Some(CheckCause::ObjectReadInValueInvariant)
+            ),
+            "{peer}: {refusal:?}"
+        );
+    }
+}
+
+/// FR-366: a `Context` selection holds the one side as `current` with no
+/// `pre` or `post`; the machine's context is a value at the receiver binding
+/// of that side, never an object with a declared identity.
+#[trace("TC-1051", "FR-366-AC-9")]
+#[test]
+fn a_context_selection_locates_the_machine_at_the_receiver_binding() {
+    use crate::tc235_business_meaning_runtime::lifecycle_selection;
+    use qsl_semantics::model::observation::ContextSide;
+    let (documents, snapshots, invocations, i1) = lifecycle_documents(
+        "invariant Machine using v on M::OrderLifecycle at current { true }\n\
+         post FlagsPlaced using v on M::OrderLifecycle::place { flags.placed }",
+    );
+    let receiver = |label: &str| RuntimeValuePath {
+        observation: identity_of(label),
+        subject: ValuePathSubject::Invocation {
+            invocation: identity_of("i1"),
+            binding: InvocationBinding::Receiver,
+        },
+        steps: Vec::new(),
+    };
+    for (side, label, extra_holds) in [
+        (ContextSide::Pre, "p1", true),
+        (ContextSide::Post, "q1", true),
+    ] {
+        let admitted = lifecycle_selection(
+            &documents.package,
+            &documents.packages,
+            "Machine",
+            &snapshots,
+            &invocations,
+            ClauseSelectionInput::Context {
+                invocation: i1.clone(),
+                side,
+            },
+        )
+        .expect("the context admits");
+        assert!(admitted.current.is_some() && admitted.pre.is_none() && admitted.post.is_none());
+        let evaluation = evaluate(&documents, &admitted);
+        let extra = id("OrderLifecycle/Extra");
+        assert_eq!(
+            rows(&evaluation)
+                .into_iter()
+                .filter(|(clause, _, _)| *clause == extra)
+                .collect::<Vec<_>>(),
+            [(extra, receiver(label), extra_holds)],
+            "{label}"
+        );
+        assert!(
+            rows(&evaluation)
+                .iter()
+                .all(|(_, path, _)| !matches!(path.subject, ValuePathSubject::Object(_))),
+            "the machine is no object: {label}"
+        );
+    }
 }

@@ -114,9 +114,23 @@ fn collect<'a>(
     observations: &'a AdmittedObservations,
 ) -> Result<Vec<Pending<'a>>, CallFailure> {
     let mut pending = Vec::new();
+    // A state machine's context has no declared object identity: its only
+    // values are its contexts at the invocation's receiver binding, on the
+    // `pre` and `post` side. A `Context` selection holds the one side as
+    // `current`, so a context is never walked as an object.
+    let contexts: Vec<&ObjectReference> = [
+        observations.receiver_pre.as_ref(),
+        observations.receiver_post.as_ref(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
     if let Some(current) = &observations.current {
         let own = observation_identity(&current.identity);
         for reference in current.environment.references() {
+            if contexts.contains(&reference) {
+                continue;
+            }
             let root = RuntimeValuePath {
                 observation: own.clone(),
                 subject: ValuePathSubject::Object(reference.clone()),
@@ -125,20 +139,18 @@ fn collect<'a>(
             push_object(types, &mut pending, root, reference, &current.environment)?;
         }
     }
-    let invocation = observations.invocation.as_ref().map(observation_identity);
-    if let (Some(invocation), Some(pre), Some(post)) = (
-        invocation,
-        observations.pre.as_ref(),
-        observations.post.as_ref(),
-    ) {
-        let binding = |observation: &Observation, binding: InvocationBinding| RuntimeValuePath {
-            observation: observation_identity(&observation.identity),
-            subject: ValuePathSubject::Invocation {
-                invocation: invocation.clone(),
-                binding,
-            },
-            steps: Vec::new(),
-        };
+    let Some(invocation) = observations.invocation.as_ref().map(observation_identity) else {
+        return Ok(pending);
+    };
+    let binding = |observation: &Observation, binding: InvocationBinding| RuntimeValuePath {
+        observation: observation_identity(&observation.identity),
+        subject: ValuePathSubject::Invocation {
+            invocation: invocation.clone(),
+            binding,
+        },
+        steps: Vec::new(),
+    };
+    if let (Some(pre), Some(post)) = (observations.pre.as_ref(), observations.post.as_ref()) {
         let mut walks = Vec::new();
         for (name, value) in &observations.parameters {
             walks.push(Walk {
@@ -153,22 +165,27 @@ fn collect<'a>(
             });
         }
         walk(types, &mut pending, walks)?;
-        if observations.self_kind == SelfKind::Context {
-            for (reference, side) in [
-                (observations.receiver_pre.as_ref(), pre),
-                (observations.receiver_post.as_ref(), post),
-            ] {
-                let Some(reference) = reference else {
-                    continue;
-                };
-                let root = binding(side, InvocationBinding::Receiver);
-                pending.push(Pending {
-                    path: root,
-                    value: Value::Reference(reference.clone()),
-                    slot: TypeSlot::Object(reference.object_type()),
-                    environment: Some(&side.environment),
-                });
-            }
+    }
+    if observations.self_kind == SelfKind::Context {
+        for (reference, side) in [
+            (
+                observations.receiver_pre.as_ref(),
+                observations.pre.as_ref().or(observations.current.as_ref()),
+            ),
+            (
+                observations.receiver_post.as_ref(),
+                observations.post.as_ref().or(observations.current.as_ref()),
+            ),
+        ] {
+            let (Some(reference), Some(side)) = (reference, side) else {
+                continue;
+            };
+            pending.push(Pending {
+                path: binding(side, InvocationBinding::Receiver),
+                value: Value::Reference(reference.clone()),
+                slot: TypeSlot::Object(reference.object_type()),
+                environment: Some(&side.environment),
+            });
         }
     }
     Ok(pending)

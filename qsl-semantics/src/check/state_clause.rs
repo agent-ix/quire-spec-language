@@ -42,7 +42,7 @@ use crate::model::key::DeclarationKey;
 use crate::model::operation::OperationDeclaration;
 use qsl_foundation::bound::DomainKind;
 use quire_semantic_value::checking::CheckingLimits;
-use quire_semantic_value::declaration::TypeEnvironment;
+use quire_semantic_value::declaration::{CompositeShape, TypeEnvironment};
 use quire_semantic_value::location::Location;
 
 /// The observation a clause of `kind` reads (FR-104, FR-107): `current`
@@ -271,6 +271,41 @@ impl ClauseView<'_> {
     }
 }
 
+/// Whether a value of `value_type` is, or contains, a reference to an object
+/// or a population: the values a callee reads objects through.
+fn holds_reference(types: &TypeEnvironment, value_type: &ValueType) -> bool {
+    let mut pending = vec![value_type.clone()];
+    let mut visited = BTreeSet::new();
+    while let Some(current) = pending.pop() {
+        match &current {
+            ValueType::Reference(_) | ValueType::Population(_) => return true,
+            ValueType::Option(payload) => pending.push((**payload).clone()),
+            ValueType::Collection(collection) => {
+                pending.push(collection.element().clone());
+            }
+            ValueType::Composite(key) => {
+                let key = *key;
+                if !visited.insert(key) {
+                    continue;
+                }
+                match types.composite(key).map(|declaration| declaration.shape()) {
+                    Some(CompositeShape::Record(fields)) => {
+                        pending.extend(fields.iter().map(|field| field.value_type().clone()));
+                    }
+                    Some(CompositeShape::Tuple(positions)) => {
+                        pending.extend(positions.iter().cloned());
+                    }
+                    // A union's members are not walked: a conservative
+                    // refusal would reject every union argument.
+                    Some(CompositeShape::Union(_)) | None => {}
+                }
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
 /// FR-366: checks a type invariant as `check_clause` checks a unit state
 /// clause, and returns the checked clause. A type invariant adds no claim or
 /// requirement record: its body is kept for evaluation per value.
@@ -289,15 +324,30 @@ pub(crate) fn check_type_invariant<'a>(
     // "Evaluation per reachable value"), so a read of an object, a
     // relationship or a population has nothing to observe.
     if matches!(invariant.self_type, ValueType::Composite(_)) {
-        let reads_objects = typed.body.root().descendants().into_iter().any(|node| {
-            matches!(
-                node.kind(),
-                NodeKind::Attribute { .. }
+        let types = declarations.scope.types();
+        let reads_objects =
+            typed
+                .body
+                .root()
+                .descendants()
+                .into_iter()
+                .any(|node| match node.kind() {
+                    NodeKind::Attribute { .. }
                     | NodeKind::Navigate { .. }
                     | NodeKind::AllInstances { .. }
                     | NodeKind::Lookup { .. }
-            )
-        });
+                    | NodeKind::Reaches { .. }
+                    | NodeKind::ReachesEnd { .. }
+                    | NodeKind::Dispatch { .. } => true,
+                    // The callee's body is not entered, so a call that hands it a
+                    // reference or a population may read objects through it.
+                    NodeKind::Call { arguments, .. } | NodeKind::ImportedCall { arguments, .. } => {
+                        arguments
+                            .iter()
+                            .any(|argument| holds_reference(types, node.at(*argument).value_type()))
+                    }
+                    _ => false,
+                });
         if reads_objects {
             return Err(invariant.refusal(CheckRefusal {
                 location: declarations.location.clone(),

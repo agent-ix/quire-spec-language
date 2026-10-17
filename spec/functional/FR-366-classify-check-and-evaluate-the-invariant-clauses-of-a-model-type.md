@@ -130,13 +130,17 @@ invariant is never evaluated through them.
 
 The *values* an evaluation ranges over are these:
 
-- For a record value type or an event type: every value of the type that is
-  *reachable*, that is the value of a field of an object of the observation,
+- For a record value type: every value of the type that is *reachable*, that is the value of a field of an object of the observation,
   the value of a parameter or the result of the selected invocation, or a value
   contained in a reachable value (an element of a collection, the contained
   value of a present optional, a field of a reachable record value). A
   `reference` field is not followed: the referenced object's own fields are
   values of that object, reached once as a member of its population.
+- For an event type: every value of the type that is reachable in the same way
+  through the parameters and the result of the selected invocation, or
+  contained in a reachable value. Intake refuses an event type as the declared
+  type of a field and of an operation parameter, so no admitted observation
+  holds an event value until that is lifted (FR-366-AC-7).
 - For an object type or a process: every object of the observation whose type
   conforms to the type, with `self` the object's reference.
 - For a state machine: the one machine the selected invocation's `context`
