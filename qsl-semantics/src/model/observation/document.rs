@@ -2793,10 +2793,16 @@ pub(super) fn finish_populations(
             )
         })
         .collect();
+    let references: Vec<ObjectReference> = values
+        .objects
+        .iter()
+        .map(|(reference, _)| reference.clone())
+        .collect();
     let environment = ObjectEnvironment::new(
         ObjectClosure::new(closure_types, values.objects, &tolerated)
             .map_err(map_environment_refusal)?,
     )
+    .with_references(references)
     .with_out_of_range(out_of_range.clone())
     .with_extents(extents)
     .with_population_sizes(population_sizes);

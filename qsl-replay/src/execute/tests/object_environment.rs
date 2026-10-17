@@ -23,7 +23,7 @@ use crate::witness::{DecodeRefusal, WitnessBinding, WitnessField, WitnessSlot, W
 use crate::SnapshotValue;
 use qsl_semantics::model::key::DeclarationKey;
 
-const PACKAGE: &str = "test/graph";
+pub(crate) const PACKAGE: &str = "test/graph";
 const PLACEHOLDER: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 
 fn identity(name: &str) -> String {
@@ -72,7 +72,7 @@ fn object_type(name: &str, supertypes: &[String], fields: Vec<Value>) -> Value {
 /// The `test/graph` domain package: `Node` (`items`, `next`), `Hub`
 /// specializing `Node`, `Lone` with its own supertype component, and the
 /// closed population `G` over `Node` and `Lone`.
-fn domain_document() -> Vec<u8> {
+pub(crate) fn domain_document() -> Vec<u8> {
     let (digit, node, lone) = (identity("Digit"), identity("Node"), identity("Lone"));
     let bound = |keyword: &str, value: &str| {
         json!({

@@ -294,6 +294,24 @@ fn node_id(key: NodeKey) -> CheckedNodeId {
     }
 }
 
+/// The Contract IR node id of the wire node id `node`: the same id
+/// [`emit_checked`] writes for the node.
+pub fn checked_node_id(node: WireNodeId) -> CheckedNodeId {
+    CheckedNodeId {
+        domain: NODE_KEY_DOMAIN.into(),
+        digest: node.to_string().into(),
+    }
+}
+
+/// The Contract IR occurrence `origin` names, as [`emit_checked`] writes it
+/// on a node. `None` for a role FR-322 does not name.
+pub fn checked_occurrence(origin: &Origin) -> Option<CheckedOccurrence> {
+    Some(CheckedOccurrence {
+        role: crate::checked_v2::occurrence_role(origin.role().as_str())?,
+        ordinal: origin.ordinal(),
+    })
+}
+
 /// What one node body names: the FR-093 rule 1 and 2 dependencies, the
 /// type annotations (literal `type`s and application `result_type`s), and
 /// the law definitions of its applications.

@@ -51,6 +51,9 @@ pub struct ObjectEnvironment {
     /// population's declaration identity (FR-380); empty for an environment
     /// no snapshot admitted.
     population_sizes: BTreeMap<String, u64>,
+    /// Every object the snapshot admitted, ascending; empty for an
+    /// environment no snapshot admitted.
+    references: Vec<ObjectReference>,
 }
 
 impl ObjectEnvironment {
@@ -63,6 +66,7 @@ impl ObjectEnvironment {
             unresolved_references: false,
             extents: None,
             population_sizes: BTreeMap::new(),
+            references: Vec::new(),
         }
     }
 
@@ -78,6 +82,21 @@ impl ObjectEnvironment {
     /// declaration identity is `population`, when it lists that population.
     pub fn population_size(&self, population: &str) -> Option<u64> {
         self.population_sizes.get(population).copied()
+    }
+
+    /// Records every object the snapshot admitted, so an evaluation that
+    /// ranges over the observation's objects (FR-366) can enumerate them.
+    #[must_use]
+    pub fn with_references(mut self, mut references: Vec<ObjectReference>) -> Self {
+        references.sort();
+        self.references = references;
+        self
+    }
+
+    /// Every object the snapshot admitted, ascending by reference; empty
+    /// for an environment no snapshot admitted.
+    pub fn references(&self) -> &[ObjectReference] {
+        &self.references
     }
 
     /// Records the relationship extents and the population traversal this

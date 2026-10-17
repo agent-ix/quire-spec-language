@@ -11,15 +11,19 @@ use crate::spine::{
     classify_clause_run, classify_compile, classify_refusal, ClauseRunReport, CompileRefusal,
     ReachedLimit, RefinementClass, RefusalCause, RunRefusal, SuppliedLibrary,
 };
+use qsl_forms::ClauseTextRefusal;
 use qsl_foundation::diagnostic::{LimitExceeded, StageFailure};
 use qsl_foundation::{Code, Setting, SettingLimits};
 use qsl_package::{EmitRefusal, ImportViewRefusal};
+use qsl_semantics::check::TypeInvariantRefusal;
 use qsl_semantics::check::{AssemblyCause, AssemblyError, AssemblyRefusal};
 use qsl_semantics::check::{
     CheckCause, CheckRefusal, DispatchLinkCause, KeyFault, ProtocolAnchorCause,
     ProtocolReferenceCause,
 };
 use qsl_semantics::library::LibraryName;
+use qsl_semantics::model::key::DeclarationKey;
+use qsl_semantics::model::refusal::MemberPath;
 use quire_semantic_value::location::{Location, Origin};
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
@@ -746,4 +750,61 @@ fn a_model_budget_denial_at_s3_is_incomplete_naming_the_limit() {
     ))]));
     assert_eq!(dispatch.class, RefinementClass::Incomplete);
     assert_eq!(dispatch.limits(), [expected]);
+}
+
+fn invariant_clause() -> DeclarationKey {
+    DeclarationKey::fixture("ix://test/orders/Order/Cap")
+}
+
+fn in_type_invariant(cause: CheckCause) -> CheckCause {
+    CheckCause::TypeInvariant(Box::new(TypeInvariantRefusal {
+        clause: invariant_clause(),
+        position: 0,
+        cause,
+    }))
+}
+
+/// FR-341-AC-3: a type-level invariant clause that does not parse is content
+/// refused with the code of its parse failure, as an operation clause is.
+#[trace("TC-861", "FR-341-AC-3")]
+#[test]
+fn a_type_invariant_clause_that_does_not_parse_is_refused() {
+    let refusal = CompileRefusal::TypeInvariant {
+        clause: invariant_clause(),
+        member: MemberPath::type_definition().name("clauses").index(0),
+        failure: ClauseTextRefusal::NotOneExpression,
+    };
+    assert_eq!(refusal.causes(), [cause(Code::InvalidSyntax, None)]);
+    assert_eq!(class_of(&refusal), RefinementClass::Refused);
+}
+
+/// FR-341-AC-3: a type invariant's check refusal classifies as the cause it
+/// wraps: a typed refusal is `refused`.
+#[trace("TC-861", "FR-341-AC-3")]
+#[test]
+fn a_wrapped_type_invariant_cause_classifies_as_the_cause_it_wraps() {
+    let refusal = check(vec![in_type_invariant(ill_typed())]);
+    let classified = classify_refusal(&refusal);
+    assert_eq!(classified.class, RefinementClass::Refused);
+    assert_eq!(
+        classified.causes,
+        [cause(Code::IllTyped, Some("non-boolean-root"))]
+    );
+}
+
+/// FR-341-AC-6: an object read in a record or event invariant is
+/// `unsupported_construct`/`expression-form`, so it classifies `prohibited`.
+#[trace("TC-861", "FR-341-AC-6")]
+#[test]
+fn an_object_read_in_a_value_invariant_is_prohibited() {
+    let refusal = check(vec![in_type_invariant(
+        CheckCause::ObjectReadInValueInvariant,
+    )]);
+    let classified = classify_refusal(&refusal);
+    assert_eq!(classified.class, RefinementClass::Prohibited);
+    assert_eq!(
+        classified.causes,
+        [cause(Code::UnsupportedConstruct, Some("expression-form"))]
+    );
+    assert!(classified.limits().is_empty());
 }

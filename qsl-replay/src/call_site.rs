@@ -486,6 +486,7 @@ impl From<CompileRefusal> for CallSiteRefusal {
             refusal @ (CompileRefusal::Source(_)
             | CompileRefusal::Forms { .. }
             | CompileRefusal::OperationClause { .. }
+            | CompileRefusal::TypeInvariant { .. }
             | CompileRefusal::Profile { .. }
             | CompileRefusal::Assembly { .. }
             | CompileRefusal::Check { .. }

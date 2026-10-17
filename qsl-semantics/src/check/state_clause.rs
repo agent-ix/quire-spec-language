@@ -42,7 +42,7 @@ use crate::model::key::DeclarationKey;
 use crate::model::operation::OperationDeclaration;
 use qsl_foundation::bound::DomainKind;
 use quire_semantic_value::checking::CheckingLimits;
-use quire_semantic_value::declaration::TypeEnvironment;
+use quire_semantic_value::declaration::{CompositeShape, TypeEnvironment};
 use quire_semantic_value::location::Location;
 
 /// The observation a clause of `kind` reads (FR-104, FR-107): `current`
@@ -207,6 +207,7 @@ impl StateClauseDeclaration {
                     .entry(crate::value::definition::CatalogRole::Root)
                     .identity,
             context: self.context,
+            receiver: ValueType::Reference(self.context),
             operation: self.operation.as_ref(),
             context_population: self.context_population,
             frame_population: self.frame_population,
@@ -224,6 +225,9 @@ pub(crate) struct ClauseView<'a> {
     /// Whether the selected profile is the complete-value one.
     pub(crate) complete_value: bool,
     pub(crate) context: EffectiveId,
+    /// The type of `self`: a reference to the context for a state clause or
+    /// a kept operation clause, a value of the owner for a type invariant.
+    pub(crate) receiver: ValueType,
     pub(crate) operation: Option<&'a ClauseOperation>,
     pub(crate) context_population: Option<PopulationDomain>,
     pub(crate) frame_population: Option<PopulationDomain>,
@@ -251,7 +255,7 @@ impl ClauseView<'_> {
     /// clause, each typed as FR-103 declares it: the slots the body is
     /// typed over, in order. An invariant binds `self` alone.
     fn parameters(&self) -> (Vec<(String, ValueType)>, bool) {
-        let mut parameters = vec![("self".to_owned(), ValueType::Reference(self.context))];
+        let mut parameters = vec![("self".to_owned(), self.receiver.clone())];
         let Some(operation) = self.operation else {
             return (parameters, false);
         };
@@ -265,6 +269,103 @@ impl ClauseView<'_> {
         parameters.extend(operation.declaration.parameters().iter().cloned());
         (parameters, result)
     }
+}
+
+/// Whether a value of `value_type` is, or contains, a reference to an object
+/// or a population: the values a callee reads objects through.
+fn holds_reference(types: &TypeEnvironment, value_type: &ValueType) -> bool {
+    let mut pending = vec![value_type.clone()];
+    let mut visited = BTreeSet::new();
+    while let Some(current) = pending.pop() {
+        match &current {
+            ValueType::Reference(_) | ValueType::Population(_) => return true,
+            ValueType::Option(payload) => pending.push((**payload).clone()),
+            ValueType::Collection(collection) => {
+                pending.push(collection.element().clone());
+            }
+            ValueType::Composite(key) => {
+                let key = *key;
+                if !visited.insert(key) {
+                    continue;
+                }
+                match types.composite(key).map(|declaration| declaration.shape()) {
+                    Some(CompositeShape::Record(fields)) => {
+                        pending.extend(fields.iter().map(|field| field.value_type().clone()));
+                    }
+                    Some(CompositeShape::Tuple(positions)) => {
+                        pending.extend(positions.iter().cloned());
+                    }
+                    // A union's members are not walked: a conservative
+                    // refusal would reject every union argument.
+                    Some(CompositeShape::Union(_)) | None => {}
+                }
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
+/// FR-366: checks a type invariant as `check_clause` checks a unit state
+/// clause, and returns the checked clause. A type invariant adds no claim or
+/// requirement record: its body is kept for evaluation per value.
+pub(crate) fn check_type_invariant<'a>(
+    invariant: &super::type_invariant::TypeInvariantDeclaration,
+    declarations: &ClauseDeclarations<'a>,
+    cx: &mut CheckContext<'a, ClauseDeclarations<'a>>,
+) -> Result<(super::type_invariant::CheckedTypeInvariant, u64), CheckRefusal> {
+    let typed = check_clause(
+        &invariant.view(),
+        declarations,
+        &mut cx.reborrow(declarations.scope),
+    )
+    .map_err(|refusal| invariant.refusal(refusal))?;
+    // A record or event value is evaluated with no object universe (FR-366
+    // "Evaluation per reachable value"), so a read of an object, a
+    // relationship or a population has nothing to observe.
+    if matches!(invariant.self_type, ValueType::Composite(_)) {
+        let types = declarations.scope.types();
+        let reads_objects =
+            typed
+                .body
+                .root()
+                .descendants()
+                .into_iter()
+                .any(|node| match node.kind() {
+                    NodeKind::Attribute { .. }
+                    | NodeKind::Navigate { .. }
+                    | NodeKind::AllInstances { .. }
+                    | NodeKind::Lookup { .. }
+                    | NodeKind::Reaches { .. }
+                    | NodeKind::ReachesEnd { .. }
+                    | NodeKind::Dispatch { .. } => true,
+                    // The callee's body is not entered, so a call that hands it a
+                    // reference or a population may read objects through it.
+                    NodeKind::Call { arguments, .. } | NodeKind::ImportedCall { arguments, .. } => {
+                        arguments
+                            .iter()
+                            .any(|argument| holds_reference(types, node.at(*argument).value_type()))
+                    }
+                    _ => false,
+                });
+        if reads_objects {
+            return Err(invariant.refusal(CheckRefusal {
+                location: declarations.location.clone(),
+                cause: CheckCause::ObjectReadInValueInvariant,
+            }));
+        }
+    }
+    Ok((
+        super::type_invariant::CheckedTypeInvariant {
+            clause: invariant.invariant.clause.clone(),
+            owner: invariant.invariant.owner.clone(),
+            applies_to: invariant.applies_to.clone(),
+            parameters: typed.parameters,
+            body: typed.body,
+            slots: typed.slots,
+        },
+        typed.nodes_used,
+    ))
 }
 
 /// The read-only declarations a state clause checks against.
