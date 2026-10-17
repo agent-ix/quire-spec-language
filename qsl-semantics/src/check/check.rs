@@ -48,6 +48,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::ops::ControlFlow;
 use std::sync::Arc;
 
+mod native_literal;
 mod typing;
 
 use super::ir::{
