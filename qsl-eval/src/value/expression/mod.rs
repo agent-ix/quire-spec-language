@@ -1005,6 +1005,9 @@ impl CheckedPackageEvaluation for CheckedPackage {
 }
 
 #[cfg(test)]
+mod union_admission;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use ix_trace_rs::trace;
