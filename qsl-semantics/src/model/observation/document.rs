@@ -2893,15 +2893,18 @@ pub(super) struct AdmittedObject {
 pub(super) fn admit_initial_populations(
     views: &[ModelView],
     types: &TypeEnvironment,
-    populations: &[RawPopulation],
-    relationships: &[super::relationships::RawEntry],
+    snapshot: &SnapshotDocument,
+    document: &DocumentRef,
     ancestor_steps: u64,
 ) -> Result<AdmittedInitial, AdmissionFailure> {
+    // An initialization snapshot is `current`: it holds no machine context.
+    let populations = &snapshot.populations[..];
     let values = admit_population_values(
         views,
         types,
-        populations,
-        relationships,
+        snapshot,
+        document,
+        None,
         PostStateRange::Refuse,
         ancestor_steps,
     )?;
