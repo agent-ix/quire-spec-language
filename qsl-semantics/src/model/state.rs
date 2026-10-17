@@ -12,17 +12,17 @@
 
 use std::collections::BTreeMap;
 
-use quire_exact::Value;
+use quire_exact::{EffectiveId, ObjectReference, Value, ValueType};
 use quire_semantic_value::declaration::TypeEnvironment;
 use quire_semantic_value::relationship_extent::RelationshipExtent;
 
 use crate::model::accounting::ModelNormalizationLimits;
-use crate::model::domain_package::DomainPackageRef;
+use crate::model::domain_package::{DomainPackageRecord, DomainPackageRef, OperationEffect};
 use crate::model::index::ModelIndex;
 use crate::model::key::DeclarationKey;
 use crate::model::observation::{
-    admit_initial_state, model_views, observe_state, AdmissionFailure, DocumentRef, ModelView,
-    Observation, ObservationLimits, SelectedAnchor,
+    admit_initial_state, model_views, observe_state, state_fields, state_reference,
+    AdmissionFailure, DocumentRef, ModelView, Observation, ObservationLimits, SelectedAnchor,
 };
 
 /// One complete, closed population state: for each population, its objects
@@ -45,6 +45,30 @@ pub struct StateObject {
     /// declaration key. A field declared `?` that the object leaves absent
     /// has no entry.
     pub fields: BTreeMap<DeclarationKey, Value>,
+}
+
+/// One declared field of an object type, in the type's effective attribute
+/// order.
+#[derive(Clone, Debug)]
+pub struct StateField {
+    /// The field's own declaration key, the key a [`StateObject`] holds its
+    /// value under.
+    pub key: DeclarationKey,
+    /// The field's declared name.
+    pub name: String,
+    /// The field's declared value type.
+    pub value_type: ValueType,
+    /// Whether the field is declared `?` and so may be absent.
+    pub optional: bool,
+}
+
+/// One population of the selected models and its declared member types.
+#[derive(Clone, Debug)]
+pub struct StatePopulation {
+    /// The population's declaration key.
+    pub key: DeclarationKey,
+    /// The population's declared member types, in declaration order.
+    pub member_types: Vec<DeclarationKey>,
 }
 
 /// FR-106's re-derived model views and the checked type environment.
@@ -130,5 +154,94 @@ impl StateModel {
     /// [`FrameDecision::ancestor_steps`](crate::model::population::FrameDecision).
     pub fn ancestor_steps(&self) -> u64 {
         self.limits.ancestor_steps
+    }
+
+    /// Every population of the selected models, in ascending declaration
+    /// key order.
+    pub fn populations(&self) -> Vec<StatePopulation> {
+        let mut populations: Vec<StatePopulation> = self
+            .views
+            .iter()
+            .flat_map(|view| view.view.domain_package().records.iter())
+            .filter_map(|record| match record {
+                DomainPackageRecord::Population(population) => Some(StatePopulation {
+                    key: population.key.clone(),
+                    member_types: population.member_types.clone(),
+                }),
+                _ => None,
+            })
+            .collect();
+        populations.sort_by(|left, right| left.key.cmp(&right.key));
+        populations
+    }
+
+    /// The effective identity of the declared type `key`.
+    pub fn type_identity(&self, key: &DeclarationKey) -> Option<EffectiveId> {
+        self.views
+            .iter()
+            .find_map(|view| view.view.type_identities().get(key).copied())
+    }
+
+    /// The declaration key of the type whose effective identity is
+    /// `identity`.
+    pub fn type_key(&self, identity: EffectiveId) -> Option<&DeclarationKey> {
+        self.views
+            .iter()
+            .find_map(|view| view.declaration_key(identity))
+    }
+
+    /// Whether the object type `key` is declared abstract.
+    pub fn is_abstract(&self, key: &DeclarationKey) -> bool {
+        self.views
+            .iter()
+            .any(|view| view.view.model_index().is_abstract(key))
+    }
+
+    /// The fields of the object type `type_key`, in its effective attribute
+    /// order; `None` when no selected model declares it.
+    ///
+    /// # Errors
+    ///
+    /// A `Fault` when a field's owner has no declaration key.
+    pub fn fields(
+        &self,
+        type_key: &DeclarationKey,
+    ) -> Result<Option<Vec<StateField>>, AdmissionFailure> {
+        state_fields(&self.views, &self.types, type_key)
+    }
+
+    /// The reference to the object `object` of the type `type_key`, in the
+    /// universe admission assigns it.
+    ///
+    /// # Errors
+    ///
+    /// A `Refused` record when `object` is empty, and a `Fault` when no
+    /// selected model declares the type.
+    pub fn object_reference(
+        &self,
+        type_key: &DeclarationKey,
+        object: &str,
+    ) -> Result<ObjectReference, AdmissionFailure> {
+        state_reference(&self.views, type_key, object)
+    }
+
+    /// Whether `effect` grants a write to `field` (FR-013): an every-object
+    /// `modifies` entry, or, when `receiver` is set, a receiver-scoped entry,
+    /// reached through the field's `redefines` chain as the frame decision
+    /// reaches it.
+    pub fn field_is_granted(
+        &self,
+        field: &DeclarationKey,
+        effect: &OperationEffect,
+        receiver: bool,
+    ) -> bool {
+        self.views.iter().any(|view| {
+            view.view
+                .model_index()
+                .redefinition_reaches(field, |candidate| {
+                    effect.modifies.contains(candidate)
+                        || (receiver && effect.receiver_modifies.contains(candidate))
+                })
+        })
     }
 }

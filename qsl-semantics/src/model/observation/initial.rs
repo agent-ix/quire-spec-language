@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 
 use qsl_foundation::diagnostic::Code;
-use quire_exact::{FieldValue, Presence};
+use quire_exact::{FieldValue, ObjectReference, Presence};
 use quire_semantic_value::declaration::{EffectiveAttribute, TypeEnvironment};
 use quire_semantic_value::object_closure::ObjectClosure;
 
@@ -20,7 +20,7 @@ use super::{
 };
 use crate::model::key::DeclarationKey;
 use crate::model::object_environment::ObjectEnvironment;
-use crate::model::state::{ModelState, StateObject};
+use crate::model::state::{ModelState, StateField, StateObject};
 
 /// `attribute`'s own declaration key: its owner's key with the field name
 /// appended, the key FR-106 check 11 compares fields by.
@@ -184,4 +184,44 @@ pub(crate) fn observe_state(
         populations: completeness,
         out_of_range: Vec::new(),
     })
+}
+
+/// [`crate::model::state::StateModel::fields`].
+pub(crate) fn state_fields(
+    views: &[ModelView],
+    types: &TypeEnvironment,
+    type_key: &DeclarationKey,
+) -> Result<Option<Vec<StateField>>, AdmissionFailure> {
+    let Some(identity) = views
+        .iter()
+        .find_map(|view| view.view.type_identities().get(type_key).copied())
+    else {
+        return Ok(None);
+    };
+    let Some(attributes) = types.attributes(identity) else {
+        return Ok(None);
+    };
+    let mut fields = Vec::new();
+    for attribute in attributes {
+        fields.push(StateField {
+            key: field_key(views, attribute)?,
+            name: attribute.field().name().to_owned(),
+            value_type: attribute.field().value_type().clone(),
+            optional: attribute.field().presence() == Presence::Optional,
+        });
+    }
+    Ok(Some(fields))
+}
+
+/// [`crate::model::state::StateModel::object_reference`].
+pub(crate) fn state_reference(
+    views: &[ModelView],
+    type_key: &DeclarationKey,
+    object: &str,
+) -> Result<ObjectReference, AdmissionFailure> {
+    let identity = views
+        .iter()
+        .find_map(|view| view.view.type_identities().get(type_key).copied())
+        .ok_or_else(|| fault("state-object-type-unresolved"))?;
+    object_reference(views, identity, object)
 }

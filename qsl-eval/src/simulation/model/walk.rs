@@ -1,0 +1,192 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//! FR-120 "Applications and transition identities": the expansion of one
+//! model state. It evaluates the state's invariants, then every application
+//! of every object's operations, collecting the successors and the findings.
+
+use qsl_semantics::model::key::DeclarationKey;
+use qsl_semantics::model::observation::Observation;
+use quire_exact::{EffectiveId, ObjectReference};
+use quire_semantic_value::model_transition::ModelTransition;
+
+use super::{
+    contracts, encode, frames, identity_limits, state_document, ClauseInfo, ModelFinding,
+    ModelSimState, ModelSystem, BROKEN, EXHAUSTED,
+};
+use crate::simulation::expansion::{Expansion, ExpansionStop};
+use crate::simulation::key;
+
+/// A stop with `cause`.
+pub(super) const fn stop(cause: qsl_foundation::CatalogCode) -> ExpansionStop {
+    ExpansionStop { cause }
+}
+
+/// The candidates one expansion has generated, against its bound
+/// (FR-120 "Post-states", ADR-016 G-4).
+pub(super) struct Budget {
+    used: u64,
+    max: u64,
+}
+
+impl Budget {
+    /// Count one candidate or (candidate, result) pair.
+    ///
+    /// # Errors
+    ///
+    /// `resource_exhausted`/`insufficient-next-charge` when the count would
+    /// exceed the bound.
+    pub(super) fn charge(&mut self) -> Result<(), ExpansionStop> {
+        self.used = self.used.saturating_add(1);
+        if self.used > self.max {
+            Err(stop(EXHAUSTED))
+        } else {
+            Ok(())
+        }
+    }
+
+    /// How many more charges fit.
+    pub(super) fn remaining(&self) -> u64 {
+        self.max.saturating_sub(self.used)
+    }
+}
+
+/// One object of the expanded state.
+pub(super) struct Row {
+    pub(super) population: DeclarationKey,
+    pub(super) key: String,
+    pub(super) reference: ObjectReference,
+}
+
+impl Row {
+    /// The object's most-specific type.
+    pub(super) fn type_id(&self) -> EffectiveId {
+        self.reference.object_type()
+    }
+}
+
+/// What an expansion reads: the system, the expanded state, its observation
+/// and its objects in ascending (population, key) order.
+pub(super) struct Walk<'s, 'a> {
+    pub(super) system: &'s ModelSystem<'a>,
+    pub(super) state: &'s ModelSimState,
+    pub(super) observation: Observation,
+    pub(super) rows: Vec<Row>,
+}
+
+impl Walk<'_, '_> {
+    /// The references of every object of the state, in row order.
+    pub(super) fn references(&self) -> Vec<ObjectReference> {
+        self.rows.iter().map(|row| row.reference.clone()).collect()
+    }
+
+    /// The clauses in `group` that apply to `row` as the receiver of the
+    /// operation `name` declared by `declaring`: the clause resolves to that
+    /// operation and the receiver's type conforms to the clause's context
+    /// (FR-120 "Contract clauses").
+    pub(super) fn applicable<'c>(
+        &self,
+        group: &'c [ClauseInfo],
+        row: &Row,
+        declaring: EffectiveId,
+        name: &str,
+    ) -> Vec<&'c ClauseInfo> {
+        group
+            .iter()
+            .filter(|clause| {
+                clause
+                    .operation
+                    .as_ref()
+                    .is_some_and(|(owner, operation)| *owner == declaring && operation == name)
+                    && self.system.types.conforms(row.type_id(), clause.context)
+            })
+            .collect()
+    }
+}
+
+/// A contract finding with the keys its position among its siblings follows:
+/// ascending transition-identity bytes, then candidate state-key bytes (none
+/// first), then clause name (FR-120 "Invariants").
+pub(super) struct ContractFinding {
+    pub(super) transition: Vec<u8>,
+    pub(super) candidate: Option<Vec<u8>>,
+    pub(super) clause: String,
+    pub(super) finding: ModelFinding,
+}
+
+/// One successor: the transition and the state it reaches.
+pub(super) type Successor = (ModelTransition, ModelSimState);
+
+/// The objects of `state`, in ascending (population, key) order.
+fn rows_of(
+    system: &ModelSystem<'_>,
+    state: &qsl_semantics::model::state::ModelState,
+) -> Result<Vec<Row>, ExpansionStop> {
+    let mut rows = Vec::new();
+    for (population, objects) in &state.populations {
+        for (object_key, object) in objects {
+            let reference = system
+                .model
+                .object_reference(&object.type_identity, object_key)
+                .map_err(|_| stop(BROKEN))?;
+            rows.push(Row {
+                population: population.clone(),
+                key: object_key.clone(),
+                reference,
+            });
+        }
+    }
+    Ok(rows)
+}
+
+/// Expand `state`: its findings and every successor (FR-120).
+pub(super) fn expand_state(
+    system: &ModelSystem<'_>,
+    state: &ModelSimState,
+) -> Result<Expansion<ModelTransition, ModelSimState, ModelFinding>, ExpansionStop> {
+    let identity = identity_limits();
+    let state_key = encode::model_key(&system.model, &state.state);
+    let (_, digest) = key::state_key(&state_key, identity).map_err(|_| stop(BROKEN))?;
+    let observation = system
+        .model
+        .observation(&state.state, state_document(&digest))
+        .map_err(|_| stop(BROKEN))?;
+    let walk = Walk {
+        system,
+        state,
+        observation,
+        rows: rows_of(system, &state.state)?,
+    };
+    let mut budget = Budget {
+        used: 0,
+        max: system.limits.max_candidates,
+    };
+
+    let mut findings = contracts::invariants(&walk)?;
+    let mut contract = Vec::new();
+    let mut successors = Vec::new();
+    for row in &walk.rows {
+        let Some(applications) = system.applications.get(&row.type_id()) else {
+            continue;
+        };
+        for application in applications {
+            frames::apply(
+                &walk,
+                row,
+                application,
+                &mut budget,
+                &mut contract,
+                &mut successors,
+            )?;
+        }
+    }
+    contract.sort_by(|left: &ContractFinding, right: &ContractFinding| {
+        left.transition
+            .cmp(&right.transition)
+            .then_with(|| left.candidate.cmp(&right.candidate))
+            .then_with(|| left.clause.cmp(&right.clause))
+    });
+    findings.extend(contract.into_iter().map(|entry| entry.finding));
+    Ok(Expansion {
+        successors,
+        findings,
+    })
+}
