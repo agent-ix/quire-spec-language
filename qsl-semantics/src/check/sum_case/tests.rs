@@ -888,7 +888,7 @@ fn a_union_member_variant_id_is_its_member_key_and_selects_only_its_union() {
     // the preimage text.
     let shape = final_of(unit.key("Shape"));
     for (position, member) in ["Empty", "Circle", "Rect"].into_iter().enumerate() {
-        let variant = mint_union_variant_id(shape, member);
+        let variant = mint_union_variant_id(mint_union_member_key(shape, member));
         assert_eq!(
             variant.to_string(),
             member_key_hex(shape, member),
@@ -910,8 +910,8 @@ fn a_union_member_variant_id_is_its_member_key_and_selects_only_its_union() {
     let (a, b) = (final_of(unit.key("A")), final_of(unit.key("B")));
     let enum_key = unit.package.enums[0].declaration.key();
     let ids = [
-        mint_union_variant_id(a, "X"),
-        mint_union_variant_id(b, "X"),
+        mint_union_variant_id(mint_union_member_key(a, "X")),
+        mint_union_variant_id(mint_union_member_key(b, "X")),
         mint_variant_id(enum_key, "X"),
     ];
     assert!(ids[0] != ids[1] && ids[0] != ids[2] && ids[1] != ids[2]);

@@ -424,10 +424,11 @@ pub(crate) fn union_member_digest(declaration: NodeKey, member: &str) -> [u8; 32
     )
 }
 
-/// The `VariantId` of the same member: its key's bytes retyped with no
-/// fresh computation, as [`mint_variant_id`] retypes an enum member's key.
-pub fn mint_union_variant_id(declaration: NodeKey, member: &str) -> VariantId {
-    VariantId::from_digest(union_member_digest(declaration, member))
+/// The `VariantId` of a union member: its member `key`'s bytes retyped with
+/// no fresh computation, as [`mint_variant_id`] retypes an enum member's key.
+/// `key` is minted by `check` (`mint_union_member_key`).
+pub fn mint_union_variant_id(key: NodeKey) -> VariantId {
+    VariantId::from_digest(*key.as_bytes())
 }
 
 /// The RFC 8785 bytes of the `quire.enum-member-node/v1` preimage of member
