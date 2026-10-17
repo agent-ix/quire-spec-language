@@ -144,9 +144,11 @@ untrusted data, recorded as found.
   `src/state/evaluation.rs:15`), `src/native_model`, `src/protocol_artifact`,
   and the FR-108 parity test
   `tc_469_step_2_and_3_native_and_spine_agree_and_name_the_boundary_locus`
-  (`tests/it/config_version_spine.rs:324`). TC-469's own `build()` reaches
-  the native `runtime`, `model_source` and `native_model` modules through
-  `examples/config-version/fixtures.rs:6-15`.
+  (`tests/it/config_version_spine.rs:324`). TC-469's own `build()` calls
+  `spine::write` through the `config_version_spine` support module over
+  `examples/config-version/spine_corpus.rs`, which imports no native module;
+  `fixtures.rs` (native model, runtime) delegates its spine files to the same
+  module.
 
 **IR dependencies.** QSL consumes IR-370's checked-package reader, which
 decides the reference edge of a `quire.op.model.reaches_field` application.
@@ -380,7 +382,7 @@ successor.
 | G-3 | ID-5 population identity | QSL-68 (#120) | `population_id_preimage` builds FR-089's seven-member preimage; `with_population` keeps `PopulationConflict` | FR-089-AC-1 (amended) and FR-089-AC-7 | TC-291 (the 3-and-7 conflict test at `qsl-eval/tests/it/model_reference_queries.rs:2834` changes to expect two ids) | before G-4 |
 | G-4 | FR-120 `ModelSystem`, `model::state::StateModel`, `explore_model`, `sample_model` | QSL-67 (#121) | as FR-120 "Outputs" and "Frame and observation seam"; the expansion calls `decide_frame` (FE-1); candidates generated lazily in canonical order, each generated candidate charged to `max_candidates` | FR-120-AC-1 to AC-13 | TC-471 to TC-473 | after G-1, G-3 and QSL-48 |
 | G-5 | FR-085 relationship-end resolution | QSL-68 (#120) | FR-085's resolution step over `RelationshipEnd` | FR-085-AC-1 to AC-3 | TC-230 to TC-232 | independent |
-| G-6 | M-6c state lane deletion | QSL-67 (#121), with QSL-68 for the model half (ADR-011 M-6c row) | first split the spine generator in `examples/config-version/` from `fixtures.rs`'s native imports, so TC-469's `build()` needs no native module | ADR-012 §15.8 step 2 and ADR-011 M-6c exactly, including the SEAM-3 reads and the IR import that feed `state` (`src/state/evaluation.rs:15`), `lowering`, IT-010 and the dev dependencies, in one PR; FR-108's independent table stays | TC-469 step 1 passes with the native modules deleted; the parity test is gone | independent of G-4 |
+| G-6 | M-6c state lane deletion | QSL-67 (#121), with QSL-68 for the model half (ADR-011 M-6c row) | the spine generator `examples/config-version/spine_corpus.rs` has no native import, so TC-469's `build()` needs no native module | ADR-012 §15.8 step 2 and ADR-011 M-6c exactly, including the SEAM-3 reads and the IR import that feed `state` (`src/state/evaluation.rs:15`), `lowering`, IT-010 and the dev dependencies, in one PR; FR-108's independent table stays | TC-469 step 1 passes with the native modules deleted; the parity test is gone | independent of G-4 |
 | G-7 | Dispatch at S3 | QSL-68 (#120) | spine `compile` links dispatch through `check::checked_dispatch_operation` | FR-302-AC-1 to FR-302-AC-6: spine `compile` carries one dispatch table per called operation and refuses an ambiguous or empty dispatch at S3 with no checked package | TC-793 to TC-795, TC-809 | independent |
 | G-8 | One-to-one model correspondence | QSL-68 (#120) | `ModelCorrespondence::record` returns an internal fault for a second, different entry for one key in either direction | FR-303-AC-1 to FR-303-AC-4: a second, different entry for one key in either direction faults | TC-796 | independent |
 | G-9 | Planned model criteria | QSL-68 (#120) | as each FR states | FR-084-AC-2, AC-5, AC-7; FR-086-AC-1, AC-2, AC-4, AC-5 | TC-227, TC-240, TC-410; TC-233, TC-234, TC-236, TC-241 | independent |
