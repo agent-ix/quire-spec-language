@@ -48,3 +48,10 @@ The author-recorded gaps are planner questions and are not counted as defects he
 - A `?` field is keyed `{type: option}`.
 - Unenumerable roots are listed as unbounded.
 - Some types refuse `KeyEncoding`.
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | c4ec15148 |
+| FND-002 | fixed | c4ec15148 |

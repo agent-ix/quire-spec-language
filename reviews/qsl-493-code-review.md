@@ -48,3 +48,18 @@ Cargo.lock, recorded as a note and not a finding:
 The ticket's "Touches" list names qsl-eval and QSV but not qsl-semantics. That is a planner question.
 
 The author-recorded gaps are planner questions and are not counted as defects here. They are: the AC-9 fixture, the AC-11 child process, the clause spellings, the `?` field as `{type: option}`, unenumerable roots listed as unbounded, the types with no `KeyEncoding`, and the `result_large_err` allows.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | high | Regression from the FND-003 fix. `writable_fields` probes every field of every object in the state, granted or not, and calls `Domain::of(...).ok_or_else(\|\| stop(BROKEN))?` before choosing a probe value. A field whose type is encodable but not enumerable (`Integer`, `String`, `Text`, `Rational`, `Float`, `Collection` without a bound), and that no frame grants, used to be kept as is. It now stops every expansion that has an enabled application with `runtime_invariant`/`established-invariant-broken`. Example: a `Counter` with `id: Integer` that no operation modifies. `domains()` lists only granted fields, so no `RequiresBound` refusal catches this first. The Counter fixture has only enumerable fields, so no test reaches the path. Fix: skip the probe when the field has no domain. A granted unenumerable field is already an unbounded root in `domains()`. | qsl-eval/src/simulation/model/frames.rs:663-718, qsl-eval/src/simulation/model/frames.rs:362 |
+| FND-005 | medium | The state key has six members. QSpec FR-181 (current main) defines it as `{"type":"simulation-state","semantic":…,"control":…,"queues":…,"roles":…,"observations":…,"bounds":…,"memory":…}` and says that for a model subject `control`, `queues`, `roles`, `observations`, `bounds` and `memory` are empty maps. `model_key` writes no `memory` member. FR-120 "State, state key and anchor" and the AC-4 envelope list five empty maps and also omit it, so the key bytes and the golden test disagree with the normative source. Fix: add `("memory", empty_map())` and amend FR-120 and the AC-4 golden bytes. | qsl-eval/src/simulation/model/encode.rs:293-305, spec/functional/FR-120-simulate-a-checked-package-s-state-family.md:186-192 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | c4ec15148 |
+| FND-002 | fixed | c4ec15148 |
+| FND-003 | fixed | c4ec15148 (the fix introduced FND-004) |
