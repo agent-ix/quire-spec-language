@@ -247,7 +247,8 @@ fn assembly_limit(cause: &AssemblyCause) -> Option<ReachedLimit> {
         | AssemblyCause::UnresolvedOperation { .. }
         | AssemblyCause::AmbiguousOperation { .. }
         | AssemblyCause::DuplicateOperationBody { .. }
-        | AssemblyCause::AmbiguousPopulation { .. } => None,
+        | AssemblyCause::AmbiguousPopulation { .. }
+        | AssemblyCause::UnsupportedLayerForm { .. } => None,
     }
 }
 

@@ -45,10 +45,8 @@ exist"; ruling on QSL-229). Its model half is I1 (FR-056), which spine
 lock's edition and definition selections come from the same catalog
 through the emitter (ADR-011 §2.4, amended 2026-09-24).
 
-Layer selection (AC-7, AC-8) and AC-1's layer-closure lock
-rows are not yet implemented. FR-361 states what a unit that selects
-`quire.model.complete/v1` gains, and the complete-model lock rows the
-catalog then holds.
+FR-361 states what a unit that selects `quire.model.complete/v1` gains, and
+the complete-model lock rows the catalog then holds.
 
 ## Inputs
 

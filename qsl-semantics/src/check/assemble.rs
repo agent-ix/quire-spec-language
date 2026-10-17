@@ -45,6 +45,7 @@ use quire_exact::{
 use super::check::{
     EnumBinding, ModelRecords, PackageDeclarations, ResolvedSignature, VariantTypeDeclaration,
 };
+use super::layer::LayerAdmission;
 use super::lowering::{
     record_node_key, strongly_connected, variant_type_node_key, AdmittedModel, RecordKeyError,
 };
@@ -80,6 +81,7 @@ use crate::value::enumeration::{
 };
 use crate::value::environment_stage::stage_limit;
 use crate::value::semantic_node::{identity_limit, NominalRefusal, OwnerSelection};
+use crate::value::{DefinitionLock, HeaderLayer, LayerForm};
 use quire_semantic_value::declaration::{
     CompositeDeclaration, CompositeShape, DeclarationCause, EnvironmentFailure, FieldDeclaration,
     FieldRef, InvalidDeclaration, ObjectTypeDeclaration, StorageUnit, TypeEnvironment,
@@ -374,6 +376,16 @@ pub enum AssemblyCause {
         /// The populations, in ascending `DeclarationKey` order.
         populations: Vec<DeclarationKey>,
     },
+    /// A declaration whose `using` alias names a header profile resolved to
+    /// `layer` writes a form outside the admitted-form set of that layer's
+    /// `requires` closure (FR-110 "Layer selection"):
+    /// `unsupported_construct`/`declaration-form` or `expression-form`.
+    UnsupportedLayerForm {
+        /// The selected layer.
+        layer: HeaderLayer,
+        /// The form outside its admitted-form set.
+        form: LayerForm,
+    },
 }
 
 impl AssemblyCause {
@@ -424,6 +436,7 @@ impl AssemblyCause {
             | Self::StorageAllocation { .. }
             | Self::StorageCapacity { .. } => Code::ResourceExhausted,
             Self::Handle(_) | Self::NominalAdmission(_) => Code::RuntimeInvariant,
+            Self::UnsupportedLayerForm { .. } => Code::UnsupportedConstruct,
         }
     }
 
@@ -498,6 +511,7 @@ impl AssemblyCause {
             Self::IdentityAllocation { .. } | Self::StorageAllocation { .. } => "allocation-failed",
             Self::StorageCapacity { .. } => "reservation-size-overflow",
             Self::Handle(_) | Self::NominalAdmission(_) => "established-invariant-broken",
+            Self::UnsupportedLayerForm { form, .. } => form.refusal_cause(),
         };
         CatalogCode::new(self.code().as_str(), cause)
     }
@@ -2329,6 +2343,13 @@ impl PackageDeclarations {
                 });
             }
         }
+        let lock = DefinitionLock::pinned();
+        let predicates: BTreeSet<&str> = unit
+            .functions
+            .iter()
+            .filter(|function| function.kind() == qsl_forms::DeclarationKind::Predicate)
+            .map(|function| function.name.as_str())
+            .collect();
         let mut function_selections = BTreeMap::new();
         for (index, function) in unit.functions.iter().enumerate() {
             if let Some(using) = function.using() {
@@ -2342,6 +2363,12 @@ impl PackageDeclarations {
                 {
                     Some(profile) => {
                         function_selections.insert(index, profile.clone());
+                        // FR-110 "Layer selection".
+                        if let Some(layer) = HeaderLayer::from_identity(&profile.identity) {
+                            errors.extend(
+                                LayerAdmission::new(&lock, layer, &predicates).function(function),
+                            );
+                        }
                     }
                     None => errors.push(AssemblyError {
                         cause: AssemblyCause::UndeclaredAlias {
@@ -2767,7 +2794,12 @@ impl PackageDeclarations {
             operations: &operations,
             selected: &models,
         };
-        let state_clauses = state_clauses(unit.state_clauses, &resolve, &admitted);
+        let state_clauses = state_clauses(
+            unit.state_clauses,
+            &resolve,
+            &admitted,
+            (&lock, &predicates),
+        );
         let operation_bodies = operation_bodies(unit.operation_bodies, &resolve);
         let protocol_attempts = protocol_attempts(
             &unit.protocols,
@@ -2881,6 +2913,13 @@ impl PackageDeclarations {
         {
             package.lock_evidence = package.lock_evidence.with_protocol_profile(definition);
         }
+        package.header_layers = selections
+            .profiles
+            .iter()
+            .filter_map(|profile| HeaderLayer::from_identity(&profile.identity))
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
         package.protocols = unit.protocols;
         package.protocol_attempts = protocol_attempts;
         package.declared_type_spans = declared_type_spans;
@@ -2916,6 +2955,7 @@ fn state_clauses(
     forms: Vec<StateClauseForm>,
     resolve: &Resolve<'_>,
     models: &[AdmittedModel],
+    (lock, predicates): (&DefinitionLock, &BTreeSet<&str>),
 ) -> Result<Vec<StateClauseDeclaration>, AssemblyRefusal> {
     let Resolve {
         profiles,
@@ -2932,13 +2972,19 @@ fn state_clauses(
             .iter()
             .find(|profile| profile.alias == form.profile.alias)
             .cloned();
-        if selection.is_none() {
-            errors.push(error(
+        match &selection {
+            None => errors.push(error(
                 AssemblyCause::UndeclaredAlias {
                     alias: form.profile.alias.clone(),
                 },
                 form.profile.span,
-            ));
+            )),
+            // FR-110 "Layer selection".
+            Some(selection) => {
+                if let Some(layer) = HeaderLayer::from_identity(&selection.identity) {
+                    errors.extend(LayerAdmission::new(lock, layer, predicates).state_clause(&form));
+                }
+            }
         }
         let context = object_names.get(&form.context.name).copied();
         let Some(context) = context else {

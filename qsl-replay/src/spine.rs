@@ -613,6 +613,11 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
                 .collect::<Vec<_>>()
                 .join(", ")
         ),
+        AssemblyCause::UnsupportedLayerForm { layer, form } => format!(
+            "{} is not an admitted form of `{}`",
+            form.refusal_cause(),
+            layer.identity()
+        ),
     };
     with_more(message, refusal.errors.len())
 }
