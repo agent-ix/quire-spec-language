@@ -3768,7 +3768,9 @@ impl<'a> Lowering<'a> {
             }
             // FR-319 keys a `case` node by its declared-order body; that
             // lowering waits on the union wire vocabulary.
-            NodeKind::Case { .. } => return Err(super::sum_case::unlowered(node.location())),
+            NodeKind::Case { .. } | NodeKind::UnionValue { .. } => {
+                return Err(super::sum_case::unlowered(node.location()))
+            }
             NodeKind::Pre(operand) => (
                 Keyed::Application(Operator::Pre, plain("quire.op.state.pre")),
                 Operands::One(operand),

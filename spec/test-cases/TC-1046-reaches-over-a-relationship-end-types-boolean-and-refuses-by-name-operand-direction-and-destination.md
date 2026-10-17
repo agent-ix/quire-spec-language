@@ -43,6 +43,7 @@ is declared by its source type; the end names type, role and multiplicity
 | `Order/mate` | `undirected` | `Order`, role `mate`, `{0,1}` | `Order`, role `mateOf`, `{0,1}` |
 | `Order/back` | `target-to-source` | `Order`, role `back`, `{0,unbounded}` | `Order`, role `backOf`, `{0,unbounded}` |
 | `Order/kids` | `source-to-target` | `Order`, role `kids`, `{0,1}` | `Order`, no role, `{0,3}` |
+| `Order/litter` | `source-to-target` | `Order`, role `litter`, `{0,1}` | `Order`, no role, `{0,3}`, `unique: false` |
 | `Order/crowd` | `source-to-target` | `Order`, role `crowd`, `{0,1}` | `Order`, no role, `{0,unbounded}` |
 | `Order/ranked` | `source-to-target` | `Order`, role `ranked`, `{0,1}` | `Order`, no role, `{0,1}`, `ordered: true` |
 | `Order/bare` | `source-to-target` | `Order`, role `bare`, `{0,1}` | `Order`, no role, no multiplicity |
@@ -50,6 +51,7 @@ is declared by its source type; the end names type, role and multiplicity
 | `Order/parent` | `source-to-target` | `Order`, role `parent`, `{0,1}` | `Order`, no role, `{0,1}` |
 | `Order/twinA` | `source-to-target` | `Order`, role `twin`, `{0,1}` | `Order`, no role, `{0,1}` |
 | `Order/twinB` | `source-to-target` | `Order`, role `twin`, `{0,1}` | `Order`, no role, `{0,1}` |
+| `Order/manyOwners` | `source-to-target` | `Order`, role `manyOwners`, `{0,1}` | `Person`, no role, `{0,3}` |
 | `Order/loose` | `source-to-target` | `Order`, role `loose`, `{0,1}` | `Person`, no role, `{0,unbounded}` |
 
 | Vector | Input | Expected result/disposition |
@@ -63,13 +65,15 @@ is declared by its source type; the end names type, role and multiplicity
 | C07 | `reaches(self, self, nothing)` | `missing_declaration`/`missing-name` located at the form |
 | C08 | `reaches(self, target, next)` with `target: Reference<M::Person>`; and with `target: Int[0,9]` | `ill_typed`/`operator-ineligible` at the form, each |
 | C09 | `reaches(self, self, previous)` on `M::Order` (the inverse of `source-to-target`) | `ill_typed`/`operator-ineligible`: direction |
-| C10 | `reaches(self, self, kids)` (finite multi-valued destination); `reaches(self, self, owner)` (destination `Person`) | `ill_typed`/`operator-ineligible`, each |
+| C10 | `reaches(self, self, owner)` (destination `Person`); `reaches(self, self, manyOwners)` (finite multi-valued destination `Person`) | `ill_typed`/`operator-ineligible`, each |
 | C11 | `reaches(self, self, crowd)`; `reaches(self, self, ranked)`; `reaches(self, self, bare)` | `unsupported_construct`/`expression-form`, each |
 | C12 | `reaches(self, self, back)` on `M::Order`: forward traversal of a `target-to-source` relationship whose destination is also unbounded | `ill_typed`/`operator-ineligible` (direction), not `expression-form`: direction before multiplicity |
 | C13 | `reaches(self, self, next)` in a `Value` function body `f(o: Reference<M::Order>): Boolean pure` | `ill_typed`/`operator-ineligible` at the form: no observation to traverse |
 | C14 | `reaches(self, self, M::Order::next)` | refused at the form's build as FR-102 states for a qualified edge |
 | C15 | `Person` declares the operation `watch(o: Reference<M::Order>)`; the clause `pre using V on M::Person::watch { reaches(o, o, next) }` (`next` resolves on `Order`, the operand's type, as the end of `Order/next`; the context object is a `Person`, so the walked population is not the context population); then with an added population `archive` with member type `Order` and no maximum | admitted, type `Boolean`, and the requirements record adds the `orders` domain once beside the context population `people`; then `ambiguous_declaration`/`ambiguous-name` at the form naming `archive` and `orders` in ascending `DeclarationKey` order |
 | C16 | `reaches(self, self, loose)` on `M::Order`, where `Order/loose`'s destination is an unbounded `Person` end (it fails both the multiplicity and the destination-type check) | `unsupported_construct`/`expression-form`, not `ill_typed`/`operator-ineligible`: multiplicity before destination type |
+| C17 | `reaches(self, self, kids)` (`Set`-shaped, `{0,3}` unique) and `reaches(self, self, litter)` (`Bag`-shaped, `{0,3}` non-unique) as an `invariant` on `M::Order`; and `reaches(self, target, kids)` as a `pre` clause of `M::Rush::hop(target: Reference<M::Order>)` | admitted, type `Boolean` each; the node holds the end's relationship and role, the same shape as for `next` |
+| C18 | `reaches(self, target, crowd)` as a `pre` clause of `M::Order::toPerson(target: Reference<M::Person>)` (a non-conforming second operand, and an unbounded destination) | `ill_typed`/`operator-ineligible`, not `expression-form`: the operand check runs first |
 
 ## Expected Results
 

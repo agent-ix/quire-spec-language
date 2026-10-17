@@ -1086,8 +1086,9 @@ impl<'v> RawItems<'v> {
 /// `EffectiveId -> DeclarationKey` index admission needs (the forward
 /// direction, [`EffectiveView::type_identities`], is a checked package's own
 /// input, never admission's own name-first lookup).
-struct ModelView {
-    view: EffectiveView,
+#[derive(Debug)]
+pub(crate) struct ModelView {
+    pub(crate) view: EffectiveView,
     by_effective_id: BTreeMap<EffectiveId, DeclarationKey>,
 }
 
@@ -1098,7 +1099,7 @@ impl ModelView {
             .map(|key| key.node.as_str())
     }
 
-    fn declaration_key(&self, effective: EffectiveId) -> Option<&DeclarationKey> {
+    pub(crate) fn declaration_key(&self, effective: EffectiveId) -> Option<&DeclarationKey> {
         self.by_effective_id.get(&effective)
     }
 }
@@ -1107,7 +1108,7 @@ impl ModelView {
 /// names (the caller's own `CheckedGraph::model_selections()`), against the
 /// same package input a caller's `compile` already used. See the module
 /// doc's design note.
-fn model_views(
+pub(crate) fn model_views(
     model_selections: &[DomainPackageRef],
     packages: &BTreeMap<[u8; 32], Vec<u8>>,
     limits: ModelNormalizationLimits,
@@ -1166,7 +1167,7 @@ fn model_views(
 /// [`DeclarationKey`] it resolves to. `None` when no re-derived view names
 /// it -- a broken invariant, since `effective` came from the same checked
 /// package these views were re-derived from.
-fn view_of(views: &[ModelView], effective: EffectiveId) -> Option<&ModelView> {
+pub(crate) fn view_of(views: &[ModelView], effective: EffectiveId) -> Option<&ModelView> {
     views
         .iter()
         .find(|view| view.declaration_key(effective).is_some())
@@ -1852,6 +1853,7 @@ mod document;
 mod encode;
 mod extents;
 mod frame;
+mod initial;
 mod relationships;
 mod tree;
 mod write;
@@ -1863,6 +1865,7 @@ pub use extents::{
     BundleKey, BundlePart, BundleRefusal, Keyed, ObservationOrigin, PopulationEnumerationFailure,
     PopulationManifest, RelationshipExtents, ResolveBundle,
 };
+pub(crate) use initial::{admit_initial_state, observe_state};
 pub use write::{
     write_environment_document, EnvironmentLabels, EnvironmentModel, EnvironmentObject,
     EnvironmentPopulation,
