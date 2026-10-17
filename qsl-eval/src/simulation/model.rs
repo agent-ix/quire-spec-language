@@ -781,9 +781,11 @@ fn state_document(digest: &DigestRecord) -> DocumentRef {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ix_trace_rs::trace;
 
     /// FR-120 "Post-states": the two stops a model expansion makes carry the
     /// catalog's codes.
+    #[trace("TC-472", "FR-120-AC-6")]
     #[test]
     fn the_stop_causes_are_the_catalog_codes() {
         assert_eq!(EXHAUSTED.code(), "resource_exhausted");

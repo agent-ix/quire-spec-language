@@ -323,6 +323,7 @@ mod tests {
     }
 
     /// A value with no form refuses to write rather than writing a guess.
+    #[trace("TC-471", "FR-120-AC-4")]
     #[test]
     fn a_value_without_a_form_refuses_to_encode() {
         let text = Enc::Unencodable("a union value").canonical_text(Limits::new(1024));

@@ -284,6 +284,7 @@ mod tests {
     /// FR-120: a sequence with a declared maximum ranges over every length
     /// from its minimum to its maximum; with `Int[0, 1]` elements and bound
     /// `[0, 2]` that is 1 + 2 + 4 sequences.
+    #[trace("TC-471", "FR-120-AC-2")]
     #[test]
     fn a_bounded_sequence_ranges_over_every_length() {
         let sequence = ValueType::collection(CollectionType::new(
@@ -303,6 +304,7 @@ mod tests {
     }
 
     /// The odometer visits every combination once, last digit fastest.
+    #[trace("TC-471", "FR-120-AC-3")]
     #[test]
     fn an_odometer_visits_every_combination_once() {
         let mut odometer = Odometer::new(vec![2, 3]);
@@ -319,6 +321,7 @@ mod tests {
     }
 
     /// Every other type is unbounded here.
+    #[trace("TC-472", "FR-120-AC-7")]
     #[test]
     fn an_unenumerable_type_has_no_domain() {
         assert!(!enumerable(&ValueType::Integer));
