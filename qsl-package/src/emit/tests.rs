@@ -42,6 +42,7 @@ mod navigation;
 mod owners;
 mod protocol_reference;
 mod reachability;
+mod receiver_frames;
 mod variant_types;
 
 /// The unit the fixture packages are read from; every occurrence's region is
