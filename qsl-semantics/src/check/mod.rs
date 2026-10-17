@@ -2582,7 +2582,7 @@ mod tests {
         else {
             panic!("expected a type admission cause");
         };
-        assert_eq!(code, Code::StageLimitExceeded);
+        assert_eq!(code, qsl_foundation::Code::StageLimitExceeded);
         assert_eq!(limit, expected);
 
         let CheckCause::TypeAdmission { limit, .. } =
