@@ -88,11 +88,13 @@ enum Fixture {
     /// TC-1028: `=` and `!=` over native `String`, `UUID` and `Timestamp`
     /// parameters.
     NativeScalars,
+    /// TC-827: [`UNION_NODES`], a union, a construction and a `case`.
+    UnionNodes,
 }
 
 impl Fixture {
     /// Every fixture; each must back at least one row.
-    const ALL: [Self; 20] = [
+    const ALL: [Self; 21] = [
         Self::Tc416Functions,
         Self::RecursiveF,
         Self::Tree,
@@ -113,6 +115,7 @@ impl Fixture {
         Self::VariantType,
         Self::ProtocolReference,
         Self::NativeScalars,
+        Self::UnionNodes,
     ];
 }
 
@@ -136,6 +139,13 @@ const FORMS_UNIT: &str =
 const NATIVE_SCALARS: &str = "function eqs using v(a: String, b: String): Boolean pure { a = b }\n\
      function neu using v(a: UUID, b: UUID): Boolean pure { a != b }\n\
      function eqt using v(a: Timestamp, b: Timestamp): Boolean pure { a = b }\n";
+
+/// TC-827: a union, a construction of one of its members and a `case` over
+/// it, the families FR-320 emits.
+const UNION_NODES: &str =
+    "union Shape { Empty, Circle(Integer), Rect(Integer, Integer) }\n\
+     function area using v(s: Shape): Integer pure { case s { Empty: 0; Circle(r): r; Rect(w, h): w * h; } }\n\
+     function rect using v(): Shape pure { Shape::Rect(2, 3) }\n";
 
 /// Structural equality over TC-416's recursive `Tree`, the STD-129 case: a
 /// recursive compared type that reaches no `Text`, so it has no leaves
@@ -275,6 +285,7 @@ impl Fixture {
             Self::FormsUnit => text(FORMS_UNIT),
             Self::CyclicEquality => text(CYCLIC_EQUALITY),
             Self::NativeScalars => text(NATIVE_SCALARS),
+            Self::UnionNodes => text(UNION_NODES),
             Self::VariantType => {
                 let document = VARIANT_DOCUMENT.as_slice();
                 let unit = format!(
@@ -373,6 +384,7 @@ fn rows() -> Vec<Row> {
         row(K::CompositeType(C::OrderedSet), F::FormsUnit),
         row(K::CompositeType(C::Record), F::Tree),
         row(K::CompositeType(C::Tuple), F::DeclaredTypes),
+        row(K::CompositeType(C::Union), F::UnionNodes),
         row(K::CompositeType(C::Reference), F::SpineModel),
         row(K::BoundedDomain(B::IntegerRange), F::RecursiveF),
         row(K::BoundedDomain(B::RationalRange), F::GoldenCases),
@@ -385,10 +397,12 @@ fn rows() -> Vec<Row> {
         row(K::Value(ValueForm::EnumValue), F::OrderedEnum),
         row(K::Value(ValueForm::RecordValue), F::FormsUnit),
         row(K::Value(ValueForm::TupleValue), F::FormsUnit),
+        row(K::Value(ValueForm::UnionValue), F::UnionNodes),
         row(K::Value(ValueForm::Parameter), F::Tc416Functions),
         row(K::Expression(E::Call), F::Tc416Functions),
         row(K::Expression(E::Unary), F::ConfigVersion),
         row(K::Expression(E::Binary), F::Tc416Functions),
+        row(K::Expression(E::Case), F::UnionNodes),
         Row {
             family: K::Expression(E::Binary),
             fixture: F::CyclicEquality,
@@ -445,18 +459,6 @@ const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
             K::Value(ValueForm::CollectionValue),
             "a collection literal lowers to an expression/collection node, and a constant \
              Value::Collection is refused as UnbuiltLiteral",
-        ),
-        (
-            K::CompositeType(CompositeTypeForm::Union),
-            "lowering builds no union type; the checker has no union type form",
-        ),
-        (
-            K::Value(ValueForm::UnionValue),
-            "lowering builds no union value; the checker has no union type form",
-        ),
-        (
-            K::Expression(ExpressionForm::Case),
-            "lowering builds no case expression; the value expression grammar has none",
         ),
         (
             K::Value(ValueForm::OptionValue),
