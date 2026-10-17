@@ -149,7 +149,7 @@ Measured on main when this was written.
   `src/lib.rs`.
 - *Migration cost:* high. Composed `profile X = ".." version ".." digest ".."`
   lines appear in 18 source and test files (including format-string
-  generators): `src/linking/composed/arena.rs`, `src/linking/composed/parser.rs`,
+  generators): `src/linking/composed/arena.rs`, `src/parser.rs`,
   `src/protocol_artifact/handoff/writer.rs`, twelve `tests/it` files,
   `tests/support/composed_types`, `tests/support/protocol_artifact` and
   `tests/fixtures/composed-choreography.native`; and in 40 files under
@@ -174,8 +174,8 @@ Measured on main when this was written.
   carries the type report, the formal identity and the digest comparison. The
   type report is one-unit by construction, so a report that covers two units
   cannot be built. The inventory's own `CheckedUnit` is deleted; `qsl_inventory`
-  and its `CheckedUnit` live in `qsl_replay` and read the spine's, no longer in
-  the root crate's `checking::source_inventory`.
+  lives in `qsl_replay` and reads `spine::CheckedUnit`, no longer in the root
+  crate's `checking::source_inventory`.
 
 ### Option A-only: keep the composed linker and checker over S2 forms
 
@@ -236,7 +236,7 @@ text. These points follow from it and are decided.
   outcome of `check` and yields no partial inventory rows. The exhaustion stops
   `TypeWorkExhausted` and `TypeAdmissionUnfinished` are a different case: they
   stay `Incomplete` with the retained partial rows and the typed cause
-  (FR-052-AC-10). The inventory's identity binds the whole `RawSourceRef`;
+  (IR FR-052-AC-10). The inventory's identity binds the whole `RawSourceRef`;
   the row identity encoding belongs to the owning FR.
 - **One checked unit.** `spine::CheckedUnit` is extended; the inventory's own
   `CheckedUnit` is deleted.

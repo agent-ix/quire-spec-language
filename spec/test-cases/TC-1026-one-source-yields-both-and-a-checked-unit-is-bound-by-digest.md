@@ -10,7 +10,7 @@ relationships:
 
 ## Description
 
-Verify FR-362-AC-1 to FR-362-AC-4 and FR-362-AC-7. Catches an implementation that compares only labels, one that reads the source twice with two grammars, and one that accepts a type report built from other bytes.
+Verify FR-362-AC-1 to FR-362-AC-4, FR-362-AC-7 and FR-362-AC-8. Catches an implementation that compares only labels, one that reads the source twice with two grammars, and one that accepts a type report built from other bytes.
 
 ## Test Procedure
 
@@ -19,6 +19,7 @@ Verify FR-362-AC-1 to FR-362-AC-4 and FR-362-AC-7. Catches an implementation tha
 3. Build the graph from the text of step 1 and the type report from the same text with one character of a comment changed, same authority and identity. Call the checked-unit constructor. Repeat with the graph from the changed text and the type report from the original.
 4. Build the checked unit from a graph and a type report of the same bytes and take the inventory. Compare its rows with the rows of the producer's unit.
 5. Read a unit holding `predicate Positive` and an `invariant` (moved families) and one `relation` clause (unmoved: S2 has no dispatch entry). Read it again without the `relation` clause, and once more with a `hyper` clause in its place.
+6. Take the inventory of a unit the S3 type phase refuses. Take the inventory of a unit whose type phase stops on `TypeWorkExhausted`, and of one that stops on `TypeAdmissionUnfinished`.
 
 ## Expected Results
 
@@ -27,4 +28,5 @@ Verify FR-362-AC-1 to FR-362-AC-4 and FR-362-AC-7. Catches an implementation tha
 - Step 3: both calls refuse with the cause naming the differing side, the selected reference and the differing reference.
 - Step 4: the rows are equal.
 - Step 5: the first and third reads are refused `unsupported_construct` at the `relation` or `hyper` clause with no graph and no type report; the second yields both; no second parser runs. When a family moves, its read is retired with the family.
+- Step 6: the refused unit is an error outcome of `check` with no inventory rows; each exhaustion stop yields an `Incomplete` inventory with its partial rows and the typed cause.
 - Assertions compare typed causes and references, never message text.

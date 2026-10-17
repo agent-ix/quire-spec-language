@@ -47,8 +47,8 @@ bind a graph, a type report and a selected formal source only when the
    `CheckedUnit` type exists: the spine's, which carries the graph's
    requirement records, the type report, the formal identity and the source
    references. The type report covers one unit by construction. The type the
-   source inventory used to define is deleted, and `qsl_inventory` with its
-   `CheckedUnit` lives in `qsl_replay`.
+   source inventory used to define is deleted, and `qsl_inventory` lives in
+   `qsl_replay` and reads `spine::CheckedUnit`.
 4. **Digest-bound unit.** The checked unit is built only by that producer or by
    a constructor that takes a formal source, a graph and a type report and
    compares their source references as whole references: authority, identity
@@ -78,7 +78,7 @@ bind a graph, a type report and a selected formal source only when the
    of `check` and yields no partial inventory rows. This is a different case
    from the exhaustion stops: when the type phase stops on `TypeWorkExhausted`
    or `TypeAdmissionUnfinished`, the inventory stays `Incomplete`, retains the
-   partial rows and carries the typed cause (FR-052-AC-10). The inventory's
+   partial rows and carries the typed cause (IR FR-052-AC-10). The inventory's
    identity binds the whole `RawSourceRef` (authority, identity and digest);
    the encoding of a row's identity belongs to the FR that owns the inventory
    rows.
@@ -90,10 +90,11 @@ bind a graph, a type report and a selected formal source only when the
 | FR-362-AC-1 | For a source the grammar admits, the producer returns a graph and a type report from one parse. The graph's source reference, the type report unit's source reference and the formal source's reference are equal, and their digest is the `quire.source.bytes/v1` digest of the input bytes. | Test (TC-1026) |
 | FR-362-AC-2 | For a source whose profile line carries `version` or `digest` after the identity, `qsl_cst::parse` returns a recovered `ParsedSource` with an `invalid_syntax` diagnostic at that token, and `build_unit` and the producer refuse it with `invalid_syntax`; no other parser admits it. | Test (TC-1026) |
 | FR-362-AC-3 | Given a graph from one text and a type report from a second text that differs by one byte and has the same authority and identity, the checked-unit constructor refuses with a cause naming the type report side, the selected reference and the differing one. The same holds with the graph from the other bytes. | Test (TC-1026) |
-| FR-362-AC-4 | A checked unit built from a graph and a type report of the same bytes yields the inventory rows of the producer's own unit; the report type holds one unit, so a two-unit report cannot be built. | Test (TC-1026) |
+| FR-362-AC-4 | A checked unit built from a graph and a type report of the same bytes yields the inventory rows of the producer's own unit. | Test (TC-1026) |
 | FR-362-AC-5 | No type or function compares only the authority and identity of a graph, a type report or a formal source: the label-only types and the label-only constructor do not exist. | Inspection (TC-1027) |
 | FR-362-AC-6 | The producer and the type phase it runs call no composed entry point (`parse_native`, `parse_native_source`) and name no composed type (`ComposedUnit`, `syntax::composed`), and no conversion from `ParsedUnit` to a composed tree exists. After the last family has moved, those symbols and the composed linker and checker no longer exist. | Inspection (TC-1027) |
 | FR-362-AC-7 | During the migration sequence, a unit that holds a `predicate` and a `relation` clause is refused with `unsupported_construct` at the `relation` clause, and produces no graph and no type report; the same unit without the `relation` clause yields both. A `hyper` clause is refused the same way. Once a family has moved, its constructs are admitted and the test for that family is retired with it. No second parser reads the unit. | Test (TC-1026) |
+| FR-362-AC-8 | A unit that the S3 type phase refuses is an error outcome of `check` and yields no inventory rows. A unit whose type phase stops on `TypeWorkExhausted` or `TypeAdmissionUnfinished` yields an `Incomplete` inventory that retains the partial rows and carries the typed cause. | Test (TC-1026) |
 
 ## Dependencies
 
