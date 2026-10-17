@@ -205,6 +205,13 @@ struct Run<'w, 's, 'a> {
     postconditions: &'w [&'w ClauseInfo],
 }
 
+/// What one application's candidates share: the keys it may create objects
+/// under and the fields it may write.
+struct Plan<'p> {
+    slots: &'p [Slot],
+    writable: &'p WritableFields,
+}
+
 /// An unused universe key an operation may create an object under.
 struct Slot {
     population: DeclarationKey,
@@ -353,6 +360,10 @@ impl Run<'_, '_, '_> {
         let deletable = self.deletable();
         let slots = self.slots();
         let writable = self.writable_fields()?;
+        let plan = Plan {
+            slots: &slots,
+            writable: &writable,
+        };
         let mut deletions = Odometer::new(vec![2; deletable.len()]);
         while let Some(deleted) = deletions.next_digits() {
             let deleted: BTreeSet<(&DeclarationKey, &str)> = deletable
@@ -368,9 +379,7 @@ impl Run<'_, '_, '_> {
                     .collect(),
             );
             while let Some(created) = creations.next_digits() {
-                self.fields_of_choice(
-                    &deleted, &slots, &created, &writable, budget, contract, successors,
-                )?;
+                self.fields_of_choice(&deleted, &plan, &created, budget, contract, successors)?;
             }
         }
         Ok(())
@@ -382,9 +391,8 @@ impl Run<'_, '_, '_> {
     fn fields_of_choice(
         &self,
         deleted: &BTreeSet<(&DeclarationKey, &str)>,
-        slots: &[Slot],
+        plan: &Plan<'_>,
         created: &[u128],
-        writable: &WritableFields,
         budget: &mut Budget,
         contract: &mut Vec<ContractFinding>,
         successors: &mut Vec<Successor>,
@@ -408,7 +416,7 @@ impl Run<'_, '_, '_> {
                 created: false,
             });
         }
-        for (slot, choice) in slots.iter().zip(created) {
+        for (slot, choice) in plan.slots.iter().zip(created) {
             let Some(position) = choice.checked_sub(1) else {
                 continue;
             };
@@ -444,7 +452,7 @@ impl Run<'_, '_, '_> {
             };
             for field in fields {
                 if !member.created
-                    && !writable.contains(&(
+                    && !plan.writable.contains(&(
                         member.population.clone(),
                         member.key.clone(),
                         field.key.clone(),
@@ -466,7 +474,8 @@ impl Run<'_, '_, '_> {
         let mut values = Odometer::new(dimensions.iter().map(Dimension::radix).collect());
         while let Some(digits) = values.next_digits() {
             budget.charge()?;
-            let candidate = self.build(deleted, &members, slots, created, &dimensions, &digits)?;
+            let candidate =
+                self.build(deleted, &members, plan.slots, created, &dimensions, &digits)?;
             if !is_closed(&candidate, &post_references) {
                 continue;
             }

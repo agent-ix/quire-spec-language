@@ -583,7 +583,7 @@ fn arguments_come_from_the_parameter_domain_and_preconditions_conjoin() {
         None,
         frame(&["value"], false, false),
     );
-    let clauses = "post SetsIt using v on M::Counter::setTo { self.value = n }";
+    let clauses = "post SetsIt using v on M::Counter::setTo { self.value - n = 0 }";
     let mut world = world(vec![set_to.clone()], clauses);
     let s0 = world.start("s0", &[Obj("c1", 0, 0, None)]);
     let system = self::system(&world, vec![s0], &["c1", "c2"], UNLIMITED);
@@ -759,10 +759,7 @@ fn the_state_key_is_the_simulation_state_envelope() {
     let keys = [bytes(0), bytes(1), bytes(2)];
     for (label, next) in [(0, Json::Null), (1, Json::Null), (0, own)] {
         let expected = canonical(envelope(label, next));
-        assert!(
-            keys.iter().any(|key| *key == expected),
-            "no key equals {expected}"
-        );
+        assert!(keys.contains(&expected), "no key equals {expected}");
     }
 }
 
@@ -1155,7 +1152,7 @@ fn every_argument_vector_counts_against_the_bound() {
     );
     let mut world = world(
         vec![set_to],
-        "pre Match using v on M::Counter::setTo { self.value = n }",
+        "pre Match using v on M::Counter::setTo { self.value - n = 0 }",
     );
     let s0 = world.start("s0", &[Obj("c1", 2, 0, None)]);
     let system = ModelSystem::new(request(&world, vec![s0], universe(&["c1"]), UNLIMITED, 10))
@@ -1486,7 +1483,9 @@ fn an_undecided_precondition_is_a_contract_finding() {
                 .expect("a key encodes");
         let digest = qsl_foundation::digest::DigestRecord::mint(
             qsl_foundation::digest::DigestDomain::SimulationStateKeyV1,
-            qsl_foundation::ByteDigest::of(&key_bytes).as_bytes().to_owned(),
+            qsl_foundation::ByteDigest::of(&key_bytes)
+                .as_bytes()
+                .to_owned(),
         );
         (expansion.successors.len(), expansion.findings, digest)
     };
