@@ -11,7 +11,14 @@ description = "Workspace developer tooling: cargo xtask seam-probe / string-edge
 # FR-059's `graph::classify` (ecosystem packages, ADR-032 DT-4).
 arch-lint = { path = "../tools/arch-lint" }
 qsl-attrs = { path = "../qsl-attrs" }
-serde_json = { version = "1.0.151" }
+# FR-340: the refinement gate runs cases through `qsl_replay::spine::run_clause`
+# and reads its inputs as FR-106 observation documents.
+qsl-foundation = { path = "../qsl-foundation" }
+qsl-replay = { path = "../qsl-replay" }
+qsl-semantics = { path = "../qsl-semantics" }
+quire-canonical = { workspace = true }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = { version = "1.0.151", features = ["raw_value"] }
 proc-macro2 = { version = "1.0.107", features = ["span-locations"] }
 syn = { version = "2.0.119", features = ["full", "visit"] }
 thiserror = "2.0.20"

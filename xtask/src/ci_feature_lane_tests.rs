@@ -488,6 +488,7 @@ fn aggregate_reaches_default_then_all_features_without_changing_recipe_order() {
         "string-edge",
         "route-lint",
         "checked-input",
+        "refinement-versioning",
         "cargo-deny-bans",
         "ci-docs",
         "arch-lint-canonical-encoder",
