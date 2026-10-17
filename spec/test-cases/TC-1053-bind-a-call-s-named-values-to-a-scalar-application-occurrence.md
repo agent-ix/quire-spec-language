@@ -59,6 +59,10 @@ Compile and emit each unit as FR-100's `run` does, then call
    `a + 9223372036854775808` over `a: Int[0, 9]`.
 7. `a + 1` with a `work_units` of 0, which `run` reports `Incomplete`, binding
    its `+` occurrence.
+   An `undefined` evaluation is not exercised for division by an unproved
+   divisor, `reduce` over an unproved nonempty source and `sum` outside its
+   domain, which the checker refuses statically. Not covered: none-value,
+   ieee-not-finite.
 8. Bind step 1's request twice, and the FR-357 claim for the same occurrence;
    compare `values()` with the claim's operand values.
 
