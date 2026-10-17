@@ -438,85 +438,87 @@ fn tc235_m12_state_machine_meaning_is_explicit() {
     }
 }
 
-/// The retained state machine at `node`, then every ancestor reached through
-/// its `supertypes`.
-fn machine_with_ancestors<'a>(
-    package: &'a DomainPackage,
-    node: &str,
-) -> Vec<&'a qsl_semantics::model::domain_package::StateMachineRecord> {
-    let mut chain = Vec::new();
-    let mut pending = vec![id(node)];
-    while let Some(next) = pending.pop() {
-        let machine = package
-            .records
-            .iter()
-            .find_map(|record| match record {
-                DomainPackageRecord::StateMachine(machine) if machine.key.node == next => {
-                    Some(machine)
-                }
-                _ => None,
-            })
-            .expect("the chain names a retained state machine");
-        pending.extend(machine.supertypes.iter().map(|key| key.node.clone()));
-        chain.push(machine);
-    }
-    chain
+/// The summary of one effective state or transition: its declaring machine's
+/// node, its key's node and its position.
+type Entry = (String, String, usize);
+
+fn entry(declaring: &DeclarationKey, key: &DeclarationKey, position: usize) -> Entry {
+    (declaring.node.clone(), key.node.clone(), position)
 }
 
-/// M19 runs 1 and 7: `ExpressLifecycle` conforms to `OrderLifecycle`, and its
-/// effective states, transitions, operations and field are its own plus its
-/// ancestor's (FR-208), with `NotYetPlaced` guarding the inherited `[0]` and,
-/// when `own_guard`, its own `[0]`.
-fn assert_express_effective_machine(package: &DomainPackage, own_guard: bool) {
-    let chain = machine_with_ancestors(package, "ExpressLifecycle");
-    let states: std::collections::BTreeSet<_> = chain
+fn expected_entries(entries: &[(&str, &str, usize)]) -> Vec<Entry> {
+    entries
         .iter()
-        .flat_map(|machine| machine.states.iter().map(|state| state.name.as_str()))
-        .collect();
+        .map(|(declaring, key, position)| (id(declaring), id(key), *position))
+        .collect()
+}
+
+/// M19 runs 1 and 7 (FR-081-AC-17, AC-19, AC-21), asserted through the view:
+/// `ExpressLifecycle`'s effective states and transitions are its own then
+/// `OrderLifecycle`'s, ordered by declaring machine key bytes then position,
+/// with `NotYetPlaced` guarding the inherited `[0]` and, when `own_guard`, its
+/// own `[0]`.
+fn assert_express_effective_machine(view: &EffectiveView, own_guard: bool) {
+    let express = view
+        .state_machine(&package_key("ExpressLifecycle"))
+        .expect("ExpressLifecycle is a state machine of the package");
     assert_eq!(
-        states,
-        ["Cancelled", "Draft", "Expedited", "Placed"]
-            .into_iter()
-            .collect()
+        express
+            .states
+            .iter()
+            .map(|state| entry(state.declaring, state.key, state.position))
+            .collect::<Vec<_>>(),
+        expected_entries(&[
+            ("ExpressLifecycle", "ExpressLifecycle/Expedited", 0),
+            ("OrderLifecycle", "OrderLifecycle/Draft", 0),
+            ("OrderLifecycle", "OrderLifecycle/Placed", 1),
+            ("OrderLifecycle", "OrderLifecycle/Cancelled", 2),
+        ]),
     );
     assert_eq!(
-        chain[0]
-            .supertypes
+        express
+            .states
+            .iter()
+            .map(|state| state.name)
+            .collect::<Vec<_>>(),
+        ["Expedited", "Draft", "Placed", "Cancelled"]
+    );
+    assert_eq!(
+        express
+            .transitions
+            .iter()
+            .map(|transition| entry(transition.declaring, transition.key, transition.position))
+            .collect::<Vec<_>>(),
+        expected_entries(&[
+            ("ExpressLifecycle", "ExpressLifecycle/transition0", 0),
+            ("OrderLifecycle", "OrderLifecycle/transition0", 0),
+            ("OrderLifecycle", "OrderLifecycle/transition1", 1),
+            ("OrderLifecycle", "OrderLifecycle/transition2", 2),
+        ]),
+    );
+    let own = &express.transitions[0];
+    assert_eq!(own.from.node, id("OrderLifecycle/Placed"));
+    assert_eq!(own.to.node, id("ExpressLifecycle/Expedited"));
+    assert_eq!(own.trigger.node, id("ExpressLifecycle/expedite"));
+    assert_eq!(own.guard, own_guard.then_some("NotYetPlaced"));
+    assert!(own.emits.is_empty());
+    let inherited = &express.transitions[1];
+    assert_eq!(inherited.from.node, id("OrderLifecycle/Draft"));
+    assert_eq!(inherited.to.node, id("OrderLifecycle/Placed"));
+    assert_eq!(inherited.trigger.node, id("OrderLifecycle/place"));
+    assert_eq!(inherited.guard, Some("NotYetPlaced"));
+    assert_eq!(
+        inherited
+            .emits
             .iter()
             .map(|key| &key.node)
             .collect::<Vec<_>>(),
-        [&id("OrderLifecycle")],
-        "ExpressLifecycle conforms to OrderLifecycle"
+        [&id("OrderPlaced")]
     );
-    let order = chain[1];
-    assert_eq!(order.transitions.len(), 3, "OrderLifecycle [0]-[2]");
-    assert_eq!(order.transitions[0].guard.as_deref(), Some("NotYetPlaced"));
-    assert_eq!(chain[0].transitions.len(), 1, "its own [0]");
-    assert_eq!(
-        chain[0].transitions[0].guard.as_deref(),
-        own_guard.then_some("NotYetPlaced")
-    );
-    let operations: std::collections::BTreeSet<_> = package
-        .records
-        .iter()
-        .filter_map(|record| match record {
-            DomainPackageRecord::OperationMember(operation)
-                if chain.iter().any(|machine| machine.key == operation.owner) =>
-            {
-                operation.key.node.rsplit('/').next()
-            }
-            _ => None,
-        })
-        .collect();
-    assert_eq!(
-        operations,
-        ["cancel", "expedite", "place"].into_iter().collect()
-    );
-    assert!(package.records.iter().any(|record| matches!(
-        record,
-        DomainPackageRecord::FieldMember(field)
-            if field.key.node == id("OrderLifecycle/placed") && field.owner == order.key
-    )));
+    assert!(view.conforms(
+        &package_key("ExpressLifecycle"),
+        &package_key("OrderLifecycle")
+    ));
 }
 
 pub(super) fn assert_derivation_conflict(
@@ -570,8 +572,15 @@ fn express_lifecycle(supertype: &str, states: &[&str], from: &str) -> Value {
 
 /// M19: inherited states/transitions form the subtype's effective machine;
 /// duplicate local names and ancestor transitions to subtype-only states are
-/// rejected at their authored declaration paths.
-#[trace("QSpec-TC-235")]
+/// rejected at their authored declaration paths. Runs 1 and 7 and the run 2
+/// and 4 refusals (a refused package has no view) are TC-1049 steps 1, 5 and 6.
+#[trace(
+    "QSpec-TC-235",
+    "TC-1049",
+    "FR-081-AC-17",
+    "FR-081-AC-19",
+    "FR-081-AC-21"
+)]
 #[test]
 fn tc235_m19_state_machine_specialization_vectors() {
     let inherited = "OrderLifecycle/Placed";
@@ -600,9 +609,8 @@ fn tc235_m19_state_machine_specialization_vectors() {
         .map(|entry| entry.preimage.original.node.clone())
         .collect();
     effective.sort();
-    // The effective view carries operations, fields and clauses; states and
-    // transitions have no effective-view entry, so `assert_express_effective_machine`
-    // reads them (and the supertype edge) from the source records.
+    // The declarations carry operations, fields and clauses; states and
+    // transitions are read through `state_machine`.
     let mut expected: Vec<_> = [
         // Operations place, cancel, expedite; field placed; the guard clause.
         "OrderLifecycle/place",
@@ -616,7 +624,7 @@ fn tc235_m19_state_machine_specialization_vectors() {
     .collect();
     expected.sort();
     assert_eq!(effective, expected);
-    assert_express_effective_machine(&package, false);
+    assert_express_effective_machine(&view, false);
 
     // Run 7: `NotYetPlaced` guards the subtype's transition too.
     let inherited_state_and_guard = mutate_k2(|document| {
@@ -639,7 +647,7 @@ fn tc235_m19_state_machine_specialization_vectors() {
         node: id("ExpressLifecycle"),
     };
     assert!(view.type_identities().contains_key(&child_key));
-    assert_express_effective_machine(&package, true);
+    assert_express_effective_machine(&view, true);
 
     // Run 2: `Placed` redeclared beside the inherited one.
     let duplicate_state = mutate_k2(|document| {
@@ -985,4 +993,107 @@ fn tc235_m32_run2_clause_named_like_an_operation_is_conflicting_binding() {
         panic!("expected conflicting-binding, got {:?}", refusals[0]);
     };
     assert_eq!(at.as_ref(), Some(&member("TypeDefinition.clauses[1]")));
+}
+
+/// `ExpressLifecycleCopy`: a full machine sharing `ExpressLifecycle`'s display
+/// name but not its key, with no supertypes.
+fn express_lifecycle_copy() -> Value {
+    let mut copy = declaration(
+        "ExpressLifecycleCopy",
+        "lifecycle",
+        json!({
+            "operations": [operation("ExpressLifecycleCopy", "expedite")],
+            "states": [lifecycle_state("ExpressLifecycleCopy", "Expedited")],
+            "transitions": [lifecycle_transition(
+                "ExpressLifecycleCopy", "transition0", "Expedited", "Expedited", "expedite", vec![],
+            )],
+        }),
+    );
+    copy["displayName"] = json!("ExpressLifecycle");
+    copy
+}
+
+/// TC-1049 steps 2 to 4: the view answers `state_machine` for machines only,
+/// answers `conforms` by key and not by display name, and exposes neither as
+/// a declaration or identity change.
+#[trace("TC-1049", "FR-081-AC-18", "FR-081-AC-20")]
+#[test]
+fn tc1049_view_exposes_machine_scope_and_conformance_by_key() {
+    let document = mutate_k2(|document| {
+        let types = document["types"].as_array_mut().unwrap();
+        types.push(express_lifecycle(
+            "OrderLifecycle",
+            &["Expedited"],
+            "OrderLifecycle/Placed",
+        ));
+        types.push(express_lifecycle_copy());
+    });
+    let package = read_k2(&document).expect("the copy is an admissible machine");
+    let view = record_charges(&package, 25);
+    let order = package_key("OrderLifecycle");
+    let express = package_key("ExpressLifecycle");
+    let copy = package_key("ExpressLifecycleCopy");
+
+    // A second normalization of the package, which no accessor has read: its
+    // identities are the baseline for the read view.
+    let without_calls = {
+        let (outcome, _) = normalize_with_meter(&package, ModelNormalizationLimits::default());
+        let NormalizeOutcome::Completed(fresh) = outcome else {
+            panic!("normalization must complete");
+        };
+        fresh
+    };
+
+    let own = view
+        .state_machine(&order)
+        .expect("OrderLifecycle is a machine");
+    assert_eq!(
+        own.states
+            .iter()
+            .map(|state| state.name)
+            .collect::<Vec<_>>(),
+        ["Draft", "Placed", "Cancelled"]
+    );
+    assert_eq!(
+        own.transitions
+            .iter()
+            .map(|transition| entry(transition.declaring, transition.key, transition.position))
+            .collect::<Vec<_>>(),
+        expected_entries(&[
+            ("OrderLifecycle", "OrderLifecycle/transition0", 0),
+            ("OrderLifecycle", "OrderLifecycle/transition1", 1),
+            ("OrderLifecycle", "OrderLifecycle/transition2", 2),
+        ]),
+    );
+    assert_eq!(own.transitions[0].guard, Some("NotYetPlaced"));
+    assert_eq!(
+        own.transitions[0]
+            .emits
+            .iter()
+            .map(|key| &key.node)
+            .collect::<Vec<_>>(),
+        [&id("OrderPlaced")]
+    );
+
+    // Step 2: an object type and an absent key are no machine.
+    assert_eq!(view.state_machine(&package_key("Order")), None);
+    assert_eq!(view.state_machine(&package_key("Absent")), None);
+
+    // Step 3.
+    assert!(view.conforms(&express, &order));
+    assert!(view.conforms(&express, &express));
+    assert!(!view.conforms(&order, &express));
+    assert!(!view.conforms(&express, &package_key("Fulfilment")));
+    assert!(!view.conforms(&copy, &express));
+    assert!(!view.conforms(&copy, &order));
+    assert!(!view.conforms(&express, &copy));
+
+    // Step 4: the accessors changed nothing a caller can observe.
+    assert_eq!(view.identity(), without_calls.identity());
+    assert_eq!(view.declarations(), without_calls.declarations());
+    assert_eq!(view.type_identities(), without_calls.type_identities());
+    assert!(view.declarations().iter().all(|entry| {
+        let node = &entry.preimage.original.node;
+        !node.contains("/transition") && !node.ends_with("/Draft") && !node.ends_with("/Expedited")
+    }));
 }
