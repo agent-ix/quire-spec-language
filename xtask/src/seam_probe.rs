@@ -909,10 +909,15 @@ mod state_model_tests {
         // A renamed Bound arm is not the expected arm.
         fs::write(
             &file,
-            source.replace(bound, "LeadingTokenKind::Bound => state_model::other(construct),"),
+            source.replace(
+                bound,
+                "LeadingTokenKind::Bound => state_model::other(construct),",
+            ),
         )
         .unwrap();
-        let message = state_model_arm_report(scratch.path()).unwrap_err().to_string();
+        let message = state_model_arm_report(scratch.path())
+            .unwrap_err()
+            .to_string();
         assert!(message.contains("state_model::other"), "{message}");
         // The Bound arm deleted: the expected arm is missing.
         fs::write(
@@ -920,7 +925,9 @@ mod state_model_tests {
             source.replace(bound, "LeadingTokenKind::Bound => value::alias(construct),"),
         )
         .unwrap();
-        let message = state_model_arm_report(scratch.path()).unwrap_err().to_string();
+        let message = state_model_arm_report(scratch.path())
+            .unwrap_err()
+            .to_string();
         assert!(
             message.contains("expected-but-missing") && message.contains("population_bound"),
             "{message}"

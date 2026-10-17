@@ -898,7 +898,10 @@ impl CheckedPackageEvaluation for CheckedPackage {
             {
                 if let Some(refusal) = evaluate::authored_bound_refusal(&instant.environment, bound)
                     .map_err(|_| {
-                        CallFailure::Fault(InternalFault::new("S6a", "authored-population-bound-invalid"))
+                        CallFailure::Fault(InternalFault::new(
+                            "S6a",
+                            "authored-population-bound-invalid",
+                        ))
                     })?
                 {
                     return Ok(ClauseEvaluation::new(

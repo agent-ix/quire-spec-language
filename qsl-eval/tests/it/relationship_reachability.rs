@@ -1420,8 +1420,8 @@ fn a_bounded_population_refuses_for_a_clause_that_never_evaluates_a_reaches() {
     let population = key("orders").node;
     for clause in ["PreContext", "PreShort"] {
         for (count, refused) in [(2_u64, false), (3, true)] {
-            let environment = chain(&orders)
-                .with_population_sizes(BTreeMap::from([(population.clone(), count)]));
+            let environment =
+                chain(&orders).with_population_sizes(BTreeMap::from([(population.clone(), count)]));
             let (evaluation, meter) = orders.run(
                 clause,
                 &orders.order("o1"),

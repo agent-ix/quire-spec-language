@@ -270,7 +270,10 @@ fn reachabilities_over_two_populations_carry_two_links_to_two_nodes() {
     assert_ne!(links[0], links[1], "each reachability has its own link");
     for population in &populations {
         assert_eq!(
-            links.iter().filter(|link| **link == &population["node_id"]).count(),
+            links
+                .iter()
+                .filter(|link| **link == &population["node_id"])
+                .count(),
             1,
             "each node is linked once"
         );
