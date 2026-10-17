@@ -215,6 +215,23 @@ fn declarations(body: &str, guard: bool) -> (PackageDeclarations, EffectiveView,
     (declarations, view, source)
 }
 
+/// FR-120-AC-9's fixture: the checked package of `body` over this dispatch
+/// model, and the domain package bytes it was checked against.
+pub(crate) fn simulation_package(
+    body: &str,
+    guard: bool,
+) -> (qsl_package::CheckedPackage, BTreeMap<[u8; 32], Vec<u8>>) {
+    let (declarations, _, _) = declarations(body, guard);
+    let graph = declarations
+        .check(CheckingLimits::default())
+        .expect("S3 checks source");
+    let document = model_document();
+    (
+        qsl_package::CheckedPackage::link(graph),
+        qsl_semantics::model::intake::package_input([document.as_slice()]),
+    )
+}
+
 fn graph(body: &str, guard: bool) -> (CheckedGraph, EffectiveView) {
     let (declarations, view, _) = declarations(body, guard);
     (

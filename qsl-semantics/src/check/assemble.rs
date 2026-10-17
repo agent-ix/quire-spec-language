@@ -316,6 +316,13 @@ pub enum AssemblyCause {
         /// The library identity the import names.
         identity: String,
     },
+    /// A `temporal` clause: no checker reads one yet (the TemporalTrace
+    /// family checks them), so it is refused rather than compiled and
+    /// silently missing from the emitted package.
+    UnimplementedTemporalClause {
+        /// The declared clause name.
+        name: String,
+    },
     /// A `model` declaration names no domain package admitted at I1.
     UnadmittedModel {
         /// The declaration's alias.
@@ -422,6 +429,7 @@ impl AssemblyCause {
             Self::FloatingType { .. } | Self::UnsupportedModelMember { .. } => {
                 Code::UnknownRequiredFeature
             }
+            Self::UnimplementedTemporalClause { .. } => Code::UnsupportedConstruct,
             Self::AliasCycle { .. } => Code::InvalidPackage,
             Self::InvalidTypeDeclaration(invalid) => match &invalid.cause {
                 DeclarationCause::DuplicateMember(_) => Code::AmbiguousDeclaration,
@@ -499,6 +507,7 @@ impl AssemblyCause {
             Self::FloatingType { .. } | Self::UnsupportedModelMember { .. } => {
                 "unsupported-feature"
             }
+            Self::UnimplementedTemporalClause { .. } => "not-yet-implemented",
             Self::AliasCycle { .. } => "definition-cycle",
             Self::UndeclaredAlias { .. }
             | Self::UnadmittedModel { .. }
@@ -621,6 +630,10 @@ struct Unit {
     /// Each `protocol` declaration's form, in source order, for FR-113's
     /// `check::protocol_clause` checker to resolve at S3.
     protocols: Vec<qsl_forms::ProtocolDeclarationForm>,
+    /// One refusal per `temporal` clause: no checker reads a clause yet, so
+    /// it is refused rather than compiled and silently missing from the
+    /// emitted package.
+    temporal_refusals: Vec<AssemblyError>,
 }
 
 impl Unit {
@@ -637,8 +650,10 @@ impl Unit {
             operation_bodies: Vec::new(),
             population_bounds: Vec::new(),
             protocols: Vec::new(),
+            temporal_refusals: Vec::new(),
         };
         for form in forms {
+            let span = form.span();
             match form.into_form() {
                 DeclarationForm::Function(function) => unit.functions.push(*function),
                 DeclarationForm::Alias(alias) => {
@@ -676,6 +691,12 @@ impl Unit {
                         members: Members::Union(union.members),
                     });
                 }
+                DeclarationForm::Temporal(clause) => unit.temporal_refusals.push(AssemblyError {
+                    cause: AssemblyCause::UnimplementedTemporalClause {
+                        name: clause.name.name,
+                    },
+                    span,
+                }),
             }
         }
         unit
@@ -2226,8 +2247,8 @@ impl PackageDeclarations {
         cancel: &Cancel,
     ) -> Result<Self, AssemblyRefusal> {
         let (selections, forms) = unit.into_parts();
-        let unit = Unit::new(forms);
-        let mut errors = Vec::new();
+        let mut unit = Unit::new(forms);
+        let mut errors = std::mem::take(&mut unit.temporal_refusals);
         let owner = SourceOwner::from(&source);
         // The models and the one meter their admission counted on; checking
         // continues that meter into the conformance stage.

@@ -20,6 +20,7 @@ mod expansion;
 mod explore;
 mod frontier;
 mod key;
+pub mod model;
 mod not_simulated;
 mod order;
 mod sample;

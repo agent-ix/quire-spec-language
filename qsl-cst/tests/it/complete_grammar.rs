@@ -80,6 +80,7 @@ const ACCEPTED_PRODUCTIONS: &[Production] = &[
     Production::TemporalClause,
     Production::Activation,
     Production::Capture,
+    Production::Fairness,
     Production::Interval,
     Production::TemporalExpression,
     Production::TemporalImplication,
@@ -190,8 +191,9 @@ fn corpus() -> Vec<(&'static str, String)> {
             source(
                 concat!(
                     "temporal Watch using Complete over (sample: M::Sample) clock \"ticks\" on each (trigger: M::Trigger) when (true) {\n",
+                    "fair weak each M::Thing::act;\n",
                     "capture remembered: Integer = 0;\n",
-                    "always[0,*] (holds(true) until[0,1] holds(false))\n",
+                    "always[0,*] (holds(true) until[0,1] holds(false)) and eventually holds(true)\n",
                     "}",
                 ),
             ),
