@@ -88,6 +88,7 @@ const ACCEPTED_PRODUCTIONS: &[Production] = &[
     Production::TemporalRelation,
     Production::TemporalUnary,
     Production::TemporalPrimary,
+    Production::TerminalDeclaration,
     Production::ProtocolClause,
     Production::Role,
     Production::RoleLifetime,
@@ -195,6 +196,13 @@ fn corpus() -> Vec<(&'static str, String)> {
                     "}",
                 ),
             ),
+        ),
+        (
+            "terminal",
+            source(concat!(
+                "terminal Done using Complete on M when { true };\n",
+                "terminal Halt using Complete on M any;",
+            )),
         ),
         (
             "protocol",

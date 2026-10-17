@@ -35,6 +35,7 @@ mod spans;
 mod sum_case;
 mod syntax;
 mod temporal_clause;
+mod terminal_declaration;
 mod value;
 
 pub use clause_text::{parse_clause_text, ClauseTextRefusal};
@@ -54,8 +55,9 @@ pub use syntax::{
     ProtocolNodeDeclaration, ProtocolNodeKind, RecordFieldForm, RecordForm, RoleForm, ScopeEntry,
     ScopeId, ScopeName, ScopedAnchorForm, ShapeChanged, Spellings, StateClauseForm,
     StateClauseKind, TemporalClauseForm, TemporalFormulaForm, TemporalNodeForm, TemporalNodeId,
-    TemporalOperator, TemporalOperatorForm, TermOperator, TreeRefusal, TupleForm, TypeForm,
-    TypeFormHead, UnionForm, UnionMemberForm, UnitForm, UsingAlias,
+    TemporalOperator, TemporalOperatorForm, TermOperator, TerminalDeclarationForm,
+    TerminalDeclarationKind, TreeRefusal, TupleForm, TypeForm, TypeFormHead, UnionForm,
+    UnionMemberForm, UnitForm, UsingAlias,
 };
 
 /// Each explicit heap stack S2 and the form traits keep grows by at most a

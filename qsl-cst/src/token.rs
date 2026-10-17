@@ -196,6 +196,7 @@ vocabulary! {
     Outstanding => "outstanding", Continue => "continue", Cancel => "cancel",
     Variant => "variant", Relation => "relation", Hyper => "hyper", Trace => "trace",
     Fair => "fair", Weak => "weak", Strong => "strong", Whole => "whole",
+    Terminal => "terminal",
     Bounded => "bounded", Hybrid => "hybrid", Mode => "mode", Flow => "flow",
     Transition => "transition", Reset => "reset", Synthesis => "synthesis",
     Grammar => "grammar", Satisfies => "satisfies", Verify => "verify", Claim => "claim",

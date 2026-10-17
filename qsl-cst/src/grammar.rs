@@ -283,6 +283,7 @@ fn source_and_types(g: &mut Grammar) {
         r(P::StateClause),
         r(P::OperationBody),
         r(P::TemporalClause),
+        r(P::TerminalDeclaration),
         r(P::ProtocolClause),
         r(P::RelationClause),
         r(P::HyperClause),
@@ -1053,6 +1054,19 @@ fn temporal(g: &mut Grammar) {
             opt(c(vec![x("weak"), x("strong")])),
             opt(c(vec![x("whole"), x("each")])),
             r(P::QualifiedName),
+            x(";"),
+        ]),
+    );
+    g.insert(
+        P::TerminalDeclaration,
+        s(vec![
+            x("terminal"),
+            ident(),
+            x("using"),
+            ident(),
+            x("on"),
+            ident(),
+            c(vec![s(vec![x("when"), r(P::Block)]), x("any")]),
             x(";"),
         ]),
     );

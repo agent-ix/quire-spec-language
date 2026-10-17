@@ -110,7 +110,8 @@ fn state_clause(form: &DeclarationForm) -> &StateClauseForm {
         | DeclarationForm::Unit(_)
         | DeclarationForm::OperationBody(_)
         | DeclarationForm::Protocol(_)
-        | DeclarationForm::Temporal(_) => panic!("a state clause form, not {form:?}"),
+        | DeclarationForm::Temporal(_)
+        | DeclarationForm::Terminal(_) => panic!("a state clause form, not {form:?}"),
     }
 }
 
@@ -127,7 +128,8 @@ fn operation_body(form: &DeclarationForm) -> &OperationBodyForm {
         | DeclarationForm::Unit(_)
         | DeclarationForm::StateClause(_)
         | DeclarationForm::Protocol(_)
-        | DeclarationForm::Temporal(_) => panic!("an operation body form, not {form:?}"),
+        | DeclarationForm::Temporal(_)
+        | DeclarationForm::Terminal(_) => panic!("an operation body form, not {form:?}"),
     }
 }
 
@@ -144,7 +146,8 @@ fn protocol_form(form: &DeclarationForm) -> &ProtocolDeclarationForm {
         | DeclarationForm::Unit(_)
         | DeclarationForm::OperationBody(_)
         | DeclarationForm::StateClause(_)
-        | DeclarationForm::Temporal(_) => panic!("a protocol form, not {form:?}"),
+        | DeclarationForm::Temporal(_)
+        | DeclarationForm::Terminal(_) => panic!("a protocol form, not {form:?}"),
     }
 }
 
