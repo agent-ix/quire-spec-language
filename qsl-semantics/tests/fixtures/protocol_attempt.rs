@@ -87,6 +87,7 @@ pub fn m_actor_model() -> SelectedModel {
         span: qsl_foundation::Span { start: 0, end: 0 },
         view,
         operation_clauses: Vec::new(),
+        type_invariants: Vec::new(),
     }
 }
 

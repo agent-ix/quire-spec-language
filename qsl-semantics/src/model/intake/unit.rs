@@ -20,11 +20,14 @@ use super::{admit_located, read_domain_package, PackageDocument};
 use crate::model::accounting::{Incomplete, Meter, ModelNormalizationLimits};
 #[cfg(any(test, feature = "test-support"))]
 use crate::model::domain_package::DomainPackage;
-use crate::model::domain_package::{DomainPackageRecord, DomainPackageRef, ParsedOperationClause};
+use crate::model::domain_package::{
+    DomainPackageRecord, DomainPackageRef, ParsedOperationClause, ParsedTypeInvariant,
+};
 use crate::model::key::DeclarationKey;
 use crate::model::key::{raw_bytes_digest, SHA256_JCS_DIGEST_DOMAIN};
 use crate::model::normalize::{normalize_on, EffectiveView, NormalizeOutcome, Refusals};
 use crate::model::refusal::{MemberPath, MemberRoot};
+use crate::model::type_invariant::ClauseRole;
 use qsl_forms::Expression;
 use quire_semantic_value::location::OperationClauseKind;
 
@@ -42,6 +45,10 @@ pub struct SelectedModel {
     /// parsed by the compile driver (FR-103). I1 parses none, so admission
     /// leaves this empty.
     pub operation_clauses: Vec<ParsedOperationClause>,
+    /// Each `Invariant` clause of the package's types, parsed by the
+    /// compile driver (FR-366). I1 parses none, so admission leaves this
+    /// empty.
+    pub type_invariants: Vec<ParsedTypeInvariant>,
 }
 
 /// One model-admission operation: the selected models of a unit and the one
@@ -98,6 +105,20 @@ impl SelectedModels {
         Ok(Self { entries, meter })
     }
 
+    /// Each selected model parsed by `parse` (see
+    /// [`SelectedModel::with_parsed_type_invariants`]); the meter is kept.
+    pub fn with_parsed_type_invariants<E>(
+        self,
+        mut parse: impl FnMut(&str) -> Result<Expression, E>,
+    ) -> Result<Self, TypeInvariantFailure<E>> {
+        let Self { entries, meter } = self;
+        let entries = entries
+            .into_iter()
+            .map(|entry| entry.with_parsed_type_invariants(&mut parse))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self { entries, meter })
+    }
+
     /// The work the operation has consumed so far, for one limit kind.
     pub fn consumed(&self, kind: crate::model::accounting::LimitKind) -> u64 {
         self.meter.consumed(kind)
@@ -145,6 +166,7 @@ impl SelectedModels {
                 span,
                 view,
                 operation_clauses: Vec::new(),
+                type_invariants: Vec::new(),
             }],
             meter,
         })
@@ -163,7 +185,67 @@ pub struct OperationClauseFailure<E> {
     pub cause: E,
 }
 
+/// A type invariant the caller's parser refused: which clause, where it is,
+/// and the parser's own refusal.
+#[derive(Clone, Debug)]
+pub struct TypeInvariantFailure<E> {
+    /// The refused clause's declaration key.
+    pub clause: DeclarationKey,
+    /// The `TypeDefinition.clauses[k]` member the clause is at.
+    pub member: MemberPath,
+    /// The parser's refusal.
+    pub cause: E,
+}
+
 impl SelectedModel {
+    /// FR-366: this model with the text of each type-level clause classified
+    /// `Invariant` parsed by `parse`, the caller's FR-146 expression
+    /// production. A clause in another language, and a guard, is not parsed.
+    /// The first clause `parse` refuses stops the walk, located at
+    /// `TypeDefinition.clauses[k]`, `k` the clause's position among its
+    /// owner's clauses in the package.
+    ///
+    /// Marked `#[string_edge]`: a clause's `language` is the wire identifier
+    /// of its authored language.
+    #[qsl_attrs::string_edge]
+    pub fn with_parsed_type_invariants<E>(
+        mut self,
+        mut parse: impl FnMut(&str) -> Result<Expression, E>,
+    ) -> Result<Self, TypeInvariantFailure<E>> {
+        let roles = self.view.type_clause_roles();
+        let mut positions: BTreeMap<&DeclarationKey, usize> = BTreeMap::new();
+        let mut parsed = Vec::new();
+        for record in &self.view.domain_package().records {
+            let DomainPackageRecord::Clause(clause) = record else {
+                continue;
+            };
+            let position = {
+                let next = positions.entry(&clause.owner).or_default();
+                let position = *next;
+                *next += 1;
+                position
+            };
+            if roles.role(&clause.key) != Some(ClauseRole::Invariant) {
+                continue;
+            }
+            let expression = parse(&clause.text).map_err(|cause| TypeInvariantFailure {
+                clause: clause.key.clone(),
+                member: MemberPath::new(MemberRoot::TypeDefinition)
+                    .name("clauses")
+                    .index(position),
+                cause,
+            })?;
+            parsed.push(ParsedTypeInvariant {
+                clause: clause.key.clone(),
+                owner: clause.owner.clone(),
+                position,
+                expression,
+            });
+        }
+        self.type_invariants = parsed;
+        Ok(self)
+    }
+
     /// FR-103: this model with each kept `quire`-language `requires` and
     /// `ensures` clause of its operations parsed by `parse`, the caller's
     /// FR-146 expression production. Intake keeps the text and parses none
@@ -393,6 +475,7 @@ pub fn admit_unit_with_cancel(
             span: selection.span,
             view,
             operation_clauses: Vec::new(),
+            type_invariants: Vec::new(),
         });
     }
     Ok(SelectedModels { entries, meter })
