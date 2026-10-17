@@ -307,12 +307,6 @@ fn clause_run_command_refuses_ambiguous_and_missing_selection_members() {
         ("missing", |value| {
             value["request"]["clause"]["selection"]["clause"]["observation"] = json!("missing")
         }),
-        ("self", |value| {
-            value["request"]["clause"]["selection"]["clause"]
-                .as_object_mut()
-                .unwrap()
-                .remove("self");
-        }),
         ("anchor", |value| {
             value["request"]["clause"]["selection"]["clause"]
                 .as_object_mut()
@@ -337,6 +331,30 @@ fn clause_run_command_refuses_ambiguous_and_missing_selection_members() {
             "{member}: {failure}"
         );
     }
+}
+
+/// FR-106 check 2: a current snapshot over an object receiver that names no
+/// `self` is no request defect (a state machine's has none); admission
+/// refuses it as `wrong-observation`.
+#[trace("TC-891", "FR-312-AC-2")]
+#[test]
+fn clause_run_command_refuses_a_missing_self_of_an_object_receiver_at_admission() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("healthy-parent");
+    build(&path, Case::Healthy);
+    let mut request = current_clause_request(&path);
+    request["request"]["clause"]["selection"]["clause"]
+        .as_object_mut()
+        .unwrap()
+        .remove("self");
+    let output = run_clause_file(&path, &request);
+    assert_eq!(output.status.code(), Some(20), "{output:?}");
+    let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(result["disposition"]["stage"], "admit");
+    assert_eq!(
+        result["disposition"]["refusal"]["cause"],
+        "wrong-observation"
+    );
 }
 
 /// FR-312-AC-5: a selected post, unknown role or unknown document format
