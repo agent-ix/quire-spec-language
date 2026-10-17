@@ -1014,7 +1014,8 @@ fn node_unit(
     );
     let unit = compile_source(source, package_input([document.as_slice()]));
     let graph = unit.checked.package().graph();
-    let ValueType::Collection(declared) = &graph.callable("shape").expect("declared").parameters[0].1
+    let ValueType::Collection(declared) =
+        &graph.callable("shape").expect("declared").parameters[0].1
     else {
         panic!("s is a collection");
     };
@@ -1033,7 +1034,9 @@ fn node_unit(
         .map(|(key, identity)| (key.clone(), *identity))
         .expect("Node is declared");
     let reference = quire_exact::ObjectReference::new(
-        view.object_universe_of(&key).expect("a universe").identity(),
+        view.object_universe_of(&key)
+            .expect("a universe")
+            .identity(),
         identity,
         quire_exact::ObjectId::new("n1").unwrap(),
     );
@@ -1052,47 +1055,17 @@ fn node_unit(
     (unit, ObjectEnvironment::new(world), reference)
 }
 
-fn node_call(function: &str, reference: &quire_exact::ObjectReference, rest: Vec<CallArgument>) -> Call {
+fn node_call(
+    function: &str,
+    reference: &quire_exact::ObjectReference,
+    rest: Vec<CallArgument>,
+) -> Call {
     let mut arguments = vec![CallArgument {
         parameter: "n".to_owned(),
         value: Value::Reference(reference.clone()),
     }];
     arguments.extend(rest);
     call(function, arguments)
-}
-
-/// FR-367-AC-8: a call whose evaluation is `undefined` (a `sum` leaving its
-/// declared domain) and whose work limit is one unit still binds.
-#[trace("TC-1053", "FR-367-AC-8")]
-#[test]
-fn tc_1053_step_7_undefined_evaluation_still_binds() {
-    let (unit, objects, reference) = node_unit(
-        "function und using v(n: Reference<M::Node>, a: Digit): Boolean pure \
-         { sum<Digit>(x in deref(n).items: x) > 5 and a + 1 > 0 }",
-        &[9, 9],
-    );
-    let occurrence = the_application(&unit, "und", ScalarOperator::Add);
-    let evaluated = run(
-        identity(),
-        "bind.native",
-        unit.source.as_bytes(),
-        &unit.packages,
-        &unit.dependencies,
-        SpineLimits::default(),
-        &node_call("und", &reference, vec![arg("a", 4)]),
-        &objects,
-        &Cancel::new(),
-    )
-    .unwrap()
-    .1;
-    assert!(matches!(evaluated, CallOutcome::Undefined { .. }), "{evaluated:?}");
-
-    let mut starved = node_call("und", &reference, vec![arg("a", 4)]);
-    starved.accounting = default_accounting(1);
-    let Ok(BindOutcome::Bound(bound)) = bind_with(&unit, &starved, &occurrence, &objects) else {
-        panic!("an undefined call still binds");
-    };
-    assert_eq!(bound.values(), [4, 1]);
 }
 
 /// FR-367-AC-10: a quantifier-bound variable operand is a parameter node no

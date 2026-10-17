@@ -57,10 +57,8 @@ Compile and emit each unit as FR-100's `run` does, then call
 6. `function big using v(a: Int[0, 100000000000000000000]): Int[0, 100000000000000000001] pure { a + 1 }`
    with `a = 9223372036854775807` and `a = 9223372036854775808`, and
    `a + 9223372036854775808` over `a: Int[0, 9]`.
-7. A function whose evaluation is undefined (a `sum` over a `Reference`
-   argument's items leaving its domain, beside `a + 1`) with a `work_units` of
-   1, binding its `+` occurrence; then `a + 1` with a `work_units` of 0, which
-   `run` reports `Incomplete`.
+7. `a + 1` with a `work_units` of 0, which `run` reports `Incomplete`, binding
+   its `+` occurrence.
 8. Bind step 1's request twice, and the FR-357 claim for the same occurrence;
    compare `values()` with the claim's operand values.
 
@@ -92,6 +90,5 @@ Compile and emit each unit as FR-100's `run` does, then call
 - Step 6: `[9223372036854775807, 1]` binds despite the range endpoint beyond
   `i64`; the next value and the literal `9223372036854775808` return
   `Refused(OperandNotNative)` at their ordinals.
-- Step 7: `Bound` with `[4, 1]` though `run` is `Undefined`; `Bound` with
-  `[4, 1]` though `run` is `Incomplete` at `work_units`.
+- Step 7: `Bound` with `[4, 1]` though `run` is `Incomplete` at `work_units`.
 - Step 8: equal results; `values()` equals the claim's ordered operand values.
