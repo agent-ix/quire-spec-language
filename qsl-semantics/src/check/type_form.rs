@@ -750,9 +750,9 @@ mod tests {
             CollectionKind::Bag,
             CollectionKind::OrderedSet,
         ] {
-            let ValueType::Collection(unbounded) =
-                resolve(&collection(kind, &[])).expect("an unbounded collection resolves")
-            else {
+            let resolved =
+                resolve(&collection(kind, &[])).expect("an unbounded collection resolves");
+            let ValueType::Collection(ref unbounded) = resolved else {
                 panic!("a collection type");
             };
             assert_eq!(unbounded.kind(), kind);
