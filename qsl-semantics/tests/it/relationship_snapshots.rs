@@ -1537,7 +1537,7 @@ fn link_change(
 
 /// TC-1037 rows 1 to 3: the first differing instance in source-then-target
 /// order is the `Link`, carrying the frame's checked `modifies`.
-#[trace("TC-1037")]
+#[trace("TC-1037", "FR-115-AC-9", "FR-115-AC-10")]
 #[test]
 fn a_frame_run_reports_the_first_changed_link_in_source_then_target_order() {
     use qsl_semantics::model::observation::{FrameVerdict, LinkDifference};
@@ -1591,7 +1591,7 @@ fn a_frame_run_reports_the_first_changed_link_in_source_then_target_order() {
 
 /// TC-1037 rows 4 and 5: a link at a created object is the `Link` after the
 /// creation is granted, and the relationship grant covers it.
-#[trace("TC-1037")]
+#[trace("TC-1037", "FR-115-AC-9")]
 #[test]
 fn a_link_at_a_created_object_is_added_unless_the_relationship_is_modified() {
     use qsl_semantics::model::observation::{FrameVerdict, LinkDifference};
@@ -1643,7 +1643,7 @@ fn a_link_at_a_created_object_is_added_unless_the_relationship_is_modified() {
 
 /// TC-1037 rows 6 and 7: relationships in ascending `DeclarationKey` order,
 /// then the lower source first.
-#[trace("TC-1037")]
+#[trace("TC-1037", "FR-115-AC-9")]
 #[test]
 fn links_are_walked_by_relationship_key_then_by_source_then_target() {
     use qsl_semantics::model::observation::LinkDifference;
@@ -1697,7 +1697,7 @@ fn links_are_walked_by_relationship_key_then_by_source_then_target() {
 
 /// TC-1037 rows 10 and 11: a deleted object's links go with it; a
 /// relationship listed in one snapshot, or incomplete, is not compared.
-#[trace("TC-1037")]
+#[trace("TC-1037", "FR-115-AC-10")]
 #[test]
 fn a_deleted_objects_links_and_an_uncompared_relationship_find_nothing() {
     use qsl_semantics::model::observation::FrameVerdict;
