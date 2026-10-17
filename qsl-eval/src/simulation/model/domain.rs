@@ -239,6 +239,7 @@ fn power(base: u128, exponent: u64) -> u128 {
 
 #[cfg(test)]
 mod tests {
+    use ix_trace_rs::trace;
     use quire_exact::{CardinalityBound, IntegerInterval};
 
     use super::*;
@@ -262,6 +263,7 @@ mod tests {
 
     /// FR-120 "Applications": an `Int[lower, upper]` domain is every integer
     /// in the range, ascending, and `Option<T>` is absent then each value.
+    #[trace("TC-471", "FR-120-AC-2")]
     #[test]
     fn integers_ascend_and_an_option_starts_absent() {
         let domain = Domain::of(&int(-1, 1), &[], &types()).expect("Int is enumerable");

@@ -307,11 +307,13 @@ pub(super) fn model_key(model: &StateModel, state: &ModelState) -> ModelKey {
 
 #[cfg(test)]
 mod tests {
+    use ix_trace_rs::trace;
     use quire_exact::{Integer, ValueType};
 
     use super::*;
 
     /// FR-181's integer form is an exact decimal string.
+    #[trace("TC-471", "FR-120-AC-4")]
     #[test]
     fn an_integer_encodes_as_a_tagged_decimal_string() {
         let text = value_enc(&Value::Integer(Integer::from(-12_i64)))
@@ -329,6 +331,7 @@ mod tests {
 
     /// QSpec FR-181: a field declared `Option<T>` is an option value, none
     /// `{"type":"option","value":null}` and some wrapping the encoded payload.
+    #[trace("TC-471", "FR-120-AC-4")]
     #[test]
     fn an_option_value_encodes_as_an_option_object() {
         let int = ValueType::Int(

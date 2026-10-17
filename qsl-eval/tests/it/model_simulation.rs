@@ -154,7 +154,7 @@ fn increment() -> Json {
     operation("increment", &[], None, frame(&["value"], false, false))
 }
 
-fn counters_document(operations: Vec<Json>) -> Vec<u8> {
+fn counters_document(operations: Vec<Json>, extras: bool) -> Vec<u8> {
     let counter_identity = ident("Counter");
     let constructs = vec![
         ("object_type", meaning::OBJECT_TYPE),
@@ -171,6 +171,16 @@ fn counters_document(operations: Vec<Json>) -> Vec<u8> {
         })
         .collect();
     let population = ident("counters");
+    let mut fields = vec![
+        wire_field("value", &ident("Level"), "required"),
+        wire_field("label", &ident("Flag"), "required"),
+        wire_field("next", &counter_identity, "optional"),
+    ];
+    if extras {
+        // Granted by no frame and with no finite domain.
+        fields.push(wire_field("tag", "ix://quire/native/Integer", "optional"));
+        fields.push(wire_field("id", "ix://quire/native/Integer", "required"));
+    }
     json!({
         "contractVersion": "2.0.0",
         "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
@@ -187,14 +197,7 @@ fn counters_document(operations: Vec<Json>) -> Vec<u8> {
             bound_type("Huge", 1_000_000_000_000_000),
             wire_type(&counter_identity, "object_type", json!({
                 "supertypes": [],
-                "fields": [
-                    wire_field("value", &ident("Level"), "required"),
-                    wire_field("label", &ident("Flag"), "required"),
-                    wire_field("next", &counter_identity, "optional"),
-                    // Granted by no frame and with no finite domain.
-                    wire_field("tag", "ix://quire/native/Integer", "optional"),
-                    wire_field("id", "ix://quire/native/Integer", "required"),
-                ],
+                "fields": fields,
                 "operations": operations,
                 "relationships": [],
             })),
@@ -214,6 +217,7 @@ fn counters_document(operations: Vec<Json>) -> Vec<u8> {
 // ---------------------------------------------------------------------------
 
 struct World {
+    extras: bool,
     package: CheckedPackage,
     packages: BTreeMap<[u8; 32], Vec<u8>>,
     header: Json,
@@ -225,12 +229,26 @@ fn world(operations: Vec<Json>, clauses: &str) -> World {
     try_world(operations, clauses).expect("the unit checks")
 }
 
+/// [`world`] with `tag: Integer?` and `id: Integer` added to `Counter`: fields
+/// no frame grants and no finite domain covers.
+fn world_with_unbounded_fields(operations: Vec<Json>) -> World {
+    build_world(operations, "", true).expect("the unit checks")
+}
+
 /// [`world`], or the refusals S3 gives the unit.
 fn try_world(
     operations: Vec<Json>,
     clauses: &str,
 ) -> Result<World, Vec<qsl_semantics::check::CheckRefusal>> {
-    let document = counters_document(operations);
+    build_world(operations, clauses, false)
+}
+
+fn build_world(
+    operations: Vec<Json>,
+    clauses: &str,
+    extras: bool,
+) -> Result<World, Vec<qsl_semantics::check::CheckRefusal>> {
+    let document = counters_document(operations, extras);
     let packages = package_input([document.as_slice()]);
     let digest = *packages.keys().next().expect("one model");
     let unit = format!(
@@ -266,6 +284,7 @@ fn try_world(
     .expect("the unit assembles");
     let graph = declarations.check(CheckingLimits::default())?;
     Ok(World {
+        extras,
         package: CheckedPackage::link(graph),
         header: json!({"identity": PACKAGE, "version": "1.0.0",
             "digest": format!("sha256-jcs:{}", hex(&digest))}),
@@ -277,16 +296,20 @@ fn try_world(
 /// One object of a snapshot: key, `value`, `label` and `next`.
 struct Obj(&'static str, i64, i64, Option<&'static str>);
 
-fn object_json(object: &Obj) -> Json {
+fn object_json(object: &Obj, extras: bool) -> Json {
     let next = match object.3 {
         None => json!({"absent": {}}),
         Some(target) => {
             json!({"present": {"reference": {"population": ident("counters"), "key": target}}})
         }
     };
-    json!({"key": object.0, "type": ident("Counter"),
-        "fields": {"value": {"integer": object.1.to_string()},
-            "label": {"integer": object.2.to_string()}, "next": next}})
+    let mut fields = json!({"value": {"integer": object.1.to_string()},
+        "label": {"integer": object.2.to_string()}, "next": next});
+    if extras {
+        fields["tag"] = json!({"absent": {}});
+        fields["id"] = json!({"integer": "0"});
+    }
+    json!({"key": object.0, "type": ident("Counter"), "fields": fields})
 }
 
 impl World {
@@ -304,7 +327,7 @@ impl World {
                 "revision": "fixture:1"},
             "observation": observation, "model": self.header,
             "populations": [{"population": ident("counters"), "complete": true,
-                "objects": objects.iter().map(object_json).collect::<Vec<_>>()}],
+                "objects": objects.iter().map(|object| object_json(object, self.extras)).collect::<Vec<_>>()}],
         });
         if !anchor.is_null() {
             document["anchor"] = anchor;
@@ -735,9 +758,7 @@ fn the_state_key_is_the_simulation_state_envelope() {
         json!({"type": "record", "name": counter_text(), "fields": [
             {"name": "value", "value": {"type": "integer", "value": "0"}},
             {"name": "label", "value": {"type": "integer", "value": label.to_string()}},
-            {"name": "next", "value": next},
-            {"name": "tag", "value": null},
-            {"name": "id", "value": {"type": "integer", "value": "0"}}]})
+            {"name": "next", "value": next}]})
     };
     let envelope = |label: i64, next: Json| {
         let empty = json!({"type": "map", "entries": []});
@@ -1602,7 +1623,7 @@ fn a_child_process_in_an_empty_directory_explores_the_same() {
 #[trace("TC-471", "FR-120-AC-1")]
 #[test]
 fn an_ungranted_unbounded_field_is_neither_probed_nor_a_root() {
-    let mut world = world(vec![increment()], "");
+    let mut world = world_with_unbounded_fields(vec![increment()]);
     let s0 = world.start("s0", &[Obj("c1", 0, 0, None)]);
     let system = self::system(&world, vec![s0], &["c1"], UNLIMITED);
     assert_eq!(successors_of(&system, 0).len(), 3);
