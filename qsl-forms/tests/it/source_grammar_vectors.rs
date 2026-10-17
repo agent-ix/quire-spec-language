@@ -47,7 +47,7 @@ fn span_of(text: &str, needle: &str) -> Span {
 /// `digest` after the identity recovers with `invalid_syntax` at that token,
 /// records no profile selection, and `build_unit` refuses the source with the
 /// `invalid_syntax` cause.
-#[trace("FR-362-AC-2", "TC-1026")]
+#[trace("TC-1026", "FR-362")]
 #[test]
 fn a_profile_line_names_only_its_identity() {
     let hex = "d".repeat(64);
@@ -86,7 +86,7 @@ fn a_profile_line_names_only_its_identity() {
 /// `invariant` builds; the same unit with a `relation` or `hyper` clause is
 /// refused with `NoDispatchEntry`, mapped to `unsupported_construct`, at that
 /// clause, and builds no `ParsedUnit`.
-#[trace("FR-362-AC-7", "TC-1026")]
+#[trace("TC-1026", "FR-362")]
 #[test]
 fn a_relation_or_hyper_clause_refuses_the_unit_with_no_dispatch_entry() {
     let baseline = build(&format!("{PREDICATE}{INVARIANT}"));
