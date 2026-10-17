@@ -37,6 +37,6 @@ mod state_model_family;
 mod supplied_phases;
 mod tc235_business_meaning_runtime;
 mod total_functions;
-mod unbounded_set_call;
 mod type_invariants;
+mod unbounded_set_call;
 mod variant_fields;
