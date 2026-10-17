@@ -450,6 +450,7 @@ fn floating_types_are_admitted_and_reference_types_are_refused() {
 /// No checker reads a `temporal` clause yet: each one refuses at its own
 /// declaration span rather than compiling into a package that silently
 /// lacks it.
+#[trace("FR-341-AC-5", "TC-861")]
 #[test]
 fn each_temporal_clause_refuses_as_not_yet_implemented() {
     let first = "temporal A using v over (p: Boolean) clock \"s\" on origin { holds(true) }";
