@@ -72,7 +72,36 @@ pub struct CaseName {
     pub selection: SelectionName,
 }
 
-/// The selection of a case, by the members that name what it selects.
+/// An object a selection names.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct ObjectName {
+    /// The population identity.
+    pub population: String,
+    /// The object's declared key.
+    pub key: String,
+}
+
+/// The anchor a clause selection names.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AnchorName {
+    /// An initialization anchor, by name.
+    Initialization(String),
+    /// A handler anchor, by name.
+    Handler(String),
+}
+
+/// One argument of a function selection, by its canonical JSON text.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct ArgumentName {
+    /// The parameter's declared name.
+    pub parameter: String,
+    /// The argument value's JSON text.
+    pub value: String,
+}
+
+/// The selection of a case, by every member that tells it from another case
+/// over the same documents.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SelectionName {
@@ -82,6 +111,13 @@ pub enum SelectionName {
         name: String,
         /// The case's key of the observation the clause reads.
         observation: String,
+        /// The selected self object.
+        #[serde(rename = "self")]
+        self_object: Option<ObjectName>,
+        /// The selected anchor.
+        anchor: Option<AnchorName>,
+        /// The pre snapshot's parameters, by name and JSON text.
+        parameters: std::collections::BTreeMap<String, String>,
     },
     /// A function run as a claim.
     Function {
@@ -89,6 +125,8 @@ pub enum SelectionName {
         name: String,
         /// The case's key of the snapshot the function reads.
         snapshot: String,
+        /// The call's arguments.
+        arguments: Vec<ArgumentName>,
     },
     /// An operation frame.
     Frame {
@@ -97,6 +135,8 @@ pub enum SelectionName {
         /// The case's key of the invocation document.
         invocation: String,
     },
+    /// The case selects none of a clause, frame or function.
+    Unselected,
 }
 
 /// The case member that raises a limit (FR-340 Inputs).

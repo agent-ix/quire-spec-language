@@ -2735,7 +2735,6 @@ dependencies = [
  "qsl-foundation",
  "qsl-replay",
  "qsl-semantics",
- "quire-canonical",
  "serde",
  "serde_json",
  "syn 2.0.119",

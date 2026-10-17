@@ -7,9 +7,6 @@ use qsl_replay::spine::{
     ClauseRequestParts, ClauseRunRequest, ClauseRunSource, DependencyInput, SpineLimits,
     SuppliedLibrary, SuppliedObservation,
 };
-use qsl_semantics::model::observation::{
-    AnchorKind, ObservationLimits, PostStateRange, SelectedAnchor, SelectedObject,
-};
 
 use super::{output, wire, FormalSource, Intake, Result, RunCause, RunResult};
 
@@ -30,87 +27,6 @@ fn observation(
         intake.observation_file(file, usize::try_from(document_bytes).unwrap_or(usize::MAX))?;
     SuppliedObservation::from_document(key, bytes)
         .map_err(|error| invalid(error.member, error.reason))
-}
-
-fn selected_object(value: &wire::ObjectReference) -> SelectedObject {
-    SelectedObject {
-        population: value.population.clone(),
-        key: value.key.clone(),
-    }
-}
-
-fn selection_parts(
-    wire: &wire::ClauseRunSelection,
-) -> Result<qsl_replay::spine::ClauseSelectionPartsKind> {
-    use qsl_replay::spine::{ClauseSelectionParts, ClauseSelectionPartsKind};
-    let count = usize::from(wire.clause.is_some())
-        + usize::from(wire.frame.is_some())
-        + usize::from(wire.function.is_some());
-    if count != 1 {
-        return Err(invalid(
-            "selection",
-            "select exactly one clause, frame or function",
-        ));
-    }
-    if let Some(clause) = &wire.clause {
-        let anchor = clause.anchor.as_ref().map(|anchor| {
-            let (kind, name) = match anchor {
-                wire::Anchor::Initialization { name } => (AnchorKind::Initialization, name),
-                wire::Anchor::Handler { name } => (AnchorKind::Handler, name),
-            };
-            SelectedAnchor {
-                kind,
-                name: name.clone(),
-            }
-        });
-        return Ok(ClauseSelectionPartsKind::Clause(ClauseSelectionParts {
-            name: clause.name.clone(),
-            observation: clause.observation.clone(),
-            self_object: clause.self_object.as_ref().map(selected_object),
-            anchor,
-            parameters: clause.parameters.clone(),
-        }));
-    }
-    if let Some(frame) = &wire.frame {
-        return Ok(ClauseSelectionPartsKind::Frame {
-            operation: frame.operation.clone(),
-            invocation: frame.invocation.clone(),
-        });
-    }
-    let function = wire.function.as_ref().expect("exactly one variant");
-    Ok(ClauseSelectionPartsKind::Function {
-        name: function.name.clone(),
-        arguments: function
-            .arguments
-            .iter()
-            .map(|arg| (arg.parameter.clone(), arg.value.clone()))
-            .collect(),
-        snapshot: function.snapshot.clone(),
-    })
-}
-
-#[qsl_attrs::string_edge]
-fn limits(overrides: Option<&wire::ObservationLimitOverrides>) -> Result<ObservationLimits> {
-    let mut limits = ObservationLimits::default();
-    if let Some(overrides) = overrides {
-        if let Some(value) = overrides.document_bytes {
-            limits.document_bytes = value;
-        }
-        if let Some(value) = overrides.objects_per_document {
-            limits.objects_per_document = value;
-        }
-        if let Some(value) = overrides.values_per_document {
-            limits.values_per_document = value;
-        }
-        if let Some(value) = &overrides.post_state {
-            limits.post_state = match value.as_str() {
-                "refuse" => PostStateRange::Refuse,
-                "witness" => PostStateRange::Witness,
-                _ => return Err(invalid("observation_limits.post_state", "unknown policy")),
-            };
-        }
-    }
-    Ok(limits)
 }
 
 pub(super) fn read(
@@ -157,7 +73,9 @@ pub(super) fn read(
             bytes: read.source().text().as_bytes().to_vec(),
         }))
         .map_err(|error| invalid("libraries", error.to_string()))?;
-    let observation_limits = limits(clause.observation_limits.as_ref())?;
+    let observation_limits =
+        qsl_replay::spine::ObservationLimitsWire::resolve(clause.observation_limits.as_ref())
+            .map_err(|error| invalid(error.member, error.reason))?;
     let mut by_file = BTreeMap::<String, SuppliedObservation>::new();
     let mut observations = BTreeMap::new();
     for (key, file) in &clause.observations {
@@ -180,7 +98,10 @@ pub(super) fn read(
         packages,
         dependencies,
         observations,
-        selection: selection_parts(&clause.selection)?,
+        selection: clause
+            .selection
+            .into_parts()
+            .map_err(|error| invalid(error.member, error.reason))?,
         expected_package_id_claim: clause.package_id.clone(),
         limits: SpineLimits::default(),
         observation_limits,

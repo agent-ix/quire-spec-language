@@ -26,24 +26,23 @@ use std::io;
 use std::path::{Component, Path, PathBuf};
 
 use qsl_foundation::source::provenance::RawSourceRef;
-use qsl_foundation::{Setting, SettingLimits, SettingName, Source, SourceIdentity};
+use qsl_foundation::{
+    AccountingSetting, Setting, SettingLimits, SettingName, Source, SourceIdentity,
+};
 use qsl_replay::spine::{
-    classify_clause_run, read_clause_run_request, Classification, ClauseRequestParts,
-    ClauseRunRefusal, ClauseRunRequest, ClauseRunSource, ClauseRunStage, ClauseSelectionParts,
-    ClauseSelectionPartsKind, DependencyInput, RefinementClass, SpineLimits, SuppliedLibrary,
+    classify_clause_run, read_clause_run_request, AnchorWire, Classification, ClauseRequestParts,
+    ClauseRunRefusal, ClauseRunRequest, ClauseRunSelectionWire, ClauseRunSource, ClauseRunStage,
+    DependencyInput, ObservationLimitsWire, RefinementClass, SpineLimits, SuppliedLibrary,
     SuppliedObservation,
 };
 use qsl_replay::AccountingLimits;
-use qsl_semantics::model::observation::{
-    AnchorKind, ObservationLimits, PostStateRange, SelectedAnchor, SelectedObject,
-};
+use qsl_semantics::model::observation::ObservationLimits;
 use serde::Deserialize;
-use serde_json::value::RawValue;
 
 use super::compare::{compare, CaseResult, SelectionKind, Side};
 use super::report::{
-    limit_reports, CaseEntry, CaseName, CorpusFailure, PairFailure, Report, SelectionName,
-    SideName, SideReport,
+    limit_reports, AnchorName, ArgumentName, CaseEntry, CaseName, CorpusFailure, ObjectName,
+    PairFailure, Report, SelectionName, SideName, SideReport,
 };
 
 /// The file a pair is read from, inside the pair's directory.
@@ -92,89 +91,16 @@ struct DependencyFile {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct CaseFile {
-    selection: SelectionFile,
+    selection: ClauseRunSelectionWire,
     observations: BTreeMap<String, String>,
     #[serde(default)]
     limits: BTreeMap<String, u64>,
     #[serde(default)]
-    observation_limits: Option<ObservationLimitsFile>,
+    observation_limits: Option<ObservationLimitsWire>,
     #[serde(default)]
     model_limits: BTreeMap<String, u64>,
     #[serde(default)]
     accounting: BTreeMap<String, u64>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum SelectionFile {
-    Clause(ClauseFile),
-    Frame(FrameFile),
-    Function(FunctionFile),
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ClauseFile {
-    name: String,
-    observation: String,
-    #[serde(default, rename = "self")]
-    self_object: Option<ObjectFile>,
-    #[serde(default)]
-    anchor: Option<AnchorFile>,
-    #[serde(default)]
-    parameters: Option<BTreeMap<String, Box<RawValue>>>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ObjectFile {
-    population: String,
-    key: String,
-}
-
-#[derive(Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-enum AnchorFile {
-    Initialization { name: String },
-    Handler { name: String },
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct FrameFile {
-    operation: String,
-    invocation: String,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct FunctionFile {
-    name: String,
-    arguments: Vec<ArgumentFile>,
-    snapshot: String,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ArgumentFile {
-    parameter: String,
-    value: Box<RawValue>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ObservationLimitsFile {
-    document_bytes: Option<u64>,
-    objects_per_document: Option<u64>,
-    values_per_document: Option<u64>,
-    post_state: Option<PostStateFile>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "lowercase")]
-enum PostStateFile {
-    Refuse,
-    Witness,
 }
 
 /// What is wrong with one pair. Rendered into the pair's tool-failure result.
@@ -473,7 +399,10 @@ fn case_requests(
             packages: packages.clone(),
             dependencies: dependencies.clone(),
             observations: observations.clone(),
-            selection: selection_parts(&case.selection),
+            selection: case
+                .selection
+                .into_parts()
+                .map_err(|error| at(&error.member, error.reason))?,
             expected_package_id_claim: None,
             limits: limits.spine,
             observation_limits: limits.observation,
@@ -513,9 +442,11 @@ fn read_in(roots: &Roots, path: &str) -> Result<Vec<u8>, PairDefect> {
             Component::CurDir => {}
             Component::Normal(_) => depth += 1,
             Component::ParentDir => {
-                depth = depth.checked_sub(1).ok_or_else(|| PairDefect::OutsidePair {
-                    path: path.to_owned(),
-                })?;
+                depth = depth
+                    .checked_sub(1)
+                    .ok_or_else(|| PairDefect::OutsidePair {
+                        path: path.to_owned(),
+                    })?;
             }
         }
     }
@@ -598,24 +529,8 @@ impl Limits {
                 return Err(("model_limits", format!("{name} is not a model limit")));
             }
         }
-        let mut observation = ObservationLimits::default();
-        if let Some(stated) = &case.observation_limits {
-            if let Some(bound) = stated.document_bytes {
-                observation.document_bytes = bound;
-            }
-            if let Some(bound) = stated.objects_per_document {
-                observation.objects_per_document = bound;
-            }
-            if let Some(bound) = stated.values_per_document {
-                observation.values_per_document = bound;
-            }
-            if let Some(policy) = &stated.post_state {
-                observation.post_state = match policy {
-                    PostStateFile::Refuse => PostStateRange::Refuse,
-                    PostStateFile::Witness => PostStateRange::Witness,
-                };
-            }
-        }
+        let observation = ObservationLimitsWire::resolve(case.observation_limits.as_ref())
+            .map_err(|error| ("observation_limits", error.reason))?;
         let accounting = case
             .accounting
             .iter()
@@ -662,67 +577,58 @@ impl<'a> Documents<'a> {
             return Ok(held.clone());
         }
         let bytes = read_in(self.roots, path)?;
-        let document = SuppliedObservation::from_document(key, bytes).map_err(|error| {
-            PairDefect::Source {
+        let document =
+            SuppliedObservation::from_document(key, bytes).map_err(|error| PairDefect::Source {
                 path: path.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
+            })?;
         self.read.insert(path.to_owned(), document.clone());
         Ok(document)
     }
 }
 
-fn selection_parts(selection: &SelectionFile) -> ClauseSelectionPartsKind {
-    match selection {
-        SelectionFile::Clause(clause) => ClauseSelectionPartsKind::Clause(ClauseSelectionParts {
+/// The name of a case's selection: everything that distinguishes it from
+/// another case over the same documents.
+fn selection_name(selection: &ClauseRunSelectionWire) -> SelectionName {
+    if let Some(clause) = &selection.clause {
+        return SelectionName::Clause {
             name: clause.name.clone(),
             observation: clause.observation.clone(),
-            self_object: clause.self_object.as_ref().map(|object| SelectedObject {
+            self_object: clause.self_object.as_ref().map(|object| ObjectName {
                 population: object.population.clone(),
                 key: object.key.clone(),
             }),
             anchor: clause.anchor.as_ref().map(|anchor| match anchor {
-                AnchorFile::Initialization { name } => SelectedAnchor {
-                    kind: AnchorKind::Initialization,
-                    name: name.clone(),
-                },
-                AnchorFile::Handler { name } => SelectedAnchor {
-                    kind: AnchorKind::Handler,
-                    name: name.clone(),
-                },
+                AnchorWire::Initialization { name } => AnchorName::Initialization(name.clone()),
+                AnchorWire::Handler { name } => AnchorName::Handler(name.clone()),
             }),
-            parameters: clause.parameters.clone(),
-        }),
-        SelectionFile::Frame(frame) => ClauseSelectionPartsKind::Frame {
+            parameters: clause
+                .parameters
+                .iter()
+                .flatten()
+                .map(|(name, value)| (name.clone(), value.get().to_owned()))
+                .collect(),
+        };
+    }
+    if let Some(frame) = &selection.frame {
+        return SelectionName::Frame {
             operation: frame.operation.clone(),
             invocation: frame.invocation.clone(),
-        },
-        SelectionFile::Function(function) => ClauseSelectionPartsKind::Function {
+        };
+    }
+    if let Some(function) = &selection.function {
+        return SelectionName::Function {
             name: function.name.clone(),
+            snapshot: function.snapshot.clone(),
             arguments: function
                 .arguments
                 .iter()
-                .map(|argument| (argument.parameter.clone(), argument.value.clone()))
+                .map(|argument| ArgumentName {
+                    parameter: argument.parameter.clone(),
+                    value: argument.value.get().to_owned(),
+                })
                 .collect(),
-            snapshot: function.snapshot.clone(),
-        },
+        };
     }
-}
-
-fn selection_name(selection: &SelectionFile) -> SelectionName {
-    match selection {
-        SelectionFile::Clause(clause) => SelectionName::Clause {
-            name: clause.name.clone(),
-            observation: clause.observation.clone(),
-        },
-        SelectionFile::Frame(frame) => SelectionName::Frame {
-            operation: frame.operation.clone(),
-            invocation: frame.invocation.clone(),
-        },
-        SelectionFile::Function(function) => SelectionName::Function {
-            name: function.name.clone(),
-            snapshot: function.snapshot.clone(),
-        },
-    }
+    SelectionName::Unselected
 }

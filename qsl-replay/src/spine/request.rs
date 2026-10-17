@@ -3,9 +3,10 @@
 
 use std::collections::BTreeMap;
 
+use qsl_foundation::serde_object::{deserialize_objects, from_object};
 use qsl_semantics::model::observation::{
-    ClauseSelection, ClauseSelectionInput, DocumentRef, NativeKind, ObservationLimits,
-    RawNativeKind, SelectedAnchor, SelectedObject, SnapshotValue,
+    AnchorKind, ClauseSelection, ClauseSelectionInput, DocumentRef, NativeKind, ObservationLimits,
+    PostStateRange, RawNativeKind, SelectedAnchor, SelectedObject, SnapshotValue,
 };
 use quire_canonical::{Node, NodeRef};
 use quire_exact::{Identifier, ScalarLimits};
@@ -35,10 +36,7 @@ impl SuppliedObservation {
     /// `sha256-jcs` digest, declared format, identity labels and role. `key`
     /// names the observation in a refusal's member path.
     #[qsl_attrs::string_edge]
-    pub fn from_document(
-        key: &str,
-        bytes: Vec<u8>,
-    ) -> Result<Self, ClauseRequestReadError> {
+    pub fn from_document(key: &str, bytes: Vec<u8>) -> Result<Self, ClauseRequestReadError> {
         let parsed = quire_canonical::read(&bytes, u64::MAX)
             .map_err(|error| invalid(key, error.to_string()))?;
         let digest = *quire_canonical::sha256(&parsed, quire_canonical::Limits::new(u64::MAX))
@@ -89,6 +87,200 @@ impl SuppliedObservation {
             role,
             bytes,
         })
+    }
+}
+
+/// The `{population, key}` object a clause selection or argument names.
+#[derive(Clone, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ObjectReferenceWire {
+    /// The population identity.
+    pub population: String,
+    /// The object's declared key.
+    pub key: String,
+}
+
+/// A current snapshot's selected anchor.
+#[derive(Clone, Debug, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum AnchorWire {
+    /// An initialization anchor.
+    Initialization {
+        /// The anchor's name.
+        name: String,
+    },
+    /// A handler anchor.
+    Handler {
+        /// The anchor's name.
+        name: String,
+    },
+}
+
+/// The `clause` member of a clause-run selection. Role-specific members are
+/// checked against the selected document.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClauseSelectionWire {
+    /// The clause name.
+    pub name: String,
+    /// Key in the selected observations table.
+    pub observation: String,
+    /// The selected self object.
+    #[serde(default, rename = "self", deserialize_with = "from_object_opt")]
+    pub self_object: Option<ObjectReferenceWire>,
+    /// The current snapshot's anchor.
+    #[serde(default, deserialize_with = "from_object_opt")]
+    pub anchor: Option<AnchorWire>,
+    /// The pre snapshot's parameter values.
+    #[serde(default, deserialize_with = "from_object_opt")]
+    pub parameters: Option<BTreeMap<String, Box<RawValue>>>,
+}
+
+/// The `frame` member of a clause-run selection.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FrameSelectionWire {
+    /// The operation `M::T::op`.
+    pub operation: String,
+    /// Key of the invocation document.
+    pub invocation: String,
+}
+
+/// One named argument of a `function` selection.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClauseArgumentWire {
+    /// The parameter's declared name.
+    pub parameter: String,
+    /// The canonical integer or object reference.
+    pub value: Box<RawValue>,
+}
+
+/// The `function` member of a clause-run selection.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FunctionSelectionWire {
+    /// The function name.
+    pub name: String,
+    /// The call's arguments.
+    #[serde(deserialize_with = "deserialize_objects")]
+    pub arguments: Vec<ClauseArgumentWire>,
+    /// Key of the current snapshot.
+    pub snapshot: String,
+}
+
+/// FR-312's closed clause-run selection: exactly one of its members.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClauseRunSelectionWire {
+    /// A state clause.
+    #[serde(default, deserialize_with = "from_object_opt")]
+    pub clause: Option<ClauseSelectionWire>,
+    /// An operation frame.
+    #[serde(default, deserialize_with = "from_object_opt")]
+    pub frame: Option<FrameSelectionWire>,
+    /// A function run as a claim.
+    #[serde(default, deserialize_with = "from_object_opt")]
+    pub function: Option<FunctionSelectionWire>,
+}
+
+fn from_object_opt<'de, D: serde::Deserializer<'de>, T: serde::Deserialize<'de>>(
+    decoder: D,
+) -> Result<Option<T>, D::Error> {
+    from_object(decoder).map(Some)
+}
+
+impl ClauseRunSelectionWire {
+    /// The closed selection this member set names.
+    pub fn into_parts(&self) -> Result<ClauseSelectionPartsKind, ClauseRequestReadError> {
+        let count = usize::from(self.clause.is_some())
+            + usize::from(self.frame.is_some())
+            + usize::from(self.function.is_some());
+        if count != 1 {
+            return Err(invalid(
+                "selection",
+                "select exactly one clause, frame or function",
+            ));
+        }
+        if let Some(clause) = &self.clause {
+            let anchor = clause.anchor.as_ref().map(|anchor| {
+                let (kind, name) = match anchor {
+                    AnchorWire::Initialization { name } => (AnchorKind::Initialization, name),
+                    AnchorWire::Handler { name } => (AnchorKind::Handler, name),
+                };
+                SelectedAnchor {
+                    kind,
+                    name: name.clone(),
+                }
+            });
+            return Ok(ClauseSelectionPartsKind::Clause(ClauseSelectionParts {
+                name: clause.name.clone(),
+                observation: clause.observation.clone(),
+                self_object: clause.self_object.as_ref().map(|object| SelectedObject {
+                    population: object.population.clone(),
+                    key: object.key.clone(),
+                }),
+                anchor,
+                parameters: clause.parameters.clone(),
+            }));
+        }
+        if let Some(frame) = &self.frame {
+            return Ok(ClauseSelectionPartsKind::Frame {
+                operation: frame.operation.clone(),
+                invocation: frame.invocation.clone(),
+            });
+        }
+        let function = self.function.as_ref().expect("exactly one variant");
+        Ok(ClauseSelectionPartsKind::Function {
+            name: function.name.clone(),
+            arguments: function
+                .arguments
+                .iter()
+                .map(|argument| (argument.parameter.clone(), argument.value.clone()))
+                .collect(),
+            snapshot: function.snapshot.clone(),
+        })
+    }
+}
+
+/// FR-106 observation limit overrides of a clause run.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ObservationLimitsWire {
+    /// The document byte ceiling.
+    pub document_bytes: Option<u64>,
+    /// The objects-per-document ceiling.
+    pub objects_per_document: Option<u64>,
+    /// The values-per-document ceiling.
+    pub values_per_document: Option<u64>,
+    /// The post-state range policy, `refuse` or `witness`.
+    pub post_state: Option<String>,
+}
+
+impl ObservationLimitsWire {
+    /// The default observation limits with each stated override applied.
+    #[qsl_attrs::string_edge]
+    pub fn resolve(overrides: Option<&Self>) -> Result<ObservationLimits, ClauseRequestReadError> {
+        let mut limits = ObservationLimits::default();
+        if let Some(overrides) = overrides {
+            if let Some(value) = overrides.document_bytes {
+                limits.document_bytes = value;
+            }
+            if let Some(value) = overrides.objects_per_document {
+                limits.objects_per_document = value;
+            }
+            if let Some(value) = overrides.values_per_document {
+                limits.values_per_document = value;
+            }
+            if let Some(value) = &overrides.post_state {
+                limits.post_state = match value.as_str() {
+                    "refuse" => PostStateRange::Refuse,
+                    "witness" => PostStateRange::Witness,
+                    _ => return Err(invalid("observation_limits.post_state", "unknown policy")),
+                };
+            }
+        }
+        Ok(limits)
     }
 }
 

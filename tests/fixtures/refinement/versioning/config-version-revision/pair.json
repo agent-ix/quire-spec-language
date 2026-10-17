@@ -5,7 +5,7 @@
     "identity": "ix://example/config-version/spine/unit"
   },
   "superseding": {
-    "path": "unit.native",
+    "path": "superseding.native",
     "authority": "agent-ix",
     "identity": "ix://example/config-version/spine/unit"
   },

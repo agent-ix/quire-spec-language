@@ -526,8 +526,12 @@ fn a_copied_corpus_gives_a_byte_equal_report() {
     let original = corpus(&[("pair", seed_pair())]);
     let copy = tempfile::tempdir().unwrap();
     copy_directory(original.path(), copy.path());
-    let first = versioning::run(original.path(), &repository()).to_json().unwrap();
-    let second = versioning::run(copy.path(), &repository()).to_json().unwrap();
+    let first = versioning::run(original.path(), &repository())
+        .to_json()
+        .unwrap();
+    let second = versioning::run(copy.path(), &repository())
+        .to_json()
+        .unwrap();
     assert_eq!(first, second);
 }
 
@@ -752,6 +756,29 @@ fn an_unreadable_case_is_a_tool_failure_of_that_case_alone() {
     assert_eq!(report.exit, 30);
 }
 
+/// FR-340 (case naming): two cases of one pair that differ only in the
+/// selected self object are named apart.
+#[test]
+#[trace("TC-860", "FR-340-AC-1")]
+fn cases_differing_only_in_their_self_object_have_distinct_names() {
+    let at_root = {
+        let mut case = clause_case("healthy-parent");
+        case["selection"]["clause"]["self"]["key"] = json!("root");
+        case
+    };
+    let pair = Pair::new(unit(), unit(), vec![clause_case("healthy-parent"), at_root]);
+    let corpus = corpus(&[("pair", pair)]);
+    let report = versioning::run(corpus.path(), &repository());
+    let entries = listed(&report);
+    assert_eq!(entries.len(), 2);
+    assert_ne!(entries[0]["name"], entries[1]["name"]);
+    let keys: Vec<&Value> = entries
+        .iter()
+        .map(|entry| &entry["name"]["selection"]["clause"]["self"]["key"])
+        .collect();
+    assert_eq!(keys, [&json!("child"), &json!("root")]);
+}
+
 fn dummy_reference(identity: &str) -> RawSourceRef {
     RawSourceRef::new(
         AUTHORITY,
@@ -777,6 +804,9 @@ fn entry(identity: &str, result: CaseResult) -> CaseEntry {
             selection: SelectionName::Clause {
                 name: "ParentOrder".to_owned(),
                 observation: "healthy-parent".to_owned(),
+                self_object: None,
+                anchor: None,
+                parameters: std::collections::BTreeMap::new(),
             },
         },
         prior: side("admitted", "evaluate"),
@@ -890,7 +920,9 @@ fn cases_are_ordered_by_name_whatever_the_creation_order() {
     assert_eq!(identities, ["ix://spec/a", "ix://spec/m", "ix://spec/z"]);
     assert_eq!(
         first.to_json().unwrap(),
-        versioning::run(corpus.path(), &repository()).to_json().unwrap()
+        versioning::run(corpus.path(), &repository())
+            .to_json()
+            .unwrap()
     );
 }
 
