@@ -433,6 +433,14 @@ pub struct PackageDeclarations {
     /// inner list is in the same order as its protocol's own
     /// `ProtocolDeclarationForm::attempts`.
     pub protocol_attempts: Vec<Vec<super::state_clause::AttemptDeclaration>>,
+    /// FR-325, FR-326: the unit's `temporal` clauses in declaration order,
+    /// each as S2 built it, for the `TemporalTrace` family's `check`.
+    pub temporal_clauses: Vec<super::temporal_clause::TemporalDeclaration>,
+    /// FR-110, FR-326: the unit's header profile selections the
+    /// `TemporalTrace` family's catalog holds, in source order. A clause is
+    /// checked under the one of them, or refuses when there is none or
+    /// several.
+    pub temporal_selections: Vec<super::temporal_clause::TemporalSelection>,
     /// FR-103: each domain-package operation `requires`/`ensures` clause the
     /// driver parsed, with its operation resolved, checked beside the state
     /// clauses. Checking yields a refusal or nothing.
@@ -521,6 +529,8 @@ impl PackageDeclarations {
             state_clauses: Vec::new(),
             protocols: Vec::new(),
             protocol_attempts: Vec::new(),
+            temporal_clauses: Vec::new(),
+            temporal_selections: Vec::new(),
             operation_clauses: Vec::new(),
             type_invariants: Vec::new(),
             operation_bodies: Vec::new(),
