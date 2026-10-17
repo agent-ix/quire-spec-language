@@ -84,8 +84,10 @@ pub use native_result::{
 };
 mod request;
 pub use request::{
-    read_clause_run_request, ClauseRequestParts, ClauseRequestReadError, ClauseSelectionParts,
-    ClauseSelectionPartsKind, SuppliedObservation,
+    read_clause_run_request, AnchorWire, ClauseArgumentWire, ClauseRequestParts,
+    ClauseRequestReadError, ClauseRunSelectionWire, ClauseSelectionParts, ClauseSelectionPartsKind,
+    ClauseSelectionWire, FrameSelectionWire, FunctionSelectionWire, ObjectReferenceWire,
+    ObservationLimitsWire, SuppliedObservation,
 };
 // FR-116: FR-115's frame run, shared with the frame replay (`crate::execute`).
 pub(crate) use clause::{

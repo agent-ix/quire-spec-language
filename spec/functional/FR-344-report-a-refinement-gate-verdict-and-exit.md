@@ -33,7 +33,8 @@ FR-340's pair-level tool-failure results.
 - A JSON report on stdout with, in this member order: `cases`, a list of
   every result, each holding the case's name (for a versioning case, the
   prior and superseding `RawSourceRef`s and the selection; for a layering
-  case, FR-345's name), each side's class, stage and codes, any limit
+  case, FR-345's name), each side's class, stage and codes (none for a case
+  that could not be formed, which names its defect instead), any limit
   reached, and the result; then `verdict`; then `exit`.
 - The process exit code.
 
