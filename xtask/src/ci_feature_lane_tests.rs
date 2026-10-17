@@ -220,6 +220,48 @@ fn expected(root: &str, commands: &[&[&str]]) -> String {
         .collect()
 }
 
+const DEEP_CASES: [&str; 3] = [
+    "formatter_identity::all_three_deep_source_generators_keep_format_identity",
+    "formatter_identity::replay_large_source_generator_keeps_format_identity",
+    "formatter_identity::dependency_chain_and_order_variants_keep_format_identity",
+];
+
+/// The deep-format calls in recipe order: one exact listing per case, then the
+/// three cases in a single run, all in the default lane's directory.
+fn deep_calls(directory: &str) -> String {
+    let listings: Vec<Vec<&str>> = DEEP_CASES
+        .iter()
+        .map(|&case| {
+            vec![
+                "test",
+                "--locked",
+                "--workspace",
+                "--test",
+                "it",
+                case,
+                "--",
+                "--ignored",
+                "--exact",
+                "--list",
+            ]
+        })
+        .collect();
+    let mut run = vec![
+        "test",
+        "--locked",
+        "--workspace",
+        "--test",
+        "it",
+        "--",
+        "--ignored",
+        "--exact",
+    ];
+    run.extend(DEEP_CASES);
+    let mut commands: Vec<&[&str]> = listings.iter().map(Vec::as_slice).collect();
+    commands.push(&run);
+    expected(directory, &commands)
+}
+
 #[test]
 #[trace(
     "TC-915",
@@ -325,51 +367,25 @@ fn explicit_roots_and_lane_overrides_are_one_quoted_argument() {
 #[test]
 #[trace("TC-915", "NFR-013-AC-1", "NFR-013-AC-3")]
 fn deep_formatter_target_runs_each_full_size_case_and_is_in_ci() {
-    const CASES: &[&str] = &[
-        "formatter_identity::all_three_deep_source_generators_keep_format_identity",
-        "formatter_identity::replay_large_source_generator_keeps_format_identity",
-        "formatter_identity::dependency_chain_and_order_variants_keep_format_identity",
-    ];
     let recipe = Recipe::new();
-    let expected_calls: String = CASES
-        .iter()
-        .flat_map(|case| {
-            [
-                expected(
-                    "target/test-deep-format",
-                    &[&[
-                        "test",
-                        "--locked",
-                        "--test",
-                        "it",
-                        case,
-                        "--",
-                        "--ignored",
-                        "--exact",
-                        "--list",
-                    ]],
-                ),
-                expected(
-                    "target/test-deep-format",
-                    &[&[
-                        "test",
-                        "--locked",
-                        "--test",
-                        "it",
-                        case,
-                        "--",
-                        "--ignored",
-                        "--exact",
-                        "--test-threads=1",
-                    ]],
-                ),
-            ]
-        })
-        .collect();
     assert_eq!(
         recipe.run(&["test-deep-format"], None, &[]),
-        expected_calls,
-        "the full-size depth and volume regressions run in the named target"
+        deep_calls("target/ci-default-features"),
+        "the full-size depth and volume regressions run once, in the default lane's directory"
+    );
+    assert_eq!(
+        recipe.run(&["test-deep-format"], Some("caller target"), &[]),
+        deep_calls("caller target/ci-default-features"),
+        "a caller root selects the default lane's child, not a directory of its own"
+    );
+    assert_eq!(
+        recipe.run(
+            &["test-deep-format"],
+            Some("caller target"),
+            &["CI_DEFAULT_TARGET_DIR=default override"]
+        ),
+        deep_calls("default override"),
+        "the default lane override moves the deep target with its lane"
     );
 
     let makefile = fs::read_to_string(recipe.directory.path().join("Makefile")).unwrap();
@@ -502,77 +518,7 @@ fn aggregate_reaches_default_then_all_features_without_changing_recipe_order() {
         recipe.run(&["ci-internal"], Some("caller target"), &overrides),
         expected("caller target/ci-default-features", DEFAULT_COMMANDS)
             + &expected("caller target/ci-all-features", ALL_COMMANDS)
-            + &expected(
-                "caller target/test-deep-format",
-                &[
-                    &[
-                        "test",
-                        "--locked",
-                        "--test",
-                        "it",
-                        "formatter_identity::all_three_deep_source_generators_keep_format_identity",
-                        "--",
-                        "--ignored",
-                        "--exact",
-                        "--list",
-                    ],
-                    &[
-                        "test",
-                        "--locked",
-                        "--test",
-                        "it",
-                        "formatter_identity::all_three_deep_source_generators_keep_format_identity",
-                        "--",
-                        "--ignored",
-                        "--exact",
-                        "--test-threads=1",
-                    ],
-                    &[
-                        "test",
-                        "--locked",
-                        "--test",
-                        "it",
-                        "formatter_identity::replay_large_source_generator_keeps_format_identity",
-                        "--",
-                        "--ignored",
-                        "--exact",
-                        "--list",
-                    ],
-                    &[
-                        "test",
-                        "--locked",
-                        "--test",
-                        "it",
-                        "formatter_identity::replay_large_source_generator_keeps_format_identity",
-                        "--",
-                        "--ignored",
-                        "--exact",
-                        "--test-threads=1",
-                    ],
-                    &[
-                        "test",
-                        "--locked",
-                        "--test",
-                        "it",
-                        "formatter_identity::dependency_chain_and_order_variants_keep_format_identity",
-                        "--",
-                        "--ignored",
-                        "--exact",
-                        "--list",
-                    ],
-                    &[
-                        "test",
-                        "--locked",
-                        "--test",
-                        "it",
-                        "formatter_identity::dependency_chain_and_order_variants_keep_format_identity",
-                        "--",
-                        "--ignored",
-                        "--exact",
-                        "--test-threads=1",
-                    ],
-                ],
-            )
+            + &deep_calls("caller target/ci-default-features")
     );
 }
 
