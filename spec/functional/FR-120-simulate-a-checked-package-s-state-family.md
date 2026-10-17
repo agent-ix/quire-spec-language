@@ -295,13 +295,20 @@ impl StateModel {
 
 For each object `r` of a state and each operation name of `r`'s effective
 view (FR-103, FR-081), the application's operation is the effective member
-that name selects for `r`'s most-specific type. Its arguments are `r`, then
-one value per declared parameter from the parameter's domain. The receiver
-is argument 0, as QSpec FR-151 makes it parameter 0.
+that name selects for `r`'s most-specific type. Its receiver is `r`, and its
+arguments are one value per declared parameter, in declaration order, from the
+parameter's domain. The receiver is not an argument.
 
 The transition identity is FR-181's
-`{"type":"transition","operation":"<qualified-name>","arguments":[<encoded>, ...]}`,
-and `<qualified-name>` is the operation's declaration identity text.
+`{"type":"transition","operation":"<qualified-name>","receiver":<encoded>,"arguments":[<encoded>, ...]}`,
+and `<qualified-name>` is the operation's declaration identity text. Written
+as bytes its keys are in JCS order: `arguments`, `operation`, `receiver`,
+`type`. `ModelTransition` is the typed form of that identity: the `operation` as its
+canonical text, a `receiver: Option<String>` and the `arguments` as a vector of
+canonical text. Each text is the value's canonical JCS text, as `operation` and
+each argument are. A model application always has a receiver; `receiver` is
+`None` only for an operation FR-181 admits with none, and `Some("null")` is
+refused.
 
 A value domain is: `Boolean`, `false` then `true`; `Int[lower, upper]`,
 every integer in the range; `Option<T>`, absent then each value of `T`;
@@ -489,8 +496,8 @@ identity text of operation `op`.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-120-AC-1 | With operation `increment()` (frame `modifies value`) and no clause, `s0` has three successors, `v0`, `v1` and `v2`, all with transition identity `{"type":"transition","operation":"{\"digest_domain\":\"sha256-jcs\",\"node\":\"test/counters/Counter/increment\",\"package\":\"test/counters\"}","arguments":[<c1's reference>]}`; `label` and `next` keep their values in each. Adding `post Inc on Counters::Counter::increment { self.value = pre(self.value) + 1 }` leaves one successor, `v1`. With `pre CanInc … { self.value < 2 }` and no `post` clause, `v0` and `v1` each have the three successors and `v2` has no `increment` successor. | Test (TC-471) |
-| FR-120-AC-2 | With `setTo(n: Int[0, 2])` (frame `modifies value`, post `self.value = n`), `s0` has one successor per `n`, with arguments `[<c1>, {"type":"integer","value":"0"}]` to `…"2"}]`. With `c2` added to `s0`, each receiver gives its own identity. With `pre A { self.value >= 1 }` and `pre B { self.value <= 1 }` on `setTo`, both must hold: it is enabled at `v1` and not at `v0` or `v2`. | Test (TC-471) |
+| FR-120-AC-1 | With operation `increment()` (frame `modifies value`) and no clause, `s0` has three successors, `v0`, `v1` and `v2`, all with transition identity, as JCS bytes, `{"arguments":[],"operation":"{\"digest_domain\":\"sha256-jcs\",\"node\":\"test/counters/Counter/increment\",\"package\":\"test/counters\"}","receiver":<c1's reference>,"type":"transition"}`; `label` and `next` keep their values in each. Adding `post Inc on Counters::Counter::increment { self.value = pre(self.value) + 1 }` leaves one successor, `v1`. With `pre CanInc … { self.value < 2 }` and no `post` clause, `v0` and `v1` each have the three successors and `v2` has no `increment` successor. | Test (TC-471) |
+| FR-120-AC-2 | With `setTo(n: Int[0, 2])` (frame `modifies value`, post `self.value = n`), `s0` has one successor per `n`, with `receiver` `<c1>` and arguments `[{"type":"integer","value":"0"}]` to `[{"type":"integer","value":"2"}]`. With `c2` added to `s0`, each receiver gives its own identity. With `pre A { self.value >= 1 }` and `pre B { self.value <= 1 }` on `setTo`, both must hold: it is enabled at `v1` and not at `v0` or `v2`. | Test (TC-471) |
 | FR-120-AC-3 | With `spawn()` (frame `creates Counter`) and no clause, `s0` has 1 + 18 successors: `s0` itself, and `c2` created with each (`value`, `label`, `next`) in 3 × 2 × 3 (absent, `c1`, `c2`). With `remove()` (frame `deletes Counter`) over `c1` and `c2`, where `c1.next` names `c2`, each receiver's successors are the deletion sets {}, {`c1`} and {`c1`, `c2`}; deleting `c2` alone leaves `c1.next` dangling and is not a candidate. Each successor's delta is the one the frame decision returns. | Test (TC-471) |
 | FR-120-AC-4 | `s0`'s state key has `semantic` equal to `{"type":"map","entries":[{"key":{"type":"text","value":"{\"digest_domain\":\"sha256-jcs\",\"node\":\"test/counters/counters\",\"package\":\"test/counters\"}"},"value":{"type":"map","entries":[{"key":{"type":"reference","universe":"<U>","object_type":"<E>","identity":"6331"},"value":{"type":"record","name":"{\"digest_domain\":\"sha256-jcs\",\"node\":\"test/counters/Counter\",\"package\":\"test/counters\"}","fields":[{"name":"value","value":{"type":"integer","value":"0"}},{"name":"label","value":{"type":"integer","value":"0"}},{"name":"next","value":{"type":"option","value":null}}]}}]}}]}`, where `<U>` and `<E>` are the universe and effective type of the `ObjectReference` that FR-106 admission gives `c1` in `s0`'s admitted `Observation` (`StateModel::admit_initial`, independent of the simulator's key encoding), each as 64 lowercase hex digits; `control`, `queues`, `roles`, `observations` and `bounds` are `{"type":"map","entries":[]}`. `s0` with `c1.label` 1 has a different key. | Test (TC-471) |
 | FR-120-AC-5 | With `increment`, `CanInc`, `Inc` and `invariant Small … at current { self.value < 2 }`, exploration is `Exhaustive` with 3 states, 2 transitions and depth 2, and `findings` holds exactly one entry: `v2`'s digest, depth 2, `InvariantViolated { Small, c1, {handler, <increment>} }`. Adding `reset()` (frame `modifies value`, post `self.value = 0`) makes the run `Exhaustive` with 3 states and 5 transitions, including `v2 → v0`: the violating state is expanded. `s0`'s findings, when any, carry anchor `{initialization, start}`. | Test (TC-472) |
@@ -507,7 +514,7 @@ identity text of operation `op`.
 
 - QSpec FR-181, its exploration contract, typed canonical form and AC-4 to
   AC-6; QSpec FR-013 (frames, including its Behavior's `modifies`, `creates`
-  and `deletes` rules); QSpec FR-151 (the receiver as parameter 0, effective
+  and `deletes` rules); QSpec FR-151 (the receiver, effective
   pre- and postconditions, conformance); QSpec `state-contract.md` and
   `shared-grammar.md` (anchor operations are caller-side);
   `native-diagnostics.md`.

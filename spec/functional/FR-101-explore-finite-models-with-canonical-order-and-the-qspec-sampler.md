@@ -235,7 +235,11 @@ the order a `TransitionSystem` lists them in. Breadth-first exploration
 keeps parent states in FIFO discovery order within a level. Each parent's
 successors are visited in ascending unsigned-lexicographic order of the
 RFC 8785 JCS UTF-8 bytes of their transition identity,
-`{"type":"transition","operation":"<qualified-name>","arguments":[<encoded>, ...]}`.
+`{"type":"transition","operation":"<qualified-name>","receiver":<encoded>|null,"arguments":[<encoded>, ...]}`
+(`receiver` the operation's receiver reference, `null` for an operation with
+no receiver; `arguments` the declared parameters in declaration order, the
+receiver not among them). Written as bytes the keys are in JCS order:
+`arguments`, `operation`, `receiver`, `type`.
 FR-181 does not order two successors with equal transition identities and
 different post-states. QSL orders them by the post-state's state-key bytes,
 ascending. Initial states are admitted in ascending state-key byte order,
