@@ -1525,6 +1525,7 @@ fn expression_type_forms<'e>(roots: impl IntoIterator<Item = &'e Expression>) ->
                 ExprNode::Boolean(_)
                 | ExprNode::Integer(_)
                 | ExprNode::Rational(..)
+                | ExprNode::String(_)
                 | ExprNode::Name(_)
                 | ExprNode::Let { .. }
                 | ExprNode::Case(_)
