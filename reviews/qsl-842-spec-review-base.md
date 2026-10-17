@@ -53,3 +53,9 @@ fixture's `pipe` end types.
 | FND-004 | recorded | The S1 overflow diagnostic belongs to FR-325's `u64` rule; the ACs cite it. |
 | FND-005 | fixed | The rationale paragraph in FR-381's Description is deleted. |
 | FND-006 | recorded | TC-1058 row 5 is the FR-114 package assertion; the scalar-id relationship end has no AC and is recorded. |
+| FND-001 | fixed 001fff6ed | Reviewer round 1: FR-218-AC-18 states missing_declaration/missing-name retaining name. |
+| FND-002 | fixed 001fff6ed | Reviewer round 1: FR-218-AC-20 and TC-1056 row 42 cover the FIFO key = rule; the negative row names no concrete type, left to the test author. |
+| FND-003 | fixed 001fff6ed | Reviewer round 1: guards and visible entries may read protocol captures without listing (FR-218 eligibility note, AC-17, TC-1056 row 41). |
+| FND-004 | accepted-no-change | Reviewer round 1: low; the S1 overflow belongs to FR-325's u64 rule and the ACs cite it. |
+| FND-005 | fixed 001fff6ed | Reviewer round 1: the rationale paragraph is deleted from FR-381's Description. |
+| FND-006 | accepted-no-change | Reviewer round 1: low; TC-1058 row 5 is the FR-114 package assertion; the scalar-id relationship end stays without an AC. |

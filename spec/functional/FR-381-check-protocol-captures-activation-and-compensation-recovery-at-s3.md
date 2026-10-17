@@ -105,7 +105,7 @@ reading stage may not read, and `unbound` for a name nothing declares.
 | `protocol-capture` | the `over` input, the activation binder, protocol captures written earlier |
 | `registration-capture` | the forward binder, the `over` input, the activation binder, protocol captures, registration captures of the template written earlier |
 | `trigger-guard` (`activate first ... when`) | the trigger binder, protocol captures, the template's registration captures |
-| `activation-capture` | the trigger binder, protocol captures, the template's registration captures, activation captures of the template written earlier |
+| `activation-capture` | the trigger binder, the `over` input, protocol captures, the template's registration captures, activation captures of the template written earlier |
 | `retry` | the `earlier` and `later` binders, protocol captures, the template's registration and activation captures |
 | `recovery` | the recovery binder, protocol captures, the template's registration and activation captures |
 

@@ -52,3 +52,6 @@ Nothing blocking in this lane. The "not ported" list holds except for the proof-
 | FND-001 | fixed | The commit rule is dominance: a commit on every path to the effect is refused; a commit in one `case` is admitted (TC-1058 row 20a). |
 | FND-002 | recorded | The partition proof bound and the old proof-budget rows are owned by no slice; recorded in the PR body. |
 | FND-003 | recorded | Tracker gap: no ticket implements FR-381; recorded for the planner. |
+| FND-001 | fixed 001fff6ed | Reviewer round 1: the commit rule is dominance (on every path from start to the effect); FR-381 Behavior, AC-11 and TC-1058 rows 19, 20, 20a agree, and the unordered (parallel) commit is still admitted. |
+| FND-002 | deferred: no slice owns the partition-proof bound | Reviewer round 1: recorded in the PR body only; needs a ticket under QSL-839 or an FR-218 limit AC before the old TC-133 proof-budget rows retire in QSL-840. |
+| FND-003 | deferred: tracker gap for the planner | Reviewer round 1: no ticket implements FR-381; QSL-558's scope (or a sibling ticket) must add it. |

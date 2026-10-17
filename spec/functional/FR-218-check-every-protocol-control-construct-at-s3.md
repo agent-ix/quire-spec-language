@@ -105,7 +105,7 @@ protocol system only ever runs a protocol whose meaning is fixed.
   constraints, guards, activation guards, retry relations and recovery
   predicates) through the one clause checker (FR-104) over its declared
   inputs.
-- A choice guard, repeat guard or `check` SHALL read binders and constants
+- A choice guard, repeat guard or `check` SHALL read binders, protocol captures and constants
   only. S3 SHALL refuse one that reads model state with `ill_typed`/
   `operator-ineligible` at the read, naming the guard.
 - S3 SHALL refuse a choice whose guards are not proved exhaustive and
@@ -195,7 +195,7 @@ that relationship with those two typed ends (QSpec FR-051).
   SHALL refuse with `missing_declaration`/`missing-name` at the name, retaining
   `node` and `name`.
 - S3 SHALL check each of the clause's two ends through the clause checker over
-  the binders readable at the node, and SHALL refuse an end whose type is not
+  the binders readable at the node and the protocol's `over` input (an end is a value, not a guard), and SHALL refuse an end whose type is not
   its relationship end's type with `ill_typed`/`type-mismatch` at the end
   expression, retaining `relationship`, `end` (`first` or `second`),
   `expected` and `actual`. Two equal scalar ids never satisfy a relationship
