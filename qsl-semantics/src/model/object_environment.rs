@@ -13,7 +13,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use crate::model::observation::OutOfRange;
+use crate::model::observation::{OutOfRange, RelationshipExtents};
 use crate::model::population::PopulationBinding;
 use quire_exact::{ObjectReference, PopulationId};
 use quire_semantic_value::declaration::{FieldRef, TypeEnvironment};
@@ -44,6 +44,12 @@ pub struct ObjectEnvironment {
     /// outside their declared range; empty for every other environment.
     out_of_range: Vec<OutOfRange>,
     unresolved_references: bool,
+    /// The relationship instances this observation lists (FR-364); `None`
+    /// for an environment no snapshot admitted.
+    extents: Option<RelationshipExtents>,
+    /// Every object the snapshot admitted, ascending; empty for an
+    /// environment no snapshot admitted.
+    references: Vec<ObjectReference>,
 }
 
 impl ObjectEnvironment {
@@ -54,7 +60,38 @@ impl ObjectEnvironment {
             populations: BTreeMap::new(),
             out_of_range: Vec::new(),
             unresolved_references: false,
+            extents: None,
+            references: Vec::new(),
         }
+    }
+
+    /// Records every object the snapshot admitted, so an evaluation that
+    /// ranges over the observation's objects (FR-366) can enumerate them.
+    #[must_use]
+    pub fn with_references(mut self, mut references: Vec<ObjectReference>) -> Self {
+        references.sort();
+        self.references = references;
+        self
+    }
+
+    /// Every object the snapshot admitted, ascending by reference; empty
+    /// for an environment no snapshot admitted.
+    pub fn references(&self) -> &[ObjectReference] {
+        &self.references
+    }
+
+    /// Records the relationship extents and the population traversal this
+    /// environment's snapshot admitted (FR-364).
+    #[must_use]
+    pub fn with_extents(mut self, extents: RelationshipExtents) -> Self {
+        self.extents = Some(extents);
+        self
+    }
+
+    /// The relationship extents this environment holds, when a snapshot
+    /// admitted it.
+    pub fn extents(&self) -> Option<&RelationshipExtents> {
+        self.extents.as_ref()
     }
 
     /// This environment with its references left unresolved: it holds no

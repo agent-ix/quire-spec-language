@@ -21,7 +21,8 @@ use std::sync::Arc;
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 pub use qsl_foundation::witness::{
-    ObservationIdentity, RuntimeValuePath, SeparationStep, ValuePathStep, ValuePathSubject,
+    InvocationBinding, ObservationIdentity, RuntimeValuePath, SeparationStep, ValuePathStep,
+    ValuePathSubject,
 };
 use qsl_semantics::check::{ApplicationTerm, BodyTerm, CheckedGraph, Operator};
 use qsl_semantics::model::observation::DocumentRef;
@@ -59,6 +60,16 @@ pub struct StopReport {
     pub value_path: RuntimeValuePath,
 }
 
+/// FR-107 "Read paths": one field or member selection a clause evaluated.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClauseRead {
+    /// The location of the selection node.
+    pub location: Location,
+    /// The runtime value path (QSpec FR-207) of the value the selection
+    /// read, or none when its operand has no location.
+    pub path: Option<RuntimeValuePath>,
+}
+
 /// FR-107 and FR-265: a state clause's evaluation, and what it reports
 /// beside the outcome.
 #[derive(Debug)]
@@ -66,11 +77,34 @@ pub struct ClauseEvaluation {
     /// The S6a evaluation, unchanged.
     pub evaluation: Evaluation,
     trail: Trail,
+    receiver_path: Option<RuntimeValuePath>,
 }
 
 impl ClauseEvaluation {
-    pub(crate) fn new(evaluation: Evaluation, trail: Trail) -> Self {
-        Self { evaluation, trail }
+    pub(crate) fn new(
+        evaluation: Evaluation,
+        trail: Trail,
+        receiver_path: Option<RuntimeValuePath>,
+    ) -> Self {
+        Self {
+            evaluation,
+            trail,
+            receiver_path,
+        }
+    }
+
+    /// FR-107 "The receiver path": the path of `self` under the clause's
+    /// own observation, with no steps: its declared object identity for an
+    /// object, the selected invocation's receiver binding for a state
+    /// machine's context, and none for a context with no invocation selected.
+    pub fn receiver_path(&self) -> Option<&RuntimeValuePath> {
+        self.receiver_path.as_ref()
+    }
+
+    /// FR-107 "Read paths": each field or member selection the clause
+    /// evaluated, in the order the evaluator performed them.
+    pub fn reads(&self) -> &[ClauseRead] {
+        &self.trail.reads
     }
 
     /// The decision recorded at the `and`, `or`, `implies` or `if` node at
@@ -150,6 +184,22 @@ impl Provenance {
         }
     }
 
+    pub(crate) fn receiver_field(
+        observation: ObservationIdentity,
+        invocation: ObservationIdentity,
+        field: String,
+    ) -> Self {
+        Self {
+            observation,
+            subject: ValuePathSubject::Invocation {
+                invocation,
+                binding: InvocationBinding::Receiver,
+            },
+            steps: vec![ValuePathStep::Field(field)],
+            positions: None,
+        }
+    }
+
     /// The provenance of `field` of the record stored here; `None` for a
     /// selection of elements, which has no fields.
     pub(crate) fn field(&self, field: &str) -> Option<Self> {
@@ -220,6 +270,21 @@ pub(crate) struct Trail {
     pub(crate) observation: ObservationIdentity,
     /// The pre observation, when admission gave one.
     pub(crate) pre: Option<ObservationIdentity>,
+    pub(crate) receiver: Option<ObjectReference>,
+    pub(crate) receiver_pre: Option<ObjectReference>,
+    pub(crate) receiver_invocation: Option<ObservationIdentity>,
+    /// `self` is a state machine's context and no invocation is selected: it
+    /// has no location, so nothing read from it is located (FR-107 "The
+    /// receiver path").
+    pub(crate) receiver_unlocated: bool,
+    /// The root subject of each clause slot (`self`, `result`, the
+    /// parameters, in slot order); none when the slot has no location.
+    pub(crate) bindings: Vec<Option<ValuePathSubject>>,
+    /// The path of each quantifier element bound to a slot now.
+    pub(crate) element_paths: BTreeMap<usize, RuntimeValuePath>,
+    /// The path of the latest evaluation of each selection node.
+    selection_paths: BTreeMap<Location, Option<RuntimeValuePath>>,
+    reads: Vec<ClauseRead>,
     decisions: BTreeMap<Location, bool>,
     stops: BTreeMap<Location, StopReport>,
     /// Each recorded collection or record beside its provenance; looked up
@@ -232,10 +297,32 @@ impl Trail {
         Self {
             observation,
             pre,
+            receiver: None,
+            receiver_pre: None,
+            receiver_invocation: None,
+            receiver_unlocated: false,
+            bindings: Vec::new(),
+            element_paths: BTreeMap::new(),
+            selection_paths: BTreeMap::new(),
+            reads: Vec::new(),
             decisions: BTreeMap::new(),
             stops: BTreeMap::new(),
             located: Vec::new(),
         }
+    }
+
+    /// Record a field or member selection at `at`, read at `path`.
+    pub(crate) fn read(&mut self, at: &Location, path: Option<RuntimeValuePath>) {
+        self.selection_paths.insert(at.clone(), path.clone());
+        self.reads.push(ClauseRead {
+            location: at.clone(),
+            path,
+        });
+    }
+
+    /// The path of the latest evaluation of the selection node at `at`.
+    pub(crate) fn selection_path(&self, at: &Location) -> Option<&RuntimeValuePath> {
+        self.selection_paths.get(at).and_then(Option::as_ref)
     }
 
     pub(crate) fn decide(&mut self, at: &Location, value: bool) {

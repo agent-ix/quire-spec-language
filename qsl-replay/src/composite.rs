@@ -18,7 +18,9 @@ use quire_semantic_value::declaration::EqualityOperator;
 
 use crate::execute::ReplayRefusal;
 use crate::identity::ObligationIdentity;
-use crate::proof_result::{IncompleteCause, InconclusiveCause, TerminalValue};
+use crate::proof_result::{
+    Certification, IncompleteCause, InconclusiveCause, ProofBasis, TerminalValue,
+};
 use crate::scalar::{OperandRefusal, ScalarAgreement};
 use crate::witness::WitnessValue;
 
@@ -103,8 +105,9 @@ pub struct CompositeParityClaim {
     /// The accounting limits the exact evaluation runs under, retained from
     /// the proving run.
     pub limits: ScalarLimits,
-    /// The canonical proof-content identity binding the claim to the proved
-    /// artifact. Carried into the claim identity; never recomputed.
+    /// The canonical content identity of the proved artifact alone; the
+    /// operands and limits are separate claim fields, not part of this
+    /// digest. Carried into the claim identity; never recomputed.
     pub content_identity: DigestRecord,
 }
 
@@ -236,10 +239,11 @@ impl CompositeIdentity {
 /// both.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum IncompleteStage {
-    /// Admitting an operand reached one of the request's accounting limits:
-    /// the counter, its configured value and the count reached. No exact
-    /// evaluation ran.
-    Admission(Box<Incomplete>),
+    /// Admitting an operand reached a pre-call limit of the request: the
+    /// phase, the parameter, the actual event, the counter, its configured
+    /// value, the successful spend and the denied amount (FR-277). No exact
+    /// evaluation ran and no charge point is named.
+    Admission(Box<qsl_semantics::value::supplied::SuppliedStop>),
     /// QSL's exact evaluation reached a limit: QSL's counter, its configured
     /// value and the count reached.
     ExactEvaluation(Box<Incomplete>),
@@ -384,9 +388,15 @@ impl VerifiedShadowResult {
             Self::Incomplete { .. } => {
                 TerminalValue::Incomplete(IncompleteCause::ResourceExhausted)
             }
-            Self::Vacuous => TerminalValue::Proved { success_checks: 0 },
+            Self::Vacuous => TerminalValue::Proved {
+                basis: ProofBasis::Checks { success_checks: 0 },
+                certification: Certification::Certified,
+            },
             Self::Proved { success_checks } => TerminalValue::Proved {
-                success_checks: *success_checks,
+                basis: ProofBasis::Checks {
+                    success_checks: *success_checks,
+                },
+                certification: Certification::Certified,
             },
             Self::Tested => TerminalValue::Tested,
             Self::Refused(refusal) => TerminalValue::from_replay_refusal(refusal),

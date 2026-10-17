@@ -46,12 +46,12 @@ existing closed shared-reference schemas are not silently extended here.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-021-AC-1 | Independently authored canonical bytes and domain-prefix hash vectors match the producer, including Unicode escaping and a revision above the binary64 exact-integer range. | Test |
-| FR-021-AC-2 | Reordered JSON members and unique feature order preserve reconstructed canonical identity while their differing raw artifact bytes retain distinct ByteDigests. | Test |
-| FR-021-AC-3 | Each changed semantic selector, source binding, selected model declaration/role, authored clause, resolution or runtime obligation changes the independently computed static identity. | Test |
-| FR-021-AC-4 | The canonical input omits projection availability, and a forged excluded projection claim still refuses package reconstruction despite an unchanged canonical identity. | Test |
-| FR-021-AC-5 | An unknown canonical domain/version/algorithm refuses selection; a wrong digest or raw/IR/JCS digest substitution refuses correspondence without a package. | Test |
-| FR-021-AC-6 | Canonical derivation obeys its separately reported package-pass limits before excess work; runtime populations, evaluator budgets and local display paths do not enter its bytes. | Test |
+| FR-021-AC-1 | Independently authored canonical bytes and domain-prefix hash vectors match the producer, including Unicode escaping and a revision above the binary64 exact-integer range. | Test (TC-090) |
+| FR-021-AC-2 | Reordered JSON members and unique feature order preserve reconstructed canonical identity while their differing raw artifact bytes retain distinct ByteDigests. | Test (TC-082) |
+| FR-021-AC-3 | Each changed semantic selector, source binding, selected model declaration/role, authored clause, resolution or runtime obligation changes the independently computed static identity. | Test (TC-091) |
+| FR-021-AC-4 | The canonical input omits projection availability, and a forged excluded projection claim still refuses package reconstruction despite an unchanged canonical identity. | Test (TC-091) |
+| FR-021-AC-5 | An unknown canonical domain/version/algorithm refuses selection; a wrong digest or raw/IR/JCS digest substitution refuses correspondence without a package. | Test (TC-091) |
+| FR-021-AC-6 | Canonical derivation obeys its separately reported package-pass limits before excess work; runtime populations, evaluator budgets and local display paths do not enter its bytes. | Test (TC-088, TC-090) |
 
 ## Dependencies
 
@@ -60,10 +60,3 @@ existing closed shared-reference schemas are not silently extended here.
 - [FR-020](FR-020-read-and-rebind-native-packages.md) owns strict reconstruction.
 - [NFR-007](../non-functional/NFR-007-bound-native-packages.md) bounds each pass.
 - This requirement's identity uses its own typed-record encoding, which is not RFC 8785. The IR/JCS digest domains keep their own domain labels and golden vectors, and their RFC 8785 encoding comes from `quire-canonical` (ADR-013 §2).
-
-## Status
-
-The manifest's source identity carries the two source labels of FR-001, so the independently authored hash vectors of FR-021-AC-1 change. Implemented for the four-label identity (ADR-013 §7 S-4b), with the `minimal`, `controls` and `multiple` vectors regenerated from the independent recipe with authority `agent-ix` and revision namespace `draft`. Remaining work (implementation, Linear QSL-381): the manifest drops the revision labels and the three vectors are regenerated from the recipe without them (QSpec STD-150).
-
-Draft producer contract. Review, implementation, independent vectors and shared
-consumer adoption are required before their corresponding qualification claims.

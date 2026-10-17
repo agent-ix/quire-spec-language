@@ -96,7 +96,7 @@ use crate::emit::{emit_checked, Emission, EmitRefusal};
 use quire_exact::{Origin, Role};
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 /// A test's view of one [`read_checked_package_v2`] outcome, T-4's
 /// `Result` unpacked so a test matches every arm by pattern.
@@ -786,6 +786,15 @@ pub enum ImportViewRefusal {
         /// The closure entry's identity.
         identity: LibraryName,
     },
+    /// Evidence supplied for `package` conflicts with evidence already held
+    /// under the same key.
+    #[error("the evidence for {package} conflicts: {conflict}")]
+    Evidence {
+        /// The library identity whose evidence conflicted.
+        package: LibraryName,
+        /// The typed conflict, naming the exact key.
+        conflict: quire_contract_model::CheckedPackageEvidenceInsertionError,
+    },
     /// The I2 read of the package, or of a package of its closure, refused
     /// or reached a ceiling.
     #[error("the I2 read of {package} refused: {}", read_message(refusal))]
@@ -818,7 +827,7 @@ impl ImportViewRefusal {
                 ..
             } => refusal.code(),
             Self::Emission { refusal: None, .. } => Code::UnsupportedProjection,
-            Self::UnheldDependency { .. } => Code::RuntimeInvariant,
+            Self::UnheldDependency { .. } | Self::Evidence { .. } => Code::RuntimeInvariant,
             Self::Read {
                 refusal: StageFailure::Refused(refusal),
                 ..
@@ -889,22 +898,30 @@ pub fn read_import_view(
 #[derive(Debug, Default)]
 pub struct AdmittedPackages(BTreeMap<PackageId, Arc<CheckedPackageV2>>);
 
+impl AdmittedPackages {
+    /// The package a [`read_import_view`] call admitted at `package_id`.
+    pub fn package(&self, package_id: &PackageId) -> Option<&CheckedPackageV2> {
+        self.0.get(package_id).map(Arc::as_ref)
+    }
+}
+
 /// Supply `evidence` with the admitted package of every entry of
 /// `package`'s `dependency_selections`, each read as [`read_import_view`]
-/// reads it: for a caller that reads `package`'s own bytes itself.
-#[cfg(test)]
-pub(crate) fn supply_closure(
+/// reads it under `limits`, with the supplied `domain_packages`: for a caller
+/// that reads `package`'s own bytes itself.
+pub fn supply_closure(
     package: &CheckedPackage,
+    domain_packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    limits: V2ReadLimits,
     evidence: &mut CheckedPackageEvidence,
 ) -> Result<(), ImportViewRefusal> {
-    let domain_packages = BTreeMap::new();
     let mut held = BTreeMap::new();
     hold_closure(package, &mut held);
     ClosureReader {
         held,
-        domain_packages: &domain_packages,
+        domain_packages,
         admitted: BTreeMap::new(),
-        limits: V2ReadLimits::default(),
+        limits,
     }
     .supply(package, evidence)
 }
@@ -965,7 +982,12 @@ impl ClosureReader<'_> {
         }
         let mut evidence = emission.evidence.clone();
         for (digest, document) in self.domain_packages {
-            evidence.insert_domain_package_document(hex(digest), document.as_slice());
+            evidence
+                .insert_domain_package_document(hex(digest), document.as_slice())
+                .map_err(|conflict| ImportViewRefusal::Evidence {
+                    package: identity.clone(),
+                    conflict,
+                })?;
         }
         self.supply(package, &mut evidence)?;
         let pinned = PinnedRequest::single(identity.clone(), emission.package.package_id());
@@ -997,7 +1019,12 @@ impl ClosureReader<'_> {
                     identity: dependency.clone(),
                 }
             })?;
-            evidence.insert_dependency_package(dependency.as_str(), Arc::clone(admitted));
+            evidence
+                .insert_dependency_package(dependency.as_str(), Arc::clone(admitted))
+                .map_err(|conflict| ImportViewRefusal::Evidence {
+                    package: dependency.clone(),
+                    conflict,
+                })?;
         }
         Ok(())
     }

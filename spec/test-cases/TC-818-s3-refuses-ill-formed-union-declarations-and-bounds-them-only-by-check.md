@@ -29,14 +29,10 @@ Tag each test `#[trace("TC-818", "<AC id>")]`.
 
 - Step 1: `ill_typed`, recursion subgraph non-escaping, cycle `L, L`.
 - Step 2: `ill_typed` naming the cycle through `Box` and `U`, at both.
-- Step 3: `invalid_semantic_graph` naming `A`; the unresolved-type refusal
+- Step 3: `ambiguous_declaration`/`ambiguous-name` naming `A`; the unresolved-type refusal
   naming `Missing` at its span.
 - Step 4: TC-263's verdicts.
 - Step 5: both admitted.
 - Step 6: `StageFailure::Limit`, kind work budget, the configured bound and
   the `CheckingLimits` field; then admitted. No nesting-depth limit kind
   appears anywhere.
-
-## Status
-
-Planned.

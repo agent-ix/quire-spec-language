@@ -34,8 +34,10 @@ A spine `compile` result.
 One `RefinementClass`: `admitted`, `refused`, `prohibited`, `unsupported`,
 `incomplete` or `tool failure`, with the codes and causes of every cause
 the refusal holds, in the refusal's order. An `incomplete` class also
-carries, for each `stage_limit_exceeded` cause, the limit it names and that
-limit's value.
+carries, for each `stage_limit_exceeded` cause that carries one, the limit it
+names and that limit's value. A cause the producing stage reports without
+limit data (a `Forms`, `Link` or `Emit` cause, or an `Import` view cause other
+than an I2 read ceiling) names no limit.
 
 ## Behavior
 
@@ -48,11 +50,11 @@ limit's value.
 | Rule | When | Class |
 | --- | --- | --- |
 | 1 | the result is `Ok` | `admitted` |
-| 2 | any cause has code `runtime_invariant`; or the refusal is `Intake` with a cause other than its limit cause, `Profile`, `DependencyInput`, `Import` with a cause other than its limit cause, `Dependency`, `Link` or `Emit` | `tool failure` (the case's setup is broken) |
-| 3 | the refusal is `Source`, `Forms`, `Assembly` or `Check`, and any cause has a typed refusal code: a code other than `stage_limit_exceeded`, `unsupported_construct` and `unsupported_projection` | `refused` |
-| 4 | any cause has code `stage_limit_exceeded`, whichever stage raised it | `incomplete` |
+| 2 | any cause has code `runtime_invariant`; or the refusal is `Intake` with a cause other than its limit cause, `Profile`, `DependencyInput`, `Import` with a cause other than its limit cause (an import's own ceiling or an `i2.*` read ceiling), `Dependency`, `Link` or `Emit`; except that a `Link` or `Emit` refusal holding `unsupported_projection` is not a tool failure and takes rule 5 | `tool failure` (the case's setup is broken) |
+| 3 | the refusal is `Source`, `Forms`, `OperationClause` (a kept operation clause that does not parse), `TypeInvariant` (a type-level invariant clause that does not parse), `Assembly` or `Check`, and any cause has a typed refusal code: a code other than `stage_limit_exceeded`, `resource_exhausted`, `unsupported_construct` and `unsupported_projection` | `refused` |
+| 4 | any cause has code `stage_limit_exceeded` or `resource_exhausted` (the caller's model budget, denied at I1 or at S3), whichever stage raised it | `incomplete` |
 | 5 | the refusal is `Omitted`; or any cause has code `unsupported_projection`; or any cause is `unsupported_construct` with cause `not-yet-implemented` | `unsupported` (a QSL implementation gap) |
-| 6 | otherwise: every cause is `unsupported_construct` with a catalog cause (`declaration-form`, `expression-form`) | `prohibited` (the selected profile prohibits the form, QSpec AD-003) |
+| 6 | otherwise: every cause is `unsupported_construct`, with cause `declaration-form`, `expression-form` or no catalog cause (a `Forms` `NoDispatchEntry` or `UnrepresentedConstruct` refusal has none) | `prohibited` (the selected profile prohibits the form, QSpec AD-003) |
 
 - The classification SHALL be one exhaustive `match` over `CompileRefusal`
   with no wildcard arm, so that a new refusal variant does not compile until
@@ -71,8 +73,8 @@ limit's value.
 | FR-341-AC-1 | A ConfigVersion unit that compiles classifies `admitted`. | Test (TC-861) |
 | FR-341-AC-2 | Each of these classifies `tool failure`: the unit with a header profile whose identity names no catalog row, `test:unknown-profile` (`Profile`); the unit with its `model` package not supplied (`Intake`); a dependency input that refuses (`DependencyInput`); an `Import` naming a library the input does not hold; and a `Check` refusal holding a typed refusal cause and a `runtime_invariant` cause, in either order. | Test (TC-861) |
 | FR-341-AC-3 | A unit with an ill-typed function body classifies `refused`, carrying `ill_typed`. A `Check` refusal whose first cause is `unsupported_construct`/`not-yet-implemented` and whose second is a typed refusal classifies `refused` and carries both causes in order. | Test (TC-861) |
-| FR-341-AC-4 | The unit compiled with a forms-stage limit of one and, separately, with a type limit of one each classifies `incomplete`, naming the limit and its value one. | Test (TC-861) |
-| FR-341-AC-5 | A unit using a construct S3 refuses `unsupported_construct`/`not-yet-implemented` classifies `unsupported`; an `Omitted` refusal and a refusal holding `unsupported_projection` each classify `unsupported`. | Test (TC-861) |
+| FR-341-AC-4 | The unit compiled with an S1 source-stage limit of one (`s1.nodes`) and, separately, with a type limit of one each classifies `incomplete`, naming the limit and its value one. | Test (TC-861) |
+| FR-341-AC-5 | A `Check` refusal holding `unsupported_construct`/`not-yet-implemented` (S3's refusal of a protocol construct it does not check yet) classifies `unsupported`; an `Omitted` refusal and a refusal holding `unsupported_projection` each classify `unsupported`. | Test (TC-861) |
 | FR-341-AC-6 | A refusal whose every cause is `unsupported_construct` with cause `declaration-form` or `expression-form` classifies `prohibited`. | Test (TC-861) |
 
 ## Dependencies
@@ -84,7 +86,3 @@ limit's value.
 
 - ADR-017 §2 RF-2 "Compile classification", RF-3.
 - Specification tickets QSL-386, QSL-387; implementation ticket QSL-40.
-
-## Status
-
-Specified; not yet implemented -- TC-861 planned.

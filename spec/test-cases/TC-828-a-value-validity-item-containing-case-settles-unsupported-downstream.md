@@ -23,7 +23,3 @@ Tag each test `#[trace("TC-828", "<AC id>")]`.
 
 - The item is emitted by QSL and settles `unsupported` with its catalog
   code at the IR or CG arm; QSL records no settlement of its own.
-
-## Status
-
-Planned.

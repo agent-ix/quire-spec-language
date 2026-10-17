@@ -13,7 +13,10 @@ use std::collections::BTreeMap;
 
 use qsl_eval::value::StopReport;
 use qsl_foundation::source::provenance::OccurrenceKey;
-use qsl_foundation::witness::{RuntimeValuePath, SeparationStep, ValuePathStep, ValuePathSubject};
+use qsl_foundation::witness::{
+    InvocationBinding, RuntimeValuePath, SeparationStep, ValuePathStep, ValuePathSubject,
+};
+use qsl_semantics::value::supplied::SuppliedStop;
 use quire_exact::{compare_keys, Incomplete, ScalarLimits, Value};
 use quire_semantic_value::location::{Location, Origin};
 
@@ -24,6 +27,7 @@ use crate::identity::TracePosition;
 use qsl_foundation::diagnostic::Category;
 use qsl_foundation::source::provenance::SourceRegion;
 pub use wire::CauseCodecError;
+pub(crate) use wire::{validate_state_element, RecordWire};
 
 /// The verdict a proved or replayed outcome settles to, taken from the
 /// QSpec outcome-to-verdict map fixed per ADR-013 O-16 category (QC-8). A
@@ -197,7 +201,10 @@ fn origin_bytes(origin: &Origin) -> usize {
         Origin::Body { function: name, .. }
         | Origin::Measure { function: name, .. }
         | Origin::TypeDeclaration { name }
-        | Origin::StateClause { clause: name, .. } => name.len(),
+        | Origin::StateClause { clause: name, .. }
+        | Origin::ModelOperationClause {
+            operation: name, ..
+        } => name.len(),
         Origin::Expression | Origin::ProtocolAttempt { .. } => 0,
     }
 }
@@ -376,6 +383,19 @@ impl SeparatingWitnessRecord {
         let observation = &self.value_path.observation;
         let subject = match &self.value_path.subject {
             ValuePathSubject::Object(object) => 64 + object.object().as_str().len(),
+            ValuePathSubject::Invocation {
+                invocation,
+                binding,
+            } => {
+                invocation.authority.len()
+                    + invocation.identity.len()
+                    + invocation.revision_namespace.len()
+                    + invocation.revision.len()
+                    + match binding {
+                        InvocationBinding::Parameter(parameter) => 1 + parameter.len(),
+                        InvocationBinding::Result | InvocationBinding::Receiver => 1,
+                    }
+            }
             ValuePathSubject::Built(occurrence) => {
                 32 + occurrence.origin().role().as_str().len() + 8
             }
@@ -388,6 +408,7 @@ impl SeparatingWitnessRecord {
                 ValuePathStep::Field(name) | ValuePathStep::Member(name) => name.len(),
                 ValuePathStep::Index(_) => 8,
                 ValuePathStep::OptionValue => 1,
+                ValuePathStep::Reference(object) => 64 + object.object().as_str().len(),
             })
             .sum();
         32 + self.quantifier.origin().role().as_str().len()
@@ -424,6 +445,8 @@ pub(crate) fn value_bytes(value: &Value) -> usize {
             }
             Value::Decimal(decimal) => digits(decimal.representation().coefficient()) + 4,
             Value::Float(_) => 8,
+            Value::Uuid(_) | Value::Timestamp(_) => 16,
+            Value::String(text) => text.len(),
             Value::Quantity(quantity) => {
                 let magnitude = quantity.magnitude();
                 digits(magnitude.numerator()) + digits(magnitude.denominator()) + 32
@@ -442,6 +465,11 @@ pub(crate) fn value_bytes(value: &Value) -> usize {
             Value::Option(option) => {
                 pending.extend(option.payload());
                 1
+            }
+            // The variant digest, then the payload values.
+            Value::Union(union) => {
+                pending.extend(union.payload());
+                32
             }
             Value::Composite(composite) => {
                 pending.extend(composite.slots().iter().filter_map(|slot| match slot {
@@ -469,6 +497,7 @@ pub struct WitnessArmResult {
     resolved_regions: Vec<SourceRegion>,
     charges: ScalarLimits,
     limit: Option<Incomplete>,
+    pre_call: Option<Box<SuppliedStop>>,
 }
 
 impl WitnessArmResult {
@@ -507,6 +536,7 @@ impl WitnessArmResult {
             resolved_regions,
             charges,
             limit: None,
+            pre_call: None,
         }
     }
 
@@ -531,6 +561,7 @@ impl WitnessArmResult {
             resolved_regions,
             charges,
             limit: None,
+            pre_call: None,
         }
     }
 
@@ -546,6 +577,22 @@ impl WitnessArmResult {
     #[must_use]
     pub fn with_limit(mut self, limit: Incomplete) -> Self {
         self.limit = Some(limit);
+        self
+    }
+
+    /// The phase-marked pre-call limit that stopped the replay before any
+    /// call, when one did (FR-277): the conversion or admission phase, the
+    /// parameter, the actual event, the configured ceiling, the successful
+    /// spend and the denied amount, with no charge point.
+    pub fn pre_call_limit(&self) -> Option<&SuppliedStop> {
+        self.pre_call.as_deref()
+    }
+
+    /// This result carrying `stop` as the pre-call limit that stopped the
+    /// replay.
+    #[must_use]
+    pub fn with_pre_call(mut self, stop: Box<SuppliedStop>) -> Self {
+        self.pre_call = Some(stop);
         self
     }
 
@@ -597,6 +644,7 @@ pub struct InputArmResult {
     resolved_regions: Vec<SourceRegion>,
     charges: ScalarLimits,
     limit: Option<Incomplete>,
+    pre_call: Option<Box<SuppliedStop>>,
 }
 
 impl InputArmResult {
@@ -627,6 +675,7 @@ impl InputArmResult {
             resolved_regions,
             charges,
             limit: None,
+            pre_call: None,
         }
     }
 
@@ -646,6 +695,7 @@ impl InputArmResult {
             resolved_regions,
             charges,
             limit: None,
+            pre_call: None,
         }
     }
 
@@ -661,6 +711,22 @@ impl InputArmResult {
     #[must_use]
     pub fn with_limit(mut self, limit: Incomplete) -> Self {
         self.limit = Some(limit);
+        self
+    }
+
+    /// The phase-marked pre-call limit that stopped the replay before any
+    /// call, when one did (FR-277): the conversion or admission phase, the
+    /// parameter, the actual event, the configured ceiling, the successful
+    /// spend and the denied amount, with no charge point.
+    pub fn pre_call_limit(&self) -> Option<&SuppliedStop> {
+        self.pre_call.as_deref()
+    }
+
+    /// This result carrying `stop` as the pre-call limit that stopped the
+    /// replay.
+    #[must_use]
+    pub fn with_pre_call(mut self, stop: Box<SuppliedStop>) -> Self {
+        self.pre_call = Some(stop);
         self
     }
 
@@ -723,6 +789,25 @@ impl ReplayResult {
         }
     }
 
+    /// The phase-marked pre-call limit that stopped the replay before any
+    /// call, when one did (FR-277).
+    pub fn pre_call_limit(&self) -> Option<&SuppliedStop> {
+        match self {
+            Self::Witness(result) => result.pre_call_limit(),
+            Self::Input(result) => result.pre_call_limit(),
+        }
+    }
+
+    /// This result carrying `stop` as the pre-call limit that stopped the
+    /// replay.
+    #[must_use]
+    pub fn with_pre_call(self, stop: Box<SuppliedStop>) -> Self {
+        match self {
+            Self::Witness(result) => Self::Witness(result.with_pre_call(stop)),
+            Self::Input(result) => Self::Input(result.with_pre_call(stop)),
+        }
+    }
+
     /// The category the result carries.
     pub fn category(&self) -> Category {
         match self {
@@ -763,19 +848,32 @@ fn common_measured_bytes(resolved_regions: &[SourceRegion]) -> usize {
 
 /// [`read_bounded`]'s own measurement of `result`'s encoded size
 /// (FR-072-AC-5): every variable-length member's own byte length -- the
-/// nested FR-351 record's value-path segments among them -- never a
-/// caller-declared number a result could understate to launder oversized
-/// content past the bound (B3).
-fn measured_encoded_bytes(result: &ReplayResult) -> usize {
-    match result {
+/// nested FR-351 record's value-path segments and an incomplete record's
+/// arbitrary-precision `next_charge` among them -- never a caller-declared
+/// number a result could understate to launder oversized content past the
+/// bound (B3).
+pub(crate) fn measured_encoded_bytes(result: &ReplayResult) -> usize {
+    let arm_bytes = match result {
         ReplayResult::Witness(arm) => {
             common_measured_bytes(arm.resolved_regions())
                 + arm
                     .record()
                     .map_or(0, SeparatingWitnessRecord::measured_bytes)
+                + arm
+                    .disagreement()
+                    .map_or(0, DisagreementCause::measured_bytes)
         }
-        ReplayResult::Input(arm) => common_measured_bytes(arm.resolved_regions()),
-    }
+        ReplayResult::Input(arm) => {
+            common_measured_bytes(arm.resolved_regions())
+                + arm
+                    .disagreement()
+                    .map_or(0, DisagreementCause::measured_bytes)
+        }
+    };
+    arm_bytes
+        + result
+            .limit()
+            .map_or(0, |limit| limit.next_charge.to_string().len())
 }
 
 /// [`ReplayResult`]'s bound-checked reader (FR-072-AC-5): refuses an
@@ -822,6 +920,12 @@ mod tests {
             work_units: 100,
             result_units: 10,
         }
+    }
+
+    #[test]
+    fn native_string_result_size_uses_utf8_bytes() {
+        assert_eq!(value_bytes(&Value::String("Aλ雪".to_owned())), 6);
+        assert_eq!(value_bytes(&Value::String(String::new())), 0);
     }
 
     fn record(value_path: Vec<&str>) -> SeparatingWitnessRecord {
@@ -950,6 +1054,75 @@ mod tests {
     #[test]
     fn common_measured_bytes_counts_each_source_member() {
         assert_eq!(common_measured_bytes(&regions()), 13);
+    }
+
+    /// A disagreement's retained failure text is part of the replay result
+    /// whose reader limit is checked.
+    #[trace("TC-191", "FR-072-AC-5")]
+    #[test]
+    fn bounded_replay_counts_disagreement_evidence() {
+        let verdict = Verdict::from_category(Category::Violation);
+        let replay = ReplayResult::Witness(WitnessArmResult::settle(
+            verdict,
+            verdict,
+            Category::Violation,
+            Some(EvaluatedValue::Boolean(false)),
+            WitnessCheck::Disagrees {
+                given: None,
+                derived: None,
+                failure: WitnessFailure::Separation {
+                    step: SeparationStep::Body,
+                    reason: SeparationReason::Refused(SeparationRefusal {
+                        code: "invalid_runtime_input".to_owned(),
+                        cause: "x".repeat(DEFAULT_INPUT_BYTES + 1),
+                        fields: BTreeMap::new(),
+                    }),
+                },
+            },
+            Vec::new(),
+            charges(),
+        ));
+        assert!(read_bounded(replay, ReplayLimits::default()).is_err());
+    }
+
+    fn limit_with_next_charge(digits: &str) -> Incomplete {
+        Incomplete {
+            limit_kind: quire_exact::LimitKind::WorkUnits,
+            limit: 1,
+            consumed: 1,
+            next_charge: digits.parse().unwrap(),
+            charge_point: quire_exact::ChargePoint::TextInputBytes,
+        }
+    }
+
+    /// Both replay arms measure the mathematical integer retained in their
+    /// optional incomplete record, including the exact one-byte boundary.
+    #[trace("TC-191", "FR-072-AC-5")]
+    #[test]
+    fn bounded_replay_counts_next_charge_on_both_arms() {
+        for arm in ["witness", "input"] {
+            let make = |digits| match arm {
+                "witness" => ReplayResult::Witness(
+                    WitnessArmResult::settle_range_violation(None, Vec::new(), charges())
+                        .with_limit(limit_with_next_charge(digits)),
+                ),
+                "input" => ReplayResult::Input(
+                    InputArmResult::settle_range_violation(None, Vec::new(), charges())
+                        .with_limit(limit_with_next_charge(digits)),
+                ),
+                _ => unreachable!(),
+            };
+            let limits = ReplayLimits::default().with_input_bytes(1);
+            assert!(read_bounded(make("9"), limits).is_ok(), "{arm}");
+            assert_eq!(
+                read_bounded(make("99"), limits),
+                Err(BoundExceeded {
+                    bound: 1,
+                    actual: 2
+                }),
+                "{arm}"
+            );
+        }
     }
 
     #[trace("TC-189", "FR-072-AC-1")]
@@ -1190,7 +1363,7 @@ mod tests {
         // FR-069: a proof-result envelope for a `Counterexample` Kani run.
         let proof_source = BackendProviderSource {
             backend_identity: "kani-backend-1".to_owned(),
-            items: vec![TerminalRecord::new(
+            items: vec![TerminalRecord::from_value(
                 qsl_foundation::RequestIndex::new(0),
                 TerminalValue::Refuted,
             )],

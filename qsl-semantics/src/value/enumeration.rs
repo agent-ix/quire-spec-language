@@ -41,6 +41,7 @@ use quire_semantic_value::semantic_node::{
 
 const DECLARATION_VERSION: &str = "quire.enum-declaration-node/v1";
 const MEMBER_VERSION: &str = "quire.enum-member-node/v1";
+const UNION_MEMBER_VERSION: &str = "quire.union-member-node/v1";
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -74,6 +75,13 @@ struct CanonicalDeclaration<'a> {
 struct CanonicalMember<'a> {
     case: &'a str,
     declaration_node_id: CanonicalNodeId,
+    version: &'static str,
+}
+
+#[derive(Serialize, FixedShape)]
+struct CanonicalUnionMember<'a> {
+    declaration_node_id: CanonicalNodeId,
+    member: &'a str,
     version: &'static str,
 }
 
@@ -365,9 +373,9 @@ impl AdmittedEnumDeclaration {
 }
 
 /// The byte limit a variant id's preimage encodes under: none. The preimage
-/// is one validated case identifier and a 32-byte digest, so it is bounded by
-/// the case name the check stage already bounded, and no setting could
-/// raise a bound here.
+/// is one case name (an identifier for a source enum, any non-empty name for a
+/// model variant type) and a 32-byte digest, so it is bounded by the case name
+/// admission already bounded, and no setting could raise a bound here.
 const VARIANT_ID_LIMITS: IdentityLimits = IdentityLimits {
     input_bytes: u64::MAX,
 };
@@ -392,10 +400,35 @@ pub fn mint_variant_id(declaration: NodeKey, case: &str) -> VariantId {
         VARIANT_ID_LIMITS,
     )
     .expect(
-        "a declaration NodeKey and a validated case identifier are always \
-         representable as canonical JSON",
+        "a declaration NodeKey and a case name are always representable as \
+         canonical JSON under an unbounded input limit",
     );
     VariantId::from_digest(digest)
+}
+
+/// The digest of QSpec FR-441's union-member preimage
+/// `{version: quire.union-member-node/v1, declaration_node_id, member}` of
+/// `member` of the union whose declaration node id is `declaration`.
+pub(crate) fn union_member_digest(declaration: NodeKey, member: &str) -> [u8; 32] {
+    preimage_digest(
+        &CanonicalUnionMember {
+            declaration_node_id: declaration.into(),
+            member,
+            version: UNION_MEMBER_VERSION,
+        },
+        VARIANT_ID_LIMITS,
+    )
+    .expect(
+        "a declaration NodeKey and a member name are always representable as \
+         canonical JSON under an unbounded input limit",
+    )
+}
+
+/// The `VariantId` of a union member: its member `key`'s bytes retyped with
+/// no fresh computation, as [`mint_variant_id`] retypes an enum member's key.
+/// `key` is minted by `check` (`mint_union_member_key`).
+pub fn mint_union_variant_id(key: NodeKey) -> VariantId {
+    VariantId::from_digest(*key.as_bytes())
 }
 
 /// The RFC 8785 bytes of the `quire.enum-member-node/v1` preimage of member

@@ -7,9 +7,9 @@
 //! declaration's first significant token selects its dispatch entry
 //! (FR-091, refining FR-067's "root construct's leading token"). The `Value`
 //! family owns the `function`, `type`, `record`, `tuple`, `enum`, `ordered`,
-//! `predicate`, `dimension` and `unit` entries; every
-//! other leading token has none and refuses the whole unit with
-//! [`FormsCause::NoDispatchEntry`]. The families' own productions are in
+//! `predicate`, `dimension` and `unit` entries; `SumCase` owns `union`
+//! (FR-313), and `ProtocolClause` owns its state and protocol entries.
+//! A token with no entry refuses with [`FormsCause::NoDispatchEntry`]. The families' own productions are in
 //! their own modules (`value` for `Value`); this module holds no grammar.
 //!
 //! The mechanism itself — refusal on a recovering CST, span-only/no-identity
@@ -24,6 +24,7 @@ use qsl_foundation::selection::SourceSelections;
 use qsl_foundation::{Code, Span};
 
 use super::protocol_clause;
+use super::sum_case;
 use super::syntax::DeclarationForm;
 use super::value;
 
@@ -135,6 +136,8 @@ impl ParsedUnit {
 /// (TC-167) over CSTs the real grammar cannot produce.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LeadingTokenKind {
+    /// `union`: the `SumCase` declaration form (FR-313).
+    Union,
     /// `function`: the `Value` function form.
     Function,
     /// `type`: the `Value` alias form.
@@ -163,6 +166,8 @@ pub enum LeadingTokenKind {
     /// `post`: the `ProtocolClause` state clause form, kind
     /// `Postcondition` (FR-102).
     Post,
+    /// `body`: the `ProtocolClause` operation-body form (FR-102).
+    Body,
     /// `protocol`: the `ProtocolClause` protocol declaration form, holding
     /// its scoped anchors (FR-112, ADR-012 §12.2).
     Protocol,
@@ -355,6 +360,7 @@ fn dispatch(
     construct: Construct<'_>,
 ) -> Result<DeclarationForm, FormsRefusal> {
     match kind {
+        LeadingTokenKind::Union => sum_case::union_declaration(construct),
         LeadingTokenKind::Function => value::function(construct),
         LeadingTokenKind::Type => value::alias(construct),
         LeadingTokenKind::Record => value::record(construct),
@@ -366,6 +372,7 @@ fn dispatch(
         LeadingTokenKind::Invariant => protocol_clause::state_clause(construct),
         LeadingTokenKind::Pre => protocol_clause::state_clause(construct),
         LeadingTokenKind::Post => protocol_clause::state_clause(construct),
+        LeadingTokenKind::Body => protocol_clause::operation_body(construct),
         LeadingTokenKind::Protocol => protocol_clause::protocol_declaration(construct),
         #[cfg(test)]
         LeadingTokenKind::TestProbe => test_support::stub_production(construct),
@@ -389,6 +396,7 @@ fn from_spelling(spelling: &[u8]) -> Option<LeadingTokenKind> {
         return Some(LeadingTokenKind::TestProbe);
     }
     match spelling {
+        b"union" => Some(LeadingTokenKind::Union),
         b"function" => Some(LeadingTokenKind::Function),
         b"type" => Some(LeadingTokenKind::Type),
         b"record" => Some(LeadingTokenKind::Record),
@@ -401,6 +409,7 @@ fn from_spelling(spelling: &[u8]) -> Option<LeadingTokenKind> {
         b"invariant" => Some(LeadingTokenKind::Invariant),
         b"pre" => Some(LeadingTokenKind::Pre),
         b"post" => Some(LeadingTokenKind::Post),
+        b"body" => Some(LeadingTokenKind::Body),
         b"protocol" => Some(LeadingTokenKind::Protocol),
         _ => None,
     }

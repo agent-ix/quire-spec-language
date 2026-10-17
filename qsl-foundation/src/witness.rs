@@ -21,20 +21,39 @@ pub struct ObservationIdentity {
     pub revision: String,
 }
 
+/// One binding of a declared invocation that can root a runtime value path.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum InvocationBinding {
+    /// A named parameter binding, preserving its exact declared spelling.
+    Parameter(String),
+    /// The invocation's result binding.
+    Result,
+    /// The receiver binding `self`, for a context with no object identity.
+    Receiver,
+}
+
 /// QSpec FR-207's root subject, for the subjects a state clause's domain
 /// collection can have.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum ValuePathSubject {
     /// A declared object identity (QSpec FR-204): a collection stored in a
     /// member of that object.
     Object(ObjectReference),
+    /// A binding of one declared invocation. The receiver form is used for
+    /// state-machine contexts, which have no declared object identity.
+    Invocation {
+        /// The invocation document's authority-qualified identity.
+        invocation: ObservationIdentity,
+        /// The binding within that invocation.
+        binding: InvocationBinding,
+    },
     /// A built collection: the occurrence key of the expression that builds
     /// the collection inside the evaluated claim (QSpec FR-207-AC-9).
     Built(OccurrenceKey),
 }
 
 /// QSpec FR-207's traversal steps a state clause's domain path uses.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum ValuePathStep {
     /// A declared field of a record, by its exact spelling.
     Field(String),
@@ -44,11 +63,14 @@ pub enum ValuePathStep {
     Member(String),
     /// The element at this zero-based position of a collection.
     Index(u64),
+    /// The object a reference value refers to, by its declared object
+    /// identity (QSpec FR-207's object-reference selection).
+    Reference(ObjectReference),
 }
 
 /// QSpec FR-207's runtime value path: a root (the observation and the
 /// subject) and an ordered sequence of traversal steps.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct RuntimeValuePath {
     /// The observation the value is read under.
     pub observation: ObservationIdentity,

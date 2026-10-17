@@ -153,6 +153,26 @@ automaton states and the depth reached.
 
 ### Property automaton
 
+- The translation SHALL construct canonical structural states by
+  [FR-338](FR-338-check-an-en-1-closure-certificate.md)'s closed state
+  algebra and encode them as its `AutomatonStateKey` octets. This is the
+  normative basis for the translator's public state identity, including
+  TP-4 states used by the component checker. A graph's local numbering
+  SHALL NOT substitute for it. The letter update SHALL occur on every
+  protocol position; interval distance SHALL advance only on ADR-027
+  PB-3 counted steps (terminal stutter included). FR-338 defines upper
+  distance-region closure and IV-2 open-upper until/release prefix debt.
+  For protocol future intervals it SHALL also perform FR-338's
+  checker-owned non-progress acceptance construction; first-phase closure
+  alone SHALL NOT certify a pending finite eventuality on an admitted
+  zero-counted lasso. This derived verification obligation preserves the
+  checked source form and its actual fairness set. A violation uses the
+  existing replayed lasso evidence; a Closure proof requires the core
+  acceptance check in addition to bad-prefix closure. FR-338's typed
+  Stopped result is propagated through FR-127 as Incomplete with the
+  actual limit/value/setting or cancellation source; it is never converted
+  to an accepted closure or CertificateRejected.
+
 - For a `BoundedMltl` (TP-2) clause the engine SHALL build a deterministic
   finite monitor over positions, for activation `on origin` and for
   activation `on each` (ADR-018 TP-2).
@@ -187,7 +207,9 @@ automaton states and the depth reached.
 
 - The product SHALL be a `TransitionSystem` whose state is (model state,
   automaton state) and whose key is (FR-101 state key, automaton state
-  index). Its initial states SHALL be each subject initial state paired with
+  index), where the index is storage local to that explored graph and
+  the corresponding property key is FR-338's complete canonical structural
+  state. Its initial states SHALL be each subject initial state paired with
   each automaton state in the automaton's set of successors of its initial
   state on position 0; a deterministic monitor has one, a generalized Büchi
   automaton may have several (ADR-018 §6's `(0, 0, q0)` and `(0, 0, q1)`).

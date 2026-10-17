@@ -1674,7 +1674,7 @@ fn not_simulated_catalog_code_and_fields_cover_every_variant() {
     );
 
     let fault = InternalFault::new("S3", "test-fixture-invariant");
-    let extent_fault = NotSimulated::Extent(ClassifyFailure::Fault(fault));
+    let extent_fault = NotSimulated::Extent(ClassifyFailure::Fault(fault.clone()));
     assert_eq!(extent_fault.catalog_code(), Some(fault.catalog_code()));
     assert_eq!(extent_fault.catalog_fields(), None);
 

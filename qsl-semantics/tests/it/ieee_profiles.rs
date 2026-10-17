@@ -19,9 +19,9 @@ use qsl_semantics::value::{CatalogRole, DefinitionLock, DefinitionReference};
 use quire_exact::RationalDomain;
 use quire_exact::{
     compare_ieee, convert_ieee_width, evaluate_ieee, exact_to_ieee, ieee_intrinsic_identities,
-    ieee_to_exact, Decimal, DecimalType, ExactScalar, IeeeComparison, IeeeExact, IeeeExactLoss,
-    IeeeExactTarget, IeeeFlag, IeeeFlags, IeeeOperand, IeeeOperation, IeeeResult, IeeeValue,
-    IeeeWidth, IllTyped, IllTypedCause, Rational, RoundingMode, IEEE_DEFINITION,
+    ieee_to_exact, Decimal, ExactScalar, IeeeComparison, IeeeExact, IeeeExactLoss, IeeeFlag,
+    IeeeFlags, IeeeOperand, IeeeOperation, IeeeResult, IeeeValue, IeeeWidth, IllTyped,
+    IllTypedCause, Rational, RoundingMode, IEEE_DEFINITION,
 };
 use quire_exact::{
     ChargePoint, Incomplete, InjectedDenial, Integer, IntegerInterval, LimitKind, Meter, Outcome,
@@ -121,9 +121,10 @@ fn every_finite_ieee() -> RationalDomain {
 }
 
 fn to_rational(value: IeeeValue, domain: &RationalDomain, meter: &mut Meter) -> Outcome<IeeeExact> {
-    ieee_to_exact(value, IeeeExactTarget::Rational(domain), meter)
-        .expect("a Rational[..] target is well-typed")
+    ieee_to_exact(value, domain, meter)
 }
+
+use crate::admitted_charge_points as admitted_points;
 
 fn ratio(numerator: i64, denominator: i64) -> Rational {
     Rational::new(Integer::from(numerator), Integer::from(denominator)).unwrap()
@@ -273,7 +274,7 @@ fn f06_cross_width_comparison_is_ill_typed_until_an_explicit_conversion() {
             compare_ieee(comparison, narrow, wide, &mut meter),
             Err(ill_typed)
         );
-        assert!(meter.admitted_charges().is_empty());
+        assert!(admitted_points(&meter).as_slice().is_empty());
     }
     let mut meter = Meter::new(UNLIMITED);
     assert_eq!(
@@ -284,7 +285,7 @@ fn f06_cross_width_comparison_is_ill_typed_until_an_explicit_conversion() {
         ),
         Err(ill_typed)
     );
-    assert!(meter.admitted_charges().is_empty());
+    assert!(admitted_points(&meter).as_slice().is_empty());
 
     let converted = done(convert_ieee_width(
         narrow,
@@ -563,7 +564,7 @@ fn f17_f18_classified_paths_charge_only_operands_and_retention() {
     };
     let mut meter = Meter::new(F17);
     assert_eq!(nan_equal(&mut meter), Outcome::Completed(false));
-    assert_eq!(meter.admitted_charges(), CLASSIFIED_CHARGES);
+    assert_eq!(admitted_points(&meter).as_slice(), CLASSIFIED_CHARGES);
     assert_eq!(meter.consumed(LimitKind::IntegerBits), 32);
     assert_eq!(meter.consumed(LimitKind::ValueOccurrences), 2);
     assert_eq!(meter.consumed(LimitKind::WorkUnits), 2);
@@ -593,7 +594,7 @@ fn f17_f18_classified_paths_charge_only_operands_and_retention() {
         bits_flags(eval_with(invalid, RoundingMode::NearestEven, &mut meter)),
         (0x7fc0_0000, flags(&[IeeeFlag::Invalid]))
     );
-    assert_eq!(meter.admitted_charges(), CLASSIFIED_CHARGES);
+    assert_eq!(admitted_points(&meter).as_slice(), CLASSIFIED_CHARGES);
     let mut denied = Meter::new(F17).with_injected_denial(InjectedDenial {
         point: ChargePoint::IeeeResultRetain,
         occurrence: NonZeroU64::MIN,
@@ -631,7 +632,7 @@ fn f19_irrational_square_root_charges_the_fixed_width_allowance() {
         bits_flags(eval_with(root, RoundingMode::NearestEven, &mut meter)),
         (0x3fb5_04f3, flags(&[IeeeFlag::Inexact]))
     );
-    assert_eq!(meter.admitted_charges(), FINITE_CHARGES);
+    assert_eq!(admitted_points(&meter).as_slice(), FINITE_CHARGES);
     let consumed: Vec<_> = LimitKind::ALL.map(|kind| meter.consumed(kind)).to_vec();
     assert_eq!(consumed, [32, 0, 0, 0, 0, 0, 0, 1, 4, 1]);
     for (index, point) in FINITE_CHARGES.into_iter().enumerate() {
@@ -657,7 +658,7 @@ fn f10_binary64_limit_tuple_succeeds_and_its_final_charge_denial_is_incomplete()
         bits_flags(eval_with(f10, RoundingMode::NearestEven, &mut meter)),
         (0x3ff0_0000_0000_0000, flags(&[IeeeFlag::Inexact]))
     );
-    assert_eq!(meter.admitted_charges(), FINITE_CHARGES);
+    assert_eq!(admitted_points(&meter).as_slice(), FINITE_CHARGES);
     let consumed: Vec<_> = LimitKind::ALL.map(|kind| meter.consumed(kind)).to_vec();
     assert_eq!(consumed, [64, 0, 0, 0, 0, 0, 0, 2, 4, 1]);
 
@@ -965,7 +966,7 @@ fn explicit_width_and_exact_conversions_report_loss_or_refuse() {
                 }
                 other => panic!("{bits:#x}: {other:?}"),
             };
-            assert_eq!(meter.admitted_charges(), TO_EXACT_CHARGES);
+            assert_eq!(admitted_points(&meter).as_slice(), TO_EXACT_CHARGES);
             // The exact-intermediate is sized analytically as the result's
             // `maxparts`; consumption records the largest charge.
             assert_eq!(
@@ -989,7 +990,7 @@ fn explicit_width_and_exact_conversions_report_loss_or_refuse() {
                 (back.value().bits(), back.flags()),
                 (expected, IeeeFlags::EMPTY)
             );
-            assert_eq!(meter.admitted_charges(), FINITE_CHARGES);
+            assert_eq!(admitted_points(&meter).as_slice(), FINITE_CHARGES);
             for (index, point) in FINITE_CHARGES.into_iter().enumerate() {
                 assert_denied(
                     exact_to_ieee(exact.value(), width, even, &mut injected(point)),
@@ -1517,7 +1518,7 @@ fn check_vector(spec: Spec, operation: OOp, operands: &[u64], mode: RoundingMode
         }
         (expected, outcome) => panic!("{context}: expected {expected:?}, got {outcome:?}"),
     };
-    assert_eq!(meter.admitted_charges(), charges, "{context}");
+    assert_eq!(admitted_points(&meter).as_slice(), charges, "{context}");
     if deny {
         for (index, point) in charges.iter().enumerate() {
             let mut denied = injected(*point);
@@ -1688,7 +1689,7 @@ fn a_largest_scale_decimal_source_is_sized_without_materializing_its_power() {
             ChargePoint::IeeeOperands
         ))
     );
-    assert!(meter.admitted_charges().is_empty());
+    assert!(admitted_points(&meter).as_slice().is_empty());
 }
 
 #[trace("QSpec-TC-193", "QSpec-FR-148-AC-8")]
@@ -1707,21 +1708,12 @@ fn f20_cross_width_comparisons_refuse_ill_typed_before_any_charge() {
                 cause: IllTypedCause::DistinctIeeeWidths
             })
         );
-        assert!(meter.admitted_charges().is_empty());
+        assert!(admitted_points(&meter).as_slice().is_empty());
         assert!(LimitKind::ALL.iter().all(|kind| meter.consumed(*kind) == 0));
     }
 
     let one = Integer::from(1_i64);
     let wide = f64v(0x3ff0_0000_0000_0000);
-    let decimal = DecimalType::new(
-        Integer::from(0_i64),
-        Integer::from(10_i64),
-        0,
-        0,
-        RoundingMode::NearestEven,
-    )
-    .unwrap();
-    let bit = IntegerInterval::new(Integer::from(0_i64), Integer::from(1_i64)).unwrap();
     for (attempt, cause) in [
         (
             evaluate_ieee(
@@ -1754,33 +1746,6 @@ fn f20_cross_width_comparisons_refuse_ill_typed_before_any_charge() {
             .map(|_| ()),
             IllTypedCause::IeeeWithExactOperand,
         ),
-        (
-            ieee_to_exact(
-                f32v(0x3f80_0000),
-                IeeeExactTarget::Decimal(&decimal),
-                &mut Meter::new(limits(0, 0, 0, 0)),
-            )
-            .map(|_| ()),
-            IllTypedCause::IeeeToNonRationalExact,
-        ),
-        (
-            ieee_to_exact(
-                f32v(0x3f80_0000),
-                IeeeExactTarget::BoundedInteger(&bit),
-                &mut Meter::new(limits(0, 0, 0, 0)),
-            )
-            .map(|_| ()),
-            IllTypedCause::IeeeToNonRationalExact,
-        ),
-        (
-            ieee_to_exact(
-                f32v(0x3f80_0000),
-                IeeeExactTarget::Integer,
-                &mut Meter::new(limits(0, 0, 0, 0)),
-            )
-            .map(|_| ()),
-            IllTypedCause::IeeeToNonRationalExact,
-        ),
     ] {
         assert_eq!(attempt, Err(IllTyped { cause }));
     }
@@ -1805,7 +1770,7 @@ fn f21_zero_operands_take_all_four_finite_charges() {
             bits_flags(eval_with(operation, even, &mut meter)),
             (expected, IeeeFlags::EMPTY)
         );
-        assert_eq!(meter.admitted_charges(), FINITE_CHARGES);
+        assert_eq!(admitted_points(&meter).as_slice(), FINITE_CHARGES);
         assert_eq!(
             eval_with(operation, even, &mut Meter::new(limits(32, 2, 3, 1))),
             Outcome::Incomplete(incomplete(
@@ -1831,7 +1796,7 @@ fn f22_strict_exact_refuses_after_round_and_before_retention() {
             would_be: flags(&[IeeeFlag::Inexact])
         })
     );
-    assert_eq!(meter.admitted_charges(), &FINITE_CHARGES[..3]);
+    assert_eq!(admitted_points(&meter).as_slice(), &FINITE_CHARGES[..3]);
     assert_eq!(
         eval_with(
             f09,
@@ -1897,7 +1862,7 @@ fn f24_conversions_charge_at_their_stated_widths_and_positions() {
         )),
         (0x3ff0_0000_0000_0000, IeeeFlags::EMPTY)
     );
-    assert_eq!(meter.admitted_charges(), FINITE_CHARGES);
+    assert_eq!(admitted_points(&meter).as_slice(), FINITE_CHARGES);
     assert_eq!(
         convert_ieee_width(
             f32v(0x3f80_0000),
@@ -1935,7 +1900,7 @@ fn f24_conversions_charge_at_their_stated_widths_and_positions() {
         bits_flags(exact_to_ieee(&third, IeeeWidth::Binary32, even, &mut meter)),
         (0x3eaa_aaab, flags(&[IeeeFlag::Inexact]))
     );
-    assert_eq!(meter.admitted_charges(), FINITE_CHARGES);
+    assert_eq!(admitted_points(&meter).as_slice(), FINITE_CHARGES);
     assert_eq!(
         exact_to_ieee(
             &third,
@@ -1959,14 +1924,17 @@ fn f24_conversions_charge_at_their_stated_widths_and_positions() {
         .completed()
         .unwrap();
     assert_eq!(half.value(), &ratio(1, 2));
-    assert_eq!(meter.admitted_charges(), TO_EXACT_CHARGES);
+    assert_eq!(admitted_points(&meter).as_slice(), TO_EXACT_CHARGES);
     assert_eq!(half.value().max_part_bits(), 2);
     let mut meter = Meter::new(limits(32, 1, 2, 1));
     assert_eq!(
         to_rational(f32v(0x7fc0_0000), &unit_halves, &mut meter),
         Outcome::Undefined(Undefined::IeeeNotFinite)
     );
-    assert_eq!(meter.admitted_charges(), [ChargePoint::IeeeOperands]);
+    assert_eq!(
+        admitted_points(&meter).as_slice(),
+        [ChargePoint::IeeeOperands]
+    );
 }
 
 #[trace("QSpec-TC-193", "QSpec-FR-148-AC-9")]
@@ -2000,7 +1968,7 @@ fn f25_nan_width_conversion_keeps_sign_and_payload_or_refuses() {
         let result = done(convert_ieee_width(source, target, even, &mut meter));
         assert_eq!((result.value().bits(), result.flags()), (expected, raised));
         assert_eq!(result.value().width(), target);
-        assert_eq!(meter.admitted_charges(), CLASSIFIED_CHARGES);
+        assert_eq!(admitted_points(&meter).as_slice(), CLASSIFIED_CHARGES);
     }
 
     let wide_payload = f64v(0x7ff8_0000_0040_0000);
@@ -2009,7 +1977,10 @@ fn f25_nan_width_conversion_keeps_sign_and_payload_or_refuses() {
         convert_ieee_width(wide_payload, IeeeWidth::Binary32, even, &mut meter),
         Outcome::Refused(Refusal::IeeeNanPayloadNotRepresentable { .. })
     ));
-    assert_eq!(meter.admitted_charges(), [ChargePoint::IeeeOperands]);
+    assert_eq!(
+        admitted_points(&meter).as_slice(),
+        [ChargePoint::IeeeOperands]
+    );
     assert_eq!(
         convert_ieee_width(
             wide_payload,
@@ -2046,7 +2017,10 @@ fn f25_nan_width_conversion_keeps_sign_and_payload_or_refuses() {
         ),
         Outcome::Refused(Refusal::IeeeNanPayloadNotRepresentable { .. })
     ));
-    assert_eq!(meter.admitted_charges(), [ChargePoint::IeeeOperands]);
+    assert_eq!(
+        admitted_points(&meter).as_slice(),
+        [ChargePoint::IeeeOperands]
+    );
 }
 
 #[trace("QSpec-TC-193", "QSpec-FR-148-AC-8", "QSpec-FR-148-AC-9")]
@@ -2063,7 +2037,7 @@ fn f26_zero_signs_survive_width_conversion_sums_and_differences() {
         )),
         (0x8000_0000_0000_0000, IeeeFlags::EMPTY)
     );
-    assert_eq!(meter.admitted_charges(), FINITE_CHARGES);
+    assert_eq!(admitted_points(&meter).as_slice(), FINITE_CHARGES);
     assert_eq!(
         convert_ieee_width(
             f32v(0x8000_0000),
@@ -2159,7 +2133,7 @@ fn f27_ieee_to_rational_sizes_maxparts_and_admits_membership_before_retention() 
         tiny.value(),
         &Rational::new(Integer::from(1_i64), big(&smallest)).unwrap()
     );
-    assert_eq!(meter.admitted_charges(), TO_EXACT_CHARGES);
+    assert_eq!(admitted_points(&meter).as_slice(), TO_EXACT_CHARGES);
     assert_eq!(
         to_rational(
             f64v(0x0000_0000_0000_0001),
@@ -2182,7 +2156,7 @@ fn f27_ieee_to_rational_sizes_maxparts_and_admits_membership_before_retention() 
         .unwrap();
     assert_eq!(zero.value(), &ratio(0, 1));
     assert_eq!(zero.loss(), Some(IeeeExactLoss::NegativeZeroSign));
-    assert_eq!(meter.admitted_charges(), TO_EXACT_CHARGES);
+    assert_eq!(admitted_points(&meter).as_slice(), TO_EXACT_CHARGES);
     assert_eq!(
         to_rational(
             f32v(0x8000_0000),
@@ -2204,7 +2178,10 @@ fn f27_ieee_to_rational_sizes_maxparts_and_admits_membership_before_retention() 
         to_rational(f32v(0x7f80_0000), &unit_halves, &mut meter),
         Outcome::Undefined(Undefined::IeeeNotFinite)
     );
-    assert_eq!(meter.admitted_charges(), [ChargePoint::IeeeOperands]);
+    assert_eq!(
+        admitted_points(&meter).as_slice(),
+        [ChargePoint::IeeeOperands]
+    );
     assert_eq!(
         to_rational(
             f32v(0x7f80_0000),
@@ -2228,7 +2205,7 @@ fn f27_ieee_to_rational_sizes_maxparts_and_admits_membership_before_retention() 
     assert!(
         matches!(&refusal, Refusal::IeeeRationalOutOfDomain { target } if **target == integers)
     );
-    assert_eq!(meter.admitted_charges(), &TO_EXACT_CHARGES[..2]);
+    assert_eq!(admitted_points(&meter).as_slice(), &TO_EXACT_CHARGES[..2]);
     assert_eq!(refusal.code(), Some("ieee_rational_out_of_domain"));
     assert_eq!(
         to_rational(
@@ -2261,7 +2238,7 @@ fn f28_decimal_source_is_sized_by_its_retained_representation() {
         )),
         (0x3f80_0000, IeeeFlags::EMPTY)
     );
-    assert_eq!(meter.admitted_charges(), FINITE_CHARGES);
+    assert_eq!(admitted_points(&meter).as_slice(), FINITE_CHARGES);
     assert_eq!(
         exact_to_ieee(
             &decimal,
@@ -2319,7 +2296,7 @@ fn f30_square_root_of_negative_zero_is_negative_zero() {
         bits_flags(eval_with(root, even, &mut meter)),
         (0x8000_0000, IeeeFlags::EMPTY)
     );
-    assert_eq!(meter.admitted_charges(), FINITE_CHARGES);
+    assert_eq!(admitted_points(&meter).as_slice(), FINITE_CHARGES);
     assert_eq!(
         eval_with(root, even, &mut Meter::new(limits(32, 1, 3, 1))),
         Outcome::Incomplete(incomplete(
@@ -2354,7 +2331,7 @@ fn f31_narrowing_conversion_rounds_overflows_and_underflows_once() {
         bits_flags(narrow(0xfff0_0000_0000_0000, even, &mut meter)),
         (0xff80_0000, IeeeFlags::EMPTY)
     );
-    assert_eq!(meter.admitted_charges(), CLASSIFIED_CHARGES);
+    assert_eq!(admitted_points(&meter).as_slice(), CLASSIFIED_CHARGES);
     assert_eq!(
         narrow(
             0xfff0_0000_0000_0000,
@@ -2371,7 +2348,7 @@ fn f31_narrowing_conversion_rounds_overflows_and_underflows_once() {
         bits_flags(narrow(tenth, even, &mut meter)),
         (0x3dcc_cccd, inexact)
     );
-    assert_eq!(meter.admitted_charges(), FINITE_CHARGES);
+    assert_eq!(admitted_points(&meter).as_slice(), FINITE_CHARGES);
     let mut meter = Meter::new(limits(64, 1, 3, 1));
     assert_eq!(
         narrow(tenth, RoundingMode::Exact, &mut meter),
@@ -2380,7 +2357,7 @@ fn f31_narrowing_conversion_rounds_overflows_and_underflows_once() {
             would_be: inexact,
         })
     );
-    assert_eq!(meter.admitted_charges(), &FINITE_CHARGES[..3]);
+    assert_eq!(admitted_points(&meter).as_slice(), &FINITE_CHARGES[..3]);
     assert_eq!(
         narrow(
             tenth,

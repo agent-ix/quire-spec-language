@@ -25,10 +25,17 @@ declares, with FR-027's edition reader. This requirement owns the `0-draft`
 route, which also takes a source declaring no edition. A `1-draft` program runs a named function through the spine under
 [FR-100](FR-100-run-a-named-function-through-the-spine.md), which owns that
 route's request members (`call`, `libraries`), outcome document
-(`spine-run-result/1`, the `quire-spec` CLI's current output, retired when
-the driver's verbs land; the outcome document is FR-286's `quire-outcome/1`)
+(`spine-run-result/1` for the `quire-spec` CLI; FR-286 owns the driver's
+`quire-outcome/1`)
 and exit statuses. The members, outcome and exit
 contract below apply to `0-draft` programs.
+
+The code applies fixed 1 MiB, 64-file and
+8 MiB ceilings; they become the configurable `request_bytes` and
+`dependent_bytes` limits in Behavior (FR-026-AC-4).
+
+The `0-draft` request and result identities carry `revision_namespace` and
+`revision` (QSpec STD-150).
 
 ## Inputs
 
@@ -108,11 +115,11 @@ including incomplete native, model, package and runtime input failures.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-026-AC-1 | A file-driven aggregate example returns exact true/false outcomes, package/source/input identities and measured work using the real compiler/runtime. | Test |
-| FR-026-AC-2 | Recorded pre/post operation files execute with immutable captures; illegal frame changes refuse without Boolean truth. | Test |
-| FR-026-AC-3 | Stale source/input selections, malformed requests, unknown formats and unavailable files report their actual stage and catalogued code with available provenance; emitted outcomes conform to the native result schema. | Test |
-| FR-026-AC-4 | A request one byte over `request_bytes`, and dependent files one byte over `dependent_bytes`, each refuse naming the limit, its configured value and its CLI option; the same requests with each limit raised to their size run; caller-lowered runtime limits stop with incomplete; a fresh default request succeeds. | Test |
-| FR-026-AC-5 | Existing parse/format behavior remains, command-specific arity errors precede I/O, and relative and absolute file operands resolve independently of the working directory. | Test |
+| FR-026-AC-1 | A file-driven aggregate example returns exact true/false outcomes, package/source/input identities and measured work using the real compiler/runtime. | Test (TC-103) |
+| FR-026-AC-2 | Recorded pre/post operation files execute with immutable captures; illegal frame changes refuse without Boolean truth. | Test (TC-103) |
+| FR-026-AC-3 | Stale source/input selections, malformed requests, unknown formats and unavailable files report their actual stage and catalogued code with available provenance; emitted outcomes conform to the native result schema. | Test (TC-104) |
+| FR-026-AC-4 | A request one byte over `request_bytes`, and dependent files one byte over `dependent_bytes`, each refuse naming the limit, its configured value and its CLI option; the same requests with each limit raised to their size run; caller-lowered runtime limits stop with incomplete; a fresh default request succeeds. | Test (TC-104) |
+| FR-026-AC-5 | Existing parse/format behavior remains, command-specific arity errors precede I/O, and relative and absolute file operands resolve independently of the working directory. | Test (TC-103) |
 | FR-026-AC-6 | A native-run/1 request whose program source, model source and snapshot selection each name `authority` `agent-ix` and their own `identity` runs, and its result renders each with those two labels and its digest, and no other identity member. The same request without the program source's `authority`, and again without the snapshot selection's `identity`, refuses at the request stage with `invalid-request` and exits 20. A present but blank `authority` refuses with `invalid_source_identity`, cause `blank-label`, field `label` `authority` (FR-001). | Test (TC-430) |
 
 ## Dependencies
@@ -120,11 +127,3 @@ including incomplete native, model, package and runtime input failures.
 - [FR-025](FR-025-compile-rule-model-source.md): public model source frontend.
 - [FR-024](FR-024-read-native-runtime-artifacts.md): selected runtime artifact intake.
 - [FR-023](FR-023-run-native-packages.md): native execution and retained outcomes.
-
-## Status
-
-Remaining work (implementation): the code applies fixed 1 MiB, 64-file and
-8 MiB ceilings; they become the configurable `request_bytes` and
-`dependent_bytes` limits above (FR-026-AC-4).
-
-FR-026-AC-6 is implemented for the four-label identity (ADR-013 §7 slice S-4b) and backed by TC-430. Remaining work (implementation, Linear QSL-381): the request and result identities drop `revision_namespace` and `revision` (QSpec STD-150). Its `invalid_source_identity` code, `blank-label` cause and `label` field (FR-001) are backed; a run output's span for this region-less refusal is the native `Diagnostic`'s byte 0, the debt FR-001 records in "Where an S0 refusal is located".

@@ -15,18 +15,26 @@
 
 use std::collections::BTreeMap;
 
-use quire_exact::{EffectiveId, ObjectReference};
+use quire_exact::{EffectiveId, ObjectReference, ValueType};
 
-use super::document::{find_declaration, raw_field, RawObject, RawPopulation};
-use super::helpers::object_reference;
-use super::{
-    fault, refuse, view_of, AdmissionFailure, AdmissionRecord, DocumentRef, FrameChange,
-    FrameVerdict, FrameWitness, ModelView, SelectedObject, SnapshotValue,
+use super::document::{
+    find_declaration, raw_field, read_context, record_field_type, record_keys, RawObject,
+    RawPopulation, SnapshotDocument,
 };
+use super::helpers::object_reference;
+use super::relationships::{first_link_change, LinkFinding, RawEntry};
+use super::{
+    caller_budget_record, fault, refuse, view_of, AdmissionFailure, AdmissionRecord, DocumentRef,
+    FrameChange, FrameVerdict, FrameWitness, LinkDifference, ModelView, SelectedObject,
+    SnapshotValue, INSUFFICIENT_NEXT_CHARGE,
+};
+use crate::model::accounting::{Charge, ChargePoint, Incomplete, Meter, ModelNormalizationLimits};
 use crate::model::domain_package::OperationEffect;
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
-use crate::model::population::{decide_frame, FrameDecision, FrameObject};
+use crate::model::population::{
+    decide_frame, FrameCharge, FrameDecision, FrameObject, FrameStop as DecisionStop,
+};
 use qsl_foundation::diagnostic::{Code, InternalFault};
 use quire_semantic_value::declaration::TypeEnvironment;
 
@@ -39,10 +47,50 @@ pub(super) struct FrameContext<'a> {
     pub(super) types: &'a TypeEnvironment,
     /// The view the clause's context type and operation resolve in.
     pub(super) context_view: &'a ModelView,
-    /// The conformance walk's `ancestor_steps` ceiling.
-    pub(super) ancestor_steps: u64,
+    /// The model limits: the conformance walk's `ancestor_steps` ceiling and
+    /// the `work_units` the frame's own charges are counted against.
+    pub(super) limits: ModelNormalizationLimits,
     /// The operation's authored frame.
     pub(super) effect: &'a OperationEffect,
+}
+
+/// Who the invocation's receiver and reference arguments are (FR-013): what
+/// the frame's receiver-scoped and argument-scoped entries ground in.
+pub(super) struct FrameBinding<'a> {
+    /// The invocation's `self`: none for an operation of a state machine,
+    /// whose receiver is its context.
+    pub(super) receiver: Option<&'a SelectedObject>,
+    /// Each reference parameter's bound object, by parameter name.
+    pub(super) arguments: Vec<(String, &'a SelectedObject)>,
+}
+
+impl FrameBinding<'_> {
+    /// The receiver's identity when it is in population `name`.
+    fn receiver_in(&self, name: &str) -> Option<&str> {
+        self.receiver
+            .filter(|receiver| receiver.population == name)
+            .map(|receiver| receiver.key.as_str())
+    }
+
+    /// `(parameter, object)` for each argument bound to an object of
+    /// population `name`.
+    fn arguments_in(&self, name: &str) -> Vec<(String, String)> {
+        self.arguments
+            .iter()
+            .filter(|(_, object)| object.population == name)
+            .map(|(parameter, object)| (parameter.clone(), object.key.clone()))
+            .collect()
+    }
+}
+
+/// One snapshot of the invocation as check 11 reads it: its populations and
+/// the relationship entries it lists.
+#[derive(Clone, Copy)]
+pub(super) struct FrameSnapshot<'a> {
+    /// The snapshot's populations, in document order.
+    pub(super) populations: &'a [RawPopulation],
+    /// The snapshot's `relationships` entries, in document order.
+    pub(super) relationships: &'a [RawEntry],
 }
 
 /// What this module keeps about one wire object beside its
@@ -56,7 +104,7 @@ struct WireFacts<'a> {
 /// One population's objects on one side, in document order:
 /// `frame[i]` and `facts[i]` describe the same object.
 struct WireSide<'a> {
-    frame: Vec<FrameObject<'a, &'a SnapshotValue>>,
+    frame: Vec<FrameObject<'a, TypedRaw<'a>>>,
     facts: Vec<WireFacts<'a>>,
 }
 
@@ -75,7 +123,7 @@ impl WireSide<'_> {
 fn wire_object<'a>(
     context: &FrameContext<'a>,
     object: &'a RawObject,
-) -> Result<(FrameObject<'a, &'a SnapshotValue>, WireFacts<'a>), AdmissionFailure> {
+) -> Result<(FrameObject<'a, TypedRaw<'a>>, WireFacts<'a>), AdmissionFailure> {
     let (view, type_identity) = find_declaration(context.views, object.type_identity.as_str())
         .ok_or_else(|| fault("frame-object-type-unresolved"))?;
     let effective_type = *view
@@ -83,6 +131,33 @@ fn wire_object<'a>(
         .type_identities()
         .get(&type_identity)
         .ok_or_else(|| fault("frame-object-type-has-no-effective-id"))?;
+    let (fields, names) = wire_fields(context, effective_type, &object.fields)?;
+    Ok((
+        FrameObject {
+            object: object.key.as_str(),
+            type_identity,
+            fields,
+        },
+        WireFacts {
+            effective_type,
+            names,
+        },
+    ))
+}
+
+/// The typed field values of an instance of `effective_type` whose wire
+/// values are `values`, keyed by each field's declaration, and each field's
+/// wire name by the same key.
+type WireFields<'a> = (
+    BTreeMap<DeclarationKey, TypedRaw<'a>>,
+    BTreeMap<DeclarationKey, &'a str>,
+);
+
+fn wire_fields<'a>(
+    context: &FrameContext<'a>,
+    effective_type: EffectiveId,
+    values: &'a [(String, SnapshotValue)],
+) -> Result<WireFields<'a>, AdmissionFailure> {
     let attributes = context
         .types
         .attributes(effective_type)
@@ -98,22 +173,17 @@ fn wire_object<'a>(
             package: owner.package.clone(),
             node: format!("{}/{name}", owner.node),
         };
-        let value =
-            raw_field(&object.fields, name).ok_or_else(|| fault("frame-declared-field-missing"))?;
-        fields.insert(key.clone(), value);
+        let value = raw_field(values, name).ok_or_else(|| fault("frame-declared-field-missing"))?;
+        fields.insert(
+            key.clone(),
+            TypedRaw {
+                value,
+                declared: attribute.field().value_type(),
+            },
+        );
         names.insert(key, name);
     }
-    Ok((
-        FrameObject {
-            object: object.key.as_str(),
-            type_identity,
-            fields,
-        },
-        WireFacts {
-            effective_type,
-            names,
-        },
-    ))
+    Ok((fields, names))
 }
 
 /// Population `name`'s objects in `populations`, in document order; empty
@@ -178,6 +248,10 @@ enum FrameStop<'a> {
     Admission(AdmissionFailure),
     /// [`decide_frame`]'s first finding.
     Decision(Box<Decision<'a>>),
+    /// A `frame.write` or `frame.redefines-link` charge the meter denied.
+    Denied(Incomplete),
+    /// Step 5's first changed relationship instance.
+    Link(Box<LinkFinding>),
 }
 
 /// [`decide_frame`]'s first finding, in `population`, with the pre side it
@@ -205,11 +279,13 @@ type AdmittedDelta = (Vec<ObjectReference>, Vec<ObjectReference>);
 /// from one side is an empty document there. Stops at the first finding.
 fn run<'a>(
     context: &FrameContext<'a>,
-    pre_populations: &'a [RawPopulation],
-    post_populations: &'a [RawPopulation],
+    binding: &FrameBinding<'_>,
+    pre: FrameSnapshot<'a>,
+    post: FrameSnapshot<'a>,
     declared_created: &'a [SelectedObject],
     declared_deleted: &'a [SelectedObject],
 ) -> Result<AdmittedDelta, FrameStop<'a>> {
+    let (pre_populations, post_populations) = (pre.populations, post.populations);
     let mut order: Vec<&str> = Vec::new();
     let names = pre_populations
         .iter()
@@ -235,6 +311,8 @@ fn run<'a>(
             .collect()
     };
 
+    let record_keys = record_keys(context.views);
+    let mut meter = Meter::new(context.limits);
     let mut created = Vec::new();
     let mut deleted = Vec::new();
     for name in order {
@@ -242,24 +320,42 @@ fn run<'a>(
         let post = wire_side(context, post_populations, name)?;
         let population_created = keys_in(declared_created, name);
         let population_deleted = keys_in(declared_deleted, name);
+        let arguments = binding.arguments_in(name);
         let frame = FrameDecision {
             index: context.context_view.view.model_index(),
-            ancestor_steps: context.ancestor_steps,
+            ancestor_steps: context.limits.ancestor_steps,
             effect: context.effect,
             declared_created: &population_created,
             declared_deleted: &population_deleted,
+            receiver: binding.receiver_in(name),
+            arguments: &arguments,
         };
-        let delta = match decide_frame(&frame, &pre.frame, &post.frame, |_, left, right| {
-            raw_values_equal(left.copied(), right.copied())
-        }) {
+        let delta = match decide_frame(
+            &frame,
+            &pre.frame,
+            &post.frame,
+            |_, left, right| {
+                typed_values_equal(left, right, &|identity, field| {
+                    record_field_type(context.types, &record_keys, identity, field)
+                })
+            },
+            &mut |charge| {
+                let point = match charge {
+                    FrameCharge::Write => ChargePoint::FrameWrite,
+                    FrameCharge::RedefinesLink => ChargePoint::FrameRedefinesLink,
+                };
+                meter.charge(Charge::new(point))
+            },
+        ) {
             Ok(delta) => delta,
-            Err(refusal) => {
+            Err(DecisionStop::Refused(refusal)) => {
                 return Err(FrameStop::Decision(Box::new(Decision {
                     refusal,
                     population: name,
                     pre,
                 })))
             }
+            Err(DecisionStop::Denied(incomplete)) => return Err(FrameStop::Denied(incomplete)),
         };
 
         for (keys, side, into) in [
@@ -274,6 +370,17 @@ fn run<'a>(
             }
         }
     }
+    // Step 5, once, after every population: the relationship instances.
+    if let Some(link) = first_link_change(
+        context.views,
+        context.types,
+        (pre.populations, pre.relationships),
+        (post.populations, post.relationships),
+        context.effect,
+        declared_deleted,
+    )? {
+        return Err(FrameStop::Link(Box::new(link)));
+    }
     Ok((created, deleted))
 }
 
@@ -282,15 +389,17 @@ fn run<'a>(
 /// test (FR-115 Description). Returns the admitted `(created, deleted)`.
 pub(super) fn enforce(
     context: &FrameContext<'_>,
-    pre_populations: &[RawPopulation],
-    post_populations: &[RawPopulation],
+    binding: &FrameBinding<'_>,
+    pre: FrameSnapshot<'_>,
+    post: FrameSnapshot<'_>,
     declared_created: &[SelectedObject],
     declared_deleted: &[SelectedObject],
 ) -> Result<AdmittedDelta, AdmissionFailure> {
     run(
         context,
-        pre_populations,
-        post_populations,
+        binding,
+        pre,
+        post,
         declared_created,
         declared_deleted,
     )
@@ -301,7 +410,113 @@ pub(super) fn enforce(
             decision.population,
             &decision.pre,
         )),
+        FrameStop::Denied(incomplete) => refuse(budget_record(&incomplete)),
+        FrameStop::Link(link) => refuse(
+            AdmissionRecord::new(Code::FrameViolation, "unauthorized-change")
+                .with("population", link.source.population.clone())
+                .with("relationship", link.relationship.node.clone())
+                .with("source", link.source.key.clone())
+                .with("target", link.target.key.clone())
+                .with("difference", link_difference_name(link.difference)),
+        ),
     })
+}
+
+/// FR-106 check 11.6: the pre and the post context of a state machine's
+/// clause (the read contexts of check 9, of `machine` or a specialization of
+/// it) compared field by field in the machine's exposed effective field
+/// order, as admitted typed values under the equality of each field's
+/// declared type, as an object's fields are. A retype refuses first, naming
+/// both machines; a changed field the operation's frame does not grant in
+/// `modifies` refuses naming the machine and the field. A context needs no
+/// `creates` or `deletes` grant and has no entry in `created` or `deleted`.
+pub(super) fn enforce_contexts<'a>(
+    context: &FrameContext<'a>,
+    machine: EffectiveId,
+    pre: &'a SnapshotDocument,
+    post: &'a SnapshotDocument,
+) -> Result<(), AdmissionFailure> {
+    const RECEIVER: &str = "context";
+    let side = |snapshot: &'a SnapshotDocument| -> Result<_, AdmissionFailure> {
+        let (raw, effective) = read_context(context.views, context.types, snapshot, machine)
+            .ok_or_else(|| fault("frame-read-context-missing"))?;
+        let type_identity = view_of(context.views, effective)
+            .and_then(|view| view.declaration_key(effective))
+            .cloned()
+            .ok_or_else(|| fault("frame-context-machine-unresolved"))?;
+        let (fields, names) = wire_fields(context, effective, &raw.fields)?;
+        Ok((
+            raw,
+            names,
+            FrameObject {
+                object: RECEIVER,
+                type_identity,
+                fields,
+            },
+        ))
+    };
+    let (pre_raw, pre_names, pre_object) = side(pre)?;
+    let (_, _, post_object) = side(post)?;
+    let record_keys = record_keys(context.views);
+    let frame = FrameDecision {
+        index: context.context_view.view.model_index(),
+        ancestor_steps: context.limits.ancestor_steps,
+        effect: context.effect,
+        declared_created: &[],
+        declared_deleted: &[],
+        receiver: Some(RECEIVER),
+        arguments: &[],
+    };
+    let mut meter = Meter::new(context.limits);
+    match decide_frame(
+        &frame,
+        &[pre_object],
+        &[post_object],
+        |_, left, right| {
+            typed_values_equal(left, right, &|identity, field| {
+                record_field_type(context.types, &record_keys, identity, field)
+            })
+        },
+        &mut |charge| {
+            let point = match charge {
+                FrameCharge::Write => ChargePoint::FrameWrite,
+                FrameCharge::RedefinesLink => ChargePoint::FrameRedefinesLink,
+            };
+            meter.charge(Charge::new(point))
+        },
+    ) {
+        Ok(_) => Ok(()),
+        Err(DecisionStop::Denied(incomplete)) => Err(refuse(budget_record(&incomplete))),
+        Err(DecisionStop::Refused(refusal)) => {
+            let record = AdmissionRecord::new(refusal.code, refusal.cause.as_str())
+                .with("machine", pre_raw.machine.clone());
+            Err(refuse(match &refusal.cause {
+                ModelRefusalCause::FrameTypeChanged {
+                    pre_type,
+                    post_type,
+                    ..
+                } => record
+                    .with("pre_machine", pre_type.node.clone())
+                    .with("post_machine", post_type.node.clone()),
+                ModelRefusalCause::FrameFieldWriteOutsideGrant { field, .. } => record.with(
+                    "field",
+                    pre_names
+                        .get(field)
+                        .copied()
+                        .unwrap_or(field.node.as_str())
+                        .to_owned(),
+                ),
+                _ => record,
+            }))
+        }
+    }
+}
+
+fn link_difference_name(difference: LinkDifference) -> &'static str {
+    match difference {
+        LinkDifference::Added => "added",
+        LinkDifference::Removed => "removed",
+    }
 }
 
 /// The three documents a Frame run's witness names.
@@ -318,16 +533,18 @@ pub(super) struct WitnessDocuments<'a> {
 /// frame cannot be evaluated over that input.
 pub(super) fn verdict(
     context: &FrameContext<'_>,
+    binding: &FrameBinding<'_>,
     documents: &WitnessDocuments<'_>,
-    pre_populations: &[RawPopulation],
-    post_populations: &[RawPopulation],
+    pre: FrameSnapshot<'_>,
+    post: FrameSnapshot<'_>,
     declared_created: &[SelectedObject],
     declared_deleted: &[SelectedObject],
 ) -> Result<FrameVerdict, InternalFault> {
     let stop = match run(
         context,
-        pre_populations,
-        post_populations,
+        binding,
+        pre,
+        post,
         declared_created,
         declared_deleted,
     ) {
@@ -345,6 +562,40 @@ pub(super) fn verdict(
             ))
         }
         FrameStop::Admission(AdmissionFailure::Fault(fault)) => return Err(fault),
+        // The first denied charge ends the check with the caller's budget
+        // record and no frame verdict.
+        FrameStop::Denied(incomplete) => {
+            return Ok(FrameVerdict::Refused(budget_record(&incomplete)))
+        }
+        FrameStop::Link(link) => {
+            let LinkFinding {
+                relationship,
+                difference,
+                source,
+                target,
+            } = *link;
+            return Ok(FrameVerdict::Violation(Box::new(FrameWitness {
+                code: Code::FrameViolation,
+                cause: "unauthorized-change",
+                invocation: documents.invocation.clone(),
+                pre: documents.pre.clone(),
+                post: documents.post.clone(),
+                population: source.population.clone(),
+                change: FrameChange::Link {
+                    relationship,
+                    difference,
+                    source,
+                    target,
+                    modifies: context
+                        .effect
+                        .modifies
+                        .iter()
+                        .chain(&context.effect.receiver_modifies)
+                        .cloned()
+                        .collect(),
+                },
+            })));
+        }
         FrameStop::Decision(decision) => *decision,
     };
     let Decision {
@@ -366,7 +617,15 @@ pub(super) fn verdict(
             FrameChange::FieldWrite {
                 object: object.clone(),
                 field: field_name(&pre, object, field).to_owned(),
-                modifies: effect.modifies.clone(),
+                // Every `modifies` entry the write was checked against,
+                // whichever its scope: the witness names the field grants,
+                // and the receiver is named by the invocation it carries.
+                modifies: effect
+                    .modifies
+                    .iter()
+                    .chain(&effect.receiver_modifies)
+                    .cloned()
+                    .collect(),
             }
         }
         ModelRefusalCause::FrameCreateOutsideGrant { object, type_name } => FrameChange::Created {
@@ -408,6 +667,32 @@ pub(super) fn verdict(
     })))
 }
 
-fn raw_values_equal(left: Option<&SnapshotValue>, right: Option<&SnapshotValue>) -> bool {
-    left == right
+/// `incomplete` as the admission record of the caller-budget refusal
+/// [`enforce`] raises for it.
+fn budget_record(incomplete: &Incomplete) -> AdmissionRecord {
+    caller_budget_record(&incomplete.denial(), INSUFFICIENT_NEXT_CHARGE)
+}
+
+/// A wire field value with the type its slot declares.
+struct TypedRaw<'a> {
+    value: &'a SnapshotValue,
+    declared: &'a ValueType,
+}
+
+/// Whether a field is unchanged (FR-106 check 11, FR-106-AC-40): each value
+/// compares by its declared type's own equality, so a Text compares by its
+/// retained sequence under its profile and every other type as written.
+fn typed_values_equal<'t>(
+    left: Option<&TypedRaw<'t>>,
+    right: Option<&TypedRaw<'t>>,
+    field_type: &dyn Fn(&str, &str) -> Option<&'t ValueType>,
+) -> bool {
+    match (left, right) {
+        (None, None) => true,
+        (Some(left), Some(right)) => {
+            left.value
+                .equals_by(right.value, Some(left.declared), field_type)
+        }
+        _ => false,
+    }
 }

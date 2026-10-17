@@ -9,17 +9,18 @@ use ix_trace_rs::trace;
 use qsl_forms::build_unit;
 use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound};
 use qsl_foundation::digest::{ByteDigest, WireNodeId};
-use qsl_foundation::SourceIdentity;
+use qsl_foundation::{BackendId, SourceIdentity};
 use qsl_package::CheckedPackage;
 use qsl_route::request::{
     items_from_requirements, ExtentClassification, RequestWriter, RequirementItem,
 };
 use qsl_route::{
-    BackendDescriptor, BackendId, Candidate, CandidateOutcome, ManifestDigest, Mode,
-    ProviderOrigin, Registry,
+    BackendDescriptor, Candidate, CandidateOutcome, ManifestDigest, Mode, ProviderOrigin, Registry,
 };
-use qsl_semantics::check::{Capability, CheckedGraph, PackageDeclarations};
-use quire_exact::{Integer, IntegerInterval, ValueType};
+use qsl_semantics::check::{
+    ApplicationTerm, BodyTerm, Capability, CheckedGraph, LeafTerm, MemberTerm, PackageDeclarations,
+};
+use quire_exact::{Integer, IntegerInterval, NodeKey, ValueType};
 use quire_semantic_value::checking::CheckingLimits;
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
@@ -31,14 +32,33 @@ const SQ: &str = "function sq using v(x: Int[0, 9]): Integer pure { (x + 1) * (x
 /// FR-062's RR-6.
 const BIG: &str = "function big using v(n: Integer): Integer pure { n + 1 }";
 
+/// TC-984's opposite-guard occurrences of one application node.
+const GUARDED: &str =
+    "function f using v(x: Int[0, 9], p: Boolean): Integer pure { if p then x + 1 else x + 1 }";
+
+/// TC-984's unguarded record.
+const UNGUARDED: &str = "function g using v(x: Int[0, 9]): Integer pure { x + 1 }";
+
+/// QSL-710's `inc` example: the `+` is narrowed to the declared result.
+const INC: &str = "function inc using v(a: Int[0, 9]): Int[0, 10] pure { a + 1 }";
+
 /// FR-062's RR-16.
 const TWO_CALLEES: &str = "function g using v(p: Int[0, 10]): Boolean pure { true }\n\
     function h using v(q: Int[0, 20]): Boolean pure { true }\n\
     function f using v(x: Int[0, 9]): Boolean pure { g(x + 1) and h(x + 1) }";
 
 /// `declarations` checked through S1, S2 and S3.
+/// Trace: FR-003-AC-9
 fn check(declarations: &str) -> CheckedGraph {
     let text = format!("{HEADER}{declarations}\n");
+    crate::support::front_end::emitted(
+        SourceIdentity::new("a", "u", "git", "1"),
+        "unit.native",
+        text.as_bytes(),
+        &BTreeMap::new(),
+        &qsl_replay::spine::DependencyInput::default(),
+    )
+    .expect("each checked request-builder fixture retains its formatted package identity");
     let parsed = qsl_cst::parse(
         SourceIdentity::new("a", "u", "git", "1"),
         "unit.native",
@@ -243,7 +263,7 @@ fn tc_449_a_package_with_no_records_gives_no_items() {
 /// TC-449 step 6 (FR-075-AC-8): RR-16's two `+` items at one node carry
 /// distinct occurrence keys and their own records' result bounds,
 /// `Int[0, 10]` then `Int[0, 20]` in key order.
-#[trace("TC-449", "FR-075-AC-8")]
+#[trace("TC-449", "FR-075-AC-8", "FR-075-AC-15")]
 #[test]
 fn tc_449_two_items_at_one_node_carry_their_own_result_bounds() {
     let package = package(TWO_CALLEES);
@@ -266,4 +286,104 @@ fn tc_449_two_items_at_one_node_carry_their_own_result_bounds() {
         .collect();
     assert_eq!([first.result_bound(), second.result_bound()], nodes[..]);
     assert_ne!(first.result_bound(), second.result_bound());
+    let contexts: Vec<_> = records
+        .values()
+        .map(|record| record.conversion_context().cloned())
+        .collect();
+    assert_eq!(contexts.len(), 2);
+    assert!(contexts.iter().all(Option::is_some));
+    assert_eq!(first.conversion_context(), contexts[0].as_ref());
+    assert_eq!(second.conversion_context(), contexts[1].as_ref());
+    assert_ne!(contexts[0], contexts[1]);
+}
+
+/// FR-062-AC-13: the `inc` example's request item carries the enclosing
+/// narrow's identity as its typed conversion context: a node other than the
+/// add, whose operation is the narrow and whose only operand is the add.
+#[trace("TC-449", "FR-075-AC-8", "FR-062-AC-13")]
+#[test]
+fn tc_449_inc_item_carries_its_enclosing_narrow_as_conversion_context() {
+    let package = package(INC);
+    let records = package.graph().requirements();
+    let (registry, _) = registry(Capability::ValueValidity);
+    let items = items_from_requirements(records, &registry, None);
+    let [item] = items.as_slice() else {
+        panic!("one item for the add: {items:#?}");
+    };
+    let context = item
+        .conversion_context()
+        .expect("the narrowed add carries a conversion context");
+    assert_ne!(context.node(), item.node());
+    let graph = package.graph().semantic_graph();
+    let narrow = graph
+        .node(NodeKey::from_digest(*context.node().as_bytes()))
+        .expect("the context names a graph node");
+    let BodyTerm::Application(ApplicationTerm {
+        operation,
+        arguments,
+        ..
+    }) = narrow.body()
+    else {
+        panic!("the context is an application: {narrow:#?}");
+    };
+    assert_eq!(operation.identity(), "quire.op.numeric.narrow");
+    let [MemberTerm::Leaf(LeafTerm::Reference { target })] = arguments.as_slice() else {
+        panic!("the narrow has the add as its one operand: {arguments:#?}");
+    };
+    assert_eq!(*target.0.as_bytes(), *item.node().as_bytes());
+}
+
+/// TC-984 / FR-075-AC-9: each request item preserves its record's canonical
+/// guard sequence, including opposite outcomes for the shared branch guard.
+#[trace("TC-984", "FR-075-AC-9")]
+#[test]
+fn tc_984_items_preserve_occurrence_path_conditions() {
+    let checked = package(GUARDED);
+    let records = checked.graph().requirements();
+    let (registry, _) = registry(Capability::ValueValidity);
+    let items = items_from_requirements(records, &registry, None);
+    let selected: Vec<_> = items
+        .iter()
+        .filter(|item| {
+            items
+                .iter()
+                .filter(|other| other.node() == item.node())
+                .count()
+                == 2
+        })
+        .collect();
+    let [first, second] = selected.as_slice() else {
+        panic!("two items at the shared `+` node: {items:#?}");
+    };
+    assert_eq!(first.node(), second.node());
+    assert_ne!(first.occurrence(), second.occurrence());
+    assert!(first.occurrence() < second.occurrence());
+
+    for item in [*first, *second] {
+        let record = &records[item.occurrence()];
+        assert_eq!(item.path_condition(), record.path_condition());
+        assert_eq!(item.path_condition().len(), 1);
+    }
+    let [then_guard] = first.path_condition() else {
+        panic!("then occurrence has one guard: {first:#?}");
+    };
+    let [else_guard] = second.path_condition() else {
+        panic!("else occurrence has one guard: {second:#?}");
+    };
+    assert_eq!(then_guard.occurrence(), else_guard.occurrence());
+    assert!(then_guard.holds());
+    assert!(!else_guard.holds());
+
+    let unguarded = package(UNGUARDED);
+    let records = unguarded.graph().requirements();
+    let items = items_from_requirements(records, &registry, None);
+    let [item] = items.as_slice() else {
+        panic!("one unguarded item: {items:#?}");
+    };
+    assert_eq!(
+        item.path_condition(),
+        records[item.occurrence()].path_condition()
+    );
+    assert!(item.path_condition().is_empty());
+    assert_eq!(item.conversion_context(), None);
 }

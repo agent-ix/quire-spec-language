@@ -68,8 +68,10 @@ domain bound (NFR-001).
   Lowering charges one unit for each node it builds and each composite a
   text-leaf walk enters. Keying a recursion group charges the group's key
   work. Each leaf a text-leaf walk appends charges its key bytes: the
-  length of each segment's key spelling (`field:<name>`, `position:<n>`,
-  `inner`) along its path, plus `recursion:<d>` for a recursion leaf.
+  length of each segment's key spelling (`field:<name>`, `member:<name>`,
+  `position:<n>`, `inner`) along its path, plus `recursion:<d>` for a
+  recursion leaf. Union entry is a composite charge under the same rule;
+  each member segment contributes its literal UTF-8 byte length.
 
 ## Default derivation
 

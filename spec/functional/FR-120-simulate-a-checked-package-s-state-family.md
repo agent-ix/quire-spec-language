@@ -231,11 +231,6 @@ pub struct StateObject {
     pub fields: BTreeMap<DeclarationKey, Value>,
 }
 
-pub struct StateDelta {
-    pub created: Vec<ObjectReference>,
-    pub deleted: Vec<ObjectReference>,
-}
-
 impl StateModel {
     pub fn new(
         model_selections: &[DomainPackageRef],
@@ -249,12 +244,6 @@ impl StateModel {
         selected: &DocumentRef,
         limits: ObservationLimits,
     ) -> Result<(ModelState, SelectedAnchor), AdmissionFailure>;
-    pub fn check_frame(
-        &self,
-        effect: &OperationEffect,
-        pre: &ModelState,
-        post: &ModelState,
-    ) -> Result<StateDelta, AdmissionFailure>;
     pub fn observation(
         &self,
         state: &ModelState,
@@ -263,18 +252,27 @@ impl StateModel {
 }
 ```
 
-- `check_frame` is FR-106 check 11 over two in-memory states. Per
-  population, in ascending population `DeclarationKey` order, it first
-  computes the delta from the two states: the created keys are the post
-  state's keys absent from the pre state, and the deleted keys the pre
-  state's keys absent from the post state. It then builds the population's
-  `FrameObject`s and calls `population::decide_frame`, the one frame
-  decision `enforce_frame` and FR-106's `observation::frame::enforce` also
-  call, passing those created and deleted keys as
-  `FrameDecision.declared_created` and `declared_deleted`. It returns the
-  computed delta, or check 11's first finding as `AdmissionFailure::Refused`
-  (`frame_violation`/`unauthorized-change` or `population_delta_mismatch`/
-  `delta-disagreement`). Its verdicts are the ones FR-115 reports.
+- **The frame decision.** `ModelSystem` decides whether a candidate stays
+  inside its operation's frame by FR-106 check 11 over two in-memory states,
+  with no `StateModel` method between: per population, in ascending
+  population `DeclarationKey` order, it computes the created keys (the post
+  state's keys absent from the pre state) and the deleted keys (the pre
+  state's keys absent from the post state), builds the population's pre and
+  post `FrameObject`s, and calls `population::decide_frame` (FR-154 "One
+  decision"), the one frame decision that `enforce_frame` and FR-106's
+  `observation::frame::enforce` also call. It passes those created and deleted
+  keys as `FrameDecision.declared_created` and `declared_deleted`, the
+  application's `OperationEffect`, the application's receiver as
+  `FrameDecision.receiver` when the receiver lies in that population, and
+  each reference argument of the application as a `(parameter name, object)`
+  pair in `FrameDecision.arguments` when the object lies in it, so that a
+  scoped `modifies` or `deletes` entry is decided as FR-154 states. The
+  step's frame delta is the union over populations of the returned
+  `FrameDelta`s (`created` and `deleted` identity sets). A refusal from
+  `decide_frame` is check 11's first finding
+  (`frame_violation`/`unauthorized-change`, or
+  `population_delta_mismatch`/`delta-disagreement`), and its verdicts are the
+  ones FR-115 reports.
 - `observation` builds FR-106's `Observation` for a state: `identity` is the
   given `DocumentRef`; `environment` is the `ObjectEnvironment` of every
   object with every field value, built by FR-106's builder; `populations`
@@ -289,7 +287,7 @@ impl StateModel {
   observation; for a precondition, `pre` is the state's observation and
   `post` is none (FR-107 reads `pre` only); for a postcondition, `pre` is
   the state's and `post` the candidate's observation, `created` and
-  `deleted` are `check_frame`'s delta; `self_object` is the receiver, or
+  `deleted` are the frame delta; `self_object` is the receiver, or
   the invariant's object; `parameters` are the arguments by declared name;
   `result` is the candidate result or none.
 
@@ -297,13 +295,20 @@ impl StateModel {
 
 For each object `r` of a state and each operation name of `r`'s effective
 view (FR-103, FR-081), the application's operation is the effective member
-that name selects for `r`'s most-specific type. Its arguments are `r`, then
-one value per declared parameter from the parameter's domain. The receiver
-is argument 0, as QSpec FR-151 makes it parameter 0.
+that name selects for `r`'s most-specific type. Its receiver is `r`, and its
+arguments are one value per declared parameter, in declaration order, from the
+parameter's domain. The receiver is not an argument.
 
 The transition identity is FR-181's
-`{"type":"transition","operation":"<qualified-name>","arguments":[<encoded>, ...]}`,
-and `<qualified-name>` is the operation's declaration identity text.
+`{"type":"transition","operation":"<qualified-name>","receiver":<encoded>,"arguments":[<encoded>, ...]}`,
+and `<qualified-name>` is the operation's declaration identity text. Written
+as bytes its keys are in JCS order: `arguments`, `operation`, `receiver`,
+`type`. `ModelTransition` is the typed form of that identity: the `operation` as its
+canonical text, a `receiver: Option<String>` and the `arguments` as a vector of
+canonical text. Each text is the value's canonical JCS text, as `operation` and
+each argument are. A model application always has a receiver; `receiver` is
+`None` only for an operation FR-181 admits with none, and `Some("null")` is
+refused.
 
 A value domain is: `Boolean`, `false` then `true`; `Int[lower, upper]`,
 every integer in the range; `Option<T>`, absent then each value of `T`;
@@ -333,9 +338,9 @@ intake.rs:1444`), so the applicable clauses are the selected member's own.
 The effective postcondition is the conjunction of the applicable `post`
 clauses, and `true` when none applies.
 
-A conjunction is evaluated through FR-107's `evaluate_clause`, each call
-with a fresh meter, over every applicable clause in ascending name order
-(UTF-8 bytes):
+A conjunction is evaluated through FR-107's `evaluate_clause_set`, over the
+applicable clauses of one kind, with a fresh meter for each clause and each
+clause in ascending name order (UTF-8 bytes):
 
 - An `Incomplete` result stops the expansion with `resource_exhausted`/
   `insufficient-next-charge` at once: the successor set is not known.
@@ -379,10 +384,10 @@ closed population state built from the state by:
 
 Every reference of a candidate names an object of the candidate.
 
-Each candidate goes through `StateModel::check_frame` with the state as
-`pre` and the candidate as `post`. A candidate is within the frame exactly
-when the check returns a delta, the case FR-115 reports as `success`, and
-that delta is the step's `created` and `deleted`. The construction yields
+Each candidate goes through the frame decision ("The frame decision" above)
+with the state as `pre` and the candidate as `post`. A candidate is within the
+frame exactly when `decide_frame` returns a delta for every population, the
+case FR-115 reports as `success`, and that delta is the step's `created` and `deleted`. The construction yields
 only such candidates, so a finding from the check stops the expansion with
 `runtime_invariant`/`established-invariant-broken`.
 
@@ -491,15 +496,15 @@ identity text of operation `op`.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-120-AC-1 | With operation `increment()` (frame `modifies value`) and no clause, `s0` has three successors, `v0`, `v1` and `v2`, all with transition identity `{"type":"transition","operation":"{\"digest_domain\":\"sha256-jcs\",\"node\":\"test/counters/Counter/increment\",\"package\":\"test/counters\"}","arguments":[<c1's reference>]}`; `label` and `next` keep their values in each. Adding `post Inc on Counters::Counter::increment { self.value = pre(self.value) + 1 }` leaves one successor, `v1`. With `pre CanInc … { self.value < 2 }` and no `post` clause, `v0` and `v1` each have the three successors and `v2` has no `increment` successor. | Test (TC-471) |
-| FR-120-AC-2 | With `setTo(n: Int[0, 2])` (frame `modifies value`, post `self.value = n`), `s0` has one successor per `n`, with arguments `[<c1>, {"type":"integer","value":"0"}]` to `…"2"}]`. With `c2` added to `s0`, each receiver gives its own identity. With `pre A { self.value >= 1 }` and `pre B { self.value <= 1 }` on `setTo`, both must hold: it is enabled at `v1` and not at `v0` or `v2`. | Test (TC-471) |
-| FR-120-AC-3 | With `spawn()` (frame `creates Counter`) and no clause, `s0` has 1 + 18 successors: `s0` itself, and `c2` created with each (`value`, `label`, `next`) in 3 × 2 × 3 (absent, `c1`, `c2`). With `remove()` (frame `deletes Counter`) over `c1` and `c2`, where `c1.next` names `c2`, each receiver's successors are the deletion sets {}, {`c1`} and {`c1`, `c2`}; deleting `c2` alone leaves `c1.next` dangling and is not a candidate. Each successor's delta is the one `StateModel::check_frame` returns. | Test (TC-471) |
+| FR-120-AC-1 | With operation `increment()` (frame `modifies value`) and no clause, `s0` has three successors, `v0`, `v1` and `v2`, all with transition identity, as JCS bytes, `{"arguments":[],"operation":"{\"digest_domain\":\"sha256-jcs\",\"node\":\"test/counters/Counter/increment\",\"package\":\"test/counters\"}","receiver":<c1's reference>,"type":"transition"}`; `label` and `next` keep their values in each. Adding `post Inc on Counters::Counter::increment { self.value = pre(self.value) + 1 }` leaves one successor, `v1`. With `pre CanInc … { self.value < 2 }` and no `post` clause, `v0` and `v1` each have the three successors and `v2` has no `increment` successor. | Test (TC-471) |
+| FR-120-AC-2 | With `setTo(n: Int[0, 2])` (frame `modifies value`, post `self.value = n`), `s0` has one successor per `n`, with `receiver` `<c1>` and arguments `[{"type":"integer","value":"0"}]` to `[{"type":"integer","value":"2"}]`. With `c2` added to `s0`, each receiver gives its own identity. With `pre A { self.value >= 1 }` and `pre B { self.value <= 1 }` on `setTo`, both must hold: it is enabled at `v1` and not at `v0` or `v2`. | Test (TC-471) |
+| FR-120-AC-3 | With `spawn()` (frame `creates Counter`) and no clause, `s0` has 1 + 18 successors: `s0` itself, and `c2` created with each (`value`, `label`, `next`) in 3 × 2 × 3 (absent, `c1`, `c2`). With `remove()` (frame `deletes Counter`) over `c1` and `c2`, where `c1.next` names `c2`, each receiver's successors are the deletion sets {}, {`c1`} and {`c1`, `c2`}; deleting `c2` alone leaves `c1.next` dangling and is not a candidate. Each successor's delta is the one the frame decision returns. | Test (TC-471) |
 | FR-120-AC-4 | `s0`'s state key has `semantic` equal to `{"type":"map","entries":[{"key":{"type":"text","value":"{\"digest_domain\":\"sha256-jcs\",\"node\":\"test/counters/counters\",\"package\":\"test/counters\"}"},"value":{"type":"map","entries":[{"key":{"type":"reference","universe":"<U>","object_type":"<E>","identity":"6331"},"value":{"type":"record","name":"{\"digest_domain\":\"sha256-jcs\",\"node\":\"test/counters/Counter\",\"package\":\"test/counters\"}","fields":[{"name":"value","value":{"type":"integer","value":"0"}},{"name":"label","value":{"type":"integer","value":"0"}},{"name":"next","value":{"type":"option","value":null}}]}}]}}]}`, where `<U>` and `<E>` are the universe and effective type of the `ObjectReference` that FR-106 admission gives `c1` in `s0`'s admitted `Observation` (`StateModel::admit_initial`, independent of the simulator's key encoding), each as 64 lowercase hex digits; `control`, `queues`, `roles`, `observations` and `bounds` are `{"type":"map","entries":[]}`. `s0` with `c1.label` 1 has a different key. | Test (TC-471) |
 | FR-120-AC-5 | With `increment`, `CanInc`, `Inc` and `invariant Small … at current { self.value < 2 }`, exploration is `Exhaustive` with 3 states, 2 transitions and depth 2, and `findings` holds exactly one entry: `v2`'s digest, depth 2, `InvariantViolated { Small, c1, {handler, <increment>} }`. Adding `reset()` (frame `modifies value`, post `self.value = 0`) makes the run `Exhaustive` with 3 states and 5 transitions, including `v2 → v0`: the violating state is expanded. `s0`'s findings, when any, carry anchor `{initialization, start}`. | Test (TC-472) |
 | FR-120-AC-6 | With `increment`, `Small`, no `pre` or `post` clause and a meter budget of zero, exploration is `Exhaustive` with 3 states, and each state has `InvariantUndetermined` for `Small` and `c1`, its evaluation `Incomplete` with `resource_exhausted`/`insufficient-next-charge`. With budget zero and `CanInc`, the run is `Outcome::Stopped` with cause `resource_exhausted`/`insufficient-next-charge`, frontier `[<s0>]`, category incomplete. With `max_candidates` 2 and `increment` with no clause, the run is `Stopped` with the same cause. | Test (TC-472) |
 | FR-120-AC-7 | `ModelSystem::new` refuses an initial snapshot with `observation` `pre` (`wrong_snapshot`/`wrong-observation`), one anchored `{handler, validate}` (`wrong_snapshot`/`wrong-anchor`), one whose anchor kind is `other` (`invalid_runtime_input`/`wrong-value-kind` with field `anchor`, refused by FR-106's document reader, `qsl-semantics/src/model/observation/document.rs:525-528`, before check 3), and one holding `c3` (`invalid_runtime_input`/`invalid-value`); a universe listing `c1` twice refuses `invalid_runtime_input`/`conflicting-identity`; a universe for a population the package does not declare refuses `invalid_runtime_input`/`wrong-role-mapping`; a universe population absent from the snapshot returns `Incomplete` with `incomplete_population`/`incomplete-scope`. With no universe for `counters`, or with an operation parameter typed `Integer`, `explore_model` returns `NotSimulated::RequiresBound`, and `sample_model` `ModelSampleError::NotSimulated(RequiresBound)`, naming that root's `WireNodeId` and expand no state. | Test (TC-472) |
 | FR-120-AC-8 | A `sample_model` trace (seed `424242`, trace `0`, `max_steps` 4) over the AC-5 package ends `NoSuccessors` at `v2`, records `Small`'s finding at step 2, and replays; the same trace with that finding removed refuses `ReplayError::FindingMismatch` at step 2. With budget zero and `CanInc`, the trace ends `StopReason::Stopped(resource_exhausted/insufficient-next-charge)` at step 0 and replays; replayed against the same package with the default budget it refuses `ReplayError::Stopped { step: 0, recorded: Some(…), replayed: None }`. Two runs with equal inputs give equal `Exploration`s and equal `ModelTrace`s. | Test (TC-472) |
-| FR-120-AC-9 | Over package `test/tallies` (object type `Tally` with `items: Sequence<Int[0, 2]>[1, 1]`, population `tallies`, operation `touch()` with an empty frame) and unit type `Tiny = Int[0, 1]`: from `t1` with `items` `[2]`, `pre Low { sum<Tiny>(x in self.items: x) = 0 }` makes `touch` not enabled and records `ContractUndetermined { <touch identity>, none, Low, Undefined(SumOutOfDomain) }`; adding `pre Never { false }` records no finding, whatever the two names; `post LowPost` with `Low`'s body records the finding with `candidate` = `t1`'s state-key digest and gives no successor. | Test (TC-472) |
+| FR-120-AC-9 | Over package `test/tallies` (object type `Tally` with `items: Sequence<Int[0, 2]>[1, 1]`, population `tallies`, operation `touch()` with an empty frame) with a query operation `ready(): Boolean` of `Tally` whose effective precondition is `false`: from `t1`, `pre Low { self.ready() }` makes `touch` not enabled and records `ContractUndetermined { <touch identity>, none, Low, the family result Undefined with reason precondition-false }`; adding `pre Never { false }` records no finding, whatever the two names; `post LowPost` with `Low`'s body records the finding with `candidate` = `t1`'s state-key digest and gives no successor. | Test (TC-472) |
 | FR-120-AC-10 | With `isZero(): Boolean` (empty frame, `post Z { result = (self.value = 0) }`), `v0` has one `isZero` successor, `v0`, whose step effect has result `{"type":"boolean","value":true}`, and `v1` has one, `v1`, with result `false`; the `isZero` result root is in `domains()`. | Test (TC-473) |
 | FR-120-AC-11 | For `increment` (post `Inc`), `spawn` and `remove` over `s0` and state `w` = {`c1` (`value` 0), `c2` (`value` 0)}: the step `increment` from `v0` has effect `created: []`, `deleted: []`, `changed: [{object: c1, field: value, pre: {"type":"integer","value":"0"}, post: {"type":"integer","value":"1"}}]`, result none; `spawn` from `s0` to `s0` plus `c2` (`value` 1, `label` 0, `next` absent) has `created: [<c2>]` and `changed: []`; `remove` with receiver `c1` from `w` to {`c2`} has `deleted: [<c1>]`. Exploring the AC-5 package twice, the second time in a child process started in an empty temporary directory, gives equal `Exploration`s, and `s0`'s key bytes are equal before and after exploring. | Test (TC-473) |
 | FR-120-AC-12 | A unit whose function body reads `self`, whose invariant reads `result`, whose invariant reads `pre(self.value)`, or whose function calls `reaches`, refuses at S3 with `missing_declaration`/`missing-name`, `wrong_snapshot`/`wrong-anchor`, `wrong_snapshot`/`forbidden-pre-read` or `ill_typed`/`operator-ineligible`, each at the source span of that form, and yields no `CheckedPackage` to simulate. | Test (TC-473) |
@@ -509,7 +514,7 @@ identity text of operation `op`.
 
 - QSpec FR-181, its exploration contract, typed canonical form and AC-4 to
   AC-6; QSpec FR-013 (frames, including its Behavior's `modifies`, `creates`
-  and `deletes` rules); QSpec FR-151 (the receiver as parameter 0, effective
+  and `deletes` rules); QSpec FR-151 (the receiver, effective
   pre- and postconditions, conformance); QSpec `state-contract.md` and
   `shared-grammar.md` (anchor operations are caller-side);
   `native-diagnostics.md`.
@@ -532,9 +537,3 @@ identity text of operation `op`.
   semantics FR-120 uses, through `population::decide_frame`.
 - The S4 `CheckedPackage` and FR-056's package input, which are the
   simulator's whole input.
-
-## Status
-
-Specified; not yet implemented. TC-471 to TC-473
-planned. FR-056's bound scalar reader, which every AC's fixture uses, is
-on main.

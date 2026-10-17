@@ -51,20 +51,12 @@ The command shall return exit 22 for exhausted budgets, exit 21 for an unsupport
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-029-AC-1 | Actual lower-command bytes match library lowering, and the IR reader accepts them with the package digest and every authored clause of the library projection, without runtime files. | Test |
-| FR-029-AC-2 | A later unsupported clause refuses the complete projection and exits 21 with empty stdout and original request/package/source/clause identity; location context distinguishes absent, located and invalid spans; a fresh valid retry succeeds. | Test |
-| FR-029-AC-3 | Wrong request format, runtime fields, stale source and intake limits retain existing error/exit behavior; lower arity errors precede I/O and exit 20; compile/run/parse/format remain usable. | Test |
+| FR-029-AC-1 | Actual lower-command bytes match library lowering, and the IR reader accepts them with the package digest and every authored clause of the library projection, without runtime files. | Test (TC-107) |
+| FR-029-AC-2 | A later unsupported clause refuses the complete projection and exits 21 with empty stdout and original request/package/source/clause identity; location context distinguishes absent, located and invalid spans; a fresh valid retry succeeds. | Test (TC-107) |
+| FR-029-AC-3 | Wrong request format, runtime fields, stale source and intake limits retain existing error/exit behavior; lower arity errors precede I/O and exit 20; compile/run/parse/format remain usable. | Test (TC-107) |
 | FR-029-AC-4 | A failure writing the exported projection bytes exits 30, [FR-301](ix://agent-ix/quire-specification/FR-301)'s code for tool failure. | Test |
 
 ## Dependencies
 
 - [FR-009](FR-009-lower-qualified-projections.md): admitted target and strict binding.
 - [FR-027](FR-027-export-compiled-native-package.md): source-only command contract.
-
-## Status
-
-FR-029-AC-3's edition-refusal clause is backed by
-`lower_refuses_a_complete_v1_program_as_unknown_edition`
-(`tests/it/compile_command.rs`, `#[trace("TC-107", "FR-029-AC-3")]`), which
-asserts `lower` refuses a `1-draft` program with `unknown_edition` the same
-way `compile` does.

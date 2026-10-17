@@ -38,8 +38,10 @@ fn required_kind(node: &Value) -> Option<&'static str> {
         Some("source")
     } else if matches!(
         (node["node_tag"].as_str(), node["semantic_form"].as_str()),
-        (Some("model"), Some("object_type" | "systems_interface"))
-            | (Some("relation"), Some("relationship"))
+        (
+            Some("model"),
+            Some("object_type" | "systems_interface" | "record_value_type" | "event_type")
+        ) | (Some("relation"), Some("relationship"))
             | (Some("function"), _)
     ) {
         Some("model")
@@ -125,7 +127,7 @@ fn owner_json(authority: &str, identity: &str) -> Value {
     json!({"kind": "source", "authority": authority, "identity": identity})
 }
 
-fn node_where<'w>(wire: &'w Value, tag: &str, form: &str) -> Vec<&'w Value> {
+pub(super) fn node_where<'w>(wire: &'w Value, tag: &str, form: &str) -> Vec<&'w Value> {
     nodes(wire)
         .iter()
         .filter(|node| node["node_tag"] == tag && node["semantic_form"] == form)
@@ -252,7 +254,8 @@ fn query(name: &str, owner: &str, redefines: Option<&str>) -> DomainPackageRecor
             multiplicity: one(),
         }),
         effect: OperationEffect::default(),
-        own_postcondition_clauses: Vec::new(),
+        requires: Vec::new(),
+        ensures: Vec::new(),
         has_body: true,
         redefines: redefines.map(model_key),
     })
@@ -410,7 +413,9 @@ fn model_declaration_nodes_and_clause_functions_carry_their_model_owner() {
             let digest = wire["lock"]["model_selections"][0]["digest"]
                 .as_str()
                 .unwrap();
-            evidence.insert_domain_package_document(digest, &document[..]);
+            evidence
+                .insert_domain_package_document(digest, &document[..])
+                .expect("a fresh evidence key");
             assert!(
                 matches!(read_with(emission, &evidence), Read::Verified { .. }),
                 "{root}: IR's v2 reader admits the package"

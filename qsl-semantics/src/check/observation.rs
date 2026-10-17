@@ -142,11 +142,12 @@ impl<'n> Walk<'n> {
                 self.results.push(self.binders.get(slot).copied().flatten());
                 Exit::Pass
             }
-            NodeKind::Attribute { reference, .. } => {
+            NodeKind::Attribute { reference, .. } | NodeKind::Navigate { reference, .. } => {
                 children.push(visit(*reference));
                 Exit::Attribute(node.location(), ambient)
             }
-            NodeKind::Reaches { source, target, .. } => {
+            NodeKind::Reaches { source, target, .. }
+            | NodeKind::ReachesEnd { source, target, .. } => {
                 children.extend([visit(*source), visit(*target)]);
                 Exit::Collapse {
                     count: 2,

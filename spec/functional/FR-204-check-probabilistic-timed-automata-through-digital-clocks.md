@@ -50,8 +50,11 @@ exact probability of the resulting chain instead.
 ## Outputs
 
 FR-196's `ProbProduct` over digital timed states, whose `ProductKey` adds an
-integer value per clock and, for a deadline event, the deadline clock; delay
-edges carry `action: None` and one unit of elapsed time. The results of
+integer value per clock and, for a deadline event, the deadline clock, plus
+FR-196's complete tail control. Each edge has the mandatory closed
+ProductAction choice. Delay/tail observation operation projections remain
+`action: None`; this projection cannot identify the policy choice. Delay
+choices carry one digital unit of elapsed time; IdleObserve carries zero. The results of
 FR-197 and FR-198 over it, and FR-203's unsupported causes
 `StrictClockConstraint{locus}`, `DelayDistribution{operation}`,
 `ZeroDelayCycle{states}`, `TimedFormShape` and ADR-026's `NotStochastic`.
@@ -84,7 +87,15 @@ FR-197 and FR-198 over it, and FR-203's unsupported causes
   invariant holds after it. A discrete move SHALL be ADR-026 TS-2's step with
   integer clocks.
 - Over every scheduler, each digital timed state's actions SHALL be its
-  admissible delay move and its enabled scheduled identities.
+  admissible UnitDelay and enabled scheduled identities in running mode.
+  A TS-5 quiescent running state additionally admits EnterIdleDelay: a
+  positive unit delay committing irreversibly to idle-delayed. In idle-ready
+  or idle-delayed, IdleDelay applies the actual delay guards/invariants,
+  advances one unit and yields idle-delayed. IdleObserve is enabled only in
+  idle-delayed, advances no clock/time, emits the current clock-valued
+  stutter letter and yields idle-ready. Idle mode has no operation/reset
+  action. Distinct literal action bodies and exact source modes are FR-196;
+  no fictitious ScheduledIdentity names these choices.
 - Under a workload, each racing identity SHALL draw its `discrete` delay
   conditioned on its window, the smallest draw winning with ties ordered by
   the workload's weights (ADR-026 SD-3); each race outcome SHALL be one
@@ -94,31 +105,47 @@ FR-197 and FR-198 over it, and FR-203's unsupported causes
   settle `Unsupported(NotStochastic)`.
 - A deadline event SHALL add one digital clock that no step resets, capped
   at `D + 1`. `expected elapsed` SHALL carry one unit of time as the reward
-  of each delay move.
+  of each delay move (1/scale in the model unit); IdleObserve has reward0.
+  Reach/elapsed target predicates are read on initial observation, resolved
+  discrete steps and IdleObserve, never pure delay. Deadline same-time
+  closure includes actual available IdleObserve at D, and crossing D
+  fails by elapsed time before a later success letter (FR-196).
 - EN-5 SHALL decompose the subgraph of discrete moves into SCCs and settle
   `Unsupported(ZeroDelayCycle{states})` when a reachable cycle has no delay
   move.
 
 ### Evidence
 
-- A witness scheduler SHALL choose between a unit delay and an identity at
-  each digital state it names, and under a workload only the delays no
-  distribution gives.
+- A witness scheduler SHALL name FR-202's closed ProductAction choices
+  for every digital evidence/continuation state: actual enabled identity or
+  residual PostState, UnitDelay, EnterIdleDelay, IdleDelay or IdleObserve
+  according to the source mode. Under a workload it resolves only actual
+  free-delay/observation choices; fixed race weights/distributions remain
+  unchanged. A timed path names the same choice, exact elapsed amount and
+  complete post-key. Neither action None nor a local node/index chooses an
+  observation. Randomized exact-rational entries are allowed for derived
+  TS-5 even without an authored fairness declaration.
 - A timed witness path SHALL carry ADR-026 CT-1 delays and replay by CT-3
   through FR-202; replay SHALL check that its last timed state has no
   admissible discrete step before the event's time horizon passes.
 - A certificate SHALL name digital product states, and FR-201's checker
-  SHALL re-enumerate the digital MDP.
+  SHALL re-enumerate the digital MDP. Optimization and evidence SHALL
+  apply ADR-028 §13a/FR-198 infimum/supremum rules over almost-surely
+  TS-5-admissible schedulers, including positive finite-wait components
+  with admissible exits. Original continuation graphs, observation edges
+  and actual authored fairness are checked separately from objective
+  absorption. No unqualified deterministic-memoryless attainment, finite
+  waiting bound or new fairness premise decides elapsed expectations.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-204-AC-1 | §15.5 `Deadline` over every scheduler: `x` takes the values 0 to 2 and the deadline clock 0 to 5; the minimum is `99/100` (send at `x = 2`) and the maximum `9999/10000` (send at `x = 1`); the item settles `proved`, `ExactValue{99/100}`. At threshold 0.995 it settles `refuted` with a path of two losses at 2 ms and 4 ms of probability `1/100`, whose replay checks that the next `send` needs `x >= 1`, after 4 ms. | Test (TC-639) |
-| FR-204-AC-2 | §15.5 `MeanTime` settles `proved`, `ExactValue{20/9 ms}` (maximum; the minimum is `10/9 ms`). With the guard `self.x > 1 ms` the items settle `unsupported`, `StrictClockConstraint`, naming the guard. | Test (TC-639) |
+| FR-204-AC-2 | §15.5 `MeanTime` settles `proved`, `ExactValue{20/9 ms}` (maximum; the minimum is `10/9 ms`). The no-operation x>=1/cap2 oracle of FR-196 has elapsed infimum1 and supremum+infinity despite eventual observation almost surely; at threshold3 its geometric IdleDelay3/4/IdleObserve1/4 policy has exact value5 and a checked infinite observation continuation. A finite maximum3 or delay-only witness fails. With the guard `self.x > 1 ms` the items settle `unsupported`, `StrictClockConstraint`, naming the guard. | Test (TC-639) |
 | FR-204-AC-3 | `Retx` with `delay ~ discrete { 1 ms: 1, 2 ms: 1 }` on `send`, under a workload `One` with weight 1 on `send`, is a DTMC over digital timed states; `probability >= 0.99 [eventually[0 ms, 4 ms] holds(m.delivered)]` settles `proved`, `ExactValue{159129/160000}`: after every reset `send` waits 1 or 2 ms with probability 1/2 each, both inside its window `[1, 2]`, loses with `1/10`, and attempts at time stamps up to 4 ms inclusive count. The same claim `under every scheduler` settles `unsupported`, `DelayDistribution`, naming `send`; with `delay ~ exponential(1 per ms)` under `One` it settles `unsupported`, `DelayDistribution`. | Test (TC-639) |
 | FR-204-AC-4 | A variant of `Retx` whose `send` has no `x >= 1 ms` guard and no reset settles `unsupported`, `ZeroDelayCycle`, naming the cycle's states. `probability >= 0.99 [always[0 ms, 4 ms] holds(not m.delivered)]` over `Retx` settles `unsupported`, `TimedFormShape`. | Test (TC-639) |
-| FR-204-AC-5 | §15.5 `Retx`, whose `send` has no `delay` member, under the workload `One` (weight 1 on `send`): the workload resolves the scheduled identity and `send`'s delay stays the scheduler's choice in `[1, 2]` ms after each reset, with no distribution assumed for it. `probability >= 0.99 [eventually[0 ms, 4 ms] holds(m.delivered)]` under `One` settles `proved`, `ExactValue{99/100}`, its entry marked a minimum. `probability <= 0.999` over the same event under `One` settles `refuted` on the maximum `9999/10000`, its entry marked a maximum and its witness scheduler sending at `x = 1`. | Test (TC-642) |
+| FR-204-AC-5 | §15.5 `Retx`, whose `send` has no `delay` member, under the workload `One` (weight 1 on `send`): the workload resolves the scheduled identity and `send`'s delay stays the scheduler's choice in `[1, 2]` ms after each reset, with no distribution assumed for it. `probability >= 0.99 [eventually[0 ms, 4 ms] holds(m.delivered)]` under `One` settles `proved`, `ExactValue{99/100}`, its entry marked a minimum. `probability <= 0.999` over the same event under `One` settles `refuted` on the maximum `9999/10000`, its entry marked a maximum and its witness scheduler sending at `x = 1`. At the same quiescent D=1 idle-delayed key, IdleObserve reads success at D with elapsed0 while IdleDelay crosses D with elapsed1; replay/certificates preserve the distinct actions, post-keys and predicate positions. | Test (TC-642) |
 
 ## Dependencies
 

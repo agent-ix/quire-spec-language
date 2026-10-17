@@ -15,6 +15,8 @@ relationships:
     type: traces_to
   - target: ix://agent-ix/quire-specification/FR-019
     type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-151
+    type: depends_on
 ---
 # FR-102: Build state clause forms and the self, result and reaches expressions at S2
 
@@ -23,6 +25,8 @@ relationships:
 When a `1-draft` unit declares an `invariant`, `pre` or `post` state clause,
 S2 (`qsl-forms`) SHALL build one `ProtocolClause` state clause form for it
 through the closed leading-token-kind entry table (ADR-012 §3, §4.3, §15.3).
+When a `1-draft` unit declares an `operation-body`, S2 SHALL build one
+source-preserving `OperationBodyForm` through that table.
 When a clause body or any other expression uses `self`, `result` or
 `reaches(a, b, edge)`, S2 SHALL build an `Expression` variant for it instead
 of refusing it as an unrepresented construct.
@@ -50,6 +54,14 @@ parses all of them (`qsl-cst/src/grammar.rs:566-591`, `:864-865`,
   - `operation`: the operation member name and its span for a `pre` or
     `post` clause, and none for an invariant;
   - `body`: the block's `Expression` and its `DeclarationSpans`.
+- `DeclarationForm::OperationBody(Box<OperationBodyForm>)`, where
+  `OperationBodyForm` retains the declaration label and span, `using` profile
+  alias and span, target model alias/type/operation segments and their
+  individual spans, positional parameter names and spans, and the block body
+  as an `Expression` with its `DeclarationSpans`. Its target is spelled
+  `model-alias::Type::operation`; S2 preserves the spellings and source
+  locations without resolving them. The declaration label is local to the
+  unit and is not the operation identity.
 - `Expression::SelfRef`, `Expression::Result` and
   `Expression::Reaches { source, target, edge }`, where `edge` is one
   member name and its span.
@@ -61,6 +73,27 @@ parses all of them (`qsl-cst/src/grammar.rs:566-591`, `:864-865`,
   `dispatch` arm SHALL make exactly that one call (ADR-012 §4.3).
   `from_spelling` SHALL map `invariant`, `pre` and `post` only in declaration
   head position; `pre(e)` in an expression stays `Expression::Pre`.
+- `LeadingTokenKind` SHALL gain `Body`. It SHALL select only the
+  `operation_body` production, and its `dispatch` arm SHALL make exactly one
+  call. `from_spelling` SHALL map `body` only in declaration-head position.
+- S2 SHALL retain every `operation-body` expression tree and its node spans.
+  It SHALL NOT resolve the profile, model alias, target type, operation or
+  parameters; S3 resolution follows FR-104's selected-model and
+  effective-operation rules.
+- QSpec requires an `operation-body` to refuse `unsupported_construct` unless
+  the package selects `quire.model.complete/v1`. QSL does not enforce that
+  yet, because it has no model-profile selection: `resolve_profiles` accepts
+  only `quire.value.complete/v1`, and FR-304-AC-8 states the same rule for the
+  abstraction form without code behind it. FR-361 states the gate. Delete
+  this sentence when FR-110 layer selection is built and FR-361's gate is
+  implemented.
+- An `operation-body` supplies an operation candidate's body under QSpec
+  FR-151. It is distinct from `StateClauseForm`: it supplies one operation
+  body, while a unit `pre` or `post` `StateClauseForm` supplies a contract
+  clause. An invariant is not associated with an operation body. Both are
+  distinct from the `requires` and `ensures` clauses a domain package
+  authors on its own operation: those are kept by intake and parsed at S3
+  (FR-103), are not built at S2 and are not `StateClauseForm`s.
 - The production SHALL read the kind from the leading token alone:
   `invariant` gives `Invariant`, `pre` gives `Precondition` and `post` gives
   `Postcondition`.
@@ -92,9 +125,10 @@ parses all of them (`qsl-cst/src/grammar.rs:566-591`, `:864-865`,
 | FR-102-AC-1 | The unit `invariant ParentOrder using v on Config::ConfigVersion at current { present(self.parent) implies deref(value(self.parent)).versionNumber < self.versionNumber }` builds one `StateClauseForm` with kind `Invariant`, name `ParentOrder`, profile `v`, context `Config::ConfigVersion`, no operation, and a body whose spans resolve to the source bytes of each sub-expression. | Test (TC-456) |
 | FR-102-AC-2 | `pre P using v on Config::ConfigVersion::attemptUpdate { true }` builds kind `Precondition` with operation `attemptUpdate`; the same text with `post` builds kind `Postcondition`. | Test (TC-456) |
 | FR-102-AC-3 | `not reaches(self, self, parent)` builds `Not(Reaches { SelfRef, SelfRef, edge: parent })`, and `reaches(self, self, Config::ConfigVersion::parent)` refuses `UnrepresentedConstruct` at the edge; and `self.versionNumber = pre(self.versionNumber)` builds an equality of two `Field` reads of `SelfRef`, the right one under `Pre`. `result` builds `Expression::Result`. None of the single-segment forms refuses. | Test (TC-456) |
-| FR-102-AC-4 | The `dispatch` arms for `Invariant`, `Pre` and `Post` each make exactly one call (the existing `dispatch_entry_is_a_single_thin_call` check passes over them). A unit whose only declaration begins with a spelling no family claims, such as `temporal`, still refuses `NoDispatchEntry`, naming that spelling. | Test (TC-457) |
+| FR-102-AC-4 | The `dispatch` arms for `Invariant`, `Pre`, `Post` and `Body` each make exactly one call (the existing `dispatch_entry_is_a_single_thin_call` check passes over them). A unit whose only declaration begins with a spelling no family claims, such as `temporal`, still refuses `NoDispatchEntry`, naming that spelling. | Test (TC-457) |
 | FR-102-AC-5 | An invariant whose body is 128 nested `not`s around `true`, and one of 100,000 nested `not`s around `true` parsed on a thread with a 512 KiB stack under S1 limits raised to fit it, each build their form on that thread, and no S2 outcome names a depth. | Test (TC-457) |
 | FR-102-AC-6 | With the `seam-probe` feature, the probe variant of `LeadingTokenKind` and of `Expression` still fails to compile at exactly the checked-in S2 seam list, which is unchanged by this feature (FR-063). | Test (TC-457) |
+| FR-102-AC-7 | `body forB using v on Config::ConfigVersion::resize(amount, extra) { amount + 22 }` builds one `OperationBodyForm` with label `forB`, profile alias `v`, target segments `Config`, `ConfigVersion` and `resize`, parameter names `amount` and `extra`, and a body expression, each with a span that slices to its source text and the target span slicing to `Config::ConfigVersion::resize`; a body with no parameters and a reserved member name (`size`) builds, and several bodies keep their source order. | Test (TC-457) |
 
 ## Dependencies
 

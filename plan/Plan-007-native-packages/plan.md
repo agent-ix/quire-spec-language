@@ -37,8 +37,7 @@ duplicating their completed tasks.
 - [x] NFR-005: first-party production, assertions, generators and qualification remain Rust.
 - [x] IT-007-SC-01..08: actual reconstructed package-to-native-runtime workflow.
 
-The criterion enumeration and authoritative test mapping are in
-[TM-005](../../spec/native-packages/tests.md). All fourteen package cases and
+The criterion-to-test mapping is in each FR's Verification cell. All fourteen package cases and
 all 27 functional criteria now have executed evidence in SR-111/112.
 Review approval establishes the specification gate, not implemented packages,
 schema qualification, independent consumer acceptance or full LC02 closure.

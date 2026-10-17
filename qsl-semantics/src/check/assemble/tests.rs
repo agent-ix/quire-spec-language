@@ -6,20 +6,34 @@ use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
 use qsl_forms::build_unit;
-use qsl_foundation::{SourceIdentity, Span};
+use qsl_foundation::diagnostic::Code;
+use qsl_foundation::{IdentityLimits, SourceIdentity, Span};
 use quire_exact::{
     CardinalityBound, CollectionKind, CollectionType, EffectiveId, IeeeWidth, IntegerInterval,
     Presence, RoundingMode, ValueType,
 };
 
-use super::{model_field, AssemblyCause, AssemblyError, AssemblyRefusal, TopologyFault, Unmapped};
-use crate::check::{CheckCause, PackageDeclarations, TypeFormFault};
-use crate::model::domain_package::{
-    DomainPackageRecord, FieldMemberRecord, Multiplicity, NativeValueType, ValueTypeRef,
+use super::{
+    admit_types_with, model_field, AssemblyCause, AssemblyError, AssemblyRefusal, TopologyFault,
+    Unmapped,
 };
+use crate::check::{CheckCause, PackageDeclarations, TypeFormFault};
+use crate::model::accounting::ModelNormalizationLimits;
+use crate::model::domain_package::{
+    ClauseRecord, DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord,
+    Multiplicity, NamespaceRecord, NativeValueType, OperationEffect, OperationMemberRecord,
+    ScalarTypeRecord, ScalarValueDomain, StateMachineRecord, StateMachineStateRecord,
+    StateMachineTransitionRecord, ValueTypeRef,
+};
+use crate::model::intake::SelectedModel;
 use crate::model::key::DeclarationKey;
+use crate::model::normalize::{normalize, NormalizeOutcome};
+use quire_exact::Cancel;
 use quire_semantic_value::checking::CheckingLimits;
-use quire_semantic_value::declaration::FieldDeclaration;
+use quire_semantic_value::declaration::{
+    CompositeShape, DeclarationCause, EnvironmentFailure, FieldDeclaration, RecursionEdges,
+    StorageRequest, StorageUnit, TypeEnvironmentLimits,
+};
 use quire_semantic_value::location::{Location, Origin};
 
 const PROFILE_V: &str = "profile v = \"quire.value.complete/v1\";\n";
@@ -48,7 +62,7 @@ fn assemble_as(
     PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         unit,
-        Vec::new(),
+        crate::model::intake::SelectedModels::default(),
         Vec::new(),
     )
 }
@@ -65,6 +79,137 @@ fn errors(declarations: &str) -> (String, Vec<AssemblyError>) {
         Err(refusal) => (text, refusal.errors),
         Ok(_) => panic!("{declarations}: the assembler refuses"),
     }
+}
+
+#[test]
+fn a_state_machine_meaning_is_emitted_as_an_object_type() {
+    let machine = DeclarationKey::fixture("ix://test/orders/OrderLifecycle");
+    let draft = DeclarationKey::fixture("ix://test/orders/OrderLifecycle/Draft");
+    let placed = DeclarationKey::fixture("ix://test/orders/OrderLifecycle/Placed");
+    let advance = DeclarationKey::fixture("ix://test/orders/OrderLifecycle/advance");
+    let not_yet_placed = DeclarationKey::fixture("ix://test/orders/OrderLifecycle/NotYetPlaced");
+    let consistent = DeclarationKey::fixture("ix://test/orders/OrderLifecycle/Consistent");
+    let management = DeclarationKey::fixture("ix://test/orders/OrderManagement");
+    let package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.tc235-state-machine-assembly"),
+        vec![
+            DomainPackageRecord::StateMachine(StateMachineRecord {
+                key: machine.clone(),
+                supertypes: Vec::new(),
+                states: vec![
+                    StateMachineStateRecord {
+                        key: draft.clone(),
+                        name: "Draft".to_owned(),
+                    },
+                    StateMachineStateRecord {
+                        key: placed.clone(),
+                        name: "Placed".to_owned(),
+                    },
+                ],
+                transitions: vec![StateMachineTransitionRecord {
+                    key: DeclarationKey::fixture("ix://test/orders/OrderLifecycle/place_order"),
+                    from: draft,
+                    to: placed,
+                    trigger: advance.clone(),
+                    guard: None,
+                    emits: Vec::new(),
+                    path: "/types/0/transitions/0".to_owned(),
+                    origin: serde_json::Value::Null,
+                }],
+            }),
+            DomainPackageRecord::FieldMember(FieldMemberRecord {
+                key: DeclarationKey::fixture("ix://test/orders/OrderLifecycle/status"),
+                owner: machine.clone(),
+                value_type: ValueTypeRef::Native(NativeValueType::Integer),
+                multiplicity: Multiplicity {
+                    lower: 1,
+                    upper: Some(1),
+                    ordered: false,
+                    unique: false,
+                },
+                presence: Presence::Required,
+                subsets: Vec::new(),
+                redefines: None,
+            }),
+            DomainPackageRecord::OperationMember(OperationMemberRecord {
+                key: advance,
+                owner: machine.clone(),
+                parameters: Vec::new(),
+                result: None,
+                effect: OperationEffect::default(),
+                requires: Vec::new(),
+                ensures: Vec::new(),
+                has_body: true,
+                redefines: None,
+            }),
+            DomainPackageRecord::Clause(ClauseRecord {
+                key: not_yet_placed,
+                owner: machine.clone(),
+                language: "quire".to_owned(),
+                text: "not self.status = 1".to_owned(),
+            }),
+            DomainPackageRecord::Clause(ClauseRecord {
+                key: consistent,
+                owner: machine.clone(),
+                language: "quire".to_owned(),
+                text: "self.status = 1".to_owned(),
+            }),
+            DomainPackageRecord::Namespace(NamespaceRecord {
+                key: management,
+                members: vec![machine.clone()],
+                vocabulary: Vec::new(),
+            }),
+        ],
+    );
+    let NormalizeOutcome::Completed(view) =
+        normalize(&package, ModelNormalizationLimits::default())
+    else {
+        panic!("the state-machine domain package normalizes");
+    };
+    let selected = SelectedModel {
+        alias: "M".to_owned(),
+        span: Span { start: 0, end: 0 },
+        view,
+        operation_clauses: Vec::new(),
+        type_invariants: Vec::new(),
+    };
+    let mut operations = super::OperationTable::default();
+    let super::ModelTypes {
+        objects: declarations,
+        composites,
+        ..
+    } = super::model_object_types(
+        "M",
+        &selected,
+        selected.span,
+        &mut operations,
+        IdentityLimits::default(),
+    )
+    .expect("state-machine meaning is supported by the object-type seam");
+    assert!(composites.is_empty());
+    assert_eq!(declarations.len(), 1);
+    assert_eq!(declarations[0].name(), "M::OrderLifecycle");
+    assert_eq!(
+        declarations[0]
+            .attributes()
+            .iter()
+            .map(FieldDeclaration::name)
+            .collect::<Vec<_>>(),
+        ["status"]
+    );
+    let identity = selected
+        .view
+        .type_identities()
+        .get(&DeclarationKey::fixture("ix://test/orders/OrderLifecycle"))
+        .expect("normalization indexed the state-machine identity");
+    assert_eq!(
+        operations
+            .declared_by(*identity)
+            .iter()
+            .map(|operation| operation.name())
+            .collect::<Vec<_>>(),
+        ["advance"]
+    );
 }
 
 /// The span of the last occurrence of `needle` in `text`.
@@ -170,6 +315,7 @@ fn the_assembler_reports_every_error() {
                 cause: AssemblyCause::AmbiguousTypeName {
                     name: "A".into(),
                     candidates: candidates.clone(),
+                    native: false,
                 },
                 span: candidates[1],
             },
@@ -177,6 +323,7 @@ fn the_assembler_reports_every_error() {
                 cause: AssemblyCause::AmbiguousTypeName {
                     name: "A".into(),
                     candidates,
+                    native: false,
                 },
                 span: after(&text, "(x: A)", "A"),
             },
@@ -365,6 +512,7 @@ fn each_assembler_cause_has_its_catalog_code() {
             AssemblyCause::AmbiguousTypeName {
                 name: "X".into(),
                 candidates: vec![span],
+                native: false,
             },
             "ambiguous_declaration/ambiguous-name",
         ),
@@ -419,6 +567,85 @@ fn each_assembler_cause_has_its_catalog_code() {
     ];
     for (cause, code) in cases {
         assert_eq!(cause.catalog_code().to_string(), code, "{cause:?}");
+    }
+}
+
+/// FR-082-AC-10: assembler allocation refusals preserve the kernel's exact
+/// request amount and unit, including element counts that are not bytes.
+#[trace("FR-082-AC-10")]
+#[test]
+fn assembler_allocation_cause_preserves_native_request_unit() {
+    for (request, expected_unit) in [
+        (StorageRequest::new(6, StorageUnit::Bytes), "bytes"),
+        (
+            StorageRequest::new(3, StorageUnit::AdditionalElements),
+            "additional-elements",
+        ),
+    ] {
+        let refusal = admit_types_with(
+            Vec::new(),
+            &[],
+            &BTreeMap::new(),
+            TypeEnvironmentLimits::default(),
+            &Cancel::new(),
+            |_, _, _, _| -> Result<(), _> { Err(EnvironmentFailure::Allocation(request)) },
+        )
+        .expect_err("injected registry allocation failure must refuse admission");
+        let [error] = refusal.errors.as_slice() else {
+            panic!("registry allocation failure must produce one assembly error")
+        };
+        let cause = &error.cause;
+        assert_eq!(
+            cause.catalog_code().to_string(),
+            "resource_exhausted/allocation-failed"
+        );
+        assert_eq!(
+            cause.storage_request(),
+            Some((request.amount(), request.unit()))
+        );
+        let fields =
+            BTreeMap::from([("requested", format!("{expected_unit}:{}", request.amount()))]);
+        assert_eq!(cause.catalog_fields(), Some(fields));
+    }
+}
+
+/// FR-082-AC-11: reservation size overflow is distinct from allocation
+/// denial and preserves the kernel's exact request amount and unit.
+#[trace("FR-082-AC-11")]
+#[test]
+fn assembler_capacity_cause_preserves_native_request_unit() {
+    for (request, expected_upstream) in [
+        (StorageRequest::new(9, StorageUnit::Bytes), "bytes:9"),
+        (
+            StorageRequest::new(4, StorageUnit::AdditionalElements),
+            "additional-elements:4",
+        ),
+    ] {
+        let refusal = admit_types_with(
+            Vec::new(),
+            &[],
+            &BTreeMap::new(),
+            TypeEnvironmentLimits::default(),
+            &Cancel::new(),
+            |_, _, _, _| -> Result<(), _> { Err(EnvironmentFailure::Capacity(request)) },
+        )
+        .expect_err("injected reservation overflow must refuse admission");
+        let [error] = refusal.errors.as_slice() else {
+            panic!("reservation overflow must produce one assembly error")
+        };
+        let cause = &error.cause;
+        assert_eq!(
+            cause.catalog_code().to_string(),
+            "resource_exhausted/reservation-size-overflow"
+        );
+        assert_eq!(
+            cause.storage_request(),
+            Some((request.amount(), request.unit()))
+        );
+        assert_eq!(
+            cause.catalog_fields(),
+            Some(BTreeMap::from([("upstream", expected_upstream.to_owned())]))
+        );
     }
 }
 
@@ -852,6 +1079,39 @@ fn a_duplicate_type_name_is_refused_in_either_order() {
                 cause: AssemblyCause::AmbiguousTypeName {
                     name: "P".into(),
                     candidates: vec![first, second],
+                    native: false,
+                },
+                span: second,
+            }],
+            "{declarations}"
+        );
+    }
+}
+
+/// FR-317-AC-3 (TC-820 step 3): one unit cannot declare two types named `q`
+/// -- two unions, or a union and an enum -- so the member resolver never sees
+/// them. The assembler refuses at the second declaration.
+#[trace("FR-317-AC-3", "TC-820")]
+#[test]
+fn two_types_named_q_are_refused_at_the_second_declaration() {
+    for declarations in [
+        "union q { m }\nunion q { m }",
+        "union q { m }\nenum q { m }",
+    ] {
+        let (text, found) = errors(declarations);
+        // The first and the last `q {` of the unit, each at its name.
+        let first = after(&text, "union q {", "q");
+        let second = Span {
+            start: text.rfind("q {").expect("the second declaration"),
+            end: text.rfind("q {").expect("the second declaration") + 1,
+        };
+        assert_eq!(
+            found,
+            [AssemblyError {
+                cause: AssemblyCause::AmbiguousTypeName {
+                    name: "q".into(),
+                    candidates: vec![first, second],
+                    native: false,
                 },
                 span: second,
             }],
@@ -952,7 +1212,14 @@ fn model_field_of(
     let field = presence_field(multiplicity, presence);
     let records: BTreeMap<&DeclarationKey, &DomainPackageRecord> = BTreeMap::new();
     let identities: BTreeMap<DeclarationKey, EffectiveId> = BTreeMap::new();
-    model_field(&field, &records, &identities)
+    let meaning_handles = BTreeMap::new();
+    model_field(
+        &field,
+        &records,
+        &identities,
+        &meaning_handles,
+        &BTreeMap::new(),
+    )
 }
 
 fn mult(lower: u64, upper: Option<u64>, ordered: bool, unique: bool) -> Multiplicity {
@@ -980,6 +1247,62 @@ fn one_one_required_gives_the_element_type() {
     let declaration = model_field_of(mult(1, Some(1), false, true), Presence::Required).unwrap();
     assert_eq!(declaration.value_type(), &ValueType::Integer);
     assert_eq!(declaration.presence(), Presence::Required);
+}
+
+#[trace("TC-897", "FR-056-AC-17")]
+#[test]
+fn timestamp_alias_field_assembles_with_its_distinct_kernel_type() {
+    let mut field = presence_field(mult(1, Some(1), false, true), Presence::Required);
+    let alias_key = DeclarationKey::fixture("ix://test/orders/Instant");
+    field.value_type = ValueTypeRef::Package(alias_key.clone());
+    let alias = DomainPackageRecord::ScalarType(ScalarTypeRecord {
+        key: alias_key.clone(),
+        domain: ScalarValueDomain::Native(NativeValueType::Timestamp),
+    });
+    let records: BTreeMap<&DeclarationKey, &DomainPackageRecord> =
+        BTreeMap::from([(&alias_key, &alias)]);
+    let identities: BTreeMap<DeclarationKey, EffectiveId> = BTreeMap::new();
+    let meaning_handles = BTreeMap::new();
+
+    let declaration = model_field(
+        &field,
+        &records,
+        &identities,
+        &meaning_handles,
+        &BTreeMap::new(),
+    )
+    .expect("native Timestamp is supported by the shared value kernel");
+
+    assert_eq!(*declaration.value_type(), ValueType::Timestamp);
+}
+
+/// Native `String` is a distinct checked leaf, not profile-bounded `Text`.
+#[trace("FR-056-AC-11")]
+#[test]
+fn native_string_field_assembles_as_a_distinct_kernel_type() {
+    let mut field = presence_field(mult(1, Some(1), false, true), Presence::Required);
+    field.value_type = ValueTypeRef::Native(NativeValueType::String);
+    let records: BTreeMap<&DeclarationKey, &DomainPackageRecord> = BTreeMap::new();
+    let identities: BTreeMap<DeclarationKey, EffectiveId> = BTreeMap::new();
+    let meaning_handles = BTreeMap::new();
+
+    let declaration = model_field(
+        &field,
+        &records,
+        &identities,
+        &meaning_handles,
+        &BTreeMap::new(),
+    )
+    .expect("native String is supported by the shared value kernel");
+
+    assert_eq!(*declaration.value_type(), ValueType::String);
+    assert_ne!(
+        *declaration.value_type(),
+        ValueType::Text(
+            quire_exact::TextType::new(0, 1, quire_exact::TextProfile::UnicodeScalars,)
+                .expect("valid Text bounds")
+        )
+    );
 }
 
 /// A lower bound of `0` makes an empty collection legal; it never makes a
@@ -1276,6 +1599,7 @@ fn enum_and_type_name_errors_are_all_reported() {
                 == AssemblyCause::AmbiguousTypeName {
                     name: "F".to_owned(),
                     candidates: vec![enum_f, record_f],
+                    native: false,
                 }),
         "{found:?}"
     );
@@ -1630,7 +1954,7 @@ fn the_decimal_scale_bound_refuses_with_a_work_budget_limit() {
         let assembled = PackageDeclarations::assemble_with_limits(
             parsed.source().reference().clone(),
             unit,
-            Vec::new(),
+            crate::model::intake::SelectedModels::default(),
             Vec::new(),
             crate::check::AssemblyLimits {
                 decimal_scale: 4,
@@ -1828,4 +2152,413 @@ fn the_dimension_and_unit_causes_have_their_catalog_codes() {
     for (cause, code) in cases {
         assert_eq!(cause.catalog_code().to_string(), code, "{cause:?}");
     }
+}
+
+fn composite_node(label: &str) -> quire_exact::NodeKey {
+    let mut digest = [0; 32];
+    digest[..label.len()].copy_from_slice(label.as_bytes());
+    quire_exact::NodeKey::from_digest(digest)
+}
+
+fn empty_record(
+    label: &str,
+    supertypes: &[&str],
+) -> quire_semantic_value::declaration::CompositeDeclaration {
+    quire_semantic_value::declaration::CompositeDeclaration::new(
+        composite_node(label),
+        label.to_owned(),
+        quire_semantic_value::declaration::CompositeShape::Record(Vec::new()),
+    )
+    .with_supertypes(
+        supertypes
+            .iter()
+            .map(|general| composite_node(general))
+            .collect(),
+    )
+}
+
+fn admit_composites(
+    declarations: Vec<quire_semantic_value::declaration::CompositeDeclaration>,
+) -> Result<quire_semantic_value::declaration::TypeEnvironment, AssemblyRefusal> {
+    super::admit_types(
+        declarations,
+        &[],
+        &BTreeMap::new(),
+        TypeEnvironmentLimits::default(),
+        &Cancel::new(),
+    )
+    .map(|admitted| admitted.types)
+}
+
+/// QSL-732: a composite generalization cycle refuses with the typed cause,
+/// `ill_typed`, and the `type-mismatch` catalog cause beside the object-type
+/// cycle; it is not reported as a broken invariant.
+#[trace("FR-143-AC-9", "TC-188")]
+#[test]
+fn a_composite_supertype_cycle_refuses_as_ill_typed_type_mismatch() {
+    let refusal = admit_composites(vec![empty_record("A", &["B"]), empty_record("B", &["A"])])
+        .expect_err("a composite cycle refuses");
+    assert!(!refusal.errors.is_empty());
+    for error in &refusal.errors {
+        let AssemblyCause::InvalidTypeDeclaration(invalid) = &error.cause else {
+            panic!("expected the typed declaration refusal: {error:?}");
+        };
+        assert!(
+            matches!(
+                invalid.cause,
+                quire_semantic_value::declaration::DeclarationCause::CompositeGeneralizationCycle { .. }
+            ),
+            "{invalid:?}"
+        );
+        assert_eq!(
+            error.cause.code(),
+            qsl_foundation::diagnostic::Code::IllTyped
+        );
+        assert_eq!(
+            error.cause.catalog_code().to_string(),
+            "ill_typed/type-mismatch"
+        );
+    }
+}
+
+/// QSL-732: a composite supertype naming no declaration that any round set
+/// aside is its own refusal (`UnknownDeclaration`, a broken invariant), not a
+/// silently dropped child.
+#[trace("FR-143-AC-9", "TC-188")]
+#[test]
+fn a_dangling_composite_supertype_is_refused_not_dropped() {
+    let refusal = admit_composites(vec![empty_record("Child", &["Missing"])])
+        .expect_err("a dangling composite supertype refuses");
+    let [error] = refusal.errors.as_slice() else {
+        panic!("one refusal expected: {:?}", refusal.errors);
+    };
+    let AssemblyCause::InvalidTypeDeclaration(invalid) = &error.cause else {
+        panic!("expected the typed declaration refusal: {error:?}");
+    };
+    assert_eq!(invalid.declaration, "Child");
+    assert_eq!(
+        invalid.cause,
+        quire_semantic_value::declaration::DeclarationCause::UnknownDeclaration(composite_node(
+            "Missing"
+        ))
+    );
+    assert_eq!(
+        error.cause.catalog_code().to_string(),
+        "runtime_invariant/established-invariant-broken"
+    );
+}
+
+/// QSL-732: a child whose composite parent is itself refused is a
+/// consequence of the parent's refusal and is set aside unreported.
+#[trace("FR-143-AC-9", "TC-188")]
+#[test]
+fn a_child_of_a_refused_composite_parent_is_a_consequence() {
+    use quire_semantic_value::declaration::{
+        CompositeDeclaration, CompositeShape, FieldDeclaration,
+    };
+    let duplicate = || FieldDeclaration::new("x", ValueType::Integer, Presence::Required);
+    let parent = CompositeDeclaration::new(
+        composite_node("Parent"),
+        "Parent".to_owned(),
+        CompositeShape::Record(vec![duplicate(), duplicate()]),
+    );
+    let refusal = admit_composites(vec![parent, empty_record("Child", &["Parent"])])
+        .expect_err("the parent refuses");
+    let [error] = refusal.errors.as_slice() else {
+        panic!("only the parent is reported: {:?}", refusal.errors);
+    };
+    let AssemblyCause::InvalidTypeDeclaration(invalid) = &error.cause else {
+        panic!("expected the typed declaration refusal: {error:?}");
+    };
+    assert_eq!(invalid.declaration, "Parent");
+}
+
+/// Relaxing a widened redefinition retypes only the field that redefines the
+/// widened member (or a member it redefines), never a sibling field of the
+/// same type that redefines something else.
+#[test]
+fn relaxing_a_widening_leaves_a_sibling_redefinition_alone() {
+    use quire_semantic_value::declaration::{FieldDeclaration, FieldRef, ObjectTypeDeclaration};
+    let id = |byte: u8| EffectiveId::from_digest([byte; 32]);
+    let (a, b) = (id(1), id(2));
+    let int = |upper: i64| {
+        ValueType::Int(
+            IntegerInterval::new(
+                quire_exact::Integer::from(0i64),
+                quire_exact::Integer::from(upper),
+            )
+            .expect("interval"),
+        )
+    };
+    let parent = ObjectTypeDeclaration::new(
+        a,
+        "M::A",
+        vec![
+            FieldDeclaration::new("x", int(5), Presence::Required),
+            FieldDeclaration::new("y", int(9), Presence::Required),
+        ],
+    );
+    let child = ObjectTypeDeclaration::new(
+        b,
+        "M::B",
+        vec![
+            FieldDeclaration::new("x", int(7), Presence::Required)
+                .with_redefines(FieldRef::new(a, "x")),
+            FieldDeclaration::new("y", int(3), Presence::Required)
+                .with_redefines(FieldRef::new(a, "y")),
+        ],
+    )
+    .with_supertypes(vec![a]);
+    let mut types = vec![parent, child];
+    assert!(super::relax_widening(
+        &mut types,
+        "M::B",
+        &FieldRef::new(a, "x")
+    ));
+    let fields = types[1].attributes();
+    assert_eq!(
+        fields[0].value_type(),
+        &int(5),
+        "the widened field is relaxed"
+    );
+    assert_eq!(
+        fields[1].value_type(),
+        &int(3),
+        "the sibling keeps its own type"
+    );
+}
+
+/// The composite declaration the unit declares under `name`.
+fn composite_named<'p>(
+    package: &'p PackageDeclarations,
+    name: &str,
+) -> &'p quire_semantic_value::declaration::CompositeDeclaration {
+    package
+        .types
+        .composites()
+        .find(|declaration| declaration.name() == name)
+        .unwrap_or_else(|| panic!("the unit declares {name}"))
+}
+
+/// A union's members as (name, payload types), in declared order.
+fn members_of(
+    declaration: &quire_semantic_value::declaration::CompositeDeclaration,
+) -> Vec<(String, Vec<ValueType>)> {
+    let CompositeShape::Union(members) = declaration.shape() else {
+        panic!("{} is a union", declaration.name())
+    };
+    members
+        .iter()
+        .map(|member| {
+            (
+                member.identifier().as_str().to_owned(),
+                member.positions().to_vec(),
+            )
+        })
+        .collect()
+}
+
+#[trace("FR-316-AC-1", "TC-817")]
+#[test]
+fn a_union_is_its_own_composite_in_declared_order_beside_an_enum() {
+    let (_, assembled) = assemble(
+        "union Shape { Empty, Circle(Integer), Rect(Integer, Integer) }\n\
+         enum Kind { Empty, Circle }",
+    );
+    let assembled = assembled.expect("the unit assembles");
+    let shape = composite_named(&assembled, "Shape");
+    assert_eq!(
+        members_of(shape),
+        [
+            ("Empty".to_owned(), vec![]),
+            ("Circle".to_owned(), vec![ValueType::Integer]),
+            (
+                "Rect".to_owned(),
+                vec![ValueType::Integer, ValueType::Integer]
+            ),
+        ]
+    );
+    let [kind] = assembled.enums.as_slice() else {
+        panic!("one enum")
+    };
+    assert_ne!(
+        ValueType::Composite(shape.key()),
+        ValueType::Enum(kind.shape()),
+        "a union and an enum with the same member names are different types"
+    );
+}
+
+/// The refusals of `declarations`, each with its recursion cycle when the
+/// cause is the recursion rule.
+fn recursion_refusals(
+    declarations: &str,
+) -> (String, Vec<(AssemblyError, RecursionEdges, Vec<String>)>) {
+    let (text, found) = errors(declarations);
+    let refusals = found
+        .into_iter()
+        .map(|error| {
+            let AssemblyCause::InvalidTypeDeclaration(invalid) = &error.cause else {
+                panic!("a type declaration refusal, not {:?}", error.cause)
+            };
+            let DeclarationCause::Recursion { edges, cycle } = &invalid.cause else {
+                panic!("the recursion rule, not {:?}", invalid.cause)
+            };
+            let (edges, cycle) = (*edges, cycle.clone());
+            (error, edges, cycle)
+        })
+        .collect();
+    (text, refusals)
+}
+
+#[trace("FR-316-AC-2", "TC-817", "TC-818")]
+#[test]
+fn a_union_recurses_only_through_an_escaping_edge() {
+    let (_, tree) = assemble(
+        "union Tree { Leaf, Node(Integer, Option<Tree>, Option<Tree>) }\n\
+         union L { Nil, Cons(Integer, Option<L>) }",
+    );
+    tree.expect("an Option payload escapes the recursion rule");
+
+    let (text, refusals) = recursion_refusals("union L { Nil, Cons(Integer, L) }");
+    let [(error, edges, cycle)] = refusals.as_slice() else {
+        panic!("one refusal, not {refusals:?}")
+    };
+    assert_eq!(*edges, RecursionEdges::NonEscaping);
+    assert_eq!(cycle, &["L", "L"]);
+    assert_eq!(error.span, after(&text, "union L", "L"));
+    assert_eq!(
+        error.cause.catalog_code().to_string(),
+        "ill_typed/type-mismatch"
+    );
+}
+
+#[trace("FR-316-AC-2", "TC-818")]
+#[test]
+fn a_cycle_through_a_record_and_a_union_is_refused_at_both_declarations() {
+    let (text, refusals) = recursion_refusals("record Box { inner: U; }\nunion U { Wrap(Box) }");
+    assert_eq!(refusals.len(), 2, "{refusals:?}");
+    let mut spans: Vec<Span> = refusals.iter().map(|(error, ..)| error.span).collect();
+    spans.sort_by_key(|span| span.start);
+    assert_eq!(
+        spans,
+        [
+            after(&text, "record Box", "Box"),
+            after(&text, "union U", "U")
+        ]
+    );
+    for (_, edges, cycle) in &refusals {
+        assert_eq!(*edges, RecursionEdges::NonEscaping);
+        let mut named: Vec<&str> = cycle.iter().map(String::as_str).collect();
+        named.sort_unstable();
+        named.dedup();
+        assert_eq!(named, ["Box", "U"], "the cycle runs through both");
+        assert_eq!(cycle.first(), cycle.last());
+    }
+}
+
+#[trace("FR-316-AC-3", "TC-818")]
+#[test]
+fn a_union_refuses_a_repeated_member_and_an_unresolved_payload_type() {
+    let (text, found) = errors("union U { A, A(Integer) }");
+    let [error] = found.as_slice() else {
+        panic!("one refusal, not {found:?}")
+    };
+    let AssemblyCause::InvalidTypeDeclaration(invalid) = &error.cause else {
+        panic!("a type declaration refusal, not {:?}", error.cause)
+    };
+    assert_eq!(invalid.declaration, "U");
+    assert_eq!(invalid.cause, DeclarationCause::DuplicateMember("A".into()));
+    assert_eq!(error.span, after(&text, "union U", "U"));
+    assert_eq!(error.cause.code(), Code::AmbiguousDeclaration);
+    assert_eq!(
+        error.cause.catalog_code().to_string(),
+        "ambiguous_declaration/ambiguous-name"
+    );
+
+    let (text, found) = errors("union U { A(Missing) }");
+    assert_eq!(
+        found,
+        [AssemblyError {
+            cause: AssemblyCause::UnresolvedTypeName {
+                name: "Missing".into()
+            },
+            span: last(&text, "Missing"),
+        }]
+    );
+}
+
+#[trace("FR-316-AC-4", "TC-818")]
+#[test]
+fn a_union_is_bounded_only_by_the_configured_ceilings() {
+    let members: Vec<String> = (0..5_000).map(|member| format!("M{member}")).collect();
+    let text = text(
+        PROFILE_V,
+        &format!("union Big {{ {} }}", members.join(", ")),
+    );
+    let assemble_under = |work_units: u64| {
+        let parsed = qsl_cst::parse(
+            SourceIdentity::new("a", "u", "git", "1"),
+            "unit.native",
+            text.as_bytes(),
+            qsl_cst::Limits::default(),
+        )
+        .expect("S1 reads the unit");
+        let unit = build_unit(&parsed).expect("S2 builds the unit");
+        PackageDeclarations::assemble_with_limits(
+            parsed.source().reference().clone(),
+            unit,
+            crate::model::intake::SelectedModels::default(),
+            Vec::new(),
+            crate::check::AssemblyLimits {
+                environment: TypeEnvironmentLimits {
+                    work_units,
+                    ..crate::check::AssemblyLimits::default().environment
+                },
+                ..crate::check::AssemblyLimits::default()
+            },
+        )
+    };
+    let default = crate::check::AssemblyLimits::default()
+        .environment
+        .work_units;
+    let admitted = assemble_under(default).expect("5,000 members are admitted by default");
+    assert_eq!(members_of(composite_named(&admitted, "Big")).len(), 5_000);
+    let needed = admitted.types.spent();
+    let refusal = assemble_under(needed - 1).expect_err("one unit short of the work needed");
+    let [error] = refusal.errors.as_slice() else {
+        panic!("one error, not {:?}", refusal.errors)
+    };
+    let AssemblyCause::TypeLimit(limit) = &error.cause else {
+        panic!("a type-environment limit, not {:?}", error.cause)
+    };
+    assert_eq!(limit.configured_bound(), needed - 1);
+    assert_eq!(
+        limit.setting(),
+        qsl_foundation::Setting::EnvironmentWorkUnits
+    );
+    assert!(
+        assemble_under(needed).is_ok(),
+        "the field raised by one admits it"
+    );
+
+    let nested = format!(
+        "union Deep {{ Wrap({}Integer{}) }}",
+        "Option<".repeat(1_000),
+        ">".repeat(1_000)
+    );
+    assemble(&nested)
+        .1
+        .expect("1,000 nested payload levels are admitted");
+}
+
+/// FR-313 builds `case` and FR-318 checks it, so a unit holding one
+/// assembles; the union that declares the scrutinee type is registered.
+#[trace("FR-313-AC-2", "TC-815")]
+#[test]
+fn a_case_expression_assembles_over_a_registered_union() {
+    let (_, assembled) = assemble(
+        "union Shape { Empty, Circle(Integer) }\n\
+         function f using v(s: Shape): Integer pure { case s { Circle(r): r; Empty: 0; } }",
+    );
+    assembled.expect("the unit assembles");
 }

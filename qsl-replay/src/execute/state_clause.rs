@@ -168,7 +168,11 @@ pub fn replay_state_clause(
     replay_limits: ReplayLimits,
 ) -> Result<StateClauseReplayResult, ReplayRefusal> {
     let request = ReplayRequest::decode(wire, replay_limits)?;
-    let limits = super::request_limits(request.stage_limits(), replay_limits)?;
+    let limits = super::request_limits(
+        request.stage_limits(),
+        request.accounting_limits(),
+        replay_limits,
+    )?;
     let compiled = recompile(&request, &limits)?;
     let package_id = compiled.emitted.package().package_id();
     if !package_id.matches(&envelope.package_id()) {
@@ -264,6 +268,9 @@ pub fn replay_state_clause(
         ),
         // FR-104: a state clause's body is Boolean.
         ClauseDisposition::Evaluate(CallOutcome::Completed(CallValue::Integer(_))) => {
+            return fault("state-clause-completes-a-boolean")
+        }
+        ClauseDisposition::Evaluate(CallOutcome::Completed(CallValue::Reference(_))) => {
             return fault("state-clause-completes-a-boolean")
         }
         ClauseDisposition::Evaluate(CallOutcome::Refused(_)) => (Category::Refusal, None),
@@ -511,12 +518,23 @@ pub(crate) fn separate(
     let separation = match package.check_separation(&qualified, observations, claim, meter) {
         Ok(separation) => separation,
         Err(CallFailure::Fault(fault)) => return Err(ReplayRefusal::Fault(fault)),
+        Err(CallFailure::Storage { parameter, failure }) => {
+            return Err(ReplayRefusal::Storage {
+                position: parameter,
+                failure,
+            })
+        }
         // The clause was resolved by name and admitted for that clause.
         Err(CallFailure::Input(_)) => {
             return Err(fault("separation-check-over-the-admitted-clause"))
         }
         // This meter holds no `Cancel` handle, so no charge is cancelled.
         Err(CallFailure::Cancelled(_)) => return Err(fault("cancelled-without-a-handle")),
+        // Clause separation admits no supplied-value argument: the admission
+        // phase never runs here.
+        Err(CallFailure::Supplied(_) | CallFailure::UnsupportedHelper(_)) => {
+            return Err(fault("separation-check-runs-no-supplied-phase"))
+        }
     };
     match separation {
         Separation::Holds => Ok(SeparationOutcome::Holds),

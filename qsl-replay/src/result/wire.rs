@@ -17,12 +17,14 @@ use qsl_foundation::diagnostic::catalog_category;
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::witness::{
-    ObservationIdentity, RuntimeValuePath, SeparationStep, ValuePathStep, ValuePathSubject,
+    InvocationBinding, ObservationIdentity, RuntimeValuePath, SeparationStep, ValuePathStep,
+    ValuePathSubject,
 };
 use qsl_package::CheckedPackage;
 use quire_canonical::{Document, Encode, Limits, Node, NodeRef, Sink, Writer};
 use quire_exact::{Origin, Role, Value};
-use quire_semantic_value::location::{Location, Origin as Declaration};
+use quire_semantic_value::declaration::EnvironmentFailure;
+use quire_semantic_value::location::{Location, OperationClauseKind, Origin as Declaration};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::value::RawValue;
 
@@ -34,7 +36,7 @@ use crate::identity::TracePosition;
 use qsl_foundation::diagnostic::Category;
 
 mod value;
-use value::{decode_element, encode_element, reference_of, Keys};
+use value::{decode_element, encode_element, reference_of, validate_element_shape, Keys};
 
 /// Why a [`DisagreementCause`] did not encode or read.
 #[derive(Debug, thiserror::Error)]
@@ -80,6 +82,16 @@ pub enum CauseCodecError {
     /// is empty or not a catalog spelling.
     #[error("the refusal's {0} is not a catalog spelling")]
     Spelling(&'static str),
+    /// A member's membership in its declared type was not decided because
+    /// the type environment could not reserve storage (`resource_exhausted`):
+    /// never a [`Self::Value`] refusal.
+    #[error("the {member} could not be admitted: {failure:?}")]
+    Storage {
+        /// The member whose admission was undecided.
+        member: &'static str,
+        /// The kernel's storage failure.
+        failure: EnvironmentFailure,
+    },
 }
 
 /// A [`CauseCodecError::Shape`] refusal.
@@ -367,7 +379,7 @@ mod verdict_tests {
     deny_unknown_fields,
     bound(serialize = "E: Serialize", deserialize = "E: Deserialize<'de>")
 )]
-struct RecordWire<E> {
+pub(crate) struct RecordWire<E> {
     quantifier: OccurrenceWire,
     deciding_element: E,
     #[serde(
@@ -386,7 +398,7 @@ struct RecordWire<E> {
 }
 
 impl RecordWire<Box<RawValue>> {
-    fn of(record: &SeparatingWitnessRecord) -> Result<Self, CauseCodecError> {
+    pub(crate) fn of(record: &SeparatingWitnessRecord) -> Result<Self, CauseCodecError> {
         if record.index.is_none() {
             return Err(CauseCodecError::MissingIndex);
         }
@@ -401,6 +413,52 @@ impl RecordWire<Box<RawValue>> {
                 .map(|position| position.as_str().to_owned()),
         })
     }
+
+    /// Validate the state-clause subset of the shared witness shape without
+    /// resolving its deciding value against an in-memory checked package.
+    pub(crate) fn validate_state(&self) -> Result<(), CauseCodecError> {
+        if self.index.is_none() {
+            return Err(CauseCodecError::MissingIndex);
+        }
+        if self.trace_position.is_some() {
+            return Err(CauseCodecError::Shape("trace_position"));
+        }
+        self.quantifier.clone().read()?;
+        let element = quire_canonical::read(self.deciding_element.get().as_bytes(), u64::MAX)
+            .map_err(|_| CauseCodecError::Shape("deciding_element"))?;
+        validate_element_shape(element.root())
+            .map_err(|_| CauseCodecError::Shape("deciding_element"))?;
+        self.value_path
+            .validate_shape()
+            .map_err(|_| CauseCodecError::Shape("value_path"))?;
+        Ok(())
+    }
+
+    /// Decode a state-clause witness against the exact checked package that
+    /// owns its declaration keys. The wire reader can validate shape alone;
+    /// a consumer supplies the package for semantic identity resolution.
+    pub(crate) fn read_state(
+        &self,
+        package: &CheckedPackage,
+        element: NodeRef<'_>,
+    ) -> Result<SeparatingWitnessRecord, CauseCodecError> {
+        let keys = Keys::new(package);
+        Ok(SeparatingWitnessRecord {
+            quantifier: self.quantifier.clone().read()?,
+            deciding_element: decode_element(element, keys)?,
+            index: self.index,
+            value_path: self.value_path.clone().read(keys)?,
+            trace_position: self
+                .trace_position
+                .as_ref()
+                .map(|p| TracePosition::new(p.clone())),
+        })
+    }
+}
+
+/// Package-independent shape check for a `/2` deciding element.
+pub(crate) fn validate_state_element(node: NodeRef<'_>) -> Result<(), CauseCodecError> {
+    validate_element_shape(node).map_err(|_| CauseCodecError::Shape("deciding_element"))
 }
 
 impl RecordWire<ElementSlot> {
@@ -423,7 +481,7 @@ impl RecordWire<ElementSlot> {
 }
 
 /// An occurrence key: `node_id`, `role`, `ordinal` (QSpec FR-322).
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct OccurrenceWire {
     node_id: String,
@@ -449,7 +507,7 @@ impl OccurrenceWire {
 }
 
 /// QSpec FR-207's `runtime_value` wire form.
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct PathWire {
     kind: PathKind,
@@ -457,20 +515,20 @@ struct PathWire {
     steps: Vec<StepWire>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum PathKind {
     RuntimeValue,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RootWire {
     observation: ObservationWire,
     subject: SubjectWire,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ObservationWire {
     authority: String,
@@ -479,7 +537,7 @@ struct ObservationWire {
     revision: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(tag = "tag", rename_all = "snake_case", deny_unknown_fields)]
 enum SubjectWire {
     Object {
@@ -488,21 +546,101 @@ enum SubjectWire {
         object_type: String,
         object_identity: String,
     },
+    Invocation {
+        invocation: ObservationWire,
+        binding: InvocationBindingWire,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        parameter: Option<String>,
+    },
     Built {
         occurrence: OccurrenceWire,
     },
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum InvocationBindingWire {
+    Parameter,
+    Result,
+    Receiver,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(tag = "tag", rename_all = "snake_case", deny_unknown_fields)]
 enum StepWire {
     Field { name: String },
     OptionValue,
     Member { name: String },
     Index { index: u64 },
+    Reference { object: ObjectWire },
+}
+
+/// A declared object identity in a `reference` step.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ObjectWire {
+    universe: String,
+    #[serde(rename = "type")]
+    object_type: String,
+    object_identity: String,
 }
 
 impl PathWire {
+    /// Validate the path's package-independent identifiers at strict read.
+    fn validate_shape(&self) -> Result<(), CauseCodecError> {
+        match &self.root.subject {
+            SubjectWire::Object {
+                universe,
+                object_type,
+                object_identity,
+            } => {
+                digest(universe, "universe")?;
+                digest(object_type, "type")?;
+                quire_exact::ObjectId::new(object_identity.clone())
+                    .map_err(|_| CauseCodecError::Empty("object_identity"))?;
+            }
+            SubjectWire::Invocation {
+                invocation,
+                binding,
+                parameter,
+            } => {
+                if invocation.authority.is_empty() {
+                    return Err(CauseCodecError::Empty("authority"));
+                }
+                if invocation.identity.is_empty() {
+                    return Err(CauseCodecError::Empty("identity"));
+                }
+                if invocation.revision_namespace.is_empty() {
+                    return Err(CauseCodecError::Empty("revision_namespace"));
+                }
+                if invocation.revision.is_empty() {
+                    return Err(CauseCodecError::Empty("revision"));
+                }
+                match (binding, parameter) {
+                    (InvocationBindingWire::Parameter, Some(parameter))
+                        if !parameter.is_empty() => {}
+                    (InvocationBindingWire::Result | InvocationBindingWire::Receiver, None) => {}
+                    (InvocationBindingWire::Parameter, Some(_)) => {
+                        return Err(CauseCodecError::Empty("parameter"));
+                    }
+                    _ => return Err(CauseCodecError::Shape("invocation_binding")),
+                }
+            }
+            SubjectWire::Built { occurrence } => {
+                occurrence.clone().read()?;
+            }
+        }
+        for step in &self.steps {
+            if let StepWire::Reference { object } = step {
+                digest(&object.universe, "universe")?;
+                digest(&object.object_type, "type")?;
+                quire_exact::ObjectId::new(object.object_identity.clone())
+                    .map_err(|_| CauseCodecError::Empty("object_identity"))?;
+            }
+        }
+        Ok(())
+    }
+
     fn of(path: &RuntimeValuePath) -> Self {
         let observation = &path.observation;
         Self {
@@ -520,6 +658,28 @@ impl PathWire {
                         object_type: hex(object.object_type().as_bytes()),
                         object_identity: object.object().as_str().to_owned(),
                     },
+                    ValuePathSubject::Invocation {
+                        invocation,
+                        binding,
+                    } => {
+                        let (binding, parameter) = match binding {
+                            InvocationBinding::Parameter(parameter) => {
+                                (InvocationBindingWire::Parameter, Some(parameter.clone()))
+                            }
+                            InvocationBinding::Result => (InvocationBindingWire::Result, None),
+                            InvocationBinding::Receiver => (InvocationBindingWire::Receiver, None),
+                        };
+                        SubjectWire::Invocation {
+                            invocation: ObservationWire {
+                                authority: invocation.authority.clone(),
+                                identity: invocation.identity.clone(),
+                                revision_namespace: invocation.revision_namespace.clone(),
+                                revision: invocation.revision.clone(),
+                            },
+                            binding,
+                            parameter,
+                        }
+                    }
                     ValuePathSubject::Built(occurrence) => SubjectWire::Built {
                         occurrence: OccurrenceWire::of(occurrence),
                     },
@@ -533,6 +693,13 @@ impl PathWire {
                     ValuePathStep::OptionValue => StepWire::OptionValue,
                     ValuePathStep::Member(name) => StepWire::Member { name: name.clone() },
                     ValuePathStep::Index(index) => StepWire::Index { index: *index },
+                    ValuePathStep::Reference(object) => StepWire::Reference {
+                        object: ObjectWire {
+                            universe: hex(object.universe().as_bytes()),
+                            object_type: hex(object.object_type().as_bytes()),
+                            object_identity: object.object().as_str().to_owned(),
+                        },
+                    },
                 })
                 .collect(),
         }
@@ -559,18 +726,46 @@ impl PathWire {
                     &object_type,
                     object_identity,
                 )?),
+                SubjectWire::Invocation {
+                    invocation,
+                    binding,
+                    parameter,
+                } => ValuePathSubject::Invocation {
+                    invocation: ObservationIdentity {
+                        authority: invocation.authority,
+                        identity: invocation.identity,
+                        revision_namespace: invocation.revision_namespace,
+                        revision: invocation.revision,
+                    },
+                    binding: match (binding, parameter) {
+                        (InvocationBindingWire::Parameter, Some(parameter)) => {
+                            InvocationBinding::Parameter(parameter)
+                        }
+                        (InvocationBindingWire::Result, None) => InvocationBinding::Result,
+                        (InvocationBindingWire::Receiver, None) => InvocationBinding::Receiver,
+                        _ => return Err(CauseCodecError::Shape("invocation_binding")),
+                    },
+                },
                 SubjectWire::Built { occurrence } => ValuePathSubject::Built(occurrence.read()?),
             },
             steps: self
                 .steps
                 .into_iter()
-                .map(|step| match step {
-                    StepWire::Field { name } => ValuePathStep::Field(name),
-                    StepWire::OptionValue => ValuePathStep::OptionValue,
-                    StepWire::Member { name } => ValuePathStep::Member(name),
-                    StepWire::Index { index } => ValuePathStep::Index(index),
+                .map(|step| {
+                    Ok(match step {
+                        StepWire::Field { name } => ValuePathStep::Field(name),
+                        StepWire::OptionValue => ValuePathStep::OptionValue,
+                        StepWire::Member { name } => ValuePathStep::Member(name),
+                        StepWire::Index { index } => ValuePathStep::Index(index),
+                        StepWire::Reference { object } => ValuePathStep::Reference(reference_of(
+                            keys,
+                            &object.universe,
+                            &object.object_type,
+                            object.object_identity,
+                        )?),
+                    })
                 })
-                .collect(),
+                .collect::<Result<_, CauseCodecError>>()?,
         })
     }
 }
@@ -712,12 +907,58 @@ struct LocationWire {
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 enum DeclarationWire {
-    Body { function: String, index: usize },
-    Measure { function: String, index: usize },
+    Body {
+        function: String,
+        index: usize,
+    },
+    Measure {
+        function: String,
+        index: usize,
+    },
     Expression,
-    TypeDeclaration { name: String },
-    StateClause { clause: String, index: usize },
-    ProtocolAttempt { protocol: usize, attempt: usize },
+    TypeDeclaration {
+        name: String,
+    },
+    StateClause {
+        clause: String,
+        index: usize,
+    },
+    ProtocolAttempt {
+        protocol: usize,
+        attempt: usize,
+    },
+    ModelOperationClause {
+        operation: String,
+        clause: OperationClauseWire,
+        position: usize,
+    },
+}
+
+/// Which list of a model operation a clause belongs to, as it is spelled on
+/// the wire.
+#[derive(Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum OperationClauseWire {
+    Requires,
+    Ensures,
+}
+
+impl From<OperationClauseKind> for OperationClauseWire {
+    fn from(kind: OperationClauseKind) -> Self {
+        match kind {
+            OperationClauseKind::Requires => Self::Requires,
+            OperationClauseKind::Ensures => Self::Ensures,
+        }
+    }
+}
+
+impl From<OperationClauseWire> for OperationClauseKind {
+    fn from(kind: OperationClauseWire) -> Self {
+        match kind {
+            OperationClauseWire::Requires => Self::Requires,
+            OperationClauseWire::Ensures => Self::Ensures,
+        }
+    }
 }
 
 impl LocationWire {
@@ -746,6 +987,15 @@ impl LocationWire {
                         attempt: *attempt,
                     }
                 }
+                Declaration::ModelOperationClause {
+                    operation,
+                    kind,
+                    position,
+                } => DeclarationWire::ModelOperationClause {
+                    operation: operation.clone(),
+                    clause: (*kind).into(),
+                    position: *position,
+                },
             },
             path: location.path(),
         }
@@ -766,6 +1016,15 @@ impl LocationWire {
                 DeclarationWire::ProtocolAttempt { protocol, attempt } => {
                     Declaration::ProtocolAttempt { protocol, attempt }
                 }
+                DeclarationWire::ModelOperationClause {
+                    operation,
+                    clause,
+                    position,
+                } => Declaration::ModelOperationClause {
+                    operation,
+                    kind: clause.into(),
+                    position,
+                },
             },
             &self.path,
         )
@@ -791,4 +1050,132 @@ fn digest(text: &str, member: &'static str) -> Result<[u8; 32], CauseCodecError>
     WireNodeId::from_hex(text)
         .map(|id| *id.as_bytes())
         .ok_or(CauseCodecError::Digest(member))
+}
+
+#[cfg(test)]
+mod tc235_path_tests {
+    use super::*;
+    use ix_trace_rs::trace;
+
+    #[trace("QSpec-TC-235", "QSpec-FR-207-AC-8", "QSpec-FR-047-AC-9")]
+    #[test]
+    fn tc235_m22_invocation_binding_paths_use_the_production_codec() {
+        let identity = |name: &str| ObservationIdentity {
+            authority: "test".to_owned(),
+            identity: name.to_owned(),
+            revision_namespace: "tc235".to_owned(),
+            revision: "1".to_owned(),
+        };
+        let path = |binding| RuntimeValuePath {
+            observation: identity("q1"),
+            subject: ValuePathSubject::Invocation {
+                invocation: identity("i1"),
+                binding,
+            },
+            steps: vec![ValuePathStep::Field("placed".to_owned())],
+        };
+        let receiver = path(InvocationBinding::Receiver);
+        let parameter = path(InvocationBinding::Parameter("flags".to_owned()));
+        assert_ne!(receiver, parameter);
+        assert!(InvocationBinding::Parameter("flags".to_owned()) < InvocationBinding::Receiver);
+        let encode = |path: &RuntimeValuePath| serde_json::to_value(PathWire::of(path)).unwrap();
+        let receiver_json = encode(&receiver);
+        let parameter_json = encode(&parameter);
+        assert_eq!(receiver_json["kind"], "runtime_value");
+        assert_eq!(receiver_json["root"]["observation"]["identity"], "q1");
+        assert_eq!(
+            receiver_json["root"]["subject"]["invocation"]["identity"],
+            "i1"
+        );
+        assert_eq!(receiver_json["root"]["subject"]["binding"], "receiver");
+        assert!(receiver_json["root"]["subject"].get("parameter").is_none());
+        assert_eq!(parameter_json["root"]["subject"]["binding"], "parameter");
+        assert_eq!(parameter_json["root"]["subject"]["parameter"], "flags");
+        for json in [&receiver_json, &parameter_json] {
+            assert_eq!(json["steps"].as_array().unwrap().len(), 1);
+            assert_eq!(json["steps"][0]["tag"], "field");
+            assert_eq!(json["steps"][0]["name"], "placed");
+            let wire: PathWire = serde_json::from_value(json.clone()).unwrap();
+            wire.validate_shape().unwrap();
+        }
+        assert_ne!(receiver_json, parameter_json);
+        let process = RuntimeValuePath {
+            observation: identity("q1"),
+            subject: ValuePathSubject::Object(quire_exact::ObjectReference::new(
+                quire_exact::UniverseId::from_digest([1; 32]),
+                quire_exact::EffectiveId::from_digest([2; 32]),
+                quire_exact::ObjectId::new("r1").unwrap(),
+            )),
+            steps: vec![ValuePathStep::Member("attempts".to_owned())],
+        };
+        let process_json = encode(&process);
+        assert_eq!(process_json["root"]["subject"]["tag"], "object");
+        assert!(process_json["root"]["subject"].get("binding").is_none());
+        for (path, expected_binding) in
+            [(&receiver_json, "receiver"), (&parameter_json, "parameter")]
+        {
+            let wire: PathWire = serde_json::from_value(path.clone()).unwrap();
+            assert_eq!(serde_json::to_value(wire).unwrap(), *path);
+            assert_eq!(path["root"]["subject"]["binding"], expected_binding);
+        }
+        let mut missing_parameter = parameter_json.clone();
+        missing_parameter["root"]["subject"]
+            .as_object_mut()
+            .unwrap()
+            .remove("parameter");
+        let wire: PathWire = serde_json::from_value(missing_parameter).unwrap();
+        assert!(matches!(
+            wire.validate_shape(),
+            Err(CauseCodecError::Shape("invocation_binding"))
+        ));
+        let mut unknown_binding = receiver_json;
+        unknown_binding["root"]["subject"]["binding"] = serde_json::json!("context");
+        assert!(serde_json::from_value::<PathWire>(unknown_binding).is_err());
+    }
+
+    /// A `reference` step carries the referenced object's declared identity
+    /// as `object` (QSpec FR-207's serialization), and a malformed identity
+    /// refuses at shape validation.
+    #[trace("QSpec-FR-207-AC-10")]
+    #[test]
+    fn a_reference_step_serializes_the_referenced_object_identity() {
+        let object = |key: &str| {
+            quire_exact::ObjectReference::new(
+                quire_exact::UniverseId::from_digest([1; 32]),
+                quire_exact::EffectiveId::from_digest([2; 32]),
+                quire_exact::ObjectId::new(key).unwrap(),
+            )
+        };
+        let path = RuntimeValuePath {
+            observation: ObservationIdentity {
+                authority: "test".to_owned(),
+                identity: "q1".to_owned(),
+                revision_namespace: "tc235".to_owned(),
+                revision: "1".to_owned(),
+            },
+            subject: ValuePathSubject::Object(object("child")),
+            steps: vec![
+                ValuePathStep::Member("parent".to_owned()),
+                ValuePathStep::Reference(object("root")),
+            ],
+        };
+        let json = serde_json::to_value(PathWire::of(&path)).unwrap();
+        assert_eq!(
+            json["steps"][1],
+            serde_json::json!({
+                "tag": "reference",
+                "object": {
+                    "universe": hex(&[1; 32]),
+                    "type": hex(&[2; 32]),
+                    "object_identity": "root",
+                },
+            })
+        );
+        let wire: PathWire = serde_json::from_value(json.clone()).unwrap();
+        wire.validate_shape().unwrap();
+        let mut malformed = json;
+        malformed["steps"][1]["object"]["universe"] = serde_json::json!("not hex");
+        let wire: PathWire = serde_json::from_value(malformed).unwrap();
+        assert!(wire.validate_shape().is_err());
+    }
 }

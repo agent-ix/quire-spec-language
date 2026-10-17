@@ -2,6 +2,8 @@
 //! The typed, name-resolved expression tree that checking produces and the
 //! evaluator runs.
 
+use super::navigation::EndSide;
+use crate::model::key::DeclarationKey;
 use qsl_foundation::absence::AbsenceMode;
 use quire_exact::DecimalType;
 use quire_exact::EffectiveId;
@@ -21,6 +23,37 @@ use std::ops::ControlFlow;
 
 /// A local slot of one function frame or checked expression.
 pub type Slot = usize;
+
+/// The identity of a record field a checked read names (FR-359 item 2): the
+/// declaration key of the record the read is typed at, and the field's name
+/// there. It carries no position: the value read may be a child of that
+/// record, whose own fields are not a positional prefix of the record's, so
+/// the slot is found in the value's own declaration by this identity.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RecordField {
+    declaration: NodeKey,
+    name: String,
+}
+
+impl RecordField {
+    /// The field `name` of the record declared as `declaration`.
+    pub fn new(declaration: NodeKey, name: impl Into<String>) -> Self {
+        Self {
+            declaration,
+            name: name.into(),
+        }
+    }
+
+    /// The record the read is typed at.
+    pub fn declaration(&self) -> NodeKey {
+        self.declaration
+    }
+
+    /// The field's name in that record.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+}
 
 /// The state a model read in a state clause observes (FR-104
 /// "Observations of reads"): `current` in an invariant, `pre` in a
@@ -119,6 +152,30 @@ pub struct CheckedBody {
 }
 
 impl CheckedBody {
+    /// A malformed checked-state fixture for producer tests, never shipped.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn fixture(
+        operands: Vec<ValueType>,
+        kind: impl FnOnce(&[NodeId]) -> NodeKind,
+        result: ValueType,
+    ) -> Self {
+        let ids: Vec<_> = (0..operands.len()).map(NodeId).collect();
+        let mut nodes: Vec<_> = operands
+            .into_iter()
+            .map(|value_type| Node {
+                kind: NodeKind::Literal(CheckedLiteral(Value::Boolean(true))),
+                value_type,
+                location: Location::root(quire_semantic_value::location::Origin::Expression),
+            })
+            .collect();
+        nodes.push(Node {
+            kind: kind(&ids),
+            value_type: result,
+            location: Location::root(quire_semantic_value::location::Origin::Expression),
+        });
+        Self { nodes }
+    }
+
     /// The root node.
     pub fn root(&self) -> CheckedNode<'_> {
         CheckedNode {
@@ -337,6 +394,18 @@ pub enum Arithmetic {
     Multiply,
 }
 
+/// Integer operations whose result uses the selected division law or the
+/// independent Euclidean modulus law.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IntegerDivisionOperator {
+    /// Quotient under the selected law.
+    Div,
+    /// Remainder under the selected law.
+    Rem,
+    /// Euclidean remainder, independent of the selected law.
+    Mod,
+}
+
 /// Which values an ordering compares.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OrderedKind {
@@ -448,6 +517,19 @@ pub enum RecordSlot {
     Null,
     /// A field given a value.
     Present(NodeId),
+}
+
+/// One arm of a checked [`NodeKind::Case`] (FR-318): the member it selects,
+/// the slots its payload binds positionally, and its body.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CaseArm {
+    /// The selected member's position in the union's declared member order.
+    pub member: usize,
+    /// One slot per payload position, in payload order; a nullary member
+    /// binds none.
+    pub binders: Vec<Slot>,
+    /// The arm body, checked under the binders.
+    pub body: NodeId,
 }
 
 /// A one-binder query that visits every occurrence or stops early.
@@ -642,6 +724,17 @@ pub enum NodeKind {
     },
     /// Integer arithmetic.
     Arithmetic(Arithmetic, NodeId, NodeId),
+    /// An integer division member, with its admitted law for `div`/`rem`.
+    IntegerDivision {
+        /// The source operator.
+        operator: IntegerDivisionOperator,
+        /// The package's admitted law, absent only for `mod`.
+        selection: Option<crate::value::definition::AdmittedIntegerDivision>,
+        /// The dividend.
+        left: NodeId,
+        /// The divisor.
+        right: NodeId,
+    },
     /// Unary integer `-`.
     Negate(NodeId),
     /// Integer `/` producing `Rational[..]`.
@@ -699,8 +792,8 @@ pub enum NodeKind {
     Field {
         /// The record.
         operand: NodeId,
-        /// The field's declaration-order slot.
-        index: usize,
+        /// The field read, by identity (FR-359 item 2).
+        field: RecordField,
         /// Whether the field is optional.
         optional: bool,
     },
@@ -720,6 +813,24 @@ pub enum NodeKind {
         /// bare `self.f`/`r.f` read, though both give this same node kind
         /// (SR-750 FND-008 round 2).
         derefed: bool,
+    },
+    /// `r.name` over a relationship end of the reference's static object type
+    /// (FR-363). The node's own `value_type` is the destination end's typed
+    /// result (`Reference<U>`, `Option<Reference<U>>`, `Set<..>` or `Bag<..>`).
+    Navigate {
+        /// The object reference navigated from.
+        reference: NodeId,
+        /// The relationship's declaration.
+        relationship: DeclarationKey,
+        /// The role of the end nearest the reference, which the source named.
+        role: String,
+        /// The relationship end nearest the reference: `Source` reads the
+        /// relationship's targets, `Target` its sources (FR-364).
+        near: EndSide,
+        /// Whether the destination end is `unique: true`: the collection kind
+        /// a single-valued end's cardinality refusal retains, `Set` when
+        /// unique and `Bag` otherwise (FR-364-AC-6).
+        unique: bool,
     },
     /// Whether an `Option` operand holds a value.
     Present(NodeId),
@@ -862,6 +973,52 @@ pub enum NodeKind {
         /// The edge field, in `T`'s effective attribute set.
         edge: FieldRef,
     },
+    /// `reaches(source, target, name)` where `name` is a relationship end of
+    /// the operands' object type (FR-365): whether `target` is reachable from
+    /// `source` by one or more links of the relationship, read from the state
+    /// clause's own observation. Both operands are `Reference<S>` with `S`
+    /// conforming to the near end's type; the destination end is
+    /// single-valued and of the near end's own type.
+    ReachesEnd {
+        /// The source reference.
+        source: NodeId,
+        /// The target reference.
+        target: NodeId,
+        /// The relationship's declaration.
+        relationship: DeclarationKey,
+        /// The role of the end nearest the operands, which the source named.
+        role: String,
+        /// The relationship end nearest the operands.
+        near: EndSide,
+    },
+    /// `protocol <name>` (FR-308, FR-218): a reference to the unit's
+    /// `protocol`-th protocol declaration, resolved once at S3 and typed
+    /// `Boolean`, the semantic type the protocol's node carries. Its value is
+    /// the value of that protocol clause.
+    ProtocolReference {
+        /// The target's index in the unit's protocol declarations.
+        protocol: usize,
+    },
+    /// `case scrutinee { ... }` over a declared union (FR-318): one arm per
+    /// member of the union, in the union's declared member order, so the
+    /// arm order in the source does not reach the node.
+    Case {
+        /// The union-typed scrutinee.
+        scrutinee: NodeId,
+        /// The scrutinee's union declaration.
+        declaration: NodeKey,
+        /// The arms, one per member, in declared member order.
+        arms: Vec<CaseArm>,
+    },
+    /// A construction of a union member (FR-317): `U::m` or `U::m(a, b)`.
+    UnionValue {
+        /// The union's declaration.
+        declaration: NodeKey,
+        /// The member's position in the union's declared member order.
+        member: usize,
+        /// The payload arguments, in the member's declared position order.
+        arguments: Vec<NodeId>,
+    },
     /// FR-063/S3: exists only so `--cfg seam_probe` makes every
     /// match over `NodeKind` outside this module non-exhaustive. Never
     /// constructed outside the probe build.
@@ -892,12 +1049,17 @@ impl NodeKind {
     /// Direct operands in evaluation order.
     pub fn children(&self) -> Vec<NodeId> {
         match self {
-            NodeKind::Literal(_) | NodeKind::Local(_) => Vec::new(),
+            NodeKind::Literal(_) | NodeKind::Local(_) | NodeKind::ProtocolReference { .. } => {
+                Vec::new()
+            }
             NodeKind::Coerce(operand, _)
             | NodeKind::Negate(operand)
             | NodeKind::Not(operand)
             | NodeKind::Field { operand, .. }
             | NodeKind::Attribute {
+                reference: operand, ..
+            }
+            | NodeKind::Navigate {
                 reference: operand, ..
             }
             | NodeKind::Present(operand)
@@ -918,6 +1080,7 @@ impl NodeKind {
                 otherwise,
             } => vec![*condition, *then, *otherwise],
             NodeKind::Arithmetic(_, left, right)
+            | NodeKind::IntegerDivision { left, right, .. }
             | NodeKind::Divide { left, right, .. }
             | NodeKind::Rational { left, right, .. }
             | NodeKind::Decimal { left, right, .. }
@@ -931,10 +1094,16 @@ impl NodeKind {
                 source: left,
                 target: right,
                 ..
+            }
+            | NodeKind::ReachesEnd {
+                source: left,
+                target: right,
+                ..
             } => vec![*left, *right],
             NodeKind::Call { arguments, .. }
             | NodeKind::ImportedCall { arguments, .. }
-            | NodeKind::Tuple { arguments, .. } => arguments.clone(),
+            | NodeKind::Tuple { arguments, .. }
+            | NodeKind::UnionValue { arguments, .. } => arguments.clone(),
             NodeKind::Record { slots, .. } => slots
                 .iter()
                 .filter_map(|slot| match slot {
@@ -956,6 +1125,11 @@ impl NodeKind {
                 children
             }
             NodeKind::AllInstances { population } => vec![*population],
+            NodeKind::Case {
+                scrutinee, arms, ..
+            } => std::iter::once(*scrutinee)
+                .chain(arms.iter().map(|arm| arm.body))
+                .collect(),
             NodeKind::Lookup {
                 population,
                 reference,

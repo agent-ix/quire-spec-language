@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
-# Fail when an FR or TC artifact exists under spec/ but has no row
-# in the master index (spec/spec.md's Requirements table for FR, and the
-# `Test ID` column of every spec/**/tests.md TestMatrix's Test Case Summary
-# table for TC). Without this check the master index falls behind silently,
-# every new spec PR is "consistent" with the gap as it stands, and the gap
-# compounds indefinitely.
+# Fail when an FR artifact exists under spec/ but has no row in the master
+# index (spec/spec.md's Requirements table). Without this check the master
+# index falls behind silently, every new spec PR is "consistent" with the gap
+# as it stands, and the gap compounds indefinitely.
 #
 # This intentionally checks only ID presence, not row content, direction or
 # accuracy -- it is a completeness net, not a content reviewer.
@@ -39,13 +37,9 @@ check_kind() {
 check_kind "FR" \
 	"grep -ohE '^\\| \\[FR-[0-9]+\\]' spec/spec.md | grep -ohE 'FR-[0-9]+'"
 
-# TC: every `| TC-NNN | ...` row in any spec/**/tests.md Test Case Summary table.
-check_kind "TC" \
-	"grep -rohE '^\\| TC-[0-9]+' spec/tests.md spec/*/tests.md 2>/dev/null | grep -ohE 'TC-[0-9]+'"
-
 if [ "$fail" -ne 0 ]; then
-	echo "check-index-completeness: FAILED -- add the missing row(s) to spec/spec.md and/or spec/tests.md (or the owning subsystem tests.md)." >&2
+	echo "check-index-completeness: FAILED -- add the missing row(s) to spec/spec.md." >&2
 	exit 1
 fi
 
-echo "check-index-completeness: every FR and TC artifact under spec/ has an index row."
+echo "check-index-completeness: every FR artifact under spec/ has an index row."

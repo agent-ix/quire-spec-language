@@ -65,6 +65,18 @@ domain `quire.checked-semantic-node/v1`, retyped with no fresh computation, exac
 - The compiler SHALL key a `case` node and a construction (`union_value`)
   node as undeclared nodes, by content with no owner, under the
   `quire.application-node/v1` preimage (QSpec FR-440; FR-092, FR-093).
+  For `union_value`, this selection applies even when its body contains no
+  `application` term. The preimage SHALL contain exactly
+  `{version: "quire.application-node/v1", node_tag: "value",
+  semantic_form: "union_value", semantic_type, declaration: null,
+  recursion, body}`, with `semantic_type` the union node id and `recursion`
+  as QSpec FR-322 defines it. The body SHALL remain QSpec FR-440's
+  `aggregate` of one member-named `binding` over the payload `aggregate`:
+  `Empty` holds an empty aggregate, and `Rect` holds its two payload terms
+  in position order. Payloads lowered to separate nodes are `reference`
+  terms, as [FR-093](FR-093-lower-checked-value-expressions-to-fr-322-terms.md)
+  spells a present `record_value` slot. This selection introduces no
+  construction application, operator or operation identity.
 - S3 lowering SHALL lower a `case` node's arms in `U`'s declared member
   order, so the arm order in source does not reach its preimage.
 - The kernel SHALL compare union values by QSpec FR-143's union equality,
@@ -79,6 +91,8 @@ domain `quire.checked-semantic-node/v1`, retyped with no fresh computation, exac
 | FR-319-AC-1 | Compiling one unit twice, and compiling it with whitespace and comments changed and the arms of one `case` reordered, gives the same union node id, the same `VariantId` for every member, the same `case` node id and the same `package_id`. Renaming a member, adding a member or changing a payload type changes the union's node id and the id of every value, expression and function node that names the union. | Test (TC-826) |
 | FR-319-AC-2 | For each member of `Shape`, the `VariantId` computed at check time equals the one computed at argument admission for the same member, and equals that member's FR-441 member key bytes (QSpec FR-441-AC-1's vectors give the expected digests for their inputs). Two unions `A { X }` and `B { X }` give two different `VariantId`s for `X`; an enum `E { X }` gives a third. A `case` over `A` evaluated with a scrutinee whose `VariantId` belongs to `B` or `E` selects no arm (it is refused at admission, FR-321). | Test (TC-826) |
 | FR-319-AC-3 | `Shape::Rect(2, 3) = Shape::Rect(2, 3)` is `true`, `Shape::Rect(2, 3) = Shape::Rect(3, 2)` is `false`, and `Shape::Empty = Shape::Circle(0)` is `false`. With `union A { X(Integer) }` and `union B { X(Integer) }`, comparing `A::X(1)` with `B::X(1)` is refused by type checking (QSpec TC-262's equality cases each give TC-262's verdict). | Test (TC-826) |
+| FR-319-AC-4 | For fixed union and payload node ids, the nullary `Shape::Empty` and a `Shape::Rect` whose two payload terms are references each produce independently fixed RFC 8785 preimage bytes and SHA-256 node keys under `quire.application-node/v1`. Neither body contains an application, both have `declaration: null`, neither preimage has `owner`, and a node outside a recursion group has `recursion: null`. The expected bytes and keys are fixed independently of the producer and reader under test. | Test |
+| FR-319-AC-5 | The same fixed `record_value` and `tuple_value` inputs whose bodies contain only bindings, references and literals retain their existing `quire.structural-node/v1` bytes and keys. Reordering the source arms of the `case` in AC-1 still gives the same declared-order body, node id and `package_id`. | Test |
 
 ## Dependencies
 
@@ -93,3 +107,6 @@ domain `quire.checked-semantic-node/v1`, retyped with no fresh computation, exac
 - Owning ticket: QSL-383. Design: ADR-012 §16.3 (SC-R2, SC-R4, SC-R5).
 - Union member identity preimage (SC-G3): QSpec FR-441 (specification
   ticket STD-142).
+- Construction preimage selector reconciliation: QSL-679; the matching
+  QSpec FR-440 and FR-322 selectors and independent producer/reader vector
+  qualification are required before this slice is claimed complete.

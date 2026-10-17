@@ -10,116 +10,160 @@ relationships:
 
 ## Description
 
-Verify that `xtask string-edge` reports every string comparison or string
-`match` outside a `#[string_edge]`-marked function in non-test code, respects
-the checked-in allow-list, excludes test code, exits non-zero exactly when
-its report is non-empty, rejects an allow-list entry that gates a branch
-(including each of ADR-010 §4.3's five named production sites), and that the
-lint gate fails when the tool does. Scope: FR-064-AC-1 through FR-064-AC-6.
+Verify [FR-064](../functional/FR-064-restrict-string-dispatch-to-marked-edges.md)
+through both QSL's adapter and the reusable scanner's library and command.
+The scan reports unmarked string dispatch, respects valid consumer rules,
+excludes test code, rejects branch-gating allow-list entries and preserves
+source locations. Scope: FR-064-AC-1 through FR-064-AC-11.
 
-**Status.** `xtask string-edge` is clean over the whole
-workspace and `string-edge` is a prerequisite of `make ci` (step 7, backed
-by `the_real_makefile_wires_string_edge_into_ci` and
-`a_failed_prerequisite_fails_the_aggregate_target`). The scan skips a
-`tests/` directory, `#[cfg(test)]` items and files declared by
-`#[cfg(test)] mod x;`, never a file by name alone. The detector treats a
-comparison that is a term of a `&&`/`||` chain, a match arm's own value, or a
-`strip_prefix` call as branch-gating. Step 6's real-site half runs the raw
-scan (marks ignored) over the ADR-010 §4.3 dispatch strings still compared
-in the tree -- `CanonicalizationDomain::from_str`,
-`AdapterArtifact::try_from`, `clock_binding_name` -- and asserts each is
-branch-gating and rejected as an allow-list entry
-(`real_adr010_sites_are_flagged_branch_gating_by_the_structural_detector`,
-`FR-064-AC-5`). The scan reads string literals only; a comparison against a
-named `const NAME: &str` or another string value is not detected (FR-064
-Status).
-
-**Correction: steps 2 and 6 (PR #262 review, finding F11).** An earlier
-draft of `xtask/src/string_edge.rs` checked the allow-list only through
-`allow_list_branch_gating_check`, which reads the real, checked-in
-`allow_list()` directly -- and `allow_list()` returns an empty `Vec` today
-(nothing has yet been reviewed and admitted). Steps 2 and 6 need a
-*non-empty* allow-list to add, remove and submit entries against, so no
-test could exercise them through that one entry point: the rejection this
-requirement's own Behavior section describes was asserted in prose but
-unreachable by anything the test suite could actually run, the same
-"claims a behavior the code cannot exhibit" shape F7 found elsewhere in
-this PR. `branch_gating_entries` is now a separate, pure function taking
-the candidate allow-list as a parameter (`allow_list_branch_gating_check`
-is a thin wrapper that scans the crate and calls it with the real
-`allow_list()`); `xtask/src/string_edge.rs`'s own test module now
-constructs non-empty allow-list fixtures directly and exercises steps 2's
-rejection shape and step 6's five ADR-010 §4.3 sites through it
-(`allow_list_entry_at_a_branch_gating_occurrence_is_rejected`,
-`none_of_the_five_adr010_production_sites_can_be_allow_listed`). Step 6's
-production sites are fixtures shaped like each named site, not the real
-crate's own occurrences of them (the real-site half is
-`real_adr010_sites_are_flagged_branch_gating_by_the_structural_detector`); the fixtures demonstrate the
-rejection rule works, not that the real crate's five sites are converted.
-Step 2's own dedicated test lands the same way: `run`'s allow-list
-filtering is split into a separate, pure `unreported_occurrences`, and
-`allow_listed_occurrence_is_silent_removing_the_entry_reports_it_again`
-exercises the real add-then-remove-reappears sequence through it.
+The consumer procedures below are acceptance obligations for the extraction;
+existing QSL-only tests do not establish consumer installation or adoption.
+The structural detector covers literals and same-crate named string constants.
+Variable-to-variable comparisons, external constants and indirect branch
+dataflow retain the limitations stated by FR-064.
 
 ## Test Procedure
 
 1. Build a fixture QSL-shaped source tree with one string comparison inside
    a `#[string_edge]`-marked function and one string `match` inside an
    unmarked function; run `xtask string-edge` against it.
-2. Add an allow-list entry naming the unmarked occurrence's file and line;
-   re-run the scan. Remove the entry and re-run again.
+2. Add a non-empty allow-list with the unmarked occurrence's file and item
+   anchor and a display-only reason; re-run the scan. Remove the entry and
+   re-run again. Use a separate comparison whose result only feeds a
+   displayed message for this step, so it meets the allow-list rule.
 3. Move the unmarked occurrence from step 1 into a `#[cfg(test)]` module,
    into a file under a `tests/` directory and into a file declared by
    `#[cfg(test)] mod x;` (separate fixtures); run the scan against each.
    Separately, a file named `tests.rs` or `*_tests.rs` that is not declared
    `#[cfg(test)]` is scanned.
-4. Run the scan against the empty-report fixture from step 2 (with the
-   allow-list entry present) and against the non-empty-report fixture (entry
-   removed); capture both exit codes.
+4. Run the scan against an empty-report fixture and against the
+   non-empty-report fixture; capture both exit codes.
 5. Construct one allow-list entry whose comparison result feeds an `if`
-   condition selecting between two code paths in the fixture, and one entry
-   whose comparison result feeds only a logged message; submit both to
-   `xtask string-edge`.
-6. For each of the five sites ADR-010 §4.3 names (the `"allocation"`
-   relationship-category string, `"quire.protocol.finite-global/v1"`,
-   `"filament-canonical-json-1"`, `"quire.state.authority-adapter"`, and the
-   `clock:` prefix), construct a fixture occurrence shaped like that site
-   (a string comparison whose result selects one of two branches) and an
-   allow-list entry naming it; submit each to `xtask string-edge` in turn.
-   Then run the real scan with `#[string_edge]` marks ignored over the
-   workspace, and for each ADR-010 §4.3 dispatch string still compared in
-   the tree (`CanonicalizationDomain::from_str`, `AdapterArtifact::try_from`,
-   `clock_binding_name`) submit an allow-list entry at its real file and
-   item.
+   condition selecting between two code paths, and one entry whose result
+   feeds only a logged message; submit each separately to the scanner.
+6. For each of the five sites ADR-010 §4.3 names (`"allocation"`,
+   `"quire.protocol.finite-global/v1"`, `"filament-canonical-json-1"`,
+   `"quire.state.authority-adapter"`, and `"clock:"`), construct a branch-gating
+   fixture and an allow-list entry naming it; submit each in turn. Run the
+   real scan with marks ignored over the workspace and submit an entry for
+   each named dispatch site still present in production. Preserve the
+   existing real-site acceptance checks during extraction.
 7. Confirm that the real `Makefile`'s `ci` target lists `string-edge` as a
-   prerequisite and that `string-edge`'s recipe runs `cargo xtask
-   string-edge` (a grep-shaped check over the real file, not a stub of an
-   abstraction that does not exist). Separately, on
-   a minimal fixture `Makefile` of an aggregate-target/prerequisite shape,
-   confirm a failed prerequisite fails the aggregate target and a
-   succeeding one does not (the same mechanism FR-063-AC-5/TC-161 step 7
-   demonstrates).
+   prerequisite and its recipe runs `cargo run --package xtask -- string-edge`.
+   On a minimal fixture `Makefile` of the same aggregate/prerequisite shape,
+   confirm a failed prerequisite fails the aggregate and a succeeding one
+   does not.
+8. Create an external workspace with `reader/src`, `emitter/src` and
+   `unselected/src`, without QSL-named directories. Put one unmarked literal
+   dispatch in each. Select only reader and emitter through the library
+   request and binary flags. Repeat from a different working directory with
+   absolute paths. Add a named string constant in reader and a same-named
+   numeric constant and numeric comparison in emitter to check crate scope.
+9. Exercise the fixtures from steps 1–5 through the public library and binary
+   with consumer rules. Add qualified `#[qsl_attrs::string_edge]` coverage.
+   Submit a branch-gating allow-list entry both before and after marking its
+   function. Compare occurrence fields and errors with the QSL adapter.
+10. Submit each invalid case independently: no roots; missing, non-directory,
+    duplicate, overlapping and out-of-base roots; roots with no production
+    Rust files; unreadable source; malformed Rust; malformed JSON; unknown,
+    missing or wrongly typed rule fields; empty reasons; escaping rule
+    paths; a source link outside the base; and a directory-link cycle.
+    Capture the typed library error and actual command exit for every case.
+    Use a permissions fixture or controlled reader failure that remains
+    unreadable under the test user's privileges.
+11. Execute the authoritative installation route and worked consumer runs
+    below. Exercise a separate Rust client with the Git library dependency,
+    calling the public API on the same clean and violating source. Inspect
+    the client dependencies and files to establish that the scanner was
+    referenced rather than copied.
+12. Inspect the adapter call and the scanner crate dependencies to confirm
+    there is one detector implementation and QSL-specific roots/rules stay
+    in the adapter. Feed clean, violating and invalid-input fixtures through
+    the adapter and direct library call. Confirm the existing lint
+    prerequisite remains and extraction adds only the scanner crate's tests.
+
+### Worked external consumer acceptance
+
+The implementation's acceptance test creates a non-QSL crate outside the QSL
+checkout, for example at `/tmp/string-edge-consumer`, with this manifest:
+
+```toml
+[package]
+name = "consumer-example"
+version = "0.1.0"
+edition = "2021"
+```
+
+Its `edge-rules.json` is `{"allow_list": []}`. Its clean `src/lib.rs` is:
+
+```rust
+pub enum Kind { Accepted, Other }
+pub fn accepted(kind: Kind) -> bool { matches!(kind, Kind::Accepted) }
+```
+
+The acceptance run installs and invokes the actual binary using existing
+access to the private authoritative repository:
+
+```sh
+cargo install --git https://github.com/agent-ix/quire-spec-language --branch main qsl-string-edge
+cd /tmp/string-edge-consumer
+qsl-string-edge --base-dir . --crate-root src --rules edge-rules.json
+```
+
+It then replaces `src/lib.rs` with this one-line production violation and
+repeats the same scan command:
+
+```rust
+pub fn accepted(kind: &str) -> bool { match kind { "accepted" => true, _ => false } }
+```
+
+The separate Rust library client's manifest references the authoritative
+package using:
+
+```toml
+[dependencies]
+qsl-string-edge = { git = "https://github.com/agent-ix/quire-spec-language", branch = "main" }
+```
+
+A consumer compiling marked intake functions uses the existing attribute
+crate by reference as well:
+
+```toml
+[dependencies]
+qsl-attrs = { git = "https://github.com/agent-ix/quire-spec-language", branch = "main" }
+```
+
+These commands are the acceptance recipe, not a claim that the standalone
+package has already been implemented or the installation run has passed.
 
 ## Expected Results
 
-- Step 1: the report names exactly the unmarked occurrence, with its file
-  and line; the marked occurrence is absent from the report.
-- Step 2: with the allow-list entry present, the report omits the
-  occurrence; with the entry removed, the report includes it again, with no
-  source change.
-- Step 3: none of the `#[cfg(test)]`-module, `tests/`-directory or
-  `#[cfg(test)] mod x;`-file occurrences is reported, marked or not,
-  allow-listed or not; an undeclared `tests.rs`/`*_tests.rs` file is scanned.
-- Step 4: the empty-report run exits zero; the non-empty-report run exits
-  non-zero.
-- Step 5: the branch-gating entry is rejected, naming its file and line; the
-  display-only entry is accepted.
-- Step 6: each of the five constructed entries is rejected; none of the five
-  is accepted into the allow-list under any submitted reason text. In the
-  real scan, each of the three named sites above is flagged branch-gating and
-  an allow-list entry at it is rejected. The `"allocation"` site is gone from
-  the tree and the profile string is now only registry data
-  (`RegisteredDefinition::identity`), so neither is a real site.
-- Step 7: `ci` lists `string-edge` and its recipe runs `cargo xtask
-  string-edge`; the fixture `Makefile` fails its aggregate target exactly
-  when the prerequisite's recipe fails, and not otherwise.
+- Steps 1 and 3: only the unmarked production occurrence is reported, with
+  its file and one-based line. Production files named `tests.rs` remain in
+  scope; declared test modules and test directories do not.
+- Step 2: adding the valid display-only entry suppresses its occurrence;
+  removing the entry restores it without changing source.
+- Step 4: the clean report exits zero and the violating report exits non-zero.
+- Steps 5 and 6: branch-gating entries are rejected with source locations;
+  display-only entries are accepted. Every named production dispatch shape
+  is rejected as an allow-list entry, independent of the supplied reason.
+- Step 7: the real gate invokes the adapter and propagates failure through
+  the prerequisite. The fixture aggregate succeeds only when its prerequisite
+  succeeds.
+- Step 8 (FR-064-AC-7): only reader and emitter violations appear. Public
+  library and command agree on file, line, item, branch classification and
+  ordering; changing the working directory and equivalent path spelling
+  does not change them. The numeric comparison in emitter is absent.
+- Step 9 (FR-064-AC-8): all entry points agree on the fixture outcomes.
+  A branch-gating entry produces a rule error even in a marked function;
+  neither marking nor a consumer reason can suppress that error.
+- Step 10 (FR-064-AC-9): every invalid input returns a typed library error
+  identifying the affected input and binary exit `2`, without a clean result.
+- Step 11 (FR-064-AC-10): installation succeeds by reference. The worked
+  clean run exits `0`; the changed source exits `1`, reports `src/lib.rs:1`
+  in item `accepted`, and classifies its string match as branch-gating.
+  The separate library client returns the equivalent clean and violating
+  reports without copied scanner sources or a QSL workspace layout.
+- Step 12 (FR-064-AC-11): the adapter calls the public scanner with QSL's
+  roots and rules and propagates its reports and failures. No duplicate
+  detector or additional QSL gate is introduced.

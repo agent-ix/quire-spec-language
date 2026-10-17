@@ -84,26 +84,6 @@ relationships:
 ---
 # ADR-017: Protocol/frame, refinement and abstraction-relation boundaries (ARCH-43)
 
-## Status
-
-Proposed, 2026-09-29. Owning ticket: GitHub #223 (ARCH-43),
-epic QSL-34 (#205), Layer 4 (coordination and conformance architecture). It
-is a prerequisite of gate QSL-15 (#224, ARCH-G4) for that gate's scenarios 5
-(scoped protocol/frame clause), 7 (spec/profile refinement regression) and 8
-(model-to-implementation relation with an unbound refusal). It implements no
-feature. Supersedes nothing. Its `/spec-review all` is SR-800 to SR-807 in
-[`spec/reviews/arch-43-boundaries/`](../reviews/arch-43-boundaries/integrity.md).
-
-Amended 2026-10-01 (abstraction relation FR pass, FR-304 to FR-307): AR-1,
-AR-2, AR-4 and §5 follow QSpec's answers to Q-1, Q-2 and Q-7, which are
-decided: QSpec FR-450 spells the declaration (Q-1), QSpec FR-451 spells the
-v2 node (Q-2), and QSpec FR-353-AC-1 accepts the derived operation key
-(Q-7). AR-2's frame binding receiver is a `RustReceiver`.
-
-A bare FR, AD or TC id is a QSL artifact; a QSpec artifact is always written
-"QSpec FR-nnn". Item ids `PF-`, `RF-`, `AR-`, `G-`, `Q-` and `TK-` are local
-to this record; other artifacts cite them as `ADR-017 PF-n`.
-
 ## Context
 
 External ticket text is quoted as data, not verified in its repository.
@@ -152,9 +132,8 @@ FR-116):
   frame, keyed by the frame's occurrence (`check/mod.rs:1452-1572`).
 - Tests: TC-462, TC-463, TC-514 and TC-515 pass locally; TC-463 step 1 (the
   I2 read-back) passes through IR-370's `reaches_field` reference-edge check.
-  `spec/tests.md` still lists TC-510
-  to TC-513 as planned although traced tests for them exist; this record
-  cites them only as specified.
+  Traced tests exist for TC-510 to TC-513; this record cites them only as
+  specified.
 - SEAM-3 handoffs to IR are deleted (M-6d). `src/protocol_artifact`
   remains for the root crate's native, state and temporal paths only; no
   `qsl-*` crate imports it.
@@ -206,6 +185,16 @@ corpus, Backlog; IR-33 blocks IR-32). Frame lowering is
 agent-ix/quire-contract-ir#109 (IR-89; its lowering half is now IR-339,
 Backlog). Kani contracts and frame harnesses are
 agent-ix/quire-contract-codegen#49 (IR-93, Backlog).
+
+A bare FR, AD or TC id is a QSL artifact; a QSpec artifact is always written
+"QSpec FR-nnn". Item ids `PF-`, `RF-`, `AR-`, `G-`, `Q-` and `TK-` are local
+to this record; other artifacts cite them as `ADR-017 PF-n`.
+
+AR-1,
+AR-2, AR-4 and §5 follow QSpec's answers to Q-1, Q-2 and Q-7, which are
+decided: QSpec FR-450 spells the declaration (Q-1), QSpec FR-451 spells the
+v2 node (Q-2), and QSpec FR-353-AC-1 accepts the derived operation key
+(Q-7). AR-2's frame binding receiver is a `RustReceiver`.
 
 ## Decision
 
@@ -630,7 +619,7 @@ implementation. Its surface spelling is QSpec FR-450's `abstraction-decl`
   one function.
 - QSpec FR-353's "AD-006 effective-declaration key" is QSL's O-03
   `DeclarationKey`. It is not O-05's `EffectiveId`
-  (`quire.model.effective-declaration/v1`), which keys normalized
+  (`quire.model.effective-declaration/v2`), which keys normalized
   declarations.
 
 **Implementation side.** `RustPath` is a non-empty sequence of Rust
@@ -827,8 +816,7 @@ Ticket-text corrections for the owner (all ticket text read as data):
 - ADR-013 O-25 packet list: a frame packet's members per PF-4.
 - FR-057 claim-form row for refinement between operation contracts,
   FR-057-AC-10 (that row is outside V1) and its Dependencies; TC-153 step 7
-  and its expected results; the FR-057-AC-10 row of
-  `spec/model-linking/tests.md` (RF-1).
+  and its expected results (RF-1).
 - `spec/spec.md`: index row.
 - 2026-10-01, with FR-340 to FR-345: RF-2's pair direction is the corpus's
   `prior`/`superseding` naming alone (the lexical revision-label comparison

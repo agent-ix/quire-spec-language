@@ -23,23 +23,554 @@
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
-use qsl_semantics::check::PackageDeclarations;
+use qsl_semantics::check::{AssemblyCause, PackageDeclarations};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::meaning;
 use qsl_semantics::model::intake::{admit_unit, package_input, UnitIntakeCause};
 use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::operation::OperationDeclaration;
-use quire_exact::{Integer, IntegerInterval, Presence, ValueType};
+use quire_exact::{IeeeWidth, Integer, IntegerInterval, Presence, ValueType};
 use quire_semantic_value::declaration::ObjectTypeDeclaration;
 use serde_json::{json, Value};
+/// The original tc464_step5_a_non_reference_parameter_requires_no_population input, before observation construction.
+pub fn tc464_flag_source() -> (Vec<u8>, String) {
+    let flag = operation(
+        "flag",
+        json!([operation_parameter(
+            "flag",
+            "b",
+            "ix://quire/native/Boolean"
+        )]),
+        None,
+        empty_frame(),
+    );
+    let document = with_archive_population(config_version_document_with_operations(vec![
+        attempt_update_modifies_version_and_parent(),
+        probe_operation(),
+        flag,
+    ]));
+    let clauses =
+        format!("{TC465_CLAUSES}pre FlagHolds using v on Config::ConfigVersion::flag {{ b }}\n");
+    (document, clauses)
+}
+
+/// The original a_supertype_object_refuses_a_subtype_parameter_with_wrong_value_kind input, before observation construction.
+pub fn tc464_sub_target_source() -> (Vec<u8>, String) {
+    let probe_sub = operation(
+        "probeSub",
+        json!([operation_parameter(
+            "probeSub",
+            "target",
+            "ix://example/config-version/Sub"
+        )]),
+        None,
+        empty_frame(),
+    );
+    let document = with_archive_population(config_version_document_with_operations(vec![
+        attempt_update_modifies_version_and_parent(),
+        probe_operation(),
+        probe_sub,
+    ]));
+    let clauses = format!(
+        "{TC465_CLAUSES}pre SubTargetHolds using v on Config::ConfigVersion::probeSub {{ true }}\n"
+    );
+    (document, clauses)
+}
+
+/// The original an_out_of_range_argument_refuses_whatever_the_limits input, before observation construction.
+pub fn tc464_integer_argument_source() -> (Vec<u8>, String) {
+    let probe_int = operation(
+        "probeInt",
+        json!([operation_parameter(
+            "probeInt",
+            "amount",
+            &version_number_identity()
+        )]),
+        None,
+        empty_frame(),
+    );
+    let document = with_archive_population(config_version_document_with_operations(vec![
+        attempt_update_modifies_version_and_parent(),
+        probe_operation(),
+        probe_int,
+    ]));
+    let clauses = format!(
+        "{TC465_CLAUSES}pre AmountHolds using v on Config::ConfigVersion::probeInt {{ true }}\n"
+    );
+    (document, clauses)
+}
+
+/// The original a_creation_of_a_subtype_of_a_creates_grant_admits input, before observation construction.
+pub fn tc465_creates_subtype_document() -> Vec<u8> {
+    let config_version = "ix://example/config-version/ConfigVersion";
+    add_sub_type(
+        tc465_document_with(operation(
+            "attemptUpdate",
+            json!([]),
+            Some("ix://quire/native/Boolean"),
+            json!({
+                "modifies": [config_version_identity("versionNumber")],
+                "creates": [config_version],
+                "deletes": [],
+            }),
+        )),
+        &["ix://example/config-version/config_history"],
+    )
+}
+
+/// The owning state test's original source/model fixture.
+pub fn frame_test_document() -> Vec<u8> {
+    config_version_document(
+        attempt_update_modifies_version_number(),
+        Vec::new(),
+        Vec::new(),
+        json!([]),
+    )
+}
+
+/// The owning state test's original source/model fixture.
+pub const FRAME_CLAUSES: &str =
+    "pre AttemptUpdatePre using v on Config::ConfigVersion::attemptUpdate \
+    { true }\npost AttemptUpdatePost using v on Config::ConfigVersion::attemptUpdate { true }\n";
+
+/// The owning state test's original source/model fixture.
+pub const TC465_CLAUSES: &str =
+    "invariant ParentOrder using v on Config::ConfigVersion at current { \
+    present(self.parent) implies deref(value(self.parent)).versionNumber < self.versionNumber }\n\
+    post VersionUnchanged using v on Config::ConfigVersion::attemptUpdate { \
+    self.versionNumber = pre(self.versionNumber) }\n\
+    pre ReachesTarget using v on Config::ConfigVersion::probe { \
+    reaches(self, target, parent) }\n\
+    post ProbeHolds using v on Config::ConfigVersion::probe { true }\n";
+/// The original TC465 hierarchy input, with the caller's exact depth.
+pub fn tc465_deep_hierarchy_document(depth: usize) -> Vec<u8> {
+    let config_version = "ix://example/config-version/ConfigVersion";
+    let type_name = |level: usize| format!("ix://example/config-version/Deep{level}");
+    let mut envelope: serde_json::Value =
+        serde_json::from_slice(&tc465_document()).expect("valid JSON");
+    for level in 1..=depth {
+        let identity = type_name(level);
+        let parent = if level == 1 {
+            config_version.to_owned()
+        } else {
+            type_name(level - 1)
+        };
+        envelope["types"].as_array_mut().unwrap().push(json!({
+            "identity": identity,
+            "displayName": identity,
+            "kind": {"module": "example/config-version", "name": "object_type"},
+            "roles": [],
+            "origin": {
+                "generated": {
+                    "generatorIdentity": identity,
+                    "generatorVersion": "1.0.0",
+                    "inputIdentities": [identity],
+                }
+            },
+            "constraints": [],
+            "extensions": [],
+            "unknownPolicy": "reject",
+            "supertypes": [parent],
+            "fields": [],
+            "operations": [],
+        }));
+    }
+    serde_json::to_vec(&envelope).expect("valid JSON")
+}
+
+// Original state-clause model inputs, shared with the S4 formatter tests.
+/// `attemptUpdate` with `modifies: [versionNumber]`, no parameters, result
+/// `Boolean` -- TC-458's own operation, reused verbatim by name.
+pub fn attempt_update_modifies_version_number() -> serde_json::Value {
+    operation(
+        "attemptUpdate",
+        json!([]),
+        Some("ix://quire/native/Boolean"),
+        json!({
+            "modifies": [config_version_identity("versionNumber")],
+            "creates": [],
+            "deletes": [],
+        }),
+    )
+}
+
+/// `attemptUpdate` with `modifies: [versionNumber, parent]` (TC-459 step 4).
+pub fn attempt_update_modifies_version_and_parent() -> serde_json::Value {
+    operation(
+        "attemptUpdate",
+        json!([]),
+        Some("ix://quire/native/Boolean"),
+        json!({
+            "modifies": [
+                config_version_identity("versionNumber"),
+                config_version_identity("parent"),
+            ],
+            "creates": [],
+            "deletes": [],
+        }),
+    )
+}
+
+/// `probe(target: ConfigVersion)`, no result, empty frame (TC-459 step 5,
+/// TC-466 step 3's fixture variant).
+pub fn probe_operation() -> serde_json::Value {
+    let config_version = "ix://example/config-version/ConfigVersion";
+    operation(
+        "probe",
+        json!([operation_parameter("probe", "target", config_version)]),
+        None,
+        empty_frame(),
+    )
+}
+
+/// `document` with `Other`, an object type unrelated to `ConfigVersion` (no
+/// supertypes, nothing specializes it), and the population `others` whose
+/// only declared member is `Other`.
+pub fn with_unrelated_population(document: Vec<u8>) -> Vec<u8> {
+    let mut envelope: serde_json::Value = serde_json::from_slice(&document).expect("valid JSON");
+    let other = "ix://example/config-version/Other";
+    let others = "ix://example/config-version/others";
+    envelope["types"].as_array_mut().unwrap().push(json!({
+        "identity": other,
+        "displayName": other,
+        "kind": {"module": "example/config-version", "name": "object_type"},
+        "roles": [],
+        "origin": {
+            "generated": {
+                "generatorIdentity": other,
+                "generatorVersion": "1.0.0",
+                "inputIdentities": [other],
+            }
+        },
+        "constraints": [],
+        "extensions": [],
+        "unknownPolicy": "reject",
+        "supertypes": [],
+        "fields": [],
+        "operations": [],
+    }));
+    envelope["populations"].as_array_mut().unwrap().push(json!({
+        "identity": others,
+        "displayName": others,
+        "kind": {"module": "example/config-version", "name": "population"},
+        "members": [other],
+        "extent": "closed",
+        "origin": {
+            "generated": {
+                "generatorIdentity": others,
+                "generatorVersion": "1.0.0",
+                "inputIdentities": [others],
+            }
+        },
+    }));
+    serde_json::to_vec(&envelope).expect("valid JSON")
+}
+
+pub fn tc465_document_with(operation: serde_json::Value) -> Vec<u8> {
+    config_version_document_with_operations(vec![operation, probe_operation()])
+}
+
+pub fn tc465_document() -> Vec<u8> {
+    tc465_document_with(attempt_update_modifies_version_and_parent())
+}
+
+/// [`tc465_document`], with `attemptUpdate` modifying `[parent]` only
+/// (row 27: an authorized-elsewhere change outside `modifies` must still
+/// refuse).
+pub fn tc465_document_with_frame_modifies_parent_only() -> Vec<u8> {
+    tc465_document_with(operation(
+        "attemptUpdate",
+        json!([]),
+        Some("ix://quire/native/Boolean"),
+        json!({
+            "modifies": ["ix://example/config-version/ConfigVersion/parent"],
+            "creates": [],
+            "deletes": [],
+        }),
+    ))
+}
+
+/// [`tc465_document`], with `ConfigVersion` also declaring `tags`, a set
+/// of `ConfigVersion` (row 17: check 6.2's set/bag/ordered-set refusal).
+/// Mutated directly at the JSON level (`config_version_document_with_
+/// operations` has no set-field builder), matching the ad hoc envelope
+/// patching [`config_version_document_with_population`] already uses for
+/// its own extra population.
+pub fn tc465_document_with_set_field() -> Vec<u8> {
+    let document = tc465_document();
+    let mut envelope: serde_json::Value = serde_json::from_slice(&document).expect("valid JSON");
+    let config_version = "ix://example/config-version/ConfigVersion";
+    let tags_identity = format!("{config_version}/tags");
+    envelope["types"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|entry| entry["identity"] == config_version)
+        .expect("ConfigVersion is declared")["fields"]
+        .as_array_mut()
+        .expect("ConfigVersion declares fields")
+        .push(json!({
+            "identity": tags_identity,
+            "name": "tags",
+            "typeRef": config_version,
+            "presence": "required",
+            "nullable": false,
+            "defaultKind": "none",
+            "multiplicity": {"lower": 0, "upper": 5, "ordered": false, "unique": true},
+            "origin": {
+                "generated": {
+                    "generatorIdentity": tags_identity,
+                    "generatorVersion": "1.0.0",
+                    "inputIdentities": [tags_identity],
+                }
+            },
+        }));
+    serde_json::to_vec(&envelope).expect("valid JSON")
+}
+
+/// [`tc465_document`], with an extra object type `Note` declared but named
+/// by no population's `members` (row 32: check 6.1's wrong-role-mapping
+/// for an object whose type is not a member type of its population).
+pub fn tc465_document_with_note_type() -> Vec<u8> {
+    let document = tc465_document();
+    let mut envelope: serde_json::Value = serde_json::from_slice(&document).expect("valid JSON");
+    let note = "ix://example/config-version/Note";
+    envelope["types"].as_array_mut().unwrap().push(json!({
+        "identity": note,
+        "displayName": note,
+        "kind": {"module": "example/config-version", "name": "object_type"},
+        "roles": [],
+        "origin": {
+            "generated": {
+                "generatorIdentity": note,
+                "generatorVersion": "1.0.0",
+                "inputIdentities": [note],
+            }
+        },
+        "constraints": [],
+        "extensions": [],
+        "unknownPolicy": "reject",
+        "supertypes": [],
+        "fields": [],
+        "operations": [],
+    }));
+    serde_json::to_vec(&envelope).expect("valid JSON")
+}
+
+/// [`tc465_document_with`]'s `attemptUpdate` modifying `[versionNumber]`
+/// only, plus an independent object type `Tag` (no supertype relation to
+/// `ConfigVersion`) that declares its *own* field also named
+/// `versionNumber` -- same display name, unrelated declaring type. `Tag` is
+/// declared a member of `config_history` too (SR-750 FND-007 round 2's own
+/// cross-type test: a grant on `ConfigVersion::versionNumber` must never
+/// authorize a write to `Tag::versionNumber`, a same-named field of an
+/// unrelated type).
+pub fn tc465_document_with_tag_type_sharing_a_field_name() -> Vec<u8> {
+    let document = tc465_document_with(attempt_update_modifies_version_number());
+    let mut envelope: serde_json::Value = serde_json::from_slice(&document).expect("valid JSON");
+    let tag = "ix://example/config-version/Tag";
+    let tag_version_number = format!("{tag}/versionNumber");
+    envelope["types"].as_array_mut().unwrap().push(json!({
+        "identity": tag,
+        "displayName": tag,
+        "kind": {"module": "example/config-version", "name": "object_type"},
+        "roles": [],
+        "origin": {
+            "generated": {
+                "generatorIdentity": tag,
+                "generatorVersion": "1.0.0",
+                "inputIdentities": [tag],
+            }
+        },
+        "constraints": [],
+        "extensions": [],
+        "unknownPolicy": "reject",
+        "supertypes": [],
+        "fields": [{
+            "identity": tag_version_number,
+            "name": "versionNumber",
+            "typeRef": "ix://quire/native/Integer",
+            "presence": "required",
+            "nullable": false,
+            "defaultKind": "none",
+            "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
+            "origin": {
+                "generated": {
+                    "generatorIdentity": tag_version_number.clone(),
+                    "generatorVersion": "1.0.0",
+                    "inputIdentities": [tag_version_number],
+                }
+            },
+        }],
+        "operations": [],
+    }));
+    envelope["populations"][0]["members"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!(tag));
+    serde_json::to_vec(&envelope).expect("valid JSON")
+}
+
+/// [`tc465_document_with`]'s `attemptUpdate` modifying `[versionNumber]`
+/// only, plus `Sub` (a subtype of `ConfigVersion` and a member of
+/// `config_history`) declaring `version`, which redefines
+/// `ConfigVersion::versionNumber` under another name.
+pub fn tc465_document_with_sub_redefining_version_number() -> Vec<u8> {
+    let document = add_sub_type(
+        tc465_document_with(attempt_update_modifies_version_number()),
+        &["ix://example/config-version/config_history"],
+    );
+    let mut envelope: serde_json::Value = serde_json::from_slice(&document).expect("valid JSON");
+    let sub = "ix://example/config-version/Sub";
+    let version = format!("{sub}/version");
+    let sub_type = envelope["types"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|entry| entry["identity"] == sub)
+        .expect("Sub is declared");
+    sub_type["fields"] = json!([{
+        "identity": version,
+        "name": "version",
+        // The same bound `VersionNumber` (`Int[0, 1000]`) that
+        // `ConfigVersion::versionNumber` declares, so this redefinition does
+        // not widen it and the package admits. A native `Integer` here would
+        // widen it and refuse `RedefinitionWidens` at assembly, which is
+        // covered in `type_environment_model.rs`, not here.
+        "typeRef": version_number_identity(),
+        "presence": "required",
+        "nullable": false,
+        "defaultKind": "none",
+        "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
+        "redefines": config_version_identity("versionNumber"),
+        "origin": {
+            "generated": {
+                "generatorIdentity": version.clone(),
+                "generatorVersion": "1.0.0",
+                "inputIdentities": [version],
+            }
+        },
+    }]);
+    serde_json::to_vec(&envelope).expect("valid JSON")
+}
+
+/// [`tc465_document`], with an extra object type `Sub` (`supertypes:
+/// [ConfigVersion]`, no fields/operations of its own), declared as
+/// `config_history`'s own second member type (row 39: `Sub` "is a member
+/// type of `config_history`", `TC-465-admission-refuses-each-input-defect.md:67`
+/// -- not merely covered by conformance, so check 6.1 never refuses a `Sub`
+/// object as an undeclared member type).
+pub fn tc465_document_with_sub_subtype() -> Vec<u8> {
+    add_sub_type(
+        tc465_document(),
+        &["ix://example/config-version/config_history"],
+    )
+}
+
+/// Appends object type `Sub` (`supertypes: [ConfigVersion]`, no fields or
+/// operations of its own) to `document`, and declares it a member of every
+/// population in `populations` (by identity).
+pub fn add_sub_type(document: Vec<u8>, populations: &[&str]) -> Vec<u8> {
+    let mut envelope: serde_json::Value = serde_json::from_slice(&document).expect("valid JSON");
+    let config_version = "ix://example/config-version/ConfigVersion";
+    let sub = "ix://example/config-version/Sub";
+    envelope["types"].as_array_mut().unwrap().push(json!({
+        "identity": sub,
+        "displayName": sub,
+        "kind": {"module": "example/config-version", "name": "object_type"},
+        "roles": [],
+        "origin": {
+            "generated": {
+                "generatorIdentity": sub,
+                "generatorVersion": "1.0.0",
+                "inputIdentities": [sub],
+            }
+        },
+        "constraints": [],
+        "extensions": [],
+        "unknownPolicy": "reject",
+        "supertypes": [config_version],
+        "fields": [],
+        "operations": [],
+    }));
+    for population in envelope["populations"].as_array_mut().unwrap() {
+        if populations.contains(&population["identity"].as_str().unwrap()) {
+            population["members"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!(sub));
+        }
+    }
+    serde_json::to_vec(&envelope).expect("valid JSON")
+}
+
+/// [`tc465_document`], with `Sub` (see [`add_sub_type`]) and a second,
+/// unbounded population `archive` whose only declared member is `Sub`
+/// (rows 40, 41). FR-104 (`FR-104-check-state-clauses.md:194-195,216-221`,
+/// as amended): a population declaration never has a maximum,
+/// so `archive`, like `config_history`, is simply an unbounded
+/// `Population(None)` -- no wire field expresses a maximum at all.
+/// `archive` never covers a clause on `ConfigVersion` itself: population
+/// coverage is by conformance downward only (a clause on a *subtype*
+/// reaches its supertype's population, never the reverse,
+/// `population_coverage_is_by_conformance_and_absent_when_none_covers`),
+/// so declaring `archive`'s member as `Sub` (not `ConfigVersion`) keeps
+/// `config_history` the sole population `ConfigVersion`'s own clauses
+/// resolve against -- no S3 `ambiguous_declaration`/`ambiguous-name`.
+pub fn tc465_document_with_archive_population() -> Vec<u8> {
+    with_archive_population(tc465_document())
+}
+
+/// `document` with `Sub` (see [`add_sub_type`]) and the unbounded
+/// population `archive` whose only declared member is `Sub`
+/// ([`tc465_document_with_archive_population`]).
+pub fn with_archive_population(document: Vec<u8>) -> Vec<u8> {
+    let document = add_sub_type(document, &[]);
+    let mut envelope: serde_json::Value = serde_json::from_slice(&document).expect("valid JSON");
+    let sub = "ix://example/config-version/Sub";
+    let archive = "ix://example/config-version/archive";
+    envelope["populations"].as_array_mut().unwrap().push(json!({
+        "identity": archive,
+        "displayName": archive,
+        "kind": {"module": "example/config-version", "name": "population"},
+        "members": [sub],
+        "extent": "closed",
+        "origin": {
+            "generated": {
+                "generatorIdentity": archive,
+                "generatorVersion": "1.0.0",
+                "inputIdentities": [archive],
+            }
+        },
+    }));
+    serde_json::to_vec(&envelope).expect("valid JSON")
+}
+
+/// [`tc465_document_with_archive_population`], with `attemptUpdate`
+/// modifying `[versionNumber]` only (row 40: a `parent` change anywhere,
+/// in any population, must be unauthorized).
+pub fn tc465_document_with_archive_population_and_narrow_frame() -> Vec<u8> {
+    let document = tc465_document_with_archive_population();
+    let mut envelope: serde_json::Value = serde_json::from_slice(&document).expect("valid JSON");
+    let config_version = "ix://example/config-version/ConfigVersion";
+    envelope["types"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|entry| entry["identity"] == config_version)
+        .expect("ConfigVersion is declared")["operations"][0]["frame"]["modifies"] =
+        json!(["ix://example/config-version/ConfigVersion/versionNumber"]);
+    serde_json::to_vec(&envelope).expect("valid JSON")
+}
 
 pub(super) const PACKAGE_IDENTITY: &str = "example/config-version";
 const PLACEHOLDER_DIGEST: &str =
     "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 
-fn wire_envelope(constructs: Value, types: Value, populations: Value) -> Value {
+pub(super) fn wire_envelope(constructs: Value, types: Value, populations: Value) -> Value {
     json!({
         "contractVersion": "2.0.0",
+        "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
         "source": {
             "identity": format!("ix://{PACKAGE_IDENTITY}/spec"),
             "version": "1.0.0",
@@ -62,7 +593,7 @@ fn wire_envelope(constructs: Value, types: Value, populations: Value) -> Value {
     })
 }
 
-fn wire_construct(name: &str, meaning: &str, members: Value) -> Value {
+pub(super) fn wire_construct(name: &str, meaning: &str, members: Value) -> Value {
     json!({
         "kind": {"module": PACKAGE_IDENTITY, "name": name},
         "moduleVersion": "1.0.0",
@@ -76,7 +607,7 @@ fn wire_construct(name: &str, meaning: &str, members: Value) -> Value {
     })
 }
 
-fn wire_type(identity: &str, kind_name: &str, extra: Value) -> Value {
+pub(super) fn wire_type(identity: &str, kind_name: &str, extra: Value) -> Value {
     let mut node = json!({
         "identity": identity,
         "displayName": identity,
@@ -101,7 +632,13 @@ fn wire_type(identity: &str, kind_name: &str, extra: Value) -> Value {
     node
 }
 
-fn wire_field(identity: &str, name: &str, type_ref: &str, presence: &str, lower: u64) -> Value {
+pub(super) fn wire_field(
+    identity: &str,
+    name: &str,
+    type_ref: &str,
+    presence: &str,
+    lower: u64,
+) -> Value {
     json!({
         "identity": identity,
         "name": name,
@@ -201,17 +738,13 @@ pub(super) fn version_number_value_type() -> (Value, Value, String) {
     // `validate_with_semantic_ir` schema check, not just this reader's own
     // hand-rolled one), unlike `intake.rs`'s own direct-reader unit tests.
     // `appliesTo` names the native scalar the value type binds
-    // (`ix://quire/native/Integer`), not `VersionNumber`'s own identity:
-    // `agent-ix-semantic-ir`'s own applicability table (`rules.rs::applies_to`)
-    // only ever resolves a construct-kind node's own `kind`/`shape` to
-    // `"construct"`, never `"scalar"` (no `Shape` variant means "scalar" at
-    // this pinned rev) -- a constraint whose `appliesTo` named `VersionNumber`
-    // itself would refuse `CONSTRAINT_NOT_APPLICABLE` even though this is
-    // exactly the bound `VersionNumber` names. Naming the native scalar
-    // directly is what actually resolves to `Resolved::Native("integer")`,
-    // and is what `VALUE_TYPE`'s own meaning describes: "naming the value
-    // type and its bound native value type".
-    let constraint = |keyword: &str, value: i64| {
+    // (`ix://quire/native/Integer`), which is what `VALUE_TYPE`'s own
+    // meaning describes: "naming the value type and its bound native value
+    // type". FCD also judges a constraint applied to a value type carrying
+    // `scalar` by that scalar's keyword table, so naming `VersionNumber`
+    // itself is no longer refused `CONSTRAINT_NOT_APPLICABLE`; this form
+    // stays valid.
+    let constraint = |keyword: &str, value: &str| {
         json!({
             "identity": format!("{identity}/constraints/{keyword}"),
             "keyword": keyword,
@@ -233,7 +766,7 @@ pub(super) fn version_number_value_type() -> (Value, Value, String) {
         "value_type",
         json!({
             "scalar": "integer",
-            "constraints": [constraint("min", 0), constraint("max", 1000)],
+            "constraints": [constraint("min", "0"), constraint("max", "1000")],
         }),
     );
     (construct, type_node, identity)
@@ -312,8 +845,12 @@ pub(super) fn config_version_document(
 
 /// A `Supersedes` relationship from `ConfigVersion` to itself, wired for
 /// `ConfigVersion`'s own inline `relationships[]`.
-fn supersedes_relationship() -> Value {
-    let supersedes = config_version_identity("Supersedes");
+pub(super) fn supersedes_identity() -> String {
+    format!("ix://{PACKAGE_IDENTITY}/relationship/ConfigVersion-supersedes-ConfigVersion")
+}
+
+pub(super) fn supersedes_relationship() -> Value {
+    let supersedes = supersedes_identity();
     json!({
         "identity": supersedes,
         "sourceEnd": {
@@ -339,29 +876,6 @@ fn supersedes_relationship() -> Value {
     })
 }
 
-/// A `Note` record value type, as a sibling declaration
-/// (`extra_constructs`/`extra_types`) beside `ConfigVersion`.
-fn note_record_value_type() -> (Value, Value) {
-    let note = format!("ix://{PACKAGE_IDENTITY}/Note");
-    let construct = wire_construct("record_value_type", meaning::RECORD_VALUE_TYPE, json!({}));
-    let type_node = wire_type(
-        &note,
-        "record_value_type",
-        json!({
-            "supertypes": [],
-            "operations": [],
-            "fields": [wire_field(
-                &format!("{note}/text"),
-                "text",
-                "ix://quire/native/Integer",
-                "required",
-                1,
-            )],
-        }),
-    );
-    (construct, type_node)
-}
-
 fn frame_key(suffix: &str) -> DeclarationKey {
     DeclarationKey {
         package: PACKAGE_IDENTITY.to_owned(),
@@ -381,7 +895,7 @@ fn frame_key_of(owner: &str, name: &str) -> DeclarationKey {
 /// The unit text selecting `document` as model alias `Config`, plus its
 /// package input map (`model::intake::unit::package_input`'s own digest
 /// keying).
-fn config_unit(document: &[u8]) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
+pub(super) fn config_unit(document: &[u8]) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
     let packages = package_input([document]);
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
         panic!("one supplied document");
@@ -430,7 +944,11 @@ pub(super) fn admit_and_assemble_with_body(
         &packages,
         ModelNormalizationLimits::default(),
     )
-    .unwrap_or_else(|refusal| panic!("I1 refused: {refusal:?}"));
+    .unwrap_or_else(|refusal| panic!("I1 refused: {refusal:?}"))
+    .with_parsed_operation_clauses(|text| {
+        qsl_forms::parse_clause_text(text, qsl_cst::Limits::default())
+    })
+    .unwrap_or_else(|failure| panic!("a kept operation clause does not parse: {failure:?}"));
     let raw = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("test", "tc-459", "fixture", "fixture:1"),
         "unit.native",
@@ -841,10 +1359,10 @@ pub(super) fn parse_and_build(unit: &str) -> qsl_forms::ParsedUnit {
 /// Admits `document`'s one model selection through I1
 /// (`model::intake::unit::admit_unit`).
 #[allow(clippy::result_large_err)] // mirrors `admit_unit`'s own signature exactly
-fn admit(
+pub(super) fn admit(
     document: &[u8],
 ) -> Result<
-    Vec<qsl_semantics::model::intake::SelectedModel>,
+    qsl_semantics::model::intake::SelectedModels,
     qsl_semantics::model::intake::UnitIntakeRefusal,
 > {
     let (unit, packages) = config_unit(document);
@@ -859,7 +1377,7 @@ fn admit(
 /// Admits and assembles `document` into `PackageDeclarations`, over a unit
 /// with no declarations of its own besides the `model Config = ...`
 /// selection.
-fn admit_and_assemble(document: &[u8]) -> Result<PackageDeclarations, String> {
+pub(super) fn admit_and_assemble(document: &[u8]) -> Result<PackageDeclarations, String> {
     let (unit, packages) = config_unit(document);
     let built = parse_and_build(&unit);
     let models = admit_unit(
@@ -1030,6 +1548,471 @@ fn bound_integer_value_type_admits_and_assembles() {
     assert_eq!(num.presence(), Presence::Required);
 }
 
+/// FR-322's model operation owners include persistence interfaces. An
+/// admitted interface remains an original-only model declaration, so its
+/// storage metadata and operation signatures must not make assembly reject a
+/// package that does not select an interface operation in native source.
+#[trace("FR-322-AC-25", "TC-235")]
+#[test]
+fn persistence_interface_model_members_do_not_block_assembly() {
+    let order = format!("ix://{PACKAGE_IDENTITY}/Order");
+    let order_id = format!("{order}/id");
+    let store = format!("ix://{PACKAGE_IDENTITY}/OrderStore");
+    let operation = |name: &str| {
+        let identity = format!("{store}/{name}");
+        json!({
+            "identity": identity,
+            "name": name,
+            "params": [],
+            "pre": [],
+            "post": [],
+            "frame": {"modifies": [], "creates": [], "deletes": []},
+            "origin": {
+                "generated": {
+                    "generatorIdentity": identity,
+                    "generatorVersion": "1.0.0",
+                    "inputIdentities": [identity],
+                }
+            },
+        })
+    };
+    let document = wire_envelope(
+        json!([
+            wire_construct(
+                "object_type",
+                meaning::OBJECT_TYPE,
+                json!({"identityFields": "required"}),
+            ),
+            wire_construct(
+                "persistence_interface",
+                meaning::PERSISTENCE_INTERFACE,
+                json!({"persists": "required"}),
+            ),
+        ]),
+        json!([
+            wire_type(
+                &order,
+                "object_type",
+                json!({
+                    "identityFields": [order_id],
+                    "fields": [wire_field(
+                        &format!("{order}/id"),
+                        "id",
+                        "ix://quire/native/Boolean",
+                        "required",
+                        1,
+                    )],
+                    "operations": [],
+                    "relationships": [],
+                }),
+            ),
+            wire_type(
+                &store,
+                "persistence_interface",
+                json!({
+                    "fields": [],
+                    "operations": [operation("get"), operation("save")],
+                    "persists": [order],
+                }),
+            ),
+        ]),
+        json!([]),
+    )
+    .to_string()
+    .into_bytes();
+
+    admit_and_assemble(&document)
+        .expect("an original-only persistence interface must not block model assembly");
+}
+
+/// FR-322's model operation owners include processes. A process's identified
+/// runs use the object-type surface, so assembly must keep its fields,
+/// supertypes and operation signatures while its ordered steps remain domain
+/// package data.
+#[trace("FR-322-AC-25", "TC-235")]
+#[test]
+fn process_model_members_assemble_as_an_identified_run_type() {
+    let workflow = format!("ix://{PACKAGE_IDENTITY}/Workflow");
+    let workflow_id = format!("{workflow}/id");
+    let workflow_step = format!("{workflow}/begin");
+    let process = format!("ix://{PACKAGE_IDENTITY}/Fulfilment");
+    let correlation = format!("{process}/correlation_id");
+    let restart = format!("{process}/restart");
+    let step = format!("{process}/receive");
+    let document = wire_envelope(
+        json!([wire_construct(
+            "process",
+            meaning::PROCESS,
+            json!({"identityFields": "required", "steps": "required"}),
+        )]),
+        json!([
+            wire_type(
+                &workflow,
+                "process",
+                json!({
+                    "identityFields": [workflow_id],
+                    "fields": [wire_field(
+                        &format!("{workflow}/id"),
+                        "id",
+                        "ix://quire/native/Boolean",
+                        "required",
+                        1,
+                    )],
+                    "operations": [],
+                    "steps": [{
+                        "identity": workflow_step,
+                        "name": "begin",
+                        "stepKind": "command",
+                        "consumes": [],
+                        "emits": [],
+                        "origin": {
+                            "generated": {
+                                "generatorIdentity": workflow_step,
+                                "generatorVersion": "1.0.0",
+                                "inputIdentities": [workflow_step],
+                            }
+                        },
+                    }],
+                }),
+            ),
+            wire_type(
+                &process,
+                "process",
+                json!({
+                "identityFields": [correlation],
+                "supertypes": [workflow],
+                "fields": [wire_field(
+                    &format!("{process}/correlation_id"),
+                    "correlation_id",
+                    "ix://quire/native/UUID",
+                    "required",
+                    1,
+                )],
+                "operations": [{
+                    "identity": restart,
+                    "name": "restart",
+                    "params": [],
+                    "returns": {
+                        "typeRef": "ix://quire/native/Boolean",
+                        "multiplicity": {
+                            "lower": 1,
+                            "upper": 1,
+                            "ordered": false,
+                            "unique": true,
+                        },
+                        "nullable": false,
+                    },
+                    "pre": [],
+                    "post": [],
+                    "frame": {
+                        "modifies": [],
+                        "creates": [process],
+                        "deletes": [process],
+                    },
+                    "origin": {
+                        "generated": {
+                            "generatorIdentity": restart,
+                            "generatorVersion": "1.0.0",
+                            "inputIdentities": [restart],
+                        }
+                    },
+                }],
+                "steps": [{
+                    "identity": step,
+                    "name": "receive",
+                    "stepKind": "command",
+                    "consumes": [],
+                    "emits": [],
+                    "origin": {
+                        "generated": {
+                            "generatorIdentity": step,
+                            "generatorVersion": "1.0.0",
+                            "inputIdentities": [step],
+                        }
+                    },
+                }],
+                }),
+            ),
+        ]),
+        json!([]),
+    )
+    .to_string()
+    .into_bytes();
+
+    let declarations = admit_and_assemble(&document).expect(
+        "a process's identified-run members and process-valued create/delete frame entries must assemble",
+    );
+
+    let (unit, packages) = config_unit(&document);
+    let built = parse_and_build(&unit);
+    let views = admit_unit(
+        &built.selections().models,
+        &packages,
+        ModelNormalizationLimits::default(),
+    )
+    .expect("the process package admits");
+    let identities = views[0].view.type_identities();
+    let key = |node: &str| DeclarationKey {
+        package: PACKAGE_IDENTITY.to_owned(),
+        node: node.to_owned(),
+    };
+    let workflow_effective = identities[&key(&workflow)];
+    let process_effective = identities[&key(&process)];
+    let declared = declarations
+        .types
+        .object_type(process_effective)
+        .expect("Fulfilment is projected as an identified run type");
+    assert_eq!(declared.name(), "Config::Fulfilment");
+    assert_eq!(declared.supertypes(), &[workflow_effective]);
+    let correlation = declared
+        .attributes()
+        .iter()
+        .find(|field| field.name() == "correlation_id")
+        .expect("the process correlation field is projected");
+    assert_eq!(correlation.value_type(), &ValueType::Uuid);
+    assert_eq!(correlation.presence(), Presence::Required);
+
+    let operation = declarations
+        .operations
+        .declared_by(process_effective)
+        .iter()
+        .find(|operation| operation.name() == "restart")
+        .expect("the process operation is projected");
+    assert_eq!(operation.parameters(), &[]);
+    assert_eq!(operation.result(), Some(&ValueType::Boolean));
+    assert_eq!(operation.effect().modifies, Vec::new());
+    assert_eq!(operation.effect().creates, vec![key(&process)]);
+    assert_eq!(operation.effect().deletes, vec![key(&process)]);
+}
+
+/// FR-322 model-owned fields project from a state-machine owner through the
+/// same checked object surface used for its operations.
+#[trace("FR-322-AC-30", "TC-235")]
+#[test]
+fn state_machine_fields_assemble_on_the_state_owner() {
+    let machine = format!("ix://{PACKAGE_IDENTITY}/OrderLifecycle");
+    let placed = format!("{machine}/placed");
+    let place = format!("{machine}/place");
+    let transition = format!("{machine}/place_transition");
+    let state = |name: &str| {
+        let identity = format!("{machine}/{name}");
+        json!({
+            "identity": identity,
+            "name": name,
+            "origin": {
+                "generated": {
+                    "generatorIdentity": identity,
+                    "generatorVersion": "1.0.0",
+                    "inputIdentities": [identity],
+                }
+            },
+        })
+    };
+    let document = wire_envelope(
+        json!([wire_construct(
+            "state_machine",
+            meaning::STATE_MACHINE,
+            json!({"states": "required", "transitions": "required"}),
+        )]),
+        json!([wire_type(
+            &machine,
+            "state_machine",
+            json!({
+                "fields": [wire_field(
+                    &placed,
+                    "placed",
+                    "ix://quire/native/Boolean",
+                    "required",
+                    1,
+                )],
+                "operations": [{
+                    "identity": place,
+                    "name": "place",
+                    "params": [],
+                    "pre": [],
+                    "post": [],
+                    "frame": {"modifies": [placed], "creates": [], "deletes": []},
+                    "origin": {
+                        "generated": {
+                            "generatorIdentity": place,
+                            "generatorVersion": "1.0.0",
+                            "inputIdentities": [place],
+                        }
+                    },
+                }],
+                "clauses": [],
+                "supertypes": [],
+                "states": [state("Draft"), state("Placed")],
+                "transitions": [{
+                    "identity": transition,
+                    "from": format!("{machine}/Draft"),
+                    "to": format!("{machine}/Placed"),
+                    "trigger": place,
+                    "emits": [],
+                    "origin": {
+                        "generated": {
+                            "generatorIdentity": transition,
+                            "generatorVersion": "1.0.0",
+                            "inputIdentities": [transition],
+                        }
+                    },
+                }],
+            }),
+        )]),
+        json!([]),
+    )
+    .to_string()
+    .into_bytes();
+
+    let declarations = admit_and_assemble(&document)
+        .expect("a representable state-machine field assembles on its state owner");
+    let (unit, packages) = config_unit(&document);
+    let built = parse_and_build(&unit);
+    let views = admit_unit(
+        &built.selections().models,
+        &packages,
+        ModelNormalizationLimits::default(),
+    )
+    .expect("the state-machine package admits");
+    let machine_key = DeclarationKey {
+        package: PACKAGE_IDENTITY.to_owned(),
+        node: machine,
+    };
+    let machine_effective = views[0].view.type_identities()[&machine_key];
+    let declared = declarations
+        .types
+        .object_type(machine_effective)
+        .expect("OrderLifecycle is projected on the checked object surface");
+    let placed = declared
+        .attributes()
+        .iter()
+        .find(|field| field.name() == "placed")
+        .expect("the state-machine field is projected");
+    assert_eq!(placed.value_type(), &ValueType::Boolean);
+    assert_eq!(placed.presence(), Presence::Required);
+}
+
+/// Native UUID identity fields project on ordinary object owners as well as
+/// process-owned run types.
+#[trace("FR-322-AC-31", "TC-235")]
+#[test]
+fn object_uuid_field_projects_as_uuid() {
+    let order = format!("ix://{PACKAGE_IDENTITY}/Order");
+    let order_id = format!("{order}/order_id");
+    let document = wire_envelope(
+        json!([wire_construct(
+            "object_type",
+            meaning::OBJECT_TYPE,
+            json!({"identityFields": "required"}),
+        )]),
+        json!([wire_type(
+            &order,
+            "object_type",
+            json!({
+                "identityFields": [order_id],
+                "fields": [wire_field(
+                    &format!("{order}/order_id"),
+                    "order_id",
+                    "ix://quire/native/UUID",
+                    "required",
+                    1,
+                )],
+                "operations": [],
+                "relationships": [],
+                "supertypes": [],
+            }),
+        )]),
+        json!([]),
+    )
+    .to_string()
+    .into_bytes();
+
+    let declarations = admit_and_assemble(&document)
+        .expect("an object UUID identity field is assembled as a native UUID");
+    let (unit, packages) = config_unit(&document);
+    let built = parse_and_build(&unit);
+    let views = admit_unit(
+        &built.selections().models,
+        &packages,
+        ModelNormalizationLimits::default(),
+    )
+    .expect("the object package admits");
+    let order_key = DeclarationKey {
+        package: PACKAGE_IDENTITY.to_owned(),
+        node: order,
+    };
+    let order_effective = views[0].view.type_identities()[&order_key];
+    let declared = declarations
+        .types
+        .object_type(order_effective)
+        .expect("Order is projected on the checked object surface");
+    let order_id = declared
+        .attributes()
+        .iter()
+        .find(|field| field.name() == "order_id")
+        .expect("the object UUID identity field is projected");
+    assert_eq!(order_id.value_type(), &ValueType::Uuid);
+    assert_eq!(order_id.presence(), Presence::Required);
+}
+
+/// FR-056-AC-20 (TC-405 step 5): a native floating model field is refused by
+/// the real producer -> intake -> assembler path. The width is part of the
+/// refusal oracle; floating signatures and bodies have their own admission
+/// contract and do not assign a model-field rounding mode here.
+#[trace("FR-056-AC-20", "TC-405")]
+#[test]
+fn native_float_model_fields_refuse_as_unsupported_features() {
+    for (type_ref, expected_width) in [
+        ("ix://quire/native/Float32", IeeeWidth::Binary32),
+        ("ix://quire/native/Float64", IeeeWidth::Binary64),
+    ] {
+        let gauge = format!("ix://{PACKAGE_IDENTITY}/Gauge");
+        let document = wire_envelope(
+            json!([wire_construct(
+                "object_type",
+                meaning::OBJECT_TYPE,
+                json!({})
+            )]),
+            json!([wire_type(
+                &gauge,
+                "object_type",
+                json!({
+                    "supertypes": [],
+                    "operations": [],
+                    "relationships": [],
+                    "fields": [wire_field(
+                        &format!("{gauge}/reading"),
+                        "reading",
+                        type_ref,
+                        "required",
+                        1,
+                    )],
+                }),
+            )]),
+            json!([]),
+        )
+        .to_string()
+        .into_bytes();
+
+        let refusal = admit_and_assemble_with_body(
+            &document,
+            "function noop using v(): Boolean pure { true }",
+        )
+        .expect_err("a native float model field remains unsupported");
+        let [error] = refusal.errors.as_slice() else {
+            panic!("one floating model-field refusal, not {:?}", refusal.errors);
+        };
+        assert_eq!(
+            error.cause.catalog_code().to_string(),
+            "unknown_required_feature/unsupported-feature"
+        );
+        assert!(matches!(
+            error.cause,
+            AssemblyCause::FloatingType { width, .. } if width == expected_width
+        ));
+    }
+}
+
 /// FR-103-AC-2 (TC-458 step 2, part 1): `modifies` naming no declaration of
 /// the package refuses `missing_declaration`/`missing-name` at that entry,
 /// and no declaration is admitted.
@@ -1152,13 +2135,13 @@ fn a_creates_entry_naming_a_field_refuses_malformed_declaration() {
     assert_eq!(entry, &version_number);
 }
 
-/// FR-103-AC-2 (TC-458 step 2, part 4): `modifies` naming a declared
-/// relationship refuses `unknown_required_feature`/`unsupported-feature` at
-/// that entry.
+/// FR-103-AC-2 (TC-458 step 2, part 4): with a relationship `Supersedes`
+/// declared, `modifies [Supersedes]` admits and the operation's effect
+/// modifies `Supersedes`.
 #[trace("TC-458", "FR-103-AC-2")]
 #[test]
-fn a_modifies_entry_naming_a_relationship_refuses_unsupported_feature() {
-    let supersedes = config_version_identity("Supersedes");
+fn a_modifies_entry_naming_a_relationship_admits_as_a_grant() {
+    let supersedes = supersedes_identity();
     let document = config_version_document(
         attempt_update(
             json!([]),
@@ -1172,18 +2155,68 @@ fn a_modifies_entry_naming_a_relationship_refuses_unsupported_feature() {
         Vec::new(),
         json!([supersedes_relationship()]),
     );
-    let refusal = admit(&document).expect_err("modifies naming a relationship refuses");
+    let declarations =
+        admit_and_assemble(&document).expect("modifies naming a relationship admits and assembles");
+    let (unit, packages) = config_unit(&document);
+    let built = parse_and_build(&unit);
+    let views = admit_unit(
+        &built.selections().models,
+        &packages,
+        ModelNormalizationLimits::default(),
+    )
+    .expect("the package admits");
+    let owner = DeclarationKey {
+        package: PACKAGE_IDENTITY.to_owned(),
+        node: format!("ix://{PACKAGE_IDENTITY}/ConfigVersion"),
+    };
+    let owner_id = views[0].view.type_identities()[&owner];
+    let operation = declarations
+        .operations
+        .declared_by(owner_id)
+        .iter()
+        .find(|operation| operation.name() == "attemptUpdate")
+        .expect("attemptUpdate is declared on ConfigVersion");
+    assert_eq!(
+        operation.effect().modifies,
+        vec![DeclarationKey {
+            package: PACKAGE_IDENTITY.to_owned(),
+            node: supersedes,
+        }]
+    );
+    assert!(operation.effect().creates.is_empty() && operation.effect().deletes.is_empty());
+}
+
+/// FR-103-AC-2 (TC-458 step 2, part 5a): `creates` naming the relationship
+/// refuses `invalid_model_binding`/`malformed-declaration` at that entry.
+#[trace("TC-458", "FR-103-AC-2")]
+#[test]
+fn a_creates_entry_naming_a_relationship_refuses_malformed_declaration() {
+    let supersedes = supersedes_identity();
+    let document = config_version_document(
+        attempt_update(
+            json!([]),
+            json!({
+                "modifies": [],
+                "creates": [supersedes.clone()],
+                "deletes": [],
+            }),
+        ),
+        Vec::new(),
+        Vec::new(),
+        json!([supersedes_relationship()]),
+    );
+    let refusal = admit(&document).expect_err("creates naming a relationship refuses");
     let UnitIntakeCause::Refused(refusals) = refusal.cause else {
         panic!("{refusal:?}: expected a Refused cause");
     };
     assert_eq!(refusals.len(), 1, "{refusals:?}");
-    assert_eq!(refusals[0].code.as_str(), "unknown_required_feature");
-    assert_eq!(refusals[0].cause.as_str(), "unsupported-feature");
-    let qsl_semantics::model::refusal::ModelRefusalCause::FrameEntryUnsupported {
+    assert_eq!(refusals[0].code.as_str(), "invalid_model_binding");
+    assert_eq!(refusals[0].cause.as_str(), "malformed-declaration");
+    let qsl_semantics::model::refusal::ModelRefusalCause::FrameEntryMalformed {
         node, entry, ..
     } = &refusals[0].cause
     else {
-        panic!("{:?}: expected FrameEntryUnsupported", refusals[0].cause);
+        panic!("{:?}: expected FrameEntryMalformed", refusals[0].cause);
     };
     assert_eq!(node, &config_version_identity("attemptUpdate"));
     assert_eq!(entry, &supersedes);
@@ -1246,38 +2279,107 @@ fn only_the_modifies_refusal_is_reported_when_both_members_are_invalid() {
 /// arm (`qsl-semantics/src/check/assemble.rs`) is unreachable dead code for
 /// a package-declared operation parameter/result.
 ///
-/// `Text` itself cannot be used through the real pipeline at all: the
-/// pinned FCD schema validator's own native-scalar vocabulary
-/// (`agent-ix-semantic-ir`, rev `033e228`,
-/// `crates/semantic-ir/src/rules.rs`'s `NATIVE_SCALARS`) has no `Text`
-/// entry -- it spells the same concept `String` -- so
-/// `validate_with_semantic_ir` refuses any `ix://quire/native/Text`
-/// `typeRef` as `UNRESOLVED_TYPE_REF` before this reader's own
-/// `read_value_type_ref` ever runs; `ix://quire/native/String` does resolve
-/// at FCD's layer, but QSL's own `NativeValueType::from_str` has no
-/// `String` variant (only `Text`), so it would refuse there instead, with a
-/// different cause (`malformed-declaration`). That cross-repo vocabulary
-/// gap is **QSL-290**, not fixed by this ticket; `Decimal` is the closest
-/// substitute both vocabularies recognize by the same name.
+/// `ix://quire/native/Text` resolves at FCD's layer (its native vocabulary
+/// admits `Text`), so a `Text` parameter now reaches this reader; QSL's
+/// Text intake is the next slice (QSL-806). `Decimal` remains the native
+/// type this test uses.
 #[trace("TC-458", "FR-103-AC-3")]
 #[test]
 fn a_decimal_typed_parameter_refuses_at_intake_not_assembly() {
+    let mut note = parameter("note", "ix://quire/native/Decimal");
+    let document_with_note = |note| {
+        config_version_document(
+            attempt_update(
+                json!([note]),
+                json!({"modifies": [], "creates": [], "deletes": []}),
+            ),
+            Vec::new(),
+            Vec::new(),
+            json!([]),
+        )
+    };
+    let missing_policy = admit(&document_with_note(note.clone()))
+        .expect_err("a native Decimal without a wire policy refuses upstream");
+    let UnitIntakeCause::Refused(refusals) = missing_policy.cause else {
+        panic!("{missing_policy:?}: expected a Refused cause");
+    };
+    // FR-056 retains the reader's diagnostic with its IR node, the
+    // parameter; FR-103-AC-3 adds unsupported_construct/declaration-form at
+    // the same parameter. Exactly these two.
+    let parameter_node = note["identity"].as_str().unwrap();
+    assert_eq!(refusals.len(), 2, "{refusals:?}");
+    assert!(
+        refusals.iter().any(|refusal| refusal.code.as_str()
+            == "invalid_model_binding"
+            && matches!(
+                &refusal.cause,
+                qsl_semantics::model::refusal::ModelRefusalCause::IntakeMalformedDeclaration { node, .. }
+                    if node == parameter_node
+            )),
+        "{refusals:?}"
+    );
+    assert!(
+        refusals.iter().any(|refusal| refusal.code.as_str() == "unsupported_construct"
+            && matches!(
+                &refusal.cause,
+                qsl_semantics::model::refusal::ModelRefusalCause::UnsupportedDeclarationForm { node, .. }
+                    if node == parameter_node
+            )),
+        "{refusals:?}"
+    );
+    // The wire policy admits this Decimal parameter at FCD's boundary;
+    // QSL's missing native parameters remain the refusal under test.
+    note["decimal"] = json!({"precision": 5, "scale": 2});
+    let document = document_with_note(note);
+    let refusal = admit(&document).expect_err("a Decimal parameter refuses at I1");
+    let UnitIntakeCause::Refused(refusals) = refusal.cause else {
+        panic!("{refusal:?}: expected a Refused cause");
+    };
+    assert_eq!(refusals.len(), 1, "{refusals:?}");
+    assert_eq!(
+        refusals[0].code.as_str(),
+        "unsupported_construct",
+        "{refusals:?}"
+    );
+    assert_eq!(refusals[0].cause.as_str(), "declaration-form");
+}
+
+/// FR-056-AC-11 (TC-897 step 3): a parameter whose `typeRef` is the bare
+/// `ix://quire/native/Text` resolves at the pinned validator and refuses
+/// `unsupported_construct`/`declaration-form` at the parameter, naming
+/// `profile`: `Text[min, max; profile]` needs its parameters.
+#[trace("TC-897", "FR-056-AC-11")]
+#[test]
+fn a_bare_native_text_parameter_refuses_naming_the_profile() {
+    let note = parameter("note", "ix://quire/native/Text");
+    let parameter_node = note["identity"].as_str().unwrap().to_owned();
     let document = config_version_document(
         attempt_update(
-            json!([parameter("note", "ix://quire/native/Decimal")]),
+            json!([note]),
             json!({"modifies": [], "creates": [], "deletes": []}),
         ),
         Vec::new(),
         Vec::new(),
         json!([]),
     );
-    let refusal = admit(&document).expect_err("a Decimal parameter refuses at I1");
+    let refusal = admit(&document).expect_err("a bare native Text refuses at I1");
     let UnitIntakeCause::Refused(refusals) = refusal.cause else {
         panic!("{refusal:?}: expected a Refused cause");
     };
     assert_eq!(refusals.len(), 1, "{refusals:?}");
     assert_eq!(refusals[0].code.as_str(), "unsupported_construct");
-    assert_eq!(refusals[0].cause.as_str(), "declaration-form");
+    let qsl_semantics::model::refusal::ModelRefusalCause::UnsupportedDeclarationForm {
+        node, ..
+    } = &refusals[0].cause
+    else {
+        panic!("declaration-form, not {:?}", refusals[0].cause);
+    };
+    assert_eq!(node, &parameter_node);
+    assert!(
+        refusals[0].detail.contains("requires parameter(s) profile"),
+        "{}",
+        refusals[0].detail
+    );
 }
 
 /// FR-103-AC-3 (TC-458 step 3, part 2): a parameter typed `VersionNumber`
@@ -1329,33 +2431,102 @@ fn a_version_number_typed_parameter_admits_and_is_typed_bound_integer() {
     );
 }
 
-/// FR-103-AC-4 (TC-458 step 4): a package holding a record value type still
-/// refuses `UnsupportedModelMember` naming that node, with the operation
-/// admitted beside it not changing the refusal.
+/// FR-103-AC-4 (TC-458 step 4): a record value type `Address { street:
+/// VersionNumber }` and `ConfigVersion.address: Address` assemble beside
+/// `attemptUpdate`, which modifies `ConfigVersion/address`; a clause reading
+/// `self.address.street` checks; `address` is typed by the record's
+/// composite, not a `Reference`; and no `UnsupportedModelMember` names it.
 #[trace("TC-458", "FR-103-AC-4")]
 #[test]
-fn a_record_value_type_beside_an_admitted_operation_still_refuses() {
-    let note = format!("ix://{PACKAGE_IDENTITY}/Note");
-    let (construct, type_node) = note_record_value_type();
-    let document = config_version_document(
+fn a_record_value_type_beside_an_admitted_operation_assembles() {
+    let address = format!("ix://{PACKAGE_IDENTITY}/Address");
+    let construct = wire_construct("record_value_type", meaning::RECORD_VALUE_TYPE, json!({}));
+    let address_type = wire_type(
+        &address,
+        "record_value_type",
+        json!({
+            "supertypes": [],
+            "operations": [],
+            "fields": [wire_field(
+                &format!("{address}/street"),
+                "street",
+                &version_number_identity(),
+                "required",
+                1,
+            )],
+        }),
+    );
+    let bytes = config_version_document(
         attempt_update(
             json!([]),
             json!({
-                "modifies": [config_version_identity("versionNumber")],
+                "modifies": [config_version_identity("address")],
                 "creates": [],
                 "deletes": [],
             }),
         ),
         vec![construct],
-        vec![type_node],
+        vec![address_type],
         json!([]),
     );
-    let error = admit_and_assemble(&document).expect_err("a record value type still refuses");
+    let mut document: Value = serde_json::from_slice(&bytes).expect("the fixture is JSON");
+    let config_version = format!("ix://{PACKAGE_IDENTITY}/ConfigVersion");
+    let owner = document["types"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|node| node["identity"] == config_version.as_str())
+        .expect("ConfigVersion is declared");
+    owner["fields"].as_array_mut().unwrap().push(wire_field(
+        &config_version_identity("address"),
+        "address",
+        &address,
+        "required",
+        1,
+    ));
+    let bytes = serde_json::to_vec(&document).unwrap();
+
+    let body = "invariant AddressStreet using v on Config::ConfigVersion at current { \
+                self.address.street >= 0 }\n";
+    let declarations =
+        admit_and_assemble_with_body(&bytes, body).expect("a record value type assembles");
+
+    let (unit, packages) = config_unit(&bytes);
+    let built = parse_and_build(&unit);
+    let views = admit_unit(
+        &built.selections().models,
+        &packages,
+        ModelNormalizationLimits::default(),
+    )
+    .expect("the package admits");
+    let config_version_id = views[0].view.type_identities()[&DeclarationKey {
+        package: PACKAGE_IDENTITY.to_owned(),
+        node: config_version.clone(),
+    }];
+    let declared = declarations
+        .types
+        .object_type(config_version_id)
+        .expect("ConfigVersion is declared");
+    let field = declared
+        .attributes()
+        .iter()
+        .find(|field| field.name() == "address")
+        .expect("address is an attribute");
     assert!(
-        error.contains("UnsupportedModelMember"),
-        "{error}: expected AssemblyCause::UnsupportedModelMember naming {note:?}"
+        matches!(field.value_type(), ValueType::Composite(_)),
+        "address is typed by the record value type, not a Reference: {:?}",
+        field.value_type()
     );
-    assert!(error.contains(&note), "{error}: expected the node named");
+    assert!(
+        declarations
+            .types
+            .composites()
+            .any(|composite| composite.name() == "Config::Address"),
+        "the record value type Address is declared"
+    );
+    declarations
+        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .expect("the clause reading self.address.street checks");
 }
 
 /// FR-103-AC-5 (TC-458 step 5): admission is deterministic. Admitting the

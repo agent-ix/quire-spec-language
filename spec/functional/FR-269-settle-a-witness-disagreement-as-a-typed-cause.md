@@ -67,12 +67,6 @@ one side only, or fails the separation check (ADR-031 SW-12, SW-13). Like
 | FR-269-AC-3 | A replay result holding FR-269-AC-1's cause round-trips through serialize and read to an equal result; the same document with `failure` set to an undefined value refuses, and one with `given` missing its `index` refuses; two results that differ only in `derived` compare unequal. | Test (TC-744) |
 | FR-269-AC-4 | A deciding element whose value or type nests 100,000 levels round-trips through the cause codec on a 512 KiB stack: the writer is `quire-canonical`'s, the reader keeps the document on the heap (`quire_canonical::read`) and decodes each deciding element from it on an explicit stack, and the element reads back and encodes to the same document. No depth refuses (ADR-030 D-1). | Test (TC-744) |
 
-## Status
-
-The cause's own codec round-trips here. The round-trip of a whole replay
-result holding the cause lands with the `native-run-result/2` wire
-([FR-267](FR-267-write-run-results-as-native-run-result-2.md)).
-
 ## Dependencies
 
 - [ADR-031](../decisions/ADR-031-state-forall-separating-witness.md) SW-12
@@ -81,6 +75,10 @@ result holding the cause lands with the `native-run-result/2` wire
   causes), [FR-268](FR-268-check-a-state-clause-witness-on-replay.md) (the
   replay that settles it).
 - QSpec FR-351 (record identity and strict reading).
+
+The cause's own codec round-trips here. The round-trip of a whole replay
+result holding the cause lands with the `native-run-result/2` wire
+([FR-267](FR-267-write-run-results-as-native-run-result-2.md)).
 
 ## References
 

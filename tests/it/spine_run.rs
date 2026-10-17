@@ -31,6 +31,90 @@ fn program_source(program: &[u8]) -> Value {
         "digest":ByteDigest::of(program).to_string(),"document":"SpineRun","formal_revision":1})
 }
 
+/// FR-289-AC-1 / TC-773 step 1: the front end has no registry input, so
+/// compiling the same source alongside an empty registry and alongside a
+/// populated three-manifest registry produces the same package bytes and
+/// the same successful check outcome.
+#[test]
+#[trace("TC-773", "FR-289-AC-1")]
+fn front_end_package_is_independent_of_provider_registry() {
+    use qsl_foundation::digest::ByteDigest;
+    use qsl_foundation::BackendId;
+    use qsl_route::{descriptor_from_manifest, Candidate, ProviderOrigin, Registry};
+
+    let program = std::fs::read(SEVEN_FIXTURE).unwrap();
+    let source = qsl_foundation::SourceIdentity::new(
+        "agent-ix",
+        "test:fr-289-front-end",
+        "fixture",
+        "fixture:1",
+    );
+    let empty = Registry::new();
+    let mut populated = Registry::new();
+    for (index, (identity, capability, mode, origin)) in [
+        (
+            "provider-a",
+            "value-validity",
+            "unbounded",
+            ProviderOrigin::Linked,
+        ),
+        (
+            "provider-b",
+            "operation-contract",
+            "bounded",
+            ProviderOrigin::Process,
+        ),
+        (
+            "provider-c",
+            "finite-replay",
+            "bounded",
+            ProviderOrigin::Linked,
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        populated
+            .register(
+                descriptor_from_manifest(
+                    Candidate::new(BackendId::new(identity)),
+                    origin,
+                    qsl_route::ManifestDigest::from_digest(
+                        ByteDigest::of(format!("fr-289-manifest-{index}").as_bytes()).as_bytes(),
+                    ),
+                    [(Some(capability), Some(mode))],
+                    Some(&["collection"]),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+    }
+    assert_eq!(empty.backends().count(), 0);
+    assert_eq!(populated.backends().count(), 3);
+
+    // The registry values are intentionally built but cannot be passed to
+    // any front-end operation: parse/select/check/package do not accept one.
+    let empty_result = crate::support::front_end::emitted(
+        source.clone(),
+        "spine-compile.native",
+        &program,
+        &std::collections::BTreeMap::new(),
+        &qsl_replay::spine::DependencyInput::default(),
+    );
+    let populated_result = crate::support::front_end::emitted(
+        source,
+        "spine-compile.native",
+        &program,
+        &std::collections::BTreeMap::new(),
+        &qsl_replay::spine::DependencyInput::default(),
+    );
+    assert_eq!(empty_result.is_ok(), populated_result.is_ok());
+    assert_eq!(
+        empty_result.unwrap().package().bytes(),
+        populated_result.unwrap().package().bytes()
+    );
+}
+
 /// Write `program` as `program.native` and a native-run/1 request selecting
 /// it with `call`, no models and no libraries.
 fn spine_run_request(directory: &Path, program: &[u8], call: Value) {
@@ -49,6 +133,110 @@ fn spine_run_request(directory: &Path, program: &[u8], call: Value) {
 
 fn call(function: &str, arguments: Value) -> Value {
     json!({"function": function, "arguments": arguments})
+}
+
+/// FR-267-AC-3: the clause-run transition changes command failures to the
+/// closed /2 envelope, including failures before the source can compile.
+#[test]
+#[trace("TC-742", "FR-267-AC-3")]
+fn unknown_edition_uses_native_run_result_two_command_error() {
+    let program = std::fs::read_to_string(SEVEN_FIXTURE)
+        .unwrap()
+        .replacen("1-draft", "9-draft", 1);
+    let directory = tempfile::tempdir().unwrap();
+    spine_run_request(
+        directory.path(),
+        program.as_bytes(),
+        call("seven", json!([])),
+    );
+
+    let output = run(directory.path());
+    assert_eq!(output.status.code(), Some(20), "{output:?}");
+    assert!(output.stdout.is_empty(), "{output:?}");
+    let error: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(error["format"], "native-run-result/2");
+    assert_eq!(error["stage"], "profile");
+    assert_eq!(error["code"], "unknown_edition");
+    assert_eq!(error["basis"], "unavailable");
+    let members = error
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        members,
+        ["basis", "code", "details", "format", "message", "stage"]
+    );
+    let read = qsl_replay::spine::read_native_run_result(&output.stderr).unwrap();
+    let qsl_replay::spine::NativeRunResult::CommandError(read) = read else {
+        panic!("the command error must read as its own typed variant");
+    };
+    assert_eq!(read.stage(), "profile");
+    assert_eq!(read.code(), "unknown_edition");
+    assert!(matches!(
+        read.details().get("phase").unwrap().node(),
+        quire_canonical::Node::String("profile")
+    ));
+    assert!(matches!(
+        read.details().get("path").unwrap().node(),
+        quire_canonical::Node::String("program.native")
+    ));
+}
+
+/// FR-267-AC-10: command errors have their own closed shape and cannot be
+/// selected by changing any non-format member of a `/2` document.
+#[test]
+#[trace("TC-742", "FR-267-AC-10")]
+fn native_result_two_reader_refuses_invalid_command_error_members() {
+    let valid = json!({
+        "format": "native-run-result/2", "stage": "profile",
+        "code": "unknown_edition", "message": "unknown edition in program.native",
+        "details": {"phase": "profile", "code": "unknown_edition", "path": "program.native"},
+        "basis": "unavailable"
+    });
+    assert!(matches!(
+        qsl_replay::spine::read_native_run_result(&serde_json::to_vec(&valid).unwrap()).unwrap(),
+        qsl_replay::spine::NativeRunResult::CommandError(_)
+    ));
+    type MemberEdit = (&'static str, fn(&mut Value));
+    let edits: &[MemberEdit] = &[
+        ("stage", |v: &mut Value| {
+            v.as_object_mut().unwrap().remove("stage");
+        }),
+        ("disposition", |v: &mut Value| {
+            v["disposition"] = json!({});
+        }),
+        ("basis", |v: &mut Value| {
+            v["basis"] = json!("decisive-witness");
+        }),
+        ("witness", |v: &mut Value| {
+            v["witness"] = json!({});
+        }),
+        ("cause", |v: &mut Value| {
+            v["cause"] = json!("unknown-edition");
+        }),
+        ("details", |v: &mut Value| {
+            v["details"] = json!({"phase":"profile"});
+        }),
+        ("format", |v: &mut Value| {
+            v["format"] = json!("native-run-result/1");
+        }),
+        ("format", |v: &mut Value| {
+            v["format"] = json!("native-run-result/3");
+        }),
+    ];
+    for &(member, edit) in edits {
+        let mut candidate = valid.clone();
+        edit(&mut candidate);
+        let error = match qsl_replay::spine::read_native_run_result(
+            &serde_json::to_vec(&candidate).unwrap(),
+        ) {
+            Ok(_) => panic!("accepted invalid {member}: {candidate}"),
+            Err(error) => error.to_string(),
+        };
+        assert!(error.contains(member), "{member}: {error}");
+    }
 }
 
 /// FR-100-AC-1 (TC-450 step 1): `seven()` completes integer `7`, and the
@@ -579,7 +767,7 @@ fn tc_451_step_5_function_shape_and_lookup_refusals() {
     assert_eq!(failure["details"]["function"], "corner");
 }
 
-/// FR-100-AC-6 (TC-451 step 7): `seven` with `work_units` 0 writes outcome
+/// FR-100-AC-6 (TC-451 step 7): `seven` with `call.accounting` `{"work_units": 0}` writes outcome
 /// `{"kind": "incomplete", "limit": "work_units"}`, exit 22.
 #[test]
 #[trace("TC-451", "FR-100-AC-6")]
@@ -587,7 +775,7 @@ fn tc_451_step_7_zero_work_units_is_incomplete() {
     let program = std::fs::read(RUN_FIXTURE).unwrap();
     let directory = tempfile::tempdir().unwrap();
     let mut request = call("seven", json!([]));
-    request["work_units"] = json!(0);
+    request["accounting"] = json!({"work_units": 0});
     spine_run_request(directory.path(), &program, request);
     let output = run(directory.path());
     assert_eq!(
@@ -603,10 +791,54 @@ fn tc_451_step_7_zero_work_units_is_incomplete() {
     );
 }
 
-/// FR-100-AC-3 (TC-450 step 4): a `work_units` of `18446744073709551616`
-/// (above `u64::MAX`), `-1`, `1.5` or `null` refuses `invalid-request` at
-/// stage `request`, exit 20 (FND-009/FND-018: `null` is a present key, not
-/// an absent one, and admits no `u64`).
+/// FR-100-AC-13 (TC-921 step 5): `run_complete` forwards the supplied
+/// `integer_bits` limit through evaluation and reports the exhausted counter.
+#[test]
+#[trace("TC-921", "FR-100-AC-13")]
+fn native_run_integer_bits_limit_reaches_evaluation() {
+    let fixture = std::fs::read_to_string(RUN_FIXTURE).unwrap();
+    let literal_directory = tempfile::tempdir().unwrap();
+    let mut literal_call = call("seven", json!([]));
+    literal_call["accounting"] = json!({"integer_bits": 0});
+    spine_run_request(literal_directory.path(), fixture.as_bytes(), literal_call);
+    let literal_output = run(literal_directory.path());
+    assert_eq!(literal_output.status.code(), Some(0));
+    let literal_document: Value = serde_json::from_slice(&literal_output.stdout).unwrap();
+    assert_eq!(
+        literal_document["outcome"],
+        json!({"kind": "completed", "value": {"kind": "integer", "decimal": "7"}})
+    );
+
+    let program = fixture.replace(
+        "function seven using v(): Digit pure { 7 }",
+        "function seven using v(): Digit pure { 7 + 1 }",
+    );
+    assert_ne!(program, fixture, "the fixture's seven body must be updated");
+    let directory = tempfile::tempdir().unwrap();
+    let mut request = call("seven", json!([]));
+    request["accounting"] = json!({"integer_bits": 0});
+    spine_run_request(directory.path(), program.as_bytes(), request);
+
+    let output = run(directory.path());
+    assert_eq!(
+        output.status.code(),
+        Some(22),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let document: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        document["outcome"],
+        json!({"kind": "incomplete", "limit": "integer_bits"})
+    );
+}
+
+/// FR-100-AC-3 (TC-450 step 4): an `accounting` member `work_units` of
+/// `18446744073709551616` (above `u64::MAX`), `-1`, `1.5` or `null`, an
+/// `accounting` member `depth`, a member named twice, an `accounting` of
+/// `5`, and the legacy `call.work_units` each refuse `invalid-request` at stage
+/// `request`, exit 20 (FND-009/FND-018: `null` is a present key, not an
+/// absent one, and admits no `u64`).
 #[test]
 #[trace("TC-450", "FR-100-AC-3")]
 fn tc_450_step_4_malformed_work_units_refuses() {
@@ -614,19 +846,29 @@ fn tc_450_step_4_malformed_work_units_refuses() {
     // `18446744073709551616` (2^64) does not fit `serde_json::Value`'s own
     // `u64`/`i64`/`f64` number representation, so it is spliced into the
     // request text directly rather than built through `json!`.
-    for work_units in ["18446744073709551616", "-1", "1.5", "null"] {
+    let accounting_spliced = [
+        r#""accounting":{"work_units":18446744073709551616}"#,
+        r#""accounting":{"work_units":-1}"#,
+        r#""accounting":{"work_units":1.5}"#,
+        r#""accounting":{"work_units":null}"#,
+        r#""accounting":{"depth":1}"#,
+        r#""accounting":{"work_units":1,"work_units":2}"#,
+        r#""accounting":5"#,
+        r#""work_units":0"#,
+    ];
+    for work_units in accounting_spliced {
         let directory = tempfile::tempdir().unwrap();
         std::fs::write(directory.path().join("program.native"), &program).unwrap();
         let mut placeholder_call = call("seven", json!([]));
-        placeholder_call["work_units"] = json!(0);
+        placeholder_call["accounting"] = json!({"work_units": 0});
         let request = json!({"format":"native-run/1","request":{
             "models":[],
             "program":{"source":program_source(&program)},
             "call": placeholder_call,
         }});
         let text = serde_json::to_string(&request).unwrap().replacen(
-            "\"work_units\":0",
-            &format!("\"work_units\":{work_units}"),
+            "\"accounting\":{\"work_units\":0}",
+            work_units,
             1,
         );
         std::fs::write(directory.path().join("request.json"), text).unwrap();
@@ -670,30 +912,22 @@ fn tc_451_step_4_malformed_argument_value_refuses() {
     }
 }
 
-/// FR-100-AC-2 (TC-450 step 2): a `0-draft` standalone request's stdout and
-/// exit status are unaffected by the spine-run routing change.
+/// The atomic /2 transition refuses a retired native `run` request with a
+/// closed command-error envelope and no successful /1 result.
 #[test]
-#[trace("TC-450", "FR-100-AC-2")]
-fn tc_450_step_2_zero_draft_requests_are_unaffected() {
+#[trace("TC-742", "FR-267-AC-3")]
+fn native_zero_draft_run_is_retired_with_two_envelope() {
     use crate::support::standalone_setup as fixtures;
     let directory = tempfile::tempdir().unwrap();
     fixtures::write(directory.path(), fixtures::Case::Boolean { flag: true }).unwrap();
     let output = run(directory.path());
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert!(output.stderr.is_empty());
-    let document: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(document["format"], "native-run-result/1");
-    // FND-008: a stronger oracle than the format alone -- the fixture's
-    // clause (`true implies flag`, `flag` bound `true`) actually evaluates
-    // and completes `true`, not merely reaching some other stage or a
-    // refusal that happens to still exit 0.
-    assert_eq!(document["stage"], "evaluate");
-    assert_eq!(document["truth"], true);
+    assert_eq!(output.status.code(), Some(20));
+    assert!(output.stdout.is_empty());
+    let document: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(document["format"], "native-run-result/2");
+    assert_eq!(document["stage"], "request");
+    assert_eq!(document["code"], "invalid-request");
+    assert_eq!(document["basis"], "unavailable");
 }
 
 /// FR-100-AC-3 (TC-450 step 6): a `1-draft` request whose `libraries`
@@ -712,7 +946,7 @@ fn tc_450_step_6_libraries_and_models_both_present_runs() {
     let program = format!(
         "{HEADER}\
          import \"test/geometry\" as g;\n\
-         model M = \"acme/orders\" version \"1.0.0\" digest \"sha256-jcs:5fc327ab7b2b90151ae6713296e15512c38930d9ba61cf5f586eaa2a70145bfd\";\n\
+         model M = \"acme/orders\" version \"1.0.0\" digest \"sha256-jcs:876d1b2d9e3f825763f6e301cca5c6d6462f4cc0daacb501f7a68a8b3089e114\";\n\
          function seven using v(): Integer pure {{ 7 }}\n"
     )
     .into_bytes();
@@ -763,15 +997,15 @@ fn tc_786_run_exit_statuses_come_from_the_exit_function() {
     use qsl_replay::spine::{default_accounting, Call, CallArgument, DEFAULT_WORK_UNITS};
     let program = std::fs::read(RUN_FIXTURE).unwrap();
     for (function, parameter, value, work_units, expected) in [
-        ("flag", Some("b"), 2, DEFAULT_WORK_UNITS, 20),
-        ("id", Some("x"), 12, DEFAULT_WORK_UNITS, 20),
-        ("corner", Some("p"), 0, DEFAULT_WORK_UNITS, 21),
-        ("seven", None, 0, 0, 22),
+        ("flag", Some("b"), 2_i64, DEFAULT_WORK_UNITS, 20),
+        ("id", Some("x"), 12_i64, DEFAULT_WORK_UNITS, 20),
+        ("corner", Some("p"), 0_i64, DEFAULT_WORK_UNITS, 21),
+        ("seven", None, 0_i64, 0, 22),
     ] {
         let arguments: Vec<CallArgument> = parameter
             .map(|parameter| CallArgument {
                 parameter: parameter.to_owned(),
-                value,
+                value: quire_exact::Value::Integer(quire_exact::Integer::from(value)),
             })
             .into_iter()
             .collect();
@@ -780,11 +1014,11 @@ fn tc_786_run_exit_statuses_come_from_the_exit_function() {
             Value::Array(
                 arguments
                     .iter()
-                    .map(|argument| json!({"parameter": argument.parameter, "value": argument.value}))
+                    .map(|argument| json!({"parameter": argument.parameter, "value": value}))
                     .collect(),
             ),
         );
-        request["work_units"] = json!(work_units);
+        request["accounting"] = json!({"work_units": work_units});
         let directory = tempfile::tempdir().unwrap();
         spine_run_request(directory.path(), &program, request);
         let output = run(directory.path());
@@ -806,7 +1040,9 @@ fn tc_786_run_exit_statuses_come_from_the_exit_function() {
                 function: function.to_owned(),
                 arguments,
                 accounting: default_accounting(work_units),
+                supplied: Default::default(),
             },
+            &qsl_semantics::model::object_environment::ObjectEnvironment::default(),
             &quire_exact::Cancel::new(),
         );
         let category = match direct {

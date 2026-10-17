@@ -33,10 +33,17 @@ use super::*;
 use crate::checked_v2::{read_v2, Read, V2ReadLimits};
 
 mod admission_corpus;
+mod child_composite;
 mod deep_bodies;
+mod envelope_adoption;
 mod golden;
 mod identity_depth;
+mod navigation;
 mod owners;
+mod protocol_reference;
+mod reachability;
+mod receiver_frames;
+mod variant_types;
 
 /// The unit the fixture packages are read from; every occurrence's region is
 /// the whole of it.
@@ -421,11 +428,26 @@ pub(crate) fn rebuilt_key(node: &Value, group: &[&Value]) -> String {
     sha256_hex(&jcs(&rebuilt_preimage(node, group, true)))
 }
 
+/// The digest of a node's structural preimage, even for node families whose
+/// normal key is derived from an application preimage.
+pub(crate) fn rebuilt_structural_key(node: &Value, group: &[&Value]) -> String {
+    sha256_hex(&jcs(&rebuilt_preimage_as(node, group, true, Some(false))))
+}
+
 /// The preimage [`rebuilt_key`] hashes. With `labelled` false, a recursion
 /// group member's preimage omits `recursion.group`: its group-local form,
 /// whose digests the group label hashes. The owner is read from the wire
 /// node's own `owner` member, never from the owner the checked unit carries.
 pub(super) fn rebuilt_preimage(node: &Value, group: &[&Value], labelled: bool) -> Value {
+    rebuilt_preimage_as(node, group, labelled, None)
+}
+
+fn rebuilt_preimage_as(
+    node: &Value,
+    group: &[&Value],
+    labelled: bool,
+    application_override: Option<bool>,
+) -> Value {
     let ordinal = |id: &Value| group.iter().position(|member| member["node_id"] == *id);
     let in_group = |term: &Value| -> Value {
         fn walk(term: &Value, ordinal: &dyn Fn(&Value) -> Option<usize>) -> Value {
@@ -452,9 +474,12 @@ pub(super) fn rebuilt_preimage(node: &Value, group: &[&Value], labelled: bool) -
         walk(term, &ordinal)
     };
     let body = in_group(&node["body"]);
-    let application = serde_json::to_string(&body)
-        .unwrap()
-        .contains("\"application\"");
+    let application = application_override.unwrap_or_else(|| {
+        (node["node_tag"] == "value" && node["semantic_form"] == "union_value")
+            || serde_json::to_string(&body)
+                .unwrap()
+                .contains("\"application\"")
+    });
     let declaration = node.get("declaration").cloned().unwrap_or(Value::Null);
     let recursion = node.get("recursion_group").map(|label| {
         let position = ordinal(&node["node_id"]).unwrap();
@@ -1317,6 +1342,9 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
             Err(EmitRefusal::UnknownOccurrenceRole { .. }) => Seen::UnknownOccurrenceRole,
             Err(EmitRefusal::Encoding { .. }) => Seen::Encoding,
             Err(EmitRefusal::Cancelled { .. }) => panic!("no handle was cancelled"),
+            Err(EmitRefusal::StaleProtocolReference { .. }) => {
+                panic!("the fixture set holds no protocol reference")
+            }
         }
     }
     assert_eq!(
@@ -2330,7 +2358,8 @@ fn emit_model_unit(unit: &str, evidence_digest: Option<&str>) -> (Emission, Valu
         evidence.support_feature(feature.as_str().unwrap());
     }
     evidence
-        .insert_domain_package_document(evidence_digest.unwrap_or(&digest), SPINE_MODEL_DOCUMENT);
+        .insert_domain_package_document(evidence_digest.unwrap_or(&digest), SPINE_MODEL_DOCUMENT)
+        .expect("a fresh evidence key");
     let read = read_v2(
         emission.package.bytes(),
         library(),
@@ -2613,10 +2642,13 @@ fn normalization_refusals_and_limits_stop_intake_at_the_declaration() {
         ),
         "{limited:?}"
     );
+    // The ceiling is `ModelNormalizationLimitsV1`, the caller's budget
+    // (ADR-014 section 1, FR-255 Behavior 1).
     assert_eq!(
         limited.cause.code(),
-        qsl_foundation::Code::StageLimitExceeded
+        qsl_foundation::Code::ResourceExhausted
     );
+    assert_eq!(limited.cause.cause(), Some("insufficient-next-charge"));
     assert!(UNIT[limited.span.start..limited.span.end].starts_with("model M = "));
 
     let mut cyclic: Value = serde_json::from_slice(SPINE_MODEL_DOCUMENT).unwrap();
@@ -2689,7 +2721,13 @@ fn linked(imports: Vec<crate::Import>) -> CheckedPackage {
 fn read_linked(package: &CheckedPackage) {
     let emission = emit(package);
     let mut evidence = read_evidence(&emission);
-    crate::checked_v2::supply_closure(package, &mut evidence).expect("each dependency reads back");
+    crate::checked_v2::supply_closure(
+        package,
+        &std::collections::BTreeMap::new(),
+        crate::V2ReadLimits::default(),
+        &mut evidence,
+    )
+    .expect("each dependency reads back");
     let outcome = read_with(&emission, &evidence);
     assert!(matches!(outcome, Read::Verified { .. }), "{outcome:?}");
 }
@@ -2936,8 +2974,10 @@ fn config_version_model(with_sub: bool) -> qsl_semantics::model::intake::Selecte
                 modifies: vec![key("ConfigVersion/versionNumber")],
                 creates: Vec::new(),
                 deletes: Vec::new(),
+                ..Default::default()
             },
-            own_postcondition_clauses: Vec::new(),
+            requires: Vec::new(),
+            ensures: Vec::new(),
             has_body: false,
             redefines: None,
         }),
@@ -2967,6 +3007,8 @@ fn config_version_model(with_sub: bool) -> qsl_semantics::model::intake::Selecte
         alias: "Config".to_owned(),
         span: SPAN,
         view,
+        operation_clauses: Vec::new(),
+        type_invariants: Vec::new(),
     }
 }
 
@@ -3002,8 +3044,16 @@ fn check_attempt_unit(
     unit: &str,
     with_sub: bool,
 ) -> Result<qsl_semantics::check::CheckedGraph, Vec<qsl_semantics::check::CheckRefusal>> {
+    check_attempt_unit_revision(unit, with_sub, "fixture:1")
+}
+
+fn check_attempt_unit_revision(
+    unit: &str,
+    with_sub: bool,
+    revision: &str,
+) -> Result<qsl_semantics::check::CheckedGraph, Vec<qsl_semantics::check::CheckRefusal>> {
     let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("agent-ix", "test:qsl-309", "fixture", "fixture:1"),
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:qsl-309", "fixture", revision),
         "program.native",
         unit.as_bytes(),
         qsl_cst::Limits::default(),
@@ -3052,6 +3102,46 @@ fn emit_attempt_unit(unit: &str, with_sub: bool) -> AttemptEmission {
         .count();
     let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
     assert_eq!(emission.omitted, []);
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:qsl-309", "fixture", "fixture:1"),
+        "program.native",
+        unit.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("the original attempt passed S1");
+    let formatted = qsl_cst::format::format_with_limit(&parsed, usize::MAX)
+        .expect("the admitted attempt formats");
+    let reparsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new(
+            "agent-ix",
+            "test:qsl-309",
+            "fixture",
+            "fixture:1-formatted",
+        ),
+        "program.native",
+        formatted.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("the formatted attempt parses");
+    assert_eq!(
+        qsl_cst::format::format_with_limit(&reparsed, usize::MAX).unwrap(),
+        formatted,
+        "attempt second-pass bytes"
+    );
+    let formatted_graph = check_attempt_unit_revision(&formatted, with_sub, "fixture:1-formatted")
+        .unwrap_or_else(|refusals| panic!("formatted attempt refuses: {refusals:?}"));
+    let formatted_emission = emit_checked(&CheckedPackage::link(formatted_graph))
+        .expect("the formatted attempt emits through public S4");
+    assert_eq!(
+        formatted_emission.omitted,
+        [],
+        "formatted attempt S4 omissions"
+    );
+    assert_eq!(
+        formatted_emission.package().package_id(),
+        emission.package().package_id(),
+        "attempt formatting changed checked package identity"
+    );
     AttemptEmission {
         attempt,
         clauses,
@@ -3084,7 +3174,7 @@ fn digest_of(key: quire_exact::NodeKey) -> String {
 /// frame's `modifies` exactly `versionNumber` -- and exactly one
 /// `operation-contract` record for the frame. The "emit.rs needs no
 /// new code" claim, exercised against real nodes rather than their absence.
-#[trace("TC-513", "FR-114-AC-1")]
+#[trace("TC-513", "FR-114-AC-1", "FR-003-AC-9")]
 #[test]
 fn an_attempt_and_its_clause_share_one_frame_node_through_emission() {
     let emitted = emit_attempt_unit(
@@ -3128,7 +3218,7 @@ fn assert_frame_modifies_version_number(frame: &Value) {
 /// one anchor node, one frame node and one frame record for it. The
 /// attempt's own occurrences are the only ones placing these nodes, so this
 /// fails if an attempt's generated occurrences have no enclosing region.
-#[trace("TC-513", "FR-114-AC-2")]
+#[trace("TC-513", "FR-114-AC-2", "FR-003-AC-9")]
 #[test]
 fn an_operation_named_only_by_an_attempt_emits_its_anchor_frame_and_record() {
     let emitted = emit_attempt_unit(
@@ -3153,7 +3243,7 @@ fn an_operation_named_only_by_an_attempt_emits_its_anchor_frame_and_record() {
 /// and a `post` on `Config::ConfigVersion::attemptUpdate` share one anchor
 /// node and one frame node, whose context is `ConfigVersion`'s own object
 /// node -- the same one the unit without `Sub` binds.
-#[trace("TC-513", "FR-114-AC-4")]
+#[trace("TC-513", "FR-114-AC-4", "FR-003-AC-9")]
 #[test]
 fn an_inherited_operation_binds_its_declaring_types_anchor_and_frame() {
     let emitted = emit_attempt_unit(
@@ -3290,7 +3380,7 @@ fn a_valid_attempt_does_not_let_garbage_content_through() {
 /// one `anchor` occurrence per clause or attempt naming it, ordinals in
 /// source order -- whichever is written first, the protocol's attempt or
 /// the `post` clause, gets ordinal 0.
-#[trace("TC-513", "FR-114")]
+#[trace("TC-513", "FR-114", "FR-003-AC-9")]
 #[test]
 fn anchor_occurrence_ordinals_follow_source_order() {
     let protocol = attempt_frame_unit(
@@ -3374,6 +3464,78 @@ fn package_from_text(declarations: &str) -> (String, CheckedPackage) {
         .check(CheckingLimits::default())
         .expect("the package checks");
     (text, CheckedPackage::link(graph))
+}
+
+#[trace("TC-416", "FR-093-AC-9")]
+#[test]
+fn function_parameter_occurrences_cover_each_own_declaration_and_each_read() {
+    let (text, package) = package_from_text(
+        "function both using v(a: Boolean, b: Boolean): Boolean pure { a and b }\n\
+         function other using v(a: Boolean, b: Boolean): Boolean pure { not a and b }\n",
+    );
+    let emission = emit_checked(&package).expect("source parameters have real regions");
+    let wire = wire(&emission);
+    let parameters: Vec<&Value> = nodes(&wire)
+        .iter()
+        .filter(|node| node["semantic_form"] == "parameter")
+        .map(|node| &node["node_id"])
+        .collect();
+    assert_eq!(
+        parameters.len(),
+        2,
+        "equal parameter content shares a key across functions"
+    );
+    let mut slices = Vec::new();
+    let mut ranges = Vec::new();
+    for entry in wire["source_map"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|entry| parameters.contains(&&entry["node_id"]))
+    {
+        assert_eq!(entry["role"], "expression");
+        let regions = entry["regions"].as_array().unwrap();
+        assert_eq!(regions.len(), 1);
+        let region = &regions[0];
+        assert_eq!(
+            region["source"],
+            serde_json::to_value(source_artifact(package.graph().source())).unwrap()
+        );
+        let start = usize::try_from(region["start"].as_u64().unwrap()).unwrap();
+        let end = usize::try_from(region["end"].as_u64().unwrap()).unwrap();
+        slices.push(&text[start..end]);
+        ranges.push((start, end));
+    }
+    slices.sort();
+    assert_eq!(
+        slices,
+        [
+            "a",
+            "a",
+            "a: Boolean",
+            "a: Boolean",
+            "b",
+            "b",
+            "b: Boolean",
+            "b: Boolean"
+        ]
+    );
+    let mut expected_ranges = Vec::new();
+    for declaration in ["a: Boolean", "b: Boolean"] {
+        expected_ranges.extend(
+            text.match_indices(declaration)
+                .map(|(start, matched)| (start, start + matched.len())),
+        );
+    }
+    for (body, offsets) in [("{ a and b }", [2, 8]), ("{ not a and b }", [6, 12])] {
+        let start = text.find(body).unwrap();
+        expected_ranges.extend(offsets.map(|offset| (start + offset, start + offset + 1)));
+    }
+    ranges.sort();
+    expected_ranges.sort();
+    assert_eq!(ranges, expected_ranges);
+    let read = read_back(&emission);
+    assert!(matches!(read, Read::Verified { .. }), "{read:?}");
 }
 
 /// The source text each `generated` source-map entry of `node` covers.
@@ -3509,7 +3671,7 @@ fn a_node_two_unnamed_types_share_is_placed_at_the_least_name() {
 /// a declared type no function names also reaches it, though a type name
 /// sorts before a state clause. `VersionUnchanged`'s body `1 < 2` and
 /// `record R { x: Int[0, 9]; }` both reach the `Integer` scalar node.
-#[trace("FR-093-AC-18", "TC-416")]
+#[trace("FR-093-AC-18", "TC-416", "FR-003-AC-9")]
 #[test]
 fn a_node_a_state_clause_places_does_not_move_to_a_type_name() {
     const CLAUSE: &str =

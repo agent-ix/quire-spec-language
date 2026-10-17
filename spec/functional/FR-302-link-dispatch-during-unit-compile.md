@@ -34,6 +34,9 @@ checked package.
   precondition and postcondition clauses make (QSpec FR-151 rule
   `quire.model.dispatch.single/v1`).
 - The admitted model effective view of each selected domain package.
+- A dispatched call in an operation body is not an input. It refuses
+  `ill_typed`/`operator-ineligible` where the body is checked (TC-196 D07),
+  and links nothing.
 - The caller's `SpineLimits`, whose model normalization limits carry the
   `family_steps` ceiling FR-083 reads.
 
@@ -53,6 +56,66 @@ which calls `model::dispatch::link_dispatch` (ADR-016 SC-3). The checked
 package SHALL carry each linked table, and S6a SHALL select a call's target
 only from the table its checked node names.
 
+A dispatched call names the family of the operation its member resolves to
+on the receiver's static type: the family whose root, an operation that
+redefines none, is declared by that type or inherited by it. A call whose
+receiver's static type is the root's declaring type, or any object type
+conforming to it, abstract or concrete and including a type that redefines
+the operation, names that root's table. S3 links the family of every root
+whose member name some call spells. A family that does not link refuses the
+compile only for a call that needs it: a call whose member the check finds no
+dispatch operation for, and whose receiver's static type is one the family's
+root answers for (its declaring type or a type conforming to it). That
+refusal is located at the call. A call on any other receiver type keeps the
+check's own refusal, and a same-named family of an unrelated type that no
+call reaches does not refuse the compile.
+
+The source-to-intake join SHALL use the resolved operation's
+`DeclarationKey` in the selected model's effective view. S3 SHALL resolve
+each retained `OperationBodyForm` target and each unit `pre`/`post`
+`StateClauseForm` through FR-104, preserving the resolved declaring
+operation identity, and SHALL key the body's expression and clauses by that
+same key. For each operation requested by a dispatched call, the checker
+SHALL supply `checked_dispatch_operation` the admitted operation and the
+body, signature and precondition data keyed by that `DeclarationKey`. It
+SHALL NOT join by the source-local body label, display spelling or
+declaration order. The domain package's own `requires`/`ensures` clauses on
+the operation (FR-103) stay the operation's contract. They are not unit
+`pre`/`post` clauses and not a body, and the join SHALL NOT take a unit clause
+or body from them. A body declaration with no
+matching operation SHALL refuse under FR-104's missing-operation resolution
+rule at S3 without a checked package or partial dispatch table.
+
+QSpec requires an `operation-body` to refuse `unsupported_construct` unless
+the package selects `quire.model.complete/v1`. QSL does not enforce that yet,
+because it has no model-profile selection: `resolve_profiles` accepts only
+`quire.value.complete/v1`, and FR-304-AC-8 states the same rule for the
+abstraction form without code behind it. FR-361 states the gate. Delete this
+sentence when FR-110 layer selection is built and FR-361's gate is
+implemented.
+
+A body's parameter count and types against the operation's signature, and its
+body type against the operation's declared result, are checked when dispatch
+linking first reads a body, before any consumer uses it; a mismatch refuses
+`ill_typed`/`type-mismatch` at the body (QSpec FR-151's arity row gives the
+same code and cause). Resolving a body to
+its `DeclarationKey` and setting `has_body` do not depend on that check.
+
+Exactly one executable unit `operation-body` SHALL resolve to each
+`DeclarationKey`. If a second body form resolves to a key already targeted by
+another body form, S3 SHALL refuse the compile as
+`conflicting_declaration`/`duplicate-declaration`, naming both body
+declarations, and SHALL produce no checked package or partial dispatch table.
+This reuses the duplicate-declaration diagnostic for repeated same-name
+declarations in [FR-246](FR-246-check-task-sets-and-schedulability-claims.md)
+and the at-most-one declaration rule in
+[FR-211](FR-211-declare-a-protocol-s-intended-terminal-states-and-report-its-deadlocks.md);
+QSpec FR-151 requires the same outcome: across all source units linked into
+one package, at most one `operation-body` declaration resolves to a given
+operation identity, and a second is refused as
+`conflicting_declaration`/`duplicate-declaration`. A single unit is the
+one-unit case of that rule.
+
 ### A failed link refuses the compile
 
 If FR-083 linking reports a no-applicable or a multiple-undominated failure
@@ -60,15 +123,18 @@ for any subtype of any called family, the compile SHALL refuse at S3 with the
 QSpec FR-151 code and cause for that failure (`ambiguous_dispatch`/
 `no-applicable` or `ambiguous_dispatch`/`multiple-undominated`), naming the
 subtype, the candidates and the dominance pairs. The checker SHALL report
-every failing subtype of every called family in one refusal, and SHALL
-produce no checked package and no partial dispatch table.
+every failing subtype of every called family in one refusal, as one QSpec
+FR-272 record for each failing subtype. The records SHALL come in charge
+order: families by ascending model alias and then ascending root operation
+key, and the subtypes of one family by ascending effective identity. The
+checker SHALL produce no checked package and no partial dispatch table.
 
 ### The family walk is bounded by a caller limit
 
 If a called family's `redefines` walk would exceed the caller's
 `family_steps` ceiling, the compile SHALL refuse at S3 with FR-083's
-resource-exhaustion cause `family-steps`, naming the limit `family_steps`, its configured value, and the
-`SpineLimits` model normalization field that raises it. The ceiling is the
+`resource_exhausted`/`insufficient-next-charge`, naming the setting `model.family_steps`, its
+effective limit, and the `SpineLimits` model normalization field that raises it. The ceiling is the
 caller's value, with the published default of
 `ModelNormalizationLimits::default()`.
 
@@ -76,12 +142,15 @@ caller's value, with the published default of
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-302-AC-1 | A unit with dispatched calls on two operations, `size` redefined at `A` and at `B` (`B` a subtype of `A`) and `area` declared at `A`, each called twice, compiles into a checked package carrying exactly one linked dispatch table per called operation; the `size` table maps `A` to `A`'s candidate and `B` to `B`'s, and the checked node of every dispatched call names the table of the operation it calls. | Test (TC-793) |
+| FR-302-AC-1 | A unit with dispatched calls on two operations, `size` redefined at `A` and at `B` (`B` a subtype of `A`) and `area` declared at `A`, each called twice, compiles into a checked package carrying exactly one linked dispatch table per called operation; the `size` table maps `A` to `A`'s candidate and `B` to `B`'s, and the checked node of every dispatched call names the table of the operation it calls. A call on a receiver of an abstract type between `A` and `B` names the `size` table too. | Test (TC-793) |
 | FR-302-AC-2 | A unit whose dispatched call's family has two undominated candidates for one concrete subtype refuses at S3 with `ambiguous_dispatch`/`multiple-undominated`, naming the subtype, both candidates and the dominance pairs, and returns no checked package. | Test (TC-794) |
 | FR-302-AC-3 | A unit whose dispatched call's family has no applicable candidate for one concrete subtype refuses at S3 with `ambiguous_dispatch`/`no-applicable`, naming the subtype, and returns no checked package. | Test (TC-794) |
 | FR-302-AC-4 | A unit with dispatched calls on two operations, each with one failing subtype, refuses once and names both failures. | Test (TC-794) |
-| FR-302-AC-5 | A unit whose called family has `n` `redefines` edges compiles with `family_steps = n` and, with `family_steps = n - 1`, refuses at S3 with the resource-exhaustion cause `family-steps` naming `family_steps`, the value `n - 1` and the limits field that raises it. | Test (TC-795) |
+| FR-302-AC-5 | A unit whose called family has `n` `redefines` edges compiles with `family_steps = n` and, with `family_steps = n - 1`, refuses at S3 with `resource_exhausted`/`insufficient-next-charge` naming the setting `model.family_steps`, the limit `n - 1` and the limits field that raises it. | Test (TC-795) |
 | FR-302-AC-6 | A unit whose precondition makes a dispatched call on an operation redefined at `A` and at `B` (`B` a subtype of `A`) compiles; evaluating the precondition with a receiver whose most-specific type is `B` runs `B`'s body, and with a receiver of type `A` runs `A`'s body. | Test (TC-809) |
+| FR-302-AC-7 | A single body for each of `A.size` and `B.size` joins with retained expressions and unit pre/post clauses to admitted operations by resolved `DeclarationKey`, independent of body labels and declaration order; `has_body` is true for those resolved operations and false for an operation without a body, whose called family is not applicable under FR-151. Two body forms resolving to the same `DeclarationKey` refuse as `conflicting_declaration`/`duplicate-declaration`, naming both forms and producing no checked package or partial table. TC-986 is the single-body control; TC-987 covers the duplicate. | Test |
+| FR-302-AC-8 | A body whose parameter count differs from its operation's signature, and a body whose type does not match its operation's declared result, each refuse at S3 as `ill_typed`/`type-mismatch`, located at the body, when dispatch linking first reads the body, with no checked package or partial dispatch table. QSpec FR-151 refuses an operation-redefinition parameter-count mismatch with the same code and cause. | Test (TC-1011) |
+| FR-302-AC-9 | A model holding `A.size` with a body and an unrelated type `Other` declaring its own `size` with no body: a unit whose only `size` call is on an `A` receiver compiles; a unit with a `size` call on an `Other` receiver refuses `ambiguous_dispatch`/`no-applicable` naming `Other.size`. A dispatched call in an operation body refuses `ill_typed`/`operator-ineligible`. | Test (TC-1019) |
 
 ## Dependencies
 

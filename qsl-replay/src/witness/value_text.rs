@@ -475,6 +475,22 @@ fn value_steps<'v>(value: &'v WitnessValue, order: Option<&[usize]>) -> Vec<Task
             vec![],
         ),
         WitnessValue::Text(text) => object(vec![tag("text"), ("value", Task::Str(text))], vec![]),
+        // FR-056's closed wire objects, the one spelling of these inputs.
+        WitnessValue::Uuid(text) => object(
+            vec![("kind", Task::Str("uuid")), ("text", Task::Str(text))],
+            vec![],
+        ),
+        WitnessValue::String(text) => object(
+            vec![("kind", Task::Str("string")), ("text", Task::Str(text))],
+            vec![],
+        ),
+        WitnessValue::Timestamp(text) => object(
+            vec![
+                ("kind", Task::Str("timestamp")),
+                ("nanoseconds", Task::Str(text)),
+            ],
+            vec![],
+        ),
         WitnessValue::Rational {
             numerator,
             denominator,
@@ -1088,6 +1104,46 @@ fn build(root: NodeRef<'_>) -> Result<WitnessValue, EntryFault> {
     }
 }
 
+/// FR-056's closed native wire object at `node`: `{"kind":"uuid","text":..}`,
+/// `{"kind":"string","text":..}` or `{"kind":"timestamp","nanoseconds":..}`. The form is read; the payload
+/// text is admitted when the executor converts the argument.
+#[qsl_attrs::string_edge]
+fn visit_native<'d>(
+    node: NodeRef<'d>,
+    mut members: impl Iterator<Item = (&'d str, NodeRef<'d>)>,
+    values: &mut Vec<WitnessValue>,
+) -> Result<(), EntryFault> {
+    let kind = members
+        .find(|(name, _)| *name == "kind")
+        .map(|(_, kind)| kind)
+        .ok_or(EntryFault::Shape)?;
+    let Node::String(kind) = kind.node() else {
+        return Err(EntryFault::Shape);
+    };
+    match kind {
+        "uuid" => {
+            let members = exact_object(node, &["kind", "text"])?;
+            values.push(WitnessValue::Uuid(
+                string_member(&members, "text")?.to_owned(),
+            ));
+        }
+        "string" => {
+            let members = exact_object(node, &["kind", "text"])?;
+            values.push(WitnessValue::String(
+                string_member(&members, "text")?.to_owned(),
+            ));
+        }
+        "timestamp" => {
+            let members = exact_object(node, &["kind", "nanoseconds"])?;
+            values.push(WitnessValue::Timestamp(
+                string_member(&members, "nanoseconds")?.to_owned(),
+            ));
+        }
+        _ => return Err(EntryFault::Shape),
+    }
+    Ok(())
+}
+
 /// Read the form at `node`: a leaf is pushed as a value, a composite pushes
 /// its parts' visits and then the step that assembles them.
 #[qsl_attrs::string_edge]
@@ -1099,6 +1155,11 @@ fn visit<'d>(
     let Node::Object(first) = node.node() else {
         return Err(EntryFault::Shape);
     };
+    // FR-056's closed UUID and Timestamp wire objects carry a `kind`, not a
+    // `type`; they are leaves.
+    if !first.clone().any(|(name, _)| name == "type") {
+        return visit_native(node, first.clone(), values);
+    }
     let tag = first
         .clone()
         .find(|(name, _)| *name == "type")

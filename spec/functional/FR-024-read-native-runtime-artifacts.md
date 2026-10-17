@@ -18,6 +18,10 @@ relationships:
 
 When a caller supplies serialized native runtime bytes and an exact snapshot or invocation reference, the reader shall return a structurally checked artifact bound to those selected bytes.
 
+The envelope identity and the local schema still carry
+`revision_namespace` and `revision` until QSL-381 drops them
+(QSpec STD-150).
+
 ## Inputs
 
 Borrowed input bytes, a role-specific SnapshotRef or InvocationRef, and existing
@@ -84,11 +88,11 @@ model-aware execution remain reader/constructor/runtime responsibilities.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-024-AC-1 | Snapshot and invocation bytes round-trip into artifacts with exact selected references, bytes and flat drafts, including whitespace and reordered object fields. | Test |
-| FR-024-AC-2 | Stale digests/identities, foreign roles, unknown versions and malformed/unknown/missing/duplicate JSON fields refuse with the actual stage and a distinct typed cause; byte-limit causes retain the actual length and effective ceiling, and envelope/body errors retain their original JSON diagnostics. | Test |
-| FR-024-AC-3 | Every admitted value variant decodes exactly; direct and nested decoding of each public runtime record rejects positional arrays and unknown, missing or duplicate fields. Invalid identifier, numeric, digest and local-index values refuse while vector duplicates remain intact; explicit null invocation results are admitted but omitted results refuse. | Test |
-| FR-024-AC-4 | Byte and structural limits return incomplete without partial artifacts; fresh reads can succeed and actual execution of reread snapshots/invocations preserves truth and frame refusals. | Test |
-| FR-024-AC-5 | The local schema accepts actual snapshot/invocation encodings and all ten value variants, preserves null results and vector duplicates, and rejects wrong envelope/body pairing, malformed/unknown/missing record fields and invalid scalar ranges/spellings. Controls demonstrate schema-valid data still refused by byte selection, exact wire decoding or structural construction. | Test |
+| FR-024-AC-1 | Snapshot and invocation bytes round-trip into artifacts with exact selected references, bytes and flat drafts, including whitespace and reordered object fields. | Test (TC-099) |
+| FR-024-AC-2 | Stale digests/identities, foreign roles, unknown versions and malformed/unknown/missing/duplicate JSON fields refuse with the actual stage and a distinct typed cause; byte-limit causes retain the actual length and effective ceiling, and envelope/body errors retain their original JSON diagnostics. | Test (TC-100) |
+| FR-024-AC-3 | Every admitted value variant decodes exactly; direct and nested decoding of each public runtime record rejects positional arrays and unknown, missing or duplicate fields. Invalid identifier, numeric, digest and local-index values refuse while vector duplicates remain intact; explicit null invocation results are admitted but omitted results refuse. | Test (TC-099, TC-100) |
+| FR-024-AC-4 | Byte and structural limits return incomplete without partial artifacts; fresh reads can succeed and actual execution of reread snapshots/invocations preserves truth and frame refusals. | Test (TC-099, TC-100) |
+| FR-024-AC-5 | The local schema accepts actual snapshot/invocation encodings and all ten value variants, preserves null results and vector duplicates, and rejects wrong envelope/body pairing, malformed/unknown/missing record fields and invalid scalar ranges/spellings. Controls demonstrate schema-valid data still refused by byte selection, exact wire decoding or structural construction. | Test (TC-099, TC-100) |
 | FR-024-AC-6 | Snapshot bytes naming both labels read back to an artifact whose reference retains them, and the local schema accepts them. The same bytes without `authority`, and again without `identity`, each read under a reference whose digest is the edited bytes' digest, refuse at the envelope stage with `invalid_runtime_input` whose retained JSON error names that member, and the schema rejects them. | Test (TC-431) |
 
 ## Dependencies
@@ -97,7 +101,3 @@ model-aware execution remain reader/constructor/runtime responsibilities.
 - [FR-023](FR-023-run-native-packages.md): native execution of admitted artifacts.
 - [FR-020](FR-020-read-and-rebind-native-packages.md): shared closed JSON record adapter.
 - [Input contract](../../docs/native-runtime-inputs.md): complete native-state-input/1 fields.
-
-## Status
-
-FR-024-AC-6 is implemented for the four-label identity (ADR-013 §7 slice S-4b) and backed by TC-431. Remaining work (implementation, Linear QSL-381): the envelope identity and the local schema drop `revision_namespace` and `revision` (QSpec STD-150).

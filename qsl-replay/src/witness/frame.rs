@@ -24,7 +24,9 @@ use crate::identity::QualifiedName;
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::model::key::DeclarationKey;
-use qsl_semantics::model::observation::{DocumentRef, FrameChange, FrameWitness, SelectedObject};
+use qsl_semantics::model::observation::{
+    DocumentRef, FrameChange, FrameWitness, LinkDifference, SelectedObject,
+};
 
 /// The operation a frame counterexample refutes: its declaring object
 /// type's [`QualifiedName`] (`M::T`, the model alias then the type) and the
@@ -82,6 +84,17 @@ pub enum ClaimedChange {
         /// Its post most-specific type.
         post_type: DeclarationKey,
     },
+    /// A relationship instance was added or removed.
+    Link {
+        /// The relationship node's key.
+        relationship: DeclarationKey,
+        /// Whether the instance was added or removed.
+        difference: LinkDifference,
+        /// The instance's source end.
+        source: SelectedObject,
+        /// The instance's target end.
+        target: SelectedObject,
+    },
 }
 
 impl ClaimedChange {
@@ -125,6 +138,18 @@ impl ClaimedChange {
                 object: object(key),
                 pre_type: pre_type.clone(),
                 post_type: post_type.clone(),
+            },
+            FrameChange::Link {
+                relationship,
+                difference,
+                source,
+                target,
+                ..
+            } => Self::Link {
+                relationship: relationship.clone(),
+                difference: *difference,
+                source: source.clone(),
+                target: target.clone(),
             },
         }
     }
@@ -243,6 +268,21 @@ mod tests {
                     object: object("c2"),
                     pre_type: key("A"),
                     post_type: key("B"),
+                },
+            ),
+            (
+                FrameChange::Link {
+                    relationship: key("Pump-housing-Tank"),
+                    difference: LinkDifference::Removed,
+                    source: object("p1"),
+                    target: object("t1"),
+                    modifies: vec![key("Pump/backup")],
+                },
+                ClaimedChange::Link {
+                    relationship: key("Pump-housing-Tank"),
+                    difference: LinkDifference::Removed,
+                    source: object("p1"),
+                    target: object("t1"),
                 },
             ),
         ];

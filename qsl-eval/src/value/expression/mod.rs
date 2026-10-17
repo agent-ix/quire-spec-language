@@ -12,23 +12,33 @@
 //! through its public accessors, never through a private field (US-009).
 
 mod causes;
+mod clause_set;
 mod evaluate;
 mod family;
 mod s6a;
+mod value_invariants;
 
 use evaluate::Machine;
 use qsl_foundation::diagnostic::InternalFault;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
+use qsl_semantics::model::observation::SelfKind;
+use qsl_semantics::value::supplied::{
+    SuppliedCause, SuppliedFailure, SuppliedLimits, SuppliedPhase, SuppliedRun, SuppliedStop,
+    UnsupportedHelperStop,
+};
 use quire_exact::{FieldValue, Meter, NodeKey, Value, ValueType};
 use quire_semantic_value::call::InputRefusal;
+use quire_semantic_value::declaration::{EnvironmentFailure, TypeEnvironment};
 use s6a::{ReferenceEvaluation, S6aFamilyKind};
 
+pub use clause_set::{ClauseSetEntry, ClauseSetEvaluation, ClauseSetOutcome};
 pub use evaluate::Evaluation;
 pub use family::{InvalidQualifiedName, QualifiedName};
 pub use s6a::separation::{
-    ClauseEvaluation, ObservationIdentity, RuntimeValuePath, Separation, SeparationStep,
-    StopReport, ValuePathStep, ValuePathSubject, WitnessClaim,
+    ClauseEvaluation, ClauseRead, InvocationBinding, ObservationIdentity, RuntimeValuePath,
+    Separation, SeparationStep, StopReport, ValuePathStep, ValuePathSubject, WitnessClaim,
 };
+pub use value_invariants::{ValueInvariantEvaluation, ValueInvariantOutcome, ValueInvariantResult};
 
 // `CheckedExpression` is `check`'s own checked-output type; this module
 // imports it from `qsl_semantics::check` and re-exports none of it (FR-068-AC-10 is
@@ -79,7 +89,36 @@ pub fn input_refusal_code(refusal: &InputRefusal) -> qsl_foundation::diagnostic:
             Code::InvalidRuntimeInput
         }
         InputRefusal::DanglingReference { .. } => Code::DanglingReference,
-        InputRefusal::ObservationsMismatch => Code::InvalidRuntimeInput,
+        InputRefusal::ObservationsMismatch | InputRefusal::DuplicateClause(_) => {
+            Code::InvalidRuntimeInput
+        }
+    }
+}
+
+/// The catalog code of a supplied-phase stop (FR-277), by the cause it
+/// already has elsewhere in QSL: an input refusal its own, a cancellation
+/// `cancelled`, and a ceiling, a denied reservation or an unrepresentable
+/// size `resource_exhausted`.
+pub fn supplied_stop_code(stop: &SuppliedStop) -> qsl_foundation::diagnostic::Code {
+    use qsl_foundation::diagnostic::Code;
+    match &stop.cause {
+        SuppliedCause::Input { refusal, .. } => input_refusal_code(refusal),
+        SuppliedCause::Cancelled(_) => Code::Cancelled,
+        SuppliedCause::Limit(_) | SuppliedCause::Storage(_) | SuppliedCause::Capacity(_) => {
+            Code::ResourceExhausted
+        }
+    }
+}
+
+/// The catalog cause under [`supplied_stop_code`], where the cause names
+/// one.
+pub fn supplied_stop_cause(stop: &SuppliedStop) -> Option<&'static str> {
+    use qsl_foundation::diagnostic::{ALLOCATION_FAILED, RESERVATION_SIZE_OVERFLOW};
+    match &stop.cause {
+        SuppliedCause::Input { refusal, .. } => Some(refusal.cause()),
+        SuppliedCause::Storage(_) => Some(ALLOCATION_FAILED.cause()),
+        SuppliedCause::Capacity(_) => Some(RESERVATION_SIZE_OVERFLOW.cause()),
+        SuppliedCause::Limit(_) | SuppliedCause::Cancelled(_) => None,
     }
 }
 
@@ -105,6 +144,44 @@ pub enum CallFailure {
     /// value.
     #[error("the call was cancelled: {0:?}")]
     Cancelled(quire_exact::CancelCause),
+    /// An argument's membership in its parameter type was not decided because
+    /// the type environment's admission worklist could not reserve storage.
+    /// It is `resource_exhausted`, never a wrong-value-kind refusal.
+    #[error("admission of argument {parameter} decided nothing: {failure:?}")]
+    Storage {
+        /// The parameter index.
+        parameter: usize,
+        /// The kernel's storage failure.
+        failure: EnvironmentFailure,
+    },
+    /// A supplied-value phase stopped before any call at a helper ceiling,
+    /// a failed reservation or an unrepresentable size (FR-277), with its
+    /// phase context. No evaluation ran and nothing was charged to the
+    /// meter. Invalid input and cancellation keep [`Self::Input`] and
+    /// [`Self::Cancelled`]; their phase context is the run's
+    /// [`SuppliedRun::failure`].
+    #[error("supplied-value {phase} stopped before the call: {cause:?}", phase = .0.context.phase.as_str(), cause = .0.cause)]
+    Supplied(Box<SuppliedStop>),
+    /// A supplied-admission walk reached a helper family QSV has not
+    /// qualified, before that helper ran. Distinct from every other arm.
+    #[error("supplied-value {phase} reached the unqualified {family:?} helper", phase = .0.context.phase.as_str(), family = .0.family)]
+    UnsupportedHelper(Box<UnsupportedHelperStop>),
+}
+
+impl From<SuppliedFailure> for CallFailure {
+    fn from(failure: SuppliedFailure) -> Self {
+        match failure {
+            SuppliedFailure::Stop(stop) => match stop.cause {
+                SuppliedCause::Input { refusal, .. } => Self::Input(refusal),
+                SuppliedCause::Cancelled(cause) => Self::Cancelled(cause),
+                SuppliedCause::Limit(_)
+                | SuppliedCause::Storage(_)
+                | SuppliedCause::Capacity(_) => Self::Supplied(stop),
+            },
+            SuppliedFailure::Unsupported(stop) => Self::UnsupportedHelper(stop),
+            SuppliedFailure::Fault(fault) => Self::Fault(fault),
+        }
+    }
 }
 
 impl CallFailure {
@@ -115,7 +192,15 @@ impl CallFailure {
         match self {
             Self::Input(_) => Category::Refusal,
             Self::Fault(fault) => fault.category(),
-            Self::Cancelled(_) => Category::Incomplete,
+            Self::Cancelled(_) | Self::Storage { .. } => Category::Incomplete,
+            Self::Supplied(stop) => match stop.cause {
+                SuppliedCause::Input { .. } => Category::Refusal,
+                SuppliedCause::Limit(_)
+                | SuppliedCause::Cancelled(_)
+                | SuppliedCause::Storage(_)
+                | SuppliedCause::Capacity(_) => Category::Incomplete,
+            },
+            Self::UnsupportedHelper(_) => Category::Unsupported,
         }
     }
 }
@@ -158,16 +243,19 @@ pub struct FrameEvaluation {
 /// depth for a `Value::Population` the type checker's own structural
 /// argument-type matching would otherwise have already ruled out at every
 /// nested call site.
-fn validate(
+pub fn admit_arguments(
     parameters: &[(String, ValueType)],
     arguments: &[Value],
     objects: &ObjectEnvironment,
-) -> Result<(), InputRefusal> {
+    types: &TypeEnvironment,
+    run: &mut SuppliedRun,
+) -> Result<(), CallFailure> {
     if parameters.len() != arguments.len() {
         return Err(InputRefusal::Arity {
             declared: parameters.len(),
             supplied: arguments.len(),
-        });
+        }
+        .into());
     }
     for (parameter, ((_, value_type), argument)) in parameters.iter().zip(arguments).enumerate() {
         // FR-089-AC-6: kernel `ValueType::admits` refuses every
@@ -184,19 +272,28 @@ fn validate(
                 .resolve_population(*population_id)
                 .is_some_and(|binding| binding.declared_maximum() == *maximum);
             if !resolved {
-                return Err(InputRefusal::WrongValueKind { parameter });
+                return Err(InputRefusal::WrongValueKind { parameter }.into());
             }
-        } else if !value_type.admits(argument) {
-            return Err(InputRefusal::WrongValueKind { parameter });
+        } else {
+            // FR-277: the final membership walk is the admission phase's,
+            // one QSV event at a time against the run's cumulative A.
+            run.admit(
+                SuppliedPhase::Admission,
+                parameter,
+                types,
+                value_type,
+                argument,
+            )?;
         }
         let mut pending = vec![argument];
         while let Some(value) = pending.pop() {
+            run.check_cancelled(SuppliedPhase::Admission, parameter)?;
             match value {
                 Value::Reference(reference) => {
                     if !objects.references_are_unresolved()
                         && !objects.objects().contains(reference)
                     {
-                        return Err(InputRefusal::DanglingReference { parameter });
+                        return Err(InputRefusal::DanglingReference { parameter }.into());
                     }
                 }
                 Value::Option(option) => pending.extend(option.payload()),
@@ -207,15 +304,19 @@ fn validate(
                     }));
                 }
                 Value::Collection(collection) => pending.extend(collection.elements()),
+                Value::Union(union) => pending.extend(union.payload()),
                 Value::Boolean(_)
                 | Value::Integer(_)
                 | Value::Rational(_)
                 | Value::Decimal(_)
                 | Value::Float(_)
                 | Value::Quantity(_)
+                | Value::String(_)
                 | Value::Text(_)
                 | Value::Enum(_)
-                | Value::Population(_) => {}
+                | Value::Population(_)
+                | Value::Uuid(_)
+                | Value::Timestamp(_) => {}
             }
         }
     }
@@ -350,6 +451,23 @@ pub trait CheckedPackageEvaluation: family::sealed::Sealed {
         meter: &mut Meter,
     ) -> Result<Evaluation, CallFailure>;
 
+    /// [`Self::call`] under the caller's supplied-value `run` (FR-277): the
+    /// final membership of every argument spends the run's cumulative
+    /// admission budget A one event at a time and polls the run's original
+    /// [`quire_exact::Cancel`]. A stop of the admission phase is
+    /// [`CallFailure::Supplied`] (or [`CallFailure::UnsupportedHelper`])
+    /// with zero evaluation consumption: `meter` is untouched and no
+    /// `FunctionCall` charge is made. [`Self::call`] is this method at the
+    /// default [`SuppliedLimits`] over a handle nobody cancels.
+    fn call_supplied(
+        &self,
+        function: &QualifiedName,
+        arguments: Vec<Value>,
+        objects: &ObjectEnvironment,
+        meter: &mut Meter,
+        run: &mut SuppliedRun,
+    ) -> Result<Evaluation, CallFailure>;
+
     /// Evaluate a checked expression with `arguments` for its parameters.
     ///
     /// FR-090's S6a entry point for a checked clause expression: it admits
@@ -387,6 +505,42 @@ pub trait CheckedPackageEvaluation: family::sealed::Sealed {
         observations: &qsl_semantics::model::observation::AdmittedObservations,
         meter: &mut Meter,
     ) -> Result<ClauseEvaluation, CallFailure>;
+
+    /// FR-107 "Clause sets": evaluate `clauses`, the state clauses of one
+    /// invocation, one object or one state, each over its own admitted
+    /// observations and with a fresh meter built from `limits`, and report
+    /// the entries together with their combined outcome (FR-120).
+    ///
+    /// Invariants come first, then preconditions, then postconditions, each
+    /// group in ascending name order; postconditions are evaluated only
+    /// when every precondition is `Completed(true)`. Refuses as
+    /// [`Self::evaluate_clause`] does for an unknown clause or mismatched
+    /// observations, before evaluating any clause.
+    fn evaluate_clause_set(
+        &self,
+        clauses: &[(
+            QualifiedName,
+            &qsl_semantics::model::observation::AdmittedObservations,
+        )],
+        limits: quire_exact::ScalarLimits,
+    ) -> Result<ClauseSetEvaluation, CallFailure>;
+
+    /// FR-366: evaluate every type-level invariant of this package once for
+    /// every value of its type that `observations` reach, under the one
+    /// `meter` for all of them. A false result is a logical violation
+    /// located by its QSpec FR-207 runtime value path; a denied charge stops
+    /// the evaluation with `Incomplete` and no result for the invariant
+    /// whose charge was denied.
+    ///
+    /// The observations name no clause: `current` supplies the objects and
+    /// their members, `parameters`, `result` and the observation of the
+    /// invocation supply the invocation's values, and a state machine's
+    /// context is the receiver of each side of the invocation.
+    fn evaluate_value_invariants(
+        &self,
+        observations: &qsl_semantics::model::observation::AdmittedObservations,
+        meter: &mut Meter,
+    ) -> Result<ValueInvariantEvaluation, CallFailure>;
 
     /// FR-268 (ADR-031 SW-13): check that `claim` separates the state
     /// clause `clause` over `observations`, charged to `meter`: step 1
@@ -434,6 +588,28 @@ struct ClauseSetup<'a> {
     pre: Option<&'a ObjectEnvironment>,
     bindings: Vec<Value>,
     trail: s6a::separation::Trail,
+    receiver_path: Option<s6a::separation::RuntimeValuePath>,
+}
+
+/// FR-107: the state clause `clause` names, when `observations` were
+/// admitted for it. Refuses `UnknownClause` or `ObservationsMismatch`
+/// before any charge.
+fn resolve_clause<'a>(
+    package: &'a CheckedPackage,
+    clause: &QualifiedName,
+    observations: &qsl_semantics::model::observation::AdmittedObservations,
+) -> Result<&'a qsl_semantics::check::CheckedStateClause, CallFailure> {
+    let name = clause
+        .as_unqualified()
+        .ok_or_else(|| InputRefusal::UnknownClause(clause.to_string()))?;
+    let declaration = package
+        .graph()
+        .state_clause(name)
+        .ok_or_else(|| InputRefusal::UnknownClause(clause.to_string()))?;
+    if declaration.identity() != observations.clause {
+        return Err(InputRefusal::ObservationsMismatch.into());
+    }
+    Ok(declaration)
 }
 
 impl<'a> ClauseSetup<'a> {
@@ -442,16 +618,7 @@ impl<'a> ClauseSetup<'a> {
         clause: &QualifiedName,
         observations: &'a qsl_semantics::model::observation::AdmittedObservations,
     ) -> Result<Self, CallFailure> {
-        let name = clause
-            .as_unqualified()
-            .ok_or_else(|| InputRefusal::UnknownClause(clause.to_string()))?;
-        let declaration = package
-            .graph()
-            .state_clause(name)
-            .ok_or_else(|| InputRefusal::UnknownClause(clause.to_string()))?;
-        if declaration.identity() != observations.clause {
-            return Err(InputRefusal::ObservationsMismatch.into());
-        }
+        let declaration = resolve_clause(package, clause, observations)?;
         // The clause's own observation (FR-107): `current` for an
         // invariant, `post` for a postcondition, and `pre` for a
         // precondition, which reads every model read there and never the
@@ -500,7 +667,60 @@ impl<'a> ClauseSetup<'a> {
         // The clause's own observation names its value paths: the pre
         // snapshot for a precondition (FR-104).
         let own = s6a::separation::observation_identity(&current.identity);
-        let trail = s6a::separation::Trail::new(own, pre);
+        let invocation = observations
+            .invocation
+            .as_ref()
+            .map(s6a::separation::observation_identity);
+        let mut trail = s6a::separation::Trail::new(own.clone(), pre);
+        trail.receiver = Some(observations.self_object.clone());
+        trail.receiver_pre = observations.receiver_pre.clone();
+        // FR-107 "The receiver path": `self` is rooted at its declared
+        // object identity when it has one, and at the invocation's receiver
+        // binding when it is a context; a context with no invocation has no
+        // path.
+        let receiver_subject = match observations.self_kind {
+            SelfKind::Object => Some(s6a::separation::ValuePathSubject::Object(
+                observations.self_object.clone(),
+            )),
+            SelfKind::Context => {
+                trail.receiver_invocation = invocation.clone();
+                trail.receiver_unlocated = invocation.is_none();
+                invocation
+                    .clone()
+                    .map(|invocation| s6a::separation::ValuePathSubject::Invocation {
+                        invocation,
+                        binding: s6a::separation::InvocationBinding::Receiver,
+                    })
+            }
+        };
+        let binding = |binding: s6a::separation::InvocationBinding| {
+            invocation
+                .clone()
+                .map(|invocation| s6a::separation::ValuePathSubject::Invocation {
+                    invocation,
+                    binding,
+                })
+        };
+        trail.bindings.push(receiver_subject.clone());
+        let mut remaining_slots = declaration.parameters().get(1..).unwrap_or(&[]).iter();
+        if declaration.binds_result() {
+            remaining_slots.next();
+            trail
+                .bindings
+                .push(binding(s6a::separation::InvocationBinding::Result));
+        }
+        for (parameter, _) in remaining_slots {
+            trail
+                .bindings
+                .push(binding(s6a::separation::InvocationBinding::Parameter(
+                    parameter.clone(),
+                )));
+        }
+        let receiver_path = receiver_subject.map(|subject| s6a::separation::RuntimeValuePath {
+            observation: own,
+            subject,
+            steps: Vec::new(),
+        });
         Ok(Self {
             declaration,
             current: &current.environment,
@@ -510,6 +730,7 @@ impl<'a> ClauseSetup<'a> {
                 .map(|observation| &observation.environment),
             bindings,
             trail,
+            receiver_path,
         })
     }
 }
@@ -585,6 +806,19 @@ impl CheckedPackageEvaluation for CheckedPackage {
         objects: &ObjectEnvironment,
         meter: &mut Meter,
     ) -> Result<Evaluation, CallFailure> {
+        let mut run = SuppliedRun::new(SuppliedLimits::default(), quire_exact::Cancel::new())
+            .map_err(|stop| CallFailure::from(SuppliedFailure::Stop(stop)))?;
+        self.call_supplied(function, arguments, objects, meter, &mut run)
+    }
+
+    fn call_supplied(
+        &self,
+        function: &QualifiedName,
+        arguments: Vec<Value>,
+        objects: &ObjectEnvironment,
+        meter: &mut Meter,
+        run: &mut SuppliedRun,
+    ) -> Result<Evaluation, CallFailure> {
         let name = function
             .as_unqualified()
             .ok_or_else(|| InputRefusal::UnknownFunction(function.to_string()))?;
@@ -592,7 +826,13 @@ impl CheckedPackageEvaluation for CheckedPackage {
             .graph()
             .callable(name)
             .ok_or_else(|| InputRefusal::UnknownFunction(function.to_string()))?;
-        validate(callable.parameters, &arguments, objects)?;
+        admit_arguments(
+            callable.parameters,
+            &arguments,
+            objects,
+            self.graph().scope().types(),
+            run,
+        )?;
         // FR-062/FR-065: this family's own `evaluate` hook
         // (`s6a::ReferenceEvaluation`) is the one path that runs
         // checked function-application code, not a second, parallel
@@ -620,7 +860,15 @@ impl CheckedPackageEvaluation for CheckedPackage {
         objects: &ObjectEnvironment,
         meter: &mut Meter,
     ) -> Result<Evaluation, CallFailure> {
-        validate(expression.parameters(), &arguments, objects)?;
+        let mut run = SuppliedRun::new(SuppliedLimits::default(), quire_exact::Cancel::new())
+            .map_err(|stop| CallFailure::from(SuppliedFailure::Stop(stop)))?;
+        admit_arguments(
+            expression.parameters(),
+            &arguments,
+            objects,
+            self.graph().scope().types(),
+            &mut run,
+        )?;
         Machine::new(
             self.graph().scope(),
             self.graph(),
@@ -660,7 +908,30 @@ impl CheckedPackageEvaluation for CheckedPackage {
                 "clause-evaluation-environment-carries-a-trail",
             ))
         })?;
-        Ok(ClauseEvaluation::new(evaluation, trail))
+        Ok(ClauseEvaluation::new(
+            evaluation,
+            trail,
+            setup.receiver_path,
+        ))
+    }
+
+    fn evaluate_clause_set(
+        &self,
+        clauses: &[(
+            QualifiedName,
+            &qsl_semantics::model::observation::AdmittedObservations,
+        )],
+        limits: quire_exact::ScalarLimits,
+    ) -> Result<ClauseSetEvaluation, CallFailure> {
+        clause_set::evaluate(self, clauses, limits)
+    }
+
+    fn evaluate_value_invariants(
+        &self,
+        observations: &qsl_semantics::model::observation::AdmittedObservations,
+        meter: &mut Meter,
+    ) -> Result<ValueInvariantEvaluation, CallFailure> {
+        value_invariants::evaluate(self, observations, meter)
     }
 
     fn check_separation(
@@ -748,6 +1019,24 @@ mod tests {
         assert_eq!(input.category().exit_code(), 20);
         let fault = CallFailure::Fault(qsl_foundation::diagnostic::InternalFault::new("S6a", "x"));
         assert_eq!(fault.category().exit_code(), 30);
+    }
+
+    /// A membership query that reserved no storage is incomplete (exit 22),
+    /// not a refused argument (exit 20) and not a fault.
+    #[test]
+    fn storage_failure_is_incomplete_not_a_refused_argument() {
+        use quire_semantic_value::declaration::{StorageRequest, StorageUnit};
+        for failure in [
+            EnvironmentFailure::Allocation(StorageRequest::new(8, StorageUnit::AdditionalElements)),
+            EnvironmentFailure::Capacity(StorageRequest::new(8, StorageUnit::Bytes)),
+        ] {
+            let storage = CallFailure::Storage {
+                parameter: 1,
+                failure,
+            };
+            assert_eq!(storage.category(), Category::Incomplete);
+            assert_eq!(storage.category().exit_code(), 22);
+        }
     }
 
     /// Each admission refusal maps to its catalog code: a missing name to
@@ -961,7 +1250,16 @@ mod tests {
                 .expect_err("a checked-program invariant break is an internal fault");
         assert_eq!(fault.stage(), "S6a");
         assert_eq!(fault.category(), Category::InternalFailure);
-        assert_eq!(fault.invariant(), "checked-program-invariant");
+        assert_eq!(fault.invariant(), "boolean-value-expected");
+        assert_eq!(fault.kernel_cause(), None);
+        assert_eq!(
+            meter
+                .admitted_charges()
+                .iter()
+                .map(|charge| charge.point)
+                .collect::<Vec<_>>(),
+            [quire_exact::ChargePoint::FunctionCall]
+        );
         assert_eq!(
             fault.catalog_code(),
             qsl_foundation::diagnostic::CatalogCode::new(
@@ -970,6 +1268,48 @@ mod tests {
             ),
             "FR-096-AC-15 names the code runtime_invariant"
         );
+        let expression = package
+            .graph()
+            .check_expression(
+                vec![("x".to_owned(), ValueType::Boolean)],
+                &Expression::logical_not(Expression::name("x".to_owned())),
+                None,
+                quire_semantic_value::checking::CheckMode::Linked,
+                CheckingLimits::default(),
+            )
+            .unwrap();
+        for call in [false, true] {
+            for argument in [Value::Integer(Integer::from(3_i64)), Value::Boolean(true)] {
+                let invalid = matches!(argument, Value::Integer(_));
+                let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+                let result = if call {
+                    package.call(
+                        &QualifiedName::unqualified("flip").unwrap(),
+                        vec![argument],
+                        &objects,
+                        &mut meter,
+                    )
+                } else {
+                    package.evaluate(&expression, vec![argument], &objects, &mut meter)
+                };
+                if invalid {
+                    assert!(matches!(
+                        result,
+                        Err(CallFailure::Input(InputRefusal::WrongValueKind {
+                            parameter: 0
+                        }))
+                    ));
+                    assert!(meter.admitted_charges().is_empty());
+                } else {
+                    assert!(matches!(
+                        result.unwrap().outcome,
+                        FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(
+                            false
+                        )))
+                    ));
+                }
+            }
+        }
     }
 
     /// TC-385 step 2: an exhaustive `match` with no `_` arm over a

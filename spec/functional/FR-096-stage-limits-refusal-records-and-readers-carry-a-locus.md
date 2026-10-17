@@ -3,6 +3,10 @@ id: FR-096
 title: "S-5b: stage limits, refusal records and the I2 reader name their locus"
 type: FR
 relationships:
+  - target: ix://agent-ix/quire-spec-language/FR-090
+    type: depends_on
+  - target: ix://agent-ix/quire-exact/FR-369
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/US-001
     type: traces_to
   - target: ix://agent-ix/quire-spec-language/US-005
@@ -30,6 +34,11 @@ which producers cannot know one and why, and how a refusal record gets the
 structured fields the catalog requires.
 
 The types are layer F's, in `qsl_foundation::diagnostic` (ADR-011 §6.1).
+
+The key table has no row for the other `ModelQueryRefusal` causes
+(including `type-mismatch`; the walk ceilings and the intake byte limit have
+the rows below) or for `qsl-route`'s `BoundRefusal`; they build
+no record.
 
 ## Inputs
 
@@ -102,6 +111,15 @@ declaration the assembler built from the unit, it SHALL resolve to a
 A declaration as a whole SHALL be located at its form's span (FR-091-AC-1),
 mapped the same way.
 
+A function the unit compile synthesizes for FR-151 dispatch (FR-302) from the
+unit's own declarations SHALL be located at them. The body function of an
+operation carries the spans of the `operation-body` it was built from, so a
+position in it resolves as in any body. A precondition function (an
+operation's unit `pre` clause or clauses, or the disjunction with a redefined
+operation's) has no tree of spans of its own shape, so every position in it
+resolves to the form span of the first unit `pre` clause of its operation.
+Each such function has one `generated` occurrence, at its own body.
+
 A location SHALL resolve to no region in exactly four cases. In the first
 three, the tree holding the position was not read from the unit, so no
 region of the unit names it; in the fourth, the position was read from the
@@ -109,8 +127,10 @@ unit, but its span does not map to a single region of the document it is
 embedded in:
 
 1. A position in a function that the `model` bridge synthesized for FR-151
-   dispatch (a function not callable by name). It is built from a
-   domain-package declaration.
+   dispatch (a function not callable by name) from a domain-package
+   declaration, when the bridge's caller supplied no unit declaration for it.
+   The unit compile supplies one (FR-302), so none of its functions is in
+   this case.
 2. A position with `Origin::Expression`. This is a standalone expression
    handed to `check`, a tree `check` builds itself (the FR-094
    field-refinement guards), or a position `check` names for a table the
@@ -161,7 +181,7 @@ meter wherever it is read and keeps `resource_exhausted`
 §1). The `quire.native.diagnostics/v1`
 `stage_limit_exceeded` row names these surfaces,
 together with S1, `replay` and `route`, and the catalog keeps `resource_exhausted` for the caller's
-work-budget meter, adding that a semantic maximum is not a caller work
+work-budget meter, adding that a maximum fixed by the language is not a caller work
 budget. The check stage's `CheckingLimits` ceilings (node count, declaration
 input bytes and work, NFR-011) are therefore stage
 limits. S1's syntax budgets (`SyntaxLimit`, FR-035) report
@@ -221,6 +241,8 @@ names the catalog payload item beside it (`quire.native.diagnostics/v1`):
 | `ProtocolClauseSnapshot` | `wrong_snapshot` / `forbidden-pre-read` | `read`: the exact prohibited read |
 | `ModelQueryRefusal` | `invalid_runtime_input` / `absent-key` | `binding`: the population binding; `key`: the requested key |
 | `ModelQueryRefusal` | `foreign_reference` / `foreign-universe` | `required`: the required object universe (the binding's), as lowercase hex; `supplied`: the supplied object universe, as lowercase hex |
+| `ModelQueryRefusal` | `resource_exhausted` / `insufficient-next-charge` (a model walk ceiling, `ancestor_steps` or `family_steps`) | `setting`: the setting that raises the limit; `limit`: the effective limit; `actual`: the limit plus the denied edge; `stage`, `accounting_contract`: the budget's owner; `limit_kind`: the counter (`ancestor_steps` or `family_steps`); `consumed`: the prior usage; `next_charge`: the denied amount (1); `charge_point`: the point that asked |
+| `ModelQueryRefusal` | `resource_exhausted` / `intake-limit-exceeded` | `kind`: the exceeded limit kind's cause tag; `bound`: the configured bound; `actual`: the document's length; `setting`: `intake.input_bytes` |
 | `LimitExceeded` | `stage_limit_exceeded` / the kind's cause | `kind`: the exceeded limit kind's cause tag; `bound`: the configured bound; `actual`: the actual counter |
 | `BoundExceeded` (`replay`) | `stage_limit_exceeded` / `input-bytes-exceeded` | `kind`, `bound`, `actual`, as for `LimitExceeded` |
 | kernel `Refusal::CardinalityOutOfBound` | `cardinality_out_of_bound` / `below-minimum` or `above-maximum` | `collection`: the collection kind; `bound`: the inclusive bound `[minimum, maximum]`; `count`: the formed count |
@@ -322,9 +344,22 @@ At S6a, a consumer SHALL build a record as follows:
   record from the kernel `Refusal` through QSL F's map of the kernel cause
   (O-17), `kernel_refusal_record`. The map gives a record for each of the
   twelve kernel causes in the key table, and for no other.
-  A kernel `CheckedInvariant` SHALL become an `InternalFault`
-  (`runtime_invariant`), never a refusal record: a record is always
-  category refusal.
+  A received kernel `CheckedInvariant { cause }` SHALL become an
+  `InternalFault` (`runtime_invariant`) with stage `S6a` and invariant
+  `checked-program-invariant`, never a refusal record: a record is always
+  category refusal. The fault SHALL retain the original typed
+  `CheckedInvariantCause`, including any carried typed payload, as accessible
+  fault provenance beside its stage and invariant identifier. This applies to
+  every cause admitted by the kernel type, not only causes QSL currently
+  expects to receive. The typed cause SHALL survive public-call and replay
+  fault propagation unchanged; a display string, default cause or legacy unit
+  variant is not a substitute. Kernel `Refusal::code()` and `Refusal::cause()`
+  remain absent for this variant.
+
+  QSL's own producers instead follow [FR-090](FR-090-return-a-family-outcome-or-a-typed-family-refusal.md)'s
+  classification table and carry no invented kernel provenance. The kernel's
+  [FR-369](ix://agent-ix/quire-exact/FR-369) owns its closed typed cause set;
+  these QSL producers do not extend that set.
 
 In both cases the locus is `Evaluation.location`, resolved by the checked
 package. It is absent when the location is `None` or resolves to no region.
@@ -352,24 +387,35 @@ name.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-096-AC-1 | For function `0` with body `if a then b else c + d` and measure `n`, under a unit reference `r`: location (`Body{0}`, `[]`) resolves to the region of the `If` node's span, (`Body{0}`, `[2]`) to the span of `c + d`, (`Body{0}`, `[2, 1]`) to the span of `d`, and (`Measure{0}`, `[]`) to the span of `n`. Each region is under `r`. The checked package of those declarations resolves the same four locations to the same four regions. When the unit is a body embedded at byte offset `k` of a document with reference `d`, with no layout deletions, the same locations resolve under `d` to the same spans shifted by `k`. When the embedding's map splits one of those spans into more than one document region (a layout deletion), the location resolves to no region. A location in an FR-151 synthesized function and a location with `Origin::Expression` resolve to no region. | Test (TC-426) |
-| FR-096-AC-2 | `LimitKind`'s `catalog_code()` gives `stage_limit_exceeded` with causes `input-bytes-exceeded`, `token-count-exceeded`, `node-count-exceeded`, `edge-count-exceeded`, `occurrence-count-exceeded`, `diagnostic-count-exceeded` and `work-budget-exceeded` for its seven variants, and a `LimitExceeded` gives its kind's code and carries its setting name. | Test (TC-427) |
-| FR-096-AC-3 | S1 over a function body of `not`×8 `a`, with `s1.nodes` one below the unit's syntax-node count, returns `stage_limit_exceeded`/`node-count-exceeded` with that bound, the count reached and setting `s1.nodes`, at the region S1's diagnostic names under the unit's `RawSourceRef`; S2 over the same body, parsed at the default S1 limits, builds its form. | Test (TC-427) |
-| FR-096-AC-4 | A declaration whose preimage input bytes exceed a configured bound `B` returns `StageFailure::Limit` with kind input bytes, bound `B`, actual equal to the measured bytes, and `Locus::Region` over the declaration's span. The same limit reached for an FR-151 synthesized function carries no locus. | Test (TC-427) |
-| FR-096-AC-5 | A declaration whose work charge is denied by a work budget `W` returns `StageFailure::Limit` with kind work budget, bound `W`, actual equal to the spend the denied charge would have reached, and `Locus::Region` over the declaration's span. | Test (TC-427) |
-| FR-096-AC-6 | A family refusal of `lookup<T>(p, r) absent refused` with no member for `r` builds a `RefusalRecord` with code `invalid_runtime_input`/`absent-key`, category refusal, fields `binding` and `key` naming the population binding and the requested key, and `Locus::Region` over the span of the `lookup` expression. An `Evaluation` whose `location` is `None` builds a record with no locus. | Test (TC-428) |
-| FR-096-AC-7 | For each `CatalogCoded` cause in the key table (every row but the twelve kernel `Refusal` rows, which `kernel_refusal_record` maps and AC-8 checks), `catalog_fields()` holds exactly the keys the table lists for it. | Test (TC-428) |
-| FR-096-AC-8 | For each of the twelve kernel causes in the key table, a `RefusalRecord` built from an S6a `Evaluation` whose outcome is that kernel `Refused` carries the table's code and cause, category refusal, exactly the table's field keys and the evaluation's resolved locus, and `Refusal::code()` and `Refusal::cause()` return the same code and cause. The fields are spelled exactly: `IntegerOutOfDomain` for target `Int[-5, 9]` gives `expected` `Int[-5, 9]`; `DecimalOutOfDomain` for `Decimal[-100, 100; 0, 2]` gives `expected` `Decimal[-100, 100; 0, 2]`; `RationalOutOfDomain` for `Rational[-9, 9; 1, 9]` gives `expected` `Rational[-9, 9; 1, 9]`; `TextLengthOutOfDomain` for `Text[1, 8; nfc]` gives `expected` `Text[1, 8; nfc]`; `InexactDecimal` for an integer target `Int[0, 9]` gives `expected` `Int[0, 9]`; `IeeeNotExact` for a `binary32` result whose `nearest-even` flags are inexact and overflow gives `expected` `binary32` and `flags` `overflow,inexact`; `IeeeNanPayloadNotRepresentable` for a `binary64` to `binary32` conversion gives `expected` `binary32` and `actual` `binary64`. A kernel `CheckedInvariant` builds no record. | Test (TC-428) |
-| FR-096-AC-9 | The I2 reader, given bytes whose `contract_version` is `quire.checked-package/v3`, returns `StageFailure::Refused` with code `unknown_wire`/`unsupported-wire`, `actual` `quire.checked-package/v3`, `expected` `quire.checked-package/v2`, and `Locus::Artifact` whose digest is the `raw-artifact-digest` of those bytes and whose pointer is `/contract_version`. Given bytes that are not JSON, it refuses with no locus. A refusal IR reports at a value, such as a `package_id` digest domain, is located at `Locus::Artifact` with the bytes' `raw-artifact-digest` and the pointer of that value. | Test (TC-429) |
-| FR-096-AC-10 | The I2 reader, given a v2 wire whose graph has more nodes than its node bound `B`, returns `StageFailure::Limit` with kind node count, bound `B`, IR's consumed counter as actual, and `Locus::Artifact` with the bytes' `raw-artifact-digest` and the pointer IR reports. The same holds for IR's edge, occurrence, diagnostic and work limits, each with its own kind. Given bytes longer than its artifact byte ceiling, it returns kind input bytes with no locus. | Test (TC-429) |
-| FR-096-AC-11 | A function whose body is the source text `not not not true` (four expression nodes), parsed under a unit reference so its forms carry spans and checked through `ValueFunctionFamily::check` with `CheckingLimits` node limit 3, returns `StageFailure::Limit` with kind node count, bound 3, actual 4, setting `s3.nodes`, and `Locus::Region` over the span of the node whose entry failed, reported as `stage_limit_exceeded`/`node-count-exceeded`. With node limit 4 and nothing else changed, it returns no limit. The same stop inside an FR-151 synthesized function carries no locus. | Test (TC-378) |
-| FR-096-AC-12 | `Code::RuntimeInvariant`, the code of `InternalFault` (T-4, O-16 internal-failure category), resolves to FR-301 exit status 30 (tool failure) through its category's FR-285 exit code, and every other `Code` resolves to 20, 21 or 22. A native `run` whose evaluation refuses with `runtime_invariant` exits 30. A report holding a `runtime_invariant` diagnostic beside invalid, unsupported or incomplete ones exits 30. | Test (TC-470) |
-| FR-096-AC-13 | A kernel `DivisionOutOfDomain` for consumer domain `Int[0, 9]` builds a record with `expected` `Int[0, 9]` and cause `quotient-outside-domain` when the exposed member is the quotient and `remainder-outside-domain` when it is the remainder. | Test (TC-428) |
-| FR-096-AC-14 | With `type Small = Int[0, 3]` checked under `CheckMode::Kernel`, S6a evaluation of `sum<Small>(x in q: x)` for `q` of `Sequence<Int[0, 3]>[0, 2]` holding `2, 2` returns `FamilyOutcome::Evaluated(Outcome::Undefined(Undefined::SumOutOfDomain))`, located at the `sum` node, with no refusal record and no charge after `integer-arithmetic.arithmetic`; it is not `Outcome::Refused(Refusal::IntegerOutOfDomain)`. The same `sum` for `q` holding `1, 2` completes with `3`. `sum<Small>(x in q: x)` for `q` of `Sequence<Int[0, 9]>[0, 2]` holding `5, 0` returns the same undefined outcome, located at the summand node, with no addition. | Test (TC-500) |
-| FR-096-AC-15 | An S6a evaluation of `not x` for `x: Boolean`, called through `qsl_semantics::check::ValueFunctionFamily::evaluate` with an Integer argument that admission would have refused, stops on a kernel `CheckedInvariant`. It returns `Err(InternalFault)` naming stage `S6a` and invariant `checked-program-invariant` (category internal failure, code `runtime_invariant`); it returns no `Evaluation` and builds no refusal record. | Test (TC-428) |
-| FR-096-AC-16 | A lowering work-budget stop -- the shared work meter denying a per-node charge past a declaration's own precheck -- is a `CheckRefusal`/`stage_limit_exceeded` with kind work budget, `region: None` on its `StageLimitCause`, and `DeclarationRegions::refusal_region` resolving to the specific node whose lowering charge crossed the bound, not the declaration span. | Test (TC-427) |
-| FR-096-AC-17 | Two declarations `g1`, `g2`, each with an individually-under-bound node count, checked together under a package-wide node bound one past `g1`'s own count: `g1` types fully, and `Typer`'s package-wide counter, seeded from `g1`'s final count, crosses the bound partway through `g2`'s own body walk -- a `CheckRefusal`/`stage_limit_exceeded` with kind node count located at the specific node of `g2` where the running count passed the bound, never at either declaration's span. | Test (TC-427) |
-| FR-096-AC-18 | The I2 reader, given a v2 wire whose bytes are valid JSON for a valid envelope but carry one space after the opening brace, refuses with the native code `noncanonical_wire`, not `invalid_package`. | Test (TC-429) |
+| FR-096-AC-1 | For function `0` with body `if a then b else c + d` and measure `n`, under a unit reference `r`: location (`Body{0}`, `[]`) resolves to the region of the `If` node's span, (`Body{0}`, `[2]`) to the span of `c + d`, (`Body{0}`, `[2, 1]`) to the span of `d`, and (`Measure{0}`, `[]`) to the span of `n`. Each region is under `r`. The checked package of those declarations resolves the same four locations to the same four regions. When the unit is a body embedded at byte offset `k` of a document with reference `d`, with no layout deletions, the same locations resolve under `d` to the same spans shifted by `k`. When the embedding's map splits one of those spans into more than one document region (a layout deletion), the location resolves to no region. A location in an FR-151 synthesized function and a location with `Origin::Expression` resolve to no region. | Test |
+| FR-096-AC-2 | `LimitKind`'s `catalog_code()` gives `stage_limit_exceeded` with causes `input-bytes-exceeded`, `token-count-exceeded`, `node-count-exceeded`, `edge-count-exceeded`, `occurrence-count-exceeded`, `diagnostic-count-exceeded` and `work-budget-exceeded` for its seven variants, and a `LimitExceeded` gives its kind's code and carries its setting name. | Test |
+| FR-096-AC-3 | S1 over a function body of `not`×8 `a`, with `s1.nodes` one below the unit's syntax-node count, returns `stage_limit_exceeded`/`node-count-exceeded` with that bound, the count reached and setting `s1.nodes`, at the region S1's diagnostic names under the unit's `RawSourceRef`; S2 over the same body, parsed at the default S1 limits, builds its form. | Test |
+| FR-096-AC-4 | A declaration whose preimage input bytes exceed a configured bound `B` returns `StageFailure::Limit` with kind input bytes, bound `B`, actual equal to the measured bytes, and `Locus::Region` over the declaration's span. The same limit reached for an FR-151 synthesized function carries no locus. | Test |
+| FR-096-AC-5 | A declaration whose work charge is denied by a work budget `W` returns `StageFailure::Limit` with kind work budget, bound `W`, actual equal to the spend the denied charge would have reached, and `Locus::Region` over the declaration's span. | Test |
+| FR-096-AC-6 | A family refusal of `lookup<T>(p, r) absent refused` with no member for `r` builds a `RefusalRecord` with code `invalid_runtime_input`/`absent-key`, category refusal, fields `binding` and `key` naming the population binding and the requested key, and `Locus::Region` over the span of the `lookup` expression. An `Evaluation` whose `location` is `None` builds a record with no locus. | Test |
+| FR-096-AC-7 | For each `CatalogCoded` cause in the key table (every row but the twelve kernel `Refusal` rows, which `kernel_refusal_record` maps and AC-8 checks), `catalog_fields()` holds exactly the keys the table lists for it. | Test |
+| FR-096-AC-8 | For each of the twelve kernel causes in the key table, a `RefusalRecord` built from an S6a `Evaluation` whose outcome is that kernel `Refused` carries the table's code and cause, category refusal, exactly the table's field keys and the evaluation's resolved locus, and `Refusal::code()` and `Refusal::cause()` return the same code and cause. The fields are spelled exactly: `IntegerOutOfDomain` for target `Int[-5, 9]` gives `expected` `Int[-5, 9]`; `DecimalOutOfDomain` for `Decimal[-100, 100; 0, 2]` gives `expected` `Decimal[-100, 100; 0, 2]`; `RationalOutOfDomain` for `Rational[-9, 9; 1, 9]` gives `expected` `Rational[-9, 9; 1, 9]`; `TextLengthOutOfDomain` for `Text[1, 8; nfc]` gives `expected` `Text[1, 8; nfc]`; `InexactDecimal` for an integer target `Int[0, 9]` gives `expected` `Int[0, 9]`; `IeeeNotExact` for a `binary32` result whose `nearest-even` flags are inexact and overflow gives `expected` `binary32` and `flags` `overflow,inexact`; `IeeeNanPayloadNotRepresentable` for a `binary64` to `binary32` conversion gives `expected` `binary32` and `actual` `binary64`. A kernel `CheckedInvariant` builds no record. | Test |
+| FR-096-AC-9 | The I2 reader, given bytes whose `contract_version` is `quire.checked-package/v3`, returns `StageFailure::Refused` with code `unknown_wire`/`unsupported-wire`, `actual` `quire.checked-package/v3`, `expected` `quire.checked-package/v2`, and `Locus::Artifact` whose digest is the `raw-artifact-digest` of those bytes and whose pointer is `/contract_version`. Given bytes that are not JSON, it refuses with no locus. A refusal IR reports at a value, such as a `package_id` digest domain, is located at `Locus::Artifact` with the bytes' `raw-artifact-digest` and the pointer of that value. | Test |
+| FR-096-AC-10 | The I2 reader, given a v2 wire whose graph has more nodes than its node bound `B`, returns `StageFailure::Limit` with kind node count, bound `B`, IR's consumed counter as actual, and `Locus::Artifact` with the bytes' `raw-artifact-digest` and the pointer IR reports. The same holds for IR's edge, occurrence, diagnostic and work limits, each with its own kind. Given bytes longer than its artifact byte ceiling, it returns kind input bytes with no locus. | Test |
+| FR-096-AC-11 | A function whose body is the source text `not not not true` (four expression nodes), parsed under a unit reference so its forms carry spans and checked through `ValueFunctionFamily::check` with `CheckingLimits` node limit 3, returns `StageFailure::Limit` with kind node count, bound 3, actual 4, setting `s3.nodes`, and `Locus::Region` over the span of the node whose entry failed, reported as `stage_limit_exceeded`/`node-count-exceeded`. With node limit 4 and nothing else changed, it returns no limit. The same stop inside an FR-151 synthesized function carries no locus. | Test |
+| FR-096-AC-12 | `Code::RuntimeInvariant`, the code of `InternalFault` (T-4, O-16 internal-failure category), resolves to FR-301 exit status 30 (tool failure) through its category's FR-285 exit code, and every other `Code` resolves to 20, 21 or 22. A native `run` whose evaluation refuses with `runtime_invariant` exits 30. A report holding a `runtime_invariant` diagnostic beside invalid, unsupported or incomplete ones exits 30. | Test |
+| FR-096-AC-13 | A kernel `DivisionOutOfDomain` for consumer domain `Int[0, 9]` builds a record with `expected` `Int[0, 9]` and cause `quotient-outside-domain` when the exposed member is the quotient and `remainder-outside-domain` when it is the remainder. | Test |
+| FR-096-AC-14 | With `type Small = Int[0, 3]` checked under `CheckMode::Kernel`, S6a evaluation of `sum<Small>(x in q: x)` for `q` of `Sequence<Int[0, 3]>[0, 2]` holding `2, 2` returns `FamilyOutcome::Evaluated(Outcome::Undefined(Undefined::SumOutOfDomain))`, located at the `sum` node, with no refusal record and no charge after `integer-arithmetic.arithmetic`; it is not `Outcome::Refused(Refusal::IntegerOutOfDomain)`. The same `sum` for `q` holding `1, 2` completes with `3`. `sum<Small>(x in q: x)` for `q` of `Sequence<Int[0, 9]>[0, 2]` holding `5, 0` returns the same undefined outcome, located at the summand node, with no addition. | Test |
+| FR-096-AC-15 | An S6a evaluation of `not x` for `x: Boolean`, called through `qsl_semantics::check::ValueFunctionFamily::evaluate` with an Integer argument that admission would have refused, returns `Err(InternalFault)` naming stage `S6a` and invariant `boolean-value-expected` (category internal failure, code `runtime_invariant`), with no synthetic kernel cause, Evaluation or refusal record. | Test |
+| FR-096-AC-16 | A lowering work-budget stop -- the shared work meter denying a per-node charge past a declaration's own precheck -- is a `CheckRefusal`/`stage_limit_exceeded` with kind work budget, `region: None` on its `StageLimitCause`, and `DeclarationRegions::refusal_region` resolving to the specific node whose lowering charge crossed the bound, not the declaration span. | Test |
+| FR-096-AC-17 | Two declarations `g1`, `g2`, each with an individually-under-bound node count, checked together under a package-wide node bound one past `g1`'s own count: `g1` types fully, and `Typer`'s package-wide counter, seeded from `g1`'s final count, crosses the bound partway through `g2`'s own body walk -- a `CheckRefusal`/`stage_limit_exceeded` with kind node count located at the specific node of `g2` where the running count passed the bound, never at either declaration's span. | Test |
+| FR-096-AC-18 | The I2 reader, given a v2 wire whose bytes are valid JSON for a valid envelope but carry one space after the opening brace, refuses with the native code `noncanonical_wire`, not `invalid_package`. | Test |
+| FR-096-AC-19 | For each typed kernel CheckedInvariantCause, a received CheckedInvariant at S6a returns an InternalFault with stage `S6a`, invariant `checked-program-invariant` and the identical typed cause payload as accessible provenance through public call, public evaluate and replay fault mappings; kernel code and cause accessors remain absent. | Test |
+| FR-096-AC-20 | A unit compiled with `body sizeA ... { 11 }`, `body sizeB ... { 22 }` and `pre preA`, `pre preB` on `A.size` and `B.size` (`B` redefining `A`), and a `pre` clause calling `size`: the body function of `A.size` resolves to the text `11` and that of `B.size` to `22`; the precondition function of `A.size` and of `B.size`, and the disjunction `B.size` takes with `A.size`, resolve to the text of `preA`, `preB` and `preB`; each of the five functions has one `generated` occurrence resolving to the same region as its body; and `compile_package` emits the unit. | Test (TC-1018) |
+
+The fourth
+no-region case (a span the map splits) is backed directly against the
+resolver; no production caller builds a multi-segment C-21 map today, so
+that path is untested by any end-to-end flow. No production caller sets
+`embedding` yet either: `qsl-source`'s own document map
+(`qsl-source/src/lib.rs` ~304-344) does not reach the FR-091 assembler, so
+a real Markdown-embedded unit still resolves under its own body reference
+until that wiring lands.
 
 ## Dependencies
 
@@ -416,113 +462,3 @@ name.
   placed as a temporary `DecimalType` `Decimal[lo, hi; 0, 0]`; its record
   SHALL still render the declared `Int[lo, hi]`, not that placement, which
   FR-096-AC-8's `InexactDecimal` example checks.
-
-## Status
-
-Partly implemented.
-
-- `LimitExceeded` carries an optional `Locus` (AC-2), and `LimitKind` has
-  the seven kinds of AC-2. A reached limit names its setting through
-  `LimitsField` (FR-277); the FR-255 settings operation is not yet
-  implemented.
-- A family `check` locates its declaration-level limits at the
-  declaration's span, and `Typer`'s node-count stop at the node whose
-  entry failed. Declarations not read from a unit carry no locus (AC-4, AC-5,
-  AC-11). Package checking keeps that region on the `CheckRefusal` it
-  returns (`StageLimitCause.region`), and `DeclarationRegions::refusal_region`
-  resolves any check refusal to its region.
-- The I2 reader returns T-4's `Result<Staged<_>, StageFailure<_>>`. It
-  carries IR's version refusal as `unknown_wire`/`unsupported-wire`
-  located at `/contract_version`, locates every IR refusal and limit
-  reported at a value, and gives its own byte ceiling and a refusal at no
-  value no locus (AC-9, AC-10).
-- The expression checker's `TypeEnvironmentLimits` ceilings return
-  `StageFailure::Limit(LimitExceeded)` (edge count for `ancestor_steps`,
-  work budget for `work_units`) with no locus (FR-082).
-- `RefusalRecord` exists in F `diagnostic`, carrying the code, category,
-  locus and catalog fields. The I2 reader builds one for its version
-  refusal.
-
-Implemented:
-
-- `CatalogCoded::catalog_fields` (returning `None` for a cause with no
-  key-table row) and `CatalogCoded::refusal_record` exist.
-  `ProtocolClauseSnapshot` carries `required`/`supplied` for `wrong-anchor`
-  and `read` for `forbidden-pre-read`; `ModelRefusalCause::AbsentKey` carries
-  the `binding` beside its `key`; `ModelRefusalCause::catalog_fields` matches
-  every cause explicitly and gives `absent-key` and `foreign-universe` fields
-  (AC-7).
-- `Evaluation::refusal_record` builds the record of a family refusal, with
-  `Evaluation.location` resolved by the checked package it is given as its
-  locus (AC-6). The caller passes the graph the evaluation ran.
-- `kernel_refusal_record` maps the kernel `CardinalityOutOfBound` to
-  `cardinality_out_of_bound` with its fields.
-- Package checking reports a `CheckingLimits` stop (`Typer`'s node count,
-  lowering's own work charge, and a declaration's input bytes) as a
-  `CheckRefusal` with code `stage_limit_exceeded`; the region comes from
-  `DeclarationRegions::refusal_region`, tested for each stop, including
-  `Typer`'s package-wide node count reached from a second declaration
-  (AC-17) and lowering's own work charge located at a node, not a
-  declaration span (AC-16).
-- A kernel `CheckedInvariant` is an `InternalFault` from
-  `ValueFunctionFamily::evaluate`/`Machine::run` (AC-15, TC-428), named
-  `S6a`/`checked-program-invariant`.
-
-Implemented:
-
-- `Code::category` maps `runtime_invariant` to internal failure, exit 30 (QSpec FR-301 tool failure; ADR-013 T-4 internal failure), and a report combining diagnostics ranks 30 first (AC-12).
-
-Implemented:
-
-- The key table has a kernel `Refusal::ForeignReference` row: `required` the
-  universe already in force, `supplied` the universe of the value tested
-  against it, both lowercase hex, agreeing with the family `ModelQueryRefusal`
-  row's shape.
-- The kernel `Refusal::ForeignReference` variant carries both universes
-  (`quire-exact` fields `required`/`supplied`), and `kernel_refusal_record`
-  builds the record from them.
-
-Implemented against the catalog (QSpec
-STD-110, merged):
-
-- AC-8 is backed for all twelve kernel causes. Each of the ten value
-  refusals carries the target domain or IEEE width its `expected` field
-  renders from (`quire-exact` `Refusal`; bigint domains are boxed, so
-  `Refusal` is `Clone`, not `Copy`), `IeeeNotExact` its would-be flags and
-  `IeeeNanPayloadNotRepresentable` its source width. `Refusal::code()` and
-  `Refusal::cause()` return the key table's code and cause for every cause
-  but `CheckedInvariant`, `ForeignReference` included (`foreign-universe`).
-  `kernel_refusal_record` builds the twelve records, and the ten codes are in
-  the catalog category table.
-- AC-13: `DivisionOutOfDomain` takes its cause from its `member`.
-- AC-14: S6a's `sum` checks the seed and each running total, returns
-  `Undefined::SumOutOfDomain` located at the summand (seed) or the `sum`
-  node (addition), charges nothing after the failed decision, and makes no
-  final-total decision for a non-empty sum. An empty `sum` whose `N` does
-  not admit `0` is the same undefined outcome at the `sum` node: `sum<Int[1, 3]>`
-  over an empty sequence checks under `CheckMode::Kernel` and reaches it
-  (FR-100-AC-10). FR-100's kernel undefined-reason table owns the
-  `sum-out-of-domain` spelling, and `qsl-replay` renders it.
-- Conformance passes against QSpec's catalog.
-
-Not built:
-
-- The key table has no row for the other `ModelQueryRefusal` causes
-  (including `type-mismatch`) or for `qsl-route`'s `BoundRefusal`; they build
-  no record.
-
-Implemented:
-
-- The embedded-document mapping of AC-1 (TC-426 step 3, C-21):
-  `PackageDeclarations::embedding` and `CheckedGraph`'s equivalent carry the
-  body's C-21 `SourceMap`, and `check::region`'s resolver maps a location's
-  span through it -- under the map's own body's identity, never a caller-
-  supplied one -- to the document's region, uniformly for
-  `PackageDeclarations`, `DeclarationRegions` and `CheckedGraph`. The fourth
-  no-region case (a span the map splits) is backed directly against the
-  resolver; no production caller builds a multi-segment C-21 map today, so
-  that path is untested by any end-to-end flow. No production caller sets
-  `embedding` yet either: `qsl-source`'s own document map
-  (`qsl-source/src/lib.rs` ~304-344) does not reach the FR-091 assembler, so
-  a real Markdown-embedded unit still resolves under its own body reference
-  until that wiring lands.

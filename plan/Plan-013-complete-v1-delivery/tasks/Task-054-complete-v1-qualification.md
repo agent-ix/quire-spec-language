@@ -16,7 +16,6 @@ relationships:
   - { target: ix://agent-ix/quire-specification/FR-303, type: references }
   - { target: ix://agent-ix/quire-specification/FR-311, type: references }
   - { target: ix://agent-ix/quire-specification/FR-336, type: references }
-  - { target: ix://agent-ix/quire-specification/TM-009, type: references }
   - { target: ix://agent-ix/quire-specification/TC-047, type: verifies }
   - { target: ix://agent-ix/quire-specification/TC-182, type: verifies }
   - { target: ix://agent-ix/quire-specification/TC-183, type: verifies }

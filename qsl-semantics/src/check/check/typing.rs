@@ -19,24 +19,28 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
+use super::native_literal::NativeConstructor;
 use super::{
     catalogued_step, contains_pre_eligible_read, contextual, ineligible, is_integer, mismatch,
     node, refuse, LocalKind, Typer,
 };
+use crate::check::call_target::{resolve_target, ResolvedTarget};
 use crate::check::family::Application;
 use crate::check::ir::{
-    CheckedBody, CheckedLiteral, Connective, Node, NodeId, NodeKind, RecordSlot, Slot, Visit,
+    CheckedBody, CheckedLiteral, Connective, IntegerDivisionOperator, Node, NodeId, NodeKind,
+    RecordSlot, Slot, Visit,
 };
-use crate::check::refusal::{CheckCause, CheckRefusal, WrongSnapshotCause};
+use crate::check::refusal::{CheckCause, CheckRefusal, KeyFault, WrongSnapshotCause};
+use crate::check::sum_case::{ArmHead, CaseBuilder, UnionMember, UnionRef};
 use crate::check::type_form::{IntegerOutsideI128, IntegerSite};
 use crate::check::DispatchOperation;
 use qsl_forms::{
-    Accumulation, BinaryOperator, BinderQuery, ClauseKind, ExprNode, ExprRef, Expression,
+    Accumulation, BinaryOperator, BinderQuery, CaseForm, ClauseKind, ExprNode, ExprRef, Expression,
     FieldInitializer,
 };
 use qsl_foundation::absence::AbsenceMode;
 use quire_exact::{
-    ArithmeticOperator, CollectionType, NodeKey, OrderingOperator, Value, ValueType,
+    ArithmeticOperator, CollectionType, IllTypedCause, NodeKey, OrderingOperator, Value, ValueType,
 };
 use quire_semantic_value::declaration::{EqualityOperand, EqualityOperator, FieldDeclaration};
 use quire_semantic_value::location::Location;
@@ -124,6 +128,7 @@ enum Frame<'e, 'r> {
     Upcast(Want<'r>, Location),
     If(Box<IfFrame<'e, 'r>>),
     Let(Box<LetFrame<'e, 'r>>),
+    Case(Box<CaseFrame<'e, 'r>>),
     Connective(Box<ConnectiveFrame<'e>>),
     Peer(Box<PeerFrame<'e, 'r>>),
     Unary(Box<UnaryFrame<'r>>),
@@ -179,6 +184,41 @@ struct LetFrame<'e, 'r> {
     value: Option<(Node, Slot)>,
 }
 
+/// `case scrutinee { arms }` (FR-318): the scrutinee first, then each arm
+/// whose head resolved, in source order.
+struct CaseFrame<'e, 'r> {
+    branches: Branches<'r>,
+    /// The `case` expression, whose arena holds its scrutinee and bodies.
+    expression: ExprRef<'e>,
+    case: &'e CaseForm,
+    location: Location,
+    stage: CaseStage<'r>,
+}
+
+enum CaseStage<'r> {
+    /// The scrutinee is being typed.
+    Scrutinee,
+    /// The arms are being resolved and their bodies typed.
+    Arms(Box<CaseArms<'r>>),
+}
+
+/// The arms of a `case` whose scrutinee is typed.
+struct CaseArms<'r> {
+    builder: CaseBuilder<'r>,
+    /// The next arm to resolve.
+    next: usize,
+    /// The arm whose body is being typed.
+    open: Option<OpenArm>,
+    /// The result type the arm bodies inferred so far.
+    result: Option<ValueType>,
+}
+
+/// An arm whose binders are bound and whose body is being typed.
+struct OpenArm {
+    member: usize,
+    binders: Vec<Slot>,
+}
+
 /// Which operand of a pair is being typed.
 enum Pair<'e, T> {
     /// The first; the other is still to type, at this location.
@@ -206,6 +246,7 @@ struct PeerFrame<'e, 'r> {
 /// A binary operator typed as an operand pair.
 enum PeerOperator {
     Arithmetic(ArithmeticOperator),
+    IntegerDivision(IntegerDivisionOperator),
     Ordering(OrderingOperator),
     Equality(EqualityOperator),
 }
@@ -218,6 +259,10 @@ enum PeerForm<'e, 'r> {
     Arithmetic {
         operator: ArithmeticOperator,
         hint: Option<Want<'r>>,
+        pair: Pair<'e, Node>,
+    },
+    IntegerDivision {
+        operator: IntegerDivisionOperator,
         pair: Pair<'e, Node>,
     },
     Ordering {
@@ -260,9 +305,34 @@ struct AttributeFrame<'e> {
     location: Location,
 }
 
-/// A function or tuple-constructor call.
+/// What an [`ApplicationFrame`] applies: `Value`'s call target, or the
+/// `SumCase` family's union member (FR-317).
+enum Callee<'r> {
+    Value(Application<'r>),
+    Union(UnionMember<'r>),
+}
+
+impl<'r> Callee<'r> {
+    /// The type the argument at `index` is checked against.
+    fn parameter(&self, index: usize) -> Option<&'r ValueType> {
+        match self {
+            Self::Value(application) => application.parameter(index),
+            Self::Union(member) => member.parameter(index),
+        }
+    }
+
+    /// The node over its checked `arguments`.
+    fn finish(self, arguments: Vec<NodeId>, location: &Location) -> Node {
+        match self {
+            Self::Value(application) => application.finish(arguments, location),
+            Self::Union(member) => member.finish(arguments, location),
+        }
+    }
+}
+
+/// A function, tuple-constructor or union-member call.
 struct ApplicationFrame<'e, 'r> {
-    application: Application<'r>,
+    application: Callee<'r>,
     arguments: Vec<ExprRef<'e>>,
     location: Location,
     typed: Vec<NodeId>,
@@ -406,6 +476,31 @@ struct DispatchArgumentsFrame<'e, 'r> {
     typed: Vec<NodeId>,
 }
 
+/// The result type the arm bodies infer once `body`, the next one in source
+/// order, is typed (QSpec FR-146 "Case result type"): the type every body
+/// shares, `Integer` when every body is `Integer` or an `Int[..]` type, and
+/// otherwise a refusal at the first body that has neither.
+fn case_result(result: Option<ValueType>, body: &Node) -> Result<ValueType, CheckRefusal> {
+    match result {
+        None => Ok(body.value_type.clone()),
+        Some(result) if result == body.value_type => Ok(result),
+        Some(result) if is_integer(&result) && is_integer(&body.value_type) => {
+            Ok(ValueType::Integer)
+        }
+        Some(_) => Err(mismatch(&body.location)),
+    }
+}
+
+/// A broken invariant of the `case` frame, never a refusal of the input.
+fn case_fault(location: &Location, invariant: &'static str) -> CheckRefusal {
+    refuse(
+        location,
+        CheckCause::InternalFault(Box::new(KeyFault::StageFault(
+            qsl_foundation::InternalFault::new("S3", invariant),
+        ))),
+    )
+}
+
 /// `(first, second)` in source order: `second` is the left operand when
 /// the right one was typed first.
 fn ordered<T>(right_first: bool, first: T, second: T) -> (T, T) {
@@ -529,6 +624,15 @@ impl<'a> Typer<'a> {
                     frames,
                 ))
             }
+            ExprNode::Case(case) => {
+                self.enter(&location)?;
+                Ok(Self::case(
+                    Branches::Expected(expected),
+                    (expression, case),
+                    location,
+                    frames,
+                ))
+            }
             _ => {
                 let hint = match expected {
                     Expected::Checked(required) => {
@@ -581,6 +685,24 @@ impl<'a> Typer<'a> {
             value: None,
         })));
         Step::Descend(Goal::Infer(value, None, value_location))
+    }
+
+    /// Start `case scrutinee { arms }` (FR-318): type the scrutinee first.
+    fn case<'e, 'r>(
+        branches: Branches<'r>,
+        (expression, case): (ExprRef<'e>, &'e CaseForm),
+        location: Location,
+        frames: &mut Vec<Frame<'e, 'r>>,
+    ) -> Step<'e, 'r> {
+        let scrutinee = Goal::Infer(expression.at(case.scrutinee), None, location.child(0));
+        frames.push(Frame::Case(Box::new(CaseFrame {
+            branches,
+            expression,
+            case,
+            location,
+            stage: CaseStage::Scrutinee,
+        })));
+        Step::Descend(scrutinee)
     }
 
     /// Start a form over one operand, `goal`.
@@ -648,10 +770,30 @@ impl<'a> Typer<'a> {
                     &location,
                 )
             }
+            ExprNode::String(text) => node(
+                NodeKind::Literal(CheckedLiteral(Value::String(text.clone()))),
+                ValueType::String,
+                &location,
+            ),
             ExprNode::Rational(numerator, denominator) => {
                 self.rational_literal(numerator, denominator, hint.as_deref(), &location)?
             }
-            ExprNode::Name(name) => self.name(name, &location)?,
+            ExprNode::Name(name) => match resolve_target(self, name, &location, || Ok(()))? {
+                ResolvedTarget::UnionMember(member) => {
+                    member.admit_shape(None, &location)?;
+                    member.finish(Vec::new(), &location)
+                }
+                ResolvedTarget::Value(()) => self.name(name, hint.as_deref(), &location)?,
+            },
+            ExprNode::ProtocolReference { target } => self.protocol_reference(target, &location)?,
+            ExprNode::Case(case) => {
+                return Ok(Self::case(
+                    Branches::Inferred(hint),
+                    (expression, case),
+                    location,
+                    frames,
+                ))
+            }
             ExprNode::Let { name, value, body } => {
                 return Ok(Self::binding(
                     Branches::Inferred(hint),
@@ -805,9 +947,10 @@ impl<'a> Typer<'a> {
                 let (source, target) = (expression.at(*source), expression.at(*target));
                 // FR-104 (ADR-012 §15.2): only a state clause has an
                 // observation to traverse.
-                if !self.in_state_clause() {
-                    return Err(ineligible(&location));
-                }
+                self.model_check(
+                    super::super::state_model::Form::ReachesContext(self.in_state_clause()),
+                    &location,
+                )?;
                 let source_location = location.child(0);
                 frames.push(Frame::Reaches(Box::new(ReachesFrame {
                     edge,
@@ -817,16 +960,29 @@ impl<'a> Typer<'a> {
                 return Ok(Step::Descend(Goal::Infer(source, None, source_location)));
             }
             ExprNode::Call { name, arguments } => {
-                let application = Application::resolve(self, name, arguments.len(), &location)?;
-                return Ok(Self::application(
-                    Box::new(ApplicationFrame {
-                        application,
-                        arguments: arguments.iter().map(|id| expression.at(*id)).collect(),
-                        location,
-                        typed: Vec::with_capacity(arguments.len()),
-                    }),
-                    frames,
-                ));
+                if let Some(constructor) = NativeConstructor::named(name) {
+                    self.native_literal(constructor, name, expression, arguments, &location)?
+                } else {
+                    let arity = arguments.len();
+                    let application = match resolve_target(self, name, &location, || {
+                        Application::resolve(self, name, arity, &location)
+                    })? {
+                        ResolvedTarget::UnionMember(member) => {
+                            member.admit_shape(Some(arity), &location)?;
+                            Callee::Union(member)
+                        }
+                        ResolvedTarget::Value(application) => Callee::Value(application),
+                    };
+                    return Ok(Self::application(
+                        Box::new(ApplicationFrame {
+                            application,
+                            arguments: arguments.iter().map(|id| expression.at(*id)).collect(),
+                            location,
+                            typed: Vec::with_capacity(arguments.len()),
+                        }),
+                        frames,
+                    ));
+                }
             }
             ExprNode::Record { name, fields } => {
                 let (key, declared) = self.record_declaration(name, &location)?;
@@ -1053,6 +1209,22 @@ impl<'a> Typer<'a> {
     {
         let (left_location, right_location) = (location.child(0), location.child(1));
         let peer = match operator {
+            BinaryOperator::IntegerDiv
+            | BinaryOperator::IntegerRem
+            | BinaryOperator::IntegerMod => {
+                if !self.complete_value {
+                    return Err(refuse(
+                        &location,
+                        CheckCause::ProfileProhibitedOperator(operator),
+                    ));
+                }
+                PeerOperator::IntegerDivision(match operator {
+                    BinaryOperator::IntegerDiv => IntegerDivisionOperator::Div,
+                    BinaryOperator::IntegerRem => IntegerDivisionOperator::Rem,
+                    BinaryOperator::IntegerMod => IntegerDivisionOperator::Mod,
+                    _ => return Err(ineligible(&location)),
+                })
+            }
             BinaryOperator::Add
             | BinaryOperator::Subtract
             | BinaryOperator::Multiply
@@ -1103,6 +1275,13 @@ impl<'a> Typer<'a> {
         let ((first, first_location), (second, second_location)) =
             ordered(right_first, (left, left_location), (right, right_location));
         let (form, goal) = match peer {
+            PeerOperator::IntegerDivision(operator) => (
+                PeerForm::IntegerDivision {
+                    operator,
+                    pair: Pair::First(second, second_location),
+                },
+                Goal::Infer(first, None, first_location),
+            ),
             PeerOperator::Arithmetic(operator) => (
                 PeerForm::Arithmetic {
                     operator,
@@ -1350,7 +1529,7 @@ impl<'a> Typer<'a> {
         &mut self,
         frame: Box<DispatchArgumentsFrame<'e, 'r>>,
         frames: &mut Vec<Frame<'e, 'r>>,
-    ) -> Step<'e, 'r> {
+    ) -> Result<Step<'e, 'r>, CheckRefusal> {
         let index = frame.typed.len();
         let operation = frame.operation;
         match (
@@ -1360,11 +1539,11 @@ impl<'a> Typer<'a> {
             (Some(argument), Some(parameter)) => {
                 let location = frame.location.child(index + 1);
                 frames.push(Frame::DispatchArguments(frame));
-                Step::Descend(Goal::Expect(
+                Ok(Step::Descend(Goal::Expect(
                     argument,
                     Expected::Argument(Cow::Borrowed(parameter)),
                     location,
-                ))
+                )))
             }
             _ => {
                 let DispatchArgumentsFrame {
@@ -1374,16 +1553,16 @@ impl<'a> Typer<'a> {
                     typed,
                     ..
                 } = *frame;
-                Step::Typed(node(
-                    NodeKind::Dispatch {
-                        receiver: self.push(receiver),
-                        table: operation.table,
+                let receiver = self.push(receiver);
+                self.model_node(
+                    super::super::state_model::Form::Dispatch {
+                        receiver,
                         operation: operation_index,
                         arguments: typed,
                     },
-                    operation.result.clone(),
                     &location,
-                ))
+                )
+                .map(Step::Typed)
             }
         }
     }
@@ -1406,15 +1585,17 @@ impl<'a> Typer<'a> {
             }
             Frame::If(frame) => self.accept_if(frame, typed, frames),
             Frame::Let(frame) => self.accept_let(frame, typed, frames),
+            Frame::Case(frame) => self.accept_case(frame, typed, frames),
             Frame::Connective(frame) => Ok(self.accept_connective(frame, typed, frames)),
             Frame::Peer(frame) => self.accept_peer(frame, typed, frames),
             Frame::Unary(frame) => self.accept_unary(*frame, typed).map(Step::Typed),
             // FR-104: in a state clause, a field read through a reference
             // (`self.f`, `s.f`) is the `Attribute` node `deref(r).f` gives.
-            Frame::Field(field, location)
-                if self.in_state_clause()
-                    && matches!(typed.value_type, ValueType::Reference(_)) =>
-            {
+            // FR-363: `r.name` over a relationship end of a reference is a
+            // `Navigate` node. Only a receiver that can be a model receiver
+            // reaches the `StateModel` hook; every other `x.f` is the record
+            // field read it was.
+            Frame::Field(field, location) if self.is_model_receiver(&typed.value_type, field) => {
                 let operand_location = location.child(0);
                 self.attribute(typed, field, &operand_location, &location, false)
                     .map(Step::Typed)
@@ -1471,7 +1652,7 @@ impl<'a> Typer<'a> {
             Frame::Contains(frame) => self.accept_contains(frame, typed, frames),
             Frame::Lookup(mut frame) => match frame.population.take() {
                 None => {
-                    Self::lookup_population(&typed)?;
+                    self.lookup_population(&typed)?;
                     let reference_location = frame.location.child(1);
                     let reference = frame.reference;
                     frame.population = Some(typed);
@@ -1501,7 +1682,7 @@ impl<'a> Typer<'a> {
                 let (operation_index, operation) =
                     self.dispatch_operation(&typed, member, arguments.len(), &location)?;
                 let count = arguments.len();
-                Ok(self.dispatch_arguments(
+                self.dispatch_arguments(
                     Box::new(DispatchArgumentsFrame {
                         receiver: typed,
                         operation_index,
@@ -1511,11 +1692,11 @@ impl<'a> Typer<'a> {
                         typed: Vec::with_capacity(count),
                     }),
                     frames,
-                ))
+                )
             }
             Frame::DispatchArguments(mut frame) => {
                 frame.typed.push(self.push(typed));
-                Ok(self.dispatch_arguments(frame, frames))
+                self.dispatch_arguments(frame, frames)
             }
         }
     }
@@ -1629,6 +1810,102 @@ impl<'a> Typer<'a> {
         }
     }
 
+    /// Hand `typed` to a `case`: its scrutinee, or the body of its open arm.
+    fn accept_case<'e, 'r>(
+        &mut self,
+        mut frame: Box<CaseFrame<'e, 'r>>,
+        typed: Node,
+        frames: &mut Vec<Frame<'e, 'r>>,
+    ) -> Result<Step<'e, 'r>, CheckRefusal>
+    where
+        'a: 'r,
+    {
+        let arms = match std::mem::replace(&mut frame.stage, CaseStage::Scrutinee) {
+            CaseStage::Scrutinee => {
+                // A scrutinee refusal, including a type that is no declared
+                // union, ends the case before any arm is resolved.
+                let scope: &'a super::Scope = self.scope;
+                let union = UnionRef::of(scope.types(), &typed.value_type)
+                    .ok_or_else(|| mismatch(&typed.location))?;
+                let scrutinee = self.push(typed);
+                Box::new(CaseArms {
+                    builder: CaseBuilder::new(union, scrutinee),
+                    next: 0,
+                    open: None,
+                    result: None,
+                })
+            }
+            CaseStage::Arms(mut arms) => {
+                let open = arms
+                    .open
+                    .take()
+                    .ok_or_else(|| case_fault(&frame.location, "case-arm-body-unexpected"))?;
+                self.unbind(open.binders.len());
+                if matches!(frame.branches, Branches::Inferred(_)) {
+                    arms.result = Some(case_result(arms.result.take(), &typed)?);
+                }
+                let body = self.push(typed);
+                arms.builder.arm(open.member, open.binders, body);
+                arms
+            }
+        };
+        self.next_arm(frame, arms, frames)
+    }
+
+    /// Resolve arm heads in source order until one whose binders are typed
+    /// has a body to check, or every arm is resolved and the `case`
+    /// finishes. Recording a head refuses nothing.
+    fn next_arm<'e, 'r>(
+        &mut self,
+        mut frame: Box<CaseFrame<'e, 'r>>,
+        mut arms: Box<CaseArms<'r>>,
+        frames: &mut Vec<Frame<'e, 'r>>,
+    ) -> Result<Step<'e, 'r>, CheckRefusal>
+    where
+        'a: 'r,
+    {
+        while let Some(arm) = frame.case.arms.get(arms.next) {
+            let at = frame.location.child(1 + arms.next);
+            arms.next += 1;
+            let ArmHead::Resolved(member) = arms.builder.head(&arm.member.name, arm.binders.len())
+            else {
+                continue;
+            };
+            let mut binders = Vec::with_capacity(arm.binders.len());
+            for (binder, value_type) in arm.binders.iter().zip(arms.builder.payload(member)) {
+                binders.push(self.bind(&binder.name, value_type.clone(), &at, LocalKind::Bound)?);
+            }
+            let goal = frame.branches.goal(frame.expression.at(arm.body), at);
+            arms.open = Some(OpenArm { member, binders });
+            frame.stage = CaseStage::Arms(arms);
+            frames.push(Frame::Case(frame));
+            return Ok(Step::Descend(goal));
+        }
+        let CaseFrame {
+            branches, location, ..
+        } = *frame;
+        let CaseArms {
+            builder, result, ..
+        } = *arms;
+        let (scrutinee, declaration, arms) = builder.finish(&location)?;
+        let value_type = match branches {
+            Branches::Expected(expected) => expected.into_type(),
+            // Only a union with no member has no arm body to infer from.
+            Branches::Inferred(_) => result.ok_or_else(|| {
+                CheckRefusal::ill_typed(&location, IllTypedCause::AmbiguousLiteral)
+            })?,
+        };
+        Ok(Step::Typed(node(
+            NodeKind::Case {
+                scrutinee,
+                declaration,
+                arms,
+            },
+            value_type,
+            &location,
+        )))
+    }
+
     fn accept_connective<'e, 'r>(
         &mut self,
         frame: Box<ConnectiveFrame<'e>>,
@@ -1673,6 +1950,55 @@ impl<'a> Typer<'a> {
             location,
         } = *frame;
         match form {
+            PeerForm::IntegerDivision { operator, pair } => match pair {
+                Pair::First(second, second_location) => {
+                    let peer = typed.value_type.clone();
+                    frames.push(Frame::Peer(Box::new(PeerFrame {
+                        form: PeerForm::IntegerDivision {
+                            operator,
+                            pair: Pair::Second(typed),
+                        },
+                        right_first,
+                        location,
+                    })));
+                    Ok(Step::Descend(Goal::Infer(
+                        second,
+                        Some(Cow::Owned(peer)),
+                        second_location,
+                    )))
+                }
+                Pair::Second(first) => {
+                    let (left, right) = ordered(right_first, first, typed);
+                    if !is_integer(&left.value_type) || !is_integer(&right.value_type) {
+                        return Err(mismatch(&location));
+                    }
+                    let selection = match operator {
+                        IntegerDivisionOperator::Div | IntegerDivisionOperator::Rem => {
+                            Some(self.scope.integer_division.ok_or_else(|| {
+                                refuse(
+                                    &location,
+                                    CheckCause::MissingSelection {
+                                        role: crate::check::node_key::LawRole::IntegerDivision,
+                                    },
+                                )
+                            })?)
+                        }
+                        IntegerDivisionOperator::Mod => None,
+                    };
+                    let left = self.push(left);
+                    let right = self.push(right);
+                    Ok(Step::Typed(node(
+                        NodeKind::IntegerDivision {
+                            operator,
+                            selection,
+                            left,
+                            right,
+                        },
+                        ValueType::Integer,
+                        &location,
+                    )))
+                }
+            },
             PeerForm::Arithmetic {
                 operator,
                 hint,

@@ -17,6 +17,10 @@ relationships:
     type: traces_to
   - target: ix://agent-ix/quire-spec-language/FR-068
     type: traces_to
+  - target: ix://agent-ix/quire-specification/FR-147
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-149
+    type: references
 ---
 # FR-091: Produce Value-family parsed forms from the CST and assemble them into package declarations
 
@@ -93,6 +97,12 @@ The requirement carries testable criteria for decisions already taken:
   one source unit are unique
   (`shared-grammar.md`).
   `proposals/quire-v1/definitions/native-diagnostics.md`: the catalog codes and causes this requirement names.
+  `spec/functional/expressions/FR-147-evaluate-integer-division-domains.md`:
+  `div` and `rem` use exactly one selected integer-division law under
+  `quire.value.complete/v1`; `mod` is independently Euclidean; absent facet
+  and an integer-division reading of `/` remain refused; FR-149 permits exact
+  integer-to-rational promotion for rational `/` with an expected rational type
+  only under `quire.value.complete/v1`.
   `spec/functional/type-model/FR-141-evaluate-text-and-enumerations.md`:
   an enum declaration's key hashes
   `{version: "quire.enum-declaration-node/v1", owner, qualified_declaration,
@@ -119,6 +129,10 @@ The requirement carries testable criteria for decisions already taken:
 The complete-V1 grammar is QSpec's `proposals/quire-v1/shared-grammar.md`,
 which `qsl-cst` transcribes (`qsl-cst/src/grammar.rs`). It is the authority
 for the syntax this requirement maps.
+
+A domain package's native `Float32`/`Float64` model field is still refused
+with the floating-type error (`Unmapped::Float`); floating types are admitted
+as function parameter, result and body types only.
 
 ## Inputs
 
@@ -281,6 +295,7 @@ The `Value` production maps each CST expression construct to one
 | `true`, `false` | `Boolean` |
 | unsigned integer literal | `Integer` |
 | `rational(n, d)` | `Rational(n, d)` |
+| quoted text `"..."` | `String`, holding the decoded Unicode scalar sequence |
 | identifier, qualified name, enum value `E::m` | `Name`, spelled as written with `::` separators |
 | `let x = v in b` | `Let` |
 | `if c then a else b` | `If` |
@@ -288,11 +303,12 @@ The `Value` production maps each CST expression construct to one
 | `or`, `and` | `Binary{Or}`, `Binary{And}`, left-associative |
 | `=`, `!=`, `<`, `<=`, `>`, `>=` | `Binary{Equal, NotEqual, Less, LessOrEqual, Greater, GreaterOrEqual}` |
 | `+`, `-`, `*`, `/` | `Binary{Add, Subtract, Multiply, Divide}`, left-associative |
+| integer `div`, `rem`, `mod` | `Binary{IntegerDiv, IntegerRem, IntegerMod}` respectively, left-associative at product precedence |
 | `not e` | `Not` |
 | unary `-e` | `Negate` |
 | `e.f` | `Field` |
 | `present(e)`, `value(e)` | `Present`, `Value` |
-| `name(args)`, tuple value `Q(args)` | `Call`, with arguments in source order |
+| `name(args)`, tuple value `Q(args)` | `Call`, with arguments in source order; `UUID("...")` and `Timestamp(n)` are such calls, and check resolves them ("Native scalar literals") |
 | record value `R { f: e, g: null }` | `Record`; a field whose whole value is `null` is `FieldInitializer::Null` |
 | `sequence[..]`, `set[..]`, `bag[..]`, `orderedSet[..]` | `Collection` with kind `Sequence`, `Set`, `Bag`, `OrderedSet` |
 | `map`, `collect` `(x in c: e)` | `Query` with `BinderQuery::Map` |
@@ -314,6 +330,17 @@ never re-derives them from token order.
 `map` and `collect` are one operation (QSpec FR-145), so both spellings map
 to `BinderQuery::Map`.
 
+S2 preserves `div`, `rem` and `mod` as distinct operator forms with their CST
+spans even if the containing expression is unreachable. It does not decide
+whether the declaration's profile admits them. At check, the declaration's
+resolved `using` selection admits them only with `quire.value.complete/v1`;
+otherwise each receives a located `unsupported_construct`. The checked
+package's exactly-one integer-division definition selects the `div`/`rem`
+law, while `mod` uses the independent Euclidean remainder. `/` never denotes
+integer division; rational `/` follows QSpec FR-044, with FR-149's integer-operand
+promotion only under `quire.value.complete/v1`. Evaluation follows QSpec
+FR-147 and cannot infer the division law from the spelling or a backend.
+
 `Deref` and `AllInstances` belong to `StateModel`, and `Pre` to
 `ProtocolClause` (ADR-012 §1, §3, §4.3). The variants are defined in the
 `forms` core, so the `Value` production builds them where they are nested in
@@ -331,9 +358,9 @@ measure:
 
 A construct that no family's variant represents refuses the whole unit with
 cause `UnrepresentedConstruct`, naming the construct's CST production and
-span. These constructs are text literals, `decimal(..)`, `float32(bits: ..)`
+span. These constructs are `decimal(..)`, `float32(bits: ..)`
 and `float64(bits: ..)`, `null` outside a record field value, `none`,
-`self`, `result`, `div`, `rem`, `mod`, indexing `e[i]`, `size<T>(e)` and
+`self`, `result`, indexing `e[i]`, `size<T>(e)` and
 `reaches(..)`. S2 returns no form for any declaration of that unit.
 `reaches(..)` is a `StateModel` construct (model-graph reachability), and
 its variant is `StateModel`'s to add (ADR-012 §4.3).
@@ -609,6 +636,14 @@ The resolution `match` has one explicit arm per type-form head:
   model field is still refused with the floating-type error (a follow-up);
 - `Reference<Q>` resolves `Q` against the admitted domain packages (I1). With
   no admitted domain package, `Q` is an unresolved name;
+- the unreserved names `String`, `UUID` and `Timestamp` resolve to the native
+  `ValueType::String`, `ValueType::Uuid` and `ValueType::Timestamp` (FR-056),
+  take no bounds or arguments, and need no domain package, and are available as a parameter, result, field
+  or alias target type of the unit. They are not keywords: for these three spellings the native type is a
+  candidate alongside the unit's alias, record, tuple and enum forms, so a unit
+  that also declares a form of the same name makes the use an ambiguous type
+  name, below, and the exactly-one arms below apply only when the name is not
+  one of these spellings;
 - a qualified name that names exactly one alias form of the unit resolves to
   that alias's resolved type;
 - a qualified name that names exactly one record or tuple form of the unit
@@ -623,12 +658,15 @@ does not declare refuses there with `missing_declaration`/`missing-name`.
 The assembler refuses in these cases:
 
 - **Unresolved type name.** A qualified name names no alias, record, tuple
-  or enum form of the unit and nothing in an admitted domain package. The
-  refusal names the name and the span of the type form.
-- **Ambiguous type name.** A qualified name names more than one alias,
-  record, tuple or enum form of the unit (ADR-013 O-11). The refusal names
-  the name, the span of the referencing type form and the span of each
-  candidate declaration.
+  or enum form of the unit and nothing in an admitted domain package, other
+  than the spellings `String`, `UUID` and `Timestamp`, which resolve to the
+  native types. The refusal names the name and the span of the type form.
+- **Ambiguous type name.** A qualified name names more than one candidate: the
+  unit's alias, record, tuple and enum forms and, for `String`, `UUID` and
+  `Timestamp`, the native type of that spelling (ADR-013 O-11). The refusal
+  names the name, the span of the referencing type form and the span of each
+  candidate declaration; the native candidate has no declaration span and is
+  reported as the native type of that name, without a span.
 - **Duplicate enum member.** As stated under "Enum declarations".
 - **Nominal-admission fault.** As stated under "Enum declarations" and
   "Dimension and unit declarations".
@@ -718,6 +756,89 @@ Runtime values are not type bounds. The evaluator's `ScalarLimits` budget
 the size of the values a run computes; they never narrow a declared bound
 or refuse a literal that this rule admits.
 
+### Native scalar literals
+
+The unit language writes a constant of each native value type `String`,
+`UUID` and `Timestamp` with one literal form. The forms are the only way to
+write such a constant, and each has exactly one checked type. They add no
+production, no token and no reserved word: the quoted text token is already
+read by the lexer, and `UUID("...")` and `Timestamp(n)` are ordinary calls
+that the shared complete-V1 grammar already parses.
+
+| Literal | Syntax | Checked type | Value |
+|---|---|---|---|
+| `"..."` | the quoted text token | `String` | the decoded Unicode scalar sequence |
+| `UUID("...")` | a call of the name `UUID` with one quoted text argument | `UUID` | the 128-bit payload of the canonical text |
+| `Timestamp(n)` | a call of the name `Timestamp` with one integer argument | `Timestamp` | the signed 128-bit nanosecond count `n` on the POSIX epoch scale |
+
+**String.** The quoted text token is the JSON-compatible quoted text the
+lexer already reads: the escapes `\"`, `\\`, `\/`, `\b`, `\f`, `\n`, `\r`,
+`\t` and `\uXXXX` (a surrogate pair is one scalar) decode as JSON decodes
+them. S2 builds `Expression::String` holding the decoded scalar sequence. The
+sequence is kept exactly, as FR-056 states for the native String: the empty
+sequence, a NUL (`"\u0000"`), a multibyte scalar and UUID-looking text are
+all admitted, and no normalization, case folding or truncation applies, so
+`"\u00e9"` and `"é"` are one value and differ from `"e\u0301"`. A quoted
+literal has the type `String` in every position. It is never `Text`, never
+`UUID` and never a variant or enum value, and it takes no profile, bound or
+expected type. A malformed escape, a lone surrogate escape, an unterminated
+literal and a raw control character below U+0020 inside the quotes are lexical
+errors: `invalid_syntax`/`invalid-escape` for the first two and
+`invalid_syntax`/`invalid-token` for the others, at the literal, before S2.
+
+**UUID.** `UUID("...")` takes one argument, which must be a quoted text
+literal (not a `String`-typed expression such as a parameter or a `let`
+binding). Its text must be the canonical UUID text of FR-056's K2 canonical
+native payloads: 32 lowercase hexadecimal digits grouped `8-4-4-4-12` with
+four hyphens, and no other spelling. A case variant, a hyphenless, braced or
+`urn:uuid:` spelling, text of another length, a non-hexadecimal digit and the
+empty text are each malformed. Check admits the text as the 128-bit payload
+through the same K2 admission FR-056 applies to a runtime input, and refuses a
+malformed text with the typed cause `MalformedUuidLiteral`, naming the
+argument text as written and the span of the call, code
+`ill_typed`/`type-mismatch`. The refusal is reported with every other error of
+the unit, and no checked package holds the literal.
+
+**Timestamp.** `Timestamp(n)` takes one argument, which must be an integer
+literal or a directly negated integer literal (the forms of "Integer bounds
+and literals up to i128"), and the value is the nanosecond count. No calendar,
+timezone, offset or precision form exists, and the count is not converted. The
+value is the integer value, so `Timestamp(-0)` and `Timestamp(0)` are one
+value. A count above `i128::MAX` or below `i128::MIN` is the argument literal's
+own `IntegerOutsideI128` refusal, which that section states, and needs no
+cause of its own; `Timestamp(-170141183460469231731687303715884105728)` is the
+folded `i128::MIN` literal and is admitted. A leading-zero integer such as
+`007` is refused by the lexer as `invalid_syntax`/`invalid-token` before any
+form exists. An `Integer`-typed expression never converts to a `Timestamp`.
+
+**Name resolution.** `UUID` and `Timestamp` in a call position resolve with the native
+literal constructor of that spelling as a candidate beside the unit's function,
+predicate and tuple declarations of that name, and exactly one candidate is
+required. This is new behavior: a call otherwise resolves a declared function
+before a type, and a call headed by a native type refuses
+`ill_typed`/`operator-ineligible`; the literal constructors are the only calls
+that take the native type name. A unit that also
+declares a function, predicate or tuple `UUID` (or `Timestamp`) makes the call
+an ambiguous name, `ambiguous_declaration`/`ambiguous-name`, naming the use,
+the span of each declaration and the native constructor as a candidate without
+a span, as the ambiguous type-name rule above does. A qualified spelling such
+as `M::UUID("...")` names no native constructor and resolves as any qualified
+call does, refusing `missing_declaration`/`missing-name` when it names
+nothing. A call whose argument is not the form above (`UUID(x)`, `UUID(5)`,
+`Timestamp(x)`, `Timestamp("5")`, `Timestamp(1 + 2)`), or that has no argument
+or two, refuses `ill_typed`/`type-mismatch` at the argument, or at the call
+when the argument count is not one, naming the expected argument form. The `UUID` and
+`Timestamp` type names are the predeclared type names above and are unaffected.
+
+The three literals have no operator of their own. They take part in `=` and
+`!=` under FR-056, as arguments, `let` bindings, record field values,
+conditional branches, collection elements and bodies, wherever a value of the
+literal's type is accepted. A literal at a slot of another type, including
+`"abc"` at a `Text[0, 8; nfc]` slot, `"00112233-4455-6677-8899-aabbccddeeff"`
+at a `UUID` slot and the integer `5` at a `Timestamp` slot, refuses
+`ill_typed`/`type-mismatch` at the literal as every typed mismatch does, with
+no coercion. FR-093 lowers the three literals.
+
 ### Catalog codes
 
 Each S2 and assembler cause has one exhaustive `catalog_code()` (ADR-013
@@ -733,6 +854,7 @@ code or code/cause:
 | ambiguous type name | `ambiguous_declaration` |
 | ill-formed scalar bounds | `ill_typed` |
 | integer outside i128 (`IntegerOutsideI128`), a bound or a literal | `ill_typed`/`type-mismatch` |
+| malformed UUID literal (`MalformedUuidLiteral`) | `ill_typed`/`type-mismatch` |
 | floating type (a domain package model field only) | `unknown_required_feature`/`unsupported-feature` |
 | undeclared `using` alias | `missing_declaration`/`missing-selection` |
 | duplicate alias | `ambiguous_declaration`/`ambiguous-name` |
@@ -744,6 +866,8 @@ code or code/cause:
 | dimension or unit cycle | `invalid_package`/`definition-cycle` |
 | zero denominator | `undefined_expression`/`unproved-nonzero` |
 | decimal-scale limit | `stage_limit_exceeded`/`work-budget-exceeded` |
+| type-environment allocator denial | `resource_exhausted`/`allocation-failed` |
+| type-environment reservation size arithmetic or representation overflow | `resource_exhausted`/`reservation-size-overflow` |
 | unit-graph topology | `invalid_package`/`unit-graph-topology`, interim, replaced by the STD-112 cause once published (FR-091-OQ-12) |
 | unresolved state clause operation (FR-104) | `missing_declaration`/`missing-name` |
 | ambiguous state clause operation (FR-104) | `ambiguous_declaration`/`ambiguous-name` |
@@ -795,7 +919,7 @@ STD-112 publishes the causes and replaces it (FR-091-OQ-12).
 | FR-091-AC-4 | S2 refuses a `ParsedSource` whose CST carries a recovery with cause `RecoveringCst`. It refuses an admissible parse, to which `prepend_diagnostic` has added one diagnostic, with the diagnosed-source cause holding that diagnostic's code. Neither refusal returns a parsed unit. | Test (TC-395) |
 | FR-091-AC-5 | S2 refuses the whole unit with cause `NoDispatchEntry` for an admissible unit holding a valid `function` declaration followed by `invariant Positive using v on M::T at current { true }`. The refusal names the spelling `invariant` and that declaration's span, and S2 returns no form for the `function` declaration. | Test (TC-395) |
 | FR-091-AC-6 | S2 builds a parsed unit with one form for an admissible unit whose only declaration is `enum Color { RED }`, `ordered enum Level { LOW }`, `predicate P using v(x: Boolean): Boolean { x }`, `dimension Length;` or, after `dimension Length;`, `unit m : Length = rational(1, 1);`. None of these refuses with `NoDispatchEntry`. No module under `forms` other than the `Value` family form builder names the `EnumDeclaration`, `EnumMember`, `Predicate`, `DimensionDeclaration` or `UnitDeclaration` CST production. | Test (TC-395) |
-| FR-091-AC-7 | S2 refuses the whole unit with cause `UnrepresentedConstruct`, naming the construct's CST production and span and returning no form, for a function body that holds exactly one of: a text literal, `decimal(1, 2)`, `a mod b`, `xs[0]`, `none`, `reaches(a, b, M::R)`. | Test (TC-396) |
+| FR-091-AC-7 | S2 refuses the whole unit with cause `UnrepresentedConstruct`, naming the construct's CST production and span and returning no form, for a function body that holds exactly one of: `decimal(1, 2)`, `xs[0]`, `none`, `reaches(a, b, M::R)`. | Test |
 | FR-091-AC-8 | For each of `function f using v(x: Int[0, 9]): Boolean pure { B }` with body `B` equal to `deref(x)`, `allInstances<M::T>(x)` or `pre(x)`, and `function g using v(x: Int[0, 9]): Boolean pure decreases(pre(x)) { true }`, each in a unit with no admitted domain package, S2 returns a parsed unit that holds `Deref`, `AllInstances` or `Pre` where the construct is written. Check refuses `pre(x)`, in the body and in the measure, with `wrong_snapshot`/`forbidden-pre-read`, the `ProtocolClause` cause, and `deref(x)` with `ill_typed`/`type-mismatch`. The assembler refuses `allInstances<M::T>(x)` with an unresolved-type-name error naming `M::T` (`missing_declaration`/`missing-name`). None of these refusals has code `unsupported_construct`. | Test (TC-396) |
 | FR-091-AC-9 | S2 builds a form for each of the function bodies `not`×8 `a`, `not`×20 `a` and `not`×129 `a`, each admitted by S1 at its default limits, and each form's expression tree is as deep as its body. S2 takes no limit set, and no S2 outcome names a depth. | Test (TC-397) |
 | FR-091-AC-10 | Every `Expression` node in a `Value` form carries the span of the CST node it maps from. For the body `if a then b else c + d`, the `If` node's span covers the whole body, the `Add` node's span covers `c + d`, and the `Name("d")` node's span covers `d`. For `(a + b) * c`, the `Add` node's span covers `a + b`, without the parentheses. | Test (TC-403) |
@@ -827,9 +951,16 @@ STD-112 publishes the causes and replaces it (FR-091-OQ-12).
 | FR-091-AC-36 | Check admits `function u using v(x: Int[0, 18446744073709551615]): Boolean pure { x >= 0 }` and the same function with `x: Int[0, 9223372036854775808]` and with `x: Int[0, 18446744073709551616]` (2^64, inside i128); each parameter's resolved type is `ValueType::Int` with exactly those bounds. The 2^64 unit also keys, lowers and replays like the others (FR-092-AC-14, FR-098-AC-11). Check admits a parameter typed `Int[-170141183460469231731687303715884105728, 170141183460469231731687303715884105727]`, whose bounds are `i128::MIN` and `i128::MAX` exactly, and the body `x <= 170141183460469231731687303715884105727` over it. | Test (TC-909) |
 | FR-091-AC-37 | Check refuses `Int[0, 170141183460469231731687303715884105728]` (`i128::MAX + 1`) with `IntegerOutsideI128` naming site `upper`, value `170141183460469231731687303715884105728`, limit `i128::MAX` and the type form's span, and `Int[-170141183460469231731687303715884105729, 0]` naming site `lower` and limit `i128::MIN`. Each refusal's catalog code is `ill_typed`/`type-mismatch`, and the compile returns no checked package, so nothing is keyed or lowered. | Test (TC-909) |
 | FR-091-AC-38 | Over `x: Int[-170141183460469231731687303715884105728, 0]`: the body `x >= -170141183460469231731687303715884105728` checks, its right operand is one `Integer` literal of value `i128::MIN` with no `Negate` node, that literal node keys to FR-092 vector L7, and lowering writes it as one literal. The body `x >= -170141183460469231731687303715884105727` checks with its right operand a `Negate` of the literal 170141183460469231731687303715884105727, as before. The bodies `x < 170141183460469231731687303715884105728`, `x >= -(170141183460469231731687303715884105728)` and `x >= -170141183460469231731687303715884105729` refuse `IntegerOutsideI128` at the literal's span, with site `literal`, the literal's value as written, limit `i128::MAX` and code `ill_typed`/`type-mismatch`, and return no checked package. | Test (TC-909) |
+| FR-091-AC-39 | S2 maps `a div b`, `a rem b` and `a mod b` to distinct `IntegerDiv`, `IntegerRem` and `IntegerMod` binary forms with operand order and original spans, including in an unreachable branch. Check admits each well-typed operator under a resolved `quire.value.complete/v1` selection, using the checked package's exactly-one law for `div`/`rem` and Euclidean meaning for `mod`; without that facet, each receives a located `unsupported_construct` rather than `UnrepresentedConstruct`. `/` never becomes integer division; only under complete value does a rational `/` with integer operands and an expected rational type follow QSpec FR-149. | Test |
+| FR-091-AC-40 | The assembler admits `function f using v(a: String, b: UUID, c: Timestamp): Timestamp pure { c }` and resolves `a`, `b`, `c` and the result to the native String, UUID and Timestamp value types; a use of these names needs no `using` selection or domain package. A unit declaring `record UUID { x: Integer; }` and using `UUID` as a type refuses `ambiguous_declaration`/`ambiguous-name` naming the use, the span of the record declaration and the native `UUID` candidate with no span. | Test (TC-1028) |
+| FR-091-AC-41 | S2 builds, for the bodies `"abc"`, `""`, `"\u00e9"`, `"é"`, `"e\u0301"`, `"a\nb"`, `"\ud83d\ude00"` and `"\u0000"`, one `Expression::String` each, holding the scalar sequences: `a`, `b`, `c`; empty; U+00E9 (twice); U+0065 U+0301; `a`, LF, `b`; the single scalar U+1F600; U+0000. For `UUID("00112233-4455-6677-8899-aabbccddeeff")`, `Timestamp(0)`, `Timestamp(-1)` and `Timestamp(-170141183460469231731687303715884105728)` it builds a `Call` of the name `UUID` or `Timestamp` and no new expression kind; check resolves each to the native `UUID` or `Timestamp` literal, the last holding `i128::MIN`, and `Timestamp(-0)` and `Timestamp(0)` are one value. | Test (TC-1052) |
+| FR-091-AC-42 | `"\ud800"` and `"\q"` refuse `invalid_syntax`/`invalid-escape`, and an unterminated literal, a literal holding a raw line feed and `Timestamp(007)` refuse `invalid_syntax`/`invalid-token`, each at the offending token with no form. `UUID(x)` over a `String` parameter, `UUID(5)`, `Timestamp(x)`, `Timestamp("5")`, `Timestamp(1 + 2)`, `Timestamp()` and `Timestamp(1, 2)` each refuse `ill_typed`/`type-mismatch` at the argument (at the call for `Timestamp()` and `Timestamp(1, 2)`). `function UUID using v(): Boolean pure { true }` beside a use `UUID("00112233-4455-6677-8899-aabbccddeeff")` refuses `ambiguous_declaration`/`ambiguous-name` naming the use, the declaration's span and the native constructor with no span; `M::UUID("00112233-4455-6677-8899-aabbccddeeff")` over an alias `M` that declares no `UUID` refuses `missing_declaration`/`missing-name`. A parameter or field named `timestamp` or `uuid` stays valid. | Test (TC-1052) |
+| FR-091-AC-43 | Check refuses `UUID("00112233-4455-6677-8899-AABBCCDDEEFF")`, `UUID("00112233445566778899aabbccddeeff")`, `UUID("{00112233-4455-6677-8899-aabbccddeeff}")`, `UUID("urn:uuid:00112233-4455-6677-8899-aabbccddeeff")`, `UUID("00112233-4455-6677-8899-aabbccddeef")`, `UUID("00112233-4455-6677-8899-aabbccddeefg")` and `UUID("")` with `MalformedUuidLiteral`, code `ill_typed`/`type-mismatch`, naming the argument as written and the call's span. It refuses `Timestamp(170141183460469231731687303715884105728)` and `Timestamp(-170141183460469231731687303715884105729)` with `IntegerOutsideI128`, site `literal`, limit `i128::MAX` in both cases (the second names the positive literal 170141183460469231731687303715884105729, as FR-091-AC-38 states), code `ill_typed`/`type-mismatch`; `Timestamp(170141183460469231731687303715884105727)` checks. A refused literal reaches no keying, lowering or IR. | Test (TC-1052) |
 
 ## Dependencies
 
+- [TC-1052](../test-cases/TC-1052-native-string-uuid-and-timestamp-literals.md)
+  verifies the native scalar literals.
 - **Upstream:** [FR-067](FR-067-add-s2-forms-and-retire-seam-5.md) built the
   `forms` core: the dispatch table, `ParsedForm`'s span, edition and
   declared-extent accessors, and the `RecoveringCst` and `NoDispatchEntry`
@@ -874,57 +1005,14 @@ STD-112 publishes the causes and replaces it (FR-091-OQ-12).
   dependencies and to FR-151 dispatch cycles, and has no row for a type
   alias. The one-sentence catalog extension is proposed to
   `ix://agent-ix/quire-specification`.
+- QSpec's `quire.native.diagnostics/v1` catalog defines both
+  `resource_exhausted` storage causes: `allocation-failed` with `requested`
+  and `reservation-size-overflow` with `upstream` (QSpec PR #236, merged main
+  `1498c1e95eb3e0bbc8cf8c6bd9df2704b691c083`; the capacity cause was added by
+  QSpec PR #234). QSL preserves the upstream `StorageRequest` amount and unit
+  in each single payload field, rendered as `<unit>:<amount>`.
 - **Downstream:** the ADR-011 §5 stage driver calls S1, S2, the assembler
   and `check` in that order.
-
-## Status
-
-The `Value` slice is implemented, with the `dimension` and `unit`
-declarations (FR-091-AC-31 to AC-34, AC-6's other half): S2 builds
-the dimension and unit forms as written, and the assembler normalizes
-terms, reduces exact numbers, mints keys with `nominal_key` and admits a
-`UnitGraph` (`PackageDeclarations::units`, `nominal_spans`;
-`assemble_with_limits` takes the decimal-scale bound). AC-35's errors are
-raised with their declarations; only their catalog code is open. It also has the `enum`, `ordered enum`
-and `predicate` declarations (FR-091-AC-25 to AC-30; the enum and
-predicate half of AC-6). `enum` and `ordered` build the enum form, and
-`predicate` builds the `forms` `FunctionDeclaration` of kind `Predicate`.
-The assembler admits each enum form as an `EnumBinding` over keys that
-`check::node_key::nominal_key` mints, records its name span in
-`declared_type_spans`, and resolves an enum name in a type form to
-`ValueType::Enum`. `nominal_key` returns a `Result`, because encoding a
-preimage can refuse, and the refusal is the nominal-admission fault. `qsl_forms::build_unit` walks a
-unit's declarations and dispatches `function`, `type`, `record` and `tuple`
-to the `Value` builder (`qsl-forms/src/value.rs`), which maps every row of
-the expression table with each node's span, refuses the listed
-unrepresented constructs, and builds every depth S1 admits. The forms
-`FunctionDeclaration` carries its `using` alias. The assembler records each
-resolved selection in `PackageDeclarations::function_selections`
-(FR-091-AC-22). A bare `Float32` or `Float64` is admitted by S1 and builds a
-type form with no rounding mode (FR-091-AC-23). No `match` over `Production`
-in `qsl-forms` has a `_` arm (FR-091-AC-11). The assembler is
-`PackageDeclarations::assemble` (`qsl-semantics/src/check/assemble.rs`). It
-resolves aliases, records, tuples and function signatures, mints each
-record's and tuple's handle over the unit's `SourceOwner`, records the span
-of each declared type's name for FR-096, and reports every error it finds.
-
-Remaining work:
-
-- QSL-642's i128 ceiling and the `i128::MIN` fold (FR-091-AC-36 to AC-38)
-  are implemented: S2 builds the folded literal, the assembler refuses a
-  bound and `Typer` a literal with `IntegerOutsideI128`. The IR wire still
-  carries `i64` until IR-662 (FR-033-AC-6, TC-912).
-- AC-35's catalog code waits on STD-112 (FR-091-OQ-12). Until QSpec
-  publishes the topology causes the topology cause reports
-  `invalid_package` with the informational cause `unit-graph-topology`.
-  The hand-off to FR-094's lowering of the unit and dimension nodes is
-  under Dependencies.
-- The other families' parsed-form types are not built: the state family's
-  under QSL-67, and the others under QSL-45, QSL-44, QSL-43, QSL-42,
-  QSL-40, QSL-39 and QSL-36.
-- A domain package's native `Float32`/`Float64` model field is still refused
-  with the floating-type error (`Unmapped::Float`); floating types are admitted
-  as function parameter, result and body types only.
 
 ## Rulings
 
@@ -938,7 +1026,8 @@ decided; the last column names the fact that reopens it.
 | FR-091-OQ-2 | S2 carries each unit's profile, import and model selections, and each form keeps its `using` alias. E3 resolves every alias to a declared profile selection, or refuses with `missing_declaration`/`missing-selection`. ADR-011 §2.2's E2 Version cell reads "Edition and the unit's profile, import and model selections carried". Resolution against the library lock is the M-4 lock evidence. The forms `FunctionDeclaration` has a `using` field. | ADR-011 OBS-007 makes S2 the only source of check-stage input from source. QSpec requires `using` to name a declared alias, with no default. | QSpec makes the compile request's input inventory, not each unit, the source of selections. S2 still carries each unit's selections for the driver to compare, and only the lock assembly moves. |
 | FR-091-OQ-3 | Record, tuple and function node keys are minted over `SourceOwner{authority, identity}`. ADR-013 O-04 and ADR-012 §2 state the owner reading of QC-18. `check` has no `DEFAULT_PACKAGE_IDENTITY`. | Neither the source grammar nor the v2 wire carries a package name, so replay could not rebuild a `name@version` key. QSpec's `proposals/checked-package-v2/README.md` publishes the owner reading for nominal enum, dimension and unit nodes; for `composite_type` and `function` nodes QSL keys by its proposed `quire.structural-node/v1` preimage, which carries the owner (FR-092). | QSpec adds a package name to source or to the v2 wire, or a declaration must keep its key when it moves between the units of one package. |
 | FR-091-OQ-4 | `ValueType::Float` carries the rounding mode, in `quire-exact` (`FloatType`) and in QSL, and the evaluator applies it (done). The floating-type error (now only for a domain package model field) has code `unknown_required_feature`/`unsupported-feature`: no catalog code names a well-formed type the producer does not represent, and `unsupported_construct` is reserved for profile-prohibited forms. A bare `Float32` or `Float64` is strict `exact`, and `qsl-cst` accepts it. | QSpec FR-322 makes the rounding mode part of the type, and FR-148 requires the evaluator to use it. | QSpec FR-322 moves float rounding off `type_pinned_modes`. |
-| FR-091-OQ-5 | `collect` maps to `Query{Map}`. `reaches` is a `StateModel` construct with no variant; it and the other listed constructs are refused with `UnrepresentedConstruct`. A variant for one of them comes with its checker and evaluator arms. `div`/`rem` depend on the unit's div/rem selection (FR-091-OQ-2), float literals on a mode-carrying `ValueType::Float` (FR-091-OQ-4), and `e[i]` on QSpec semantics. | QSpec FR-145 makes `map` and `collect` one operation. QSL FR-008-AC-20's duplicate-output `collect` refusal belongs to the native lane, not to complete-V1; QSpec FR-008-AC-5 refuses `collect` only where `quire.state.queries/v1` is selected without `quire.value.complete/v1`. | M-6a must compile existing native programs that use the refused constructs. |
+| FR-091-OQ-5, integer operators | Resolved: S2 maps `div`, `rem` and `mod` to distinct forms regardless of reachability. Check uses the declaration's resolved `using` selection: absent `quire.value.complete/v1` refuses each at its operator locus; selected complete value admits well-typed forms. The checked package's exactly-one integer-division law governs `div`/`rem`; `mod` stays Euclidean. Their checker and evaluator arms are required by FR-091-AC-39 and QSpec FR-147. `/` has no integer-division meaning; QSpec FR-149 owns exact integer-to-rational promotion only under complete value. | QSpec FR-147 and its shared grammar admit these operators only under the complete-value facet, while QSpec FR-039 preserves the state-only refusal. S2 must not discard the distinction before profile admission. | QSpec changes the facet, operator law or slash rule. |
+| FR-091-OQ-5, other constructs | `collect` maps to `Query{Map}`. `reaches` is a `StateModel` construct with no variant; it and the other listed unrepresented constructs are refused with `UnrepresentedConstruct`. A variant for one of them comes with its checker and evaluator arms. Float literals depend on a mode-carrying `ValueType::Float` (FR-091-OQ-4), and `e[i]` on QSpec semantics. | QSpec FR-145 makes `map` and `collect` one operation. QSL FR-008-AC-20's duplicate-output `collect` refusal belongs to the native lane, not to complete-V1; QSpec FR-008-AC-5 refuses `collect` only where `quire.state.queries/v1` is selected without `quire.value.complete/v1`. | M-6a must compile existing native programs that use the refused constructs. |
 | FR-091-OQ-7 | An alias cycle is `invalid_package`/`definition-cycle` at the check stage. | The check stage uses the same code for an FR-151 dispatch call-graph cycle (`qsl-semantics/src/check/refusal.rs`, `CheckCause::DefinitionCycle`), and the cause's payload is dependency edges. | QSpec declines the catalog extension and keeps `definition-cycle` to `DefinitionRef` closures. |
 | FR-091-OQ-11 | Source dimensions and units (team lead ruling, 2026-09-26). (a) Dimension terms are normalized: derived terms expand to base terms, repeated exponents add, zeros drop, terms sort by key, and a derived dimension that cancels to no terms refuses. (b) `rational`/`decimal` numbers are reduced, not refused; a zero denominator refuses as `undefined_expression`/`unproved-nonzero`. (c) A dimension or unit cycle is `invalid_package`/`definition-cycle` and an unresolved name `missing_declaration`/`missing-name`; the topology errors take the STD-112 causes (FR-091-OQ-12). (d) Units are admitted with no source use until STD-113 settles a quantity type reference. | (a) matches FR-142's normalized base-dimension map, and a derived term is how acceleration is written from speed. (b) the reduced rational is the value written (ADR-013 R-07). (c) follows FR-091-OQ-7 and the catalog's `missing-name`; no existing cause fits the topology errors. (d) the complete-V1 `type-ref` has no quantity form, and reading a unit's name as a type would invent syntax meaning. | QSpec publishes STD-112's causes or STD-113's quantity type reference. |
 

@@ -64,21 +64,6 @@ relationships:
 ---
 # ADR-027: The protocol transition system for parallel
 
-## Status
-
-Proposed, 2026-10-01. §10 records the owner's rulings on the five questions
-the draft left open. The QSL compiler requirements that implement it are
-FR-205 to FR-218, traced to US-024; QSpec's half is listed under References.
-The owner ruled that this record comes before the refinement, state-space
-reduction and weak-memory records, which build on it. The owning ticket and
-those records are listed under References.
-
-"QSpec FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
-requirement. Item ids `PS-`, `FO-`, `ST-`, `AT-`, `CI-`, `SE-`, `PB-`, `PD-`,
-`PA-`, `TS-`, `PX-`, `FT-`, `PR-`, `QS-` and `DS-` are local to this record.
-Other artifacts cite them as `ADR-027 ST-6`. Items of ADR-018 are cited as
-`ADR-018 SM-3`.
-
 ## Context
 
 **What `parallel` means today.** QSpec FR-052: "Parallel branches SHALL admit
@@ -133,6 +118,12 @@ component to the state, internal memory steps such as `flush(b)`, and
 enabledness conditions on fork, join and `send` (its SC-1, MS-1, TSO-7).
 Each of those needs one definition of the protocol state, its steps and their
 identities.
+
+"QSpec FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
+requirement. Item ids `PS-`, `FO-`, `ST-`, `AT-`, `CI-`, `SE-`, `PB-`, `PD-`,
+`PA-`, `TS-`, `PX-`, `FT-`, `PR-`, `QS-` and `DS-` are local to this record.
+Other artifacts cite them as `ADR-027 ST-6`. Items of ADR-018 are cited as
+`ADR-018 SM-3`.
 
 ## Decision
 
@@ -275,7 +266,7 @@ read.
 | --- | --- |
 | TS-1 | **`ProtocolSystem`.** Crate `qsl-eval`'s `simulation` module gains `ProtocolSystem<M: MemoryModel>`, beside `ModelSystem`, implementing FR-101's `TransitionSystem`. It is built from the in-process checked package's checked protocol clause, the protocol subject (PS-1), the memory model, with `M = Sc` for a `parallel` with no memory clause, and the instance bound (AE-4). `initial` is FO-3, with no instance under `on each`; `key` is PS-8; `successors` enumerates ST-1 to ST-15 over every live instance, thread, registration, role, channel and the memory model, each step with its successor state. |
 | TS-2 | **Transition identity.** A step's identity is a typed canonical form in QSpec FR-181's style: `{"type":"protocol-transition","step":<kind>,"thread":<path>,"node":<wire node id>,…}` with, for `attempt` and `cattempt`, the operation's qualified name, the receiver reference and the argument vector; for `cattempt` and `cend`, the template's qualified name and the registration key; for `send`, `receive`, `event`, `finish` and `activate`, the bound record; for a step `by` a replicated role, the acting instance's reference; for `spawn` and `retire`, the role and the object's reference; for `duplicate` and `lose`, the channel's qualified name with its protocol instance ordinal, and the entry; for a `fence` and an access with an ordering, the ordering; for a memory step, the form its model gives. Several successors of one identity are told apart by their post-state digest, as ADR-018 CX-3 tells FR-120's apart. Successors are visited in ascending JCS bytes of the identity, as FR-181 states. |
-| TS-3 | **One application rule.** ST-1 applies one FR-120 application through the same function `ModelSystem` uses to expand an application: effective precondition, frame post-states, postcondition, `check_frame`'s delta. The protocol system passes the clauses its attempt selects and the observation the memory model gives; it adds no second contract evaluator. |
+| TS-3 | **One application rule.** ST-1 applies one FR-120 application through the same function `ModelSystem` uses to expand an application: effective precondition, frame post-states, postcondition, the frame decision's delta. The protocol system passes the clauses its attempt selects and the observation the memory model gives; it adds no second contract evaluator. |
 | TS-4 | **Findings.** Each expanded protocol state carries FR-120's invariant findings for its model state and `ContractUndetermined` for an attempt whose contract decision was refused or incomplete. Such a decision during a model check settles ADR-018 V-6 `UndecidedSuccessor`, as for a model subject. A contract that evaluates undefined is not undecided: the item refutes with cause `UndefinedEvaluation{where, cause}` (ADR-018 UE, QSpec FR-426). |
 | TS-5 | **Pre-check.** Before any expansion, EN-1 classifies every root of the protocol subject: FR-120's `domains()` under the request's universes, the record types of every binder ST-2 to ST-4, ST-9, ST-11 and ST-13 range over, and each replicated role's population universe. An unbounded root returns `requires-bound` (ADR-018 §3), which the caller answers with a universe or a bounded domain. |
 | TS-6 | **The product.** EN-1 is unchanged: the product of `ProtocolSystem` with the property automaton, keyed by (protocol state key, automaton state index), explored by FR-101's engine, with edge retention, the SCC phase, the fairness filter over PA-1's classes, the limits and the canonical counterexample of ADR-018 §3 and CX-5. |
@@ -301,7 +292,7 @@ instances; and the locations a memory model names.
 | ID | Rule |
 | --- | --- |
 | FT-1 | **Footprints per step.** Each step `s` of the protocol system has a static write footprint `W(s)` and read footprint `R(s)`. `attempt(n)` by `t`: `R` is the model read footprint of its application (POR-1) with the contract clauses `n` selects, the binders `n`'s constraint reads, and `ctl(t)`; `W` is the frame's model locations (POR-1, POR-3), `bind(n, t)` and `ctl(t)`, and `inst(i)` when the step ends `t`'s branch body. `event(n)` and `finish`: `R` the binders read, `ctl(t)`; `W` `bind(n, t)`, `ctl(t)`, and `inst(i)` when the step ends a branch. `send(n)` and `receive(n)`: as `event(n)`, plus `queue(h)` in both `R` and `W`. `duplicate(h, e)` and `lose(h, e)`: `queue(h)` in both. `fork(p)` by `t`: `R` and `W` `ctl(t)`; `W` the new instance and its threads' `ctl`. `join(p)` by `t`: `R` `inst(i)` and `ctl(t)`; `W` `ctl(t)`, `inst(i)`, and under `outstanding cancel` the `ctl` of every branch thread of `i`. `timeout(a)`: `ctl(t)` in both. An event step whose node is a template's forward effect also writes `reg(c, ·)` (CP-1); a step that binds a record of a template's trigger type reads and writes `reg(c, ·)` of that template and writes the new compensation thread's `ctl` (CP-2); a step of a template's commit node writes `reg(c, ·)` (CP-4). `cattempt(c, r)`: as `attempt`, with `ctl` of its thread, its count and the previous attempt's binder. `cend(c, r)`: its thread's `ctl` and the model locations its recovery predicate reads. `activate(T)`: `W` `pinst`, the new instance's `ctl`. `spawn(r, o)` and `retire(r, o)`: `role(r)` in both, plus the model and binder locations `p` reads for `retire`; a step `by` a replicated role reads `role(r)`. A memory step: its model's footprint. A gate adds the memory locations its model names to `R`. Settling (FO-1) reads only binders and the thread's own control, so its reads are inside these footprints. |
-| FT-2 | **Enforced.** Model reads and writes are enforced as ADR-021 POR-2 states (the restricted observation and `check_frame`). Protocol locations are enforced by construction: a step reads and writes the control of its own thread, the queue of its own node's channel, the binders S3 resolves for its node, and the instance its fork or join names, and nothing else. |
+| FT-2 | **Enforced.** Model reads and writes are enforced as ADR-021 POR-2 states (the restricted observation and `decide_frame`). Protocol locations are enforced by construction: a step reads and writes the control of its own thread, the queue of its own node's channel, the binders S3 resolves for its node, and the instance its fork or join names, and nothing else. |
 | FT-3 | **Enabling footprint.** Each step's footprint is the state-space reduction record's `Footprint{reads, writes, enabling}` (ADR-021 EI-4, FR-155), with the protocol locations of FT-1 as `Location::Protocol(ProtocolLocation)`, `ProtocolLocation` one of `ctl(t)`, `inst(i)`, `bind(n, t)`, `queue(h)`, `reg(c, ·)`, `role(r)` and `pinst`. For a step, the enabling footprint holds the model locations its precondition reads, the pre-state locations its postconditions read (an attempt is enabled only when a post-state exists), the membership of its receiver and of each reference argument, the binders its arguments, constraint, guard or retry relation read (for an `attempt`, every binder an argument expression reads), its own `ctl(t)` and the instance locations it reads (`inst(i)` for a `join`, `reg(c, ·)` and the commit's occurrence for a `cattempt`, `pinst` for `activate`), `queue(h)` for a `receive`, a `send` under `block`, and `duplicate` and `lose` on `h`, `role(r)` for a step `by` a replicated role and for `spawn`, and its gate's memory locations. A disabled step can be enabled only by a step that writes one of these: its own thread, a writer of its precondition's model locations, a writer of the pre-state locations its postconditions read, a step that creates or deletes its receiver or a reference argument (a writer of their membership), a step that binds a binder it reads, a sender or remover on its channel, a step that ends a branch of its instance, a registration or activation step, a spawn, a finishing or activating step, or a memory step. This is the necessary enabling set ADR-021 POR-7 takes. |
 | FT-4 | **Independence.** Independence is ADR-021 POR-4 over FT-1's footprints. Two steps of one thread share `ctl(t)` and are always dependent. Steps of distinct threads are independent when their model, binder, queue and instance footprints are disjoint in POR-4's sense: two attempts in sibling branches on different objects, or on one object's different fields under receiver-scoped frames, are independent. A `fork` or a branch's internal step is independent of every step of another thread that touches neither its instance nor its locations. |
 | FT-5 | **Visibility.** A step is visible (ADR-021 POR-5) when its write footprint meets a model location an atom reads, or when an atom reads the anchor of its position and names its node or operation. `fork`, `join`, `timeout`, channel steps, `event` steps and `finish` write no model location, so they are invisible to every claim whose atoms read model state only. |

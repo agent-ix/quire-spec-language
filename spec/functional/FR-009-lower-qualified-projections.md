@@ -68,21 +68,15 @@ applies its own node limit as an additional guard over already checked packages.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-009-AC-1 | Boolean state and captured input projections preserve their explicit read correspondence and are accepted by the existing strict binder. | Test |
-| FR-009-AC-2 | An unqualified reference feature is refused as unsupported. | Test |
-| FR-009-AC-3 | A missing executable clause binding refuses the projection. | Test |
-| FR-009-AC-4 | Changing a referenced Boolean declaration from state to invocation input changes the bound identity; unrelated native model changes remain visible in native identity. | Test |
-| FR-009-AC-5 | Actual generated Rust agrees with native evaluation for the complete Boolean input domain of the named parity fixture, including true and false outcomes and source-mapped implication activation. | Test |
-| FR-009-AC-6 | Zero, exact and one-below limits distinguish success from exhaustion, retain all input obligations and permit a fresh successful retry. | Test |
-| FR-009-AC-7 | A later unsupported clause, mixed package owners or multiple revisions of one requirement refuses the complete projection without partial output. | Test |
+| FR-009-AC-1 | Boolean state and captured input projections preserve their explicit read correspondence and are accepted by the existing strict binder. | Test (TC-092) |
+| FR-009-AC-2 | An unqualified reference feature is refused as unsupported. | Test (TC-093) |
+| FR-009-AC-3 | A missing executable clause binding refuses the projection. | Test (TC-092) |
+| FR-009-AC-4 | Changing a referenced Boolean declaration from state to invocation input changes the bound identity; unrelated native model changes remain visible in native identity. | Test (TC-092) |
+| FR-009-AC-5 | Actual generated Rust agrees with native evaluation for the complete Boolean input domain of the named parity fixture, including true and false outcomes and source-mapped implication activation. | Test (ix://agent-ix/quire-integration/TC-094) |
+| FR-009-AC-6 | Zero, exact and one-below limits distinguish success from exhaustion, retain all input obligations and permit a fresh successful retry. | Test (TC-093) |
+| FR-009-AC-7 | A later unsupported clause, mixed package owners or multiple revisions of one requirement refuses the complete projection without partial output. | Test (TC-093) |
 
 ## Dependencies
 
 - [US-004](../usecase/US-004-reuse-existing-toolchain.md) supplies the user need.
 - [Detailed contract or implementation evidence](../../README.md) supplies the scoped context.
-
-## Status
-
-FR-009-AC-5 is qualified for the named `boolean-oracle/v1` domain by
-quire-integration's [TC-094](ix://agent-ix/quire-integration/TC-094), which
-composes this compiler's lowering with the code generator's generated Rust.

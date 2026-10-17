@@ -754,82 +754,14 @@ mod tests {
         CheckCause, CheckRefusal, CheckedGraph, PackageDeclarations, Scope, Signatures,
     };
     use super::{CheckedProtocol, ProtocolAnchorCause, ProtocolNodeId, ShadowedDeclaration};
-    use crate::model::accounting::ModelNormalizationLimits;
-    use crate::model::domain_package::{
-        DomainPackage, DomainPackageRecord, DomainPackageRef, ObjectTypeRecord, OperationEffect,
-        OperationMemberRecord,
-    };
-    use crate::model::intake::SelectedModel;
-    use crate::model::key::DeclarationKey;
-    use crate::model::normalize::{normalize, NormalizeOutcome};
     use quire_semantic_value::checking::CheckingLimits;
     use quire_semantic_value::declaration::TypeEnvironment;
 
-    const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
-        profile v = \"quire.value.complete/v1\";\n\
-        model M = \"example/protocol-fixture\" version \"1\" digest \
-        \"sha256-jcs:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\";\n";
-
-    /// `M::Actor` and its own `op` and `other` operations (no parameters,
-    /// no result, an empty frame), normalized to a [`SelectedModel`] aliased `M` --
-    /// the FR-114 fixture, so every `attempt ... on M::Actor::op` this
-    /// module's fixtures already write (FR-114's own assembler resolution,
-    /// which now runs for every protocol) resolves rather than refusing at
-    /// assembly. This module's FR-113 tests still exercise anchor
-    /// resolution and binder shadowing only; FR-114 touches neither.
-    fn m_actor_model() -> SelectedModel {
-        let key = |name: &str| DeclarationKey {
-            package: "example/protocol-fixture".to_owned(),
-            node: format!("ix://example/protocol-fixture/{name}"),
-        };
-        let package = DomainPackage::new(
-            DomainPackageRef {
-                identity: "example/protocol-fixture".to_owned(),
-                version: "1".to_owned(),
-                digest: [0_u8; 32],
-            },
-            vec![
-                DomainPackageRecord::ObjectType(ObjectTypeRecord {
-                    key: key("Actor"),
-                    interface_features: None,
-                    abstract_type: false,
-                    supertypes: Vec::new(),
-                }),
-                DomainPackageRecord::OperationMember(OperationMemberRecord {
-                    key: key("Actor/op"),
-                    owner: key("Actor"),
-                    parameters: Vec::new(),
-                    result: None,
-                    effect: OperationEffect::default(),
-                    own_postcondition_clauses: Vec::new(),
-                    has_body: false,
-                    redefines: None,
-                }),
-                // A second operation, so FR-114-AC-3's "a `pre` clause of a
-                // different operation" case has one to anchor at.
-                DomainPackageRecord::OperationMember(OperationMemberRecord {
-                    key: key("Actor/other"),
-                    owner: key("Actor"),
-                    parameters: Vec::new(),
-                    result: None,
-                    effect: OperationEffect::default(),
-                    own_postcondition_clauses: Vec::new(),
-                    has_body: false,
-                    redefines: None,
-                }),
-            ],
-        );
-        let NormalizeOutcome::Completed(view) =
-            normalize(&package, ModelNormalizationLimits::UNLIMITED)
-        else {
-            panic!("the M::Actor fixture normalizes");
-        };
-        SelectedModel {
-            alias: "M".to_owned(),
-            span: qsl_foundation::Span { start: 0, end: 0 },
-            view,
-        }
+    mod attempt_fixture {
+        use crate as semantics;
+        include!("../../tests/fixtures/protocol_attempt.rs");
     }
+    use attempt_fixture::{attempt_flow, m_actor_model, shared_binder_protocols, HEADER};
 
     /// S1, S2 and the assembler over `declarations`, against
     /// [`m_actor_model`]'s own `M::Actor::op`: FR-113's checker
@@ -920,23 +852,6 @@ mod tests {
         assembled
             .check(CheckingLimits::default())
             .unwrap_or_else(|refusals| panic!("{declarations}: {refusals:?}"))
-    }
-
-    /// A protocol `name` made only of parts the checker covers in
-    /// full (`super::content`): one role, a `run sequence` holding one
-    /// `attempt` of `M::Actor::op` with `contracts [contracts]`, and a
-    /// `finish`, every body the bare literal `true`.
-    fn attempt_flow(name: &str, contracts: &str) -> String {
-        format!(
-            "protocol {name} using v over (input: Boolean) on origin {{\n\
-             role R on M::Actor;\n\
-             run sequence Main {{\n\
-             attempt Tried by R on M::Actor::op contracts [{contracts}] \
-             as (tried: Boolean) {{ true }};\n\
-             }}\n\
-             finish End as (outcome: Boolean) {{ true }};\n\
-             }}"
-        )
     }
 
     /// S1, S2 and the assembler over `declarations` (against
@@ -1069,6 +984,70 @@ mod tests {
              finish End as (outcome: Boolean) {{ true }};\n\
              }}"
         )
+    }
+
+    /// The `protocol_clause` and `protocol_reference` node keys (and the
+    /// clause's preimage) of one protocol and its reference, lowered with
+    /// `protocol` as the unit's `protocol_profile` selection.
+    fn protocol_nodes_under(
+        protocol: &crate::value::DefinitionReference,
+    ) -> [(quire_exact::NodeKey, Vec<u8>); 2] {
+        let (_, mut assembled) = assemble(
+            "function refers using v(): Boolean pure { protocol Flow }\n\
+             protocol Flow using v over (input: Boolean) on origin {\n\
+             role R on M::Actor;\n\
+             run sequence Main { }\n\
+             finish End as (outcome: Boolean) { true };\n\
+             }",
+        );
+        assembled.lock_evidence =
+            crate::check::LockEvidence::default().with_protocol_profile(protocol.clone());
+        let graph = assembled
+            .check(CheckingLimits::default())
+            .unwrap_or_else(|refusals| panic!("{refusals:?}"));
+        let node = |form: &str| {
+            let mut found = graph
+                .semantic_graph()
+                .nodes()
+                .filter(|node| node.semantic_form() == form);
+            let node = found.next().unwrap_or_else(|| panic!("a {form} node"));
+            assert!(found.next().is_none(), "one {form} node");
+            (node.key(), node.preimage().to_vec())
+        };
+        [node("protocol_clause"), node("protocol_reference")]
+    }
+
+    /// QSL-780 AC-3: the `protocol_profile` binding the lock evidence names is
+    /// part of the protocol node's identity. The same protocol and reference
+    /// lowered under two bindings key differently, the reference follows its
+    /// target's key, and the same binding keys identically (so the difference
+    /// is the binding's, and an old binding does not silently match).
+    #[test]
+    fn a_changed_protocol_profile_binding_changes_the_node_keys() {
+        let binding = |identity: &str| crate::value::DefinitionReference {
+            authority: "agent-ix".to_owned(),
+            identity: identity.to_owned(),
+        };
+        let old = binding("quire.protocol.finite-global/v1");
+        let new = binding("quire.protocol.finite-global/v2");
+        let [old_clause, old_reference] = protocol_nodes_under(&old);
+        let [new_clause, new_reference] = protocol_nodes_under(&new);
+        assert_eq!(
+            [old_clause.clone(), old_reference.clone()],
+            protocol_nodes_under(&old)
+        );
+        assert_ne!(
+            old_clause.0, new_clause.0,
+            "the clause key follows the binding"
+        );
+        assert_ne!(old_clause.1, new_clause.1, "the preimage names the binding");
+        assert_ne!(
+            old_reference.0, new_reference.0,
+            "the reference follows its target"
+        );
+        let preimage = String::from_utf8_lossy(&new_clause.1).into_owned();
+        assert!(preimage.contains("finite-global/v2"), "{preimage}");
+        assert!(!preimage.contains("finite-global/v1"), "{preimage}");
     }
 
     /// FR-113-AC-1 (TC-511): every anchor of the `RecoveryFlow` fixture
@@ -2160,13 +2139,7 @@ mod tests {
     #[trace("TC-512", "FR-113-AC-5")]
     #[test]
     fn two_protocols_sharing_an_ordinary_binder_name_both_check() {
-        let first =
-            attempt_flow("First", "").replacen("as (tried: Boolean)", "as (shared: Boolean)", 1);
-        let second =
-            attempt_flow("Second", "").replacen("as (tried: Boolean)", "as (shared: Boolean)", 1);
-        let combined = format!("{first}\n{second}");
-        // Both protocols are made only of fully checked parts, so
-        // the whole package checks: neither refuses `Shadow`.
+        let combined = shared_binder_protocols();
         let checked = checks(&combined);
         let names: Vec<&str> = checked
             .protocols()

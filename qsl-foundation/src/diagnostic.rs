@@ -4,8 +4,10 @@
 //! [`Locus`] is ADR-013 T-5's foundation diagnostic locus.
 use crate::source::{LocatedSpan, Source, SourceIdentity, SourceReadCause, Span};
 
+mod budget;
 mod locus;
 mod stage;
+pub use budget::{BudgetDenial, BudgetOwner, DeniedCharge};
 pub use locus::{InvalidJsonPointer, JsonPointer, Locus, UnresolvedLocus};
 pub use stage::{LimitExceeded, LimitKind, StageFailure, StageWork, Staged, Stopped};
 
@@ -123,6 +125,9 @@ pub enum Code {
     AmbiguousDeclaration,
     /// A required formal or lexical declaration is absent.
     MissingDeclaration,
+    /// Two declarations that must be unique resolve to one identity (FR-302:
+    /// two unit `operation-body` declarations resolving to one operation).
+    ConflictingDeclaration,
     /// Import digest, context binding or clause identity is invalid.
     InvalidModelBinding,
     /// Native runtime artifact structure or selected runtime data is invalid.
@@ -209,6 +214,7 @@ impl Code {
             Self::StaleDependency => "stale_dependency",
             Self::AmbiguousDeclaration => "ambiguous_declaration",
             Self::MissingDeclaration => "missing_declaration",
+            Self::ConflictingDeclaration => "conflicting_declaration",
             Self::InvalidModelBinding => "invalid_model_binding",
             Self::InvalidRuntimeInput => "invalid_runtime_input",
             Self::WrongSnapshot => "wrong_snapshot",
@@ -264,6 +270,7 @@ impl Code {
             Self::StaleDependency,
             Self::AmbiguousDeclaration,
             Self::MissingDeclaration,
+            Self::ConflictingDeclaration,
             Self::InvalidModelBinding,
             Self::InvalidRuntimeInput,
             Self::WrongSnapshot,
@@ -776,10 +783,27 @@ impl std::fmt::Display for Category {
 /// consumer reads the catalog's message -- only the code, the cause and the
 /// structured fields the catalog defines for that pair. Equality is lexical
 /// on both fields, matching ADR-013 O-17's stated equality kind.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug)]
 pub struct CatalogCode {
     code: &'static str,
     cause: &'static str,
+    prefix: Option<&'static str>,
+}
+
+// O-17 equality remains lexical on the published pair; ownership is
+// rendering metadata and is inspected separately through prefix().
+impl PartialEq for CatalogCode {
+    fn eq(&self, other: &Self) -> bool {
+        (self.code, self.cause) == (other.code, other.cause)
+    }
+}
+
+impl Eq for CatalogCode {}
+
+impl std::hash::Hash for CatalogCode {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::hash::Hash::hash(&(self.code, self.cause), state);
+    }
 }
 
 impl CatalogCode {
@@ -787,7 +811,22 @@ impl CatalogCode {
     /// the catalog spells them (ADR-013 R-07: a typed-cause-to-code
     /// conversion never invents a code the catalog does not define).
     pub const fn new(code: &'static str, cause: &'static str) -> Self {
-        Self { code, cause }
+        Self {
+            code,
+            cause,
+            prefix: None,
+        }
+    }
+
+    /// Attribute the rendered pair without changing its published raw fields.
+    pub const fn with_prefix(mut self, prefix: &'static str) -> Self {
+        self.prefix = Some(prefix);
+        self
+    }
+
+    /// The producing family's rendering prefix, when attributed.
+    pub const fn prefix(&self) -> Option<&'static str> {
+        self.prefix
     }
 
     /// The catalog's top-level code, e.g. `"runtime_invariant"`.
@@ -804,6 +843,9 @@ impl CatalogCode {
 
 impl std::fmt::Display for CatalogCode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(prefix) = self.prefix {
+            write!(f, "{prefix}/")?;
+        }
         write!(f, "{}/{}", self.code, self.cause)
     }
 }
@@ -816,6 +858,12 @@ impl std::fmt::Display for CatalogCode {
 pub const ALLOCATION_FAILED: CatalogCode =
     CatalogCode::new("resource_exhausted", "allocation-failed");
 
+/// FR-082-AC-11: the shared type registry could not represent or compute the
+/// requested reservation size. The payload carries the original amount and
+/// unit, distinct from a denied allocator request.
+pub const RESERVATION_SIZE_OVERFLOW: CatalogCode =
+    CatalogCode::new("resource_exhausted", "reservation-size-overflow");
+
 /// ADR-013 T-4: a broken runtime, evaluator or mapping invariant, raised
 /// from a compiler stage, the I2 reader, `replay` or `route` (and, for
 /// evaluation, `CheckedPackage::call`). Names the stage and the violated
@@ -827,17 +875,58 @@ pub const ALLOCATION_FAILED: CatalogCode =
 /// (`runtime_invariant`/`established-invariant-broken`, confirmed by the
 /// catalog's revision `1-draft.6` note) and exactly one category
 /// (`Category::InternalFailure`), and is never a `Refusal` (ADR-013 T-4).
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct InternalFault {
     stage: &'static str,
     invariant: &'static str,
+    kernel_cause: Option<quire_exact::CheckedInvariantCause>,
+    named: Vec<(&'static str, String)>,
 }
 
 impl InternalFault {
     /// `stage` and `invariant` are stable identifiers the raising site
     /// names, never derived from a display string or message (ADR-013 R-05).
     pub const fn new(stage: &'static str, invariant: &'static str) -> Self {
-        Self { stage, invariant }
+        Self {
+            stage,
+            invariant,
+            kernel_cause: None,
+            named: Vec::new(),
+        }
+    }
+
+    /// This fault with the values it concerns, each under a stable field
+    /// name (for example the node and declarations of a rebound
+    /// correspondence entry).
+    #[must_use]
+    pub fn with_named(mut self, named: Vec<(&'static str, String)>) -> Self {
+        self.named = named;
+        self
+    }
+
+    /// The values this fault concerns, by stable field name; empty when the
+    /// invariant names none.
+    pub fn named(&self) -> &[(&'static str, String)] {
+        &self.named
+    }
+
+    /// A received kernel invariant, retaining its original typed provenance.
+    pub const fn from_kernel(
+        stage: &'static str,
+        invariant: &'static str,
+        cause: quire_exact::CheckedInvariantCause,
+    ) -> Self {
+        Self {
+            stage,
+            invariant,
+            kernel_cause: Some(cause),
+            named: Vec::new(),
+        }
+    }
+
+    /// The received kernel cause; QSL-owned invariant faults have no kernel cause.
+    pub const fn kernel_cause(&self) -> Option<quire_exact::CheckedInvariantCause> {
+        self.kernel_cause
     }
 
     /// The stage, reader or module that raised this fault.
@@ -865,6 +954,9 @@ impl InternalFault {
 
 /// Every code of the `quire.native.diagnostics/v1` "Required distinguishing
 /// causes" table with its ADR-013 O-16 category, in the catalog's row order.
+/// One row has no catalog row yet: `conflicting_declaration`, which QSpec
+/// FR-151 requires but QSpec's native-diagnostics catalog (FR-271, FR-272)
+/// does not list.
 ///
 /// This is the refusal-record map: the category a code has when a refusal
 /// record carries it (O-17: each cause type has a fixed category). Every
@@ -875,7 +967,7 @@ impl InternalFault {
 /// `incomplete` row names (FR-106, ADR-012's admission table) and
 /// [`Code::is_incomplete`] agrees with.
 /// `resource_exhausted` is the caller work-budget code (the catalog's
-/// `insufficient-next-charge`; a semantic maximum is not a work budget). It
+/// `insufficient-next-charge`; a maximum fixed by the language is not a work budget). It
 /// is a refusal here, when a refusal record carries it (ADR-013's read-only
 /// ceiling row). When a denied charge stops a run instead, the outcome is
 /// incomplete and still carries `resource_exhausted` (ADR-014 B-2; FR-101's
@@ -890,7 +982,7 @@ impl InternalFault {
 /// codes (`unsupported_construct`, `unknown_required_feature`,
 /// `unsupported_projection`) and the incomplete `resource_exhausted` that
 /// this table files under `Refusal`.
-const CATALOG_CATEGORIES: [(&str, Category); 49] = [
+const CATALOG_CATEGORIES: [(&str, Category); 50] = [
     ("invalid_syntax", Category::Refusal),
     ("unsupported_construct", Category::Refusal),
     ("unknown_language", Category::Refusal),
@@ -900,6 +992,7 @@ const CATALOG_CATEGORIES: [(&str, Category); 49] = [
     ("unknown_required_feature", Category::Refusal),
     ("missing_import", Category::Refusal),
     ("missing_declaration", Category::Refusal),
+    ("conflicting_declaration", Category::Refusal),
     ("stale_dependency", Category::Refusal),
     ("source_digest_mismatch", Category::Refusal),
     ("ambiguous_declaration", Category::Refusal),
@@ -1078,7 +1171,7 @@ pub fn kernel_refusal_record(
             ("expected", target.as_str().to_owned()),
             ("actual", source.as_str().to_owned()),
         ]),
-        Refusal::CheckedInvariant => return None,
+        Refusal::CheckedInvariant { .. } => return None,
     };
     Some(RefusalRecord::new(code, fields, locus))
 }
@@ -1169,6 +1262,20 @@ pub trait UndefinedCoded: std::fmt::Debug + Send + Sync + 'static {
     /// This cause's [`UndefinedRecord`]; its O-16 category is always
     /// `Category::Undefined`.
     fn undefined_record(&self) -> UndefinedRecord;
+
+    /// The producing family's prefix, separate from the published reason.
+    fn catalog_prefix(&self) -> Option<&'static str> {
+        None
+    }
+
+    /// Render ownership and the unchanged catalog reason together.
+    fn catalog_code(&self) -> String {
+        let record = self.undefined_record();
+        match self.catalog_prefix() {
+            Some(prefix) => format!("{prefix}/{}", record.reason),
+            None => record.reason.to_string(),
+        }
+    }
 }
 
 /// ADR-013 O-16: the closed reason set of the
@@ -1184,6 +1291,9 @@ pub enum UndefinedReason {
     /// FR-153: a `lookup<T>(p, r) absent undefined` query's reference `r`
     /// names no member of the population bound to `p`.
     AbsentKey,
+    /// FR-090-AC-21: an `allInstances<T>` query cannot establish subtype
+    /// closure for the admitted population declaration.
+    IncompleteClosure,
 }
 
 impl UndefinedReason {
@@ -1192,6 +1302,7 @@ impl UndefinedReason {
         match self {
             Self::PreconditionFalse => "precondition-false",
             Self::AbsentKey => "absent-key",
+            Self::IncompleteClosure => "incomplete-closure",
         }
     }
 }

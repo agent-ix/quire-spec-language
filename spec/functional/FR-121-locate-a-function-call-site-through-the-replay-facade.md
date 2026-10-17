@@ -72,6 +72,11 @@ its declared name, rather than returning node ids alone, is required by
 ADR-013 O-25: a consumer joins a witness row or an argument to its
 declaration by declared identity, never by position.
 
+A field selection
+returns the field's own key `[ordinal]` only; nested keys
+`[ordinal, ...child path]` into the field's type are remaining work under
+QSL-345.
+
 ## Inputs
 
 - `source`: the unit's FR-001 source identity.
@@ -268,16 +273,3 @@ declaration by declared identity, never by position.
 - [ADR-012](../decisions/ADR-012-semantic-family-extension-contracts.md)
   §15.4, §15.7: the state field and population domain keys.
 - ADR-015 D-1: the dependency input.
-
-## Status
-
-Implemented: `qsl_replay::call_site`, sharing its parameter node-key
-derivation with `qsl_replay::replay`'s own selection
-(`callable_parameter_keys`) and its operation resolution with FR-115's
-`Frame` selection and its clause lookup with FR-106's clause selection,
-and `CallSiteRefusal::code` giving each refusal the code `replay` gives
-it, verified by TC-516, with `FunctionSite`'s `function` and `declaration`
-members (AC-15) read from the same function node. A field selection
-returns the field's own key `[ordinal]` only; nested keys
-`[ordinal, ...child path]` into the field's type are remaining work under
-QSL-345. AC-1 to AC-22 are verified by TC-516.

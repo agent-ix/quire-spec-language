@@ -302,8 +302,11 @@ mod tests {
     /// (`value::expression::family.rs` keeps the evaluation half and
     /// `check::family.rs` keeps the checking half, FR-068-AC-1) and
     /// `causes` (FR-090's family evaluation causes, defined beside the
-    /// evaluator) and `s6a` (the S6a family contract, `ReferenceEvaluation`
-    /// and `S6aFamilyKind`, layer 5), so an unexpected module
+    /// evaluator), `clause_set` (FR-107's clause-set evaluation, which runs
+    /// clauses through the evaluator) `s6a` (the S6a family contract,
+    /// `ReferenceEvaluation` and `S6aFamilyKind`, layer 5) and `value_invariants`
+    /// (FR-366's per-value evaluation, which runs invariants through the
+    /// evaluator), so an unexpected module
     /// cannot be hiding a renamed leftover here.
     #[trace("TC-170", "FR-068-AC-1")]
     #[test]
@@ -316,13 +319,20 @@ mod tests {
                 "value::expression::mod.rs still declares mod {forbidden};"
             );
         }
-        let expected: std::collections::BTreeSet<&str> = ["causes", "evaluate", "family", "s6a"]
-            .into_iter()
-            .collect();
+        let expected: std::collections::BTreeSet<&str> = [
+            "causes",
+            "clause_set",
+            "evaluate",
+            "family",
+            "s6a",
+            "value_invariants",
+        ]
+        .into_iter()
+        .collect();
         let actual: std::collections::BTreeSet<&str> = mods.iter().map(String::as_str).collect();
         assert_eq!(
             actual, expected,
-            "value::expression::mod.rs declares an unexpected module beyond causes/evaluate/family/s6a"
+            "value::expression::mod.rs declares an unexpected module beyond causes/clause_set/evaluate/family/s6a/value_invariants"
         );
     }
 
@@ -489,21 +499,17 @@ mod tests {
     #[test]
     fn m2_items_moved_to_check_and_are_absent_from_model() {
         let definitions = scan_crate(&workspace_root()).expect("scan runs");
-        for name in [
-            "checked_dispatch_operation",
-            "check_field_refinement_obligation",
-        ] {
-            let locations = definitions.items.get(name).cloned().unwrap_or_default();
-            assert_eq!(locations.len(), 1, "{name}: {locations:?}");
-            assert!(
-                locations[0].file.starts_with("qsl-semantics/src/check/"),
-                "{name} must now live in qsl-semantics/src/check/: {locations:?}"
-            );
-            assert!(
-                !locations[0].file.starts_with("qsl-semantics/src/model/"),
-                "{name}: {locations:?}"
-            );
-        }
+        let name = "checked_dispatch_operation";
+        let locations = definitions.items.get(name).cloned().unwrap_or_default();
+        assert_eq!(locations.len(), 1, "{name}: {locations:?}");
+        assert!(
+            locations[0].file.starts_with("qsl-semantics/src/check/"),
+            "{name} must now live in qsl-semantics/src/check/: {locations:?}"
+        );
+        assert!(
+            !locations[0].file.starts_with("qsl-semantics/src/model/"),
+            "{name}: {locations:?}"
+        );
     }
 
     /// TC-173 step 2: the loss records `ValueLoss` and `LocatedLoss` are

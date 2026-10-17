@@ -13,7 +13,7 @@ relationships:
 Verify the node set, bodies, types, dependencies and occurrences S4 emits for
 state clauses, and the totality of the clause-kind mapping.
 
-Scope: FR-105-AC-1, FR-105-AC-2, FR-105-AC-5.
+Scope: FR-105-AC-1, FR-105-AC-2, FR-105-AC-5, FR-105-AC-8.
 
 ## Test Procedure
 
@@ -26,6 +26,9 @@ Scope: FR-105-AC-1, FR-105-AC-2, FR-105-AC-5.
 4. Run `CheckedClauseKind`'s mapping forward over all seven variants and
    backward over every triple the forward pass gives and over
    (`state`, `frame`); run `cargo mutants` over the mapping functions.
+5. Spine-compile a unit holding TC-459 step 7's `P`, `Q` and `I` against
+   that step's package, and decode the emitted graph; then compile it with
+   only `I`.
 
 Tag the tests `#[trace("TC-462", "FR-105-AC-n")]`.
 
@@ -51,24 +54,13 @@ Tag the tests `#[trace("TC-462", "FR-105-AC-n")]`.
 - Step 4: each variant gives one triple, no two share one, each triple
   decodes back to its variant, (`state`, `frame`) decodes to none, and
   `StateTransition` gives (`state`, `transition`); no mutant survives.
-
-## Status
-
-Implemented: `s4_emits_exactly_the_fr_105_state_nodes` covers step
-1 and most of step 2 (node set, kinds, anchor operation, frame
-`modifies`/`creates`/`deletes`, the `ConfigVersion` node found independently
-through `resolve_declaration`, each invariant's anchor argument, the
-forbidden forms); `s4_emitted_frame_node_lists_configversion_in_dependencies`
-covers the frame's own emitted `dependencies`, decoding the wire directly.
-`triple_mapping_is_total_and_injective_over_all_seven_variants` covers step
-4. Tests cover the rest of step 2 and step 3:
-`s4_state_clause_and_anchor_dependencies_beyond_the_frame` (each clause's
-parameter aggregate and exact emitted `dependencies`, the anchor's, and the
-`versionNumber` field read's),
-`s4_state_clause_anchor_and_frame_occurrences_match_the_outputs_table`,
-`s4_state_clause_semantic_type_is_the_boolean_scalar_type_node`,
-`s4_version_unchanged_condition_holds_a_pre_application_over_the_versionnumber_field_read`,
-`s4_no_cycle_condition_holds_a_reaches_field_application_naming_parent` and
-`s4_parent_order_self_parent_read_shares_no_cycles_member_shape`.
-`VersionUnchanged`'s anchor argument is asserted by
-`s4_a_second_post_on_attempt_update_adds_one_clause_node_and_no_anchor_or_frame`.
+- Step 5: one `state`/`operation_anchor` for `go`, with context the `Flow`
+  `model`/`process` node and operation the text literal `"go"`; one
+  `state`/`frame`, whose `semantic_type` is the `Flow` node and whose
+  `modifies` is exactly (`Flow` node, `n`, scope `every-object`), with
+  `creates`, `deletes` and `deletes_scoped` empty; one `operation-contract`
+  frame record for `go`; two `anchor` occurrences of the anchor, for `P` and
+  `Q`. `I`'s `state_clause` references the `Flow` node. With only `I`, the
+  package holds no anchor, frame node or frame record for `go`. As for step
+  1, the emitted-node assertions wait on STD-111; the checked-graph
+  assertions do not.

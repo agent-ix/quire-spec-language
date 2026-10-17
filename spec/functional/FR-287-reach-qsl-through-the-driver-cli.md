@@ -65,7 +65,7 @@ FR-298) and takes FR-285's exit code.
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-287-AC-1 | `cargo build --workspace` in the QSL repository produces no executable file in its target directory. | Test (TC-771) |
-| FR-287-AC-2 | `command` called in process with FR-027's compile request over `tests/fixtures/spine-compile.native` returns a typed success outcome whose FR-285 exit code is 0, and with FR-100-AC-6's `work_units` 0 run request a typed incomplete outcome whose exit code is 22; neither call writes a byte to stdout or stderr. | Test (TC-771) |
+| FR-287-AC-2 | `command` called in process with FR-027's compile request over `tests/fixtures/spine-compile.native` returns a typed success outcome whose FR-285 exit code is 0, and with FR-100-AC-6's `call.accounting` `{"work_units": 0}` run request a typed incomplete outcome whose exit code is 22; neither call writes a byte to stdout or stderr. | Test (TC-771) |
 
 ## Dependencies
 

@@ -28,16 +28,12 @@ The map covers every body byte once and permits only selected layout deletion. L
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-004-AC-1 | Exact normalized segments yield the corresponding original ranges. | Test |
-| FR-004-AC-2 | Deleting an interior token receives invalid_source_map. | Test |
-| FR-004-AC-3 | A foreign source passed to map_span receives invalid_source_map. | Test |
-| FR-004-AC-4 | An exceeded segment budget receives resource_exhausted. | Test |
+| FR-004-AC-1 | Exact normalized segments yield the corresponding original ranges. | Test (TC-014) |
+| FR-004-AC-2 | Deleting an interior token receives invalid_source_map. | Test (TC-014) |
+| FR-004-AC-3 | A foreign source passed to map_span receives invalid_source_map. | Test (TC-014) |
+| FR-004-AC-4 | An exceeded segment budget receives resource_exhausted. | Test (TC-014) |
 
 ## Dependencies
 
 - [US-002](../usecase/US-002-link-exact-models.md) supplies the user need.
 - [Detailed contract or implementation evidence](../../src/source_map.rs) supplies the scoped context.
-
-## Status
-
-Draft. Specification review and prerequisite acceptance remain distinct from existing code/tests. No acceptance criterion is claimed satisfied solely because this artifact has been authored.

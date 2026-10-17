@@ -104,7 +104,7 @@ fn equal(
         EqualityOperand::typed(value_type.clone()),
         &EnumMemberIndex::default(),
     )
-    .map(|checked| checked.evaluate(left, right, &mut Meter::new(UNLIMITED)))
+    .map(|checked| checked.evaluate(env, left, right, &mut Meter::new(UNLIMITED)))
 }
 
 /// `record P { a: Integer; b: Integer?; }` and `tuple T(Integer, Integer);`.
@@ -531,7 +531,7 @@ fn r10_record_construction_charges_one_result_retain() {
     };
     assert_eq!(value.occ(), Integer::from(2_i64));
     assert_eq!(
-        meter.admitted_charges(),
+        crate::support::admitted_charge_points(&meter),
         [ChargePoint::CompositeResultRetain]
     );
     assert_eq!(meter.consumed(LimitKind::WorkUnits), 1);
@@ -558,7 +558,9 @@ fn record_fields_run_in_declaration_order_and_the_first_stop_propagates() {
                 (
                     "a",
                     FieldExpression::Evaluate(Box::new(|_: &mut Meter| {
-                        Outcome::Refused(Refusal::CheckedInvariant)
+                        Outcome::Refused(Refusal::CheckedInvariant {
+                            cause: quire_exact::CheckedInvariantCause::DeferredResultNotAdmitted,
+                        })
                     })),
                 ),
             ],
@@ -567,7 +569,9 @@ fn record_fields_run_in_declaration_order_and_the_first_stop_propagates() {
         .unwrap();
     assert!(matches!(
         outcome,
-        Outcome::Refused(Refusal::CheckedInvariant)
+        Outcome::Refused(Refusal::CheckedInvariant {
+            cause: quire_exact::CheckedInvariantCause::DeferredResultNotAdmitted
+        })
     ));
     assert!(!b_ran.get());
     assert!(meter.admitted_charges().is_empty());
@@ -786,8 +790,8 @@ mod checked {
     /// `crate::support::type_form::type_form` can't recover a
     /// declared composite's own name from `ValueType::Composite`'s bare
     /// digest, so this file's own fixtures (whose only two composite
-    /// parameter types are "P::R" and "P") map the two back explicitly
-    /// instead.
+    /// parameter types are "P::R", "P", "M::Parent" and "M::Child") map
+    /// them back explicitly instead.
     fn param_type_form(value_type: &ValueType) -> TypeForm {
         match value_type {
             ValueType::Composite(k) if *k == key("P::R") => {
@@ -795,6 +799,12 @@ mod checked {
             }
             ValueType::Composite(k) if *k == key("P") => {
                 crate::support::type_form::named_type_form("P")
+            }
+            ValueType::Composite(k) if *k == key("M::Parent") => {
+                crate::support::type_form::named_type_form("M::Parent")
+            }
+            ValueType::Composite(k) if *k == key("M::Child") => {
+                crate::support::type_form::named_type_form("M::Child")
             }
             _ => crate::support::type_form::type_form(value_type),
         }
@@ -996,6 +1006,60 @@ mod checked {
         assert!(meter.admitted_charges().is_empty());
     }
 
+    /// Runtime input admission (`TypeEnvironment::admits`): a call argument of
+    /// a child composite is admitted at a parent-typed parameter and a parent
+    /// is refused at a child-typed one. Check-time acceptance is not covered.
+    #[trace("QSpec-TC-188", "QSpec-FR-143-AC-9")]
+    #[test]
+    fn a_call_admits_a_child_composite_at_its_parent_parameter_only() {
+        let types = TypeEnvironment::new(
+            [
+                record(
+                    "M::Parent",
+                    vec![field("x", ValueType::Integer, Presence::Required)],
+                ),
+                record(
+                    "M::Child",
+                    vec![field("x", ValueType::Integer, Presence::Required)],
+                )
+                .with_supertypes(vec![key("M::Parent")]),
+            ],
+            [],
+        )
+        .unwrap();
+        let package = package(
+            types.clone(),
+            Vec::new(),
+            vec![
+                function("takesParent", &[("r", composite("M::Parent"))], literal(1)),
+                function("takesChild", &[("r", composite("M::Child"))], literal(1)),
+            ],
+        )
+        .unwrap();
+        let value = |label: &str| {
+            types
+                .record(key(label), vec![("x", FieldValue::Present(int(1)))])
+                .unwrap()
+        };
+        let call = |function: &str, argument: Value| {
+            let mut meter = Meter::new(UNLIMITED);
+            package.call(
+                &QualifiedName::unqualified(function).unwrap(),
+                vec![argument],
+                &ObjectEnvironment::default(),
+                &mut meter,
+            )
+        };
+        assert!(call("takesParent", value("M::Child")).is_ok());
+        assert!(call("takesParent", value("M::Parent")).is_ok());
+        match call("takesChild", value("M::Parent")).unwrap_err() {
+            CallFailure::Input(refused) => {
+                assert_eq!(refused, InputRefusal::WrongValueKind { parameter: 0 });
+            }
+            other => panic!("expected CallFailure::Input(_), got {other:?}"),
+        }
+    }
+
     #[trace("QSpec-TC-188", "QSpec-FR-143-AC-8")]
     #[test]
     fn r08_field_a_stops_construction_before_field_b_is_evaluated() {
@@ -1081,7 +1145,7 @@ mod checked {
             )
         );
         assert_eq!(
-            meter.admitted_charges(),
+            crate::support::admitted_charge_points(&meter),
             [
                 ChargePoint::CollectionVisit,
                 ChargePoint::CollectionVisit,

@@ -204,10 +204,10 @@ fn write_current(
                 kind: AnchorKind::Handler,
                 name: "validate".to_owned(),
             },
-            self_object: SelectedObject {
+            self_object: Some(SelectedObject {
                 population: population_identity(),
                 key: self_key.to_owned(),
-            },
+            }),
         },
     };
     Ok(Written {
@@ -317,6 +317,7 @@ pub fn write(directory: &Path, case: Case) -> io::Result<()> {
                 ClauseSelectionInput::Current { .. } => "current",
                 ClauseSelectionInput::PreCall { .. } => "pre-call",
                 ClauseSelectionInput::Invocation { .. } => "invocation",
+                ClauseSelectionInput::Context { .. } => "context",
             },
         }),
         ClauseRunSelection::Function {
@@ -399,6 +400,7 @@ pub fn request(directory: &Path, case: Case) -> io::Result<ClauseRunRequest> {
         invocations: written.invocations,
         selection: written.selection,
         expected_package_id: None,
+        expected_package_id_claim: None,
         limits: SpineLimits::default(),
         observation_limits: ObservationLimits::default(),
         // `exhausted-work`'s own `work_units: 0` (FR-108's Corpus table);

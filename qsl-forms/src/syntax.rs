@@ -350,6 +350,12 @@ pub enum BinaryOperator {
     Multiply,
     /// `/`.
     Divide,
+    /// `div`.
+    IntegerDiv,
+    /// `rem`.
+    IntegerRem,
+    /// `mod`.
+    IntegerMod,
     /// `=`.
     Equal,
     /// `!=`.
@@ -478,12 +484,17 @@ impl fmt::Debug for ExprId {
 /// it has its own probe arm. Never constructed outside the probe build.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ExprNode {
+    /// A union `case`, whose child handles belong to this expression arena.
+    Case(CaseForm),
     /// `true` or `false`.
     Boolean(bool),
     /// An integer literal.
     Integer(Integer),
     /// `rational(n, d)`; it takes its unique expected `Rational[..]` type.
     Rational(Integer, Integer),
+    /// A quoted text literal (FR-091 "Native scalar literals"): the decoded
+    /// Unicode scalar sequence, kept exactly. It is always a `String`.
+    String(String),
     /// A parameter, `let` or binder name, or a qualified enum member.
     Name(String),
     /// `let name = value in body`.
@@ -699,6 +710,13 @@ pub enum ExprNode {
         /// The span of the edge member name.
         edge_span: Span,
     },
+    /// `protocol <qualified-name>` (FR-308): a reference to a protocol
+    /// declared in the same unit, written as `target` and resolved by S3
+    /// (FR-218). It carries no package selector, alias or key.
+    ProtocolReference {
+        /// The written qualified name, segments joined by `::`.
+        target: String,
+    },
     /// FR-063/S2: exists only so `--cfg seam_probe` makes every
     /// match over `ExprNode` outside this module non-exhaustive. Never
     /// constructed outside the probe build.
@@ -711,12 +729,17 @@ impl ExprNode {
     /// child index `i` names the `i`th of them.
     pub fn children(&self) -> Vec<ExprId> {
         match self {
+            Self::Case(case) => std::iter::once(case.scrutinee)
+                .chain(case.arms.iter().map(|arm| arm.body))
+                .collect(),
             Self::Boolean(_)
             | Self::Integer(_)
             | Self::Rational(..)
+            | Self::String(_)
             | Self::Name(_)
             | Self::SelfRef
-            | Self::Result => Vec::new(),
+            | Self::Result
+            | Self::ProtocolReference { .. } => Vec::new(),
             Self::Let { value, body, .. } => vec![*value, *body],
             Self::If {
                 condition,
@@ -784,9 +807,15 @@ impl ExprNode {
 
     /// The names this node binds, in binding order: a `let`'s name, a
     /// query's, count's or sum's binder, or an accumulation's accumulator
-    /// then its binder. Empty for every other node.
+    /// then its binder; a case's arm binders in arm and payload order.
+    /// Empty for every other node. Arm scopes belong to their own bodies.
     pub fn binders(&self) -> Vec<&str> {
         match self {
+            Self::Case(case) => case
+                .arms
+                .iter()
+                .flat_map(|arm| arm.binders.iter().map(|binder| binder.name.as_str()))
+                .collect(),
             Self::Let { name: binder, .. }
             | Self::Query { binder, .. }
             | Self::Count { binder, .. }
@@ -799,6 +828,7 @@ impl ExprNode {
             Self::Boolean(_)
             | Self::Integer(_)
             | Self::Rational(..)
+            | Self::String(_)
             | Self::Name(_)
             | Self::SelfRef
             | Self::Result
@@ -821,7 +851,8 @@ impl ExprNode {
             | Self::AllInstances { .. }
             | Self::Lookup { .. }
             | Self::Dispatch { .. }
-            | Self::Reaches { .. } => Vec::new(),
+            | Self::Reaches { .. }
+            | Self::ProtocolReference { .. } => Vec::new(),
             #[cfg(seam_probe)]
             Self::__SeamProbe => unreachable!("never constructed outside the probe build"),
         }
@@ -831,6 +862,16 @@ impl ExprNode {
     /// child id in reach.
     fn spellings_mut(&mut self) -> Spellings<'_> {
         match self {
+            // Dispatch rewriting respells arm binders, in the order
+            // `binders` lists them, and never a member selector (FR-313).
+            Self::Case(case) => Spellings {
+                reference: None,
+                binders: case
+                    .arms
+                    .iter_mut()
+                    .flat_map(|arm| arm.binders.iter_mut().map(|binder| &mut binder.name))
+                    .collect(),
+            },
             Self::Name(name) => Spellings {
                 reference: Some(name),
                 binders: Vec::new(),
@@ -853,6 +894,7 @@ impl ExprNode {
             Self::Boolean(_)
             | Self::Integer(_)
             | Self::Rational(..)
+            | Self::String(_)
             | Self::SelfRef
             | Self::Result
             | Self::If { .. }
@@ -874,7 +916,8 @@ impl ExprNode {
             | Self::AllInstances { .. }
             | Self::Lookup { .. }
             | Self::Dispatch { .. }
-            | Self::Reaches { .. } => Spellings {
+            | Self::Reaches { .. }
+            | Self::ProtocolReference { .. } => Spellings {
                 reference: None,
                 binders: Vec::new(),
             },
@@ -887,12 +930,20 @@ impl ExprNode {
     fn shift_children(&mut self, shift: impl Fn(ExprId) -> ExprId) {
         let one = |id: &mut ExprId| *id = shift(*id);
         match self {
+            Self::Case(case) => {
+                one(&mut case.scrutinee);
+                for arm in &mut case.arms {
+                    one(&mut arm.body);
+                }
+            }
             Self::Boolean(_)
             | Self::Integer(_)
             | Self::Rational(..)
+            | Self::String(_)
             | Self::Name(_)
             | Self::SelfRef
-            | Self::Result => {}
+            | Self::Result
+            | Self::ProtocolReference { .. } => {}
             Self::Negate(operand)
             | Self::Not(operand)
             | Self::Present(operand)
@@ -1079,6 +1130,11 @@ impl Expression {
     /// An integer literal.
     pub fn integer(value: impl Into<Integer>) -> Self {
         Self::single(ExprNode::Integer(value.into()))
+    }
+
+    /// A quoted text literal holding the decoded scalar sequence `text`.
+    pub fn string(text: impl Into<String>) -> Self {
+        Self::single(ExprNode::String(text.into()))
     }
 
     /// `rational(numerator, denominator)`.
@@ -1443,7 +1499,9 @@ impl Expression {
     /// A copy of this tree with the names its nodes read and bind
     /// respelled by `respell`, which is handed each node's id (children
     /// first) and that node's [`Spellings`]. It reaches no child id, so the
-    /// copy always has this tree's shape.
+    /// copy always has this tree's shape. Case member selectors and arm
+    /// binder declarations remain authored; their body references are
+    /// visited as ordinary child name nodes (FR-313).
     pub fn respell_names(&self, mut respell: impl FnMut(ExprId, Spellings<'_>)) -> Self {
         let nodes = self
             .nodes
@@ -1732,6 +1790,8 @@ pub struct FunctionDeclaration {
     /// The form's byte spans (FR-091-AC-10), when it was read from a source
     /// unit. A declaration built by hand or synthesized (FR-151) has none.
     spans: Option<DeclarationSpans>,
+    /// Each parameter's complete declaration span, when read from source.
+    parameter_spans: Option<Vec<Span>>,
     /// The `using` alias as written, when the declaration was read from a
     /// source unit (FR-091-AC-2). A declaration built by hand has none.
     using: Option<UsingAlias>,
@@ -1779,6 +1839,7 @@ impl FunctionDeclaration {
             kind: DeclarationKind::Function,
             callable_by_name: true,
             spans: None,
+            parameter_spans: None,
             using: None,
         }
     }
@@ -1827,6 +1888,7 @@ impl FunctionDeclaration {
             kind: DeclarationKind::Function,
             callable_by_name: false,
             spans: None,
+            parameter_spans: None,
             using: None,
         }
     }
@@ -1875,6 +1937,36 @@ impl FunctionDeclaration {
         self.spans
             .as_ref()
             .filter(|spans| spans.fit(&self.body, self.measure.as_ref()).is_ok())
+    }
+
+    /// Attach each parameter's complete declaration span in parameter order.
+    /// Every span must lie inside this declaration and contain the declared
+    /// type's span. Source-less declarations carry no parameter spans.
+    pub fn with_parameter_spans(mut self, spans: Vec<Span>) -> Result<Self, SpansMismatch> {
+        let declaration = self
+            .spans()
+            .ok_or(SpansMismatch::OutsideDeclaration)?
+            .declaration;
+        if spans.len() != self.parameters.len()
+            || spans.iter().zip(&self.parameters).any(|(span, (_, ty))| {
+                span.start < declaration.start
+                    || span.end > declaration.end
+                    || span.start >= span.end
+                    || span.start > ty.span.start
+                    || span.end < ty.span.end
+            })
+        {
+            return Err(SpansMismatch::OutsideDeclaration);
+        }
+        self.parameter_spans = Some(spans);
+        Ok(self)
+    }
+
+    /// Each source parameter's declaration span, in parameter order.
+    pub fn parameter_spans(&self) -> Option<&[Span]> {
+        self.parameter_spans
+            .as_deref()
+            .filter(|spans| spans.len() == self.parameters.len())
     }
 }
 
@@ -1947,6 +2039,52 @@ pub struct EnumForm {
     pub ordered: bool,
     /// The members in source order.
     pub members: Vec<EnumMemberForm>,
+}
+
+/// One union member, preserving authored payload positions (FR-313).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UnionMemberForm {
+    /// The member identifier and its span.
+    pub name: DeclaredName,
+    /// Payload types in source order; empty for a nullary member.
+    pub payload: Vec<TypeForm>,
+    /// The whole member's source span.
+    pub span: Span,
+}
+
+/// A closed union declaration at S2 (FR-313).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UnionForm {
+    /// The union identifier and its span.
+    pub name: DeclaredName,
+    /// Members in source order, without semantic validation.
+    pub members: Vec<UnionMemberForm>,
+    /// The declaration's source span.
+    pub span: Span,
+}
+
+/// An expression case arm, with arena-local body handle (FR-313).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ArmForm {
+    /// Bare or qualified member selector as authored.
+    pub member: NameForm,
+    /// Binder identifiers and spans in payload order.
+    pub binders: Vec<DeclaredName>,
+    /// Body in the enclosing expression arena.
+    pub body: ExprId,
+    /// The whole arm, including its terminating semicolon.
+    pub span: Span,
+}
+
+/// An expression case, with children in the enclosing arena (FR-313).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CaseForm {
+    /// Scrutinee in the enclosing expression arena.
+    pub scrutinee: ExprId,
+    /// Arms in source order, including duplicates for S3 to diagnose.
+    pub arms: Vec<ArmForm>,
+    /// The whole expression's source span.
+    pub span: Span,
 }
 
 /// A qualified name as written, with `::` separators, and its span.
@@ -2069,6 +2207,34 @@ pub struct StateClauseForm {
     /// The form's byte spans (FR-091-AC-10 applied to a state clause): the
     /// whole declaration's, and one per node of the body. A state clause
     /// declares no `decreases` measure, so `measure` is always `None`.
+    pub spans: DeclarationSpans,
+}
+
+/// `body L using p on M::T::op (a, b) { e }` (FR-102 "Outputs", QSpec
+/// FR-151): the one operation body a unit supplies for an operation
+/// candidate. S2 keeps the label, the `using` alias, each segment of the
+/// target name, each positional parameter name and the body expression
+/// spelled and spanned, resolving none of them: the assembler and S3 resolve
+/// the target to the operation's `DeclarationKey` (FR-104). The label is
+/// local to the unit and is not the operation's identity.
+#[derive(Clone, Debug)]
+pub struct OperationBodyForm {
+    /// The declared label.
+    pub label: DeclaredName,
+    /// The `using` alias.
+    pub profile: UsingAlias,
+    /// The target name's segments as written (`model-alias`, `Type`,
+    /// `operation` for a well-formed target), each with its own span.
+    pub target: Vec<DeclaredName>,
+    /// The span of the whole target name.
+    pub target_span: Span,
+    /// The receiver-less parameter names, in written order.
+    pub parameters: Vec<DeclaredName>,
+    /// The body.
+    pub body: Expression,
+    /// The form's byte spans: the whole declaration's, and one per node of
+    /// the body. A body declares no `decreases` measure, so `measure` is
+    /// always `None`.
     pub spans: DeclarationSpans,
 }
 
@@ -2498,6 +2664,8 @@ impl ProtocolDeclarationForm {
 /// carries").
 #[derive(Clone, Debug)]
 pub enum DeclarationForm {
+    /// A `union` declaration (FR-313).
+    Union(UnionForm),
     /// A `function` declaration, boxed: it is several times the size of
     /// the other forms.
     Function(Box<FunctionDeclaration>),
@@ -2516,6 +2684,9 @@ pub enum DeclarationForm {
     /// An `invariant`, `pre` or `post` state clause, boxed for the same
     /// reason as [`Self::Function`] (FR-102).
     StateClause(Box<StateClauseForm>),
+    /// A `body` operation-body declaration, boxed for the same reason
+    /// (FR-102).
+    OperationBody(Box<OperationBodyForm>),
     /// A `protocol` declaration (FR-112).
     Protocol(ProtocolDeclarationForm),
 }

@@ -14,7 +14,6 @@ pub mod checking;
 pub mod command;
 pub mod complete;
 pub mod formal_source;
-pub mod format;
 pub mod linking;
 pub mod located_json;
 pub mod lowering;
@@ -23,6 +22,8 @@ pub mod model_source;
 pub mod native_model;
 pub mod package;
 mod parser;
+#[cfg(feature = "population-fixtures")]
+pub mod population_fixtures;
 pub mod protocol_artifact;
 pub mod runtime;
 pub mod state;

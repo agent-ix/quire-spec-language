@@ -15,6 +15,10 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/ADR-014
     type: depends_on
+  - target: ix://agent-ix/quire-semantic-value/FR-108
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-259
+    type: references
 ---
 # FR-082: Resolve conformance, subsetting and redefinition over the closed declaration set
 
@@ -53,6 +57,8 @@ result, or a `Refused` outcome carrying every failing axis (member kind, axis
 name and typed cause), or a typed incomplete result naming the exhausted
 charge point. For the expression checker's type-environment admission, a
 reached ceiling is a stage failure, `StageFailure::Limit(LimitExceeded)`.
+A failed shared-registry storage reservation is a typed resource refusal
+carrying the measured request and its unit, as specified below.
 
 ## Behavior
 
@@ -99,13 +105,26 @@ SHALL refuse specialization for every declaration on the cycle with a
 specialization-cycle cause, and SHALL derive no conformance edge across the
 cycle.
 
+A cycle is identified by the set of its supertype edges, so two directed
+cycles over the same nodes with different edges are two cycles. A declaration
+is refused once per cycle it lies on, at its own declaration: a declaration on
+two cycles is refused twice, once listing each. A cycle is reported at the
+first extension, in `normalize.cycle-check` charge order, that closes it; a
+later extension that closes a cycle with the same edge set is charged and not
+reported again. The refusals follow cycle detection order and, within one
+cycle, declaration-key order. Each refusal's typed cause carries the
+declaration it is raised at and the cycle's type declaration keys in path
+order, rotated to start at the least key.
+
 ### The refinement obligation admits no partial pass
 
-A narrowing field redefinition SHALL be admitted only when an established
-postcondition fact proves the narrowing; absent that fact, the model checker
-SHALL refuse it with an unproved-refinement cause naming the missing
-obligation kind. The model checker SHALL NOT admit a narrowing redefinition
-on the strength of its declared shape alone.
+A narrowing field redefinition written by an exposed operation SHALL be
+admitted only when an established postcondition fact of that operation proves
+the narrowing; absent that fact, the model checker SHALL refuse it with an
+unproved-refinement cause naming the missing obligation kind. The model
+checker SHALL NOT discharge that writer's obligation on the strength of the
+field's declared shape alone. When no exposed operation writes the field,
+no writer refinement obligation arises.
 
 The field-domain obligation is decided over exact integers. The redefined
 field's declared scalar bounds and a postcondition's comparison literal are
@@ -143,7 +162,13 @@ raises or lowers it, and the value is used as given. If a charge is denied,
 the model checker SHALL stop with the `Incomplete` outcome naming
 `ancestor_steps`, its configured value and the count the denied charge would
 have reached (ADR-013 O-21, ADR-030 D-1), and SHALL NOT report a conformance
-or non-conformance verdict for that walk.
+or non-conformance verdict for that walk. The denied charge refuses
+`resource_exhausted`/`insufficient-next-charge`, the shape QSpec FR-150-AC-11
+gives it (`incomplete(ancestor_steps, limit, consumed, 1,
+model.ancestor-edge)`), carrying `setting`, `limit` (the effective limit), `actual`, `stage`, `accounting_contract`, `limit_kind`, `consumed`, `next_charge` and `charge_point`. Its `charge_point` is `admission.ancestor-edge` (stage `population-admission`,
+contract `PopulationAdmissionLimitsV1`) when the setting is `admission.ancestor_steps`, and
+`model.ancestor-edge` for `model.ancestor_steps`, including the model walks that
+observation admission re-runs. The catalog has no `ancestor-steps` cause.
 
 The walks above charge B-2 limits, carried by the accounting-contract limits
 types `ModelNormalizationLimitsV1` and `PopulationAdmissionLimitsV1`, so a
@@ -199,12 +224,80 @@ give the same verdict the model gives at evaluation:
   proper ancestor SHALL refuse with a redefinition-target cause. The
   exposed field SHALL narrow every field it stands for: required wherever
   one of them is, and admitting only values that field's type admits. A
-  reference field SHALL be redefined only with the identical reference
-  type, since evaluation matches a reference's object type exactly.
-  Otherwise the environment SHALL refuse as ill-typed.
+  reference field of type `Reference<T>` SHALL, under
+  `quire.model.complete/v1`, admit a redefining field of type `Reference<S>`
+  exactly when `S` conforms to `T` in the closed FR-151 effective view:
+  `S` is `T` or a proper subtype of `T`. This covariance SHALL preserve the
+  reference's qualified identity and SHALL NOT admit an implicit downcast.
+  Reverse or unrelated target types SHALL refuse `ill_typed`/`variance-result`.
+  Covariance SHALL NOT discharge a writer's refinement obligation: narrowing
+  an object-typed domain written by an exposed operation still requires an
+  established postcondition fact and SHALL refuse
+  `undefined_expression`/`unproved-refinement` with obligation `no-proof-form`
+  when no FR-146 fact form expresses that narrowing.
 - `deref(r).f` SHALL resolve `f` in `r`'s static type's flattened set, and
   SHALL read the one slot of the referenced object's own type that stands
   for that field.
+
+### Shared-registry storage failure retains its measured request and unit
+
+When shared type-environment admission reports an allocator denial under
+[QSV FR-108](ix://agent-ix/quire-semantic-value/FR-108), the expression
+checker SHALL stop with `StageFailure::Refused` carrying a typed registry
+allocation cause, catalog `resource_exhausted`/`allocation-failed`.
+This is an admission resource refusal, in category refusal; it produces no
+type environment or checked package. Its calling stage is S3 expression
+checking, including a caller that invokes this admission while reconstructing
+a checked package. Re-reporting by a caller SHALL retain the originating
+admission stage and the typed payload.
+
+The registry allocation payload SHALL identify type-environment storage and
+carry exactly one `requested` field, rendered as `<unit>:<amount>`:
+
+| Unit | Meaning of `requested` |
+| --- | --- |
+| `bytes` | The byte amount passed to the failed reservation, in unpadded base-10. |
+| `additional-elements` | The additional element count passed to the failed collection reservation, not its length or final capacity, in unpadded base-10. |
+
+QSL SHALL preserve the amount and unit observed at the upstream production
+reservation boundary without inferring bytes from a count, multiplying by a
+guessed element size, or substituting a configured budget. This payload has
+no configured bound, setting, or work-counter interpretation. An allocation
+failure in this admission SHALL NOT become `StageFailure::Limit`, malformed
+input, an ill-typed declaration, a Boolean `false`, cancellation, or an
+`InternalFault` or kernel checked-invariant cause.
+
+When upstream instead reports reservation-size arithmetic or representation
+overflow, QSL SHALL preserve that distinct typed capacity/size resource
+failure as `resource_exhausted`/`reservation-size-overflow`, preserving the
+upstream `StorageRequest` amount and native unit. It SHALL NOT report
+`allocation-failed` or claim a measured allocator-denied request for that
+case. This requirement does not require converting native reservation counts
+to bytes.
+
+The registry's resource-failure causes and payloads are:
+
+| Code | Cause | Payload |
+| --- | --- | --- |
+| `resource_exhausted` | `allocation-failed` | Exactly `requested`: the native unit and upstream amount as `<unit>:<amount>` (`bytes` or `additional-elements`, then unpadded base-10 amount). |
+| `resource_exhausted` | `reservation-size-overflow` | `upstream`: the exact upstream `StorageRequest` amount and unit rendered as `<unit>:<amount>`; `<unit>` is `bytes` or `additional-elements`, and `<amount>` is unpadded base-10. Preserve the capacity/size arithmetic or representation overflow reason. |
+
+When either storage failure stops admission, QSL SHALL expose no admitted
+descriptor prefix, registry index, member key join, type environment, or
+checked package from that attempt. QSL SHALL perform no evaluation and charge
+no evaluation work before this denial. Admission work already performed keeps
+its existing accounting. Retrying identical declarations after removing the
+denial SHALL give the same complete admitted environment and member links as
+a fresh successful attempt.
+
+The `TypeEnvironmentLimits` denials above SHALL retain their existing
+`StageFailure::Limit`, limit kind, configured bound, actual counter and
+setting. QSV owns the fallible storage design and reservation measurement;
+QSL owns this consumer mapping. Canonical reader/encoder allocation at the
+calling sites of [FR-259](FR-259-encode-identities-and-read-json-through-quire-canonical-at-any-depth.md)
+continues to carry requested **bytes** under its own typed cause, with no
+bound or setting. A registry request, even when measured in bytes, SHALL NOT
+be presented as canonical `IdentityRefusal::Allocation`.
 
 ## Acceptance Criteria
 
@@ -219,6 +312,13 @@ give the same verdict the model gives at evaluation:
 | FR-082-AC-7 | Given object types whose ancestor closure and flattened attribute sets would cost more than the admission `work_units` budget, the expression checker's type environment refuses with a stage limit (`LimitExceeded`, work budget) naming the budget; a linear chain admits within four work units per flattened slot. | Test (TC-220) |
 | FR-082-AC-8 | Given a field `f` declared `optional` with multiplicity `[1, 1]`, redefined by a field declared `required` with multiplicity `[1, 1]` and written by an exposed operation whose postcondition establishes no presence fact, the checker refuses `unproved-refinement` with obligation `field-presence`; with `present(self.f)` established it admits the redefinition. Given `f` and its redefinition both declared `required` with multiplicity `[0, 1]`, or both `optional` with multiplicity `[1, 1]`, written by the same operation with no established fact, the checker admits the redefinition and engages no obligation. | Test (TC-896) |
 | FR-082-AC-9 | Given a domain package whose scalar type `Wide` is bound to `[0, 18446744073709551615]` (its bounds written as decimal strings, FR-056), a field `f: Wide` redefined by a field of scalar type `Narrow` bound to `[0, 9223372036854775808]`, and an exposed operation writing `f` whose stated postcondition is `self.f <= 9223372036854775808`, the checker admits the redefinition; with the postcondition `self.f <= 9223372036854775809` it refuses `unproved-refinement` with obligation `field-domain`. | Test (TC-911) |
+| FR-082-AC-10 | With valid declarations and sufficient configured limits, an isolated allocator seam denies a real production reservation during shared registry, index or traversal construction. S3 returns `StageFailure::Refused` with `resource_exhausted`/`allocation-failed` and exactly one `requested` field containing the upstream native unit and amount as `<unit>:<amount>` (`bytes` or `additional-elements`, then unpadded base-10), with no bound or setting. The consumer neither returns false nor reports a limit, malformed/type refusal, cancellation or fault. | Test |
+| FR-082-AC-11 | A production reservation-size arithmetic or representation overflow reaches QSL as `resource_exhausted`/`reservation-size-overflow`, preserving the upstream amount and native unit, never `allocation-failed` or a fabricated measured allocator-denied request. A genuine allocator denial with representable request remains the AC-10 case. | Test |
+| FR-082-AC-12 | Denial after earlier descriptors or member links have been staged exposes no admitted prefix, index, key join, environment or checked package; evaluation invocation count and evaluation charge are both zero. Removing the denial and retrying identical declarations gives the same complete environment and member links as fresh admission. | Test |
+| FR-082-AC-13 | For the same valid declaration fixture with allocation enabled, exact N-1/N controls for `environment.work_units` and `environment.ancestor_steps` retain their original stage-limit kind, configured bound and actual denied counter, and admit at sufficient limits. Malformed input, cancellation, FR-259's 4096-byte canonical allocation control and released checked-invariant causes retain their existing classifications and payloads. Budget denial and capacity overflow do not stand in for AC-10's measured reservation failure. | Test |
+| FR-082-AC-15 | Types `A` (`supertypes: [B, C]`), `B` (`supertypes: [A]`) and `C` (`supertypes: [A]`) are refused as four `invalid_model_binding`/`specialization-cycle` refusals: `A` and `B` each listing `[A, B]`, then `A` and `C` each listing `[A, C]`, so `A` is refused once per cycle. Types `A` (`supertypes: [C]`), `B` (`supertypes: [C]`), `C` (`supertypes: [D]`) and `D` (`supertypes: [B]`) are refused as three refusals, at `B`, `C` and `D`, each listing `[B, C, D]`; `A` only leads into the cycle and is neither refused nor listed. Types `A` and `B` of two-node cycle `A -> B -> A` are refused at `A`, then at `B`, each listing `[A, B]`. | Test (TC-1020) |
+| FR-082-AC-16 | Under `quire.model.complete/v1`, given `S` a proper subtype of `T`, a field of type `Reference<T>` redefined by `Reference<S>` with identical multiplicity and presence and no outstanding writer refinement obligation passes the value-type axis and preserves qualified reference identity. A reverse or unrelated target type refuses `ill_typed`/`variance-result` and admits no implicit downcast. If an exposed operation writes the narrowed object-typed domain and no FR-146 fact form expresses the narrowing, the checker refuses `undefined_expression`/`unproved-refinement` with obligation `no-proof-form`. | Test |
+| FR-082-AC-17 | The model conformance stage runs inside the checker, after source resolution, structural assembly and clause checking and before dispatch linking, on the same meter that admitted the models. A source or clause refusal is reported without charging the stage; a stage ceiling that denies a charge reports an incomplete result naming the limit kind, the limit, the work consumed, the next charge and the `conformance.axis` charge point, and withholds failures found so far. A redefinition whose target is reached through several direct supertypes is judged along each of them, and one failing lineage refuses the axis. | Test |
 
 ## Dependencies
 
@@ -230,6 +330,12 @@ give the same verdict the model gives at evaluation:
 - **Downstream:** [FR-083](FR-083-resolve-unique-most-specific-dispatch.md)
   uses this requirement's conformance relation to decide dispatch
   applicability and dominance.
+- [QSV FR-108](ix://agent-ix/quire-semantic-value/FR-108) owns shared
+  admission storage and its native reservation failure units (IR-713).
+  [TC-914](../test-cases/TC-914-registry-allocation-preserves-native-units.md)
+  specifies the QSL consumer checks for AC-10 through AC-13 after upstream
+  delivery. It does not qualify an unpublished carrier or replace the
+  upstream storage tests.
 - This requirement's behavior touches the same compiler surface as
   [FR-068](FR-068-split-expression-checking-into-check-stage.md), which
   declares a bounded, temporary `model` → `check` import edge confined to
@@ -241,3 +347,4 @@ give the same verdict the model gives at evaluation:
 
 - Linear QSL-254 (AC-8: presence and multiplicity are separate narrowing axes).
 - Linear QSL-642 (AC-9: the field-domain obligation over exact integers up to i128).
+- Linear QSL-678 (AC-10 through AC-13: shared-registry storage failures).

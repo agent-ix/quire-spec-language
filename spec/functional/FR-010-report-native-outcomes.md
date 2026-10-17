@@ -14,6 +14,10 @@ relationships:
 
 When the native CLI finishes a request, it shall report the observed pipeline outcome with its source identity.
 
+`src/cli.rs` takes the four-label grammar (with the revision namespace
+and revision) before the file today. The two-label grammar of AC-11 is
+remaining implementation work under QSL-381.
+
 ## Inputs
 
 Command, source labels/file and compiler outcome.
@@ -59,19 +63,21 @@ express this existing API. Display renders `{code}: {message}` and Error has
 no underlying cause. This scoped compatibility exception does not introduce
 a second error envelope or alter the audit target's derived errors.
 
+The refusal line's keys are in one fixed order, the field order of the CLI's refusal record: `status`, `phase`, `code`, `source`, `path`, `span`, `message`, then `cause` and `label` when present; `source`'s own keys read `authority`, `identity`, `revision_namespace`, `revision`.
+
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-010-AC-1 | A successful parse emits status parsed. | Test |
-| FR-010-AC-2 | A refused syntax request whose construct is invalid, not merely unsupported, exits 20, [FR-301](ix://agent-ix/quire-specification/FR-301)'s code for invalid or refused input. | Test |
-| FR-010-AC-3 | An invalid command invocation exits 20, other than naming an unpublished lowering target (AC-9). | Test |
-| FR-010-AC-4 | An exhausted parser request exits 22, [FR-301](ix://agent-ix/quire-specification/FR-301)'s code for incomplete. | Test |
-| FR-010-AC-5 | A parse result carries the actual source digest. | Test |
-| FR-010-AC-6 | Invalid OS encoding in commands/labels exits 20 without panic; valid source at a non-UTF-8 Unix file path parses with the exact labels and byte digest. | Test |
-| FR-010-AC-7 | A missing or unreadable selected source file exits 20 and emits no parsed output. | Test |
-| FR-010-AC-8 | A native Diagnostic propagates through a standard Error-based caller; every stable code round-trips through its catalog lookup. | Test |
-| FR-010-AC-9 | A construct the parser recognizes but the admitted profile does not support, or a command invocation naming a lowering target outside the published catalog, exits 21, [FR-301](ix://agent-ix/quire-specification/FR-301)'s code for unsupported. | Test |
+| FR-010-AC-1 | A successful parse emits status parsed. | Test (TC-015) |
+| FR-010-AC-2 | A refused syntax request whose construct is invalid, not merely unsupported, exits 20, [FR-301](ix://agent-ix/quire-specification/FR-301)'s code for invalid or refused input. | Test (TC-015) |
+| FR-010-AC-3 | An invalid command invocation exits 20, other than naming an unpublished lowering target (AC-9). | Test (TC-015, TC-017) |
+| FR-010-AC-4 | An exhausted parser request exits 22, [FR-301](ix://agent-ix/quire-specification/FR-301)'s code for incomplete. | Test (TC-015) |
+| FR-010-AC-5 | A parse result carries the actual source digest. | Test (TC-015) |
+| FR-010-AC-6 | Invalid OS encoding in commands/labels exits 20 without panic; valid source at a non-UTF-8 Unix file path parses with the exact labels and byte digest. | Test (TC-017) |
+| FR-010-AC-7 | A missing or unreadable selected source file exits 20 and emits no parsed output. | Test (TC-015, TC-017) |
+| FR-010-AC-8 | A native Diagnostic propagates through a standard Error-based caller; every stable code round-trips through its catalog lookup. | Test (TC-018) |
+| FR-010-AC-9 | A construct the parser recognizes but the admitted profile does not support, or a command invocation naming a lowering target outside the published catalog, exits 21, [FR-301](ix://agent-ix/quire-specification/FR-301)'s code for unsupported. | Test (TC-015) |
 | FR-010-AC-10 | A failure writing the command's own output exits 30, [FR-301](ix://agent-ix/quire-specification/FR-301)'s code for tool failure. | Test |
 | FR-010-AC-11 | `parse agent-ix specs/a.quire <file>` over an admissible file reports its source with authority `agent-ix`, identity `specs/a.quire` and the file's `quire.source.bytes/v1` digest, and no other source member. `parse` with the two labels and no file, or with one extra operand, exits 20. `parse agent-ix "" <missing-file>` exits 20 with `invalid_source_identity`, cause `blank-label`, `label` `identity`, not a file error. `format` takes the same two labels: `format agent-ix specs/a.quire <file>` over admissible complete-V1 source exits 0, and with one extra operand exits 20. | Test (TC-425) |
 
@@ -79,10 +85,3 @@ a second error envelope or alter the audit target's derived errors.
 
 - [US-001](../usecase/US-001-author-native-source.md) supplies the user need.
 - [Detailed contract or implementation evidence](../../src/main.rs) supplies the scoped context.
-
-## Status
-
-Draft. FR-010-AC-11 is implemented (ADR-013 §7 slice S-4b):
-`src/cli.rs` takes the four-label grammar (with the revision namespace and revision) before the file today, and TC-425 backs that form; `parse` reports the source `RawSourceRef` with only the authority, the identity and the digest. Remaining work (implementation, Linear QSL-381): the CLI takes the two labels AC-11 states. The `refused` line carries `cause` `blank-label` and `label` for a blank label (FR-001), backed by TC-425. The refusal line's keys are in one fixed order, the field order of the CLI's refusal record: `status`, `phase`, `code`, `source`, `path`, `span`, `message`, then `cause` and `label` when present; `source`'s own keys read `authority`, `identity`, `revision_namespace`, `revision`.
-
-Specification review and prerequisite acceptance remain distinct from existing code/tests. No acceptance criterion is claimed satisfied solely because this artifact has been authored.

@@ -17,8 +17,11 @@ use std::collections::BTreeMap;
 use qsl_foundation::bound::DomainKey;
 use qsl_foundation::diagnostic::InternalFault;
 use qsl_foundation::digest::WireNodeId;
-use quire_exact::IntegerInterval;
+use qsl_semantics::value::supplied::{
+    SuppliedCause, SuppliedFailure, SuppliedPhase, SuppliedRun, SuppliedStop,
+};
 use quire_exact::{plan_equality, planned_equality, Meter, Outcome, ScalarLimits, Value};
+use quire_exact::{Cancel, IntegerInterval};
 use quire_semantic_value::declaration::EqualityOperator;
 
 use super::argument::{self, Stopped};
@@ -29,7 +32,7 @@ use super::parity_identity::{
     parity_obligation, BoundEntries, Domain, ParityArgument, ParityPreimage,
 };
 use super::scalar_site::operand_identities;
-use super::{consumed, exceeded_before_call, recompile, request_limits, Recompiled, ReplayRefusal};
+use super::{consumed, recompile, request_limits, Recompiled, ReplayRefusal};
 use crate::bounds::ReplayLimits;
 use crate::composite::{
     CompositeEvidence, CompositeIdentity, CompositeParityClaim, CompositeParityReport,
@@ -59,7 +62,11 @@ fn prepare(
     replay_limits: ReplayLimits,
 ) -> Result<Prepared, ReplayRefusal> {
     let request = ReplayRequest::decode(wire, replay_limits)?;
-    let limits = request_limits(request.stage_limits(), replay_limits)?;
+    let limits = request_limits(
+        request.stage_limits(),
+        request.accounting_limits(),
+        replay_limits,
+    )?;
     let compiled = recompile(&request, &limits)?;
     let site = locate(
         &compiled,
@@ -279,7 +286,7 @@ fn falsified_rows(
         }
     };
     // F-5.
-    let [left, right] = &admitted;
+    let [left, right] = admitted.as_ref();
     let (exact, charges) = match exact_equality(left, right, claim.operator, claim.limits)? {
         Exact::Outcome(exact, charges) => (exact, charges),
         Exact::Stopped(incomplete) => {
@@ -314,11 +321,11 @@ fn falsified_rows(
 
 /// What admitting the two operands found.
 enum Admission {
-    Admitted([Value; 2]),
+    Admitted(Box<[Value; 2]>),
     /// The operand at this position failed admission.
     Refused(usize),
-    /// An accounting limit of the request stopped the admission.
-    Stopped(Box<quire_exact::Incomplete>),
+    /// A pre-call limit of the request stopped the admission.
+    Stopped(Box<SuppliedStop>),
 }
 
 /// Admit each operand against its domain through FR-098's conversion and
@@ -328,6 +335,9 @@ enum Admission {
 fn admit(prepared: &Prepared, operands: &[WitnessValue; 2]) -> Result<Admission, ReplayRefusal> {
     let package = prepared.compiled.checked.package();
     let limits = prepared.request.accounting_limits();
+    // One run for both operands: the helper budgets are cumulative.
+    let mut run = SuppliedRun::new(prepared.request.supplied_limits(), Cancel::new())
+        .map_err(ReplayRefusal::Supplied)?;
     let mut admitted = Vec::with_capacity(2);
     for (index, (operand, witness)) in prepared.operands.iter().zip(operands).enumerate() {
         let declared = std::slice::from_ref(operand.value_type());
@@ -336,21 +346,34 @@ fn admit(prepared: &Prepared, operands: &[WitnessValue; 2]) -> Result<Admission,
             declared,
             std::slice::from_ref(witness),
             &limits,
+            &mut run,
+            &prepared.compiled.reference_model(),
         ) {
             Ok(converted) => converted,
             Err(Stopped::Refusal(refusal)) => match *refusal {
-                ReplayRefusal::Input(_) => return Ok(Admission::Refused(index)),
+                ReplayRefusal::Input(_) | ReplayRefusal::NativePayload { .. } => {
+                    return Ok(Admission::Refused(index));
+                }
                 other => return Err(other),
             },
-            Err(Stopped::Limit(incomplete)) => return Ok(Admission::Stopped(incomplete)),
+            Err(Stopped::Supplied(failure)) => return stopped(index, failure),
         };
-        if let Some(incomplete) = exceeded_before_call(&converted, &limits) {
-            return Ok(Admission::Stopped(Box::new(incomplete)));
-        }
         let value = converted
             .values
             .pop()
             .ok_or_else(|| fault("converted-operand"))?;
+        // S6a admission of the converted operand against its declared type,
+        // in the admission phase of the same run (FR-358, FR-277): the
+        // conversion above does not decide a root numeric domain or B.
+        if let Err(failure) = run.admit(
+            SuppliedPhase::Admission,
+            index,
+            package.graph().scope().types(),
+            operand.value_type(),
+            &value,
+        ) {
+            return stopped(index, failure);
+        }
         if let Operand::Literal { value: literal, .. } = operand {
             let mut meter = Meter::new(argument::UNLIMITED);
             match planned_equality(&value, literal, &mut meter) {
@@ -364,7 +387,25 @@ fn admit(prepared: &Prepared, operands: &[WitnessValue; 2]) -> Result<Admission,
         admitted.push(value);
     }
     let [left, right] = <[Value; 2]>::try_from(admitted).map_err(|_| fault("two-operands"))?;
-    Ok(Admission::Admitted([left, right]))
+    Ok(Admission::Admitted(Box::new([left, right])))
+}
+
+/// What a supplied-phase failure of the operand at `index` settles: an input
+/// refusal, a pre-call limit stop, or a refusal of the replay.
+fn stopped(index: usize, failure: SuppliedFailure) -> Result<Admission, ReplayRefusal> {
+    match failure {
+        SuppliedFailure::Stop(stop) => {
+            if stop.limit().is_some() {
+                Ok(Admission::Stopped(stop))
+            } else if matches!(stop.cause, SuppliedCause::Input { .. }) {
+                Ok(Admission::Refused(index))
+            } else {
+                Err(ReplayRefusal::Supplied(stop))
+            }
+        }
+        SuppliedFailure::Unsupported(stop) => Err(ReplayRefusal::UnsupportedHelper(stop)),
+        SuppliedFailure::Fault(fault) => Err(ReplayRefusal::Fault(fault)),
+    }
 }
 
 fn fault(invariant: &'static str) -> ReplayRefusal {

@@ -47,11 +47,11 @@ Tag the tests `#[trace("TC-471", "FR-120-AC-n")]`.
 ## Expected Results
 
 - Step 1: three successors `v0`, `v1`, `v2`, each with transition identity
-  `{"type":"transition","operation":"{\"digest_domain\":\"sha256-jcs\",\"node\":\"test/counters/Counter/increment\",\"package\":\"test/counters\"}","arguments":[<c1>]}`,
+  `{"arguments":[],"operation":"{\"digest_domain\":\"sha256-jcs\",\"node\":\"test/counters/Counter/increment\",\"package\":\"test/counters\"}","receiver":<c1>,"type":"transition"}` as JCS bytes,
   `label` 0 and `next` absent. With `Inc`: one successor, `v1`. With
   `CanInc` alone: three successors from `v0` and from `v1`, none from `v2`.
-- Step 2: three successors from `s0`, with arguments `[<c1>,
-  {"type":"integer","value":"0"}]`, `…"1"}]` and `…"2"}]`, reaching `v0`,
+- Step 2: three successors from `s0`, with receiver `<c1>` and arguments `[{"type":"integer","value":"0"}]`,
+  `[{"type":"integer","value":"1"}]` and `[{"type":"integer","value":"2"}]`, reaching `v0`,
   `v1`, `v2`. With `c2`, each of `c1` and `c2` has its own three
   identities. With `A` and `B`: `setTo` successors at `v1`
   only, none at `v0` or `v2` (each has one `Completed(false)` clause), and
@@ -60,8 +60,8 @@ Tag the tests `#[trace("TC-471", "FR-120-AC-n")]`.
   every (`value`, `label`, `next`) in {0, 1, 2} × {0, 1} × {absent, `c1`,
   `c2`}. `remove` gives, per receiver, three successors: deletion sets {},
   {`c1`} and {`c1`, `c2`}; none deletes `c2` alone. Each successor's
-  created and deleted sets equal the delta `StateModel::check_frame`
-  returns.
+  created and deleted sets equal the delta the frame decision
+  (FR-120 "The frame decision") returns.
 - Step 4: `semantic` is exactly FR-120-AC-4's JCS value, with `<U>` and
   `<E>` the universe and effective type, each as 64 lowercase hex digits,
   of the `ObjectReference` that FR-106 admission (`StateModel::
@@ -71,7 +71,3 @@ Tag the tests `#[trace("TC-471", "FR-120-AC-n")]`.
   and `c1`'s `identity` is `6331`. `control`, `queues`, `roles`,
   `observations` and `bounds` are `{"type":"map","entries":[]}`. The two
   keys differ.
-
-## Status
-
-Planned.

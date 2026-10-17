@@ -34,6 +34,8 @@ request is the command encoding of the `parse`, `select`, `check` and
 `package` operations composed (FR-278). Every exit status this requirement
 states is FR-285's exit code of the outcome's ADR-013 O-16 category.
 
+The code still applies fixed file-count and aggregate-byte ceilings; they become the configurable `request_bytes` and `dependent_bytes` limits FR-026 states.
+
 ## Inputs
 
 A closed format/request JSON envelope. The request contains only models,
@@ -77,9 +79,12 @@ command-error envelope, with the refusing spine stage (`source`, `forms`,
 code. A consumer selects
 those bytes by their SHA-256 digest and may reread them using the existing
 NativePackage::read_verified API with explicit source/model bindings.
-Intake and static failures emit no package bytes and use FR-026's existing native-run-result/1
-command-error envelope on stderr, including the original request digest and
-stage/code when available. On FR-301's six-code contract, refusal, malformed
+Intake and static failures emit no package bytes and use the artifact-command
+refusal envelope on stderr: `format` is `native-run-result/2`, `status` is
+`refused` or `incomplete`, and `request_digest` retains the original request
+digest when available, alongside the stage and code. This artifact envelope
+is outside FR-267's closed `run` command-error reader. On FR-301's six-code
+contract, refusal, malformed
 requests, I/O failures and invalid command usage all exit 20; a selected model
 naming a real, profile-gated capability this build does not admit — a later
 native model profile or a rational scalar/value declared outside its admitting
@@ -105,13 +110,15 @@ The compiler command shall finish package construction before writing its bytes.
 If a static stage fails, then the compiler command shall return its existing
 typed failure without a successful artifact.
 
+Library source files count toward `dependent_bytes`.
+
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-027-AC-1 | CLI output matches the existing public static pipeline byte-for-byte and is accepted by the existing verified package reader with explicit bindings. | Test |
-| FR-027-AC-2 | A directory containing only selected sources and its compile request produces the package; native-run/1 and unexpected runtime fields refuse at the command boundary. | Test |
-| FR-027-AC-3 | Stale source and malformed syntax return original codes with empty stdout; a request past `dependent_bytes` names the limit, its configured value and its CLI option, and the same request with the limit raised to its size compiles; compile arity errors precede I/O and exit 20; output failures exit 30; existing run and parse/format tests still pass. | Test |
+| FR-027-AC-1 | CLI output matches the existing public static pipeline byte-for-byte and is accepted by the existing verified package reader with explicit bindings. | Test (TC-105) |
+| FR-027-AC-2 | A directory containing only selected sources and its compile request produces the package; native-run/1 and unexpected runtime fields refuse at the command boundary. | Test (TC-105) |
+| FR-027-AC-3 | Stale source and malformed syntax return original codes with empty stdout; a request past `dependent_bytes` names the limit, its configured value and its CLI option, and the same request with the limit raised to its size compiles; compile arity errors precede I/O and exit 20; output failures exit 30; existing run and parse/format tests still pass. | Test (TC-105) |
 | FR-027-AC-4 | A native-compile/1 request whose program source names `authority` `agent-ix` and `identity` `p` emits package bytes whose `source` names those two labels and the source digest, and no other identity member, and the package validates against the native-linked-package/1 schema. The same request without `identity` refuses with `invalid-request` and exits 20. | Test (TC-430) |
 | FR-027-AC-5 | A native-compile/1 request whose program source declares `edition "1-draft"` and holds a record, an Integer function and a function with parameters writes exactly the bytes the FR-278 composition returns for that source, and QSL's I2 reader reads those bytes back Verified with no node omitted. Two such requests that differ only in the program's `document` and `formal_revision` write identical bytes. | Test (TC-435) |
 | FR-027-AC-6 | A program source declaring `edition "0-draft"` compiles through native compile, and its bytes equal the native static pipeline's (FR-027-AC-1). | Test (TC-435) |
@@ -132,11 +139,3 @@ typed failure without a successful artifact.
 - [FR-278](FR-278-parse-select-check-and-package-as-library-operations.md): the library operations the command encodes.
 - [FR-285](FR-285-map-every-outcome-category-to-one-exit-code.md): the exit function.
 - [FR-287](FR-287-reach-qsl-through-the-driver-cli.md): the driver CLI.
-
-## Status
-
-FR-027-AC-4 is implemented for the four-label identity (ADR-013 §7 slice S-4b) and backed by TC-430. Remaining work (implementation, Linear QSL-381): the request identity and the package `source` drop `revision_namespace` and `revision` (QSpec STD-150).
-FR-027-AC-5 to FR-027-AC-8 are implemented (ADR-011 §7.3 M-6a) and backed by TC-435.
-FR-027-AC-10 (the `libraries` member) is implemented and backed by TC-446 step 7. Library source files count toward `dependent_bytes`.
-Remaining work (implementation): the code still applies fixed file-count and aggregate-byte ceilings; they become the configurable `request_bytes` and `dependent_bytes` limits FR-026 states.
-FR-027-AC-11 (the command as the composition of FR-278's operations) is specified and not yet implemented -- TC-785 planned.

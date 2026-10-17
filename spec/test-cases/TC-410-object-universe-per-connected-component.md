@@ -14,7 +14,7 @@ Verify FR-084-AC-7. An object universe is one connected component of the
 supertype graph restricted to object types (quire-specification
 `model-complete.md`, "Object universe"; ADR-013 O-05, OQ-C and OQ-E
 rulings). A model with two disconnected components has two universes, each
-the `quire.model.object-universe/v1` digest over the model selection and
+the `quire.model.object-universe/v2` digest over the model selection and
 that component's root effective type identities. A reference key's object
 component is the authored object identity, not a digest. Scope:
 FR-084-AC-7.
@@ -37,7 +37,7 @@ digested object component.
    `x1`.
 4. Compute the expected universes independently: SHA-256 over the RFC 8785
    JCS bytes of
-   `{version: quire.model.object-universe/v1, model_selection, root_types}`
+   `{version: quire.model.object-universe/v2, model_selection, root_types}`
    with `root_types` equal to `[A]`, to `[C, D]` in ascending effective
    identity order, and to `[X]`, each as effective identities.
 
@@ -49,7 +49,3 @@ Tag the test `#[trace("FR-084-AC-7", "TC-410")]`.
   in that order, and the three differ.
 - Each object component is the member's authored identity bytes (`b1`,
   `e1`, `x1`).
-
-## Status
-
-Planned; no test backs this case.

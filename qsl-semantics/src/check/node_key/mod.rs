@@ -77,7 +77,7 @@ use qsl_foundation::IdentityLimits;
 use quire_semantic_value::semantic_node::IdentityRefusal;
 
 use qsl_foundation::absence::AbsenceMode;
-use quire_exact::{Identifier, Integer, Rational, RoundingMode, TextProfile};
+use quire_exact::{Identifier, Integer, Rational, RoundingMode, TextProfile, Timestamp, Uuid};
 
 use crate::value::counter::Counter;
 use crate::value::definition::DefinitionReference;
@@ -465,14 +465,18 @@ pub struct AggregateTerm {
 #[serde(tag = "term", rename = "frame")]
 pub struct FrameTerm {
     /// Every field or relationship the operation may write, ascending by
-    /// (declaring node digest, field name) (FR-340).
-    pub modifies: Vec<FrameField>,
+    /// (declaring node digest, field name), a relationship's name being
+    /// empty (FR-340).
+    pub modifies: Vec<FrameModifies>,
     /// Every object type or process the operation may create, ascending by
     /// node digest.
     pub creates: Vec<NodeRef>,
     /// Every object type or process the operation may delete, ascending by
     /// node digest.
     pub deletes: Vec<NodeRef>,
+    /// The scoped deletes: `receiver` first, then each reference parameter
+    /// by name as UTF-8 bytes (QSpec FR-340). Always present.
+    pub deletes_scoped: Vec<FrameDeletesScoped>,
 }
 
 /// A node's body: the Body stratum of QSpec FR-322's v2 body grammar
@@ -493,28 +497,183 @@ pub enum BodyTerm {
     Frame(FrameTerm),
 }
 
-/// One `modifies` entry of a `state`/`frame` node's body (QSpec FR-340): a
-/// field this operation may write, named by its declaring node and the
-/// field's own name. The schema's `FrameModifiesEntry` union also admits a
-/// bare relationship entry (`{kind: "relationship", declaration}`); QSL's
-/// checker records no relationship modifies yet (FR-104's own scope is field
-/// effects only), so this type carries only the field form its one producer
-/// (the checker's own `frame_node` lowering step) ever builds -- adding
-/// relationship modifies later is a new constructor here, not a wire-shape
-/// change.
+/// One `modifies` entry of a `state`/`frame` node's body (QSpec FR-340's
+/// `FrameModifiesEntry`): a field or a navigation relationship the
+/// operation may write.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum FrameModifies {
+    /// `{kind: "field", declaration, name, scope}`.
+    Field(FrameField),
+    /// `{kind: "relationship", declaration}`: the node key of the declared
+    /// `relation`/`relationship` node, standing for every link of it.
+    Relationship(NodeRef),
+}
+
+impl FrameModifies {
+    /// The node this entry names: a field's declaring node, or the
+    /// relationship's own node.
+    pub fn declaration(&self) -> NodeRef {
+        match self {
+            Self::Field(field) => field.declaration,
+            Self::Relationship(declaration) => *declaration,
+        }
+    }
+
+    /// The field's own name; `None` for a relationship.
+    pub fn field_name(&self) -> Option<&str> {
+        match self {
+            Self::Field(field) => Some(field.name()),
+            Self::Relationship(_) => None,
+        }
+    }
+}
+
+impl Serialize for FrameModifies {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Field(field) => field.serialize(serializer),
+            Self::Relationship(declaration) => FrameRelationshipWire {
+                kind: "relationship",
+                declaration: *declaration,
+            }
+            .serialize(serializer),
+        }
+    }
+}
+
+/// The deeper of the two entry shapes, so a [`FrameModifies`] nests as deep.
+impl FixedShape for FrameModifies {
+    const DEPTH: usize = {
+        let field = <FrameField as FixedShape>::DEPTH;
+        let relationship = <FrameRelationshipWire as FixedShape>::DEPTH;
+        if field > relationship {
+            field
+        } else {
+            relationship
+        }
+    };
+}
+
+/// `{kind: "relationship", declaration}`.
+#[derive(Serialize, FixedShape)]
+struct FrameRelationshipWire {
+    kind: &'static str,
+    declaration: NodeRef,
+}
+
+// Test-only, matching `LiteralValue`'s own pattern: QSpec's operation
+// vectors carry no frame body, so the conformance decoder never needs one.
+#[cfg(test)]
+impl<'de> serde::Deserialize<'de> for FrameModifies {
+    fn deserialize<D: serde::Deserializer<'de>>(_: D) -> Result<Self, D::Error> {
+        Err(serde::de::Error::custom(
+            "frame entries are not decoded from vectors",
+        ))
+    }
+}
+
+/// The scope of a frame field entry (QSpec FR-340): `every-object` sorts
+/// before `receiver`.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum FrameScope {
+    /// `modifies f`: every object whose effective type has the field.
+    EveryObject,
+    /// `modifies self.f`: the operation's receiver only.
+    Receiver,
+}
+
+impl FrameScope {
+    /// The wire spelling.
+    const fn as_wire(self) -> &'static str {
+        match self {
+            Self::EveryObject => "every-object",
+            Self::Receiver => "receiver",
+        }
+    }
+}
+
+/// One `deletes_scoped` entry of a `state`/`frame` node's body (QSpec
+/// FR-340): `deletes self` or `deletes p`.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum FrameDeletesScoped {
+    /// `{kind: "receiver"}`.
+    Receiver,
+    /// `{kind: "parameter", name}`.
+    Parameter(String),
+}
+
+impl Serialize for FrameDeletesScoped {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Receiver => FrameReceiverWire { kind: "receiver" }.serialize(serializer),
+            Self::Parameter(name) => FrameParameterWire {
+                kind: "parameter",
+                name,
+            }
+            .serialize(serializer),
+        }
+    }
+}
+
+/// The deeper of the two entry shapes, so a [`FrameDeletesScoped`] nests as
+/// deep.
+impl FixedShape for FrameDeletesScoped {
+    const DEPTH: usize = {
+        let receiver = <FrameReceiverWire as FixedShape>::DEPTH;
+        let parameter = <FrameParameterWire<'static> as FixedShape>::DEPTH;
+        if receiver > parameter {
+            receiver
+        } else {
+            parameter
+        }
+    };
+}
+
+/// `{kind: "receiver"}`.
+#[derive(Serialize, FixedShape)]
+struct FrameReceiverWire {
+    kind: &'static str,
+}
+
+/// `{kind: "parameter", name}`.
+#[derive(Serialize, FixedShape)]
+struct FrameParameterWire<'a> {
+    kind: &'static str,
+    name: &'a str,
+}
+
+// Test-only, matching `FrameModifies`.
+#[cfg(test)]
+impl<'de> serde::Deserialize<'de> for FrameDeletesScoped {
+    fn deserialize<D: serde::Deserializer<'de>>(_: D) -> Result<Self, D::Error> {
+        Err(serde::de::Error::custom(
+            "frame entries are not decoded from vectors",
+        ))
+    }
+}
+
+/// A `modifies` entry naming a field: the field's declaring node, its own
+/// name and its scope.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct FrameField {
     declaration: NodeRef,
     name: String,
+    scope: FrameScope,
 }
 
 impl FrameField {
-    /// `{kind: "field", declaration, name}`.
-    pub(crate) fn new(declaration: NodeKey, name: impl Into<String>) -> Self {
+    /// `{kind: "field", declaration, name, scope}`.
+    pub(crate) fn new(declaration: NodeKey, name: impl Into<String>, scope: FrameScope) -> Self {
         Self {
             declaration: NodeRef(declaration),
             name: name.into(),
+            scope,
         }
+    }
+
+    /// The entry's scope.
+    pub fn scope(&self) -> FrameScope {
+        self.scope
     }
 
     /// The field's declaring node.
@@ -534,6 +693,7 @@ impl Serialize for FrameField {
             kind: "field",
             declaration: self.declaration,
             name: &self.name,
+            scope: self.scope.as_wire(),
         }
         .serialize(serializer)
     }
@@ -544,25 +704,13 @@ impl FixedShape for FrameField {
     const DEPTH: usize = <FrameFieldWire<'static> as FixedShape>::DEPTH;
 }
 
-/// `{kind: "field", declaration, name}`.
+/// `{kind: "field", declaration, name, scope}`.
 #[derive(Serialize, FixedShape)]
 struct FrameFieldWire<'a> {
     kind: &'static str,
     declaration: NodeRef,
     name: &'a str,
-}
-
-// Test-only, matching `LiteralValue`'s own pattern: QSpec's operation
-// vectors carry no frame body (a frame's modifies/creates/deletes are the
-// `node-identity-vectors.json` fixture's own, separate shape), so the
-// conformance decoder never needs one.
-#[cfg(test)]
-impl<'de> serde::Deserialize<'de> for FrameField {
-    fn deserialize<D: serde::Deserializer<'de>>(_: D) -> Result<Self, D::Error> {
-        Err(serde::de::Error::custom(
-            "frame fields are not decoded from vectors",
-        ))
-    }
+    scope: &'static str,
 }
 
 /// A dependency's `package_id` as a term writes it: a
@@ -876,18 +1024,20 @@ impl BodyTerm {
         })
     }
 
-    /// `{term: "frame", modifies, creates, deletes}` (QSpec FR-340).
+    /// `{term: "frame", modifies, creates, deletes, deletes_scoped}` (QSpec FR-340).
     /// `creates` and `deletes` are each an ascending-by-digest list of
     /// object type or process node keys.
     pub(crate) fn frame(
-        modifies: Vec<FrameField>,
+        modifies: Vec<FrameModifies>,
         creates: Vec<NodeKey>,
         deletes: Vec<NodeKey>,
+        deletes_scoped: Vec<FrameDeletesScoped>,
     ) -> Self {
         Self::Frame(FrameTerm {
             modifies,
             creates: creates.into_iter().map(NodeRef).collect(),
             deletes: deletes.into_iter().map(NodeRef).collect(),
+            deletes_scoped,
         })
     }
 
@@ -933,9 +1083,10 @@ impl BodyTerm {
                 modifies,
                 creates,
                 deletes,
+                deletes_scoped: _,
             }) => {
-                for field in modifies {
-                    visit(field.declaration.0);
+                for entry in modifies {
+                    visit(entry.declaration().0);
                 }
                 for reference in creates.iter().chain(deletes) {
                     visit(reference.0);
@@ -977,16 +1128,24 @@ impl BodyTerm {
                 modifies,
                 creates,
                 deletes,
+                deletes_scoped,
             }) => Self::Frame(FrameTerm {
                 modifies: modifies
                     .iter()
-                    .map(|field| FrameField {
-                        declaration: NodeRef(map(field.declaration.0)),
-                        name: field.name.clone(),
+                    .map(|entry| match entry {
+                        FrameModifies::Field(field) => FrameModifies::Field(FrameField {
+                            declaration: NodeRef(map(field.declaration.0)),
+                            name: field.name.clone(),
+                            scope: field.scope,
+                        }),
+                        FrameModifies::Relationship(declaration) => {
+                            FrameModifies::Relationship(NodeRef(map(declaration.0)))
+                        }
                     })
                     .collect(),
                 creates: creates.iter().map(|node| NodeRef(map(node.0))).collect(),
                 deletes: deletes.iter().map(|node| NodeRef(map(node.0))).collect(),
+                deletes_scoped: deletes_scoped.clone(),
             }),
         }
     }
@@ -1004,6 +1163,14 @@ pub enum LiteralValue {
     Rational(Rational),
     /// `text`: the text as a JSON string.
     Text(String),
+    /// `string`: the exact scalar sequence as a JSON string, with no
+    /// normalization.
+    String(String),
+    /// `uuid`: the canonical lowercase `8-4-4-4-12` text.
+    Uuid(Uuid),
+    /// `timestamp`: the canonical decimal string of the signed 128-bit
+    /// nanosecond count.
+    Timestamp(Timestamp),
     /// `none`: `null`.
     None,
     /// `enum`: the member's case identifier, the body of an enum member's
@@ -1022,6 +1189,9 @@ impl LiteralValue {
                 LiteralJson::Spelled(format!("{}/{}", value.numerator(), value.denominator())),
             ),
             Self::Text(value) => ("text", LiteralJson::Text(value)),
+            Self::String(value) => ("string", LiteralJson::Text(value)),
+            Self::Uuid(value) => ("uuid", LiteralJson::Spelled(value.to_string())),
+            Self::Timestamp(value) => ("timestamp", LiteralJson::Spelled(value.to_string())),
             Self::None => ("none", LiteralJson::Null(())),
             Self::Enum(case) => ("enum", LiteralJson::Text(case)),
         };
@@ -1954,9 +2124,10 @@ enum PreimageLeaf<'a> {
         node: WireNodeRef,
     },
     Frame {
-        modifies: &'a [FrameField],
+        modifies: &'a [FrameModifies],
         creates: &'a [NodeRef],
         deletes: &'a [NodeRef],
+        deletes_scoped: &'a [FrameDeletesScoped],
     },
 }
 
@@ -2224,11 +2395,13 @@ impl Walk<'_> {
                 modifies,
                 creates,
                 deletes,
+                deletes_scoped,
             }) => (
                 PreimageTerm::Leaf(PreimageLeaf::Frame {
                     modifies,
                     creates,
                     deletes,
+                    deletes_scoped,
                 }),
                 false,
             ),

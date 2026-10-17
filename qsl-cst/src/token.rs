@@ -28,7 +28,14 @@ fn integer(lex: &mut logos::Lexer<'_, Kind>) -> Result<String, LexError> {
 // Recognize the complete quoted region, then let the JSON implementation
 // validate escapes, controls and surrogate pairs. No second escape grammar.
 fn string(lex: &mut logos::Lexer<'_, Kind>) -> Result<String, LexError> {
-    serde_json::from_str(lex.slice()).map_err(|_| LexError::String)
+    decode_quoted(lex.slice()).ok_or(LexError::String)
+}
+
+/// The Unicode scalar sequence a quoted text token spells, decoded exactly as
+/// the lexer decodes it (JSON escapes, surrogate pairs), or `None` when the
+/// spelling is not a well-formed quoted text.
+pub fn decode_quoted(spelling: &str) -> Option<String> {
+    serde_json::from_str(spelling).ok()
 }
 
 /// Whether `value` is entirely lexer-skipped whitespace (spaces, tabs,
@@ -168,15 +175,16 @@ vocabulary! {
     Star => "*", Slash => "/", Qualify => "::", NotEqual => "!=", LessEqual => "<=", GreaterEqual => ">=";
     complete:
     Import => "import", Dimension => "dimension", Unit => "unit", Ordered => "ordered",
-    Enum => "enum", Record => "record", Tuple => "tuple", Type => "type",
+    Enum => "enum", Record => "record", Tuple => "tuple", Union => "union", Type => "type",
     Function => "function", Pure => "pure", Decreases => "decreases",
     IntegerType => "Integer", IntType => "Int", RationalType => "Rational",
     DecimalType => "Decimal", Float32Type => "Float32", Float64Type => "Float64",
     TextType => "Text", OptionType => "Option", SequenceType => "Sequence",
     SetType => "Set", BagType => "Bag", OrderedSetType => "OrderedSet",
-    ReferenceType => "Reference", Null => "null", NoneValue => "none",
+    ReferenceType => "Reference", PopulationType => "Population", Null => "null", NoneValue => "none",
     Decimal => "decimal", Float32 => "float32", Float64 => "float64", Bits => "bits",
-    Convert => "convert", AllInstances => "allInstances", Collect => "collect",
+    Convert => "convert", AllInstances => "allInstances", Lookup => "lookup",
+    Absent => "absent", Collect => "collect",
     FlatMap => "flatMap", Flatten => "flatten", Fold => "fold", Reduce => "reduce",
     Identity => "identity", Exact => "exact",
     Nfc => "nfc", Nfd => "nfd", Nfkc => "nfkc", Nfkd => "nfkd",
@@ -191,6 +199,7 @@ vocabulary! {
     Transition => "transition", Reset => "reset", Synthesis => "synthesis",
     Grammar => "grammar", Satisfies => "satisfies", Verify => "verify", Claim => "claim",
     Method => "method", Domain => "domain", Depends => "depends", Bound => "bound",
+    Body => "body",
     Caret => "^", Question => "?", Apostrophe => "'"
 }
 

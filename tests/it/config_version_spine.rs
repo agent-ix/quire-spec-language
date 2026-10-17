@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-108: TC-469's 17-case ConfigVersion spine corpus. Runs the
-//! same `examples/config-version/cases.rs` catalog `config_version.rs`'s
-//! native test uses, through `run_clause` (FR-109) over the spine files
+//! same `examples/config-version/cases.rs` catalog as the fixture test,
+//! through `run_clause` (FR-109) over the spine files
 //! `crate::support::config_version::spine` writes beside the native ones.
 
 use crate::support::config_version::{spine, Case};
@@ -10,7 +10,7 @@ use qsl_foundation::diagnostic::{Category, Code};
 use qsl_replay::spine::{
     run_clause, CallOutcome, ClauseDisposition, ClauseRunRequest, ClauseRunStage,
 };
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::{collections::BTreeSet, path::Path, process::Command};
 
 /// FR-108's own independent expected disposition (Corpus table), one arm
@@ -199,9 +199,729 @@ fn build(directory: &Path, case: Case) -> ClauseRunRequest {
     spine::request(directory, case).expect("the written spine files reconstruct a request")
 }
 
+fn current_clause_request(path: &Path) -> Value {
+    let unit = std::fs::read(path.join("spine-unit.native")).unwrap();
+    let model = std::fs::read(path.join("spine-model.semantic-ir.json")).unwrap();
+    let source = |file: &str, bytes: &[u8], document: &str| {
+        json!({
+            "file": file, "digest": qsl_foundation::ByteDigest::of(bytes).to_string(),
+            "authority": "agent-ix", "identity": format!("test:fr-312:{file}"),
+            "revision_namespace": "fixture", "revision": "1",
+            "document": document, "formal_revision": 1
+        })
+    };
+    let request = json!({"format":"native-run/1", "request": {
+        "models": [{"format":"semantic-ir/2.0.0", "source":
+            source("spine-model.semantic-ir.json", &model, "SpineModel")}],
+        "program": {"source": source("spine-unit.native", &unit, "SpineUnit")},
+        "clause": {
+            "selection": {"clause": {"name":"ParentOrder", "observation":"current",
+                "self": {"population":format!("ix://{}/config_history", spine::PACKAGE_IDENTITY),
+                    "key":"child"}, "anchor":{"kind":"handler", "name":"validate"}}},
+            "observations": {"current":"spine-snapshot.json"}
+        }
+    }});
+    request
+}
+
+fn run_clause_file(path: &Path, request: &Value) -> std::process::Output {
+    std::fs::write(
+        path.join("request.json"),
+        serde_json::to_vec(request).unwrap(),
+    )
+    .unwrap();
+    Command::new(env!("CARGO_BIN_EXE_quire-spec"))
+        .arg("run")
+        .arg(path.join("request.json"))
+        .output()
+        .unwrap()
+}
+
+/// FR-312-AC-1/AC-5: a request names the selected self and anchor explicitly;
+/// the snapshot alone cannot choose either for the caller.
+#[trace("TC-891", "FR-312-AC-1", "FR-312-AC-5")]
+#[test]
+fn clause_run_command_uses_explicit_current_self_and_anchor() {
+    let directory = tempfile::tempdir().unwrap();
+    for (case, truth, exit) in [(Case::Healthy, true, 0), (Case::Violating, false, 10)] {
+        let path = directory.path().join(case.id());
+        let in_process = build(&path, case);
+        assert_eq!(
+            run_clause(in_process).unwrap().disposition.truth(),
+            Some(truth)
+        );
+        let request = current_clause_request(&path);
+        let output = run_clause_file(&path, &request);
+        assert_eq!(output.status.code(), Some(exit), "{output:?}");
+        assert!(output.stderr.is_empty(), "{output:?}");
+        let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(value["format"], "native-run-result/2");
+        assert_eq!(value["disposition"]["truth"], truth);
+        assert_eq!(value["basis"], "closed-scope");
+        let decoded =
+            quire_spec_language::command::read_clause_run_request(&path.join("request.json"))
+                .unwrap();
+        let qsl_replay::spine::ClauseRunSelection::Clause(decoded) = decoded.selection else {
+            panic!("the wire selection must remain a state clause");
+        };
+        let qsl_semantics::model::observation::ClauseSelectionInput::Current {
+            self_object,
+            anchor,
+            ..
+        } = decoded.input
+        else {
+            panic!("the current snapshot must retain its current role");
+        };
+        assert_eq!(self_object.expect("a named self").key, "child");
+        assert_eq!(anchor.name, "validate");
+        let driver = quire_spec_language::command::run(&path.join("request.json")).unwrap();
+        assert_eq!(output.stdout, format!("{}\n", driver.value).into_bytes());
+        assert_eq!(driver.exit_code, exit as u8);
+    }
+}
+
+/// FR-312-AC-2/AC-5: malformed clause routing fails at request intake,
+/// before it can turn into a compile, selection or admission report.
+#[trace("TC-891", "FR-312-AC-2", "FR-312-AC-5")]
+#[test]
+fn clause_run_command_refuses_ambiguous_and_missing_selection_members() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("healthy-parent");
+    build(&path, Case::Healthy);
+    let valid = current_clause_request(&path);
+    type Edit = (&'static str, fn(&mut Value));
+    let edits: &[Edit] = &[
+        ("call", |value| {
+            value["request"]["call"] = json!({"function":"seven","arguments":[]})
+        }),
+        ("call", |value| {
+            value["request"].as_object_mut().unwrap().remove("clause");
+        }),
+        ("selection", |value| {
+            value["request"]["clause"]["selection"]["function"] =
+                json!({"name":"sameIdentity","arguments":[],"snapshot":"current"})
+        }),
+        ("unexpected", |value| {
+            value["request"]["clause"]["unexpected"] = json!(true)
+        }),
+        ("missing", |value| {
+            value["request"]["clause"]["selection"]["clause"]["observation"] = json!("missing")
+        }),
+        ("anchor", |value| {
+            value["request"]["clause"]["selection"]["clause"]
+                .as_object_mut()
+                .unwrap()
+                .remove("anchor");
+        }),
+        ("parameters", |value| {
+            value["request"]["clause"]["selection"]["clause"]["parameters"] = json!({})
+        }),
+    ];
+    for &(member, edit) in edits {
+        let mut request = valid.clone();
+        edit(&mut request);
+        let output = run_clause_file(&path, &request);
+        assert_eq!(output.status.code(), Some(20), "{member}: {output:?}");
+        assert!(output.stdout.is_empty(), "{member}: {output:?}");
+        let failure: Value = serde_json::from_slice(&output.stderr).unwrap();
+        assert_eq!(failure["stage"], "request", "{member}: {failure}");
+        assert_eq!(failure["code"], "invalid-request", "{member}: {failure}");
+        assert!(
+            failure["message"].as_str().unwrap().contains(member),
+            "{member}: {failure}"
+        );
+    }
+}
+
+/// FR-106 check 2: a current snapshot over an object receiver that names no
+/// `self` is no request defect (a state machine's has none); admission
+/// refuses it as `wrong-observation`.
+#[trace("TC-891", "FR-312-AC-5")]
+#[test]
+fn clause_run_command_refuses_a_missing_self_of_an_object_receiver_at_admission() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("healthy-parent");
+    build(&path, Case::Healthy);
+    let mut request = current_clause_request(&path);
+    request["request"]["clause"]["selection"]["clause"]
+        .as_object_mut()
+        .unwrap()
+        .remove("self");
+    let output = run_clause_file(&path, &request);
+    assert_eq!(output.status.code(), Some(20), "{output:?}");
+    let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(result["disposition"]["stage"], "admit");
+    assert_eq!(
+        result["disposition"]["refusal"]["cause"],
+        "wrong-observation"
+    );
+}
+
+/// FR-312-AC-5: a selected post, unknown role or unknown document format
+/// refuses at request intake; an anchor mismatch reaches FR-106 admission.
+#[trace("TC-891", "FR-312-AC-5")]
+#[test]
+fn clause_run_reader_checks_observation_role_and_anchor() {
+    let directory = tempfile::tempdir().unwrap();
+    for (label, member, replacement) in [
+        ("post", "observation", json!("post")),
+        ("unknown-role", "observation", json!("future")),
+        ("unknown-format", "format", json!("quire.state.future/v1")),
+    ] {
+        let path = directory.path().join(label);
+        build(&path, Case::Healthy);
+        let snapshot_path = path.join("spine-snapshot.json");
+        let mut snapshot: Value =
+            serde_json::from_slice(&std::fs::read(&snapshot_path).unwrap()).unwrap();
+        snapshot[member] = replacement;
+        std::fs::write(&snapshot_path, serde_json::to_vec(&snapshot).unwrap()).unwrap();
+        let output = run_clause_file(&path, &current_clause_request(&path));
+        assert_eq!(output.status.code(), Some(20), "{label}: {output:?}");
+        assert!(output.stdout.is_empty(), "{label}");
+        let error: Value = serde_json::from_slice(&output.stderr).unwrap();
+        assert_eq!(error["stage"], "request", "{label}: {error}");
+        assert!(
+            error["message"].as_str().unwrap().contains("observation"),
+            "{label}: {error}"
+        );
+    }
+
+    let path = directory.path().join("wrong-anchor");
+    build(&path, Case::Healthy);
+    let mut request = current_clause_request(&path);
+    request["request"]["clause"]["selection"]["clause"]["anchor"]["name"] = json!("other");
+    let output = run_clause_file(&path, &request);
+    assert_eq!(output.status.code(), Some(20), "{output:?}");
+    assert!(output.stderr.is_empty());
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["disposition"]["stage"], "admit");
+    assert_eq!(report["disposition"]["refusal"]["cause"], "wrong-anchor");
+}
+
+/// FR-261/FR-312: the command adapter reads the selected observation through
+/// the depth-independent document reader before admission inspects its body.
+#[trace("TC-891", "FR-312-AC-5")]
+#[test]
+fn clause_run_reader_accepts_observation_deeper_than_128() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("deep-observation");
+    build(&path, Case::Healthy);
+    let snapshot_path = path.join("spine-snapshot.json");
+    let mut document = std::fs::read_to_string(&snapshot_path).unwrap();
+    let close = document.rfind('}').unwrap();
+    document.insert_str(
+        close,
+        &format!(",\"padding\":{}0{}", "[".repeat(160), "]".repeat(160)),
+    );
+    std::fs::write(&snapshot_path, document).unwrap();
+    let request = current_clause_request(&path);
+    std::fs::write(
+        path.join("request.json"),
+        serde_json::to_vec(&request).unwrap(),
+    )
+    .unwrap();
+    let decoded = quire_spec_language::command::read_clause_run_request(&path.join("request.json"));
+    assert!(decoded.is_ok(), "{:?}", decoded.err());
+}
+
+/// FR-312: an explicit observation byte bound above the default is honored
+/// within the caller's aggregate dependent-byte ceiling.
+#[trace("TC-891", "FR-312-AC-5")]
+#[test]
+fn clause_run_reader_honors_raised_observation_byte_limit() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("large-observation");
+    build(&path, Case::Healthy);
+    let snapshot_path = path.join("spine-snapshot.json");
+    let mut document = std::fs::read_to_string(&snapshot_path).unwrap();
+    let close = document.rfind('}').unwrap();
+    document.insert_str(
+        close,
+        &format!(",\"padding\":\"{}\"", "x".repeat(1_100_000)),
+    );
+    std::fs::write(&snapshot_path, document).unwrap();
+    let mut request = current_clause_request(&path);
+    request["request"]["clause"]["observation_limits"] = json!({"document_bytes":2_000_000});
+    std::fs::write(
+        path.join("request.json"),
+        serde_json::to_vec(&request).unwrap(),
+    )
+    .unwrap();
+    let decoded = quire_spec_language::command::read_clause_run_request(&path.join("request.json"));
+    assert!(decoded.is_ok(), "{:?}", decoded.err());
+}
+
+/// FR-255: the smallest binding ceiling owns the refusal and its reported
+/// maximum when an observation exceeds its document budget.
+#[trace("TC-891", "FR-312-AC-3")]
+#[test]
+fn clause_run_observation_limit_reports_its_own_bound() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("observation-bound");
+    build(&path, Case::Healthy);
+    let snapshot_path = path.join("spine-snapshot.json");
+    let mut document = std::fs::read_to_string(&snapshot_path).unwrap();
+    let close = document.rfind('}').unwrap();
+    document.insert_str(
+        close,
+        &format!(",\"padding\":\"{}\"", "x".repeat(1_100_000)),
+    );
+    std::fs::write(&snapshot_path, document).unwrap();
+    let mut request = current_clause_request(&path);
+    request["request"]["clause"]["observation_limits"] = json!({"document_bytes":1_000_000});
+    std::fs::write(
+        path.join("request.json"),
+        serde_json::to_vec(&request).unwrap(),
+    )
+    .unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
+        .arg("run")
+        .arg(path.join("request.json"))
+        .arg("--dependent-bytes")
+        .arg("8000000")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(22), "{output:?}");
+    let error: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(error["details"]["limit"], "observation.document_bytes");
+    assert_eq!(error["details"]["maximum"], 1_000_000);
+}
+
+/// FR-312: a deep pre-call parameter reaches the typed reader without a
+/// serde recursion ceiling or recursive JSON-value drop.
+#[trace("TC-891", "FR-312-AC-5")]
+#[test]
+fn clause_run_reader_keeps_parameter_beyond_128_levels() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("deep-parameter");
+    build(&path, Case::Unchanged);
+    let mut request = current_clause_request(&path);
+    request["request"]["clause"]["selection"] = json!({"clause": {
+        "name":"ParentPresent", "observation":"pre",
+        "self":{"population":format!("ix://{}/config_history", spine::PACKAGE_IDENTITY),
+                "key":"child"},
+        "parameters":{"probe":"__DEEP_PARAMETER__"}
+    }});
+    request["request"]["clause"]["observations"] = json!({
+        "pre":"spine-pre-snapshot.json", "post":"spine-post-snapshot.json",
+        "invocation":"spine-invocation.json"
+    });
+    let mut nested = String::from("{\"integer\":\"1\"}");
+    for _ in 0..160 {
+        nested = format!("{{\"present\":{nested}}}");
+    }
+    let text = serde_json::to_string(&request)
+        .unwrap()
+        .replace("\"__DEEP_PARAMETER__\"", &nested);
+    std::fs::write(path.join("request.json"), text).unwrap();
+    let decoded = quire_spec_language::command::read_clause_run_request(&path.join("request.json"))
+        .expect("deep typed parameter must read without a parser depth cap");
+    let qsl_replay::spine::ClauseRunSelection::Clause(clause) = decoded.selection else {
+        panic!("expected clause selection");
+    };
+    let qsl_semantics::model::observation::ClauseSelectionInput::PreCall { parameters, .. } =
+        clause.input
+    else {
+        panic!("expected pre-call selection")
+    };
+    assert_eq!(parameters.len(), 1);
+}
+
+/// FR-312-AC-6: the clause-run accounting object carries all ten counters;
+/// the legacy direct `work_units` member is not accepted.
+#[trace("TC-891", "FR-312-AC-6")]
+#[test]
+fn clause_run_accounting_object_sets_all_counters_and_rejects_legacy_member() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("accounting-object");
+    build(&path, Case::Healthy);
+
+    let defaults = current_clause_request(&path);
+    std::fs::write(
+        path.join("request.json"),
+        serde_json::to_vec(&defaults).unwrap(),
+    )
+    .unwrap();
+    let decoded_defaults =
+        quire_spec_language::command::read_clause_run_request(&path.join("request.json"))
+            .expect("omitted accounting uses the published defaults");
+    assert_eq!(
+        decoded_defaults.accounting,
+        qsl_replay::spine::default_accounting(qsl_replay::spine::DEFAULT_WORK_UNITS)
+    );
+
+    let mut request = current_clause_request(&path);
+    request["request"]["clause"]["accounting"] = json!({
+        "integer_bits":1,
+        "decimal_digits":2,
+        "scale_expansion":3,
+        "text_input_bytes":4,
+        "text_scalars":5,
+        "normalized_scalars":6,
+        "unit_edges":7,
+        "value_occurrences":8,
+        "work_units":9,
+        "result_units":10
+    });
+    std::fs::write(
+        path.join("request.json"),
+        serde_json::to_vec(&request).unwrap(),
+    )
+    .unwrap();
+    let decoded = quire_spec_language::command::read_clause_run_request(&path.join("request.json"))
+        .expect("the closed accounting counter object is accepted");
+    assert_eq!(
+        decoded.accounting,
+        quire_exact::ScalarLimits {
+            integer_bits: 1,
+            decimal_digits: 2,
+            scale_expansion: 3,
+            text_input_bytes: 4,
+            text_scalars: 5,
+            normalized_scalars: 6,
+            unit_edges: 7,
+            value_occurrences: 8,
+            work_units: 9,
+            result_units: 10,
+        }
+    );
+
+    let mut legacy = current_clause_request(&path);
+    legacy["request"]["clause"]["work_units"] = json!(0);
+    let output = run_clause_file(&path, &legacy);
+    assert_eq!(output.status.code(), Some(20), "{output:?}");
+    assert!(output.stdout.is_empty(), "{output:?}");
+    let failure: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(failure["stage"], "request", "{failure}");
+    assert_eq!(failure["code"], "invalid-request", "{failure}");
+    assert!(
+        failure["message"].as_str().unwrap().contains("work_units"),
+        "{failure}"
+    );
+}
+
+/// FR-312: the function-argument adapter diagnoses an invalid deep form by
+/// member after parsing it, rather than refusing at a JSON stack limit.
+#[trace("TC-891", "FR-312-AC-5")]
+#[test]
+fn clause_run_reader_diagnoses_deep_function_argument() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("deep-function-argument");
+    build(&path, Case::Healthy);
+    let mut request = current_clause_request(&path);
+    request["request"]["clause"]["selection"] = json!({"function": {
+        "name":"sameIdentity", "snapshot":"current", "arguments":[
+            {"parameter":"a", "value":"__DEEP_ARGUMENT__"}
+        ]
+    }});
+    let mut nested = String::from("{\"integer\":\"1\"}");
+    for _ in 0..160 {
+        nested = format!("{{\"present\":{nested}}}");
+    }
+    let text = serde_json::to_string(&request)
+        .unwrap()
+        .replace("\"__DEEP_ARGUMENT__\"", &nested);
+    std::fs::write(path.join("request.json"), text).unwrap();
+    let error = quire_spec_language::command::read_clause_run_request(&path.join("request.json"))
+        .err()
+        .expect("nested argument is outside the function argument forms");
+    assert!(
+        format!("{error:?}").contains("arguments.value"),
+        "{error:?}"
+    );
+}
+
+/// FR-312-AC-4: function, frame and stale-package requests retain the
+/// in-process report's stage, category and truth through the CLI route.
+#[trace("TC-891", "FR-312-AC-4")]
+#[test]
+fn clause_run_command_routes_function_frame_and_stale_package() {
+    let directory = tempfile::tempdir().unwrap();
+    let population = format!("ix://{}/config_history", spine::PACKAGE_IDENTITY);
+    let path = directory.path().join(Case::Distinct.id());
+    let in_process = run_clause(build(&path, Case::Distinct)).unwrap();
+    let mut request = current_clause_request(&path);
+    request["request"]["clause"]["selection"] = json!({"function": {
+        "name": "sameIdentity", "snapshot": "current", "arguments": [
+            {"parameter":"a", "value":{"reference":{"population":population,"key":"child"}}},
+            {"parameter":"b", "value":{"reference":{"population":population,"key":"root"}}}
+        ]
+    }});
+    let output = run_clause_file(&path, &request);
+    assert_eq!(
+        output.status.code(),
+        Some(in_process.disposition.category().exit_code() as i32),
+        "{output:?}"
+    );
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["disposition"]["stage"], "evaluate");
+    assert_eq!(
+        value["disposition"]["truth"],
+        in_process.disposition.truth().unwrap()
+    );
+
+    let path = directory.path().join(Case::Unchanged.id());
+    let mut in_process = build(&path, Case::Unchanged);
+    let invocation = match &in_process.selection {
+        qsl_replay::spine::ClauseRunSelection::Clause(clause) => match &clause.input {
+            qsl_semantics::model::observation::ClauseSelectionInput::Invocation { invocation } => {
+                invocation.clone()
+            }
+            _ => panic!("update fixture selects an invocation"),
+        },
+        _ => panic!("update fixture selects a clause"),
+    };
+    in_process.selection = qsl_replay::spine::ClauseRunSelection::Frame {
+        operation: qsl_replay::spine::OperationName {
+            model: quire_exact::Identifier::new("Config").unwrap(),
+            object: quire_exact::Identifier::new("ConfigVersion").unwrap(),
+            operation: quire_exact::Identifier::new("attemptUpdate").unwrap(),
+        },
+        invocation,
+    };
+    let expected = run_clause(in_process).unwrap();
+    let mut request = current_clause_request(&path);
+    request["request"]["clause"]["selection"] = json!({"frame": {
+        "operation": "Config::ConfigVersion::attemptUpdate", "invocation": "invocation"
+    }});
+    request["request"]["clause"]["observations"] = json!({
+        "pre": "spine-pre-snapshot.json", "post": "spine-post-snapshot.json",
+        "invocation": "spine-invocation.json"
+    });
+    let output = run_clause_file(&path, &request);
+    assert_eq!(
+        output.status.code(),
+        Some(expected.disposition.category().exit_code() as i32),
+        "{output:?}"
+    );
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["disposition"]["stage"], "evaluate");
+    assert_eq!(
+        value["disposition"]["truth"],
+        expected.disposition.truth().unwrap()
+    );
+
+    let path = directory.path().join(Case::Healthy.id());
+    let mut in_process = build(&path, Case::Healthy);
+    let claim = "0".repeat(64);
+    in_process.expected_package_id_claim = Some(claim.clone());
+    let expected = run_clause(in_process).unwrap();
+    assert!(matches!(
+        expected.disposition,
+        ClauseDisposition::StalePackage { .. }
+    ));
+    let mut request = current_clause_request(&path);
+    request["request"]["clause"]["package_id"] = json!(claim);
+    let output = run_clause_file(&path, &request);
+    assert_eq!(output.status.code(), Some(20), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["disposition"]["stage"], "compile");
+    assert_eq!(value["disposition"]["refusal"]["code"], "stale_dependency");
+    assert_eq!(value["disposition"]["refusal"]["cause"], "stale-package");
+}
+
+/// FR-312-AC-5: the named document role chooses the FR-106 input variant;
+/// role-specific fields come from the request and stay closed.
+#[trace("TC-891", "FR-312-AC-5")]
+#[test]
+fn clause_run_reader_distinguishes_pre_and_invocation_roles() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join(Case::Unchanged.id());
+    let expected = run_clause(build(&path, Case::Unchanged)).unwrap();
+    let mut request = current_clause_request(&path);
+    request["request"]["clause"]["selection"] = json!({"clause": {
+        "name":"VersionUnchanged", "observation":"invocation"
+    }});
+    request["request"]["clause"]["observations"] = json!({
+        "pre":"spine-pre-snapshot.json", "post":"spine-post-snapshot.json",
+        "invocation":"spine-invocation.json"
+    });
+    let output = run_clause_file(&path, &request);
+    assert_eq!(
+        output.status.code(),
+        Some(expected.disposition.category().exit_code() as i32),
+        "{output:?}"
+    );
+    let decoded =
+        quire_spec_language::command::read_clause_run_request(&path.join("request.json")).unwrap();
+    let qsl_replay::spine::ClauseRunSelection::Clause(clause) = decoded.selection else {
+        panic!("expected a clause selection");
+    };
+    assert!(matches!(
+        clause.input,
+        qsl_semantics::model::observation::ClauseSelectionInput::Invocation { .. }
+    ));
+
+    request["request"]["clause"]["selection"] = json!({"clause": {
+        "name":"ParentPresent", "observation":"pre",
+        "self":{"population":format!("ix://{}/config_history", spine::PACKAGE_IDENTITY),"key":"child"},
+        "parameters":{}
+    }});
+    run_clause_file(&path, &request);
+    let decoded =
+        quire_spec_language::command::read_clause_run_request(&path.join("request.json")).unwrap();
+    let qsl_replay::spine::ClauseRunSelection::Clause(clause) = decoded.selection else {
+        panic!("expected a clause selection");
+    };
+    let qsl_semantics::model::observation::ClauseSelectionInput::PreCall {
+        self_object,
+        parameters,
+        ..
+    } = clause.input
+    else {
+        panic!("pre snapshot must yield PreCall");
+    };
+    assert_eq!(self_object.expect("a named self").key, "child");
+    assert!(parameters.is_empty());
+
+    request["request"]["clause"]["selection"]["clause"]["anchor"] =
+        json!({"kind":"handler","name":"validate"});
+    let output = run_clause_file(&path, &request);
+    assert_eq!(output.status.code(), Some(20), "{output:?}");
+    let error: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(error["stage"], "request");
+    assert!(error["message"].as_str().unwrap().contains("anchor"));
+}
+
+/// FR-312-AC-4 / FR-267: every reached spine stage remains a clause report
+/// on stdout, including selection and admission refusals and exhausted work.
+#[trace("TC-891", "FR-312-AC-4", "FR-267-AC-9")]
+#[test]
+fn clause_run_command_reports_select_admit_and_incomplete_classes() {
+    let directory = tempfile::tempdir().unwrap();
+    type StageCase = (
+        Case,
+        fn(&mut Value),
+        &'static str,
+        Option<&'static str>,
+        i32,
+        Option<&'static str>,
+    );
+    let cases: &[StageCase] = &[
+        (
+            Case::Healthy,
+            |v: &mut Value| {
+                v["request"]["clause"]["selection"]["clause"]["name"] = json!("NoSuchClause")
+            },
+            "select",
+            Some("missing_declaration"),
+            20,
+            None,
+        ),
+        (
+            Case::Dangling,
+            |_: &mut Value| {},
+            "admit",
+            Some("dangling_reference"),
+            20,
+            None,
+        ),
+        (
+            Case::Healthy,
+            |v: &mut Value| v["request"]["clause"]["accounting"]["work_units"] = json!(0),
+            "evaluate",
+            None,
+            22,
+            Some("work_units"),
+        ),
+        (
+            Case::Healthy,
+            |v: &mut Value| v["request"]["clause"]["accounting"]["integer_bits"] = json!(1),
+            "evaluate",
+            None,
+            22,
+            Some("integer_bits"),
+        ),
+    ];
+    for &(case, edit, stage, code, exit, incomplete_limit) in cases {
+        let path = directory.path().join(format!("{}-{stage}", case.id()));
+        build(&path, case);
+        let mut request = current_clause_request(&path);
+        edit(&mut request);
+        let output = run_clause_file(&path, &request);
+        assert_eq!(output.status.code(), Some(exit), "{output:?}");
+        assert!(output.stderr.is_empty(), "{output:?}");
+        let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(value["format"], "native-run-result/2");
+        assert_eq!(value["disposition"]["stage"], stage);
+        assert_eq!(
+            value["disposition"]["refusal"]
+                .get("code")
+                .and_then(Value::as_str),
+            code
+        );
+        if let Some(limit) = incomplete_limit {
+            assert_eq!(value["disposition"]["category"], "incomplete");
+            assert_eq!(value["disposition"]["outcome"]["kind"], "incomplete");
+            assert_eq!(value["disposition"]["outcome"]["limit"], limit);
+        }
+        assert_eq!(value["basis"], "unavailable");
+    }
+}
+
+/// FR-312-AC-3 / FR-026-AC-4: caller byte ceilings bound the exact request
+/// and aggregate selected-file reads before the spine consumes them.
+#[trace("TC-891", "FR-312-AC-3", "FR-026-AC-4")]
+#[test]
+fn clause_run_command_honors_caller_byte_ceilings() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join(Case::Healthy.id());
+    build(&path, Case::Healthy);
+    let request = current_clause_request(&path);
+    std::fs::write(
+        path.join("request.json"),
+        serde_json::to_vec(&request).unwrap(),
+    )
+    .unwrap();
+    let dependent = [
+        "spine-unit.native",
+        "spine-model.semantic-ir.json",
+        "spine-snapshot.json",
+    ]
+    .iter()
+    .map(|file| std::fs::metadata(path.join(file)).unwrap().len() as usize)
+    .sum::<usize>();
+    let invoke = |option: &str, limit: usize| {
+        Command::new(env!("CARGO_BIN_EXE_quire-spec"))
+            .arg("run")
+            .arg(path.join("request.json"))
+            .arg(option)
+            .arg(limit.to_string())
+            .output()
+            .unwrap()
+    };
+    let failure = invoke("--dependent-bytes", dependent - 1);
+    assert_eq!(failure.status.code(), Some(22), "{failure:?}");
+    assert!(failure.stdout.is_empty());
+    let value: Value = serde_json::from_slice(&failure.stderr).unwrap();
+    assert_eq!(value["details"]["option"], "--dependent-bytes");
+    assert_eq!(value["details"]["maximum"], dependent - 1);
+    assert_eq!(
+        invoke("--dependent-bytes", dependent).status.code(),
+        Some(0)
+    );
+
+    let bytes = std::fs::metadata(path.join("request.json")).unwrap().len() as usize;
+    let failure = invoke("--request-bytes", bytes - 1);
+    assert_eq!(failure.status.code(), Some(22), "{failure:?}");
+    assert!(failure.stdout.is_empty());
+    let value: Value = serde_json::from_slice(&failure.stderr).unwrap();
+    assert_eq!(value["details"]["option"], "--request-bytes");
+    assert_eq!(value["details"]["maximum"], bytes - 1);
+    assert_eq!(invoke("--request-bytes", bytes).status.code(), Some(0));
+}
+
 /// FR-108-AC-1 (TC-469 step 1): every one of the 17 cases gives the Corpus
 /// table's disposition and exit code through `run_clause`.
-#[trace("TC-469", "FR-108-AC-1")]
+#[trace(
+    "TC-469",
+    "FR-108-AC-1",
+    "FR-108-AC-3",
+    "FR-032-AC-1",
+    "FR-032-AC-2",
+    "FR-032-AC-3"
+)]
 #[test]
 fn tc_469_step_1_every_case_matches_the_independent_expected_table() {
     let directory = tempfile::tempdir().unwrap();
@@ -221,245 +941,65 @@ fn tc_469_step_1_every_case_matches_the_independent_expected_table() {
     );
 }
 
-/// One native `quire-spec run` outcome, read from whichever stream holds it.
-struct NativeRun {
-    exit: i32,
-    value: Value,
-}
-
-fn run_native(directory: &Path) -> NativeRun {
-    let output = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
-        .arg("run")
-        .arg(directory.join("request.json"))
-        .current_dir(directory.parent().unwrap())
-        .output()
-        .unwrap();
-    let stdout = !output.stdout.is_empty();
-    let bytes = if stdout {
-        &output.stdout
-    } else {
-        &output.stderr
-    };
-    NativeRun {
-        exit: output.status.code().unwrap(),
-        value: serde_json::from_slice(bytes).unwrap(),
-    }
-}
-
-/// Native's own `stage`/`status`/`truth`/code JSON fields, mapped onto
-/// FR-109's spine vocabulary so [`tc_469_step_2_and_3_native_and_spine_agree_and_name_the_boundary_locus`]
-/// can compare the two directly rather than by exit code alone (SR-768
-/// FND-001): native `validate`→spine `admit`, native `link`/`quire`→spine
-/// `compile`, native `evaluate`→spine `evaluate`.
-struct NativeSummary {
-    stage: ClauseRunStage,
-    category: Category,
-    truth: Option<bool>,
-    /// Every catalog code native's own top-level `code` or `diagnostics[]`
-    /// carries. Empty for `completed` (no code at all).
-    codes: BTreeSet<String>,
-}
-
-fn native_summary(value: &Value) -> NativeSummary {
-    let stage = match value["stage"].as_str().unwrap() {
-        "validate" => ClauseRunStage::Admit,
-        "link" | "quire" => ClauseRunStage::Compile,
-        "evaluate" => ClauseRunStage::Evaluate,
-        other => panic!("unknown native stage {other:?}: {value}"),
-    };
-    let truth = value.get("truth").and_then(Value::as_bool);
-    let category = match value["status"].as_str().unwrap() {
-        "completed" => {
-            if truth.expect("a completed status always carries truth") {
-                Category::Success
-            } else {
-                Category::Violation
-            }
-        }
-        "refused" => Category::Refusal,
-        "incomplete" => Category::Incomplete,
-        other => panic!("unknown native status {other:?}: {value}"),
-    };
-    let mut codes = BTreeSet::new();
-    if let Some(code) = value.get("code").and_then(Value::as_str) {
-        codes.insert(code.to_owned());
-    }
-    if let Some(diagnostics) = value.get("diagnostics").and_then(Value::as_array) {
-        codes.extend(
-            diagnostics
-                .iter()
-                .map(|entry| entry["code"].as_str().unwrap().to_owned()),
-        );
-    }
-    NativeSummary {
-        stage,
-        category,
-        truth,
-        codes,
-    }
-}
-
-/// The same shape as [`native_summary`], read from spine's own report.
-/// `codes` is `None` where spine's disposition carries no catalog code
-/// comparable to native's own vocabulary (the `evaluate`-stage `work_units`
-/// resource limit, which step 1 already pins precisely) -- comparing `None`
-/// against native's codes would be meaningless, so that case skips the code
-/// comparison rather than asserting an empty set.
-fn spine_summary(
-    report: &qsl_replay::spine::ClauseRunReport,
-) -> (
-    ClauseRunStage,
-    Category,
-    Option<bool>,
-    Option<BTreeSet<String>>,
-) {
-    use qsl_semantics::model::observation::AdmissionFailure;
-    let disposition = &report.disposition;
-    let codes = match disposition {
-        ClauseDisposition::Compile(refusal) => {
-            Some(BTreeSet::from([refusal.code().as_str().to_owned()]))
-        }
-        ClauseDisposition::Admit(AdmissionFailure::Refused(record))
-        | ClauseDisposition::Admit(AdmissionFailure::Incomplete(record)) => {
-            Some(BTreeSet::from([record.code.as_str().to_owned()]))
-        }
-        _ => None,
-    };
-    (
-        disposition.stage(),
-        disposition.category(),
-        disposition.truth(),
-        codes,
-    )
-}
-
-/// FR-108-AC-2 (TC-469 step 2): native `quire-spec run` and `run_clause`
-/// agree on stage, category, truth, code and exit code for all 17 cases,
-/// under FR-108's own stage/category map (native `validate`→spine `admit`,
-/// native `link`→spine `compile`). Comparing more than the exit code alone
-/// matters because exit 20 is shared by `dangling_reference`,
-/// `frame_violation`, `invalid_runtime_input` and `missing_import` (SR-768
-/// FND-001): a spine refusal with the wrong code at the wrong stage would
-/// still pass an exit-code-only check.
-/// FR-108-AC-3 (TC-469 step 3): `below-range`/`above-range` name exactly
-/// `root`/`child` (not either, for either case -- SR-768 FND-002) and
-/// `versionNumber` in both outputs' locus.
-#[trace("TC-469", "FR-108-AC-2", "FR-108-AC-3", "FR-032-AC-1")]
+/// All independently checked corpus outcomes survive the FR-267 result writer
+/// and strict reader without reverting to the retired native value envelope.
+#[trace("TC-469", "FR-108-AC-2", "FR-267-AC-9")]
 #[test]
-fn tc_469_step_2_and_3_native_and_spine_agree_and_name_the_boundary_locus() {
+fn tc_469_every_case_survives_result_two_round_trip() {
     let directory = tempfile::tempdir().unwrap();
     for &case in crate::support::config_version::CASES {
-        let path = directory.path().join(case.id());
-        let spine_request = build(&path, case);
-        let spine_report = run_clause(spine_request).unwrap();
-        let native = run_native(&path);
+        let report = run_case(&directory.path().join(case.id()), case);
+        assert_expected(case, &report);
+        let bytes = qsl_replay::spine::write_clause_run_result(&report).unwrap();
+        let read = qsl_replay::spine::read_native_run_result(&bytes).unwrap();
+        let qsl_replay::spine::NativeRunResult::Clause(read) = read else {
+            panic!("{}: expected a clause-run result", case.id());
+        };
+        let stage = match report.disposition.stage() {
+            ClauseRunStage::Compile => "compile",
+            ClauseRunStage::Select => "select",
+            ClauseRunStage::Admit => "admit",
+            ClauseRunStage::Evaluate => "evaluate",
+        };
+        assert_eq!(read.stage(), stage, "{}", case.id());
         assert_eq!(
-            native.exit,
-            spine_report.disposition.category().exit_code() as i32,
-            "{}: native {} spine {:?}",
-            case.id(),
-            native.value,
-            spine_report.disposition,
+            read.category(),
+            report.disposition.category().as_str(),
+            "{}",
+            case.id()
         );
-        let native_summary = native_summary(&native.value);
-        let (spine_stage, spine_category, spine_truth, spine_codes) = spine_summary(&spine_report);
+        assert_eq!(read.truth(), report.disposition.truth(), "{}", case.id());
         assert_eq!(
-            native_summary.stage,
-            spine_stage,
-            "{}: stage; native {}",
-            case.id(),
-            native.value
+            read.code(),
+            maybe_disposition_code(&report.disposition).map(Code::as_str),
+            "{}",
+            case.id()
         );
-        assert_eq!(
-            native_summary.category,
-            spine_category,
-            "{}: category; native {}",
-            case.id(),
-            native.value
-        );
-        assert_eq!(
-            native_summary.truth,
-            spine_truth,
-            "{}: truth; native {}",
-            case.id(),
-            native.value
-        );
-        if let Some(spine_codes) = spine_codes {
-            assert_eq!(
-                native_summary.codes,
-                spine_codes,
-                "{}: code; native {}",
-                case.id(),
-                native.value
-            );
-        }
     }
+}
 
-    // The boundary object below-range/above-range's own object, taken from
-    // native's `diagnostics[0].runtime.path` array entry that carries an
-    // `object` key (verified live: `{"object":"root"}` for below-range,
-    // `{"object":"child"}` for above-range), and from spine's own
-    // `record.fields["object"]`. Neither side accepts the other case's
-    // object.
-    for case in [Case::BelowRange, Case::AboveRange] {
-        let expected_object = match case {
-            Case::BelowRange => "root",
-            Case::AboveRange => "child",
-            _ => unreachable!("only the two boundary cases are iterated"),
+/// The boundary refusal keeps its authored object and field when the clause
+/// report crosses the native-run-result/2 writer and strict reader.
+#[trace("TC-469", "FR-108-AC-3", "FR-267-AC-9", "FR-032-AC-4")]
+#[test]
+fn tc_469_boundary_locus_survives_result_two_round_trip() {
+    let directory = tempfile::tempdir().unwrap();
+    for (case, object) in [(Case::BelowRange, "root"), (Case::AboveRange, "child")] {
+        let report = run_case(&directory.path().join(case.id()), case);
+        let bytes = qsl_replay::spine::write_clause_run_result(&report).unwrap();
+        let read = qsl_replay::spine::read_native_run_result(&bytes).unwrap();
+        let qsl_replay::spine::NativeRunResult::Clause(read) = read else {
+            panic!("expected a clause-run result");
         };
-        let path = directory.path().join(format!("{}-locus", case.id()));
-        let spine_request = build(&path, case);
-        let spine_report = run_clause(spine_request).unwrap();
-        let native = run_native(&path);
-        let runtime_path = native.value["diagnostics"][0]["runtime"]["path"]
-            .as_array()
-            .unwrap_or_else(|| panic!("{}: native locus {}", case.id(), native.value));
-        let native_field = runtime_path
-            .iter()
-            .find_map(|entry| entry.get("field").and_then(Value::as_str));
+        assert_eq!(read.stage(), "admit", "{}", case.id());
+        assert_eq!(read.category(), "refusal", "{}", case.id());
+        assert_eq!(read.code(), Some("invalid_runtime_input"), "{}", case.id());
+        let fields = read.fields().expect("the admission refusal retains fields");
         assert_eq!(
-            native_field,
-            Some("versionNumber"),
-            "{}: native locus {}",
-            case.id(),
-            native.value
+            fields.get("field").map(String::as_str),
+            Some("versionNumber")
         );
-        let native_object = runtime_path
-            .iter()
-            .find_map(|entry| entry.get("object").and_then(Value::as_str));
-        assert_eq!(
-            native_object,
-            Some(expected_object),
-            "{}: native locus {}",
-            case.id(),
-            native.value
-        );
-
-        let ClauseDisposition::Admit(qsl_semantics::model::observation::AdmissionFailure::Refused(
-            record,
-        )) = &spine_report.disposition
-        else {
-            panic!(
-                "{}: expected Admit(Refused), got {:?}",
-                case.id(),
-                spine_report.disposition
-            );
-        };
-        assert_eq!(record.code, Code::InvalidRuntimeInput, "{}", case.id());
-        assert_eq!(
-            record.fields.get("field").map(String::as_str),
-            Some("versionNumber"),
-            "{}: {:?}",
-            case.id(),
-            record.fields
-        );
-        assert_eq!(
-            record.fields.get("object").map(String::as_str),
-            Some(expected_object),
-            "{}: {:?}",
-            case.id(),
-            record.fields
-        );
+        assert_eq!(fields.get("object").map(String::as_str), Some(object));
     }
 }
 
@@ -469,7 +1009,7 @@ fn tc_469_step_2_and_3_native_and_spine_agree_and_name_the_boundary_locus() {
 /// the 17 cases twice gives identical reports (the full disposition, not a
 /// field subset), and a request carrying spine `compile`'s own emitted
 /// `package_id` for the unit gives the same report.
-#[trace("TC-469", "FR-108-AC-4")]
+#[trace("TC-469", "FR-108-AC-4", "FR-032-AC-4")]
 #[test]
 fn tc_469_step_4_generation_and_reports_are_deterministic() {
     let root = tempfile::tempdir().unwrap();
@@ -661,7 +1201,7 @@ mod extraction {
     }
 
     /// FR-108-AC-5 (TC-469 step 5).
-    #[trace("TC-469", "FR-108-AC-5")]
+    #[trace("TC-469", "FR-108-AC-5", "FR-032-AC-4")]
     #[test]
     fn tc_469_step_5_markdown_run_matches_the_direct_run_via_i3() {
         let directory = tempfile::tempdir().unwrap();
@@ -800,10 +1340,12 @@ fn tc_469_step_6_the_emitted_package_admits_via_i04() {
     // The lock's `model_selections` names the domain package by its own
     // `sha256-jcs` digest (FR-154/FR-322); I04 recomputes that digest from
     // the document bytes supplied here rather than trusting the lock.
-    evidence.insert_domain_package_document(
-        spine::model_digest_hex(),
-        spine::DOMAIN_PACKAGE.as_bytes().to_vec(),
-    );
+    evidence
+        .insert_domain_package_document(
+            spine::model_digest_hex(),
+            spine::DOMAIN_PACKAGE.as_bytes().to_vec(),
+        )
+        .expect("a fresh evidence key");
     let result = quire_contract_model::read_checked_package(
         bytes,
         quire_contract_model::CheckedPackageReadLimits::bounded(),

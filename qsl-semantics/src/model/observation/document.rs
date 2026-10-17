@@ -5,7 +5,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use quire_exact::{CollectionKind, FieldValue, Integer, ObjectReference, Value};
+use quire_exact::{
+    CollectionKind, FieldValue, Integer, ObjectId, ObjectReference, UniverseId, Value,
+};
 
 use qsl_foundation::diagnostic::Code;
 
@@ -13,14 +15,15 @@ use super::helpers::{admission_record, object_reference};
 use super::tree::{read_raw_value, Json, Object};
 use super::{
     check_document_digest, fault, incomplete, population_universe, refuse, AdmissionFailure,
-    AdmissionRecord, DocumentRef, ModelView, ObservationLimits, OutOfRange, PostStateRange,
-    RawForm, RawValue, ReadMeter, SelectedObject, SnapshotValue,
+    AdmissionRecord, DocumentRef, ModelView, NativeKind, ObservationLimits, OutOfRange, PathStep,
+    PostStateRange, RawForm, RawNative, RawNativeKind, RawValue, ReadMeter, SelectedObject,
+    SnapshotValue,
 };
 use crate::model::key::DeclarationKey;
 use crate::model::object_environment::ObjectEnvironment;
 use crate::model::operation::OperationDeclaration;
 use quire_semantic_value::declaration::{
-    FieldDeclaration, FieldRef, ObjectTypeDeclaration, TypeEnvironment,
+    CompositeShape, FieldDeclaration, FieldRef, ObjectTypeDeclaration, TypeEnvironment,
 };
 use quire_semantic_value::object_closure::{
     ObjectClosure, ObjectClosureCause, ObjectClosureRefusal,
@@ -38,6 +41,10 @@ pub(super) enum DocumentKind {
     /// read (FR-106 "Behavior": a precondition's input is the pre-call
     /// observation).
     InvocationCall,
+    /// An invocation read for a state machine's invariant on side `pre`: its
+    /// call alone, and not its `parameters` either, which an invariant binds
+    /// none of (FR-106 "Behavior").
+    InvocationContext,
 }
 
 #[derive(Clone, Debug)]
@@ -91,7 +98,7 @@ pub(super) struct RawPopulation {
 /// pattern) converts it once, at read (`read_snapshot_body`), so no caller
 /// compares `SnapshotDocument::observation` against a string literal.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum ObservationRole {
+pub enum ObservationRole {
     /// `current`.
     Current,
     /// `pre`.
@@ -104,8 +111,114 @@ pub(super) enum ObservationRole {
 pub(super) struct SnapshotDocument {
     pub(super) observation: ObservationRole,
     pub(super) anchor: Option<DocAnchor>,
+    /// The invocation this snapshot says it observes, when it names one.
+    pub(super) invocation: Option<InvocationLabels>,
     pub(super) model: ModelHeader,
     pub(super) populations: Vec<RawPopulation>,
+    /// The snapshot's `relationships` entries, in document order (FR-106).
+    pub(super) relationships: Vec<super::relationships::RawEntry>,
+    /// The snapshot's `contexts` member (FR-106 checks 6.10 to 6.12).
+    pub(super) contexts: RawContexts,
+}
+
+/// One context of a `pre` or `post` snapshot: the state of one instance of a
+/// state machine, as written (FR-106 "Document forms").
+#[derive(Clone, Debug)]
+pub(super) struct RawContext {
+    /// The declaration identity of the most-specific state machine.
+    pub(super) machine: String,
+    /// The machine's effective field values, in document order.
+    pub(super) fields: Vec<(String, SnapshotValue)>,
+}
+
+/// One entry of `contexts`, or the shape defect check 6.10 refuses it for.
+/// A defect is kept with the entry at read and refused when the check walk
+/// reaches it, so an earlier object's or relationship's defect is reported
+/// first, as FR-106's walk order says.
+#[derive(Clone, Debug)]
+pub(super) struct RawContextEntry(Result<RawContext, AdmissionRecord>);
+
+/// A snapshot's `contexts` member as read.
+#[derive(Clone, Debug)]
+pub(super) enum RawContexts {
+    /// No `contexts` member.
+    Absent,
+    /// A `contexts` member that is not an array.
+    Malformed(AdmissionRecord),
+    /// The entries, in document order.
+    Entries(Vec<RawContextEntry>),
+}
+
+impl RawContexts {
+    /// The context entries that read as contexts, with their position.
+    pub(super) fn contexts(&self) -> impl Iterator<Item = (usize, &RawContext)> {
+        let entries: &[RawContextEntry] = match self {
+            Self::Entries(entries) => entries,
+            Self::Absent | Self::Malformed(_) => &[],
+        };
+        entries
+            .iter()
+            .enumerate()
+            .filter_map(|(at, entry)| entry.0.as_ref().ok().map(|context| (at, context)))
+    }
+}
+
+/// A member of a context entry, converted once at read.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ContextMember {
+    Machine,
+    Fields,
+}
+
+impl ContextMember {
+    #[qsl_attrs::string_edge]
+    fn read(name: &str) -> Option<Self> {
+        match name {
+            "machine" => Some(Self::Machine),
+            "fields" => Some(Self::Fields),
+            _ => None,
+        }
+    }
+}
+
+/// The four FR-001 labels of an invocation document's own `identity`: how
+/// a snapshot names the invocation it observes. No digest: the
+/// invocation's digest covers its `pre` and `post` references, whose
+/// digests cover these snapshots.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct InvocationLabels {
+    authority: String,
+    identity: String,
+    revision_namespace: String,
+    revision: String,
+}
+
+impl InvocationLabels {
+    fn names(&self, invocation: &DocumentRef) -> bool {
+        self.authority == invocation.authority
+            && self.identity == invocation.identity
+            && self.revision_namespace == invocation.revision_namespace
+            && self.revision == invocation.revision
+    }
+}
+
+/// FR-106 check 5: a snapshot that names an invocation names the selected
+/// invocation's own identity. A snapshot that names none is unbound.
+pub(super) fn check_snapshot_invocation(
+    snapshot: &SnapshotDocument,
+    snapshot_identity: &DocumentRef,
+    invocation: &DocumentRef,
+) -> Result<(), AdmissionFailure> {
+    match &snapshot.invocation {
+        Some(named) if !named.names(invocation) => Err(refuse(
+            admission_record(Code::WrongSnapshot, "wrong-invocation")
+                .with("document", snapshot_identity.identity.clone())
+                .with("field", "invocation")
+                .with("required", invocation.identity.clone())
+                .with("actual", named.identity.clone()),
+        )),
+        Some(_) | None => Ok(()),
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -120,9 +233,12 @@ pub(super) struct InvocationCall {
     pub(super) model: ModelHeader,
     pub(super) context: String,
     pub(super) operation: String,
-    pub(super) self_object: SelectedObject,
+    /// The invocation's `self`: an object reference, or `None` for JSON
+    /// `null`, which check 9 decides against the receiver's kind.
+    pub(super) self_object: Option<SelectedObject>,
     pub(super) pre: DocumentRef,
-    /// The invocation's own `parameters` member, in document order.
+    /// The invocation's own `parameters` member, in document order (empty
+    /// when the read skipped it).
     pub(super) parameters: Vec<(String, SnapshotValue)>,
 }
 
@@ -137,7 +253,7 @@ pub(super) struct InvocationDocument {
 }
 
 enum Body {
-    Snapshot(SnapshotDocument),
+    Snapshot(Box<SnapshotDocument>),
     Invocation(Box<InvocationDocument>),
     InvocationCall(Box<InvocationCall>),
 }
@@ -153,7 +269,7 @@ pub(super) struct ReadDocument {
 impl ReadDocument {
     pub(super) fn as_snapshot(&self) -> Option<&SnapshotDocument> {
         match &self.body {
-            Body::Snapshot(snapshot) => Some(snapshot),
+            Body::Snapshot(snapshot) => Some(snapshot.as_ref()),
             Body::Invocation(_) | Body::InvocationCall(_) => None,
         }
     }
@@ -248,7 +364,9 @@ pub(super) fn read_document(
     // 1.4: format.
     let expected_format = match kind {
         DocumentKind::Snapshot => "quire.state.snapshot/v1",
-        DocumentKind::Invocation | DocumentKind::InvocationCall => "quire.state.invocation/v1",
+        DocumentKind::Invocation
+        | DocumentKind::InvocationCall
+        | DocumentKind::InvocationContext => "quire.state.invocation/v1",
     };
     if object.member("format").and_then(|value| value.as_str()) != Some(expected_format) {
         return Err(refuse(admission_record(
@@ -288,6 +406,15 @@ pub(super) fn read_document(
             "pre",
             "parameters",
         ],
+        DocumentKind::InvocationContext => &[
+            "format",
+            "identity",
+            "model",
+            "context",
+            "operation",
+            "self",
+            "pre",
+        ],
     };
     let allowed: &[&str] = match kind {
         DocumentKind::Snapshot => &[
@@ -295,10 +422,15 @@ pub(super) fn read_document(
             "identity",
             "observation",
             "anchor",
+            "invocation",
             "model",
             "populations",
+            "relationships",
+            "contexts",
         ],
-        DocumentKind::Invocation | DocumentKind::InvocationCall => INVOCATION_MEMBERS,
+        DocumentKind::Invocation
+        | DocumentKind::InvocationCall
+        | DocumentKind::InvocationContext => INVOCATION_MEMBERS,
     };
     for member in always_required {
         if !object.contains_key(member) {
@@ -355,13 +487,18 @@ pub(super) fn read_document(
     let model = read_model(object)?;
 
     let body = match kind {
-        DocumentKind::Snapshot => Body::Snapshot(read_snapshot_body(object, model, &mut meter)?),
+        DocumentKind::Snapshot => {
+            Body::Snapshot(Box::new(read_snapshot_body(object, model, &mut meter)?))
+        }
         DocumentKind::Invocation => {
             Body::Invocation(Box::new(read_invocation_body(object, model, &mut meter)?))
         }
-        DocumentKind::InvocationCall => {
-            Body::InvocationCall(Box::new(read_invocation_call(object, model, &mut meter)?))
-        }
+        DocumentKind::InvocationCall => Body::InvocationCall(Box::new(read_invocation_call(
+            object, model, true, &mut meter,
+        )?)),
+        DocumentKind::InvocationContext => Body::InvocationCall(Box::new(read_invocation_call(
+            object, model, false, &mut meter,
+        )?)),
     };
     Ok(ReadDocument {
         identity: document_identity,
@@ -567,12 +704,142 @@ fn read_snapshot_body(
         }
         None => None,
     };
+    let invocation = match object.member("invocation") {
+        Some(value) => Some(read_invocation_labels(value)?),
+        None => None,
+    };
     let populations = read_populations(object, meter)?;
+    let relationships = super::relationships::read_relationships(object, meter)?;
+    let contexts = read_contexts(object, meter)?;
     Ok(SnapshotDocument {
         observation,
         anchor,
+        invocation,
         model,
         populations,
+        relationships,
+        contexts,
+    })
+}
+
+fn context_defect(cause: &'static str, member: &'static str) -> AdmissionRecord {
+    admission_record(Code::InvalidRuntimeInput, cause).with("member", member)
+}
+
+/// Reads a snapshot's optional `contexts` member, charging one value per
+/// entry and one per field value against `observation.values`.
+///
+/// # Errors
+///
+/// A limit refusal.
+fn read_contexts(
+    object: Object<'_>,
+    meter: &mut ReadMeter,
+) -> Result<RawContexts, AdmissionFailure> {
+    let Some(member) = object.member("contexts") else {
+        return Ok(RawContexts::Absent);
+    };
+    let Some(items) = member.as_array() else {
+        return Ok(RawContexts::Malformed(context_defect(
+            "wrong-value-kind",
+            "contexts",
+        )));
+    };
+    let mut entries = Vec::with_capacity(items.len());
+    for item in items {
+        meter.value()?;
+        entries.push(read_context_entry(item, meter)?);
+    }
+    Ok(RawContexts::Entries(entries))
+}
+
+/// One `contexts` entry: its first shape defect in FR-106 check 6.10's order
+/// (a wrong kind, then a missing member, then an unknown one), else its
+/// machine and field values.
+fn read_context_entry(
+    item: Json<'_>,
+    meter: &mut ReadMeter,
+) -> Result<RawContextEntry, AdmissionFailure> {
+    let Some(entry) = item.as_object() else {
+        return Ok(RawContextEntry(Err(context_defect(
+            "wrong-value-kind",
+            "contexts",
+        ))));
+    };
+    let machine = entry.member("machine");
+    let fields = entry.member("fields");
+    if machine.is_some_and(|value| value.as_str().is_none()) {
+        return Ok(RawContextEntry(Err(context_defect(
+            "wrong-value-kind",
+            "machine",
+        ))));
+    }
+    if fields.is_some_and(|value| value.as_object().is_none()) {
+        return Ok(RawContextEntry(Err(context_defect(
+            "wrong-value-kind",
+            "fields",
+        ))));
+    }
+    let (Some(machine), Some(fields)) = (machine, fields) else {
+        let missing = if machine.is_none() {
+            "machine"
+        } else {
+            "fields"
+        };
+        return Ok(RawContextEntry(Err(context_defect(
+            "missing-member",
+            missing,
+        ))));
+    };
+    if let Some((unknown, _)) = entry
+        .iter()
+        .find(|(name, _)| ContextMember::read(name).is_none())
+    {
+        return Ok(RawContextEntry(Err(admission_record(
+            Code::InvalidRuntimeInput,
+            "unknown-member",
+        )
+        .with("member", unknown))));
+    }
+    let (Some(machine), Some(field_members)) = (machine.as_str(), fields.as_object()) else {
+        return Err(fault("context-entry-members-after-check"));
+    };
+    let mut values = Vec::new();
+    for (name, value) in field_members.iter() {
+        match read_raw_value(value, &mut || meter.value())? {
+            Some(raw) => values.push((name.to_owned(), raw)),
+            None => {
+                return Ok(RawContextEntry(Err(admission_record(
+                    Code::InvalidRuntimeInput,
+                    "wrong-value-kind",
+                )
+                .with("machine", machine.to_owned())
+                .with("field", name.to_owned()))));
+            }
+        }
+    }
+    Ok(RawContextEntry(Ok(RawContext {
+        machine: machine.to_owned(),
+        fields: values,
+    })))
+}
+
+/// Reads a snapshot's `invocation` member: the invocation's four identity
+/// labels.
+fn read_invocation_labels(value: Json<'_>) -> Result<InvocationLabels, AdmissionFailure> {
+    let object = value.as_object().ok_or_else(|| wrong_kind("invocation"))?;
+    let label = |name: &'static str| {
+        object
+            .member(name)
+            .and_then(|value| value.as_str())
+            .map(str::to_owned)
+            .ok_or_else(|| missing_member("invocation"))
+    };
+    Ok(InvocationLabels {
+        authority: label("authority")?,
+        identity: label("identity")?,
+        revision_namespace: label("revision_namespace")?,
+        revision: label("revision")?,
     })
 }
 
@@ -648,6 +915,7 @@ fn read_populations(
 fn read_invocation_call(
     object: Object<'_>,
     model: ModelHeader,
+    read_parameters: bool,
     meter: &mut ReadMeter,
 ) -> Result<InvocationCall, AdmissionFailure> {
     let context = object
@@ -660,22 +928,29 @@ fn read_invocation_call(
         .and_then(|value| value.as_str())
         .ok_or_else(|| missing_member("operation"))?
         .to_owned();
-    let self_object = object
+    let self_member = object
         .member("self")
-        .ok_or_else(|| missing_member("self"))
-        .and_then(|value| read_object_ref(value, "self"))?;
+        .ok_or_else(|| missing_member("self"))?;
+    let self_object = if self_member.is_null() {
+        None
+    } else {
+        Some(read_object_ref(self_member, "self")?)
+    };
     let pre = object
         .member("pre")
         .ok_or_else(|| missing_member("pre"))
         .and_then(|value| read_document_ref(value, "pre"))?;
-    let parameter_items = object
-        .member("parameters")
-        .and_then(|value| value.as_object())
-        .ok_or_else(|| wrong_kind("parameters"))?;
     let mut parameters = Vec::new();
-    for (name, value) in parameter_items.iter() {
-        let raw = read_raw_value(value, &mut || meter.value())?.ok_or_else(|| wrong_kind(name))?;
-        parameters.push((name.to_owned(), raw));
+    if read_parameters {
+        let parameter_items = object
+            .member("parameters")
+            .and_then(|value| value.as_object())
+            .ok_or_else(|| wrong_kind("parameters"))?;
+        for (name, value) in parameter_items.iter() {
+            let raw =
+                read_raw_value(value, &mut || meter.value())?.ok_or_else(|| wrong_kind(name))?;
+            parameters.push((name.to_owned(), raw));
+        }
     }
     Ok(InvocationCall {
         model,
@@ -694,7 +969,7 @@ fn read_invocation_body(
     model: ModelHeader,
     meter: &mut ReadMeter,
 ) -> Result<InvocationDocument, AdmissionFailure> {
-    let call = read_invocation_call(object, model, meter)?;
+    let call = read_invocation_call(object, model, true, meter)?;
     let post = object
         .member("post")
         .ok_or_else(|| missing_member("post"))
@@ -749,6 +1024,7 @@ pub(super) fn find_declaration<'v>(
 }
 
 struct PopulationInfo {
+    key: DeclarationKey,
     member_types: Vec<DeclarationKey>,
 }
 
@@ -765,6 +1041,7 @@ fn find_population<'v>(
                     return Some((
                         view,
                         PopulationInfo {
+                            key: population.key.clone(),
                             member_types: population.member_types.clone(),
                         },
                     ));
@@ -818,7 +1095,9 @@ fn field_kind_matches(raw: &SnapshotValue, value_type: &quire_exact::ValueType) 
                 quire_exact::ValueType::Option(_)
             )
             | (RawForm::Sequence(_), quire_exact::ValueType::Collection(_))
-    )
+            | (RawForm::Record(_), quire_exact::ValueType::Composite(_))
+            | (RawForm::Variant(_), quire_exact::ValueType::Enum(_))
+    ) || matches!(raw.form(), RawForm::Native(_))
 }
 
 /// An object type's own field's raw kind test: presence
@@ -832,15 +1111,20 @@ fn field_kind_matches(raw: &SnapshotValue, value_type: &quire_exact::ValueType) 
 /// `absent`/`present` object-field forms key off `presence`, not off
 /// matching `value_type` against `ValueType::Option`.
 fn object_field_kind_matches(
-    raw: &SnapshotValue,
+    raw: RawForm<'_>,
     value_type: &quire_exact::ValueType,
     presence: quire_exact::Presence,
 ) -> bool {
+    // A native payload object is judged by `admit_native`, whose order puts
+    // its own envelope defects before declared-type fit.
+    if matches!(raw, RawForm::Native(_)) {
+        return true;
+    }
     if presence == quire_exact::Presence::Optional {
-        return matches!(raw.form(), RawForm::Absent | RawForm::Present(_));
+        return matches!(raw, RawForm::Absent | RawForm::Present(_));
     }
     matches!(
-        (raw.form(), value_type),
+        (raw, value_type),
         (RawForm::Boolean(_), quire_exact::ValueType::Boolean)
             | (
                 RawForm::Integer(_),
@@ -848,6 +1132,8 @@ fn object_field_kind_matches(
             )
             | (RawForm::Reference(_), quire_exact::ValueType::Reference(_))
             | (RawForm::Sequence(_), quire_exact::ValueType::Collection(_))
+            | (RawForm::Record(_), quire_exact::ValueType::Composite(_))
+            | (RawForm::Variant(_), quire_exact::ValueType::Enum(_))
     )
 }
 
@@ -870,6 +1156,12 @@ pub(super) struct References<'a> {
     /// Each reference that named no object of the snapshot, with the wire
     /// population it named, in walk order.
     unresolved: Vec<(String, ObjectReference)>,
+    /// The declaration key of each selected record value type by its IR
+    /// node identity, built on first use.
+    record_keys: Option<BTreeMap<String, quire_exact::NodeKey>>,
+    /// Each selected variant type by its IR node identity, built on first
+    /// use from the same declarations the type environment holds.
+    variant_keys: Option<BTreeMap<String, crate::check::VariantTypeDeclaration>>,
 }
 
 impl<'a> References<'a> {
@@ -907,7 +1199,54 @@ impl<'a> References<'a> {
             admitted,
             completeness,
             unresolved: Vec::new(),
+            record_keys: None,
+            variant_keys: None,
         }
+    }
+
+    /// The variant type the IR node identity `identity` names, or `None`
+    /// when no selected package declares a variant type by that identity
+    /// (another meaning or no declaration at all). It is the declaration the
+    /// type environment holds, so a value admitted here equals the same case
+    /// a unit's literal builds (FR-360 item 11).
+    fn variant_type(&mut self, identity: &str) -> Option<&crate::check::VariantTypeDeclaration> {
+        let views = self.views;
+        self.variant_keys
+            .get_or_insert_with(|| {
+                let unbounded = qsl_foundation::IdentityLimits {
+                    input_bytes: u64::MAX,
+                };
+                let mut found = BTreeMap::new();
+                for view in views {
+                    let Ok(declared) =
+                        crate::check::variant_type_declarations(&view.view, "", unbounded)
+                    else {
+                        continue;
+                    };
+                    for (key, declaration) in declared {
+                        found.entry(key.node).or_insert(declaration);
+                    }
+                }
+                found
+            })
+            .get(identity)
+    }
+
+    /// The declaration key the record value type named by the IR node
+    /// identity `identity` is declared under in the type environment, or
+    /// `None` when no selected package declares a record value type by that
+    /// identity (an object type, an event type or no declaration at all).
+    /// It is the record's model node key (FR-359 item 9), a function of the
+    /// declaring package and node alone. The keys of every selected record
+    /// are computed once, on the first record value, with no byte bound: a
+    /// record the unit assembled had already keyed under the unit's own
+    /// identity limits, and the key does not depend on the limit.
+    fn record_type(&mut self, identity: &str) -> Option<quire_exact::NodeKey> {
+        let views = self.views;
+        self.record_keys
+            .get_or_insert_with(|| record_keys(views))
+            .get(identity)
+            .copied()
     }
 
     /// FR-106 check 8 over one check-10 value (a parameter or the result):
@@ -979,95 +1318,70 @@ struct RangeBreach {
     range: quire_exact::IntegerInterval,
     observed: Integer,
     index: Option<usize>,
-}
-
-/// A value inside a sequence admitted as a value of `value_type`: scalars
-/// only, since no declared element type nests a collection or an option.
-/// `witness` is `Some` for a post-state field (FR-106 check 6.5's
-/// post-state rule): an integer outside its declared range is admitted
-/// exactly and recorded there instead of refused. `None` refuses it.
-fn admit_scalar(
-    references: &mut References<'_>,
-    raw: RawValue<'_>,
-    value_type: &quire_exact::ValueType,
-    witness: Option<&mut Vec<RangeBreach>>,
-) -> Result<Value, AdmissionRecord> {
-    admit_form(references, raw.form(), value_type, witness)
+    /// The record field names from the checked field or element down to the
+    /// integer, outermost first (FR-106 check 6.5's nested-record steps).
+    steps: Vec<PathStep>,
 }
 
 /// An object type's own field's admission: `presence`, not `value_type`,
 /// decides whether `absent`/`present` is admitted (see
 /// [`object_field_kind_matches`]'s doc). Parameters and results have no
 /// `FieldValue` slot to fill (they admit straight to a [`Value`] via
-/// [`admit_scalar`] plus [`field_kind_matches`]'s `ValueType::Option`
+/// [`admit_form`] plus [`field_kind_matches`]'s `ValueType::Option`
 /// reading), so this is the one caller [`admit_populations`] needs.
 fn admit_object_field(
     references: &mut References<'_>,
     raw: &SnapshotValue,
     value_type: &quire_exact::ValueType,
     presence: quire_exact::Presence,
-    mut witness: Option<&mut Vec<RangeBreach>>,
+    witness: Option<&mut Vec<RangeBreach>>,
 ) -> Result<FieldValue, AdmissionRecord> {
-    let mut raw = raw.form();
-    if presence == quire_exact::Presence::Optional {
-        raw = match raw {
-            RawForm::Absent => return Ok(FieldValue::Absent),
-            // A present value is admitted as a required one of the same
-            // type, so an optional collection-typed member admits its
-            // sequence.
-            RawForm::Present(inner) => inner.form(),
-            // `object_field_kind_matches` already refused every other raw
-            // form for an optional field before this is called.
-            RawForm::Boolean(_)
-            | RawForm::Integer(_)
-            | RawForm::Reference(_)
-            | RawForm::Sequence(_) => {
-                return Err(admission_record(
-                    Code::InvalidRuntimeInput,
-                    "wrong-value-kind",
-                ))
-            }
-        };
-    }
-    match (raw, value_type) {
-        (RawForm::Sequence(items), quire_exact::ValueType::Collection(collection)) => {
-            if collection.kind() != CollectionKind::Sequence {
-                return Err(admission_record(
-                    Code::UnknownRequiredFeature,
-                    "unsupported-feature",
-                ));
-            }
-            let mut elements = Vec::with_capacity(items.iter().len());
-            for (index, item) in items.iter().enumerate() {
-                let first = witness.as_deref().map_or(0, Vec::len);
-                elements.push(admit_scalar(
-                    references,
-                    item,
-                    collection.element(),
-                    witness.as_deref_mut(),
-                )?);
-                // Each breach this element recorded is at `index`.
-                if let Some(found) = witness.as_deref_mut() {
-                    for breach in &mut found[first..] {
-                        breach.index = Some(index);
-                    }
-                }
-            }
-            Ok(FieldValue::Present(quire_exact::from_admitted(
-                (**collection).clone(),
-                elements,
-            )))
-        }
-        (form, value_type) => {
-            admit_form(references, form, value_type, witness).map(FieldValue::Present)
-        }
+    admit_field_form(references, raw.form(), value_type, presence, witness)
+}
+
+/// [`admit_object_field`] over a value's form.
+fn admit_field_form(
+    references: &mut References<'_>,
+    raw: RawForm<'_>,
+    value_type: &quire_exact::ValueType,
+    presence: quire_exact::Presence,
+    witness: Option<&mut Vec<RangeBreach>>,
+) -> Result<FieldValue, AdmissionRecord> {
+    admit_value(references, raw, value_type, presence, witness)
+}
+
+/// A form admitted as a value of `value_type`: a boolean, an integer in its
+/// declared interval, a reference to an object of a conforming type, a
+/// sequence, or a record whose type conforms to the declared record type; any
+/// other pairing is `wrong-value-kind`.
+fn admit_form(
+    references: &mut References<'_>,
+    form: RawForm<'_>,
+    value_type: &quire_exact::ValueType,
+    witness: Option<&mut Vec<RangeBreach>>,
+) -> Result<Value, AdmissionRecord> {
+    match admit_value(
+        references,
+        form,
+        value_type,
+        quire_exact::Presence::Required,
+        witness,
+    )? {
+        FieldValue::Present(value) => Ok(value),
+        FieldValue::Absent | FieldValue::Null => Err(admission_record(
+            Code::InvalidRuntimeInput,
+            "wrong-value-kind",
+        )),
     }
 }
 
 /// A scalar form admitted as a value of `value_type`: a boolean, an integer
 /// in its declared interval, or a reference to an object of a conforming
-/// type; any other pairing is `wrong-value-kind`.
-fn admit_form(
+/// type; any other pairing is `wrong-value-kind`. `witness` is `Some` for a
+/// post-state field (FR-106 check 6.5's post-state rule): an integer outside
+/// its declared range is admitted exactly and recorded there instead of
+/// refused. `None` refuses it.
+fn admit_leaf(
     references: &mut References<'_>,
     form: RawForm<'_>,
     value_type: &quire_exact::ValueType,
@@ -1092,6 +1406,7 @@ fn admit_form(
                         range: interval.clone(),
                         observed: value.clone(),
                         index: None,
+                        steps: Vec::new(),
                     });
                     Ok(Value::Integer(value))
                 }
@@ -1103,11 +1418,502 @@ fn admit_form(
                 .resolve(reference, *type_identity)
                 .map(Value::Reference)
         }
+        (RawForm::Variant(variant), quire_exact::ValueType::Enum(slot)) => {
+            admit_variant(references, variant, slot)
+        }
+        (RawForm::Native(native), value_type) => admit_native(native, value_type),
         _ => Err(admission_record(
             Code::InvalidRuntimeInput,
             "wrong-value-kind",
         )),
     }
+}
+
+/// A native payload object's kind and payload text, once its envelope is
+/// sound. The first defect refuses, in FR-106's native order: a `kind` that
+/// is not text (`wrong-value-kind`), a `kind` that names no native kind
+/// (`invalid-value`, the members unexamined), a missing payload member
+/// (`missing-member`), an unknown member (`unknown-member`, the first in
+/// document order), and a payload that is not text (`wrong-value-kind`).
+/// Each names the member.
+#[qsl_attrs::string_edge]
+fn native_payload(native: RawNative<'_>) -> Result<(NativeKind, &str), AdmissionRecord> {
+    let refuse = |cause: &'static str, member: &str| {
+        admission_record(Code::InvalidRuntimeInput, cause).with("member", member.to_owned())
+    };
+    let kind = match native.kind() {
+        RawNativeKind::NotText => return Err(refuse("wrong-value-kind", "kind")),
+        RawNativeKind::Unknown => return Err(refuse("invalid-value", "kind")),
+        RawNativeKind::Known(kind) => kind,
+    };
+    let member = match kind {
+        NativeKind::String | NativeKind::Uuid | NativeKind::Text => "text",
+        NativeKind::Timestamp => "nanoseconds",
+    };
+    let Some((_, payload)) = native.members().find(|(name, _)| *name == member) else {
+        return Err(refuse("missing-member", member));
+    };
+    if let Some((unknown, _)) = native.members().find(|(name, _)| *name != member) {
+        return Err(refuse("unknown-member", unknown));
+    }
+    payload
+        .map(|text| (kind, text))
+        .ok_or_else(|| refuse("wrong-value-kind", member))
+}
+
+/// A native payload object admitted as a value of `value_type` (FR-106's
+/// native order): the envelope ([`native_payload`]), then the slot's fit
+/// (`wrong-value-kind`), then, for a UUID or a Timestamp, the kernel's
+/// canonical constructor (`invalid-value` naming the payload member, with
+/// the kernel's class) and, for a Text, its profile length ([`admit_text`]).
+/// A String has every Unicode scalar sequence as a value, so it has no
+/// payload refusal.
+fn admit_native(
+    native: RawNative<'_>,
+    value_type: &quire_exact::ValueType,
+) -> Result<Value, AdmissionRecord> {
+    let (kind, payload) = native_payload(native)?;
+    let invalid = |refusal: quire_exact::ConstructionRefusal, member: &'static str| {
+        admission_record(Code::InvalidRuntimeInput, "invalid-value")
+            .with("member", member)
+            .kernel_class(refusal.cause)
+    };
+    match (kind, value_type) {
+        (NativeKind::String, quire_exact::ValueType::String) => {
+            Ok(Value::String(payload.to_owned()))
+        }
+        (NativeKind::Uuid, quire_exact::ValueType::Uuid) => {
+            quire_exact::Uuid::from_canonical_text(payload)
+                .map(Value::Uuid)
+                .map_err(|refusal| invalid(refusal, "text"))
+        }
+        (NativeKind::Timestamp, quire_exact::ValueType::Timestamp) => {
+            quire_exact::Timestamp::from_canonical_text(payload)
+                .map(Value::Timestamp)
+                .map_err(|refusal| invalid(refusal, "nanoseconds"))
+        }
+        (NativeKind::Text, quire_exact::ValueType::Text(declared)) => admit_text(payload, declared),
+        // Type fit (check 6) refuses every other pairing before any length.
+        (
+            NativeKind::String | NativeKind::Uuid | NativeKind::Timestamp | NativeKind::Text,
+            quire_exact::ValueType::Boolean
+            | quire_exact::ValueType::Integer
+            | quire_exact::ValueType::Int(_)
+            | quire_exact::ValueType::Rational(_)
+            | quire_exact::ValueType::Decimal(_)
+            | quire_exact::ValueType::Float(_)
+            | quire_exact::ValueType::Quantity(_)
+            | quire_exact::ValueType::Text(_)
+            | quire_exact::ValueType::String
+            | quire_exact::ValueType::Uuid
+            | quire_exact::ValueType::Timestamp
+            | quire_exact::ValueType::Enum(_)
+            | quire_exact::ValueType::Option(_)
+            | quire_exact::ValueType::Composite(_)
+            | quire_exact::ValueType::Collection(_)
+            | quire_exact::ValueType::Reference(_)
+            | quire_exact::ValueType::Population(_),
+        ) => Err(admission_record(
+            Code::InvalidRuntimeInput,
+            "wrong-value-kind",
+        )),
+    }
+}
+
+/// A Text payload admitted into `declared` (FR-106 check 7): the kernel
+/// retains the sequence under the declared profile, and a profile length
+/// outside `[min, max]`, measured on the retained sequence, refuses
+/// `invalid-value` naming `text`, the declared type (`expected`) and the
+/// measured length (`actual`). Nothing is trimmed, truncated or repaired.
+#[qsl_attrs::string_edge]
+fn admit_text(payload: &str, declared: &quire_exact::TextType) -> Result<Value, AdmissionRecord> {
+    let profile = declared.profile();
+    let retained = super::retained_text(declared, payload);
+    let measured = profile.length(&retained);
+    if !(declared.min()..=declared.max()).contains(&measured) {
+        return Err(admission_record(Code::InvalidRuntimeInput, "invalid-value")
+            .with("member", "text")
+            .with(
+                "expected",
+                format!(
+                    "Text[{}, {}; {}]",
+                    declared.min(),
+                    declared.max(),
+                    profile.as_str()
+                ),
+            )
+            .with("actual", measured.to_string()));
+    }
+    let mut meter = quire_exact::Meter::new(crate::check::UNBOUNDED_SCALAR_LIMITS);
+    quire_exact::admit_text(
+        &quire_exact::TextPayload::from_utf8(payload.as_bytes())
+            .map_err(|_| admission_record(Code::InvalidRuntimeInput, "invalid-value"))?,
+        declared,
+        &mut meter,
+    )
+    .completed()
+    .map(Value::Text)
+    .ok_or_else(|| admission_record(Code::InvalidRuntimeInput, "invalid-value"))
+}
+
+/// A `variant` form admitted as a value of the enum type `slot` (FR-360
+/// item 9). The first defect found refuses, in this order: a missing `type`
+/// or `case` (`type` reported first), an extra payload member, a `type` that
+/// names any declaration other than the slot's variant type, and a `case`
+/// that is not a declared case of it, compared byte for byte.
+fn admit_variant(
+    references: &mut References<'_>,
+    variant: super::RawVariant<'_>,
+    slot: &quire_exact::EnumShape,
+) -> Result<Value, AdmissionRecord> {
+    let refuse = |cause: &'static str| admission_record(Code::InvalidRuntimeInput, cause);
+    let (Some(type_identity), Some(case)) = (variant.type_identity(), variant.case()) else {
+        let member = if variant.type_identity().is_none() {
+            "type"
+        } else {
+            "case"
+        };
+        return Err(refuse("missing-member").with("member", member));
+    };
+    if variant.has_extra_member() {
+        return Err(refuse("unknown-member"));
+    }
+    let Some(declared) = references
+        .variant_type(type_identity)
+        .filter(|declared| &declared.shape() == slot)
+    else {
+        return Err(refuse("wrong-value-kind"));
+    };
+    declared
+        .cases()
+        .iter()
+        .enumerate()
+        .find(|(_, declared_case)| declared_case.name() == case)
+        .and_then(|(rank, declared_case)| {
+            Some(Value::Enum(quire_exact::EnumMember::new(
+                declared_case.variant(),
+                u32::try_from(rank).ok()?,
+            )))
+        })
+        .ok_or_else(|| refuse("invalid-value"))
+}
+
+/// One unit of the explicit work stack [`admit_value`] drains.
+enum Admit<'w, 'v> {
+    /// Admit `form` as a value of `value_type`. `field` is set for a record
+    /// field, whose kind is judged first (FR-106 check 6.5).
+    Value {
+        form: RawForm<'v>,
+        value_type: &'w quire_exact::ValueType,
+        presence: quire_exact::Presence,
+        field: bool,
+    },
+    /// Descend one step of the value path.
+    Enter(PathStep),
+    /// Leave the step last entered, moving the post-state range breaches it
+    /// recorded under it.
+    Leave,
+    /// Build the record of declaration `own` from its `count` admitted
+    /// fields.
+    Record {
+        own: quire_exact::NodeKey,
+        count: usize,
+    },
+    /// Wrap the admitted payload as a present value of the option type
+    /// whose payload type is `payload`.
+    SomeOf { payload: &'w quire_exact::ValueType },
+    /// Build the sequence of type `collection` from its `count` admitted
+    /// elements.
+    Sequence {
+        collection: &'w quire_exact::CollectionType,
+        count: usize,
+    },
+}
+
+/// FR-106 check 6.5 value validation, on an explicit work stack and result
+/// stack, so a value of any nesting depth admits in constant native stack
+/// and is bounded only by the document's byte and value limits (FR-106
+/// Behavior; FR-261): a form is admitted as a value of `value_type`, with
+/// `presence` deciding whether `absent`/`present` is expected. A record is
+/// resolved to the record value type its `type` names, which must conform
+/// to the declared record type; its fields are admitted in effective field
+/// order, a sequence's elements by ascending index. A refusal names the
+/// typed path of steps (record field, option value, sequence index) from the
+/// checked field down to the value.
+fn admit_value<'a: 'w, 'w>(
+    references: &mut References<'a>,
+    form: RawForm<'_>,
+    value_type: &'w quire_exact::ValueType,
+    presence: quire_exact::Presence,
+    mut witness: Option<&mut Vec<RangeBreach>>,
+) -> Result<FieldValue, AdmissionRecord> {
+    let types: &'w TypeEnvironment = references.types;
+    let mut work = vec![Admit::Value {
+        form,
+        value_type,
+        presence,
+        field: false,
+    }];
+    let mut done: Vec<FieldValue> = Vec::new();
+    let mut path: Vec<PathStep> = Vec::new();
+    // The breach count when each entered step was entered.
+    let mut marks: Vec<usize> = Vec::new();
+    while let Some(next) = work.pop() {
+        let refuse_at = |cause: &'static str, path: &[PathStep]| {
+            admission_record(Code::InvalidRuntimeInput, cause).at(path.to_vec())
+        };
+        match next {
+            Admit::Enter(step) => {
+                path.push(step);
+                marks.push(witness.as_deref().map_or(0, Vec::len));
+            }
+            Admit::Leave => {
+                let (Some(step), Some(first)) = (path.pop(), marks.pop()) else {
+                    return Err(refuse_at("wrong-value-kind", &path));
+                };
+                if let Some(found) = witness.as_deref_mut() {
+                    for breach in &mut found[first..] {
+                        match &step {
+                            // The element of the checked sequence field.
+                            PathStep::Index(index) if path.is_empty() => {
+                                breach.index = Some(*index);
+                            }
+                            _ => breach.steps.insert(0, step.clone()),
+                        }
+                    }
+                }
+            }
+            Admit::Record { own, count } => {
+                let Some(start) = done.len().checked_sub(count) else {
+                    return Err(refuse_at("wrong-value-kind", &path));
+                };
+                let slots: Vec<FieldValue> = done.split_off(start);
+                done.push(FieldValue::Present(quire_exact::from_admitted_slots(
+                    own,
+                    slots.into_boxed_slice(),
+                )));
+            }
+            Admit::SomeOf { payload } => {
+                let Some(FieldValue::Present(value)) = done.pop() else {
+                    return Err(refuse_at("wrong-value-kind", &path));
+                };
+                done.push(FieldValue::Present(
+                    quire_exact::OptionValue::from_admitted(payload.clone(), Some(value)),
+                ));
+            }
+            Admit::Sequence { collection, count } => {
+                if collection.bound().is_some_and(|bound| {
+                    bound.violation(quire_exact::length_amount(count)).is_some()
+                }) {
+                    return Err(refuse_at("invalid-value", &path));
+                }
+                let Some(start) = done.len().checked_sub(count) else {
+                    return Err(refuse_at("wrong-value-kind", &path));
+                };
+                let elements: Vec<Value> = done
+                    .split_off(start)
+                    .into_iter()
+                    .filter_map(|element| match element {
+                        FieldValue::Present(value) => Some(value),
+                        FieldValue::Absent | FieldValue::Null => None,
+                    })
+                    .collect();
+                done.push(FieldValue::Present(quire_exact::from_admitted(
+                    collection.clone(),
+                    elements,
+                )));
+            }
+            Admit::Value {
+                form,
+                value_type,
+                presence,
+                field,
+            } => {
+                if field && !object_field_kind_matches(form, value_type, presence) {
+                    return Err(refuse_at("wrong-value-kind", &path));
+                }
+                if presence == quire_exact::Presence::Optional {
+                    match form {
+                        RawForm::Absent => done.push(FieldValue::Absent),
+                        // A present value is admitted as a required one of
+                        // the same type, one option-value step down.
+                        RawForm::Present(inner) => {
+                            work.push(Admit::Leave);
+                            work.push(Admit::Value {
+                                form: inner.form(),
+                                value_type,
+                                presence: quire_exact::Presence::Required,
+                                field: false,
+                            });
+                            work.push(Admit::Enter(PathStep::OptionValue));
+                        }
+                        // The native order refuses an envelope defect before
+                        // the slot's fit.
+                        RawForm::Native(native) => {
+                            return Err(match native_payload(native) {
+                                Err(record) => record.at(path.clone()),
+                                Ok(_) => refuse_at("wrong-value-kind", &path),
+                            });
+                        }
+                        _ => return Err(refuse_at("wrong-value-kind", &path)),
+                    }
+                    continue;
+                }
+                match (form, value_type) {
+                    // A genuinely `Option`-typed value (an operation
+                    // parameter or result).
+                    (RawForm::Absent, quire_exact::ValueType::Option(payload)) => {
+                        done.push(FieldValue::Present(quire_exact::OptionValue::none(
+                            (**payload).clone(),
+                        )));
+                    }
+                    (RawForm::Present(inner), quire_exact::ValueType::Option(payload)) => {
+                        let payload: &'w quire_exact::ValueType = payload;
+                        work.push(Admit::SomeOf { payload });
+                        work.push(Admit::Leave);
+                        work.push(Admit::Value {
+                            form: inner.form(),
+                            value_type: payload,
+                            presence: quire_exact::Presence::Required,
+                            field: false,
+                        });
+                        work.push(Admit::Enter(PathStep::OptionValue));
+                    }
+                    (RawForm::Sequence(items), quire_exact::ValueType::Collection(collection)) => {
+                        if collection.kind() != CollectionKind::Sequence {
+                            return Err(admission_record(
+                                Code::UnknownRequiredFeature,
+                                "unsupported-feature",
+                            )
+                            .at(path.clone()));
+                        }
+                        let collection: &'w quire_exact::CollectionType = collection;
+                        work.push(Admit::Sequence {
+                            collection,
+                            count: items.iter().len(),
+                        });
+                        for (index, item) in items.iter().enumerate().rev() {
+                            work.push(Admit::Leave);
+                            work.push(Admit::Value {
+                                form: item.form(),
+                                value_type: collection.element(),
+                                presence: quire_exact::Presence::Required,
+                                field: false,
+                            });
+                            work.push(Admit::Enter(PathStep::Index(index)));
+                        }
+                    }
+                    (RawForm::Record(record), quire_exact::ValueType::Composite(slot)) => {
+                        let Some(own) = references.record_type(record.type_identity()) else {
+                            return Err(refuse_at("wrong-value-kind", &path));
+                        };
+                        if !types.composite_conforms(own, *slot) {
+                            return Err(refuse_at("wrong-value-kind", &path));
+                        }
+                        let Some(CompositeShape::Record(declared)) =
+                            types.composite(own).map(|declaration| declaration.shape())
+                        else {
+                            return Err(refuse_at("wrong-value-kind", &path));
+                        };
+                        let nested = |name: &str| {
+                            let mut nested = path.clone();
+                            nested.push(PathStep::Field(name.to_owned()));
+                            nested
+                        };
+                        if let Some(missing) = declared
+                            .iter()
+                            .find(|field| !record.fields().any(|(name, _)| name == field.name()))
+                        {
+                            return Err(admission_record(
+                                Code::InvalidRuntimeInput,
+                                "missing-member",
+                            )
+                            .at(nested(missing.name())));
+                        }
+                        if let Some((extra, _)) = record
+                            .fields()
+                            .find(|(name, _)| !declared.iter().any(|field| field.name() == *name))
+                        {
+                            return Err(admission_record(
+                                Code::InvalidRuntimeInput,
+                                "unknown-member",
+                            )
+                            .at(nested(extra)));
+                        }
+                        work.push(Admit::Record {
+                            own,
+                            count: declared.len(),
+                        });
+                        for field in declared.iter().rev() {
+                            let Some((_, raw)) =
+                                record.fields().find(|(name, _)| *name == field.name())
+                            else {
+                                return Err(refuse_at("wrong-value-kind", &nested(field.name())));
+                            };
+                            work.push(Admit::Leave);
+                            work.push(Admit::Value {
+                                form: raw.form(),
+                                value_type: field.value_type(),
+                                presence: field.presence(),
+                                field: true,
+                            });
+                            work.push(Admit::Enter(PathStep::Field(field.name().to_owned())));
+                        }
+                    }
+                    (form, value_type) => {
+                        let value =
+                            admit_leaf(references, form, value_type, witness.as_deref_mut())
+                                .map_err(|record| record.at(path.clone()))?;
+                        done.push(FieldValue::Present(value));
+                    }
+                }
+            }
+        }
+    }
+    done.pop()
+        .ok_or_else(|| admission_record(Code::InvalidRuntimeInput, "wrong-value-kind"))
+}
+
+/// The declaration key of each selected record value type by its IR node
+/// identity (FR-359 item 9). The keys are computed with no byte bound: a
+/// record the unit assembled had already keyed under the unit's own identity
+/// limits, and the key does not depend on the limit.
+pub(super) fn record_keys(views: &[ModelView]) -> BTreeMap<String, quire_exact::NodeKey> {
+    let unbounded = qsl_foundation::IdentityLimits {
+        input_bytes: u64::MAX,
+    };
+    let mut keys = BTreeMap::new();
+    for view in views {
+        for record in &view.view.domain_package().records {
+            let crate::model::domain_package::DomainPackageRecord::RecordValueType(declared) =
+                record
+            else {
+                continue;
+            };
+            if let Ok(Some(key)) = crate::check::record_node_key(record, unbounded) {
+                keys.entry(declared.key.node.clone()).or_insert(key);
+            }
+        }
+    }
+    keys
+}
+
+/// The declared value type of field `field` of the record value type the IR
+/// node identity `identity` names, or `None` when `keys` holds no such
+/// record or it declares no such field.
+pub(super) fn record_field_type<'t>(
+    types: &'t TypeEnvironment,
+    keys: &BTreeMap<String, quire_exact::NodeKey>,
+    identity: &str,
+    field: &str,
+) -> Option<&'t quire_exact::ValueType> {
+    let CompositeShape::Record(declared) = types.composite(*keys.get(identity)?)?.shape() else {
+        return None;
+    };
+    declared
+        .iter()
+        .find(|declared| declared.name() == field)
+        .map(|declared| declared.value_type())
 }
 
 /// Every `(population, key)` a reference value inside `raw` names (a
@@ -1126,7 +1932,14 @@ fn collect_references(raw: &SnapshotValue, into: &mut Vec<(String, String)>) {
             RawForm::Sequence(items) => {
                 pending.extend(items.iter().rev().map(RawValue::form));
             }
-            RawForm::Boolean(_) | RawForm::Integer(_) | RawForm::Absent => {}
+            RawForm::Record(record) => {
+                pending.extend(record.fields().rev().map(|(_, value)| value.form()));
+            }
+            RawForm::Boolean(_)
+            | RawForm::Integer(_)
+            | RawForm::Native(_)
+            | RawForm::Absent
+            | RawForm::Variant(_) => {}
         }
     }
 }
@@ -1139,14 +1952,134 @@ fn collect_references(raw: &SnapshotValue, into: &mut Vec<(String, String)>) {
 /// 6 to 8 before starting the other's check 6 (SR-750 FND-005).
 pub(super) struct PopulationValues<'t> {
     objects: Vec<(ObjectReference, Vec<(&'t str, FieldValue)>)>,
+    /// The wire population that lists each object of `objects`, in step.
+    holders: Vec<String>,
     pub(super) completeness: BTreeMap<String, bool>,
     pub(super) keys_by_population: BTreeMap<String, BTreeSet<String>>,
+    /// The entries of the snapshot's `relationships` member that passed
+    /// checks 6.6 to 6.9 (FR-364).
+    pub(super) extents: Vec<super::relationships::CheckedExtent>,
+    /// The package facts the extent store is built from.
+    facts: super::relationships::ModelFacts,
     /// Each reference that named no object of this snapshot, with the wire
     /// population it named ([`References`]).
     unresolved: Vec<(String, ObjectReference)>,
     /// Each post-state integer admitted outside its declared range, in
     /// walk order.
     out_of_range: Vec<OutOfRange>,
+    /// The contexts of the snapshot the clause reads (FR-106 "Behavior",
+    /// "read contexts"), in document order: empty for a clause whose
+    /// receiver is an object.
+    read_contexts: Vec<ReadContext<'t>>,
+}
+
+/// One reference value in a field of a read context.
+#[derive(Clone, Debug)]
+struct ContextReference {
+    field: String,
+    population: String,
+    key: String,
+}
+
+/// One context entry the clause reads, admitted by checks 6.10 to 6.12.
+pub(super) struct ReadContext<'t> {
+    /// The `machine` member as written.
+    machine: String,
+    /// Its position among the snapshot's `contexts` entries.
+    entry: usize,
+    /// The most-specific machine's effective identity.
+    pub(super) effective: quire_exact::EffectiveId,
+    attributes: Vec<(&'t str, FieldValue)>,
+    /// The reference values of its fields, in effective field order.
+    references: Vec<ContextReference>,
+    /// Each post-state integer admitted outside its declared range.
+    breaches: Vec<(FieldRef, RangeBreach)>,
+}
+
+impl<'t> PopulationValues<'t> {
+    /// The populations a reference in a read context names, in field order:
+    /// required by check 7, as a reference in an object field is.
+    pub(super) fn read_context_populations(&self) -> Vec<String> {
+        self.read_contexts
+            .iter()
+            .flat_map(|context| &context.references)
+            .map(|reference| reference.population.clone())
+            .collect()
+    }
+
+    /// FR-106 check 9's context rule: the snapshot holds exactly one read
+    /// context. Gives it the observation-scoped reference an evaluator looks
+    /// its fields up by (a context has no object identity, QSpec FR-208) and
+    /// adds it to the objects of the observation.
+    ///
+    /// # Errors
+    ///
+    /// `invalid_model_binding`/`wrong-context` when the snapshot holds none,
+    /// `invalid_runtime_input`/`duplicate-member` at a second.
+    pub(super) fn attach_read_context(
+        &mut self,
+        machine: &str,
+        snapshot: &DocumentRef,
+        receiver: &DocumentRef,
+    ) -> Result<ObjectReference, AdmissionFailure> {
+        let mut read = std::mem::take(&mut self.read_contexts).into_iter();
+        let Some(context) = read.next() else {
+            return Err(refuse(
+                admission_record(Code::InvalidModelBinding, "wrong-context")
+                    .with("machine", machine.to_owned())
+                    .with("document", snapshot.identity.clone()),
+            ));
+        };
+        if let Some(second) = read.next() {
+            return Err(refuse(
+                admission_record(Code::InvalidRuntimeInput, "duplicate-member")
+                    .with("machine", second.machine)
+                    .with("document", snapshot.identity.clone())
+                    .with("entry", second.entry.to_string()),
+            ));
+        }
+        let object = ObjectId::new(receiver.identity.clone()).map_err(|_| {
+            refuse(
+                admission_record(Code::InvalidRuntimeInput, "invalid-value")
+                    .with("field", "identity"),
+            )
+        })?;
+        let reference = ObjectReference::new(
+            UniverseId::from_digest(snapshot.digest),
+            context.effective,
+            object,
+        );
+        self.out_of_range.extend(
+            context
+                .breaches
+                .into_iter()
+                .map(|(field, breach)| OutOfRange {
+                    object: reference.clone(),
+                    field,
+                    index: breach.index,
+                    range: breach.range,
+                    observed: breach.observed,
+                    steps: breach.steps,
+                }),
+        );
+        self.objects.push((reference.clone(), context.attributes));
+        Ok(reference)
+    }
+}
+
+impl PopulationValues<'_> {
+    /// The populations that list an object equal to one of `references`
+    /// (FR-098 step 3: the populations an argument's reference key names),
+    /// in the document's population order.
+    pub(super) fn populations_holding(&self, references: &[ObjectReference]) -> Vec<String> {
+        let mut held: Vec<String> = Vec::new();
+        for ((object, _), population) in self.objects.iter().zip(&self.holders) {
+            if references.contains(object) && !held.contains(population) {
+                held.push(population.clone());
+            }
+        }
+        held
+    }
 }
 
 /// FR-106 check 6: admit every population's every object's every field, in
@@ -1159,11 +2092,16 @@ pub(super) struct PopulationValues<'t> {
 pub(super) fn admit_population_values<'t>(
     views: &[ModelView],
     types: &'t TypeEnvironment,
-    populations: &[RawPopulation],
+    snapshot: &SnapshotDocument,
+    document: &DocumentRef,
+    read_machine: Option<quire_exact::EffectiveId>,
     range: PostStateRange,
     ancestor_steps: u64,
 ) -> Result<PopulationValues<'t>, AdmissionFailure> {
+    let populations = &snapshot.populations[..];
     let mut objects: Vec<(ObjectReference, Vec<(&str, FieldValue)>)> = Vec::new();
+    let mut holders: Vec<String> = Vec::new();
+    let mut listed = super::relationships::Listed::new();
     let mut completeness = BTreeMap::new();
     let mut keys_by_population: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     let mut references = References::over(views, types, populations);
@@ -1207,8 +2145,11 @@ pub(super) fn admit_population_values<'t>(
                     }
                     Ok(false) => {}
                     Err(refusal) => {
-                        return Err(match refusal.cause.limit_exceeded() {
-                            Some(limit) => super::limit_refusal(&limit),
+                        return Err(match refusal.cause.denial() {
+                            Some(denial) => super::caller_budget_refusal(
+                                &denial,
+                                refusal.cause.catalog_code().cause(),
+                            ),
                             None => fault("conformance-walk-refused"),
                         });
                     }
@@ -1293,7 +2234,7 @@ pub(super) fn admit_population_values<'t>(
                 // raw value here.
                 let raw = raw_field(&object.fields, name)
                     .ok_or_else(|| fault("declared-field-missing-after-check-6-4"))?;
-                if !object_field_kind_matches(raw, value_type, presence) {
+                if !object_field_kind_matches(raw.form(), value_type, presence) {
                     return Err(refuse(
                         admission_record(Code::InvalidRuntimeInput, "wrong-value-kind")
                             .with("object", object.key.clone())
@@ -1326,24 +2267,291 @@ pub(super) fn admit_population_values<'t>(
             // own `invalid-value` (SR-750 FND-004 round 2): propagated
             // directly, never re-mapped to a `Fault`.
             let reference = object_reference(views, effective_type, &object.key)?;
+            if !listed.contains_key(&entry.population) {
+                listed.insert(entry.population.clone(), BTreeMap::new());
+            }
+            if let Some(objects) = listed.get_mut(&entry.population) {
+                objects.insert(object.key.clone(), reference.clone());
+            }
             out_of_range.extend(breaches.into_iter().map(|(field, breach)| OutOfRange {
                 object: reference.clone(),
                 field,
                 index: breach.index,
                 range: breach.range,
                 observed: breach.observed,
+                steps: breach.steps,
             }));
+            holders.push(entry.population.clone());
             objects.push((reference, attributes));
         }
     }
 
+    // 6.6 to 6.9: the `relationships` entries, after the last object.
+    let facts = super::relationships::model_facts(views, types);
+    let extents =
+        super::relationships::check_entries(types, &facts, &snapshot.relationships, &listed)?;
+
+    // 6.10 to 6.12: the `contexts` entries, after the last relationship.
+    let read_contexts = admit_contexts(
+        views,
+        types,
+        snapshot,
+        document,
+        read_machine,
+        range,
+        &mut references,
+    )?;
+
     Ok(PopulationValues {
         objects,
+        holders,
         completeness,
         keys_by_population,
+        extents,
+        facts,
         unresolved: references.unresolved,
         out_of_range,
+        read_contexts,
     })
+}
+
+/// Whether the declaration `key` of `view` is a state machine (FR-208).
+fn is_state_machine(view: &ModelView, key: &DeclarationKey) -> bool {
+    view.view.domain_package().records.iter().any(|record| {
+        matches!(
+            record,
+            crate::model::domain_package::DomainPackageRecord::StateMachine(machine)
+                if machine.key == *key
+        )
+    })
+}
+
+/// FR-106 checks 6.10 to 6.12 over a snapshot's `contexts`, entry by entry in
+/// document order. Every entry is validated, whichever machine it is of;
+/// those whose machine is `read_machine` or specializes it are the read
+/// contexts the clause evaluates over, and are returned.
+fn admit_contexts<'t>(
+    views: &[ModelView],
+    types: &'t TypeEnvironment,
+    snapshot: &SnapshotDocument,
+    document: &DocumentRef,
+    read_machine: Option<quire_exact::EffectiveId>,
+    range: PostStateRange,
+    references: &mut References<'_>,
+) -> Result<Vec<ReadContext<'t>>, AdmissionFailure> {
+    // Every refusal of checks 6.10 to 6.12 names the snapshot and the entry.
+    let named = |record: AdmissionRecord, entry: usize| {
+        refuse(
+            record
+                .with("document", document.identity.clone())
+                .with("entry", entry.to_string()),
+        )
+    };
+    let entries = match &snapshot.contexts {
+        RawContexts::Absent => return Ok(Vec::new()),
+        // A current observation names no invocation, so it holds no context.
+        _ if snapshot.observation == ObservationRole::Current => {
+            return Err(refuse(
+                admission_record(Code::InvalidRuntimeInput, "unknown-member")
+                    .with("document", document.identity.clone())
+                    .with("field", "contexts"),
+            ));
+        }
+        RawContexts::Malformed(record) => {
+            return Err(refuse(
+                record.clone().with("document", document.identity.clone()),
+            ))
+        }
+        RawContexts::Entries(entries) => entries,
+    };
+    let mut machines: Vec<&str> = Vec::new();
+    let mut read = Vec::new();
+    for (entry, raw) in entries.iter().enumerate() {
+        // 6.10: the entry's shape.
+        let context = raw
+            .0
+            .as_ref()
+            .map_err(|record| named(record.clone(), entry))?;
+        // 6.11: the machine, and one context per machine.
+        let machine = context.machine.as_str();
+        let Some((view, key)) =
+            find_declaration(views, machine).filter(|(view, key)| is_state_machine(view, key))
+        else {
+            return Err(named(
+                admission_record(Code::InvalidRuntimeInput, "wrong-role-mapping")
+                    .with("machine", machine.to_owned()),
+                entry,
+            ));
+        };
+        if machines.contains(&machine) {
+            return Err(named(
+                admission_record(Code::InvalidRuntimeInput, "duplicate-member")
+                    .with("machine", machine.to_owned()),
+                entry,
+            ));
+        }
+        machines.push(machine);
+        let effective = *view
+            .view
+            .type_identities()
+            .get(&key)
+            .ok_or_else(|| fault("context-machine-has-no-effective-id"))?;
+        let declared = types
+            .attributes(effective)
+            .ok_or_else(|| fault("context-machine-has-no-checked-attributes"))?;
+        // 6.12: the fields, in the machine's exposed effective order.
+        for attribute in declared {
+            if let quire_exact::ValueType::Collection(collection) = attribute.field().value_type() {
+                if collection.kind() != CollectionKind::Sequence {
+                    return Err(named(
+                        admission_record(Code::UnknownRequiredFeature, "unsupported-feature")
+                            .with("machine", machine.to_owned())
+                            .with("field", attribute.field().name().to_owned()),
+                        entry,
+                    ));
+                }
+            }
+        }
+        for attribute in declared {
+            let name = attribute.field().name();
+            if raw_field(&context.fields, name).is_none() {
+                return Err(named(
+                    admission_record(Code::InvalidRuntimeInput, "missing-member")
+                        .with("machine", machine.to_owned())
+                        .with("field", name.to_owned()),
+                    entry,
+                ));
+            }
+        }
+        for (name, _) in &context.fields {
+            if !declared
+                .iter()
+                .any(|attribute| attribute.field().name() == name)
+            {
+                return Err(named(
+                    admission_record(Code::InvalidRuntimeInput, "unknown-member")
+                        .with("machine", machine.to_owned())
+                        .with("field", name.clone()),
+                    entry,
+                ));
+            }
+        }
+        let mut attributes = Vec::with_capacity(declared.len());
+        let mut breaches = Vec::new();
+        let mut context_references = Vec::new();
+        for attribute in declared {
+            let name = attribute.field().name();
+            let value_type = attribute.field().value_type();
+            let presence = attribute.field().presence();
+            let raw = raw_field(&context.fields, name)
+                .ok_or_else(|| fault("context-field-missing-after-check"))?;
+            if !object_field_kind_matches(raw.form(), value_type, presence) {
+                return Err(named(
+                    admission_record(Code::InvalidRuntimeInput, "wrong-value-kind")
+                        .with("machine", machine.to_owned())
+                        .with("field", name.to_owned()),
+                    entry,
+                ));
+            }
+            let mut found = Vec::new();
+            let witness = match range {
+                PostStateRange::Witness => Some(&mut found),
+                PostStateRange::Refuse => None,
+            };
+            let value = admit_object_field(references, raw, value_type, presence, witness)
+                .map_err(|record| {
+                    named(
+                        record
+                            .with("machine", machine.to_owned())
+                            .with("field", name.to_owned()),
+                        entry,
+                    )
+                })?;
+            breaches.extend(
+                found
+                    .into_iter()
+                    .map(|breach| (attribute.identity(), breach)),
+            );
+            let mut found_references = Vec::new();
+            collect_references(raw, &mut found_references);
+            context_references.extend(found_references.into_iter().map(|(population, key)| {
+                ContextReference {
+                    field: name.to_owned(),
+                    population,
+                    key,
+                }
+            }));
+            attributes.push((name, value));
+        }
+        if read_machine.is_some_and(|clause| types.conforms(effective, clause)) {
+            read.push(ReadContext {
+                machine: machine.to_owned(),
+                entry,
+                effective,
+                attributes,
+                references: context_references,
+                breaches,
+            });
+        }
+    }
+    Ok(read)
+}
+
+/// The read context of `snapshot` for a clause of the state machine `machine`
+/// (FR-106 "Behavior": the entry whose `machine` is `machine` or specializes
+/// it), with its most-specific machine. Decided from the entries' `machine`
+/// member alone, so it is the context check 9 found once admission passed.
+pub(super) fn read_context<'s>(
+    views: &[ModelView],
+    types: &TypeEnvironment,
+    snapshot: &'s SnapshotDocument,
+    machine: quire_exact::EffectiveId,
+) -> Option<(&'s RawContext, quire_exact::EffectiveId)> {
+    snapshot.contexts.contexts().find_map(|(_, context)| {
+        let (view, key) = find_declaration(views, &context.machine)?;
+        let effective = *view.view.type_identities().get(&key)?;
+        types
+            .conforms(effective, machine)
+            .then_some((context, effective))
+    })
+}
+
+/// FR-106 check 8 over the reference values of the read contexts, in the
+/// order given (`pre` before `post`): a reference naming a key absent from
+/// its complete population refuses `dangling_reference`, naming the machine,
+/// the field, the key and the population, in effective field order. The
+/// population of a context reference that the snapshot does not list is left
+/// to the object closure, as it is for an object field.
+pub(super) fn check_context_closure(
+    observations: &[&PopulationValues<'_>],
+) -> Result<(), AdmissionFailure> {
+    for values in observations {
+        for context in &values.read_contexts {
+            for reference in &context.references {
+                if values.completeness.get(&reference.population).copied() != Some(true) {
+                    continue;
+                }
+                let known = values
+                    .keys_by_population
+                    .get(&reference.population)
+                    .is_some_and(|keys| keys.contains(&reference.key));
+                if known {
+                    continue;
+                }
+                return Err(refuse(
+                    admission_record(
+                        Code::DanglingReference,
+                        "absent-target-in-complete-population",
+                    )
+                    .with("machine", context.machine.clone())
+                    .with("field", reference.field.clone())
+                    .with("population", reference.population.clone())
+                    .with("object", reference.key.clone()),
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// FR-106's required populations from parameters: every population of the
@@ -1396,9 +2604,12 @@ fn holds_references(value_type: &quire_exact::ValueType) -> bool {
             | quire_exact::ValueType::Float(_)
             | quire_exact::ValueType::Quantity(_)
             | quire_exact::ValueType::Text(_)
+            | quire_exact::ValueType::String
             | quire_exact::ValueType::Enum(_)
             | quire_exact::ValueType::Composite(_)
-            | quire_exact::ValueType::Population(_) => return false,
+            | quire_exact::ValueType::Population(_)
+            | quire_exact::ValueType::Uuid
+            | quire_exact::ValueType::Timestamp => return false,
         }
     }
 }
@@ -1420,6 +2631,7 @@ pub(super) fn check_population_completeness(
     completeness: &BTreeMap<String, bool>,
     self_population: Option<&str>,
     parameter_populations: &[String],
+    extents: &[super::relationships::CheckedExtent],
 ) -> Result<(), AdmissionFailure> {
     // Built from the wire-declared `reference.population` (SR-750 FND-001):
     // a dangling reference (whose target this call never admits into
@@ -1451,6 +2663,8 @@ pub(super) fn check_population_completeness(
                 }
             }
         }
+        // An instance end makes the population of its other end required.
+        grew |= super::relationships::extend_required(&mut required, extents);
         if !grew {
             break;
         }
@@ -1472,6 +2686,13 @@ pub(super) fn check_population_completeness(
             walk_order.push(name);
         }
     }
+    // A declared population only an instance end made required follows them
+    // all (check 6.8 admitted only declared populations at instance ends).
+    for name in super::relationships::end_populations(extents) {
+        if required.contains(name) && !walk_order.contains(&name) {
+            walk_order.push(name);
+        }
+    }
     for name in walk_order {
         if required.contains(name) && completeness.get(name).copied() != Some(true) {
             return Err(incomplete(
@@ -1480,7 +2701,7 @@ pub(super) fn check_population_completeness(
             ));
         }
     }
-    Ok(())
+    super::relationships::check_unlisted_ends(extents, completeness)
 }
 
 /// FR-106 check 8: closure, skipped over an incomplete population, over
@@ -1491,6 +2712,7 @@ pub(super) fn check_population_closure(
     populations: &[RawPopulation],
     completeness: &BTreeMap<String, bool>,
     keys_by_population: &BTreeMap<String, BTreeSet<String>>,
+    extents: &[super::relationships::CheckedExtent],
 ) -> Result<(), AdmissionFailure> {
     for entry in populations {
         for object in &entry.objects {
@@ -1519,7 +2741,8 @@ pub(super) fn check_population_closure(
             }
         }
     }
-    Ok(())
+    // After the `reference` values: the instance ends.
+    super::relationships::check_dangling_ends(extents)
 }
 
 /// Builds the final [`AdmittedEnvironment`] from `values`, once checks 6, 7
@@ -1554,11 +2777,24 @@ pub(super) fn finish_populations(
         widened = widen_ranges(types)?;
         &widened
     };
+    let extents = super::relationships::build_extents(
+        types,
+        values.facts,
+        &values.extents,
+        &values.completeness,
+    )?;
+    let references: Vec<ObjectReference> = values
+        .objects
+        .iter()
+        .map(|(reference, _)| reference.clone())
+        .collect();
     let environment = ObjectEnvironment::new(
         ObjectClosure::new(closure_types, values.objects, &tolerated)
             .map_err(map_environment_refusal)?,
     )
-    .with_out_of_range(out_of_range.clone());
+    .with_references(references)
+    .with_out_of_range(out_of_range.clone())
+    .with_extents(extents);
     Ok(AdmittedEnvironment {
         environment,
         completeness: values.completeness,
@@ -1606,27 +2842,173 @@ fn widen_ranges(types: &TypeEnvironment) -> Result<TypeEnvironment, AdmissionFai
 pub(super) fn admit_populations(
     views: &[ModelView],
     types: &TypeEnvironment,
-    populations: &[RawPopulation],
+    snapshot: &SnapshotDocument,
+    document: &DocumentRef,
     self_population: Option<&str>,
     ancestor_steps: u64,
 ) -> Result<AdmittedEnvironment, AdmissionFailure> {
     let values = admit_population_values(
         views,
         types,
-        populations,
+        snapshot,
+        document,
+        None,
         PostStateRange::Refuse,
         ancestor_steps,
     )?;
-    check_population_completeness(populations, &values.completeness, self_population, &[])?;
+    check_population_completeness(
+        &snapshot.populations,
+        &values.completeness,
+        self_population,
+        &[],
+        &values.extents,
+    )?;
     check_population_closure(
-        populations,
+        &snapshot.populations,
         &values.completeness,
         &values.keys_by_population,
+        &values.extents,
     )?;
     finish_populations(types, values)
 }
 
-fn map_environment_refusal(error: ObjectClosureRefusal) -> AdmissionFailure {
+/// One population of an admitted initial state: its declaration key and
+/// every object it lists, with each field's admitted slot.
+pub(super) struct AdmittedPopulation {
+    pub(super) key: DeclarationKey,
+    pub(super) objects: Vec<AdmittedObject>,
+}
+
+/// An admitted initial state: its populations and the relationship extents
+/// its snapshot listed.
+pub(super) struct AdmittedInitial {
+    pub(super) populations: Vec<AdmittedPopulation>,
+    pub(super) extents:
+        Vec<quire_semantic_value::relationship_extent::RelationshipExtent<DeclarationKey>>,
+}
+
+/// One object of an admitted initial state.
+pub(super) struct AdmittedObject {
+    pub(super) reference: ObjectReference,
+    pub(super) fields: Vec<(String, FieldValue)>,
+}
+
+/// FR-106 checks 6 to 8 over an initial state's one snapshot, where check 7
+/// requires every population the snapshot lists: every population the
+/// document lists, in the document's order, with its objects.
+pub(super) fn admit_initial_populations(
+    views: &[ModelView],
+    types: &TypeEnvironment,
+    snapshot: &SnapshotDocument,
+    document: &DocumentRef,
+    ancestor_steps: u64,
+) -> Result<AdmittedInitial, AdmissionFailure> {
+    // An initialization snapshot is `current`: it holds no machine context.
+    let populations = &snapshot.populations[..];
+    let values = admit_population_values(
+        views,
+        types,
+        snapshot,
+        document,
+        None,
+        PostStateRange::Refuse,
+        ancestor_steps,
+    )?;
+    let required: Vec<String> = populations
+        .iter()
+        .map(|entry| entry.population.clone())
+        .collect();
+    check_population_completeness(
+        populations,
+        &values.completeness,
+        None,
+        &required,
+        &values.extents,
+    )?;
+    check_population_closure(
+        populations,
+        &values.completeness,
+        &values.keys_by_population,
+        &values.extents,
+    )?;
+    let mut admitted: Vec<(String, AdmittedPopulation)> = Vec::new();
+    for entry in populations {
+        if admitted.iter().any(|(name, _)| *name == entry.population) {
+            continue;
+        }
+        let (_, info) = find_population(views, &entry.population)
+            .ok_or_else(|| fault("listed-population-unresolved"))?;
+        admitted.push((
+            entry.population.clone(),
+            AdmittedPopulation {
+                key: info.key,
+                objects: Vec::new(),
+            },
+        ));
+    }
+    for ((reference, fields), holder) in values.objects.iter().zip(&values.holders) {
+        let (_, population) = admitted
+            .iter_mut()
+            .find(|(name, _)| name == holder)
+            .ok_or_else(|| fault("object-holder-unlisted"))?;
+        population.objects.push(AdmittedObject {
+            reference: reference.clone(),
+            fields: fields
+                .iter()
+                .map(|(name, value)| ((*name).to_owned(), value.clone()))
+                .collect(),
+        });
+    }
+    let extents = super::relationships::supplied_extents(&values.extents)?;
+    finish_populations(types, values)?;
+    Ok(AdmittedInitial {
+        populations: admitted
+            .into_iter()
+            .map(|(_, population)| population)
+            .collect(),
+        extents,
+    })
+}
+
+/// FR-098 step 3: FR-106 checks 6 to 8 over a function's one environment
+/// document. The populations holding an object that equals one of the
+/// converted `arguments` are required (check 7), and so is, repeatedly, what
+/// their reference fields and relationship ends name.
+pub(super) fn admit_argument_populations(
+    views: &[ModelView],
+    types: &TypeEnvironment,
+    snapshot: &SnapshotDocument,
+    document: &DocumentRef,
+    arguments: &[ObjectReference],
+    ancestor_steps: u64,
+) -> Result<AdmittedEnvironment, AdmissionFailure> {
+    let values = admit_population_values(
+        views,
+        types,
+        snapshot,
+        document,
+        None,
+        PostStateRange::Refuse,
+        ancestor_steps,
+    )?;
+    let required = values.populations_holding(arguments);
+    check_population_completeness(
+        &snapshot.populations,
+        &values.completeness,
+        None,
+        &required,
+        &values.extents,
+    )?;
+    check_population_closure(
+        &snapshot.populations,
+        &values.completeness,
+        &values.keys_by_population,
+        &values.extents,
+    )?;
+    finish_populations(types, values)
+}
+
+pub(super) fn map_environment_refusal(error: ObjectClosureRefusal) -> AdmissionFailure {
     match error.cause {
         ObjectClosureCause::DanglingReference(target) => refuse(
             admission_record(
@@ -1760,7 +3142,8 @@ pub(super) fn admit_result(
                     "wrong-value-kind",
                 )));
             }
-            let value = admit_form(references, raw.form(), value_type, None).map_err(refuse)?;
+            let value = admit_form(references, raw.form(), value_type, None)
+                .map_err(|record| refuse(record.with("field", "result")))?;
             references.check_closure(raw).map_err(refuse)?;
             Ok(Some(value))
         }
@@ -2012,5 +3395,327 @@ mod tests {
         )
         .expect_err("an unwitnessed sequence refuses");
         assert_eq!(record.cause, "invalid-value");
+    }
+
+    /// The raw value `text` spells, or `None` when it is not a value form.
+    fn read(text: &str) -> Option<SnapshotValue> {
+        let document =
+            quire_canonical::read(text.as_bytes(), u64::MAX).expect("test fixture is JSON");
+        read_raw_value(Json::of(document.root()), &mut || Ok::<(), ()>(()))
+            .expect("an uncharged read does not fail")
+    }
+
+    /// FR-106 record form: the `record` tag reads its `type` and its fields
+    /// in document order, nested records included, and equals the value built
+    /// from its parts; a payload with any member besides `type` and `fields`,
+    /// or either missing or of the wrong kind, is not a value form.
+    #[trace("FR-106-AC-15", "FR-359-AC-9")]
+    #[test]
+    fn a_record_value_reads_by_its_type_and_fields_in_document_order() {
+        let read_back = snapshot(
+            r#"{"record":{"type":"ix://p/T","fields":{"b":{"integer":"2"},"a":{"record":{"type":"ix://p/U","fields":{}}}}}}"#,
+        );
+        let RawForm::Record(record) = read_back.form() else {
+            panic!("a record");
+        };
+        assert_eq!(record.type_identity(), "ix://p/T");
+        let names: Vec<&str> = record.fields().map(|(name, _)| name).collect();
+        assert_eq!(names, ["b", "a"], "document order");
+        assert_eq!(
+            read_back,
+            SnapshotValue::record(
+                "ix://p/T",
+                vec![
+                    ("b".to_owned(), SnapshotValue::integer("2")),
+                    (
+                        "a".to_owned(),
+                        SnapshotValue::record("ix://p/U", Vec::new())
+                    ),
+                ]
+            )
+        );
+        for malformed in [
+            r#"{"record":{"type":"ix://p/T"}}"#,
+            r#"{"record":{"fields":{}}}"#,
+            r#"{"record":{"type":"ix://p/T","fields":{},"extra":1}}"#,
+            r#"{"record":{"type":7,"fields":{}}}"#,
+            r#"{"record":{"type":"ix://p/T","fields":[]}}"#,
+            r#"{"record":{"type":"ix://p/T","fields":{"a":{"nope":1}}}}"#,
+            r#"{"record":"ix://p/T"}"#,
+        ] {
+            assert!(read(malformed).is_none(), "{malformed}");
+        }
+    }
+
+    /// FR-360 item 9: the `variant` tag keeps the members of its payload as
+    /// written, so a missing or an extra one is judged by admission in its
+    /// own order; a payload that is not an object, or a `type` or `case` that
+    /// is not text, is not a value form.
+    #[trace("FR-360-AC-9", "FR-360-AC-10")]
+    #[test]
+    fn a_variant_value_reads_its_members_as_written() {
+        let read_back = snapshot(r#"{"variant":{"case":"Gold","type":"ix://p/Tier"}}"#);
+        let RawForm::Variant(variant) = read_back.form() else {
+            panic!("a variant");
+        };
+        assert_eq!(variant.type_identity(), Some("ix://p/Tier"));
+        assert_eq!(variant.case(), Some("Gold"));
+        assert!(!variant.has_extra_member());
+        assert_eq!(
+            read_back,
+            SnapshotValue::variant("ix://p/Tier", "Gold"),
+            "member order does not change the value"
+        );
+        let partial = snapshot(r#"{"variant":{"x":1}}"#);
+        let RawForm::Variant(variant) = partial.form() else {
+            panic!("a variant");
+        };
+        assert_eq!((variant.type_identity(), variant.case()), (None, None));
+        assert!(variant.has_extra_member());
+        for malformed in [
+            r#"{"variant":"Gold"}"#,
+            r#"{"variant":{"type":7,"case":"Gold"}}"#,
+            r#"{"variant":{"type":"ix://p/Tier","case":null}}"#,
+        ] {
+            assert!(read(malformed).is_none(), "{malformed}");
+        }
+    }
+
+    /// A reference inside a record is found by the closure walk.
+    #[trace("FR-106-AC-15", "FR-359-AC-9")]
+    #[test]
+    fn collect_references_walks_into_a_record() {
+        let raw = snapshot(
+            r#"{"record":{"type":"ix://p/T","fields":{"a":{"reference":{"population":"p","key":"k"}}}}}"#,
+        );
+        let mut found = Vec::new();
+        collect_references(&raw, &mut found);
+        assert_eq!(found, [("p".to_owned(), "k".to_owned())]);
+    }
+
+    /// A `Text[min, max; profile]` slot.
+    fn text_slot(min: u64, max: u64, profile: quire_exact::TextProfile) -> quire_exact::ValueType {
+        quire_exact::ValueType::Text(
+            quire_exact::TextType::new(min, max, profile).expect("the bounds are not empty"),
+        )
+    }
+
+    fn title() -> quire_exact::ValueType {
+        text_slot(1, 8, quire_exact::TextProfile::Nfc)
+    }
+
+    fn tag() -> quire_exact::ValueType {
+        text_slot(0, 4, quire_exact::TextProfile::UnicodeScalars)
+    }
+
+    fn code() -> quire_exact::ValueType {
+        text_slot(0, 4, quire_exact::TextProfile::BinaryUtf8)
+    }
+
+    /// The Text object of `text`, admitted into `slot`.
+    fn admit_text_object(
+        text: &str,
+        slot: &quire_exact::ValueType,
+    ) -> Result<Value, AdmissionRecord> {
+        let object = snapshot(&serde_json::json!({"kind": "text", "text": text}).to_string());
+        let RawForm::Native(native) = object.form() else {
+            panic!("a native object");
+        };
+        admit_native(native, slot)
+    }
+
+    /// The retained sequence of an admitted Text value.
+    fn retained(admitted: Result<Value, AdmissionRecord>) -> String {
+        match admitted {
+            Ok(Value::Text(text)) => text.retained().to_owned(),
+            other => panic!("a Text value, not {other:?}"),
+        }
+    }
+
+    /// TC-1038 step 2 (FR-106-AC-33): each text admits into its declared
+    /// type; under `nfc` U+00E9 and U+0065 U+0301 retain one sequence and
+    /// sixteen supplied scalars retain eight.
+    #[trace("TC-1038", "FR-106-AC-33")]
+    #[test]
+    fn a_text_object_admits_into_a_text_slot_under_its_profile() {
+        for text in ["a", "abcdefgh", "a;b>>>c", "\u{e9}", "\u{0}", "\u{1f600}"] {
+            assert_eq!(retained(admit_text_object(text, &title())), text);
+        }
+        assert_eq!(retained(admit_text_object("e\u{301}", &title())), "\u{e9}");
+        assert_eq!(
+            retained(admit_text_object(&"e\u{301}".repeat(8), &title())),
+            "\u{e9}".repeat(8)
+        );
+        // Unicode scalars and bytes retain what was supplied.
+        assert_eq!(
+            retained(admit_text_object(&"\u{e9}".repeat(4), &tag())),
+            "\u{e9}".repeat(4)
+        );
+        assert_eq!(retained(admit_text_object("", &tag())), "");
+        for text in ["abcd", "\u{e9}\u{e9}", "\u{1f600}"] {
+            assert_eq!(retained(admit_text_object(text, &code())), text);
+        }
+    }
+
+    /// TC-1038 step 4 (FR-106-AC-34): each object defect refuses in the
+    /// payload order, the first defect naming its member.
+    #[trace("TC-1038", "FR-106-AC-34")]
+    #[test]
+    fn a_defective_text_object_refuses_in_the_payload_order() {
+        for (object, cause, member) in [
+            (r#"{"kind":1}"#, "wrong-value-kind", Some("kind")),
+            (r#"{"kind":null}"#, "wrong-value-kind", Some("kind")),
+            (r#"{"kind":{}}"#, "wrong-value-kind", Some("kind")),
+            (
+                r#"{"kind":"Text","text":"x"}"#,
+                "invalid-value",
+                Some("kind"),
+            ),
+            (
+                r#"{"kind":"TEXT","text":"x"}"#,
+                "invalid-value",
+                Some("kind"),
+            ),
+            (
+                r#"{"kind":"blob","value":"x"}"#,
+                "invalid-value",
+                Some("kind"),
+            ),
+            (
+                r#"{"kind":"blob","text":"x"}"#,
+                "invalid-value",
+                Some("kind"),
+            ),
+            (r#"{"kind":"text"}"#, "missing-member", Some("text")),
+            (
+                r#"{"kind":"text","nanoseconds":"0"}"#,
+                "missing-member",
+                Some("text"),
+            ),
+            (
+                r#"{"kind":"text","text":"Ready","extra":1}"#,
+                "unknown-member",
+                Some("extra"),
+            ),
+            (
+                r#"{"kind":"text","text":"Ready","nanoseconds":"0"}"#,
+                "unknown-member",
+                Some("nanoseconds"),
+            ),
+            (
+                r#"{"kind":"text","text":5}"#,
+                "wrong-value-kind",
+                Some("text"),
+            ),
+            (
+                r#"{"kind":"text","text":null}"#,
+                "wrong-value-kind",
+                Some("text"),
+            ),
+            (
+                r#"{"kind":"text","text":true}"#,
+                "wrong-value-kind",
+                Some("text"),
+            ),
+            (
+                r#"{"kind":"text","text":["x"]}"#,
+                "wrong-value-kind",
+                Some("text"),
+            ),
+            (
+                r#"{"kind":"text","text":{}}"#,
+                "wrong-value-kind",
+                Some("text"),
+            ),
+            (
+                r#"{"extra":1,"kind":"text","text":5}"#,
+                "unknown-member",
+                Some("extra"),
+            ),
+        ] {
+            let object_value = snapshot(object);
+            let RawForm::Native(native) = object_value.form() else {
+                panic!("a native object: {object}");
+            };
+            let Err(record) = admit_native(native, &title()) else {
+                panic!("a refusal: {object}");
+            };
+            assert_eq!(record.code, Code::InvalidRuntimeInput, "{object}");
+            assert_eq!(record.cause, cause, "{object}");
+            assert_eq!(
+                record.fields.get("member").map(String::as_str),
+                member,
+                "{object}"
+            );
+        }
+    }
+
+    /// TC-1038 step 5 (FR-106-AC-35): a String object in a Text slot and a
+    /// Text object in any other native slot refuse `wrong-value-kind`
+    /// naming no member, and a Text object longer than the Text slot's
+    /// maximum placed in a String slot refuses fit, not length.
+    #[trace("TC-1038", "FR-106-AC-35")]
+    #[test]
+    fn text_and_string_objects_fit_only_their_own_slots() {
+        let string_object = snapshot(r#"{"kind":"string","text":"Ready"}"#);
+        let RawForm::Native(native) = string_object.form() else {
+            panic!("a native object");
+        };
+        let refusal = admit_native(native, &title()).expect_err("a String fits no Text slot");
+        assert_eq!(refusal.code, Code::InvalidRuntimeInput);
+        assert_eq!(refusal.cause, "wrong-value-kind");
+        assert!(!refusal.fields.contains_key("member"));
+        for slot in [
+            quire_exact::ValueType::String,
+            quire_exact::ValueType::Uuid,
+            quire_exact::ValueType::Timestamp,
+            quire_exact::ValueType::Integer,
+        ] {
+            for text in ["Ready", "00112233-4455-6677-8899-aabbccddeeff", "aaaaaaaaa"] {
+                let refusal = admit_text_object(text, &slot).expect_err("a Text fits no such slot");
+                assert_eq!(refusal.cause, "wrong-value-kind", "{slot:?} {text}");
+                assert!(!refusal.fields.contains_key("member"), "{slot:?} {text}");
+            }
+        }
+        // A defect before type fit still wins: `text` 5 in a UUID slot.
+        let broken = snapshot(r#"{"kind":"text","text":5}"#);
+        let RawForm::Native(native) = broken.form() else {
+            panic!("a native object");
+        };
+        let refusal = admit_native(native, &quire_exact::ValueType::Uuid).expect_err("refused");
+        assert_eq!(refusal.cause, "wrong-value-kind");
+        assert_eq!(
+            refusal.fields.get("member").map(String::as_str),
+            Some("text")
+        );
+    }
+
+    /// TC-1038 step 6 (FR-106-AC-36): the length is the profile length of the
+    /// retained sequence; a text outside the declared bounds refuses
+    /// `invalid-value` naming `text`, the declared type and the measured
+    /// length.
+    #[trace("TC-1038", "FR-106-AC-36")]
+    #[test]
+    fn a_text_outside_its_declared_length_refuses_with_the_measured_length() {
+        let long = "a".repeat(65_536);
+        let pairs = |count: usize| "e\u{301}".repeat(count);
+        for (text, slot, expected, measured) in [
+            ("", title(), "Text[1, 8; nfc]", 0),
+            ("abcdefghi", title(), "Text[1, 8; nfc]", 9),
+            (pairs(9).as_str(), title(), "Text[1, 8; nfc]", 9),
+            (long.as_str(), title(), "Text[1, 8; nfc]", 65_536),
+            ("abcde", tag(), "Text[0, 4; unicode-scalars]", 5),
+            (pairs(3).as_str(), tag(), "Text[0, 4; unicode-scalars]", 6),
+            ("\u{e9}\u{e9}\u{e9}", code(), "Text[0, 4; binary-utf8]", 6),
+            ("\u{1f600}\u{1f600}", code(), "Text[0, 4; binary-utf8]", 8),
+        ] {
+            let refusal = admit_text_object(text, &slot).expect_err("outside the bounds");
+            assert_eq!(refusal.code, Code::InvalidRuntimeInput);
+            assert_eq!(refusal.cause, "invalid-value");
+            let field = |name: &str| refusal.fields.get(name).map(String::as_str);
+            assert_eq!(field("member"), Some("text"));
+            assert_eq!(field("expected"), Some(expected));
+            assert_eq!(field("actual"), Some(measured.to_string().as_str()));
+        }
     }
 }

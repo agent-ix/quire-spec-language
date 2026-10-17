@@ -15,13 +15,14 @@ use qsl_eval::value::{input_refusal_code, CheckedPackageEvaluation};
 use qsl_foundation::diagnostic::InternalFault;
 use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
-use quire_exact::{Incomplete, Meter, ScalarLimits};
+use qsl_semantics::value::supplied::{SuppliedFailure, SuppliedRun, SuppliedStop};
+use quire_exact::{Cancel, Incomplete, Meter, ScalarLimits};
 use quire_semantic_value::call::InputRefusal;
 
 use super::argument::{self, Stopped};
 use super::{
-    arguments, call_failure_to_replay_refusal, consumed, exceeded_before_call, recompile,
-    request_limits, select, Claim, ReplayRefusal,
+    arguments, call_failure_to_replay_refusal, consumed, recompile, request_limits, select, Claim,
+    ReplayRefusal,
 };
 use crate::bounds::ReplayLimits;
 use crate::identity::ObligationIdentity;
@@ -62,6 +63,9 @@ pub enum ValueParityResult {
     /// The evaluation reached a limit before it produced an outcome, so
     /// there is nothing to compare.
     Incomplete(Box<Incomplete>),
+    /// A pre-call limit of the request stopped the arguments' conversion or
+    /// admission before the call (FR-277), so there is nothing to compare.
+    PreCallIncomplete(Box<SuppliedStop>),
     /// The request failed before any outcome: FR-098's refusals (a stale
     /// package, an unknown function, an unbound parameter, a `Boolean`
     /// function) and a broken checked invariant.
@@ -109,7 +113,9 @@ impl ValueParityResult {
             Self::RefusedInput(refusal) => TerminalValue::Inconclusive(
                 InconclusiveCause::ReplayRefused(input_refusal_code(refusal)),
             ),
-            Self::Incomplete(_) => TerminalValue::Incomplete(IncompleteCause::ResourceExhausted),
+            Self::Incomplete(_) | Self::PreCallIncomplete(_) => {
+                TerminalValue::Incomplete(IncompleteCause::ResourceExhausted)
+            }
             Self::Refused(refusal) => TerminalValue::from_replay_refusal(refusal),
         }
     }
@@ -137,15 +143,30 @@ pub fn replay_value_parity(
         package_id: wire.package_id.clone(),
         function: wire.selected_function.clone(),
         source: wire.source.clone(),
-        limits: wire.accounting_limits,
+        limits: wire.effective_accounting_limits(),
         generated,
     };
     let result = match settle(wire, &claim, replay_limits) {
         Ok(result) => result,
-        Err(ReplayRefusal::Input(refusal)) => ValueParityResult::RefusedInput(refusal),
-        Err(refusal) => ValueParityResult::Refused(Box::new(refusal)),
+        Err(refusal) => match refusal.input_refusal() {
+            Some(input) => ValueParityResult::RefusedInput(input.clone()),
+            None => ValueParityResult::Refused(Box::new(refusal)),
+        },
     };
     ValueParityReport { claim, result }
+}
+
+/// A supplied-value phase stopped before the call: a ceiling is the report's
+/// pre-call incomplete, any other stop its own typed refusal.
+fn pre_call(failure: SuppliedFailure) -> Result<ValueParityResult, ReplayRefusal> {
+    match failure {
+        SuppliedFailure::Stop(stop) if stop.limit().is_some() => {
+            Ok(ValueParityResult::PreCallIncomplete(stop))
+        }
+        SuppliedFailure::Stop(stop) => Err(ReplayRefusal::Supplied(stop)),
+        SuppliedFailure::Unsupported(stop) => Err(ReplayRefusal::UnsupportedHelper(stop)),
+        SuppliedFailure::Fault(fault) => Err(ReplayRefusal::Fault(fault)),
+    }
 }
 
 #[deny(clippy::wildcard_enum_match_arm)]
@@ -155,7 +176,11 @@ fn settle(
     replay_limits: ReplayLimits,
 ) -> Result<ValueParityResult, ReplayRefusal> {
     let request = ReplayRequest::decode(wire, replay_limits)?;
-    let limits = request_limits(request.stage_limits(), replay_limits)?;
+    let limits = request_limits(
+        request.stage_limits(),
+        request.accounting_limits(),
+        replay_limits,
+    )?;
     let compiled = recompile(&request, &limits)?;
     let package = compiled.checked.package();
     let call = select(&compiled, request.selected_function(), Claim::ValueParity)?;
@@ -166,23 +191,36 @@ fn settle(
         request.obligation_identity(),
     )?;
     let limits = request.accounting_limits();
-    let converted = match argument::convert_arguments(package, &call.types, &joined, &limits) {
+    let mut run = SuppliedRun::new(request.supplied_limits(), Cancel::new())
+        .map_err(ReplayRefusal::Supplied)?;
+    let converted = match argument::convert_arguments(
+        package,
+        &call.types,
+        &joined,
+        &limits,
+        &mut run,
+        &compiled.reference_model(),
+    ) {
         Ok(converted) => converted,
         Err(Stopped::Refusal(refusal)) => return Err(*refusal),
-        Err(Stopped::Limit(incomplete)) => return Ok(ValueParityResult::Incomplete(incomplete)),
+        Err(Stopped::Supplied(failure)) => return pre_call(failure),
     };
-    if let Some(incomplete) = exceeded_before_call(&converted, &limits) {
-        return Ok(ValueParityResult::Incomplete(Box::new(incomplete)));
-    }
     let mut meter = Meter::new(limits);
-    let evaluation = package
-        .call(
-            &call.name,
-            converted.values,
-            &ObjectEnvironment::default(),
-            &mut meter,
-        )
-        .map_err(call_failure_to_replay_refusal)?;
+    let evaluation = match package.call_supplied(
+        &call.name,
+        converted.values,
+        &ObjectEnvironment::default(),
+        &mut meter,
+        &mut run,
+    ) {
+        Ok(evaluation) => evaluation,
+        Err(failure) => {
+            return match run.failure() {
+                Some(recorded) => pre_call(recorded.clone()),
+                None => Err(call_failure_to_replay_refusal(failure)),
+            };
+        }
+    };
     let outcome = match evaluation.outcome {
         FamilyOutcome::Evaluated(outcome) => outcome,
         // A function's call is a kernel evaluation; a family-owned result

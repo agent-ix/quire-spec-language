@@ -18,17 +18,6 @@ relationships:
 ---
 # ADR-011: QSL stage DAG and crate/module dependency architecture (ARCH-10)
 
-## Status
-
-Accepted, 2026-09-23 (proposed 2026-09-19). The §7.3 crate
-extraction X-1 to X-10 has landed, and ADR-011-OQ-2 is ruled. The owner
-widened FB-05 on 2026-10-01 with a shared `no_std` leaf class and layer SV
-(X-11). Amended by ADR-030 (FR-356): the walker toolkit `quire-walk`, layer
-W, joins that class (its own repository, `agent-ix/quire-walk`), and the std-only `maybe_grow` crate `qsl-walk-grow`,
-layer WG, sits outside the qualified core. Owning ticket: agent-ix/quire-spec-language#209 (ARCH-10),
-epic #205, Layer 1. Acceptance is tested by the change-scenario gate #212.
-Supersedes nothing.
-
 ## Context
 
 #209 asks for the legal compilation and execution stages of QSL V1, what each
@@ -121,6 +110,10 @@ Terms used below:
   constructs a value of a checked type.
 - **Reference semantics**: the QSL evaluator whose result defines what a
   checked package means. #205 assigns reference semantics to QSL.
+
+Amended by ADR-030 (FR-356): the walker toolkit `quire-walk`, layer
+W, joins the shared `no_std` leaf class (its own repository, `agent-ix/quire-walk`), and the std-only `maybe_grow` crate `qsl-walk-grow`,
+layer WG, sits outside the qualified core.
 
 ## Decision
 
@@ -719,7 +712,7 @@ its own repository, agent-ix/quire-driver.
 
 The "Depends on" column is an exhaustive allow-list. A module may depend on a
 listed lower layer, or on a module earlier in its own layer's order. Every
-other edge is forbidden. The result is acyclic. #226 owns the drift gate that
+other edge is forbidden. The column is the exhaustive allow-list of first-party layer edges; an external third-party crate is not a layer edge and this column does not govern it (for example, `quire-driver` uses `serde_json` to read FR-331 manifest bytes as data, ADR-013 T-7), except that a cell that restricts its external crates with "only" or "without `std`" (SV, WG) is exhaustive for that crate; a per-crate exact dependency table in a layering test is a stricter gate that governs where it exists. The result is acyclic. #226 owns the drift gate that
 enforces it; before #226, §3's interim rule applies.
 
 | Layer | Modules, in order | Stage | Depends on |
@@ -749,7 +742,8 @@ each their own workspace crate (§7.2). K is `quire-exact` (X-1), SV is
 `quire-semantic-value` (X-11), W is `quire-walk`, an external crate in its own repository, `agent-ix/quire-walk`, and WG is `qsl-walk-grow`
 (ADR-030 FR-356). A layer
 crate's `[dependencies]` name only the layer crates and the external crates in
-its "Depends on" cell above.
+its "Depends on" cell above, plus external third-party crates that §6.1 says are not layer
+edges.
 
 | Crate | Layer |
 |---|---|
@@ -1302,7 +1296,8 @@ Answered by ADR-012 (#210, QSL PR #234) §13.5 and applied above:
   stages, a family that sits out the stage has an explicit, hand-written arm
   that returns `unsupported` with a catalog code.
 - **Requirement records.** Exactly one record per checked item that has
-  `Requirements`: the item's one kind, extent and bound. No backend, candidate
+  `Requirements`: the item's one kind and, for `probabilistic-satisfaction`,
+  its exact evidence kind, plus extent and bound. No backend, candidate
   or disposition (§2.2 E3). The v2 `capability_report` member is FR-322's
   feature-level report (§2.2 E4), not these records.
 - **IR admission.** IR's predicate admission reads the v2 value and expression

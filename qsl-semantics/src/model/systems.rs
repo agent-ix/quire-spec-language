@@ -6,27 +6,18 @@
 //!
 //! Scope decisions, recorded rather than left implicit:
 //!
-//! - This module resolves a systems-model element **by [`DeclarationKey`]
-//!   directly**, not by FR-152's own `resolve(kind, name)` binder request
-//!   over a qualified, aliased name (`M::Sys::pump`). Qualified-name
-//!   resolution needs the profile/model-alias binder this crate's
-//!   expression-grammar layer owns, not `crate::model` (the same "pure
-//!   function of a caller-supplied value" boundary every other module in
-//!   this crate keeps) — a caller that already has that binder can still
-//!   use this module's kind mapping as the last step.
-//! - **Navigation is entirely out of scope.** FR-152's "Navigation" section
-//!   (`systems.resolve`, `model.navigate`, runtime traversal returning
+//! - This module resolves a systems-model element **by [`DeclarationKey`]**.
+//!   FR-152's `resolve(kind, name)` request over a qualified, aliased name
+//!   (`M::pump_out`) is [`crate::model::qualified`], which resolves the name
+//!   to a key and then calls [`resolve_kind`] and reads the effective
+//!   declaration from the [`crate::model::normalize::EffectiveView`].
+//! - **Runtime navigation is entirely out of scope.** FR-152's "Navigation"
+//!   section (`model.navigate`, runtime traversal returning
 //!   `Option<Reference<U>>`/`Set<Reference<U>>`/`Bag<Reference<U>>`,
 //!   canonical reference-key ordering, `cardinality_out_of_bound`) needs an
 //!   object population to traverse. Nothing in `crate::model` builds one
 //!   yet (that is FR-153's own territory); this module resolves and admits
 //!   *declarations*, never runtime references.
-//! - This module does not compute an effective-declaration identity for any
-//!   systems-model kind: `crate::model::normalize` does not fold
-//!   components/endpoints/relationships into its `EffectiveView` (see its
-//!   own module docs' exhaustive per-variant no-op arms for these three
-//!   `DomainPackageRecord` variants). What this module resolves is the original
-//!   producer identity and its kind only.
 //! - Work-unit costs mirror the flat-one-per-charge choice
 //!   [`crate::model::conformance`]/[`crate::model::dispatch`] already
 //!   record, for the same reason: FR-152's own worked figures (e.g. Y04's
@@ -47,11 +38,12 @@ use crate::model::accounting::{Charge, ChargePoint, Incomplete, Meter};
 use crate::model::conformance::multiplicity_conforms;
 use crate::model::domain_package::{
     AllocationRecord, ComponentRecord, DomainPackage, DomainPackageRecord, EndpointRecord,
-    PortDirection, RelationshipRecord,
+    ObjectTypeRecord, PortDirection, RelationshipRecord,
 };
 use crate::model::index::ModelIndex;
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
+use crate::model::refusal::{MemberPath, MemberRoot};
 use qsl_foundation::diagnostic::Code;
 
 /// FR-152's five disjoint systems-model kinds, plus `None` for a record
@@ -153,7 +145,7 @@ impl SystemsClassification {
     }
 }
 
-fn wrong_export(required: Kind, actual: Kind, item: &str) -> ModelRefusal {
+pub(crate) fn wrong_export(required: Kind, actual: Kind, item: &str) -> ModelRefusal {
     ModelRefusal {
         code: Code::InvalidModelBinding,
         cause: ModelRefusalCause::WrongExport,
@@ -189,11 +181,13 @@ fn charge_kind(meter: &mut Meter) -> Result<(), Incomplete> {
     meter.charge(Charge::new(ChargePoint::SystemsKind))
 }
 
-/// Runs `quire.model.systems.kind-mapping/v1` over every component, then
-/// every endpoint, then every relationship in `domain_package`, each ascending by
-/// producer key, charging `systems.kind` once per record before resolving
-/// it. Exhaustive under the limits: every no-kind cascade is reported, in
-/// this same order, never stopping at the first.
+/// Runs `quire.model.systems.kind-mapping/v1` over every interface, then
+/// every component, endpoint, relationship and allocation in
+/// `domain_package`, each ascending by producer key, charging `systems.kind`
+/// once per record before resolving it. A port's interface type resolves
+/// against the interfaces the first phase classified. Exhaustive under the
+/// limits: every no-kind cascade is reported, in this same order, never
+/// stopping at the first.
 pub fn classify(
     domain_package: &DomainPackage,
     meter: &mut Meter,
@@ -203,9 +197,14 @@ pub fn classify(
     let mut relationships: Vec<&RelationshipRecord> = Vec::new();
     let mut allocations: Vec<&AllocationRecord> = Vec::new();
     let mut object_types: HashSet<DeclarationKey> = HashSet::new();
-    let mut interface_types: HashSet<DeclarationKey> = HashSet::new();
+    let mut interfaces: Vec<&ObjectTypeRecord> = Vec::new();
     let mut record_value_types: HashSet<DeclarationKey> = HashSet::new();
 
+    let declared: HashSet<&DeclarationKey> = domain_package
+        .records
+        .iter()
+        .map(DomainPackageRecord::key)
+        .collect();
     for record in &domain_package.records {
         match record {
             DomainPackageRecord::Component(component) => components.push(component),
@@ -215,18 +214,26 @@ pub fn classify(
             DomainPackageRecord::ObjectType(object_type) => {
                 object_types.insert(object_type.key.clone());
                 if object_type.interface_features.is_some() {
-                    interface_types.insert(object_type.key.clone());
+                    interfaces.push(object_type);
                 }
             }
             DomainPackageRecord::RecordValueType(record) => {
                 record_value_types.insert(record.key.clone());
             }
+            DomainPackageRecord::EventType(_) => {}
+            DomainPackageRecord::Enum(_) | DomainPackageRecord::Variant(_) => {}
+            DomainPackageRecord::StateMachine(_) => {}
+            DomainPackageRecord::Process(_) => {}
             DomainPackageRecord::FieldMember(_)
+            | DomainPackageRecord::Clause(_)
+            | DomainPackageRecord::Namespace(_)
+            | DomainPackageRecord::PersistenceInterface(_)
             | DomainPackageRecord::ScalarType(_)
             | DomainPackageRecord::OperationMember(_)
             | DomainPackageRecord::Population(_) => {}
         }
     }
+    interfaces.sort_by_key(|interface| interface.key.clone());
     components.sort_by_key(|component| component.key.clone());
     endpoints.sort_by_key(|endpoint| endpoint.key.clone());
     relationships.sort_by_key(|relationship| relationship.key.clone());
@@ -235,7 +242,13 @@ pub fn classify(
     let mut component_kinds: HashMap<DeclarationKey, Kind> = HashMap::new();
     let mut endpoint_kinds: HashMap<DeclarationKey, Kind> = HashMap::new();
     let mut edge_kinds: HashMap<DeclarationKey, Kind> = HashMap::new();
+    let mut interface_types: HashSet<DeclarationKey> = HashSet::new();
     let mut refusals: Vec<ModelRefusal> = Vec::new();
+
+    for interface in &interfaces {
+        charge_kind(meter)?;
+        interface_types.insert(interface.key.clone());
+    }
 
     for component in &components {
         charge_kind(meter)?;
@@ -256,6 +269,10 @@ pub fn classify(
                 Kind::None
             }
             Some(_) => match component_kinds.get(&endpoint.owning_component) {
+                None if declared.contains(&endpoint.owning_component) => {
+                    refusals.push(wrong_export(Kind::Part, Kind::None, &endpoint.key.node));
+                    Kind::None
+                }
                 None => {
                     refusals.push(dangling(
                         ModelRefusalCause::UnknownComponent {
@@ -267,7 +284,16 @@ pub fn classify(
                     ));
                     Kind::None
                 }
-                Some(&Kind::Part) => Kind::Port,
+                Some(&Kind::Part) if interface_types.contains(&endpoint.value_type) => Kind::Port,
+                Some(&Kind::Part) => {
+                    let actual = component_kinds
+                        .get(&endpoint.value_type)
+                        .or_else(|| endpoint_kinds.get(&endpoint.value_type))
+                        .copied()
+                        .unwrap_or(Kind::None);
+                    refusals.push(wrong_export(Kind::Interface, actual, &endpoint.key.node));
+                    Kind::None
+                }
                 Some(&owner_kind) => {
                     refusals.push(wrong_export(Kind::Part, owner_kind, &endpoint.key.node));
                     Kind::None
@@ -295,7 +321,11 @@ pub fn classify(
             for (end, label) in record_ends {
                 refusals.push(ModelRefusal {
                     code: Code::InvalidModelBinding,
-                    cause: ModelRefusalCause::MalformedDeclaration,
+                    cause: crate::model::normalize::malformed_at(
+                        domain_package,
+                        &relationship.key,
+                        MemberPath::new(MemberRoot::Relationship).name(label),
+                    ),
                     detail: format!(
                         "{} end of {} names {}, a record value type",
                         label, relationship.key.node, end.type_identity.node
@@ -312,6 +342,14 @@ pub fn classify(
                 (&relationship.target, "target"),
             ] {
                 match endpoint_kinds.get(&end.type_identity) {
+                    None if declared.contains(&end.type_identity) => {
+                        refusals.push(wrong_export(
+                            Kind::Port,
+                            Kind::None,
+                            &format!("{} end of {}", label, relationship.key.node),
+                        ));
+                        ends_ok = false;
+                    }
                     None => {
                         refusals.push(dangling(
                             ModelRefusalCause::UnknownEndpoint {
@@ -392,8 +430,8 @@ pub struct ResolvedElement {
     pub kind: Kind,
 }
 
-/// Resolves `key` as `required`, refusing `wrong-export` (a different real
-/// kind) or `unsupplied-producer-record` (no kind at all) otherwise. Equal
+/// Resolves `key` as `required`, refusing `wrong-export` otherwise, whether
+/// the actual kind is a different real kind or `none` (FR-152-AC-8). Equal
 /// names never substitute for a kind match — this module never inspects a
 /// display name at all, only the full key and the classification.
 pub fn resolve_kind(
@@ -410,22 +448,8 @@ pub fn resolve_kind(
             key: resolved_key,
             kind: actual,
         })
-    } else if actual == Kind::None {
-        Err(unsupplied_or_wrong(required, key))
     } else {
         Err(wrong_export(required, actual, &key.node))
-    }
-}
-
-fn unsupplied_or_wrong(required: Kind, key: &DeclarationKey) -> ModelRefusal {
-    ModelRefusal {
-        code: Code::InvalidModelBinding,
-        cause: ModelRefusalCause::UnsuppliedProducerRecord,
-        detail: format!(
-            "{} does not resolve to the required kind {}",
-            key.node,
-            required.as_str()
-        ),
     }
 }
 
@@ -624,17 +648,21 @@ pub fn check_connection(
         (&relationship.source, source_port, "source"),
         (&relationship.target, target_port, "target"),
     ] {
-        if !multiplicity_conforms(&end.multiplicity, &port.multiplicity) {
+        // An end that declares no multiplicity states no bound to narrow.
+        let Some(declared) = end.multiplicity else {
+            continue;
+        };
+        if !multiplicity_conforms(&declared, &port.multiplicity) {
             failures.push(ConditionFailure {
                 condition: "multiplicity",
                 code: Code::IllTyped,
                 cause: ModelRefusalCause::MultiplicityNarrowing {
-                    from: end.multiplicity,
+                    from: declared,
                     to: port.multiplicity,
                 },
                 detail: format!(
-                    "{label} end {:?} does not conform to port {:?}",
-                    end.multiplicity, port.multiplicity
+                    "{label} end {declared:?} does not conform to port {:?}",
+                    port.multiplicity
                 ),
             });
         }

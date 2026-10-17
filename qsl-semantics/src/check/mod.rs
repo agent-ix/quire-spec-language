@@ -45,9 +45,8 @@
 //! module's own `checked_dispatch` submodule (a private module, not
 //! resolvable as an intra-doc link, matching this crate's own convention;
 //! see [`checked_dispatch_operation`] for its re-exported entry point), and
-//! `model::conformance::check_field_refinement_obligation` moved to this
-//! module's own `field_refinement` submodule (see
-//! [`check_field_refinement_obligation`]) -- `check` (layer-3-later)
+//! refinement consumes retained source facts inside this module's own
+//! private `field_refinement` submodule. `check` (layer-3-later)
 //! importing from `model` (layer-3-earlier) is the *forward* direction
 //! §6.1's order permits, not a reverse edge, so `model_check_edges`
 //! (`xtask`'s TC-176 scan) is empty from here on. `grep -rn "use crate::check"
@@ -70,15 +69,23 @@
 // resolution and typing) -- the inception is the spec's own naming, not an
 // accidental collision this file introduced.
 mod assemble;
+mod call_target;
 mod capability;
 #[allow(clippy::module_inception)]
 mod check;
 mod checked_dispatch;
 mod claims;
+mod dispatch_link;
+pub use dispatch_link::PendingLinks;
 mod facts;
 mod family;
+// The scalar limits of a caller that bounds nothing itself, for the model
+// layer's kernel admissions (a Text snapshot value's retention).
+pub(crate) use family::SCALAR_LIMITS_UNLIMITED as UNBOUNDED_SCALAR_LIMITS;
 mod field_refinement;
 mod identity;
+mod model_conformance;
+mod navigation;
 // The nested expression forms of TC-415, shared by this crate's tests and the
 // package emitter's tests, so only `test-support` exposes them.
 #[cfg(any(test, feature = "test-support"))]
@@ -92,18 +99,31 @@ pub mod imports;
 pub(crate) mod imports;
 mod ir;
 mod lowering;
+pub(crate) use assemble::variant_type_declarations;
+pub(crate) use lowering::record_node_key;
 mod node_key;
 mod observation;
+mod operation_body;
+mod operation_clause;
 mod profile;
 mod protocol_clause;
+mod protocol_reference;
 mod refusal;
 mod region;
 mod settings;
 mod state_clause;
+mod state_model;
+mod sum_case;
+pub use state_model::StateModelRefusal;
+pub use sum_case::{mint_union_member_key, ExhaustivenessObligation, SumCaseCause};
 #[cfg(any(test, feature = "test-support"))]
 pub mod stratum;
 mod termination;
 mod type_form;
+mod type_invariant;
+pub use type_invariant::{
+    CheckedTypeInvariant, TypeInvariantDeclaration, TypeInvariantRefusal, TypeSlot,
+};
 
 use crate::model::domain_package::DomainPackageRef;
 use std::collections::BTreeMap;
@@ -136,11 +156,11 @@ pub use lowering::{
     AdmittedModel, ForeignView, LockEvidence, ModelClause, NominalNode, SemanticGraph, SemanticNode,
 };
 pub use node_key::{
-    AggregateTerm, ApplicationTerm, Binding, BindingValue, BodyTerm, FrameField, FrameTerm,
-    GroupMember, GroupTerm, InvalidModelOwner, InvalidSourceOwner, LawRole, LeafSegment, LeafTerm,
-    LiteralValue, MemberTerm, ModelOwner, NodeKeyRefusal, NodeRef, NodeTag, Operation,
-    OperationLaw, OperationLeaf, OperationMode, Operator, Owner, PackageRef, SourceOwner,
-    TupleMember, TupleTerm, WireNodeRef,
+    AggregateTerm, ApplicationTerm, Binding, BindingValue, BodyTerm, FrameDeletesScoped,
+    FrameField, FrameModifies, FrameScope, FrameTerm, GroupMember, GroupTerm, InvalidModelOwner,
+    InvalidSourceOwner, LawRole, LeafSegment, LeafTerm, LiteralValue, MemberTerm, ModelOwner,
+    NodeKeyRefusal, NodeRef, NodeTag, Operation, OperationLaw, OperationLeaf, OperationMode,
+    Operator, Owner, PackageRef, SourceOwner, TupleMember, TupleTerm, WireNodeRef,
 };
 // PR #303 review, finding N7b: `empty_scope`/`root_location` used to be
 // defined twice -- once here (`check::family`'s own `checking_tests`
@@ -159,12 +179,13 @@ pub use node_key::{
 #[cfg(any(test, feature = "test-support"))]
 pub use family::fixtures::{
     admitted_source, check_context, declaration, declaration_signature, declarations_for,
-    empty_scope, fixture_source, json_depth, limits, measure_resolved, root_location, scope_with,
-    SCALAR_LIMITS_UNLIMITED,
+    empty_scope, fixture_source, json_depth, limits, measure_resolved, received_kernel_causes,
+    root_location, scope_with, SCALAR_LIMITS_UNLIMITED,
 };
 pub use ir::{
-    Arithmetic, CheckedBody, CheckedLiteral, CheckedNode, Connective, Node, NodeId, NodeKind,
-    Observation, OrderedKind, RecordSlot, Slot, Visit,
+    Arithmetic, CaseArm, CheckedBody, CheckedLiteral, CheckedNode, Connective,
+    IntegerDivisionOperator, Node, NodeId, NodeKind, Observation, OrderedKind, RecordField,
+    RecordSlot, Slot, Visit,
 };
 
 pub use assemble::{
@@ -172,12 +193,18 @@ pub use assemble::{
     DEFAULT_DECIMAL_SCALE,
 };
 pub use capability::{Capability, UnknownCapabilityLabel};
-pub use check::{DispatchOperation, EnumBinding, PackageDeclarations, ResolvedSignatures};
+pub use check::{
+    DispatchOperation, EnumBinding, ModelRecords, PackageDeclarations, ResolvedSignatures,
+    VariantCaseDeclaration, VariantTypeDeclaration,
+};
+#[cfg(any(test, feature = "test-support"))]
+pub use checked_dispatch::checked_dispatch_selected_operation;
 pub use checked_dispatch::{
     checked_dispatch_operation, object_type_supertypes, DispatchBridgeRefusal, DispatchRoot,
     MissingClauseField, OperationClauses,
 };
-pub use field_refinement::check_field_refinement_obligation;
+pub use operation_body::OperationBodyDeclaration;
+pub use operation_clause::OperationClauseDeclaration;
 use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 use quire_semantic_value::location::{Location, Origin};
 pub use region::DeclarationRegions;
@@ -197,16 +224,21 @@ pub use type_form::{I128Limit, IntegerOutsideI128, IntegerSite, TypeFormFault};
 // an enum-member literal the same way `identity::to_kernel_value_type`'s C-26
 // conversion does, and both are `check`-core call sites of one canonical
 // function rather than two.
+pub use field_refinement::RefinementObligation;
 pub use identity::{
     to_kernel_value_type, CheckedClauseKind, CheckedTypeNode, CorrespondenceConflict,
     InvalidSumVariants, ModelCorrespondence, ScalarShape, SumVariant, SumVariants,
 };
 pub use ir::{CollectionLoss, CollectionProperty, DispatchCandidate, DispatchTable};
+pub use model_conformance::ModelConformanceFailure;
+pub use navigation::{EndDeclaration, EndSide, RelationshipDeclaration, Relationships};
 pub use protocol_clause::{CheckedAttempt, CheckedProtocol, ProtocolNodeId};
 pub use refusal::{
-    AliasKind, CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, DispatchFunctionRole,
-    InvalidDispatchDeclaration, KeyFault, MeasureObligation, Obligation, ProtocolAnchorCause,
-    ProvedInterval, ShadowedDeclaration, StageLimitCause, WrongSnapshotCause,
+    AliasKind, AmbiguousMember, AmbiguousQualified, CheckCause, CheckRefusal, CheckingLimitKind,
+    CheckingStage, DispatchFunctionRole, DispatchLinkCause, DispatchSubtypeFailure,
+    InvalidDispatchDeclaration, KeyFault, MeasureObligation, MemberCandidate, NavigationBound,
+    Obligation, ProtocolAnchorCause, ProtocolReferenceCause, ProvedInterval, QualifiedCandidate,
+    ShadowedDeclaration, StageLimitCause, WrongSnapshotCause,
 };
 
 /// A checked function.
@@ -322,6 +354,7 @@ pub struct CheckedGraph {
     /// declaration and function-application occurrence this package
     /// checked.
     occurrences: family::OccurrenceMap<Location>,
+    parameter_spans: BTreeMap<(quire_exact::NodeKey, quire_exact::Origin), qsl_foundation::Span>,
     /// ADR-012 §13.5, ADR-011 E7: this package's requirement records, one
     /// per claim site, keyed by the site's occurrence key. Read through
     /// [`Self::requirements`], the candidate step's own input
@@ -351,6 +384,9 @@ pub struct CheckedGraph {
     /// FR-096: the span of each declared type's name read from the unit, by
     /// its declared name, so an `Origin::TypeDeclaration` resolves.
     type_spans: BTreeMap<String, qsl_foundation::Span>,
+    /// FR-096, FR-302: the declaration each function synthesized for
+    /// dispatch without form spans was derived from, by function index.
+    synthesized_spans: BTreeMap<usize, qsl_foundation::Span>,
     /// FR-096-AC-1: the embedding map the spans resolve through, if any.
     embedding: Option<std::sync::Arc<qsl_foundation::source_map::SourceMap>>,
     /// ADR-011 §2.4 `model_selections`: each admitted domain package's
@@ -358,6 +394,9 @@ pub struct CheckedGraph {
     model_selections: Vec<DomainPackageRef>,
     /// FR-104: every checked state clause, in declaration order.
     state_clauses: Vec<CheckedStateClause>,
+    /// FR-366: every checked type-level invariant, in declaration order of
+    /// the selected models and their clauses.
+    type_invariants: Vec<CheckedTypeInvariant>,
     /// FR-113: every checked protocol declaration, in declaration order.
     protocols: Vec<CheckedProtocol>,
     /// FR-115: every operation a state clause or attempt names, with its
@@ -625,6 +664,28 @@ fn resolve_signature(
     }
 }
 
+/// A refused or exhausted type admission as the check refusal that reports it.
+fn type_admission(failure: quire_semantic_value::declaration::EnvironmentFailure) -> CheckCause {
+    let cause = assemble::environment_cause(failure);
+    CheckCause::TypeAdmission {
+        code: cause.code(),
+        cause: cause.catalog_code().cause(),
+    }
+}
+
+/// A refused staged-admission read as a refusal: a ceiling or storage failure
+/// keeps its type-admission cause, anything else is a broken invariant.
+fn pending_refusal(failure: quire_semantic_value::declaration::PendingFieldFailure) -> CheckCause {
+    use quire_semantic_value::declaration::PendingFieldFailure;
+    match failure {
+        PendingFieldFailure::Limit(limit) => {
+            type_admission(quire_semantic_value::declaration::EnvironmentFailure::Limit(limit))
+        }
+        PendingFieldFailure::Storage(storage) => type_admission(storage),
+        other => CheckCause::InternalFault(Box::new(KeyFault::PendingField(format!("{other:?}")))),
+    }
+}
+
 impl PackageDeclarations {
     /// Check every function: duplicate names, declared types, typing, static
     /// definedness and termination, in that order. Every refusal is made
@@ -709,6 +770,21 @@ impl PackageDeclarations {
         }
         // Every declared signature is resolved against the package `Scope`
         // before dispatch validation, which compares resolved types.
+        let complete_identity = crate::value::definition::DefinitionLock::pinned()
+            .entry(crate::value::definition::CatalogRole::Root)
+            .identity;
+        let complete_value = self
+            .function_selections
+            .values()
+            .any(|selection| selection.identity == complete_identity)
+            || self
+                .state_clauses
+                .iter()
+                .any(|clause| clause.selection.identity == complete_identity);
+        // Model intake currently admits only `quire.model.complete/v1`.
+        // Carry that selection into S3 so the inherited-edge rule is
+        // confined to a package with an admitted model.
+        let complete_model = !self.models.is_empty();
         let scope = Scope::new(
             self.types,
             self.operations,
@@ -718,7 +794,18 @@ impl PackageDeclarations {
             self.ieee_profile,
             self.dispatch_operations,
         )
-        .with_imports(self.imports);
+        .with_variant_types(self.variant_types)
+        .with_model_records(self.model_records)
+        .with_relationships(self.relationships)
+        .with_imports(self.imports)
+        .with_integer_division(self.integer_division)
+        .with_complete_value(complete_value)
+        .with_complete_model(complete_model)
+        .with_protocols(
+            self.protocols
+                .iter()
+                .map(|protocol| protocol.name.name.as_str()),
+        );
         let dispatch_tables = self.dispatch_tables;
         if let Some(index) = self
             .resolved_signatures
@@ -818,15 +905,25 @@ impl PackageDeclarations {
         }
         let source = self.source;
         let type_spans = self.declared_type_spans;
+        let synthesized_spans = self.synthesized_spans;
         let embedding = self.embedding;
         let form_spans = self
             .functions
             .iter()
             .map(|function| function.spans().cloned())
             .collect();
+        let function_parameter_spans: Vec<_> = self
+            .functions
+            .iter()
+            .map(|function| function.parameter_spans().map(<[_]>::to_vec))
+            .collect();
         let owner = node_key::SourceOwner::from(&source);
         let lock_evidence = self.lock_evidence;
         let models = self.models;
+        let model_inputs = self.model_inputs;
+        let mut pending_types = self
+            .pending_types
+            .map(|staged| std::cell::RefCell::new(staged.0));
         let (model_objects, object_types) = model_object_tables(&models);
         let model_populations = model_population_tables(&models);
         let object_nodes = object_types
@@ -1001,6 +1098,10 @@ impl PackageDeclarations {
                 own_signature: &signatures.as_slice()[index],
                 dispatch_tables: &dispatch_tables,
                 checking_limits: limits,
+                complete_value: self
+                    .function_selections
+                    .get(&index)
+                    .is_some_and(|selection| selection.identity == complete_identity),
                 location: &location,
                 measure_location: &measure_location,
                 nodes_used,
@@ -1079,6 +1180,7 @@ impl PackageDeclarations {
                 location: &location,
                 nodes_used,
                 cancel: Some(cancel),
+                staged: pending_types.as_ref(),
             };
             let mut contract_cx = crate::family::CheckContext::new(
                 &declarations,
@@ -1119,8 +1221,146 @@ impl PackageDeclarations {
                 }
             }
         }
+        // FR-103: each kept operation `requires`/`ensures`, checked as a
+        // Boolean under the clause kind its position gives. A kept clause
+        // adds no checked state clause, claim or requirement record: it
+        // yields a refusal or nothing.
+        for clause in &self.operation_clauses {
+            let location = clause.location();
+            let declarations = state_clause::ClauseDeclarations {
+                scope: &scope,
+                signatures: &signatures,
+                dispatch_tables: &dispatch_tables,
+                models: &models,
+                checking_limits: limits,
+                location: &location,
+                nodes_used,
+                cancel: Some(cancel),
+                staged: None,
+            };
+            let mut contract_cx = crate::family::CheckContext::new(
+                &declarations,
+                contract_limits,
+                &mut contract_meter,
+                &mut contract_diagnostics,
+                &mut contract_scopes,
+            );
+            match state_clause::check_operation_clause(clause, &declarations, &mut contract_cx) {
+                Ok(used) => nodes_used = used,
+                Err(refusal) => {
+                    let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
+                    refusals.push(refusal);
+                    if exhausted || cancel.tripped().is_some() {
+                        return Err(refusals);
+                    }
+                }
+            }
+        }
+        // FR-366: each type-level invariant, checked as a Boolean invariant
+        // whose `self` is a value of its owner. A checked invariant adds no
+        // declaration, claim or requirement record; its body is kept for
+        // evaluation per value.
+        let mut type_invariants = Vec::with_capacity(self.type_invariants.len());
+        for invariant in &self.type_invariants {
+            let location = invariant.location();
+            let declarations = state_clause::ClauseDeclarations {
+                scope: &scope,
+                signatures: &signatures,
+                dispatch_tables: &dispatch_tables,
+                models: &models,
+                checking_limits: limits,
+                location: &location,
+                nodes_used,
+                cancel: Some(cancel),
+                staged: None,
+            };
+            let mut contract_cx = crate::family::CheckContext::new(
+                &declarations,
+                contract_limits,
+                &mut contract_meter,
+                &mut contract_diagnostics,
+                &mut contract_scopes,
+            );
+            match state_clause::check_type_invariant(invariant, &declarations, &mut contract_cx) {
+                Ok((checked, used)) => {
+                    nodes_used = used;
+                    type_invariants.push(checked);
+                }
+                Err(refusal) => {
+                    let exhausted = matches!(
+                        refusal.type_invariant_cause(),
+                        Some(CheckCause::ResourceExhausted(_))
+                    );
+                    refusals.push(refusal);
+                    if exhausted || cancel.tripped().is_some() {
+                        return Err(refusals);
+                    }
+                }
+            }
+        }
+        // FR-218: a second reference to one protocol in the unit refuses at
+        // the second: the function bodies in declaration order, then the
+        // state clauses.
+        refusals.extend(protocol_reference::repeated(
+            drafts
+                .iter()
+                .map(|(_, body, _)| &body.body)
+                .chain(typed_clauses.iter().map(|clause| &clause.body)),
+        ));
         if !refusals.is_empty() {
             return Err(refusals);
+        }
+        if let Some((selected, mut model_meter)) = model_inputs {
+            match model_conformance::check(
+                &selected,
+                &mut model_meter,
+                &models,
+                &state_clause_forms,
+                &typed_clauses,
+                pending_types.as_mut().map(std::cell::RefCell::get_mut),
+            ) {
+                Ok(()) => {}
+                Err(model_conformance::StageDenial::Pending(failure)) => {
+                    return Err(vec![CheckRefusal {
+                        location: root(Origin::Expression),
+                        cause: pending_refusal(failure),
+                    }])
+                }
+                Err(model_conformance::StageDenial::MissingModel(identity)) => {
+                    return Err(vec![CheckRefusal {
+                        location: root(Origin::Expression),
+                        cause: CheckCause::InternalFault(Box::new(KeyFault::MissingAdmittedModel(
+                            identity,
+                        ))),
+                    }])
+                }
+                Err(model_conformance::StageDenial::Incomplete(incomplete)) => {
+                    return Err(vec![CheckRefusal {
+                        location: root(Origin::Expression),
+                        cause: CheckCause::ModelIncomplete(incomplete),
+                    }])
+                }
+                Err(model_conformance::StageDenial::Refused(failures)) => {
+                    return Err(failures
+                        .into_iter()
+                        .map(|failure| CheckRefusal {
+                            location: root(Origin::Expression),
+                            cause: CheckCause::ModelConformance(Box::new(failure)),
+                        })
+                        .collect())
+                }
+            }
+        }
+        // FR-110: the staged type admission completes only after the
+        // conformance stage found every model redefinition conforming, and
+        // before dispatch linking or sealing.
+        if let Some(pending) = pending_types.take().map(std::cell::RefCell::into_inner) {
+            if let Err(failure) = pending.complete() {
+                return Err(vec![CheckRefusal {
+                    location: root(Origin::Expression),
+                    cause: type_admission(failure),
+                }]);
+            }
         }
         // FR-113: each protocol declaration's scoped anchors, resolved
         // through its nested control scopes (`check::protocol_clause`), and
@@ -1234,6 +1474,26 @@ impl PackageDeclarations {
             self.identity,
         )
         .with_node_limit(limits.nodes(), nodes_used);
+        // Relationship declarations are model graph roots. No existing
+        // checked value type names one, so root them before lowering the
+        // unit's functions; otherwise the relation family disappears from
+        // the package even though the selected model declares it.
+        let relationship_locations: BTreeMap<String, Location> = models
+            .iter()
+            .filter_map(|model| {
+                let alias = model.alias()?.to_owned();
+                Some((alias.clone(), root(Origin::TypeDeclaration { name: alias })))
+            })
+            .collect();
+        if let Err(refusal) = lowering.relationship_nodes(&relationship_locations) {
+            refusals.push(refusal);
+        }
+        // FR-092: each checked protocol's node, before any function that
+        // refers to it is lowered.
+        match lowering.protocol_nodes(&protocol_reference::inputs(&self.protocols)) {
+            Ok(unsupported) => refusals.extend(unsupported),
+            Err(refusal) => refusals.push(refusal),
+        }
         for group in &order {
             let inputs: Vec<lowering::FunctionInput<'_>> = group
                 .members
@@ -1245,6 +1505,9 @@ impl PackageDeclarations {
                         kind: *kind,
                         location: &locations[index],
                         parameters: &signature.parameters,
+                        parameter_spans: function_parameter_spans
+                            .get(index)
+                            .and_then(|spans| spans.as_deref()),
                         result: &signature.result,
                         body: body.body.root(),
                         body_slots: &body.slot_names,
@@ -1440,6 +1703,7 @@ impl PackageDeclarations {
             }
         }
         let lowered = lowering.finish(&lowering::generated_location());
+        let parameter_spans = lowered.parameter_spans;
         if !refusals.is_empty() {
             return Err(refusals);
         }
@@ -1658,6 +1922,7 @@ impl PackageDeclarations {
             functions,
             dispatch_tables,
             occurrences,
+            parameter_spans,
             requirements,
             model_correspondence,
             type_nodes,
@@ -1665,9 +1930,11 @@ impl PackageDeclarations {
             effective_limits: limits,
             form_spans,
             type_spans,
+            synthesized_spans,
             embedding,
             model_selections,
             state_clauses,
+            type_invariants,
             protocols: checked_protocols,
             operation_frames,
             model_objects,
@@ -1748,6 +2015,13 @@ impl CheckedGraph {
     /// from, the lock's `sources` entry (QSpec FR-322 `PackageLock`).
     pub fn source(&self) -> &qsl_foundation::source::provenance::RawSourceRef {
         &self.source
+    }
+
+    /// The lowered nodes, for a test that re-keys one after the nodes bound
+    /// to its old key were minted (FR-218-AC-9).
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn semantic_graph_mut(&mut self) -> &mut SemanticGraph {
+        &mut self.semantic_graph
     }
 
     /// FR-092/FR-093: every lowered, keyed node of this package's functions.
@@ -1853,13 +2127,28 @@ impl CheckedGraph {
     ) -> Result<CheckedExpression, CheckRefusal> {
         let location = root(Origin::Expression);
         let mut nodes = 0_u64;
-        let mut typer = Typer::new(
+        let typer = Typer::new(
             &self.scope,
             &self.functions.signatures,
             limits,
             &mut nodes,
             clause_kind,
         );
+        let mut meter = quire_exact::Meter::new(family::SCALAR_LIMITS_UNLIMITED);
+        let mut diagnostics = crate::family::DiagnosticSink::default();
+        let mut scopes = crate::family::ScopeStack::default();
+        let stage_limits = crate::family::StageLimits {
+            input_bytes: limits.input_bytes(),
+            node_count: limits.nodes(),
+        };
+        let mut cx = crate::family::CheckContext::new(
+            &self.scope,
+            stage_limits,
+            &mut meter,
+            &mut diagnostics,
+            &mut scopes,
+        );
+        let mut typer = typer.with_context(cx.reborrow(&self.scope));
         bind_parameters(&mut typer, &parameters, &location)?;
         let root = match expected {
             Some(expected) => {
@@ -1895,6 +2184,11 @@ impl CheckedGraph {
     /// FR-104: every checked state clause, in declaration order.
     pub fn state_clauses(&self) -> &[CheckedStateClause] {
         &self.state_clauses
+    }
+
+    /// FR-366: every checked type-level invariant.
+    pub fn type_invariants(&self) -> &[CheckedTypeInvariant] {
+        &self.type_invariants
     }
 
     /// FR-113: every checked protocol declaration, in declaration order.

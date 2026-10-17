@@ -58,16 +58,16 @@ method, plan, result or evidence schema is introduced.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-019-AC-1 | A package built from real checked invariant/pre/post clauses retains every authored owner/clause, source-order position, kind and execution point. | Test |
-| FR-019-AC-2 | The package retains exact native/formal source identity and byte digest while excluding the local display path from artifact identity. | Test |
-| FR-019-AC-3 | Every selected import retains its alias, owner, complete native-model artifact and digest; changed unused declarations or roles in a selected model change package bytes. | Test |
-| FR-019-AC-4 | Every formal/local resolved occurrence and runtime context/universe/observation/operation/frame obligation matches the retained CheckedPackage. | Test |
+| FR-019-AC-1 | A package built from real checked invariant/pre/post clauses retains every authored owner/clause, source-order position, kind and execution point. | Test (TC-078, TC-089) |
+| FR-019-AC-2 | The package retains exact native/formal source identity and byte digest while excluding the local display path from artifact identity. | Test (TC-078) |
+| FR-019-AC-3 | Every selected import retains its alias, owner, complete native-model artifact and digest; changed unused declarations or roles in a selected model change package bytes. | Test (TC-078) |
+| FR-019-AC-4 | Every formal/local resolved occurrence and runtime context/universe/observation/operation/frame obligation matches the retained CheckedPackage. | Test (TC-079) |
 | FR-019-AC-5 | **RETIRED.** The package carried base-profile and semantic-rules definition members, each an exact revision and digest. Both members are deleted from the wire: the revisions restated version pins that `Cargo.toml` and `Cargo.lock` own, and nothing recomputed either digest over a definition's bytes, so a reader only compared one recorded value with another. | Retired |
-| FR-019-AC-6 | Required features are the exact duplicate-free sorted set derived from all selected model declarations and source syntax, including unused declarations and unreachable syntax. | Test |
-| FR-019-AC-7 | Every clause retains available native-reference and unlowered executable-IR dispositions with original clause identity and location; no IR proof view is exported as executable code. | Test |
-| FR-019-AC-8 | Repeated construction with identical checked inputs emits identical bytes and digests; changing runtime populations or evaluator budgets cannot change the static artifact. | Test |
-| FR-019-AC-9 | Package byte digests, native static identity, authored identifiers and IR canonical/bound digests retain distinct typed roles and selected domains. | Test |
-| FR-019-AC-10 | Construction honors each selected content/entry limit before excess work and leaves caller-retained source/model bytes unchanged on success or failure. | Test |
+| FR-019-AC-6 | Required features are the exact duplicate-free sorted set derived from all selected model declarations and source syntax, including unused declarations and unreachable syntax. | Test (TC-080) |
+| FR-019-AC-7 | Every clause retains available native-reference and unlowered executable-IR dispositions with original clause identity and location; no IR proof view is exported as executable code. | Test (TC-081, TC-089) |
+| FR-019-AC-8 | Repeated construction with identical checked inputs emits identical bytes and digests; changing runtime populations or evaluator budgets cannot change the static artifact. | Test (TC-082) |
+| FR-019-AC-9 | Package byte digests, native static identity, authored identifiers and IR canonical/bound digests retain distinct typed roles and selected domains. | Test (TC-081, TC-082) |
+| FR-019-AC-10 | Construction honors each selected content/entry limit before excess work and leaves caller-retained source/model bytes unchanged on success or failure. | Test (TC-088) |
 
 ## Dependencies
 
@@ -78,10 +78,3 @@ method, plan, result or evidence schema is introduced.
 - [FR-021](FR-021-derive-native-package-identity.md) owns native static identity.
 - [NFR-007](../non-functional/NFR-007-bound-native-packages.md) owns package limits.
 - [FR-009](FR-009-lower-qualified-projections.md) retains actual executable lowering.
-
-## Status
-
-Reviewed draft for LC02 issue #3: all-eight review, with the
-source-setup correction/re-review. Task-016's producer
-qualification is recorded in SR-111; reconstruction and independent
-canonical/interchange/B/C acceptance remain pending under Plan-007.

@@ -22,8 +22,9 @@ relationships:
 
 ## Description
 
-A frame counterexample is an invocation that writes, creates or deletes
-outside its operation's frame. QSL SHALL replay one through the layer-6
+A frame counterexample is an invocation that writes, creates, deletes or
+retypes an object, or adds or removes a relationship link, outside its
+operation's frame. QSL SHALL replay one through the layer-6
 `replay` facade (FR-098) and the `ProtocolClause` S6a `evaluate` arm
 (FR-115), keeping the clause, frame, anchor and occurrence identity and the
 witness's values through replay, and SHALL settle an FR-072 replay result
@@ -48,15 +49,17 @@ payload.
   - `change`: the change the counterexample claims: an object reference and
     a field name for a write, an object reference and its type for a
     creation or deletion, or an object reference and its pre and post types
-    for a retyping (the four change kinds of FR-106's check 11, which
-    FR-115 runs).
+    for a retyping, or a relationship, an added or removed difference and
+    the source and target object references for a link (the five change
+    kinds of FR-106's check 11, which FR-115 runs).
 - The envelope's members for a frame packet: its `clause_node` is the
   frame node, its `occurrence_key` is the frame's `generated` occurrence,
   and its `obligation_identity` is the O-09 obligation identity of the
   frame's `operation-contract` record (ADR-017 PF-4).
 - A check-time FR-115 frame witness decodes to the `change` it claims:
-  the witness's population and object key, and its field or types,
-  without the frame permission.
+  the witness's population and object key, and its field or types (for a
+  link, its relationship, difference and two end references), without the
+  frame permission.
 - FR-098's package reference, byte provision and limits.
 
 ## Outputs
@@ -123,6 +126,7 @@ payload.
 | FR-116-AC-4 | An envelope whose pre snapshot is absent from the byte provision refuses with FR-106's `unavailable_observation` record, and one whose invocation bytes differ from their digest refuses with `stale_dependency`/`content-mismatch`; neither settles a result. | Test (TC-515) |
 | FR-116-AC-5 | Replaying one envelope twice gives equal results. `FrameCounterexample` implements `FamilyPayload`, and the envelope carries it as its generic parameter with no string-keyed field. | Test (TC-515) |
 | FR-116-AC-6 | Envelope consistency: the step-1 envelope with its `clause_node` replaced by another package's frame node refuses `stale_dependency`/`content-mismatch` naming the envelope's clause node and the payload's frame node; with its `occurrence_key` at another ordinal it refuses the same way naming both occurrences. Each refuses before the recompile: the request's source does not compile, and the consistent envelope over the same request refuses at the recompile. | Test (TC-515) |
+| FR-116-AC-7 | A hand-built envelope for `Orders::Pump::rehome` carrying TC-1037's invocation I under a frame that modifies no relationship and `change` the link `p1`-`t1` of `Pump-housing-Tank` `removed` settles `reproduced-with-evaluated-witness`, holding the payload's change and the replay's `Link` change; with `change` the link `p1`-`t2` `added` it settles the same and holds both changes as found; under a frame that modifies `Pump-housing-Tank` it settles `inconclusive`, `Verdicts`. | Test (TC-1037) |
 
 ## Dependencies
 
@@ -133,11 +137,6 @@ payload.
 - agent-ix/quire-contract-ir#109 and agent-ix/quire-contract-codegen#49 for
   the end-to-end path from a Kani frame counterexample.
 
-## Status
-
-Specified, and implemented by
-`qsl_replay::replay_frame` over FR-098's request and a
-`WitnessEnvelope<FrameCounterexample>`, running FR-115's frame run through
-the same path as FR-109's `Frame` selection, verified by TC-515. The decode
+The decode
 from IR's witness waits on agent-ix/quire-contract-ir#109 and
 agent-ix/quire-contract-codegen#49.

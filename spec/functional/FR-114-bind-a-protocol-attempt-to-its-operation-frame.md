@@ -33,10 +33,19 @@ substitute a more permissive frame" (`state-contract.md`, FR-013).
 When S3 checks an attempt, the `ProtocolClause` family SHALL resolve its
 operation, bind it to the operation's one anchor and one frame, and check
 each `contracts` entry against that anchor. S4 SHALL name the frame by
-FR-105's `state`/`frame` node. There is one frame node per (declaring object
-type, operation name), however many clauses and attempts name the operation
-(FR-105); an attempt adds no second frame node and no second frame
-requirement record.
+FR-105's `state`/`frame` node. There is one anchor per (declaring object
+type, operation name), however many clauses and attempts name the operation,
+and it references the operation's frame node (FR-105); an attempt adds no
+second anchor, no second frame node and no second frame requirement record.
+
+A protocol holding the attempt compiles only when every other part of it is
+checked (FR-113 Description lists what is and what still refuses
+`unsupported_construct`/`not-yet-implemented`). The package then holds the
+attempt's anchor, frame and frame record, and no node for the protocol
+itself. So TC-513's own fixture
+body `{ updated }`, which reads the binder, still refuses until protocol
+bodies are checked. The tests use `{ true }`. The emitted spellings follow
+FR-105's and are pending STD-111, as FR-105's are.
 
 ## Inputs
 
@@ -60,6 +69,11 @@ requirement record.
   `ambiguous-name` at `op` when two ancestors declare it and neither
   declaring type is more derived. An operation inherited by a subtype binds
   the anchor and frame of its declaring type (FR-105).
+- If `M::T` names a process, then the checker SHALL bind the attempt to the
+  anchor and frame of the process operation `op` as FR-104's Resolution
+  gives a clause naming it: the anchor's context is the process node
+  (FR-105), and the same anchor and frame node serve every clause and attempt
+  that names the operation.
 - The checker SHALL record the attempt's frame only by the frame node's
   identity, and SHALL NOT copy the frame's entries into the attempt.
 - If a `contracts` entry names no state clause of the unit, then the
@@ -87,6 +101,7 @@ requirement record.
 | FR-114-AC-2 | The same unit with `VersionUnchanged` removed, so only the attempt names `attemptUpdate` (with `contracts []`), still gets exactly one anchor node, one frame node and one frame record for `attemptUpdate`. | Test (TC-513) |
 | FR-114-AC-3 | `on Config::ConfigVersion::missing` refuses `missing_declaration`/`missing-name` at `missing`; `contracts [Absent]` refuses `missing_declaration`/`missing-name` at the entry; `contracts [ParentOrder]` (an invariant) and `contracts [ProbePre]` (a `pre` clause of `probe`) each refuse `wrong_snapshot`/`wrong-anchor` at the entry, naming both anchors. | Test (TC-513) |
 | FR-114-AC-4 | Over a package where `Sub` specializes `ConfigVersion`, an attempt on `Config::Sub::attemptUpdate` and a `post` clause on `Config::ConfigVersion::attemptUpdate` share one anchor node and one frame node, whose context is `ConfigVersion`. | Test (TC-513) |
+| FR-114-AC-5 | Over the process `Flow` of FR-104-AC-10, a protocol with `attempt U by R on Config::Flow::go contracts [Q]` checks and binds the identity of `go`'s anchor node (context the `Flow` process node), of its frame node and of `Q`'s clause node; with `Q` and `P` both naming `go`, the package holds one anchor and one frame node for `go`. `contracts [Absent]` refuses `missing_declaration`/`missing-name` at the entry, and `contracts [I]` (an invariant) refuses `wrong_snapshot`/`wrong-anchor` at the entry, naming both anchors. | Test (TC-513) |
 
 ## Dependencies
 
@@ -96,24 +111,3 @@ requirement record.
 - QSpec FR-013 (a caller cannot enlarge a frame), FR-340 (frame body),
   `choreography-surface.md` (the `attempt` row), `state-contract.md`.
 - STD-111 (QSpec) for the emitted spellings, as FR-105 states.
-
-## Status
-
-Specified and implemented: the
-assembler resolves an attempt's operation as FR-104 resolves a clause's.
-S3 checks the `contracts` list, and refuses a list entry that names two
-state clauses of one name. S4 binds the operation's one anchor and frame
-node, and gives each clause or attempt naming the operation an `anchor`
-occurrence, with ordinals in source order. The attempt's frame record is
-computed by the same function a clause's frame record uses. An operation
-named only by an attempt emits its anchor, frame and frame record. AC-1 to
-AC-4 are tested (TC-513), including through `emit_checked`.
-
-A protocol holding the attempt compiles only when every other part of it is
-checked (FR-113 Status lists what is and what still refuses
-`unsupported_construct`/`not-yet-implemented`). The package then holds the
-attempt's anchor, frame and frame record, and no node for the protocol
-itself. So TC-513's own fixture
-body `{ updated }`, which reads the binder, still refuses until protocol
-bodies are checked. The tests use `{ true }`. The emitted spellings follow
-FR-105's and are pending STD-111, as FR-105's are.

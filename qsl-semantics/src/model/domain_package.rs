@@ -9,9 +9,15 @@
 //! 2.0.0 document bytes against a selection and reads an admitted
 //! document's IR nodes into these records.
 
+use std::collections::BTreeMap;
+
 use crate::model::key::DeclarationKey;
+use crate::model::normalize::ModelRefusal;
+use crate::model::origin::JsonValue;
+use qsl_forms::Expression;
 use quire_canonical::FixedShape;
-use quire_exact::{OrderingOperator, Presence};
+use quire_exact::{Presence, TextType};
+use quire_semantic_value::location::OperationClauseKind;
 
 /// A field or association-end multiplicity (FCD FR-113).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -59,13 +65,175 @@ pub struct ObjectTypeRecord {
 pub struct RecordValueTypeRecord {
     /// This type's own original declaration key.
     pub key: DeclarationKey,
+    /// Authored identity fields, retained until the charged FR-208 binder
+    /// rejects this record meaning. A record value type has no identity field.
+    pub identity_fields: Vec<DeclarationKey>,
+    /// Declared ancestors of this same business meaning.
+    pub supertypes: Vec<DeclarationKey>,
 }
 
-/// QSL's own closed native value-type vocabulary (shared-grammar.md's
-/// `type-ref` production): the unparameterized value-type keywords a
-/// `typeRef` may name directly, under `ix://quire/native/<Name>`, without
-/// naming a node of any package. `Boolean`, `Integer`, `Float32` and
-/// `Float64` take no parameters. `Integer`'s own optional inline bound
+/// An event type (FR-208): an identity-free type whose occurrence field
+/// resolves to native Timestamp. Event subtypes retain the occurrence field
+/// and other effective members through their authored `supertypes`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EventTypeRecord {
+    /// This type's own original declaration key.
+    pub key: DeclarationKey,
+    /// Authored identity fields, retained so normalization can refuse them
+    /// at the business-meaning boundary rather than erasing the input.
+    pub identity_fields: Vec<DeclarationKey>,
+    /// The authored occurrence field's original declaration key.
+    pub occurrence_field: Option<DeclarationKey>,
+    /// Declared event-type ancestors.
+    pub supertypes: Vec<DeclarationKey>,
+}
+
+/// A state declared by an FR-208 state machine.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StateMachineStateRecord {
+    /// The state's original declaration key.
+    pub key: DeclarationKey,
+    /// The authored local state name.
+    pub name: String,
+}
+
+/// A transition declared by an FR-208 state machine.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StateMachineTransitionRecord {
+    /// The transition's original declaration key.
+    pub key: DeclarationKey,
+    /// The transition's source state.
+    pub from: DeclarationKey,
+    /// The transition's target state.
+    pub to: DeclarationKey,
+    /// The operation serving as its trigger.
+    pub trigger: DeclarationKey,
+    /// The optional authored guard clause id.
+    pub guard: Option<String>,
+    /// Emitted event-type identities in authored order.
+    pub emits: Vec<DeclarationKey>,
+    /// Original JSON document pointer to this transition.
+    pub path: String,
+    /// The transition's exact FCD origin value.
+    pub origin: serde_json::Value,
+}
+
+/// A state-machine meaning (FR-208). Its fields, operations, and clauses
+/// remain ordinary owner-linked records alongside this type.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StateMachineRecord {
+    /// This type's original declaration key.
+    pub key: DeclarationKey,
+    /// Declared state-machine ancestors.
+    pub supertypes: Vec<DeclarationKey>,
+    /// States in source order.
+    pub states: Vec<StateMachineStateRecord>,
+    /// Transitions in source order.
+    pub transitions: Vec<StateMachineTransitionRecord>,
+}
+
+/// One process step, retained as structural process data rather than a
+/// declaration/member in the domain package.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProcessStepRecord {
+    /// The step's authored identity.
+    pub key: DeclarationKey,
+    /// The authored step name.
+    pub name: String,
+    /// The closed process step-kind vocabulary.
+    pub step_kind: ProcessStepKind,
+    /// Event types consumed by this step.
+    pub consumes: Vec<DeclarationKey>,
+    /// Event types emitted by this step.
+    pub emits: Vec<DeclarationKey>,
+}
+
+/// The closed step-kind vocabulary defined by FR-208.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProcessStepKind {
+    /// A command step.
+    Command,
+    /// An event step.
+    Event,
+    /// A decision step.
+    Decision,
+    /// A compensation step.
+    Compensation,
+    /// A wait step.
+    Wait,
+}
+
+/// A process declaration: an identified run type and its ordered steps.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProcessRecord {
+    /// The original process declaration key.
+    pub key: DeclarationKey,
+    /// The process correlation key fields.
+    pub identity_fields: Vec<DeclarationKey>,
+    /// Whether the source supplied `identityFields`. A subtype may supply an
+    /// empty list to inherit its process identity; omission remains a
+    /// normalization diagnostic.
+    pub identity_fields_declared: bool,
+    /// Declared process ancestors.
+    pub supertypes: Vec<DeclarationKey>,
+    /// Authored steps, preserving declaration order.
+    pub steps: Vec<ProcessStepRecord>,
+}
+
+/// An authored clause member. Its language and text are retained verbatim;
+/// retaining a clause does not parse or evaluate it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClauseRecord {
+    /// The clause's original member key.
+    pub key: DeclarationKey,
+    /// The original declaration owning this clause.
+    pub owner: DeclarationKey,
+    /// The authored language identifier.
+    pub language: String,
+    /// The exact authored expression text.
+    pub text: String,
+}
+
+/// One authored namespace vocabulary entry, in declaration order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NamespaceTerm {
+    /// The authored term.
+    pub term: String,
+    /// Its authored documentation.
+    pub doc: String,
+    /// The exact FCD origin, including generated or source provenance.
+    pub origin: serde_json::Value,
+}
+
+/// A namespace is one original declaration, never an effective type or an
+/// object universe. Membership and vocabulary are data, not declarations.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NamespaceRecord {
+    /// The original namespace node key.
+    pub key: DeclarationKey,
+    /// Declared members, preserving authored order.
+    pub members: Vec<DeclarationKey>,
+    /// Declared vocabulary, preserving authored order.
+    pub vocabulary: Vec<NamespaceTerm>,
+}
+
+/// A persistence interface declaration: the original storage contract and
+/// the object types whose values it persists. Its operation members remain
+/// ordinary [`OperationMemberRecord`]s owned by this key.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PersistenceInterfaceRecord {
+    /// The original persistence-interface declaration key.
+    pub key: DeclarationKey,
+    /// The object types named by the declaration's `persists` list.
+    pub persists: Vec<DeclarationKey>,
+}
+
+/// QSL's own closed native value-type vocabulary: the unparameterized
+/// value-type keywords a `typeRef` may name directly, under
+/// `ix://quire/native/<Name>`, without naming a node of any package. It
+/// includes shared-grammar.md's keywords plus `Timestamp`, required by
+/// FR-056-AC-17/19. `Boolean`, `Integer`, `Float32`, `Float64` and
+/// `Timestamp` take no parameters. `Integer`'s own optional inline bound
 /// (`Int[lo,hi]`) is a constraint fact about the field, not a distinct
 /// value-type reference. `Rational`, `Decimal` and `Text` are parameterized
 /// in the grammar (`Rational[lo,hi;dmin,dmax]`, `Decimal[lo,hi;dmin,dmax]`,
@@ -73,6 +241,8 @@ pub struct RecordValueTypeRecord {
 /// (see [`Self::unsupported_parameters`]).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NativeValueType {
+    /// `UUID`.
+    Uuid,
     /// `Boolean`.
     Boolean,
     /// `Integer`.
@@ -87,12 +257,17 @@ pub enum NativeValueType {
     Float64,
     /// `Text`.
     Text,
+    /// `String`.
+    String,
+    /// `Timestamp`.
+    Timestamp,
 }
 
 impl NativeValueType {
     /// The `<Name>` past `ix://quire/native/`.
     pub fn as_str(&self) -> &'static str {
         match self {
+            Self::Uuid => "UUID",
             Self::Boolean => "Boolean",
             Self::Integer => "Integer",
             Self::Rational => "Rational",
@@ -100,6 +275,8 @@ impl NativeValueType {
             Self::Float32 => "Float32",
             Self::Float64 => "Float64",
             Self::Text => "Text",
+            Self::String => "String",
+            Self::Timestamp => "Timestamp",
         }
     }
 
@@ -108,16 +285,22 @@ impl NativeValueType {
     /// `profile`) that `agent-ix-semantic-ir`'s own constraint vocabulary
     /// (`constraint_schema`'s closed `keyword` set: `min`, `max`,
     /// `exclusiveMin`, `exclusiveMax`, `minLength`, `maxLength`, `pattern`,
-    /// `enumValues`, `nonEmpty`, `unique`, `format`) has no keyword for at
-    /// all -- so a `typeRef` naming this native type can never resolve, no
+    /// `enumValues`, `nonEmpty`, `unique`, `format`) has no keyword for these
+    /// parameter sets, so `Rational`, `Decimal` and `Text` cannot resolve no
     /// matter what a producer's own document supplies. `Rational`/`Decimal`
     /// also require `lo`/`hi`, which the vocabulary's `min`/`max` do carry;
     /// only the decimal-scale bound is unexpressable. `Boolean`, `Integer`,
-    /// `Float32` and `Float64` take no required parameter, so this is empty
-    /// for them.
+    /// `Float32`, `Float64` and `Timestamp` take no required parameter, so this
+    /// is empty for them.
     pub fn unsupported_parameters(&self) -> &'static [&'static str] {
         match self {
-            Self::Boolean | Self::Integer | Self::Float32 | Self::Float64 => &[],
+            Self::Uuid
+            | Self::Boolean
+            | Self::Integer
+            | Self::Float32
+            | Self::Float64
+            | Self::String
+            | Self::Timestamp => &[],
             Self::Rational | Self::Decimal => &["dmin", "dmax"],
             Self::Text => &["profile"],
         }
@@ -130,6 +313,7 @@ impl std::str::FromStr for NativeValueType {
     #[qsl_attrs::string_edge]
     fn from_str(name: &str) -> Result<Self, Self::Err> {
         match name {
+            "UUID" => Ok(Self::Uuid),
             "Boolean" => Ok(Self::Boolean),
             "Integer" => Ok(Self::Integer),
             "Rational" => Ok(Self::Rational),
@@ -137,6 +321,8 @@ impl std::str::FromStr for NativeValueType {
             "Float32" => Ok(Self::Float32),
             "Float64" => Ok(Self::Float64),
             "Text" => Ok(Self::Text),
+            "String" => Ok(Self::String),
+            "Timestamp" => Ok(Self::Timestamp),
             _ => Err(()),
         }
     }
@@ -208,19 +394,31 @@ pub struct FieldMemberRecord {
     pub redefines: Option<DeclarationKey>,
 }
 
-/// A scalar type export bound to a closed `Int[lower,upper]` domain
-/// (FR-151's `model.Count`/`model.Small` fixtures). QSL V1 does not carry the
-/// FR-149 equality-conversion table; this is the narrow slice this rung
-/// needs to decide value-type conformance and FR-146 interval containment
-/// for a scalar redefinition, not a general scalar type system.
+/// The value domain carried by a scalar type declaration.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ScalarValueDomain {
+    /// A closed integer interval (FR-151's `model.Count`/`model.Small`
+    /// fixtures).
+    Integer {
+        /// Inclusive lower bound.
+        lower: i128,
+        /// Inclusive upper bound.
+        upper: i128,
+    },
+    /// A bounded text `Text[min, max; profile]` (FR-056's Text value type).
+    Text(TextType),
+    /// An alias for a native value type.
+    Native(NativeValueType),
+}
+
+/// A scalar type export. Integer bounds support FR-146 interval containment;
+/// native aliases preserve the target's distinct value-type identity.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ScalarTypeRecord {
     /// This type's own original declaration key.
     pub key: DeclarationKey,
-    /// Inclusive lower bound.
-    pub lower: i128,
-    /// Inclusive upper bound.
-    pub upper: i128,
+    /// This type's value domain.
+    pub domain: ScalarValueDomain,
 }
 
 /// One operation parameter: `{key, value_type, multiplicity}`.
@@ -246,72 +444,105 @@ pub struct OperationResult {
 
 /// An operation's producer-supplied effect frame: `{modifies, creates,
 /// deletes}` (FR-151's `quire.model.conformance.effect/v1`).
+///
+/// `modifies` holds the every-object entries (`modifies f`) and `deletes`
+/// the type-wide entries (`deletes T`). The receiver-scoped `modifies
+/// self.f` entries, the receiver-scoped `deletes self` entry and the
+/// argument-scoped `deletes p` entries are kept apart in the fields below
+/// (FR-154), so a frame without them reads exactly as before.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct OperationEffect {
-    /// Field members this operation writes.
+    /// Field members this operation writes on every object of the
+    /// invocation's populations that has them (an every-object entry).
     pub modifies: Vec<DeclarationKey>,
     /// Object types this operation creates.
     pub creates: Vec<DeclarationKey>,
-    /// Object types this operation deletes.
+    /// Object types this operation deletes (a type-wide entry).
     pub deletes: Vec<DeclarationKey>,
+    /// Field members this operation writes on the invocation's receiver
+    /// only (a receiver-scoped entry, `modifies self.f`).
+    pub receiver_modifies: Vec<DeclarationKey>,
+    /// Whether the operation deletes its receiver (`deletes self`).
+    pub deletes_receiver: bool,
+    /// The names of the reference parameters whose bound argument the
+    /// operation deletes (an argument-scoped entry, `deletes p`).
+    pub deletes_arguments: Vec<String>,
 }
 
-/// One postcondition clause an operation's own postcondition declares about
-/// `self.<field>` — a single accepted FR-146 guard-fact form, exactly as
-/// FR-151's refinement obligation names it: `present(self.<field>)`, or one
-/// ordering between `self.<field>` and an integer literal.
-///
-/// FR-146's expression parser is out of scope for `crate::model`, which
-/// normalizes and checks a caller-constructed [`DomainPackage`] only and never
-/// parses producer-supplied expression text. A postcondition clause is
-/// therefore not parsed here: the caller states one accepted single-relation
-/// guard form directly, as this typed value. What that clause actually
-/// establishes is not caller-trusted, though: FR-151's refinement rule
-/// (`crate::check::check_field_refinement_obligation`, moved from
-/// `crate::model::conformance` by FR-074/ADR-011 §7.3 M-2) rebuilds
-/// the small synthetic guard tree the clause describes and runs it through
-/// `crate::value`'s own FR-146 fact-derivation primitive
-/// (`established_field_fact`) — the identical guard-fact propagation a real
-/// checked postcondition's `Definedness::walk` already uses — then decides
-/// discharge from what that derivation actually proves, never from the
-/// clause's own literal restated as already-true. A [`Comparison`] clause
-/// naming only a lower bound, for instance, does not by itself establish an
-/// upper bound the derivation did not also produce.
-///
-/// [`Comparison`]: Self::Comparison
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum PostconditionClause {
-    /// `present(self.<field>)`.
-    Presence {
-        /// The field the postcondition establishes presence for.
-        field: DeclarationKey,
-    },
-    /// `self.<field> <operator> <literal>`, e.g. `self.cs <= 5`.
-    Comparison {
-        /// The field the postcondition relates to `literal`.
-        field: DeclarationKey,
-        /// The stated ordering between `self.<field>` and `literal`.
-        operator: OrderingOperator,
-        /// The integer literal `self.<field>` is compared against.
-        literal: i128,
-    },
-}
+impl OperationEffect {
+    /// Every field this operation writes on some object, under either
+    /// scope: the every-object and the receiver-scoped entries.
+    pub fn written_fields(&self) -> impl Iterator<Item = &DeclarationKey> {
+        self.modifies.iter().chain(&self.receiver_modifies)
+    }
 
-impl PostconditionClause {
-    /// The field this clause is about.
-    pub fn field(&self) -> &DeclarationKey {
-        match self {
-            Self::Presence { field } | Self::Comparison { field, .. } => field,
-        }
+    /// Whether the frame grants nothing: no write, creation or deletion
+    /// under any scope.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.modifies.is_empty()
+            && self.receiver_modifies.is_empty()
+            && self.creates.is_empty()
+            && self.deletes.is_empty()
+            && !self.deletes_receiver
+            && self.deletes_arguments.is_empty()
     }
 }
 
-/// An operation member of an object type.
+/// One `requires` or `ensures` clause of a domain-package operation, kept
+/// verbatim with its source identity (FR-103). Keeping it does not parse it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OperationContractClause {
+    /// The operation whose contract this clause belongs to.
+    pub operation: DeclarationKey,
+    /// Position in the operation's `pre` (for `requires`) or `post` (for
+    /// `ensures`) list.
+    pub position: usize,
+    /// The authored language identifier.
+    pub language: String,
+    /// The exact authored expression text.
+    pub text: String,
+    /// The clause's source artifact id, when its origin names one.
+    pub artifact: Option<String>,
+    /// The clause's source span, when its origin carries one.
+    pub span: Option<qsl_foundation::source::LocatedSpan>,
+}
+
+/// One kept `requires` or `ensures` clause of a domain-package operation,
+/// parsed by the compile driver (FR-103).
+#[derive(Clone, Debug)]
+pub struct ParsedOperationClause {
+    /// The operation whose contract the clause belongs to.
+    pub operation: DeclarationKey,
+    /// Whether the clause is a `requires` or an `ensures`.
+    pub kind: OperationClauseKind,
+    /// The clause's position in the operation's list of that kind.
+    pub position: usize,
+    /// The parsed clause text.
+    pub expression: Expression,
+}
+
+/// One type-level clause classified `Invariant` (FR-366), parsed by the
+/// compile driver.
+#[derive(Clone, Debug)]
+pub struct ParsedTypeInvariant {
+    /// The clause's declaration key.
+    pub clause: DeclarationKey,
+    /// The type that owns the clause.
+    pub owner: DeclarationKey,
+    /// The clause's position among its owner's clauses in the package, the
+    /// `k` of `TypeDefinition.clauses[k]`.
+    pub position: usize,
+    /// The parsed clause text.
+    pub expression: Expression,
+}
+
+/// An operation member of an object type, state machine, or persistence interface.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OperationMemberRecord {
     /// This member's own original declaration key.
     pub key: DeclarationKey,
-    /// The owning object type's original declaration key (the receiver type).
+    /// The owning declaration's original key (the receiver type when it has one).
     pub owner: DeclarationKey,
     /// Declared parameters, in signature order.
     pub parameters: Vec<OperationParameterRecord>,
@@ -319,10 +550,18 @@ pub struct OperationMemberRecord {
     pub result: Option<OperationResult>,
     /// Declared effect frame.
     pub effect: OperationEffect,
-    /// This operation's own postcondition clause(s), exactly as the caller
-    /// states them (see [`PostconditionClause`]).
-    pub own_postcondition_clauses: Vec<PostconditionClause>,
+    /// The domain package's `pre` entries of this operation, kept as its
+    /// `requires` clauses in declared order (FR-103). Distinct from a unit
+    /// `pre` `StateClauseForm`.
+    pub requires: Vec<OperationContractClause>,
+    /// The domain package's `post` entries of this operation, kept as its
+    /// `ensures` clauses in declared order (FR-103). Its postcondition text;
+    /// distinct from a unit `post` `StateClauseForm`.
+    pub ensures: Vec<OperationContractClause>,
     /// Whether an `operation-body` declaration supplies this member's body.
+    /// A domain package never does: the assembler sets it on the compiled
+    /// unit's selected view from the unit's `operation-body` declarations
+    /// (`EffectiveView::with_operation_bodies`), and intake leaves it false.
     /// FR-151's dispatch family (`crate::model::dispatch`) is the original
     /// declaration together with every redefining operation reaching a
     /// subtype; only family members with a body are dispatch candidates. A
@@ -399,8 +638,18 @@ pub struct RelationshipEnd {
     /// `Some(role)` when the producer's own end shape carries a role;
     /// `None` when it does not.
     pub role: Option<String>,
-    /// The declared multiplicity.
-    pub multiplicity: Multiplicity,
+    /// The declared multiplicity; `None` when the end declares none, which
+    /// is retained as absent and never defaulted (FR-085-AC-2).
+    pub multiplicity: Option<Multiplicity>,
+}
+
+/// Where a record sits in its declaring type's array (`relationships[i]`).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DeclaredSlot {
+    /// The declaring type.
+    pub owner: DeclarationKey,
+    /// The zero-based position in that type's array.
+    pub index: usize,
 }
 
 /// FCD FR-115 relationship traversal direction (`semantics.direction`).
@@ -416,16 +665,16 @@ pub enum RelationshipDirection {
     Undirected,
 }
 
-/// FCD FR-115 relationship record: FR-152's Connection candidate, or (when
-/// both ends name object types) a navigation-only relationship with no
-/// kind. Never an Allocation: an allocation's wire shape names only a
-/// source and a target element and carries neither ends' multiplicity nor a
-/// direction (`model-complete.md`:335 — see [`AllocationRecord`]), so it is
-/// read as one, never folded into this shape with fabricated fields.
+/// A connection or navigation relationship, retaining its producer meaning.
+/// An allocation has its own source/target shape and is never folded here.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RelationshipRecord {
     /// This relationship's own original declaration key.
     pub key: DeclarationKey,
+    /// The declaring type and the position in its `relationships` array the
+    /// reader read this from; `None` for a relationship that has no such
+    /// array slot (a systems connection, or a record built in memory).
+    pub declared_at: Option<DeclaredSlot>,
     /// The source end.
     pub source: RelationshipEnd,
     /// The target end.
@@ -481,15 +730,72 @@ pub struct PopulationRecord {
     pub extent: Extent,
 }
 
+/// A variant type's `enum` export (FR-056 "Variant types"): the type's
+/// declaration, its artifact id as `name`, and its case names as the
+/// unordered set `members`, kept in ascending UTF-8 byte order of the name so
+/// the document's `variants` order changes no record. The export locus is the
+/// type's original FCD origin.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EnumRecord {
+    /// The variant type's own original declaration key; also the `enum`
+    /// export key.
+    pub key: DeclarationKey,
+    /// The type's artifact id.
+    pub name: String,
+    /// The declared case names, ascending by UTF-8 bytes.
+    pub members: Vec<String>,
+}
+
+/// One case of a variant type: the `variant` export (FR-056 "Variant types").
+///
+/// The record's [`key`](Self::key) is the case node's own declaration
+/// identity (`ix://<package>/variant/<Name>-<value>`, FR-154's variant slot),
+/// which is the declaration's key. The `variant` export is keyed instead by
+/// [`export_key`](Self::export_key), the owner's identity and the declared
+/// case name. The export locus is the case's original FCD origin.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VariantRecord {
+    /// The case node's own original declaration key.
+    pub key: DeclarationKey,
+    /// The owning variant type; also the owner `enum` export key.
+    pub owner: DeclarationKey,
+    /// The declared case name, compared as exact UTF-8 bytes.
+    pub case: String,
+}
+
+impl VariantRecord {
+    /// The `variant` export key: the owner's declaration identity and the
+    /// declared case name. Never the case node's minted identity.
+    pub fn export_key(&self) -> (&DeclarationKey, &str) {
+        (&self.owner, &self.case)
+    }
+}
+
 /// One producer record, in the domain package's declared order.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DomainPackageRecord {
+    /// A variant type's `enum` export (FR-056 "Variant types").
+    Enum(EnumRecord),
+    /// One case of a variant type: a `variant` export.
+    Variant(VariantRecord),
     /// An object type export.
     ObjectType(ObjectTypeRecord),
     /// A field member of an object type or record value type.
     FieldMember(FieldMemberRecord),
     /// A record value type (FR-208).
     RecordValueType(RecordValueTypeRecord),
+    /// An event type (FR-208).
+    EventType(EventTypeRecord),
+    /// A state machine (FR-208).
+    StateMachine(StateMachineRecord),
+    /// A process type (FR-208).
+    Process(ProcessRecord),
+    /// An authored clause member (FR-208).
+    Clause(ClauseRecord),
+    /// An original namespace with no effective type (FR-208).
+    Namespace(NamespaceRecord),
+    /// An original persistence interface with no effective type (FR-208).
+    PersistenceInterface(PersistenceInterfaceRecord),
     /// A scalar type export bound to a closed integer interval.
     ScalarType(ScalarTypeRecord),
     /// An operation member of an object type.
@@ -511,9 +817,17 @@ impl DomainPackageRecord {
     /// This record's own original declaration key.
     pub fn key(&self) -> &DeclarationKey {
         match self {
+            Self::Enum(record) => &record.key,
+            Self::Variant(record) => &record.key,
             Self::ObjectType(record) => &record.key,
             Self::FieldMember(record) => &record.key,
             Self::RecordValueType(record) => &record.key,
+            Self::EventType(record) => &record.key,
+            Self::StateMachine(record) => &record.key,
+            Self::Process(record) => &record.key,
+            Self::Clause(record) => &record.key,
+            Self::Namespace(record) => &record.key,
+            Self::PersistenceInterface(record) => &record.key,
             Self::ScalarType(record) => &record.key,
             Self::OperationMember(record) => &record.key,
             Self::Component(record) => &record.key,
@@ -552,55 +866,22 @@ impl std::fmt::Debug for DomainPackageRef {
     }
 }
 
-/// A [`DomainPackageRef`]'s preimage form inside the model identities
-/// (`quire.model.*`, `quire.population-id/v1`).
+/// A [`DomainPackageRef`]'s preimage form inside the `quire.model.*` identities.
 #[derive(serde::Serialize, FixedShape)]
 pub(super) struct DomainPackageRefWire<'a> {
     identity: &'a str,
-    version: &'a str,
     digest_domain: &'static str,
     digest: String,
 }
 
 impl DomainPackageRef {
-    /// This selection's FR-321 preimage form: `{identity, version,
-    /// digest_domain, digest}`, the digest lowercase hex.
+    /// This selection's FR-321 preimage form: `{identity, digest_domain,
+    /// digest}`, the digest lowercase hex.
     pub(super) fn wire(&self) -> DomainPackageRefWire<'_> {
         DomainPackageRefWire {
             identity: &self.identity,
-            version: &self.version,
             digest_domain: super::key::SHA256_JCS_DIGEST_DOMAIN,
             digest: super::key::hex(&self.digest),
-        }
-    }
-
-    /// A `test/orders` version-`1` selection whose digest is the SHA-256 of
-    /// `placeholder`'s exact UTF-8 bytes, following TC-195's own placeholder
-    /// selection convention: F1 selects `n01`, F2 selects `n02`, and F1 as
-    /// version `2` selects `n01v2`.
-    ///
-    /// Test-only (PR #140 F13): this derives a digest from a display
-    /// identity, which is exactly the name-derived-identity defect this
-    /// engine exists to exclude. Gated behind `test-support` so a production
-    /// caller cannot reach it; `cargo test --all-features` enables it for
-    /// `tests/model_normalization.rs`.
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn fixture(placeholder: impl Into<String>) -> Self {
-        Self::fixture_with_version(placeholder, "1")
-    }
-
-    /// [`Self::fixture`], with an explicit `version` rather than the
-    /// hard-wired `"1"` — needed to reach F1 as version `2` under
-    /// placeholder `n01v2` (TC-195 N09's third clause).
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn fixture_with_version(
-        placeholder: impl Into<String>,
-        version: impl Into<String>,
-    ) -> Self {
-        Self {
-            identity: "test/orders".to_owned(),
-            version: version.into(),
-            digest: qsl_foundation::ByteDigest::of(placeholder.into().as_bytes()).as_bytes(),
         }
     }
 }
@@ -612,14 +893,48 @@ pub struct DomainPackage {
     pub model_selection: DomainPackageRef,
     /// The domain package's records, in the producer's declared order.
     pub records: Vec<DomainPackageRecord>,
+    /// Original intake provenance, separate from normalized identities.
+    pub(crate) originals: BTreeMap<DeclarationKey, OriginalDeclaration>,
+    /// FR-154 intake refusals retained until normalization has charged every
+    /// declaration in the source package. Synthetic packages carry none.
+    pub(crate) intake_refusals: Vec<ModelRefusal>,
+    /// Source declaration count before a refusing node can be omitted from
+    /// the partial typed records. `None` means use `records.len()`.
+    pub(crate) declared_record_count: Option<usize>,
+}
+
+/// An original declaration's authored provenance. The FCD origin is
+/// retained whole: generated origins have no source span, and source
+/// origins retain their path and optional end coordinates unchanged.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OriginalDeclaration {
+    /// The exact construct meaning for a type or population. Members carry
+    /// no meaning id under QSpec FR-208.
+    pub meaning: Option<String>,
+    /// The original FCD origin object, without fabricated byte positions.
+    pub origin: JsonValue,
+    /// A member's declared name. Type and population nodes have none.
+    pub member_name: Option<String>,
 }
 
 impl DomainPackage {
-    /// A domain package over `records`, selected under `model_selection`.
+    /// A synthetic domain package over `records`, selected under
+    /// `model_selection`. This constructor receives no source document and
+    /// supplies no authored provenance. Intake callers use
+    /// [`crate::model::intake::read_domain_package`] to retain it.
     pub fn new(model_selection: DomainPackageRef, records: Vec<DomainPackageRecord>) -> Self {
         Self {
             model_selection,
             records,
+            originals: BTreeMap::new(),
+            intake_refusals: Vec::new(),
+            declared_record_count: None,
         }
+    }
+
+    /// The original intake provenance of `key`, or none for a synthetic
+    /// record that was constructed without a source document.
+    pub fn original(&self, key: &DeclarationKey) -> Option<&OriginalDeclaration> {
+        self.originals.get(key)
     }
 }

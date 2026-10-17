@@ -46,7 +46,3 @@ Tag the test `#[trace("FR-091-AC-22", "TC-412")]`.
 - Step 3 returns a refusal holding a duplicate-alias error, code
   `ambiguous_declaration`/`ambiguous-name`, naming `v` and both selection
   spans, and no `PackageDeclarations` value.
-
-## Status
-
-Steps 1, 2 and 3 are backed by `qsl-semantics` `check::assemble` test `using_aliases_resolve_to_the_units_profile_selections`. Step 1 asserts the recorded selection in `PackageDeclarations::function_selections`: its alias, definition identity and version, and the spans of the selection and of its identity literal.

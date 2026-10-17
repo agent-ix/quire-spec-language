@@ -23,6 +23,8 @@ relationships:
     type: traces_to
   - target: ix://agent-ix/quire-specification/FR-301
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-267
+    type: traces_to
 ---
 # FR-109: Run a selected state clause through the spine and report a typed disposition
 
@@ -38,9 +40,12 @@ disposition, the compiled `package_id` and the usage. It is the spine replacemen
 for native-run/1 clause execution (ADR-011 §5, the paragraph that says it has
 no spine equivalent before M-6c) and for FR-023's in-process `execute`.
 
-FR-100 already owns the spine run's argument binding and its S6a outcome
-mapping. This requirement reuses both by reference and adds only object
-arguments, observations and the claim reading of a Boolean result.
+FR-100 owns the spine run's typed public argument binding and S6a outcome
+mapping. This requirement reuses their applicable rules and adds observations
+and the claim reading of a Boolean result. Its `Function` selection remains
+a Boolean claim. A Reference-valued Value function is called through
+FR-100's existing `spine::run` entry, including TC-792 step 1; it is not
+selected as a claim to work around the Value-call boundary.
 
 ## Inputs
 
@@ -49,19 +54,20 @@ A `ClauseRunRequest`:
 - the unit's source bytes and its four FR-001 labels, or an I3 extracted
   source (ADR-011 I3, `qsl-source`, feature `quire-extraction`) with its
   original document identity;
-- FR-056's package input (domain packages by `sha256-jcs` digest) and
+- FR-056's package input (domain packages by canonical package identity) and
   FR-099's dependency input;
 - the snapshot and invocation provisions (FR-106);
 - a selection: `Clause(ClauseSelection)` (FR-106), `Frame { operation,
   invocation }` (FR-115), or `Function { name,
   arguments, snapshot }`. `name` follows FR-100's `function` rule.
-  `arguments` are FR-100's `{parameter, value}` pairs, one per parameter, in
-  any order, whose `value` is FR-100's canonical integer, or
+  `arguments` are this claim runner's `{parameter, value}` pairs, one per
+  parameter, in any order, whose `value` is the file-assignment form of
+  FR-100's canonical integer, or
   `{"reference": {"population": ..., "key": ...}}` for a parameter of a
   model object type, resolved in the current snapshot `snapshot` names;
 - an optional expected `package_id`;
 - `SpineLimits`, `ObservationLimits` and the evaluation meter budget
-  (FR-100's `work_units`).
+  (FR-100's `accounting`).
 
 ## Outputs
 
@@ -80,10 +86,19 @@ selection, admission or evaluation result is a report.
   undefined `reason` spelling, and, for every other category, the one
   record: for `compile`, `select` and `admit` a `RefusalRecord` (code,
   cause, locus); for an `evaluate` refusal, unsupported or incomplete, FR-100's
-  `outcome` member for that S6a outcome; for `evaluate` `internal-failure`, the `InternalFault`'s stage
+  `outcome` member for that S6a outcome; for an evaluated `Frame` violation,
+  `truth: false` and a `refusal` record carrying
+  `frame_violation`/`unauthorized-change` and the complete FR-115
+  `FrameWitness` as `frame_witness`, with no `outcome` member; for `evaluate` `internal-failure`, the `InternalFault`'s stage
   and invariant, as FR-100's internal-failure section gives them;
 - `package_id`: the compiled package's identity, when compile completed;
 - usage: the admission work and the evaluation meter charges, separately.
+
+The report's `package_id` identifies the compiled QSL package. The report
+does not authenticate generated Rust, its source map or coverage-producer
+execution. [FR-267](FR-267-write-run-results-as-native-run-result-2.md)'s CG
+source-identity boundary requires a separate CG-owned producer/artifact
+binding receipt when CG consumes the serialized result.
 
 ## Behavior
 
@@ -122,6 +137,12 @@ selection, admission or evaluation result is a report.
   snapshot, refusing an unresolved one `invalid_runtime_input`/
   `wrong-role-mapping`; evaluation SHALL be `CheckedPackage::call` with that
   snapshot's `ObjectEnvironment`.
+- Sharing FR-100's argument/result helpers SHALL NOT widen a `Function`
+  claim's Boolean guard, require its object argument to be a member of a
+  separate query population, or replace its actual snapshot admission.
+  Its existing `wrong-role-mapping` unresolved-object oracle remains this
+  claim selection's rule; the typed Value call retains FR-100's distinct
+  call-admission and lookup outcomes.
 - The entry SHALL map `Completed(true)` to `success` (exit 0) and
   `Completed(false)` to `violation` (exit 10), as QSpec FR-301 does for a
   claim, with `truth` set.
@@ -156,21 +177,34 @@ selection, admission or evaluation result is a report.
   refuses any CG reference into `qsl_replay::spine`. Like FR-100's `run`, no
   public item of `run_clause`'s signature names a `qsl_eval` path
   (FR-100-AC-8).
+- A consumer SHALL NOT substitute the report's `package_id`, including a
+  match against the request's expected `package_id`, for the external
+  generated-source, source-map and producer-execution authentication required
+  by [FR-267](FR-267-write-run-results-as-native-run-result-2.md).
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-109-AC-1 | The healthy-parent request reports stage `evaluate`, `success`, `truth: true`, exit code 0, with the compiled `package_id`; violating-parent reports `violation`, `truth: false`, exit 10. | Test (TC-468) |
-| FR-109-AC-2 | missing-model (no package supplied) reports stage `compile`, `refusal`, `missing_import`/`missing-selection`, exit 20, with no `package_id`; an expected `package_id` of another unit reports stage `compile`, `stale_dependency`, naming both; a `Clause` selection naming `Absent`, and one naming the function `sameIdentity`, each report stage `select`, `missing_declaration`/`missing-name`. | Test (TC-468) |
-| FR-109-AC-3 | dangling-parent reports stage `admit`, `refusal`, `dangling_reference`, exit 20; incomplete-population reports stage `admit`, `incomplete`, `incomplete_population`, exit 22; exhausted-work (budget zero) reports stage `evaluate`, `incomplete`, FR-100's `{"kind": "incomplete", "limit": "work_units"}`, exit 22; none carries `truth`. | Test (TC-468) |
-| FR-109-AC-4 | A `Function` selection of `sameIdentity` with arguments `{b: child, a: root}` (given in that order) over the distinct-identities snapshot reports `violation`, `truth: false`; with `a` = `b` = `child`, `success`; with `b` naming `ghost`, stage `admit`, `invalid_runtime_input`/`wrong-role-mapping`; with an argument naming `c`, stage `admit`, FR-100's refusal for an unknown parameter; a function returning `Integer` reports stage `select`, `ill_typed`/`type-mismatch`, before any call. | Test (TC-468) |
-| FR-109-AC-5 | Running one request twice gives equal reports, including usage. For each S6a outcome other than `Completed`, the report's `outcome` member and exit code equal what FR-100's mapping gives for the same outcome (checked over the outcomes FR-100-AC-9 constructs); for the kernel `CheckedInvariant` and a `CallFailure::Fault`, which FR-100 handles as an internal failure, the report is stage `evaluate`, category `internal-failure`, carrying the fault's stage and invariant, with no `outcome` member and FR-100's internal-failure exit status. | Test (TC-468) |
-| FR-109-AC-6 | The healthy-parent request whose unit is an I3 extracted source reports `success`, exit 0, with the `package_id` its extracted body compiles to; violating-parent over the same source reports `violation`, exit 10; missing-model over the same source reports stage `compile`, `refusal`, `missing_import`/`missing-selection`, exit 20; the same unit in an `ix:formal` fence reports stage `compile`, `refusal`, `unknown_language`, exit 20, with no `package_id`. | Test (TC-468) |
-| FR-109-AC-7 | The step 1 unit with the clause `invariant Ratio using v on Config::ConfigVersion at current { 6 / (self.versionNumber - self.versionNumber) >= 0 }` added, run over healthy-parent selecting `Ratio`, reports stage `evaluate`, category `undefined`, `UndefinedEvaluation{cause: division-by-zero}`, no `truth`, exit 10. | Test (TC-468) |
+| FR-109-AC-1 | The healthy-parent request reports stage `evaluate`, `success`, `truth: true`, exit code 0, with the compiled `package_id`; violating-parent reports `violation`, `truth: false`, exit 10. | Test |
+| FR-109-AC-2 | missing-model (no package supplied) reports stage `compile`, `refusal`, `missing_import`/`missing-selection`, exit 20, with no `package_id`; an expected `package_id` of another unit reports stage `compile`, `stale_dependency`, naming both; a `Clause` selection naming `Absent`, and one naming the function `sameIdentity`, each report stage `select`, `missing_declaration`/`missing-name`. | Test |
+| FR-109-AC-3 | dangling-parent reports stage `admit`, `refusal`, `dangling_reference`, exit 20; incomplete-population reports stage `admit`, `incomplete`, `incomplete_population`, exit 22; exhausted-work (budget zero) reports stage `evaluate`, `incomplete`, FR-100's `{"kind": "incomplete", "limit": "work_units"}`, exit 22; none carries `truth`. | Test |
+| FR-109-AC-4 | A `Function` selection of `sameIdentity` with arguments `{b: child, a: root}` (given in that order) over the distinct-identities snapshot reports `violation`, `truth: false`; with `a` = `b` = `child`, `success`; with `b` naming `ghost`, stage `admit`, `invalid_runtime_input`/`wrong-role-mapping`; with an argument naming `c`, stage `admit`, FR-100's refusal for an unknown parameter; a function returning `Integer` reports stage `select`, `ill_typed`/`type-mismatch`, before any call. | Test |
+| FR-109-AC-5 | Running one request twice gives equal reports, including usage. For each S6a outcome other than `Completed`, the report's `outcome` member and exit code equal what FR-100's mapping gives for the same outcome (checked over the outcomes FR-100-AC-9 constructs); for the kernel `CheckedInvariant` and a `CallFailure::Fault`, which FR-100 handles as an internal failure, the report is stage `evaluate`, category `internal-failure`, carrying the fault's stage and invariant, with no `outcome` member and FR-100's internal-failure exit status. | Test |
+| FR-109-AC-6 | The healthy-parent request whose unit is an I3 extracted source reports `success`, exit 0, with the `package_id` its extracted body compiles to; violating-parent over the same source reports `violation`, exit 10; missing-model over the same source reports stage `compile`, `refusal`, `missing_import`/`missing-selection`, exit 20; the same unit in an `ix:formal` fence reports stage `compile`, `refusal`, `unknown_language`, exit 20, with no `package_id`. | Test |
+| FR-109-AC-7 | Over the model `M` of FR-107-AC-19 (`ready` with effective precondition `false`) and the clause `pre F using v on M::A::ready { self.ready() }`, run over a snapshot holding `r1` selecting `F`, the entry reports stage `evaluate`, category `undefined`, `UndefinedEvaluation{cause: precondition-false}`, no `truth`, exit 10. | Test |
+| FR-109-AC-8 | Given a successful clause run with the expected compiled `package_id`, CG consumption of its serialized result still refuses campaign binding when its external receipt is missing or its generated-source or source-map association is mismatched, as FR-267-AC-4 and FR-267-AC-6 require; the QSL report retains its original success disposition and package identity. | Test |
+| FR-109-AC-9 | The step 1 unit with the clause `invariant Ratio using v on Config::ConfigVersion at current { 6 / (self.versionNumber - self.versionNumber) >= 0 }` added reports stage `compile`, `ill_typed`, exit 20, no `package_id` and no `truth`, and admits and evaluates nothing: the checker refuses integer `/` that has no `Rational` expected type, so no linked clause divides by zero at run time. | Test |
+| FR-109-AC-9 | FR-115's forbidden-parent-change `Frame` run reports stage `evaluate`, category `violation`, `truth: false`, and a `refusal` record with `frame_violation`/`unauthorized-change` and its complete `FrameWitness` as `frame_witness`; it carries no `outcome` or FR-351 separating `witness`. The same frame's changed-version run reports `success` with no `refusal` or `frame_witness`. | Test |
 
 ## Dependencies
 
+- [FR-100](FR-100-run-a-named-function-through-the-spine.md)'s proposed
+  typed-public-call amendment supplies the Value-call boundary only;
+  [TC-792](../test-cases/TC-792-state-model-causes-render-with-their-own-prefix.md)
+  retains this claim runner for its separate dispatched-clause step 2.
+  QSL-656 owns the accounting setting member; this amendment does not take
+  ownership of TC-951.
 - FR-100 (the spine run's argument binding, outcome mapping, internal-failure
   handling and exit statuses), FR-106, FR-107 (admission and evaluation), FR-099 and FR-027
   (the spine compile), FR-098 (the stale `package_id` rule), FR-060 (the CG
@@ -185,10 +219,3 @@ selection, admission or evaluation result is a report.
   driver read it with `read_clause_run_request` and call `run_clause`. It
   lands in the change that lands FR-100's clause runner (FR-312's reader plus `run_clause`), with the deletion of native `run`
   ([FR-026](FR-026-run-standalone-native-workflow.md), ADR-031 R-1).
-
-## Status
-
-Implemented, except AC-7's `UndefinedEvaluation{cause}` record (the undefined evaluation's
-category `undefined` and exit 10 are implemented). The I3 extracted-source input is
-`ClauseRunSource::Extracted`, behind `qsl-replay`'s `quire-extraction`
-feature.

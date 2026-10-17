@@ -31,8 +31,9 @@
 mod bounds;
 mod call_site;
 mod compile;
-// Crate-private until `check_zone_certificate` (FR-245) calls it; until then
-// only its own tests and Kani harnesses reach it.
+// The facade exports the rejection vocabulary. Zone arithmetic stays
+// crate-private until `check_zone_certificate` (FR-245) calls it; its tests
+// and Kani harnesses exercise it directly.
 #[allow(
     dead_code,
     reason = "the zone certificate checker is its first caller and has not landed yet"
@@ -42,12 +43,14 @@ mod composite;
 mod execute;
 mod identity;
 mod limits;
+mod object_environment;
 mod outcome;
 mod proof_result;
 mod request;
 mod result;
 mod scalar;
 pub mod spine;
+mod supplied_limits;
 mod witness;
 
 pub use bounds::{BoundExceeded, ReplayLimits, DEFAULT_REPLAY_INPUT_BYTES};
@@ -55,6 +58,7 @@ pub use call_site::{
     call_site, CallSite, CallSiteRefusal, CallSiteSelection, ClauseName, ClauseSite, FieldName,
     FieldSite, FunctionSite, OperationSite, PopulationName, PopulationSite,
 };
+pub use certificate::{CertificateLocus, CertificateRule, QueryPart};
 pub use compile::{compile_package, CompiledPackage};
 pub use composite::{
     CompositeEvidence, CompositeIdentity, CompositeParityClaim, CompositeParityReport,
@@ -64,16 +68,16 @@ pub use composite::{
 };
 pub use execute::{
     parity_obligation, replay, replay_composite_parity, replay_frame, replay_operator_parity,
-    replay_value_parity, settle_verified_shadow, BoundEntries, DependencySelectionsCause, Domain,
-    FrameIdentityMismatch, FrameReplayResult, IdentityEncodeError, LimitAboveReader,
-    ParityArgument, ParityBoundRefusal, ParityPreimage, ReplayRefusal, ScalarIdentityMismatch,
-    ValueParityReport, ValueParityResult,
+    replay_value_parity, replay_with_cancel, settle_verified_shadow, BoundEntries,
+    DependencySelectionsCause, Domain, FrameIdentityMismatch, FrameReplayResult,
+    IdentityEncodeError, LimitAboveReader, ParityArgument, ParityBoundRefusal, ParityPreimage,
+    ReplayRefusal, ScalarIdentityMismatch, ValueParityReport, ValueParityResult,
 };
 pub use identity::{
-    Backend, DeclaredDomain, EmptyQualifiedName, ObligationIdentity, ProfileSelection,
-    QualifiedName, RawSourceRef, TracePosition,
+    DeclaredDomain, EmptyQualifiedName, ObligationIdentity, ProfileSelection, QualifiedName,
+    RawSourceRef, TracePosition,
 };
-pub use limits::CallerLimits;
+pub use limits::{AccountingLimits, CallerLimits};
 // The equality operator a composite parity claim names (FR-358).
 pub use quire_semantic_value::declaration::EqualityOperator;
 // The typed identity and catalog code a `TerminalRecord` and a
@@ -85,9 +89,10 @@ pub use outcome::{
     ParityReason, ResultLimit, ResultValue, OUTCOME_FORMAT,
 };
 pub use proof_result::{
-    read_backend_provider_envelope, BackendProviderSource, DeclineCode, EmptyEnvelopeSet,
-    IncompleteCause, InconclusiveCause, ProofRefusalCause, ProofResultEnvelope, ProofResultRefusal,
-    ReportedInconclusiveCause, SettlementBasis, TerminalRecord, TerminalValue, UnavailabilityCause,
+    read_backend_provider_envelope, BackendProviderSource, Certification, DeclineCode,
+    EmptyEnvelopeSet, IncompleteCause, InconclusiveCause, ProofBasis, ProofRefusalCause,
+    ProofResultEnvelope, ProofResultRefusal, ReportedInconclusiveCause, SettlementBasis,
+    TerminalRecord, TerminalRecordRefusal, TerminalValue, UnavailabilityCause,
 };
 pub use qsl_foundation::{Code, InternalFault, RequestIndex};
 pub use quire_contract_model::{std001_code, Std001Code};
@@ -137,10 +142,19 @@ pub use quire_semantic_value::call::InputRefusal;
 // `FiniteBound::cardinality`/`integer_range`/`depth`, `IntegerInterval::new` and `Integer`'s `From`
 // conversions -- and the refusals they return. None is a T-12-governed
 // constructor (ADR-011 §3 FB-05).
+pub use execute::{ObjectEnvironmentFailure, Unresolved};
+pub use object_environment::{
+    object_reference_witness, read_object_environment, write_object_environment, EnvironmentLabels,
+    EnvironmentModel, EnvironmentObject, EnvironmentPopulation, ObjectEnvironmentDocument,
+    ObjectEnvironmentRef, ObjectEnvironmentRefusal, ObjectEnvironmentWriteError,
+    ObjectReferenceError,
+};
 pub use qsl_foundation::bound::{
     DomainKey, DomainKind, EmptyFiniteBound, FiniteBound, FiniteBoundKind, ProofBound,
     ProofBoundRefusal,
 };
+pub use qsl_semantics::model::accounting::ModelNormalizationLimits;
+pub use qsl_semantics::model::domain_package::DomainPackageRef;
 pub use quire_exact::{EmptyInterval, Incomplete, Integer, IntegerInterval};
 pub use request::{
     ByteProvision, DependencyEntry, DependencyEntryWire, ReplayRequest, ReplayRequestRefusal,
@@ -151,11 +165,13 @@ pub use result::{
     InputSettlement, ReplayResult, SeparatingWitnessRecord, SeparationReason, SeparationRefusal,
     Verdict, WitnessArmResult, WitnessCheck, WitnessFailure, WitnessSettlement,
 };
+pub use supplied_limits::{read_supplied_limits, SuppliedLimitsRefusal};
 // FR-265 and FR-268: the separation-check step and the QSpec FR-207 value
 // path a separating witness record carries, re-exported so CG names them
 // through this crate (ADR-011 FB-05).
 pub use qsl_foundation::witness::{
-    ObservationIdentity, RuntimeValuePath, SeparationStep, ValuePathStep, ValuePathSubject,
+    InvocationBinding, ObservationIdentity, RuntimeValuePath, SeparationStep, ValuePathStep,
+    ValuePathSubject,
 };
 pub use scalar::{
     GeneratedFault, NativeOutcome, OperandIdentity, OperandRefusal, OperatorClaim,
@@ -175,7 +191,8 @@ pub use witness::{
 // `Identifier` re-exported above.
 pub use qsl_semantics::model::key::DeclarationKey;
 pub use qsl_semantics::model::observation::{
-    AdmissionFailure, AdmissionRecord, DocumentRef, FrameChange, FrameWitness, SelectedObject,
+    AdmissionFailure, AdmissionRecord, DocumentRef, FrameChange, FrameWitness, LinkDifference,
+    SelectedObject,
 };
 
 // FR-122: the state-clause counterexample's replay entry, payload and
@@ -252,6 +269,8 @@ mod redaction_tests {
             state_environment: StateEnvironment::new(vec![]),
             accounting_limits: scalar_limits(1),
             stage_limits: std::collections::BTreeMap::new(),
+            supplied_limits: None,
+            object_environment: None,
             declared_domains: Vec::new(),
             byte_provision: vec![(
                 Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
@@ -292,6 +311,8 @@ mod redaction_tests {
             state_environment: StateEnvironment::new(vec![]),
             accounting_limits: scalar_limits(1),
             stage_limits: std::collections::BTreeMap::new(),
+            supplied_limits: None,
+            object_environment: None,
             declared_domains: Vec::new(),
             byte_provision: vec![(
                 Some(DigestDomain::SourceBytesV1.as_str().to_owned()),

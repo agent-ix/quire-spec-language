@@ -14,7 +14,7 @@ Verify `qsl_replay::spine::run_clause` over one case per stage and category,
 its compiled `package_id`, its FR-100-aligned function selection and its
 exit codes.
 
-Scope: FR-109-AC-1 to FR-109-AC-7.
+Scope: FR-109-AC-1 to FR-109-AC-7 and FR-109-AC-9.
 
 ## Test Procedure
 
@@ -40,7 +40,9 @@ Build `ClauseRunRequest`s from FR-108's fixtures, in memory.
    run healthy-parent, violating-parent and missing-model with that
    extracted source as the unit; then healthy-parent with the same unit
    extracted from an `ix:formal` fence.
-7. The step 1 unit with FR-109-AC-7's `Ratio` clause, over healthy-parent
+7. FR-109-AC-7's model `M` and clause `F`, over a snapshot holding `r1`
+   selecting `F`.
+8. The step 1 unit with FR-109-AC-9's `Ratio` clause, over healthy-parent
    selecting `Ratio`.
 
 Tag the tests `#[trace("TC-468", "FR-109-AC-n")]`.
@@ -69,9 +71,6 @@ Tag the tests `#[trace("TC-468", "FR-109-AC-n")]`.
   body alone; `violation`, exit 10; `compile`, `missing_import`/
   `missing-selection`; `compile`, `refusal`, `unknown_language`, exit 20,
   no `package_id`.
-- Step 7: `evaluate`, `violation`, `UndefinedEvaluation{cause:
-  division-by-zero}`, no `truth`, exit 10.
-
-## Status
-
-Planned.
+- Step 7: `evaluate`, `undefined`, `UndefinedEvaluation{cause:
+  precondition-false}`, no `truth`, exit 10.
+- Step 8: `compile`, `ill_typed`, exit 20, no `package_id`, no `truth`.

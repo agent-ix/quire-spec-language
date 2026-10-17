@@ -267,6 +267,10 @@ pub fn classify_domains(
                         fields.iter().map(|field| field.value_type()).collect()
                     }
                     CompositeShape::Tuple(positions) => positions.iter().collect(),
+                    CompositeShape::Union(union_members) => union_members
+                        .iter()
+                        .flat_map(|member| member.positions())
+                        .collect(),
                 };
                 // Pushed last-first so the stack visits them in order.
                 for (index, member) in members.into_iter().enumerate().rev() {
@@ -279,9 +283,12 @@ pub fn classify_domains(
             | ValueType::Decimal(_)
             | ValueType::Float(_)
             | ValueType::Text(_)
+            | ValueType::String
             | ValueType::Enum(_)
             | ValueType::Reference(_)
-            | ValueType::Population(Some(_)) => {}
+            | ValueType::Population(Some(_))
+            | ValueType::Uuid
+            | ValueType::Timestamp => {}
         }
     }
     Ok(domains)

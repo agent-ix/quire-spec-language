@@ -26,7 +26,7 @@ relationships:
 
 When a requested clause/capability pair reaches the QSL composed linker, the
 linker SHALL admit its capability label only if the label is exactly one of the
-ten capability kinds of vocabulary `quire.capability-kind/v1`, which
+twelve capability kinds of vocabulary `quire.capability-kind/v1`, which
 `ix://agent-ix/quire-specification/FR-290` fixes.
 
 The QSL `Capability` type is language admission only (quire-specification
@@ -38,7 +38,7 @@ checking, lowering, proof or execution, and it negotiates nothing.
 Capability vocabulary `quire.capability-kind/v1` is the FR-290 Values table in
 quire-specification
 ([quire-specification#135](https://github.com/agent-ix/quire-specification/pull/135)).
-It admits these ten labels and no others. The labels, their meanings, their
+It admits these twelve labels and no others. The labels, their meanings, their
 families and their spelling are FR-290's. QSL defines no local alias,
 abbreviation or extra member.
 
@@ -54,6 +54,8 @@ abbreviation or extra member.
 | `refinement` | protocol |
 | `realizability` | protocol |
 | `composition` | protocol |
+| `probabilistic-satisfaction` | probabilistic |
+| `schedulability` | real-time |
 
 ## Inputs
 
@@ -62,7 +64,9 @@ abbreviation or extra member.
   ([FR-036](FR-036-link-composed-native-packages.md)).
 - For a serialized carrier of capability labels that QSL reads: its declared
   capability vocabulary identity.
-- For a backend registration: the (kind, mode) pairs the backend advertises.
+- For a backend registration: the (kind, mode) pairs the backend advertises
+  and, when it advertises `probabilistic-satisfaction`, its evidence-kind
+  labels.
 
 ## Outputs
 
@@ -102,7 +106,7 @@ The QSL composed linker SHALL NOT normalize a received label before matching.
 The QSL composed linker SHALL treat two `Capability` values as equal exactly
 when their labels are byte-equal.
 
-The ten kinds carry no order. Declaration order in the vocabulary table, in the
+The twelve kinds carry no order. Declaration order in the vocabulary table, in the
 Rust type and in any serialization confers no strength, precedence or dispatch
 priority. The QSL composed linker SHALL compare a set of kinds as a set.
 
@@ -170,7 +174,7 @@ application in its body is one claim of its own, its value validity
 | Boolean clause over pure expressions, including function application (#217) | `value-validity` |
 | Scalar operation application in a `Value` function body (FR-062): the application is defined and its result lies in its result bound (the target range of the narrow that wraps it, or its own result type), for every assignment of its extent roots under which its path condition holds | `value-validity`, one claim per occurrence |
 | Narrowing conversion (`quire.op.numeric.narrow`) in a `Value` function body | none. When it wraps a scalar operation application, its target range is that application's result bound. When it wraps anything else, `check`'s `Coerce` range obligation discharges it (FR-093) |
-| Clause containing a `case` expression over a sum type | `value-validity` |
+| State clause containing a `case` expression over a sum type | `operation-contract`, one record, the clause's own; the `case` adds none |
 | `case` exhaustiveness obligation | none; language admission discharges it (quire-specification FR-146), and an unproved obligation refuses as `undefined_expression`/`unproved-exhaustiveness` |
 | Operation precondition, postcondition or invariant | `operation-contract` |
 | Frame obligation (`modifies`, `creates`, `deletes`) | `operation-contract` |
@@ -186,7 +190,8 @@ family the "Kind applicability" table below gives that kind.
 
 ### Kind applicability
 
-A requested pair's kind applies to exactly one QSL declaration family:
+A requested pair's kind applies to the QSL declaration family listed below,
+or to no current QSL declaration family where the entry says `none`:
 
 | Kind | QSL declaration family |
 | --- | --- |
@@ -195,10 +200,14 @@ A requested pair's kind applies to exactly one QSL declaration family:
 | `finite-replay` | protocol |
 | `temporal-satisfaction` | temporal |
 | `global-conformance`, `monitorability`, `local-projection`, `refinement`, `realizability`, `composition` | protocol |
+| `probabilistic-satisfaction` | none; no current QSL declaration form belongs to `probabilistic` |
+| `schedulability` | none; no current QSL declaration form belongs to `real-time` |
 
-QSL has four declaration families where FR-290 names five. FR-290's
+QSL has four declaration families where FR-290 names seven. FR-290's
 `finite-replay` family applies to a QSL protocol declaration, because only a
-choreography is replayed.
+choreography is replayed. QSL currently defines no claim form for the
+`probabilistic` or `real-time` family; those labels remain members of the
+shared vocabulary and are inapplicable to every current QSL declaration form.
 
 If a requested pair's kind does not apply to its declaration's family, then the
 QSL composed linker SHALL record the pair as an inapplicable capability, naming
@@ -236,9 +245,9 @@ consumes this type and defines no second capability vocabulary.
 
 QSL reads no provider-manifest bytes. The driver reads a backend's FR-331
 provider manifest, writes the FR-331 `manifest`, and registers the backend
-with three values from it, each exactly as stated: the backend identity, the
-advertised (kind, mode) labels, and the manifest's `domains`, present or
-absent (ADR-013 C-28).
+with the backend identity, the advertised (kind, mode) labels, the manifest's
+`domains`, present or absent, and its evidence-kind labels when it advertises
+`probabilistic-satisfaction` (ADR-013 C-28).
 
 When a backend registers, the registry SHALL admit each advertised kind under
 the same rules as a requested pair.
@@ -272,7 +281,7 @@ QSL's.
 A second registration under an identity the registry already holds
 is judged against the held descriptor (FR-075-AC-4, FR-075-AC-7,
 quire-specification FR-290 "Candidate set and negotiation"): an equal
-descriptor repeats harmlessly, and an unequal one conflicts, refusing the
+complete descriptor, including its evidence-kind set, repeats harmlessly, and an unequal one conflicts, refusing the
 identity once with `invalid_capability`/`duplicate-backend` and withdrawing
 the registration already held -- unlike the kind/mode and `domains` causes above,
 this refusal does not leave the earlier registration standing.
@@ -301,7 +310,7 @@ first:
 | Candidate set | Disposition |
 | --- | --- |
 | unknown-backend mark, or a registered backend with no negotiation arm | `invalid-request`, `invalid_capability`/`unknown-backend` |
-| inconsistent with the manifest or the named backend, or containing a candidate that does not advertise the kind | `invalid-request`, `invalid_capability`/`inconsistent-candidates` |
+| inconsistent with the manifest or the named backend, or containing a candidate that does not advertise the item's capability kind and, for a probabilistic item, its exact evidence kind | `invalid-request`, `invalid_capability`/`inconsistent-candidates` |
 | empty | `unsupported`, warned, naming the item's kind and any named backend; `unsupported_projection`/`unsupported-requested-capability` |
 | more than one, and the request names none | `invalid-request`, `invalid_capability`/`ambiguous-backend`, naming every candidate in candidate order |
 | exactly one | that candidate's arm: `supported`, `requires-bound`, `unsupported` (warned) or `invalid-request` |
@@ -371,21 +380,23 @@ checker's definition permissions. Their ownership is decided in #211.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-057-AC-1 | Each of the ten labels in this requirement's v1 table is admitted and round-trips to a byte-identical JSON string. The admitted set equals that table's ten values exactly, with no extra and no missing member. | Test (TC-153) |
+| FR-057-AC-1 | Each of the twelve labels in this requirement's v1 table is admitted and round-trips to a byte-identical JSON string. The admitted set equals that table's twelve values exactly, with no extra and no missing member. | Test (TC-153, TC-970) |
 | FR-057-AC-2 | A missing or `null` label refuses with `invalid_capability`/`absent-kind` and is never defaulted. Every other label that is not byte-equal to an admitted label refuses with `invalid_capability`/`unknown-kind` and names the received bytes. This includes `""`, a non-string value, a case variant (`Global-Conformance`), a separator variant (`value_validity`), a display form (`Operation contract`), a padded label (` composition`), a Rust variant name (`ValueValidity`) and each of `FamilyCheck`, `StateOperation`, `FiniteReplay` and `TemporalProjection`. No refusal carries a replacement kind. A refused pair stays at its index; a refused required pair makes complete admission unavailable. | Test (TC-153) |
 | FR-057-AC-3 | A carrier QSL reads that declares `quire.capability-kind/v1` is read. A carrier that declares no identity, or any other identity string, refuses with `invalid_capability`/`unsupported-version`, naming the received identity or its absence, and none of its labels is read. | Test (TC-154) |
-| FR-057-AC-4 | Kind equality is label equality. Permuting a set of kinds leaves set comparison unchanged. Permuting the requested pairs changes only request indices, and each pair keeps its own kind. Two pairs with the same declaration and kind both stay at their own indices. | Test (TC-153) |
+| FR-057-AC-4 | Kind equality is label equality for all twelve kinds. Permuting a set of kinds leaves set comparison unchanged. Permuting the requested pairs changes only request indices, and each pair keeps its own kind. Two pairs with the same declaration and kind both stay at their own indices. | Test (TC-153, TC-972) |
 | FR-057-AC-5 | The admission entry point takes no registry or backend parameter. Admitting the same requested pairs yields identical admitted pairs and static meaning whatever backends are registered. A declaration whose names resolved reaches its family checker without any capability request. | Test (TC-155) |
 | FR-057-AC-6 | Given settled dispositions in which one item is `unsupported` for an empty candidate set and one is `supported`, routing routes only the `supported` item. The `unsupported` item gets no target and no artifact, and is not turned into a refusal or a hold. The other item routes without delay. | Test (TC-155) |
 | FR-057-AC-7 | The QSL source tree defines one type carrying capability-kind labels, and no other type parses or emits an FR-290 label. | Test (TC-153) |
-| FR-057-AC-8 | A backend registration advertising an absent or unknown kind or an unknown mode is refused with `invalid_capability` and its cause, keyed by backend identity; the refused registration contributes nothing, and any registration already held under that identity stands. A registration repeating an already-held identity with an equal descriptor is not refused; with an unequal descriptor, every registration of that identity -- the one already held and the new one -- is refused `invalid_capability`/`duplicate-backend` and the held registration is withdrawn (FR-075-AC-4, FR-075-AC-7). Candidate sets, their order, and the routing of `supported` items are identical under every registration order; two capable backends with no named backend yield two candidates, never a chosen one. | Test (TC-155) |
+| FR-057-AC-8 | A backend registration advertising an absent or unknown kind or an unknown mode is refused with `invalid_capability` and its cause, keyed by backend identity; the refused registration contributes nothing, and any registration already held under that identity stands. A registration repeating an already-held identity with an equal complete descriptor is not refused; with an unequal descriptor, every registration of that identity -- the one already held and the new one -- is refused `invalid_capability`/`duplicate-backend` and the held registration is withdrawn (FR-075-AC-4, FR-075-AC-7). Candidate sets, their order, and the routing of `supported` items are identical under every registration order; two capable backends with no named backend yield two candidates, never a chosen one. | Test (TC-155) |
 | FR-057-AC-10 | Each claim form in this requirement's claim-form table requests exactly its listed kind, one kind per item, except the row for refinement between two operation contracts or state models, whose proof route no V1 ticket owns (ADR-017 RF-1); an expression nested in a clause adds no kind; a scalar operation application in a `Value` function body requests `value-validity` once per occurrence (FR-062-AC-13); a `case` exhaustiveness obligation and an abstraction relation request none. | Test (TC-153, TC-160) |
-| FR-057-AC-11 | Each kind is applicable to exactly the family this requirement's applicability table gives it. A required `operation-contract` request on a state declaration is admitted; a `finite-replay` request on a state declaration is an inapplicable capability naming the state family, and its declaration's body still reaches its family checker. | Test (TC-115) |
+| FR-057-AC-11 | Each kind is applicable to exactly the family this requirement's applicability table gives it, or is inapplicable to all current QSL declaration families where the table says `none`. A required `operation-contract` request on a state declaration is admitted; a `finite-replay` request on a state declaration and a `probabilistic-satisfaction` or `schedulability` request on any current declaration are inapplicable, name the declaration family, and leave its body reaching its family checker. | Test (TC-115, TC-971) |
 | FR-057-AC-12 | A registration whose `domains` is present but empty, holds `quantity`, `loop`, `infinite-trace` or a label not byte-equal to an FR-331 domain kind (such as `Collection`), or repeats a kind, is refused `invalid_capability`/`invalid-domains`, keyed by backend identity, both when it advertises a `bounded` pair and when it advertises only `unbounded` pairs; a refusal for an unknown or non-boundable label names the received bytes. A registration with no `domains` is refused `invalid-domains` when it advertises a `bounded` pair and is admitted when it advertises only `unbounded` pairs. A registration with both a pair defect and a `domains` defect refuses with the pair's cause. A registration whose `domains` holds each of `collection`, `population`, `integer` and `recursive` once is admitted, and its descriptor's `domains()` returns those four kinds. | Test (TC-155) |
+| FR-057-AC-13 | The family projection for each capability label equals the FR-290 family column in this requirement's table, including `probabilistic-satisfaction` → `probabilistic` and `schedulability` → `real-time`; it introduces no QSL alias. | Test (TC-971) |
+| FR-057-AC-14 | The composed admission stage projection preserves this requirement's stage ownership for every kind: requested labels are admitted by the composed linker without registry input; advertised labels are admitted by `BackendDescriptor::admit`; and candidate sets are computed by the registry only after descriptor admission. | Test (TC-973) |
 
 ## Dependencies
 
-- quire-specification FR-290 (`ix://agent-ix/quire-specification/FR-290`) owns the kind vocabulary (the ten labels, their
+- quire-specification FR-290 (`ix://agent-ix/quire-specification/FR-290`) owns the kind vocabulary (the twelve labels, their
   meanings and families), (kind, mode) advertisement, the candidate-set rule
   and the tool-absence result. Its FR-290-AC-4 owns the backend-absence
   settlement at negotiation. This requirement's claim-form table is QSL's
@@ -411,42 +422,3 @@ checker's definition permissions. Their ownership is decided in #211.
   requirement's "Kind applicability" table. #211 decides the QSL
   carrier member for the vocabulary identity and the ownership of the other QSL
   types named for capabilities.
-
-## Status
-
-Specified under
-[#229](https://github.com/agent-ix/quire-spec-language/issues/229). The
-canonical `Capability` value type and its total FR-290 wire conversion
-(ADR-013 C-24) are implemented (`qsl-semantics/src/check/capability.rs`).
-FR-057-AC-1, FR-057-AC-2 and FR-057-AC-4 are partial: each AC's value-type
-portion (label round-trip, refusal-with-bytes and label equality on this
-type) is passed under TC-153; each AC's admission portion (the composed
-linker actually receiving and admitting a requested clause/capability pair)
-is planned under #213.
-
-`linking::composed::requests::Request` carries the
-canonical `crate::check::Capability`, and no other capability-kind type exists
-in `requests`. `requests::report` reads no backend; the layer-R `route`
-registry computes candidate sets over the same type (FR-075). `admitted_bodies`
-is every declaration whose names resolved, independent of capability requests,
-as "Family-body admission" states. `report` marks a request inapplicable by
-this requirement's applicability table (`requests::families`); FR-057-AC-11 is
-backed by TC-115 (`tests/it/composed_admission_stages.rs`).
-
-The layer-R `route` crate adds registration from advertised labels
-(`qsl_route::BackendDescriptor::admit`, refusing `absent-kind`,
-`unknown-kind`, `unknown-mode` and `invalid-domains` keyed by backend
-identity, and keeping the admitted `domains` on the descriptor) and the routing
-step (`qsl_route::routing`), which takes settled dispositions as data and
-gives a target only to a `supported` item. FR-057-AC-6 and FR-057-AC-8 are
-backed by TC-155 steps 3 to 6 (`qsl-route/tests/it/routing.rs`), and
-FR-057-AC-12 by TC-155 step 7 in the same file; FR-057-AC-8's
-malformed-mode case is additionally backed by TC-447's
-`tc_282_duplicate_backend_identity::db_07_a_malformed_registration_never_reaches_the_registry`
-(`qsl-route/tests/it/route_registry.rs`).
-
-FR-057-AC-3, FR-057-AC-5, FR-057-AC-7 and FR-057-AC-10 are not yet backed by
-tests traced to them. Remaining work: #213 lands the carrier-version refusal
-(AC-3) and composed-linker admission of a received clause/capability pair.
-TC-154, the rest of TC-155, and the admission portion of TC-153 (including
-AC-7 and AC-10), are planned under that ticket.

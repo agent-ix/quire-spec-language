@@ -22,18 +22,19 @@
 //! `Expression` and signature. `DomainPackage` carries no `Expression` payload —
 //! adding one would perturb the
 //! `model-effective-declaration.schema.json`/`model-complete.md`
-//! correspondence every other rung of this crate keys against — so this is where a real
-//! intake (`agent-ix/quire-specification#131`) will eventually plug in its
-//! own clause source in place of a test-built side table; nothing else here
-//! needs to change when it does.
+//! correspondence every other rung of this crate keys against — so the clause
+//! source is the unit's own: the production caller,
+//! [`PackageDeclarations::link_dispatch`], builds the side table from the
+//! unit's `operation-body` declarations and `pre` clauses (FR-302).
 //!
 //! Scope, kept to exactly what TC-196 D06-D08 need (re-read this note before
 //! extending it):
 //!
 //! - One dispatch-eligible operation at a time, mirroring `link_dispatch`'s
-//!   own per-operation signature. A package with several dispatch call sites
-//!   calls this once per distinct receiver-type/member pair and merges the
-//!   resulting `functions`/`dispatch_operations`/`dispatch_tables`.
+//!   own per-operation signature. A package with several dispatched calls
+//!   calls this once per distinct called family root and merges the
+//!   resulting `functions`/`dispatch_operations`/`dispatch_tables`
+//!   (`PackageDeclarations::link_dispatch`).
 //! - The receiver's admitted static types are derived from
 //!   `table.entries()` and the model's effective view, not supplied by the
 //!   caller: each subtype's [`DeclarationKey`] resolves to its
@@ -555,6 +556,19 @@ fn rename_parameters(
     substitute_names(expression, &rename)
 }
 
+/// `expression` with every free name in `rename`'s keys spelled as its value,
+/// under [`rename_parameters`]' capture-avoiding rule. A plain clone when
+/// `rename` is empty.
+pub(super) fn rename_names(
+    expression: &Expression,
+    rename: &BTreeMap<String, String>,
+) -> Expression {
+    if rename.is_empty() {
+        return expression.clone();
+    }
+    substitute_names(expression, rename)
+}
+
 /// The spelling [`Scope::bind`] gives the `suffix`-th alpha-name of a binder
 /// named `name`.
 fn alpha_name(name: &str, suffix: usize) -> String {
@@ -637,13 +651,18 @@ impl<'r> Scope<'r> {
         } else {
             name.to_owned()
         };
-        self.binders.push((name.to_owned(), used.clone()));
+        self.bind_as(name, &used);
+        used
+    }
+
+    /// Record `name` bound under the spelling `used`.
+    fn bind_as(&mut self, name: &str, used: &str) {
+        self.binders.push((name.to_owned(), used.to_owned()));
         self.shadows
             .entry(name.to_owned())
             .or_default()
-            .push(used.clone());
-        *self.in_use.entry(used.clone()).or_default() += 1;
-        used
+            .push(used.to_owned());
+        *self.in_use.entry(used.to_owned()).or_default() += 1;
     }
 
     /// Leave the innermost binder's scope. A name it frees that is some
@@ -742,6 +761,20 @@ impl Renaming<'_, '_, '_> {
                     return;
                 };
                 match node.node() {
+                    ExprNode::Case(case) => {
+                        children.push(Rewrite::Node(case.scrutinee));
+                        // `ExprNode::binders` numbers every arm's binders in
+                        // arm order, so an arm's binders start after the
+                        // earlier arms'.
+                        let mut first = 0;
+                        for arm in &case.arms {
+                            let next = first + arm.binders.len();
+                            children.extend((first..next).map(|slot| Rewrite::Bind(id, slot)));
+                            children.push(Rewrite::Node(arm.body));
+                            children.extend(arm.binders.iter().map(|_| Rewrite::Unbind));
+                            first = next;
+                        }
+                    }
                     ExprNode::Name(name) => {
                         if let Some(slot) = self.names.get_mut(id.index()) {
                             *slot = Some(self.scope.resolve(name, self.rename));
@@ -922,10 +955,7 @@ pub fn checked_dispatch_operation(
         let record = operation_records
             .get(candidate)
             .ok_or_else(|| unknown_candidate(candidate))?;
-        let is_query = record.result.is_some()
-            && record.effect.modifies.is_empty()
-            && record.effect.creates.is_empty()
-            && record.effect.deletes.is_empty();
+        let is_query = record.result.is_some() && record.effect.is_empty();
         if !is_query {
             return Err(not_a_query(candidate));
         }
@@ -1167,6 +1197,42 @@ pub fn checked_dispatch_operation(
     })
 }
 
+/// Test fixtures retain the genuine selection admission owner while the
+/// existing bridge links its dispatch root on the same operation meter.
+#[cfg(any(test, feature = "test-support"))]
+pub fn checked_dispatch_selected_operation(
+    selected: crate::model::intake::SelectedModels,
+    root: &DispatchRoot,
+    clauses: &OperationClauses,
+    source: qsl_foundation::source::provenance::RawSourceRef,
+    identity: qsl_foundation::IdentityLimits,
+) -> Result<PackageDeclarations, DispatchBridgeRefusal> {
+    let (entries, mut meter) = selected.into_parts();
+    let Some(ordinal) = entries
+        .iter()
+        .position(|entry| entry.view.model_selection().identity == root.key.package)
+    else {
+        return Err(unknown_candidate(&root.key));
+    };
+    let mut declarations = checked_dispatch_operation(
+        &entries[ordinal].view,
+        root,
+        clauses,
+        source,
+        &mut meter,
+        identity,
+    )?;
+    for (position, entry) in entries.iter().enumerate() {
+        if position != ordinal {
+            declarations
+                .models
+                .push(AdmittedModel::from_view(&entry.view));
+        }
+    }
+    declarations.model_inputs = Some((entries, meter));
+    Ok(declarations)
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
@@ -1304,16 +1370,39 @@ mod tests {
         limit: u64,
     ) {
         match refusal {
-            DispatchBridgeRefusal::FamilyStepsExceeded(model_refusal) => assert_eq!(
-                model_refusal.cause,
-                ModelRefusalCause::family_steps(original.clone(), limit)
-            ),
+            DispatchBridgeRefusal::FamilyStepsExceeded(model_refusal) => {
+                assert_eq!(
+                    model_refusal.cause,
+                    ModelRefusalCause::family_steps(original.clone(), limit)
+                );
+                // FR-302-AC-5 and QSpec FR-150-AC-11: the S3 refusal is a
+                // denied one-edge charge, `resource_exhausted`/
+                // `insufficient-next-charge`, with the charge record.
+                let code = model_refusal.catalog_code();
+                assert_eq!(code.code(), "resource_exhausted");
+                assert_eq!(code.cause(), "insufficient-next-charge");
+                let fields = model_refusal
+                    .cause
+                    .catalog_fields()
+                    .expect("a denied charge carries its record");
+                let field = |name: &str| fields[name].clone();
+                assert_eq!(field("setting"), "model.family_steps");
+                assert_eq!(field("limit"), limit.to_string());
+                assert_eq!(field("actual"), (limit + 1).to_string());
+                assert_eq!(field("limit_kind"), "family_steps");
+                assert_eq!(field("consumed"), limit.to_string());
+                assert_eq!(field("next_charge"), "1");
+                assert_eq!(field("charge_point"), "model.family-edge");
+                assert_eq!(field("stage"), "model-normalization");
+                assert_eq!(field("accounting_contract"), "ModelNormalizationLimitsV1");
+            }
             other => panic!("expected FamilyStepsExceeded, got {other:?}"),
         }
     }
 
     /// `ancestor_closure` admits a chain of exactly `family_steps` edges with
     /// its full closure, and refuses one edge more instead of truncating.
+    #[trace("TC-795", "FR-302-AC-5")]
     #[test]
     fn ancestor_closure_admits_the_bound_and_refuses_one_past_it() {
         let (keys, redefinitions) = chain("at", FAMILY_STEPS);
@@ -1569,6 +1658,7 @@ mod tests {
             Expression::boolean(true),
             Expression::integer(3_i64),
             Expression::rational(Integer::from(1_i64), Integer::from(3_i64)),
+            Expression::string("abc"),
             o(),
         ];
         let mut boxed = o;
@@ -1657,14 +1747,17 @@ mod tests {
                 qsl_foundation::Span { start: 0, end: 0 },
             ),
         ]);
+        forms.push(case_source("case x { A(z): x + z; B: x; }"));
         forms
     }
 
     /// Every name [`form_name`] gives, one per `Expression` form.
-    const FORM_NAMES: [&str; 31] = [
+    const FORM_NAMES: [&str; 33] = [
+        "Case",
         "Boolean",
         "Integer",
         "Rational",
+        "String",
         "Name",
         "Let",
         "If",
@@ -1701,9 +1794,11 @@ mod tests {
     #[deny(clippy::wildcard_enum_match_arm)]
     fn form_name(expression: &Expression) -> &'static str {
         match expression.root_node() {
+            ExprNode::Case(_) => "Case",
             ExprNode::Boolean(_) => "Boolean",
             ExprNode::Integer(_) => "Integer",
             ExprNode::Rational(..) => "Rational",
+            ExprNode::String(_) => "String",
             ExprNode::Name(_) => "Name",
             ExprNode::Let { .. } => "Let",
             ExprNode::If { .. } => "If",
@@ -1732,7 +1827,88 @@ mod tests {
             ExprNode::SelfRef => "SelfRef",
             ExprNode::Result => "Result",
             ExprNode::Reaches { .. } => "Reaches",
+            ExprNode::ProtocolReference { .. } => "ProtocolReference",
         }
+    }
+
+    fn case_source(body: &str) -> Expression {
+        let text = format!("language \"ix:native\" edition \"1-draft\"; profile v = \"quire.value.complete/v1\"; function f using v(x: U): Integer pure {{ {body} }}");
+        let parsed = qsl_cst::parse(
+            qsl_foundation::SourceIdentity::new("test", "case", "git", "1"),
+            "case.native",
+            text.as_bytes(),
+            qsl_cst::Limits::default(),
+        )
+        .expect("S1 reads the unit");
+        assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+        let unit = qsl_forms::build_unit(&parsed).expect("S2 builds case");
+        let qsl_forms::DeclarationForm::Function(function) = unit.forms()[0].form() else {
+            panic!("function")
+        };
+        function.body.clone()
+    }
+
+    #[trace("TC-815", "FR-313-AC-2")]
+    #[test]
+    fn dispatch_substitution_walks_case_children_and_preserves_each_arm_binding() {
+        let source = case_source("case x { A(z): x + z; B(x): x; C: case x { D(k): x + k; }; }");
+        let renamed = substitute_names(
+            &source,
+            &BTreeMap::from([("x".to_owned(), "receiver".to_owned())]),
+        );
+        let ExprNode::Case(case) = renamed.root_node() else {
+            panic!("case")
+        };
+        assert_eq!(
+            renamed.at(case.scrutinee).node(),
+            &ExprNode::Name("receiver".into())
+        );
+        assert_eq!(case.arms[0].binders[0].name, "z");
+        assert_eq!(case.arms[1].binders[0].name, "x");
+        assert_eq!(
+            renamed.at(case.arms[1].body).node(),
+            &ExprNode::Name("x".into())
+        );
+        let ExprNode::Binary { left, right, .. } = renamed.at(case.arms[0].body).node() else {
+            panic!("binary body")
+        };
+        assert_eq!(renamed.at(*left).node(), &ExprNode::Name("receiver".into()));
+        assert_eq!(renamed.at(*right).node(), &ExprNode::Name("z".into()));
+        let ExprNode::Case(inner) = renamed.at(case.arms[2].body).node() else {
+            panic!("inner case")
+        };
+        assert_eq!(
+            renamed.at(inner.scrutinee).node(),
+            &ExprNode::Name("receiver".into())
+        );
+        assert_eq!(inner.arms[0].binders[0].name, "k");
+        let ExprNode::Binary { left, right, .. } = renamed.at(inner.arms[0].body).node() else {
+            panic!("inner binary")
+        };
+        assert_eq!(renamed.at(*left).node(), &ExprNode::Name("receiver".into()));
+        assert_eq!(renamed.at(*right).node(), &ExprNode::Name("k".into()));
+    }
+
+    /// A rename target that an arm binder already spells must not capture
+    /// the renamed reference: `x -> r` in `A(r): x + r` leaves the renamed
+    /// receiver `r` and the arm's own `r` apart, as a `let` binder does.
+    #[trace("TC-815", "FR-313-AC-2")]
+    #[test]
+    fn dispatch_substitution_renames_an_arm_binder_that_a_rename_target_would_capture() {
+        let source = case_source("case x { A(r): x + r; B(k): k; }");
+        let renamed =
+            substitute_names(&source, &BTreeMap::from([("x".to_owned(), "r".to_owned())]));
+        let ExprNode::Case(case) = renamed.root_node() else {
+            panic!("case")
+        };
+        let fresh = case.arms[0].binders[0].name.clone();
+        assert_ne!(fresh, "r", "the binder no longer spells the rename target");
+        let ExprNode::Binary { left, right, .. } = renamed.at(case.arms[0].body).node() else {
+            panic!("binary body")
+        };
+        assert_eq!(renamed.at(*left).node(), &ExprNode::Name("r".into()));
+        assert_eq!(renamed.at(*right).node(), &ExprNode::Name(fresh));
+        assert_eq!(case.arms[1].binders[0].name, "k");
     }
 
     /// The rename walk's task stack grows by at most a constant per

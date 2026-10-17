@@ -17,7 +17,7 @@ Scope: FR-287-AC-1, FR-287-AC-2.
 ## Test Procedure
 
 1. Run `cargo build --workspace` in a clean QSL checkout and list the executable files in its target directory.
-2. With stdout and stderr captured, call `command` in process with FR-027's compile request over `tests/fixtures/spine-compile.native`, then with FR-100-AC-6's `work_units` 0 run request, and map each outcome's category through FR-285.
+2. With stdout and stderr captured, call `command` in process with FR-027's compile request over `tests/fixtures/spine-compile.native`, then with FR-100-AC-6's `call.accounting` `{"work_units": 0}` run request, and map each outcome's category through FR-285.
 
 Tag the tests `#[trace("TC-771", "<AC id>")]`.
 

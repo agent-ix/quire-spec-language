@@ -52,10 +52,10 @@ remains a separate fallible step. Existing validate/evaluate callers retain thei
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-023-AC-1 | Healthy and violating parent/aggregate requests return true and false respectively with their exact package, original input bytes and authored selection retained. | Test |
-| FR-023-AC-2 | Invalid inputs or foreign selections retain the original validation classification, details, terminal reason and usage, with no evaluation result or Boolean. | Test |
-| FR-023-AC-3 | Validation and evaluation exhaustion or cancellation remain distinguishable, retain actual usage/event prefixes, and fresh retries can complete. | Test |
-| FR-023-AC-4 | An operation request retains exact invocation and pre/post inputs while actual capture/frame semantics determine completion or refusal. | Test |
+| FR-023-AC-1 | Healthy and violating parent/aggregate requests return true and false respectively with their exact package, original input bytes and authored selection retained. | Test (TC-097) |
+| FR-023-AC-2 | Invalid inputs or foreign selections retain the original validation classification, details, terminal reason and usage, with no evaluation result or Boolean. | Test (TC-098) |
+| FR-023-AC-3 | Validation and evaluation exhaustion or cancellation remain distinguishable, retain actual usage/event prefixes, and fresh retries can complete. | Test (TC-098) |
+| FR-023-AC-4 | An operation request retains exact invocation and pre/post inputs while actual capture/frame semantics determine completion or refusal. | Test (TC-097) |
 
 ## Dependencies
 

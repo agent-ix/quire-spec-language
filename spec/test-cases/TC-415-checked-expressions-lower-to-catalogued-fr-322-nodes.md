@@ -102,6 +102,14 @@ selection whose alias is `v`, and is checked under owner (`a`, `u`).
 
 Tag the tests `#[trace("FR-093-AC-n", "TC-415")]` with the AC each backs.
 
+`PackageDeclarations::check` reports a family's `StageFailure::Limit` as a
+`CheckRefusal` whose cause is `CheckCause::ResourceExhausted` carrying the
+stage, kind, bound and actual counter (ADR-013 §7 slice S-5b, FR-096); that
+cause's code is always `stage_limit_exceeded` and its cause the limit kind's
+(`check/refusal.rs`, `CheckCause::code` and `CheckCause::cause`).
+The node-limit step's test (`check/lowering/tests/leaves.rs`) asserts
+`stage_limit_exceeded`/`node-count-exceeded` directly.
+
 ## Expected Results
 
 - Step 1: one literal node and one conditional node, as FR-093-AC-1 states,
@@ -138,25 +146,3 @@ Tag the tests `#[trace("FR-093-AC-n", "TC-415")]` with the AC each backs.
   level 5, and `v + u` reads `v`'s and `u`'s parameter nodes. The two
   unguarded `value(o)` bodies each refuse with
   `undefined_expression`/`unproved-presence` alone; the guarded one checks.
-
-## Status
-
-Implemented (#384). The tests back steps 1 to 11, step 4's nested `fm`
-and the recursive text-leaf steps 8 and 9 included, except step 6's first
-half, which needs the QSpec `complete-value-lock.json` accessor (ADR-011
-§2.4). Steps 10 and 11 cover the case where a debug build once aborted at
-20 nested `a and (…)`.
-
-`PackageDeclarations::check` reports a family's `StageFailure::Limit` as a
-`CheckRefusal` whose cause is `CheckCause::ResourceExhausted` carrying the
-stage, kind, bound and actual counter (ADR-013 §7 slice S-5b, FR-096); that
-cause's code is always `stage_limit_exceeded` and its cause the limit kind's
-(`check/refusal.rs`, `CheckCause::code` and `CheckCause::cause`).
-The node-limit step's test (`check/lowering/tests/leaves.rs`) asserts
-`stage_limit_exceeded`/`node-count-exceeded` directly. Step 10 is backed by
-`every_nested_form_checks_at_1000_levels_as_at_2_on_a_small_stack`
-(`check/lowering/tests/expression_depth.rs`,
-`check/lowering/model/tests/expression_depth.rs`), which compares the
-outcome at 1,000 levels with the outcome at 2, and by
-`the_longest_and_chain_s1_admits_checks_and_emits_at_the_defaults`
-(`qsl-package/src/emit/tests/deep_bodies.rs`) for the longest `and` chain.

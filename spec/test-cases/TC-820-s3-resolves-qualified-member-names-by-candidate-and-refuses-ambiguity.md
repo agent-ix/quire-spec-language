@@ -14,23 +14,32 @@ Scope: FR-317-AC-3.
 
 ## Test Procedure
 
-1. `q::m` with a union `q` and an enum `q` both declaring `m`.
-2. `q::m` with two unions `q` both declaring `m`.
-3. `q::m` with a union `q` declaring `m` and an import alias `q` exporting
+Source vectors (one program each):
+
+1. `q::m` with a union `q` declaring `m` and an import alias `q` exporting
    `m`.
-4. `q::m` with two unions `q`, only one declaring `m`.
-5. `Kind::Empty` for an enum, and `Pair(1, 2)` for a tuple, with unions
+2. `q::m` with the union `q` alone.
+3. A unit declaring two unions named `q`, and a unit declaring a union `q`
+   and an enum `q`.
+4. `Kind::Empty` for an enum, and `Pair(1, 2)` for a tuple, with unions
    declared in the unit.
+
+Hand-built scope vectors (the assembler refuses duplicate type names before
+resolution, so a source program cannot produce them):
+
+5. `q::m` with a union `q` and an enum `q` both declaring `m`.
+6. `q::m` with two unions `q` both declaring `m`.
+7. `q::m` with two unions `q`, only one declaring `m`.
 
 Tag each test `#[trace("TC-820", "<AC id>")]`.
 
 ## Expected Results
 
-- Steps 1 to 3: `ambiguous_declaration`/`ambiguous-name`, naming every
+- Step 1: `ambiguous_declaration`/`ambiguous-name`, naming both candidates.
+- Step 2: resolves to the union's member.
+- Step 3: `ambiguous_declaration`/`ambiguous-name` at the second
+  declaration, from the assembler.
+- Step 4: an enum member and a tuple construction, as without unions.
+- Steps 5 and 6: `ambiguous_declaration`/`ambiguous-name`, naming every
   candidate.
-- Step 4: resolves to the declaring union's member.
-- Step 5: an enum member and a tuple construction, as without unions.
-
-## Status
-
-Planned.
+- Step 7: resolves to the declaring union's member.

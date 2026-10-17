@@ -55,11 +55,11 @@ The relation is authored in QSL source as a `Relation` family declaration
 checked package. It is a declaration of its own, distinct from a model
 refinement declaration, with its own checked type.
 
-- S2 SHALL parse each `abstraction-decl` into its relation form, refusing as
-  QSpec FR-450-AC-3 states: `unsupported_construct` at the declaration when
-  the package does not select `quire.model.complete/v1`, and
+- S2 SHALL parse each `abstraction-decl` into its relation form, refusing
   `invalid_syntax` at the offending token for a declaration with no binding
-  or a binding whose Rust spelling is not quoted.
+  or a binding whose Rust spelling is not quoted (QSpec FR-450-AC-3).
+  S3 refuses `unsupported_construct` at the declaration when the package does
+  not select `quire.model.complete/v1` (QSpec FR-450-AC-3), as FR-361 states.
 - S3 SHALL check every `abstraction-decl` of the unit into the one
   `CheckedAbstractionRelation`. Key uniqueness spans all of them (QSpec
   FR-450 rule 5).

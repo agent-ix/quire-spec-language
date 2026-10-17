@@ -19,8 +19,14 @@ relationships:
     type: traces_to
   - target: ix://agent-ix/quire-spec-language/FR-103
     type: traces_to
+  - target: ix://agent-ix/quire-spec-language/FR-380
+    type: depends_on
   - target: ix://agent-ix/quire-specification/FR-153
     type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-043
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-010
+    type: references
 ---
 # FR-104: Check state clauses at S3 and record their requirements
 
@@ -67,9 +73,30 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
 
 - The assembler SHALL resolve the `using` alias to one of the unit's profile
   selections, exactly as it does for a function (FR-091).
-- If `M` names no `model` declaration of the unit, or `T` no object type of
-  its package, then the assembler SHALL refuse `missing_declaration`/
-  `missing-name` at the name.
+- If `M` names no `model` declaration of the unit, or `T` no object type,
+  state machine or process of its package, then the assembler SHALL refuse
+  `missing_declaration`/`missing-name` at the name.
+- The context `M::T` of a clause is the declaration `T` names, whichever of
+  the three it is, and a process is a context as an object type is. The
+  `self` of a clause on a process is one run of it (QSpec FR-208): a
+  `Reference<M::T>` to the run, whose declared object identity roots the
+  clause's receiver path (FR-107), so an invariant on a process holds for
+  every run of its population at `current` and a `pre` or `post` clause of a
+  process operation reads the run the operation is called on, as one on an
+  object type reads its object. An operation `op` a process declares
+  (FR-103) is resolved, anchored and framed as an object type's operation is
+  (FR-105): its anchor and frame are the ones every clause and attempt that
+  names it share, the anchor's `context` is the node of the process that
+  declares `op` (`model`/`process`), and the frame is the operation's
+  `OperationEffect` as FR-103 and FR-154 admit it. No scoped frame is built
+  for a process operation: intake refuses its receiver-scoped members
+  (`modifies_receiver`, `deletes_receiver: true`) at the member
+  (FR-154-AC-8), so the frame a clause names holds only `every-object` `modifies`
+  entries, `creates`, `deletes` and `deletes_parameters` entries, and no
+  clause can name a process operation whose frame holds a receiver-scoped
+  entry. The anchor context of an operation of a state machine is the node of
+  the state machine in the same way, with `self` the machine's context
+  (FR-107).
 - If a `pre` or `post` clause's `op` names no operation of `M::T`'s effective
   view (FR-103), then the assembler SHALL refuse `missing_declaration`/
   `missing-name` at `op`.
@@ -144,13 +171,21 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
 - If `reaches` appears outside a state clause, then the checker SHALL refuse
   `ill_typed`/`operator-ineligible` at the `reaches`: only a clause has an
   observation to traverse (ADR-012 §15.2).
-- The checker SHALL admit `reaches(a, b, edge)` only when `a` and `b` are
-  `Reference<M::T>` of one object type and `edge` names a field of `T` whose
-  type is `Reference<M::T>`, `Option<Reference<M::T>>` or a sequence of
-  `Reference<M::T>` (QSpec `state-contract.md`, "Finite graph extension").
-  If `edge` has any other type, a set, bag or ordered set of references
-  included, then the checker SHALL refuse `ill_typed`/`operator-ineligible`
-  at the `reaches`.
+- The checker SHALL admit `reaches(a, b, edge)` only when `edge` names a field
+  of an object type `M::T` whose type is `Reference<M::T>`,
+  `Option<Reference<M::T>>` or a sequence of `Reference<M::T>`. For a package
+  selecting `quire.model.complete/v1`, the checker SHALL apply QSpec
+  [FR-043](ix://agent-ix/quire-specification/FR-043)'s conformance to the
+  static edge owner `T` to each operand and retain the checked operand
+  references without erasing the type identity that FR-043 uses for each
+  object's most-specific identity at evaluation; QSpec
+  [FR-010](ix://agent-ix/quire-specification/FR-010) delegates this traversal
+  profile to FR-043. For any other selection, `a` and `b` SHALL both be
+  `Reference<M::T>` of that exact object type, as before. An ineligible
+  operand or edge shape, including a set, bag or ordered set of references,
+  SHALL refuse `ill_typed`/`operator-ineligible` at the `reaches`. When `edge` names a
+  relationship end instead of a field, [FR-365](FR-365-reach-an-object-over-a-relationship-end-in-a-state-clause.md)
+  checks, lowers and evaluates the form.
 
 ### Definedness facts
 
@@ -194,12 +229,15 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
   the clause's `self`, `result` and parameter types and the populations the
   clause ranges over: the context's population (every object of which the
   clause holds for) and each population a `reaches` walks. A domain-package
-  population declaration never has a maximum (QSpec FR-153's own record has
-  none), so each one is always an unbounded `Population(None)` domain,
-  boundable by `Cardinality`.
+  population declaration has no maximum of its own (QSpec FR-153's own record
+  has none), so a population is an unbounded `Population(None)` domain,
+  boundable by `Cardinality`, unless the package authors a bound on it
+  (FR-380). A population with an authored bound `N` is a `Population(Some(N))`
+  domain: it is not listed among the unbounded domains, and its available
+  finite bound is `Cardinality{N}`.
 - The checker SHALL key a population domain as
   `DomainKey::Population{member_type, ordinal}` with `member_type` the
-  `model`/`object_type` node of the population's *canonical*
+  `model`/`object_type` or `model`/`process` node of the population's *canonical*
   member type: the least, in ascending `DeclarationKey` order, of its
   declared member types -- never a node of the clause's context type `T`
   itself when `T` is a proper subtype of a member (SR-736 FND-010), and
@@ -213,15 +251,17 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
   UTF-8 bytes, `qsl-semantics/src/model/key.rs:80-84`). The ordinal is stable
   within one domain-package digest only, and domain keys SHALL NOT be
   compared across digests. A population record has no node of its own
-  (FR-094), so its domain is named by the object type plus the population, as
-  a model member is (ADR-012 §15.4). A `reaches` over the context population
+  (FR-094; the one node FR-380 emits for a bounded population a `reaches`
+  walks is a `Population<T>[N]` type node, not the record), so its domain is
+  named by the object type plus the population, as a model member is
+  (ADR-012 §15.4). A `reaches` over the context population
   adds no second domain.
-- The context population SHALL be the one population with no maximum that
-  covers `T`: `T` itself, or a proper supertype of `T`, is one of its member
-  types, by conformance (FR-084's `allInstances<T>` reads this way, not by
+- The context population SHALL be the one population that covers `T`,
+  whether or not the package authors a bound on it (FR-380): `T` itself, or a
+  proper supertype of `T`, is one of its member types, by conformance (FR-084's `allInstances<T>` reads this way, not by
   exact identity). If no population covers `T`, then the clause's extent
   names no population domain for it. If `T` conforms to a member type of two
-  or more populations with no maximum, then the extent cannot name exactly
+  or more populations, then the extent cannot name exactly
   one population, and the checker SHALL refuse `ambiguous_declaration`/
   `ambiguous-name` at the clause's `on`, naming those populations in
   ascending `DeclarationKey` order.
@@ -241,11 +281,14 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
 | FR-104-AC-6 | Checking the same unit twice, and checking it with its clauses in another order, gives each clause the same node identity and the same requirement record keys. Two clauses with equal kind, anchor and body and different names share a node identity and differ in their `claim` occurrence (ordinals in source order). | Test (TC-461) |
 | FR-104-AC-7 | In postconditions of `attemptUpdate` over a package whose frame modifies `parent`: `present(pre(self.parent)) implies deref(value(self.parent)).versionNumber > 0` refuses `undefined_expression`/`unproved-presence` at `value(self.parent)`; `pre(present(self.parent) implies deref(value(self.parent)).versionNumber > 0)` checks; `let v = self.versionNumber in pre(v) = 1` and `let s = self in pre(s.versionNumber) = 1` each refuse `wrong_snapshot`/`forbidden-pre-read` at the `pre`; `let s = pre(self) in s.versionNumber = 1` checks with its read `pre`. | Test (TC-459) |
 | FR-104-AC-8 | Over a package that adds operation `probe(target: ConfigVersion)` on `ConfigVersion` with no result and an empty frame: the postcondition `deref(target).versionNumber = 1` checks with its read `post`; the precondition `deref(target).versionNumber = 1` checks with its read `pre`; the postcondition `pre(deref(target).versionNumber) = 1` checks with its read `pre`; the postcondition `pre(target) = target` refuses `wrong_snapshot`/`forbidden-pre-read` at the `pre`. | Test (TC-459) |
+| FR-104-AC-9 | Under `quire.model.complete/v1`, `reaches(self, target, parent)` on a `ConfigVersion` subtype with its inherited `parent: Option<Reference<ConfigVersion>>` field checks with `self` retained as the subtype reference and `target` as the base reference, without erasing the operand identity FR-043 evaluates; a target type not conforming to the edge owner refuses `ill_typed`/`operator-ineligible`. The subtype/base operands under any other admitted model selection refuse `ill_typed`/`operator-ineligible` by the exact-type rule. | Test |
+| FR-104-AC-10 | Over the ConfigVersion package (TC-458's) with a process `Flow` (identity field `x`, field `n: Integer`) that declares operation `go` whose frame is `modifies [Flow/n]` and a closed population of `Flow`, `pre P using v on Config::Flow::go { self.n < 3 }`, `post Q using v on Config::Flow::go { self.n = pre(self.n) + 1 }` and `invariant I using v on Config::Flow at current { self.n >= 0 }` each check, `self` being `Reference<Config::Flow>` and `self.n` an `Attribute` of type `Integer`; `P`'s read is `pre`, `Q`'s reads are `post` and `pre`, `I`'s read is `current`. `pre M using v on Config::Flow::missing { true }` refuses `missing_declaration`/`missing-name` at `missing`. | Test (TC-459, TC-460) |
+| FR-104-AC-11 | Over the ConfigVersion package with `bound HistoryBound on Config::config_history [8]` (FR-380), `NoCycle` yields an `operation-contract` record whose one domain, the `config_history` population keyed as in FR-104-AC-5, is a `Population(Some(8))` domain with available finite bound `Cardinality{8}` and is not listed among the unbounded domains, so a clause whose only domains are bounded has extent `Bounded`; the population covering `ConfigVersion` is still the one `config_history`, and a second population `archive` of `ConfigVersion` with or without a bound of its own still refuses `ambiguous_declaration`/`ambiguous-name` at each clause's `on`. Without the `bound` declaration the record is FR-104-AC-5's. | Test (TC-1054) |
 
 ## Dependencies
 
-- FR-102 (forms), FR-103 (operations), FR-062 and FR-097 (requirement
-  records and extent), FR-088 (clause identity), FR-057 (the
+- FR-102 (forms), FR-103 (operations), FR-380 (the authored population
+  bound), FR-062 and FR-097 (requirement records and extent), FR-088 (clause identity), FR-057 (the
   `operation-contract` kind).
 - QSpec `state-contract.md` ("Operation anchors, aliases and captures",
-  "Finite graph extension") and FR-153.
+  "Finite graph extension"), FR-043, FR-010 and FR-153.

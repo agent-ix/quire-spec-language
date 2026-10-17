@@ -87,36 +87,59 @@ fn dependency_selection(identity: &str, label: &str) -> Value {
 /// `occurrences` dropped, so IR's own reader requires the two to describe
 /// literally the same node (`identity_preimage.identity_projection` must
 /// equal `semantic_graph.nodes` mapped through that `From` impl). A
-/// self-typed scalar with a trivial boolean literal body needs no other
+/// self-typed scalar with an empty aggregate body needs no other
 /// node's identity and no frame/nominal validation. `export` is `R`'s own
 /// `declaration`, paired with a `declaration`-role occurrence
 /// (`validate_declaration`'s `DeclarationOccurrenceRule`).
 fn node_fields(label: &str, export: &str) -> Value {
     let reference = node_ref(label);
-    json!({
+    let mut node = json!({
         "node_id": reference,
         "schema_version": "quire.checked-semantic-graph/v2",
         "node_tag": "scalar_type",
-        "semantic_form": "boolean",
+        "semantic_form": "text",
         "semantic_type": reference,
         "dependencies": [],
         "declaration": {"qualified_name": [export]},
         "owner": declared_owner(),
-        "body": {
-            "term": "literal",
-            "type": reference,
-            "value_kind": "boolean",
-            "value": true,
-        },
-    })
+        "body": {"term": "aggregate", "members": []},
+    });
+    // A self-typed structural node's preimage omits semantic_type. Derive
+    // with the same wire-preimage helper used by emitter tests, then install
+    // the resulting identity in both self-reference sites.
+    let digest = crate::emit::tests::rebuilt_key(&node, &[]);
+    let reference = json!({"domain": NODE_DOMAIN, "digest": digest});
+    node["node_id"] = reference.clone();
+    node["semantic_type"] = reference;
+    node
 }
 
 fn projection_node(label: &str, export: &str) -> Value {
     node_fields(label, export)
 }
 
+fn node_fields_in_source(label: &str, export: &str, source: &str) -> Value {
+    let mut node = node_fields(label, export);
+    node["owner"]["identity"] = json!(source);
+    let digest = crate::emit::tests::rebuilt_key(&node, &[]);
+    let reference = json!({"domain": NODE_DOMAIN, "digest": digest});
+    node["node_id"] = reference.clone();
+    node["semantic_type"] = reference;
+    node
+}
+
+fn projection_node_in_source(label: &str, export: &str, source: &str) -> Value {
+    node_fields_in_source(label, export, source)
+}
+
 fn graph_node(label: &str, export: &str) -> Value {
     let mut node = node_fields(label, export);
+    node["occurrences"] = json!([{"role": "declaration", "ordinal": 0}]);
+    node
+}
+
+fn graph_node_in_source(label: &str, export: &str, source: &str) -> Value {
+    let mut node = node_fields_in_source(label, export, source);
     node["occurrences"] = json!([{"role": "declaration", "ordinal": 0}]);
     node
 }
@@ -176,7 +199,7 @@ fn package_id_member(preimage: &Value) -> Value {
 /// A structurally valid `quire.checked-package/v2` envelope wrapping
 /// `preimage`, with a correctly recomputed `package_id` and one graph node.
 fn valid_envelope(preimage: &Value) -> Value {
-    json!({
+    let mut envelope = json!({
         "capability_report": [],
         "contract_version": CHECKED_PACKAGE_V2,
         "diagnostics": diagnostics(),
@@ -188,12 +211,17 @@ fn valid_envelope(preimage: &Value) -> Value {
             "nodes": [graph_node("pkg::R", "R")],
         },
         "source_map": [{
-            "node_id": node_ref("pkg::R"),
+            "node_id": graph_node("pkg::R", "R")["node_id"],
             "role": "declaration",
             "ordinal": 0,
             "regions": [{"source": source_ref("src"), "start": 0, "end": 1}],
         }],
-    })
+    });
+    // Keep inline wires valid under IR's derived-key checks. The test-only
+    // rekeyer uses the same QSL node-key preimage path as emitter tests, then
+    // refreshes the projection and package identity together.
+    rekey_stale(&mut envelope);
+    envelope
 }
 
 fn identity(label: &str) -> LibraryName {
@@ -270,11 +298,15 @@ fn accepts_valid_bytes() {
 }
 
 /// A wire whose projection declares `exports` (label, qualified name), each
-/// a self-typed boolean scalar with a `declaration`-role occurrence, in
-/// ascending node-id order.
+/// a self-typed, keyable scalar with a `declaration`-role occurrence.
 fn envelope_declaring(exports: &[(&str, &str)]) -> (Value, Value) {
     let mut sorted = exports.to_vec();
-    sorted.sort_by_key(|(label, _)| hex(label));
+    sorted.sort_by_key(|(label, export)| {
+        node_fields(label, export)["node_id"]["digest"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    });
     envelope_in_graph_order(&sorted)
 }
 
@@ -294,27 +326,34 @@ fn envelope_in_graph_order(exports: &[(&str, &str)]) -> (Value, Value) {
     envelope["source_map"] = exports
         .iter()
         .zip(0_u64..)
-        .map(|((label, _), start)| {
+        .map(|((label, export), start)| {
             json!({
-                "node_id": node_ref(label),
+                "node_id": node_fields(label, export)["node_id"],
                 "role": "declaration",
                 "ordinal": 0,
                 "regions": [{"source": source_ref("src"), "start": start, "end": start + 1}],
             })
         })
         .collect();
+    rekey_stale(&mut envelope);
+    let preimage = envelope["identity_preimage"].clone();
     (preimage, envelope)
 }
 
 /// QSpec FR-322-AC-14: the projection keeps the semantic graph's
 /// node order, and that order is part of `package_id`. The same two exports
-/// in ascending and in descending node-id order are both admitted, under two
+/// in two graph orders are both admitted, under two
 /// different `package_id`s, and export the same declarations.
 #[trace("TC-253", "FR-087-AC-3")]
 #[test]
 fn reversed_node_order_is_admitted_under_a_different_package_id() {
     let mut exports = vec![("pkg::Y", "A"), ("pkg::Z", "B")];
-    exports.sort_by_key(|(label, _)| hex(label));
+    exports.sort_by_key(|(label, export)| {
+        node_fields(label, export)["node_id"]["digest"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    });
     let admitted = |exports: &[(&str, &str)]| {
         let (preimage, envelope) = envelope_in_graph_order(exports);
         match read(&jcs(&envelope), &pinned_for(&preimage)) {
@@ -337,32 +376,49 @@ fn reversed_node_order_is_admitted_under_a_different_package_id() {
 }
 
 /// The `ImportView` of the verified wire declaring `exports`.
-fn import_view_of(exports: &[(&str, &str)]) -> (PackageId, ImportView) {
+fn import_view_of(
+    exports: &[(&str, &str)],
+) -> (PackageId, ImportView, BTreeMap<String, PackageNodeKey>) {
     let (preimage, envelope) = envelope_declaring(exports);
     let verified = match read(&jcs(&envelope), &pinned_for(&preimage)) {
         Read::Verified { package, .. } => package,
         other => panic!("expected Verified, got {other:?}"),
     };
     let package_id = verified.package_id();
-    (package_id, verified.into_import_view())
+    let expected = envelope["semantic_graph"]["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|node| {
+            let name = node["declaration"]["qualified_name"][0]
+                .as_str()
+                .unwrap()
+                .to_owned();
+            let digest = node["node_id"]["digest"].as_str().unwrap();
+            (
+                name,
+                PackageNodeKey::new(package_id, WireNodeId::from_hex(digest).unwrap()),
+            )
+        })
+        .collect();
+    (package_id, verified.into_import_view(), expected)
 }
 
 /// FR-087-AC-4, TC-254 steps 1-2: `VerifiedPackage::into_import_view`
 /// carries every exported declaration of a two-export package, each at its
 /// own `WireNodeId` under the verified `package_id`, keyed by that id and
-/// not by name. The node seeds are chosen so that ascending node-id order
-/// (`pkg::Z` before `pkg::Y`) is the reverse of ascending name order (`A`
-/// before `B`): a view keyed by name yields `A` first and fails.
+/// not by name. Expected keys come from the wire's canonical node identities,
+/// independently of the view's name index.
 #[trace("TC-254", "FR-087-AC-4")]
 #[test]
 fn import_view_keys_each_export_by_its_own_wire_node_id() {
-    let (package_id, view) = import_view_of(&[("pkg::Y", "A"), ("pkg::Z", "B")]);
+    let (package_id, view, expected) = import_view_of(&[("pkg::Y", "A"), ("pkg::Z", "B")]);
     assert_eq!(view.package(), package_id);
-    let key =
-        |label: &str| PackageNodeKey::new(package_id, WireNodeId::from_hex(&hex(label)).unwrap());
-    assert!(key("pkg::Z").node < key("pkg::Y").node);
     let exports: Vec<_> = view.exports().collect();
-    assert_eq!(exports, vec![("B", key("pkg::Z")), ("A", key("pkg::Y"))]);
+    let mut expected_exports = vec![("A", expected["A"]), ("B", expected["B"])];
+    expected_exports.sort_by_key(|(_, key)| key.node);
+    assert_eq!(exports, expected_exports);
+    assert_ne!(expected["A"].node, expected["B"].node);
 }
 
 /// FR-087-AC-4, TC-254 step 5: the importing package's checker resolves a
@@ -372,12 +428,10 @@ fn import_view_keys_each_export_by_its_own_wire_node_id() {
 #[trace("TC-254", "FR-087-AC-4")]
 #[test]
 fn the_checker_resolves_an_imported_name_over_the_view_entries() {
-    let (package_id, view) = import_view_of(&[("pkg::Y", "A"), ("pkg::Z", "B")]);
+    let (_, view, expected) = import_view_of(&[("pkg::Y", "A"), ("pkg::Z", "B")]);
     let names = ImportedNames::of(&view);
-    let key =
-        |label: &str| PackageNodeKey::new(package_id, WireNodeId::from_hex(&hex(label)).unwrap());
-    assert_eq!(names.resolve("A"), Ok(key("pkg::Y")));
-    assert_eq!(names.resolve("B"), Ok(key("pkg::Z")));
+    assert_eq!(names.resolve("A"), Ok(expected["A"]));
+    assert_eq!(names.resolve("B"), Ok(expected["B"]));
     let missing = names.resolve("C").unwrap_err();
     assert_eq!(missing, CheckCause::MissingName("C".to_owned()));
     assert_eq!(missing.code(), Code::MissingDeclaration);
@@ -710,25 +764,30 @@ fn refuses_an_ambiguous_declaration_at_ir_intake() {
     let mut preimage = identity_preimage(vec![]);
     preimage["identity_projection"] = json!([
         projection_node("pkg::R", "R"),
-        projection_node("pkg::S", "R"),
+        projection_node_in_source("pkg::S", "R", "src2"),
     ]);
     let mut envelope = valid_envelope(&preimage);
-    envelope["semantic_graph"]["nodes"] =
-        json!([graph_node("pkg::R", "R"), graph_node("pkg::S", "R"),]);
+    envelope["semantic_graph"]["nodes"] = json!([
+        graph_node("pkg::R", "R"),
+        graph_node_in_source("pkg::S", "R", "src2"),
+    ]);
+    envelope["lock"]["sources"] = json!([source_ref("src"), source_ref("src2")]);
     envelope["source_map"] = json!([
         {
-            "node_id": node_ref("pkg::R"),
+            "node_id": graph_node("pkg::R", "R")["node_id"],
             "role": "declaration",
             "ordinal": 0,
             "regions": [{"source": source_ref("src"), "start": 0, "end": 1}],
         },
         {
-            "node_id": node_ref("pkg::S"),
+            "node_id": graph_node_in_source("pkg::S", "R", "src2")["node_id"],
             "role": "declaration",
             "ordinal": 0,
-            "regions": [{"source": source_ref("src"), "start": 1, "end": 2}],
+            "regions": [{"source": source_ref("src2"), "start": 1, "end": 2}],
         },
     ]);
+    rekey_stale(&mut envelope);
+    let preimage = envelope["identity_preimage"].clone();
     let bytes = jcs(&envelope);
     let outcome = read(&bytes, &pinned_for(&preimage));
     let Read::Refused(
@@ -1239,7 +1298,9 @@ fn supply_qspec_domain_package(evidence: &mut CheckedPackageEvidence, envelope: 
         .as_array()
         .is_some_and(|rows| rows.iter().any(|row| row["digest"] == digest.as_str()));
     if selected {
-        evidence.insert_domain_package_document(digest.as_str(), &bytes[..]);
+        evidence
+            .insert_domain_package_document(digest.as_str(), &bytes[..])
+            .expect("a fresh evidence key");
     }
 }
 
@@ -1328,6 +1389,92 @@ fn conformance_c14_source_map_lookup_over_qspec_positive_fixtures() {
         "conformance: {looked_up} source-map entries over {} positive fixtures",
         paths.len()
     );
+}
+
+/// FR-320-AC-4: QSpec's independently keyed nullary and reference-payload
+/// union vectors use the application preimage even though both bodies are
+/// aggregate terms. Exercise QSL's producer-key derivation on those exact
+/// wire nodes, then admit the same fixture through the whole I2 reader.
+/// This covers the published vectors; it does not imply QSL source lowering
+/// currently constructs union values.
+#[trace("FR-320-AC-4")]
+#[test]
+fn qspec_union_value_application_keys_are_admitted_by_i2() {
+    let Some((directory, _)) = qspec_v2_fixtures() else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
+    let envelope = read_fixture(&directory.join("positive-union-nodes.json"));
+    let nodes = envelope["semantic_graph"]["nodes"]
+        .as_array()
+        .expect("positive union fixture has semantic graph nodes");
+    let union_values: Vec<_> = nodes
+        .iter()
+        .filter(|node| node["node_tag"] == "value" && node["semantic_form"] == "union_value")
+        .collect();
+    let mut member_keys = BTreeMap::new();
+    for node in &union_values {
+        let member = node["body"]["members"][0]["name"]
+            .as_str()
+            .expect("union value has a named member");
+        let expected_key = node["node_id"]["digest"]
+            .as_str()
+            .expect("QSpec vector carries its fixed node key");
+        assert_eq!(
+            crate::emit::tests::rebuilt_key(node, &[]),
+            expected_key,
+            "{member}: aggregate-bodied union value uses its application key"
+        );
+        member_keys.insert(member, node);
+    }
+    assert_eq!(member_keys.len(), 2, "fixture has both fixed union vectors");
+    assert_eq!(
+        member_keys["Empty"]["body"]["members"][0]["value"],
+        json!({"term": "aggregate", "members": []}),
+        "nullary vector has an empty aggregate payload"
+    );
+    assert_eq!(
+        member_keys["Rect"]["body"]["members"][0]["value"]["term"], "aggregate",
+        "reference-payload vector keeps its aggregate payload"
+    );
+
+    let (package_id, outcome) = read_fixture_wire(&envelope);
+    match outcome {
+        Read::Verified { package, .. } => assert_eq!(package.package_id(), package_id),
+        other => panic!("expected I2 to admit QSpec's union vectors, got {other:?}"),
+    }
+
+    let empty = member_keys["Empty"];
+    let retained_key = empty["node_id"]["digest"]
+        .as_str()
+        .expect("nullary vector has a retained node key");
+    let structural_key = crate::emit::tests::rebuilt_structural_key(empty, &[]);
+    assert_ne!(structural_key, retained_key);
+    let empty_index = nodes
+        .iter()
+        .position(|node| node["body"]["members"][0]["name"] == "Empty")
+        .expect("nullary vector belongs to the fixture graph");
+    let encoded = serde_json::to_string(&envelope).expect("fixture serializes");
+    let mut stale = serde_json::from_str(&encoded.replace(retained_key, &structural_key))
+        .expect("structural-preimage key mutation parses");
+    refresh_frame_identity(&mut stale);
+
+    let (_, outcome) = read_fixture_wire(&stale);
+    match outcome {
+        Read::Refused(V2ReadRefusal::Envelope { refusal, locus }) => {
+            assert_eq!(refusal.code, CheckedPackageRefusalCode::InvalidPackage);
+            assert_eq!(
+                refusal.cause,
+                Some(CheckedPackageRefusalCause::StaleNodeKey)
+            );
+            assert!(matches!(
+                locus.as_deref(),
+                Some(Locus::Artifact { pointer, .. })
+                    if pointer.as_str() == format!("/semantic_graph/nodes/{empty_index}/node_id")
+            ));
+        }
+        other => panic!("expected I2 to refuse the stale union key, got {other:?}"),
+    }
 }
 
 /// QSL's whole I2 read (`read_checked_package_v2`) admits every
@@ -1826,10 +1973,11 @@ fn each_reader_limit_names_its_kind_bound_actual_and_locus() {
         "details": [],
         "loci": [],
     }]);
-    let mut edge_preimage = preimage.clone();
-    edge_preimage["identity_projection"][0]["dependencies"] = json!([node_ref("pkg::R")]);
-    let mut edged = valid_envelope(&edge_preimage);
-    edged["semantic_graph"]["nodes"][0]["dependencies"] = json!([node_ref("pkg::R")]);
+    let mut edged = valid_envelope(&preimage);
+    let node_id = edged["semantic_graph"]["nodes"][0]["node_id"].clone();
+    edged["semantic_graph"]["nodes"][0]["dependencies"] = json!([node_id]);
+    rekey_stale(&mut edged);
+    let edge_preimage = edged["identity_preimage"].clone();
 
     let cases = [
         (
@@ -2010,7 +2158,14 @@ fn modifies_entries(name: &str, entries: &[Value]) -> Value {
                                 "{name}: frame_mutations modifies field entry has no string name: {entry}"
                             )
                         });
-                        modifies_field(&declaration, field_name)
+                        let scope = entry["scope"].as_str().unwrap_or_else(|| {
+                            panic!(
+                                "{name}: frame_mutations modifies field entry has no string scope: {entry}"
+                            )
+                        });
+                        let mut field = modifies_field(&declaration, field_name);
+                        field["scope"] = json!(scope);
+                        field
                     }
                     "relationship" => modifies_relationship(&declaration),
                     other => panic!("{name}: frame_mutations modifies entry has unmapped kind {other}"),
@@ -2043,7 +2198,7 @@ fn projection_of(nodes: &[Value]) -> Vec<Value> {
 /// none is stale, then recomputes the projection and `package_id`. Returns
 /// each original digest's final digest, so a test names a node by its
 /// current key.
-fn rekey_stale(envelope: &mut Value) -> BTreeMap<String, String> {
+pub(crate) fn rekey_stale(envelope: &mut Value) -> BTreeMap<String, String> {
     let mut renames = BTreeMap::<String, String>::new();
     let limit = envelope["semantic_graph"]["nodes"]
         .as_array()
@@ -2161,6 +2316,11 @@ fn conformance_fr340_frame_mutations_match_qspec_vectors() {
                 frame_entries(name, mutation["creates"].as_array().expect("creates"));
             node["body"]["deletes"] =
                 frame_entries(name, mutation["deletes"].as_array().expect("deletes"));
+            // Vectors that do not exercise the scoped deletes carry none.
+            node["body"]["deletes_scoped"] = mutation
+                .get("deletes_scoped")
+                .cloned()
+                .unwrap_or_else(|| json!([]));
         }
         if let Some(second_frame) = mutation.get("second_frame") {
             candidate["semantic_graph"]["nodes"]
@@ -2179,6 +2339,7 @@ fn conformance_fr340_frame_mutations_match_qspec_vectors() {
         let expected_cause = match mutation["expected_cause"].as_str() {
             Some("missing-name") => Some(CheckedPackageRefusalCause::MissingName),
             Some("malformed-declaration") => Some(CheckedPackageRefusalCause::MalformedDeclaration),
+            Some("conflicting-binding") => Some(CheckedPackageRefusalCause::ConflictingBinding),
             None => None,
             Some(other) => panic!("{name}: unmapped expected_cause {other}"),
         };
@@ -2254,7 +2415,7 @@ fn modifies_relationship(declaration: &Value) -> Value {
 /// `model`/`object_type` or `model`/`record_value_type` node (STD-111's
 /// `{kind: "field", declaration, name}` shape).
 fn modifies_field(declaration: &Value, name: &str) -> Value {
-    json!({"kind": "field", "declaration": declaration, "name": name})
+    json!({"kind": "field", "declaration": declaration, "name": name, "scope": "every-object"})
 }
 
 /// A `state`/`frame` node whose `dependencies` and body members are given
@@ -2283,6 +2444,7 @@ fn frame_node(
             "modifies": modifies,
             "creates": creates,
             "deletes": deletes,
+            "deletes_scoped": [],
         },
     })
 }
@@ -2355,10 +2517,10 @@ fn nodes_source_map(nodes: &[Value]) -> Value {
 fn frame_fixture(
     frame_body: impl FnOnce(&Value) -> (Vec<Value>, Vec<Value>, Vec<Value>),
 ) -> (Value, BTreeMap<String, String>) {
-    let type_ref = node_ref("pkg::T");
+    let type_node = keyable_type_node("pkg::T", "T");
+    let type_ref = type_node["node_id"].clone();
     let object_ref = node_ref("pkg::O");
     let (modifies, creates, deletes) = frame_body(&object_ref);
-    let type_node = keyable_type_node("pkg::T", "T");
     let object_node = model_graph_node("pkg::O", "object_type", "O", &type_ref);
     let frame = frame_node(
         "pkg::Frame",
@@ -2412,9 +2574,9 @@ fn frame_body_membership_against_dependencies_is_admitted() {
 #[test]
 fn frame_entry_outside_dependencies_refuses_as_missing_declaration() {
     let field_digest = hex("pkg::F");
-    let type_ref = node_ref("pkg::T");
-    let object_ref = node_ref("pkg::O");
     let type_node = keyable_type_node("pkg::T", "T");
+    let type_ref = type_node["node_id"].clone();
+    let object_ref = node_ref("pkg::O");
     let object_node = model_graph_node("pkg::O", "object_type", "O", &type_ref);
     // `F` is never declared as a dependency of this frame, only named in
     // `modifies`.

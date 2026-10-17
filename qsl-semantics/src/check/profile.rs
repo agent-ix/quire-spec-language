@@ -4,13 +4,32 @@
 //!
 //! The one row a header selects is `root` (`quire.value.complete/v1`); the
 //! catalog's other rows come from its own package-selection rules. A clause
-//! profile resolves in its clause family's catalog (ADR-012 §2), which no
-//! spine registers yet, so every header profile reaches this table.
+//! profile resolves in its clause family's catalog (ADR-012 §2): the
+//! `ProtocolClause` family's is [`protocol_profile`]. Every other header
+//! profile reaches the `Value` table.
 
 use qsl_foundation::selection::ProfileSelection;
 use qsl_foundation::{Code, Span};
 
-use crate::value::definition::{CatalogEntry, CatalogRole, DefinitionLock};
+use crate::value::definition::{CatalogEntry, CatalogRole, DefinitionLock, DefinitionReference};
+
+/// The publishing authority of the protocol profile.
+const PROTOCOL_AUTHORITY: &str = "agent-ix";
+
+/// The protocol clause family's one profile: bounded finite global
+/// choreography (QSpec FR-322 `protocol_profile`).
+const PROTOCOL_PROFILE: &str = "quire.protocol.finite-global/v1";
+
+/// The `protocol_profile` definition a header profile `identity` selects, if
+/// it is one the `ProtocolClause` family's catalog holds (FR-110). The one
+/// place a header profile's spelling is read for that family.
+#[qsl_attrs::string_edge]
+pub(crate) fn protocol_profile(identity: &str) -> Option<DefinitionReference> {
+    (identity == PROTOCOL_PROFILE).then(|| DefinitionReference {
+        authority: PROTOCOL_AUTHORITY.to_owned(),
+        identity: PROTOCOL_PROFILE.to_owned(),
+    })
+}
 
 /// Why a header profile does not resolve (FR-110's table).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -69,7 +88,7 @@ pub fn resolve_profiles(profiles: &[ProfileSelection]) -> Result<(), Vec<Profile
         .iter()
         .filter_map(|profile| {
             let selected = profile.identity.as_str();
-            let cause = if selected == root.identity {
+            let cause = if selected == root.identity || protocol_profile(selected).is_some() {
                 return None;
             } else if lock
                 .catalog()
@@ -102,6 +121,33 @@ mod tests {
     use ix_trace_rs::trace;
 
     use super::*;
+
+    /// FR-110: a header profile naming the protocol clause family's profile
+    /// resolves in that family's catalog, and selects it as the package's
+    /// `protocol_profile`; a profile in no catalog still refuses.
+    #[trace("FR-092-AC-18", "TC-1021")]
+    #[test]
+    fn the_protocol_profile_resolves_in_the_protocol_catalog() {
+        let selection = |identity: &str| ProfileSelection {
+            alias: "p".to_owned(),
+            identity: identity.to_owned(),
+            span: Span { start: 0, end: 0 },
+            identity_span: Span { start: 0, end: 0 },
+        };
+        let protocol = selection("quire.protocol.finite-global/v1");
+        assert_eq!(resolve_profiles(std::slice::from_ref(&protocol)), Ok(()));
+        assert_eq!(
+            protocol_profile(&protocol.identity),
+            Some(DefinitionReference {
+                authority: "agent-ix".to_owned(),
+                identity: "quire.protocol.finite-global/v1".to_owned(),
+            })
+        );
+        let unknown = selection("quire.protocol.unknown/v1");
+        assert_eq!(protocol_profile(&unknown.identity), None);
+        let refused = resolve_profiles(&[unknown]).expect_err("an unknown profile refuses");
+        assert_eq!(refused[0].cause, ProfileCause::UnsupportedSelection);
+    }
 
     /// FR-110's table against QSpec's own catalog: every (code, cause) pair
     /// a header profile refusal carries is one `quire.native.diagnostics/v1`

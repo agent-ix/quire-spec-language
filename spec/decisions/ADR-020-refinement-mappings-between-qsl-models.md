@@ -54,21 +54,6 @@ relationships:
 ---
 # ADR-020: Refinement mappings between QSL models
 
-## Status
-
-Proposed, 2026-10-01. §11 records the rulings on every question; the
-QSL compiler requirements that implement it are FR-135 to FR-149 and FR-310, exercised
-by US-018. It builds on ADR-018, itself a draft. ADR-027 (the protocol
-transition system) amends RM-5, RM-6, CO-4, MC-1, RC-1 and RC-2 for
-protocol subjects; each amended item says so. The plan lead's rulings on the draft's open questions
-are folded in and recorded in §11. The owning ticket and related work are
-listed under References.
-
-"QSpec FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
-requirement. Item ids `RM-`, `RS-`, `CO-`, `AX-`, `RE-`, `RC-`, `MC-`, `DS-`,
-`QS-` and `RU-` are local to this record. Other artifacts cite them as
-`ADR-020 RS-2`. Items of ADR-018 are cited as `ADR-018 SM-3`.
-
 ## Context
 
 A layered design proves properties of an abstract model once, then shows
@@ -123,6 +108,11 @@ since, with previous false at position zero, and ADR-018 §11 admits interval
 operators nested under unbounded ones. ADR-018 IV-7 records that an interval
 operator counts positions.
 
+"QSpec FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
+requirement. Item ids `RM-`, `RS-`, `CO-`, `AX-`, `RE-`, `RC-`, `MC-`, `DS-`,
+`QS-` and `RU-` are local to this record. Other artifacts cite them as
+`ADR-020 RS-2`. Items of ADR-018 are cited as `ADR-018 SM-3`.
+
 ## Decision
 
 ### 1. The refinement declaration
@@ -172,7 +162,7 @@ identity enters the `package_id` and every obligation identity that cites it
 | RS-1 | **The step check is the semantics.** One function in layer 6, crate `qsl-replay`, decides each concrete step: `check_step(refinement, abstract subject, (s, h), t, (s', h')) -> StepVerdict`. EN-1 (layer A, crate `qsl-analyze`), the SMT encodings, replay and the simulation certificate checker (CT-1) answer to it, as every temporal engine answers to the trace evaluator (ADR-018 SM-1, SM-7). |
 | RS-2 | **Initial states.** For each initial state `c0` of the concrete subject, with history initial values `h0`, `map(c0, h0)` equals, by state key, one initial state of the abstract subject. The abstract subject's initial states are its own FR-106 snapshots. |
 | RS-3 | **A `stutter` step** passes when `map(s', h') = map(s, h)` by state key. |
-| RS-4 | **An abstract-operation step** passes when the abstract transition identity it names (the abstract operation; the receiver; the arguments evaluated at `(s, h)`, each `_` ranging over its parameter domain) is a transition from `a = map(s, h)` to `a' = map(s', h')` under FR-120: the effective precondition holds at `a`, `StateModel::check_frame` over `(a, a')` returns a delta, and the effective postcondition is true over `(a, a', delta)` with the abstract result bound to the concrete step's result when RM-5 binds it, or with some value of the result domain otherwise. These are the same calls `ModelSystem` makes when it expands `a`, applied to one candidate. |
+| RS-4 | **An abstract-operation step** passes when the abstract transition identity it names (the abstract operation; the receiver; the arguments evaluated at `(s, h)`, each `_` ranging over its parameter domain) is a transition from `a = map(s, h)` to `a' = map(s', h')` under FR-120: the effective precondition holds at `a`, the frame decision (`population::decide_frame`) over `(a, a')` returns a delta, and the effective postcondition is true over `(a, a', delta)` with the abstract result bound to the concrete step's result when RM-5 binds it, or with some value of the result domain otherwise. These are the same calls `ModelSystem` makes when it expands `a`, applied to one candidate. |
 | RS-5 | **An `any` step** passes when it passes RS-3 or passes RS-4 for some abstract transition identity enabled at `a`. |
 | RS-6 | **Terminal stutter.** The concrete terminal stutter step (ADR-018 SM-4) is a `stutter` step. |
 | RS-7 | **Abstract progress comes from abstract fairness.** With `F_A` empty, a mapped behaviour may stutter forever at any abstract state, as in TLA+: a refinement with no `ensure` row is a safety refinement, accepted even when the concrete model spins or halts where the abstract model could move. With `F_A` non-empty, a stutter tail violates the refinement exactly when it violates some `F_A` constraint: the constraint is enabled at the tail's constant mapped state and no step of the tail takes it (ADR-018 FA-3, CO-2). A concrete terminal state is the tail made of the concrete terminal stutter (RS-6), which takes no constraint. The failure is `Divergence` when the violating loop has only `stutter` steps (RC-1). QSpec FR-177 keeps divergence-freedom as part of its own relation (MC-1). |

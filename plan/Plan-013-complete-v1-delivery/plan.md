@@ -61,7 +61,6 @@ relationships:
   - { target: ix://agent-ix/quire-specification/FR-311, type: references }
   - { target: ix://agent-ix/quire-specification/FR-336, type: references }
   - { target: ix://agent-ix/quire-specification/FR-339, type: references }
-  - { target: ix://agent-ix/quire-specification/TM-009, type: references }
 ---
 # Plan-013: Complete-V1 native compiler, runtime and tooling delivery
 
@@ -91,7 +90,7 @@ evidence state.
   and exact compilation/cache behavior in QSL #122.
 - [ ] **FR-307/308:** deliver reusable semantic libraries in QSL #119 and pure
   bounded WASM parity in `quire-wasm` #6.
-- [ ] **FR-311/336, I18/I19 and TM-009:** qualify every Agent-A inventory row in
+- [ ] **FR-311/336, I18/I19:** qualify every Agent-A inventory row in
   QSL #123 without promoting missing consumer evidence.
 
 The central baseline has no FR-135 through FR-139 artifacts. FR-304/TC-224 and
@@ -182,7 +181,7 @@ missing; qualification is 83 missing. Plan adoption changes none of those states
 
 ## Atomic capability allocation
 
-Each row is copied by identity from QSpec's accepted Agent-A manifest and TM-009.
+Each row is copied by identity from QSpec's accepted Agent-A manifest.
 `Delivery test` selects exactly one existing central TestCase as the row's
 concrete evidence owner; task files may require additional boundary cases.
 
@@ -305,7 +304,7 @@ A00 -> A01 -> A02 -> A03 -> A04 -> A05 -> A06 -> A07 -> A08
 | Task-051 | A05 | FR-180/181 | TC-209/210 | not_started |
 | Task-052 | A06 | FR-300/301/305/306, FR-339 | TC-180, TC-220/221/225/226 | not_started |
 | Task-053 | A07 | FR-308 | TC-228 | not_started |
-| Task-054 | A08 | FR-132/133, FR-270–272, FR-303, FR-311/336, TM-009 | TC-047, TC-182/183, TC-223, TC-230/231, IT-070/071/076 | not_started |
+| Task-054 | A08 | FR-132/133, FR-270–272, FR-303, FR-311/336 | TC-047, TC-182/183, TC-223, TC-230/231, IT-070/071/076 | not_started |
 
 ## Coordination Rules
 
@@ -318,5 +317,5 @@ A00 -> A01 -> A02 -> A03 -> A04 -> A05 -> A06 -> A07 -> A08
   target-codex-backends`; No hosted CI is dispatched.
 - Do not modify `resources/native-v1`, move/delete tags, infer completion from a
   self-report, or replace an unsupported capability with smaller semantics.
-- After every merge, reconcile the child, parent, QSpec #9 inventory/matrix and
+- After every merge, reconcile the child, parent and
   maintained Research plan before taking the next ticket.

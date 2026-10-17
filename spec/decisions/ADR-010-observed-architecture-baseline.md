@@ -10,12 +10,6 @@ relationships:
 ---
 # ADR-010: Observed QSL and backend architecture baseline (ARCH-00)
 
-## Status
-
-Proposed, 2026-09-19. Owning ticket: agent-ix/quire-spec-language#206 (ARCH-00),
-epic #205, Layer 0. Acceptance is decided at the baseline authority gate #208.
-Supersedes nothing.
-
 ## Context
 
 Epic #205 requires an evidence-backed record of the architecture as implemented
@@ -828,7 +822,7 @@ All rows are class "fix".
 |---|---|---|---|
 | #1 | epic | parent epic of the feature ladder | unrelated (parent) |
 | #27 | fix | refusal and wire-code discriminants (DA-10) | #211 |
-| #28 | unrelated | TestMatrix status-column contract | unrelated |
+| #28 | unrelated | status-column contract | unrelated |
 | #29 | fix | CLI parse and dispatch (§2.1 CLI) | #209 |
 | #42 | unrelated | reserved-construct list as a progress metric | unrelated |
 | #85 | fix | compiled-protocol channel premise (B8 wire) | #211 |
@@ -891,7 +885,7 @@ Single writer: Agent A writes `src/model/normalize.rs`,
 `src/model/conformance.rs` and `src/model/refusal.rs`. Merge order:
 #204 (merged) → #228 → #200; #228 builds on #204's typed `RedefinitionTarget`.
 
-All other ARCH-01 items (stale-merged and superseded branches, the #28 matrix
+All other ARCH-01 items (stale-merged and superseded branches, the #28 status-column
 lane, and PRs whose disposition names no Layer 1 ticket) are outside Layer 1
 and are recorded only on #207.
 
