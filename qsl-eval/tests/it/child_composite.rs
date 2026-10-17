@@ -968,6 +968,7 @@ fn admit_invocation(
             declaring: operation.declaring,
             declaration: operation.declaration.clone(),
         }),
+        operations: Default::default(),
     };
     admit_observations(
         package.graph().model_selections(),

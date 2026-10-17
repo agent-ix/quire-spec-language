@@ -148,6 +148,7 @@ impl Case {
                 declaring: base.declaring,
                 declaration,
             }),
+            operations: Default::default(),
         };
         let model = json!({"identity": "example/config-version", "version": "1.0.0",
             "digest": format!("sha256-jcs:{}", qsl_semantics::model::key::hex(&model_digest))});
@@ -196,7 +197,7 @@ impl Case {
         let input = if self.pre_call {
             ClauseSelectionInput::PreCall {
                 snapshot: pre,
-                self_object,
+                self_object: Some(self_object),
                 parameters: self
                     .supplied
                     .into_iter()
