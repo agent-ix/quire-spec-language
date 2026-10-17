@@ -50,8 +50,9 @@ profile.
 - An S2 `TemporalClauseForm` holding the clause name, its profile and model
   references, its `over` parameter, its clock, its activation, its fairness
   constraint forms (FR-123), its capture forms and a `TemporalFormulaForm`
-  tree. The clock is `ClockForm{text, span}`: the `clock` string literal as
-  spelled, quotes included, and its span, for FR-233 and FR-326 to read. Each
+  tree. The clock is `ClockForm{text, span}`: the `clock` string literal's
+  decoded JSON string value and its span, for FR-233, FR-326 and FR-337 to
+  read. Each
   fairness form is `FairnessConstraintForm{kind, granularity, operation,
   span}` with `kind: Option<FairnessKind::{Weak, Strong}>`, `granularity:
   Option<FairnessGranularity::{Whole, Each}>`, the operation's qualified
@@ -100,6 +101,7 @@ profile.
 | FR-325-AC-4 | Two units that differ only in the selected profile identity, one selecting the infinite-trace profile and one the event-position false-extension profile, padded so their headers have equal length and the clause starts at the same byte offset, build equal S2 forms for the clause, compared by `PartialEq` and by their `Debug` rendering. | Test (TC-835) |
 | FR-325-AC-5 | A clause whose body holds `fair Config::ConfigVersion::attemptUpdate;`, `fair strong each Config::ConfigVersion::reset;` and `fair weak whole Config::ConfigVersion::tick;` before its formula builds three fairness forms in that order: (`None`, `None`, `Config::ConfigVersion::attemptUpdate`), (`Some(Strong)`, `Some(Each)`, `Config::ConfigVersion::reset`) and (`Some(Weak)`, `Some(Whole)`, `Config::ConfigVersion::tick`), each with the span of its own constraint. | Test (TC-835) |
 | FR-325-AC-6 | A clause over `(p: Config::ConfigVersion)` whose body holds `fair Config::ConfigVersion::tick;`, then `capture before: Int[0, 1000] = p.value;` and `capture parent: Config::ConfigVersion = p.parent;`, then its formula, builds one fairness form and two capture forms in that order: `before` with type `Int[0, 1000]` and value `p.value`, and `parent` with type `Config::ConfigVersion` and value `p.parent`, each with the span of its own capture; its formula form equals, up to spans, the formula form of the same clause with the two captures removed. | Test (TC-835) |
+| FR-325-AC-7 | `temporal C using t over (p: T) clock "model\u002dsteps" on origin { always holds(true) }` builds a clause form whose `clock.text` is the decoded JSON string value `model-steps` (no quotes, escapes resolved) and whose `clock.span` is the span of the string literal as written, quotes included; a clause with clock `"wall"` builds `wall`. | Test (TC-835) |
 
 ## Dependencies
 

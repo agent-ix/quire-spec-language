@@ -332,7 +332,7 @@ fn the_clause_forms_are_the_same_under_every_profile_selection() {
     let built = clause(&infinite);
     assert_eq!(built.profile.alias, "t");
     assert_eq!(built.over.name.name, "p");
-    assert_eq!(built.clock.text, "\"steps\"");
+    assert_eq!(built.clock.text, "steps");
     assert_eq!(slice(&infinite_text, built.clock.span), "\"steps\"");
     let ActivationForm::Each { parameter, when } = &built.activation else {
         panic!("an `on each` activation: {:?}", built.activation);
@@ -484,22 +484,26 @@ fn captures_build_their_type_value_and_span_beside_an_unchanged_formula() {
     );
 }
 
-/// FR-325 "Outputs" (TC-835): the clause keeps its `clock` string and the
-/// string's span, after the `over` parameter and before the activation, for
-/// FR-233 and FR-326.
-#[trace("TC-835", "FR-325-AC-1")]
+/// FR-325-AC-7 (TC-835): the clause keeps its `clock` string, decoded, and
+/// the span of the literal as written, for FR-233, FR-326 and FR-337.
+#[trace("TC-835", "FR-325-AC-7")]
 #[test]
 fn the_clock_string_and_its_span_are_built() {
-    for clock in ["model-steps", "model-time", "wall"] {
+    for (written, value) in [
+        ("model-steps", "model-steps"),
+        ("model-time", "model-time"),
+        ("wall", "wall"),
+        (r"model\u002dsteps", "model-steps"),
+    ] {
         let text = format!(
-            "{}temporal C using t over (p: Config::ConfigVersion) clock \"{clock}\" \
+            "{}temporal C using t over (p: Config::ConfigVersion) clock \"{written}\" \
              on each (q: Config::ConfigVersion) {{ always holds(true) }}\n",
             header(INFINITE, 0)
         );
         let unit = build(&text);
         let built = clause(&unit);
-        assert_eq!(built.clock.text, format!("\"{clock}\""));
-        assert_eq!(slice(&text, built.clock.span), format!("\"{clock}\""));
+        assert_eq!(built.clock.text, value);
+        assert_eq!(slice(&text, built.clock.span), format!("\"{written}\""));
         assert_eq!(
             built.clock.span.start,
             text.find("clock ").expect("the clock keyword") + "clock ".len()

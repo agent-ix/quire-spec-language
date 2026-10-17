@@ -2875,8 +2875,8 @@ pub struct CaptureForm {
 /// bind it (FR-233, FR-326).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClockForm {
-    /// The clock string exactly as spelled, quotes included, as an enum
-    /// member's display string is.
+    /// The clock string's value: the JSON string literal decoded (quotes
+    /// removed, escapes resolved).
     pub text: String,
     /// The span of the string literal.
     pub span: Span,

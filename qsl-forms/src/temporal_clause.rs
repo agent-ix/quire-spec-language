@@ -68,7 +68,8 @@ pub(crate) fn temporal_clause(construct: Construct<'_>) -> Result<DeclarationFor
         },
         over: parameter_form(cst, only(&clause_items, Production::Parameter, node)?)?,
         clock: ClockForm {
-            text: text(clock, node)?,
+            text: qsl_cst::token::decode_quoted(&text(clock, node)?)
+                .ok_or_else(|| unexpected(node))?,
             span: clock.span(),
         },
         activation,

@@ -161,8 +161,11 @@ impl CompileRefusal {
                     .errors
                     .iter()
                     .map(|error| {
-                        RefusalCause::new(error.cause.code(), None)
-                            .reaching(assembly_limit(&error.cause))
+                        RefusalCause::new(
+                            error.cause.code(),
+                            Some(error.cause.catalog_code().cause()),
+                        )
+                        .reaching(assembly_limit(&error.cause))
                     })
                     .collect(),
             ),
@@ -240,6 +243,7 @@ fn assembly_limit(cause: &AssemblyCause) -> Option<ReachedLimit> {
         | AssemblyCause::NominalAdmission(_)
         | AssemblyCause::UnsuppliedImport { .. }
         | AssemblyCause::UnadmittedModel { .. }
+        | AssemblyCause::UnimplementedTemporalClause { .. }
         | AssemblyCause::UnsupportedModelMember { .. }
         | AssemblyCause::ModelType { .. }
         | AssemblyCause::UnresolvedOperation { .. }
