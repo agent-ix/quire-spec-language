@@ -244,7 +244,7 @@ pub fn unrolling(
     trace: TemporalTrace,
 ) -> Result<Unrolling, TemporalRefusal> {
     let shape = Shape::new(clause.profile(), trace)?;
-    let plan = Plan::new(clause.formula())?;
+    let plan = Plan::new(clause.formula()).map_err(TemporalRefusal::Fault)?;
     unroll(&plan, shape.prefix, shape.period()).map_err(TemporalRefusal::Fault)
 }
 
@@ -277,7 +277,7 @@ pub(super) fn run<L: TemporalLetters>(
             });
         }
     }
-    let plan = Plan::new(clause.formula())?;
+    let plan = Plan::new(clause.formula()).map_err(TemporalRefusal::Fault)?;
     let evaluation = Evaluator::new(clause, plan, shape, meter)
         .and_then(|mut evaluator| evaluator.execute(clause, goal, source));
     match evaluation {
@@ -673,8 +673,9 @@ impl<'a> Evaluator<'a> {
     /// A window is capped where the word repeats: past `max(start, N) + L - 1`
     /// every position has been read once, and a repeat can neither add a
     /// witness nor weaken a guard that the first pass left standing. An open
-    /// window with a guard operand starts at its anchor (`plan::unsettled_open`
-    /// refuses a lower bound above 0).
+    /// window is the limit of the closed one: it starts at the lower bound and
+    /// keeps the closed form's left-operand range `[a, d)`, so one window code
+    /// serves both.
     fn window(&self, scan: Scan, p: i128) -> Result<Run, InternalFault> {
         let geometry = self.geometry;
         let n = geometry.unrolled;

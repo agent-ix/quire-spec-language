@@ -161,7 +161,7 @@ automaton states and the depth reached.
   SHALL NOT substitute for it. The letter update SHALL occur on every
   protocol position; interval distance SHALL advance only on ADR-027
   PB-3 counted steps (terminal stutter included). FR-338 defines upper
-  distance-region closure and IV-2 open-upper until/release prefix debt.
+  distance-region closure and the IV-2 shift of open-upper until/release.
   For protocol future intervals it SHALL also perform FR-338's
   checker-owned non-progress acceptance construction; first-phase closure
   alone SHALL NOT certify a pending finite eventuality on an admitted

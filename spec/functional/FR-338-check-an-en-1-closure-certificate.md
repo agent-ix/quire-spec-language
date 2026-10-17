@@ -188,8 +188,8 @@ position and is not an authored operator.
 | `A R B` | Require `B` now and either require `A` now or carry this `R` to the next position. |
 | finite interval with lower `l>0` | Carry without reading its operands until the lower distance is reached. Finite until/release retain FR-091's lower-bound convention, with no prefix operand debt. |
 | open-upper `F[l,open] A` / `G[l,open] A`, `l>0` | Carry the shift without reading A before the lower distance. |
-| `A U[l,open] B`, `l>0` | Require A at every prefix position before the lower distance, and carry the shift. This is IV-2's prefix conjunction followed by unbounded until. |
-| `A R[l,open] B`, `l>0` | Require A now and discharge, or carry the shift. This is the Boolean dual of the preceding until rule; B is not required in the prefix. |
+| `A U[l,open] B`, `l>0` | Carry the shift without reading A or B before the lower distance, then run unbounded until: A is required only from the lower distance to the witness, as for a finite interval. |
+| `A R[l,open] B`, `l>0` | Carry the shift without reading A or B before the lower distance, then run unbounded release. This is the Boolean dual of the preceding until rule. |
 | `F[0,u] A`, finite `u` | Require A now, or carry the same debt until the distance region closes. An undischarged F debt fails when a move would pass u. |
 | `G[0,u] A`, finite `u` | Require A now and carry until the region closes; discharge at its closed upper boundary. |
 | `A U[0,u] B`, finite `u` | Require B now, or require A now and carry until the region closes. An undischarged U debt fails when a move would pass u. |
@@ -227,8 +227,7 @@ is read: an undischarged F/U fails, a surviving G/R discharges. A debt with
 upper zero remains live across zero-distance successors, whose letters
 must still be read. Fulfilled obligations disappear, and a new activation
 adds its checked interval. Open-upper U/R shift entries retain the signed
-operator occurrence, which selects the prefix rule above; a shift counter
-alone never erases prefix debt.
+operator occurrence, which selects the shift rule above.
 Only the common lower-zero/no-nested-interval shapes use the one-counter
 subsumption. General offset sets preserve distinct lower shifts and nested
 obligations; neither earliest nor largest alone represents them. A state
@@ -502,10 +501,10 @@ also refuses. The clause-root lexical vector above independently checks
 string ordinal zero/max versus number zero/overflow.
 
 Additional semantic vectors: for `p until[1,*] q`, p false at origin and
-q true at distance one rejects immediately at origin; finite
-`p until[1,1] q` on the same letters accepts. The dual open release
-accepts when its left operand holds in the pre-shift prefix, regardless
-of its right operand there. For `eventually[0,1] p`, false origin, false
+q true at distance one accepts, as finite `p until[1,1] q` on the same
+letters does. The dual open release accepts when its right operand holds
+at every position from the lower distance on, regardless of its left
+operand and of its right operand before the lower distance. For `eventually[0,1] p`, false origin, false
 fork, true counted operation accepts; replacing the fork with a counted
 operation closes the false final region before that later true letter.
 At distance one, a false letter followed by an uncounted p-true letter

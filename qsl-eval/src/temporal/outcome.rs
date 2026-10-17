@@ -87,15 +87,6 @@ pub enum TemporalRefusal {
         /// The clause's profile.
         profile: TemporalProfile,
     },
-    /// `until`, `release`, `since` or `triggered` with an open interval
-    /// `[a,*]`, `a > 0`: QSpec FR-091/092 (closed intervals) and FR-367 (open
-    /// intervals) differ on which offsets the left operand covers, so this
-    /// evaluator reads no meaning for it until QSpec settles one.
-    #[error("an open interval [{lower},*] on a binary operator has no settled meaning")]
-    UnsettledOpenInterval {
-        /// The interval's lower bound.
-        lower: u64,
-    },
     /// A position is outside the represented trace (FR-327 "Positions").
     #[error(transparent)]
     Position(#[from] PositionRefusal),
@@ -115,9 +106,7 @@ impl TemporalRefusal {
             Self::EmptyTrace | Self::EmptyLoop | Self::TraceTooLong => {
                 CatalogCode::new("invalid_runtime_input", "invalid-value")
             }
-            Self::LassoUnderBoundedProfile { .. }
-            | Self::ProfileNotEvaluated { .. }
-            | Self::UnsettledOpenInterval { .. } => {
+            Self::LassoUnderBoundedProfile { .. } | Self::ProfileNotEvaluated { .. } => {
                 CatalogCode::new("unsupported_construct", "expression-form")
             }
             Self::Position(refusal) => refusal.catalog_code(),

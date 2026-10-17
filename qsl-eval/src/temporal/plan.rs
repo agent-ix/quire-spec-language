@@ -10,7 +10,6 @@
 //! same scan over negated operands with a negated result. Every walk here
 //! runs over the arena in index order, forward or reverse, so none recurses.
 
-use super::outcome::TemporalRefusal;
 use qsl_foundation::bound::{TemporalInterval, TemporalUpper};
 use qsl_foundation::InternalFault;
 use qsl_semantics::check::{BinaryTemporal, CheckedFormula, FormulaNode, UnaryTemporal};
@@ -126,7 +125,7 @@ pub(super) struct Plan {
 }
 
 impl Plan {
-    pub(super) fn new(formula: &CheckedFormula) -> Result<Self, TemporalRefusal> {
+    pub(super) fn new(formula: &CheckedFormula) -> Result<Self, InternalFault> {
         let mut nodes = Vec::with_capacity(formula.nodes().len());
         let mut atoms = Vec::new();
         for (index, node) in formula.nodes().iter().enumerate() {
@@ -181,29 +180,13 @@ impl Plan {
                 }
             });
         }
-        // QSpec FR-091/092 give a closed interval's left operand the offsets
-        // from the lower bound to the witness, and QSpec FR-367 gives an open
-        // `[a,*]` interval the offsets from the anchor. Those differ for
-        // `a > 0`, so the evaluator takes no meaning for that case.
-        for node in &nodes {
-            if let Node::Scan(Scan {
-                guard: Some(_),
-                window: Window::From { lower },
-                ..
-            }) = node
-            {
-                if *lower > 0 {
-                    return Err(TemporalRefusal::UnsettledOpenInterval { lower: *lower });
-                }
-            }
-        }
         let mut plan = Self {
             nodes,
             root: formula.root().index(),
             atoms,
             left_floor: Vec::new(),
         };
-        plan.left_floor = plan.floors().map_err(TemporalRefusal::Fault)?;
+        plan.left_floor = plan.floors()?;
         Ok(plan)
     }
 

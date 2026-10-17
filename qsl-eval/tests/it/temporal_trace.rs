@@ -860,23 +860,56 @@ fn a_window_over_unrepresented_positions_is_paid_per_step_and_stops_on_the_meter
     assert_eq!(spent, 10_000);
 }
 
-/// QSpec FR-091/092 (closed) and FR-367 (open) differ on which offsets the
-/// left operand covers, so an open `[a,*]`, `a > 0`, on a binary operator is
-/// refused; `[0,*]` is the unbounded operator and reads.
+/// An open `[a,*]` is the limit of the closed `[a,b]`: the left operand of
+/// `until` is required over `[a,d)`, not from the anchor (QSpec FR-091). On
+/// the lasso `a.versionNumber` 0, 1, 2, `p until[1,*] q` with `p` = 1 and `q` =
+/// 2 holds at position 0 although `p` is false there, before the lower bound;
+/// with `p` = 0 it fails, `p` being false at position 1, which is at or after
+/// the lower bound and before the witness at position 2.
 #[test]
-fn an_open_interval_with_a_lower_bound_on_a_binary_operator_is_refused() {
-    let fx = config("holds(a.versionNumber = 0) until[1,*] holds(a.versionNumber = 2)");
-    let mut letters = Letters::new(&fx, versions(&[0, 1, 2]));
-    let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
-    let refused = evaluate(&fx.clause, lasso(0, 3), &mut letters, &mut meter);
+fn an_open_until_requires_its_left_operand_from_the_lower_bound_to_the_witness() {
+    let holds = config("holds(a.versionNumber = 1) until[1,*] holds(a.versionNumber = 2)");
     assert_eq!(
-        refused,
-        Err(TemporalRefusal::UnsettledOpenInterval { lower: 1 })
-    );
-    assert!(letters.reads.is_empty());
-    let zero = config("holds(a.versionNumber = 0) until[0,*] holds(a.versionNumber = 1)");
-    assert_eq!(
-        outcome(&zero, lasso(0, 3), versions(&[0, 1, 2])),
+        outcome(&holds, lasso(0, 3), versions(&[0, 1, 2])),
         TemporalOutcome::Holds
+    );
+    let fails = config("holds(a.versionNumber = 0) until[1,*] holds(a.versionNumber = 2)");
+    assert_eq!(
+        outcome(&fails, lasso(0, 3), versions(&[0, 1, 2])),
+        violated(0)
+    );
+    let unbounded = config("holds(a.versionNumber = 0) until[0,*] holds(a.versionNumber = 1)");
+    assert_eq!(
+        outcome(&unbounded, lasso(0, 3), versions(&[0, 1, 2])),
+        TemporalOutcome::Holds
+    );
+}
+
+/// The past limit: `p since[1,*] q` at position 2 requires `p` over
+/// `(j, i-1]`, not `(j, i]`. With `q` = 0 at position 0 and `p` = 1 at
+/// position 1 it holds although `p` is false at position 2, the most recent
+/// position; with `p` = 0 it fails, `p` being false at position 1.
+#[test]
+fn an_open_since_requires_its_left_operand_up_to_the_lower_bound_back_from_the_anchor() {
+    let at = |body: &str| {
+        let fx = config(body);
+        let mut letters = Letters::new(&fx, versions(&[0, 1, 2]));
+        let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+        evaluate_at(
+            &fx.clause,
+            lasso(0, 3),
+            TemporalPosition::new(2),
+            &mut letters,
+            &mut meter,
+        )
+        .expect("the lasso is readable")
+    };
+    assert_eq!(
+        at("holds(a.versionNumber = 1) since[1,*] holds(a.versionNumber = 0)"),
+        TemporalOutcome::Holds
+    );
+    assert_eq!(
+        at("holds(a.versionNumber = 0) since[1,*] holds(a.versionNumber = 0)"),
+        violated(2)
     );
 }

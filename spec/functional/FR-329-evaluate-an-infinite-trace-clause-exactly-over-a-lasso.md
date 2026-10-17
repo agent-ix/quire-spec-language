@@ -119,7 +119,10 @@ loop is never reported as a violation.
   loop copy congruent to it modulo `L`.
 - Future interval operators SHALL have QSpec FR-091's offset meaning over
   the infinite lasso; every future position exists, so no closed-boundary
-  rule applies (ADR-018 IV-2).
+  rule applies (ADR-018 IV-2). An `[a,*]` operator SHALL have the limit of
+  that meaning: `p until[a,*] q` holds when `q` holds at some `j >= i+a` and
+  `p` at every `k` with `i+a <= k < j`, and `p since[a,*] q` holds when `q`
+  holds at some `j <= i-a` and `p` at every `k` with `j < k <= i-a`.
 - Work SHALL be charged per (node, position) visit and exhausted as FR-327
   states.
 
