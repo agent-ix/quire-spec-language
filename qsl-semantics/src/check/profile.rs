@@ -59,9 +59,7 @@ impl TemporalProfile {
     /// The profile's definition identity.
     pub const fn identity(self) -> &'static str {
         match self {
-            Self::EventPositionFalseExtension => {
-                "quire.temporal.event-position.false-extension/v1"
-            }
+            Self::EventPositionFalseExtension => "quire.temporal.event-position.false-extension/v1",
             Self::FixedSampleFalseExtension => "quire.temporal.fixed-sample.false-extension/v1",
             Self::TimestampedEventFiniteWindow => {
                 "quire.temporal.timestamped-event.finite-window/v1"
@@ -241,7 +239,10 @@ mod tests {
                 Some(profile)
             );
             assert_eq!(resolve_profiles(&[selection(profile.identity())]), Ok(()));
-            assert_eq!(profile.is_bounded(), profile != TemporalProfile::InfiniteTrace);
+            assert_eq!(
+                profile.is_bounded(),
+                profile != TemporalProfile::InfiniteTrace
+            );
         }
         for unknown in [
             "quire.temporal.timed/v1",

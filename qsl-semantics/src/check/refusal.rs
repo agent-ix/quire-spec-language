@@ -394,9 +394,9 @@ impl TemporalCause {
     pub fn code(&self) -> Code {
         match self {
             Self::ProfileSelection { .. } => Code::UnknownProfile,
-            Self::MissingInterval { .. }
-            | Self::OpenInterval { .. }
-            | Self::NotEmitted { .. } => Code::UnsupportedConstruct,
+            Self::MissingInterval { .. } | Self::OpenInterval { .. } | Self::NotEmitted { .. } => {
+                Code::UnsupportedConstruct
+            }
             Self::InvertedInterval { .. } => Code::IllTyped,
             Self::ParameterType { fault, .. } => type_fault_class(fault).0,
         }

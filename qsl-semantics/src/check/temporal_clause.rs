@@ -205,7 +205,10 @@ impl CheckedTemporalClause {
     /// clause's profile and clock binding; `None` when `node` carries no
     /// finite interval.
     pub fn interval_key(&self, node: TemporalNodeId) -> Option<IntervalKey> {
-        let operator = self.operators.iter().find(|operator| operator.node == node)?;
+        let operator = self
+            .operators
+            .iter()
+            .find(|operator| operator.node == node)?;
         operator
             .interval?
             .key(self.profile_ref.clone(), self.clock_binding)
@@ -335,8 +338,9 @@ fn check_clause(
             }))
         }
     };
-    let profile_ref = DefinitionRef::new(super::profile::CLAUSE_PROFILE_AUTHORITY, profile.identity())
-        .map_err(|_| fault("profile-identity-valid"))?;
+    let profile_ref =
+        DefinitionRef::new(super::profile::CLAUSE_PROFILE_AUTHORITY, profile.identity())
+            .map_err(|_| fault("profile-identity-valid"))?;
 
     let mut types = Vec::new();
     for parameter in parameters(form) {

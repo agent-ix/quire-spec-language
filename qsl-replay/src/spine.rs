@@ -750,9 +750,9 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 TemporalCause::ParameterType { parameter, .. } => {
                     format!("{message}: the type of `{parameter}` does not resolve")
                 }
-                TemporalCause::NotEmitted { name, .. } => format!(
-                    "{message}: `temporal {name}` checks but is not emitted yet"
-                ),
+                TemporalCause::NotEmitted { name, .. } => {
+                    format!("{message}: `temporal {name}` checks but is not emitted yet")
+                }
             };
         }
         _ => {}

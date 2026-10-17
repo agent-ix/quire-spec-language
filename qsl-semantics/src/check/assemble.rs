@@ -655,7 +655,10 @@ impl Unit {
                 }
                 DeclarationForm::Temporal(clause) => {
                     unit.temporal_clauses
-                        .push(super::temporal_clause::TemporalDeclaration { form: *clause, span });
+                        .push(super::temporal_clause::TemporalDeclaration {
+                            form: *clause,
+                            span,
+                        });
                 }
             }
         }

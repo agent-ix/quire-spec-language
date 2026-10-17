@@ -23,7 +23,8 @@ const INFINITE: &str = "quire.temporal.infinite-trace/v1";
 /// bounded `Counter` and an unbounded `Loose`, with one temporal clause
 /// `C` over a `Counter` (or `over`) whose formula is `formula`.
 fn source(temporal: &[&str], over: &str, formula: &str) -> String {
-    let mut text = format!("language \"ix:native\" edition \"1-draft\";\nprofile v = \"{VALUE}\";\n");
+    let mut text =
+        format!("language \"ix:native\" edition \"1-draft\";\nprofile v = \"{VALUE}\";\n");
     for (index, identity) in temporal.iter().enumerate() {
         text.push_str(&format!("profile t{index} = \"{identity}\";\n"));
     }
@@ -372,7 +373,11 @@ fn an_unresolved_over_type_refuses_at_the_type() {
 #[trace("TC-836", "FR-326-AC-1")]
 #[test]
 fn the_package_check_refuses_a_clause_no_emission_writes_yet() {
-    let package = assemble(&source(&[INFINITE], "Counter", "eventually holds(c.value = 3)"));
+    let package = assemble(&source(
+        &[INFINITE],
+        "Counter",
+        "eventually holds(c.value = 3)",
+    ));
     let text = source(&[INFINITE], "Counter", "eventually holds(c.value = 3)");
     let refusals = package
         .check(CheckingLimits::default())
@@ -389,7 +394,11 @@ fn the_package_check_refuses_a_clause_no_emission_writes_yet() {
     assert_eq!(cause.tag(), "not-yet-implemented");
     assert_eq!(cause.span().start, text.find("temporal C").expect("clause"));
 
-    let bounded = assemble(&source(&[EVENT], "Counter", "eventually holds(c.value = 3)"));
+    let bounded = assemble(&source(
+        &[EVENT],
+        "Counter",
+        "eventually holds(c.value = 3)",
+    ));
     let refusals = bounded
         .check(CheckingLimits::default())
         .expect_err("a bare operator is refused");
