@@ -19,6 +19,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-082
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-380
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-047
     type: references
   - target: ix://agent-ix/quire-spec-language/FR-008
@@ -127,11 +129,13 @@ navigation of a set-valued or bag-valued end (FR-363) is unchanged.
 
 A reachability over a relationship end walks the objects of `E` in the
 relationship's extent. Its requirements record's extent (FR-104 "Requirements")
-adds the population domain of the one population with no maximum that covers
-`E` by conformance, keyed as FR-104 keys the context population; when that
-population is the context population it adds no second domain. When no
-population covers `E` the record names no domain for it. When `E` is a member
-type of two or more populations with no maximum, the checker SHALL refuse
+adds the population domain of the one population that covers `E` by
+conformance, keyed as FR-104 keys the context population; when that
+population is the context population it adds no second domain. The domain is
+unbounded unless the package authors a bound on that population (FR-380), and
+then it is a `Population(Some(N))` domain with available finite bound
+`Cardinality{N}`. When no population covers `E` the record names no domain for
+it. When `E` is a member type of two or more populations, the checker SHALL refuse
 `ambiguous_declaration`/`ambiguous-name` at the form, naming those populations
 in ascending `DeclarationKey` order.
 
@@ -144,20 +148,44 @@ expression node, FR-093's application node with `semantic_form` `reachability`:
 | --- | --- |
 | `operator` | `reaches` |
 | `operation.identity` | `quire.op.model.reaches` |
-| `operation.member` | `{kind: "relationship_end", declaration: <the relationship's model node>, name: <the end's role>}` (FR-094) |
+| `operation.member` | `{kind: "relationship_end", declaration: <the relationship's model node>, name: <the end's role>}` (FR-094), with the added key `population: <the population node's id>` only when the walked population has an authored bound ("The population link") |
 | `operation.laws`, `operation.leaves`, `operation.mode` | none, none, `null` |
 | `arguments` | `[ref(a), ref(b)]`, no `deref` node |
 | `result_type` and `semantic_type` | the `Boolean` scalar type node |
-| `dependencies` | the two operand nodes and the relationship's model node |
+| `dependencies` | the two operand nodes, the relationship's model node and, when `member` carries `population`, that population node |
 
 The node carries the relationship (its declaration node) and the end's role, so
-the traversal direction and the near end are those the role names. It carries no
-population, no bound and no observation: the walked population is the
-requirements record's domain, and the observation is the clause kind's (FR-104
-"Observations of reads"). A reachability over a field edge keeps lowering to
+the traversal direction and the near end are those the role names. When the
+walked population has an authored bound it also carries the link to that
+population's node ("The population link"). It carries no observation, and
+carries no population when the walked population has no authored bound: the
+walked population is also the requirements record's domain, and the
+observation is the clause kind's (FR-104 "Observations of reads"). A reachability over a field edge keeps lowering to
 `quire.op.model.reaches_field` (FR-105). The two operation identities are the
 two forms of one predicate, and a clause holding either is carried by a v2
 package.
+
+### The population link
+
+When the population a reachability walks has an authored bound `N` (FR-380),
+S4 SHALL write `population: <id>` in the application's `operation.member`, where
+`<id>` is the node id of the `bounded_domain`/`model_population` node of
+`Population<E>[N]` that FR-380 emits for it. The key is absent, not `null`,
+when the walked population has no authored bound, so a reachability over an
+unbounded population keeps the member and the node identity it had before
+FR-380, and no population node is emitted for it. The link names the node and
+no occurrence. The convention for a reader that needs an occurrence is: the
+occurrence of the node's `Type` role with the least ordinal. A `model_population`
+node is anonymous and its key is its content, `(E, N)`, so a `Population<E>[N]`
+parameter type of the same `E` and `N`, and the populations of two bounds that
+write the same `N` for the same `E`, are one node with one `Type` occurrence for
+each place that writes it; the link names that node explicitly because the
+node does not say which place it came from.
+
+One claim can hold several reachabilities over different populations; each
+reachability carries its own link, and each stays homogeneous: its two operands
+and the population it walks are of the one type `E`. Two reachabilities over the
+same relationship end share one link.
 
 ### What a clause claim carries for a proof
 
@@ -166,9 +194,9 @@ occurrence of its declaration. The condition term of that node is a tree of
 nodes, and a reachability is a node of that tree. A proof that binds the
 reachability SHALL bind the pair of the `state_clause` node's identity and the
 path of argument positions from the clause's condition term to the
-reachability node. The node itself identifies the relationship and the role;
-the clause's requirements record, keyed by the `claim` occurrence, identifies
-the population domain and its bound; the clause kind identifies the
+reachability node. The node itself identifies the relationship, the role and, when it is
+bounded, the population node; the clause's requirements record, keyed by the
+`claim` occurrence, identifies the population domain and its bound; the clause kind identifies the
 observation. The path is positions and not node identities because nodes are
 keyed by content: one reachability written twice in a condition is one node on
 two paths, and the same reachability in two clauses with different conditions is one node under two
@@ -240,15 +268,16 @@ changes the observation or a later run's result.
 | FR-365-AC-1 | `reaches(a, b, name)` over a relationship end whose destination is `[0,1]` or `[1,1]` of the near end's own type, or a finite multi-valued end of that type (unique, `Set`-shaped, and non-unique, `Bag`-shaped), checks as `Boolean` in an invariant, a precondition and a postcondition; a receiver of a subtype of the near end's type, an inverse end under `bidirectional` and under `undirected`, and a subtype operand beside a base operand each check; the field-edge form `reaches(self, self, trail)` still checks and lowers as before. | Test (TC-1046) |
 | FR-365-AC-2 | A name matching a field and a relationship end, or two ends, refuses `ambiguous_declaration`/`ambiguous-name`; a name matching neither refuses `missing_declaration`/`missing-name`. | Test (TC-1046) |
 | FR-365-AC-3 | An operand of a type that does not conform to the near end's type, a forward traversal against `target-to-source`, an inverse traversal against `source-to-target`, a destination end of another type (single-valued or finite multi-valued) and `reaches` in a function body each refuse `ill_typed`/`operator-ineligible`; an unbounded, ordered or multiplicity-less destination end refuses `unsupported_construct`/`expression-form`; operands are checked ahead of direction, direction ahead of multiplicity and multiplicity ahead of destination type, so a defect earlier in that order is the one reported. | Test (TC-1046) |
-| FR-365-AC-4 | A reachability over `E` whose type is a member type of two populations with no maximum refuses `ambiguous_declaration`/`ambiguous-name` at the form, naming both populations; with one covering population the requirements record adds that domain once and none when it is the context population. | Test (TC-1046) |
+| FR-365-AC-4 | A reachability over `E` whose type is a member type of two populations refuses `ambiguous_declaration`/`ambiguous-name` at the form, naming both populations; with one covering population the requirements record adds that domain once and none when it is the context population. | Test (TC-1046) |
 | FR-365-AC-5 | A checked reachability over a relationship end lowers to one expression node with `semantic_form` `reachability`, `operator` `reaches`, `operation.identity` `quire.op.model.reaches`, member `relationship_end` naming the relationship's model node and the role, no laws, leaves or mode, arguments `[ref(a), ref(b)]` and a `Boolean` `result_type`, with no `deref` node, and IR's v2 reader admits the emitted package. | Test (TC-1047) |
-| FR-365-AC-6 | The lowered node carries no population, bound or observation. The same reachability in two clauses whose conditions differ is one node under two `state_clause` identities, and two clauses of equal kind, parameters, anchor and condition are one `state_clause` node with two `claim` occurrences; one reachability written twice in a condition is one node on two argument paths; two different roles or relationships give two nodes. | Test (TC-1047) |
+| FR-365-AC-6 | The lowered node carries no observation, and carries no population or bound unless the walked population has an authored bound, in which case its member holds exactly the one added key `population` naming that population's node (AC-13). The same reachability in two clauses whose conditions differ is one node under two `state_clause` identities, and two clauses of equal kind, parameters, anchor and condition are one `state_clause` node with two `claim` occurrences; one reachability written twice in a condition is one node on two argument paths; two different roles or relationships give two nodes. | Test (TC-1047) |
 | FR-365-AC-7 | Reachability is one or more edges over the extent: a chain reaches its far end and not its start, an isolated object does not reach itself, a self-loop and a cycle return to their start, a cycle that holds no target and an empty complete extent give `false`, and two distinct equal-valued objects are not the same target. | Test (TC-1048) |
 | FR-365-AC-8 | Every graph on one to three objects, with each object holding no outgoing link or one, agrees with an independently authored transitive-closure oracle for every ordered pair, over a forward and an inverse role, and a non-unique relationship that repeats a link gives the same Boolean as one occurrence. | Test (TC-1048) |
 | FR-365-AC-9 | The charges are the `graph.expand`, `graph.edge` and `graph.result-retain` schedule in discovery order with the stated `value_occurrences`, a repeated link charges one `graph.edge` per occurrence and is discovered once, and the exact required `work_units` and `value_occurrences` complete while one less is incomplete at the stated charge point. | Test (TC-1048) |
 | FR-365-AC-10 | An unlisted extent and an incomplete extent each give `incomplete_population`/`incomplete-scope` after the start's `graph.expand` and no further charge, even when a known link would reach the target; a complete empty extent gives `false`. | Test (TC-1048) |
 | FR-365-AC-11 | A dangling neighbour of a model-layer extent refuses `dangling_reference`/`absent-target-in-complete-population` before its `graph.edge`, including when it is the target `b`; an undecidable neighbour gives `incomplete_population`/`incomplete-scope` at the same point; the first neighbour in order that is not present decides; a dangling or undecidable start decides before any charge. | Test (TC-1048) |
 | FR-365-AC-12 | A neighbour count above or below the destination end's bound refuses nothing; a reachability in a postcondition reads the post-observation extent and in a precondition the pre-observation extent; two evaluations of one reachability give equal results and charges and leave the observation equal to what it was. | Test (TC-1048) |
+| FR-365-AC-13 | A reachability whose walked population has an authored bound `N` (FR-380) lowers with `operation.member` holding `kind`, `declaration`, `name` and `population`, the last the id of the `bounded_domain`/`model_population` node of `Population<E>[N]`, whose id its `dependencies` hold; one whose walked population has no authored bound lowers exactly as FR-365-AC-5 states, with no `population` key and no population node, and keeps the node identity it had before FR-380. Two reachabilities over one population share the link; a claim with reachabilities over two different populations carries two links, each to its own node. | Test (TC-1054) |
 
 ## Dependencies
 
@@ -265,6 +294,8 @@ changes the observation or a later run's result.
   conformance. [FR-047](FR-047-evaluate-finite-object-reference-graphs.md) and
   [FR-008](FR-008-evaluate-state-reference.md) own the field-edge reachability
   semantics and the independent-oracle and exact-budget criteria this form
-  repeats over relationship extents. QSpec FR-322-AC-57 owns the lowered
-  application's checks and FR-152 the direction rule.
+  repeats over relationship extents. [FR-380](FR-380-bound-a-domain-package-population-and-link-a-reachability-to-its-node.md)
+  owns the authored population bound and the population node the link names.
+  QSpec FR-322-AC-57 owns the lowered application's checks, FR-322 the
+  `population` member key and FR-152 the direction rule.
 - **Downstream:** none.
