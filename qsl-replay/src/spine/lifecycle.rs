@@ -384,6 +384,11 @@ impl AdmittedModels {
     pub fn models(&self) -> &[SelectedModel] {
         &self.models
     }
+
+    /// The supplied domain package documents, by their `sha256-jcs` digest.
+    pub(crate) fn packages(&self) -> &BTreeMap<[u8; 32], Vec<u8>> {
+        &self.packages
+    }
 }
 
 /// A unit checked and linked: the in-process checked package and the
@@ -423,6 +428,7 @@ impl CheckedUnit {
 pub struct EmittedUnit {
     package: pkg::EmittedPackage,
     sources: Vec<Source>,
+    evidence: quire_contract_model::CheckedPackageEvidence,
 }
 
 impl EmittedUnit {
@@ -435,6 +441,12 @@ impl EmittedUnit {
     /// each by its own digest ([`Source::reference`]).
     pub fn sources(&self) -> &[Source] {
         &self.sources
+    }
+
+    /// The evidence Contract IR's reader needs to read [`Self::package`]'s
+    /// bytes back.
+    pub fn evidence(&self) -> &quire_contract_model::CheckedPackageEvidence {
+        &self.evidence
     }
 }
 
@@ -559,6 +571,7 @@ pub fn package(
         Ok(EmittedUnit {
             package: emission.package().clone(),
             sources,
+            evidence: emission.evidence().clone(),
         })
     })
 }

@@ -907,20 +907,21 @@ impl AdmittedPackages {
 
 /// Supply `evidence` with the admitted package of every entry of
 /// `package`'s `dependency_selections`, each read as [`read_import_view`]
-/// reads it: for a caller that reads `package`'s own bytes itself.
-#[cfg(test)]
-pub(crate) fn supply_closure(
+/// reads it under `limits`, with the supplied `domain_packages`: for a caller
+/// that reads `package`'s own bytes itself.
+pub fn supply_closure(
     package: &CheckedPackage,
+    domain_packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    limits: V2ReadLimits,
     evidence: &mut CheckedPackageEvidence,
 ) -> Result<(), ImportViewRefusal> {
-    let domain_packages = BTreeMap::new();
     let mut held = BTreeMap::new();
     hold_closure(package, &mut held);
     ClosureReader {
         held,
-        domain_packages: &domain_packages,
+        domain_packages,
         admitted: BTreeMap::new(),
-        limits: V2ReadLimits::default(),
+        limits,
     }
     .supply(package, evidence)
 }
