@@ -5146,6 +5146,7 @@ mod clause_set;
 mod frame;
 mod frame_replay;
 mod invocation_parameters;
+mod link_replay;
 mod pre_call_invocation;
 mod state_clause_replay;
 mod witness;
