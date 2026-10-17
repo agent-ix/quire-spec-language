@@ -92,6 +92,7 @@ fn show(expression: ExprRef<'_>) -> String {
         ExprNode::Boolean(value) => format!("{value}"),
         ExprNode::Integer(value) => format!("{value}"),
         ExprNode::Rational(n, d) => format!("rational({n},{d})"),
+        ExprNode::String(text) => format!("string({text:?})"),
         ExprNode::Name(spelling) => spelling.clone(),
         ExprNode::Let { name, .. } => format!("Let[{name}]"),
         ExprNode::If { .. } => "If".into(),
@@ -484,7 +485,6 @@ fn s2_refuses_inadmissible_input_and_undispatched_declarations() {
 #[test]
 fn a_construct_no_variant_represents_refuses_the_unit() {
     let cases = [
-        ("\"text\"", Production::Primary, "\"text\""),
         ("decimal(1, 2)", Production::ExactNumber, "decimal(1, 2)"),
         ("xs[0]", Production::Postfix, "xs[0]"),
         ("none", Production::Primary, "none"),
@@ -1077,4 +1077,84 @@ fn a_deep_parameter_type_builds_clones_compares_formats_and_drops_on_a_small_sta
         .expect("spawn a 512 KiB thread")
         .join()
         .expect("S2 and the type form's traits do not overflow a 512 KiB stack");
+}
+
+/// The root expression of the body `text`, as the S2 form.
+fn body_root(text: &str) -> ExprNode {
+    let (_, function) = body(text);
+    function.body.root_node().clone()
+}
+
+/// FR-091-AC-41, TC-1052 step 1: a quoted literal builds one
+/// `ExprNode::String` holding the decoded scalar sequence, exactly.
+#[trace("FR-091-AC-41", "TC-1052")]
+#[test]
+fn a_quoted_literal_builds_one_string_form_with_the_decoded_scalars() {
+    let scalars = |text: &str| ExprNode::String(text.to_owned());
+    for (source, expected) in [
+        (r#""abc""#, "abc"),
+        (r#""""#, ""),
+        (r#""é""#, "\u{e9}"),
+        ("\"\u{e9}\"", "\u{e9}"),
+        (r#""é""#, "e\u{301}"),
+        (r#""a\nb""#, "a\nb"),
+        (r#""😀""#, "\u{1f600}"),
+        (r#""\u0000""#, "\u{0}"),
+        (r#""a\"b\\c\/d""#, "a\"b\\c/d"),
+    ] {
+        assert_eq!(body_root(source), scalars(expected), "{source}");
+    }
+    assert_ne!(body_root(r#""é""#), body_root(r#""é""#), "no normalization");
+}
+
+/// FR-091-AC-41, TC-1052 step 1: `UUID("...")` and `Timestamp(n)` build the
+/// ordinary `Call` and add no expression kind.
+#[trace("FR-091-AC-41", "TC-1052")]
+#[test]
+fn uuid_and_timestamp_literals_build_ordinary_calls() {
+    let (_, function) = body(r#"UUID("00112233-4455-6677-8899-aabbccddeeff")"#);
+    let ExprNode::Call { name, arguments } = function.body.root_node() else {
+        panic!("a call");
+    };
+    assert_eq!(name, "UUID");
+    assert_eq!(
+        function.body.at(arguments[0]).node(),
+        &ExprNode::String("00112233-4455-6677-8899-aabbccddeeff".to_owned())
+    );
+    let (_, function) = body("Timestamp(-1)");
+    let ExprNode::Call { name, arguments } = function.body.root_node() else {
+        panic!("a call");
+    };
+    assert_eq!(name, "Timestamp");
+    let ExprNode::Negate(operand) = function.body.at(arguments[0]).node() else {
+        panic!("a negated count");
+    };
+    assert_eq!(
+        function.body.at(*operand).node(),
+        &ExprNode::Integer(Integer::from(1_i64))
+    );
+}
+
+/// FR-091-AC-42, TC-1052 step 2: a malformed escape is `invalid-escape`; an
+/// unterminated literal, a raw line feed and a leading-zero count are
+/// `invalid-token`, all `invalid_syntax`, with no form.
+#[trace("FR-091-AC-42", "TC-1052")]
+#[test]
+fn malformed_literals_refuse_at_the_lexer() {
+    use qsl_cst::{CompleteCause, CompleteCode};
+    for (body, cause) in [
+        (r#""\ud800""#, CompleteCause::InvalidEscape),
+        (r#""\q""#, CompleteCause::InvalidEscape),
+        (r#""abc"#, CompleteCause::InvalidToken),
+        ("\"a\nb\"", CompleteCause::InvalidToken),
+        ("Timestamp(007)", CompleteCause::InvalidToken),
+    ] {
+        let (_, parsed) = parse(&format!("function f using v(): Boolean pure {{ {body} }}"));
+        let first = parsed.diagnostics().first().expect("a diagnostic");
+        assert_eq!(
+            (first.code, first.cause),
+            (CompleteCode::InvalidSyntax, cause),
+            "{body}"
+        );
+    }
 }

@@ -19,6 +19,7 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
+use super::native_literal::NativeConstructor;
 use super::{
     catalogued_step, contains_pre_eligible_read, contextual, ineligible, is_integer, mismatch,
     node, refuse, LocalKind, Typer,
@@ -769,6 +770,11 @@ impl<'a> Typer<'a> {
                     &location,
                 )
             }
+            ExprNode::String(text) => node(
+                NodeKind::Literal(CheckedLiteral(Value::String(text.clone()))),
+                ValueType::String,
+                &location,
+            ),
             ExprNode::Rational(numerator, denominator) => {
                 self.rational_literal(numerator, denominator, hint.as_deref(), &location)?
             }
@@ -954,25 +960,29 @@ impl<'a> Typer<'a> {
                 return Ok(Step::Descend(Goal::Infer(source, None, source_location)));
             }
             ExprNode::Call { name, arguments } => {
-                let arity = arguments.len();
-                let application = match resolve_target(self, name, &location, || {
-                    Application::resolve(self, name, arity, &location)
-                })? {
-                    ResolvedTarget::UnionMember(member) => {
-                        member.admit_shape(Some(arity), &location)?;
-                        Callee::Union(member)
-                    }
-                    ResolvedTarget::Value(application) => Callee::Value(application),
-                };
-                return Ok(Self::application(
-                    Box::new(ApplicationFrame {
-                        application,
-                        arguments: arguments.iter().map(|id| expression.at(*id)).collect(),
-                        location,
-                        typed: Vec::with_capacity(arguments.len()),
-                    }),
-                    frames,
-                ));
+                if let Some(constructor) = NativeConstructor::named(name) {
+                    self.native_literal(constructor, name, expression, arguments, &location)?
+                } else {
+                    let arity = arguments.len();
+                    let application = match resolve_target(self, name, &location, || {
+                        Application::resolve(self, name, arity, &location)
+                    })? {
+                        ResolvedTarget::UnionMember(member) => {
+                            member.admit_shape(Some(arity), &location)?;
+                            Callee::Union(member)
+                        }
+                        ResolvedTarget::Value(application) => Callee::Value(application),
+                    };
+                    return Ok(Self::application(
+                        Box::new(ApplicationFrame {
+                            application,
+                            arguments: arguments.iter().map(|id| expression.at(*id)).collect(),
+                            location,
+                            typed: Vec::with_capacity(arguments.len()),
+                        }),
+                        frames,
+                    ));
+                }
             }
             ExprNode::Record { name, fields } => {
                 let (key, declared) = self.record_declaration(name, &location)?;

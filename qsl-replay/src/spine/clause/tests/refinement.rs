@@ -212,6 +212,24 @@ fn a_typed_refusal_cause_anywhere_is_refused() {
     );
 }
 
+/// FR-341, FR-091-AC-43: a malformed `UUID("...")` literal is a typed
+/// `ill_typed`/`type-mismatch` refusal of the unit's content, so it classifies
+/// `refused`, carries no limit and is no `incomplete` or `unsupported` class.
+#[trace("TC-861", "FR-341-AC-3")]
+#[test]
+fn a_malformed_uuid_literal_is_a_refusal_of_the_content() {
+    let refusal = check(vec![CheckCause::MalformedUuidLiteral {
+        argument: "00112233-4455-6677-8899-AABBCCDDEEFF".to_owned(),
+    }]);
+    let classified = classify_refusal(&refusal);
+    assert_eq!(classified.class, RefinementClass::Refused);
+    assert_eq!(
+        classified.causes,
+        [cause(Code::IllTyped, Some("type-mismatch"))]
+    );
+    assert!(classified.limits().is_empty());
+}
+
 /// FR-341-AC-4: a reached stage limit is `incomplete`, naming the limit and
 /// its value.
 #[trace("TC-861", "FR-341-AC-4")]
