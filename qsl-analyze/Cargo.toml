@@ -9,8 +9,7 @@ description = "ADR-011 §6.1 layer A: in-process analysis engines, including ret
 
 # ADR-011 §6.1 layer A may depend on "6, 5, 4, 3, R, F, SV, K". The graph
 # engine uses layer 5's existing transition seam and foundation identities.
-# The zone
-# engine's DBM needs only layer K's exact rationals (the constants it
+# The zone engine's DBM needs only layer K's exact rationals (the constants it
 # scales) and arbitrary-precision integers for its bounds. It names no
 # `qsl-replay` item: the certificate checker's DBM there is separate code
 # (ADR-026 CF-6).

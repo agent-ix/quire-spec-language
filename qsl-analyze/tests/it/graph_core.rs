@@ -394,7 +394,7 @@ fn cancellation_and_model_stops_preserve_frontier_and_findings() {
         .map(|state| state.digest)
         .collect();
     assert!(
-        matches!(stopped.outcome, Outcome::Stopped { cause: STOP, ref frontier, .. } if frontier == &expected)
+        matches!(stopped.outcome, Outcome::Stopped { cause, ref frontier, .. } if cause == STOP && frontier == &expected)
     );
     assert_eq!(stopped.graph.states()[0].findings, [0]);
     assert!(stopped.graph.states()[1].findings.is_empty());
@@ -698,7 +698,7 @@ fn property_stops_propagate_without_retaining_a_partial_product_expansion() {
     )
     .unwrap();
     assert!(
-        matches!(result.outcome, Outcome::Stopped { cause: STOP, ref frontier, .. } if frontier.len() == 2)
+        matches!(result.outcome, Outcome::Stopped { cause, ref frontier, .. } if cause == STOP && frontier.len() == 2)
     );
     assert!(result.graph.edges().is_empty());
     assert!(result
