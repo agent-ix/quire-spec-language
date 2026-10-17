@@ -1098,7 +1098,10 @@ impl PackageDeclarations {
             );
             let mut sealed_refusals = Vec::new();
             for declaration in scope.types().composites() {
-                if matches!(declaration.shape(), CompositeShape::Union(_)) {
+                if matches!(
+                    declaration.shape(),
+                    quire_semantic_value::declaration::CompositeShape::Union(_)
+                ) {
                     if let Err(refusal) = sealing.composite_node(declaration.key()) {
                         sealed_refusals.push(refusal);
                     }
