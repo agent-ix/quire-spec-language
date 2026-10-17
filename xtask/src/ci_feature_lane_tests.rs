@@ -229,7 +229,7 @@ const DEEP_CASES: [&str; 5] = [
 ];
 
 /// The deep-format calls in recipe order: one exact listing per case, then the
-/// five cases concurrently in a single run, all in the default lane's directory.
+/// five cases three at a time in a single run, all in the default lane's directory.
 fn deep_calls(directory: &str) -> String {
     let listings: Vec<Vec<&str>> = DEEP_CASES
         .iter()
@@ -255,7 +255,7 @@ fn deep_calls(directory: &str) -> String {
         "--",
         "--ignored",
         "--exact",
-        "--test-threads=5",
+        "--test-threads=3",
     ];
     run.extend(DEEP_CASES);
     let mut commands: Vec<&[&str]> = listings.iter().map(Vec::as_slice).collect();

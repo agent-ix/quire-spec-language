@@ -223,9 +223,10 @@ ci-all-features:
 # targets implicitly, so a target whose required features are off (qsl-source's
 # `it`) is skipped as in that lane; naming `--test it` would make it an error.
 # Nothing is recompiled in a directory of its own. The five independent cases
-# run concurrently in one process (`--test-threads=5`, one thread per case, so
-# the stage takes about as long as its slowest case); each name must still
-# select exactly one ignored test.
+# run three at a time in one process (`--test-threads=3`). Each case holds
+# about 4 GB resident in a debug build, measured: five at once reached 20.8 GB
+# and was OOM-killed under a 20 GiB cap, three peak at about 12-15 GB. Each
+# name must still select exactly one ignored test.
 test-deep-format:
 	@set -eu; \
 	for test in \
@@ -241,7 +242,7 @@ test-deep-format:
 			exit 1; \
 		fi; \
 	done; \
-	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo test --locked --workspace --tests -- --ignored --exact --test-threads=5 \
+	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo test --locked --workspace --tests -- --ignored --exact --test-threads=3 \
 		formatter_identity::deep_sum_source_generator_keeps_format_identity \
 		formatter_identity::deep_else_if_source_generator_keeps_format_identity \
 		formatter_identity::deep_let_source_generator_keeps_format_identity \
