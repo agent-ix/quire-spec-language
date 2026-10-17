@@ -96,7 +96,7 @@ use crate::emit::{emit_checked, Emission, EmitRefusal};
 use quire_exact::{Origin, Role};
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 /// A test's view of one [`read_checked_package_v2`] outcome, T-4's
 /// `Result` unpacked so a test matches every arm by pattern.

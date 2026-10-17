@@ -2158,7 +2158,14 @@ fn modifies_entries(name: &str, entries: &[Value]) -> Value {
                                 "{name}: frame_mutations modifies field entry has no string name: {entry}"
                             )
                         });
-                        modifies_field(&declaration, field_name)
+                        let scope = entry["scope"].as_str().unwrap_or_else(|| {
+                            panic!(
+                                "{name}: frame_mutations modifies field entry has no string scope: {entry}"
+                            )
+                        });
+                        let mut field = modifies_field(&declaration, field_name);
+                        field["scope"] = json!(scope);
+                        field
                     }
                     "relationship" => modifies_relationship(&declaration),
                     other => panic!("{name}: frame_mutations modifies entry has unmapped kind {other}"),
@@ -2191,7 +2198,7 @@ fn projection_of(nodes: &[Value]) -> Vec<Value> {
 /// none is stale, then recomputes the projection and `package_id`. Returns
 /// each original digest's final digest, so a test names a node by its
 /// current key.
-fn rekey_stale(envelope: &mut Value) -> BTreeMap<String, String> {
+pub(crate) fn rekey_stale(envelope: &mut Value) -> BTreeMap<String, String> {
     let mut renames = BTreeMap::<String, String>::new();
     let limit = envelope["semantic_graph"]["nodes"]
         .as_array()
@@ -2309,6 +2316,11 @@ fn conformance_fr340_frame_mutations_match_qspec_vectors() {
                 frame_entries(name, mutation["creates"].as_array().expect("creates"));
             node["body"]["deletes"] =
                 frame_entries(name, mutation["deletes"].as_array().expect("deletes"));
+            // Vectors that do not exercise the scoped deletes carry none.
+            node["body"]["deletes_scoped"] = mutation
+                .get("deletes_scoped")
+                .cloned()
+                .unwrap_or_else(|| json!([]));
         }
         if let Some(second_frame) = mutation.get("second_frame") {
             candidate["semantic_graph"]["nodes"]
@@ -2327,6 +2339,7 @@ fn conformance_fr340_frame_mutations_match_qspec_vectors() {
         let expected_cause = match mutation["expected_cause"].as_str() {
             Some("missing-name") => Some(CheckedPackageRefusalCause::MissingName),
             Some("malformed-declaration") => Some(CheckedPackageRefusalCause::MalformedDeclaration),
+            Some("conflicting-binding") => Some(CheckedPackageRefusalCause::ConflictingBinding),
             None => None,
             Some(other) => panic!("{name}: unmapped expected_cause {other}"),
         };
@@ -2402,7 +2415,7 @@ fn modifies_relationship(declaration: &Value) -> Value {
 /// `model`/`object_type` or `model`/`record_value_type` node (STD-111's
 /// `{kind: "field", declaration, name}` shape).
 fn modifies_field(declaration: &Value, name: &str) -> Value {
-    json!({"kind": "field", "declaration": declaration, "name": name})
+    json!({"kind": "field", "declaration": declaration, "name": name, "scope": "every-object"})
 }
 
 /// A `state`/`frame` node whose `dependencies` and body members are given
@@ -2431,6 +2444,7 @@ fn frame_node(
             "modifies": modifies,
             "creates": creates,
             "deletes": deletes,
+            "deletes_scoped": [],
         },
     })
 }
