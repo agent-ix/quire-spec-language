@@ -698,6 +698,14 @@ pub(super) fn build_extents(
     extents: &[CheckedExtent],
     completeness: &BTreeMap<String, bool>,
 ) -> Result<RelationshipExtents, AdmissionFailure> {
+    admit_supplied_extents(types, facts, supplied_extents(extents)?, completeness)
+}
+
+/// `extents` as the supplied extents the store admits, every instance end
+/// resolved.
+pub(super) fn supplied_extents(
+    extents: &[CheckedExtent],
+) -> Result<Vec<RelationshipExtent<DeclarationKey>>, AdmissionFailure> {
     let mut supplied = Vec::with_capacity(extents.len());
     for extent in extents {
         let mut instances = Vec::with_capacity(extent.instances.len());
@@ -715,6 +723,16 @@ pub(super) fn build_extents(
             instances,
         });
     }
+    Ok(supplied)
+}
+
+/// The store over already supplied extents.
+pub(super) fn admit_supplied_extents(
+    types: &TypeEnvironment,
+    facts: ModelFacts,
+    supplied: Vec<RelationshipExtent<DeclarationKey>>,
+    completeness: &BTreeMap<String, bool>,
+) -> Result<RelationshipExtents, AdmissionFailure> {
     let row_limit = facts.populations.len();
     let mut enumerator = PackagePopulations {
         rows: facts.populations.iter(),
