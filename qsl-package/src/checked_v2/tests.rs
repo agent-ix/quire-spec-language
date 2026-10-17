@@ -1395,8 +1395,8 @@ fn conformance_c14_source_map_lookup_over_qspec_positive_fixtures() {
 /// union vectors use the application preimage even though both bodies are
 /// aggregate terms. Exercise QSL's producer-key derivation on those exact
 /// wire nodes, then admit the same fixture through the whole I2 reader.
-/// This covers the published vectors; it does not imply QSL source lowering
-/// currently constructs union values.
+/// This covers the published vectors; QSL's own union lowering is covered in
+/// `emit::tests::union_nodes`.
 #[trace("FR-320-AC-4")]
 #[test]
 fn qspec_union_value_application_keys_are_admitted_by_i2() {
