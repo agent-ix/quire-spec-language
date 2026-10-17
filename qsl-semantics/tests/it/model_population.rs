@@ -4567,6 +4567,205 @@ fn a_receiver_scoped_entry_reaches_through_redefines_and_by_declaration_not_name
     assert_frame_violation(same_name_other_type, "r1", Some("model.Plain.x"));
 }
 
+/// TC-1043 step 5, D1 to D4 (FR-154-AC-9): one frame holding entries of both
+/// scopes adds them up. D1: the receiver-scoped `x` of `model.A` and the
+/// every-object `x` of `model.Plain` grant the receiver's write and a
+/// `Plain` object's write together, and D2 still refuses another `model.A`
+/// object's write. D3: `deletes self` and `deletes p` grant the receiver and
+/// the argument together; D4: a third object's deletion is refused.
+#[test]
+#[trace("TC-1043", "FR-154-AC-9")]
+fn a_frame_holding_both_scopes_adds_them_up() {
+    let domain_package = four_link_chain_bundle();
+    let write = |object: &str, type_identity: &str, field: &str, value: &str| {
+        member_with_fields(object, type_identity, vec![(field, vec![value])])
+    };
+    let effect = OperationEffect {
+        receiver_modifies: vec![DeclarationKey::fixture("model.A.x")],
+        modifies: vec![DeclarationKey::fixture("model.Plain.x")],
+        ..Default::default()
+    };
+    let binding = InvocationBinding {
+        receiver: Some("r1"),
+        arguments: &[],
+    };
+    let run = |changed: &[&str]| {
+        let state = |post: bool| {
+            [
+                ("r1", "model.A", "model.A.x"),
+                ("o1", "model.A", "model.A.x"),
+                ("q1", "model.Plain", "model.Plain.x"),
+            ]
+            .map(|(object, type_identity, field)| {
+                let value = if post && changed.contains(&object) {
+                    "a9"
+                } else {
+                    "a1"
+                };
+                write(object, type_identity, field, value)
+            })
+            .to_vec()
+        };
+        run_frame(
+            &domain_package,
+            &effect,
+            &binding,
+            state(false),
+            state(true),
+            &[],
+            u64::MAX,
+        )
+    };
+    // D1: the receiver's `x` and the `Plain` object's `x` change.
+    assert!(matches!(run(&["r1", "q1"]), AdmissionOutcome::Admitted(_)));
+    // D2: another `model.A` object's `x` is outside both entries.
+    assert_frame_violation(run(&["r1", "o1", "q1"]), "o1", Some("model.A.x"));
+
+    // D3 and D4: `deletes self` with `deletes p` bound to `p1`.
+    let arguments = [("p".to_owned(), "p1".to_owned())];
+    let binding = InvocationBinding {
+        receiver: Some("r1"),
+        arguments: &arguments,
+    };
+    let deletes = OperationEffect {
+        deletes_receiver: true,
+        deletes_arguments: vec!["p".to_owned()],
+        ..Default::default()
+    };
+    let objects = || {
+        vec![
+            member("r1", "model.A"),
+            member("p1", "model.A"),
+            member("o1", "model.A"),
+        ]
+    };
+    let delete = |gone: &[&str]| {
+        run_frame(
+            &domain_package,
+            &deletes,
+            &binding,
+            objects(),
+            objects()
+                .into_iter()
+                .filter(|object| !gone.contains(&object.object.as_str()))
+                .collect(),
+            gone,
+            u64::MAX,
+        )
+    };
+    assert!(matches!(
+        delete(&["r1", "p1"]),
+        AdmissionOutcome::Admitted(_)
+    ));
+    assert_frame_violation(delete(&["r1", "p1", "o1"]), "o1", None);
+}
+
+/// TC-1043 step 5, D1 and D2 (FR-154-AC-9) over one type: `value` is
+/// receiver-scoped and `step` is every-object on the same `Counter`, so the
+/// receiver's `value` and any counter's `step` are granted, and another
+/// counter's `value` is refused.
+#[test]
+#[trace("TC-1043", "FR-154-AC-9")]
+fn one_type_with_a_receiver_scoped_and_an_every_object_field_adds_them_up() {
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.counter"),
+        vec![
+            object_type("model.Counter", vec![]),
+            field_member("model.Counter.value", "model.Counter", "model.Counter"),
+            field_member("model.Counter.step", "model.Counter", "model.Counter"),
+            population_record(P1_POPULATION, &["model.Counter"], Extent::Closed),
+        ],
+    );
+    let effect = OperationEffect {
+        receiver_modifies: vec![DeclarationKey::fixture("model.Counter.value")],
+        modifies: vec![DeclarationKey::fixture("model.Counter.step")],
+        ..Default::default()
+    };
+    let binding = InvocationBinding {
+        receiver: Some("c1"),
+        arguments: &[],
+    };
+    let run = |changes: &[(&str, &str)]| {
+        let state = |post: bool| {
+            ["c1", "c2"]
+                .map(|object| {
+                    let value = |field: &str| {
+                        if post && changes.contains(&(object, field)) {
+                            "9"
+                        } else {
+                            "0"
+                        }
+                    };
+                    member_with_fields(
+                        object,
+                        "model.Counter",
+                        vec![
+                            ("model.Counter.value", vec![value("value")]),
+                            ("model.Counter.step", vec![value("step")]),
+                        ],
+                    )
+                })
+                .to_vec()
+        };
+        run_frame(
+            &domain_package,
+            &effect,
+            &binding,
+            state(false),
+            state(true),
+            &[],
+            u64::MAX,
+        )
+    };
+    // D1: the receiver's `value` and another counter's `step`.
+    assert!(matches!(
+        run(&[("c1", "value"), ("c2", "step")]),
+        AdmissionOutcome::Admitted(_)
+    ));
+    // D2: another counter's `value` is outside the receiver-scoped entry.
+    assert_frame_violation(run(&[("c2", "value")]), "c2", Some("model.Counter.value"));
+}
+
+/// The two views of an operation's frame agree: `written_fields` lists the
+/// receiver-scoped and every-object fields together, and `is_empty` is false
+/// as soon as any one member grants something, so an operation with only a
+/// receiver-scoped write or a scoped delete is not a query.
+#[test]
+#[trace("TC-1043", "FR-154-AC-9")]
+fn an_operation_effect_reports_scoped_writes_and_deletes() {
+    let key = DeclarationKey::fixture;
+    let effect = OperationEffect {
+        receiver_modifies: vec![key("model.A.x")],
+        modifies: vec![key("model.A.y")],
+        ..Default::default()
+    };
+    let written: Vec<&DeclarationKey> = effect.written_fields().collect();
+    assert_eq!(written, vec![&key("model.A.y"), &key("model.A.x")]);
+
+    assert!(OperationEffect::default().is_empty());
+    let granting = [
+        OperationEffect {
+            modifies: vec![key("model.A.y")],
+            ..Default::default()
+        },
+        OperationEffect {
+            receiver_modifies: vec![key("model.A.x")],
+            ..Default::default()
+        },
+        OperationEffect {
+            deletes_receiver: true,
+            ..Default::default()
+        },
+        OperationEffect {
+            deletes_arguments: vec!["p".to_owned()],
+            ..Default::default()
+        },
+    ];
+    for effect in granting {
+        assert!(!effect.is_empty(), "{effect:?}");
+    }
+}
+
 /// QSpec FR-013-AC-9: under `deletes self` the receiver's deletion is
 /// permitted and any other object's is `frame_violation`; under `deletes p`
 /// the argument bound to `p` is permitted and any other is `frame_violation`;
