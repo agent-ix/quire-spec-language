@@ -2158,7 +2158,14 @@ fn modifies_entries(name: &str, entries: &[Value]) -> Value {
                                 "{name}: frame_mutations modifies field entry has no string name: {entry}"
                             )
                         });
-                        modifies_field(&declaration, field_name)
+                        let scope = entry["scope"].as_str().unwrap_or_else(|| {
+                            panic!(
+                                "{name}: frame_mutations modifies field entry has no string scope: {entry}"
+                            )
+                        });
+                        let mut field = modifies_field(&declaration, field_name);
+                        field["scope"] = json!(scope);
+                        field
                     }
                     "relationship" => modifies_relationship(&declaration),
                     other => panic!("{name}: frame_mutations modifies entry has unmapped kind {other}"),
@@ -2309,6 +2316,11 @@ fn conformance_fr340_frame_mutations_match_qspec_vectors() {
                 frame_entries(name, mutation["creates"].as_array().expect("creates"));
             node["body"]["deletes"] =
                 frame_entries(name, mutation["deletes"].as_array().expect("deletes"));
+            // Vectors that do not exercise the scoped deletes carry none.
+            node["body"]["deletes_scoped"] = mutation
+                .get("deletes_scoped")
+                .cloned()
+                .unwrap_or_else(|| json!([]));
         }
         if let Some(second_frame) = mutation.get("second_frame") {
             candidate["semantic_graph"]["nodes"]
@@ -2327,6 +2339,7 @@ fn conformance_fr340_frame_mutations_match_qspec_vectors() {
         let expected_cause = match mutation["expected_cause"].as_str() {
             Some("missing-name") => Some(CheckedPackageRefusalCause::MissingName),
             Some("malformed-declaration") => Some(CheckedPackageRefusalCause::MalformedDeclaration),
+            Some("conflicting-binding") => Some(CheckedPackageRefusalCause::ConflictingBinding),
             None => None,
             Some(other) => panic!("{name}: unmapped expected_cause {other}"),
         };
