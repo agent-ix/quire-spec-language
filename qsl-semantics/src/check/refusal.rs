@@ -5,8 +5,8 @@ use qsl_foundation::diagnostic::Code;
 use qsl_foundation::source::provenance::SourceRegion;
 use qsl_foundation::Setting;
 use qsl_foundation::Span;
-use quire_exact::EffectiveId;
 use quire_exact::Integer;
+use quire_exact::{EffectiveId, NodeKey};
 use quire_exact::{IllTyped, IllTypedCause};
 use quire_semantic_value::location::Location;
 use quire_semantic_value::semantic_node::IdentityRefusal;
@@ -574,6 +574,26 @@ pub enum MemberCandidate {
     },
 }
 
+/// One candidate of an ambiguous qualified reference `q::m` (FR-317).
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum QualifiedCandidate {
+    /// A declared union named `q` that has a member `m`.
+    Union(NodeKey),
+    /// A declared enum named `q` that has a member `m`.
+    Enum(NodeKey),
+    /// The import alias `q`, whose package exports `m`.
+    Import(String),
+}
+
+/// [`CheckCause::AmbiguousQualified`]'s payload.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct AmbiguousQualified {
+    /// The ambiguous reference as written, `q::m`.
+    pub name: String,
+    /// Every candidate it matched, unions then enums then the import.
+    pub candidates: Vec<QualifiedCandidate>,
+}
+
 /// [`CheckCause::AmbiguousMember`]'s payload.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct AmbiguousMember {
@@ -634,6 +654,10 @@ pub enum CheckCause {
     /// `ambiguous-name`, naming every candidate. Boxed like the other
     /// payload-bearing causes, to keep `CheckCause` small.
     AmbiguousMember(Box<AmbiguousMember>),
+    /// FR-317: `q::m` names more than one candidate, a union, an enum or an
+    /// import alias: `ambiguous_declaration` / `ambiguous-name`, naming every
+    /// candidate.
+    AmbiguousQualified(Box<AmbiguousQualified>),
     /// FR-363: `r.name` names a relationship end whose destination multiplicity
     /// types no navigation: `unsupported_construct` / `expression-form`.
     UnsupportedNavigation(NavigationBound),
@@ -1039,7 +1063,9 @@ impl CheckCause {
             }
             Self::WrongSnapshot(_) | Self::UnanchoredResult { .. } => Code::WrongSnapshot,
             Self::MissingName(_) => Code::MissingDeclaration,
-            Self::AmbiguousName { .. } | Self::AmbiguousMember(_) => Code::AmbiguousDeclaration,
+            Self::AmbiguousName { .. } | Self::AmbiguousMember(_) | Self::AmbiguousQualified(_) => {
+                Code::AmbiguousDeclaration
+            }
             Self::UnsupportedNavigation(_) => Code::UnsupportedConstruct,
             Self::Unproved(_) | Self::UnprovedDecrease { .. } => Code::UndefinedExpression,
             Self::SumCase(cause) => cause.code(),
@@ -1088,7 +1114,9 @@ impl CheckCause {
             Self::IntegerOutsideI128(_) => Some("type-mismatch"),
             Self::UnanchoredResult { .. } => Some("wrong-anchor"),
             Self::MissingName(_) => Some("missing-name"),
-            Self::AmbiguousName { .. } | Self::AmbiguousMember(_) => Some("ambiguous-name"),
+            Self::AmbiguousName { .. } | Self::AmbiguousMember(_) | Self::AmbiguousQualified(_) => {
+                Some("ambiguous-name")
+            }
             Self::UnsupportedNavigation(_) => Some("expression-form"),
             Self::Unproved(Obligation::Nonzero) => Some("unproved-nonzero"),
             Self::Unproved(Obligation::Presence) => Some("unproved-presence"),

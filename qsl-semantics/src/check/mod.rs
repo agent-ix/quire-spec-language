@@ -69,6 +69,7 @@
 // resolution and typing) -- the inception is the spec's own naming, not an
 // accidental collision this file introduced.
 mod assemble;
+mod call_target;
 mod capability;
 #[allow(clippy::module_inception)]
 mod check;
@@ -114,7 +115,7 @@ mod state_clause;
 mod state_model;
 mod sum_case;
 pub use state_model::StateModelRefusal;
-pub use sum_case::{ExhaustivenessObligation, SumCaseCause};
+pub use sum_case::{mint_union_member_key, ExhaustivenessObligation, SumCaseCause};
 #[cfg(any(test, feature = "test-support"))]
 pub mod stratum;
 mod termination;
@@ -229,11 +230,11 @@ pub use model_conformance::ModelConformanceFailure;
 pub use navigation::{EndDeclaration, EndSide, RelationshipDeclaration, Relationships};
 pub use protocol_clause::{CheckedAttempt, CheckedProtocol, ProtocolNodeId};
 pub use refusal::{
-    AliasKind, AmbiguousMember, CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage,
-    DispatchFunctionRole, DispatchLinkCause, DispatchSubtypeFailure, InvalidDispatchDeclaration,
-    KeyFault, MeasureObligation, MemberCandidate, NavigationBound, Obligation, ProtocolAnchorCause,
-    ProtocolReferenceCause, ProvedInterval, ShadowedDeclaration, StageLimitCause,
-    WrongSnapshotCause,
+    AliasKind, AmbiguousMember, AmbiguousQualified, CheckCause, CheckRefusal, CheckingLimitKind,
+    CheckingStage, DispatchFunctionRole, DispatchLinkCause, DispatchSubtypeFailure,
+    InvalidDispatchDeclaration, KeyFault, MeasureObligation, MemberCandidate, NavigationBound,
+    Obligation, ProtocolAnchorCause, ProtocolReferenceCause, ProvedInterval, QualifiedCandidate,
+    ShadowedDeclaration, StageLimitCause, WrongSnapshotCause,
 };
 
 /// A checked function.

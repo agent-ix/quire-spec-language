@@ -1251,6 +1251,7 @@ impl<'a, 'm> Machine<'a, 'm> {
             // FR-318 checks a `case`, but FR-093 lowers none yet, so no
             // checked package holds one and nothing evaluates it (FR-322).
             NodeKind::Case { .. } => return Err(invariant("case-node-not-lowered")),
+            NodeKind::UnionValue { .. } => return Err(invariant("union-value-not-lowered")),
             // FR-107: `reaches(source, target, edge)`, checked
             // only inside a state clause.
             NodeKind::Reaches { edge, .. } => {
