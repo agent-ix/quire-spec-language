@@ -51,7 +51,6 @@ use super::lowering::{
 use super::node_key::{declared_type_handle, nominal_key, NodeKeyRefusal, SourceOwner};
 use super::operation_body::OperationBodyDeclaration;
 use super::operation_clause::OperationClauseDeclaration;
-use super::type_invariant::{TypeInvariantDeclaration, TypeSlot};
 use super::refusal::AliasKind;
 use super::state_clause::{
     population_of, AttemptDeclaration, ClauseOperation, StateClauseDeclaration,
@@ -59,6 +58,7 @@ use super::state_clause::{
 use super::type_form::{
     native_scalar_named, parse_rounding_mode, resolve_form, TypeFormError, TypeFormFault, TypeNames,
 };
+use super::type_invariant::{TypeInvariantDeclaration, TypeSlot};
 use crate::library::{ImportView, LibraryName};
 use std::sync::Arc;
 

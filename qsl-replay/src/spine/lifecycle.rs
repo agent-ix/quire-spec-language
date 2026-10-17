@@ -652,7 +652,10 @@ fn select_models(
             })
         })?;
     let source_limits = parsed.syntax.effective_limits();
-    parse_type_invariants(parse_operation_clauses(models, source_limits)?, source_limits)
+    parse_type_invariants(
+        parse_operation_clauses(models, source_limits)?,
+        source_limits,
+    )
 }
 
 /// FR-366: parses the text of each type-level `Invariant` clause of `model`

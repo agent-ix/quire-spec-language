@@ -34,13 +34,11 @@ use s6a::{ReferenceEvaluation, S6aFamilyKind};
 pub use clause_set::{ClauseSetEntry, ClauseSetEvaluation, ClauseSetOutcome};
 pub use evaluate::Evaluation;
 pub use family::{InvalidQualifiedName, QualifiedName};
-pub use value_invariants::{
-    ValueInvariantEvaluation, ValueInvariantOutcome, ValueInvariantResult,
-};
 pub use s6a::separation::{
     ClauseEvaluation, ClauseRead, InvocationBinding, ObservationIdentity, RuntimeValuePath,
     Separation, SeparationStep, StopReport, ValuePathStep, ValuePathSubject, WitnessClaim,
 };
+pub use value_invariants::{ValueInvariantEvaluation, ValueInvariantOutcome, ValueInvariantResult};
 
 // `CheckedExpression` is `check`'s own checked-output type; this module
 // imports it from `qsl_semantics::check` and re-exports none of it (FR-068-AC-10 is

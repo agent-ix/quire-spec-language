@@ -232,7 +232,8 @@ fn walk(
                 for (field, slot) in fields.iter().zip(composite.slots()) {
                     if let FieldValue::Present(inner) = slot {
                         let mut path = path.clone();
-                        path.steps.push(ValuePathStep::Field(field.name().to_owned()));
+                        path.steps
+                            .push(ValuePathStep::Field(field.name().to_owned()));
                         present_payload(&mut path, field.presence());
                         stack.push(Walk {
                             path,
@@ -254,7 +255,8 @@ fn walk(
             Value::Collection(collection) => {
                 for (index, element) in collection.elements().iter().enumerate() {
                     let mut path = path.clone();
-                    let index = u64::try_from(index).map_err(|_| fault("collection-index-exceeds-u64"))?;
+                    let index =
+                        u64::try_from(index).map_err(|_| fault("collection-index-exceeds-u64"))?;
                     path.steps.push(ValuePathStep::Index(index));
                     stack.push(Walk {
                         path,
@@ -292,7 +294,10 @@ pub(super) fn evaluate(
     let invariants = graph.type_invariants();
     let mut tasks: Vec<(&CheckedTypeInvariant, Pending<'_>)> = Vec::new();
     for value in collect(graph.scope().types(), observations)? {
-        for invariant in invariants.iter().filter(|candidate| candidate.applies_to(value.slot)) {
+        for invariant in invariants
+            .iter()
+            .filter(|candidate| candidate.applies_to(value.slot))
+        {
             tasks.push((
                 invariant,
                 Pending {

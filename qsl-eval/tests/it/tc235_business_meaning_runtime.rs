@@ -143,7 +143,9 @@ pub(crate) fn lifecycle_document_with(
     document
 }
 
-pub(crate) fn read_k2(document: &serde_json::Value) -> (DomainPackage, BTreeMap<[u8; 32], Vec<u8>>) {
+pub(crate) fn read_k2(
+    document: &serde_json::Value,
+) -> (DomainPackage, BTreeMap<[u8; 32], Vec<u8>>) {
     let bytes = serde_json::to_vec(document).expect("lifecycle fixture serializes");
     let offered = package_input([bytes.as_slice()]);
     let digest = *offered.keys().next().expect("one lifecycle package");

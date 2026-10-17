@@ -207,11 +207,13 @@ impl CompileRefusal {
             Self::Source(diagnostic) => diagnostic.code,
             Self::Forms { failure, .. } => failure.catalog_code(),
             Self::Intake { refusal, .. } => refusal.cause.code(),
-            Self::OperationClause { failure, .. } | Self::TypeInvariant { failure, .. } => match failure {
-                ClauseTextRefusal::Source(diagnostic) => diagnostic.code,
-                ClauseTextRefusal::Forms(failure) => failure.catalog_code(),
-                ClauseTextRefusal::NotOneExpression => Code::InvalidSyntax,
-            },
+            Self::OperationClause { failure, .. } | Self::TypeInvariant { failure, .. } => {
+                match failure {
+                    ClauseTextRefusal::Source(diagnostic) => diagnostic.code,
+                    ClauseTextRefusal::Forms(failure) => failure.catalog_code(),
+                    ClauseTextRefusal::NotOneExpression => Code::InvalidSyntax,
+                }
+            }
             Self::Profile { refusals, .. } => refusals
                 .first()
                 .map_or(Code::RuntimeInvariant, ProfileRefusal::code),

@@ -16,20 +16,20 @@ use qsl_foundation::diagnostic::CatalogCode;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckCause, CheckRefusal, CheckedGraph, PackageDeclarations};
 use qsl_semantics::family::FamilyOutcome;
+use qsl_semantics::model::accounting::ModelNormalizationLimits;
+use qsl_semantics::model::intake::admit_unit;
+use qsl_semantics::model::key::DeclarationKey;
+use qsl_semantics::model::normalize::{normalize_with_meter, EffectiveView, NormalizeOutcome};
 use qsl_semantics::model::observation::{
     admit_observations, AdmittedObservations, AnchorKind, ClauseFacts, ClauseSelection,
     ClauseSelectionInput, DocumentRef, ObservationLimits, OperationFacts, Provisions,
     SelectedAnchor, SelectedObject,
 };
+use qsl_semantics::model::refusal::{MemberPath, MemberRoot};
+use qsl_semantics::model::type_invariant::ClauseRole;
 use quire_exact::{
     ChargePoint, FieldValue, InjectedDenial, Meter, Outcome, Timestamp, Uuid, Value as QuireValue,
 };
-use qsl_semantics::model::accounting::ModelNormalizationLimits;
-use qsl_semantics::model::intake::admit_unit;
-use qsl_semantics::model::key::DeclarationKey;
-use qsl_semantics::model::normalize::{normalize_with_meter, EffectiveView, NormalizeOutcome};
-use qsl_semantics::model::refusal::{MemberPath, MemberRoot};
-use qsl_semantics::model::type_invariant::ClauseRole;
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value};
 
@@ -368,9 +368,7 @@ fn an_invariant_is_checked_and_a_pre_read_refuses_at_its_clause() {
 #[trace("TC-1050", "FR-366-AC-3")]
 #[test]
 fn an_invariant_must_be_boolean_parse_and_name_its_position() {
-    let money = |clauses: Vec<Value>| {
-        mutate_k2(|document| set_clauses(document, "Money", clauses))
-    };
+    let money = |clauses: Vec<Value>| mutate_k2(|document| set_clauses(document, "Money", clauses));
     let named = |text: &str| vec![clause("Money", "NonNegative", text)];
 
     let refusal = sole_refusal(compile(&money(named("self.amount_minor"))));
@@ -382,7 +380,8 @@ fn an_invariant_must_be_boolean_parse_and_name_its_position() {
         0,
     );
 
-    let Compiled::Unparsed(clause_key, member) = compile(&money(named("self.amount_minor >="))) else {
+    let Compiled::Unparsed(clause_key, member) = compile(&money(named("self.amount_minor >=")))
+    else {
         panic!("the parser refuses the text");
     };
     assert_eq!(clause_key, key("Money/NonNegative"));
@@ -413,7 +412,6 @@ fn an_invariant_must_be_boolean_parse_and_name_its_position() {
 // ---------------------------------------------------------------------------
 // TC-1051: evaluation per reachable value
 // ---------------------------------------------------------------------------
-
 
 fn unlimited() -> Meter {
     Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED)
@@ -732,7 +730,10 @@ fn object_path(
     key: &str,
     steps: Vec<ValuePathStep>,
 ) -> RuntimeValuePath {
-    let current = observations.current.as_ref().expect("a current observation");
+    let current = observations
+        .current
+        .as_ref()
+        .expect("a current observation");
     let reference = current
         .environment
         .references()
@@ -777,7 +778,10 @@ fn non_negative() -> String {
     id("Money/NonNegative")
 }
 
-fn evaluate(documents: &Documents, observations: &AdmittedObservations) -> ValueInvariantEvaluation {
+fn evaluate(
+    documents: &Documents,
+    observations: &AdmittedObservations,
+) -> ValueInvariantEvaluation {
     documents
         .package
         .evaluate_value_invariants(observations, &mut unlimited())
@@ -857,13 +861,19 @@ fn reversed(fields: Value) -> Value {
     )
 }
 
-fn run(documents: &Documents, observations: &AdmittedObservations) -> (Vec<(String, RuntimeValuePath, bool)>, Vec<ChargePoint>) {
+fn run(
+    documents: &Documents,
+    observations: &AdmittedObservations,
+) -> (Vec<(String, RuntimeValuePath, bool)>, Vec<ChargePoint>) {
     let mut meter = unlimited();
     let evaluation = documents
         .package
         .evaluate_value_invariants(observations, &mut meter)
         .expect("the evaluation completes");
-    (rows(&evaluation), crate::support::admitted_charge_points(&meter))
+    (
+        rows(&evaluation),
+        crate::support::admitted_charge_points(&meter),
+    )
 }
 
 /// TC-1051 steps 2 and 3: the listing order of an object's fields is no part
@@ -940,7 +950,10 @@ fn an_event_type_no_value_reaches_has_no_result() {
     assert!(rows(&evaluation)
         .iter()
         .all(|(clause, _, _)| *clause != id("OrderPlaced/Occurred")));
-    assert!(!evaluation.results.is_empty(), "the Money values are checked");
+    assert!(
+        !evaluation.results.is_empty(),
+        "the Money values are checked"
+    );
     assert_eq!(evaluation.outcome, ValueInvariantOutcome::True);
 }
 
@@ -1060,8 +1073,7 @@ fn an_event_value_passed_as_a_parameter_is_evaluated_at_the_binding() {
                 (
                     "occurred_at",
                     FieldValue::Present(QuireValue::Timestamp(
-                        Timestamp::from_canonical_text("0")
-                            .expect("canonical Timestamp"),
+                        Timestamp::from_canonical_text("0").expect("canonical Timestamp"),
                     )),
                 ),
                 (
@@ -1114,7 +1126,13 @@ fn a_reference_is_not_followed() {
             json!({"present": {"reference": {"population": id("orders"), "key": "o2"}}}),
         )],
     );
-    let o2 = order_json("o2", money_json(-3), &[], None, vec![("buddy", json!({"absent": {}}))]);
+    let o2 = order_json(
+        "o2",
+        money_json(-3),
+        &[],
+        None,
+        vec![("buddy", json!({"absent": {}}))],
+    );
     let observations = invoked(
         &mut documents,
         &[o1, o2],
@@ -1162,7 +1180,10 @@ fn one_budget_is_shared_and_a_denied_charge_stops_the_evaluation() {
     // of the second value.
     let fourth = documents
         .package
-        .evaluate_value_invariants(&observations, &mut denying(ChargePoint::OrderingOperands, 2))
+        .evaluate_value_invariants(
+            &observations,
+            &mut denying(ChargePoint::OrderingOperands, 2),
+        )
         .expect("the evaluation returns");
     assert_eq!(
         rows(&fourth),
@@ -1184,10 +1205,16 @@ fn one_budget_is_shared_and_a_denied_charge_stops_the_evaluation() {
 
     let third = documents
         .package
-        .evaluate_value_invariants(&observations, &mut denying(ChargePoint::OrderingResultRetain, 1))
+        .evaluate_value_invariants(
+            &observations,
+            &mut denying(ChargePoint::OrderingResultRetain, 1),
+        )
         .expect("the evaluation returns");
     assert!(third.results.is_empty());
-    assert!(matches!(third.outcome, ValueInvariantOutcome::Incomplete(_)));
+    assert!(matches!(
+        third.outcome,
+        ValueInvariantOutcome::Incomplete(_)
+    ));
 
     // An `ocl` clause is kept and has no result.
     let with_ocl = fixture_f(|document| {
@@ -1223,10 +1250,11 @@ fn one_budget_is_shared_and_a_denied_charge_stops_the_evaluation() {
 fn a_process_invariant_has_one_result_for_each_run() {
     let document = mutate_k2(|document| {
         let process = type_named_mut(document, "Fulfilment");
-        process["fields"]
-            .as_array_mut()
-            .unwrap()
-            .push(field("Fulfilment", "attempts", "ix://quire/native/Integer"));
+        process["fields"].as_array_mut().unwrap().push(field(
+            "Fulfilment",
+            "attempts",
+            "ix://quire/native/Integer",
+        ));
         process["clauses"] = json!([clause(
             "Fulfilment",
             "NonNegativeAttempts",
@@ -1277,8 +1305,16 @@ fn a_process_invariant_has_one_result_for_each_run() {
     assert_eq!(
         rows(&evaluation),
         [
-            (clause.clone(), object_path(&observations, "s1", "r1", vec![]), true),
-            (clause, object_path(&observations, "s1", "r2", vec![]), false),
+            (
+                clause.clone(),
+                object_path(&observations, "s1", "r1", vec![]),
+                true
+            ),
+            (
+                clause,
+                object_path(&observations, "s1", "r2", vec![]),
+                false
+            ),
         ]
     );
     assert_eq!(evaluation.outcome, ValueInvariantOutcome::False);
@@ -1322,12 +1358,8 @@ fn a_state_machine_invariant_is_evaluated_over_each_side_of_the_invocation() {
             }),
         ));
         let lifecycle = type_named_mut(document, "OrderLifecycle");
-        lifecycle["operations"][0]["params"] = json!([parameter(
-            "OrderLifecycle",
-            "place",
-            "flags",
-            &flags_type
-        )]);
+        lifecycle["operations"][0]["params"] =
+            json!([parameter("OrderLifecycle", "place", "flags", &flags_type)]);
     });
     let documents = documents_with(
         &document,
