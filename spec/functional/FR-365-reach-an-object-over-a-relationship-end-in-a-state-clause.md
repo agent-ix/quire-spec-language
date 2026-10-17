@@ -177,9 +177,8 @@ FR-380, and no population node is emitted for it. The link names the node and
 no occurrence. The convention for a reader that needs an occurrence is: the
 occurrence of the node's `Type` role with the least ordinal. A `model_population`
 node is anonymous and its key is its content, `(E, N)`, so a `Population<E>[N]`
-parameter type of the same `E` and `N`, and the populations of two bounds that
-write the same `N` for the same `E`, are one node with one `Type` occurrence for
-each place that writes it; the link names that node explicitly because the
+parameter type of the same `E` and `N` and a walked bound are one node with one
+`Type` occurrence for each place that writes it; the link names that node explicitly because the
 node does not say which place it came from.
 
 One claim can hold several reachabilities over different populations; each
