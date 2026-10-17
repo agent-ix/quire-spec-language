@@ -244,7 +244,7 @@ pub fn unrolling(
     trace: TemporalTrace,
 ) -> Result<Unrolling, TemporalRefusal> {
     let shape = Shape::new(clause.profile(), trace)?;
-    let plan = Plan::new(clause.formula()).map_err(TemporalRefusal::Fault)?;
+    let plan = Plan::new(clause.formula())?;
     unroll(&plan, shape.prefix, shape.period()).map_err(TemporalRefusal::Fault)
 }
 
@@ -277,7 +277,7 @@ pub(super) fn run<L: TemporalLetters>(
             });
         }
     }
-    let plan = Plan::new(clause.formula()).map_err(TemporalRefusal::Fault)?;
+    let plan = Plan::new(clause.formula())?;
     let evaluation = Evaluator::new(clause, plan, shape, meter)
         .and_then(|mut evaluator| evaluator.execute(clause, goal, source));
     match evaluation {
@@ -328,23 +328,19 @@ fn span(first: i128, last: i128) -> Result<u128, InternalFault> {
     u128::try_from(last - first + 1).map_err(|_| fault("window-has-positions"))
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Phase {
-    Guard,
-    Witness,
-}
-
 /// One node visit in progress.
 #[derive(Debug)]
 struct Frame {
     node: usize,
     pos: i128,
-    phase: Phase,
+    /// The next window position to scan.
     index: u128,
+    /// How many window positions have been paid for, so a visit resumed
+    /// after an operand visit does not pay again.
+    scanned: u128,
     acc: Tri,
     guard: Tri,
-    pre: Option<Run>,
-    main: Option<Run>,
+    window: Option<Run>,
 }
 
 enum Advance {
@@ -533,6 +529,9 @@ impl<'a> Evaluator<'a> {
         if evaluates {
             let mut position = first;
             while position < limit {
+                if !self.represents(position) {
+                    self.charge()?;
+                }
                 if guarded {
                     let represented = match self.geometry.site(self.geometry.canon(position))? {
                         Site::Real(represented) => represented,
@@ -649,34 +648,34 @@ impl<'a> Evaluator<'a> {
     /// Open the visit of `node` at the canonical `pos`, charging it first.
     fn frame(&mut self, node: usize, pos: i128) -> Result<Frame, Stop> {
         self.charge()?;
-        let (pre, main) = match slot(&self.plan.nodes, node)? {
-            Node::Scan(scan) => self.runs(scan, pos)?,
+        let window = match slot(&self.plan.nodes, node)? {
+            Node::Scan(scan) => Some(self.window(scan, pos)?),
             Node::Constant(_)
             | Node::Atom
             | Node::Not(_)
             | Node::And(..)
             | Node::Or(..)
-            | Node::Implies(..) => (None, None),
+            | Node::Implies(..) => None,
         };
         Ok(Frame {
             node,
             pos,
-            phase: Phase::Guard,
             index: 0,
+            scanned: 0,
             acc: Tri::False,
             guard: Tri::True,
-            pre,
-            main,
+            window,
         })
     }
 
-    /// The windows of positions a scan at `p` runs over: the guard window
-    /// that precedes an open interval's witnesses, and the witness window.
+    /// The window of positions a scan at `p` runs over.
     ///
     /// A window is capped where the word repeats: past `max(start, N) + L - 1`
     /// every position has been read once, and a repeat can neither add a
-    /// witness nor weaken a guard that the first pass left standing.
-    fn runs(&self, scan: Scan, p: i128) -> Result<(Option<Run>, Option<Run>), InternalFault> {
+    /// witness nor weaken a guard that the first pass left standing. An open
+    /// window with a guard operand starts at its anchor (`plan::unsettled_open`
+    /// refuses a lower bound above 0).
+    fn window(&self, scan: Scan, p: i128) -> Result<Run, InternalFault> {
         let geometry = self.geometry;
         let n = geometry.unrolled;
         let l = geometry.period;
@@ -685,28 +684,20 @@ impl<'a> Evaluator<'a> {
             Some(guard) => witness_floor.min(slot(&self.floors, guard)?),
             None => witness_floor,
         };
-        let has_guard = scan.guard.is_some();
         Ok(match (scan.base.direction(), scan.window) {
             (Direction::Future, Window::Closed { lower, upper }) => {
                 let start = p + i128::from(lower);
                 let last = (p + i128::from(upper)).min(start.max(n) + l - 1);
-                (None, Some(Run::linear(start, 1, span(start, last)?)))
+                Run::linear(start, 1, span(start, last)?)
             }
             (Direction::Past, Window::Closed { lower, upper }) => {
                 let (a, b) = (i128::from(lower), i128::from(upper));
                 let farthest = b.min(a.max(p - floor));
-                (None, Some(Run::linear(p - a, -1, span(a, farthest)?)))
+                Run::linear(p - a, -1, span(a, farthest)?)
             }
             (Direction::Future, Window::From { lower }) => {
-                let a = i128::from(lower);
-                let pre = if has_guard && a > 0 {
-                    let last = (p + a - 1).min(p.max(n) + l - 1);
-                    Some(Run::linear(p, 1, span(p, last)?))
-                } else {
-                    None
-                };
-                let s0 = p + a;
-                let main = if s0 < 0 {
+                let s0 = p + i128::from(lower);
+                if s0 < 0 {
                     let start = s0.max(floor);
                     Run::linear(start, 1, span(start, n - 1)?)
                 } else {
@@ -724,24 +715,15 @@ impl<'a> Evaluator<'a> {
                             }),
                         }
                     }
-                };
-                (pre, Some(main))
+                }
             }
             (Direction::Past, Window::From { lower }) => {
-                let a = i128::from(lower);
-                let pre = if has_guard && a > 0 {
-                    let count = a.min((p - floor + 1).max(1));
-                    Some(Run::linear(p, -1, span(1, count)?))
-                } else {
-                    None
-                };
-                let s0 = p - a;
-                let main = if s0 < floor {
+                let s0 = p - i128::from(lower);
+                if s0 < floor {
                     Run::linear(floor, -1, 1)
                 } else {
                     Run::linear(s0, -1, span(floor, s0)?)
-                };
-                (pre, Some(main))
+                }
             }
         })
     }
@@ -785,55 +767,46 @@ impl<'a> Evaluator<'a> {
     /// suspended on an operand repeats its step when resumed.
     fn advance_scan(&mut self, scan: Scan, frame: &mut Frame) -> Result<Advance, Stop> {
         let done = |acc: Tri| Ok(Advance::Done(acc.flip(scan.dual)));
+        let Some(run) = frame.window else {
+            return Err(fault("scan-has-window").into());
+        };
         loop {
-            match frame.phase {
-                Phase::Guard => {
-                    let (Some(run), Some(guard)) = (frame.pre, scan.guard) else {
-                        frame.phase = Phase::Witness;
-                        frame.index = 0;
-                        continue;
-                    };
-                    if frame.index >= run.len {
-                        frame.phase = Phase::Witness;
-                        frame.index = 0;
-                        continue;
-                    }
-                    let q = run.at(frame.index)?;
-                    let value = ready!(self, guard, q).flip(scan.dual);
-                    frame.guard = frame.guard.and(value);
-                    if frame.guard == Tri::False {
-                        return done(Tri::False);
-                    }
-                    frame.index += 1;
-                }
-                Phase::Witness => {
-                    let Some(run) = frame.main else {
-                        return Err(fault("scan-has-window").into());
-                    };
-                    if frame.index >= run.len {
-                        return done(frame.acc);
-                    }
-                    let q = run.at(frame.index)?;
-                    let witness = ready!(self, scan.witness, q).flip(scan.dual);
-                    match scan.guard {
-                        None => frame.acc = frame.acc.or(witness),
-                        Some(guard) => {
-                            frame.acc = frame.acc.or(witness.and(frame.guard));
-                            if frame.acc != Tri::True && frame.index + 1 < run.len {
-                                let value = ready!(self, guard, q).flip(scan.dual);
-                                frame.guard = frame.guard.and(value);
-                                if frame.guard == Tri::False {
-                                    return done(frame.acc);
-                                }
-                            }
-                        }
-                    }
-                    if frame.acc == Tri::True {
-                        return done(Tri::True);
-                    }
-                    frame.index += 1;
+            if frame.index >= run.len {
+                return done(frame.acc);
+            }
+            let q = run.at(frame.index)?;
+            // A position the trace does not represent (past it, unrolled
+            // copies of the loop, or before 0) carries no letter charge of
+            // its own, so each such step is paid for before it runs.
+            if frame.scanned == frame.index {
+                frame.scanned += 1;
+                if !self.represents(q) {
+                    self.charge()?;
                 }
             }
+            let witness = ready!(self, scan.witness, q).flip(scan.dual);
+            match scan.guard {
+                None => frame.acc = frame.acc.or(witness),
+                Some(guard) => {
+                    frame.acc = frame.acc.or(witness.and(frame.guard));
+                    if frame.acc != Tri::True && frame.index + 1 < run.len {
+                        let value = ready!(self, guard, q).flip(scan.dual);
+                        frame.guard = frame.guard.and(value);
+                        if frame.guard == Tri::False {
+                            return done(frame.acc);
+                        }
+                    }
+                }
+            }
+            if frame.acc == Tri::True {
+                return done(Tri::True);
+            }
+            frame.index += 1;
         }
+    }
+
+    /// Whether `q` is a position of the trace itself.
+    fn represents(&self, q: i128) -> bool {
+        (0..i128::from(self.represented)).contains(&q)
     }
 }

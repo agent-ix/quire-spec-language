@@ -684,10 +684,12 @@ fn a_formula_is_read_at_a_position_by_wrapping_and_by_false_before_the_origin() 
         (settled, work(&meter))
     };
     let future = config("eventually[0,4] holds(a.versionNumber = 0)");
-    // Three atom reads (the loop's positions) and the one operator visit.
-    assert_eq!(at(&future, 2), (TemporalOutcome::Holds, 4));
+    // Three atom reads (the loop's positions), the one operator visit, and
+    // one unit for the window position the trace does not represent (position
+    // 3 by wrapping, position -1 before the origin).
+    assert_eq!(at(&future, 2), (TemporalOutcome::Holds, 5));
     let past = config("once[0,3] holds(a.versionNumber = 2)");
-    assert_eq!(at(&past, 1), (violated(1), 4));
+    assert_eq!(at(&past, 1), (violated(1), 5));
 }
 
 /// FR-125-AC-5: `always eventually (holds(a.versionNumber = 0) and
@@ -837,5 +839,44 @@ fn a_node_visit_is_charged_once_per_position() {
     );
     assert_eq!(settled, violated(0));
     assert_eq!(reads, [0, 1, 2]);
-    assert_eq!(spent, 3 + 6);
+    // The innermost visit at position 2 scans position 3, past the trace,
+    // which costs one more unit.
+    assert_eq!(spent, 3 + 6 + 1);
+}
+
+/// A window of 2^60 positions beside a past reach of 2^60 stops on the meter
+/// instead of scanning the unrolled loop copies unpaid.
+#[test]
+fn a_window_over_unrepresented_positions_is_paid_per_step_and_stops_on_the_meter() {
+    let fx = config(
+        "eventually[0,1152921504606846976] holds(a.versionNumber = 9) \
+         and once[0,1152921504606846976] holds(a.versionNumber = 9)",
+    );
+    let (settled, spent, _) = run(&fx, lasso(0, 3), versions(&[0, 1, 2]), limits(10_000));
+    let TemporalOutcome::Incomplete(incomplete) = settled else {
+        panic!("the meter stops the scan: {settled:?}");
+    };
+    assert_eq!(incomplete.limit_kind, LimitKind::WorkUnits);
+    assert_eq!(spent, 10_000);
+}
+
+/// QSpec FR-091/092 (closed) and FR-367 (open) differ on which offsets the
+/// left operand covers, so an open `[a,*]`, `a > 0`, on a binary operator is
+/// refused; `[0,*]` is the unbounded operator and reads.
+#[test]
+fn an_open_interval_with_a_lower_bound_on_a_binary_operator_is_refused() {
+    let fx = config("holds(a.versionNumber = 0) until[1,*] holds(a.versionNumber = 2)");
+    let mut letters = Letters::new(&fx, versions(&[0, 1, 2]));
+    let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+    let refused = evaluate(&fx.clause, lasso(0, 3), &mut letters, &mut meter);
+    assert_eq!(
+        refused,
+        Err(TemporalRefusal::UnsettledOpenInterval { lower: 1 })
+    );
+    assert!(letters.reads.is_empty());
+    let zero = config("holds(a.versionNumber = 0) until[0,*] holds(a.versionNumber = 1)");
+    assert_eq!(
+        outcome(&zero, lasso(0, 3), versions(&[0, 1, 2])),
+        TemporalOutcome::Holds
+    );
 }
