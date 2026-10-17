@@ -32,8 +32,7 @@ A protocol whose anchors,
 binders and attempt bindings all resolve is then checked for the rest of
 its content by FR-218 (control nodes, channels, relationships, requirements,
 decisions) and FR-381 (captures, activation, compensation), which check every
-construct FR-308 builds; no construct refuses
-`unsupported_construct`/`not-yet-implemented`. Such a protocol compiles, and
+construct FR-308 builds. Such a protocol compiles, and
 the package holds one `protocol`/`protocol_clause` node for its name (FR-092)
 and no node for its roles, `run` tree or `finish`. Only each attempt's
 operation anchor, frame and frame record reach the package beyond it (FR-114,
@@ -144,8 +143,3 @@ ADR-012 §12.2 Package row).
   `shared-grammar.md` (binder no-shadowing), and the catalog rows for
   `missing_declaration` and `ambiguous_declaration` in
   `definitions/native-diagnostics.md`.
-- The composed lane resolves the same references today in
-  `src/linking/composed/scopes/protocol.rs` (`structural`, with
-  `WrongTargetKind` and `IncompatibleReference`), with scope issues that
-  carry no catalog code; M-6d deletes that checker once this
-  requirement's checker replaces it.

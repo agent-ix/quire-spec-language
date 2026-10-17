@@ -61,17 +61,17 @@ protocol Refunds using P over (view: M::Node)
 
 Check one unit per row, the base protocol with the stated change, and assert the
 checked clause or the refusal's code, cause, span text and retained members.
-Each refusal in rows 2 to 12 and 19 is `missing_declaration`/`missing-name` at the
+Each refusal in rows 2 to 5 and 7 to 12 and 19 is `missing_declaration`/`missing-name` at the
 named read, retaining `name`, `stage`, `owner` and `read`.
 
 | # | Change | Expected |
 | --- | --- | --- |
 | 1 | none | checks; the clause holds activation `OnEach{opened, M::Tick}`, the protocol capture `order`, the compensation `Refund` with registration capture `target` and activation capture `activated`, each with its stage and owner |
 | 2 | `capture target: M::Total = recovered.total;` | at `recovered`: `stage` `registration-capture`, `owner` `Refund`, `read` `stage` |
-| 3 | the guard `when { target >= 0 and forward.total = target }` | at `forward`: `stage` `activation-guard`, `read` `stage` |
+| 3 | the guard `when { target >= 0 and forward.total = target }` | at `forward`: `stage` `trigger-guard`, `read` `stage` |
 | 4 | the retry relation reads `trigger.ready` | at `trigger`: `stage` `retry`, `read` `stage` |
 | 5 | the recovery predicate reads `earlier.tally` | at `earlier`: `stage` `recovery`, `read` `stage` |
-| 6 | the retry relation reads `view.n` | at `view`: `stage` `retry`, `read` `stage` |
+| 6 | the retry relation reads `view.n` | `ill_typed`/`operator-ineligible` at `view.n`, naming the retry stage (model state takes precedence over the stage table) |
 | 7 | `capture order: M::Total = target;` | at `target`: `stage` `protocol-capture`, `owner` the protocol, `read` `foreign` |
 | 8 | the registration capture `capture target: M::Total = target;` | at the `target` inside the initializer: `read` `forward` |
 | 9 | the registration captures `capture a: Boolean = b;` then `capture b: Boolean = true;` | at `b`: `read` `forward` |

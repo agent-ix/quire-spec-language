@@ -37,18 +37,19 @@ members.
 | 6 | a second template `Second` for `Main::Applied` with its own captures | checks; two compensations, in source order, each its own registration |
 | 7 | a second template named `Refund` | `ambiguous_declaration`/`ambiguous-name` at both declarations, in source order |
 | 8 | `for Main::Tried` and, separately, `commit Main::Applied` | `ill_typed`/`type-mismatch` at the anchor: site `compensate-for` kind `attempt`; site `compensate-commit` kind `effect` (FR-113-AC-7) |
-| 9 | `attempts 0 of M::Node` | `unsupported_construct`/`declaration-form` at `0`; `compensation` `Refund`, `member` `attempts`, `value` `0` |
+| 9 | `attempts 0 of M::Node` | `ill_typed`/`type-mismatch` at `0`; `compensation` `Refund`, `member` `attempts`, `expected` a count of at least one, `actual` `0` |
 | 10 | `attempts 1 of M::Node` and `attempts 18446744073709551615 of M::Node` | each checks; the checked compensation holds 1 and 18446744073709551615 |
 | 11 | `attempts 18446744073709551616 of M::Node` | S1 parse diagnostic at the count; no form |
-| 12 | `within [31,30]` and `within [0,*]` | each `unsupported_construct`/`declaration-form` at the interval; `member` `within`, `value` as written |
+| 12 | `within [31,30]` and `within [0,*]` | each `ill_typed`/`type-mismatch` at the interval; `member` `within`, `expected` a closed interval with `a <= b`, `actual` as written |
 | 13 | `within [0,0]` and `within [0,30]` | each checks |
 | 14 | `attempts 3 of M::Plain` with the base retry binders `M::Node` | `ill_typed`/`type-mismatch` at `earlier`'s type, then at `later`'s; `expected` `M::Plain`, `actual` `M::Node` |
 | 15 | `attempts 3 of M::Plain`, `retry (earlier: M::Plain, later: M::Plain) { earlier.ready = later.ready }` | checks |
 | 16 | the retry relation without `earlier.tally < 3 and` | `undefined_expression`/`unproved-range` at `earlier.tally + 1` |
 | 17 | the retry relation `earlier.tally` | `ill_typed`/`non-boolean-root` at the relation |
 | 18 | `commit never` | checks; the clause holds `Never` |
-| 19 | the run holds `attempt Tried`, `commit Committed`, `effect Applied` in that order | `unsupported_construct`/`declaration-form` at `Main::Committed`; `compensation` `Refund`, `member` `commit`, `commit` `Committed`, `effect` `Applied`, `reason` `commit-precedes-effect` |
+| 19 | the run holds `attempt Tried`, `commit Committed`, `effect Applied` in that order | `unsupported_construct`/`declaration-form` at `Main::Committed`, retaining the selected protocol profile; `compensation` `Refund`, `member` `commit`, `commit` `Committed`, `effect` `Applied`, `reason` `commit-precedes-effect` |
 | 20 | the commit in `parallel` branch `a` and the effect in branch `b` | checks |
+| 20a | `choice Pick` before the effect with `case yes` holding `commit Committed` and `case no` holding a `check` | checks: the commit lies in one case and does not dominate the effect |
 | 21 | the recovery predicate `recovered.n` | `ill_typed`/`non-boolean-root` at the predicate |
 | 22 | the recovery predicate `recovered.tally = recovered.tally + 1` | `undefined_expression`/`unproved-range` at `recovered.tally + 1` |
 | 23 | `recover (recovered: M::Absent)` | `missing_declaration`/`missing-name` at `Absent` |

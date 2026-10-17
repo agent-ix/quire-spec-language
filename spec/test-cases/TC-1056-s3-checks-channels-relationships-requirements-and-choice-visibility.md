@@ -14,7 +14,7 @@ Verify that S3 checks each channel's roles, payload, ordering and premises,
 each relationship declaration and `related by` clause, each `requires temporal`
 requirement and the owner and visible facts of each `choice` and `repeat`, and
 refuses each mutation with its code, cause, span and retained members. Scope:
-FR-218-AC-10 to FR-218-AC-19.
+FR-218-AC-10 to FR-218-AC-20.
 
 Catches a channel with an undeclared role that checks, a send typed differently
 from its channel that checks, a relationship bound to its written name instead of
@@ -73,13 +73,15 @@ checked clause or the refusal's code, cause, span text and retained members.
 | 31 | row 28 with `visible (true)` | `wrong_snapshot`/`wrong-observation` at each guard read; `reason` `unlisted` |
 | 32 | row 28 with two receives `gotA`, `gotB`, `visible (gotA.ready and gotB.ready)` and guards reading `gotA.ready` | `wrong_snapshot`/`wrong-observation`; `reason` `unlisted`: a composite entry discloses none of its operands |
 | 33 | row 28 with guards `let d = got.ready in true` and `false` and `visible (true)` | `wrong_snapshot`/`wrong-observation` at `got.ready`; `reason` `unlisted`; with `visible (got.ready)` it checks |
-| 34 | the choice reads the protocol input `view.n` listed in `visible` | `wrong_snapshot`/`wrong-observation`; `reason` `ineligible-kind` |
+| 34 | the choice reads the protocol input `view.n` listed in `visible` | `ill_typed`/`operator-ineligible` at each read of `view.n`, naming the guard: the `over` input is model state and the rule takes precedence over the eligibility table |
 | 35 | the receive inside `branch left` of a `parallel` and the choice in `branch right`; the receive inside one case of an earlier optional `choice`; the receive as the `match` of an `await`, with the choice after the `await` | each refuses as FR-113 refuses an unresolved name, naming `got` at its `visible` entry and at each guard read: three uses in each case |
 | 36 | a `repeat Again by Buyer visible (got.ready) max 2 while { got.ready } ...` whose `receive Got` is bound inside its own body | refuses as an out-of-scope read at the `visible` entry and at the guard, naming `got` twice |
-| 37 | row 28 with guards `got.ready` and `true`; with guards `got.ready` and `false`; with guards `got.ready` and `not got.ready` | `undefined_expression`/`unproved-exhaustiveness` at the choice with `failed` `[overlap]`; the same with `failed` `[gap]`; the third checks |
-| 38 | constant guards `true` and `not false`; constant guards `false` and `not true` | `undefined_expression`/`unproved-exhaustiveness`; `failed` `[overlap]`, then `[gap]` |
-| 39 | two receives `gotA`, `gotB`, `visible (gotA.ready, gotB.ready)`, with guards `gotA.ready` and `not gotB.ready`; `not gotA.ready` and `gotA.ready and not gotB.ready`; `gotA.ready` and `not gotA.ready or gotB.ready` | `undefined_expression`/`unproved-exhaustiveness` with `failed` `[gap, overlap]`, `[gap]` and `[overlap]` respectively |
+| 37 | row 28 with guards `got.ready` and `true`; with guards `got.ready` and `false`; with guards `got.ready` and `not got.ready` | `undefined_expression`/`unproved-exhaustiveness` at the choice with `failed` `[duplicate-arm]`; the same with `failed` `[missing-arm]`; the third checks |
+| 38 | constant guards `true` and `not false`; constant guards `false` and `not true` | `undefined_expression`/`unproved-exhaustiveness`; `failed` `[duplicate-arm]`, then `[missing-arm]` |
+| 39 | two receives `gotA`, `gotB`, `visible (gotA.ready, gotB.ready)`, with guards `gotA.ready` and `not gotB.ready`; `not gotA.ready` and `gotA.ready and not gotB.ready`; `gotA.ready` and `not gotA.ready or gotB.ready` | `undefined_expression`/`unproved-exhaustiveness` with `failed` `[missing-arm, duplicate-arm]`, `[missing-arm]` and `[duplicate-arm]` respectively |
 | 40 | complementary guards `gotA.ready and gotB.ready`, `gotA.ready and not gotB.ready`, `not gotA.ready and gotB.ready`, `not gotA.ready and not gotB.ready` over both listed facts | checks |
+| 41 | row 28 with a protocol capture `lim` and a guard `got.ready and lim >= 0` not listed in `visible` | checks: a protocol capture needs no listing |
+| 42 | row 10 with key `{m}` (a record type) and with a key of a type over which the clause checker admits no `=` | the first checks; the second `ill_typed`/`operator-ineligible` at the key, `operator` `=` and the type |
 
 ## Expected Results
 

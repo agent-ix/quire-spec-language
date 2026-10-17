@@ -37,6 +37,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-308
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-056
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-381
     type: traces_to
 ---
@@ -235,10 +237,18 @@ FR-053, FR-172). A decision fact is a Boolean field read of a record binder.
   | `receive` record | `R` is the `to` role of the receive's channel |
   | `attempt` record | the attempt is `by R` |
   | `event` record | the event is `by R`, with or without `for` |
-  | `send`, `effect`, `commit` and `finish` records, the protocol's input and activation binders, a compensation's binders | never |
+  | `send`, `effect`, `commit` and `finish` records, the protocol's activation binder, a compensation's binders | never |
+
+  The protocol's `over` input is model state, not a record binder. A guard,
+  a `visible` entry or a FIFO key that reads it refuses `ill_typed`/
+  `operator-ineligible` at the read, naming the guard; this rule has
+  precedence over the table, which classifies record binders only. A protocol
+  capture is a frozen value that every role holds: a guard or a `visible`
+  entry may read one, and it needs no listing.
 
 - Each `visible` entry and each guard (a `case when`, a `repeat while`) SHALL
-  read decision facts of eligible binders only, plus constants. A guard SHALL
+  read decision facts of eligible binders, protocol captures and constants
+  only. A guard SHALL
   read a fact only when the fact is an individual `visible` entry; a composite
   entry makes its whole value visible and none of its operands. S3 SHALL count
   a read inside a discarded `let` initializer as a read.
@@ -255,9 +265,10 @@ FR-053, FR-172). A decision fact is a Boolean field read of a record binder.
 - The partition of a `choice` SHALL be proved over the visible facts as
   independent Booleans (QSpec FR-053). S3 SHALL refuse a gap or an overlap,
   including a gap or overlap between constant guards, with `undefined_expression`/
-  `unproved-exhaustiveness` at the choice, retaining `failed`, the non-empty
-  ordered subset of `gap`, `overlap` that the valuations show, and the names
-  of the cases involved.
+  `unproved-exhaustiveness` at the choice, retaining the choice's node identity
+  in place of a `union-decl`, the names of the cases involved and `failed`, the
+  non-empty ordered subset of `missing-arm` (a valuation no guard covers) and
+  `duplicate-arm` (a valuation two guards cover) that the valuations show.
 
 ### Scopes
 
@@ -326,9 +337,10 @@ one protocol declared in the same unit. It carries no package selector.
 | FR-218-AC-14 | `relationship Pipe = M::pipe;` over an exported relationship binds the checked relationship to the export's key and the types of its two ends; `M::nothing` refuses `missing_declaration`/`missing-name` at the name; `M::out`, a port, and `M::Node`, an object type, each refuse `invalid_model_binding`/`wrong-export` at the name retaining required kind `relationship`, the actual kind and both keys; two relationships `Pipe` refuse `ambiguous_declaration`/`ambiguous-name` at both. | Test (TC-1056) |
 | FR-218-AC-15 | `related by Pipe (a, b)` checks when `a` and `b` have the types of the relationship's first and second ends, and the node holds the clause; `related by Absent (a, b)` refuses `missing_declaration`/`missing-name` at `Absent`; swapped ends, or an end of another type, refuse `ill_typed`/`type-mismatch` at that end, retaining relationship, `end`, expected and actual. A node with `related by Pipe (a, b)` and `related by Owns (c, d)` holds two checked clauses in source order. | Test (TC-1056) |
 | FR-218-AC-16 | `requires temporal Due;` over a temporal clause `Due` binds the requirement to `Due`'s node key; `requires temporal Nothing;` and a clause offered only through an import alias each refuse `missing_declaration`/`missing-name` at the name; `requires temporal Accept;` naming a predicate refuses `ill_typed`/`operator-ineligible` at the name, naming the kind; `Due` required twice is recorded once. Each refusal produces no package. | Test (TC-1056) |
-| FR-218-AC-17 | A `choice` or `repeat` owned by an undeclared role refuses `missing_declaration`/`missing-name` at the owner. An owner that is the channel's `to` role decides on its `receive` record's Boolean field listed individually in `visible`; the other role, a `send`, `effect`, `commit` or `finish` record, the protocol's input binder, an unlisted fact and a fact reachable only inside a composite entry each refuse `wrong_snapshot`/`wrong-observation` at the read, retaining node, owner, read and `reason` `other-role`, `ineligible-kind`, `unlisted`. A discarded `let` that reads a fact still needs the fact listed. | Test (TC-1056) |
-| FR-218-AC-18 | A sibling branch's record before its join, an optional choice branch's record, an `await` match read after the `await`, and a record bound inside a `repeat` body read by that `repeat`'s own `visible` entry or guard each refuse as an out-of-scope read, naming the binder at every original use. | Test (TC-1056) |
-| FR-218-AC-19 | Over two visible facts, guards that leave both facts true uncovered, that overlap on both true, that leave one fact out, and constant guards `true`/`not false` or `false`/`not true` each refuse `undefined_expression`/`unproved-exhaustiveness` at the choice, retaining `failed` (`[gap]`, `[overlap]` or `[gap, overlap]`) and the case names; complementary guards over the individually listed facts check. | Test (TC-1056) |
+| FR-218-AC-17 | A `choice` or `repeat` owned by an undeclared role refuses `missing_declaration`/`missing-name` at the owner. An owner that is the channel's `to` role decides on its `receive` record's Boolean field listed individually in `visible`; the other role, a `send`, `effect`, `commit` or `finish` record, the protocol's activation binder, an unlisted fact and a fact reachable only inside a composite entry each refuse `wrong_snapshot`/`wrong-observation` at the read, retaining node, owner, read and `reason` `other-role`, `ineligible-kind`, `unlisted`. A discarded `let` that reads a fact still needs the fact listed. A read of the `over` input refuses `ill_typed`/`operator-ineligible` at the read, naming the guard; a read of a protocol capture checks without listing. | Test (TC-1056) |
+| FR-218-AC-18 | A sibling branch's record before its join, an optional choice branch's record, an `await` match read after the `await`, and a record bound inside a `repeat` body read by that `repeat`'s own `visible` entry or guard each refuse `missing_declaration`/`missing-name` at every original use, retaining `name`. | Test (TC-1056) |
+| FR-218-AC-19 | Over two visible facts, guards that leave both facts true uncovered, that overlap on both true, that leave one fact out, and constant guards `true`/`not false` or `false`/`not true` each refuse `undefined_expression`/`unproved-exhaustiveness` at the choice, retaining `failed` (`[missing-arm]`, `[duplicate-arm]` or `[missing-arm, duplicate-arm]`) and the case names; complementary guards over the individually listed facts check. | Test (TC-1056) |
+| FR-218-AC-20 | A FIFO key of type `Boolean`, and a key of a record type, check because the clause checker admits `=` over them; a key of a type over which it admits no `=` refuses `ill_typed`/`operator-ineligible` at the key, retaining `operator` `=` and the type. | Test (TC-1056) |
 
 ## Dependencies
 
