@@ -845,11 +845,11 @@ pub(super) fn config_version_document(
 
 /// A `Supersedes` relationship from `ConfigVersion` to itself, wired for
 /// `ConfigVersion`'s own inline `relationships[]`.
-fn supersedes_identity() -> String {
+pub(super) fn supersedes_identity() -> String {
     format!("ix://{PACKAGE_IDENTITY}/relationship/ConfigVersion-supersedes-ConfigVersion")
 }
 
-fn supersedes_relationship() -> Value {
+pub(super) fn supersedes_relationship() -> Value {
     let supersedes = supersedes_identity();
     json!({
         "identity": supersedes,

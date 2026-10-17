@@ -32,6 +32,7 @@ each emitted package with IR's v2 reader.
 | 5 | one invariant `reaches(self, self, next) and reaches(self, self, next)` | one reachability node on two argument paths of the condition (positions 0 and 1 of the `and` application) |
 | 6 | invariants `reaches(self, self, next)` and `reaches(self, self, outgoing)` | two reachability nodes with different identities |
 | 7 | the node of row 1 | its body names no population, no bound and no observation; the clause's requirements record, keyed by the `claim` occurrence, holds the `orders` population domain, and the `state_clause` node's anchor and kind name the observation |
+| 8 | row 1 with `kids` over `Order/kids` (target end `{0,3}` unique) and with `litter` over `Order/litter` (target end `{0,3}`, `unique: false`) | the same node shape as row 1: one `quire.op.model.reaches` application with member `relationship_end` naming the relationship's node and the role, arguments `[ref(a), ref(b)]`, a `Boolean` result type, no `deref`; IR's v2 reader admits the package (QSpec FR-322-AC-57) |
 
 ## Expected Results
 
