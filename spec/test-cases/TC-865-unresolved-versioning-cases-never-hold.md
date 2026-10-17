@@ -20,7 +20,7 @@ Scope: FR-343-AC-5, FR-344-AC-4.
 
 ## Test Procedure
 
-1. A pair whose `superseding` unit adds a protocol `compensate` construct
+1. A pair whose `superseding` unit adds a construct S3 has no checker for
    (refused `unsupported_construct`/`not-yet-implemented`), with the
    healthy-parent case. Run the gate.
 2. A pair whose `superseding` clause adds conjuncts to the prior's, so its

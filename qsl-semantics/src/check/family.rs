@@ -2823,6 +2823,17 @@ pub(crate) mod checking_tests {
                 "the scanner must flag {needle}: {found:?}"
             );
         }
+        let variant = "fn f(o: TemporalOperator) -> bool { \
+             match o { TemporalOperator::Once | TemporalOperator::Lazy => true, _ => false } }";
+        assert!(
+            global_state_findings(variant).is_empty(),
+            "an enum variant named like a std type is not that type"
+        );
+        let qualified = "fn f() { let _o: sync::Once; let _a = Once::new(); }";
+        assert!(
+            global_state_findings(qualified).len() >= 2,
+            "a lowercase module path or a bare Once is still flagged"
+        );
         let test_only = "#[cfg(test)] mod t { static OK: u8 = 0; }";
         assert!(global_state_findings(test_only).is_empty());
     }
@@ -2911,13 +2922,25 @@ pub(crate) mod checking_tests {
                     }
                 }
             }
-            fn visit_path_segment(&mut self, segment: &'ast syn::PathSegment) {
-                let name = segment.ident.to_string();
-                let banned = banned_name(&name);
-                if banned {
-                    self.0.push(format!("type {name}"));
+            // A banned name is a finding wherever it names a type, except as
+            // the last segment of a path whose previous segment is a type
+            // (`TemporalOperator::Once` is an enum variant, not
+            // `std::sync::Once`: std's prefixes are lowercase modules).
+            fn visit_path(&mut self, path: &'ast syn::Path) {
+                let last = path.segments.len().saturating_sub(1);
+                for (index, segment) in path.segments.iter().enumerate() {
+                    let name = segment.ident.to_string();
+                    let variant_of_type = index == last
+                        && index > 0
+                        && path.segments[index - 1]
+                            .ident
+                            .to_string()
+                            .starts_with(char::is_uppercase);
+                    if banned_name(&name) && !variant_of_type {
+                        self.0.push(format!("type {name}"));
+                    }
+                    syn::visit::visit_path_segment(self, segment);
                 }
-                syn::visit::visit_path_segment(self, segment);
             }
         }
         let file = syn::parse_file(source).expect("source parses");

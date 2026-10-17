@@ -2823,6 +2823,15 @@ impl TemporalFormulaForm {
     pub fn nodes(&self) -> &[TemporalNodeForm] {
         &self.nodes
     }
+
+    /// Every node with its id, in arena order. An operator's operands
+    /// follow it, so the root is first.
+    pub fn iter(&self) -> impl Iterator<Item = (TemporalNodeId, &TemporalNodeForm)> {
+        self.nodes
+            .iter()
+            .enumerate()
+            .map(|(index, node)| (TemporalNodeId(index), node))
+    }
 }
 
 /// A `( name : Type )` parameter as written.

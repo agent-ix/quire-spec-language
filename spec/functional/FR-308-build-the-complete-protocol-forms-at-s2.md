@@ -13,6 +13,10 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-218
     type: traces_to
+  - target: ix://agent-ix/quire-spec-language/FR-381
+    type: traces_to
+  - target: ix://agent-ix/quire-spec-language/FR-325
+    type: depends_on
   - target: ix://agent-ix/quire-specification/FR-052
     type: depends_on
 ---
@@ -24,8 +28,10 @@ When S2 builds the form of a protocol declaration, it SHALL accept every surface
 shared grammar "Complete temporal, choreography and analysis forms" that
 the protocol system runs, and SHALL build one typed form for each, holding
 every member the production writes with its span (ADR-012 §1, §3;
-ADR-027 DS-1). S2 records what was written and resolves nothing; S3 checks
-it (FR-218).
+ADR-027 DS-1). That includes the protocol's captures, relationship
+declarations, `requires temporal` requirements, each event node's `related by`
+clauses and every member of a compensation template. S2 records what was
+written and resolves nothing; S3 checks it (FR-218, FR-381).
 
 ## Use case
 
@@ -42,7 +48,9 @@ every later refusal points at the text the operator wrote.
   `channel`, `delivery-policy`, `capacity`, `overflow-policy`, `parallel`,
   `join-policy`, `repetition`, `loop-proof`, `await-control`,
   `compensation`, `protocol-terminal` and `protocol-scheduling` (QSpec
-  #173's complete forms; QSpec FR-052 for `repetition`).
+  #173's complete forms; QSpec FR-052 for `repetition`), and the same
+  grammar's `capture`, `relationship`, `protocol-requirement`, `related`,
+  `event-node` and `node-ref`.
 
 ## Outputs
 
@@ -60,8 +68,24 @@ In `forms::protocol_clause` (crate `qsl-forms`):
   memory part of FR-309.
 - `RepeatForm{name, binder, visibility, max: Option<u64>, loop_proof:
   Option<{invariant, variant}>, guard, body, exhausted: Option<control>}`.
-- `AwaitForm`, `CompensationForm`, `TerminalForm::{When(block), Any}` and
+- `AwaitForm`, `TerminalForm::{When(block), Any}` and
   `SchedulingForm::Adversarial`, each with its spans.
+- `ProtocolClauseForm.captures`: one `CaptureForm{parameter, value, span}`
+  (FR-325's form) per `capture` the clause writes before its roles.
+- `ProtocolClauseForm.relationships`: one `RelationshipForm{name, target:
+  QualifiedName, span}` per `relationship` member.
+- `ProtocolClauseForm.requirements`: one `RequirementForm{temporal: Name,
+  span}` per `requires temporal` member.
+- On each `send`, `receive`, `attempt`, `effect` and `event` node form,
+  `related: Vec<RelatedForm{relationship: Name, ends: [ExpressionForm; 2],
+  span}>`, one per `related by` clause.
+- `CompensationForm{name, target: NodeRef, forward: ParameterForm, role:
+  Name, operation: QualifiedName, using: Name, clock: {text, span},
+  registration_captures: Vec<CaptureForm>, trigger: ParameterForm, guard:
+  Block, activation_captures: Vec<CaptureForm>, within: IntervalForm,
+  attempts: {count: u64, record: TypeForm}, retry: {earlier: ParameterForm,
+  later: ParameterForm, relation: Block}, commit: Node(NodeRef) | Never,
+  recover: {binder: ParameterForm, predicate: Block}, span}`.
 - `ExprNode::ProtocolReference{target}` (the span is the expression's own span in the S2 span tree), the form
   of a protocol reference expression (Protocol reference expression).
 
@@ -78,6 +102,21 @@ In `forms::protocol_clause` (crate `qsl-forms`):
 - S2 SHALL read `fork`, `join`, `scheduling`, `terminal`, `adversarial`
   and the other complete-grammar keywords only in the positions the shared
   grammar reserves them for; elsewhere they are identifiers.
+- S2 SHALL build each `CaptureForm` of the clause, of a compensation's
+  registration stage (written before `activate`) and of its activation stage
+  (written in the block after `when`), in source order, into the field of its
+  own position. It keeps the declared type and the initializer as written and
+  decides no capture's visibility or stage (FR-381).
+- S2 SHALL build one `RelationshipForm` per `relationship`, one
+  `RequirementForm` per `requires temporal` and one `RelatedForm` per
+  `related by`, each in source order, keeping every name and both ends as
+  written. A target or relationship named twice builds twice; S2 merges and
+  resolves nothing.
+- S2 SHALL build a compensation's `commit` member as `Never` for `commit
+  never` and as `Node(NodeRef)` for a node reference, and its `attempts`
+  count and `within` interval as written, with no S2 diagnostic for a zero
+  count or an inverted interval. A count that is not a decimal `u64` fails at
+  S1 (FR-325).
 - A well-formed CST adds no S2 refusal. A CST that carries an error or
   recovery node SHALL refuse as `FormsCause::RecoveringCst`, with no
   partial form.
@@ -116,12 +155,19 @@ In `forms::protocol_clause` (crate `qsl-forms`):
 | FR-308-AC-4 | A protocol with `terminal when {k.v = 3};`, then `terminal any;`, then `scheduling adversarial;` builds three members in that order with their spans; a protocol that names an identifier `fork` outside a step-row position builds it as an identifier. | Test (TC-887) |
 | FR-308-AC-5 | A protocol whose CST holds a recovery node refuses `FormsCause::RecoveringCst` with no form. Building the same declaration twice gives equal forms. | Test (TC-887) |
 | FR-308-AC-6 | `protocol Fill` written as an expression builds one `ExprNode::ProtocolReference` with target `Fill` and the span of the two tokens; `protocol M::Fill` builds the target `M::Fill`; two references in one unit build two forms in source order. A unit that holds a `protocol-clause` declaration and a reference builds both and the declaration parses as before. | Test (TC-1021) |
+| FR-308-AC-7 | A protocol that writes `capture order: M::OrderRef = opened.order;` before its roles, and a compensation that writes `capture target: M::Total = forward.total;` before `activate` and `capture activated: Boolean = trigger.ready;` in its activation block, builds one `CaptureForm` in `ProtocolClauseForm.captures`, one in the compensation's `registration_captures` and one in its `activation_captures`, each with the written name, type, initializer text and its own span. Two registration captures keep their source order. | Test (TC-1055) |
+| FR-308-AC-8 | `relationship Pipe = M::pipe;` builds a `RelationshipForm` with name `Pipe` and target `M::pipe`, each span slicing to its text; two relationship members build two forms in source order. | Test (TC-1055) |
+| FR-308-AC-9 | `requires temporal Due;`, `requires temporal Late;` and a second `requires temporal Due;` build three `RequirementForm`s in source order with the written names and no resolution. | Test (TC-1055) |
+| FR-308-AC-10 | An `effect` node with `related by Pays (applied.order, opened.order)` builds one `RelatedForm` with relationship `Pays` and both ends as full expression forms in written order; a node with two `related by` clauses, one naming `Pays` twice, builds three forms in source order. | Test (TC-1055) |
+| FR-308-AC-11 | A compensation builds every member of its `CompensationForm`: `commit Main::Committed` builds `Node` and `commit never` builds `Never`; `attempts 0` builds count 0 and `within [31,30]` builds the interval as written, each with no S2 diagnostic; `attempts 18446744073709551616` fails at S1 with a parse diagnostic at the count. | Test (TC-1055) |
+| FR-308-AC-12 | A protocol whose CST holds a recovery node inside a `capture`, a `relationship`, a `requires temporal`, a `related by` or a compensation refuses `FormsCause::RecoveringCst` for each, with no partial form. A protocol that writes all five builds equal forms when built twice. | Test (TC-1055) |
 
 ## Dependencies
 
 - ADR-012 §1, §3 (forms); ADR-027 §9 DS-1.
 - [FR-112](FR-112-build-protocol-scoped-anchor-forms.md) (scoped anchors in
-  the same forms), FR-218 (the S3 checks), FR-309 (the memory forms).
+  the same forms), FR-218 and FR-381 (the S3 checks), FR-309 (the memory
+  forms), FR-325 (`CaptureForm`, `IntervalForm` and the `u64` bound rule).
 - QSpec owns the grammar: the shared grammar's complete choreography
   productions and QSpec FR-052's `repetition`.
 
