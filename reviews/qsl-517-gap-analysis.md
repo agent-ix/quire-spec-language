@@ -53,6 +53,7 @@ branch, not yet the PR head).
 | FND | Outcome | sha/reason |
 | --- | --- | --- |
 | FND-001 | fixed | fd2fa6bd4 |
+| FND-002 | fixed bdbf61ea3 | the `repo:` refusals (absolute path, climb above the repository root) are covered by `each_malformed_pair_is_one_tool_failure_and_the_rest_still_run` and named in FR-340-AC-2 and TC-860; the symlink-out case is not tested (needs a link planted in the repository); verified by the team leader after the reviewer's last round (cap) |
 
 FND-001: the real corpus is now `config-version-revision`. Its `prior` is
 `unit.native` and its `superseding` is `superseding.native`, the same unit
