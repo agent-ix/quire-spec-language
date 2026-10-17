@@ -1076,6 +1076,42 @@ impl PackageDeclarations {
         };
         let mut contract_meter =
             quire_exact::Meter::new(contract_meter_limits).with_cancel(cancel.clone());
+        // FR-319: a body's equality over a union is typed against the sealed
+        // declaration, so each union is sealed under the node id of its type
+        // node before any body is typed. A union's type closure needs no
+        // body: a throwaway lowering over the declarations keys it. The
+        // lowering below keys the same content, so it reaches the same ids.
+        {
+            let mut sealing_meter =
+                quire_exact::Meter::new(contract_meter_limits).with_cancel(cancel.clone());
+            let mut sealing_occurrences = family::OccurrenceMap::default();
+            let mut sealing = lowering::Lowering::new(
+                &scope,
+                &owner,
+                &models,
+                scope.types().units().clone(),
+                &lock_evidence,
+                0,
+                &mut sealing_occurrences,
+                &mut sealing_meter,
+                self.identity,
+            );
+            let mut sealed_refusals = Vec::new();
+            for declaration in scope.types().composites() {
+                if matches!(declaration.shape(), CompositeShape::Union(_)) {
+                    if let Err(refusal) = sealing.composite_node(declaration.key()) {
+                        sealed_refusals.push(refusal);
+                    }
+                }
+            }
+            let nodes = sealing.finish(&lowering::generated_location()).composites;
+            if !sealed_refusals.is_empty() {
+                return Err(sealed_refusals);
+            }
+            if let Err(refusal) = scope.seal_unions(&nodes) {
+                return Err(vec![refusal]);
+            }
+        }
         let mut contract_diagnostics = crate::family::DiagnosticSink::default();
         let mut contract_scopes = crate::family::ScopeStack::default();
         // PR #303 review round 3, finding F1: the running total of
@@ -1707,13 +1743,6 @@ impl PackageDeclarations {
             }
         }
         let lowered = lowering.finish(&lowering::generated_location());
-        // FR-319: each union is sealed under the checked node id of its type
-        // node, which lowering has now keyed, with its members' FR-441 keys.
-        if refusals.is_empty() {
-            if let Err(refusal) = scope.seal_unions(&lowered.composites) {
-                refusals.push(refusal);
-            }
-        }
         let parameter_spans = lowered.parameter_spans;
         if !refusals.is_empty() {
             return Err(refusals);

@@ -388,7 +388,13 @@ fn union_leaf_paths_follow_member_then_position() {
     let chain = union_declaration(
         "Chain",
         vec![
-            ("Link", vec![t8(), ValueType::Composite(handle("Chain"))]),
+            (
+                "Link",
+                vec![
+                    t8(),
+                    ValueType::option(ValueType::Composite(handle("Chain"))),
+                ],
+            ),
             ("End", vec![]),
         ],
     );
@@ -396,7 +402,7 @@ fn union_leaf_paths_follow_member_then_position() {
         equality_leaves(vec![chain], "Chain"),
         [
             "member:Link/position:0 (nfc)",
-            "member:Link/position:1/recursion:0 (-)"
+            "member:Link/position:1/inner/recursion:0 (-)"
         ]
     );
     let list = union_declaration(
@@ -404,7 +410,10 @@ fn union_leaf_paths_follow_member_then_position() {
         vec![
             (
                 "Cons",
-                vec![ValueType::Integer, ValueType::Composite(handle("List"))],
+                vec![
+                    ValueType::Integer,
+                    ValueType::option(ValueType::Composite(handle("List"))),
+                ],
             ),
             ("Nil", vec![]),
         ],

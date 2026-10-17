@@ -383,7 +383,7 @@ fn a_case_arm_binder_is_a_parameter_node_at_the_next_binder_level() {
 #[test]
 fn a_recursive_union_is_one_recursion_group_and_seals() {
     let graph = graph(
-        "union List { Cons(Integer, List), Nil }\n\
+        "union List { Cons(Integer, List?), Nil }\n\
          function same using v(a: List, b: List): Boolean pure { a = b }\n\
          function nil using v(): List pure { List::Nil }\n",
     );

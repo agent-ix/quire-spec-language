@@ -5,8 +5,6 @@
 //! are the ones the emitter declares, so FR-319-AC-1's "same `package_id`"
 //! is read from the emitted bytes, never recomputed.
 
-use sha2::{Digest as _, Sha256};
-
 use super::*;
 
 const SHAPE: &str = "union Shape { Empty, Circle(Integer), Rect(Integer, Integer) }\n";

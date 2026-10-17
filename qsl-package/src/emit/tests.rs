@@ -942,7 +942,7 @@ fn a_declaration_without_its_occurrence_is_omitted() {
             (candidate.id.clone(), candidate)
         })
         .collect();
-    let omitted = omissions(&candidates, graph.source());
+    let omitted = omissions(&candidates, graph.source(), &ir_decodes);
     assert_eq!(
         omitted,
         [OmittedNode {
