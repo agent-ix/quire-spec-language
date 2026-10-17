@@ -87,8 +87,9 @@ Measured on main when this was written.
   `tests/it/composed_*.rs` files. Nothing outside tests calls both paths on one
   source, and the spine does not run the type path.
 - **Two `CheckedUnit` types.** `spine::CheckedUnit` holds a checked package
-  and its sources. `checking::source_inventory::CheckedUnit` holds a graph, a
-  type report and a formal identity, built by a label-only match.
+  and its sources. The root crate's `checking::source_inventory::CheckedUnit`
+  holds a graph, a type report and a formal identity, built by a label-only
+  match; `qsl_inventory` lives beside it.
 - **The grammars differ.** The shared header is `language "ix:native" edition
   "1-draft";`. After it, complete-V1 reads `profile <alias> = "<identity>";`: a
   definition resolves by identity alone, with no version or digest in the
@@ -101,10 +102,12 @@ Measured on main when this was written.
   (`FormsCause::RecoveringCst`).
 - **The families.** S2 has dispatch entries for `function`, `type`, `record`,
   `tuple`, `enum`, `predicate`, `dimension`, `unit`, `invariant`, `pre`,
-  `post`, `body` and `protocol` (`qsl-forms/src/dispatch.rs`). It has none for
-  a `temporal`, `relation` or `hyper` clause, which `qsl-cst` parses and S2
-  refuses with `NoDispatchEntry`. The composed checker holds the type phase of
-  all of them today.
+  `post`, `body`, `protocol` and `temporal` (`qsl-forms/src/dispatch.rs`). It
+  has none for a `relation` or `hyper` clause, which `qsl-cst` parses and S2
+  refuses with `NoDispatchEntry`. A `temporal` clause passes S2; S3 refuses it
+  with `UnimplementedTemporalClause` (`unsupported_construct`) until its
+  checker lands. The composed syntax has four declaration kinds (predicate,
+  state, temporal, protocol); `relation` and `hyper` exist only in `qsl-cst`.
 - **The digests cannot agree today.** The graph test fixture and the composed
   binding fixture are two different texts, so the bytes and the digests
   differ. The label-only `CheckedUnit::new` therefore compares authority and
@@ -126,9 +129,10 @@ Measured on main when this was written.
   through `parse_with_cancel`, `build_unit`, `assemble` and `check`.
 - *Type path:* binding and typing become S3 phases over the S2 forms of the
   same `ParsedUnit`. They resolve a profile alias by identity alone, as the
-  graph side does, from the caller's definition inventory. The composed
-  binder's per-profile revision and digest matching
-  (`linking/composed/definitions.rs`) is not carried over.
+  graph side does, through `DefinitionLock::pinned` and the spine's
+  `LockEvidence`. The type phase takes no caller definition inventory. The
+  composed binder's per-profile revision and digest matching
+  (`linking/composed/definitions.rs`) is deleted, not ported.
 - *Order:* ADR-011 M-6e deletes one composed family per implementing PR. A
   family moves when its binding and typing run in S3 over S2 forms; the same
   PR deletes that family's composed linker, checker and emission. The last
@@ -143,20 +147,23 @@ Measured on main when this was written.
   namespace comes from the producer once its families have moved);
   `src/checking/source_inventory.rs`; the `parse_native*` re-exports in
   `src/lib.rs`.
-- *Migration cost:* high. About 29 files under `tests/`, `src/` and
-  `examples/` spell a composed profile line (`git grep 'profile .*= .*version'`),
-  among them `tests/support/composed_types/mod.rs`, the `composed_*` and
-  `native_*` test files, `tests/fixtures/composed-choreography.native` and the
-  handoff recipe inputs under `examples/protocol-handoff`. Each profile line
-  becomes the identity-only spelling when its family moves. A test that asserts
-  the composed grammar's own shape (`composed_syntax`, `parser_differential`)
-  is deleted with the parser it tests.
-- *Fixtures, goldens, identities:* a source's bytes change wherever the profile
-  line changes, so every source digest in a golden or expected inventory
-  changes with it, and a compiled-protocol artifact's source references change
-  for the same reason. Model digests, checked node identities and `package_id`
-  do not depend on the profile line's spelling and do not change; the author
-  confirms this with the existing identity goldens before merging.
+- *Migration cost:* high. Composed `profile X = ".." version ".." digest ".."`
+  lines appear in 18 source and test files (including format-string
+  generators): `src/linking/composed/arena.rs`, `src/parser.rs`,
+  `src/protocol_artifact/handoff/writer.rs`, twelve `tests/it` files,
+  `tests/support/composed_types`, `tests/support/protocol_artifact` and
+  `tests/fixtures/composed-choreography.native`; and in 40 files under
+  `artifacts/compiled-protocol-v1` and `artifacts/compiled-protocol-v2`. A
+  `model M = ".." version ".." digest ".."` line is complete-V1 and is not
+  composed; only `profile` and `import` are identity-only. Each surviving
+  fixture takes the identity-only profile spelling and a complete-V1 profile
+  binding. A test that asserts the composed grammar's own shape
+  (`composed_syntax`, `parser_differential`) is deleted with the parser it
+  tests.
+- *Fixtures and goldens:* the handoff snapshots under `artifacts/` and the
+  `native_*_emission` goldens belong to the protocol-artifact lane that is
+  deleted; they are not re-digested. Model digests, checked node identities
+  and `package_id` do not depend on the profile line's spelling.
 - *What the checked unit compares:* the single source digest. The selected
   formal source, the graph's `RawSourceRef` and the type report unit's
   `Source::reference()` are equal as whole references (authority, identity,
@@ -164,10 +171,11 @@ Measured on main when this was written.
 - *The interim label match:* `UnitLabel`, `UnitLabelMismatch` and the
   label-only `CheckedUnit::new` are deleted when the producer lands.
 - *One `CheckedUnit`:* the spine's `spine::CheckedUnit` is the one type. It
-  gains the type report, the formal identity and the digest comparison; the
-  inventory's own `CheckedUnit` is deleted, and `qsl_inventory` reads the
-  spine's. If the checked package does not expose the requirement records the
-  inventory reads, the slice exposes them.
+  carries the type report, the formal identity and the digest comparison. The
+  type report is one-unit by construction, so a report that covers two units
+  cannot be built. The inventory's own `CheckedUnit` is deleted; `qsl_inventory`
+  lives in `qsl_replay` and reads `spine::CheckedUnit`, no longer in the root
+  crate's `checking::source_inventory`.
 
 ### Option A-only: keep the composed linker and checker over S2 forms
 
@@ -213,15 +221,23 @@ text. These points follow from it and are decided.
 - **Moved and unmoved families.** The producer admits a family only once its
   type phase runs in S3 over S2 forms. It refuses a construct of a family
   whose type phase has not moved with `unsupported_construct`, at the
-  construct. A unit is therefore never read by two parsers. During the
-  migration sequence the unmoved families are those S2 has no dispatch entry
-  for today: the `temporal`, `relation` and `hyper` clauses. The refusal
-  disappears for a family when the family moves.
+  construct. A unit is therefore never read by two parsers. The unmoved
+  constructs are the `relation` and `hyper` clauses, which S2 refuses with
+  `NoDispatchEntry`. The refusal disappears for a family when the family
+  moves. `temporal` has an S2 dispatch entry; its S3 state is that family's
+  own.
 - **Profile selection.** A source selects a profile by identity alone
   (FR-110). A profile line that states `version` or `digest` after the
-  identity is not the single grammar and is refused. Any pin of a definition's
-  revision and digest belongs to the caller's definition inventory, which is
-  already an explicit input of the binding phase.
+  identity is not the single grammar and is refused. The type phase resolves
+  profiles through `DefinitionLock::pinned` and the spine's `LockEvidence`;
+  there is no caller definition inventory parameter, and the source never
+  carries a revision or digest.
+- **Refusal and exhaustion.** A unit the S3 type phase refuses is an error
+  outcome of `check` and yields no partial inventory rows. The exhaustion stops
+  `TypeWorkExhausted` and `TypeAdmissionUnfinished` are a different case: they
+  stay `Incomplete` with the retained partial rows and the typed cause
+  (IR FR-052-AC-10). The inventory's identity binds the whole `RawSourceRef`;
+  the row identity encoding belongs to the owning FR.
 - **One checked unit.** `spine::CheckedUnit` is extended; the inventory's own
   `CheckedUnit` is deleted.
 - **Composed requirements.** FR-035, FR-036, FR-040 and FR-049 stay normative
