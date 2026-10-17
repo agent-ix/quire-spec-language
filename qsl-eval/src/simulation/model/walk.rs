@@ -42,11 +42,6 @@ impl Budget {
             Ok(())
         }
     }
-
-    /// How many more charges fit.
-    pub(super) fn remaining(&self) -> u64 {
-        self.max.saturating_sub(self.used)
-    }
 }
 
 /// One object of the expanded state.

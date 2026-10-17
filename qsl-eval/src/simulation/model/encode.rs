@@ -248,16 +248,10 @@ pub(super) fn semantic_enc(model: &StateModel, state: &ModelState) -> Enc {
             let fields = fields
                 .iter()
                 .map(|field| {
-                    // A `?` field is an `Option<T>` in the typed form: present
-                    // or absent, never a bare value or `null`.
-                    let value = match (field.optional, object.fields.get(&field.key)) {
-                        (true, present) => Enc::tagged(
-                            "option",
-                            vec![("value", present.map_or(Enc::Null, value_enc))],
-                        ),
-                        (false, Some(present)) => value_enc(present),
-                        (false, None) => Enc::Null,
-                    };
+                    // QSpec FR-181: a field declared `Option<T>` holds an option
+                    // value (encoded by `value_enc`); an absent presence-optional
+                    // field is a plain `null` entry.
+                    let value = object.fields.get(&field.key).map_or(Enc::Null, value_enc);
                     Enc::Object(vec![
                         ("name", Enc::text(field.name.clone())),
                         ("value", value),
@@ -312,7 +306,7 @@ pub(super) fn model_key(model: &StateModel, state: &ModelState) -> ModelKey {
 
 #[cfg(test)]
 mod tests {
-    use quire_exact::Integer;
+    use quire_exact::{Integer, ValueType};
 
     use super::*;
 
@@ -330,5 +324,30 @@ mod tests {
     fn a_value_without_a_form_refuses_to_encode() {
         let text = Enc::Unencodable("a union value").canonical_text(Limits::new(1024));
         assert!(matches!(text, Err(Error::Serialize(_))));
+    }
+
+    /// QSpec FR-181: a field declared `Option<T>` is an option value, none
+    /// `{"type":"option","value":null}` and some wrapping the encoded payload.
+    #[test]
+    fn an_option_value_encodes_as_an_option_object() {
+        let int = ValueType::Int(
+            quire_exact::IntegerInterval::new(Integer::from(0_i64), Integer::from(2_i64))
+                .expect("nonempty"),
+        );
+        let none = quire_exact::OptionValue::none(int.clone());
+        let some = quire_exact::OptionValue::from_admitted(
+            int,
+            Some(Value::Integer(Integer::from(1_i64))),
+        );
+        let text = |value: &Value| {
+            value_enc(value)
+                .canonical_text(Limits::new(1024))
+                .expect("an option encodes")
+        };
+        assert_eq!(text(&none), r#"{"type":"option","value":null}"#);
+        assert_eq!(
+            text(&some),
+            r#"{"type":"option","value":{"type":"integer","value":"1"}}"#
+        );
     }
 }

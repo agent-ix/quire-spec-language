@@ -17,7 +17,7 @@ use quire_semantic_value::declaration::TypeEnvironment;
 use quire_semantic_value::relationship_extent::RelationshipExtent;
 
 use crate::model::accounting::ModelNormalizationLimits;
-use crate::model::domain_package::{DomainPackageRecord, DomainPackageRef, OperationEffect};
+use crate::model::domain_package::{DomainPackageRecord, DomainPackageRef};
 use crate::model::index::ModelIndex;
 use crate::model::key::DeclarationKey;
 use crate::model::observation::{
@@ -223,25 +223,5 @@ impl StateModel {
         object: &str,
     ) -> Result<ObjectReference, AdmissionFailure> {
         state_reference(&self.views, type_key, object)
-    }
-
-    /// Whether `effect` grants a write to `field` (FR-013): an every-object
-    /// `modifies` entry, or, when `receiver` is set, a receiver-scoped entry,
-    /// reached through the field's `redefines` chain as the frame decision
-    /// reaches it.
-    pub fn field_is_granted(
-        &self,
-        field: &DeclarationKey,
-        effect: &OperationEffect,
-        receiver: bool,
-    ) -> bool {
-        self.views.iter().any(|view| {
-            view.view
-                .model_index()
-                .redefinition_reaches(field, |candidate| {
-                    effect.modifies.contains(candidate)
-                        || (receiver && effect.receiver_modifies.contains(candidate))
-                })
-        })
     }
 }

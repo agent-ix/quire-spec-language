@@ -96,7 +96,7 @@ fn wire_field(name: &str, type_ref: &str, presence: &str) -> Json {
     })
 }
 
-fn bound_type(name: &str, upper: u32) -> Json {
+fn bound_type(name: &str, upper: u64) -> Json {
     let identity = ident(name);
     let constraint = |keyword: &str, value: String| {
         json!({
@@ -183,6 +183,8 @@ fn counters_document(operations: Vec<Json>) -> Vec<u8> {
         "types": [
             bound_type("Level", 2),
             bound_type("Flag", 1),
+            bound_type("Count", 100),
+            bound_type("Huge", 1_000_000_000_000_000),
             wire_type(&counter_identity, "object_type", json!({
                 "supertypes": [],
                 "fields": [
@@ -692,7 +694,13 @@ fn the_state_key_is_the_simulation_state_envelope() {
     let mut world = world(vec![increment()], "");
     let s0 = world.start("s0", &[Obj("c1", 0, 0, None)]);
     let s0_label = world.start("s0-label", &[Obj("c1", 0, 1, None)]);
-    let system = self::system(&world, vec![s0.clone(), s0_label], &["c1", "c2"], UNLIMITED);
+    let s0_next = world.start("s0-next", &[Obj("c1", 0, 0, Some("c1"))]);
+    let system = self::system(
+        &world,
+        vec![s0.clone(), s0_label, s0_next],
+        &["c1", "c2"],
+        UNLIMITED,
+    );
     let model = world.model();
     let (state, _) = model
         .admit_initial(&world.snapshots, &s0, ObservationLimits::default())
@@ -714,13 +722,19 @@ fn the_state_key_is_the_simulation_state_envelope() {
         )
         .expect("UTF-8")
     };
-    let record = |label: i64| {
+    // QSpec FR-181: an absent presence-optional field is a plain `null`
+    // entry; a present one is its bare encoded value.
+    let own = json!({"type": "reference",
+        "universe": hex(reference.universe().as_bytes()),
+        "object_type": hex(reference.object_type().as_bytes()),
+        "identity": "6331"});
+    let record = |label: i64, next: Json| {
         json!({"type": "record", "name": counter_text(), "fields": [
             {"name": "value", "value": {"type": "integer", "value": "0"}},
             {"name": "label", "value": {"type": "integer", "value": label.to_string()}},
-            {"name": "next", "value": {"type": "option", "value": null}}]})
+            {"name": "next", "value": next}]})
     };
-    let envelope = |label: i64| {
+    let envelope = |label: i64, next: Json| {
         let empty = json!({"type": "map", "entries": []});
         json!({"type": "simulation-state",
             "semantic": {"type": "map", "entries": [{
@@ -730,7 +744,7 @@ fn the_state_key_is_the_simulation_state_envelope() {
                         "universe": hex(reference.universe().as_bytes()),
                         "object_type": hex(reference.object_type().as_bytes()),
                         "identity": "6331"},
-                    "value": record(label)}]}}]},
+                    "value": record(label, next)}]}}]},
             "control": empty, "queues": empty, "roles": empty, "observations": empty,
             "bounds": empty})
     };
@@ -741,18 +755,15 @@ fn the_state_key_is_the_simulation_state_envelope() {
         )
         .expect("UTF-8")
     };
-    let mut order: Vec<(String, usize)> = vec![(bytes(0), 0), (bytes(1), 1)];
-    order.sort();
     assert_ne!(bytes(0), bytes(1), "label 1 is a different key");
-    let by_label = |label: i64| {
-        let expected = canonical(envelope(label));
+    let keys = [bytes(0), bytes(1), bytes(2)];
+    for (label, next) in [(0, Json::Null), (1, Json::Null), (0, own)] {
+        let expected = canonical(envelope(label, next));
         assert!(
-            order.iter().any(|(key, _)| *key == expected),
+            keys.iter().any(|key| *key == expected),
             "no key equals {expected}"
         );
-    };
-    by_label(0);
-    by_label(1);
+    }
 }
 
 fn counter_text() -> String {
@@ -1004,7 +1015,13 @@ fn an_unbounded_population_or_parameter_requires_a_bound() {
     else {
         panic!("a population with no universe is unbounded")
     };
-    assert!(!bound.domains.is_empty());
+    assert!(
+        bound
+            .domains
+            .iter()
+            .any(|(key, _)| *key == root_key(&declaration_naming(&counters()))),
+        "the population root is named by the hash of its declaration identity"
+    );
     let sampler = sampler();
     assert!(matches!(
         sample_model(&unbounded, 10_000, &sampler, 424_242, 0, 4),
@@ -1028,6 +1045,127 @@ fn an_unbounded_population_or_parameter_requires_a_bound() {
         panic!("an Integer parameter is unbounded")
     };
     assert_eq!(bound.domains.len(), 1);
+    let naming = json!({
+        "operation": declaration_naming(&key("Counter/add")),
+        "parameter": "n",
+    });
+    assert_eq!(
+        bound
+            .domains
+            .iter()
+            .map(|(key, _)| key.clone())
+            .collect::<Vec<_>>(),
+        vec![root_key(&naming)],
+        "the parameter root is named by the hash of its naming object"
+    );
+}
+
+fn declaration_naming(key: &DeclarationKey) -> Json {
+    json!({"digest_domain": "sha256-jcs", "node": key.node, "package": key.package})
+}
+
+/// The requires-bound domain key FR-120 "Bounds" gives the root named by
+/// `naming`: the SHA-256 of its JCS bytes.
+fn root_key(naming: &Json) -> qsl_foundation::bound::DomainKey {
+    let read = quire_canonical::read(naming.to_string().as_bytes(), u64::MAX).expect("reads");
+    let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(1 << 20))
+        .expect("hashes")
+        .as_bytes();
+    qsl_foundation::bound::DomainKey::Node {
+        node: qsl_foundation::digest::WireNodeId::from_digest(digest),
+        path: Vec::new(),
+    }
+}
+
+/// FR-120-AC-7 (TC-472): a universe population the snapshot omits returns
+/// `Incomplete` with `incomplete_population`/`incomplete-scope`.
+#[trace("TC-472", "FR-120-AC-7")]
+#[test]
+fn a_universe_population_the_snapshot_omits_is_incomplete() {
+    let mut world = world(vec![increment()], "");
+    let document = json!({
+        "format": "quire.state.snapshot/v1",
+        "identity": {"authority": "test", "identity": "empty", "revision_namespace": "fixture",
+            "revision": "fixture:1"},
+        "observation": "current", "model": world.header,
+        "anchor": {"kind": "initialization", "name": "start"},
+        "populations": [],
+    });
+    let bytes = document.to_string().into_bytes();
+    let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
+    let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
+        .expect("canonical fixture")
+        .as_bytes();
+    world.snapshots.insert(digest, bytes);
+    let omitted = DocumentRef {
+        authority: "test".to_owned(),
+        identity: "empty".to_owned(),
+        revision_namespace: "fixture".to_owned(),
+        revision: "fixture:1".to_owned(),
+        digest,
+    };
+    let failure = ModelSystem::new(request(
+        &world,
+        vec![omitted],
+        universe(&["c1"]),
+        UNLIMITED,
+        10,
+    ))
+    .err();
+    let Some(AdmissionFailure::Incomplete(record)) = failure else {
+        panic!("expected Incomplete, got {failure:?}")
+    };
+    assert_eq!(
+        (record.code, record.cause),
+        (Code::IncompletePopulation, "incomplete-scope")
+    );
+}
+
+/// FR-120 "Post-states": only the (candidate, result) pairs actually
+/// evaluated are counted, so an operation whose first pair is accepted stays
+/// exhaustive however large its result domain is.
+#[trace("TC-472", "FR-120-AC-6")]
+#[test]
+fn only_evaluated_result_pairs_are_counted() {
+    let count = operation(
+        "count",
+        &[],
+        Some(&ident("Count")),
+        frame(&[], false, false),
+    );
+    let mut world = world(vec![count], "");
+    let s0 = world.start("s0", &[Obj("c1", 0, 0, None)]);
+    let system = ModelSystem::new(request(&world, vec![s0], universe(&["c1"]), UNLIMITED, 50))
+        .expect("admits");
+    let exploration = explore(&system);
+    assert_eq!(stats(&exploration), (1, 1, 0));
+}
+
+/// FR-120 "Post-states": every argument vector counts against the bound,
+/// enabled or not, so a huge parameter domain behind a false precondition
+/// stops the expansion.
+#[trace("TC-472", "FR-120-AC-13")]
+#[test]
+fn every_argument_vector_counts_against_the_bound() {
+    let set_to = operation(
+        "setTo",
+        &[("n", &ident("Huge"))],
+        None,
+        frame(&["value"], false, false),
+    );
+    let mut world = world(
+        vec![set_to],
+        "pre Match using v on M::Counter::setTo { self.value = n }",
+    );
+    let s0 = world.start("s0", &[Obj("c1", 2, 0, None)]);
+    let system = ModelSystem::new(request(&world, vec![s0], universe(&["c1"]), UNLIMITED, 10))
+        .expect("admits");
+    let exploration = explore(&system);
+    assert!(
+        matches!(&exploration.outcome, Outcome::Stopped { cause, .. } if *cause == exhausted()),
+        "{:?}",
+        exploration.outcome
+    );
 }
 
 /// FR-120-AC-13 (TC-472): a candidate product over 10^9 stops after at most
@@ -1343,10 +1481,17 @@ fn an_undecided_precondition_is_a_contract_finding() {
         .expect("the dispatch model admits");
         let state = system.initial().remove(0);
         let expansion = system.successors(&state).expect("expands");
-        (expansion.successors.len(), expansion.findings)
+        let key_bytes =
+            quire_canonical::to_vec(&system.key(&state), quire_canonical::Limits::new(1 << 20))
+                .expect("a key encodes");
+        let digest = qsl_foundation::digest::DigestRecord::mint(
+            qsl_foundation::digest::DigestDomain::SimulationStateKeyV1,
+            qsl_foundation::ByteDigest::of(&key_bytes).as_bytes().to_owned(),
+        );
+        (expansion.successors.len(), expansion.findings, digest)
     };
 
-    let (successors, findings) = run("pre Low using v on M::A::ready { self.ready() }");
+    let (successors, findings, _) = run("pre Low using v on M::A::ready { self.ready() }");
     assert_eq!(successors, 0, "an undecided precondition enables nothing");
     let [ModelFinding::ContractUndetermined {
         candidate,
@@ -1366,11 +1511,83 @@ fn an_undecided_precondition_is_a_contract_finding() {
         )
     );
 
-    let (_, findings) = run(
+    let (_, findings, _) = run(
         "pre Low using v on M::A::ready { self.ready() }\npre Never using v on M::A::ready { false }",
     );
     assert!(
         findings.is_empty(),
         "a false clause hides the undecided one: {findings:?}"
     );
+
+    // The postcondition half: the finding names the candidate by its
+    // state-key digest, and no candidate is a successor.
+    let (successors, findings, digest) =
+        run("post LowPost using v on M::A::ready { self.ready() }");
+    assert_eq!(successors, 0);
+    assert!(!findings.is_empty());
+    for finding in &findings {
+        let ModelFinding::ContractUndetermined {
+            candidate,
+            clause,
+            evaluation,
+            ..
+        } = finding
+        else {
+            panic!("a contract finding: {finding:?}")
+        };
+        assert_eq!(clause, "LowPost");
+        assert_eq!(*candidate, Some(digest));
+        assert_eq!(
+            *evaluation,
+            ClauseOutcome::FamilyUndefined(
+                qsl_foundation::diagnostic::UndefinedReason::PreconditionFalse
+            )
+        );
+    }
+}
+
+const CHILD: &str = "FR120_CHILD_EXPLORATION";
+
+/// The AC-5 package's exploration, rendered.
+fn ac5_exploration() -> String {
+    let mut world = world(vec![increment()], &clauses(&[CAN_INC, INC, SMALL]));
+    let s0 = world.start("s0", &[Obj("c1", 0, 0, None)]);
+    let system = self::system(&world, vec![s0], &["c1", "c2"], UNLIMITED);
+    format!("{:?}", explore(&system))
+}
+
+/// FR-120-AC-11 (TC-473): exploring twice, the second time in a child process
+/// started in an empty temporary directory, gives equal explorations and
+/// leaves that directory empty.
+#[trace("TC-473", "FR-120-AC-11")]
+#[test]
+fn a_child_process_in_an_empty_directory_explores_the_same() {
+    if std::env::var_os(CHILD).is_some() {
+        println!("EXPLORATION={}", ac5_exploration());
+        return;
+    }
+    let mine = ac5_exploration();
+    let directory = std::env::temp_dir().join(format!("fr120-child-{}", std::process::id()));
+    std::fs::create_dir_all(&directory).expect("a temporary directory");
+    let output = std::process::Command::new(std::env::current_exe().expect("the test binary"))
+        .args([
+            "--exact",
+            "model_simulation::a_child_process_in_an_empty_directory_explores_the_same",
+            "--nocapture",
+            "--test-threads=1",
+        ])
+        .env(CHILD, "1")
+        .current_dir(&directory)
+        .output()
+        .expect("the child runs");
+    let untouched = std::fs::read_dir(&directory).expect("readable").count() == 0;
+    std::fs::remove_dir(&directory).expect("an empty directory is removed");
+    assert!(output.status.success(), "{output:?}");
+    assert!(untouched, "the child wrote into its directory");
+    let stdout = String::from_utf8(output.stdout).expect("UTF-8");
+    let theirs = stdout
+        .lines()
+        .find_map(|line| line.split_once("EXPLORATION=").map(|(_, rest)| rest))
+        .expect("the child printed its exploration");
+    assert_eq!(theirs, mine);
 }

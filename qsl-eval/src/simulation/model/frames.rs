@@ -34,6 +34,10 @@ use crate::simulation::expansion::ExpansionStop;
 use crate::simulation::key;
 use qsl_foundation::digest::DigestRecord;
 
+/// The most values a result domain may hold and still be put in canonical
+/// order; a larger one stops the expansion.
+const RESULT_ORDER_LIMIT: u128 = 1 << 16;
+
 /// The identity limit every canonical text of a step is written under.
 fn text_limits() -> CanonicalLimits {
     CanonicalLimits::new(identity_limits().input_bytes)
@@ -119,6 +123,9 @@ pub(super) fn apply(
             })
             .collect::<Option<Vec<_>>>()
             .ok_or_else(|| stop(BROKEN))?;
+        // Every argument vector counts, enabled or not: a false or undecided
+        // precondition would otherwise let one expansion run unbounded.
+        budget.charge()?;
         let transition = transition_of(row, application, &args)?;
         let transition_bytes =
             quire_canonical::to_vec(&transition, text_limits()).map_err(|_| stop(BROKEN))?;
@@ -242,6 +249,13 @@ impl Dimension<'_> {
     }
 }
 
+/// A refusal by the frame decision.
+struct FrameRefused;
+
+/// The (population, object key, field) triples a frame lets an application
+/// write.
+type WritableFields = BTreeSet<(DeclarationKey, String, DeclarationKey)>;
+
 /// What the frame decision found: the created and deleted objects, by
 /// population and key.
 struct Delta {
@@ -338,6 +352,7 @@ impl Run<'_, '_, '_> {
     ) -> Result<(), ExpansionStop> {
         let deletable = self.deletable();
         let slots = self.slots();
+        let writable = self.writable_fields()?;
         let mut deletions = Odometer::new(vec![2; deletable.len()]);
         while let Some(deleted) = deletions.next_digits() {
             let deleted: BTreeSet<(&DeclarationKey, &str)> = deletable
@@ -353,7 +368,9 @@ impl Run<'_, '_, '_> {
                     .collect(),
             );
             while let Some(created) = creations.next_digits() {
-                self.fields_of_choice(&deleted, &slots, &created, budget, contract, successors)?;
+                self.fields_of_choice(
+                    &deleted, &slots, &created, &writable, budget, contract, successors,
+                )?;
             }
         }
         Ok(())
@@ -367,6 +384,7 @@ impl Run<'_, '_, '_> {
         deleted: &BTreeSet<(&DeclarationKey, &str)>,
         slots: &[Slot],
         created: &[u128],
+        writable: &WritableFields,
         budget: &mut Budget,
         contract: &mut Vec<ContractFinding>,
         successors: &mut Vec<Successor>,
@@ -424,12 +442,13 @@ impl Run<'_, '_, '_> {
             let Some(fields) = system.fields.get(&member.type_key) else {
                 return Err(stop(BROKEN));
             };
-            let is_receiver = member.reference == self.row.reference;
             for field in fields {
                 if !member.created
-                    && !system
-                        .model
-                        .field_is_granted(&field.key, self.effect(), is_receiver)
+                    && !writable.contains(&(
+                        member.population.clone(),
+                        member.key.clone(),
+                        field.key.clone(),
+                    ))
                 {
                     continue;
                 }
@@ -451,7 +470,11 @@ impl Run<'_, '_, '_> {
             if !is_closed(&candidate, &post_references) {
                 continue;
             }
-            let delta = self.decide(&candidate)?;
+            let Ok(delta) = self.decide(&candidate)? else {
+                // Candidates are built inside the frame, so a refusal here is
+                // a broken internal invariant.
+                return Err(stop(BROKEN));
+            };
             self.complete(
                 candidate,
                 &delta,
@@ -538,7 +561,7 @@ impl Run<'_, '_, '_> {
 
     /// The frame decision for `candidate` against the state, per population
     /// in ascending order (FR-120 "Frame and observation seam").
-    fn decide(&self, candidate: &ModelState) -> Result<Delta, ExpansionStop> {
+    fn decide(&self, candidate: &ModelState) -> Result<Result<Delta, FrameRefused>, ExpansionStop> {
         let system = self.walk.system;
         let pre = &self.walk.state.state;
         let empty = BTreeMap::new();
@@ -604,9 +627,7 @@ impl Run<'_, '_, '_> {
                 &mut |_| Ok::<(), Infallible>(()),
             );
             match outcome {
-                // The construction yields only candidates inside the frame,
-                // so a finding here is a broken internal invariant.
-                Err(FrameStop::Refused(_)) => return Err(stop(BROKEN)),
+                Err(FrameStop::Refused(_)) => return Ok(Err(FrameRefused)),
                 Err(FrameStop::Denied(never)) => match never {},
                 Ok(found) => {
                     delta.created.extend(
@@ -624,7 +645,67 @@ impl Run<'_, '_, '_> {
                 }
             }
         }
-        Ok(delta)
+        Ok(Ok(delta))
+    }
+
+    /// Every (population, object, field) the frame lets this application
+    /// write, decided by [`decide_frame`] alone: a probe state changes that
+    /// one field, and the frame decision accepts or refuses it.
+    fn writable_fields(&self) -> Result<WritableFields, ExpansionStop> {
+        let system = self.walk.system;
+        let pre = &self.walk.state.state;
+        let references = self.walk.references();
+        let mut writable = BTreeSet::new();
+        for row in &self.walk.rows {
+            let type_key = system
+                .model
+                .type_key(row.type_id())
+                .ok_or_else(|| stop(BROKEN))?;
+            let fields = system.fields.get(type_key).ok_or_else(|| stop(BROKEN))?;
+            for field in fields {
+                let current = pre
+                    .populations
+                    .get(&row.population)
+                    .and_then(|objects| objects.get(&row.key))
+                    .and_then(|object| object.fields.get(&field.key));
+                let domain = Domain::of(&field.value_type, &references, system.types)
+                    .ok_or_else(|| stop(BROKEN))?;
+                let mut different: Option<Option<Value>> = None;
+                if field.optional && current.is_some() {
+                    different = Some(None);
+                } else {
+                    for index in 0..domain.len().min(8) {
+                        let value = domain.nth(index).ok_or_else(|| stop(BROKEN))?;
+                        if current.is_none_or(|held| !values_equal(held, &value)) {
+                            different = Some(Some(value));
+                            break;
+                        }
+                    }
+                }
+                // A field whose domain holds no other value cannot change.
+                let Some(different) = different else {
+                    continue;
+                };
+                let mut probe = pre.clone();
+                let object = probe
+                    .populations
+                    .get_mut(&row.population)
+                    .and_then(|objects| objects.get_mut(&row.key))
+                    .ok_or_else(|| stop(BROKEN))?;
+                match different {
+                    Some(value) => {
+                        object.fields.insert(field.key.clone(), value);
+                    }
+                    None => {
+                        object.fields.remove(&field.key);
+                    }
+                }
+                if self.decide(&probe)?.is_ok() {
+                    writable.insert((row.population.clone(), row.key.clone(), field.key.clone()));
+                }
+            }
+        }
+        Ok(writable)
     }
 
     /// The effect of the step to `candidate`, with `result` as its result.
@@ -704,23 +785,23 @@ impl Run<'_, '_, '_> {
         })
     }
 
-    /// The values the result type's domain holds over the post-state, in
-    /// ascending order of their typed canonical bytes; one `None` for an
-    /// operation with no result.
+    /// The result domain over the post-state and its values' positions in
+    /// ascending order of their typed canonical bytes; `None` for an
+    /// operation with no result. Only the order is held, never the values:
+    /// each pair is read lazily and counted when it is evaluated.
     ///
-    /// A result domain larger than the candidates the expansion has left
-    /// stops it: the pairs cannot all be evaluated.
-    fn results(
+    /// A result domain with more than [`RESULT_ORDER_LIMIT`] values cannot be
+    /// ordered and stops the expansion.
+    fn result_order(
         &self,
         post_references: &[ObjectReference],
-        budget: &Budget,
-    ) -> Result<Vec<Option<Value>>, ExpansionStop> {
+    ) -> Result<Option<(Domain, Vec<u128>)>, ExpansionStop> {
         let Some(result_type) = self.application.declaration.result() else {
-            return Ok(vec![None]);
+            return Ok(None);
         };
         let domain = Domain::of(result_type, post_references, self.walk.system.types)
             .ok_or_else(|| stop(BROKEN))?;
-        if domain.len() > u128::from(budget.remaining()).saturating_add(1) {
+        if domain.len() > RESULT_ORDER_LIMIT {
             return Err(stop(EXHAUSTED));
         }
         let mut keyed = Vec::new();
@@ -728,10 +809,13 @@ impl Run<'_, '_, '_> {
             let value = domain.nth(index).ok_or_else(|| stop(BROKEN))?;
             let bytes = quire_canonical::to_vec(&value_enc(&value), text_limits())
                 .map_err(|_| stop(BROKEN))?;
-            keyed.push((bytes, value));
+            keyed.push((bytes, index));
         }
-        keyed.sort_by(|left, right| left.0.cmp(&right.0));
-        Ok(keyed.into_iter().map(|(_, value)| Some(value)).collect())
+        keyed.sort();
+        Ok(Some((
+            domain,
+            keyed.into_iter().map(|(_, index)| index).collect(),
+        )))
     }
 
     /// Pair `candidate` with each result and keep it as a successor when some
@@ -747,9 +831,19 @@ impl Run<'_, '_, '_> {
     ) -> Result<(), ExpansionStop> {
         let system = self.walk.system;
         let mut effect = self.effect_of(&candidate, delta)?;
-        let results = self.results(post_references, budget)?;
+        let ordered = self.result_order(post_references)?;
+        let picks: Vec<Option<u128>> = match &ordered {
+            None => vec![None],
+            Some((_, order)) => order.iter().copied().map(Some).collect(),
+        };
         let mut evidence: Option<(Vec<u8>, DigestRecord, Observation)> = None;
-        for result in results {
+        for pick in picks {
+            let result = match (&ordered, pick) {
+                (Some((domain, _)), Some(index)) => {
+                    Some(domain.nth(index).ok_or_else(|| stop(BROKEN))?)
+                }
+                _ => None,
+            };
             if self.application.declaration.result().is_some() {
                 budget.charge()?;
             }
