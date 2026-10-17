@@ -28,6 +28,7 @@ use crate::model::domain_package::{
 use crate::model::intake::SelectedModel;
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::{normalize, NormalizeOutcome};
+use crate::value::{HeaderLayer, LayerForm};
 use quire_exact::Cancel;
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::{
@@ -2560,4 +2561,98 @@ fn a_case_expression_assembles_over_a_registered_union() {
          function f using v(s: Shape): Integer pure { case s { Circle(r): r; Empty: 0; } }",
     );
     assembled.expect("the unit assembles");
+}
+
+const LAYER_PROFILES: &str = "profile c = \"quire.state.core/v1\";\n\
+                              profile q = \"quire.state.queries/v1\";\n";
+
+/// The unit holding the layer profiles `c` (state core) and `q` (state
+/// queries) and `declarations`, assembled.
+fn assemble_layers(declarations: &str) -> (String, Result<PackageDeclarations, AssemblyRefusal>) {
+    let text = text(LAYER_PROFILES, declarations);
+    let assembled = assemble_as("a", "u", &text);
+    (text, assembled)
+}
+
+/// The one error the assembler gives for `declarations`, which names layer
+/// `layer`, the form outside its set and the located text.
+fn layer_refusal(declarations: &str, located: &str) -> (HeaderLayer, LayerForm, String) {
+    let (text, assembled) = assemble_layers(declarations);
+    let refusal = assembled.expect_err("the layer refuses the form");
+    let [error] = refusal.errors.as_slice() else {
+        panic!("one error, not {refusal:?}");
+    };
+    let AssemblyCause::UnsupportedLayerForm { layer, form } = error.cause else {
+        panic!("a layer refusal, not {error:?}");
+    };
+    assert_eq!(&text[error.span.start..error.span.end], located);
+    assert_eq!(
+        error.cause.catalog_code().to_string(),
+        format!("unsupported_construct/{}", form.refusal_cause())
+    );
+    (layer, form, text)
+}
+
+/// FR-110-AC-8: a named predicate declared under state core refuses
+/// `unsupported_construct`/`declaration-form` at the declaration, naming the
+/// layer; the same declaration under state queries assembles.
+#[trace("TC-490", "FR-110-AC-8")]
+#[test]
+fn a_named_predicate_declaration_is_outside_state_core_and_inside_state_queries() {
+    let declaration = "predicate Positive using c(x: Int[0, 9]): Boolean { x > 0 }";
+    let (layer, form, _) = layer_refusal(declaration, declaration);
+    assert_eq!(layer, HeaderLayer::StateCore);
+    assert_eq!(form, LayerForm::PredicateDeclaration);
+    assemble_layers(&declaration.replace("using c", "using q"))
+        .1
+        .expect("state queries admits a named predicate declaration");
+}
+
+/// FR-110-AC-8: an expression form outside the closure refuses
+/// `unsupported_construct`/`expression-form` at the expression, and a form of
+/// a wider layer is never admitted: state queries admits `filter` over a
+/// predicate but not integer `div`, which only the value layer adds.
+#[trace("TC-490", "FR-110-AC-8")]
+#[test]
+fn an_expression_form_of_a_wider_layer_is_refused_at_its_span() {
+    let (layer, form, _) = layer_refusal(
+        "predicate Half using q(x: Int[0, 9]): Boolean { x div 2 = 1 }",
+        "x div 2",
+    );
+    assert_eq!(layer, HeaderLayer::StateQueries);
+    assert_eq!(form, LayerForm::ValueConstruct);
+    // The first offending form in source order is the one refused.
+    let (_, form, _) = layer_refusal(
+        "predicate Twice using q(x: Int[0, 9]): Boolean { x rem 2 = 0 and x div 2 = 1 }",
+        "x rem 2",
+    );
+    assert_eq!(form, LayerForm::ValueConstruct);
+}
+
+/// FR-110-AC-8: a named predicate call is a state-queries form. A function
+/// declaration is the value layer's, so a function using state queries
+/// refuses as a declaration, not as the call in its body.
+#[trace("TC-490", "FR-110-AC-8")]
+#[test]
+fn a_function_declaration_is_outside_state_queries() {
+    let declarations = "predicate Positive using q(x: Int[0, 9]): Boolean { x > 0 }\n\
+                        function f using q(x: Int[0, 9]): Boolean pure { Positive(x) }";
+    let located = "function f using q(x: Int[0, 9]): Boolean pure { Positive(x) }";
+    let (layer, form, _) = layer_refusal(declarations, located);
+    assert_eq!(layer, HeaderLayer::StateQueries);
+    assert_eq!(form, LayerForm::FunctionDeclaration);
+}
+
+/// FR-110-AC-8: the value layer admits what it adds to state core, and the
+/// header layers are recorded in the assembled package, ascending.
+#[trace("TC-490", "FR-110-AC-7")]
+#[test]
+fn the_value_layer_admits_functions_and_the_package_records_its_layers() {
+    let package = assemble(
+        "function f using v(x: Int[0, 9]): Boolean pure { x div 2 = 1 }\n\
+         predicate P using v(x: Int[0, 9]): Boolean { f(x) }",
+    )
+    .1
+    .expect("the value layer admits functions, predicates and integer division");
+    assert_eq!(package.header_layers, [HeaderLayer::ValueComplete]);
 }

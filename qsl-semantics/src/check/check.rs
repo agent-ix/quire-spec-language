@@ -325,6 +325,10 @@ pub struct PackageDeclarations {
     /// The package's lock evidence (ADR-011 §2.4): the law `DefinitionRef`s
     /// a lowered operation may name (FR-093).
     pub lock_evidence: super::lowering::LockEvidence,
+    /// FR-110: the header-selectable layers the unit's header profiles
+    /// resolve to, ascending; the lock's `definition_selections` hold their
+    /// `requires` closure.
+    pub header_layers: Vec<crate::value::HeaderLayer>,
     /// Record, tuple and model object-type declarations.
     pub types: TypeEnvironment,
     /// Where each record keeps the fields its ancestors name (FR-359).
@@ -489,6 +493,7 @@ impl PackageDeclarations {
             pending_types: None,
             source,
             lock_evidence: super::lowering::LockEvidence::default(),
+            header_layers: Vec::new(),
             types: TypeEnvironment::default(),
             model_records: ModelRecords::default(),
             relationships: Relationships::default(),

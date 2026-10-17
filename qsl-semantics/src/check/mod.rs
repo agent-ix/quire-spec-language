@@ -98,6 +98,7 @@ pub mod imports;
 #[cfg(not(any(test, feature = "test-support")))]
 pub(crate) mod imports;
 mod ir;
+mod layer;
 mod lowering;
 pub(crate) use assemble::variant_type_declarations;
 pub(crate) use lowering::record_node_key;
@@ -388,6 +389,9 @@ pub struct CheckedGraph {
     /// ADR-011 §2.4 `model_selections`: each admitted domain package's
     /// selection, ascending by identity.
     model_selections: Vec<DomainPackageRef>,
+    /// FR-110: the header-selectable layers the unit's header profiles
+    /// resolve to, ascending.
+    header_layers: Vec<crate::value::HeaderLayer>,
     /// FR-104: every checked state clause, in declaration order.
     state_clauses: Vec<CheckedStateClause>,
     /// FR-113: every checked protocol declaration, in declaration order.
@@ -912,6 +916,7 @@ impl PackageDeclarations {
             .collect();
         let owner = node_key::SourceOwner::from(&source);
         let lock_evidence = self.lock_evidence;
+        let header_layers = self.header_layers;
         let models = self.models;
         let model_inputs = self.model_inputs;
         let mut pending_types = self
@@ -1884,6 +1889,7 @@ impl PackageDeclarations {
             synthesized_spans,
             embedding,
             model_selections,
+            header_layers,
             state_clauses,
             protocols: checked_protocols,
             operation_frames,
@@ -1959,6 +1965,13 @@ impl CheckedGraph {
     /// `model_selections`.
     pub fn model_selections(&self) -> &[DomainPackageRef] {
         &self.model_selections
+    }
+
+    /// FR-110: the header-selectable layers the unit's header profiles
+    /// resolved to, ascending. The lock's `definition_selections` hold the
+    /// `requires` closure of these.
+    pub fn header_layers(&self) -> &[crate::value::HeaderLayer] {
+        &self.header_layers
     }
 
     /// FR-001: the `RawSourceRef` of the unit this package was checked
