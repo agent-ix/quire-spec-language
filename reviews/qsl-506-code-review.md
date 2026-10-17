@@ -9,7 +9,7 @@ review_set: subset
 
 ## Summary
 
-Ticket: QSL-506. PR quire-spec-language#941. Code review with the rust-review lane, scoped to `git diff origin/main...HEAD` (17 files, +686/-88). Read only. No build was run, and the merged tree was read for compile and type errors. The author's recorded gaps are not reported again: the FR-334-AC-4 conformance test waits on a QSpec amendment, and the FR-335-AC-5 charge-point assertion was a guess. The guess is checked below.
+Ticket: QSL-506. PR quire-spec-language#941. Code review with the rust-review lane, scoped to `git diff origin/main...HEAD` (17 files, +686/-88). Read only. No build was run, and the merged tree was read for compile and type errors. The author's recorded gap is not reported again: the FR-335-AC-5 charge-point assertion was a guess. The guess is checked below.
 
 ## Findings
 

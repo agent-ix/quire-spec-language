@@ -9,7 +9,7 @@ review_set: subset
 
 ## Summary
 
-Ticket: QSL-506. PR quire-spec-language#941. This is a planless gap analysis scoped to the diff, so plan completion was not assessed. Each criterion was traced to its tagged tests by reading them, against QSL FR-333, FR-334 and FR-335 and QSpec FR-322 (read in place, cited by id). The author's recorded gaps are not reported again: the FR-334-AC-4 conformance test waits on a QSpec FR-322 amendment for an unbounded population node, and the FR-335-AC-5 charge point is the code review's FND-001 (SR-12089).
+Ticket: QSL-506. PR quire-spec-language#941. This is a planless gap analysis scoped to the diff, so plan completion was not assessed. Each criterion was traced to its tagged tests by reading them, against QSL FR-333, FR-334 and FR-335 and QSpec FR-322 (read in place, cited by id). The author's recorded gap is not reported again: the FR-335-AC-5 charge point is the code review's FND-001 (SR-12089).
 
 ## Findings
 
@@ -28,7 +28,7 @@ FIX, for two spec and trace corrections. The code-side gap is SR-12089 FND-001. 
 - FR-334-AC-1: different node key and `package_id`, no `min`/`max` on the unbounded `set` node, and `min`/`max` with 18446744073709551615 on the bounded node.
 - FR-334-AC-2: three distinct keys, a `model_population` node without `max` and one with `max`, and lowering with no refusal.
 - FR-334-AC-3: same keys and `package_id` on recompilation.
-- FR-334-AC-4: unwritten (recorded gap). QSpec FR-322 requires exactly one `max` binding on `model_population`, so FR-334's no-maximum node is outside FR-322 until it is amended.
+- FR-334-AC-4: `conformance_fr334_collection_and_population_keys_match_qspec` keys the unbounded `Set<Reference<Order>>`, `Population<Order>[3]`, `Population<Order>` and `Population<Order>[0]` to the keys QSpec FR-322 publishes, read in place.
 - FR-335-AC-1 to AC-4: item kind, extent and `finite_bound_available`, domain list, empty and one-candidate sets, own request indices, bounded classification, and per-bound domains are all checked. The settlement half uses fixture dispositions, as TC-845 states. The amended AC-4 wording (a requirement built directly) matches its test. AC-2's "no harness is emitted" and AC-3's "unbounded item still settles requires-bound" have no assertion of their own.
 - The edits to the FR-333, FR-334 and TC-843 to TC-845 wording are consistent with the grammar (`Integer`, not `Int` without a range) and with QSpec FR-322's `collection_bounds` member names `min` and `max`.
 
