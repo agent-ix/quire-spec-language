@@ -29,3 +29,9 @@ FIX (one test-oracle gap). Every other criterion in scope has a test that can fa
 - FR-366-AC-6: `an_event_type_no_value_reaches_has_no_result`.
 - FR-366-AC-7: tests for the subtype value, the nested `Pair`, the event parameter and `a_reference_is_not_followed`.
 - FR-366-AC-9, process half: `a_process_invariant_has_one_result_for_each_run`, which includes the `UnknownClause` check.
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed ab8b210e3 | The AC-8 test now asserts the unlimited charge log equals `[ordering.operands, ordering.arithmetic, ordering.result-retain]` × 6, and asserts `resource_exhausted`/`insufficient-next-charge` on the denied run |

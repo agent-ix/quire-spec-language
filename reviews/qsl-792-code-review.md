@@ -31,3 +31,17 @@ FIX. FND-001 is a fault on input the checker admits. FND-002 and FND-003 are the
 - `evaluate` sorts by `(path, clause)`, uses the one meter, returns the results so far with `Incomplete` on a denied charge, and does not follow `Value::Reference`.
 - `ObjectEnvironment::with_references` is set on the one snapshot path (`finish_populations`) that feeds `AdmittedObservations`.
 - No new `unsafe`, unchecked casts or panics in production code. The collection index uses `u64::try_from`.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | medium | Since #911, a `Context` selection admits `current` as the invocation's post snapshot, holding the state-machine context. `collect` walks every object in `current.environment.references()`, so a state-machine invariant is evaluated at `(observation, object ctx)`, with the object as subject, instead of only at the invocation's receiver binding. Its pre and post sides are never reached, because that branch needs `pre` and `post` | qsl-eval/src/value/expression/value_invariants.rs:112-130, qsl-semantics/src/model/observation.rs:2815-2831 |
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | still-open | The denylist `check_type_invariant` added in ab8b210e3 (state_clause.rs:292-301) covers `Attribute`, `Navigate`, `AllInstances` and `Lookup`. It misses `Reaches` and `ReachesEnd`, which are relationship reads that the amended FR-366 rule names and that read the empty environment at evaluate. It also misses a `Call` whose callee reads objects through a passed reference. Any of these, checked inside a record or event invariant, still ends in `CallFailure::Fault` |
+| FND-002 | fixed ab8b210e3 | `CheckCause::unwrapped()` is used by `limit_of`, `fault_of` and `CompileRefusal::fields`; tested by `a_limit_or_fault_inside_a_type_invariant_is_read_through_its_wrapper` |
+| FND-003 | fixed ab8b210e3 | `CompileRefusal::fields` adds `clause` and `member`, which reach `RefusalWire.fields` in the native result, and `check_message` names the invariant and `TypeDefinition.clauses[k]`. The origin stays `Expression` because `Origin` is owned by quire-semantic-value; this is recorded as a gap |
