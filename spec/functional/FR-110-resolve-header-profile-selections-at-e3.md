@@ -104,6 +104,13 @@ build compiled against.
   and required role").
 - The spine registers no clause family yet, so every header profile a spine
   unit declares reaches this table.
+- A unit whose header declares no profile selects no layer. Its lock holds
+  the package-selection `always` rows, as for a unit that selects
+  `quire.value.complete/v1`, and no layer row. This is the explicit default.
+- Until QSL-750 (model-profile selection and gating in QSL, FR-361) lands, the
+  admitted-form set of `quire.value.complete/v1` also holds the object
+  navigation forms (`deref`, `reaches`), which QSpec's `quire.state.graph/v1`
+  adds. This is a temporary exception, removed when QSL-750 lands.
 - Two header profiles that both select the same layer both resolve;
   a repeated alias is the assembler's duplicate-alias refusal (FR-091-AC-22).
 - Every code and cause is one `quire.native.diagnostics/v1` lists. The
@@ -170,7 +177,7 @@ edge therefore compile to distinct packages.
 
 | ID | Constraint | Type | Validation |
 | --- | --- | --- | --- |
-| FR-110-CON-1 | The resolution's one input is the unit's profile selections; it reads the catalog, including the `header_selectable_layers` rows that name each layer's admitted-form set and `requires` edges, from `DefinitionLock::pinned()` (ADR-011 §2.4: the lock evidence derives from the source and the QSL build). QSL defines no admitted-form set of its own. | Design | Inspection |
+| FR-110-CON-1 | The resolution's one input is the unit's profile selections; it reads the catalog, including the `header_selectable_layers` rows that name each layer's admitted-form set and `requires` edges, from `DefinitionLock::pinned()` (ADR-011 §2.4: the lock evidence derives from the source and the QSL build). QSL's Rust layer table is the machine form of QSpec's prose admitted-form sets; QSL adds no form of its own, and each layer row has a test listing its admitted forms so a change is a visible diff. | Design | Inspection |
 
 ## Acceptance Criteria
 

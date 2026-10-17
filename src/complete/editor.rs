@@ -386,3 +386,33 @@ fn is_symbol(production: Production) -> bool {
             | Production::VerificationPlan
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use ix_trace_rs::trace;
+    use qsl_semantics::value::HeaderLayer;
+
+    use super::*;
+
+    /// FR-110: the editor's profile check is catalog-driven, so a catalog that
+    /// holds the five header-selectable layer identities accepts each, and
+    /// an identity it does not hold is `unknown_profile`/`unsupported-selection`.
+    #[trace("TC-490", "FR-110-AC-7")]
+    #[test]
+    fn the_five_header_layers_are_accepted_by_a_catalog_that_holds_them() {
+        let catalog =
+            ProfileCatalog::new(HeaderLayer::ALL.map(HeaderLayer::identity)).expect("a catalog");
+        for layer in HeaderLayer::ALL {
+            assert!(
+                profile_refusal(&catalog, layer.identity()).is_none(),
+                "{}",
+                layer.identity()
+            );
+        }
+        let refused = profile_refusal(&catalog, "test:unknown-profile").expect("unknown refuses");
+        assert!(matches!(refused.0, CompleteCode::UnknownProfile));
+        assert!(matches!(refused.1, CompleteCause::UnsupportedSelection));
+        let empty = ProfileCatalog::new(Vec::<String>::new()).expect("empty");
+        assert!(profile_refusal(&empty, HeaderLayer::StateCore.identity()).is_some());
+    }
+}

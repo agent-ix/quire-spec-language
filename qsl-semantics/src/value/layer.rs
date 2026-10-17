@@ -196,12 +196,13 @@ pub(super) const LAYER_ROWS: [LayerRow; 5] = [
     // `value.complete` adds complete values and pure functions to state core.
     // A predicate is a pure Boolean function and the ordered queries are
     // collection operations, so its set holds them although it does not
-    // require `state.queries`. It also holds `ObjectNavigation` until
-    // FR-361's gate of the model constructs lands: the unit language has no
-    // other way to write an object-typed state clause, and every such unit
-    // selects `value.complete` today. Deleting that entry is that gate's
-    // work, and it is the one place this table admits a form under a layer
-    // wider than the spec's.
+    // require `state.queries`. It also holds `ObjectNavigation` although it
+    // does not require `state.graph`: every unit that writes an object-typed
+    // state clause selects `value.complete` today. This is a TEMPORARY
+    // exception, the one place this table admits a form under a layer wider
+    // than the spec's. It expires when QSL-750 (model-profile selection and
+    // gating in QSL, FR-361) lands; that work deletes the `ObjectNavigation`
+    // entry below and moves those units to `quire.model.complete/v1`.
     LayerRow {
         layer: HeaderLayer::ValueComplete,
         requires: &[HeaderLayer::StateCore],
