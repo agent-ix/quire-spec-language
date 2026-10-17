@@ -241,7 +241,7 @@ pub struct FrameEvaluation {
 /// depth for a `Value::Population` the type checker's own structural
 /// argument-type matching would otherwise have already ruled out at every
 /// nested call site.
-fn validate(
+pub fn admit_arguments(
     parameters: &[(String, ValueType)],
     arguments: &[Value],
     objects: &ObjectEnvironment,
@@ -807,7 +807,7 @@ impl CheckedPackageEvaluation for CheckedPackage {
             .graph()
             .callable(name)
             .ok_or_else(|| InputRefusal::UnknownFunction(function.to_string()))?;
-        validate(
+        admit_arguments(
             callable.parameters,
             &arguments,
             objects,
@@ -843,7 +843,7 @@ impl CheckedPackageEvaluation for CheckedPackage {
     ) -> Result<Evaluation, CallFailure> {
         let mut run = SuppliedRun::new(SuppliedLimits::default(), quire_exact::Cancel::new())
             .map_err(|stop| CallFailure::from(SuppliedFailure::Stop(stop)))?;
-        validate(
+        admit_arguments(
             expression.parameters(),
             &arguments,
             objects,

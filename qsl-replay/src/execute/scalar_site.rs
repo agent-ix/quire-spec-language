@@ -19,7 +19,7 @@ use quire_semantic_value::declaration::EqualityOperator;
 /// follows every node reference of a node's preimage, and stops at another
 /// function's node: a call to another function is not that function's body.
 #[qsl_attrs::string_edge]
-pub(super) fn in_body(graph: &SemanticGraph, function: NodeKey, target: NodeKey) -> bool {
+pub(crate) fn in_body(graph: &SemanticGraph, function: NodeKey, target: NodeKey) -> bool {
     let keys: std::collections::BTreeMap<String, NodeKey> = graph
         .nodes()
         .map(SemanticNode::key)
@@ -78,7 +78,7 @@ fn node_digests(value: &serde_json::Value, out: &mut Vec<String>) {
 /// Whether `node` is an application of `operator`: its body's operation
 /// identity is the operator's catalog identity.
 #[qsl_attrs::string_edge]
-pub(super) fn applies(node: &SemanticNode, operator: ScalarOperator) -> bool {
+pub(crate) fn applies(node: &SemanticNode, operator: ScalarOperator) -> bool {
     serde_json::from_slice::<serde_json::Value>(node.preimage())
         .ok()
         .is_some_and(|preimage| {
@@ -109,7 +109,7 @@ pub(super) fn check_node_operands(
 /// for an `InlineLiteral` the argument is an inline integer literal, whose
 /// value is the operand's value and whose singleton range is the operand's.
 #[qsl_attrs::string_edge]
-pub(super) fn check_operands(
+pub(crate) fn check_operands(
     preimage: &serde_json::Value,
     application: WireNodeId,
     operation: &ScalarOperation,
@@ -169,7 +169,7 @@ pub(super) fn check_operands(
 /// catalog `quire.op.<family>.eq` or `quire.op.<family>.ne` (QSpec FR-149's
 /// `=` and `!=`).
 #[qsl_attrs::string_edge]
-pub(super) fn equality_operator(node: &SemanticNode) -> Option<EqualityOperator> {
+pub(crate) fn equality_operator(node: &SemanticNode) -> Option<EqualityOperator> {
     let preimage = serde_json::from_slice::<serde_json::Value>(node.preimage()).ok()?;
     let identity = preimage["body"]["operation"]["identity"].as_str()?;
     let (_, suffix) = identity.strip_prefix("quire.op.")?.rsplit_once('.')?;

@@ -208,6 +208,9 @@ pub enum ScalarOperator {
 }
 
 impl ScalarOperator {
+    /// Every catalog operator, in declaration order.
+    pub(crate) const ALL: [Self; 4] = [Self::Add, Self::Subtract, Self::Multiply, Self::Negate];
+
     /// The operation identity a checked application node of this operator
     /// carries.
     pub(crate) fn catalog_identity(self) -> &'static str {
@@ -300,9 +303,10 @@ pub struct OperatorClaim {
     /// The native outcome of the same proved generated artifact at the
     /// operands.
     pub generated: NativeOutcome,
-    /// The canonical generated-content identity binding the observation to
-    /// the artifact, operands and limits. Carried into the claim identity;
-    /// never recomputed or checked here.
+    /// The canonical content identity of the generated artifact alone. The
+    /// operands and limits are separate claim fields, not part of this
+    /// digest. Carried into the claim identity; never recomputed or checked
+    /// here.
     pub identity: DigestRecord,
 }
 
@@ -325,8 +329,8 @@ impl OperatorClaim {
     }
 }
 
-/// The identity of an operator-level claim. `identity` is the observation
-/// digest: QSL carries it unchanged and binds it into this identity, and
+/// The identity of an operator-level claim. `identity` is the generated
+/// artifact's content identity: QSL carries it unchanged and binds it into this identity, and
 /// never authenticates it against the generated artifact (the driver does).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OperatorIdentity {
@@ -334,7 +338,7 @@ pub struct OperatorIdentity {
     pub obligation: ObligationIdentity,
     /// The scalar node the operator is tied to.
     pub node: WireNodeId,
-    /// The generated-content identity of the observation.
+    /// The content identity of the generated artifact alone.
     pub identity: DigestRecord,
     /// The operator and its operands.
     pub operation: ScalarOperation,
