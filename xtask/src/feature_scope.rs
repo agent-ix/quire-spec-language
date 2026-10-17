@@ -325,7 +325,6 @@ pub fn skipped(decisions: &[Decision]) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ix_trace_rs::trace;
     use serde_json::json;
 
     /// One fixture package: its name, the resolved features and dependencies
@@ -396,7 +395,6 @@ mod tests {
     }
 
     #[test]
-    #[trace("TC-915", "NFR-013-AC-3")]
     fn a_package_whose_resolved_features_are_identical_is_skipped() {
         let both = [dep("leaf", &[]), pkg("featured", &[])];
         let all = [dep("leaf", &[]), pkg("featured", &["extra"])];
@@ -406,7 +404,6 @@ mod tests {
     }
 
     #[test]
-    #[trace("TC-915", "NFR-013-AC-3")]
     fn a_package_without_features_stays_when_a_dependency_gains_features() {
         let default = [dep("app", &["lib"]), pkg("lib", &[])];
         let all = [dep("app", &["lib"]), pkg("lib", &["extra"])];
@@ -421,9 +418,12 @@ mod tests {
     }
 
     #[test]
-    #[trace("TC-915", "NFR-013-AC-3")]
     fn the_change_is_found_through_a_chain_of_dependencies() {
-        let default = [dep("top", &["mid"]), dep("mid", &["third"]), pkg("third", &[])];
+        let default = [
+            dep("top", &["mid"]),
+            dep("mid", &["third"]),
+            pkg("third", &[]),
+        ];
         let all = [
             dep("top", &["mid"]),
             dep("mid", &["third"]),
@@ -439,7 +439,6 @@ mod tests {
     }
 
     #[test]
-    #[trace("TC-915", "NFR-013-AC-3")]
     fn a_dependency_reachable_only_under_all_features_keeps_the_package() {
         let default = [dep("app", &[]), dep("opt", &[])];
         let all = [dep("app", &["opt"]), dep("opt", &[])];
@@ -453,7 +452,6 @@ mod tests {
     }
 
     #[test]
-    #[trace("TC-915", "NFR-013-AC-3")]
     fn a_skipped_package_may_not_be_the_only_requester_of_a_feature() {
         let packages = || {
             [
@@ -480,7 +478,6 @@ mod tests {
     }
 
     #[test]
-    #[trace("TC-915", "NFR-013-AC-3")]
     fn a_feature_requested_by_a_staying_package_covers_the_skipped_requester() {
         let asking = |name| Pkg {
             name,
@@ -488,8 +485,16 @@ mod tests {
             deps: &["lib"],
             asks: &[("lib", "test-support")],
         };
-        let default = [asking("first"), asking("second"), pkg("lib", &["test-support"])];
-        let all = [asking("first"), asking("second"), pkg("lib", &["test-support"])];
+        let default = [
+            asking("first"),
+            asking("second"),
+            pkg("lib", &["test-support"]),
+        ];
+        let all = [
+            asking("first"),
+            asking("second"),
+            pkg("lib", &["test-support"]),
+        ];
         let verdicts = decide_fixture(&["first", "second", "lib"], &default, &all);
         // The first requester stays to supply the feature; the second asks for
         // nothing it does not supply.
@@ -504,16 +509,17 @@ mod tests {
     }
 
     #[test]
-    #[trace("TC-915", "NFR-013-AC-3")]
     fn skipped_names_the_skip_decisions_in_package_order() {
         let both = [dep("zeta", &[]), dep("alpha", &[]), pkg("mid", &["x"])];
         let all = [dep("zeta", &[]), dep("alpha", &[]), pkg("mid", &["x", "y"])];
         let decisions = decisions(&["zeta", "alpha", "mid"], &both, &all);
-        assert_eq!(skipped(&decisions), vec!["alpha".to_owned(), "zeta".to_owned()]);
+        assert_eq!(
+            skipped(&decisions),
+            vec!["alpha".to_owned(), "zeta".to_owned()]
+        );
     }
 
     #[test]
-    #[trace("TC-915", "NFR-013-AC-3")]
     fn different_member_lists_and_malformed_documents_are_refused() {
         let one = resolve(&["a"], &[dep("a", &[])]);
         let other = resolve(&["a", "b"], &[dep("a", &[]), dep("b", &[])]);

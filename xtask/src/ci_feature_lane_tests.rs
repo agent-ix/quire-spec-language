@@ -587,7 +587,6 @@ fn clean_and_core_tooling_retain_their_own_target_and_features() {
 /// QSL-825: the all-features lane's package scope, from the real workspace's
 /// `cargo metadata`. Prints the decision table (`--nocapture`).
 #[test]
-#[trace("TC-915", "NFR-013-AC-3")]
 fn real_workspace_decisions_keep_every_package_whose_compile_changes() {
     let decisions = all_features_decisions(workspace(), &[OsString::from("--locked")])
         .expect("the workspace resolves in both feature selections");
@@ -607,7 +606,10 @@ fn real_workspace_decisions_keep_every_package_whose_compile_changes() {
         verdict("quire-spec-language"),
         &Verdict::Run(KeepReason::OwnFeatures)
     );
-    assert_eq!(verdict("qsl-source"), &Verdict::Run(KeepReason::OwnFeatures));
+    assert_eq!(
+        verdict("qsl-source"),
+        &Verdict::Run(KeepReason::OwnFeatures)
+    );
     // No optional features of its own, but a dependency's features change.
     assert_eq!(
         verdict("qsl-bench"),

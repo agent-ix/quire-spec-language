@@ -1245,7 +1245,11 @@ fn read_resolution(
     cargo_args: &[OsString],
     all_features: bool,
 ) -> Result<Resolution> {
-    let scope: &[&str] = if all_features { &["--all-features"] } else { &[] };
+    let scope: &[&str] = if all_features {
+        &["--all-features"]
+    } else {
+        &[]
+    };
     let output = metadata_command_with(workspace_root, cargo_args, scope)
         .output()
         .map_err(io_error("cannot spawn cargo metadata"))?;
@@ -1462,7 +1466,10 @@ pub fn run(workspace_root: &Path, operands: &[OsString]) -> Result<String> {
     })?;
     validate_lane_selection(lane, cargo_args)?;
     let mut stdout = io::stdout().lock();
-    if !matches!(LaneKind::from_name(lane.name), LaneKind::AllFeaturesWorkspace) {
+    if !matches!(
+        LaneKind::from_name(lane.name),
+        LaneKind::AllFeaturesWorkspace
+    ) {
         return run_lane(workspace_root, lane, cargo_args, None, &mut stdout);
     }
     // QSL-825: the default lane ran every package; this one runs those whose
@@ -2460,7 +2467,6 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     }
 
     #[test]
-    #[trace("TC-915", "NFR-013-AC-3")]
     fn skipped_packages_are_excluded_before_any_test_binary_argument() {
         let skipped = names(&["b", "c"]);
         let out = |arguments: &[&str]| -> Vec<String> {
@@ -2502,7 +2508,6 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     }
 
     #[test]
-    #[trace("TC-915", "NFR-013-AC-3")]
     fn the_longest_member_directory_owns_a_source() {
         let metadata = serde_json::json!({
             "packages": [
@@ -2520,11 +2525,13 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
         assert_eq!(owner("tools/x/lib.rs"), Some("tool"));
         // `ab` is not inside `a`: ownership is by path component.
         assert_eq!(owner("ab/src/lib.rs"), Some("root"));
-        assert_eq!(workspace.owner(Path::new("/elsewhere"), "a/src/lib.rs"), None);
+        assert_eq!(
+            workspace.owner(Path::new("/elsewhere"), "a/src/lib.rs"),
+            None
+        );
     }
 
     #[test]
-    #[trace("TC-915", "NFR-013-AC-3")]
     fn empty_declarations_of_excluded_packages_leave_the_lane() {
         let workspace = workspace();
         let declared = [
@@ -3318,7 +3325,10 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
             for (name, manifest_tail) in [
                 ("leaf", ""),
                 ("featured", "\n[features]\nextra = []\n"),
-                ("user", "\n[dependencies]\nfeatured = { path = \"../featured\" }\n"),
+                (
+                    "user",
+                    "\n[dependencies]\nfeatured = { path = \"../featured\" }\n",
+                ),
             ] {
                 write(
                     root,
@@ -3342,7 +3352,6 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
         /// package whose compile `--all-features` cannot change is left out
         /// of the real run, and the two that can change stay in it.
         #[test]
-        #[trace("TC-915", "NFR-013-AC-3")]
         fn only_packages_whose_compile_changes_run_under_all_features() {
             let dir = feature_workspace();
             let arguments = cargo_args(&["--workspace", "--all-features"]);
