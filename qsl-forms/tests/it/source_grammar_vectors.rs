@@ -43,7 +43,7 @@ fn span_of(text: &str, needle: &str) -> Span {
     }
 }
 
-/// FR-362-AC-2 (TC-1026 step 2): a `profile` line that carries `version` or
+/// The grammar half of TC-1026 step 2: a `profile` line that carries `version` or
 /// `digest` after the identity recovers with `invalid_syntax` at that token,
 /// records no profile selection, and `build_unit` refuses the source with the
 /// `invalid_syntax` cause.
@@ -82,7 +82,7 @@ fn a_profile_line_names_only_its_identity() {
     }
 }
 
-/// FR-362-AC-7 (TC-1026 step 5, grammar half): a unit of a `predicate` and an
+/// The build_unit half of TC-1026 step 5: a unit of a `predicate` and an
 /// `invariant` builds; the same unit with a `relation` or `hyper` clause is
 /// refused with `NoDispatchEntry`, mapped to `unsupported_construct`, at that
 /// clause, and builds no `ParsedUnit`.
