@@ -28,6 +28,7 @@ pub(super) enum NativeConstructor {
 
 impl NativeConstructor {
     /// The constructor an unqualified call of `name` spells, if any.
+    #[qsl_attrs::string_edge]
     pub(super) fn named(name: &str) -> Option<Self> {
         match name {
             "UUID" => Some(Self::Uuid),

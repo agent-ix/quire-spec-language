@@ -1398,9 +1398,8 @@ fn a_string_literal_at_a_variant_slot_is_refused_by_the_checker() {
         .check(&[], &Expression::string("Gold"), Some(&c.tier))
         .expect_err("a String literal is not a Tier");
     assert_eq!(refusal.cause, mismatch());
-    let refusals = check_refusals(
-        "function f using v(t: Config::Tier): Boolean pure { t = \"Gold\" }",
-    );
+    let refusals =
+        check_refusals("function f using v(t: Config::Tier): Boolean pure { t = \"Gold\" }");
     assert!(
         refusals.iter().any(|refusal| refusal.cause == mismatch()),
         "the comparison refuses: {refusals:?}"
