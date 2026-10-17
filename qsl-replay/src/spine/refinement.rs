@@ -269,7 +269,7 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
             let denial = incomplete.denial();
             Some(ReachedLimit::of_setting(denial.setting(), denial.limit()))
         }
-        CheckCause::TypeAdmission { limit, .. } => limit.as_ref().map(ReachedLimit::of),
+        CheckCause::TypeAdmission { limit, .. } => limit.as_deref().map(ReachedLimit::of),
         // A type invariant's wrapper classifies as the cause it wraps.
         CheckCause::TypeInvariant(refusal) => check_limit(&refusal.cause),
         CheckCause::DispatchLink(link) => link

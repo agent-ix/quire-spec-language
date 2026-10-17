@@ -570,7 +570,11 @@ fn a_check_type_admission_limit_is_incomplete_naming_the_limit() {
     let limited = check(vec![CheckCause::TypeAdmission {
         code: Code::StageLimitExceeded,
         cause: "type-limit",
-        limit: Some(LimitExceeded::new(Setting::EnvironmentWorkUnits, 1, 2)),
+        limit: Some(Box::new(LimitExceeded::new(
+            Setting::EnvironmentWorkUnits,
+            1,
+            2,
+        ))),
     }]);
     let classified = classify_refusal(&limited);
     assert_eq!(classified.class, RefinementClass::Incomplete);
@@ -617,7 +621,11 @@ fn a_clause_run_compile_type_admission_limit_names_the_limit() {
         disposition: ClauseDisposition::Compile(Box::new(check(vec![CheckCause::TypeAdmission {
             code: Code::StageLimitExceeded,
             cause: "type-limit",
-            limit: Some(LimitExceeded::new(Setting::EnvironmentAncestorSteps, 3, 4)),
+            limit: Some(Box::new(LimitExceeded::new(
+                Setting::EnvironmentAncestorSteps,
+                3,
+                4,
+            ))),
         }]))),
     };
     let classified = assert_run(

@@ -637,8 +637,9 @@ pub enum CheckCause {
         /// Its catalog cause.
         cause: &'static str,
         /// The type-environment ceiling that was reached, when the cause is
-        /// a reached limit; `None` for every other type admission refusal.
-        limit: Option<qsl_foundation::diagnostic::LimitExceeded>,
+        /// a reached limit; `None` for every other type admission refusal. Boxed to
+        /// keep `CheckCause`, and so `CheckRefusal`, small.
+        limit: Option<Box<qsl_foundation::diagnostic::LimitExceeded>>,
     },
     /// `refused { code: ill_typed }` with its FR-272 cause.
     IllTyped(IllTypedCause),

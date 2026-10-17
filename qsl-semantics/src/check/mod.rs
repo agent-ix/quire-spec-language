@@ -672,7 +672,7 @@ fn resolve_signature(
 fn type_admission(failure: quire_semantic_value::declaration::EnvironmentFailure) -> CheckCause {
     let cause = assemble::environment_cause(failure);
     let limit = if let AssemblyCause::TypeLimit(limit) = &cause {
-        Some(limit.clone())
+        Some(Box::new(limit.clone()))
     } else {
         None
     };
@@ -2571,11 +2571,11 @@ mod tests {
             StorageRequest, StorageUnit,
         };
         let ceiling = || EnvironmentLimit::new(EnvironmentLimitKind::AncestorSteps, 5, 6);
-        let expected = Some(qsl_foundation::diagnostic::LimitExceeded::new(
+        let expected = Some(Box::new(qsl_foundation::diagnostic::LimitExceeded::new(
             qsl_foundation::Setting::EnvironmentAncestorSteps,
             5,
             6,
-        ));
+        )));
 
         let CheckCause::TypeAdmission { code, limit, .. } =
             type_admission(EnvironmentFailure::Limit(ceiling()))
