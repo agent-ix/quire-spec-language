@@ -53,7 +53,7 @@ its content under the one rule QSpec publishes.
 
 - An unbounded collection type SHALL lower to its composite collection node
   alone; a bounded collection type SHALL lower to its composite node with a
-  `collection_bounds` member holding `minimum` and `maximum`. The two SHALL
+  `collection_bounds` member holding `min` and `max`. The two SHALL
   have different node keys for every kind and element type.
 - A population type with no maximum SHALL lower to its own population node
   with no maximum member, and a population with maximum `N` to its
@@ -73,7 +73,7 @@ its content under the one rule QSpec publishes.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-334-AC-1 | A unit whose only difference from another is `s: Set<Int>` against `s: Set<Int>[0, 18446744073709551615]` emits a different node key for `s`'s type and a different `package_id`; the unbounded node has no `collection_bounds` member and the bounded node has one with `minimum` 0 and `maximum` 18446744073709551615. | Test (TC-844) |
+| FR-334-AC-1 | A unit whose only difference from another is `s: Set<Integer>` against `s: Set<Integer>[0, 18446744073709551615]` emits a different node key for `s`'s type and a different `package_id`; the unbounded node has no `collection_bounds` member and the bounded node has one with `min` 0 and `max` 18446744073709551615. | Test (TC-844) |
 | FR-334-AC-2 | `p: Population<Account>` lowers to a population node with no maximum, whose node key differs from those of `Population<Account>[4]` and of an unbounded `Set<Reference<Account>>`; it lowers with no refusal. | Test (TC-844) |
 | FR-334-AC-3 | Compiling the same bounded unit twice gives the same node keys and `package_id`. | Test (TC-844) |
 | FR-334-AC-4 | Conformance: for each collection and population type vector QSpec publishes for FR-144-AC-9, AC-13 and FR-153-AC-9, read in place from the QSpec repository by the test, QSL's node key equals the vector's expected key. | Test (TC-844) |

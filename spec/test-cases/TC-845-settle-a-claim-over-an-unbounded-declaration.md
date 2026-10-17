@@ -28,8 +28,9 @@ source. In QSL's own tests, with test descriptors and fixture dispositions
    fixture `requires-bound` disposition.
 3. Request it bounded with `Cardinality{maximum: 8}`, and again with
    `maximum: 9`.
-4. Add a quantity-typed root read by the `+` and request it against the
-   bounded-only descriptor with a fixture `unbounded-extent` disposition.
+4. Build a requirement over `s`'s collection domain and a quantity domain
+   directly (no source spelling types a parameter by a quantity yet), write
+   its item, and route a fixture `unbounded-extent` disposition.
 5. Evaluate `f` at S6a on the set `{0, 1, …, 999}` (1,000 distinct members of `Int[0, 9999]`), then with a meter too small
    for construction.
 
