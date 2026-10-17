@@ -33,6 +33,6 @@ Tag the tests `#[trace("TC-844", "FR-334-AC-n")]`.
 - Step 1: different node keys and `package_id`s; no `collection_bounds` on
   the unbounded node; `collection_bounds{min 0, max 18446744073709551615}` on the
   bounded one.
-- Step 2: three distinct node keys; no `UnrepresentableBound` refusal.
+- Step 2: three distinct node keys; no refusal.
 - Step 3: equal node keys and `package_id`.
 - Step 4: every node key equals the vector's expected key.

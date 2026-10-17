@@ -40,8 +40,9 @@ the design authority; this requirement adds no rule of its own.
 - The kernel field shapes `CollectionType.bound: Option<CardinalityBound>`
   and `ValueType::Population(Option<u64>)` (ADR-014 N-3).
 
-An unbounded population lowers to its own `model_population` node with no
-`max` member (FR-334), distinct from an unbounded `Set<Reference<T>>`.
+An unbounded population has no bound (`None`) and lowers to its own
+`model_population` node with no `max` member (FR-334), distinct from an
+unbounded `Set<Reference<T>>`.
 
 ## Inputs
 
