@@ -97,6 +97,19 @@ fn links() -> Vec<Link> {
             end("Order", None, Some(mult(0, Some(3)))),
         ),
         link(
+            "litter",
+            SourceToTarget,
+            end("Order", Some("litter"), one()),
+            end(
+                "Order",
+                None,
+                Some(Multiplicity {
+                    unique: false,
+                    ..mult(0, Some(3))
+                }),
+            ),
+        ),
+        link(
             "crowd",
             SourceToTarget,
             end("Order", Some("crowd"), one()),
@@ -144,6 +157,12 @@ fn links() -> Vec<Link> {
             SourceToTarget,
             end("Order", Some("twin"), one()),
             end("Order", None, one()),
+        ),
+        link(
+            "manyOwners",
+            SourceToTarget,
+            end("Order", Some("manyOwners"), one()),
+            end("Person", None, Some(mult(0, Some(3)))),
         ),
         link(
             "loose",
@@ -477,12 +496,12 @@ fn c09_the_inverse_end_of_a_source_to_target_relationship_is_ineligible() {
     );
 }
 
-/// FR-365-AC-3 (C10): a finite multi-valued destination and a destination of
-/// another type each refuse `ill_typed`/`operator-ineligible`.
+/// FR-365-AC-3 (C10): a destination of another type, single-valued or finite
+/// multi-valued, refuses `ill_typed`/`operator-ineligible`.
 #[trace("TC-1046", "FR-365-AC-3")]
 #[test]
-fn c10_a_finite_multi_valued_or_foreign_destination_is_ineligible() {
-    for role in ["kids", "owner"] {
+fn c10_a_foreign_destination_is_ineligible() {
+    for role in ["owner", "manyOwners"] {
         assert_refused(
             &invariant("Order", &format!("reaches(self, self, {role})")),
             Code::IllTyped,
@@ -490,6 +509,40 @@ fn c10_a_finite_multi_valued_or_foreign_destination_is_ineligible() {
             vec![],
         );
     }
+}
+
+/// FR-365-AC-1 (C17): a finite multi-valued destination of the near end's own
+/// type, `Set`-shaped (`kids`) or `Bag`-shaped (`litter`), checks `Boolean`
+/// with the same node shape as a single-valued end.
+#[trace("TC-1046", "FR-365-AC-1")]
+#[test]
+fn c17_a_finite_multi_valued_destination_checks_boolean() {
+    for role in ["kids", "litter"] {
+        assert_admitted(
+            &invariant("Order", &format!("reaches(self, self, {role})")),
+            role,
+            role,
+        );
+    }
+    assert_admitted(
+        &clause("pre", "Rush::hop", "reaches(self, target, kids)"),
+        "kids",
+        "kids",
+    );
+}
+
+/// FR-365-AC-3 (C18): the operand check runs first, so a second operand that
+/// does not conform to the near end's type refuses `operator-ineligible` even
+/// when the destination is also unbounded (`expression-form` otherwise).
+#[trace("TC-1046", "FR-365-AC-3")]
+#[test]
+fn c18_the_operand_check_is_reported_before_direction_and_multiplicity() {
+    assert_refused(
+        &clause("pre", "Order::toPerson", "reaches(self, target, crowd)"),
+        Code::IllTyped,
+        "operator-ineligible",
+        vec![],
+    );
 }
 
 /// FR-365-AC-3 (C11): an unbounded, an ordered and a multiplicity-less

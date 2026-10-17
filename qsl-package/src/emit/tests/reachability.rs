@@ -12,6 +12,11 @@ fn multiplicity() -> Value {
     json!({"lower": 0, "upper": 1, "ordered": false, "unique": true})
 }
 
+/// A finite multi-valued multiplicity `{0,3}`.
+fn many(unique: bool) -> Value {
+    json!({"lower": 0, "upper": 3, "ordered": false, "unique": unique})
+}
+
 /// A relationship `Order/<id>` of fixture R, `Order` at both ends.
 fn relationship(id: &str, direction: &str, source_role: &str, target_role: &str) -> Value {
     json!({
@@ -38,6 +43,17 @@ fn relationship(id: &str, direction: &str, source_role: &str, target_role: &str)
     })
 }
 
+/// A `source-to-target` relationship `Order/<id>` whose target end holds
+/// `target_multiplicity` of `Order`.
+fn multi_valued_relationship(id: &str, source_role: &str, target_multiplicity: Value) -> Value {
+    let mut relationship = relationship(id, "source-to-target", source_role, "");
+    relationship["targetEnd"] = json!({
+        "type": "ix://acme/orders/Order",
+        "multiplicity": target_multiplicity,
+    });
+    relationship
+}
+
 /// The `acme/orders` document with the object type `Order` (the field `trail`
 /// and the relationships `Order/next`, `Order/link` and `Order/mate`) and the
 /// population `orders`.
@@ -59,6 +75,8 @@ fn reachability_document() -> Vec<u8> {
         relationship("next", "source-to-target", "next", "previous"),
         relationship("link", "bidirectional", "outgoing", "incoming"),
         relationship("mate", "undirected", "mate", "mateOf"),
+        multi_valued_relationship("kids", "kids", many(true)),
+        multi_valued_relationship("litter", "litter", many(false)),
     ]);
     document["types"] = json!([order]);
     document["constructs"].as_array_mut().unwrap().push(json!({
@@ -276,6 +294,37 @@ fn the_member_names_the_role_over_the_relationship() {
                 "declaration": relation["node_id"],
                 "name": role,
             })
+        );
+        assert!(lowered.verified, "{role}: the reader admits the package");
+    }
+}
+
+/// TC-1047 row 8: a finite multi-valued destination end lowers to the same
+/// node shape as a single-valued one, and the reader admits the package.
+#[trace("TC-1047", "FR-365-AC-5")]
+#[test]
+fn a_multi_valued_destination_lowers_to_the_same_node_shape() {
+    for role in ["kids", "litter"] {
+        let lowered = lower(&format!(
+            "invariant NoLoop using v on M::Order at current {{ not reaches(self, self, {role}) }}"
+        ));
+        let reaches = applications(&lowered.wire, "quire.op.model.reaches");
+        let [reach] = reaches.as_slice() else {
+            panic!("one reachability node for {role}");
+        };
+        let relation = model_node(&lowered.wire, &format!("relationship/Order-{role}"));
+        assert_eq!(
+            reach["body"]["operation"]["member"],
+            json!({
+                "kind": "relationship_end",
+                "declaration": relation["node_id"],
+                "name": role,
+            })
+        );
+        assert_eq!(reach["body"]["arguments"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            applications(&lowered.wire, "quire.op.model.deref"),
+            Vec::<&Value>::new()
         );
         assert!(lowered.verified, "{role}: the reader admits the package");
     }
