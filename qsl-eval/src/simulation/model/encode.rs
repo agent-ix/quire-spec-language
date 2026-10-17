@@ -300,6 +300,7 @@ pub(super) fn model_key(model: &StateModel, state: &ModelState) -> ModelKey {
             ("roles", empty_map()),
             ("observations", empty_map()),
             ("bounds", empty_map()),
+            ("memory", empty_map()),
         ],
     ))
 }

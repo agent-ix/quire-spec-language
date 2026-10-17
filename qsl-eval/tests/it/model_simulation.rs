@@ -191,6 +191,8 @@ fn counters_document(operations: Vec<Json>) -> Vec<u8> {
                     wire_field("value", &ident("Level"), "required"),
                     wire_field("label", &ident("Flag"), "required"),
                     wire_field("next", &counter_identity, "optional"),
+                    // Granted by no frame and with no finite domain.
+                    wire_field("tag", "ix://quire/native/Integer", "optional"),
                 ],
                 "operations": operations,
                 "relationships": [],
@@ -732,7 +734,8 @@ fn the_state_key_is_the_simulation_state_envelope() {
         json!({"type": "record", "name": counter_text(), "fields": [
             {"name": "value", "value": {"type": "integer", "value": "0"}},
             {"name": "label", "value": {"type": "integer", "value": label.to_string()}},
-            {"name": "next", "value": next}]})
+            {"name": "next", "value": next},
+            {"name": "tag", "value": null}]})
     };
     let envelope = |label: i64, next: Json| {
         let empty = json!({"type": "map", "entries": []});
@@ -746,7 +749,7 @@ fn the_state_key_is_the_simulation_state_envelope() {
                         "identity": "6331"},
                     "value": record(label, next)}]}}]},
             "control": empty, "queues": empty, "roles": empty, "observations": empty,
-            "bounds": empty})
+            "bounds": empty, "memory": empty})
     };
     let canonical = |value: Json| -> String {
         let read = quire_canonical::read(value.to_string().as_bytes(), u64::MAX).expect("reads");
@@ -1589,4 +1592,21 @@ fn a_child_process_in_an_empty_directory_explores_the_same() {
         .find_map(|line| line.split_once("EXPLORATION=").map(|(_, rest)| rest))
         .expect("the child printed its exploration");
     assert_eq!(theirs, mine);
+}
+
+/// FR-120 "Post-states": a field no frame grants and whose type has no finite
+/// domain (here `tag: Integer?`) neither stops an expansion nor becomes a
+/// requires-bound root.
+#[trace("TC-471", "FR-120-AC-1")]
+#[test]
+fn an_ungranted_unbounded_field_is_neither_probed_nor_a_root() {
+    let mut world = world(vec![increment()], "");
+    let s0 = world.start("s0", &[Obj("c1", 0, 0, None)]);
+    let system = self::system(&world, vec![s0], &["c1"], UNLIMITED);
+    assert_eq!(successors_of(&system, 0).len(), 3);
+    assert!(system
+        .domains()
+        .iter()
+        .all(|(_, value_type)| !matches!(value_type, quire_exact::ValueType::Integer)));
+    assert_eq!(stats(&explore(&system)).0, 3);
 }

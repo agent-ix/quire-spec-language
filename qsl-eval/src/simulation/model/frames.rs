@@ -677,8 +677,13 @@ impl Run<'_, '_, '_> {
                     .get(&row.population)
                     .and_then(|objects| objects.get(&row.key))
                     .and_then(|object| object.fields.get(&field.key));
-                let domain = Domain::of(&field.value_type, &references, system.types)
-                    .ok_or_else(|| stop(BROKEN))?;
+                // A field with no finite domain (an `Integer`, a string, an
+                // unbounded collection) is bounded by no frame that grants it,
+                // so it cannot be written here.
+                let Some(domain) = Domain::of(&field.value_type, &references, system.types)
+                else {
+                    continue;
+                };
                 let mut different: Option<Option<Value>> = None;
                 if field.optional && current.is_some() {
                     different = Some(None);
