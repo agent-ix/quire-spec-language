@@ -19,7 +19,7 @@ use std::{io, path::Path};
 /// Original native model source, independent of historical datatype artifacts.
 pub const MODEL: &str = include_str!("model.json");
 
-use super::config_version_spine::cases::{self, CaseSpec, Input, Row};
+use super::config_version_spine::cases::{CaseSpec, Input, Row};
 pub use super::config_version_spine::Case;
 
 fn symbol(name: &str) -> ir::SymbolName {
