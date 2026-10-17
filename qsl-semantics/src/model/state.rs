@@ -14,6 +14,7 @@ use std::collections::BTreeMap;
 
 use quire_exact::Value;
 use quire_semantic_value::declaration::TypeEnvironment;
+use quire_semantic_value::relationship_extent::RelationshipExtent;
 
 use crate::model::accounting::ModelNormalizationLimits;
 use crate::model::domain_package::DomainPackageRef;
@@ -30,6 +31,9 @@ use crate::model::observation::{
 pub struct ModelState {
     /// Each listed population's objects, by the object's declared key.
     pub populations: BTreeMap<DeclarationKey, BTreeMap<String, StateObject>>,
+    /// The relationship extents the state lists, one per listed
+    /// relationship.
+    pub extents: Vec<RelationshipExtent<DeclarationKey>>,
 }
 
 /// One object of a [`ModelState`].

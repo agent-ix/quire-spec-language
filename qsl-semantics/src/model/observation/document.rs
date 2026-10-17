@@ -2497,6 +2497,14 @@ pub(super) struct AdmittedPopulation {
     pub(super) objects: Vec<AdmittedObject>,
 }
 
+/// An admitted initial state: its populations and the relationship extents
+/// its snapshot listed.
+pub(super) struct AdmittedInitial {
+    pub(super) populations: Vec<AdmittedPopulation>,
+    pub(super) extents:
+        Vec<quire_semantic_value::relationship_extent::RelationshipExtent<DeclarationKey>>,
+}
+
 /// One object of an admitted initial state.
 pub(super) struct AdmittedObject {
     pub(super) reference: ObjectReference,
@@ -2512,7 +2520,7 @@ pub(super) fn admit_initial_populations(
     populations: &[RawPopulation],
     relationships: &[super::relationships::RawEntry],
     ancestor_steps: u64,
-) -> Result<Vec<AdmittedPopulation>, AdmissionFailure> {
+) -> Result<AdmittedInitial, AdmissionFailure> {
     let values = admit_population_values(
         views,
         types,
@@ -2566,11 +2574,15 @@ pub(super) fn admit_initial_populations(
                 .collect(),
         });
     }
+    let extents = super::relationships::supplied_extents(&values.extents)?;
     finish_populations(types, values)?;
-    Ok(admitted
-        .into_iter()
-        .map(|(_, population)| population)
-        .collect())
+    Ok(AdmittedInitial {
+        populations: admitted
+            .into_iter()
+            .map(|(_, population)| population)
+            .collect(),
+        extents,
+    })
 }
 
 /// FR-098 step 3: FR-106 checks 6 to 8 over a function's one environment

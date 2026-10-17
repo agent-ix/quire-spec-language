@@ -13,7 +13,7 @@ use super::document::{
     admit_initial_populations, map_environment_refusal, read_document, DocumentKind,
 };
 use super::helpers::object_reference;
-use super::relationships::{build_extents, model_facts};
+use super::relationships::{admit_supplied_extents, model_facts};
 use super::{
     check_model_any, fault, refuse, view_of, AdmissionFailure, AdmissionRecord, AnchorKind,
     DocumentRef, ModelView, Observation, ObservationLimits, SelectedAnchor,
@@ -82,7 +82,7 @@ pub(crate) fn admit_initial_state(
 
     check_model_any(views, &snapshot.model)?;
 
-    let admitted = admit_initial_populations(
+    let admitted_initial = admit_initial_populations(
         views,
         types,
         &snapshot.populations,
@@ -91,7 +91,7 @@ pub(crate) fn admit_initial_state(
     )?;
 
     let mut populations = BTreeMap::new();
-    for population in admitted {
+    for population in admitted_initial.populations {
         let mut objects = BTreeMap::new();
         for object in population.objects {
             let type_identity = view_of(views, object.reference.object_type())
@@ -127,7 +127,13 @@ pub(crate) fn admit_initial_state(
         }
         populations.insert(population.key, objects);
     }
-    Ok((ModelState { populations }, selected_anchor))
+    Ok((
+        ModelState {
+            populations,
+            extents: admitted_initial.extents,
+        },
+        selected_anchor,
+    ))
 }
 
 /// FR-120 "Frame and observation seam": `state`'s [`Observation`] named
@@ -166,7 +172,12 @@ pub(crate) fn observe_state(
         }
     }
     let closure = ObjectClosure::new(types, objects, &[]).map_err(map_environment_refusal)?;
-    let extents = build_extents(types, model_facts(views, types), &[], &completeness)?;
+    let extents = admit_supplied_extents(
+        types,
+        model_facts(views, types),
+        state.extents.clone(),
+        &completeness,
+    )?;
     Ok(Observation {
         identity,
         environment: ObjectEnvironment::new(closure).with_extents(extents),

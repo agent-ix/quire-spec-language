@@ -23,11 +23,12 @@ use qsl_semantics::model::population::{
 use qsl_semantics::model::state::{ModelState, StateModel, StateObject};
 use quire_exact::{FieldValue, Integer, Value};
 use quire_semantic_value::checking::CheckingLimits;
+use quire_semantic_value::relationship_extent::ExtentState;
 use serde_json::json;
 
 use crate::model_operations::{
     admit_and_assemble_with_body, config_version_document, config_version_identity, operation,
-    PACKAGE_IDENTITY,
+    supersedes_identity, supersedes_relationship, PACKAGE_IDENTITY,
 };
 
 const POPULATION: &str = "ix://example/config-version/config_history";
@@ -61,6 +62,10 @@ struct Fixture {
 }
 
 fn fixture() -> Fixture {
+    fixture_with(json!([]))
+}
+
+fn fixture_with(relationships: serde_json::Value) -> Fixture {
     let document = config_version_document(
         operation(
             "bump",
@@ -70,7 +75,7 @@ fn fixture() -> Fixture {
         ),
         vec![],
         vec![],
-        json!([]),
+        relationships,
     );
     let packages = package_input([document.as_slice()]);
     let digest = *packages.keys().next().expect("one model");
@@ -201,7 +206,6 @@ fn same(a: Option<&Value>, b: Option<&Value>) -> bool {
     }
 }
 
-/// Trace: FR-120-AC-4
 #[test]
 fn an_initial_snapshot_admits_into_typed_objects_and_its_initialization_anchor() {
     let fixture = fixture();
@@ -284,7 +288,6 @@ fn an_initial_snapshot_that_is_not_a_current_initialization_refuses() {
     );
 }
 
-/// Trace: FR-120-AC-7
 #[test]
 fn an_initial_snapshot_with_a_wrong_model_a_dangling_reference_or_an_incomplete_population_refuses()
 {
@@ -342,7 +345,6 @@ fn slots(
         .collect()
 }
 
-/// Trace: FR-120-AC-4
 #[test]
 fn a_states_observation_matches_the_environment_fr106_admits_from_the_same_document() {
     let fixture = fixture();
@@ -412,7 +414,6 @@ fn a_states_observation_matches_the_environment_fr106_admits_from_the_same_docum
     assert_integer(a[0].1.as_ref().expect("present"), 1);
 }
 
-/// Trace: FR-120-AC-5
 #[test]
 fn a_changed_state_observes_its_changed_field() {
     let fixture = fixture();
@@ -563,7 +564,6 @@ fn the_public_frame_decision_returns_the_created_and_deleted_sets() {
     );
 }
 
-/// Trace: FR-120-AC-1
 #[test]
 fn the_public_frame_decision_refuses_a_change_outside_the_frame() {
     let fixture = fixture();
@@ -606,4 +606,94 @@ fn only_a_declared_population_has_a_model_index() {
         node: "ix://example/config-version/nope".to_owned(),
     };
     assert!(fixture.model.population_index(&unknown).is_none());
+}
+
+/// A state's observation keeps the relationship extents its snapshot listed,
+/// as `admit_current_snapshot` does for the same document.
+#[test]
+fn a_states_observation_navigates_the_relationships_its_snapshot_listed() {
+    let fixture = fixture_with(json!([supersedes_relationship()]));
+    let relationship = DeclarationKey {
+        package: PACKAGE_IDENTITY.to_owned(),
+        node: supersedes_identity(),
+    };
+    let (selected, provision) = {
+        let reference = label("start");
+        let document = json!({
+            "format": "quire.state.snapshot/v1",
+            "identity": {"authority": reference.authority, "identity": reference.identity,
+                "revision_namespace": reference.revision_namespace, "revision": reference.revision},
+            "observation": "current", "model": fixture.header,
+            "anchor": initial_anchor(),
+            "populations": [{"population": POPULATION, "complete": true, "objects": two_objects()}],
+            "relationships": [{
+                "relationship": supersedes_identity(),
+                "complete": true,
+                "instances": [{
+                    "source": {"population": POPULATION, "key": "b"},
+                    "target": {"population": POPULATION, "key": "a"},
+                }],
+            }],
+        });
+        let bytes = document.to_string().into_bytes();
+        let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
+        let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
+            .expect("canonical fixture")
+            .as_bytes();
+        (
+            DocumentRef {
+                digest,
+                ..reference
+            },
+            BTreeMap::from([(digest, bytes)]),
+        )
+    };
+    let (state, _) = fixture
+        .model
+        .admit_initial(&provision, &selected, ObservationLimits::default())
+        .expect("admits");
+    let observation = fixture
+        .model
+        .observation(&state, label("state"))
+        .expect("observation");
+    let (admitted, _) = admit_current_snapshot(
+        fixture.graph.model_selections(),
+        fixture.graph.scope().types(),
+        &fixture.packages,
+        ModelNormalizationLimits::default(),
+        &provision,
+        &selected,
+        ObservationLimits::default(),
+    )
+    .expect("FR-106 admits the same document");
+    let (_, universe) = declared_type_universe_for(
+        fixture.graph.model_selections(),
+        &fixture.packages,
+        ModelNormalizationLimits::default(),
+        &config_version_key(),
+    )
+    .expect("universe derivation")
+    .expect("declared");
+    let ours = observation.environment.extents().expect("extents");
+    let theirs = admitted.extents().expect("extents");
+    assert_eq!(ours.state(&relationship), ExtentState::Complete);
+    assert_eq!(ours.state(&relationship), theirs.state(&relationship));
+    let find = |environment: &qsl_semantics::model::object_environment::ObjectEnvironment,
+                key: &str| {
+        environment
+            .objects()
+            .find(universe, key)
+            .expect("object")
+            .clone()
+    };
+    let targets: Vec<_> = ours
+        .targets(&relationship, &find(&observation.environment, "b"))
+        .collect();
+    assert_eq!(targets, vec![&find(&admitted, "a")]);
+    assert_eq!(
+        targets,
+        theirs
+            .targets(&relationship, &find(&admitted, "b"))
+            .collect::<Vec<_>>()
+    );
 }
