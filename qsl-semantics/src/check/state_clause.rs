@@ -32,6 +32,7 @@ use super::facts::{CheckedFacts, Definedness};
 use super::ir::{CheckedBody, CheckedNode, DispatchTable, NodeKind, Observation};
 use super::lowering::{AdmittedModel, LoweredClause};
 use super::observation::Observations;
+use super::references::{body_objects, ModelReferences};
 use super::refusal::{CheckCause, CheckRefusal, KeyFault};
 use super::{Capability, Scope};
 use crate::family::{
@@ -716,6 +717,7 @@ fn record(
     boolean: NodeKey,
     types: &TypeEnvironment,
     position_limit: u64,
+    references: ModelReferences,
 ) -> Result<RequirementRecord, ClassifyFailure> {
     let mut domains = BTreeMap::new();
     match root_prefix {
@@ -771,7 +773,17 @@ fn record(
         ),
         ValueType::Boolean,
         wire(boolean),
+        references,
     ))
+}
+
+/// The declaring object type and name of `operation`, as a record
+/// references it (ADR-017 AR-4).
+fn operation_reference(operation: &ClauseOperation) -> (EffectiveId, String) {
+    (
+        operation.declaring,
+        operation.declaration.name().to_owned(),
+    )
 }
 
 /// `domain`'s ADR-012 §15.7 key, `object` being its member type's
@@ -835,6 +847,11 @@ pub(crate) fn frame_record(
             .iter()
             .map(|(_, value_type)| (frame, value_type)),
     );
+    let references = ModelReferences::new(
+        BTreeSet::new(),
+        populations.iter().map(|(domain, _)| *domain),
+        Some(operation_reference(operation)),
+    );
     record(
         &roots,
         Some(frame),
@@ -842,6 +859,7 @@ pub(crate) fn frame_record(
         boolean,
         types,
         position_limit,
+        references,
     )
     .map_err(|failure| classify_refusal(failure, location))
 }
@@ -900,6 +918,11 @@ pub(crate) fn clause_records(
                     .copied()
                     .zip(clause.parameters.iter().map(|(_, value_type)| value_type))
                     .collect();
+                let references = ModelReferences::new(
+                    body_objects(clause.body.root()),
+                    populations.iter().map(|(domain, _)| *domain),
+                    form.operation.as_ref().map(operation_reference),
+                );
                 let record = record(
                     &roots,
                     None,
@@ -907,6 +930,7 @@ pub(crate) fn clause_records(
                     lowered.boolean,
                     types,
                     position_limit,
+                    references,
                 )
                 .map_err(classify)?;
                 keyed.push(KeyedClaim {

@@ -15,12 +15,14 @@
 mod checked;
 mod checked_v2;
 mod emit;
+mod export;
 
 pub use checked::{CheckedPackage, EmittedPackage, Import, LinkRefusal, ResolvedDependency};
 pub use checked_v2::{
     read_import_view, supply_closure, AdmittedPackages, ImportViewRefusal, SourceMapDefect,
     UnsupportedWire, V2ReadLimits, V2ReadRefusal,
 };
+pub use export::{export_bindings, BoundItem, ExportRefusal, UnboundElement};
 pub use emit::{
     checked_node_id, checked_occurrence, emit_checked, emit_checked_with_cancel, emit_package,
     Emission, EmitRefusal, OmissionCause, OmittedNode,
