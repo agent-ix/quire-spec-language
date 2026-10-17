@@ -22,3 +22,9 @@ Ticket: QSL-819. PR quire-spec-language#923, reviewed at ee77bb9ee57278c2cc28176
 FIX, because of FND-001. Delete the third clause of FR-380-AC-5 and the matching "populations of two bounds ..." phrase in FR-365 "The population link". The parameter-type sharing case (a `Population<Order>[3]` parameter plus a walked bound) is the one real shared-node case, and TC-1054 row 11 covers it.
 
 Everything else checked is consistent. FR-104's change from "no maximum" to "covers" is safe, because every domain-package population lacks a maximum (QSpec FR-153). The FR-104-AC-11 record agrees with FR-097's extent rule (`Population(Some(N))` is not an unbounded domain). The node shape (body `max`, `Integer` node, `Set<Reference<E>>` over `Reference<E>`, dependencies `Integer` and `Set`) matches QSpec FR-322's `model_population` row and the PR #268 vectors. The least-ordinal occurrence convention matches FR-322. FR-365-AC-6 and AC-13 agree with TC-1047 row 7 and TC-1054 rows 5, 7 and 8. QSL cites QSpec by id only. The spec.md index carries FR-380. TCs are not indexed there, which matches TC-1053. `quire validate` on the six files exits 0, with only the existing FR-104 line 39 EARS warnings.
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 00f7403ec: FR-380-AC-5 now ends after the parameter-type clause, and FR-365 "The population link" reads "a `Population<E>[N]` parameter type of the same `E` and `N` and a walked bound are one node". TC-1054 row 11 (one node, two `Type` occurrences) and row 12 (two covering populations refuse `ambiguous-name`) still agree, and the round-1 delta adds no new defect. |
