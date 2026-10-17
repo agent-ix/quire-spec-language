@@ -22,9 +22,6 @@ pub const MODEL: &str = include_str!("model.json");
 use super::config_version_spine::cases::{self, CaseSpec, Input, Row};
 pub use super::config_version_spine::Case;
 
-/// Every declared case, in deterministic generation order.
-pub const CASES: &[Case] = cases::CASES;
-
 fn symbol(name: &str) -> ir::SymbolName {
     ir::SymbolName::new(name).expect("static example symbol")
 }

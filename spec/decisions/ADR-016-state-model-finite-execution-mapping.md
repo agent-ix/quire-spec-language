@@ -141,10 +141,8 @@ untrusted data, recorded as found.
   FR-084-AC-2, AC-5 (partial), AC-7 and FR-086-AC-1, AC-2, AC-4, AC-5, whose
   TCs are planned.
 - The native state lane still exists: `src/state` (typed on IR `ValueType`,
-  `src/state/evaluation.rs:15`), `src/native_model`, `src/protocol_artifact`,
-  and the FR-108 parity test
-  `tc_469_step_2_and_3_native_and_spine_agree_and_name_the_boundary_locus`
-  (`tests/it/config_version_spine.rs:324`). TC-469's own `build()` calls
+  `src/state/evaluation.rs:15`), `src/native_model` and
+  `src/protocol_artifact`. TC-469's own `build()` calls
   `spine::write` through the `config_version_spine` support module over
   `examples/config-version/spine_corpus.rs`, which imports no native module;
   `fixtures.rs` (native model, runtime) delegates its spine files to the same
