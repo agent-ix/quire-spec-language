@@ -63,11 +63,13 @@ The `--exclude` arguments of All position 2 are not written in the Makefile:
 the Makefile recipe keeps the single argument vector above. A package is
 excluded only when the default lane runs it on the same compile. `cargo metadata`
 with and without `--all-features` nominates the packages whose own and
-transitive resolved features are identical in both. `cargo tree` (host and
-target units kept apart, every platform) then confirms that leaving the
-nominees out leaves every remaining package with the feature sets it has in
-the full `--all-features` resolve, and a nominee that fails the confirmation
-runs. When no nominee can be confirmed the whole workspace runs. The
+transitive resolved features are identical in both. `cargo tree` on the host
+platform, with host and target units of a package kept apart, then confirms two
+things: each nominee and everything below it are the same compile units with
+the same feature sets in the default workspace resolve as in the `--all-features`
+resolve, and leaving the nominees out leaves every remaining package with the
+feature sets it has in the full `--all-features` resolve. A nominee that fails
+either confirmation runs. When no nominee can be confirmed the whole workspace runs. The
 all-features clippy and build keep covering every package, and the default lane
 keeps running every package's tests.
 
@@ -92,7 +94,8 @@ product feature or changing the hosted-workflow policy.
 | NFR-013-AC-1 | Without explicit lane overrides, every command selects its lane's distinct child of the owned parent root, including repeated default-to-all and all-to-default switches using the same root. | Test (TC-915) |
 | NFR-013-AC-2 | Every feature command receives the selected caller-root child or explicit lane override as literal path data under the environment and GNU Make assignment grammar above, including spaces, double quotes, backticks and dollar forms, without executing path contents. | Test (TC-915) |
 | NFR-013-AC-3 | Feature routing preserves the nine Cargo argument vectors and their order above, default versus all-feature selection, default-before-all reachability from `ci`, and the existing non-feature and clean artifact/feature policy. | Test (TC-915) |
-| NFR-013-AC-4 | The packages the all-features lane's test command excludes leave every remaining package with the same per-unit resolved feature sets as the full `--all-features` workspace, and a package whose absence would change them, through a dev-dependency or other dependency chain, a build dependency, `default-features = false` or a platform-specific request, is not excluded. | Test (TC-915) |
+| NFR-013-AC-4 | On the host platform, the packages the all-features lane's test command excludes leave every remaining package with the same per-unit resolved feature sets as the full `--all-features` workspace, and a package whose absence would change them, through a dev-dependency or other dependency chain, a build dependency, `default-features = false` or a request a remaining package makes only for another platform, is not excluded. | Test (TC-915) |
+| NFR-013-AC-5 | A package is excluded only if it and everything below it are the same compile units with the same feature sets in the default workspace resolve as in the `--all-features` resolve on the host platform, including when `cargo metadata` gives every dependency the same merged feature set in both. | Test (TC-915) |
 
 ## Verification
 

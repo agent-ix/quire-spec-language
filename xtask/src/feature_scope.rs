@@ -20,10 +20,14 @@
 //! set per package across the host, the target and every platform, and
 //! resolver 2 builds those separately, so equal metadata does not prove an
 //! equal compile. The metadata comparison therefore only nominates
-//! candidates; [`settle`] then checks them against cargo's own per-unit
-//! resolve (`cargo tree`, host and target kept apart, every platform) and
-//! puts back any candidate whose absence changes the feature set of a package
-//! that stays. A skip that cannot be shown is a run.
+//! candidates; cargo's own per-unit resolve (`cargo tree` on the host platform
+//! the lane compiles for, host and target units kept apart) then checks them
+//! twice. First, a candidate's compile units in the default workspace resolve
+//! must be exactly its units in the all-features resolve
+//! ([`TreeFeatures::compiles_same_as`]), so the default lane's run of it is the
+//! run the all-features lane would repeat. Second, [`settle`] puts back any
+//! candidate whose absence changes the feature set of a package that stays. A
+//! skip that cannot be shown is a run.
 //!
 //! **What skipping a package changes for the others.** `cargo test
 //! --exclude P` leaves `P` out of the selection, and with it `P`'s own
@@ -183,10 +187,13 @@ pub enum KeepReason {
         /// The feature requested.
         feature: String,
     },
-    /// Leaving it out changes the resolved features of a package that stays
-    /// (a request further down its dependencies, `default-features`, a
-    /// `[features]` activation, a build or platform-specific edge), as
-    /// `cargo tree` shows.
+    /// `cargo tree` on the host does not confirm the skip: the package's
+    /// compile units differ between the default and the all-features
+    /// workspace resolve (a host and a target unit of a dependency that
+    /// `--all-features` merges), or leaving it out changes the resolved
+    /// features of a package that stays (a request further down its
+    /// dependencies, `default-features`, a `[features]` activation, a build
+    /// edge).
     ExclusionChangesResolve,
 }
 
@@ -204,9 +211,10 @@ impl fmt::Display for KeepReason {
                 f,
                 "it alone requests feature {feature} of {dependency} for the remaining packages"
             ),
-            Self::ExclusionChangesResolve => {
-                f.write_str("leaving it out changes the resolved features of a remaining package")
-            }
+            Self::ExclusionChangesResolve => f.write_str(
+                "cargo tree does not confirm the skip: its compile units differ between the \
+                 lanes, or leaving it out changes a remaining package",
+            ),
         }
     }
 }
@@ -339,40 +347,92 @@ pub fn skipped(decisions: &[Decision]) -> Vec<String> {
         .collect()
 }
 
-/// The per-unit resolved feature sets of one `cargo tree --format "{p}|{f}"`
-/// run: for each package, every distinct feature set it resolves to. Host
-/// (build script, proc-macro) and target units of one package have their own
-/// feature sets under resolver 2, and each appears as its own set.
+/// The per-unit resolve of one `cargo tree --prefix depth --format "@{p}|{f}"`
+/// run on the host platform: for each package, every distinct feature set it
+/// resolves to, and the dependency edges between compile units. Host (build
+/// script, proc-macro) and target units of one package have their own feature
+/// sets under resolver 2, and each appears as its own unit.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct TreeFeatures {
     variants: BTreeMap<String, BTreeSet<String>>,
+    /// Unit (`package|features`) to the units it depends on.
+    edges: BTreeMap<String, BTreeSet<String>>,
+    /// Workspace package name to its root unit.
+    roots: BTreeMap<String, String>,
 }
 
 impl TreeFeatures {
-    /// Read the stdout of `cargo tree --prefix none --format "{p}|{f}"`.
-    /// Lines without a `|` (blank lines, section headings) are skipped.
+    /// Read the stdout of `cargo tree --prefix depth --format "@{p}|{f}"`: each
+    /// line is the depth, `@`, the package and `|`, then its features. Lines
+    /// without that shape (blank lines, headings) are skipped. Cargo prints a
+    /// repeated subtree once and marks the later occurrences `(*)`, so a unit's
+    /// edges are the union over its occurrences.
     pub fn from_cargo_tree(stdout: &str) -> Self {
-        let mut variants: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        let mut tree = Self::default();
+        let mut stack: Vec<String> = Vec::new();
         for line in stdout.lines() {
-            let mut line = line.trim_end();
+            let Some((depth, rest)) = line.split_once('@') else {
+                continue;
+            };
+            let Ok(depth) = depth.parse::<usize>() else {
+                continue;
+            };
+            let mut rest = rest.trim_end();
             loop {
                 let stripped = [" (*)", " (proc-macro)"]
                     .iter()
-                    .find_map(|suffix| line.strip_suffix(suffix));
+                    .find_map(|suffix| rest.strip_suffix(suffix));
                 match stripped {
-                    Some(rest) => line = rest,
+                    Some(shorter) => rest = shorter,
                     None => break,
                 }
             }
-            let Some((package, features)) = line.rsplit_once('|') else {
+            let Some((package, features)) = rest.rsplit_once('|') else {
                 continue;
             };
-            variants
+            tree.variants
                 .entry(package.to_owned())
                 .or_default()
                 .insert(features.to_owned());
+            let unit = rest.to_owned();
+            stack.truncate(depth);
+            if let Some(parent) = stack.last() {
+                tree.edges
+                    .entry(parent.clone())
+                    .or_default()
+                    .insert(unit.clone());
+            } else if let Some(name) = package.split_whitespace().next() {
+                tree.roots.insert(name.to_owned(), unit.clone());
+            }
+            stack.push(unit);
         }
-        Self { variants }
+        tree
+    }
+
+    /// Every compile unit reachable from the workspace package `name`, itself
+    /// included; `None` when the run has no such package.
+    fn compile_of(&self, name: &str) -> Option<BTreeSet<&str>> {
+        let mut seen = BTreeSet::new();
+        let mut pending = vec![self.roots.get(name)?.as_str()];
+        while let Some(unit) = pending.pop() {
+            if !seen.insert(unit) {
+                continue;
+            }
+            if let Some(children) = self.edges.get(unit) {
+                pending.extend(children.iter().map(String::as_str));
+            }
+        }
+        Some(seen)
+    }
+
+    /// Whether the workspace package `name` and everything it depends on are
+    /// the same compile units, with the same feature sets, in `self` and in
+    /// `other`. A package missing from either run is not the same.
+    pub fn compiles_same_as(&self, other: &Self, name: &str) -> bool {
+        matches!(
+            (self.compile_of(name), other.compile_of(name)),
+            (Some(left), Some(right)) if left == right
+        )
     }
 
     /// The packages of `self` (a run with packages left out) whose set of
@@ -645,12 +705,12 @@ mod tests {
     #[test]
     fn tree_lines_are_read_per_package_with_markers_and_headings_dropped() {
         let read = tree(&[
-            "app v0.1.0 (/ws/app)|",
+            "0@app v0.1.0 (/ws/app)|",
             "[dev-dependencies]",
             "",
-            "serde_core v1.0.228|alloc,std",
-            "serde_core v1.0.228|std (*)",
-            "serde_derive v1.0.228|default (proc-macro)",
+            "1@serde_core v1.0.228|alloc,std",
+            "1@serde_core v1.0.228|std (*)",
+            "1@serde_derive v1.0.228 (proc-macro)|default",
         ]);
         assert_eq!(
             read.variants["serde_core v1.0.228"],
@@ -658,19 +718,53 @@ mod tests {
         );
         assert_eq!(read.variants["serde_derive v1.0.228"].len(), 1);
         assert_eq!(read.variants.len(), 3);
+        assert_eq!(read.roots.len(), 1);
     }
 
     #[test]
     fn a_changed_added_or_dropped_feature_set_is_a_difference_but_a_vanished_package_is_not() {
-        let full = tree(&["a v1|x", "b v1|", "b v1|y", "gone v1|"]);
-        assert!(tree(&["a v1|x", "b v1|", "b v1|y"])
+        let full = tree(&["0@a v1|x", "0@b v1|", "0@b v1|y", "0@gone v1|"]);
+        assert!(tree(&["0@a v1|x", "0@b v1|", "0@b v1|y"])
             .differences(&full)
             .is_empty());
-        assert_eq!(tree(&["a v1|x,z"]).differences(&full), vec!["a v1"]);
+        assert_eq!(tree(&["0@a v1|x,z"]).differences(&full), vec!["a v1"]);
         // A host variant that disappears is a difference even though the
         // remaining one also exists in the full run.
-        assert_eq!(tree(&["b v1|"]).differences(&full), vec!["b v1"]);
-        assert_eq!(tree(&["new v1|"]).differences(&full), vec!["new v1"]);
+        assert_eq!(tree(&["0@b v1|"]).differences(&full), vec!["b v1"]);
+        assert_eq!(tree(&["0@new v1|"]).differences(&full), vec!["new v1"]);
+    }
+
+    #[test]
+    fn a_package_compiles_the_same_only_with_the_same_units_below_it() {
+        // `p` reaches `d` without features in the default run, and `d` with
+        // the feature in the other; `q` reaches both `d` units in both. A
+        // repeated subtree (`(*)`) still counts for the package it appears
+        // under.
+        let default = tree(&[
+            "0@p v1 (/ws/p)|",
+            "1@d v1|",
+            "2@e v1|",
+            "0@q v1 (/ws/q)|",
+            "1@d v1|f",
+            "1@d v1| (*)",
+            "0@r v1 (/ws/r)|",
+            "1@d v1| (*)",
+        ]);
+        let all = tree(&[
+            "0@p v1 (/ws/p)|",
+            "1@d v1|f",
+            "2@e v1|",
+            "0@q v1 (/ws/q)|",
+            "1@d v1|f (*)",
+            "1@d v1|",
+            "2@e v1|",
+            "0@r v1 (/ws/r)|",
+            "1@d v1| (*)",
+        ]);
+        assert!(!default.compiles_same_as(&all, "p"));
+        assert!(default.compiles_same_as(&all, "q"));
+        assert!(default.compiles_same_as(&all, "r"));
+        assert!(!default.compiles_same_as(&all, "missing"));
     }
 
     /// A fake resolver: leaving out any package of `needed` changes `serde`.
@@ -682,9 +776,9 @@ mod tests {
             calls.set(calls.get() + 1);
             let changed = needed.iter().any(|n| skip.iter().any(|s| s == n));
             Ok(tree(&[if changed {
-                "serde v1|std"
+                "0@serde v1|std"
             } else {
-                "serde v1|alloc,std"
+                "0@serde v1|alloc,std"
             }]))
         }
     }
@@ -695,7 +789,7 @@ mod tests {
 
     #[test]
     fn settle_keeps_every_candidate_when_nothing_changes() {
-        let full = tree(&["serde v1|alloc,std"]);
+        let full = tree(&["0@serde v1|alloc,std"]);
         let calls = std::cell::Cell::new(0);
         let skip = settle(&names(&["b", "a"]), &full, &mut resolver(&[], &calls)).unwrap();
         assert_eq!(skip, names(&["a", "b"]));
@@ -704,7 +798,7 @@ mod tests {
 
     #[test]
     fn settle_puts_back_only_the_candidate_that_changes_a_remaining_package() {
-        let full = tree(&["serde v1|alloc,std"]);
+        let full = tree(&["0@serde v1|alloc,std"]);
         let calls = std::cell::Cell::new(0);
         let skip = settle(
             &names(&["attrs", "cst", "package"]),
@@ -717,7 +811,7 @@ mod tests {
 
     #[test]
     fn settle_puts_back_every_candidate_that_changes_one() {
-        let full = tree(&["serde v1|alloc,std"]);
+        let full = tree(&["0@serde v1|alloc,std"]);
         let calls = std::cell::Cell::new(0);
         let skip = settle(
             &names(&["a", "b", "c"]),
@@ -732,7 +826,7 @@ mod tests {
     fn settle_runs_the_whole_workspace_when_no_skip_can_be_shown() {
         // Every candidate alone changes the resolve, and each candidate's
         // return fixes it, so all end up back.
-        let full = tree(&["serde v1|alloc,std"]);
+        let full = tree(&["0@serde v1|alloc,std"]);
         let calls = std::cell::Cell::new(0);
         let skip = settle(
             &names(&["a", "b"]),

@@ -1261,31 +1261,28 @@ fn read_resolution(
         .map_err(|source| Error::TestSuitesArtifacts { source })
 }
 
-/// The per-unit feature sets `cargo tree` resolves for the all-features
-/// workspace with `skip` left out. `--target all` keeps platform-specific
-/// requests in, and the host and target units of a package stay apart.
+/// The per-unit resolve `cargo tree` gives the workspace on the host platform
+/// the lane compiles for, under the default features or `--all-features`, with
+/// `skip` left out. Host and target units of a package stay apart.
 pub(crate) fn read_tree_features(
     workspace_root: &Path,
     cargo_args: &[OsString],
+    all_features: bool,
     skip: &[String],
 ) -> Result<TreeFeatures> {
-    let mut command = read_only_command(
-        workspace_root,
-        cargo_args,
-        &[
-            "tree",
-            "--workspace",
-            "--all-features",
-            "--target",
-            "all",
-            "-e",
-            "normal,build,dev",
-            "--prefix",
-            "none",
-            "--format",
-            "{p}|{f}",
-        ],
-    );
+    let mut leading = vec!["tree", "--workspace"];
+    if all_features {
+        leading.push("--all-features");
+    }
+    leading.extend([
+        "-e",
+        "normal,build,dev",
+        "--prefix",
+        "depth",
+        "--format",
+        "@{p}|{f}",
+    ]);
+    let mut command = read_only_command(workspace_root, cargo_args, &leading);
     for name in skip {
         command.args(["--exclude", name.as_str()]);
     }
@@ -1300,17 +1297,25 @@ pub(crate) fn read_tree_features(
     )))
 }
 
-/// The members of `candidates` that can be left out without changing the
-/// resolved features of any package that stays, checked against cargo's own
-/// resolver.
+/// The members of `candidates` that can be left out. A candidate stays out
+/// only if its compile units in the default workspace resolve are the ones it
+/// has under `--all-features` (so the default lane already ran it on that
+/// compile), and leaving the remaining ones out changes the resolved features
+/// of no package that stays. Both are read from cargo's own resolver.
 fn verified_skips(
     workspace_root: &Path,
     cargo_args: &[OsString],
     candidates: &[String],
 ) -> Result<Vec<String>> {
-    let full = read_tree_features(workspace_root, cargo_args, &[])?;
-    settle(candidates, &full, &mut |skip| {
-        read_tree_features(workspace_root, cargo_args, skip)
+    let default = read_tree_features(workspace_root, cargo_args, false, &[])?;
+    let full = read_tree_features(workspace_root, cargo_args, true, &[])?;
+    let same_compile: Vec<String> = candidates
+        .iter()
+        .filter(|candidate| default.compiles_same_as(&full, candidate))
+        .cloned()
+        .collect();
+    settle(&same_compile, &full, &mut |skip| {
+        read_tree_features(workspace_root, cargo_args, true, skip)
     })
 }
 
@@ -3523,7 +3528,6 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
             let through_dependency = "\n[dependencies]\nmid = { path = \"../../mid\" }\n";
             let build_dependency = "\n[build-dependencies]\nshared = { path = \"../../shared\", features = [\"alloc\"] }\n";
             let kept_with_build = "\n[dependencies]\nshared = { path = \"../../shared\" }\n\n[build-dependencies]\nshared = { path = \"../../shared\" }\n";
-            let platform = "\n[target.'cfg(windows)'.dependencies]\nshared = { path = \"../../shared\", features = [\"alloc\"] }\n";
             let no_default_features =
                 "\n[dependencies]\nshared = { path = \"../../shared\", default-features = false }\n";
             for (case, helper, kept, shared_default) in [
@@ -3535,7 +3539,6 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
                     "[]",
                 ),
                 ("build dependency", build_dependency, kept_with_build, "[]"),
-                ("platform-specific request", platform, SHARED, "[]"),
                 (
                     "default-features = false",
                     SHARED,
@@ -3546,6 +3549,77 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
                 let dir = exclusion_fixture(helper, kept, shared_default);
                 assert!(verified_helper(&dir).is_empty(), "{case}");
             }
+        }
+
+        /// A platform the host never is: `cargo tree` on the host drops its
+        /// requests, as the lane's compile does.
+        const OTHER_PLATFORM: &str = "target.'cfg(target_os = \"none\")'.dependencies";
+
+        /// A request `helper` makes only for another platform is not part of
+        /// the host compile, so leaving `helper` out changes nothing there.
+        #[test]
+        fn a_candidates_request_for_another_platform_does_not_keep_it() {
+            let helper = format!(
+                "\n[{OTHER_PLATFORM}]\nshared = {{ path = \"../../shared\", features = [\"alloc\"] }}\n"
+            );
+            let dir = exclusion_fixture(&helper, SHARED, "[]");
+            assert_eq!(verified_helper(&dir), names(&["helper"]));
+        }
+
+        /// `kept` asks for `alloc` of `shared` only on another platform, so on
+        /// the host `kept` gets it from nobody but `helper`: a union over every
+        /// platform would let that request cover the loss.
+        #[test]
+        #[trace("TC-915", "NFR-013-AC-4")]
+        fn another_platforms_request_of_a_kept_package_does_not_cover_a_host_loss() {
+            let kept = format!(
+                "{SHARED}\n[{OTHER_PLATFORM}]\nshared = {{ path = \"../../shared\", features = [\"alloc\"] }}\n"
+            );
+            let helper =
+                "\n[dependencies]\nshared = { path = \"../../shared\", features = [\"alloc\"] }\n";
+            let dir = exclusion_fixture(helper, &kept, "[]");
+            assert!(verified_helper(&dir).is_empty());
+        }
+
+        /// `p` depends on `d`; `m` turns `d/f` on through its own feature and
+        /// `q` builds against `d` with `f`. `cargo metadata` gives `d` the
+        /// feature `f` in both lanes, but the default lane compiles `p` against
+        /// `d` without `f` and `--all-features` against `d` with it.
+        #[test]
+        #[trace("TC-915", "NFR-013-AC-5")]
+        fn a_candidate_compiled_differently_by_the_default_lane_is_not_skipped() {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let root = dir.path();
+            write(
+                root,
+                "ws/Cargo.toml",
+                "[workspace]\nmembers = [\"p\", \"m\", \"q\"]\nresolver = \"2\"\n",
+            );
+            write(
+                root,
+                "d/Cargo.toml",
+                &manifest("d", "\n[features]\nf = []\n"),
+            );
+            let plain = "\n[dependencies]\nd = { path = \"../../d\" }\n";
+            let build = "\n[build-dependencies]\nd = { path = \"../../d\", features = [\"f\"] }\n";
+            let featured = format!("{plain}\n[features]\nextra = [\"d/f\"]\n");
+            for (name, tail) in [("p", plain), ("m", featured.as_str()), ("q", build)] {
+                write(
+                    root,
+                    &format!("ws/{name}/Cargo.toml"),
+                    &manifest(name, tail),
+                );
+                write(root, &format!("ws/{name}/src/lib.rs"), "");
+            }
+            write(root, "ws/q/build.rs", "fn main() {}\n");
+            write(root, "d/src/lib.rs", "");
+            let skips = verified_skips(
+                &root.join("ws"),
+                &cargo_args(&["--workspace", "--all-features"]),
+                &names(&["p"]),
+            )
+            .expect("cargo tree resolves the fixture");
+            assert!(skips.is_empty(), "{skips:?}");
         }
 
         fn run_workspace(

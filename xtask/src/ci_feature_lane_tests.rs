@@ -587,7 +587,7 @@ fn clean_and_core_tooling_retain_their_own_target_and_features() {
 /// QSL-825: the all-features lane's package scope, from the real workspace's
 /// `cargo metadata`. Prints the decision table (`--nocapture`).
 #[test]
-#[trace("TC-915", "NFR-013-AC-4")]
+#[trace("TC-915", "NFR-013-AC-4", "NFR-013-AC-5")]
 fn real_workspace_decisions_keep_every_package_whose_compile_changes() {
     let decisions = all_features_decisions(workspace(), &[OsString::from("--locked")])
         .expect("the workspace resolves in both feature selections");
@@ -600,9 +600,15 @@ fn real_workspace_decisions_keep_every_package_whose_compile_changes() {
     // that stays resolves to exactly the feature sets of the full
     // `--all-features` workspace, host and target units apart.
     let arguments = [OsString::from("--locked")];
-    let full = read_tree_features(workspace(), &arguments, &[]).expect("full tree");
-    let without = read_tree_features(workspace(), &arguments, &skip).expect("tree without skips");
+    let full = read_tree_features(workspace(), &arguments, true, &[]).expect("full tree");
+    let without =
+        read_tree_features(workspace(), &arguments, true, &skip).expect("tree without skips");
     assert_eq!(without.differences(&full), Vec::<String>::new());
+    // And each skipped package compiles on the same units in the default run.
+    let default = read_tree_features(workspace(), &arguments, false, &[]).expect("default tree");
+    for name in &skip {
+        assert!(default.compiles_same_as(&full, name), "{name}");
+    }
     let verdict = |name: &str| {
         &decisions
             .iter()

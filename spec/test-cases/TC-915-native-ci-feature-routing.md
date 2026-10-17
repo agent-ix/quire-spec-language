@@ -15,7 +15,7 @@ process boundary. `xtask/src/ci_feature_lane_tests.rs` copies the repository's
 Makefile into an isolated fixture and compiles the Rust recorder
 `ci_feature_lane_tests/cargo_double.rs` under the owned target. The recorder
 reports the received `CARGO_TARGET_DIR` and full Cargo argument vector; it does
-not compile a workspace or qualify compiler feature behavior. NFR-013-AC-4 is
+not compile a workspace or qualify compiler feature behavior. NFR-013-AC-4 and NFR-013-AC-5 are
 checked separately against real `cargo tree` resolves (step 7).
 
 ## Test Procedure
@@ -53,16 +53,25 @@ checked separately against real `cargo tree` resolves (step 7).
    from the independent complete oracle, restore the exact original Makefile
    bytes and require equality again (AC-1/2/3). Never execute the unsafe
    historical shell interpolation or use real secret environment values.
-7. Check NFR-013-AC-4 with real `cargo tree`: run
-   `a_candidate_whose_absence_changes_a_remaining_resolve_is_put_back` on
-   fixture workspaces whose only difference between the full resolve and the
+7. Check NFR-013-AC-4 and NFR-013-AC-5 with real `cargo tree` on the host
+   platform. Run `a_candidate_whose_absence_changes_a_remaining_resolve_is_put_back`
+   on fixture workspaces whose only difference between the full resolve and the
    resolve without the candidate is a dev-dependency chain, a request through
-   another dependency, a build dependency, a platform-specific request or a
-   `default-features = false` edge, and require the candidate to be put back;
-   require a candidate that asks for nothing the others need to stay excluded.
-   Run `real_workspace_decisions_keep_every_package_whose_compile_changes` and
+   another dependency, a build dependency or a `default-features = false` edge,
+   and require the candidate to be put back. Run
+   `another_platforms_request_of_a_kept_package_does_not_cover_a_host_loss`
+   (a remaining package's request for another platform) and require the
+   candidate to be put back. Require a candidate that asks for nothing the
+   others need, or only for another platform, to stay excluded. Run
+   `a_candidate_compiled_differently_by_the_default_lane_is_not_skipped`
+   (a dependency whose default-run units are `d` and `d` with a feature,
+   while `cargo metadata` gives `d` the feature in both) and require the
+   candidate to run (AC-5). Run
+   `real_workspace_decisions_keep_every_package_whose_compile_changes` and
    require the resolve of the real workspace without the computed exclusions to
-   have no difference from the full `--all-features` resolve (AC-4).
+   have no difference from the full `--all-features` resolve, and every
+   excluded package to have the same compile units in the default and the
+   `--all-features` resolve (AC-4, AC-5).
 8. As fixture hygiene, after the first test's synchronous subprocess calls
    complete, require the compiled helper to exist, drop its fixture owner and
    require its temporary directory to be absent. Preserve the retained owned
