@@ -19,6 +19,8 @@ relationships:
     type: traces_to
   - target: ix://agent-ix/quire-spec-language/FR-103
     type: traces_to
+  - target: ix://agent-ix/quire-spec-language/FR-380
+    type: depends_on
   - target: ix://agent-ix/quire-specification/FR-153
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-043
@@ -227,9 +229,12 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
   the clause's `self`, `result` and parameter types and the populations the
   clause ranges over: the context's population (every object of which the
   clause holds for) and each population a `reaches` walks. A domain-package
-  population declaration never has a maximum (QSpec FR-153's own record has
-  none), so each one is always an unbounded `Population(None)` domain,
-  boundable by `Cardinality`.
+  population declaration has no maximum of its own (QSpec FR-153's own record
+  has none), so a population is an unbounded `Population(None)` domain,
+  boundable by `Cardinality`, unless the package authors a bound on it
+  (FR-380). A population with an authored bound `N` is a `Population(Some(N))`
+  domain: it is not listed among the unbounded domains, and its available
+  finite bound is `Cardinality{N}`.
 - The checker SHALL key a population domain as
   `DomainKey::Population{member_type, ordinal}` with `member_type` the
   `model`/`object_type` or `model`/`process` node of the population's *canonical*
@@ -246,15 +251,17 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
   UTF-8 bytes, `qsl-semantics/src/model/key.rs:80-84`). The ordinal is stable
   within one domain-package digest only, and domain keys SHALL NOT be
   compared across digests. A population record has no node of its own
-  (FR-094), so its domain is named by the object type plus the population, as
-  a model member is (ADR-012 §15.4). A `reaches` over the context population
+  (FR-094; the one node FR-380 emits for a bounded population a `reaches`
+  walks is a `Population<T>[N]` type node, not the record), so its domain is
+  named by the object type plus the population, as a model member is
+  (ADR-012 §15.4). A `reaches` over the context population
   adds no second domain.
-- The context population SHALL be the one population with no maximum that
-  covers `T`: `T` itself, or a proper supertype of `T`, is one of its member
-  types, by conformance (FR-084's `allInstances<T>` reads this way, not by
+- The context population SHALL be the one population that covers `T`,
+  whether or not the package authors a bound on it (FR-380): `T` itself, or a
+  proper supertype of `T`, is one of its member types, by conformance (FR-084's `allInstances<T>` reads this way, not by
   exact identity). If no population covers `T`, then the clause's extent
   names no population domain for it. If `T` conforms to a member type of two
-  or more populations with no maximum, then the extent cannot name exactly
+  or more populations, then the extent cannot name exactly
   one population, and the checker SHALL refuse `ambiguous_declaration`/
   `ambiguous-name` at the clause's `on`, naming those populations in
   ascending `DeclarationKey` order.
@@ -276,11 +283,12 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
 | FR-104-AC-8 | Over a package that adds operation `probe(target: ConfigVersion)` on `ConfigVersion` with no result and an empty frame: the postcondition `deref(target).versionNumber = 1` checks with its read `post`; the precondition `deref(target).versionNumber = 1` checks with its read `pre`; the postcondition `pre(deref(target).versionNumber) = 1` checks with its read `pre`; the postcondition `pre(target) = target` refuses `wrong_snapshot`/`forbidden-pre-read` at the `pre`. | Test (TC-459) |
 | FR-104-AC-9 | Under `quire.model.complete/v1`, `reaches(self, target, parent)` on a `ConfigVersion` subtype with its inherited `parent: Option<Reference<ConfigVersion>>` field checks with `self` retained as the subtype reference and `target` as the base reference, without erasing the operand identity FR-043 evaluates; a target type not conforming to the edge owner refuses `ill_typed`/`operator-ineligible`. The subtype/base operands under any other admitted model selection refuse `ill_typed`/`operator-ineligible` by the exact-type rule. | Test |
 | FR-104-AC-10 | Over the ConfigVersion package (TC-458's) with a process `Flow` (identity field `x`, field `n: Integer`) that declares operation `go` whose frame is `modifies [Flow/n]` and a closed population of `Flow`, `pre P using v on Config::Flow::go { self.n < 3 }`, `post Q using v on Config::Flow::go { self.n = pre(self.n) + 1 }` and `invariant I using v on Config::Flow at current { self.n >= 0 }` each check, `self` being `Reference<Config::Flow>` and `self.n` an `Attribute` of type `Integer`; `P`'s read is `pre`, `Q`'s reads are `post` and `pre`, `I`'s read is `current`. `pre M using v on Config::Flow::missing { true }` refuses `missing_declaration`/`missing-name` at `missing`. | Test (TC-459, TC-460) |
+| FR-104-AC-11 | Over the ConfigVersion package with `bound HistoryBound on Config::config_history [8]` (FR-380), `NoCycle` yields an `operation-contract` record whose one domain, the `config_history` population keyed as in FR-104-AC-5, is a `Population(Some(8))` domain with available finite bound `Cardinality{8}` and is not listed among the unbounded domains, so a clause whose only domains are bounded has extent `Bounded`; the population covering `ConfigVersion` is still the one `config_history`, and a second population `archive` of `ConfigVersion` with or without a bound of its own still refuses `ambiguous_declaration`/`ambiguous-name` at each clause's `on`. Without the `bound` declaration the record is FR-104-AC-5's. | Test (TC-1054) |
 
 ## Dependencies
 
-- FR-102 (forms), FR-103 (operations), FR-062 and FR-097 (requirement
-  records and extent), FR-088 (clause identity), FR-057 (the
+- FR-102 (forms), FR-103 (operations), FR-380 (the authored population
+  bound), FR-062 and FR-097 (requirement records and extent), FR-088 (clause identity), FR-057 (the
   `operation-contract` kind).
 - QSpec `state-contract.md` ("Operation anchors, aliases and captures",
   "Finite graph extension"), FR-043, FR-010 and FR-153.
