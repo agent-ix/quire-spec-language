@@ -59,6 +59,7 @@ use super::state_clause::{
 use super::type_form::{
     native_scalar_named, parse_rounding_mode, resolve_form, TypeFormError, TypeFormFault, TypeNames,
 };
+use super::type_invariant::{TypeInvariantDeclaration, TypeSlot};
 use crate::library::{ImportView, LibraryName};
 use std::sync::Arc;
 
@@ -787,6 +788,8 @@ struct ModelTypes {
     variant_types: Vec<VariantTypeDeclaration>,
     model_records: ModelRecords,
     relationships: Vec<RelationshipDeclaration>,
+    /// Each record value type's and event type's composite declaration node.
+    handles: BTreeMap<DeclarationKey, NodeKey>,
 }
 
 /// The object types of the domain package admitted for the `model`
@@ -1094,6 +1097,7 @@ fn model_object_types(
             variant_types,
             model_records,
             relationships,
+            handles: meaning_handles,
         })
     } else {
         Err(errors)
@@ -1483,6 +1487,67 @@ fn operation_clause_declarations(
                     declaring: owner,
                     declaration: declaration.clone(),
                 },
+            })
+        })
+        .collect()
+}
+
+/// FR-366: each type-level `Invariant` clause the driver parsed for `model`,
+/// with its owner resolved: `self` is a composite value of a record value
+/// type or an event type, and a reference to an object type, a state machine
+/// or a process. A clause whose owner is none of these is a broken invariant
+/// of the driver's input.
+fn type_invariant_declarations(
+    alias: &str,
+    model: &SelectedModel,
+    handles: &BTreeMap<DeclarationKey, NodeKey>,
+) -> Result<Vec<TypeInvariantDeclaration>, AssemblyCause> {
+    let package = model.view.domain_package();
+    let identities = model.view.type_identities();
+    let roles = model.view.type_clause_roles();
+    let slot = |key: &DeclarationKey| match (handles.get(key), identities.get(key)) {
+        (Some(handle), _) => Some(TypeSlot::Composite(*handle)),
+        (None, Some(identity)) => Some(TypeSlot::Object(*identity)),
+        (None, None) => None,
+    };
+    model
+        .type_invariants
+        .iter()
+        .map(|invariant| {
+            let broken = || AssemblyCause::ModelType {
+                alias: alias.to_owned(),
+                node: invariant.clause.node.clone(),
+            };
+            let owner_is_typed = package.records.iter().any(|record| {
+                record.key() == &invariant.owner
+                    && matches!(
+                        record,
+                        DomainPackageRecord::RecordValueType(_)
+                            | DomainPackageRecord::EventType(_)
+                            | DomainPackageRecord::ObjectType(_)
+                            | DomainPackageRecord::StateMachine(_)
+                            | DomainPackageRecord::Process(_)
+                            | DomainPackageRecord::PersistenceInterface(_)
+                    )
+            });
+            let context = *identities.get(&invariant.owner).ok_or_else(broken)?;
+            if !owner_is_typed {
+                return Err(broken());
+            }
+            let self_type = match slot(&invariant.owner).ok_or_else(broken)? {
+                TypeSlot::Composite(handle) => ValueType::Composite(handle),
+                TypeSlot::Object(identity) => ValueType::Reference(identity),
+            };
+            let applies_to = roles
+                .types()
+                .filter(|(_, invariants)| invariants.contains(&invariant.clause))
+                .filter_map(|(ty, _)| slot(ty))
+                .collect();
+            Ok(TypeInvariantDeclaration {
+                invariant: invariant.clone(),
+                self_type,
+                context,
+                applies_to,
             })
         })
         .collect()
@@ -2165,6 +2230,7 @@ impl PackageDeclarations {
         let mut operations = OperationTable::default();
         let mut object_spans = BTreeMap::new();
         let mut operation_clauses = Vec::new();
+        let mut type_invariants = Vec::new();
         for selection in &selections.models {
             let Some(model) = models.iter().find(|model| model.alias == selection.alias) else {
                 errors.push(AssemblyError {
@@ -2191,8 +2257,16 @@ impl PackageDeclarations {
                     model_variant_types.extend(types.variant_types);
                     model_records.extend(types.model_records);
                     model_relationships.extend(types.relationships);
+                    let handles = types.handles;
                     match operation_clause_declarations(&selection.alias, model, &operations) {
                         Ok(resolved) => operation_clauses.extend(resolved),
+                        Err(cause) => errors.push(AssemblyError {
+                            cause,
+                            span: selection.span,
+                        }),
+                    }
+                    match type_invariant_declarations(&selection.alias, model, &handles) {
+                        Ok(resolved) => type_invariants.extend(resolved),
                         Err(cause) => errors.push(AssemblyError {
                             cause,
                             span: selection.span,
@@ -2781,6 +2855,7 @@ impl PackageDeclarations {
         package.types = types;
         package.operations = operations;
         package.operation_clauses = operation_clauses;
+        package.type_invariants = type_invariants;
         package.models = admitted;
         package.model_inputs = Some((models, model_meter));
         package.pending_types = pending.map(super::check::StagedTypes);

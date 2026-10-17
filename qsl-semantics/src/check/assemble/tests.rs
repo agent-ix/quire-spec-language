@@ -172,6 +172,7 @@ fn a_state_machine_meaning_is_emitted_as_an_object_type() {
         span: Span { start: 0, end: 0 },
         view,
         operation_clauses: Vec::new(),
+        type_invariants: Vec::new(),
     };
     let mut operations = super::OperationTable::default();
     let super::ModelTypes {

@@ -30,8 +30,8 @@ record field read.
 ## Test Procedure
 
 Fixture **F**: K2 with `Money/NonNegative` (`self.amount_minor >= 0`) and
-`Order` given the field `quoted: Money`, the field `history: Money` with
-multiplicity `{0, 3}`, the optional field `discount: Money` and the operation
+`Order` given the field `quoted: Money`, the ordered field `history: Money` with
+multiplicity `{0, 3}` (its elements are located by their position in the stored order, so the results follow the FR-207 path order `index 0`, `index 1`), the optional field `discount: Money` and the operation
 `requote` with the parameter `amount: Money` and no contract (M13). The
 current observation `s1` holds one `Order` object `o1` with `total`
 `{amount_minor: 5, currency: "EUR"}`, `quoted` `{-5, "EUR"}`, `history`
@@ -55,9 +55,11 @@ unlimited meter unless a step says otherwise. Tag the tests
    holding `{amount_minor: -5, currency: "EUR", tax_minor: 20}`, and a record
    `Pair { first: Money; second: Money }` as a field `pair` of `Order` holding
    `{first: {-1, "EUR"}, second: {2, "EUR"}}` (FR-366-AC-7).
-6. **F** plus the operation `confirm(placed: OrderPlaced)` with the
-   `OrderPlaced/Occurred` invariant `false`, and `i4` of `confirm` on `o1`
-   binding `placed` to an `OrderPlaced` value (FR-366-AC-7).
+6. **F** plus the `OrderPlaced/Occurred` invariant `false`, and an
+   `OrderPlaced` value supplied as the binding of the parameter `placed` on the
+   admitted observations of `i4` (FR-366-AC-7). Intake refuses an event type
+   as the declared type of an operation parameter and of a field, so no
+   admitted observation holds an event value; that half is carried to QSL-793.
 7. **F** plus a field `buddy: Reference<Order>` of `Order`, `o1.buddy` naming
    `o2`, and `o2` holding `quoted` `{-3, "EUR"}` and otherwise non-negative
    `Money` values (FR-366-AC-7).

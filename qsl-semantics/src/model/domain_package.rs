@@ -522,6 +522,21 @@ pub struct ParsedOperationClause {
     pub expression: Expression,
 }
 
+/// One type-level clause classified `Invariant` (FR-366), parsed by the
+/// compile driver.
+#[derive(Clone, Debug)]
+pub struct ParsedTypeInvariant {
+    /// The clause's declaration key.
+    pub clause: DeclarationKey,
+    /// The type that owns the clause.
+    pub owner: DeclarationKey,
+    /// The clause's position among its owner's clauses in the package, the
+    /// `k` of `TypeDefinition.clauses[k]`.
+    pub position: usize,
+    /// The parsed clause text.
+    pub expression: Expression,
+}
+
 /// An operation member of an object type, state machine, or persistence interface.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OperationMemberRecord {
