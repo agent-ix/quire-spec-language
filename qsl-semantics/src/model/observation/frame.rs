@@ -18,7 +18,8 @@ use std::collections::BTreeMap;
 use quire_exact::{EffectiveId, ObjectReference, ValueType};
 
 use super::document::{
-    find_declaration, raw_field, record_field_type, record_keys, RawObject, RawPopulation,
+    find_declaration, raw_field, read_context, record_field_type, record_keys, RawObject,
+    RawPopulation, SnapshotDocument,
 };
 use super::helpers::object_reference;
 use super::relationships::{first_link_change, LinkFinding, RawEntry};
@@ -56,8 +57,9 @@ pub(super) struct FrameContext<'a> {
 /// Who the invocation's receiver and reference arguments are (FR-013): what
 /// the frame's receiver-scoped and argument-scoped entries ground in.
 pub(super) struct FrameBinding<'a> {
-    /// The invocation's `self`.
-    pub(super) receiver: &'a SelectedObject,
+    /// The invocation's `self`: none for an operation of a state machine,
+    /// whose receiver is its context.
+    pub(super) receiver: Option<&'a SelectedObject>,
     /// Each reference parameter's bound object, by parameter name.
     pub(super) arguments: Vec<(String, &'a SelectedObject)>,
 }
@@ -65,7 +67,9 @@ pub(super) struct FrameBinding<'a> {
 impl FrameBinding<'_> {
     /// The receiver's identity when it is in population `name`.
     fn receiver_in(&self, name: &str) -> Option<&str> {
-        (self.receiver.population == name).then_some(self.receiver.key.as_str())
+        self.receiver
+            .filter(|receiver| receiver.population == name)
+            .map(|receiver| receiver.key.as_str())
     }
 
     /// `(parameter, object)` for each argument bound to an object of
@@ -127,6 +131,33 @@ fn wire_object<'a>(
         .type_identities()
         .get(&type_identity)
         .ok_or_else(|| fault("frame-object-type-has-no-effective-id"))?;
+    let (fields, names) = wire_fields(context, effective_type, &object.fields)?;
+    Ok((
+        FrameObject {
+            object: object.key.as_str(),
+            type_identity,
+            fields,
+        },
+        WireFacts {
+            effective_type,
+            names,
+        },
+    ))
+}
+
+/// The typed field values of an instance of `effective_type` whose wire
+/// values are `values`, keyed by each field's declaration, and each field's
+/// wire name by the same key.
+type WireFields<'a> = (
+    BTreeMap<DeclarationKey, TypedRaw<'a>>,
+    BTreeMap<DeclarationKey, &'a str>,
+);
+
+fn wire_fields<'a>(
+    context: &FrameContext<'a>,
+    effective_type: EffectiveId,
+    values: &'a [(String, SnapshotValue)],
+) -> Result<WireFields<'a>, AdmissionFailure> {
     let attributes = context
         .types
         .attributes(effective_type)
@@ -142,8 +173,7 @@ fn wire_object<'a>(
             package: owner.package.clone(),
             node: format!("{}/{name}", owner.node),
         };
-        let value =
-            raw_field(&object.fields, name).ok_or_else(|| fault("frame-declared-field-missing"))?;
+        let value = raw_field(values, name).ok_or_else(|| fault("frame-declared-field-missing"))?;
         fields.insert(
             key.clone(),
             TypedRaw {
@@ -153,17 +183,7 @@ fn wire_object<'a>(
         );
         names.insert(key, name);
     }
-    Ok((
-        FrameObject {
-            object: object.key.as_str(),
-            type_identity,
-            fields,
-        },
-        WireFacts {
-            effective_type,
-            names,
-        },
-    ))
+    Ok((fields, names))
 }
 
 /// Population `name`'s objects in `populations`, in document order; empty
@@ -400,6 +420,96 @@ pub(super) fn enforce(
                 .with("difference", link_difference_name(link.difference)),
         ),
     })
+}
+
+/// FR-106 check 11.6: the pre and the post context of a state machine's
+/// clause (the read contexts of check 9, of `machine` or a specialization of
+/// it) compared field by field in the machine's exposed effective field
+/// order, as admitted typed values under the equality of each field's
+/// declared type, as an object's fields are. A retype refuses first, naming
+/// both machines; a changed field the operation's frame does not grant in
+/// `modifies` refuses naming the machine and the field. A context needs no
+/// `creates` or `deletes` grant and has no entry in `created` or `deleted`.
+pub(super) fn enforce_contexts<'a>(
+    context: &FrameContext<'a>,
+    machine: EffectiveId,
+    pre: &'a SnapshotDocument,
+    post: &'a SnapshotDocument,
+) -> Result<(), AdmissionFailure> {
+    const RECEIVER: &str = "context";
+    let side = |snapshot: &'a SnapshotDocument| -> Result<_, AdmissionFailure> {
+        let (raw, effective) = read_context(context.views, context.types, snapshot, machine)
+            .ok_or_else(|| fault("frame-read-context-missing"))?;
+        let type_identity = view_of(context.views, effective)
+            .and_then(|view| view.declaration_key(effective))
+            .cloned()
+            .ok_or_else(|| fault("frame-context-machine-unresolved"))?;
+        let (fields, names) = wire_fields(context, effective, &raw.fields)?;
+        Ok((
+            raw,
+            names,
+            FrameObject {
+                object: RECEIVER,
+                type_identity,
+                fields,
+            },
+        ))
+    };
+    let (pre_raw, pre_names, pre_object) = side(pre)?;
+    let (_, _, post_object) = side(post)?;
+    let record_keys = record_keys(context.views);
+    let frame = FrameDecision {
+        index: context.context_view.view.model_index(),
+        ancestor_steps: context.limits.ancestor_steps,
+        effect: context.effect,
+        declared_created: &[],
+        declared_deleted: &[],
+        receiver: Some(RECEIVER),
+        arguments: &[],
+    };
+    let mut meter = Meter::new(context.limits);
+    match decide_frame(
+        &frame,
+        &[pre_object],
+        &[post_object],
+        |_, left, right| {
+            typed_values_equal(left, right, &|identity, field| {
+                record_field_type(context.types, &record_keys, identity, field)
+            })
+        },
+        &mut |charge| {
+            let point = match charge {
+                FrameCharge::Write => ChargePoint::FrameWrite,
+                FrameCharge::RedefinesLink => ChargePoint::FrameRedefinesLink,
+            };
+            meter.charge(Charge::new(point))
+        },
+    ) {
+        Ok(_) => Ok(()),
+        Err(DecisionStop::Denied(incomplete)) => Err(refuse(budget_record(&incomplete))),
+        Err(DecisionStop::Refused(refusal)) => {
+            let record = AdmissionRecord::new(refusal.code, refusal.cause.as_str())
+                .with("machine", pre_raw.machine.clone());
+            Err(refuse(match &refusal.cause {
+                ModelRefusalCause::FrameTypeChanged {
+                    pre_type,
+                    post_type,
+                    ..
+                } => record
+                    .with("pre_machine", pre_type.node.clone())
+                    .with("post_machine", post_type.node.clone()),
+                ModelRefusalCause::FrameFieldWriteOutsideGrant { field, .. } => record.with(
+                    "field",
+                    pre_names
+                        .get(field)
+                        .copied()
+                        .unwrap_or(field.node.as_str())
+                        .to_owned(),
+                ),
+                _ => record,
+            }))
+        }
+    }
 }
 
 fn link_difference_name(difference: LinkDifference) -> &'static str {

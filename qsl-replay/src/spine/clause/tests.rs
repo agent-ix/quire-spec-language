@@ -362,10 +362,10 @@ fn no_cycle_selection(label: DocumentRef, self_key: &str) -> ClauseSelection {
                 kind: qsl_semantics::model::observation::AnchorKind::Initialization,
                 name: "init".to_owned(),
             },
-            self_object: SelectedObject {
+            self_object: Some(SelectedObject {
                 population: population_identity(),
                 key: self_key.to_owned(),
-            },
+            }),
         },
     }
 }
@@ -1932,10 +1932,10 @@ fn config_version_current_selection(
                 kind: qsl_semantics::model::observation::AnchorKind::Handler,
                 name: "validate".to_owned(),
             },
-            self_object: SelectedObject {
+            self_object: Some(SelectedObject {
                 population: config_version_population_identity(),
                 key: self_key.to_owned(),
-            },
+            }),
         },
     }
 }
@@ -5155,6 +5155,7 @@ mod invocation_parameters;
 mod link_replay;
 mod pre_call_invocation;
 mod receiver_frames;
+mod refinement;
 mod state_clause_replay;
 mod witness;
 mod witness_member;

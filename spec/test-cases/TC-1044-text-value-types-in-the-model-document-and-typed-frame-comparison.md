@@ -17,7 +17,7 @@ the Text reader refuses a defective declaration, the value domain every
 surface decides on the retained sequence, and the frame check's comparison of
 each declared type by that type's own equality.
 
-Scope: FR-056-AC-37, FR-056-AC-38, FR-056-AC-39 and FR-106-AC-40. The bare
+Scope: FR-056-AC-37, FR-056-AC-38, FR-056-AC-39, FR-106-AC-40 and FR-106-AC-49. The bare
 `ix://quire/native/Text` `typeRef` rows stay with TC-897 step 3, which
 depends on the semantic-IR validator's native vocabulary naming `Text`; this
 case never uses that spelling.
@@ -51,7 +51,8 @@ are decided by the validator or the reader without it and are reachable today.
   holding Text objects `a` and `b` in the pre and the post snapshot of every
   invocation, `retitle`'s `modifies` removed so that the frame grants nothing,
   and TC-1036's `label` (String), `token` (UUID) and `subtitle` (Option of
-  `Tag`, `Text[0, 4; unicode-scalars]`) fields.
+  `Tag`, `Text[0, 4; unicode-scalars]`) fields, and the field `address` of the
+  record `Address { street: Title }` (FR-056-AC-21).
 
 ## Test Procedure
 
@@ -89,7 +90,8 @@ are decided by the validator or the reader without it and are reachable today.
    and from `{"present":<Text a>}` to the same with the object's members
    written in another order; `child.aliases` from `a`, `b` to `b`, `a`, and
    the same elements with only the document's whitespace changed; `child.token`
-   to another canonical UUID.
+   to another canonical UUID; `child.address`'s `street` from U+00E9 to U+0065
+   U+0301 and from `Main` to `Side`.
 
 ## Expected Results
 
@@ -125,4 +127,6 @@ are decided by the validator or the reader without it and are reachable today.
   change under `unicode-scalars` refuses naming `child` and `subtitle`; absent
   to present refuses naming `child` and `subtitle`, and the reordered members admit; the
   swapped `aliases` refuse naming `child` and `aliases`, and the whitespace
-  change admits; the `token` change refuses naming `child` and `token`.
+  change admits; the `token` change refuses naming `child` and `token`; the
+  `street` change from U+00E9 to U+0065 U+0301 admits as no change, and
+  `Main` to `Side` refuses naming `child` and `address`.

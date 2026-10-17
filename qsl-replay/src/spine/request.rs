@@ -277,9 +277,7 @@ fn selection(
                     }
                     ClauseSelectionInput::Current {
                         snapshot: document.reference.clone(),
-                        self_object: clause
-                            .self_object
-                            .ok_or_else(|| invalid("self", "required for current snapshot"))?,
+                        self_object: clause.self_object,
                         anchor: clause
                             .anchor
                             .ok_or_else(|| invalid("anchor", "required for current snapshot"))?,
@@ -303,9 +301,7 @@ fn selection(
                         .collect::<Result<BTreeMap<_, _>, ClauseRequestReadError>>()?;
                     ClauseSelectionInput::PreCall {
                         snapshot: document.reference.clone(),
-                        self_object: clause
-                            .self_object
-                            .ok_or_else(|| invalid("self", "required for pre snapshot"))?,
+                        self_object: clause.self_object,
                         parameters,
                     }
                 }
@@ -472,7 +468,13 @@ pub fn read_clause_run_request(
 #[cfg(test)]
 mod tests {
     use super::snapshot_value;
+    use super::{
+        selection, ClauseRunSelection, ClauseSelectionParts, ClauseSelectionPartsKind,
+        SuppliedObservation,
+    };
+    use qsl_semantics::model::observation::{ClauseSelectionInput, DocumentRef, SelectedObject};
     use qsl_semantics::model::observation::{NativeKind, RawForm, RawNativeKind};
+    use std::collections::BTreeMap;
 
     #[test]
     fn parameter_value_reader_uses_heap_stack_past_128_levels() {
@@ -565,5 +567,56 @@ mod tests {
             assert_eq!(variant.case(), case, "{text}");
             assert_eq!(variant.has_extra_member(), extra_member, "{text}");
         }
+    }
+
+    fn pre_snapshot() -> BTreeMap<String, SuppliedObservation> {
+        let reference = DocumentRef {
+            authority: "a".into(),
+            identity: "i".into(),
+            revision_namespace: "n".into(),
+            revision: "r".into(),
+            digest: [7; 32],
+        };
+        BTreeMap::from([(
+            "pre".to_owned(),
+            SuppliedObservation {
+                reference,
+                format: "quire.state.snapshot/v1".into(),
+                role: Some("pre".into()),
+                bytes: Vec::new(),
+            },
+        )])
+    }
+
+    fn pre_call_self(self_object: Option<SelectedObject>) -> Option<SelectedObject> {
+        let parts = ClauseSelectionParts {
+            name: "Machine::op::requires".into(),
+            observation: "pre".into(),
+            self_object,
+            anchor: None,
+            parameters: Some(BTreeMap::new()),
+        };
+        let Ok(ClauseRunSelection::Clause(clause)) =
+            selection(ClauseSelectionPartsKind::Clause(parts), &pre_snapshot())
+        else {
+            panic!("a pre snapshot selection reads");
+        };
+        let ClauseSelectionInput::PreCall { self_object, .. } = clause.input else {
+            panic!("a pre snapshot selects PreCall");
+        };
+        self_object
+    }
+
+    /// FR-106: a state machine's precondition has no object identity, so its
+    /// pre-call selection reads with no `self`; an object receiver's `self`
+    /// is carried through for admission to judge against the receiver.
+    #[test]
+    fn pre_call_selection_reads_with_and_without_self() {
+        assert_eq!(pre_call_self(None), None);
+        let object = SelectedObject {
+            population: "p".into(),
+            key: "k".into(),
+        };
+        assert_eq!(pre_call_self(Some(object.clone())), Some(object));
     }
 }
