@@ -13,9 +13,7 @@ use qsl_foundation::{BackendId, Setting, SourceIdentity};
 use qsl_replay::spine::DependencyInput;
 use qsl_replay::{compile_package, ReplayLimits, StageLimits};
 use qsl_route::request::items_from_requirements;
-use qsl_route::{
-    BackendDescriptor, Candidate, ManifestDigest, Mode, ProviderOrigin, Registry,
-};
+use qsl_route::{BackendDescriptor, Candidate, ManifestDigest, Mode, ProviderOrigin, Registry};
 use qsl_semantics::check::Capability;
 use serde_json::Value;
 
@@ -73,7 +71,10 @@ fn a_union_unit_recompiles_to_its_emitted_package_id() {
     )
     .expect("the retained source recompiles");
     assert_eq!(recompiled.bytes(), original.package().bytes());
-    assert_eq!(recompiled.package_id(), original.package().package_id().record());
+    assert_eq!(
+        recompiled.package_id(),
+        original.package().package_id().record()
+    );
 }
 
 /// TC-828 step 1: `area`'s one claim, the multiplication in the `Rect` arm,

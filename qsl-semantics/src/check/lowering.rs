@@ -1172,12 +1172,14 @@ impl<'w> quire_walk::Walk for LeafWalk<'w> {
                     ));
                 }
                 self.push(WalkSegment::Member(name));
-                queued.extend((0_u64..).zip(member.positions()).map(|(position, value_type)| {
-                    LeafVisit::Type {
-                        segment: Some(WalkSegment::Position(position)),
-                        value_type,
-                    }
-                }));
+                queued.extend(
+                    (0_u64..)
+                        .zip(member.positions())
+                        .map(|(position, value_type)| LeafVisit::Type {
+                            segment: Some(WalkSegment::Position(position)),
+                            value_type,
+                        }),
+                );
                 LeafFrame {
                     segment: true,
                     opened: None,

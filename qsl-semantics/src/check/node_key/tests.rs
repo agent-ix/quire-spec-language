@@ -1119,15 +1119,10 @@ fn a_union_value_is_keyed_by_the_application_preimage_and_a_tuple_value_is_not()
     let union = NodeKey::from_digest([0xbb; 32]);
     let payload = NodeKey::from_digest([0x11; 32]);
     let body = rect_body(payload);
-    let node_id = |key: NodeKey| {
-        format!(
-            r#"{{"digest":"{key}","domain":"quire.checked-semantic-node/v1"}}"#
-        )
-    };
+    let node_id =
+        |key: NodeKey| format!(r#"{{"digest":"{key}","domain":"quire.checked-semantic-node/v1"}}"#);
     let reference = format!(r#"{{"target":{},"term":"reference"}}"#, node_id(payload));
-    let aggregate = format!(
-        r#"{{"members":[{reference},{reference}],"term":"aggregate"}}"#
-    );
+    let aggregate = format!(r#"{{"members":[{reference},{reference}],"term":"aggregate"}}"#);
     let expected_body = format!(
         r#"{{"members":[{{"name":"Rect","term":"binding","value":{aggregate}}}],"term":"aggregate"}}"#
     );
@@ -1154,7 +1149,10 @@ fn a_union_value_is_keyed_by_the_application_preimage_and_a_tuple_value_is_not()
 
     let value = key_of("union_value");
     let application = expected("quire.application-node/v1", "union_value");
-    assert_eq!(std::str::from_utf8(&value.preimage), Ok(application.as_str()));
+    assert_eq!(
+        std::str::from_utf8(&value.preimage),
+        Ok(application.as_str())
+    );
     assert_eq!(
         value.key,
         NodeKey::from_digest(Sha256::digest(application.as_bytes()).into())
@@ -1162,7 +1160,10 @@ fn a_union_value_is_keyed_by_the_application_preimage_and_a_tuple_value_is_not()
 
     let tuple = key_of("tuple_value");
     let structural = expected("quire.structural-node/v1", "tuple_value");
-    assert_eq!(std::str::from_utf8(&tuple.preimage), Ok(structural.as_str()));
+    assert_eq!(
+        std::str::from_utf8(&tuple.preimage),
+        Ok(structural.as_str())
+    );
     assert_eq!(
         tuple.key,
         NodeKey::from_digest(Sha256::digest(structural.as_bytes()).into())

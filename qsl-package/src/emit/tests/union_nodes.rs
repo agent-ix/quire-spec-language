@@ -78,7 +78,9 @@ fn the_union_keeps_its_id_and_its_members_their_identities_through_emission_and_
         .find(|declaration| declaration.name() == "Shape")
         .expect("Shape is declared");
     assert_eq!(
-        types.union_key(declaration.key()).map(|key| key.to_string()),
+        types
+            .union_key(declaration.key())
+            .map(|key| key.to_string()),
         Some(union_id.to_owned())
     );
     let CompositeShape::Union(members) = declaration.shape() else {
@@ -243,7 +245,11 @@ fn a_construction_is_emitted_with_its_application_preimage_key() {
     assert_eq!(emission.omitted, []);
     let wire = wire(&emission);
     let values = of_form(&wire, "union_value");
-    assert_eq!(values.len(), 2, "the nullary and the reference-payload vector");
+    assert_eq!(
+        values.len(),
+        2,
+        "the nullary and the reference-payload vector"
+    );
     let [union] = of_form(&wire, "union")[..] else {
         panic!("one union node")
     };

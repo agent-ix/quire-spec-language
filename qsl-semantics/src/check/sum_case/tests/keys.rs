@@ -112,7 +112,12 @@ fn names(node: &SemanticNode) -> Vec<NodeKey> {
     node.semantic_type()
         .into_iter()
         .chain(result)
-        .chain(node.body().leaves().into_iter().filter_map(|leaf| leaf.key()))
+        .chain(
+            node.body()
+                .leaves()
+                .into_iter()
+                .filter_map(|leaf| leaf.key()),
+        )
         .collect()
 }
 
@@ -177,8 +182,14 @@ fn renaming_adding_or_retyping_a_member_changes_the_union_and_every_node_naming_
     let naming_shape = naming(&base, base_ids.union);
     // The parameter, the `case`, `area`, the construction and `rect` name it.
     assert!(naming_shape.len() >= 5, "{naming_shape:?}");
-    assert!(base_ids.cases.iter().all(|case| naming_shape.contains(case)));
-    assert!(base_ids.values.iter().all(|value| naming_shape.contains(value)));
+    assert!(base_ids
+        .cases
+        .iter()
+        .all(|case| naming_shape.contains(case)));
+    assert!(base_ids
+        .values
+        .iter()
+        .all(|value| naming_shape.contains(value)));
 
     let area = |arms: &str| {
         format!("function area using v(s: Shape): Integer pure {{ case s {{ {arms} }} }}\n")
@@ -260,8 +271,10 @@ fn the_union_the_construction_and_the_case_are_lowered_in_qspecs_spelling() {
     let graph = graph(&format!("{SHAPE_DECL}{AREA}{RECT}"));
     let ids = ids(&graph);
     let integer = forms(&graph, "integer")[0].key().to_string();
-    let reference = |key: &str| json!({"term": "reference", "target": {
-        "domain": "quire.checked-semantic-node/v1", "digest": key}});
+    let reference = |key: &str| {
+        json!({"term": "reference", "target": {
+        "domain": "quire.checked-semantic-node/v1", "digest": key}})
+    };
 
     // The union: a declared `composite_type`/`union`, one binding per member
     // in declaration order over its payload type nodes.
@@ -299,7 +312,10 @@ fn the_union_the_construction_and_the_case_are_lowered_in_qspecs_spelling() {
     assert_eq!(members.len(), 1);
     assert_eq!(members[0]["name"], "Rect");
     assert_eq!(members[0]["value"]["term"], "aggregate");
-    assert_eq!(members[0]["value"]["members"].as_array().map(Vec::len), Some(2));
+    assert_eq!(
+        members[0]["value"]["members"].as_array().map(Vec::len),
+        Some(2)
+    );
 
     // The `case`: an `expression`/`case` node whose application is
     // `quire.op.control.case` over the scrutinee and one arm per member in the
