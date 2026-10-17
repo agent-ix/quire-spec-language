@@ -17,7 +17,7 @@ use quire_semantic_value::checking::CheckingLimits;
 const UNIT: &str = "language \"ix:native\" edition \"1-draft\";\n\
     profile v = \"quire.value.complete/v1\";\n\
     function f using v(s: Set<Int[0, 9999]>): Integer pure { size(s) + 1 }\n\
-    function g using v(): Integer pure { size(set[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]) }\n";
+    function g using v(): Integer pure { f(set[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]) }\n";
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
     integer_bits: u64::MAX,
@@ -143,7 +143,7 @@ fn an_unbounded_set_of_any_size_evaluates_and_stops_only_on_the_meter() {
         format!("{:?}", call(&package, "g", Vec::new(), &mut ample)),
         format!(
             "{:?}",
-            Outcome::Completed(Value::Integer(Integer::from(12_i64)))
+            Outcome::Completed(Value::Integer(Integer::from(13_i64)))
         )
     );
     let mut scarce = Meter::new(ScalarLimits {
