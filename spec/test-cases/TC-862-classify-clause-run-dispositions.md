@@ -36,7 +36,7 @@ tests `#[trace("TC-862", "FR-342-AC-n")]`.
 - Step 1: `admitted`/`evaluate`; `refused`/`evaluate`; `refused`/`evaluate`.
 - Step 2: `absent`/`select`; `refused`/`select`; `refused`/`admit`;
   `refused`/`admit`.
-- Step 3: `incomplete`/`admit` naming its limit; `incomplete`/`evaluate`
+- Step 3: `incomplete`/`admit` naming `incomplete_population`/`incomplete-scope`; `incomplete`/`evaluate`
   naming `work_units` and value zero.
 - Step 4: `tool failure`, four times.
 - Step 5: `tool failure`/`compile`, equal to FR-341's class of its
