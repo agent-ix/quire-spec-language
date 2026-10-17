@@ -667,7 +667,7 @@ pub(crate) fn argument_value(
 /// S6a repeats the shared type and closure checks at its evaluator boundary;
 /// keeping this guard here also covers unused arguments and preserves the
 /// typed facade refusal arms before evaluation starts.
-fn admit_model_arguments(
+pub(crate) fn admit_model_arguments(
     models: &[qsl_semantics::model::intake::SelectedModel],
     types: &quire_semantic_value::declaration::TypeEnvironment,
     parameters: &[(String, ValueType)],
@@ -1014,4 +1014,4 @@ pub(crate) fn convert_outcome(
 }
 
 #[cfg(test)]
-mod tests;
+pub(in crate::spine) mod tests;

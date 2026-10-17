@@ -105,8 +105,9 @@ pub struct CompositeParityClaim {
     /// The accounting limits the exact evaluation runs under, retained from
     /// the proving run.
     pub limits: ScalarLimits,
-    /// The canonical proof-content identity binding the claim to the proved
-    /// artifact. Carried into the claim identity; never recomputed.
+    /// The canonical content identity of the proved artifact alone; the
+    /// operands and limits are separate claim fields, not part of this
+    /// digest. Carried into the claim identity; never recomputed.
     pub content_identity: DigestRecord,
 }
 
