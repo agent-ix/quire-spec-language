@@ -1024,6 +1024,7 @@ pub(super) fn find_declaration<'v>(
 }
 
 struct PopulationInfo {
+    key: DeclarationKey,
     member_types: Vec<DeclarationKey>,
 }
 
@@ -1040,6 +1041,7 @@ fn find_population<'v>(
                     return Some((
                         view,
                         PopulationInfo {
+                            key: population.key.clone(),
                             member_types: population.member_types.clone(),
                         },
                     ));
@@ -2864,6 +2866,101 @@ pub(super) fn admit_populations(
     finish_populations(types, values)
 }
 
+/// One population of an admitted initial state: its declaration key and
+/// every object it lists, with each field's admitted slot.
+pub(super) struct AdmittedPopulation {
+    pub(super) key: DeclarationKey,
+    pub(super) objects: Vec<AdmittedObject>,
+}
+
+/// An admitted initial state: its populations and the relationship extents
+/// its snapshot listed.
+pub(super) struct AdmittedInitial {
+    pub(super) populations: Vec<AdmittedPopulation>,
+    pub(super) extents:
+        Vec<quire_semantic_value::relationship_extent::RelationshipExtent<DeclarationKey>>,
+}
+
+/// One object of an admitted initial state.
+pub(super) struct AdmittedObject {
+    pub(super) reference: ObjectReference,
+    pub(super) fields: Vec<(String, FieldValue)>,
+}
+
+/// FR-106 checks 6 to 8 over an initial state's one snapshot, where check 7
+/// requires every population the snapshot lists: every population the
+/// document lists, in the document's order, with its objects.
+pub(super) fn admit_initial_populations(
+    views: &[ModelView],
+    types: &TypeEnvironment,
+    populations: &[RawPopulation],
+    relationships: &[super::relationships::RawEntry],
+    ancestor_steps: u64,
+) -> Result<AdmittedInitial, AdmissionFailure> {
+    let values = admit_population_values(
+        views,
+        types,
+        populations,
+        relationships,
+        PostStateRange::Refuse,
+        ancestor_steps,
+    )?;
+    let required: Vec<String> = populations
+        .iter()
+        .map(|entry| entry.population.clone())
+        .collect();
+    check_population_completeness(
+        populations,
+        &values.completeness,
+        None,
+        &required,
+        &values.extents,
+    )?;
+    check_population_closure(
+        populations,
+        &values.completeness,
+        &values.keys_by_population,
+        &values.extents,
+    )?;
+    let mut admitted: Vec<(String, AdmittedPopulation)> = Vec::new();
+    for entry in populations {
+        if admitted.iter().any(|(name, _)| *name == entry.population) {
+            continue;
+        }
+        let (_, info) = find_population(views, &entry.population)
+            .ok_or_else(|| fault("listed-population-unresolved"))?;
+        admitted.push((
+            entry.population.clone(),
+            AdmittedPopulation {
+                key: info.key,
+                objects: Vec::new(),
+            },
+        ));
+    }
+    for ((reference, fields), holder) in values.objects.iter().zip(&values.holders) {
+        let (_, population) = admitted
+            .iter_mut()
+            .find(|(name, _)| name == holder)
+            .ok_or_else(|| fault("object-holder-unlisted"))?;
+        population.objects.push(AdmittedObject {
+            reference: reference.clone(),
+            fields: fields
+                .iter()
+                .map(|(name, value)| ((*name).to_owned(), value.clone()))
+                .collect(),
+        });
+    }
+    let extents = super::relationships::supplied_extents(&values.extents)?;
+    finish_populations(types, values)?;
+    Ok(AdmittedInitial {
+        populations: admitted
+            .into_iter()
+            .map(|(_, population)| population)
+            .collect(),
+        extents,
+    })
+}
+
 /// FR-098 step 3: FR-106 checks 6 to 8 over a function's one environment
 /// document. The populations holding an object that equals one of the
 /// converted `arguments` are required (check 7), and so is, repeatedly, what
@@ -2902,7 +2999,7 @@ pub(super) fn admit_argument_populations(
     finish_populations(types, values)
 }
 
-fn map_environment_refusal(error: ObjectClosureRefusal) -> AdmissionFailure {
+pub(super) fn map_environment_refusal(error: ObjectClosureRefusal) -> AdmissionFailure {
     match error.cause {
         ObjectClosureCause::DanglingReference(target) => refuse(
             admission_record(
