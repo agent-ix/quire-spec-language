@@ -1331,7 +1331,7 @@ fn row_23_every_small_graph_agrees_with_the_independent_closure() {
     }
 }
 
-/// TC-1054 row 13 (FR-380-AC-7): with `bound OrdersBound on M::orders [2]`, an
+/// TC-1054 row 13: with `bound OrdersBound on M::orders [2]`, an
 /// observation whose `orders` population lists 2 objects evaluates the
 /// reachability as for an unbounded population; one listing 3 refuses
 /// `cardinality_out_of_bound`/`above-maximum` naming 2 and 3, before any
@@ -1402,4 +1402,51 @@ fn an_observation_above_the_authored_bound_refuses_above_maximum() {
         UNLIMITED,
     );
     assert!(boolean(decided));
+}
+
+/// TC-1054 row 13: the bound refuses for every population the
+/// clause's record holds as bounded, not only when a `reaches` node runs: a
+/// clause over the bounded context population alone, and one whose
+/// `reaches` is skipped by a short-circuit, both refuse above the maximum.
+#[trace("TC-1054", "FR-380-AC-7")]
+#[test]
+fn a_bounded_population_refuses_for_a_clause_that_never_evaluates_a_reaches() {
+    let orders = Orders::with_declarations(
+        Shape::BASE,
+        "bound OrdersBound on M::orders [2]\n\
+         pre PreContext using v on M::Order::reroute { true }\n\
+         pre PreShort using v on M::Order::reroute { true or reaches(self, target, next) }\n",
+    );
+    let population = key("orders").node;
+    for clause in ["PreContext", "PreShort"] {
+        for (count, refused) in [(2_u64, false), (3, true)] {
+            let environment = chain(&orders)
+                .with_population_sizes(BTreeMap::from([(population.clone(), count)]));
+            let (evaluation, meter) = orders.run(
+                clause,
+                &orders.order("o1"),
+                &orders.order("o3"),
+                &environment,
+                UNLIMITED,
+            );
+            match (&evaluation.outcome, refused) {
+                (FamilyOutcome::Evaluated(Outcome::Refused(refusal)), true) => {
+                    assert!(
+                        matches!(
+                            refusal,
+                            quire_exact::Refusal::CardinalityOutOfBound {
+                                violation: quire_exact::BoundViolation::AboveMaximum,
+                                count: 3,
+                                ..
+                            }
+                        ),
+                        "{clause}: {refusal:?}"
+                    );
+                    assert_charges(&meter, &[], 0, 0);
+                }
+                (FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true))), false) => {}
+                (other, _) => panic!("{clause} over {count} objects: {other:?}"),
+            }
+        }
+    }
 }

@@ -353,7 +353,7 @@ mod tests {
     /// FR-365 "The population link": the key is present only when the member
     /// links a population node, and then names it as `declaration` names its
     /// node.
-    #[trace("TC-1054", "FR-365-AC-13")]
+    #[trace("TC-1054")]
     #[test]
     fn relationship_end_renders_its_population_link_only_when_it_has_one() {
         let member = Member::RelationshipEnd {

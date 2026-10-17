@@ -461,6 +461,9 @@ pub struct TypedStateClause {
     /// is exactly the kind of comparison a `#[string_edge]` reader marks,
     /// never an interior evaluator decision).
     pub(crate) has_result: bool,
+    /// The authored bound of every bounded population the claims name, the
+    /// ones an evaluation refuses above (FR-380-AC-7).
+    pub(crate) bounds: Vec<AuthoredBound>,
 }
 
 /// The `ProtocolClause` family's state clause production (ADR-012 §15.2,
@@ -723,6 +726,14 @@ pub(crate) fn check_clause(
             populations: form.frame_population.into_iter().collect(),
         });
     }
+    let mut bounds: Vec<AuthoredBound> = claims
+        .iter()
+        .flat_map(|claim| &claim.populations)
+        .filter(|domain| domain.maximum.is_some())
+        .filter_map(|domain| walked_bound(input.models, domain.object, input.scope.types()))
+        .collect();
+    bounds.sort_by(|left, right| left.label.cmp(&right.label));
+    bounds.dedup();
     let population_types = claims
         .iter()
         .flat_map(|claim| claim.populations.iter().map(|domain| domain.object))
@@ -741,6 +752,7 @@ pub(crate) fn check_clause(
         population_types,
         claims,
         has_result,
+        bounds,
     })
 }
 
@@ -761,9 +773,16 @@ pub struct CheckedStateClause {
     pub(crate) claim: Origin,
     pub(crate) spans: DeclarationSpans,
     pub(crate) has_result: bool,
+    pub(crate) bounds: Vec<AuthoredBound>,
 }
 
 impl CheckedStateClause {
+    /// The authored bound of each bounded population the clause ranges over
+    /// (FR-380), ascending by label.
+    pub fn population_bounds(&self) -> &[AuthoredBound] {
+        &self.bounds
+    }
+
     /// The declared name.
     pub fn name(&self) -> &str {
         &self.name

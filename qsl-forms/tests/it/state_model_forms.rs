@@ -42,7 +42,7 @@ fn population_bound(form: &DeclarationForm) -> &PopulationBoundForm {
     }
 }
 
-/// FR-380-AC-1: one form, its label, alias, population and digits each
+/// one form, its label, alias, population and digits each
 /// spelled and spanned, nothing resolved.
 #[trace("TC-1054", "FR-380-AC-1")]
 #[test]
@@ -71,7 +71,7 @@ fn a_bound_builds_one_form_with_every_part_spelled_and_spanned() {
     assert_eq!(parsed.declared_extent(), None);
 }
 
-/// FR-380-AC-1: `0` is a valid maximum, and bounds keep their source order.
+/// `0` is a valid maximum, and bounds keep their source order.
 #[trace("TC-1054", "FR-380-AC-1")]
 #[test]
 fn a_zero_bound_builds_and_bounds_keep_source_order() {
@@ -90,7 +90,7 @@ fn a_zero_bound_builds_and_bounds_keep_source_order() {
     assert_eq!(bounds, [("Zero", "0"), ("Eight", "8")]);
 }
 
-/// FR-380-AC-1: a negative or non-numeric maximum refuses at S1, located at
+/// a negative or non-numeric maximum refuses at S1, located at
 /// the offending token.
 #[trace("TC-1054", "FR-380-AC-1")]
 #[test]
@@ -111,7 +111,7 @@ fn a_negative_or_non_numeric_maximum_refuses_at_s1() {
     }
 }
 
-/// FR-380-AC-1: `bound` heads a declaration only; the word stays usable as a
+/// `bound` heads a declaration only; the word stays usable as a
 /// member name in an expression.
 #[trace("TC-1054", "FR-380-AC-1")]
 #[test]

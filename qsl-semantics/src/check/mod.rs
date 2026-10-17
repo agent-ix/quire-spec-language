@@ -1882,6 +1882,7 @@ impl PackageDeclarations {
                     claim,
                     spans: form.spans,
                     has_result: typed.has_result,
+                    bounds: typed.bounds,
                 })
             })
             .collect::<Result<Vec<_>, Vec<CheckRefusal>>>()?;

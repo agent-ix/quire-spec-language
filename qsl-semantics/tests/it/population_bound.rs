@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-380 / TC-1054 rows 2 to 4 and 12 (FR-104-AC-11): an authored `bound` on a
+//! FR-380 / TC-1054 rows 2 to 4 and 12: an authored `bound` on a
 //! domain-package population resolves, makes the population a finite domain
 //! of the requirements records that name it, and refuses where it is
 //! ambiguous. Every expected value is the TC row's, over TC-1046's fixture R.
@@ -86,7 +86,7 @@ fn claim_extents(graph: &CheckedGraph) -> Vec<&ClaimExtent> {
         .collect()
 }
 
-/// FR-380-AC-2 (TC-1054 row 2): an alias naming no model, a population naming
+/// (TC-1054 row 2): an alias naming no model, a population naming
 /// no population of the package and a maximum outside `u64` each refuse at
 /// their own token.
 #[trace("TC-1054", "FR-380-AC-2")]
@@ -133,7 +133,7 @@ fn an_unresolved_alias_or_population_or_an_oversized_maximum_refuses() {
     }
 }
 
-/// FR-380-AC-2 (TC-1054 row 3): a repeated label, two bounds naming one
+/// (TC-1054 row 3): a repeated label, two bounds naming one
 /// population (equal maximum or not) and a label a clause already uses each
 /// refuse `ambiguous_declaration`/`ambiguous-name` at every declaration
 /// involved.
@@ -195,7 +195,7 @@ fn a_shared_label_or_two_bounds_on_one_population_refuse_at_each_declaration() {
     }
 }
 
-/// FR-380-AC-3, FR-104-AC-11 (TC-1054 row 4): a bounded population is a
+/// (TC-1054 row 4): a bounded population is a
 /// `Population(Some(3))` domain, so it is not among the unbounded domains
 /// and a clause whose only domain it is has extent `Bounded`; the same unit
 /// without the bound gives the unbounded record; the declarations in either
@@ -241,7 +241,7 @@ fn a_bounded_population_is_not_an_unbounded_domain_and_the_clause_is_bounded() {
     assert!(unbounded.population_bounds().is_empty());
 }
 
-/// FR-104-AC-11: a bound on the one population a clause's context type is a
+/// A bound on the one population a clause's context type is a
 /// member of, and a context-only clause, give a bounded clause too; a
 /// `pre` clause's other domain stays unbounded.
 #[trace("TC-1054", "FR-380-AC-3")]
@@ -266,7 +266,7 @@ fn a_bound_on_the_context_population_alone_bounds_a_context_only_clause() {
     assert_eq!(domains.len(), 1, "people alone");
 }
 
-/// FR-380-AC-3, FR-104-AC-11 (TC-1054 row 12): a bound does not change which
+/// (TC-1054 row 12): a bound does not change which
 /// population covers a type. A second population `staff` of `Order`, bounded
 /// or not, still refuses at the clause's `on`, and at the form of a
 /// reachability-only claim.

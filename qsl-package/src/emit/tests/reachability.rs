@@ -18,7 +18,7 @@ fn many(unique: bool) -> Value {
 }
 
 /// A relationship `Order/<id>` of fixture R, `Order` at both ends.
-fn relationship(id: &str, direction: &str, source_role: &str, target_role: &str) -> Value {
+pub(super) fn relationship(id: &str, direction: &str, source_role: &str, target_role: &str) -> Value {
     json!({
         "identity": format!("ix://acme/orders/relationship/Order-{id}"),
         "category": "structural",

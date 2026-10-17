@@ -323,20 +323,41 @@ fn single_target(
 /// `above-maximum` naming the maximum and the count, as an unbounded
 /// reading of a population with a declared maximum refuses (FR-084).
 fn check_authored_bound(objects: &ObjectEnvironment, bound: &AuthoredBound) -> Result<(), Halt> {
+    match authored_bound_refusal(objects, bound)? {
+        Some(refusal) => Err(Halt::Stop(Stop::Refused(refusal))),
+        None => Ok(()),
+    }
+}
+
+/// The evaluation that refuses with `refusal` and originates nowhere.
+pub(super) fn refused_evaluation(refusal: Refusal) -> Evaluation {
+    Evaluation {
+        outcome: FamilyOutcome::Evaluated(Outcome::Refused(refusal)),
+        location: None,
+        losses: Vec::new(),
+    }
+}
+
+/// The refusal [`check_authored_bound`] gives, when `objects` lists more
+/// objects of the population than `bound` allows.
+pub(super) fn authored_bound_refusal(
+    objects: &ObjectEnvironment,
+    bound: &AuthoredBound,
+) -> Result<Option<Refusal>, Halt> {
     let Some(count) = objects
         .population_size(&bound.population.node)
         .filter(|count| *count > bound.maximum)
     else {
-        return Ok(());
+        return Ok(None);
     };
     let maximum = CardinalityBound::new(0, bound.maximum)
         .map_err(|_| invariant("authored-population-bound-invalid"))?;
-    Err(Halt::Stop(Stop::Refused(Refusal::CardinalityOutOfBound {
+    Ok(Some(Refusal::CardinalityOutOfBound {
         violation: BoundViolation::AboveMaximum,
         kind: CollectionKind::Set,
         bound: maximum,
         count,
-    })))
+    }))
 }
 
 /// `function.call`: one work unit per checked call.

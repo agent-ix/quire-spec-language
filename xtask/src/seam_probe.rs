@@ -717,22 +717,42 @@ fn forms_s2_report(workspace_root: &Path) -> Result<String> {
             expected_but_missing: format!("{FILE}::dispatch Value producer (LeadingTokenKind::Function => value::function) without wildcard"),
         });
     }
-    let state_model_present = arms.iter().any(|arm| {
-        production(arm)
-            .is_some_and(|path| path.segments.len() == 2 && path.segments[0].ident == "state_model")
-    });
-    // ADR-016 FP-1/FP-3: StateModel's forms are expressions nested in Value and
-    // ProtocolClause bodies, so the declaration dispatch has no StateModel arm
-    // by design. An arm appearing here contradicts that design.
-    if state_model_present {
+    let state_model_arms: Vec<&syn::Arm> = arms
+        .iter()
+        .filter(|arm| {
+            production(arm).is_some_and(|path| {
+                path.segments.len() == 2 && path.segments[0].ident == "state_model"
+            })
+        })
+        .collect();
+    // ADR-016 FP-1/FP-3 as amended by FR-380: the one `StateModel`
+    // declaration with a leading token is `bound`, so the declaration
+    // dispatch has exactly the arm `Bound => state_model::population_bound`.
+    // Any other `state_model::` arm contradicts the design.
+    let is_bound_arm = |arm: &syn::Arm| {
+        matches!(&arm.pat, syn::Pat::Path(pattern) if pattern.path.segments.last().is_some_and(|segment| segment.ident == "Bound"))
+            && production(arm).is_some_and(|path| is_call(path, "state_model", "population_bound"))
+    };
+    if let Some(other) = state_model_arms.iter().find(|arm| !is_bound_arm(arm)) {
+        let called = production(other)
+            .and_then(|path| path.segments.last())
+            .map_or_else(String::new, |segment| segment.ident.to_string());
         return Err(Error::SeamProbeMismatch {
-            unexpected_but_present: format!("{FILE}::dispatch state_model:: arm"),
+            unexpected_but_present: format!("{FILE}::dispatch state_model::{called} arm"),
             expected_but_missing:
-                "no StateModel arm in the declaration dispatch (ADR-016 FP-1, FP-3)".to_owned(),
+                "only the `Bound => state_model::population_bound` StateModel arm in the declaration dispatch (ADR-016 FP-1, FP-3)".to_owned(),
+        });
+    }
+    if state_model_arms.len() != 1 {
+        return Err(Error::SeamProbeMismatch {
+            unexpected_but_present: "[]".to_owned(),
+            expected_but_missing: format!(
+                "{FILE}::dispatch StateModel arm (LeadingTokenKind::Bound => state_model::population_bound)"
+            ),
         });
     }
     Ok(format!(
-        "StateModel S2 ABSENT by design (ADR-016 FP-1, FP-3): {FILE}::dispatch (Value producer present)"
+        "StateModel S2 arm Bound => state_model::population_bound (ADR-016 FP-1, FP-3, FR-380): {FILE}::dispatch (Value producer present)"
     ))
 }
 
@@ -760,7 +780,7 @@ mod state_model_tests {
         }
         assert!(
             report.contains(
-                "StateModel S2 ABSENT by design (ADR-016 FP-1, FP-3): qsl-forms/src/dispatch.rs::dispatch"
+                "StateModel S2 arm Bound => state_model::population_bound (ADR-016 FP-1, FP-3, FR-380): qsl-forms/src/dispatch.rs::dispatch"
             ),
             "{report}"
         );
@@ -865,6 +885,46 @@ mod state_model_tests {
             .expect_err("a StateModel arm in the declaration dispatch contradicts the design");
         let message = error.to_string();
         assert!(message.contains("state_model::"), "{message}");
+    }
+
+    #[trace("TC-791")]
+    #[test]
+    fn a_second_state_model_arm_or_a_missing_bound_arm_in_the_s2_dispatch_is_rejected() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let scratch = tempfile::tempdir().unwrap();
+        for file in [
+            "qsl-semantics/src/family/mod.rs",
+            "qsl-forms/src/dispatch.rs",
+            "qsl-semantics/src/check/state_model.rs",
+        ] {
+            let destination = scratch.path().join(file);
+            fs::create_dir_all(destination.parent().unwrap()).unwrap();
+            fs::copy(root.join(file), destination).unwrap();
+        }
+        state_model_arm_report(scratch.path()).unwrap();
+        let file = scratch.path().join("qsl-forms/src/dispatch.rs");
+        let source = fs::read_to_string(&file).unwrap();
+        let bound = "LeadingTokenKind::Bound => state_model::population_bound(construct),";
+        assert!(source.contains(bound), "the real Bound arm was found");
+        // A renamed Bound arm is not the expected arm.
+        fs::write(
+            &file,
+            source.replace(bound, "LeadingTokenKind::Bound => state_model::other(construct),"),
+        )
+        .unwrap();
+        let message = state_model_arm_report(scratch.path()).unwrap_err().to_string();
+        assert!(message.contains("state_model::other"), "{message}");
+        // The Bound arm deleted: the expected arm is missing.
+        fs::write(
+            &file,
+            source.replace(bound, "LeadingTokenKind::Bound => value::alias(construct),"),
+        )
+        .unwrap();
+        let message = state_model_arm_report(scratch.path()).unwrap_err().to_string();
+        assert!(
+            message.contains("expected-but-missing") && message.contains("population_bound"),
+            "{message}"
+        );
     }
 
     #[trace("TC-791")]

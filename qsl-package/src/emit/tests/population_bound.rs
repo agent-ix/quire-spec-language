@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-380-AC-4 to AC-6, FR-365-AC-6 and AC-13 (TC-1054 rows 5 to 11): a
+//! TC-1054 rows 5 to 11: a
 //! reachability over a relationship end whose walked population has an
 //! authored bound links to the one `bounded_domain`/`model_population` node
 //! of `(E, N)`, and one without links to nothing. Every expected value is the
@@ -11,7 +11,8 @@
 //! emitted wire.
 
 use super::reachability::{
-    applications, lower_over, model_node, node_of, reachability_document, Lowered, NO_LOOP,
+    applications, lower_over, model_node, node_of, reachability_document, relationship, Lowered,
+    NO_LOOP,
 };
 use super::*;
 
@@ -32,6 +33,11 @@ fn document() -> Vec<u8> {
     person["identity"] = json!("ix://acme/orders/Person");
     person["displayName"] = json!("Person");
     person["supertypes"] = json!([]);
+    let mut friend = relationship("friend", "source-to-target", "friend", "friendOf");
+    friend["identity"] = json!("ix://acme/orders/relationship/Person-friend");
+    friend["sourceEnd"]["type"] = json!("ix://acme/orders/Person");
+    friend["targetEnd"]["type"] = json!("ix://acme/orders/Person");
+    person["relationships"] = json!([friend]);
     document["types"]
         .as_array_mut()
         .unwrap()
@@ -144,10 +150,10 @@ fn assert_population_node(wire: &Value, population: &Value, maximum: &str) {
     assert_eq!(reference["dependencies"], json!([order["node_id"]]));
 }
 
-/// TC-1054 row 5 (FR-380-AC-4, FR-365-AC-13): the member holds `population`,
+/// TC-1054 row 5: the member holds `population`,
 /// the id of the one anonymous `model_population` node, which holds the one
 /// `type` occurrence of the `[3]`.
-#[trace("TC-1054", "FR-380-AC-4", "FR-365-AC-13", "FR-365-AC-6")]
+#[trace("TC-1054", "FR-365-AC-13")]
 #[test]
 fn a_bounded_walked_population_is_linked_as_one_anonymous_node() {
     let lowered = lower(&format!("{BOUND}\n{NO_LOOP}"));
@@ -180,8 +186,8 @@ fn a_bounded_walked_population_is_linked_as_one_anonymous_node() {
     assert_eq!(lowered.claim_domains, [0], "the clause's extent is bounded");
 }
 
-/// TC-1054 row 6 (FR-380-AC-4): `[0]` is a valid maximum.
-#[trace("TC-1054", "FR-380-AC-4")]
+/// TC-1054 row 6: `[0]` is a valid maximum.
+#[trace("TC-1054")]
 #[test]
 fn a_zero_bound_emits_the_node_with_max_zero() {
     let lowered = lower(&format!("bound OrdersBound on M::orders [0]\n{NO_LOOP}"));
@@ -193,7 +199,7 @@ fn a_zero_bound_emits_the_node_with_max_zero() {
     assert_eq!(member(&lowered)["population"], population["node_id"]);
 }
 
-/// TC-1054 row 7 (FR-380-AC-6, FR-365-AC-6): without the `bound` the member
+/// TC-1054 row 7: without the `bound` the member
 /// holds exactly `kind`, `declaration` and `name`, no population node is
 /// emitted, and the application keeps its node id.
 #[trace("TC-1054", "FR-380-AC-6", "FR-365-AC-13")]
@@ -219,7 +225,7 @@ fn an_unbounded_walked_population_keeps_its_member_and_node_identity() {
     );
 }
 
-/// TC-1054 row 8 (FR-365-AC-13): two reachabilities over one population
+/// TC-1054 row 8: two reachabilities over one population
 /// share the link and the one node.
 #[trace("TC-1054", "FR-365-AC-13")]
 #[test]
@@ -243,7 +249,41 @@ fn two_reachabilities_over_one_population_share_one_link() {
     assert_eq!(type_occurrences(&lowered, population), [(0, "[3]")]);
 }
 
-/// TC-1054 row 9 (FR-380-AC-6): a bound no reachability walks emits no node
+/// TC-1054 row 14: a claim with reachabilities over two different
+/// populations carries two links, each to its own node.
+#[trace("TC-1054", "FR-365-AC-13")]
+#[test]
+fn reachabilities_over_two_populations_carry_two_links_to_two_nodes() {
+    let lowered = lower(&format!(
+        "{BOUND}\nbound PeopleBound on M::people [2]\n\
+         invariant NoLoop using v on M::Order at current {{ not reaches(self, self, next) }}\n\
+         invariant NoFriendLoop using v on M::Person at current {{ not reaches(self, self, friend) }}"
+    ));
+    let populations = population_nodes(&lowered.wire);
+    assert_eq!(populations.len(), 2, "one node per population");
+    let reaches = applications(&lowered.wire, "quire.op.model.reaches");
+    assert_eq!(reaches.len(), 2);
+    let links: Vec<&Value> = reaches
+        .iter()
+        .map(|reach| &reach["body"]["operation"]["member"]["population"])
+        .collect();
+    assert_ne!(links[0], links[1], "each reachability has its own link");
+    for population in &populations {
+        assert_eq!(
+            links.iter().filter(|link| **link == &population["node_id"]).count(),
+            1,
+            "each node is linked once"
+        );
+    }
+    let mut occurrences: Vec<Vec<(u64, &str)>> = populations
+        .iter()
+        .map(|population| type_occurrences(&lowered, population))
+        .collect();
+    occurrences.sort();
+    assert_eq!(occurrences, [[(0, "[2]")], [(0, "[3]")]]);
+}
+
+/// TC-1054 row 9: a bound no reachability walks emits no node
 /// and no occurrence.
 #[trace("TC-1054", "FR-380-AC-6")]
 #[test]
@@ -266,7 +306,7 @@ fn a_bound_no_reachability_walks_emits_nothing() {
     assert_eq!(population_nodes(&unwalked.wire), Vec::<&Value>::new());
 }
 
-/// TC-1054 row 10 (FR-380-AC-5): the node is `Population<Order>[3]` for a
+/// TC-1054 row 10: the node is `Population<Order>[3]` for a
 /// clause over `Rush`, whose near end's type is `Order`.
 #[trace("TC-1054", "FR-380-AC-5")]
 #[test]
@@ -284,9 +324,10 @@ fn the_near_ends_type_names_the_population_node() {
     assert_eq!(member(&lowered)["population"], population["node_id"]);
 }
 
-/// TC-1054 row 11 (FR-380-AC-5): a `Population<M::Order>[3]` parameter type
+/// TC-1054 row 11: a `Population<M::Order>[3]` parameter type
 /// and a bound of 3 walked by a reachability are one node holding two `type`
-/// occurrences, ordinals 0 and 1, whichever is written first.
+/// occurrences, ordinals 0 and 1 in ascending source order, whichever is
+/// written first.
 #[trace("TC-1054", "FR-380-AC-5")]
 #[test]
 fn a_parameter_type_and_a_bound_share_one_node_with_two_ordinals() {
@@ -305,19 +346,28 @@ fn a_parameter_type_and_a_bound_share_one_node_with_two_ordinals() {
         assert_eq!(occurrences.len(), 2, "{declarations}: {occurrences:?}");
         assert_eq!(occurrences[0].0, 0);
         assert_eq!(occurrences[1].0, 1);
-        assert!(
-            occurrences.iter().any(|(_, text)| *text == "[3]"),
-            "{declarations}: one occurrence is the bound's `[3]`: {occurrences:?}"
+        // The lower ordinal is the earlier occurrence in the source: the
+        // bound's `[3]` when the bound is written before the function.
+        let bound_first = declarations.find(BOUND) < declarations.find(function);
+        let bound_ordinal = occurrences
+            .iter()
+            .find(|(_, text)| *text == "[3]")
+            .map(|(ordinal, _)| *ordinal);
+        assert_eq!(
+            bound_ordinal,
+            Some(u64::from(!bound_first)),
+            "{declarations}: {occurrences:?}"
         );
     }
 }
 
-/// TC-1054 rows 5, 6, 8, 9, 11: IR's v2 reader admits the package and its
-/// population selection returns the node and the `type` occurrence.
-#[trace("TC-1054", "FR-380-AC-4")]
+/// TC-1054 row 4's unit: IR's v2 reader admits the package. The remaining
+/// reader clauses (the population selection, and the packages of rows 5, 6,
+/// 8, 9 and 11) are not read here; they wait on the same reader change.
+#[trace("TC-1054")]
 #[test]
 #[ignore = "IR-852: the locked IR reader refuses the `population` member key"]
-fn ir_reads_the_bounded_package_and_selects_its_population() {
+fn ir_reads_the_bounded_package() {
     let lowered = lower(&format!("{BOUND}\n{NO_LOOP}"));
     assert!(lowered.verified, "IR's v2 reader admits the package");
 }
