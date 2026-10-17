@@ -213,8 +213,9 @@ Snapshot, format `quire.state.snapshot/v1`:
   "text": "<any Unicode scalar sequence>"}`, `{"kind": "uuid", "text":
   "<canonical UUID>"}`, `{"kind": "timestamp", "nanoseconds":
   "<canonical decimal>"}` and `{"kind": "text", "text": "<any Unicode scalar
-  sequence>"}`. There is no set, bag or ordered-set value:
-  those collections are outside QSpec's selected state extension.
+  sequence>"}`, and the three further collection forms `{"set": [<value>,
+  ...]}`, `{"bag": [<value>, ...]}` and `{"ordered-set": [<value>, ...]}`,
+  read under "Set, bag and ordered-set values" below.
 
 A record value is `{"record": {"type": "<declaration identity>",
 "fields": {"<field name>": <value>, ...}}}`. The outer object has exactly
@@ -231,6 +232,64 @@ The record carries no object key, population or identity, and an object
 `reference` tag cannot stand in for it. Two admitted records compare under
 FR-208 by most-specific type and every effective field; JSON member order
 does not affect the typed value or the `sha256-jcs` digest.
+
+**Set, bag and ordered-set values.** A value of a declared `Sequence<T>`,
+`Set<T>`, `Bag<T>` or `OrderedSet<T>` type is the single-tag object whose tag
+names its kind, `sequence`, `set`, `bag` or `ordered-set`, holding an array of
+element values; each element is a value of `T` in this same grammar. This
+grammar is externally tagged, so the kind is the tag, not a `type` member, and
+the QSpec FR-181 `elements` member does not exist here: QSpec FR-144 "Supplied
+collection values" and FR-181 state the admission rules that this section
+maps onto this grammar. A bag is repeated elements, one array entry per
+occurrence, never element-count pairs. Admission of one supplied collection
+runs in this order, the first defect refusing at the collection's value path
+or at the element named:
+
+1. If the tag is not the declared kind's tag, then admission SHALL refuse
+   `invalid_runtime_input`/`wrong-value-kind`. A payload that is not an array,
+   an object with a member beside the tag, and an element that is a
+   counted pair such as `{"element": ..., "count": "2"}` are not value forms
+   at all, and refuse `wrong-value-kind` as every other unreadable value form
+   does.
+2. If a set, bag or ordered set, or one it holds through an optional or a
+   collection, has an element type with no value form in this grammar (a
+   Rational, Decimal, Float, quantity or population type), then admission
+   SHALL refuse `unknown_required_feature`/`unsupported-feature` naming that
+   element type as `feature`, before any element is read. A UUID, Timestamp or
+   String element has the native payload objects above, and a Text element the
+   Text object, so those element types are admitted.
+3. If the array length is below the declared minimum or above the declared
+   maximum, then admission SHALL refuse `cardinality_out_of_bound` with cause
+   `below-minimum` or `above-maximum`, naming the kind, the bound and the
+   count, before any element is read. A bag counts its occurrences and a set or
+   ordered set the supplied entries. A type with no declared bound makes no
+   such refusal. This holds for a `sequence` too.
+4. Every element is read in array order by the rules of check 6.5, each at its
+   index in the nested path; the first refusal stops admission and no partial
+   collection exists.
+5. For a set or ordered set, each element after the first is compared with the
+   earlier ones by the equality of its type (QSpec FR-149: an integer by value,
+   a Text by its retained sequence under its profile, a reference by identity),
+   and one equal to an earlier element SHALL refuse
+   `invalid_runtime_input`/`duplicate-member` at the later element's index,
+   naming the earlier element's index as `earlier-index`. A set or ordered set
+   is never deduplicated. A bag and a sequence admit equal elements.
+
+The array order of a set and a bag carries no meaning: two arrays that differ
+only in order are one value, give the same typed observation and are unchanged
+in the frame check (check 11). The array order of an ordered set is its
+first-occurrence order and the array order of a sequence its order; both are
+retained, so two arrays that differ in order are two values.
+
+A producer writes every element of a set or bag, and every value inside it, in
+its canonical encoding, so that equal values encode identically: a Text is
+written as its retained sequence under its profile (QSpec FR-141, the compared
+form, which differs from the supplied payload under `nfc`, `nfd`, `nfkc` and
+`nfkd`), and then writes the elements in ascending order of their RFC 8785
+bytes. This grammar has no decimal form. A reader accepts any encoding of an
+element, so a bag holding `U+00E9` and `U+0065 U+0301` under an `nfc` Text type
+is one member of multiplicity 2, and a set holding them is a
+`duplicate-member`.
 
 A **native payload value** is a String, a UUID or a Timestamp, the closed wire
 objects of FR-056's K2 canonical native payloads. They take that requirement's
@@ -563,9 +622,11 @@ required; check 10 settles it.
    1. If the population names no population of the package, or the object's
       type is not one of its member types (FR-084), then admission SHALL
       refuse `invalid_runtime_input`/`wrong-role-mapping`.
-   2. If the object's type declares a set, bag or ordered-set field, then
-      admission SHALL refuse `unknown_required_feature`/
-      `unsupported-feature` at that field.
+   2. If the object's type declares a set, bag or ordered-set field (or one
+      held through an optional or a collection) whose element type has no
+      value form in this grammar, then admission SHALL refuse
+      `unknown_required_feature`/`unsupported-feature` at that field, naming
+      the element type as `feature`.
    3. If an object's key repeats an earlier key of its population, then
       admission SHALL refuse `invalid_runtime_input`/`conflicting-identity`
       at the later object.
@@ -663,7 +724,8 @@ required; check 10 settles it.
        machine in an observation).
    12. For each entry, over the machine's effective fields in exposed
        effective field order: if the machine declares a set, bag or
-       ordered-set field, then admission SHALL refuse `unknown_required_feature`/
+       ordered-set field whose element type has no value form in this grammar
+       (check 6.2), then admission SHALL refuse `unknown_required_feature`/
        `unsupported-feature` at that field; if a declared field is missing,
        `invalid_runtime_input`/`missing-member` naming it; if a field of
        `fields` is not an effective field of the machine, `unknown-member`
@@ -869,7 +931,7 @@ required; check 10 settles it.
 |----|----------|--------------|
 | FR-106-AC-1 | The healthy-parent current snapshot above, selected with anchor `handler validate` and `self` = `child` for `ParentOrder`, admits: one observation with population `config_history` complete, objects `root` and `child` with `versionNumber` 1 and 2, `child.parent` present and naming `root`, and the snapshot's identity and digest retained. Re-serializing the document with other whitespace and member order gives the same digest and the same admitted value. Over a package variant where `Sub` specializes `ConfigVersion` and a second population `archive` has member type `Sub`, the same snapshot with `child.parent` naming `k`, a `Sub` object of a complete `archive`, admits with `child.parent` naming `k` typed `Sub`. | Test |
 | FR-106-AC-2 | The changed-version invocation (pre: `child` at 2; post: `child` at 3; result `true`; no parameters, created or deleted) selected for `VersionUnchanged` admits, with the pre and post observations distinct and `result` true. | Test |
-| FR-106-AC-3 | Each condition of checks 1 to 6, 9 and 10 has one case that fails only it and returns exactly its code and cause, as TC-465 lists: among them an absent document, a 1 MiB + 1 byte document, bytes edited under their original digest, `format` `native-state-input/1` (`unknown_wire`/`unsupported-wire`), a missing `populations`, an extra member, a blank `authority`, `Current` selecting `VersionUnchanged`, a `pre` document selected as current, anchor `handler other`, another model digest, operation `other`, an unknown population, a duplicate `root` key, a set-typed field, `versionNumber` `{"boolean": true}`, `"01"`, `"-1"` and `"1001"`, `self` = `ghost`, a `result` of `null` for `attemptUpdate`, an object of a type that is not a member type of its population, a missing declared field, an undeclared field, `child.parent` naming an object of a type unrelated to `ConfigVersion` (`wrong-value-kind` at `child`, `parent`), and, for an operation `probe(target: ConfigVersion)` with no result, a missing, an unknown and an ill-typed parameter, and a result value on an invocation selected for a postcondition on `probe` (a precondition selected by `Invocation` reads no result, AC-9). | Test |
+| FR-106-AC-3 | Each condition of checks 1 to 6, 9 and 10 has one case that fails only it and returns exactly its code and cause, as TC-465 lists: among them an absent document, a 1 MiB + 1 byte document, bytes edited under their original digest, `format` `native-state-input/1` (`unknown_wire`/`unsupported-wire`), a missing `populations`, an extra member, a blank `authority`, `Current` selecting `VersionUnchanged`, a `pre` document selected as current, anchor `handler other`, another model digest, operation `other`, an unknown population, a duplicate `root` key, `versionNumber` `{"boolean": true}`, `"01"`, `"-1"` and `"1001"`, `self` = `ghost`, a `result` of `null` for `attemptUpdate`, an object of a type that is not a member type of its population, a missing declared field, an undeclared field, `child.parent` naming an object of a type unrelated to `ConfigVersion` (`wrong-value-kind` at `child`, `parent`), and, for an operation `probe(target: ConfigVersion)` with no result, a missing, an unknown and an ill-typed parameter, and a result value on an invocation selected for a postcondition on `probe` (a precondition selected by `Invocation` reads no result, AC-9). | Test |
 | FR-106-AC-4 | The incomplete-population snapshot (`complete: false`, `child.parent` naming `missing`) gives `Incomplete` with `incomplete_population`/`incomplete-scope` and no dangling refusal; the same snapshot with `complete: true` gives `Refused` with `dangling_reference`, naming `missing` and `config_history`. A second, incomplete population that no reference value names does not make a healthy case incomplete. | Test |
 | FR-106-AC-5 | The forbidden-parent-change invocation (post sets `child.parent` absent) refuses `frame_violation`/`unauthorized-change` naming `child` and `parent`. A package whose `attemptUpdate` frame modifies only `parent`, with an invocation that changes only `versionNumber`, refuses `frame_violation`/`unauthorized-change` naming `versionNumber` (a scalar field). An invocation declaring `created: [child]` refuses `population_delta_mismatch`/`delta-disagreement`. A post snapshot that adds a population `archive` absent from the pre snapshot, holding `a1`, refuses `frame_violation`/`unauthorized-change` naming the creation of `a1` (the pre side is an empty document). | Test |
 | FR-106-AC-6 | Running admission twice over the same inputs gives equal results, and admission builds its result without reading the filesystem (the provisions are in-memory maps; a test with no files on disk passes). | Test |
@@ -915,6 +977,16 @@ required; check 10 settles it.
 | FR-106-AC-47 | A context field `owner: Reference<Pump>` of the machine `Owned` naming `p9`, absent from the complete population `Q` of the same snapshot, refuses `dangling_reference`/`absent-target-in-complete-population` naming `Owned`, `owner`, `p9` and `Q`; with `Q` marked `"complete": false` it returns `Incomplete` with `incomplete_population`/`incomplete-scope` naming `Q`, and the same field naming a listed key of `Q` admits. A second population `Spare` listed incomplete that no reference names admits. Each context entry and each of its field values counts toward `observation.values`: a document at the exact bound admits and one more value returns `stage_limit_exceeded`/`node-count-exceeded` naming `observation.values`. A `quire.state.snapshot/v1` environment document supplied to replay (FR-098) that holds `contexts` refuses `invalid_runtime_input`/`unknown-member` naming `contexts`, because an environment document is a current snapshot. | Test (TC-1045) |
 | FR-106-AC-48 | `ValueInvariants` over TC-235 K2 with `Order` given `quoted`, `history`, `discount` and operation `requote(amount: Money)` admits observation `s1` holding `o1` and invocation `i1` of `requote` with `amount` `{amount_minor: -7, currency: "EUR"}`, and names `s1`, `i1`'s `pre` snapshot and `i1`'s parameter `amount`; the same selection with a `pre` document as `snapshot` refuses `wrong_snapshot`/`wrong-observation`, and with an `i1` whose `amount` is missing refuses `invalid_runtime_input`/`missing-member`. | Test (TC-1051) |
 | FR-106-AC-49 | Over TC-1044's fixture with the record `Address { street: Title }` held by the field `address`, the frame check compares a record's field by that field's declared type: `street` changed from U+00E9 to U+0065 U+0301 under `nfc` is no change and admits without a grant, and `street` changed to another text is a change and refuses `frame_violation`/`unauthorized-change` naming `child` and `address`. | Test (TC-1044) |
+| FR-106-AC-50 | Over TC-1055's fixture, `{"set": [{"integer": "2"}, {"integer": "1"}]}` and `{"set": [{"integer": "1"}, {"integer": "2"}]}` admit to one value whose elements are `1, 2`; `{"bag": [{"integer": "1"}, {"integer": "2"}, {"integer": "1"}]}` and `{"bag": [{"integer": "1"}, {"integer": "1"}, {"integer": "2"}]}` admit to one value whose elements are `1, 1, 2`; `{"ordered-set": [{"integer": "2"}, {"integer": "1"}]}` admits with elements `2, 1` and its reverse with elements `1, 2`; and a `{"sequence": ...}` keeps its order and its equal elements. This holds for a parameter selected through `PreCall` and for a parameter and a result of an invocation. | Test (TC-1055) |
+| FR-106-AC-51 | Two raw values compare equal in the frame check exactly when they are the same kind with the same elements: a `set` or `bag` whose arrays differ only in order is unchanged, a `bag` with `1, 1, 2` against `1, 2, 2` is changed, and an `ordered-set` or a `sequence` whose arrays differ in order is changed. | Test (TC-1055) |
+| FR-106-AC-52 | A `set` or `ordered-set` holding `1, 2, 1` refuses `invalid_runtime_input`/`duplicate-member` at element index 2 naming `earlier-index` `0` and admits no deduplicated value; a `bag` and a `sequence` holding `1, 2, 1` admit three elements. A `set` holding `1, 1` and an element `{"integer": "x"}` refuses `invalid-value` at index 2, not `duplicate-member`, because every element is read before duplicates are decided. | Test (TC-1055) |
+| FR-106-AC-53 | A `Set<Int[0, 9]>[0, 2]` holding `1, 2, 3`, a `Bag<Int[0, 9]>[0, 2]` holding `1, 1, 1`, an `OrderedSet<Int[0, 9]>[0, 2]` holding three entries, and a `Sequence<Int[0, 9]>[0, 2]` holding three entries each refuse `cardinality_out_of_bound`/`above-maximum` with count 3, and a `Sequence<Int[0, 9]>[1, 3]` holding none refuses `below-minimum` with count 0, all naming the value's path; a `Set<Int[0, 9]>[0, 2]` holding `1, 1, 1` is `above-maximum`, not `duplicate-member`, and one holding `1, 2, {"boolean": true}` is `above-maximum`, not `wrong-value-kind`, because the bound is checked before any element. A collection at the bound admits. | Test (TC-1055) |
+| FR-106-AC-54 | A `bag` in a `Set` field, a `sequence` in a `set` field and a `set` in a `Sequence` field refuse `invalid_runtime_input`/`wrong-value-kind` at the value. A `set` payload that is an object, a `set` object with a member beside the tag, and a `bag` whose element is the counted pair `{"element": {"integer": "1"}, "count": "2"}` refuse `wrong-value-kind` naming the field, and no bag admits a counted pair. | Test (TC-1055) |
+| FR-106-AC-55 | A `Set<Decimal[0, 100; 0, 2; exact]>` parameter, whatever its value, refuses `unknown_required_feature`/`unsupported-feature` naming `Decimal` as `feature` before any element is read; a `Set<UUID>` holding two equal UUID objects refuses `duplicate-member` at index 1 and one holding two different UUID objects admits. | Test (TC-1055) |
+| FR-106-AC-56 | The writer of a set or bag orders the elements ascending by their RFC 8785 bytes: a `Set<Integer>` of 9 and 10 writes `10` before `9`, and a `Bag<Integer>` of 9, 10, 9 writes `10, 9, 9`. An ordered set and a sequence are written in their order. | Test (TC-1055) |
+| FR-106-AC-57 | Over TC-1055's object fixture, whose `ConfigVersion` has the field `tags: Set<Reference<ConfigVersion>>[0, 5]`, `tags` holding references to `root` and `child` in either array order admits to one value; `tags` holding `root` twice refuses `invalid_runtime_input`/`duplicate-member` at element index 1 naming `earlier-index` `0`; six entries refuse `cardinality_out_of_bound`/`above-maximum` with count 6; and a `bag` or a `sequence` in `tags` refuses `wrong-value-kind`, each naming `child` and `tags`. | Test (TC-1055) |
+| FR-106-AC-58 | A `Set<Text[0, 8; nfc]>` holding U+00E9 and U+0065 U+0301 refuses `duplicate-member` at index 1 naming `earlier-index` `0`, because they are one Text by the compared form; a `Bag<Text[0, 8; nfc]>` holding them admits as one member of multiplicity 2 whose two elements retain U+00E9. | Test (TC-1055) |
+| FR-106-AC-59 | The encoder of a value writes every value inside a set's or a bag's element in its canonical encoding, so a `Bag<Text[0, 8; nfc]>` of U+0065 U+0301 twice is written as two identical Text objects of U+00E9, and writes a Text in a sequence with the payload it was admitted with. | Test (TC-1055) |
 
 
 ## Dependencies
@@ -933,6 +1005,9 @@ required; check 10 settles it.
   and the read contract navigation uses).
 - QSpec FR-141 and FR-149 (the `Text[min, max; profile]` retained sequence, its
   length and its equality; the Text object's profile semantics).
+- QSpec FR-144 and FR-181 (supplied collection values: bounds, duplicate
+  refusal, element order and canonical element encoding; the rules "Set, bag
+  and ordered-set values" maps onto this grammar).
 - QSpec FR-153 and `state-contract.md` (anchors, completeness and closure),
   `native-diagnostics.md` (every code and cause above).
 - QSpec FR-046-AC-7 and FR-208-AC-13 make a precondition's input the

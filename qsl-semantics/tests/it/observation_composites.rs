@@ -6,6 +6,7 @@
 
 use std::collections::BTreeMap;
 
+use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::observation::*;
@@ -493,42 +494,6 @@ fn missing_unknown_and_null_remain_distinct_from_absent_values() {
         .is_none());
 }
 
-/// Trace: FR-106-AC-3
-#[test]
-fn excluded_collection_kinds_remain_explicit_refusals() {
-    for kind in [
-        CollectionKind::Set,
-        CollectionKind::Bag,
-        CollectionKind::OrderedSet,
-    ] {
-        let ty = ValueType::collection(CollectionType::new(kind, ValueType::Boolean, None));
-        let mut case = Case::new(
-            ty.clone(),
-            SnapshotValue::sequence(vec![]),
-            json!({"sequence": []}),
-        );
-        case.pre_call = true;
-        assert_refused(
-            case,
-            Code::UnknownRequiredFeature,
-            "unsupported-feature",
-            Some("arg"),
-        );
-        let mut result = Case::new(
-            sequence(ValueType::Boolean),
-            SnapshotValue::sequence(vec![]),
-            json!({"sequence": []}),
-        );
-        result.result_type = Some(ty);
-        assert_refused(
-            result,
-            Code::UnknownRequiredFeature,
-            "unsupported-feature",
-            Some("result"),
-        );
-    }
-}
-
 /// Trace: FR-106-AC-2, FR-106-AC-4, FR-106-AC-8
 #[test]
 fn nested_references_resolve_parameters_in_pre_and_results_in_post() {
@@ -819,18 +784,13 @@ fn declared_sequence_bounds_are_checked_before_retaining_values() {
             };
             assert_eq!(value.elements().len(), count);
         } else {
-            assert_refused(
-                parameter,
-                Code::InvalidRuntimeInput,
-                "invalid-value",
-                Some("arg"),
-            );
-            assert_refused(
-                result,
-                Code::InvalidRuntimeInput,
-                "invalid-value",
-                Some("result"),
-            );
+            let cause = if count < 1 {
+                "below-minimum"
+            } else {
+                "above-maximum"
+            };
+            assert_refused(parameter, Code::CardinalityOutOfBound, cause, Some("arg"));
+            assert_refused(result, Code::CardinalityOutOfBound, cause, Some("result"));
         }
     }
 }
@@ -864,5 +824,485 @@ fn model_owned_sequence_signature_admits_through_real_intake_and_checking() {
         assert_eq!(value.elements().len(), 2);
         assert_integer(&value.elements()[0], 7);
         assert_integer(&value.elements()[1], 2);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// FR-106 "Set, bag and ordered-set values" (TC-1055)
+// ---------------------------------------------------------------------------
+
+fn int9() -> ValueType {
+    ValueType::Int(IntegerInterval::new(Integer::from(0_i64), Integer::from(9_i64)).expect("range"))
+}
+
+fn collection_of(kind: CollectionKind, element: ValueType, bound: Option<(u64, u64)>) -> ValueType {
+    ValueType::collection(CollectionType::new(
+        kind,
+        element,
+        bound.map(|(minimum, maximum)| {
+            quire_exact::CardinalityBound::new(minimum, maximum).expect("non-empty bound")
+        }),
+    ))
+}
+
+/// An integer element, as a raw value and as its wire object.
+fn int(spelling: &str) -> (SnapshotValue, serde_json::Value) {
+    (
+        SnapshotValue::integer(spelling),
+        json!({"integer": spelling}),
+    )
+}
+
+fn boolean_true() -> (SnapshotValue, serde_json::Value) {
+    (SnapshotValue::boolean(true), json!({"boolean": true}))
+}
+
+fn integers(spellings: &[&str]) -> Vec<(SnapshotValue, serde_json::Value)> {
+    spellings.iter().map(|spelling| int(spelling)).collect()
+}
+
+/// A probe case whose parameter `arg` and result are `items` under the tag of
+/// `kind`, declared as `declared`.
+fn collection_case(
+    declared: ValueType,
+    kind: CollectionKind,
+    items: Vec<(SnapshotValue, serde_json::Value)>,
+) -> Case {
+    let (raws, wires): (Vec<_>, Vec<_>) = items.into_iter().unzip();
+    let mut wire = serde_json::Map::new();
+    wire.insert(
+        collection_tag(kind).to_owned(),
+        serde_json::Value::Array(wires),
+    );
+    Case::new(
+        declared,
+        SnapshotValue::collection(kind, raws),
+        serde_json::Value::Object(wire),
+    )
+}
+
+fn element_spellings(value: &Value) -> Vec<String> {
+    let Value::Collection(collection) = value else {
+        panic!("expected a collection: {value:?}")
+    };
+    collection
+        .elements()
+        .iter()
+        .map(|element| {
+            let Value::Integer(integer) = element else {
+                panic!("expected an integer element: {element:?}")
+            };
+            integer.to_string()
+        })
+        .collect()
+}
+
+/// Admission of `case` refused, as a parameter through `PreCall` and as the
+/// parameter of an invocation; both refusals are returned.
+fn refused_both_ways(make: impl Fn() -> Case, code: Code, cause: &str) -> Vec<AdmissionRecord> {
+    [true, false]
+        .into_iter()
+        .map(|pre_call| {
+            let mut case = make();
+            case.pre_call = pre_call;
+            assert_refused(case, code, cause, Some("arg"))
+        })
+        .collect()
+}
+
+/// FR-106-AC-50: each kind admits as a parameter through `PreCall` and as a
+/// parameter and a result of an invocation, a set and a bag in key order
+/// whatever the array order, an ordered set and a sequence in array order.
+#[trace("TC-1055", "FR-106-AC-50")]
+#[test]
+fn collection_kinds_admit_with_their_element_order() {
+    for (kind, supplied, expected) in [
+        (CollectionKind::Set, vec!["2", "1"], vec!["1", "2"]),
+        (CollectionKind::Set, vec!["1", "2"], vec!["1", "2"]),
+        (
+            CollectionKind::Bag,
+            vec!["1", "2", "1"],
+            vec!["1", "1", "2"],
+        ),
+        (
+            CollectionKind::Bag,
+            vec!["1", "1", "2"],
+            vec!["1", "1", "2"],
+        ),
+        (CollectionKind::OrderedSet, vec!["2", "1"], vec!["2", "1"]),
+        (CollectionKind::OrderedSet, vec!["1", "2"], vec!["1", "2"]),
+        (
+            CollectionKind::Sequence,
+            vec!["1", "2", "1"],
+            vec!["1", "2", "1"],
+        ),
+    ] {
+        let declared = collection_of(kind, int9(), None);
+        for pre_call in [true, false] {
+            let mut case = collection_case(declared.clone(), kind, integers(&supplied));
+            case.pre_call = pre_call;
+            let admitted = case.admit().expect("the collection admits");
+            assert_eq!(
+                element_spellings(&admitted.parameters[0].1),
+                expected,
+                "{kind:?} {supplied:?} parameter"
+            );
+            if !pre_call {
+                let result = admitted.result.expect("the invocation's result");
+                assert_eq!(
+                    element_spellings(&result),
+                    expected,
+                    "{kind:?} {supplied:?} result"
+                );
+            }
+        }
+    }
+}
+
+/// FR-106-AC-51: the raw comparison the frame check applies to a field.
+#[trace("TC-1055", "FR-106-AC-51")]
+#[test]
+fn raw_set_and_bag_compare_as_multisets_and_the_others_by_order() {
+    let of = |kind: CollectionKind, spellings: &[&str]| {
+        SnapshotValue::collection(
+            kind,
+            integers(spellings)
+                .into_iter()
+                .map(|(raw, _)| raw)
+                .collect(),
+        )
+    };
+    assert_eq!(
+        of(CollectionKind::Set, &["1", "2"]),
+        of(CollectionKind::Set, &["2", "1"])
+    );
+    assert_eq!(
+        of(CollectionKind::Bag, &["1", "1", "2"]),
+        of(CollectionKind::Bag, &["1", "2", "1"])
+    );
+    assert_ne!(
+        of(CollectionKind::Bag, &["1", "1", "2"]),
+        of(CollectionKind::Bag, &["1", "2", "2"])
+    );
+    assert_ne!(
+        of(CollectionKind::OrderedSet, &["1", "2"]),
+        of(CollectionKind::OrderedSet, &["2", "1"])
+    );
+    assert_ne!(
+        of(CollectionKind::Sequence, &["1", "2"]),
+        of(CollectionKind::Sequence, &["2", "1"])
+    );
+    assert_ne!(
+        of(CollectionKind::Set, &["1", "2"]),
+        of(CollectionKind::OrderedSet, &["1", "2"])
+    );
+}
+
+/// FR-106-AC-52: a duplicate in a set or ordered set refuses at the later
+/// element naming the earlier one, a bag and a sequence admit it, and every
+/// element is read before a duplicate is decided.
+#[trace("TC-1055", "FR-106-AC-52")]
+#[test]
+fn duplicates_refuse_in_sets_and_ordered_sets_only() {
+    for (kind, supplied) in [
+        (CollectionKind::Set, vec!["1", "2", "1"]),
+        (CollectionKind::OrderedSet, vec!["2", "1", "2"]),
+    ] {
+        let declared = collection_of(kind, int9(), None);
+        let records = refused_both_ways(
+            || collection_case(declared.clone(), kind, integers(&supplied)),
+            Code::InvalidRuntimeInput,
+            "duplicate-member",
+        );
+        for record in records {
+            assert_eq!(record.path, vec![PathStep::Index(2)], "{kind:?}");
+            assert_eq!(
+                record.fields.get("earlier-index").map(String::as_str),
+                Some("0"),
+                "{kind:?}"
+            );
+        }
+    }
+    for kind in [CollectionKind::Bag, CollectionKind::Sequence] {
+        let declared = collection_of(kind, int9(), None);
+        for pre_call in [true, false] {
+            let mut case = collection_case(declared.clone(), kind, integers(&["1", "2", "1"]));
+            case.pre_call = pre_call;
+            let admitted = case.admit().expect("equal elements admit");
+            assert_eq!(
+                element_spellings(&admitted.parameters[0].1).len(),
+                3,
+                "{kind:?}"
+            );
+        }
+    }
+    let declared = collection_of(CollectionKind::Set, int9(), Some((0, 3)));
+    let mut items = integers(&["1", "1"]);
+    items.push((SnapshotValue::integer("x"), json!({"integer": "x"})));
+    let records = refused_both_ways(
+        || collection_case(declared.clone(), CollectionKind::Set, items.clone()),
+        Code::InvalidRuntimeInput,
+        "invalid-value",
+    );
+    for record in records {
+        assert_eq!(record.path, vec![PathStep::Index(2)]);
+    }
+}
+
+/// FR-106-AC-53: the bound of every kind is checked before any element.
+#[trace("TC-1055", "FR-106-AC-53")]
+#[test]
+fn bounds_refuse_before_any_element_is_read() {
+    for (kind, supplied) in [
+        (CollectionKind::Set, vec!["1", "2", "3"]),
+        (CollectionKind::Bag, vec!["1", "1", "1"]),
+        (CollectionKind::OrderedSet, vec!["1", "2", "3"]),
+        (CollectionKind::Sequence, vec!["1", "2", "3"]),
+    ] {
+        let declared = collection_of(kind, int9(), Some((0, 2)));
+        for record in refused_both_ways(
+            || collection_case(declared.clone(), kind, integers(&supplied)),
+            Code::CardinalityOutOfBound,
+            "above-maximum",
+        ) {
+            assert_eq!(record.fields.get("count").map(String::as_str), Some("3"));
+            assert!(record.path.is_empty(), "{kind:?}");
+        }
+    }
+    let below = collection_of(CollectionKind::Sequence, int9(), Some((1, 3)));
+    for record in refused_both_ways(
+        || collection_case(below.clone(), CollectionKind::Sequence, vec![]),
+        Code::CardinalityOutOfBound,
+        "below-minimum",
+    ) {
+        assert_eq!(record.fields.get("count").map(String::as_str), Some("0"));
+    }
+    // The bound comes before the duplicate decision and before any element.
+    let set = collection_of(CollectionKind::Set, int9(), Some((0, 2)));
+    refused_both_ways(
+        || collection_case(set.clone(), CollectionKind::Set, integers(&["1", "1", "1"])),
+        Code::CardinalityOutOfBound,
+        "above-maximum",
+    );
+    let mut with_boolean = integers(&["1", "2"]);
+    with_boolean.push(boolean_true());
+    refused_both_ways(
+        || collection_case(set.clone(), CollectionKind::Set, with_boolean.clone()),
+        Code::CardinalityOutOfBound,
+        "above-maximum",
+    );
+    // At the bound the collection admits.
+    for pre_call in [true, false] {
+        let mut case = collection_case(set.clone(), CollectionKind::Set, integers(&["2", "1"]));
+        case.pre_call = pre_call;
+        let admitted = case.admit().expect("a set at its bound admits");
+        assert_eq!(element_spellings(&admitted.parameters[0].1), ["1", "2"]);
+    }
+}
+
+/// FR-106-AC-54: a form of another kind, a payload that is no array, a member
+/// beside the tag and a counted pair are all `wrong-value-kind`.
+#[trace("TC-1055", "FR-106-AC-54")]
+#[test]
+fn forms_of_another_kind_and_unreadable_forms_refuse_as_wrong_value_kind() {
+    for (declared_kind, supplied_kind) in [
+        (CollectionKind::Set, CollectionKind::Bag),
+        (CollectionKind::Set, CollectionKind::Sequence),
+        (CollectionKind::Sequence, CollectionKind::Set),
+    ] {
+        let declared = collection_of(declared_kind, int9(), None);
+        refused_both_ways(
+            || collection_case(declared.clone(), supplied_kind, integers(&["1"])),
+            Code::InvalidRuntimeInput,
+            "wrong-value-kind",
+        );
+    }
+    let set = collection_of(CollectionKind::Set, int9(), None);
+    let bag = collection_of(CollectionKind::Bag, int9(), None);
+    for (declared, wire) in [
+        (set.clone(), json!({"set": {}})),
+        (set, json!({"set": [{"integer": "1"}], "count": "1"})),
+        (
+            bag,
+            json!({"bag": [{"element": {"integer": "1"}, "count": "2"}]}),
+        ),
+    ] {
+        let mut case = Case::new(declared, SnapshotValue::absent(), wire);
+        case.pre_call = false;
+        assert_refused(
+            case,
+            Code::InvalidRuntimeInput,
+            "wrong-value-kind",
+            Some("arg"),
+        );
+    }
+}
+
+/// FR-106-AC-55: a set of an element type with no value form is refused
+/// before any element, and a set of UUIDs decides duplicates by UUID.
+#[trace("TC-1055", "FR-106-AC-55")]
+#[test]
+fn element_types_without_a_value_form_refuse_and_native_elements_admit() {
+    let decimal = quire_exact::DecimalType::new(
+        Integer::from(0_i64),
+        Integer::from(100_i64),
+        0,
+        2,
+        quire_exact::RoundingMode::Exact,
+    )
+    .expect("decimal type");
+    let declared = collection_of(CollectionKind::Set, ValueType::Decimal(decimal), None);
+    for record in refused_both_ways(
+        || collection_case(declared.clone(), CollectionKind::Set, vec![]),
+        Code::UnknownRequiredFeature,
+        "unsupported-feature",
+    ) {
+        assert_eq!(
+            record.fields.get("feature").map(String::as_str),
+            Some("Decimal")
+        );
+    }
+    let uuid = |text: &str| {
+        (
+            SnapshotValue::native(
+                RawNativeKind::Known(NativeKind::Uuid),
+                vec![("text".to_owned(), Some(text.to_owned()))],
+            ),
+            json!({"kind": "uuid", "text": text}),
+        )
+    };
+    let first = "00000000-0000-0000-0000-000000000001";
+    let second = "00000000-0000-0000-0000-000000000002";
+    let declared = collection_of(CollectionKind::Set, ValueType::Uuid, None);
+    for record in refused_both_ways(
+        || {
+            collection_case(
+                declared.clone(),
+                CollectionKind::Set,
+                vec![uuid(first), uuid(first)],
+            )
+        },
+        Code::InvalidRuntimeInput,
+        "duplicate-member",
+    ) {
+        assert_eq!(record.path, vec![PathStep::Index(1)]);
+    }
+    for pre_call in [true, false] {
+        let mut case = collection_case(
+            declared.clone(),
+            CollectionKind::Set,
+            vec![uuid(first), uuid(second)],
+        );
+        case.pre_call = pre_call;
+        let admitted = case.admit().expect("two different UUIDs admit");
+        let Value::Collection(set) = &admitted.parameters[0].1 else {
+            panic!("expected a set")
+        };
+        assert_eq!(set.elements().len(), 2);
+    }
+}
+
+/// FR-106-AC-56: the writer orders a set's and a bag's elements by their
+/// encoded bytes, and an ordered set's and a sequence's in their order.
+#[trace("TC-1055", "FR-106-AC-56")]
+#[test]
+fn the_writer_orders_sets_and_bags_by_encoded_bytes() {
+    let of = |kind: CollectionKind, spellings: &[&str]| {
+        SnapshotValue::collection(
+            kind,
+            integers(spellings)
+                .into_iter()
+                .map(|(raw, _)| raw)
+                .collect(),
+        )
+        .to_json()
+    };
+    let written = |spellings: &[&str]| {
+        json!(spellings
+            .iter()
+            .map(|spelling| json!({"integer": spelling}))
+            .collect::<Vec<_>>())
+    };
+    assert_eq!(
+        of(CollectionKind::Set, &["9", "10"]),
+        json!({"set": written(&["10", "9"])})
+    );
+    assert_eq!(
+        of(CollectionKind::Bag, &["9", "10", "9"]),
+        json!({"bag": written(&["10", "9", "9"])})
+    );
+    assert_eq!(
+        of(CollectionKind::OrderedSet, &["2", "1"]),
+        json!({"ordered-set": written(&["2", "1"])})
+    );
+    assert_eq!(
+        of(CollectionKind::Sequence, &["2", "1"]),
+        json!({"sequence": written(&["2", "1"])})
+    );
+}
+
+/// FR-106-AC-58: a reader decides the elements of a set and a bag by the
+/// equality of their type, so two spellings of one `nfc` Text are one member.
+#[trace("TC-1055", "FR-106-AC-58")]
+#[test]
+fn text_elements_are_one_member_when_their_retained_sequences_are_equal() {
+    let text_type =
+        quire_exact::TextType::new(0, 8, quire_exact::TextProfile::Nfc).expect("text type");
+    let element = |payload: &str| {
+        (
+            SnapshotValue::native(
+                RawNativeKind::Known(NativeKind::Text),
+                vec![("text".to_owned(), Some(payload.to_owned()))],
+            ),
+            json!({"kind": "text", "text": payload}),
+        )
+    };
+    let composed = "\u{e9}";
+    let decomposed = "e\u{301}";
+    let set = collection_of(
+        CollectionKind::Set,
+        ValueType::Text(text_type.clone()),
+        None,
+    );
+    for record in refused_both_ways(
+        || {
+            collection_case(
+                set.clone(),
+                CollectionKind::Set,
+                vec![element(composed), element(decomposed)],
+            )
+        },
+        Code::InvalidRuntimeInput,
+        "duplicate-member",
+    ) {
+        assert_eq!(record.path, vec![PathStep::Index(1)]);
+        assert_eq!(
+            record.fields.get("earlier-index").map(String::as_str),
+            Some("0")
+        );
+    }
+    let bag = collection_of(CollectionKind::Bag, ValueType::Text(text_type), None);
+    for pre_call in [true, false] {
+        let mut case = collection_case(
+            bag.clone(),
+            CollectionKind::Bag,
+            vec![element(decomposed), element(composed)],
+        );
+        case.pre_call = pre_call;
+        let admitted = case.admit().expect("a bag admits equal elements");
+        let Value::Collection(held) = &admitted.parameters[0].1 else {
+            panic!("expected a bag")
+        };
+        let retained: Vec<&str> = held
+            .elements()
+            .iter()
+            .map(|element| {
+                let Value::Text(text) = element else {
+                    panic!("expected a Text element: {element:?}")
+                };
+                text.retained()
+            })
+            .collect();
+        assert_eq!(retained, [composed, composed]);
     }
 }

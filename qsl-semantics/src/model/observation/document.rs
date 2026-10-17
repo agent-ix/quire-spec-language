@@ -14,10 +14,10 @@ use qsl_foundation::diagnostic::Code;
 use super::helpers::{admission_record, object_reference};
 use super::tree::{read_raw_value, Json, Object};
 use super::{
-    check_document_digest, fault, incomplete, population_universe, refuse, AdmissionFailure,
-    AdmissionRecord, DocumentRef, ModelView, NativeKind, ObservationLimits, OutOfRange, PathStep,
-    PostStateRange, RawForm, RawNative, RawNativeKind, RawValue, ReadMeter, SelectedObject,
-    SnapshotValue,
+    check_document_digest, collection_tag, fault, incomplete, population_universe, refuse,
+    AdmissionFailure, AdmissionRecord, DocumentRef, ModelView, NativeKind, ObservationLimits,
+    OutOfRange, PathStep, PostStateRange, RawForm, RawNative, RawNativeKind, RawValue, ReadMeter,
+    SelectedObject, SnapshotValue,
 };
 use crate::model::key::DeclarationKey;
 use crate::model::object_environment::ObjectEnvironment;
@@ -1094,7 +1094,10 @@ fn field_kind_matches(raw: &SnapshotValue, value_type: &quire_exact::ValueType) 
                 RawForm::Absent | RawForm::Present(_),
                 quire_exact::ValueType::Option(_)
             )
-            | (RawForm::Sequence(_), quire_exact::ValueType::Collection(_))
+            | (
+                RawForm::Collection(..),
+                quire_exact::ValueType::Collection(_)
+            )
             | (RawForm::Record(_), quire_exact::ValueType::Composite(_))
             | (RawForm::Variant(_), quire_exact::ValueType::Enum(_))
     ) || matches!(raw.form(), RawForm::Native(_))
@@ -1131,7 +1134,10 @@ fn object_field_kind_matches(
                 quire_exact::ValueType::Integer | quire_exact::ValueType::Int(_)
             )
             | (RawForm::Reference(_), quire_exact::ValueType::Reference(_))
-            | (RawForm::Sequence(_), quire_exact::ValueType::Collection(_))
+            | (
+                RawForm::Collection(..),
+                quire_exact::ValueType::Collection(_)
+            )
             | (RawForm::Record(_), quire_exact::ValueType::Composite(_))
             | (RawForm::Variant(_), quire_exact::ValueType::Enum(_))
     )
@@ -1622,9 +1628,10 @@ enum Admit<'w, 'v> {
     /// Wrap the admitted payload as a present value of the option type
     /// whose payload type is `payload`.
     SomeOf { payload: &'w quire_exact::ValueType },
-    /// Build the sequence of type `collection` from its `count` admitted
-    /// elements.
-    Sequence {
+    /// Build the collection of type `collection` from its `count` admitted
+    /// elements: refuse a duplicate of a set or ordered set, and write a set
+    /// or bag in canonical order.
+    Collection {
         collection: &'w quire_exact::CollectionType,
         count: usize,
     },
@@ -1701,12 +1708,7 @@ fn admit_value<'a: 'w, 'w>(
                     quire_exact::OptionValue::from_admitted(payload.clone(), Some(value)),
                 ));
             }
-            Admit::Sequence { collection, count } => {
-                if collection.bound().is_some_and(|bound| {
-                    bound.violation(quire_exact::length_amount(count)).is_some()
-                }) {
-                    return Err(refuse_at("invalid-value", &path));
-                }
+            Admit::Collection { collection, count } => {
                 let Some(start) = done.len().checked_sub(count) else {
                     return Err(refuse_at("wrong-value-kind", &path));
                 };
@@ -1718,10 +1720,9 @@ fn admit_value<'a: 'w, 'w>(
                         FieldValue::Absent | FieldValue::Null => None,
                     })
                     .collect();
-                done.push(FieldValue::Present(quire_exact::from_admitted(
-                    collection.clone(),
-                    elements,
-                )));
+                done.push(FieldValue::Present(form_collection_value(
+                    collection, elements, &path,
+                )?));
             }
             Admit::Value {
                 form,
@@ -1779,19 +1780,31 @@ fn admit_value<'a: 'w, 'w>(
                         });
                         work.push(Admit::Enter(PathStep::OptionValue));
                     }
-                    (RawForm::Sequence(items), quire_exact::ValueType::Collection(collection)) => {
-                        if collection.kind() != CollectionKind::Sequence {
+                    (
+                        RawForm::Collection(tag, items),
+                        quire_exact::ValueType::Collection(collection),
+                    ) => {
+                        let collection: &'w quire_exact::CollectionType = collection;
+                        let count = items.iter().len();
+                        // The collection is read first: the tag names the
+                        // declared kind (FR-106 "Set, bag and ordered-set
+                        // values" step 1), then the count against the bound,
+                        // and only then any element.
+                        if tag != collection.kind() {
+                            return Err(refuse_at("wrong-value-kind", &path));
+                        }
+                        if let Some(feature) = unsupported_collection_element(value_type) {
                             return Err(admission_record(
                                 Code::UnknownRequiredFeature,
                                 "unsupported-feature",
                             )
+                            .with("feature", feature)
                             .at(path.clone()));
                         }
-                        let collection: &'w quire_exact::CollectionType = collection;
-                        work.push(Admit::Sequence {
-                            collection,
-                            count: items.iter().len(),
-                        });
+                        if let Some(refusal) = bound_refusal(collection, count) {
+                            return Err(refusal.at(path.clone()));
+                        }
+                        work.push(Admit::Collection { collection, count });
                         for (index, item) in items.iter().enumerate().rev() {
                             work.push(Admit::Leave);
                             work.push(Admit::Value {
@@ -1874,6 +1887,166 @@ fn admit_value<'a: 'w, 'w>(
         .ok_or_else(|| admission_record(Code::InvalidRuntimeInput, "wrong-value-kind"))
 }
 
+/// The name of the first element type inside `value_type` (through `Option`
+/// and collections) that has no value form in FR-106's snapshot grammar, or
+/// `None` when every type has one. A set, bag or ordered set of such a type is
+/// refused `unsupported-feature` naming it, not read element by element.
+fn missing_wire_form(value_type: &quire_exact::ValueType) -> Option<&'static str> {
+    let mut pending = vec![value_type];
+    while let Some(next) = pending.pop() {
+        match next {
+            quire_exact::ValueType::Rational(_) => return Some("Rational"),
+            quire_exact::ValueType::Decimal(_) => return Some("Decimal"),
+            quire_exact::ValueType::Float(_) => return Some("Float"),
+            quire_exact::ValueType::Quantity(_) => return Some("Quantity"),
+            quire_exact::ValueType::Population(_) => return Some("Population"),
+            quire_exact::ValueType::Option(payload) => pending.push(payload),
+            quire_exact::ValueType::Collection(collection) => pending.push(collection.element()),
+            quire_exact::ValueType::Boolean
+            | quire_exact::ValueType::Integer
+            | quire_exact::ValueType::Int(_)
+            | quire_exact::ValueType::Text(_)
+            | quire_exact::ValueType::String
+            | quire_exact::ValueType::Uuid
+            | quire_exact::ValueType::Timestamp
+            | quire_exact::ValueType::Enum(_)
+            | quire_exact::ValueType::Composite(_)
+            | quire_exact::ValueType::Reference(_) => {}
+        }
+    }
+    None
+}
+
+/// The name of the first element type with no value form here inside the set,
+/// bag or ordered set `value_type` is or holds (through `Option` and
+/// collections), or `None`. A sequence's own element type is not judged: its
+/// elements refuse by kind fit, as before.
+fn unsupported_collection_element(value_type: &quire_exact::ValueType) -> Option<&'static str> {
+    let mut pending = vec![value_type];
+    while let Some(next) = pending.pop() {
+        match next {
+            quire_exact::ValueType::Collection(collection) => {
+                if collection.kind() != CollectionKind::Sequence {
+                    if let Some(feature) = missing_wire_form(collection.element()) {
+                        return Some(feature);
+                    }
+                }
+                pending.push(collection.element());
+            }
+            quire_exact::ValueType::Option(payload) => pending.push(payload),
+            quire_exact::ValueType::Boolean
+            | quire_exact::ValueType::Integer
+            | quire_exact::ValueType::Int(_)
+            | quire_exact::ValueType::Rational(_)
+            | quire_exact::ValueType::Decimal(_)
+            | quire_exact::ValueType::Float(_)
+            | quire_exact::ValueType::Quantity(_)
+            | quire_exact::ValueType::Text(_)
+            | quire_exact::ValueType::String
+            | quire_exact::ValueType::Uuid
+            | quire_exact::ValueType::Timestamp
+            | quire_exact::ValueType::Enum(_)
+            | quire_exact::ValueType::Composite(_)
+            | quire_exact::ValueType::Reference(_)
+            | quire_exact::ValueType::Population(_) => {}
+        }
+    }
+    None
+}
+
+/// The `cardinality_out_of_bound` refusal for
+/// `count` supplied entries against the bound `collection` declares, or
+/// `None` when it declares none or the count is inside it. A bag counts
+/// occurrences and a set or ordered set counts supplied entries, so the
+/// count is the array length for every kind.
+fn bound_refusal(
+    collection: &quire_exact::CollectionType,
+    count: usize,
+) -> Option<AdmissionRecord> {
+    let bound = collection.bound()?;
+    let violation = bound.violation(quire_exact::length_amount(count))?;
+    Some(
+        admission_record(Code::CardinalityOutOfBound, violation.as_str())
+            .with("collection", collection_tag(collection.kind()))
+            .with("count", count.to_string())
+            .with("minimum", bound.minimum().to_string())
+            .with("maximum", bound.maximum().to_string()),
+    )
+}
+
+/// The collection of type `collection` an array of already admitted
+/// `elements` forms, at the value path `path`. A set or ordered set holding
+/// an element equal to an earlier one, by the canonical key that FR-149 `=`
+/// agrees with, refuses `invalid_runtime_input`/`duplicate-member` at the
+/// later element, naming the earlier element's index, and is never
+/// deduplicated. A set and a bag are written in canonical key order whatever
+/// their array order; a sequence and an ordered set keep it.
+fn form_collection_value(
+    collection: &quire_exact::CollectionType,
+    elements: Vec<Value>,
+    path: &[PathStep],
+) -> Result<Value, AdmissionRecord> {
+    let kind = collection.kind();
+    let refuse =
+        |cause: &'static str| admission_record(Code::InvalidRuntimeInput, cause).at(path.to_vec());
+    if kind.is_unique() {
+        let mut order: Vec<usize> = (0..elements.len()).collect();
+        let mut unkeyed = false;
+        order.sort_by(
+            |left, right| match (elements.get(*left), elements.get(*right)) {
+                (Some(left), Some(right)) => {
+                    quire_exact::compare_keys(left, right).unwrap_or_else(|| {
+                        unkeyed = true;
+                        std::cmp::Ordering::Equal
+                    })
+                }
+                _ => std::cmp::Ordering::Equal,
+            },
+        );
+        if unkeyed {
+            return Err(refuse("invalid-value"));
+        }
+        // Equal keys sit together, their indices ascending (the sort is
+        // stable): the first element of the array that equals an earlier one
+        // is the second of the group that reaches it first.
+        let mut duplicate: Option<(usize, usize)> = None;
+        for group in order.chunk_by(|left, right| {
+            matches!(
+                (elements.get(*left), elements.get(*right)),
+                (Some(left), Some(right))
+                    if quire_exact::compare_keys(left, right) == Some(std::cmp::Ordering::Equal)
+            )
+        }) {
+            if let [earlier, later, ..] = group {
+                match duplicate {
+                    Some((found, _)) if found <= *later => {}
+                    _ => duplicate = Some((*later, *earlier)),
+                }
+            }
+        }
+        if let Some((later, earlier)) = duplicate {
+            let mut at = path.to_vec();
+            at.push(PathStep::Index(later));
+            return Err(
+                admission_record(Code::InvalidRuntimeInput, "duplicate-member")
+                    .with("earlier-index", earlier.to_string())
+                    .at(at),
+            );
+        }
+    }
+    match kind {
+        CollectionKind::Sequence | CollectionKind::OrderedSet => {
+            Ok(quire_exact::from_admitted(collection.clone(), elements))
+        }
+        CollectionKind::Set | CollectionKind::Bag => {
+            let mut meter = quire_exact::Meter::new(crate::check::UNBOUNDED_SCALAR_LIMITS);
+            quire_exact::form_grouped(collection, elements, &mut meter)
+                .completed()
+                .ok_or_else(|| refuse("invalid-value"))
+        }
+    }
+}
+
 /// The declaration key of each selected record value type by its IR node
 /// identity (FR-359 item 9). The keys are computed with no byte bound: a
 /// record the unit assembled had already keyed under the unit's own identity
@@ -1929,7 +2102,7 @@ fn collect_references(raw: &SnapshotValue, into: &mut Vec<(String, String)>) {
             }
             RawForm::Present(inner) => pending.push(inner.form()),
             // Pushed last-first, so the first item walks first.
-            RawForm::Sequence(items) => {
+            RawForm::Collection(_, items) => {
                 pending.extend(items.iter().rev().map(RawValue::form));
             }
             RawForm::Record(record) => {
@@ -2173,17 +2346,17 @@ pub(super) fn admit_population_values<'t>(
                     "object-type-has-no-checked-attributes",
                 ))
             })?;
-            // 6.2: a set/bag/ordered-set field.
+            // 6.2: a set, bag or ordered-set field whose element type has no
+            // value form here.
             for attribute in declared {
-                if let quire_exact::ValueType::Collection(collection) =
-                    attribute.field().value_type()
+                if let Some(feature) =
+                    unsupported_collection_element(attribute.field().value_type())
                 {
-                    if collection.kind() != CollectionKind::Sequence {
-                        return Err(refuse(
-                            admission_record(Code::UnknownRequiredFeature, "unsupported-feature")
-                                .with("field", attribute.field().name().to_owned()),
-                        ));
-                    }
+                    return Err(refuse(
+                        admission_record(Code::UnknownRequiredFeature, "unsupported-feature")
+                            .with("field", attribute.field().name().to_owned())
+                            .with("feature", feature),
+                    ));
                 }
             }
             // 6.3: duplicate key. `seen.insert` still runs first (its
@@ -2401,15 +2574,14 @@ fn admit_contexts<'t>(
             .ok_or_else(|| fault("context-machine-has-no-checked-attributes"))?;
         // 6.12: the fields, in the machine's exposed effective order.
         for attribute in declared {
-            if let quire_exact::ValueType::Collection(collection) = attribute.field().value_type() {
-                if collection.kind() != CollectionKind::Sequence {
-                    return Err(named(
-                        admission_record(Code::UnknownRequiredFeature, "unsupported-feature")
-                            .with("machine", machine.to_owned())
-                            .with("field", attribute.field().name().to_owned()),
-                        entry,
-                    ));
-                }
+            if let Some(feature) = unsupported_collection_element(attribute.field().value_type()) {
+                return Err(named(
+                    admission_record(Code::UnknownRequiredFeature, "unsupported-feature")
+                        .with("machine", machine.to_owned())
+                        .with("field", attribute.field().name().to_owned())
+                        .with("feature", feature),
+                    entry,
+                ));
             }
         }
         for attribute in declared {

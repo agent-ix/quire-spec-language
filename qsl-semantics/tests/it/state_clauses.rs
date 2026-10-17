@@ -4791,15 +4791,111 @@ fn tc465_row41_a_population_only_in_post_admits_its_pre_side_as_empty() {
     assert_eq!(record.fields.get("object").map(String::as_str), Some("a1"));
 }
 
-/// Row 17 (check 6.2): a package variant whose `ConfigVersion` has field
-/// `tags` typed a set of `ConfigVersion`.
+/// Row 17 (check 6.4): a package variant whose `ConfigVersion` has field
+/// `tags` typed a set of `ConfigVersion`, and a snapshot with no `tags`.
 #[trace("TC-465", "FR-106-AC-3")]
 #[test]
-fn tc465_row17_set_typed_field_refuses_unsupported_feature() {
+fn tc465_row17_set_typed_field_missing_from_the_snapshot_refuses_missing_member() {
     let document = tc465_document_with_set_field();
     let result = run_tc465_current(&document, |_| {}, None);
-    let record = assert_tc465_refused(result, "unknown_required_feature", "unsupported-feature");
+    let record = assert_tc465_refused(result, "invalid_runtime_input", "missing-member");
     assert_eq!(record.fields.get("field").map(String::as_str), Some("tags"));
+}
+
+/// A reference to `key` of the `config_history` population.
+fn tc1055_reference(key: &str) -> serde_json::Value {
+    json!({"reference": {
+        "population": "ix://example/config-version/config_history", "key": key,
+    }})
+}
+
+/// The healthy parent snapshot with the `tags` value of the package variant
+/// whose `ConfigVersion` has `tags: Set<Reference<ConfigVersion>>[0, 5]`
+/// given to `root` and to `child`.
+fn tc1055_with_tags(
+    root: serde_json::Value,
+    child: serde_json::Value,
+) -> impl FnOnce(&mut serde_json::Value) {
+    move |value| {
+        let objects = value["populations"][0]["objects"]
+            .as_array_mut()
+            .expect("objects");
+        objects[0]["fields"]["tags"] = root;
+        objects[1]["fields"]["tags"] = child;
+    }
+}
+
+/// FR-106-AC-57: a set field of references admits in either array order as
+/// one value, over the TC-465 package variant whose `ConfigVersion` has the
+/// field `tags`.
+#[trace("TC-1055", "FR-106-AC-57")]
+#[test]
+fn tc1055_a_set_field_admits_in_either_array_order_as_one_value() {
+    let document = tc465_document_with_set_field();
+    let both = |order: [&str; 2]| {
+        let tags = json!({"set": [tc1055_reference(order[0]), tc1055_reference(order[1])]});
+        run_tc465_current(&document, tc1055_with_tags(json!({"set": []}), tags), None)
+            .expect("a set of references admits")
+    };
+    let forward = both(["root", "child"]);
+    let backward = both(["child", "root"]);
+    assert_eq!(
+        format!("{:?}", forward.current.expect("current").environment),
+        format!("{:?}", backward.current.expect("current").environment),
+    );
+}
+
+/// FR-106-AC-57: a duplicate in a set field refuses at the later element
+/// naming the earlier one, an over-bound set refuses before its elements, and
+/// a form of another kind is `wrong-value-kind`, each naming the object and
+/// the field.
+#[trace("TC-1055", "FR-106-AC-57")]
+#[test]
+fn tc1055_a_set_field_refuses_duplicates_bounds_and_other_kinds() {
+    let document = tc465_document_with_set_field();
+    let refuse = |tags: serde_json::Value, code: &str, cause: &str| {
+        let result = run_tc465_current(&document, tc1055_with_tags(json!({"set": []}), tags), None);
+        let record = assert_tc465_refused(result, code, cause);
+        assert_eq!(
+            record.fields.get("object").map(String::as_str),
+            Some("child")
+        );
+        assert_eq!(record.fields.get("field").map(String::as_str), Some("tags"));
+        record
+    };
+    let record = refuse(
+        json!({"set": [tc1055_reference("root"), tc1055_reference("root")]}),
+        "invalid_runtime_input",
+        "duplicate-member",
+    );
+    assert_eq!(
+        record.path,
+        vec![qsl_semantics::model::observation::PathStep::Index(1)]
+    );
+    assert_eq!(
+        record.fields.get("earlier-index").map(String::as_str),
+        Some("0")
+    );
+    let six: Vec<serde_json::Value> = ["a", "b", "c", "d", "e", "f"]
+        .iter()
+        .map(|key| tc1055_reference(key))
+        .collect();
+    let record = refuse(
+        json!({"set": six}),
+        "cardinality_out_of_bound",
+        "above-maximum",
+    );
+    assert_eq!(record.fields.get("count").map(String::as_str), Some("6"));
+    refuse(
+        json!({"bag": [tc1055_reference("root")]}),
+        "invalid_runtime_input",
+        "wrong-value-kind",
+    );
+    refuse(
+        json!({"sequence": [tc1055_reference("root")]}),
+        "invalid_runtime_input",
+        "wrong-value-kind",
+    );
 }
 
 /// Row 35 (check 10): probe invocation with `parameters` `{}` (missing

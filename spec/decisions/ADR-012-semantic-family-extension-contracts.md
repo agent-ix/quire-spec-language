@@ -1204,10 +1204,9 @@ Out of scope are protocols and protocol transitions (#218), temporal clauses
 not object fields. Native-run/1's `values` roots (a State root such as
 ConfigVersion's `other`) have no `1-draft` spelling, so a comparison of two
 selected objects is a function over two references, run through FR-109's
-function arm (FR-108). Sets, bags and ordered sets are outside QSpec's
-selected state extension ("Sets, bags, OrderedSet ... remain outside this
-selected extension"), so a snapshot value, a `reaches` edge and a frame
-comparison never take one (FR-104, FR-106).
+function arm (FR-108). A snapshot value takes a set, bag or ordered set
+(FR-106 "Set, bag and ordered-set values", QSpec FR-144 and FR-181), while a
+`reaches` edge never does (FR-104).
 
 ### 15.2 Family assignment
 

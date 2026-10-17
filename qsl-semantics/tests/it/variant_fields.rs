@@ -1689,3 +1689,90 @@ fn equality_is_allowed_and_ordering_is_refused_over_non_identifier_cases() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// FR-106 canonical element encoding (TC-1055)
+// ---------------------------------------------------------------------------
+
+/// FR-106-AC-59: the encoder writes every value inside a set's or a bag's
+/// element in its canonical encoding, a Text by its retained sequence, and a
+/// Text elsewhere by the payload it was admitted with.
+#[trace("TC-1055", "FR-106-AC-59")]
+#[test]
+fn the_encoder_writes_set_and_bag_elements_in_canonical_form() {
+    let replay = replay();
+    let encoder = ValueEncoder::over(
+        replay.graph.model_selections(),
+        replay.graph.scope().types(),
+        &replay.packages,
+        ModelNormalizationLimits::default(),
+    )
+    .expect("the encoder reads the selected package");
+    let unlimited = quire_exact::ScalarLimits {
+        integer_bits: u64::MAX,
+        decimal_digits: u64::MAX,
+        scale_expansion: u64::MAX,
+        text_input_bytes: u64::MAX,
+        text_scalars: u64::MAX,
+        normalized_scalars: u64::MAX,
+        unit_edges: u64::MAX,
+        value_occurrences: u64::MAX,
+        work_units: u64::MAX,
+        result_units: u64::MAX,
+    };
+    let mut meter = quire_exact::Meter::new(unlimited);
+    let text_type =
+        quire_exact::TextType::new(0, 8, quire_exact::TextProfile::Nfc).expect("text type");
+    let mut text = |payload: &str| -> Datum {
+        let payload =
+            quire_exact::TextPayload::from_utf8(payload.as_bytes()).expect("UTF-8 payload");
+        quire_exact::admit_text(&payload, &text_type, &mut meter)
+            .completed()
+            .map(Datum::Text)
+            .expect("the text admits")
+    };
+    let composed = text("\u{e9}");
+    let decomposed = text("e\u{301}");
+    let mut meter = quire_exact::Meter::new(unlimited);
+    let form = |kind: CollectionKind, elements: Vec<Datum>, meter: &mut quire_exact::Meter| {
+        quire_exact::form(
+            &quire_exact::CollectionType::new(
+                kind,
+                ValueType::Text(
+                    quire_exact::TextType::new(0, 8, quire_exact::TextProfile::Nfc)
+                        .expect("text type"),
+                ),
+                None,
+            ),
+            elements,
+            meter,
+        )
+        .completed()
+        .expect("the collection forms")
+    };
+    let element = |payload: &str| json!({"kind": "text", "text": payload});
+    let bag = encoder
+        // The kernel keeps the first spelling of a bag member, here the
+        // decomposed one, once per occurrence.
+        .encode(&form(
+            CollectionKind::Bag,
+            vec![decomposed.clone(), composed.clone()],
+            &mut meter,
+        ))
+        .expect("a bag of Text encodes");
+    assert_eq!(
+        bag.to_json(),
+        json!({"bag": [element("\u{e9}"), element("\u{e9}")]})
+    );
+    let sequence = encoder
+        .encode(&form(
+            CollectionKind::Sequence,
+            vec![composed.clone(), decomposed.clone()],
+            &mut meter,
+        ))
+        .expect("a sequence of Text encodes");
+    assert_eq!(
+        sequence.to_json(),
+        json!({"sequence": [element("\u{e9}"), element("e\u{301}")]})
+    );
+}

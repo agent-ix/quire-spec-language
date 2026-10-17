@@ -5,11 +5,12 @@ use std::collections::BTreeMap;
 
 use qsl_foundation::serde_object::{deserialize_objects, from_object};
 use qsl_semantics::model::observation::{
-    AnchorKind, ClauseSelection, ClauseSelectionInput, DocumentRef, NativeKind, ObservationLimits,
-    PostStateRange, RawNativeKind, SelectedAnchor, SelectedObject, SnapshotValue,
+    collection_kind_of_tag, AnchorKind, ClauseSelection, ClauseSelectionInput, DocumentRef,
+    NativeKind, ObservationLimits, PostStateRange, RawNativeKind, SelectedAnchor, SelectedObject,
+    SnapshotValue,
 };
 use quire_canonical::{Node, NodeRef};
-use quire_exact::{Identifier, ScalarLimits};
+use quire_exact::{CollectionKind, Identifier, ScalarLimits};
 use serde_json::value::RawValue;
 
 use super::{
@@ -375,7 +376,7 @@ fn snapshot_value(value: NodeRef<'_>) -> Result<SnapshotValue, ClauseRequestRead
     enum Work<'a> {
         Read(NodeRef<'a>),
         Present,
-        Sequence(usize),
+        Collection(CollectionKind, usize),
     }
     let mut work = vec![Work::Read(value)];
     let mut values = Vec::new();
@@ -387,12 +388,12 @@ fn snapshot_value(value: NodeRef<'_>) -> Result<SnapshotValue, ClauseRequestRead
                     .ok_or_else(|| invalid("parameters", "missing present value"))?;
                 values.push(SnapshotValue::present(inner));
             }
-            Work::Sequence(len) => {
+            Work::Collection(kind, len) => {
                 if values.len() < len {
-                    return Err(invalid("parameters.sequence", "missing sequence value"));
+                    return Err(invalid("parameters.collection", "missing collection value"));
                 }
                 let items = values.split_off(values.len() - len);
-                values.push(SnapshotValue::sequence(items));
+                values.push(SnapshotValue::collection(kind, items));
             }
             Work::Read(value) => {
                 let Node::Object(mut object) = value.node() else {
@@ -499,11 +500,17 @@ fn snapshot_value(value: NodeRef<'_>) -> Result<SnapshotValue, ClauseRequestRead
                             extra_member,
                         ));
                     }
-                    "sequence" => {
-                        let Node::Array(items) = content.node() else {
-                            return Err(invalid("parameters.sequence", "expected array"));
+                    "sequence" | "set" | "bag" | "ordered-set" => {
+                        let Some(collection) = collection_kind_of_tag(kind) else {
+                            return Err(invalid(
+                                format!("parameters.{kind}"),
+                                "unknown value form",
+                            ));
                         };
-                        work.push(Work::Sequence(items.len()));
+                        let Node::Array(items) = content.node() else {
+                            return Err(invalid(format!("parameters.{kind}"), "expected array"));
+                        };
+                        work.push(Work::Collection(collection, items.len()));
                         work.extend(items.collect::<Vec<_>>().into_iter().rev().map(Work::Read));
                     }
                     _ => return Err(invalid(format!("parameters.{kind}"), "unknown value form")),

@@ -33,7 +33,9 @@ use qsl_foundation::diagnostic::{
     BudgetDenial, CatalogCoded, Code, InternalFault, LimitExceeded, ALLOCATION_FAILED,
 };
 use qsl_foundation::Setting;
-use quire_exact::{EffectiveId, Identifier, ObjectId, ObjectReference, UniverseId, Value};
+use quire_exact::{
+    CollectionKind, EffectiveId, Identifier, ObjectId, ObjectReference, UniverseId, Value,
+};
 
 use crate::model::accounting::ModelNormalizationLimits;
 use crate::model::domain_package::{DomainPackage, DomainPackageRef, OperationEffect};
@@ -391,7 +393,7 @@ pub enum PathStep {
     Field(String),
     /// The payload of a present optional value.
     OptionValue,
-    /// A sequence element, by its position.
+    /// A collection element, by its position in the array.
     Index(usize),
 }
 
@@ -607,7 +609,12 @@ enum RawNode {
     Absent,
     Present(usize),
     Reference(SelectedObject),
-    Sequence(Vec<usize>),
+    /// `{"sequence" | "set" | "bag" | "ordered-set": [<value>, ...]}`: the
+    /// kind and the index of each item's node, in document order.
+    Collection {
+        kind: CollectionKind,
+        items: Vec<usize>,
+    },
     /// `{"record": {"type": .., "fields": {..}}}`: the record's `type`
     /// identity and its fields in document order, each the index of its
     /// value's node.
@@ -643,12 +650,40 @@ pub enum RawForm<'v> {
     Present(RawValue<'v>),
     /// `{"reference": {"population": ..., "key": ...}}`.
     Reference(&'v SelectedObject),
-    /// `{"sequence": [<value>, ...]}`, its items in order.
-    Sequence(RawItems<'v>),
+    /// `{"sequence": [..]}`, `{"set": [..]}`, `{"bag": [..]}` or
+    /// `{"ordered-set": [..]}`: the kind its tag names and its items in
+    /// document order.
+    Collection(CollectionKind, RawItems<'v>),
     /// `{"record": {"type": <declaration identity>, "fields": {..}}}`.
     Record(RawRecord<'v>),
     /// `{"variant": {"type": <declaration identity>, "case": <case name>}}`.
     Variant(RawVariant<'v>),
+}
+
+/// The collection kind a value form's single tag names: `sequence`, `set`,
+/// `bag` or `ordered-set` (FR-106 "Document forms"), or `None` for any other
+/// tag.
+#[must_use]
+pub fn collection_kind_of_tag(tag: &str) -> Option<CollectionKind> {
+    match tag {
+        "sequence" => Some(CollectionKind::Sequence),
+        "set" => Some(CollectionKind::Set),
+        "bag" => Some(CollectionKind::Bag),
+        "ordered-set" => Some(CollectionKind::OrderedSet),
+        _ => None,
+    }
+}
+
+/// The wire tag of a collection kind: the inverse of
+/// [`collection_kind_of_tag`].
+#[must_use]
+pub fn collection_tag(kind: CollectionKind) -> &'static str {
+    match kind {
+        CollectionKind::Sequence => "sequence",
+        CollectionKind::Set => "set",
+        CollectionKind::Bag => "bag",
+        CollectionKind::OrderedSet => "ordered-set",
+    }
 }
 
 /// A `variant` value as read: the members of its payload, whichever it
@@ -780,7 +815,7 @@ impl<'v> RawRecord<'v> {
     }
 }
 
-/// The items of a `sequence` value, in order.
+/// The items of a collection value, in document order.
 #[derive(Clone, Copy, Debug)]
 pub struct RawItems<'v> {
     arena: &'v SnapshotValue,
@@ -845,6 +880,15 @@ impl SnapshotValue {
     /// `{"sequence": [items...]}`.
     #[must_use]
     pub fn sequence(items: Vec<Self>) -> Self {
+        Self::collection(CollectionKind::Sequence, items)
+    }
+
+    /// `{"<tag>": [items...]}` for the wire tag of `kind` (`sequence`,
+    /// `set`, `bag` or `ordered-set`), the items in the given order. A writer
+    /// of a `set` or `bag` orders them by encoded bytes in
+    /// [`Self::to_json`]; the order given is not the wire order there.
+    #[must_use]
+    pub fn collection(kind: CollectionKind, items: Vec<Self>) -> Self {
         let mut nodes =
             Vec::with_capacity(items.iter().map(|item| item.nodes.len()).sum::<usize>() + 1);
         let mut roots = Vec::with_capacity(items.len());
@@ -854,7 +898,7 @@ impl SnapshotValue {
             roots.push(item.root + offset);
         }
         let at = nodes.len();
-        nodes.push(RawNode::Sequence(roots));
+        nodes.push(RawNode::Collection { kind, items: roots });
         Self { nodes, root: at }
     }
 
@@ -923,7 +967,9 @@ impl SnapshotValue {
                 index: *inner,
             }),
             RawNode::Reference(reference) => RawForm::Reference(reference),
-            RawNode::Sequence(items) => RawForm::Sequence(RawItems { arena: self, items }),
+            RawNode::Collection { kind, items } => {
+                RawForm::Collection(*kind, RawItems { arena: self, items })
+            }
             RawNode::Record {
                 type_identity,
                 fields,
@@ -985,8 +1031,21 @@ impl SnapshotValue {
         declared: Option<&'t quire_exact::ValueType>,
         field_type: &dyn Fn(&str, &str) -> Option<&'t quire_exact::ValueType>,
     ) -> bool {
+        Self::forms_equal(declared, self.form(), other.form(), field_type)
+    }
+
+    /// [`Self::equals_by`] over two value forms. An iterative walk, except
+    /// that the items of a `set` or `bag` pair up in any order (FR-106 "Set,
+    /// bag and ordered-set values"), each pairing a nested call, so the
+    /// native stack is bounded by the declared type's collection nesting.
+    fn forms_equal<'t>(
+        declared: Option<&'t quire_exact::ValueType>,
+        left: RawForm<'_>,
+        right: RawForm<'_>,
+        field_type: &dyn Fn(&str, &str) -> Option<&'t quire_exact::ValueType>,
+    ) -> bool {
         use quire_exact::ValueType;
-        let mut work = vec![(declared, self.form(), other.form())];
+        let mut work = vec![(declared, left, right)];
         while let Some((declared, left, right)) = work.pop() {
             match (left, right) {
                 (RawForm::Boolean(left), RawForm::Boolean(right)) if left == right => {}
@@ -1020,18 +1079,38 @@ impl SnapshotValue {
                     };
                     work.push((inner, left.form(), right.form()));
                 }
-                (RawForm::Sequence(left), RawForm::Sequence(right))
-                    if left.iter().len() == right.iter().len() =>
+                (RawForm::Collection(left_kind, left), RawForm::Collection(right_kind, right))
+                    if left_kind == right_kind && left.iter().len() == right.iter().len() =>
                 {
                     let element = match declared {
                         Some(ValueType::Collection(collection)) => Some(collection.element()),
                         _ => None,
                     };
-                    work.extend(
-                        left.iter()
-                            .zip(right.iter())
-                            .map(|(left, right)| (element, left.form(), right.form())),
-                    );
+                    if matches!(left_kind, CollectionKind::Set | CollectionKind::Bag) {
+                        // Equal as multisets: each left item takes a distinct,
+                        // equal right item. Equality of items is an
+                        // equivalence, so taking the first free match decides.
+                        let mut free: Vec<RawValue<'_>> = right.iter().collect();
+                        for item in left.iter() {
+                            let Some(at) = free.iter().position(|candidate| {
+                                Self::forms_equal(
+                                    element,
+                                    item.form(),
+                                    candidate.form(),
+                                    field_type,
+                                )
+                            }) else {
+                                return false;
+                            };
+                            free.swap_remove(at);
+                        }
+                    } else {
+                        work.extend(
+                            left.iter()
+                                .zip(right.iter())
+                                .map(|(left, right)| (element, left.form(), right.form())),
+                        );
+                    }
                 }
                 (RawForm::Record(left_record), RawForm::Record(right_record))
                     if left_record.type_identity() == right_record.type_identity()
@@ -1068,9 +1147,10 @@ impl RawNode {
     fn shifted(self, offset: usize) -> Self {
         match self {
             Self::Present(inner) => Self::Present(inner + offset),
-            Self::Sequence(items) => {
-                Self::Sequence(items.into_iter().map(|item| item + offset).collect())
-            }
+            Self::Collection { kind, items } => Self::Collection {
+                kind,
+                items: items.into_iter().map(|item| item + offset).collect(),
+            },
             Self::Record {
                 type_identity,
                 fields,
