@@ -11,7 +11,7 @@ relationships:
 ## Description
 
 Verify the lowered node of a reachability over a relationship end and what a
-proof binds to reach it. Scope: FR-365-AC-5, FR-365-AC-6.
+proof binds to reach it. Scope: FR-365-AC-5, FR-365-AC-6 (a reachability over an unbounded population; the link of a bounded one is TC-1054's).
 
 Catches a lowering that emits `quire.op.model.reaches_field` for an end, names
 a field member, routes an operand through `deref`, carries a population or an
@@ -31,7 +31,7 @@ each emitted package with IR's v2 reader.
 | 4b | invariants `A` and `B` on `M::Order`, each `not reaches(self, self, next)` | one `state_clause` node (kind, parameters, anchor and condition are equal; the clause name is no part of it) holding one reachability node, with two `claim` occurrences, ordinals 0 and 1 in source order |
 | 5 | one invariant `reaches(self, self, next) and reaches(self, self, next)` | one reachability node on two argument paths of the condition (positions 0 and 1 of the `and` application) |
 | 6 | invariants `reaches(self, self, next)` and `reaches(self, self, outgoing)` | two reachability nodes with different identities |
-| 7 | the node of row 1 | its body names no population, no bound and no observation; the clause's requirements record, keyed by the `claim` occurrence, holds the `orders` population domain, and the `state_clause` node's anchor and kind name the observation |
+| 7 | the node of row 1, over the unbounded `orders` population | its body names no population, no bound and no observation, and its `operation.member` holds exactly `kind`, `declaration` and `name`; the clause's requirements record, keyed by the `claim` occurrence, holds the `orders` population domain, and the `state_clause` node's anchor and kind name the observation. The bounded population is TC-1054's |
 | 8 | row 1 with `kids` over `Order/kids` (target end `{0,3}` unique) and with `litter` over `Order/litter` (target end `{0,3}`, `unique: false`) | the same node shape as row 1: one `quire.op.model.reaches` application with member `relationship_end` naming the relationship's node and the role, arguments `[ref(a), ref(b)]`, a `Boolean` result type, no `deref`; IR's v2 reader admits the package (QSpec FR-322-AC-57) |
 
 ## Expected Results

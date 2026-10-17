@@ -27,6 +27,7 @@ mod kernel_refusal_payloads;
 mod machine_contexts;
 mod model_reference_queries;
 mod model_simulation;
+mod native_literals;
 mod native_scalar_equality;
 mod protocol_reference;
 mod relationship_navigation;
