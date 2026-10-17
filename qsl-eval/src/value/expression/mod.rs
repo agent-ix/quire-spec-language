@@ -16,6 +16,7 @@ mod clause_set;
 mod evaluate;
 mod family;
 mod s6a;
+mod value_invariants;
 
 use evaluate::Machine;
 use qsl_foundation::diagnostic::InternalFault;
@@ -37,6 +38,7 @@ pub use s6a::separation::{
     ClauseEvaluation, ClauseRead, InvocationBinding, ObservationIdentity, RuntimeValuePath,
     Separation, SeparationStep, StopReport, ValuePathStep, ValuePathSubject, WitnessClaim,
 };
+pub use value_invariants::{ValueInvariantEvaluation, ValueInvariantOutcome, ValueInvariantResult};
 
 // `CheckedExpression` is `check`'s own checked-output type; this module
 // imports it from `qsl_semantics::check` and re-exports none of it (FR-068-AC-10 is
@@ -523,6 +525,23 @@ pub trait CheckedPackageEvaluation: family::sealed::Sealed {
         limits: quire_exact::ScalarLimits,
     ) -> Result<ClauseSetEvaluation, CallFailure>;
 
+    /// FR-366: evaluate every type-level invariant of this package once for
+    /// every value of its type that `observations` reach, under the one
+    /// `meter` for all of them. A false result is a logical violation
+    /// located by its QSpec FR-207 runtime value path; a denied charge stops
+    /// the evaluation with `Incomplete` and no result for the invariant
+    /// whose charge was denied.
+    ///
+    /// The observations name no clause: `current` supplies the objects and
+    /// their members, `parameters`, `result` and the observation of the
+    /// invocation supply the invocation's values, and a state machine's
+    /// context is the receiver of each side of the invocation.
+    fn evaluate_value_invariants(
+        &self,
+        observations: &qsl_semantics::model::observation::AdmittedObservations,
+        meter: &mut Meter,
+    ) -> Result<ValueInvariantEvaluation, CallFailure>;
+
     /// FR-268 (ADR-031 SW-13): check that `claim` separates the state
     /// clause `clause` over `observations`, charged to `meter`: step 1
     /// resolves the claim's quantifier to a `forall` or `exists` node of the
@@ -907,6 +926,14 @@ impl CheckedPackageEvaluation for CheckedPackage {
         clause_set::evaluate(self, clauses, limits)
     }
 
+    fn evaluate_value_invariants(
+        &self,
+        observations: &qsl_semantics::model::observation::AdmittedObservations,
+        meter: &mut Meter,
+    ) -> Result<ValueInvariantEvaluation, CallFailure> {
+        value_invariants::evaluate(self, observations, meter)
+    }
+
     fn check_separation(
         &self,
         clause: &QualifiedName,
@@ -971,6 +998,9 @@ impl CheckedPackageEvaluation for CheckedPackage {
         })
     }
 }
+
+#[cfg(test)]
+mod union_admission;
 
 #[cfg(test)]
 mod tests {

@@ -30,6 +30,7 @@ mod composite_parity;
 mod native_scalar;
 pub(crate) mod object_environment;
 mod supplied;
+mod union;
 mod variant_fields;
 
 const PROFILE: &str = "profile v = \"quire.value.complete/v1\";\n";

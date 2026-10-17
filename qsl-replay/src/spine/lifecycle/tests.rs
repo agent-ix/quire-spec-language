@@ -1933,7 +1933,12 @@ fn widget_with_touch(clauses: &[(&str, &str)]) -> (String, BTreeMap<[u8; 32], Ve
         "origin": generated(identity),
         "frame": {"modifies": [], "creates": [], "deletes": []},
     }]);
-    let bytes = serde_json::to_vec(&document).expect("the document serializes");
+    offered_model(&document)
+}
+
+/// The unit selecting `document`, the model fixture with its digest.
+fn offered_model(document: &serde_json::Value) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
+    let bytes = serde_json::to_vec(document).expect("the document serializes");
     let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()]);
     let digest = packages.keys().next().expect("one package");
     let original = MODEL_FIXTURE
@@ -1943,6 +1948,88 @@ fn widget_with_touch(clauses: &[(&str, &str)]) -> (String, BTreeMap<[u8; 32], Ve
         .expect("the fixture names its digest");
     let unit = MODEL_FIXTURE.replace(original, &qsl_semantics::model::key::hex(digest));
     (unit, packages)
+}
+
+/// The model fixture with the clauses `clauses` (`name`, `language`, `text`)
+/// on the type `Widget`, and the unit selecting it.
+fn widget_with_type_clauses(
+    clauses: &[(&str, &str, &str)],
+) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
+    let mut document: serde_json::Value =
+        serde_json::from_str(MODEL_DOCUMENT).expect("the model fixture is JSON");
+    let widget = document["types"]
+        .as_array_mut()
+        .expect("types")
+        .iter_mut()
+        .find(|ty| ty["identity"] == "ix://acme/orders/Widget")
+        .expect("the fixture declares Widget");
+    widget["clauses"] = clauses
+        .iter()
+        .map(|(name, language, text)| {
+            let identity = format!("ix://acme/orders/Widget/{name}");
+            serde_json::json!({
+                "identity": identity,
+                "clauseId": name,
+                "language": language,
+                "text": text,
+                "origin": {"generated": {
+                    "generatorIdentity": identity,
+                    "generatorVersion": "1.0.0",
+                    "inputIdentities": [identity],
+                }},
+            })
+        })
+        .collect();
+    offered_model(&document)
+}
+
+/// FR-366: the driver parses each type-level `Invariant` clause of a
+/// selected model and leaves a clause in another language unparsed; an
+/// invariant whose text does not parse refuses at I1 with the clause and its
+/// `TypeDefinition.clauses[k]` member.
+#[trace("TC-1050", "FR-366-AC-3")]
+#[test]
+fn select_parses_type_invariants_and_refuses_text_that_does_not_parse() {
+    let limits = SpineLimits::default();
+    let live = Cancel::new();
+    let select_unit = |clauses: &[(&str, &str, &str)]| {
+        let (unit, packages) = widget_with_type_clauses(clauses);
+        let parsed = parse(&request(unit.as_bytes()), limits.source, &live)
+            .expect("the unit parses")
+            .into_value();
+        select(&parsed, &packages, limits.model, &live)
+    };
+    let models = select_unit(&[
+        ("Stable", "quire", "true"),
+        ("Foreign", "acme:rules", "not an expression((("),
+    ])
+    .expect("a quire invariant parses and another language is kept verbatim")
+    .into_value();
+    let [model] = models.models() else {
+        panic!("one model");
+    };
+    let [parsed] = model.type_invariants.as_slice() else {
+        panic!("one parsed invariant");
+    };
+    assert_eq!(parsed.clause.node, "ix://acme/orders/Widget/Stable");
+    assert_eq!(parsed.position, 0);
+
+    let failure = select_unit(&[("Stable", "quire", "true"), ("Broken", "quire", "true and")])
+        .expect_err("the second clause does not parse");
+    let refusal = refusal(failure);
+    let CompileRefusal::TypeInvariant { clause, member, .. } = &*refusal else {
+        panic!("expected a type invariant refusal, got {refusal:?}");
+    };
+    assert_eq!(clause.node, "ix://acme/orders/Widget/Broken");
+    assert_eq!(
+        *member,
+        qsl_semantics::model::refusal::MemberPath::new(
+            qsl_semantics::model::refusal::MemberRoot::TypeDefinition
+        )
+        .name("clauses")
+        .index(1)
+    );
+    assert_eq!(refusal.code(), qsl_foundation::Code::InvalidSyntax);
 }
 
 /// FR-103-AC-8: the driver parses each kept `quire` clause of a selected
@@ -1989,4 +2076,57 @@ fn select_parses_kept_operation_clauses_and_refuses_text_that_does_not_parse() {
         .index(1)
     );
     assert_eq!(refusal.code(), qsl_foundation::Code::InvalidSyntax);
+}
+
+/// A check refusal of the type invariant `Widget/Stable` carrying `cause`.
+fn type_invariant_check_refusal(cause: qsl_semantics::check::CheckCause) -> CompileRefusal {
+    use qsl_semantics::check::{CheckCause, CheckRefusal, TypeInvariantRefusal};
+    CompileRefusal::Check {
+        refusals: vec![CheckRefusal {
+            location: quire_semantic_value::location::Location::root(
+                quire_semantic_value::location::Origin::Expression,
+            ),
+            cause: CheckCause::TypeInvariant(Box::new(TypeInvariantRefusal {
+                clause: qsl_semantics::model::key::DeclarationKey {
+                    package: "acme/orders".to_owned(),
+                    node: "ix://acme/orders/Widget/Stable".to_owned(),
+                },
+                position: 1,
+                cause,
+            })),
+        }],
+        region: None,
+    }
+}
+
+/// FR-366: a stage limit or an internal fault reached while checking a type
+/// invariant is a limit or a fault, not a refusal of the input, and the
+/// native result names the clause and its `TypeDefinition.clauses[k]`.
+#[trace("TC-1050", "FR-366-AC-3")]
+#[test]
+fn a_limit_or_fault_inside_a_type_invariant_is_read_through_its_wrapper() {
+    use qsl_semantics::check::{
+        CheckCause, CheckingLimitKind, CheckingStage, KeyFault, StageLimitCause,
+    };
+    let limit =
+        type_invariant_check_refusal(CheckCause::ResourceExhausted(Box::new(StageLimitCause {
+            stage: CheckingStage::Typing,
+            kind: CheckingLimitKind::Nodes,
+            limit: 10,
+            actual: 11,
+            region: None,
+        })));
+    let reached = super::limit_of(&limit, &|_| None).expect("a node ceiling is a limit");
+    assert_eq!(reached.setting(), Setting::S3Nodes);
+
+    let fault = type_invariant_check_refusal(CheckCause::InternalFault(Box::new(
+        KeyFault::UnkeyableRequirements,
+    )));
+    assert!(super::fault_of(&fault).is_some());
+
+    let named = type_invariant_check_refusal(CheckCause::NonBooleanRoot);
+    let fields = named.fields().expect("the refusal names its clause");
+    assert_eq!(fields["clause"], "ix://acme/orders/Widget/Stable");
+    assert_eq!(fields["member"], "TypeDefinition.clauses[1]");
+    assert!(named.to_string().contains("TypeDefinition.clauses[1]"));
 }

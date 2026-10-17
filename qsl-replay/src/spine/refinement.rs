@@ -149,7 +149,9 @@ impl CompileRefusal {
                     ),
                 ]
             }
-            Self::OperationClause { .. } => vec![RefusalCause::new(self.code(), None)],
+            Self::OperationClause { .. } | Self::TypeInvariant { .. } => {
+                vec![RefusalCause::new(self.code(), None)]
+            }
             Self::Profile { refusals, .. } => or_invariant(
                 refusals
                     .iter()
@@ -161,8 +163,11 @@ impl CompileRefusal {
                     .errors
                     .iter()
                     .map(|error| {
-                        RefusalCause::new(error.cause.code(), None)
-                            .reaching(assembly_limit(&error.cause))
+                        RefusalCause::new(
+                            error.cause.code(),
+                            Some(error.cause.catalog_code().cause()),
+                        )
+                        .reaching(assembly_limit(&error.cause))
                     })
                     .collect(),
             ),
@@ -240,6 +245,7 @@ fn assembly_limit(cause: &AssemblyCause) -> Option<ReachedLimit> {
         | AssemblyCause::NominalAdmission(_)
         | AssemblyCause::UnsuppliedImport { .. }
         | AssemblyCause::UnadmittedModel { .. }
+        | AssemblyCause::UnimplementedTemporalClause { .. }
         | AssemblyCause::UnsupportedModelMember { .. }
         | AssemblyCause::ModelType { .. }
         | AssemblyCause::UnresolvedOperation { .. }
@@ -263,6 +269,8 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
             let denial = incomplete.denial();
             Some(ReachedLimit::of_setting(denial.setting(), denial.limit()))
         }
+        // A type invariant's wrapper classifies as the cause it wraps.
+        CheckCause::TypeInvariant(refusal) => check_limit(&refusal.cause),
         CheckCause::DispatchLink(link) => link
             .denial
             .as_ref()
@@ -272,6 +280,7 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
         )
         | CheckCause::ProfileProhibitedOperator(_)
         | CheckCause::StateModel(_)
+        | CheckCause::ObjectReadInValueInvariant
         | CheckCause::ModelConformance(_)
         | CheckCause::TypeAdmission { .. }
         | CheckCause::IllTyped(_)
@@ -332,7 +341,7 @@ impl Classification {
 /// What the refusal variant says before its causes are read.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Group {
-    /// `Source`, `Forms`, `OperationClause`, `Assembly` or `Check`: the
+    /// `Source`, `Forms`, `OperationClause`, `TypeInvariant`, `Assembly` or `Check`: the
     /// unit's own content was refused, so a typed code is a defect of it.
     Content,
     /// The case's setup or the toolchain failed, not the unit's content.
@@ -354,6 +363,7 @@ fn group(refusal: &CompileRefusal) -> Group {
         CompileRefusal::Source(_)
         | CompileRefusal::Forms { .. }
         | CompileRefusal::OperationClause { .. }
+        | CompileRefusal::TypeInvariant { .. }
         | CompileRefusal::Assembly { .. }
         | CompileRefusal::Check { .. } => Group::Content,
         CompileRefusal::Intake { refusal, .. } => match refusal.cause {

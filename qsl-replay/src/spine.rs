@@ -84,8 +84,10 @@ pub use native_result::{
 };
 mod request;
 pub use request::{
-    read_clause_run_request, ClauseRequestParts, ClauseRequestReadError, ClauseSelectionParts,
-    ClauseSelectionPartsKind, SuppliedObservation,
+    read_clause_run_request, AnchorWire, ClauseArgumentWire, ClauseRequestParts,
+    ClauseRequestReadError, ClauseRunSelectionWire, ClauseSelectionParts, ClauseSelectionPartsKind,
+    ClauseSelectionWire, FrameSelectionWire, FunctionSelectionWire, ObjectReferenceWire,
+    ObservationLimitsWire, SuppliedObservation,
 };
 // FR-116: FR-115's frame run, shared with the frame replay (`crate::execute`).
 pub(crate) use clause::{
@@ -128,6 +130,17 @@ pub enum CompileRefusal {
         operation: DeclarationKey,
         /// The member the clause is at: `Operation.pre[k]` or
         /// `Operation.post[k]`.
+        member: MemberPath,
+        /// The S1 or S2 cause.
+        failure: ClauseTextRefusal,
+    },
+    /// FR-366: the text of a type-level invariant clause did not parse as an
+    /// expression.
+    #[error("the {member} clause of `{}` does not parse: {}", .clause.node, clause_text_message(.failure))]
+    TypeInvariant {
+        /// The clause that did not parse.
+        clause: DeclarationKey,
+        /// The member the clause is at: `TypeDefinition.clauses[k]`.
         member: MemberPath,
         /// The S1 or S2 cause.
         failure: ClauseTextRefusal,
@@ -207,11 +220,13 @@ impl CompileRefusal {
             Self::Source(diagnostic) => diagnostic.code,
             Self::Forms { failure, .. } => failure.catalog_code(),
             Self::Intake { refusal, .. } => refusal.cause.code(),
-            Self::OperationClause { failure, .. } => match failure {
-                ClauseTextRefusal::Source(diagnostic) => diagnostic.code,
-                ClauseTextRefusal::Forms(failure) => failure.catalog_code(),
-                ClauseTextRefusal::NotOneExpression => Code::InvalidSyntax,
-            },
+            Self::OperationClause { failure, .. } | Self::TypeInvariant { failure, .. } => {
+                match failure {
+                    ClauseTextRefusal::Source(diagnostic) => diagnostic.code,
+                    ClauseTextRefusal::Forms(failure) => failure.catalog_code(),
+                    ClauseTextRefusal::NotOneExpression => Code::InvalidSyntax,
+                }
+            }
             Self::Profile { refusals, .. } => refusals
                 .first()
                 .map_or(Code::RuntimeInvariant, ProfileRefusal::code),
@@ -248,6 +263,7 @@ impl CompileRefusal {
             Self::Source(_)
             | Self::Forms { .. }
             | Self::OperationClause { .. }
+            | Self::TypeInvariant { .. }
             | Self::Assembly { .. }
             | Self::Emit(_)
             | Self::Omitted(_) => None,
@@ -269,12 +285,26 @@ impl CompileRefusal {
             // FR-302: a family that stopped on a caller-budget ceiling
             // reports its retained charge.
             Self::Check { refusals, .. } => {
-                refusals.iter().find_map(|refusal| match &refusal.cause {
-                    CheckCause::DispatchLink(cause) => {
-                        cause.denial.as_ref().map(|denial| denial.catalog_fields())
-                    }
+                let mut fields = refusals
+                    .iter()
+                    .find_map(|refusal| match refusal.cause.unwrapped() {
+                        CheckCause::DispatchLink(cause) => {
+                            cause.denial.as_ref().map(|denial| denial.catalog_fields())
+                        }
+                        _ => None,
+                    })
+                    .unwrap_or_default();
+                // FR-366: a refusal in a type-level invariant names the
+                // clause and the `TypeDefinition.clauses[k]` member it is at,
+                // since its location is a bare expression.
+                if let Some(refusal) = refusals.iter().find_map(|refusal| match &refusal.cause {
+                    CheckCause::TypeInvariant(refusal) => Some(refusal),
                     _ => None,
-                })
+                }) {
+                    fields.insert("clause", refusal.clause.node.clone());
+                    fields.insert("member", refusal.member().to_string());
+                }
+                (!fields.is_empty()).then_some(fields)
             }
             _ => None,
         }
@@ -287,6 +317,7 @@ impl CompileRefusal {
             Self::Forms { .. } => SpineStage::Forms,
             Self::Intake { .. }
             | Self::OperationClause { .. }
+            | Self::TypeInvariant { .. }
             | Self::DependencyInput(_)
             | Self::Import { .. } => SpineStage::Intake,
             Self::Dependency { refusal, .. } => refusal.stage(),
@@ -363,6 +394,7 @@ impl CompileRefusal {
                 Some(_) | None => None,
             },
             Self::OperationClause { .. }
+            | Self::TypeInvariant { .. }
             | Self::DependencyInput(_)
             | Self::Link(_)
             | Self::Emit(_)
@@ -551,6 +583,9 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
         AssemblyCause::UnsuppliedImport { identity } => {
             format!("`import \"{identity}\"` names a library no dependency input supplies")
         }
+        AssemblyCause::UnimplementedTemporalClause { name } => {
+            format!("the `temporal` clause `{name}` is not checked yet")
+        }
         AssemblyCause::UnadmittedModel { alias } => {
             format!("`model {alias}` names no admitted domain package")
         }
@@ -595,6 +630,13 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
     let mut message = first.cause.code().as_str().to_owned();
     if let Some(cause) = first.cause.cause() {
         message = format!("{message} ({cause})");
+    }
+    if let CheckCause::TypeInvariant(refusal) = &first.cause {
+        message = format!(
+            "{message}: the invariant `{}` at {}",
+            refusal.clause.node,
+            refusal.member()
+        );
     }
     match &first.cause {
         CheckCause::MissingName(name) | CheckCause::AmbiguousName { name, .. } => {
