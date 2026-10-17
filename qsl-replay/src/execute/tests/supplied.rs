@@ -773,7 +773,7 @@ fn the_full_size_supplied_tree_is_bounded_by_occurrences_and_admission_events() 
     let events = tree_admission_events(DEPTH);
     let a = total(&events);
     assert_eq!(a, 9_999 * 8 + 4);
-    assert_eq!(a, 79_996, "not the research prediction of 69,997");
+    assert_eq!(a, 79_996);
 
     let request = |limits: SuppliedLimits, bound: u64| {
         let mut wire = unit.with("size", vec![tree_witness(&unit, DEPTH)], limits);

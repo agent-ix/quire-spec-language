@@ -31,8 +31,10 @@ FR-277-AC-5.
    progress. Independently enumerate the reviewed QSV event sequence under
    its trusted-admitted-value boundary; call its successful total A. Set
    `supplied.admission_work_units` to A-1 and A, keeping evaluation limits
-   identical and sufficient. Do not substitute the research prediction
-   69,997 for A.
+   identical and sufficient. For the unchanged Tree A is 79,996: 9,999
+   branch levels of 8 events plus the leaf's 4 events. By kind: 29,999
+   value visits, 10,000 descriptor queries, 29,998 child schedulings and
+   9,999 type comparisons.
 5. Supply multiple arguments and retain one cumulative admission budget.
    Cancel the original handle before the first helper and during a later
    argument, once with each original cause. Exercise zero helper ceiling,
