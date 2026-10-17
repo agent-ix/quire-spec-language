@@ -72,13 +72,8 @@ impl<'a> BindPackage<'a> {
                 .insert_domain_package_document(hex(digest), document.as_slice())
                 .map_err(|_| fault("domain-package-documents-do-not-conflict"))?;
         }
-        qsl_package::supply_closure(
-            checked.package(),
-            models.packages(),
-            imports,
-            &mut evidence,
-        )
-        .map_err(|_| fault("dependency-closure-reads-back"))?;
+        qsl_package::supply_closure(checked.package(), models.packages(), imports, &mut evidence)
+            .map_err(|_| fault("dependency-closure-reads-back"))?;
         let CheckedPackageDispatchResult::AdmittedV2(ir) = read_checked_package(
             emitted.package().bytes(),
             CheckedPackageReadLimits::bounded(),

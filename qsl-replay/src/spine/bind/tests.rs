@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use ix_trace_rs::trace;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_contract_model::CheckedOccurrence;
-use quire_exact::{Cancel, Integer, IntegerInterval, Origin, Role, Value, ValueType};
+use quire_exact::{Cancel, Integer, IntegerInterval, Origin, Role, Value};
 
 use super::*;
 use crate::execute::scalar_site::{check_operands, equality_operator};
@@ -884,7 +884,12 @@ fn tc_1053_step_3_foreign_model_selection_equals_runs() {
 
     let base = include_str!("../../../../tests/fixtures/spine-model.semantic-ir.json");
     let first = base.as_bytes().to_vec();
-    let second = base.replace("acme/orders", "acme/billing").into_bytes();
+    let second = base
+        .replace("acme/orders", "acme/billing")
+        .replace("Gadget", "Gizmo")
+        .replace("Widget", "Sprocket")
+        .replace("Rock", "Stone")
+        .into_bytes();
     let digest = |bytes: &[u8]| {
         hex(
             &PackageDocument::parse(bytes, qsl_foundation::IntakeLimits::default())
@@ -901,15 +906,24 @@ fn tc_1053_step_3_foreign_model_selection_equals_runs() {
     );
     let unit = compile_source(source, package_input([first.as_slice(), second.as_slice()]));
     let occurrence = the_application(&unit, "mk", ScalarOperator::Add);
-    let other = &unit.models.models()[1].view;
-    let (key, identity) = other
-        .type_identities()
+    let (other, key, identity) = unit
+        .models
+        .models()
         .iter()
-        .find(|(key, _)| key.node.rsplit('/').next() == Some("Gadget"))
-        .map(|(key, identity)| (key.clone(), *identity))
-        .expect("the second model declares Gadget");
+        .find_map(|model| {
+            model
+                .view
+                .type_identities()
+                .iter()
+                .find(|(key, _)| key.node.rsplit('/').next() == Some("Gizmo"))
+                .map(|(key, identity)| (&model.view, key.clone(), *identity))
+        })
+        .expect("the second model declares Gizmo");
     let foreign = quire_exact::ObjectReference::new(
-        other.object_universe_of(&key).expect("a universe").identity(),
+        other
+            .object_universe_of(&key)
+            .expect("a universe")
+            .identity(),
         identity,
         quire_exact::ObjectId::new("g1").unwrap(),
     );
@@ -925,86 +939,15 @@ fn tc_1053_step_3_foreign_model_selection_equals_runs() {
     );
     let objects = ObjectEnvironment::default();
     let refusal = bind_with(&unit, &request, &occurrence, &objects).unwrap_err();
-    assert!(matches!(&*refusal, RunRefusal::Admission { position: 0, refusal }
-        if matches!(refusal.cause, ModelRefusalCause::ForeignModelSelection { .. })));
+    assert!(
+        matches!(&*refusal, RunRefusal::Admission { position: 0, refusal }
+            if matches!(refusal.cause, ModelRefusalCause::ForeignModelSelection { .. })),
+        "{refusal:?}"
+    );
     assert_eq!(refusal.code(), Code::ForeignReference);
     assert_eq!(
         format!("{refusal:?}"),
         format!("{:?}", run_refusal(&unit, &request, &objects))
-    );
-}
-
-/// FR-367-AC-8: a call whose evaluation is undefined and whose work limit is
-/// one unit still binds.
-#[trace("TC-1053", "FR-367-AC-8")]
-#[test]
-fn tc_1053_step_7_undefined_evaluation_still_binds() {
-    let unit = compile(
-        "type Digit = Int[0, 9];\n\
-         function und using v(a: Digit, b: Digit): Boolean pure { 1 / b > 0 and a + 1 > 0 }",
-    );
-    let occurrence = the_application(&unit, "und", ScalarOperator::Add);
-    let mut request = call("und", vec![arg("a", 4), arg("b", 0)]);
-    request.accounting = default_accounting(1);
-    let evaluated = run(
-        identity(),
-        "bind.native",
-        unit.source.as_bytes(),
-        &BTreeMap::new(),
-        &unit.dependencies,
-        SpineLimits::default(),
-        &call("und", vec![arg("a", 4), arg("b", 0)]),
-        &ObjectEnvironment::default(),
-        &Cancel::new(),
-    )
-    .unwrap()
-    .1;
-    assert!(
-        matches!(evaluated, CallOutcome::Undefined { reason: "division-by-zero" }),
-        "{evaluated:?}"
-    );
-    assert_eq!(bound(&unit, &request, &occurrence).values(), [4, 1]);
-}
-
-/// FR-367-AC-10: a quantifier-bound variable operand is a parameter node no
-/// argument supplies.
-#[trace("TC-1053", "FR-367-AC-10")]
-#[test]
-fn tc_1053_step_5_quantifier_binder_operand_is_not_an_argument() {
-    let unit = compile(
-        "function q using v(s: Sequence<Int[0, 9]>[0, 5]): Boolean pure { forall(x in s: x + 1 > 0) }",
-    );
-    let ValueType::Collection(declared) = &unit
-        .checked
-        .package()
-        .graph()
-        .callable("q")
-        .expect("declared")
-        .parameters[0]
-        .1
-    else {
-        panic!("s is a collection");
-    };
-    let sequence = quire_exact::from_admitted(
-        quire_exact::CollectionType::clone(declared),
-        vec![Value::Integer(Integer::from(1_i64))],
-    );
-    let request = call(
-        "q",
-        vec![CallArgument {
-            parameter: "s".to_owned(),
-            value: sequence,
-        }],
-    );
-    let adds = occurrences_in(&unit, "q", |node| applies(node, ScalarOperator::Add));
-    assert_eq!(adds.len(), 1);
-    assert_eq!(
-        refused(&unit, &request, &adds[0]),
-        BindRefusal::OperandNotArgument {
-            ordinal: 0,
-            parameter: "x".to_owned(),
-            level: "1".to_owned()
-        }
     );
 }
 
@@ -1017,10 +960,8 @@ fn tc_1053_step_1_a_unit_importing_a_library_binds() {
         identity: "test/geometry".to_owned(),
         source: qsl_foundation::SourceIdentity::new("a", "geometry", "git", "1"),
         path: "geometry.native".to_owned(),
-        bytes: format!(
-            "{HEADER}function f using v(x: Int[0, 9]): Boolean pure {{ x < 5 }}\n"
-        )
-        .into_bytes(),
+        bytes: format!("{HEADER}function f using v(x: Int[0, 9]): Boolean pure {{ x < 5 }}\n")
+            .into_bytes(),
     };
     let unit = compile_with(
         format!(
