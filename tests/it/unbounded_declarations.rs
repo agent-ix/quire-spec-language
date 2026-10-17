@@ -64,7 +64,11 @@ fn package_id(declarations: &str) -> String {
 fn parameter(graph: &CheckedGraph, name: &str, index: usize) -> NodeKey {
     graph
         .semantic_graph()
-        .node(graph.function_identity(name).expect("the function is declared"))
+        .node(
+            graph
+                .function_identity(name)
+                .expect("the function is declared"),
+        )
         .and_then(|function| function.function_parameters())
         .expect("a function node")[index]
 }
@@ -301,12 +305,10 @@ fn a_bounded_request_is_its_own_item_distinct_per_bound() {
     assert_eq!(eight.occurrence(), item.occurrence());
     assert_eq!(
         eight.domains(),
-        [ProofBound::new(
-            s,
-            Some(DomainKind::Collection),
-            FiniteBound::cardinality(8)
-        )
-        .expect("a cardinality bound pairs with a collection domain")]
+        [
+            ProofBound::new(s, Some(DomainKind::Collection), FiniteBound::cardinality(8))
+                .expect("a cardinality bound pairs with a collection domain")
+        ]
     );
     assert_ne!(eight.domains(), written[nine.get()].domains());
     assert_ne!(eight, &written[nine.get()]);
@@ -328,9 +330,12 @@ fn a_quantity_root_leaves_no_finite_bound_available() {
     let requirements = Requirements::new(
         Capability::ValueValidity,
         ClaimExtent::from_domains(
-            [(s, DomainKind::Collection), (quantity, DomainKind::Quantity)]
-                .into_iter()
-                .collect(),
+            [
+                (s, DomainKind::Collection),
+                (quantity, DomainKind::Quantity),
+            ]
+            .into_iter()
+            .collect(),
         ),
     );
     let record_occurrence = graph

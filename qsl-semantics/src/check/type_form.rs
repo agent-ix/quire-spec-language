@@ -447,7 +447,11 @@ fn resolve_head<'f>(names: &impl TypeNames, form: &'f TypeForm) -> Result<Step<'
         }),
         TypeFormHead::Population => {
             optional_bounds(form, 1)?;
-            let maximum = form.bounds.first().map(|_| bound_u64(form, 0)).transpose()?;
+            let maximum = form
+                .bounds
+                .first()
+                .map(|_| bound_u64(form, 0))
+                .transpose()?;
             Ok(Step::Leaf(ValueType::Population(maximum)))
         }
         TypeFormHead::Name(name) => named_type(names, name, form).map(Step::Leaf),
@@ -763,8 +767,11 @@ mod tests {
             Some(CardinalityBound::new(0, 8).expect("a nonempty bound"))
         );
         assert_ne!(unbounded, bounded);
-        let inverted = resolve_form(&empty_scope(), &collection(CollectionKind::Set, &["3", "2"]))
-            .expect_err("an inverted bound refuses");
+        let inverted = resolve_form(
+            &empty_scope(),
+            &collection(CollectionKind::Set, &["3", "2"]),
+        )
+        .expect_err("an inverted bound refuses");
         assert_eq!(inverted.fault, TypeFormFault::EmptyCardinality);
         assert_eq!(inverted.span, SPAN);
         let refusal = resolve(&collection(CollectionKind::Set, &["3", "2"]))

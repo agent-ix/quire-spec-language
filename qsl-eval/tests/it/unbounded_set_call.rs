@@ -57,10 +57,13 @@ fn package() -> CheckedPackage {
 
 /// The unbounded `Set<Int[0, 9999]>` holding `0..count`, formed on `meter`.
 fn set_of(count: i64, meter: &mut Meter) -> Outcome<Value> {
-    let element =
-        ValueType::Int(IntegerInterval::new(Integer::from(0_i64), Integer::from(9999_i64)).unwrap());
+    let element = ValueType::Int(
+        IntegerInterval::new(Integer::from(0_i64), Integer::from(9999_i64)).unwrap(),
+    );
     let collection = CollectionType::new(CollectionKind::Set, element, None);
-    let members = (0..count).map(|n| Value::Integer(Integer::from(n))).collect();
+    let members = (0..count)
+        .map(|n| Value::Integer(Integer::from(n)))
+        .collect();
     form_collection(&collection, members, meter).expect("every member is in the element type")
 }
 
