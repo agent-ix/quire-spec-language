@@ -1041,6 +1041,55 @@ impl Scope {
         &self.types
     }
 
+    /// Seal every declared union under the checked node id of its type
+    /// node, `nodes` mapping each declaration to its node (FR-319): each
+    /// member is bound to its QSpec FR-441 key over that node id, minted
+    /// here once, so the `VariantId` to (union, member, position) index the
+    /// type environment keeps is built exactly once and no other stage
+    /// derives it. Lowering produced `nodes`; a union it left out is an
+    /// internal fault.
+    pub(crate) fn seal_unions(
+        &mut self,
+        nodes: &BTreeMap<quire_exact::NodeKey, quire_exact::NodeKey>,
+    ) -> Result<(), CheckRefusal> {
+        let fault = |invariant: &'static str| CheckRefusal {
+            location: Location::root(quire_semantic_value::location::Origin::Expression),
+            cause: CheckCause::InternalFault(Box::new(super::refusal::KeyFault::StageFault(
+                qsl_foundation::InternalFault::new("S3", invariant),
+            ))),
+        };
+        let unions: Vec<(quire_exact::NodeKey, Vec<quire_exact::Identifier>)> = self
+            .types
+            .composites()
+            .filter_map(|declaration| match declaration.shape() {
+                CompositeShape::Union(members) => Some((
+                    declaration.key(),
+                    members
+                        .iter()
+                        .map(|member| member.identifier().clone())
+                        .collect(),
+                )),
+                CompositeShape::Record(_) | CompositeShape::Tuple(_) => None,
+            })
+            .collect();
+        for (handle, members) in unions {
+            let node = *nodes
+                .get(&handle)
+                .ok_or_else(|| fault("union-node-missing"))?;
+            let bindings = members
+                .into_iter()
+                .map(|member| {
+                    let key = super::sum_case::mint_union_member_key(node, member.as_str());
+                    quire_exact::UnionMember::from_admitted(node, key, member)
+                })
+                .collect();
+            self.types
+                .seal_union_verified(handle, node, bindings)
+                .map_err(|_| fault("union-seal"))?;
+        }
+        Ok(())
+    }
+
     /// Whether a value of `value_type` holds an event type anywhere inside
     /// it: FR-208 gives an event type no equality, so none compares one.
     pub(crate) fn reaches_event(&self, value_type: &ValueType) -> bool {
