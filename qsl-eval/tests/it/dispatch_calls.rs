@@ -2266,15 +2266,17 @@ fn d01_runtime_dispatches_d_and_c_receivers_and_observes_the_work_limit() {
     let admit_fixture_observation =
         |clause_name: &str, receiver: ObjectReference| AdmittedObservations {
             usage: AdmissionUsage::default(),
-            clause: package
-                .graph()
-                .state_clause(clause_name)
-                .expect("the invariant is checked")
-                .identity(),
+            clause: Some(
+                package
+                    .graph()
+                    .state_clause(clause_name)
+                    .expect("the invariant is checked")
+                    .identity(),
+            ),
             current: Some(current.clone()),
             pre: None,
             post: None,
-            self_object: receiver,
+            self_object: Some(receiver),
             invocation: None,
             self_kind: qsl_semantics::model::observation::SelfKind::Object,
             receiver_pre: None,

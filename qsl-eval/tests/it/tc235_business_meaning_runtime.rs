@@ -1507,15 +1507,17 @@ fn process_observations(
 ) -> AdmittedObservations {
     AdmittedObservations {
         usage: Default::default(),
-        clause: package
-            .graph()
-            .state_clause(clause)
-            .expect("the unit declares the clause")
-            .identity(),
+        clause: Some(
+            package
+                .graph()
+                .state_clause(clause)
+                .expect("the unit declares the clause")
+                .identity(),
+        ),
         current,
         pre,
         post,
-        self_object,
+        self_object: Some(self_object),
         invocation: None,
         self_kind: qsl_semantics::model::observation::SelfKind::Object,
         receiver_pre: None,

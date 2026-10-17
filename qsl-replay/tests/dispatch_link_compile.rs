@@ -1079,7 +1079,7 @@ fn evaluate_pre(checked: &CheckedUnit, name: &str, receiver: EffectiveId) -> boo
     );
     let observations = AdmittedObservations {
         usage: AdmissionUsage::default(),
-        clause: clause.identity(),
+        clause: Some(clause.identity()),
         current: None,
         pre: Some(Observation {
             identity: DocumentRef {
@@ -1094,7 +1094,7 @@ fn evaluate_pre(checked: &CheckedUnit, name: &str, receiver: EffectiveId) -> boo
             out_of_range: Vec::new(),
         }),
         post: None,
-        self_object: reference,
+        self_object: Some(reference),
         invocation: None,
         self_kind: qsl_semantics::model::observation::SelfKind::Object,
         receiver_pre: None,

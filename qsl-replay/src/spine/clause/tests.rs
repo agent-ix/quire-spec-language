@@ -410,7 +410,7 @@ fn no_cycle_observations(
 ) -> AdmittedObservations {
     AdmittedObservations {
         usage: qsl_semantics::model::observation::AdmissionUsage::default(),
-        clause: clause_identity,
+        clause: Some(clause_identity),
         current: Some(Observation {
             identity: DocumentRef {
                 authority: "test".to_owned(),
@@ -425,7 +425,7 @@ fn no_cycle_observations(
         }),
         pre: None,
         post: None,
-        self_object,
+        self_object: Some(self_object),
         invocation: None,
         self_kind: qsl_semantics::model::observation::SelfKind::Object,
         receiver_pre: None,

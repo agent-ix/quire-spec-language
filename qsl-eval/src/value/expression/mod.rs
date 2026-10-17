@@ -606,7 +606,7 @@ fn resolve_clause<'a>(
         .graph()
         .state_clause(name)
         .ok_or_else(|| InputRefusal::UnknownClause(clause.to_string()))?;
-    if declaration.identity() != observations.clause {
+    if observations.clause != Some(declaration.identity()) {
         return Err(InputRefusal::ObservationsMismatch.into());
     }
     Ok(declaration)
@@ -636,8 +636,13 @@ impl<'a> ClauseSetup<'a> {
             ))
         })?;
 
+        // A clause's observations hold its `self`; `ValueInvariants` ones hold
+        // none and were refused above by the clause identity.
+        let self_object = observations.self_object.clone().ok_or_else(|| {
+            CallFailure::Fault(InternalFault::new("S6a", "clause-observations-missing-self"))
+        })?;
         let mut bindings = Vec::with_capacity(declaration.parameters().len());
-        bindings.push(Value::Reference(observations.self_object.clone()));
+        bindings.push(Value::Reference(self_object.clone()));
         let mut remaining = declaration.parameters().get(1..).unwrap_or(&[]).iter();
         // FR-104 "Behavior": slot 1 is `result` exactly when the checker's
         // own typed `binds_result` says so (FR-064's string-edge
@@ -672,7 +677,7 @@ impl<'a> ClauseSetup<'a> {
             .as_ref()
             .map(s6a::separation::observation_identity);
         let mut trail = s6a::separation::Trail::new(own.clone(), pre);
-        trail.receiver = Some(observations.self_object.clone());
+        trail.receiver = Some(self_object.clone());
         trail.receiver_pre = observations.receiver_pre.clone();
         // FR-107 "The receiver path": `self` is rooted at its declared
         // object identity when it has one, and at the invocation's receiver
@@ -680,7 +685,7 @@ impl<'a> ClauseSetup<'a> {
         // path.
         let receiver_subject = match observations.self_kind {
             SelfKind::Object => Some(s6a::separation::ValuePathSubject::Object(
-                observations.self_object.clone(),
+                self_object.clone(),
             )),
             SelfKind::Context => {
                 trail.receiver_invocation = invocation.clone();

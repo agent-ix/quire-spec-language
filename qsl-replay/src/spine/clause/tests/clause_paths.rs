@@ -62,7 +62,7 @@ fn read_paths(evaluation: &ClauseEvaluation) -> Vec<Option<RuntimeValuePath>> {
 }
 
 fn object(observations: &AdmittedObservations) -> ValuePathSubject {
-    ValuePathSubject::Object(observations.self_object.clone())
+    ValuePathSubject::Object(observations.self_object.clone().expect("a self object"))
 }
 
 /// TC-1040 steps 1 and 2: `ParentOrder` over `H` (root 1, child 2 naming

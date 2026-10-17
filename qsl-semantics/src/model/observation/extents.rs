@@ -442,9 +442,12 @@ impl super::AdmittedObservations {
             ObservationRole::Post => self.post.as_ref(),
         }
         .ok_or_else(|| fault("bundle-observation-missing"))?;
+        let clause = self
+            .clause
+            .ok_or_else(|| fault("bundle-of-an-admission-with-no-clause"))?;
         let key = BundleKey {
             source: source.clone(),
-            clause: self.clause,
+            clause,
             documents: [&self.current, &self.pre, &self.post]
                 .into_iter()
                 .flatten()

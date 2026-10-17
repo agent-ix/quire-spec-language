@@ -451,7 +451,7 @@ impl Orders {
             .map(|name| {
                 let slot = observation.environment.objects().attribute(
                     types,
-                    &admitted.self_object,
+                    admitted.self_object.as_ref().expect("a self object"),
                     &FieldRef::new(owner, *name),
                 );
                 match slot {

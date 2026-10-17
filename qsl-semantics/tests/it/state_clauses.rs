@@ -1813,7 +1813,7 @@ fn tc464_step1_healthy_parent_admits_one_current_observation() {
         Some(&true),
         "config_history is admitted complete"
     );
-    assert_eq!(observations.self_object.object().as_str(), "child");
+    assert_eq!(observations.self_object.as_ref().expect("a self object").object().as_str(), "child");
     let rendered = format!("{:?}", current.environment);
     assert!(
         rendered.contains(r#"Integer(1)"#) && rendered.contains(r#"Integer(2)"#),
@@ -1935,7 +1935,7 @@ fn tc464_step3_changed_version_invocation_admits_a_full_observation_set() {
         format!("{post:?}"),
         "pre and post are distinct observations"
     );
-    assert_eq!(observations.self_object.object().as_str(), "child");
+    assert_eq!(observations.self_object.as_ref().expect("a self object").object().as_str(), "child");
     assert!(observations.parameters.is_empty(), "no parameters");
     assert!(observations.created.is_empty(), "empty created");
     assert!(observations.deleted.is_empty(), "empty deleted");
@@ -2156,13 +2156,13 @@ fn tc464_step5_a_pre_call_admits_one_pre_observation() {
     assert!(observations.post.is_none(), "no post observation");
     assert!(observations.result.is_none(), "no result");
     assert!(observations.created.is_empty() && observations.deleted.is_empty());
-    assert_eq!(observations.self_object.object().as_str(), "a");
+    assert_eq!(observations.self_object.as_ref().expect("a self object").object().as_str(), "a");
     let [(name, quire_exact::Value::Reference(target))] = &observations.parameters[..] else {
         panic!("one reference parameter: {:?}", observations.parameters);
     };
     assert_eq!(name, "target");
     assert_eq!(target.object().as_str(), "a");
-    assert_eq!(target, &observations.self_object);
+    assert_eq!(target, observations.self_object.as_ref().expect("a self object"));
 }
 
 /// Step 5 (FR-106-AC-8): the same selection for `VersionUnchanged`, a
@@ -2404,7 +2404,7 @@ fn a_subtype_object_binds_a_supertype_parameter() {
     );
     assert_ne!(
         target.object_type(),
-        observations.self_object.object_type(),
+        observations.self_object.as_ref().expect("a self object").object_type(),
         "target keeps Sub, not the declared ConfigVersion"
     );
 }
@@ -4269,7 +4269,7 @@ fn a_field_reference_to_an_admitted_subtype_object_admits() {
         .expect("the package checks");
     let types = graph.scope().types();
     let current = observations.current.expect("one current observation");
-    let child = &observations.self_object;
+    let child = observations.self_object.as_ref().expect("a self object");
     let parent = types
         .attribute(child.object_type(), "parent")
         .expect("ConfigVersion declares parent");

@@ -2872,6 +2872,46 @@ pub(super) fn admit_populations(
     finish_populations(types, values)
 }
 
+/// FR-106 checks 6 to 8 over a current snapshot with no `self`, as
+/// `ValueInvariants` reads it: check 7 requires every population the
+/// snapshot lists, there being no population holding `self`.
+pub(super) fn admit_listed_populations(
+    views: &[ModelView],
+    types: &TypeEnvironment,
+    snapshot: &SnapshotDocument,
+    document: &DocumentRef,
+    ancestor_steps: u64,
+) -> Result<AdmittedEnvironment, AdmissionFailure> {
+    let values = admit_population_values(
+        views,
+        types,
+        snapshot,
+        document,
+        None,
+        PostStateRange::Refuse,
+        ancestor_steps,
+    )?;
+    let required: Vec<String> = snapshot
+        .populations
+        .iter()
+        .map(|entry| entry.population.clone())
+        .collect();
+    check_population_completeness(
+        &snapshot.populations,
+        &values.completeness,
+        None,
+        &required,
+        &values.extents,
+    )?;
+    check_population_closure(
+        &snapshot.populations,
+        &values.completeness,
+        &values.keys_by_population,
+        &values.extents,
+    )?;
+    finish_populations(types, values)
+}
+
 /// One population of an admitted initial state: its declaration key and
 /// every object it lists, with each field's admitted slot.
 pub(super) struct AdmittedPopulation {

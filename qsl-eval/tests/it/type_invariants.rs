@@ -21,9 +21,8 @@ use qsl_semantics::model::intake::admit_unit;
 use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::normalize::{normalize_with_meter, EffectiveView, NormalizeOutcome};
 use qsl_semantics::model::observation::{
-    admit_observations, AdmittedObservations, AnchorKind, ClauseFacts, ClauseSelection,
-    ClauseSelectionInput, DocumentRef, ObservationLimits, OperationFacts, Provisions,
-    SelectedAnchor, SelectedObject,
+    admit_value_invariants, AdmissionFailure, AdmittedObservations, ClauseSelectionInput,
+    DocumentRef, ObservationLimits, Provisions, ValueInvariantsSelection,
 };
 use qsl_semantics::model::refusal::{MemberPath, MemberRoot};
 use qsl_semantics::model::type_invariant::ClauseRole;
@@ -584,23 +583,6 @@ fn invocation_doc(
     (lifecycle_document_ref(label, &bytes), bytes)
 }
 
-fn clause_facts(package: &CheckedPackage, name: &str) -> ClauseFacts {
-    let checked = package
-        .graph()
-        .state_clause(name)
-        .unwrap_or_else(|| panic!("the unit declares {name}"));
-    ClauseFacts {
-        identity: checked.identity(),
-        kind: checked.kind(),
-        context: checked.context(),
-        operation: checked.operation().map(|operation| OperationFacts {
-            declaring: operation.declaring,
-            declaration: operation.declaration.clone(),
-        }),
-        operations: package.graph().scope().operations().clone(),
-    }
-}
-
 /// A checked package, its offered package documents and the documents the
 /// admission of an observation reads.
 struct Documents {
@@ -620,24 +602,30 @@ impl Documents {
         snapshot.0
     }
 
-    fn admit(&self, clause: &str, input: ClauseSelectionInput) -> AdmittedObservations {
-        admit_observations(
+    /// FR-106's `ValueInvariants` admission of `selection`.
+    fn admit_values(
+        &self,
+        selection: &ValueInvariantsSelection,
+    ) -> Result<AdmittedObservations, AdmissionFailure> {
+        admit_value_invariants(
             self.package.graph().model_selections(),
             self.package.graph().scope().types(),
-            &clause_facts(&self.package, clause),
+            self.package.graph().scope().operations(),
             &self.packages,
             qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
             &Provisions {
                 snapshots: &self.snapshots,
                 invocations: &self.invocations,
             },
-            &ClauseSelection {
-                name: clause.to_owned(),
-                input,
-            },
+            selection,
             ObservationLimits::default(),
         )
-        .unwrap_or_else(|failure| panic!("{clause} admits: {failure:?}"))
+    }
+
+    /// The observations of `selection`, which admits.
+    fn admitted_values(&self, selection: &ValueInvariantsSelection) -> AdmittedObservations {
+        self.admit_values(selection)
+            .unwrap_or_else(|failure| panic!("the selection admits: {failure:?}"))
     }
 }
 
@@ -654,20 +642,17 @@ fn documents_with(document: &Value, body: &str) -> Documents {
     }
 }
 
-/// The observations FR-106's `ValueInvariants { snapshot: s1, invocation }`
-/// selection admits: the current snapshot `s1` holding `objects` and the
-/// invocation `label` of `operation` on the object `o1` of `context`, whose
-/// `pre` snapshot `s2` and `post` snapshot `s3` hold the same `objects`.
-///
-/// The unit declares an invariant `Any` and a postcondition `Done` so that
-/// the two documents are admitted by the selections that exist today.
-fn invoked(
+/// FR-106's `ValueInvariants { snapshot: s1, invocation: i1 }`: the current
+/// snapshot `s1` holding `objects` and the invocation `label` of `operation`
+/// on the object `o1` of `Order`, whose `pre` snapshot `s2` and `post`
+/// snapshot `s3` hold the same `objects`.
+fn add_invocation(
     documents: &mut Documents,
     objects: &[Value],
     label: &str,
     operation: &str,
     parameters: Value,
-) -> AdmittedObservations {
+) -> (ValueInvariantsSelection, DocumentRef) {
     let model = documents.model();
     let population = id("orders");
     let s1 = documents.add_snapshot(snapshot_doc(&model, "s1", "current", &population, objects));
@@ -684,31 +669,25 @@ fn invoked(
         parameters,
     );
     documents.invocations.insert(invocation.digest, bytes);
-    let current = documents.admit(
-        "Any",
-        ClauseSelectionInput::Current {
+    (
+        ValueInvariantsSelection {
             snapshot: s1,
-            anchor: SelectedAnchor {
-                kind: AnchorKind::Handler,
-                name: "validate".to_owned(),
-            },
-            self_object: Some(SelectedObject {
-                population: population.clone(),
-                key: "o1".to_owned(),
-            }),
+            invocation: Some(invocation),
         },
-    );
-    let invoked = documents.admit("Done", ClauseSelectionInput::Invocation { invocation });
-    AdmittedObservations {
-        current: current.current,
-        ..invoked
-    }
+        s2,
+    )
 }
 
-fn order_unit(operation: &str) -> String {
-    format!(
-        "invariant Any using v on M::Order at current {{ true }}\npost Done using v on M::Order::{operation} {{ true }}"
-    )
+/// The observations [`add_invocation`]'s selection admits.
+fn invoked(
+    documents: &mut Documents,
+    objects: &[Value],
+    label: &str,
+    operation: &str,
+    parameters: Value,
+) -> AdmittedObservations {
+    let (selection, _) = add_invocation(documents, objects, label, operation, parameters);
+    documents.admitted_values(&selection)
 }
 
 fn identity_of(label: &str) -> ObservationIdentity {
@@ -791,7 +770,7 @@ fn evaluate(
 
 /// The F observation of TC-1051 step 1.
 fn step_one(object_fields: impl FnOnce(Value) -> Value) -> (Documents, AdmittedObservations) {
-    let mut documents = documents_with(&fixture_f(|_| {}), &order_unit("requote"));
+    let mut documents = documents_with(&fixture_f(|_| {}), UNIT_BODY);
     let mut o1 = order_json("o1", money_json(-5), &[1, -2], Some(-1), vec![]);
     o1["fields"] = object_fields(o1["fields"].take());
     let observations = invoked(
@@ -893,7 +872,7 @@ fn a_result_depends_on_its_value_alone() {
     assert_eq!(run(&listed_documents, &listed).0, first);
 
     // `history[0]` changes; the other results stand.
-    let mut changed = documents_with(&fixture_f(|_| {}), &order_unit("requote"));
+    let mut changed = documents_with(&fixture_f(|_| {}), UNIT_BODY);
     let o1 = order_json("o1", money_json(-5), &[9, -2], Some(-1), vec![]);
     let observations_changed = invoked(
         &mut changed,
@@ -938,7 +917,7 @@ fn an_event_type_no_value_reaches_has_no_result() {
             .unwrap()
             .push(clause("Money", "Stable", "true"));
     });
-    let mut documents = documents_with(&document, &order_unit("requote"));
+    let mut documents = documents_with(&document, UNIT_BODY);
     let o1 = order_json("o1", money_json(2), &[1], None, vec![]);
     let observations = invoked(
         &mut documents,
@@ -992,7 +971,7 @@ fn a_subtype_value_and_a_nested_record_are_evaluated_at_their_paths() {
             .unwrap()
             .push(field("Order", "pair", &id("Pair")));
     });
-    let mut documents = documents_with(&document, &order_unit("requote"));
+    let mut documents = documents_with(&document, UNIT_BODY);
     let taxed = record_json(
         "TaxedMoney",
         json!({"amount_minor": {"integer": "-5"}, "currency": string_json("EUR"),
@@ -1052,7 +1031,7 @@ fn an_event_value_is_evaluated_at_the_parameter_binding_it_is_bound_to() {
             vec![clause("OrderPlaced", "Occurred", "false")],
         );
     });
-    let mut documents = documents_with(&document, &order_unit("requote"));
+    let mut documents = documents_with(&document, UNIT_BODY);
     let o1 = order_json("o1", money_json(2), &[], None, vec![]);
     let mut observations = invoked(
         &mut documents,
@@ -1154,7 +1133,7 @@ fn a_reference_is_not_followed() {
             .unwrap()
             .push(buddy);
     });
-    let mut documents = documents_with(&document, &order_unit("requote"));
+    let mut documents = documents_with(&document, UNIT_BODY);
     let o1 = order_json(
         "o1",
         money_json(5),
@@ -1279,7 +1258,7 @@ fn one_budget_is_shared_and_a_denied_charge_stops_the_evaluation() {
             .unwrap()
             .push(stable);
     });
-    let mut documents = documents_with(&with_ocl, &order_unit("requote"));
+    let mut documents = documents_with(&with_ocl, UNIT_BODY);
     let o1 = order_json("o1", money_json(-5), &[1, -2], Some(-1), vec![]);
     let observations = invoked(
         &mut documents,
@@ -1321,10 +1300,7 @@ fn a_process_invariant_has_one_result_for_each_run() {
             "origin": origin("runs"),
         }]);
     });
-    let mut documents = documents_with(
-        &document,
-        "invariant AnyRun using v on M::Fulfilment at current { true }",
-    );
+    let mut documents = documents_with(&document, UNIT_BODY);
     let run_json = |key: &str, attempts: i64| {
         json!({"key": key, "type": id("Fulfilment"), "fields": {
             "correlation_id": uuid_json(attempts.unsigned_abs() as u8 + 1),
@@ -1340,20 +1316,10 @@ fn a_process_invariant_has_one_result_for_each_run() {
         &population,
         &[run_json("r1", 0), run_json("r2", -1)],
     ));
-    let observations = documents.admit(
-        "AnyRun",
-        ClauseSelectionInput::Current {
-            snapshot: s1,
-            anchor: SelectedAnchor {
-                kind: AnchorKind::Handler,
-                name: "validate".to_owned(),
-            },
-            self_object: Some(SelectedObject {
-                population,
-                key: "r1".to_owned(),
-            }),
-        },
-    );
+    let observations = documents.admitted_values(&ValueInvariantsSelection {
+        snapshot: s1,
+        invocation: None,
+    });
     let evaluation = evaluate(&documents, &observations);
     let clause = id("Fulfilment/NonNegativeAttempts");
     assert_eq!(
@@ -1398,15 +1364,17 @@ type LifecycleDocuments = (
 
 /// TC-1045's `Orders` lifecycle with the type-level invariant `Extra`, the
 /// invocation `i1` of `place` between `p1` `{placed: false, cancelled:
-/// false}` and `q1` `{placed: true, cancelled: true}`, and a unit holding
-/// `unit`.
-fn lifecycle_documents(unit: &str) -> LifecycleDocuments {
+/// false}` and `q1` `{placed: true, cancelled: true}`, the specialization
+/// `ExpressLifecycle` whose context neither snapshot holds, and a unit
+/// holding `unit`. `p1` holds the contexts `pre_contexts`.
+fn lifecycle_documents(unit: &str, pre_contexts: &[(bool, bool)]) -> LifecycleDocuments {
     use crate::tc235_business_meaning_runtime::{
         lifecycle_document_with, lifecycle_invocation_with, lifecycle_observation,
     };
     let flags_type = id("Flags");
     let document = lifecycle_document_with("not self.placed", |document| {
         with_extra(document);
+        with_express_lifecycle(document);
         document["types"].as_array_mut().unwrap().push(declaration(
             "Flags",
             "money",
@@ -1421,7 +1389,7 @@ fn lifecycle_documents(unit: &str) -> LifecycleDocuments {
     });
     let documents = documents_with(&document, unit);
     let model = documents.model();
-    let (p1, p1_bytes) = lifecycle_observation(&model, "p1", "pre", &[(false, false)]);
+    let (p1, p1_bytes) = lifecycle_observation(&model, "p1", "pre", pre_contexts);
     let (q1, q1_bytes) = lifecycle_observation(&model, "q1", "post", &[(true, true)]);
     let (i1, i1_bytes) = lifecycle_invocation_with(
         &model,
@@ -1437,26 +1405,51 @@ fn lifecycle_documents(unit: &str) -> LifecycleDocuments {
     )
 }
 
-/// TC-1051 step 11, the state machine half: the invariants of the one
-/// machine the invocation names are evaluated over its context in each side
-/// of the invocation, each a separate value located at the invocation's
-/// receiver binding; a guard has no result.
-#[trace("TC-1051", "FR-366-AC-9")]
+/// The empty current snapshot `label` of the lifecycle fixture, which lists
+/// no population.
+fn lifecycle_current(model: &[u8; 32], label: &str) -> (DocumentRef, Vec<u8>) {
+    let bytes = serde_json::to_vec(&json!({
+        "format": "quire.state.snapshot/v1",
+        "identity": lifecycle_identity(&unsigned_ref(label)),
+        "observation": "current",
+        "anchor": {"kind": "handler", "name": "validate"},
+        "model": model_json(model),
+        "populations": [],
+    }))
+    .expect("snapshot serializes");
+    (lifecycle_document_ref(label, &bytes), bytes)
+}
+
+/// The lifecycle fixture's `ValueInvariants { snapshot: s1, invocation: i1 }`.
+fn lifecycle_values(
+    unit: &str,
+    pre_contexts: &[(bool, bool)],
+) -> (Documents, ValueInvariantsSelection) {
+    let (mut documents, snapshots, invocations, i1) = lifecycle_documents(unit, pre_contexts);
+    documents.snapshots = snapshots;
+    documents.invocations = invocations;
+    let model = documents.model();
+    let s1 = documents.add_snapshot(lifecycle_current(&model, "s1"));
+    (
+        documents,
+        ValueInvariantsSelection {
+            snapshot: s1,
+            invocation: Some(i1),
+        },
+    )
+}
+
+/// TC-1051 step 11, the state machine half (FR-366-AC-9, FR-106-AC-48): the
+/// invariants of the one machine the invocation names are evaluated over its
+/// context in each side of the invocation, each a separate value located at
+/// the invocation's receiver binding, with no `ExpressLifecycle` context in
+/// either snapshot though it specializes the machine; a guard has no result.
+#[trace("TC-1051", "FR-366-AC-9", "FR-106-AC-48")]
 #[test]
 fn a_state_machine_invariant_is_evaluated_over_each_side_of_the_invocation() {
-    use crate::tc235_business_meaning_runtime::lifecycle_observations;
-    let (documents, snapshots, invocations, i1) = lifecycle_documents(
-        "post FlagsPlaced using v on M::OrderLifecycle::place { flags.placed }",
-    );
-    let admitted = lifecycle_observations(
-        &documents.package,
-        &documents.packages,
-        "FlagsPlaced",
-        &snapshots,
-        &invocations,
-        i1,
-    )
-    .expect("the invocation admits");
+    let (documents, selection) = lifecycle_values(UNIT_BODY, &[(false, false)]);
+    let admitted = documents.admitted_values(&selection);
+    assert!(admitted.clause.is_none() && admitted.self_object.is_none());
     let evaluation = evaluate(&documents, &admitted);
     let receiver = |label: &str| RuntimeValuePath {
         observation: identity_of(label),
@@ -1482,6 +1475,122 @@ fn a_state_machine_invariant_is_evaluated_over_each_side_of_the_invocation() {
             .iter()
             .all(|(clause, _, _)| *clause != id("OrderLifecycle/NotYetPlaced")),
         "a guard has no result"
+    );
+}
+
+/// The catalog code and cause an admission refused with.
+fn refusal_of(
+    result: Result<AdmittedObservations, AdmissionFailure>,
+) -> (&'static str, &'static str) {
+    let Err(AdmissionFailure::Refused(record)) = result else {
+        panic!("the admission refuses: {result:?}");
+    };
+    (record.code.as_str(), record.cause)
+}
+
+/// FR-106-AC-48 and FR-366-AC-9: a `pre` snapshot with no context of the
+/// machine the invocation names refuses `invalid_model_binding`/`wrong-context`.
+#[trace("TC-1051", "FR-366-AC-9", "FR-106-AC-48")]
+#[test]
+fn an_invocation_snapshot_without_the_machines_context_refuses_wrong_context() {
+    let (documents, selection) = lifecycle_values(UNIT_BODY, &[]);
+    assert_eq!(
+        refusal_of(documents.admit_values(&selection)),
+        ("invalid_model_binding", "wrong-context")
+    );
+}
+
+/// FR-106-AC-48: an operation the invocation's context does not declare
+/// refuses `wrong_snapshot`/`wrong-invocation`, checked against the package
+/// alone.
+#[trace("TC-1051", "FR-106-AC-48")]
+#[test]
+fn an_invocation_of_an_undeclared_operation_refuses_wrong_invocation() {
+    let mut documents = documents_with(&fixture_f(|_| {}), UNIT_BODY);
+    let o1 = order_json("o1", money_json(-5), &[1, -2], Some(-1), vec![]);
+    let (selection, _) = add_invocation(
+        &mut documents,
+        &[o1],
+        "i1",
+        "other",
+        json!({"amount": money_json(-7)}),
+    );
+    assert_eq!(
+        refusal_of(documents.admit_values(&selection)),
+        ("wrong_snapshot", "wrong-invocation")
+    );
+}
+
+/// TC-1051 step 8 (FR-106-AC-48): `ValueInvariants` names the snapshot `s1`,
+/// the invocation's `pre` snapshot `s2` and its parameter `amount`, and holds
+/// no clause identity and no `self` object.
+#[trace("TC-1051", "FR-106-AC-48")]
+#[test]
+fn value_invariants_admits_the_snapshot_and_the_invocation() {
+    let (_, observations) = step_one(|fields| fields);
+    let label = |observation: &Option<qsl_semantics::model::observation::Observation>| {
+        observation
+            .as_ref()
+            .map(|held| held.identity.identity.clone())
+    };
+    assert_eq!(label(&observations.current).as_deref(), Some("s1"));
+    assert_eq!(label(&observations.pre).as_deref(), Some("s2"));
+    assert_eq!(label(&observations.post).as_deref(), Some("s3"));
+    assert_eq!(
+        observations
+            .parameters
+            .iter()
+            .map(|(name, _)| name.as_str())
+            .collect::<Vec<_>>(),
+        ["amount"]
+    );
+    assert!(observations.clause.is_none() && observations.self_object.is_none());
+
+    // A snapshot alone admits, and holds no invocation.
+    let mut documents = documents_with(&fixture_f(|_| {}), UNIT_BODY);
+    let o1 = order_json("o1", money_json(-5), &[1, -2], Some(-1), vec![]);
+    let (selection, _) = add_invocation(
+        &mut documents,
+        &[o1],
+        "i1",
+        "requote",
+        json!({"amount": money_json(-7)}),
+    );
+    let snapshot_only = documents.admitted_values(&ValueInvariantsSelection {
+        snapshot: selection.snapshot,
+        invocation: None,
+    });
+    assert!(snapshot_only.invocation.is_none() && snapshot_only.parameters.is_empty());
+}
+
+/// TC-1051 step 8 (FR-106-AC-48): a `pre` document as `snapshot` refuses
+/// `wrong_snapshot`/`wrong-observation`, and an `i1` without `amount` refuses
+/// `invalid_runtime_input`/`missing-member`.
+#[trace("TC-1051", "FR-106-AC-48")]
+#[test]
+fn value_invariants_refuses_a_pre_snapshot_and_a_missing_parameter() {
+    let o1 = order_json("o1", money_json(-5), &[1, -2], Some(-1), vec![]);
+    let mut documents = documents_with(&fixture_f(|_| {}), UNIT_BODY);
+    let (selection, pre) = add_invocation(
+        &mut documents,
+        std::slice::from_ref(&o1),
+        "i1",
+        "requote",
+        json!({"amount": money_json(-7)}),
+    );
+    assert_eq!(
+        refusal_of(documents.admit_values(&ValueInvariantsSelection {
+            snapshot: pre,
+            ..selection
+        })),
+        ("wrong_snapshot", "wrong-observation")
+    );
+
+    let mut missing = documents_with(&fixture_f(|_| {}), UNIT_BODY);
+    let (selection, _) = add_invocation(&mut missing, &[o1], "i1", "requote", json!({}));
+    assert_eq!(
+        refusal_of(missing.admit_values(&selection)),
+        ("invalid_runtime_input", "missing-member")
     );
 }
 
@@ -1566,6 +1675,7 @@ fn a_context_selection_locates_the_machine_at_the_receiver_binding() {
     let (documents, snapshots, invocations, i1) = lifecycle_documents(
         "invariant Machine using v on M::OrderLifecycle at current { true }\n\
          post FlagsPlaced using v on M::OrderLifecycle::place { flags.placed }",
+        &[(false, false)],
     );
     let receiver = |label: &str| RuntimeValuePath {
         observation: identity_of(label),

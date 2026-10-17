@@ -1066,7 +1066,7 @@ fn tc_740_the_decision_path_reaches_the_decisive_quantifier() {
             "GuardedAll",
             &[1],
             &[1, 0, 0],
-            Value::Reference(observations.self_object.clone()),
+            Value::Reference(observations.self_object.clone().expect("a self object")),
             1,
             Snapshot::High
         )
@@ -2411,7 +2411,7 @@ fn tc_1040_the_elements_of_a_built_list_are_read_at_their_index() {
     };
     let member = |name: &str| ValuePathStep::Member(name.to_owned());
     let parent = path(
-        ValuePathSubject::Object(mid.self_object.clone()),
+        ValuePathSubject::Object(mid.self_object.clone().expect("a self object")),
         vec![member("parent")],
     );
     let reads: Vec<_> = evaluation.reads().iter().map(|r| r.path.clone()).collect();
@@ -2424,7 +2424,7 @@ fn tc_1040_the_elements_of_a_built_list_are_read_at_their_index() {
                 ValuePathSubject::Built(list.clone()),
                 vec![
                     ValuePathStep::Index(0),
-                    ValuePathStep::Reference(root.self_object.clone()),
+                    ValuePathStep::Reference(root.self_object.clone().expect("a self object")),
                     member("versionNumber"),
                 ],
             ),
@@ -2432,7 +2432,7 @@ fn tc_1040_the_elements_of_a_built_list_are_read_at_their_index() {
                 ValuePathSubject::Built(list),
                 vec![
                     ValuePathStep::Index(1),
-                    ValuePathStep::Reference(mid.self_object.clone()),
+                    ValuePathStep::Reference(mid.self_object.clone().expect("a self object")),
                     member("versionNumber"),
                 ],
             ),

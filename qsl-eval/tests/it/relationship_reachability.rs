@@ -382,16 +382,17 @@ impl Orders {
         };
         AdmittedObservations {
             usage: AdmissionUsage::default(),
-            clause: self
-                .package
-                .graph()
-                .state_clause(clause)
-                .expect("the clause is declared")
-                .identity(),
+            clause: Some(
+                self.package
+                    .graph()
+                    .state_clause(clause)
+                    .expect("the clause is declared")
+                    .identity(),
+            ),
             current: None,
             pre: pre.map(|environment| instant("pre", environment)),
             post: post.map(|environment| instant("post", environment)),
-            self_object: start.clone(),
+            self_object: Some(start.clone()),
             invocation: None,
             self_kind: SelfKind::Object,
             receiver_pre: None,

@@ -218,15 +218,17 @@ fn a_selection_on_a_navigation_is_located_at_the_referenced_object() {
     };
     let observations = AdmittedObservations {
         usage: Default::default(),
-        clause: package
-            .graph()
-            .state_clause("TankLevel")
-            .expect("the clause is declared")
-            .identity(),
+        clause: Some(
+            package
+                .graph()
+                .state_clause("TankLevel")
+                .expect("the clause is declared")
+                .identity(),
+        ),
         current: Some(current),
         pre: None,
         post: None,
-        self_object: p1,
+        self_object: Some(p1),
         invocation: None,
         self_kind: SelfKind::Object,
         receiver_pre: None,
