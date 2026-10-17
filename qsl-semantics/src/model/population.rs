@@ -1854,41 +1854,41 @@ fn field_values_equal(
 /// runtime population document's reference identities here, a wire value at
 /// FR-106 admission); [`decide_frame`] only ever compares two `V`s through
 /// the caller's `values_equal`.
-pub(crate) struct FrameObject<'a, V> {
+pub struct FrameObject<'a, V> {
     /// The object's declared identity.
-    pub(crate) object: &'a str,
+    pub object: &'a str,
     /// The object's most-specific type.
-    pub(crate) type_identity: DeclarationKey,
+    pub type_identity: DeclarationKey,
     /// The object's declared field values.
-    pub(crate) fields: BTreeMap<DeclarationKey, V>,
+    pub fields: BTreeMap<DeclarationKey, V>,
 }
 
 /// [`decide_frame`]'s inputs other than the two object lists: the model the
 /// types and fields resolve in, the operation's frame, and the invocation's
 /// declared delta for this population.
-pub(crate) struct FrameDecision<'e> {
+pub struct FrameDecision<'e> {
     /// The model index types and fields resolve in.
-    pub(crate) index: &'e ModelIndex,
+    pub index: &'e ModelIndex,
     /// The conformance walk's `ancestor_steps` ceiling.
-    pub(crate) ancestor_steps: u64,
+    pub ancestor_steps: u64,
     /// The operation's authored frame.
-    pub(crate) effect: &'e OperationEffect,
+    pub effect: &'e OperationEffect,
     /// The invocation's own declared created identities.
-    pub(crate) declared_created: &'e [String],
+    pub declared_created: &'e [String],
     /// The invocation's own declared deleted identities.
-    pub(crate) declared_deleted: &'e [String],
+    pub declared_deleted: &'e [String],
     /// The identity, in this population, of the invocation's receiver, when
     /// the receiver is in this population. A receiver-scoped entry grants
     /// nothing without one.
-    pub(crate) receiver: Option<&'e str>,
+    pub receiver: Option<&'e str>,
     /// The identity, in this population, of the object each reference
     /// parameter is bound to, as `(parameter name, object)`.
-    pub(crate) arguments: &'e [(String, String)],
+    pub arguments: &'e [(String, String)],
 }
 
 /// One charge FR-013 makes while it decides a field write.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum FrameCharge {
+pub enum FrameCharge {
     /// `frame.write`.
     Write,
     /// `frame.redefines-link`.
@@ -1898,7 +1898,7 @@ pub(crate) enum FrameCharge {
 /// Why [`decide_frame`] stopped: a finding about the invocation, or a
 /// denied charge (`E` is the caller's own incomplete record).
 #[derive(Debug)]
-pub(crate) enum FrameStop<E> {
+pub enum FrameStop<E> {
     /// A refusal or violation.
     Refused(ModelRefusal),
     /// The first charge the caller's meter denied.
@@ -1913,11 +1913,11 @@ impl<E> From<ModelRefusal> for FrameStop<E> {
 
 /// [`decide_frame`]'s result: the computed created and deleted identities.
 #[derive(Debug, Default)]
-pub(crate) struct FrameDelta {
+pub struct FrameDelta {
     /// Identities in post and not in pre.
-    pub(crate) created: BTreeSet<String>,
+    pub created: BTreeSet<String>,
     /// Identities in pre and not in post.
-    pub(crate) deleted: BTreeSet<String>,
+    pub deleted: BTreeSet<String>,
 }
 
 /// Whether `type_identity` conforms to some grant in `grants`.
@@ -1999,7 +1999,7 @@ fn delete_granted(
 /// one -- FR-151's effect vocabulary grants `modifies`, `creates` and
 /// `deletes` only, and FR-143 treats the most-specific type as part of a
 /// reference's identity, never a mutable attribute.
-pub(crate) fn decide_frame<V, E>(
+pub fn decide_frame<V, E>(
     frame: &FrameDecision<'_>,
     pre: &[FrameObject<'_, V>],
     post: &[FrameObject<'_, V>],

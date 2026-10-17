@@ -36,6 +36,7 @@ mod process;
 pub mod qualified;
 mod record_value;
 pub mod refusal;
+pub mod state;
 mod state_machine;
 pub mod systems;
 mod variant_type;
