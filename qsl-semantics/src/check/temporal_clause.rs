@@ -268,10 +268,12 @@ const fn is_temporal(operator: TemporalOperator) -> bool {
     }
 }
 
-/// The clock binding's node id: a content digest of the clause's `clock`
-/// string, so equal clock strings bind equally and different ones do not
-/// (QSpec FR-252's componentwise equality). The model-steps and model-time
-/// bindings (FR-233) replace it.
+/// The clock binding's node id. Recorded exception to keying on the string
+/// itself: `IntervalKey::clock_binding` is a `WireNodeId` (QSpec FR-255's
+/// structural clock-binding node, fixed by ADR-014 and `qsl_foundation::bound`),
+/// a 32-byte id that cannot hold the `clock` string, so the id is the digest of
+/// the string's length-prefixed bytes. Equal strings bind equally. FR-233's
+/// `model-steps`/`model-time` binding node replaces it.
 fn clock_binding(text: &str) -> WireNodeId {
     let mut preimage = Vec::with_capacity(text.len() + 8);
     preimage.extend_from_slice(&u64::try_from(text.len()).unwrap_or(u64::MAX).to_be_bytes());
