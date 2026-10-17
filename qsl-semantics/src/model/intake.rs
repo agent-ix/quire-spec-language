@@ -68,7 +68,7 @@ use quire_exact::{Presence, TextProfile, TextType};
 mod unit;
 pub use unit::{
     admit_unit, admit_unit_with_cancel, package_input, OperationClauseFailure, SelectedModel,
-    SelectedModels, UnitIntakeCause, UnitIntakeRefusal,
+    SelectedModels, TypeInvariantFailure, UnitIntakeCause, UnitIntakeRefusal,
 };
 
 /// A Quire meaning id (FR-208): the sole legitimate way to determine what a

@@ -61,6 +61,7 @@ impl OperationClauseDeclaration {
             },
             complete_value: false,
             context: self.context,
+            receiver: quire_exact::ValueType::Reference(self.context),
             operation: Some(&self.operation),
             context_population: None,
             frame_population: None,
