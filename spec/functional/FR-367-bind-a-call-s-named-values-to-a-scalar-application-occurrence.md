@@ -165,6 +165,11 @@ the joined node, are internal failures (`RunRefusal::Fault`), never a
      binder to a `value`/`parameter` node at the next level), has no supplied
      value; the entry SHALL return `Refused(OperandNotArgument)` with the
      `ordinal`, the declared name and the level.
+   This source maps to FR-357's `OperandIdentity` as follows: an `Argument` and
+   an `InlineLiteral { node: Some(n) }` are each `GraphChild(n)` (the node is a
+   reference in the application), and only `InlineLiteral { node: None }` is
+   FR-357's `InlineLiteral`. The entry SHALL NOT map `Some(n)` to FR-357's
+   `InlineLiteral`, which FR-357 refuses `NotInlineLiteral` for a reference.
    Two operands that reference one parameter node bind the same argument
    twice, at their own ordinals. The `level` is carried in the `source`; it is
    not used to choose the argument.

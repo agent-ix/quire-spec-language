@@ -21,3 +21,9 @@ Ticket: QSL-818. Base checklist over FR-367, TC-1053 and the spec.md index entri
 ## Verdict
 
 FIX. ID formats valid, FR-367-AC-1..AC-9 each have a TC-1053 procedure step and expected result, spec.md has the FR-367 contains edge and index row, relationships resolve to existing FR-092/FR-098/FR-100/FR-357/US-010.
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 530ecc8c4 |

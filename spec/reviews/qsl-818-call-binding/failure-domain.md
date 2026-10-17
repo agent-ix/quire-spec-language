@@ -21,3 +21,9 @@ Ticket: QSL-818. Looked for reachable inputs that FR-367's refusal set does not 
 ## Verdict
 
 FIX. The other failure modes (missing/extra/duplicate/mistyped argument, wrong occurrence, nested application, unbounded range, out-of-i64 value) are each named.
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 530ecc8c4 |

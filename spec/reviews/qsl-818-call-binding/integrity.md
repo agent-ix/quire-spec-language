@@ -23,3 +23,20 @@ Ticket: QSL-818. PR quire-spec-language#915, head 35042dc69. Checked FR-367's Be
 ## Verdict
 
 FIX. Operand order and arity match IR (wire argument order, one entry per argument, `a - a` two operands, `-a` one); the join by parameter node id matches FR-098-AC-2; FR-357 cause reuse for Node/Operator/Occurrence matches FR-357's operator entry; every AC has a TC-1053 step; spec.md has both the contains edge and the index row.
+
+## New findings (disposition pass 1)
+
+Reviewed at agent-ix/quire-spec-language@530ecc8c4 (`git diff 35042dc..530ecc8`).
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | medium | AC-6 now declares `function n using v(a: Int[0, 9]): Int[0, 12] pure { (a + 1) + 2 }`, but TC-1053 step 5 still compiles `n` with result `Int[0, 11]`, a different unit whose body range `[3, 12]` exceeds its declared result. The TC fixture no longer matches the AC it verifies. | FR-367-AC-6, TC-1053 step 5 |
+| FND-005 | medium | `OperandSource::InlineLiteral { node: Some(n) }` names a source-compiled literal operand that FR-357's operator claim must identify as `GraphChild(n)`: FR-357's `InlineLiteral` is only an inline literal term, and its preimage check refuses `NotInlineLiteral` for a `reference` argument (qsl-replay execute/scalar_site.rs `check_operands`). FR-367 states no mapping from `OperandSource` to FR-357's `OperandIdentity`, so a driver that maps the like-named variants builds a claim FR-357 refuses for every literal operand, while AC-9 claims the binding matches the FR-357 claim. | FR-367 Outputs (OperandSource), FR-367-AC-9, FR-357 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 530ecc8c4 |
+| FND-002 | fixed | 530ecc8c4 |
+| FND-003 | fixed | 530ecc8c4 |

@@ -49,7 +49,7 @@ Compile and emit each unit as FR-100's `run` does, then call
    `ScalarOccurrence.function` that differs from `Call.function`; and an
    equality application.
 5. `function w using v(a: Integer): Integer pure { a + 1 }` and
-   `function n using v(a: Int[0, 9]): Int[0, 11] pure { (a + 1) + 2 }`; bind
+   `function n using v(a: Int[0, 9]): Int[0, 12] pure { (a + 1) + 2 }`; bind
    the inner and the outer application of `n`.
 6. `function big using v(a: Int[0, 100000000000000000000]): Int[0, 100000000000000000001] pure { a + 1 }`
    with `a = 9223372036854775807` and `a = 9223372036854775808`, and
