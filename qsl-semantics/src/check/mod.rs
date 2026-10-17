@@ -246,9 +246,13 @@ pub use refusal::{
     Obligation, ProtocolAnchorCause, ProtocolReferenceCause, ProvedInterval, QualifiedCandidate,
     ShadowedDeclaration, StageLimitCause, TemporalCause, WrongSnapshotCause,
 };
+#[cfg(any(test, feature = "test-support"))]
+pub use temporal_clause::check_clauses;
 pub use temporal_clause::{
-    CheckedOperator, CheckedTemporalClause, TemporalClaim, TemporalDeclaration,
-    TemporalDeclarations, TemporalSelection, TemporalTraceFamily,
+    Activation, BinaryTemporal, CheckedFormula, CheckedOperator, CheckedTemporalClause,
+    FairnessConstraint, FairnessGranularity, FairnessKind, FormulaNode, FormulaNodeId,
+    TemporalClaim, TemporalDeclaration, TemporalDeclarations, TemporalSelection,
+    TemporalTraceFamily, UnaryTemporal,
 };
 
 /// A checked function.

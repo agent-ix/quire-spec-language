@@ -32,8 +32,9 @@
 use std::collections::BTreeMap;
 
 use qsl_forms::{
-    ActivationForm, IntervalForm, IntervalUpper, ParameterForm, TemporalClauseForm,
-    TemporalNodeForm, TemporalNodeId, TemporalOperator,
+    ActivationForm, FairnessGranularity as FormGranularity, FairnessKind as FormKind, IntervalForm,
+    IntervalUpper, ParameterForm, TemporalClauseForm, TemporalNodeForm, TemporalNodeId,
+    TemporalOperator,
 };
 use qsl_foundation::bound::{DomainKey, DomainKind, IntervalKey, TemporalInterval, TemporalUpper};
 use qsl_foundation::diagnostic::{LimitExceeded, Locus, StageFailure, Staged};
@@ -104,6 +105,180 @@ pub struct CheckedOperator {
     pub interval: Option<TemporalInterval>,
 }
 
+/// A node of a [`CheckedFormula`], by its index in the formula's arena.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct FormulaNodeId(usize);
+
+impl FormulaNodeId {
+    /// The node's index in the formula's arena.
+    pub fn index(self) -> usize {
+        self.0
+    }
+}
+
+/// A unary temporal operator (ADR-014 TR-3).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UnaryTemporal {
+    /// `eventually`.
+    Eventually,
+    /// `always`.
+    Always,
+    /// `once`.
+    Once,
+    /// `historically`.
+    Historically,
+}
+
+/// A binary temporal operator (ADR-014 TR-3).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BinaryTemporal {
+    /// `until`.
+    Until,
+    /// `release`.
+    Release,
+    /// `since`.
+    Since,
+    /// `triggered`.
+    Triggered,
+}
+
+/// One node of a [`CheckedFormula`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum FormulaNode {
+    /// `true` or `false`.
+    Constant(bool),
+    /// A `holds(e)` atom; its condition is FR-123's, so the node keeps the
+    /// span of the whole `holds(e)`.
+    Holds {
+        /// The span of the whole `holds(e)`.
+        span: Span,
+    },
+    /// `not`.
+    Not(FormulaNodeId),
+    /// `and`.
+    And(FormulaNodeId, FormulaNodeId),
+    /// `or`.
+    Or(FormulaNodeId, FormulaNodeId),
+    /// `implies`.
+    Implies(FormulaNodeId, FormulaNodeId),
+    /// A unary temporal operator.
+    Unary {
+        /// Which operator.
+        operator: UnaryTemporal,
+        /// Its interval; `None` on an unbounded operator.
+        interval: Option<TemporalInterval>,
+        /// Its operand.
+        operand: FormulaNodeId,
+    },
+    /// A binary temporal operator.
+    Binary {
+        /// Which operator.
+        operator: BinaryTemporal,
+        /// Its interval; `None` on an unbounded operator.
+        interval: Option<TemporalInterval>,
+        /// Its left operand.
+        left: FormulaNodeId,
+        /// Its right operand.
+        right: FormulaNodeId,
+    },
+}
+
+impl FormulaNode {
+    /// The node's operands in source order.
+    pub fn operands(&self) -> impl Iterator<Item = FormulaNodeId> {
+        let (first, second) = match self {
+            Self::Constant(_) | Self::Holds { .. } => (None, None),
+            Self::Not(only) | Self::Unary { operand: only, .. } => (Some(*only), None),
+            Self::And(left, right)
+            | Self::Or(left, right)
+            | Self::Implies(left, right)
+            | Self::Binary { left, right, .. } => (Some(*left), Some(*right)),
+        };
+        first.into_iter().chain(second)
+    }
+}
+
+/// A checked temporal formula: an arena in which an operator precedes its
+/// operands, so no walk of it recurses (ADR-030 D-4.2).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedFormula {
+    nodes: Vec<FormulaNode>,
+    root: FormulaNodeId,
+}
+
+impl CheckedFormula {
+    /// The formula's root node.
+    pub fn root(&self) -> FormulaNodeId {
+        self.root
+    }
+
+    /// Every node, in arena order.
+    pub fn nodes(&self) -> &[FormulaNode] {
+        &self.nodes
+    }
+
+    /// The id of the node at arena `index`, when the arena has one.
+    pub fn node_id(&self, index: usize) -> Option<FormulaNodeId> {
+        (index < self.nodes.len()).then_some(FormulaNodeId(index))
+    }
+}
+
+/// How a clause activates (FR-325 "Outputs").
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Activation {
+    /// `on origin`: the clause is evaluated at position 0.
+    Origin,
+    /// `on each`: the clause is evaluated at every activating position.
+    Each {
+        /// Whether the activation has a `when` condition.
+        guarded: bool,
+    },
+}
+
+/// A fairness constraint's kind (QSpec FR-362, FR-129).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FairnessKind {
+    /// `weak`.
+    Weak,
+    /// `strong`.
+    Strong,
+}
+
+/// A fairness constraint's granularity (ADR-018 FA-1).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FairnessGranularity {
+    /// `whole`.
+    Whole,
+    /// `each`.
+    Each,
+}
+
+/// One checked fairness constraint. The operation is the spelled name until
+/// FR-123 resolves it to a declaration.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FairnessConstraint {
+    /// The kind, `weak` when unmarked.
+    pub kind: FairnessKind,
+    /// The operation name as written.
+    pub operation: String,
+    /// The granularity, `whole` when unmarked.
+    pub granularity: FairnessGranularity,
+}
+
+impl std::fmt::Display for FairnessConstraint {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let kind = match self.kind {
+            FairnessKind::Weak => "weak",
+            FairnessKind::Strong => "strong",
+        };
+        let granularity = match self.granularity {
+            FairnessGranularity::Whole => "whole",
+            FairnessGranularity::Each => "each",
+        };
+        write!(formatter, "fair {kind} {granularity} {}", self.operation)
+    }
+}
+
 /// The `temporal-satisfaction` claim of a clause (ADR-014 §4), before the
 /// checked nodes it is keyed by exist.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -171,6 +346,9 @@ pub struct CheckedTemporalClause {
     operators: Vec<CheckedOperator>,
     horizon: Option<u64>,
     claim: TemporalClaim,
+    formula: CheckedFormula,
+    activation: Activation,
+    fairness: Vec<FairnessConstraint>,
 }
 
 impl CheckedTemporalClause {
@@ -199,6 +377,24 @@ impl CheckedTemporalClause {
     /// profile, `None` under infinite-trace.
     pub fn horizon(&self) -> Option<u64> {
         self.horizon
+    }
+
+    /// The checked formula: its nodes in arena order (an operator precedes
+    /// its operands), each temporal operator holding its validated interval.
+    pub fn formula(&self) -> &CheckedFormula {
+        &self.formula
+    }
+
+    /// How the clause activates (FR-325 "Outputs").
+    pub fn activation(&self) -> Activation {
+        self.activation
+    }
+
+    /// The clause's fairness set, each constraint once, in source order of
+    /// first occurrence. The operation stays a spelled name until FR-123
+    /// resolves it to a declaration.
+    pub fn fairness(&self) -> &[FairnessConstraint] {
+        &self.fairness
     }
 
     /// The QSpec FR-255 key of the interval `node` carries, under the
@@ -411,6 +607,12 @@ fn check_clause(
         ClassifyFailure::Fault(fault) => StageFailure::Fault(fault),
     })?;
 
+    let intervals: BTreeMap<TemporalNodeId, Option<TemporalInterval>> = operators
+        .iter()
+        .map(|operator| (operator.node, operator.interval))
+        .collect();
+    let formula = build_formula(form, &intervals)?;
+
     Ok(CheckedTemporalClause {
         name: form.name.name.clone(),
         span: declaration.span,
@@ -424,7 +626,151 @@ fn check_clause(
             parameter_domains,
             infinite_trace: !bounded,
         },
+        formula,
+        activation: match &form.activation {
+            ActivationForm::Origin => Activation::Origin,
+            ActivationForm::Each { when, .. } => Activation::Each {
+                guarded: when.is_some(),
+            },
+        },
+        fairness: checked_fairness(form),
     })
+}
+
+/// The checked fairness set: each constraint once, in source order of first
+/// occurrence. An unmarked kind is `weak` (QSpec FR-362, FR-129) and an
+/// unmarked granularity is `whole` (ADR-018 FA-6).
+fn checked_fairness(form: &TemporalClauseForm) -> Vec<FairnessConstraint> {
+    let mut set: Vec<FairnessConstraint> = Vec::new();
+    for written in &form.fairness {
+        let constraint = FairnessConstraint {
+            kind: match written.kind {
+                None | Some(FormKind::Weak) => FairnessKind::Weak,
+                Some(FormKind::Strong) => FairnessKind::Strong,
+            },
+            operation: written.operation.name.clone(),
+            granularity: match written.granularity {
+                None | Some(FormGranularity::Whole) => FairnessGranularity::Whole,
+                Some(FormGranularity::Each) => FairnessGranularity::Each,
+            },
+        };
+        if !set.contains(&constraint) {
+            set.push(constraint);
+        }
+    }
+    set
+}
+
+/// The checked formula of `form`: the arena order is kept, so an operator
+/// still precedes its operands.
+fn build_formula(
+    form: &TemporalClauseForm,
+    intervals: &BTreeMap<TemporalNodeId, Option<TemporalInterval>>,
+) -> Result<CheckedFormula, StageFailure<CheckRefusal>> {
+    let node = |id: &TemporalNodeId| FormulaNodeId(id.index());
+    let mut nodes = Vec::with_capacity(form.formula.nodes().len());
+    for (id, written) in form.formula.iter() {
+        let checked = match written {
+            TemporalNodeForm::Constant { value, .. } => FormulaNode::Constant(*value),
+            TemporalNodeForm::Holds { span, .. } => FormulaNode::Holds { span: *span },
+            TemporalNodeForm::Operator(operator) => {
+                let interval = *intervals
+                    .get(&id)
+                    .ok_or_else(|| fault("operator-has-checked-interval"))?;
+                match (operator.operator, operator.operands.as_slice()) {
+                    (TemporalOperator::Not, [only]) => FormulaNode::Not(node(only)),
+                    (TemporalOperator::And, [left, right]) => {
+                        FormulaNode::And(node(left), node(right))
+                    }
+                    (TemporalOperator::Or, [left, right]) => {
+                        FormulaNode::Or(node(left), node(right))
+                    }
+                    (TemporalOperator::Implies, [left, right]) => {
+                        FormulaNode::Implies(node(left), node(right))
+                    }
+                    (TemporalOperator::Eventually, [operand]) => {
+                        unary(UnaryTemporal::Eventually, interval, node(operand))
+                    }
+                    (TemporalOperator::Always, [operand]) => {
+                        unary(UnaryTemporal::Always, interval, node(operand))
+                    }
+                    (TemporalOperator::Once, [operand]) => {
+                        unary(UnaryTemporal::Once, interval, node(operand))
+                    }
+                    (TemporalOperator::Historically, [operand]) => {
+                        unary(UnaryTemporal::Historically, interval, node(operand))
+                    }
+                    (TemporalOperator::Until, [left, right]) => {
+                        binary(BinaryTemporal::Until, interval, node(left), node(right))
+                    }
+                    (TemporalOperator::Release, [left, right]) => {
+                        binary(BinaryTemporal::Release, interval, node(left), node(right))
+                    }
+                    (TemporalOperator::Since, [left, right]) => {
+                        binary(BinaryTemporal::Since, interval, node(left), node(right))
+                    }
+                    (TemporalOperator::Triggered, [left, right]) => {
+                        binary(BinaryTemporal::Triggered, interval, node(left), node(right))
+                    }
+                    (
+                        TemporalOperator::Not
+                        | TemporalOperator::And
+                        | TemporalOperator::Or
+                        | TemporalOperator::Implies
+                        | TemporalOperator::Eventually
+                        | TemporalOperator::Always
+                        | TemporalOperator::Once
+                        | TemporalOperator::Historically
+                        | TemporalOperator::Until
+                        | TemporalOperator::Release
+                        | TemporalOperator::Since
+                        | TemporalOperator::Triggered,
+                        _,
+                    ) => return Err(fault("operator-arity")),
+                }
+            }
+        };
+        nodes.push(checked);
+    }
+    let root = FormulaNodeId(form.formula.root().index());
+    for (index, node) in nodes.iter().enumerate() {
+        if node
+            .operands()
+            .any(|operand| operand.0 <= index || operand.0 >= nodes.len())
+        {
+            return Err(fault("operands-follow-operator"));
+        }
+    }
+    if root.0 >= nodes.len() {
+        return Err(fault("root-in-arena"));
+    }
+    Ok(CheckedFormula { nodes, root })
+}
+
+fn unary(
+    operator: UnaryTemporal,
+    interval: Option<TemporalInterval>,
+    operand: FormulaNodeId,
+) -> FormulaNode {
+    FormulaNode::Unary {
+        operator,
+        interval,
+        operand,
+    }
+}
+
+fn binary(
+    operator: BinaryTemporal,
+    interval: Option<TemporalInterval>,
+    left: FormulaNodeId,
+    right: FormulaNodeId,
+) -> FormulaNode {
+    FormulaNode::Binary {
+        operator,
+        interval,
+        left,
+        right,
+    }
 }
 
 /// A bounded formula's horizon (ADR-014 TR-4): the greatest sum of interval
@@ -484,6 +830,51 @@ pub fn not_emitted(checked: &CheckedTemporalClause) -> CheckRefusal {
         name: checked.name.clone(),
         span: checked.span,
     })
+}
+
+/// Every `temporal` clause of `package`, checked as the assembler's check
+/// would (test-support only: the production check refuses a clause that
+/// checks until FR-337 emits it).
+#[cfg(any(test, feature = "test-support"))]
+pub fn check_clauses(
+    package: &crate::check::PackageDeclarations,
+) -> Vec<Result<CheckedTemporalClause, StageFailure<CheckRefusal>>> {
+    let scope = Scope::new(
+        package.types.clone(),
+        package.operations.clone(),
+        package.enums.clone(),
+        package.aliases.clone(),
+        Vec::new(),
+        None,
+        Vec::new(),
+    );
+    let declarations = TemporalDeclarations {
+        scope: &scope,
+        selections: &package.temporal_selections,
+        source: &package.source,
+        embedding: None,
+        position_limit: 10_000,
+    };
+    package
+        .temporal_clauses
+        .iter()
+        .map(|clause| {
+            let mut meter = quire_exact::Meter::new(crate::check::family::SCALAR_LIMITS_UNLIMITED);
+            let mut diagnostics = crate::family::DiagnosticSink::default();
+            let mut scopes = crate::family::ScopeStack::default();
+            let mut cx = CheckContext::new(
+                &declarations,
+                crate::family::StageLimits {
+                    input_bytes: u64::MAX,
+                    node_count: u64::MAX,
+                },
+                &mut meter,
+                &mut diagnostics,
+                &mut scopes,
+            );
+            TemporalTraceFamily::check(clause, &mut cx).map(Staged::into_value)
+        })
+        .collect()
 }
 
 #[cfg(test)]

@@ -14,4 +14,5 @@
 //! crate, never the other way.
 
 pub mod simulation;
+pub mod temporal;
 pub mod value;
