@@ -1121,6 +1121,38 @@ fn a_duplicate_type_name_is_refused_in_either_order() {
     }
 }
 
+/// FR-317-AC-3 (TC-820 step 3): one unit cannot declare two types named `q`
+/// -- two unions, or a union and an enum -- so the member resolver never sees
+/// them. The assembler refuses at the second declaration.
+#[trace("FR-317-AC-3", "TC-820")]
+#[test]
+fn two_types_named_q_are_refused_at_the_second_declaration() {
+    for declarations in [
+        "union q { m }\nunion q { m }",
+        "union q { m }\nenum q { m }",
+    ] {
+        let (text, found) = errors(declarations);
+        // The first and the last `q {` of the unit, each at its name.
+        let first = after(&text, "union q {", "q");
+        let second = Span {
+            start: text.rfind("q {").expect("the second declaration"),
+            end: text.rfind("q {").expect("the second declaration") + 1,
+        };
+        assert_eq!(
+            found,
+            [AssemblyError {
+                cause: AssemblyCause::AmbiguousTypeName {
+                    name: "q".into(),
+                    candidates: vec![first, second],
+                    native: false,
+                },
+                span: second,
+            }],
+            "{declarations}"
+        );
+    }
+}
+
 /// A type form inside a body resolves at the assembler, so its ill-formed
 /// bounds refuse there as a signature's do.
 #[trace("FR-091-AC-16", "TC-400")]

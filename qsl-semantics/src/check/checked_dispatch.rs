@@ -955,10 +955,7 @@ pub fn checked_dispatch_operation(
         let record = operation_records
             .get(candidate)
             .ok_or_else(|| unknown_candidate(candidate))?;
-        let is_query = record.result.is_some()
-            && record.effect.modifies.is_empty()
-            && record.effect.creates.is_empty()
-            && record.effect.deletes.is_empty();
+        let is_query = record.result.is_some() && record.effect.is_empty();
         if !is_query {
             return Err(not_a_query(candidate));
         }

@@ -504,6 +504,11 @@ impl ModelIndex {
     ) -> Result<bool, ModelRefusal> {
         self.records.conforms(s, t, max_steps, setting)
     }
+
+    /// See [`RecordIndex::conforms_admitted`].
+    pub(crate) fn conforms_admitted(&self, s: &DeclarationKey, t: &DeclarationKey) -> bool {
+        self.records.conforms_admitted(s, t)
+    }
 }
 
 /// The record at `position`, when it is a field member.
@@ -1181,6 +1186,24 @@ impl RecordIndex {
             None if ancestry.edges <= max_steps => Ok(false),
             Some(_) | None => Err(exceeded()),
         }
+    }
+
+    /// Whether `s` conforms to `t` over edges normalization already
+    /// admitted: [`Self::conforms`] with no `ancestor_steps` ceiling, since
+    /// phase 3 charged every declared `supertypes` edge when the view
+    /// completed, so this follows no edge that was not admitted and charges
+    /// nothing.
+    pub(crate) fn conforms_admitted(&self, s: &DeclarationKey, t: &DeclarationKey) -> bool {
+        if s == t {
+            return true;
+        }
+        let (Some(start), Some(target)) = (self.position(s), self.position(t)) else {
+            return false;
+        };
+        self.ancestry(start)
+            .first_named_at
+            .binary_search_by_key(&target, |(ancestor, _)| *ancestor)
+            .is_ok()
     }
 }
 
