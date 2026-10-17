@@ -323,7 +323,7 @@ fn single_target(
 /// `above-maximum` naming the maximum and the count, as an unbounded
 /// reading of a population with a declared maximum refuses (FR-084).
 fn check_authored_bound(objects: &ObjectEnvironment, bound: &AuthoredBound) -> Result<(), Halt> {
-    match authored_bound_refusal(objects, bound)? {
+    match authored_bound_refusal(objects, bound).map_err(Halt::Fault)? {
         Some(refusal) => Err(Halt::Stop(Stop::Refused(refusal))),
         None => Ok(()),
     }
@@ -343,7 +343,7 @@ pub(super) fn refused_evaluation(refusal: Refusal) -> Evaluation {
 pub(super) fn authored_bound_refusal(
     objects: &ObjectEnvironment,
     bound: &AuthoredBound,
-) -> Result<Option<Refusal>, Halt> {
+) -> Result<Option<Refusal>, InternalFault> {
     let Some(count) = objects
         .population_size(&bound.population.node)
         .filter(|count| *count > bound.maximum)
@@ -351,7 +351,7 @@ pub(super) fn authored_bound_refusal(
         return Ok(None);
     };
     let maximum = CardinalityBound::new(0, bound.maximum)
-        .map_err(|_| invariant("authored-population-bound-invalid"))?;
+        .map_err(|_| InternalFault::new("S6a", "authored-population-bound-invalid"))?;
     Ok(Some(Refusal::CardinalityOutOfBound {
         violation: BoundViolation::AboveMaximum,
         kind: CollectionKind::Set,
