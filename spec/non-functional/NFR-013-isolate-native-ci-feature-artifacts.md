@@ -34,7 +34,7 @@ Make through a shell also owns quoting its invocation; the Rust fixture passes
 assignments directly through `Command::args`. This contract does not interpret
 path bytes as shell commands or expand references to environment variables.
 
-The existing lane commands, in order, are:
+The lane commands, in order, are:
 
 | Lane | Position | Cargo arguments |
 | --- | --- | --- |
@@ -46,7 +46,7 @@ The existing lane commands, in order, are:
 | Default | 6 | `clippy --locked -p qsl-cst --all-targets -- -D warnings` |
 | Default | 7 | `test --locked -p qsl-cst` |
 | All | 1 | `clippy --locked --workspace --all-targets --all-features -- -D warnings` |
-| All | 2 | `test --locked --workspace --all-features` |
+| All | 2 | `test --locked --workspace --all-features --exclude <package>...` |
 
 The feature-lane routing change leaves non-feature targets on their existing
 artifact and feature policy. In particular, `ci-clean-build` retains its
@@ -55,8 +55,21 @@ library-only `handoff-writer` check and no-default-feature parse invocation.
 `test-deep-format` runs `test --locked --workspace --tests` with the default
 lane's feature selection, so it uses the default lane's directory (or its
 explicit override) and reuses that lane's executables. The parse invocation and
-core xtask tools retain the caller root. The routing policy changes no Cargo
-flag of the two feature lanes, no CI check and no aggregate dependency order.
+core xtask tools retain the caller root. The routing policy changes no CI check
+and no aggregate dependency order.
+
+The `--exclude` arguments of All position 2 are not written in the Makefile:
+`cargo xtask test-suites all-features-workspace` computes them on every run, so
+the Makefile recipe keeps the single argument vector above. A package is
+excluded only when the default lane runs it on the same compile. `cargo metadata`
+with and without `--all-features` nominates the packages whose own and
+transitive resolved features are identical in both. `cargo tree` (host and
+target units kept apart, every platform) then confirms that leaving the
+nominees out leaves every remaining package with the feature sets it has in
+the full `--all-features` resolve, and a nominee that fails the confirmation
+runs. When no nominee can be confirmed the whole workspace runs. The
+all-features clippy and build keep covering every package, and the default lane
+keeps running every package's tests.
 
 ## Rationale
 
@@ -79,6 +92,7 @@ product feature or changing the hosted-workflow policy.
 | NFR-013-AC-1 | Without explicit lane overrides, every command selects its lane's distinct child of the owned parent root, including repeated default-to-all and all-to-default switches using the same root. | Test (TC-915) |
 | NFR-013-AC-2 | Every feature command receives the selected caller-root child or explicit lane override as literal path data under the environment and GNU Make assignment grammar above, including spaces, double quotes, backticks and dollar forms, without executing path contents. | Test (TC-915) |
 | NFR-013-AC-3 | Feature routing preserves the nine Cargo argument vectors and their order above, default versus all-feature selection, default-before-all reachability from `ci`, and the existing non-feature and clean artifact/feature policy. | Test (TC-915) |
+| NFR-013-AC-4 | The packages the all-features lane's test command excludes leave every remaining package with the same per-unit resolved feature sets as the full `--all-features` workspace, and a package whose absence would change them, through a dev-dependency or other dependency chain, a build dependency, `default-features = false` or a platform-specific request, is not excluded. | Test (TC-915) |
 
 ## Verification
 
