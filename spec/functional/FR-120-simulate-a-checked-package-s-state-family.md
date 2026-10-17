@@ -303,10 +303,12 @@ The transition identity is FR-181's
 `{"type":"transition","operation":"<qualified-name>","receiver":<encoded>,"arguments":[<encoded>, ...]}`,
 and `<qualified-name>` is the operation's declaration identity text. Written
 as bytes its keys are in JCS order: `arguments`, `operation`, `receiver`,
-`type`. `ModelTransition` is the typed form of that identity: an `operation`,
-a `receiver: Option<ObjectReference>` and the `arguments` vector. A model
-application always has a receiver; `receiver` is `null` only for an operation
-FR-181 admits with none.
+`type`. `ModelTransition` is the typed form of that identity: the `operation` as its
+canonical text, a `receiver: Option<String>` and the `arguments` as a vector of
+canonical text. Each text is the value's canonical JCS text, as `operation` and
+each argument are. A model application always has a receiver; `receiver` is
+`None` only for an operation FR-181 admits with none, and `Some("null")` is
+refused.
 
 A value domain is: `Boolean`, `false` then `true`; `Int[lower, upper]`,
 every integer in the range; `Option<T>`, absent then each value of `T`;
