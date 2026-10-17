@@ -18,6 +18,7 @@ pub mod dispatch;
 pub mod domain_package;
 #[cfg(any(test, feature = "test-support"))]
 mod domain_package_fixture;
+pub mod effective_state_machine;
 mod event;
 pub mod index;
 pub mod intake;

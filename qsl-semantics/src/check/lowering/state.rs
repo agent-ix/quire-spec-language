@@ -24,8 +24,8 @@ use crate::check::claims::BinderSite;
 use crate::check::family::OccurrenceRole;
 use crate::check::ir::CheckedNode;
 use crate::check::node_key::{
-    BodyTerm, FrameField, FrameModifies, GroupTerm, LeafTerm, MemberTerm, NodeRef, NodeTag,
-    Operation, Operator,
+    BodyTerm, FrameDeletesScoped, FrameField, FrameModifies, FrameScope, GroupTerm, LeafTerm,
+    MemberTerm, NodeRef, NodeTag, Operation, Operator,
 };
 use crate::check::refusal::{CheckRefusal, KeyFault};
 use crate::check::state_clause::PopulationDomain;
@@ -319,27 +319,49 @@ impl Lowering<'_> {
     ) -> Result<(NodeKey, NodeKey), CheckRefusal> {
         let declaring = self.object_node(anchor.declaring, location)?;
         let effect = anchor.operation.effect();
-        let mut modifies = Vec::with_capacity(effect.modifies.len());
+        let mut modifies =
+            Vec::with_capacity(effect.modifies.len() + effect.receiver_modifies.len());
         for entry in &effect.modifies {
-            modifies.push(self.frame_modifies_entry(entry, location)?);
+            let (declaration, name) = self.frame_modifies_entry(entry, location)?;
+            modifies.push((declaration, name, FrameScope::EveryObject));
         }
-        // FR-340: entries ascending by (declaring node digest, field name),
-        // a relationship's name sorting as empty, and no member holds a
-        // duplicate entry -- two clauses naming the same field twice (or a
-        // domain package listing it twice) still produce one `modifies`
-        // entry, so the frame's node id matches the deduplicated frame's and
-        // IR's reader (which rejects a repeated entry) never sees one.
+        for entry in &effect.receiver_modifies {
+            let (declaration, name) = self.frame_field(entry, location)?;
+            modifies.push((declaration, Some(name), FrameScope::Receiver));
+        }
+        // FR-340: entries ascending by (declaring node digest, field name,
+        // scope with `every-object` first), a relationship's name sorting as
+        // empty, and no member holds a duplicate entry -- two clauses naming
+        // the same field twice (or a domain package listing it twice) still
+        // produce one `modifies` entry, so the frame's node id matches the
+        // deduplicated frame's and IR's reader (which rejects a repeated
+        // entry) never sees one.
         modifies.sort();
         modifies.dedup();
         let modifies: Vec<FrameModifies> = modifies
             .into_iter()
-            .map(|(declaration, name)| match name {
-                Some(name) => FrameModifies::Field(FrameField::new(declaration, name)),
+            .map(|(declaration, name, scope)| match name {
+                Some(name) => FrameModifies::Field(FrameField::new(declaration, name, scope)),
                 None => FrameModifies::Relationship(NodeRef(declaration)),
             })
             .collect();
         let creates = self.frame_objects(&effect.creates, location)?;
         let deletes = self.frame_objects(&effect.deletes, location)?;
+        // FR-340: `deletes self` first, then each `deletes p` by parameter
+        // name as UTF-8 bytes, no entry twice.
+        let mut parameters: Vec<&String> = effect.deletes_arguments.iter().collect();
+        parameters.sort();
+        parameters.dedup();
+        let deletes_scoped: Vec<FrameDeletesScoped> = effect
+            .deletes_receiver
+            .then_some(FrameDeletesScoped::Receiver)
+            .into_iter()
+            .chain(
+                parameters
+                    .into_iter()
+                    .map(|name| FrameDeletesScoped::Parameter(name.clone())),
+            )
+            .collect();
         // FR-340: the frame body is no other term at all -- it holds
         // no application, and it never nests inside another term (the
         // schema scopes this shape to a `state`/`frame` node's own body).
@@ -349,7 +371,7 @@ impl Lowering<'_> {
             "frame",
             Some(declaring),
             None,
-            BodyTerm::frame(modifies, creates, deletes),
+            BodyTerm::frame(modifies, creates, deletes, deletes_scoped),
         )?;
         Ok((declaring, frame))
     }

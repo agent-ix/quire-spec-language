@@ -92,8 +92,7 @@ pub(crate) fn checked_refinement_failures(
     {
         if !writer
             .effect
-            .modifies
-            .iter()
+            .written_fields()
             .any(|written| lineage.contains(&written))
         {
             continue;
