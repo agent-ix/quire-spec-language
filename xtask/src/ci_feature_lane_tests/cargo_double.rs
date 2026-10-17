@@ -16,11 +16,10 @@ fn main() {
 
     if args.iter().any(|argument| argument == "--list") {
         let test = args
-            .windows(2)
-            .find(|pair| pair[0] == "--test")
-            .and_then(|pair| args.iter().position(|argument| argument == &pair[1]))
+            .iter()
+            .position(|argument| argument == "--exact")
             .and_then(|index| args.get(index + 1))
-            .expect("test filter after --test");
+            .expect("test filter after --exact");
         let count = std::env::var("FEATURE_LANE_LIST_COUNT")
             .ok()
             .and_then(|value| value.parse::<usize>().ok())

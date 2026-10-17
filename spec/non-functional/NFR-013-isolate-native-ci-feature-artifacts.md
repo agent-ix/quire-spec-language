@@ -52,7 +52,7 @@ The feature-lane routing change leaves non-feature targets on their existing
 artifact and feature policy. In particular, `ci-clean-build` retains its
 separate `clean` child (or explicit clean override), no-default-feature build,
 library-only `handoff-writer` check and no-default-feature parse invocation.
-`test-deep-format` runs `test --locked --workspace --test it` with the default
+`test-deep-format` runs `test --locked --workspace --tests` with the default
 lane's feature selection, so it uses the default lane's directory (or its
 explicit override) and reuses that lane's executables. The parse invocation and
 core xtask tools retain the caller root. The routing policy changes no Cargo
