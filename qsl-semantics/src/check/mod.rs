@@ -1425,8 +1425,8 @@ impl PackageDeclarations {
         let temporal_declarations = temporal_clause::TemporalDeclarations {
             scope: &scope,
             selections: &self.temporal_selections,
-            source: &self.source,
-            embedding: self.embedding.as_deref(),
+            source: &source,
+            embedding: embedding.as_deref(),
             position_limit: limits.nodes(),
         };
         for clause in &self.temporal_clauses {

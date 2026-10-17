@@ -30,7 +30,7 @@ fn source(temporal: &[&str], over: &str, formula: &str) -> String {
     }
     let using = if temporal.is_empty() { "v" } else { "t0" };
     text.push_str(&format!(
-        "record Counter {{ value: Int[0, 9]; }}\n\
+        "record Counter {{ level: Int[0, 9]; }}\n\
          record Loose {{ n: Integer; }}\n\
          temporal C using {using} over (c: {over}) clock \"model-steps\" on origin \
          {{ {formula} }}\n"
@@ -137,7 +137,7 @@ fn node(byte: u8) -> WireNodeId {
 #[trace("TC-836", "FR-326-AC-1")]
 #[test]
 fn a_bare_operator_is_unbounded_under_infinite_trace_and_refused_under_a_bounded_profile() {
-    let (_, clause) = checked(&[INFINITE], "eventually holds(c.value = 3)");
+    let (_, clause) = checked(&[INFINITE], "eventually holds(c.level = 3)");
     assert_eq!(clause.profile(), TemporalProfile::InfiniteTrace);
     assert_eq!(clause.horizon(), None);
     let [eventually] = clause.operators() else {
@@ -167,7 +167,7 @@ fn a_bare_operator_is_unbounded_under_infinite_trace_and_refused_under_a_bounded
         )]
     );
 
-    let (text, cause) = refused(&[EVENT], "eventually holds(c.value = 3)");
+    let (text, cause) = refused(&[EVENT], "eventually holds(c.level = 3)");
     assert_eq!(
         cause,
         TemporalCause::MissingInterval {
@@ -186,7 +186,7 @@ fn a_bare_operator_is_unbounded_under_infinite_trace_and_refused_under_a_bounded
 #[trace("TC-836", "FR-326-AC-2")]
 #[test]
 fn intervals_are_admitted_by_profile_and_the_horizon_is_the_greatest_reach() {
-    let (_, nested) = checked(&[EVENT], "always[0,2] eventually[1,3] holds(c.value = 3)");
+    let (_, nested) = checked(&[EVENT], "always[0,2] eventually[1,3] holds(c.level = 3)");
     assert_eq!(nested.horizon(), Some(5));
     let intervals: Vec<_> = nested
         .operators()
@@ -201,7 +201,7 @@ fn intervals_are_admitted_by_profile_and_the_horizon_is_the_greatest_reach() {
         ]
     );
 
-    let formula = "eventually[3,*] holds(c.value = 3)";
+    let formula = "eventually[3,*] holds(c.level = 3)";
     let (text, cause) = refused(&[EVENT], formula);
     assert_eq!(
         cause,
@@ -219,7 +219,7 @@ fn intervals_are_admitted_by_profile_and_the_horizon_is_the_greatest_reach() {
     assert_eq!(open.horizon(), None);
 
     for profile in [EVENT, INFINITE] {
-        let (text, cause) = refused(&[profile], "eventually[5,3] holds(c.value = 3)");
+        let (text, cause) = refused(&[profile], "eventually[5,3] holds(c.level = 3)");
         assert_eq!(
             cause,
             TemporalCause::InvertedInterval {
@@ -242,7 +242,7 @@ fn a_horizon_past_u64_is_a_work_budget_limit_at_the_overflowing_operator() {
     let text = source(
         &[EVENT],
         "Counter",
-        "eventually[0,18446744073709551615] eventually[0,1] holds(c.value = 3)",
+        "eventually[0,18446744073709551615] eventually[0,1] holds(c.level = 3)",
     );
     let package = assemble(&text);
     let Err(StageFailure::Limit(limit)) = check(&package) else {
@@ -272,7 +272,7 @@ fn the_unit_selects_exactly_one_temporal_profile() {
         (&[][..], Vec::new()),
         (&[EVENT, INFINITE][..], vec![EVENT, INFINITE]),
     ] {
-        let (text, cause) = refused(profiles, "eventually[0,1] holds(c.value = 3)");
+        let (text, cause) = refused(profiles, "eventually[0,1] holds(c.level = 3)");
         let start = text.find("temporal C").expect("the clause");
         let end = text.rfind('}').expect("the clause's close") + 1;
         assert_eq!(
@@ -294,7 +294,7 @@ fn the_unit_selects_exactly_one_temporal_profile() {
 #[trace("TC-836", "FR-326-AC-5")]
 #[test]
 fn a_bounded_clause_over_a_bounded_type_is_bounded_and_keys_carry_the_profile() {
-    let formula = "eventually[0,2] holds(c.value = 3)";
+    let formula = "eventually[0,2] holds(c.level = 3)";
     let key = |profile| {
         let (_, clause) = checked(&[profile], formula);
         let [claim] = TemporalTraceFamily::requirements(&clause)
@@ -376,9 +376,9 @@ fn the_package_check_refuses_a_clause_no_emission_writes_yet() {
     let package = assemble(&source(
         &[INFINITE],
         "Counter",
-        "eventually holds(c.value = 3)",
+        "eventually holds(c.level = 3)",
     ));
-    let text = source(&[INFINITE], "Counter", "eventually holds(c.value = 3)");
+    let text = source(&[INFINITE], "Counter", "eventually holds(c.level = 3)");
     let refusals = package
         .check(CheckingLimits::default())
         .expect_err("a temporal clause is not emitted yet");
@@ -397,7 +397,7 @@ fn the_package_check_refuses_a_clause_no_emission_writes_yet() {
     let bounded = assemble(&source(
         &[EVENT],
         "Counter",
-        "eventually holds(c.value = 3)",
+        "eventually holds(c.level = 3)",
     ));
     let refusals = bounded
         .check(CheckingLimits::default())

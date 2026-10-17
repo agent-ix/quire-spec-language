@@ -2210,7 +2210,7 @@ impl PackageDeclarations {
         cancel: &Cancel,
     ) -> Result<Self, AssemblyRefusal> {
         let (selections, forms) = unit.into_parts();
-        let mut unit = Unit::new(forms);
+        let unit = Unit::new(forms);
         let mut errors = Vec::new();
         let owner = SourceOwner::from(&source);
         // The models and the one meter their admission counted on; checking
