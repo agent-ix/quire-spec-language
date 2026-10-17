@@ -48,13 +48,13 @@ and the sampler is the `quire.simulation.sampler/v1`
    the recorded trace and replay it. Then the same package with budget 0:
    `sample_model`, replay the trace against that system, and replay it
    against the default-budget system. Repeat step 1 and this step.
-6. Package `test/tallies` (object type `test/tallies/Tally` with
-   `items: Sequence<Int[0, 2]>[1, 1]`, population `test/tallies/tallies`,
-   operation `touch()` with an empty frame, and a query operation
-   `ready(): Boolean` whose effective precondition is `false`), initial state `t1` with `items` `[2]`, universe `[t1]`. Expand `t1` with:
-   `pre Low { self.ready() }` alone; `Low` and
-   `pre Never { false }`; `Low` and `pre Aaa { false }`; `post LowPost` with
-   `Low`'s body and no `pre` clause.
+6. The `test/orders` dispatch fixture (object type `A`, population `pop`, a
+   query operation `ready(): Boolean` whose effective precondition is
+   `false`, `guard` false), initial state `t1`, universe `[t1]`. Expand `t1`
+   with: `pre Low { self.ready() }` on `ready` alone; `Low` and
+   `pre Never { false }`; `post LowPost { self.ready() }` on `ready` and no
+   `pre` clause. Not covered: the `test/tallies` package (`Tally`,
+   `touch()`) and the `pre Aaa { false }` name-order case.
 
 Tag the tests `#[trace("TC-472", "FR-120-AC-n")]`.
 
@@ -93,10 +93,9 @@ Tag the tests `#[trace("TC-472", "FR-120-AC-n")]`.
   system it refuses `ReplayError::Stopped { step: 0, recorded:
   Some(resource_exhausted/insufficient-next-charge), replayed: None }`. The
   repeated runs give equal `Exploration`s and equal `ModelTrace`s.
-- Step 6: `Low` alone: no `touch` successor, and `t1` has
-  `ContractUndetermined { <touch>, none, Low, FamilyResult::Undefined
-  precondition-false }`.
-  `Low` with `Never`, and `Low` with `Aaa`: no `touch` successor and no
-  finding. `LowPost`: no `touch` successor, and `t1` has
-  `ContractUndetermined { <touch>, Some(<t1's digest>), LowPost,
+- Step 6: `Low` alone: no `ready` successor, and `t1` has
+  `ContractUndetermined { <ready>, none, Low, FamilyResult::Undefined
+  precondition-false }`. `Low` with `Never`: no `ready` successor and no
+  finding. `LowPost`: no `ready` successor, and `t1` has
+  `ContractUndetermined { <ready>, Some(<t1's digest>), LowPost,
   FamilyResult::Undefined precondition-false }`.
