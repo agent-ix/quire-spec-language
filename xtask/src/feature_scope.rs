@@ -377,16 +377,8 @@ impl TreeFeatures {
             let Ok(depth) = depth.parse::<usize>() else {
                 continue;
             };
-            let mut rest = rest.trim_end();
-            loop {
-                let stripped = [" (*)", " (proc-macro)"]
-                    .iter()
-                    .find_map(|suffix| rest.strip_suffix(suffix));
-                match stripped {
-                    Some(shorter) => rest = shorter,
-                    None => break,
-                }
-            }
+            let rest = rest.trim_end();
+            let rest = rest.strip_suffix(" (*)").unwrap_or(rest);
             let Some((package, features)) = rest.rsplit_once('|') else {
                 continue;
             };
@@ -716,7 +708,11 @@ mod tests {
             read.variants["serde_core v1.0.228"],
             BTreeSet::from(["alloc,std".to_owned(), "std".to_owned()])
         );
-        assert_eq!(read.variants["serde_derive v1.0.228"].len(), 1);
+        // Cargo prints the proc-macro marker inside the package text.
+        assert_eq!(
+            read.variants["serde_derive v1.0.228 (proc-macro)"],
+            BTreeSet::from(["default".to_owned()])
+        );
         assert_eq!(read.variants.len(), 3);
         assert_eq!(read.roots.len(), 1);
     }
