@@ -31,8 +31,8 @@ source. In QSL's own tests, with test descriptors and fixture dispositions
 4. Build a requirement over `s`'s collection domain and a quantity domain
    directly (no source spelling types a parameter by a quantity yet), write
    its item, and route a fixture `unbounded-extent` disposition.
-5. Evaluate `f` at S6a on the set `{0, 1, …, 999}` (1,000 distinct members of `Int[0, 9999]`), then with a meter too small
-   for construction.
+5. Evaluate `f` at S6a on the set `{0, 1, …, 999}` (1,000 distinct members of `Int[0, 9999]`), then form it on a meter too
+   small, and call `f` on a meter with no work left.
 
 Tag the tests `#[trace("TC-845", "FR-335-AC-n")]`.
 
@@ -45,5 +45,6 @@ Tag the tests `#[trace("TC-845", "FR-335-AC-n")]`.
   distinct obligation identities; the unbounded item still `requires-bound`.
 - Step 4: `finite_bound_available` false; `unsupported`, warned,
   `unbounded-extent`.
-- Step 5: 1,001 with no cardinality refusal; `Incomplete`; the step 1
-  disposition is unchanged.
+- Step 5: 1,001 with no cardinality refusal; `Incomplete` at `collection.member-walk`
+  when forming, at `function.call` when calling; evaluation reads no request
+  item, so the step 1 disposition cannot change.

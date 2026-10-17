@@ -874,12 +874,19 @@ fn parameter_type_node(graph: &CheckedGraph) -> quire_exact::NodeKey {
         .expect("a typed parameter")
 }
 
-/// FR-333-AC-2, FR-334-AC-2, FR-153-AC-9: `Population<T>` resolves to
+/// FR-333-AC-2, FR-334-AC-2, FR-097-AC-8: `Population<T>` resolves to
 /// `Population(None)` and lowers to its own population node with no maximum,
 /// distinct from `Population<T>[4]` and from an unbounded `Set<Reference<T>>`
 /// (here `Set<M::A>`), with no refusal; `allInstances` over it is the
 /// unbounded set.
-#[trace("TC-843", "FR-333-AC-2", "TC-844", "FR-334-AC-2", "FR-153-AC-9")]
+#[trace(
+    "TC-843",
+    "FR-333-AC-2",
+    "TC-844",
+    "FR-334-AC-2",
+    "TC-441",
+    "FR-097-AC-8"
+)]
 #[test]
 fn an_unbounded_population_has_its_own_node_and_no_maximum() {
     let parameter = |spelling: &str| {

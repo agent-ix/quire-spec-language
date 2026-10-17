@@ -40,10 +40,8 @@ the design authority; this requirement adds no rule of its own.
 - The kernel field shapes `CollectionType.bound: Option<CardinalityBound>`
   and `ValueType::Population(Option<u64>)` (ADR-014 N-3).
 
-FR-097-AC-8's lowering clause is not implemented: until QSL-42 gives
-an unbounded population its own node, lowering one refuses with
-`UnrepresentableBound` rather than writing the bare set node an unbounded
-`Set<Reference<T>>` also has. TC-441 step 5 checks that interim refusal.
+An unbounded population lowers to its own `model_population` node with no
+`max` member (FR-334), distinct from an unbounded `Set<Reference<T>>`.
 
 ## Inputs
 

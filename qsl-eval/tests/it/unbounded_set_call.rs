@@ -83,7 +83,8 @@ fn call(package: &CheckedPackage, argument: Value, meter: &mut Meter) -> Outcome
 }
 
 /// A 1,000-member set is below no declared bound and `f` returns 1,001; a
-/// meter too small to build it stops at a collection charge point.
+/// meter too small to form it stops at the member walk, and one too small
+/// for the call stops at `function.call`.
 #[trace("TC-845", "FR-335-AC-5")]
 #[test]
 fn an_unbounded_set_of_any_size_evaluates_and_stops_only_on_the_meter() {
@@ -92,6 +93,7 @@ fn an_unbounded_set_of_any_size_evaluates_and_stops_only_on_the_meter() {
     let Outcome::Completed(set) = set_of(1_000, &mut meter) else {
         panic!("the set forms on an unlimited meter");
     };
+    let formed = set.clone();
     let mut meter = Meter::new(UNLIMITED);
     assert_eq!(
         format!("{:?}", call(&package, set, &mut meter)),
@@ -101,6 +103,9 @@ fn an_unbounded_set_of_any_size_evaluates_and_stops_only_on_the_meter() {
         )
     );
 
+    // Forming a set of 1,000 members charges `collection.member-walk` for
+    // each membership comparison before `collection.bound`, so a 10-unit
+    // meter stops at the member walk.
     let mut small = Meter::new(ScalarLimits {
         work_units: 10,
         ..UNLIMITED
@@ -108,12 +113,15 @@ fn an_unbounded_set_of_any_size_evaluates_and_stops_only_on_the_meter() {
     let Outcome::Incomplete(stopped) = set_of(1_000, &mut small) else {
         panic!("a 10-unit meter cannot build 1,000 members");
     };
-    assert!(
-        matches!(
-            stopped.charge_point,
-            ChargePoint::CollectionBound | ChargePoint::CollectionElement
-        ),
-        "{:?}",
-        stopped.charge_point
-    );
+    assert_eq!(stopped.charge_point, ChargePoint::CollectionMemberWalk);
+
+    // `f` itself on a meter with no work left stops at `function.call`.
+    let mut spent = Meter::new(ScalarLimits {
+        work_units: 0,
+        ..UNLIMITED
+    });
+    let Outcome::Incomplete(stopped) = call(&package, formed.clone(), &mut spent) else {
+        panic!("a spent meter denies the call");
+    };
+    assert_eq!(stopped.charge_point, ChargePoint::FunctionCall);
 }
