@@ -295,13 +295,13 @@ fn an_implementation_gap_is_unsupported() {
     assert_eq!(class_of(&projection), RefinementClass::Unsupported);
 }
 
-/// FR-341-AC-5, AC-6, AC-1: a `temporal` clause that checks but that no
+/// FR-341-AC-5, AC-6, AC-3: a `temporal` clause that checks but that no
 /// emission writes yet is `unsupported_construct`/`not-yet-implemented` and
 /// classifies `unsupported`; a profile that does not admit an operator's
 /// interval form is `unsupported_construct`/`expression-form`, `prohibited`;
 /// a wrong profile selection, an inverted interval and an unresolved
 /// parameter type are typed refusals, `refused`. None names a limit.
-#[trace("TC-861", "FR-341-AC-5", "FR-341-AC-6", "FR-341-AC-1")]
+#[trace("TC-861", "FR-341-AC-5", "FR-341-AC-6", "FR-341-AC-3")]
 #[test]
 fn each_temporal_clause_refusal_has_its_class() {
     let span = qsl_foundation::Span { start: 0, end: 1 };

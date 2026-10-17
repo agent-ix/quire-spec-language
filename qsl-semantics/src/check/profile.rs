@@ -224,7 +224,7 @@ mod tests {
     /// `TemporalTrace` family's catalog by identity, each as bounded or
     /// not; a near-miss identity and the timed profile (FR-234) are in no
     /// catalog yet and refuse.
-    #[trace("TC-836", "FR-326-AC-4")]
+    #[trace("FR-110")]
     #[test]
     fn the_temporal_profiles_resolve_in_the_temporal_catalog() {
         let selection = |identity: &str| ProfileSelection {

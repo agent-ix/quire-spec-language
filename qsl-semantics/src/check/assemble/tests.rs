@@ -451,7 +451,7 @@ fn floating_types_are_admitted_and_reference_types_are_refused() {
 /// `TemporalTrace` check, and records the unit's temporal profile
 /// selections; it refuses a clause whose `using` alias names no profile
 /// selection at that alias.
-#[trace("FR-326-AC-4", "TC-836")]
+#[trace("FR-326")]
 #[test]
 fn the_assembler_keeps_temporal_clauses_and_refuses_an_undeclared_alias() {
     let clause = |alias: &str| {

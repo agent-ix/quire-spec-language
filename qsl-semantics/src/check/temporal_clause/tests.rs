@@ -319,7 +319,7 @@ fn a_bounded_clause_over_a_bounded_type_is_bounded_and_keys_carry_the_profile() 
 
 /// FR-326 "Requirement record": a type position with no finite bound in the
 /// `over` parameter's type is an unbounded domain beside the formula's.
-#[trace("TC-836", "FR-326-AC-1")]
+#[trace("FR-326")]
 #[test]
 fn the_over_parameters_unbounded_positions_join_the_record() {
     let text = source(&[INFINITE], "Loose", "eventually holds(c.n = 3)");
@@ -352,7 +352,7 @@ fn the_over_parameters_unbounded_positions_join_the_record() {
 }
 
 /// FR-326: an `over` type that names nothing refuses at its type form.
-#[trace("TC-836", "FR-326-AC-4")]
+#[trace("FR-326")]
 #[test]
 fn an_unresolved_over_type_refuses_at_the_type() {
     let text = source(&[EVENT], "Missing", "eventually[0,1] holds(true)");
@@ -370,7 +370,7 @@ fn an_unresolved_over_type_refuses_at_the_type() {
 /// FR-326: a clause that checks is still refused by `check` itself until
 /// FR-337 emits it, as `unsupported_construct`/`not-yet-implemented`, and
 /// a clause that does not check reports its own refusal instead.
-#[trace("TC-836", "FR-326-AC-1")]
+#[trace("FR-326")]
 #[test]
 fn the_package_check_refuses_a_clause_no_emission_writes_yet() {
     let package = assemble(&source(
