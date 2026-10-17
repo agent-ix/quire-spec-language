@@ -92,8 +92,8 @@ mod state;
 mod wire;
 
 pub(crate) use model::ParentSlotFailure;
-pub(crate) use model::{record_node_key, variant_type_node_key, RecordKeyError};
-pub use model::{AdmittedModel, ForeignView, ModelClause};
+pub(crate) use model::{bound_origin, record_node_key, variant_type_node_key, RecordKeyError};
+pub use model::{AdmittedModel, AuthoredBound, ForeignView, ModelClause};
 pub(crate) use protocol::{declaration_origin, ProtocolInput};
 pub(crate) use state::{
     AnchorInput, AttemptInput, LoweredAttempt, LoweredClause, OperationBinding, StateClauseInput,
@@ -528,6 +528,10 @@ pub(crate) struct Lowered {
     /// the slot it binds: the roots a claim's extent is keyed by.
     pub(crate) binders: BTreeMap<BinderSite, NodeKey>,
     pub(crate) parameter_spans: BTreeMap<(NodeKey, OccurrenceOrigin), qsl_foundation::Span>,
+    /// Each `bounded_domain`/`model_population` node lowering built (FR-094,
+    /// FR-380), whose `Type` occurrences take their ordinals in ascending
+    /// source order.
+    pub(crate) population_nodes: BTreeSet<NodeKey>,
 }
 
 /// Builds and keys the nodes of one package.
@@ -629,6 +633,11 @@ pub(crate) struct Lowering<'a> {
     /// first clause naming an operation, in source order, mints the
     /// occurrence; every later clause naming the same operation shares it.
     frame_origins: BTreeMap<(EffectiveId, String), OccurrenceOrigin>,
+    /// Each `model_population` node built so far (FR-094, FR-380).
+    population_nodes: BTreeSet<NodeKey>,
+    /// The (`bound` label, population node) pairs whose one `Type`
+    /// occurrence of the bound's `[N]` is recorded (FR-380).
+    bound_sites: BTreeSet<(String, NodeKey)>,
     /// What lowering holds for each checked protocol declaration, by its
     /// index in the unit's protocols (FR-092).
     protocol_keys: Vec<protocol::ProtocolKey>,
@@ -1465,6 +1474,8 @@ impl<'a> Lowering<'a> {
             node_budget: u64::MAX,
             text_reach: BTreeMap::new(),
             frame_origins: BTreeMap::new(),
+            population_nodes: BTreeSet::new(),
+            bound_sites: BTreeSet::new(),
             protocol_keys: Vec::new(),
         }
     }
@@ -1529,6 +1540,7 @@ impl<'a> Lowering<'a> {
             functions: self.functions,
             binders: self.binders,
             parameter_spans,
+            population_nodes: self.population_nodes,
         }
     }
 
@@ -3309,7 +3321,11 @@ impl<'a> Lowering<'a> {
                     Keyed::Application(
                         Operator::Query,
                         Operation {
-                            member: Some(Member::RelationshipEnd { declaration, name }),
+                            member: Some(Member::RelationshipEnd {
+                                declaration,
+                                name,
+                                population: None,
+                            }),
                             ..plain("quire.op.model.navigate")
                         },
                     ),
@@ -3701,7 +3717,8 @@ impl<'a> Lowering<'a> {
                 target,
                 relationship,
                 role,
-                ..
+                near,
+                population,
             } => {
                 // FR-365/FR-105: one `quire.op.model.reaches` over both
                 // references, naming the end by the relationship's model
@@ -3714,11 +3731,33 @@ impl<'a> Lowering<'a> {
                         CheckCause::NodePreimage(NodeKeyRefusal::EmptyBindingName),
                     )
                 })?;
+                // FR-365 "The population link": only a walked population
+                // with an authored bound names its node.
+                let population = match population {
+                    None => None,
+                    Some(bound) => {
+                        let near_object = self
+                            .scope
+                            .relationships()
+                            .end_object(relationship, *near)
+                            .ok_or_else(|| {
+                                refuse(
+                                    node.location(),
+                                    CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch),
+                                )
+                            })?;
+                        Some(self.bounded_population(bound, near_object, node.location())?)
+                    }
+                };
                 (
                     Keyed::Application(
                         Operator::Reaches,
                         Operation {
-                            member: Some(Member::RelationshipEnd { declaration, name }),
+                            member: Some(Member::RelationshipEnd {
+                                declaration,
+                                name,
+                                population,
+                            }),
                             ..plain("quire.op.model.reaches")
                         },
                     ),

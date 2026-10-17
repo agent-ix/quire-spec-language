@@ -93,6 +93,14 @@ pub(super) fn member<'de, D: Deserializer<'de>>(
         "relationship_end" => Member::RelationshipEnd {
             declaration: declaration()?,
             name: identifier("name")?,
+            population: match wire.get("population") {
+                None => None,
+                Some(population) => Some(
+                    NodeRef::deserialize(population)
+                        .map(|node| node.0)
+                        .map_err(D::Error::custom)?,
+                ),
+            },
         },
         "operation" => Member::Operation {
             declaration: declaration()?,

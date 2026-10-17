@@ -51,6 +51,29 @@ pub struct AdmittedModel {
     /// Each type's direct supertypes, from the inherit facts of its effective
     /// declaration; ancestry beyond one edge is followed on demand.
     supertypes: BTreeMap<DeclarationKey, Vec<DeclarationKey>>,
+    /// The authored bound (FR-380) of each population this package's
+    /// `bound` declarations name, by the population's declaration key.
+    /// Empty until the assembler resolves the unit's bounds.
+    population_bounds: BTreeMap<DeclarationKey, AuthoredBound>,
+}
+
+/// The `Origin::TypeDeclaration` name the `[N]` of the `bound` declaration
+/// labelled `label` is located under. Spaced, so it names no declared type.
+pub(crate) fn bound_origin(label: &str) -> String {
+    format!("bound {label}")
+}
+
+/// An authored finite maximum of one domain-package population (FR-380):
+/// part of the population's meaning, never a resource limit (ADR-014 B-1).
+/// A population the unit does not bound has none.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct AuthoredBound {
+    /// The inclusive maximum object count `N`.
+    pub maximum: u64,
+    /// The `bound` declaration's label, which names its `[N]` occurrence.
+    pub label: String,
+    /// The bounded population's declaration key.
+    pub population: DeclarationKey,
 }
 
 /// One lineage's parent member, as the staged admission selects it.
@@ -377,6 +400,7 @@ impl AdmittedModel {
                 })
                 .collect(),
             alias: None,
+            population_bounds: BTreeMap::new(),
             selection: domain_package.model_selection.clone(),
             records: domain_package
                 .records
@@ -405,6 +429,7 @@ impl AdmittedModel {
             )),
             supertypes: BTreeMap::new(),
             alias: None,
+            population_bounds: BTreeMap::new(),
             selection: domain_package.model_selection.clone(),
             records: domain_package
                 .records
@@ -421,6 +446,28 @@ impl AdmittedModel {
     pub fn with_alias(mut self, alias: impl Into<String>) -> Self {
         self.alias = Some(alias.into());
         self
+    }
+
+    /// This package with the authored population bounds the unit's `bound`
+    /// declarations resolved to it (FR-380).
+    #[must_use]
+    pub(crate) fn with_population_bounds(
+        mut self,
+        bounds: BTreeMap<DeclarationKey, AuthoredBound>,
+    ) -> Self {
+        self.population_bounds = bounds;
+        self
+    }
+
+    /// Every authored population bound of this package (FR-380).
+    pub(crate) fn population_bounds(&self) -> impl Iterator<Item = &AuthoredBound> {
+        self.population_bounds.values()
+    }
+
+    /// The authored bound of the population `population`, if the unit
+    /// bounds it (FR-380).
+    pub(crate) fn population_bound(&self, population: &DeclarationKey) -> Option<&AuthoredBound> {
+        self.population_bounds.get(population)
     }
 
     /// The alias of the `model` declaration this package is admitted for,
@@ -498,12 +545,13 @@ impl AdmittedModel {
     /// the same domain key. The ordinal is stable within this package's
     /// digest only. A domain package population declares no maximum (the
     /// Semantic IR `population` record has no such member), so each one is
-    /// an unbounded `Population(None)` domain.
+    /// an unbounded `Population(None)` domain unless the unit authors a
+    /// bound on it (FR-380), which is paired with it here.
     pub(crate) fn populations_of(
         &self,
         target: EffectiveId,
         conforms: impl Fn(EffectiveId, EffectiveId) -> bool,
-    ) -> Vec<(usize, &DeclarationKey, EffectiveId)> {
+    ) -> Vec<(usize, &DeclarationKey, EffectiveId, Option<&AuthoredBound>)> {
         let covers = |member: &DeclarationKey| {
             self.types.iter().any(|(id, declared)| {
                 declared == member && (*id == target || conforms(target, *id))
@@ -511,7 +559,14 @@ impl AdmittedModel {
         };
         self.population_domains()
             .filter(|(_, population, _)| population.member_types.iter().any(covers))
-            .map(|(ordinal, population, canonical)| (ordinal, &population.key, canonical))
+            .map(|(ordinal, population, canonical)| {
+                (
+                    ordinal,
+                    &population.key,
+                    canonical,
+                    self.population_bounds.get(&population.key),
+                )
+            })
             .collect()
     }
 
@@ -898,7 +953,29 @@ impl<'a> Lowering<'a> {
             BodyTerm::aggregate(vec![MemberTerm::reference(reference)]),
         )?;
         let max = self.integer_literal(Integer::from(maximum), location)?;
-        self.bounded("model_population", set, vec![("max", max)], location)
+        let node = self.bounded("model_population", set, vec![("max", max)], location)?;
+        self.population_nodes.insert(node);
+        Ok(node)
+    }
+
+    /// FR-380 "The population node": the `Population<E>[N]` node of the
+    /// authored `bound`, `E` the near end's type of the reachability that
+    /// walks it, with the one `Type` occurrence of the bound's `[N]` this
+    /// node holds for that bound (once, however many reachabilities share
+    /// it). A bound no reachability walks never reaches here, so it emits no
+    /// node and no occurrence.
+    pub(super) fn bounded_population(
+        &mut self,
+        bound: &AuthoredBound,
+        near: EffectiveId,
+        reachability: &Location,
+    ) -> Result<NodeKey, CheckRefusal> {
+        let site = type_declaration(&bound_origin(&bound.label));
+        let node = self.population_type(near, Some(bound.maximum), reachability)?;
+        if self.bound_sites.insert((bound.label.clone(), node)) {
+            self.record(node, OccurrenceRole::Type, site);
+        }
+        Ok(node)
     }
 
     /// A quantity's type node: a declared unit's nominal node, or a

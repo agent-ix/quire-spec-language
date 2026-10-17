@@ -31,8 +31,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_forms::{
     AliasForm, BuiltinType, DeclarationForm, DeclaredName, DimensionForm, EnumForm, ExprNode,
-    Expression, FunctionDeclaration, OperationBodyForm, ParsedUnit, RecordFieldForm,
-    StateClauseForm, TypeForm, TypeFormHead, UnitForm,
+    Expression, FunctionDeclaration, OperationBodyForm, ParsedUnit, PopulationBoundForm,
+    RecordFieldForm, StateClauseForm, TypeForm, TypeFormHead, UnitForm,
 };
 use qsl_foundation::diagnostic::{CatalogCode, LimitExceeded};
 use qsl_foundation::source::provenance::RawSourceRef;
@@ -46,7 +46,8 @@ use super::check::{
     EnumBinding, ModelRecords, PackageDeclarations, ResolvedSignature, VariantTypeDeclaration,
 };
 use super::lowering::{
-    record_node_key, strongly_connected, variant_type_node_key, AdmittedModel, RecordKeyError,
+    record_node_key, strongly_connected, variant_type_node_key, AdmittedModel, AuthoredBound,
+    RecordKeyError,
 };
 use super::node_key::{declared_type_handle, nominal_key, NodeKeyRefusal, SourceOwner};
 use super::operation_body::OperationBodyDeclaration;
@@ -364,9 +365,26 @@ pub enum AssemblyCause {
         /// The span of each body's declaration, in source order.
         bodies: Vec<Span>,
     },
+    /// A `bound` declaration names a model alias that is no `model`
+    /// declaration of the unit, or a population its domain package does not
+    /// declare (FR-380 "The declaration").
+    UnresolvedPopulationBound {
+        /// The alias or population name as written.
+        name: String,
+    },
+    /// A `bound` declaration's label is another bound's, a clause's or a
+    /// function's, or two `bound` declarations name one population (FR-380
+    /// "The declaration"). `name` is the shared label or the population
+    /// as `M::p`.
+    AmbiguousPopulationBound {
+        /// The shared label, or the population as `M::p`.
+        name: String,
+        /// The span of each declaration's name, in source order.
+        spans: Vec<Span>,
+    },
     /// A state clause's context type (or the type declaring its operation)
-    /// is a member type of two or more populations with no maximum, so its
-    /// extent cannot name exactly one (FR-104 "Requirements").
+    /// is a member type of two or more populations, so its extent cannot
+    /// name exactly one (FR-104 "Requirements").
     AmbiguousPopulation {
         /// The context type as written, `M::T`.
         context: String,
@@ -381,7 +399,8 @@ impl AssemblyCause {
         match self {
             Self::UnresolvedTypeName { .. }
             | Self::UndeclaredAlias { .. }
-            | Self::UnresolvedOperation { .. } => Code::MissingDeclaration,
+            | Self::UnresolvedOperation { .. }
+            | Self::UnresolvedPopulationBound { .. } => Code::MissingDeclaration,
             Self::UnadmittedModel { .. } | Self::UnsuppliedImport { .. } => Code::MissingImport,
             Self::ModelType { .. } => Code::RuntimeInvariant,
             Self::AmbiguousTypeName { .. }
@@ -389,6 +408,7 @@ impl AssemblyCause {
             | Self::DuplicateEnumMember { .. }
             | Self::DuplicateQuantityName { .. }
             | Self::AmbiguousOperation { .. }
+            | Self::AmbiguousPopulationBound { .. }
             | Self::AmbiguousPopulation { .. } => Code::AmbiguousDeclaration,
             Self::UnresolvedQuantityName { .. } => Code::MissingDeclaration,
             Self::DuplicateOperationBody { .. } => Code::ConflictingDeclaration,
@@ -455,12 +475,15 @@ impl AssemblyCause {
     /// ADR-013 O-17).
     pub fn catalog_code(&self) -> CatalogCode {
         let cause = match self {
-            Self::UnresolvedTypeName { .. } | Self::UnresolvedOperation { .. } => "missing-name",
+            Self::UnresolvedTypeName { .. }
+            | Self::UnresolvedOperation { .. }
+            | Self::UnresolvedPopulationBound { .. } => "missing-name",
             Self::AmbiguousTypeName { .. }
             | Self::DuplicateAlias { .. }
             | Self::DuplicateEnumMember { .. }
             | Self::DuplicateQuantityName { .. }
             | Self::AmbiguousOperation { .. }
+            | Self::AmbiguousPopulationBound { .. }
             | Self::AmbiguousPopulation { .. } => "ambiguous-name",
             Self::UnresolvedQuantityName { .. } => "missing-name",
             Self::DuplicateOperationBody { .. } => "duplicate-declaration",
@@ -591,6 +614,9 @@ struct Unit {
     /// Operation body declarations in declaration order (FR-102), resolved
     /// by the caller into `OperationBodyDeclaration`s (FR-104).
     operation_bodies: Vec<OperationBodyForm>,
+    /// `bound` declarations in declaration order (FR-380), resolved by the
+    /// caller into the admitted models' authored population bounds.
+    population_bounds: Vec<PopulationBoundForm>,
     /// Each `protocol` declaration's form, in source order, for FR-113's
     /// `check::protocol_clause` checker to resolve at S3.
     protocols: Vec<qsl_forms::ProtocolDeclarationForm>,
@@ -608,6 +634,7 @@ impl Unit {
             declared: BTreeMap::new(),
             state_clauses: Vec::new(),
             operation_bodies: Vec::new(),
+            population_bounds: Vec::new(),
             protocols: Vec::new(),
         };
         for form in forms {
@@ -639,6 +666,7 @@ impl Unit {
                 }
                 DeclarationForm::StateClause(clause) => unit.state_clauses.push(*clause),
                 DeclarationForm::OperationBody(body) => unit.operation_bodies.push(*body),
+                DeclarationForm::PopulationBound(bound) => unit.population_bounds.push(bound),
                 DeclarationForm::Protocol(protocol) => unit.protocols.push(protocol),
                 DeclarationForm::Union(union) => {
                     unit.declare(&union.name, Declared::Composite);
@@ -2570,6 +2598,14 @@ impl PackageDeclarations {
             .iter()
             .map(|enumeration| (enumeration.name.name.clone(), enumeration.name.span))
             .collect();
+        // The `[N]` of each `bound` is located under its label (FR-380), the
+        // position its population node's `Type` occurrence resolves to.
+        declared_type_spans.extend(unit.population_bounds.iter().map(|bound| {
+            (
+                super::lowering::bound_origin(&bound.label.name),
+                bound.bracketed,
+            )
+        }));
         // A selected model's alias is the declaration-site locus for model
         // graph roots that have no value or function occurrence of their own.
         // `Origin::TypeDeclaration` resolves this same span table, so such a
@@ -2693,6 +2729,18 @@ impl PackageDeclarations {
             operations: &operations,
             selected: &models,
         };
+        // FR-380: a bound applies to the whole package, so every model holds
+        // its bounds before any clause resolves the population it ranges
+        // over.
+        let (admitted, bound_errors) = match population_bounds(
+            &unit.population_bounds,
+            &models,
+            &unit.state_clauses,
+            &unit.functions,
+        ) {
+            Ok(bounds) => (apply_population_bounds(admitted, bounds), Vec::new()),
+            Err(errors) => (admitted, errors),
+        };
         let state_clauses = state_clauses(unit.state_clauses, &resolve, &admitted);
         let operation_bodies = operation_bodies(unit.operation_bodies, &resolve);
         let protocol_attempts = protocol_attempts(
@@ -2704,9 +2752,11 @@ impl PackageDeclarations {
         );
         let (state_clauses, protocol_attempts, operation_bodies) =
             match (state_clauses, protocol_attempts, operation_bodies) {
-                (Ok(clauses), Ok(attempts), Ok(bodies)) => (clauses, attempts, bodies),
+                (Ok(clauses), Ok(attempts), Ok(bodies)) if bound_errors.is_empty() => {
+                    (clauses, attempts, bodies)
+                }
                 (clauses, attempts, bodies) => {
-                    let mut errors = Vec::new();
+                    let mut errors = bound_errors;
                     for refusal in [clauses.err(), attempts.err(), bodies.err()]
                         .into_iter()
                         .flatten()
@@ -2976,6 +3026,149 @@ fn state_clauses(
     } else {
         refuse(errors)
     }
+}
+
+/// The authored bound of each bounded population, by `model` alias and then
+/// the population's declaration key (FR-380).
+type PopulationBounds = BTreeMap<String, BTreeMap<DeclarationKey, AuthoredBound>>;
+
+/// FR-380 "The declaration": each `bound` declaration resolved. Its alias
+/// must name a `model` declaration of the unit and its population a
+/// population declaration of that model's domain package; its maximum must
+/// fit a `u64`, as FR-333 requires of a `Population<T>[N]`. A label another
+/// bound, clause or function of the package uses, and two bounds naming one
+/// population, each refuse at every declaration involved. The result does
+/// not depend on the order of the declarations.
+fn population_bounds(
+    forms: &[PopulationBoundForm],
+    selected: &[SelectedModel],
+    clauses: &[StateClauseForm],
+    functions: &[FunctionDeclaration],
+) -> Result<PopulationBounds, Vec<AssemblyError>> {
+    let mut errors = Vec::new();
+    // Every declaration involved in an ambiguity, by what it shares.
+    let mut ambiguous: Vec<(String, Vec<Span>)> = Vec::new();
+
+    // A label names one declaration of the package.
+    let mut labels: BTreeMap<&str, (Vec<Span>, bool)> = BTreeMap::new();
+    for form in forms {
+        let (spans, _) = labels.entry(form.label.name.as_str()).or_default();
+        spans.push(form.label.span);
+    }
+    for (name, span) in
+        clauses
+            .iter()
+            .map(|clause| (clause.name.name.as_str(), clause.name.span))
+            .chain(functions.iter().filter_map(|function| {
+                Some((function.name.as_str(), function.spans()?.declaration))
+            }))
+    {
+        if let Some((spans, shared)) = labels.get_mut(name) {
+            spans.push(span);
+            *shared = true;
+        }
+    }
+    for (name, (spans, shared)) in labels {
+        if shared || spans.len() > 1 {
+            ambiguous.push((name.to_owned(), spans));
+        }
+    }
+
+    // A bound resolves to a population of its model, once.
+    let mut bounds = PopulationBounds::new();
+    let mut named: BTreeMap<(&str, DeclarationKey), Vec<Span>> = BTreeMap::new();
+    for form in forms {
+        let unresolved = |name: &DeclaredName| AssemblyError {
+            cause: AssemblyCause::UnresolvedPopulationBound {
+                name: name.name.clone(),
+            },
+            span: name.span,
+        };
+        let Some(model) = selected.iter().find(|model| model.alias == form.model.name) else {
+            errors.push(unresolved(&form.model));
+            continue;
+        };
+        let population =
+            model
+                .view
+                .domain_package()
+                .records
+                .iter()
+                .find_map(|record| match record {
+                    DomainPackageRecord::Population(population)
+                        if type_identity_segment(&population.key.package, &population.key.node)
+                            == Some(form.population.name.as_str()) =>
+                    {
+                        Some(population.key.clone())
+                    }
+                    _ => None,
+                });
+        let Some(population) = population else {
+            errors.push(unresolved(&form.population));
+            continue;
+        };
+        let Ok(maximum) = form.maximum.name.parse::<u64>() else {
+            errors.push(AssemblyError {
+                cause: AssemblyCause::IllFormedBounds(TypeFormFault::Malformed),
+                span: form.maximum.span,
+            });
+            continue;
+        };
+        named
+            .entry((form.model.name.as_str(), population.clone()))
+            .or_default()
+            .push(form.label.span);
+        bounds.entry(form.model.name.clone()).or_default().insert(
+            population.clone(),
+            AuthoredBound {
+                maximum,
+                label: form.label.name.clone(),
+                population,
+            },
+        );
+    }
+    for ((alias, population), spans) in named {
+        if spans.len() > 1 {
+            let name = type_identity_segment(&population.package, &population.node).map_or_else(
+                || population.node.clone(),
+                |segment| format!("{alias}::{segment}"),
+            );
+            ambiguous.push((name, spans));
+        }
+    }
+    for (name, mut spans) in ambiguous {
+        spans.sort_by_key(|span| span.start);
+        for span in &spans {
+            errors.push(AssemblyError {
+                cause: AssemblyCause::AmbiguousPopulationBound {
+                    name: name.clone(),
+                    spans: spans.clone(),
+                },
+                span: *span,
+            });
+        }
+    }
+    if errors.is_empty() {
+        Ok(bounds)
+    } else {
+        Err(errors)
+    }
+}
+
+/// `models` with each one's authored population bounds (FR-380).
+fn apply_population_bounds(
+    models: Vec<AdmittedModel>,
+    mut bounds: PopulationBounds,
+) -> Vec<AdmittedModel> {
+    models
+        .into_iter()
+        .map(
+            |model| match model.alias().and_then(|alias| bounds.remove(alias)) {
+                Some(held) => model.with_population_bounds(held),
+                None => model,
+            },
+        )
+        .collect()
 }
 
 /// FR-103, FR-302: the `DeclarationKey` of the operation `name` that the

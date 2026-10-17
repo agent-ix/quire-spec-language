@@ -2238,6 +2238,28 @@ pub struct OperationBodyForm {
     pub spans: DeclarationSpans,
 }
 
+/// `bound L on M::p [N]` (FR-380 "The declaration"): an authored finite
+/// maximum for the domain-package population `p` of the model `M`. S2 keeps
+/// the label, the model alias, the population name and the digits of `N`,
+/// each spelled and spanned, and resolves none of them: the assembler
+/// resolves the alias to a `model` declaration and `p` to a population of
+/// its domain package.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PopulationBoundForm {
+    /// The declared label.
+    pub label: DeclaredName,
+    /// The model alias, as written.
+    pub model: DeclaredName,
+    /// The population name, as written.
+    pub population: DeclaredName,
+    /// The digits of `N` exactly as written; the assembler reads them.
+    pub maximum: DeclaredName,
+    /// The span of the bracketed `[N]`.
+    pub bracketed: Span,
+    /// The span of the whole declaration.
+    pub span: Span,
+}
+
 /// One segment of a `NodeReference`, exactly as written: its text and the
 /// span of that segment alone (FR-112 "Outputs"). `Main::Applied` has two
 /// segments, `Tried` has one.
@@ -2687,6 +2709,8 @@ pub enum DeclarationForm {
     /// A `body` operation-body declaration, boxed for the same reason
     /// (FR-102).
     OperationBody(Box<OperationBodyForm>),
+    /// A `bound` population-bound declaration (FR-380).
+    PopulationBound(PopulationBoundForm),
     /// A `protocol` declaration (FR-112).
     Protocol(ProtocolDeclarationForm),
 }

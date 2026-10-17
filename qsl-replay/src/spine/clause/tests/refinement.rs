@@ -44,6 +44,10 @@ fn cause(code: Code, cause: Option<&'static str>) -> RefusalCause {
     }
 }
 
+fn cause_of(code: Code) -> RefusalCause {
+    cause(code, None)
+}
+
 fn location() -> Location {
     Location::root(Origin::Expression)
 }
@@ -535,6 +539,41 @@ fn an_assembly_type_limit_is_incomplete_naming_the_limit() {
             bound: 1
         }]
     );
+}
+
+/// FR-341-AC-3 (FR-380): the two refusals of a `bound` declaration that name
+/// a catalog code are typed refusals of the unit's content, so each
+/// classifies `refused`, carries its code and no limit.
+#[trace("TC-861", "FR-341-AC-3")]
+#[test]
+fn a_population_bound_refusal_is_a_typed_refusal_of_the_content() {
+    let span = qsl_foundation::Span { start: 0, end: 1 };
+    for (cause, code) in [
+        (
+            AssemblyCause::UnresolvedPopulationBound {
+                name: "nothing".to_owned(),
+            },
+            Code::MissingDeclaration,
+        ),
+        (
+            AssemblyCause::AmbiguousPopulationBound {
+                name: "OrdersBound".to_owned(),
+                spans: vec![span, span],
+            },
+            Code::AmbiguousDeclaration,
+        ),
+    ] {
+        let refusal = CompileRefusal::Assembly {
+            refusal: AssemblyRefusal {
+                errors: vec![AssemblyError { cause, span }],
+            },
+            region: None,
+        };
+        let classified = classify_refusal(&refusal);
+        assert_eq!(classified.class, RefinementClass::Refused);
+        assert_eq!(classified.causes, [cause_of(code)]);
+        assert!(classified.limits().is_empty());
+    }
 }
 
 /// FR-341 rule 4: an import whose I2 read reached an `i2.*` ceiling is

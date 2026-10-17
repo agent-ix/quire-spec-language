@@ -1077,6 +1077,9 @@ impl BodyTerm {
                 if let Some(declaration) = operation.member.as_ref().and_then(Member::declaration) {
                     visit(declaration);
                 }
+                if let Some(population) = operation.member.as_ref().and_then(Member::population) {
+                    visit(population);
+                }
                 visit(result_type.0);
             }
             Self::Frame(FrameTerm {
@@ -2214,9 +2217,14 @@ fn map_member(member: Member, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Membe
         Member::Element { declaration } => Member::Element {
             declaration: map(declaration),
         },
-        Member::RelationshipEnd { declaration, name } => Member::RelationshipEnd {
+        Member::RelationshipEnd {
+            declaration,
+            name,
+            population,
+        } => Member::RelationshipEnd {
             declaration: map(declaration),
             name,
+            population: population.map(&mut *map),
         },
         Member::Operation { declaration, name } => Member::Operation {
             declaration: map(declaration),

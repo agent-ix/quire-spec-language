@@ -245,6 +245,8 @@ fn assembly_limit(cause: &AssemblyCause) -> Option<ReachedLimit> {
         | AssemblyCause::UnresolvedOperation { .. }
         | AssemblyCause::AmbiguousOperation { .. }
         | AssemblyCause::DuplicateOperationBody { .. }
+        | AssemblyCause::UnresolvedPopulationBound { .. }
+        | AssemblyCause::AmbiguousPopulationBound { .. }
         | AssemblyCause::AmbiguousPopulation { .. } => None,
     }
 }

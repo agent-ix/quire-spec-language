@@ -24,6 +24,7 @@ use qsl_foundation::selection::SourceSelections;
 use qsl_foundation::{Code, Span};
 
 use super::protocol_clause;
+use super::state_model;
 use super::sum_case;
 use super::syntax::DeclarationForm;
 use super::value;
@@ -168,6 +169,10 @@ pub enum LeadingTokenKind {
     Post,
     /// `body`: the `ProtocolClause` operation-body form (FR-102).
     Body,
+    /// `bound`: the `StateModel` population-bound form (FR-380). `bound` is a
+    /// declaration-head spelling only; in an expression it stays an
+    /// identifier.
+    Bound,
     /// `protocol`: the `ProtocolClause` protocol declaration form, holding
     /// its scoped anchors (FR-112, ADR-012 §12.2).
     Protocol,
@@ -373,6 +378,7 @@ fn dispatch(
         LeadingTokenKind::Pre => protocol_clause::state_clause(construct),
         LeadingTokenKind::Post => protocol_clause::state_clause(construct),
         LeadingTokenKind::Body => protocol_clause::operation_body(construct),
+        LeadingTokenKind::Bound => state_model::population_bound(construct),
         LeadingTokenKind::Protocol => protocol_clause::protocol_declaration(construct),
         #[cfg(test)]
         LeadingTokenKind::TestProbe => test_support::stub_production(construct),
@@ -410,6 +416,7 @@ fn from_spelling(spelling: &[u8]) -> Option<LeadingTokenKind> {
         b"pre" => Some(LeadingTokenKind::Pre),
         b"post" => Some(LeadingTokenKind::Post),
         b"body" => Some(LeadingTokenKind::Body),
+        b"bound" => Some(LeadingTokenKind::Bound),
         b"protocol" => Some(LeadingTokenKind::Protocol),
         _ => None,
     }
@@ -450,8 +457,13 @@ fn declared_edition(cst: &LosslessCst) -> Option<String> {
 fn declared_extent(cst: &LosslessCst, node: &CstNode) -> Option<Box<str>> {
     let significant = value::significant_tokens(cst, node);
     for (index, token) in significant.iter().enumerate() {
+        // A `bound <label> on ...` population-bound declaration (FR-380) has
+        // an identifier after `bound`: only an integer literal is an extent.
         if token.spelling() == b"bound" {
-            if let Some(literal) = significant.get(index + 1) {
+            if let Some(literal) = significant
+                .get(index + 1)
+                .filter(|literal| literal.spelling().first().is_some_and(u8::is_ascii_digit))
+            {
                 return String::from_utf8(literal.spelling().to_vec())
                     .ok()
                     .map(String::into_boxed_str);

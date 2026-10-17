@@ -43,7 +43,7 @@
 //! `crate::check` -- layer 5 depending on layer 3 is the permitted
 //! direction (ADR-011 §6.1).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use quire_exact::{CollectionKind, NodeKey, Origin, Role};
 
@@ -1325,6 +1325,25 @@ impl<S> OccurrenceMap<S> {
         let ordinal = u64::try_from(spans.len()).unwrap_or(u64::MAX);
         spans.push(span);
         Origin::new(role.kernel_role(), ordinal)
+    }
+
+    /// Renumber the `role` occurrences of each node of `nodes` into
+    /// ascending order of `position` of their spans, keeping the recorded
+    /// order among equal positions (FR-380: a population node's `Type`
+    /// occurrences take their ordinals in source order, whichever writer
+    /// recorded them first). Only meant to run once lowering is done and
+    /// nothing holds an ordinal it returned.
+    pub(crate) fn order_by<K: Ord>(
+        &mut self,
+        role: OccurrenceRole,
+        nodes: &BTreeSet<NodeKey>,
+        position: impl Fn(&S) -> K,
+    ) {
+        for node in nodes {
+            if let Some(spans) = self.spans.get_mut(&(*node, role)) {
+                spans.sort_by_key(&position);
+            }
+        }
     }
 
     /// Whether any occurrence of `identity` is recorded.

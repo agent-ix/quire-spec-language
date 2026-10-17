@@ -22,9 +22,9 @@ use super::s6a::separation::{
 };
 use qsl_foundation::diagnostic::{kernel_refusal_record, InternalFault, Locus, RefusalRecord};
 use qsl_semantics::check::{
-    Arithmetic, CheckedGraph, CheckedLiteral, CheckedNode, Connective, DispatchTable, EndSide,
-    IntegerDivisionOperator, NodeId, NodeKind, Operator, OrderedKind, RecordSlot, Scope, Slot,
-    Visit,
+    Arithmetic, AuthoredBound, CheckedGraph, CheckedLiteral, CheckedNode, Connective,
+    DispatchTable, EndSide, IntegerDivisionOperator, NodeId, NodeKind, Operator, OrderedKind,
+    RecordSlot, Scope, Slot, Visit,
 };
 use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::family::FamilyResult;
@@ -316,6 +316,27 @@ fn single_target(
         })));
     }
     Ok(elements.pop())
+}
+
+/// FR-380: `objects` lists no more objects of the population `bound` limits
+/// than its authored maximum; otherwise `cardinality_out_of_bound`/
+/// `above-maximum` naming the maximum and the count, as an unbounded
+/// reading of a population with a declared maximum refuses (FR-084).
+fn check_authored_bound(objects: &ObjectEnvironment, bound: &AuthoredBound) -> Result<(), Halt> {
+    let Some(count) = objects
+        .population_size(&bound.population.node)
+        .filter(|count| *count > bound.maximum)
+    else {
+        return Ok(());
+    };
+    let maximum = CardinalityBound::new(0, bound.maximum)
+        .map_err(|_| invariant("authored-population-bound-invalid"))?;
+    Err(Halt::Stop(Stop::Refused(Refusal::CardinalityOutOfBound {
+        violation: BoundViolation::AboveMaximum,
+        kind: CollectionKind::Set,
+        bound: maximum,
+        count,
+    })))
 }
 
 /// `function.call`: one work unit per checked call.
@@ -1266,7 +1287,10 @@ impl<'a, 'm> Machine<'a, 'm> {
             // FR-365: `reaches(source, target, name)` over a relationship end,
             // read from the clause observation's extent of the relationship.
             NodeKind::ReachesEnd {
-                relationship, near, ..
+                relationship,
+                near,
+                population,
+                ..
             } => {
                 let Value::Reference(target) = self.pop()? else {
                     return Err(invariant("reaches-reference-value-expected"));
@@ -1280,6 +1304,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                     &target,
                     relationship,
                     *near,
+                    population.as_ref(),
                 )?)
             }
             // FR-308: the value of a protocol reference is the value of its
@@ -2194,8 +2219,15 @@ impl<'a, 'm> Machine<'a, 'm> {
         target: &ObjectReference,
         relationship: &DeclarationKey,
         near: EndSide,
+        population: Option<&AuthoredBound>,
     ) -> Result<bool, Halt> {
         let objects = self.objects_for(node)?;
+        // FR-380: a population with an authored bound holds at most that
+        // many objects; more refuses `cardinality_out_of_bound` before any
+        // charge, and is no resource outcome (ADR-014 B-1).
+        if let Some(bound) = population {
+            check_authored_bound(objects, bound)?;
+        }
         let refuse =
             |cause: NavigationRefusal| Halt::Family(FamilyResult::Refused(Box::new(cause)));
         let extents = objects.extents();

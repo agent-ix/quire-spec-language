@@ -47,6 +47,10 @@ pub struct ObjectEnvironment {
     /// The relationship instances this observation lists (FR-364); `None`
     /// for an environment no snapshot admitted.
     extents: Option<RelationshipExtents>,
+    /// How many objects each population of the snapshot lists, by the
+    /// population's declaration identity (FR-380); empty for an environment
+    /// no snapshot admitted.
+    population_sizes: BTreeMap<String, u64>,
 }
 
 impl ObjectEnvironment {
@@ -58,7 +62,22 @@ impl ObjectEnvironment {
             out_of_range: Vec::new(),
             unresolved_references: false,
             extents: None,
+            population_sizes: BTreeMap::new(),
         }
+    }
+
+    /// Records how many objects each population of the admitted snapshot
+    /// lists, by the population's declaration identity (FR-380).
+    #[must_use]
+    pub fn with_population_sizes(mut self, sizes: BTreeMap<String, u64>) -> Self {
+        self.population_sizes = sizes;
+        self
+    }
+
+    /// How many objects the snapshot lists for the population whose
+    /// declaration identity is `population`, when it lists that population.
+    pub fn population_size(&self, population: &str) -> Option<u64> {
+        self.population_sizes.get(population).copied()
     }
 
     /// Records the relationship extents and the population traversal this

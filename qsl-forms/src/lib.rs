@@ -31,6 +31,7 @@ mod clause_text;
 mod dispatch;
 mod protocol_clause;
 mod spans;
+mod state_model;
 mod sum_case;
 mod syntax;
 mod value;
@@ -46,11 +47,11 @@ pub use syntax::{
     DeclarationForm, DeclarationKind, DeclaredClauseKind, DeclaredName, DimensionForm,
     DimensionTermForm, EnumForm, EnumMemberForm, ExactNumberForm, ExactNumberKind, ExprId,
     ExprNode, ExprRef, Expression, ExpressionBuilder, FieldInitializer, FunctionDeclaration,
-    NameForm, OperationBodyForm, ProtocolBodyForm, ProtocolConstructForm, ProtocolConstructKind,
-    ProtocolDeclarationForm, ProtocolNodeDeclaration, ProtocolNodeKind, RecordFieldForm,
-    RecordForm, RoleForm, ScopeEntry, ScopeId, ScopeName, ScopedAnchorForm, ShapeChanged,
-    Spellings, StateClauseForm, StateClauseKind, TermOperator, TreeRefusal, TupleForm, TypeForm,
-    TypeFormHead, UnionForm, UnionMemberForm, UnitForm, UsingAlias,
+    NameForm, OperationBodyForm, PopulationBoundForm, ProtocolBodyForm, ProtocolConstructForm,
+    ProtocolConstructKind, ProtocolDeclarationForm, ProtocolNodeDeclaration, ProtocolNodeKind,
+    RecordFieldForm, RecordForm, RoleForm, ScopeEntry, ScopeId, ScopeName, ScopedAnchorForm,
+    ShapeChanged, Spellings, StateClauseForm, StateClauseKind, TermOperator, TreeRefusal,
+    TupleForm, TypeForm, TypeFormHead, UnionForm, UnionMemberForm, UnitForm, UsingAlias,
 };
 
 /// Each explicit heap stack S2 and the form traits keep grows by at most a

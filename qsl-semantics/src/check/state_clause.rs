@@ -30,7 +30,7 @@ use super::check::{bind_parameters, Signatures, StateContext, Typer};
 use super::claims::{wire, RequirementRecord};
 use super::facts::{CheckedFacts, Definedness};
 use super::ir::{CheckedBody, CheckedNode, DispatchTable, NodeKind, Observation};
-use super::lowering::{AdmittedModel, LoweredClause};
+use super::lowering::{AdmittedModel, AuthoredBound, LoweredClause};
 use super::observation::Observations;
 use super::refusal::{CheckCause, CheckRefusal, KeyFault};
 use super::{Capability, Scope};
@@ -303,6 +303,10 @@ pub struct ClauseDeclarations<'a> {
 pub struct PopulationDomain {
     pub(crate) object: EffectiveId,
     pub(crate) ordinal: usize,
+    /// The maximum of the unit's authored bound on this population
+    /// (FR-380), which makes it a `Population(Some(N))` domain; `None` is
+    /// the unbounded `Population(None)` domain.
+    pub(crate) maximum: Option<u64>,
 }
 
 /// What an `operation-contract` claim is about.
@@ -362,17 +366,18 @@ pub struct TypedStateClause {
 /// FR-104).
 pub struct ProtocolClauseFamily;
 
-/// The one population with no maximum that covers `object`, by conformance
-/// (FR-104, FR-084's `allInstances<T>`: a member type or a proper supertype
-/// of it): `Ok(None)` when none does, and the populations' keys in ascending
-/// `DeclarationKey` order when several do. A domain package population
-/// declares no maximum, so every one counts.
+/// The one population that covers `object`, by conformance (FR-104,
+/// FR-084's `allInstances<T>`: a member type or a proper supertype of it),
+/// whether or not the unit authors a bound on it (FR-380): `Ok(None)` when
+/// none does, and the populations' keys in ascending `DeclarationKey` order
+/// when several do. A domain package population declares no maximum, so
+/// every one counts.
 pub(crate) fn population_of(
     models: &[AdmittedModel],
     object: EffectiveId,
     types: &TypeEnvironment,
 ) -> Result<Option<PopulationDomain>, Vec<DeclarationKey>> {
-    let found: Vec<(usize, &DeclarationKey, EffectiveId)> = models
+    let found: Vec<(usize, &DeclarationKey, EffectiveId, Option<&AuthoredBound>)> = models
         .iter()
         .flat_map(|model| model.populations_of(object, |sub, sup| types.conforms(sub, sup)))
         .collect();
@@ -381,17 +386,31 @@ pub(crate) fn population_of(
         // The domain names the population's own covering member type, not
         // `object` (SR-736 FND-010): `Sub` and `ConfigVersion` clauses over
         // `config_history` key the same `PopulationDomain`.
-        [(ordinal, _, member)] => Ok(Some(PopulationDomain {
+        [(ordinal, _, member, bound)] => Ok(Some(PopulationDomain {
             object: *member,
             ordinal: *ordinal,
+            maximum: bound.map(|bound| bound.maximum),
         })),
         many => {
             let mut keys: Vec<DeclarationKey> =
-                many.iter().map(|(_, key, _)| (*key).clone()).collect();
+                many.iter().map(|(_, key, _, _)| (*key).clone()).collect();
             keys.sort();
             Err(keys)
         }
     }
+}
+
+/// The authored bound (FR-380) of the one population that covers `object`,
+/// when the unit bounds it: what a reachability over `object` links to.
+fn walked_bound(
+    models: &[AdmittedModel],
+    object: EffectiveId,
+    types: &TypeEnvironment,
+) -> Option<AuthoredBound> {
+    models
+        .iter()
+        .flat_map(|model| model.populations_of(object, |sub, sup| types.conforms(sub, sup)))
+        .find_map(|(_, _, _, bound)| bound.cloned())
 }
 
 /// `refusal`'s cause attributed to the `StateModel` family.
@@ -553,6 +572,9 @@ pub(crate) fn check_clause(
     // (FR-104 "Requirements").
     let mut clause_populations = BTreeSet::new();
     clause_populations.extend(form.context_population);
+    // Each relationship-end reachability that walks a population with an
+    // authored bound (FR-380), to be linked to that bound below.
+    let mut linked = Vec::new();
     for node in body.root().descendants() {
         // The objects walked: a field edge's operand type, and an end's near
         // end type `E` (FR-365 "The population a reachability walks").
@@ -579,8 +601,16 @@ pub(crate) fn check_clause(
                         refusal
                     }
                 })?;
+            if end_form && walked.is_some_and(|domain| domain.maximum.is_some()) {
+                let bound = walked_bound(input.models, object, input.scope.types());
+                linked.extend(bound.map(|bound| (node.id(), bound)));
+            }
             clause_populations.extend(walked);
         }
+    }
+    let mut body = body;
+    for (id, bound) in linked {
+        body.link_population(id, bound);
     }
     let mut claims = vec![ClauseClaim {
         subject: ClaimSubject::Clause,
@@ -759,6 +789,11 @@ fn record(
         }
     }
     for (domain, object) in populations {
+        // An authored bound makes the population a `Population(Some(N))`
+        // domain, which is not an unbounded domain (FR-380, ADR-014 §4).
+        if domain.maximum.is_some() {
+            continue;
+        }
         domains.insert(
             population_key(domain, *object).map_err(ClassifyFailure::Fault)?,
             DomainKind::Population,

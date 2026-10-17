@@ -149,7 +149,8 @@ pub use profile::{resolve_profiles, ProfileCause, ProfileRefusal};
 #[cfg(any(test, feature = "test-support"))]
 pub use family::DeclarationMetrics;
 pub use lowering::{
-    AdmittedModel, ForeignView, LockEvidence, ModelClause, NominalNode, SemanticGraph, SemanticNode,
+    AdmittedModel, AuthoredBound, ForeignView, LockEvidence, ModelClause, NominalNode,
+    SemanticGraph, SemanticNode,
 };
 pub use node_key::{
     AggregateTerm, ApplicationTerm, Binding, BindingValue, BodyTerm, FrameDeletesScoped,
@@ -413,6 +414,8 @@ pub struct CheckedGraph {
     /// [`AdmittedModel::population_domains`] orders them: the table
     /// [`Self::population_domain`] resolves a population in.
     model_populations: BTreeMap<String, BTreeMap<Identifier, state_clause::PopulationDomain>>,
+    /// FR-380: every `bound` declaration, ascending by label.
+    population_bounds: Vec<CheckedPopulationBound>,
     /// FR-096: each protocol's own attempts' declared name spans,
     /// index-aligned with `protocols`, so an `Origin::ProtocolAttempt`
     /// resolves.
@@ -919,6 +922,7 @@ impl PackageDeclarations {
             .map(|staged| std::cell::RefCell::new(staged.0));
         let (model_objects, object_types) = model_object_tables(&models);
         let model_populations = model_population_tables(&models);
+        let population_bounds = checked_population_bounds(&models);
         let object_nodes = object_types
             .keys()
             .filter_map(|declaration| {
@@ -1654,6 +1658,13 @@ impl PackageDeclarations {
             }
         }
         let lowered = lowering.finish(&lowering::generated_location());
+        // FR-380: a population node's `Type` occurrences take their ordinals
+        // in ascending source order, whichever writer recorded one first.
+        occurrences.order_by(
+            family::OccurrenceRole::Type,
+            &lowered.population_nodes,
+            |location| regions.region(location).map(|region| region.start()),
+        );
         let parameter_spans = lowered.parameter_spans;
         if !refusals.is_empty() {
             return Err(refusals);
@@ -1891,6 +1902,7 @@ impl PackageDeclarations {
             object_types,
             object_nodes,
             model_populations,
+            population_bounds,
             attempt_spans: regions.attempt_spans,
         })
     }
@@ -1945,7 +1957,17 @@ fn model_population_tables(
                         &population.key.node,
                     )
                     .and_then(|artifact| Identifier::new(artifact).ok())?;
-                    Some((artifact, state_clause::PopulationDomain { object, ordinal }))
+                    let maximum = model
+                        .population_bound(&population.key)
+                        .map(|bound| bound.maximum);
+                    Some((
+                        artifact,
+                        state_clause::PopulationDomain {
+                            object,
+                            ordinal,
+                            maximum,
+                        },
+                    ))
                 })
                 .collect();
             Some((model.alias()?.to_owned(), populations))
@@ -1953,7 +1975,53 @@ fn model_population_tables(
         .collect()
 }
 
+/// One `bound` declaration as checked (FR-380): the population it bounds
+/// and its authored maximum. The bound is part of the population's meaning
+/// (ADR-014 B-1), never a resource limit.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedPopulationBound {
+    /// The declared label.
+    pub label: String,
+    /// The alias of the `model` declaration whose population it bounds.
+    pub model: String,
+    /// The population's artifact id, the `P` of `M::P`.
+    pub population: Identifier,
+    /// The inclusive maximum object count `N`.
+    pub maximum: u64,
+}
+
+/// FR-380: each `bound` declaration the admitted models hold, ascending by
+/// label (a label names one bound, so the order depends on no declaration
+/// order).
+fn checked_population_bounds(models: &[AdmittedModel]) -> Vec<CheckedPopulationBound> {
+    let mut bounds: Vec<CheckedPopulationBound> = models
+        .iter()
+        .flat_map(|model| {
+            model.population_bounds().filter_map(|bound| {
+                let population = crate::model::intake::type_identity_segment(
+                    &bound.population.package,
+                    &bound.population.node,
+                )
+                .and_then(|artifact| Identifier::new(artifact).ok())?;
+                Some(CheckedPopulationBound {
+                    label: bound.label.clone(),
+                    model: model.alias()?.to_owned(),
+                    population,
+                    maximum: bound.maximum,
+                })
+            })
+        })
+        .collect();
+    bounds.sort_by(|left, right| left.label.cmp(&right.label));
+    bounds
+}
+
 impl CheckedGraph {
+    /// FR-380: every `bound` declaration of the unit, ascending by label.
+    pub fn population_bounds(&self) -> &[CheckedPopulationBound] {
+        &self.population_bounds
+    }
+
     /// ADR-011 §2.4: the selection of each domain package this package was
     /// checked against, ascending by identity: the lock's
     /// `model_selections`.

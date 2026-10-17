@@ -2,6 +2,7 @@
 //! The typed, name-resolved expression tree that checking produces and the
 //! evaluator runs.
 
+use super::lowering::AuthoredBound;
 use super::navigation::EndSide;
 use crate::model::key::DeclarationKey;
 use qsl_foundation::absence::AbsenceMode;
@@ -174,6 +175,19 @@ impl CheckedBody {
             location: Location::root(quire_semantic_value::location::Origin::Expression),
         });
         Self { nodes }
+    }
+
+    /// Link the relationship-end reachability `id` to the authored bound of
+    /// the population it walks (FR-380). A node that is no such
+    /// reachability is left as it is.
+    pub(in crate::check) fn link_population(&mut self, id: NodeId, bound: AuthoredBound) {
+        if let Some(Node {
+            kind: NodeKind::ReachesEnd { population, .. },
+            ..
+        }) = self.nodes.get_mut(id.0)
+        {
+            *population = Some(bound);
+        }
     }
 
     /// The root node.
@@ -990,6 +1004,10 @@ pub enum NodeKind {
         role: String,
         /// The relationship end nearest the operands.
         near: EndSide,
+        /// The authored bound (FR-380) of the population this reachability
+        /// walks, when the unit bounds it. The typer leaves it `None`; the
+        /// state clause check sets it once the walked population resolves.
+        population: Option<AuthoredBound>,
     },
     /// `protocol <name>` (FR-308, FR-218): a reference to the unit's
     /// `protocol`-th protocol declaration, resolved once at S3 and typed

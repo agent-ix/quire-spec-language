@@ -57,7 +57,7 @@ fn multi_valued_relationship(id: &str, source_role: &str, target_multiplicity: V
 /// The `acme/orders` document with the object type `Order` (the field `trail`
 /// and the relationships `Order/next`, `Order/link` and `Order/mate`) and the
 /// population `orders`.
-fn reachability_document() -> Vec<u8> {
+pub(super) fn reachability_document() -> Vec<u8> {
     let mut document: Value = serde_json::from_slice(SPINE_MODEL_DOCUMENT).unwrap();
     let mut order = document["types"][0].clone();
     order["identity"] = json!("ix://acme/orders/Order");
@@ -108,16 +108,22 @@ fn reachability_document() -> Vec<u8> {
 
 /// The unit holding `clauses` over the document, emitted, with the checked
 /// graph's claim-domain counts and the document's reader verdict.
-struct Lowered {
-    wire: Value,
-    verified: bool,
-    /// The population domains each `claim` occurrence's requirement record
-    /// names, from the checked graph.
-    claim_domains: Vec<usize>,
+pub(super) struct Lowered {
+    /// The compiled unit's source text.
+    pub(super) text: String,
+    pub(super) wire: Value,
+    pub(super) verified: bool,
+    /// The unbounded population domains each `claim` occurrence's
+    /// requirement record names, from the checked graph.
+    pub(super) claim_domains: Vec<usize>,
 }
 
-fn lower(clauses: &str) -> Lowered {
-    let document = reachability_document();
+pub(super) fn lower(clauses: &str) -> Lowered {
+    lower_over(reachability_document(), clauses)
+}
+
+/// [`lower`] over the domain package `document`.
+pub(super) fn lower_over(document: Vec<u8>, clauses: &str) -> Lowered {
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
         panic!("one supplied document");
@@ -139,7 +145,7 @@ fn lower(clauses: &str) -> Lowered {
         .filter(|(key, _)| key.origin().role().as_str() == "claim")
         .map(|(_, record)| match record.requirements().extent() {
             qsl_semantics::family::ClaimExtent::Unbounded(domains) => domains.len(),
-            other => panic!("an unbounded extent, not {other:?}"),
+            qsl_semantics::family::ClaimExtent::Bounded => 0,
         })
         .collect();
     let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
@@ -149,20 +155,21 @@ fn lower(clauses: &str) -> Lowered {
         .insert_domain_package_document(digest.as_str(), &document[..])
         .expect("a fresh evidence key");
     Lowered {
+        text: unit,
         wire: wire(&emission),
         verified: matches!(read_with(&emission, &evidence), Read::Verified { .. }),
         claim_domains,
     }
 }
 
-fn applications<'w>(wire: &'w Value, identity: &str) -> Vec<&'w Value> {
+pub(super) fn applications<'w>(wire: &'w Value, identity: &str) -> Vec<&'w Value> {
     nodes(wire)
         .iter()
         .filter(|node| node["body"]["operation"]["identity"] == identity)
         .collect()
 }
 
-fn node_of<'w>(wire: &'w Value, id: &Value) -> &'w Value {
+pub(super) fn node_of<'w>(wire: &'w Value, id: &Value) -> &'w Value {
     nodes(wire)
         .iter()
         .find(|node| &node["node_id"] == id)
@@ -170,7 +177,7 @@ fn node_of<'w>(wire: &'w Value, id: &Value) -> &'w Value {
 }
 
 /// The written node whose owner is the declaration `node`.
-fn model_node<'w>(wire: &'w Value, node: &str) -> &'w Value {
+pub(super) fn model_node<'w>(wire: &'w Value, node: &str) -> &'w Value {
     let found: Vec<&Value> = nodes(wire)
         .iter()
         .filter(|candidate| candidate["owner"]["node"] == format!("ix://acme/orders/{node}"))
@@ -204,7 +211,7 @@ fn claims(clause: &Value) -> Vec<u64> {
         .collect()
 }
 
-const NO_LOOP: &str =
+pub(super) const NO_LOOP: &str =
     "invariant NoLoop using v on M::Order at current { not reaches(self, self, next) }";
 
 /// TC-1047 row 1: the lowered node's every part.
