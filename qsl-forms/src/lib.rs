@@ -45,9 +45,9 @@ pub use spans::{DeclarationSpans, ExpressionSpans, SpanId, SpanRefusal, SpansMis
 pub use syntax::{
     Accumulation, ActivationForm, AliasForm, AnchorForm, AnchorSegment, AnchorSite, ArmForm,
     AttemptForm, BinaryOperator, BinderForm, BinderKind, BinderQuery, BuiltinType, CaptureForm,
-    CaseForm, ClauseKind, DeclarationForm, DeclarationKind, DeclaredClauseKind, DeclaredName,
-    DimensionForm, DimensionTermForm, EnumForm, EnumMemberForm, ExactNumberForm, ExactNumberKind,
-    ExprId, ExprNode, ExprRef, Expression, ExpressionBuilder, ExpressionForm,
+    CaseForm, ClauseKind, ClockForm, DeclarationForm, DeclarationKind, DeclaredClauseKind,
+    DeclaredName, DimensionForm, DimensionTermForm, EnumForm, EnumMemberForm, ExactNumberForm,
+    ExactNumberKind, ExprId, ExprNode, ExprRef, Expression, ExpressionBuilder, ExpressionForm,
     FairnessConstraintForm, FairnessGranularity, FairnessKind, FieldInitializer,
     FunctionDeclaration, IntervalForm, IntervalUpper, NameForm, OperationBodyForm, ParameterForm,
     ProtocolBodyForm, ProtocolConstructForm, ProtocolConstructKind, ProtocolDeclarationForm,

@@ -14,10 +14,10 @@ use qsl_foundation::Span;
 
 use super::dispatch::{Construct, FormsRefusal};
 use super::syntax::{
-    ActivationForm, CaptureForm, DeclarationForm, ExpressionForm, FairnessConstraintForm,
-    FairnessGranularity, FairnessKind, IntervalForm, IntervalUpper, ParameterForm,
-    TemporalClauseForm, TemporalFormulaForm, TemporalNodeForm, TemporalNodeId, TemporalOperator,
-    TemporalOperatorForm, UsingAlias,
+    ActivationForm, CaptureForm, ClockForm, DeclarationForm, ExpressionForm,
+    FairnessConstraintForm, FairnessGranularity, FairnessKind, IntervalForm, IntervalUpper,
+    ParameterForm, TemporalClauseForm, TemporalFormulaForm, TemporalNodeForm, TemporalNodeId,
+    TemporalOperator, TemporalOperatorForm, UsingAlias,
 };
 use super::value::{
     declared_name, expression, has_token, items, name_form, nodes_of, only, production_node, text,
@@ -33,6 +33,10 @@ pub(crate) fn temporal_clause(construct: Construct<'_>) -> Result<DeclarationFor
     // `temporal Name using p ...`: the clause's own name and its `using`
     // alias are its only two direct identifier tokens.
     let [_, alias] = tokens_of(&clause_items, TokenKind::Identifier)[..] else {
+        return Err(unexpected(node));
+    };
+    // `clock "c"`: the clause's only direct string literal.
+    let [clock] = tokens_of(&clause_items, TokenKind::Text)[..] else {
         return Err(unexpected(node));
     };
     let activation = only(&clause_items, Production::Activation, node)?;
@@ -63,6 +67,10 @@ pub(crate) fn temporal_clause(construct: Construct<'_>) -> Result<DeclarationFor
             span: alias.span(),
         },
         over: parameter_form(cst, only(&clause_items, Production::Parameter, node)?)?,
+        clock: ClockForm {
+            text: text(clock, node)?,
+            span: clock.span(),
+        },
         activation,
         fairness,
         captures,

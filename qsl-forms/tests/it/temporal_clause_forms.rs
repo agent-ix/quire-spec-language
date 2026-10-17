@@ -332,6 +332,8 @@ fn the_clause_forms_are_the_same_under_every_profile_selection() {
     let built = clause(&infinite);
     assert_eq!(built.profile.alias, "t");
     assert_eq!(built.over.name.name, "p");
+    assert_eq!(built.clock.text, "\"steps\"");
+    assert_eq!(slice(&infinite_text, built.clock.span), "\"steps\"");
     let ActivationForm::Each { parameter, when } = &built.activation else {
         panic!("an `on each` activation: {:?}", built.activation);
     };
@@ -480,4 +482,27 @@ fn captures_build_their_type_value_and_span_beside_an_unchanged_formula() {
         without_spans(&built.formula),
         without_spans(&clause(&bare).formula)
     );
+}
+
+/// FR-325 "Outputs" (TC-835): the clause keeps its `clock` string and the
+/// string's span, after the `over` parameter and before the activation, for
+/// FR-233 and FR-326.
+#[trace("TC-835", "FR-325-AC-1")]
+#[test]
+fn the_clock_string_and_its_span_are_built() {
+    for clock in ["model-steps", "model-time", "wall"] {
+        let text = format!(
+            "{}temporal C using t over (p: Config::ConfigVersion) clock \"{clock}\" \
+             on each (q: Config::ConfigVersion) {{ always holds(true) }}\n",
+            header(INFINITE, 0)
+        );
+        let unit = build(&text);
+        let built = clause(&unit);
+        assert_eq!(built.clock.text, format!("\"{clock}\""));
+        assert_eq!(slice(&text, built.clock.span), format!("\"{clock}\""));
+        assert_eq!(
+            built.clock.span.start,
+            text.find("clock ").expect("the clock keyword") + "clock ".len()
+        );
+    }
 }

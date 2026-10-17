@@ -48,8 +48,10 @@ profile.
 
 - A CST in which each temporal operator node has an optional interval child.
 - An S2 `TemporalClauseForm` holding the clause name, its profile and model
-  references, its `over` parameter, its activation, its fairness constraint
-  forms (FR-123), its capture forms and a `TemporalFormulaForm` tree. Each
+  references, its `over` parameter, its clock, its activation, its fairness
+  constraint forms (FR-123), its capture forms and a `TemporalFormulaForm`
+  tree. The clock is `ClockForm{text, span}`: the `clock` string literal as
+  spelled, quotes included, and its span, for FR-233 and FR-326 to read. Each
   fairness form is `FairnessConstraintForm{kind, granularity, operation,
   span}` with `kind: Option<FairnessKind::{Weak, Strong}>`, `granularity:
   Option<FairnessGranularity::{Whole, Each}>`, the operation's qualified

@@ -2858,6 +2858,18 @@ pub struct CaptureForm {
     pub span: Span,
 }
 
+/// The `clock "<string>"` of a `temporal` clause (FR-325 "Outputs"): S2
+/// selects no clock, it keeps the string and its span for the stages that
+/// bind it (FR-233, FR-326).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClockForm {
+    /// The clock string exactly as spelled, quotes included, as an enum
+    /// member's display string is.
+    pub text: String,
+    /// The span of the string literal.
+    pub span: Span,
+}
+
 /// A `temporal` clause (FR-325, ADR-011 M-3b, ADR-012 TemporalTrace
 /// family). S2 resolves nothing and selects no meaning: the profile alias,
 /// the `over` type and each fairness operation stay spelled, and an
@@ -2870,6 +2882,8 @@ pub struct TemporalClauseForm {
     pub profile: UsingAlias,
     /// The `over (p: T)` parameter.
     pub over: ParameterForm,
+    /// The `clock "<string>"` the clause is stepped by.
+    pub clock: ClockForm,
     /// The activation.
     pub activation: ActivationForm,
     /// The fairness constraints in source order.
