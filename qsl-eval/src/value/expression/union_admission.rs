@@ -4,7 +4,7 @@
 //! evaluation.
 //!
 //! No checked package can hold a union until the FR-319 lowering exists, so
-//! these tests drive the argument admission (`validate`) over the sealed
+//! these tests drive the argument admission (`admit_arguments`) over the sealed
 //! fixture unions (`qsl_semantics::check::union_fixture`). Every assertion
 //! reads a typed refusal or stop, never message text.
 
@@ -37,7 +37,7 @@ fn admit(
 ) -> Result<(), CallFailure> {
     let mut run = SuppliedRun::new(SuppliedLimits::default(), quire_exact::Cancel::new())
         .expect("a run has a path arena");
-    validate(
+    admit_arguments(
         &[("s".to_owned(), parameter)],
         std::slice::from_ref(argument),
         objects,
