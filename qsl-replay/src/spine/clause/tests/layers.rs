@@ -325,8 +325,18 @@ fn form_cases() -> Vec<FormCase> {
             LayerForm::NamedPredicateCall,
             FROM_QUERIES,
         ),
-        expression("filter", "filter(x in c: true)", LayerForm::SequenceQuery, FROM_QUERIES),
-        expression("map", "map(x in c: x)", LayerForm::SequenceQuery, FROM_QUERIES),
+        expression(
+            "filter",
+            "filter(x in c: true)",
+            LayerForm::SequenceQuery,
+            FROM_QUERIES,
+        ),
+        expression(
+            "map",
+            "map(x in c: x)",
+            LayerForm::SequenceQuery,
+            FROM_QUERIES,
+        ),
         expression(
             "count",
             "count<Integer>(x in c: true)",
@@ -345,15 +355,30 @@ fn form_cases() -> Vec<FormCase> {
             LayerForm::ObjectNavigation,
             NAVIGATION,
         ),
-        expression("flatMap", "flatMap(x in c: x)", LayerForm::ValueConstruct, VALUE_AND_UP),
-        expression("flatten", "flatten(c)", LayerForm::ValueConstruct, VALUE_AND_UP),
+        expression(
+            "flatMap",
+            "flatMap(x in c: x)",
+            LayerForm::ValueConstruct,
+            VALUE_AND_UP,
+        ),
+        expression(
+            "flatten",
+            "flatten(c)",
+            LayerForm::ValueConstruct,
+            VALUE_AND_UP,
+        ),
         expression(
             "collection literal",
             "sequence[c]",
             LayerForm::ValueConstruct,
             VALUE_AND_UP,
         ),
-        expression("record literal", "R { f: c }", LayerForm::ValueConstruct, VALUE_AND_UP),
+        expression(
+            "record literal",
+            "R { f: c }",
+            LayerForm::ValueConstruct,
+            VALUE_AND_UP,
+        ),
         expression(
             "case",
             "case c { Circle(r): true; Empty: false; }",
@@ -399,19 +424,21 @@ const PRELUDE: &str = "record R { f: Integer; }\n\
 fn every_form_under(identity: &str) {
     let layer = HeaderLayer::from_identity(identity).expect("a layer");
     for case in form_cases() {
-        let declarations = if case.name == "function declaration" || case.name == "predicate declaration"
-        {
-            case.declarations.clone()
-        } else {
-            format!("{PRELUDE}{}", case.declarations)
-        };
+        let declarations =
+            if case.name == "function declaration" || case.name == "predicate declaration" {
+                case.declarations.clone()
+            } else {
+                format!("{PRELUDE}{}", case.declarations)
+            };
         let (unit, compiled) = compile(&[("v", identity), ("w", VALUE)], &declarations);
         let found: Vec<AssemblyError> = match compiled {
             Err(refusal) => match *refusal {
                 CompileRefusal::Assembly { refusal, .. } => refusal
                     .errors
                     .into_iter()
-                    .filter(|error| matches!(error.cause, AssemblyCause::UnsupportedLayerForm { .. }))
+                    .filter(|error| {
+                        matches!(error.cause, AssemblyCause::UnsupportedLayerForm { .. })
+                    })
                     .collect(),
                 _ => Vec::new(),
             },
@@ -433,7 +460,11 @@ fn every_form_under(identity: &str) {
             },
             "{context}"
         );
-        assert_eq!(&unit[error.span.start..error.span.end], case.located, "{context}");
+        assert_eq!(
+            &unit[error.span.start..error.span.end],
+            case.located,
+            "{context}"
+        );
         assert_eq!(
             error.cause.catalog_code().to_string(),
             format!("unsupported_construct/{}", case.form.refusal_cause()),
