@@ -549,6 +549,7 @@ pub(crate) fn dependency_chain(length: usize) -> CheckedPackage {
             graph: Arc::clone(&graph),
             dependencies: BTreeMap::new(),
             selections: BTreeMap::new(),
+            abstraction: None,
         },
         |dependency, link| CheckedPackage {
             graph: Arc::clone(&graph),
@@ -557,6 +558,7 @@ pub(crate) fn dependency_chain(length: usize) -> CheckedPackage {
                 Arc::new(dependency),
             )]),
             selections: BTreeMap::new(),
+            abstraction: None,
         },
     )
 }

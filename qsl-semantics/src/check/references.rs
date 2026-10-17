@@ -99,7 +99,22 @@ pub(crate) fn read_object(node: CheckedNode<'_>) -> Option<EffectiveId> {
     };
     match node.at(through).value_type() {
         ValueType::Reference(object) => Some(*object),
-        _ => None,
+        ValueType::Boolean
+        | ValueType::Integer
+        | ValueType::Int(_)
+        | ValueType::Rational(_)
+        | ValueType::Decimal(_)
+        | ValueType::Float(_)
+        | ValueType::Quantity(_)
+        | ValueType::Text(_)
+        | ValueType::String
+        | ValueType::Uuid
+        | ValueType::Timestamp
+        | ValueType::Enum(_)
+        | ValueType::Option(_)
+        | ValueType::Composite(_)
+        | ValueType::Collection(_)
+        | ValueType::Population(_) => None,
     }
 }
 

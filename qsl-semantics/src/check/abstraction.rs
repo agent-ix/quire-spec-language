@@ -334,7 +334,7 @@ impl CheckedGraph {
         let mut refusals = Vec::new();
         for binding in bindings {
             if let Err(refusal) = self.admit_binding(binding) {
-                refusals.push(refusal);
+                refusals.push(*refusal);
                 continue;
             }
             match accepted.entry(binding.key()) {
@@ -376,19 +376,21 @@ impl CheckedGraph {
 
     /// Whether `binding` is admissible on its own: its key resolves and its
     /// maps are well formed.
-    fn admit_binding(&self, binding: &AuthoredBinding) -> Result<(), AbstractionRefusal> {
-        let missing = |key: AbstractionKey| AbstractionRefusal::MissingDeclaration {
-            package: key.package().to_owned(),
-            key,
+    fn admit_binding(&self, binding: &AuthoredBinding) -> Result<(), Box<AbstractionRefusal>> {
+        let missing = |key: AbstractionKey| {
+            Box::new(AbstractionRefusal::MissingDeclaration {
+                package: key.package().to_owned(),
+                key,
+            })
         };
         // QSpec FR-450 rule 2: a key that names a declaration of another
         // kind is malformed, not missing.
         let unresolved = |key: &DeclarationKey, wrong: MalformedEntry| {
             if self.declaration_keys.contains(key) {
-                AbstractionRefusal::MalformedDeclaration {
+                Box::new(AbstractionRefusal::MalformedDeclaration {
                     key: binding.key(),
                     entry: wrong,
-                }
+                })
             } else {
                 missing(binding.key())
             }
@@ -406,10 +408,10 @@ impl CheckedGraph {
                         .attribute(*context, field.as_str())
                         .is_none()
                     {
-                        return Err(AbstractionRefusal::MalformedDeclaration {
+                        return Err(Box::new(AbstractionRefusal::MalformedDeclaration {
                             key: binding.key(),
                             entry: MalformedEntry::UnknownField(field.clone()),
-                        });
+                        }));
                     }
                 }
                 Ok(())
@@ -440,9 +442,11 @@ impl CheckedGraph {
                 if declaring != *context {
                     return Err(missing(binding.key()));
                 }
-                let malformed = |entry| AbstractionRefusal::MalformedDeclaration {
-                    key: binding.key(),
-                    entry,
+                let malformed = |entry| {
+                    Box::new(AbstractionRefusal::MalformedDeclaration {
+                        key: binding.key(),
+                        entry,
+                    })
                 };
                 let declared: BTreeSet<&str> = operation
                     .parameters()
