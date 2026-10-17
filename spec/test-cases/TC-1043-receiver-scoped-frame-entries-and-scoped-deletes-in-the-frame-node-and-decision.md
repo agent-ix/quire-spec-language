@@ -25,7 +25,7 @@ Fixture: FR-120's `test/counters` package, selected as `Counters`, extended
 with: field `step: Int[0, 2]` on `Counter`; object type `Sub` specializing
 `Counter`; object type `Gauge` with field `d`; process `Flow` (identity field
 `id` typed `Integer`, field `x`, one step `begin` of kind `command` consuming
-and emitting nothing) with an operation `go(a: Reference<Counter>)`; persistence interface `Store` with an operation `put(a: Reference<Counter>)`; relationship `Supersedes`
+and emitting nothing) with an operation `go(a: Reference<Counter>)`; persistence interface `Store` with an operation `put(a: Reference<Counter>)`; record value type `Pair` with an operation `swap()`; relationship `Supersedes`
 between `Counter` objects; and the operations below. Each operation is also
 named by its own postcondition clause (`DoneBump`, `DoneMerge`, `DoneNoop`,
 `DoneOwn`, `DoneAll`, `DoneDrop`, `DoneDispose`, each `{ true }`) so that the
@@ -37,7 +37,7 @@ of the `Counter` object type node, and `<Gauge>` for `Gauge`'s. Every frame
 body is written with its members in canonical JCS order. Tag the tests
 `#[trace("TC-1043", "FR-154-AC-n")]`, `#[trace("TC-1043", "FR-105-AC-7")]` and `#[trace("TC-1043", "FR-115-AC-11")]`.
 
-Operations and their model-document `frame` (FR-154 "Inputs"). The three arrays `modifies`, `creates` and `deletes` are always present. The rows that use a scoped member (`modifies_receiver`, `deletes_receiver`, `deletes_parameters`) depend on the filament-core-data semantic-IR frame schema admitting them. That schema runs on the whole model document before intake, so every package, intake row and read built from this fixture, which declares scoped operations, depends on it (steps 1 to 4); only step 2b, which has its own fixture, is reachable today. `go` of `Flow` and `put` of `Store` have no base `frame` and reads as the empty effect (FR-103):
+Operations and their model-document `frame` (FR-154 "Inputs"). The three arrays `modifies`, `creates` and `deletes` are always present. The rows that use a scoped member (`modifies_receiver`, `deletes_receiver`, `deletes_parameters`) depend on the filament-core-data semantic-IR frame schema admitting them. That schema runs on the whole model document before intake, so every package, intake row and read built from this fixture, which declares scoped operations, depends on it (steps 1 to 4); only step 2b, which has its own fixture, is reachable today. `go` of `Flow`, `put` of `Store` and `swap` of `Pair` have no base `frame` and reads as the empty effect (FR-103):
 
 | Operation | Parameters | `frame` |
 | --- | --- | --- |
@@ -68,7 +68,7 @@ Meaning in surface text: `bump` is `modifies value`, `modifies self.step`,
    for `all` and `same`, and read it with the I2 reader.
 3. Intake the package once per row of this table, each row replacing the
    `frame` of an operation `t(n: Integer, a: Reference<Counter>)` of
-   `Counter` (of `Sub` in I7; rows I13 to I17 and I18 to I22 name their operation):
+   `Counter` (of `Sub` in I7; rows I13 to I17, I18 to I22 and I23 name their operation):
 
    | Row | `frame` |
    | --- | --- |
@@ -94,8 +94,9 @@ Meaning in surface text: `bump` is `modifies value`, `modifies self.step`,
    | I20 | `put` of `Store`: `{"modifies":[],"creates":[],"deletes":[],"modifies_receiver":[],"deletes_receiver":false}` |
    | I21 | `put` of `Store`: `{"modifies":[],"creates":[],"deletes":[],"deletes_parameters":["a"]}` |
    | I22 | `put` of `Store`: `{"modifies":[],"creates":[],"deletes":[],"modifies_receiver":["Counter/value"],"deletes_receiver":true}` |
+   | I23 | `swap` of `Pair`: `{"modifies":[],"creates":[],"deletes":[],"modifies_receiver":["Counter/value"],"deletes_receiver":true}` |
 
-   Rows I1 to I22 and the operations `bump`, `merge`, `own`, `drop` and
+   Rows I1 to I23 and the operations `bump`, `merge`, `own`, `drop` and
    `dispose` use a scoped member or its refusal, so they depend on the
    semantic-IR frame schema admitting the scoped members. Rows I10 to I12 are member-shape rows: the schema refuses a wrong-typed member, an unnamed member and an element of the wrong type at the member, and refuses a frame with no `deletes` (required before and after the change), with its own schema diagnostic before intake; the stated `malformed-declaration` is the intake reader's contract where the schema has not run. Steps 1, 2 and 4 also depend on it (they
    build from the one fixture). Step 2b uses fixture R, which holds no scoped member, and is reachable today.
@@ -181,7 +182,9 @@ Results:
   refuse `invalid_model_binding`/`malformed-declaration` at `modifies_receiver`
   and at `deletes_receiver` (a persistence interface has no object receiver;
   `Counter/value` is a field `Counter` has and is not read). I20 and I21 admit.
-  I22 refuses at `modifies_receiver` alone.
+  I22 refuses at `modifies_receiver` alone. I23 refuses
+  `invalid_model_binding`/`malformed-declaration` at `modifies_receiver` alone
+  (a record value type has no object receiver; `Counter/value` is not read).
 - Step 4: X1, X2 and X3 are refused as schema failures of the frame body. X4
   and X5 refuse `invalid_semantic_graph`. X6 refuses, in the state step and not in the frame step, located at the frame node and checked against each anchor's operation of a shared frame, `missing_declaration`/
   `missing-name`. X7 is admitted. X8 and X9 each refuse
