@@ -214,9 +214,9 @@ ci-all-features:
 # They run in the default lane's artifact directory with the same
 # `--workspace` feature selection as `ci-default-features`, so the `it`
 # executables that lane already built are reused instead of recompiled in a
-# directory of their own. The three tests run in one process, within the
-# caller's RUST_TEST_THREADS budget; each name must still select exactly one
-# ignored test.
+# directory of their own. The three tests run serially in one process
+# (`--test-threads=1`: deep-stack tests must not share a thread pool); each
+# name must still select exactly one ignored test.
 test-deep-format:
 	@set -eu; \
 	for test in \
@@ -230,7 +230,7 @@ test-deep-format:
 			exit 1; \
 		fi; \
 	done; \
-	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo test --locked --workspace --test it -- --ignored --exact \
+	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo test --locked --workspace --test it -- --ignored --exact --test-threads=1 \
 		formatter_identity::all_three_deep_source_generators_keep_format_identity \
 		formatter_identity::replay_large_source_generator_keeps_format_identity \
 		formatter_identity::dependency_chain_and_order_variants_keep_format_identity
