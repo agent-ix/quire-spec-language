@@ -120,4 +120,5 @@ mod source_map;
 mod spine_run;
 mod state_scalar_lowering;
 mod text_enum_identity;
+mod union_nodes;
 mod verified_binding_witness;

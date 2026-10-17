@@ -355,18 +355,5 @@ fn fault(location: &Location, invariant: &'static str) -> CheckRefusal {
     }
 }
 
-/// The honest refusal of a union declaration, construction or `case` that
-/// reaches the FR-093 lowering, which does not yet key them: the checked
-/// graph holds them, but no checked package can be built from it until the
-/// union lowering (FR-319, FR-320) exists.
-pub(crate) fn unlowered(location: &Location) -> CheckRefusal {
-    CheckRefusal {
-        location: location.clone(),
-        cause: CheckCause::UnsupportedFeature {
-            loci: vec![location.clone()],
-        },
-    }
-}
-
 #[cfg(test)]
 mod tests;
