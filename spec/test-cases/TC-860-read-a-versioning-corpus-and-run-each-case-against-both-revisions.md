@@ -27,17 +27,17 @@ unit with one state clause strengthened so that the healthy-parent snapshot
 violates it.
 
 1. One pair, `prior` the ConfigVersion unit and `superseding` the same unit
-   under another revision label, with two `Clause` cases (healthy-parent
+   as the same bytes, with two `Clause` cases (healthy-parent
    and violating-parent). Run `xtask refinement versioning`.
 2. Add six malformed pairs beside step 1's: a `pair.json` holding `{`; one
    with no `superseding`; one with an extra member `expected`; one whose
    `prior.path` is `../outside.qsl`; one whose `prior.path` is absolute;
    one whose `superseding.identity` differs from `prior.identity`. Run the
-   gate. Then run the gate over an empty corpus directory.
-3. One pair whose `prior` is the ConfigVersion unit at revision `b` and
-   whose `superseding` is the tightened unit at revision `a`, with the
-   healthy-parent case. Run the gate. Swap only the two revision labels and
-   run again.
+   gate. Add to step 1's pair a case naming a snapshot file that does not
+   exist. Then run the gate over an empty corpus directory.
+3. One pair whose `prior` is the ConfigVersion unit and whose `superseding`
+   is the tightened unit, with the healthy-parent case. Run the gate. Name
+   the two units the other way round and run again.
 4. Step 1's pair with the healthy-parent case stating no limit sets; then
    with `accounting` holding a work budget of one unit.
 5. Copy step 1's corpus to a second temporary directory and run the gate
@@ -53,11 +53,12 @@ Tag the tests `#[trace("TC-860", "FR-340-AC-n")]`.
   `pair.json` path and its defect (not JSON; missing `superseding`; unknown
   member `expected`; path outside the pair directory; absolute path;
   identity mismatch naming both label pairs). None of their cases ran.
-  Step 1's two case results are present. The empty corpus gives one
+  The missing-file case is one tool-failure case result naming the case
+  and the defect; step 1's two case results are present. The empty corpus gives one
   tool-failure result naming the corpus path; verdict tool failure, exit 30.
 - Step 3: the healthy-parent case is a `regression` (prior `admitted`,
-  superseding `refused`). After the label swap the two classes and the
-  result are unchanged.
+  superseding `refused`). Named the other way round, the case is `not
+  applicable`.
 - Step 4: the first run's two classes are `admitted`; in the second both
   are `incomplete`, naming `work_units`, and the case is `unresolved
   (incomplete)`.

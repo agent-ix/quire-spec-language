@@ -16,7 +16,6 @@ qsl-attrs = { path = "../qsl-attrs" }
 qsl-foundation = { path = "../qsl-foundation" }
 qsl-replay = { path = "../qsl-replay" }
 qsl-semantics = { path = "../qsl-semantics" }
-quire-canonical = { workspace = true }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = { version = "1.0.151", features = ["raw_value"] }
 proc-macro2 = { version = "1.0.107", features = ["span-locations"] }

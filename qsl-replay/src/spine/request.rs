@@ -30,6 +30,68 @@ pub struct SuppliedObservation {
     pub bytes: Vec<u8>,
 }
 
+impl SuppliedObservation {
+    /// Read one FR-106 observation document from its exact bytes: its
+    /// `sha256-jcs` digest, declared format, identity labels and role. `key`
+    /// names the observation in a refusal's member path.
+    #[qsl_attrs::string_edge]
+    pub fn from_document(
+        key: &str,
+        bytes: Vec<u8>,
+    ) -> Result<Self, ClauseRequestReadError> {
+        let parsed = quire_canonical::read(&bytes, u64::MAX)
+            .map_err(|error| invalid(key, error.to_string()))?;
+        let digest = *quire_canonical::sha256(&parsed, quire_canonical::Limits::new(u64::MAX))
+            .map_err(|error| invalid(key, error.to_string()))?
+            .as_bytes();
+        // Reuse the canonical reader's stack-backed tree. Observation values
+        // may exceed serde_json's default 128-level recursion ceiling
+        // (FR-261).
+        let root = parsed.root();
+        let text = |path: &str, value: Option<NodeRef<'_>>| match value.map(|node| node.node()) {
+            Some(Node::String(value)) => Ok(value.to_owned()),
+            _ => Err(invalid(
+                format!("observations.{key}.{path}"),
+                "expected a string",
+            )),
+        };
+        let format = text("format", root.get("format"))?;
+        if format != "quire.state.snapshot/v1" && format != "quire.state.invocation/v1" {
+            return Err(invalid(format!("observations.{key}.format"), format));
+        }
+        let identity = root.get("identity");
+        let reference = DocumentRef {
+            authority: text(
+                "identity.authority",
+                identity.and_then(|id| id.get("authority")),
+            )?,
+            identity: text(
+                "identity.identity",
+                identity.and_then(|id| id.get("identity")),
+            )?,
+            revision_namespace: text(
+                "identity.revision_namespace",
+                identity.and_then(|id| id.get("revision_namespace")),
+            )?,
+            revision: text(
+                "identity.revision",
+                identity.and_then(|id| id.get("revision")),
+            )?,
+            digest,
+        };
+        let role = root.get("observation").and_then(|node| match node.node() {
+            Node::String(value) => Some(value.to_owned()),
+            _ => None,
+        });
+        Ok(Self {
+            reference,
+            format,
+            role,
+            bytes,
+        })
+    }
+}
+
 /// Context members supplied for one clause selection.
 pub struct ClauseSelectionParts {
     /// The clause name.

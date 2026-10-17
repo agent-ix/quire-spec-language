@@ -25,14 +25,14 @@ const USAGE: &str = "usage: cargo xtask refinement versioning <corpus>";
 /// `cargo xtask refinement versioning <corpus>`: run the gate and return its
 /// report with the exit code of its verdict (FR-344).
 #[qsl_attrs::string_edge]
-pub fn run(operands: &[OsString]) -> Result<Outcome> {
+pub fn run(workspace_root: &Path, operands: &[OsString]) -> Result<Outcome> {
     let [gate, corpus] = operands else {
         return Err(Error::Usage(USAGE));
     };
     if gate.to_str() != Some("versioning") {
         return Err(Error::Usage(USAGE));
     }
-    let report = versioning::run(Path::new(corpus));
+    let report = versioning::run(Path::new(corpus), workspace_root);
     let stdout = report
         .to_json()
         .map_err(|source| Error::RefinementReport { source })?;

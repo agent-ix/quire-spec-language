@@ -7,8 +7,10 @@
 //!
 //! The gate reaches compile and evaluation only through `run_clause`
 //! (FR-340-CON-1). It reads every byte from the files a pair's `pair.json`
-//! names, relative to the pair's directory, and nothing else: no environment
-//! variable, clock or search location.
+//! names and nothing else: no environment variable, clock or search location.
+//! A path is relative to the pair's directory, or `repo:` followed by a path
+//! relative to the repository root, which names an existing repository
+//! example in place instead of copying it.
 //!
 //! A case holds one selection (the FR-312 `clause`, `frame` or `function`
 //! member shape), `observations` naming the snapshot and invocation files it
@@ -24,9 +26,7 @@ use std::io;
 use std::path::{Component, Path, PathBuf};
 
 use qsl_foundation::source::provenance::RawSourceRef;
-use qsl_foundation::{
-    AccountingSetting, Setting, SettingLimits, SettingName, Source, SourceIdentity,
-};
+use qsl_foundation::{Setting, SettingLimits, SettingName, Source, SourceIdentity};
 use qsl_replay::spine::{
     classify_clause_run, read_clause_run_request, Classification, ClauseRequestParts,
     ClauseRunRefusal, ClauseRunRequest, ClauseRunSource, ClauseRunStage, ClauseSelectionParts,
@@ -35,12 +35,12 @@ use qsl_replay::spine::{
 };
 use qsl_replay::AccountingLimits;
 use qsl_semantics::model::observation::{
-    AnchorKind, DocumentRef, ObservationLimits, PostStateRange, SelectedAnchor, SelectedObject,
+    AnchorKind, ObservationLimits, PostStateRange, SelectedAnchor, SelectedObject,
 };
 use serde::Deserialize;
 use serde_json::value::RawValue;
 
-use super::compare::{compare, SelectionKind, Side};
+use super::compare::{compare, CaseResult, SelectionKind, Side};
 use super::report::{
     limit_reports, CaseEntry, CaseName, CorpusFailure, PairFailure, Report, SelectionName,
     SideName, SideReport,
@@ -53,6 +53,9 @@ const PAIR_FILE: &str = "pair.json";
 /// still names a source by four non-blank labels. The gate compares nothing
 /// about the revision labels (FR-340 "Reading a pair"), so both sides carry
 /// these two fixed values.
+/// The prefix of a path relative to the repository root.
+const REPOSITORY_PREFIX: &str = "repo:";
+
 const REVISION_NAMESPACE: &str = "refinement-gate";
 const REVISION: &str = "pair";
 
@@ -202,12 +205,6 @@ enum PairDefect {
     Source { path: String, message: String },
     #[error("dependencies: {0}")]
     Dependencies(String),
-    #[error("cases[{index}].{member}: {reason}")]
-    Case {
-        index: usize,
-        member: String,
-        reason: String,
-    },
 }
 
 /// One revision of the specification: its unit.
@@ -228,11 +225,17 @@ impl Revision {
     }
 }
 
-/// One case, its request against each revision built and checked.
+/// One case: its requests against each revision, or why they cannot be
+/// formed.
 struct Case {
     selection: SelectionName,
-    prior: ClauseRunRequest,
-    superseding: ClauseRunRequest,
+    requests: Result<(ClauseRunRequest, ClauseRunRequest), String>,
+}
+
+/// The two directories a path is resolved against.
+struct Roots {
+    pair: PathBuf,
+    repository: PathBuf,
 }
 
 /// A well-formed pair: its two references and every case ready to run.
@@ -249,7 +252,7 @@ struct Observed {
 }
 
 /// FR-340: run the gate over `corpus`.
-pub fn run(corpus: &Path) -> Report {
+pub fn run(corpus: &Path, repository: &Path) -> Report {
     let directories = match pair_directories(corpus) {
         Ok(directories) if directories.is_empty() => {
             return corpus_failure(corpus, "the corpus holds no pair subdirectory".to_owned());
@@ -266,7 +269,7 @@ pub fn run(corpus: &Path) -> Report {
     let mut entries = Vec::new();
     for directory in directories {
         let label = pair_label(&directory);
-        match load_pair(&directory) {
+        match load_pair(&directory, repository) {
             Ok(pair) => entries.extend(run_pair(pair)),
             Err(defect) => failures.push(PairFailure::new(label, defect.to_string())),
         }
@@ -310,9 +313,27 @@ fn run_pair(pair: Pair) -> Vec<CaseEntry> {
     cases
         .into_iter()
         .map(|case| {
-            let kind = SelectionKind::of(&case.prior.selection);
-            let before = observe(case.prior);
-            let after = observe(case.superseding);
+            let name = CaseName {
+                prior: prior.clone(),
+                superseding: superseding.clone(),
+                selection: case.selection,
+            };
+            let (before_request, after_request) = match case.requests {
+                Ok(requests) => requests,
+                Err(defect) => {
+                    return CaseEntry {
+                        name,
+                        prior: None,
+                        superseding: None,
+                        limits: Vec::new(),
+                        defect: Some(defect),
+                        result: CaseResult::ToolFailure,
+                    };
+                }
+            };
+            let kind = SelectionKind::of(&before_request.selection);
+            let before = observe(before_request);
+            let after = observe(after_request);
             let result = compare(
                 Side {
                     class: before.classification.class,
@@ -327,14 +348,11 @@ fn run_pair(pair: Pair) -> Vec<CaseEntry> {
             let mut limits = limit_reports(SideName::Prior, &before.classification);
             limits.extend(limit_reports(SideName::Superseding, &after.classification));
             CaseEntry {
-                name: CaseName {
-                    prior: prior.clone(),
-                    superseding: superseding.clone(),
-                    selection: case.selection,
-                },
-                prior: SideReport::new(before.stage, &before.classification),
-                superseding: SideReport::new(after.stage, &after.classification),
+                name,
+                prior: Some(SideReport::new(before.stage, &before.classification)),
+                superseding: Some(SideReport::new(after.stage, &after.classification)),
                 limits,
+                defect: None,
                 result,
             }
         })
@@ -362,12 +380,19 @@ fn observe(request: ClauseRunRequest) -> Observed {
     }
 }
 
-/// Read and check one pair. Nothing runs until the whole pair is well formed.
-fn load_pair(directory: &Path) -> Result<Pair, PairDefect> {
-    let root = directory
-        .canonicalize()
-        .map_err(|source| read_error(directory, source))?;
-    let file: PairFile = serde_json::from_slice(&read_in(&root, PAIR_FILE)?)?;
+/// Read and check one pair. Nothing runs until `pair.json`, both units, the
+/// packages and the dependencies are well formed; a case that cannot be
+/// formed is a tool failure of that case alone.
+fn load_pair(directory: &Path, repository: &Path) -> Result<Pair, PairDefect> {
+    let roots = Roots {
+        pair: directory
+            .canonicalize()
+            .map_err(|source| read_error(directory, source))?,
+        repository: repository
+            .canonicalize()
+            .map_err(|source| read_error(repository, source))?,
+    };
+    let file: PairFile = serde_json::from_slice(&read_in(&roots, PAIR_FILE)?)?;
     if file.prior.authority != file.superseding.authority
         || file.prior.identity != file.superseding.identity
     {
@@ -381,47 +406,30 @@ fn load_pair(directory: &Path) -> Result<Pair, PairDefect> {
     if file.cases.is_empty() {
         return Err(PairDefect::NoCases);
     }
-    let prior = revision(&root, &file.prior)?;
-    let superseding = revision(&root, &file.superseding)?;
+    let prior = revision(&roots, &file.prior)?;
+    let superseding = revision(&roots, &file.superseding)?;
     let package_files = file
         .packages
         .iter()
-        .map(|path| read_in(&root, path))
+        .map(|path| read_in(&roots, path))
         .collect::<Result<Vec<_>, _>>()?;
     let packages =
         qsl_semantics::model::intake::package_input(package_files.iter().map(Vec::as_slice));
-    let dependencies = dependencies(&root, &file.dependencies)?;
-    let mut documents = Documents::new(&root);
+    let dependencies = dependencies(&roots, &file.dependencies)?;
+    let mut documents = Documents::new(&roots);
     let mut cases = Vec::new();
     for (index, case) in file.cases.iter().enumerate() {
-        let at = |member: &str, reason: String| PairDefect::Case {
+        let requests = case_requests(
             index,
-            member: member.to_owned(),
-            reason,
-        };
-        let limits = Limits::of(case).map_err(|(member, reason)| at(member, reason))?;
-        let mut observations = BTreeMap::new();
-        for (key, path) in &case.observations {
-            observations.insert(key.clone(), documents.read(path)?);
-        }
-        let build = |revision: &Revision| {
-            read_clause_run_request(ClauseRequestParts {
-                source: revision.source(),
-                packages: packages.clone(),
-                dependencies: dependencies.clone(),
-                observations: observations.clone(),
-                selection: selection_parts(&case.selection),
-                expected_package_id_claim: None,
-                limits: limits.spine,
-                observation_limits: limits.observation,
-                accounting: limits.accounting(),
-            })
-            .map_err(|error| at(&error.member, error.reason))
-        };
+            case,
+            &packages,
+            &dependencies,
+            &mut documents,
+            [&prior, &superseding],
+        )?;
         cases.push(Case {
             selection: selection_name(&case.selection),
-            prior: build(&prior)?,
-            superseding: build(&superseding)?,
+            requests,
         });
     }
     Ok(Pair {
@@ -431,6 +439,52 @@ fn load_pair(directory: &Path) -> Result<Pair, PairDefect> {
     })
 }
 
+/// The requests of one case against both revisions. A path that is absolute
+/// or outside its directory is the pair's defect; any other defect is the
+/// case's.
+fn case_requests(
+    index: usize,
+    case: &CaseFile,
+    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    dependencies: &DependencyInput,
+    documents: &mut Documents<'_>,
+    revisions: [&Revision; 2],
+) -> Result<Result<(ClauseRunRequest, ClauseRunRequest), String>, PairDefect> {
+    let at = |member: &str, reason: String| format!("cases[{index}].{member}: {reason}");
+    let limits = match Limits::of(case) {
+        Ok(limits) => limits,
+        Err((member, reason)) => return Ok(Err(at(member, reason))),
+    };
+    let mut observations = BTreeMap::new();
+    for (key, path) in &case.observations {
+        match documents.read(key, path) {
+            Ok(document) => {
+                observations.insert(key.clone(), document);
+            }
+            Err(defect @ (PairDefect::AbsolutePath { .. } | PairDefect::OutsidePair { .. })) => {
+                return Err(defect);
+            }
+            Err(defect) => return Ok(Err(at(&format!("observations.{key}"), defect.to_string()))),
+        }
+    }
+    let build = |revision: &Revision| {
+        read_clause_run_request(ClauseRequestParts {
+            source: revision.source(),
+            packages: packages.clone(),
+            dependencies: dependencies.clone(),
+            observations: observations.clone(),
+            selection: selection_parts(&case.selection),
+            expected_package_id_claim: None,
+            limits: limits.spine,
+            observation_limits: limits.observation,
+            accounting: limits.accounting(),
+        })
+        .map_err(|error| at(&error.member, error.reason))
+    };
+    let [prior, superseding] = revisions;
+    Ok(build(prior).and_then(|before| Ok((before, build(superseding)?))))
+}
+
 fn read_error(path: &Path, source: io::Error) -> PairDefect {
     PairDefect::Read {
         path: path.display().to_string(),
@@ -438,44 +492,47 @@ fn read_error(path: &Path, source: io::Error) -> PairDefect {
     }
 }
 
-/// The bytes of `relative`, a path inside the pair directory `root`. A path
-/// that is absolute, or that reaches outside `root` lexically or through a
-/// link, is refused.
-fn read_in(root: &Path, relative: &str) -> Result<Vec<u8>, PairDefect> {
-    let path = Path::new(relative);
+/// The bytes of `path`, inside the pair directory or, after the `repo:`
+/// prefix, inside the repository. A path that is absolute, or that reaches
+/// outside its directory lexically or through a link, is refused.
+#[qsl_attrs::string_edge]
+fn read_in(roots: &Roots, path: &str) -> Result<Vec<u8>, PairDefect> {
+    let (root, relative) = match path.strip_prefix(REPOSITORY_PREFIX) {
+        Some(relative) => (&roots.repository, relative),
+        None => (&roots.pair, path),
+    };
+    let relative_path = Path::new(relative);
     let mut depth = 0_usize;
-    for component in path.components() {
+    for component in relative_path.components() {
         match component {
             Component::Prefix(_) | Component::RootDir => {
                 return Err(PairDefect::AbsolutePath {
-                    path: relative.to_owned(),
+                    path: path.to_owned(),
                 });
             }
             Component::CurDir => {}
             Component::Normal(_) => depth += 1,
             Component::ParentDir => {
-                depth = depth
-                    .checked_sub(1)
-                    .ok_or_else(|| PairDefect::OutsidePair {
-                        path: relative.to_owned(),
-                    })?;
+                depth = depth.checked_sub(1).ok_or_else(|| PairDefect::OutsidePair {
+                    path: path.to_owned(),
+                })?;
             }
         }
     }
     let resolved = root
-        .join(path)
+        .join(relative_path)
         .canonicalize()
-        .map_err(|source| read_error(path, source))?;
+        .map_err(|source| read_error(Path::new(path), source))?;
     if !resolved.starts_with(root) {
         return Err(PairDefect::OutsidePair {
-            path: relative.to_owned(),
+            path: path.to_owned(),
         });
     }
-    fs::read(&resolved).map_err(|source| read_error(path, source))
+    fs::read(&resolved).map_err(|source| read_error(Path::new(path), source))
 }
 
-fn revision(root: &Path, file: &SourceFile) -> Result<Revision, PairDefect> {
-    let bytes = read_in(root, &file.path)?;
+fn revision(roots: &Roots, file: &SourceFile) -> Result<Revision, PairDefect> {
+    let bytes = read_in(roots, &file.path)?;
     let identity = SourceIdentity::new(
         file.authority.clone(),
         file.identity.clone(),
@@ -495,7 +552,7 @@ fn revision(root: &Path, file: &SourceFile) -> Result<Revision, PairDefect> {
     })
 }
 
-fn dependencies(root: &Path, files: &[DependencyFile]) -> Result<DependencyInput, PairDefect> {
+fn dependencies(roots: &Roots, files: &[DependencyFile]) -> Result<DependencyInput, PairDefect> {
     let libraries = files
         .iter()
         .map(|file| {
@@ -508,7 +565,7 @@ fn dependencies(root: &Path, files: &[DependencyFile]) -> Result<DependencyInput
                     REVISION,
                 ),
                 path: file.path.clone(),
-                bytes: read_in(root, &file.path)?,
+                bytes: read_in(roots, &file.path)?,
             })
         })
         .collect::<Result<Vec<_>, PairDefect>>()?;
@@ -587,69 +644,33 @@ impl Limits {
 
 /// The observation documents of one pair, each read once.
 struct Documents<'a> {
-    root: &'a Path,
+    roots: &'a Roots,
     read: BTreeMap<String, SuppliedObservation>,
 }
 
 impl<'a> Documents<'a> {
-    fn new(root: &'a Path) -> Self {
+    fn new(roots: &'a Roots) -> Self {
         Self {
-            root,
+            roots,
             read: BTreeMap::new(),
         }
     }
 
-    fn read(&mut self, path: &str) -> Result<SuppliedObservation, PairDefect> {
+    /// The document at `path`, read for the observation `key`.
+    fn read(&mut self, key: &str, path: &str) -> Result<SuppliedObservation, PairDefect> {
         if let Some(held) = self.read.get(path) {
             return Ok(held.clone());
         }
-        let bytes = read_in(self.root, path)?;
-        let document = observation(bytes).map_err(|reason| PairDefect::Source {
-            path: path.to_owned(),
-            message: reason,
+        let bytes = read_in(self.roots, path)?;
+        let document = SuppliedObservation::from_document(key, bytes).map_err(|error| {
+            PairDefect::Source {
+                path: path.to_owned(),
+                message: error.to_string(),
+            }
         })?;
         self.read.insert(path.to_owned(), document.clone());
         Ok(document)
     }
-}
-
-/// An FR-106 observation document: its identity, format and role, and its
-/// `sha256-jcs` digest, read from its canonical form.
-#[qsl_attrs::string_edge]
-fn observation(bytes: Vec<u8>) -> Result<SuppliedObservation, String> {
-    use quire_canonical::{Node, NodeRef};
-    let parsed = quire_canonical::read(&bytes, u64::MAX).map_err(|error| error.to_string())?;
-    let digest = *quire_canonical::sha256(&parsed, quire_canonical::Limits::new(u64::MAX))
-        .map_err(|error| error.to_string())?
-        .as_bytes();
-    let root = parsed.root();
-    let text = |path: &str, value: Option<NodeRef<'_>>| match value.map(|node| node.node()) {
-        Some(Node::String(value)) => Ok(value.to_owned()),
-        _ => Err(format!("{path}: expected a string")),
-    };
-    let format = text("format", root.get("format"))?;
-    if format != "quire.state.snapshot/v1" && format != "quire.state.invocation/v1" {
-        return Err(format!("format: {format} is not an observation document"));
-    }
-    let identity = root.get("identity");
-    let label = |name: &str| text(name, identity.and_then(|id| id.get(name)));
-    let reference = DocumentRef {
-        authority: label("authority")?,
-        identity: label("identity")?,
-        revision_namespace: label("revision_namespace")?,
-        revision: label("revision")?,
-        digest,
-    };
-    let role = root.get("observation").and_then(|node| match node.node() {
-        Node::String(value) => Some(value.to_owned()),
-        _ => None,
-    });
-    Ok(SuppliedObservation {
-        reference,
-        format,
-        role,
-        bytes,
-    })
 }
 
 fn selection_parts(selection: &SelectionFile) -> ClauseSelectionPartsKind {

@@ -8,9 +8,8 @@ use qsl_replay::spine::{
     SuppliedLibrary, SuppliedObservation,
 };
 use qsl_semantics::model::observation::{
-    AnchorKind, DocumentRef, ObservationLimits, PostStateRange, SelectedAnchor, SelectedObject,
+    AnchorKind, ObservationLimits, PostStateRange, SelectedAnchor, SelectedObject,
 };
-use quire_canonical::{Node, NodeRef};
 
 use super::{output, wire, FormalSource, Intake, Result, RunCause, RunResult};
 
@@ -21,7 +20,6 @@ fn invalid(member: impl Into<String>, reason: impl Into<String>) -> RunCause {
     }
 }
 
-#[qsl_attrs::string_edge]
 fn observation(
     intake: &mut Intake<'_>,
     key: &str,
@@ -30,55 +28,8 @@ fn observation(
 ) -> Result<SuppliedObservation> {
     let bytes =
         intake.observation_file(file, usize::try_from(document_bytes).unwrap_or(usize::MAX))?;
-    let parsed =
-        quire_canonical::read(&bytes, u64::MAX).map_err(|error| invalid(key, error.to_string()))?;
-    let digest = *quire_canonical::sha256(&parsed, quire_canonical::Limits::new(u64::MAX))
-        .map_err(|error| invalid(key, error.to_string()))?
-        .as_bytes();
-    // Reuse the canonical reader's stack-backed tree. Observation values may
-    // exceed serde_json's default 128-level recursion ceiling (FR-261).
-    let root = parsed.root();
-    let text = |path: &str, value: Option<NodeRef<'_>>| match value.map(|node| node.node()) {
-        Some(Node::String(value)) => Ok(value.to_owned()),
-        _ => Err(invalid(
-            format!("observations.{key}.{path}"),
-            "expected a string",
-        )),
-    };
-    let format = text("format", root.get("format"))?;
-    if format != "quire.state.snapshot/v1" && format != "quire.state.invocation/v1" {
-        return Err(invalid(format!("observations.{key}.format"), format));
-    }
-    let identity = root.get("identity");
-    let reference = DocumentRef {
-        authority: text(
-            "identity.authority",
-            identity.and_then(|id| id.get("authority")),
-        )?,
-        identity: text(
-            "identity.identity",
-            identity.and_then(|id| id.get("identity")),
-        )?,
-        revision_namespace: text(
-            "identity.revision_namespace",
-            identity.and_then(|id| id.get("revision_namespace")),
-        )?,
-        revision: text(
-            "identity.revision",
-            identity.and_then(|id| id.get("revision")),
-        )?,
-        digest,
-    };
-    let role = root.get("observation").and_then(|node| match node.node() {
-        Node::String(value) => Some(value.to_owned()),
-        _ => None,
-    });
-    Ok(SuppliedObservation {
-        reference,
-        format,
-        role,
-        bytes,
-    })
+    SuppliedObservation::from_document(key, bytes)
+        .map_err(|error| invalid(error.member, error.reason))
 }
 
 fn selected_object(value: &wire::ObjectReference) -> SelectedObject {

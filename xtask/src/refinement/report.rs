@@ -249,12 +249,16 @@ pub fn limit_reports(side: SideName, classification: &Classification) -> Vec<Lim
 pub struct CaseEntry {
     /// The case's name.
     pub name: CaseName,
-    /// The prior revision's run.
-    pub prior: SideReport,
-    /// The superseding revision's run.
-    pub superseding: SideReport,
+    /// The prior revision's run; absent when the case could not be formed
+    /// and nothing ran.
+    pub prior: Option<SideReport>,
+    /// The superseding revision's run; absent when nothing ran.
+    pub superseding: Option<SideReport>,
     /// Each limit an `incomplete` side reached.
     pub limits: Vec<LimitReport>,
+    /// Why the case could not be formed (a tool failure of the case).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub defect: Option<String>,
     /// The result.
     pub result: CaseResult,
 }

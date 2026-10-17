@@ -10,7 +10,7 @@
     "identity": "ix://example/config-version/spine/unit"
   },
   "packages": [
-    "model.semantic-ir.json"
+    "repo:examples/config-version/model.semantic-ir.json"
   ],
   "dependencies": [],
   "cases": [

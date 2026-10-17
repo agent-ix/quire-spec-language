@@ -20,6 +20,8 @@ mod config_version;
 
 const AUTHORITY: &str = "agent-ix";
 const IDENTITY: &str = "ix://example/config-version/spine/unit";
+/// The ConfigVersion domain package, named in place by its repository path.
+const PACKAGE: &str = "repo:examples/config-version/model.semantic-ir.json";
 const POPULATION: &str = "ix://example/config-version/config_history";
 const PARENT_ORDER: &str = "deref(value(self.parent)).versionNumber < self.versionNumber";
 
@@ -197,7 +199,7 @@ impl<'a> Pair<'a> {
         json!({
             "prior": source("prior.native"),
             "superseding": source("superseding.native"),
-            "packages": ["model.semantic-ir.json"],
+            "packages": [PACKAGE],
             "dependencies": [],
             "cases": self.cases,
         })
@@ -207,11 +209,6 @@ impl<'a> Pair<'a> {
         fs::create_dir_all(directory).unwrap();
         fs::write(directory.join("prior.native"), &self.prior).unwrap();
         fs::write(directory.join("superseding.native"), &self.superseding).unwrap();
-        fs::write(
-            directory.join("model.semantic-ir.json"),
-            config_version::DOMAIN_PACKAGE,
-        )
-        .unwrap();
         fs::write(directory.join("healthy-parent.json"), healthy().to_string()).unwrap();
         fs::write(
             directory.join("violating-parent.json"),
@@ -309,6 +306,10 @@ fn copy_directory(from: &Path, to: &Path) {
     }
 }
 
+fn repository() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("..")
+}
+
 fn real_corpus() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/fixtures/refinement/versioning")
 }
@@ -333,7 +334,7 @@ fn exit_code(corpus: &Path) -> i32 {
 #[trace("TC-860", "FR-340-AC-1")]
 fn a_well_formed_pair_reports_one_result_per_case() {
     let corpus = corpus(&[("pair", identity_pair())]);
-    let report = versioning::run(corpus.path());
+    let report = versioning::run(corpus.path(), &repository());
     let entries = listed(&report);
     assert_eq!(entries.len(), 2);
     let names: Vec<&Value> = entries.iter().map(|entry| &entry["name"]).collect();
@@ -396,7 +397,7 @@ fn each_malformed_pair_is_one_tool_failure_and_the_rest_still_run() {
     mismatch["superseding"]["identity"] = json!("ix://example/another-spec");
     write_pair("identity", &mismatch.to_string());
 
-    let report = versioning::run(root);
+    let report = versioning::run(root, &repository());
     let entries = listed(&report);
     let failures: Vec<(&str, &str)> = entries
         .iter()
@@ -434,7 +435,7 @@ fn each_malformed_pair_is_one_tool_failure_and_the_rest_still_run() {
     assert_eq!(report.exit, 30);
 
     let empty = tempfile::tempdir().unwrap();
-    let report = versioning::run(empty.path());
+    let report = versioning::run(empty.path(), &repository());
     let entries = listed(&report);
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0]["corpus"], empty.path().display().to_string());
@@ -451,7 +452,7 @@ fn the_pair_is_compared_in_the_direction_its_members_name() {
         "pair",
         Pair::new(unit(), tightened(), vec![clause_case("healthy-parent")]),
     )]);
-    let report = versioning::run(forward.path());
+    let report = versioning::run(forward.path(), &repository());
     assert_eq!(
         results(&report),
         [triple("clause", "healthy-parent", "regression")]
@@ -466,7 +467,7 @@ fn the_pair_is_compared_in_the_direction_its_members_name() {
         "pair",
         Pair::new(tightened(), unit(), vec![clause_case("healthy-parent")]),
     )]);
-    let report = versioning::run(reverse.path());
+    let report = versioning::run(reverse.path(), &repository());
     assert_eq!(
         results(&report),
         [triple("clause", "healthy-parent", "not applicable")]
@@ -483,7 +484,7 @@ fn a_stated_budget_reaches_both_runs_and_a_stated_nothing_uses_defaults() {
         "pair",
         Pair::new(unit(), unit(), vec![clause_case("healthy-parent")]),
     )]);
-    let report = versioning::run(corpus_default.path());
+    let report = versioning::run(corpus_default.path(), &repository());
     assert_eq!(
         results(&report),
         [triple("clause", "healthy-parent", "holds")]
@@ -495,7 +496,7 @@ fn a_stated_budget_reaches_both_runs_and_a_stated_nothing_uses_defaults() {
         json!({"work_units": 1}),
     );
     let corpus_budget = corpus(&[("pair", Pair::new(unit(), unit(), vec![budget]))]);
-    let report = versioning::run(corpus_budget.path());
+    let report = versioning::run(corpus_budget.path(), &repository());
     assert_eq!(
         results(&report),
         [triple(
@@ -525,8 +526,8 @@ fn a_copied_corpus_gives_a_byte_equal_report() {
     let original = corpus(&[("pair", seed_pair())]);
     let copy = tempfile::tempdir().unwrap();
     copy_directory(original.path(), copy.path());
-    let first = versioning::run(original.path()).to_json().unwrap();
-    let second = versioning::run(copy.path()).to_json().unwrap();
+    let first = versioning::run(original.path(), &repository()).to_json().unwrap();
+    let second = versioning::run(copy.path(), &repository()).to_json().unwrap();
     assert_eq!(first, second);
 }
 
@@ -538,7 +539,7 @@ fn a_copied_corpus_gives_a_byte_equal_report() {
 #[trace("TC-864", "FR-343-AC-2", "FR-344-AC-5", "FR-340-AC-6")]
 fn a_seeded_regression_fails_the_gate_naming_exactly_that_case() {
     let corpus = corpus(&[("identity", identity_pair()), ("seed", seed_pair())]);
-    let report = versioning::run(corpus.path());
+    let report = versioning::run(corpus.path(), &repository());
     assert_eq!(report.verdict, Verdict::Violation);
     assert_eq!(report.exit, 10);
     let entries = listed(&report);
@@ -589,7 +590,7 @@ fn a_dropped_clause_holds_and_a_dropped_function_regresses() {
             vec![clause_case("healthy-parent"), function_case()],
         ),
     )]);
-    let report = versioning::run(corpus.path());
+    let report = versioning::run(corpus.path(), &repository());
     assert_eq!(
         results(&report),
         [
@@ -619,7 +620,7 @@ fn a_superseding_compile_refusal_regresses_every_admitted_case() {
             ],
         ),
     )]);
-    let report = versioning::run(corpus.path());
+    let report = versioning::run(corpus.path(), &repository());
     assert_eq!(
         results(&report),
         [
@@ -639,7 +640,7 @@ fn a_superseding_compile_refusal_regresses_every_admitted_case() {
 #[trace("TC-864", "FR-340-AC-6")]
 fn the_real_corpus_passes_and_the_seeded_copy_fails() {
     let real = real_corpus();
-    let report = versioning::run(&real);
+    let report = versioning::run(&real, &repository());
     assert_eq!(
         report.verdict,
         Verdict::Success,
@@ -664,7 +665,7 @@ fn an_unsupported_compile_on_either_side_is_unresolved() {
             "pair",
             Pair::new(prior, superseding, vec![clause_case("healthy-parent")]),
         )]);
-        let report = versioning::run(corpus.path());
+        let report = versioning::run(corpus.path(), &repository());
         assert_eq!(
             results(&report),
             [triple(
@@ -692,7 +693,7 @@ fn an_exhausted_budget_is_unresolved_and_names_its_limit() {
             json!({"work_units": budget}),
         );
         let corpus = corpus(&[("pair", Pair::new(unit(), heavier(), vec![case]))]);
-        let report = versioning::run(corpus.path());
+        let report = versioning::run(corpus.path(), &repository());
         listed(&report).remove(0)
     };
     // The smallest budget the prior run fits in.
@@ -719,6 +720,38 @@ fn an_exhausted_budget_is_unresolved_and_names_its_limit() {
     assert_eq!(below["result"], "unresolved (incomplete)");
 }
 
+/// FR-340-AC-2 (case half): a case whose inputs cannot be read is one
+/// tool-failure case result naming the case and the defect; nothing of it runs
+/// and the pair's other cases still run.
+#[test]
+#[trace("TC-860", "FR-340-AC-2")]
+fn an_unreadable_case_is_a_tool_failure_of_that_case_alone() {
+    let broken = json!({
+        "selection": {"clause": {
+            "name": "ParentOrder",
+            "observation": "missing",
+            "self": {"population": POPULATION, "key": "child"},
+            "anchor": {"kind": "handler", "name": "validate"},
+        }},
+        "observations": {"missing": "missing.json"},
+    });
+    let pair = Pair::new(unit(), unit(), vec![broken, clause_case("healthy-parent")]);
+    let corpus = corpus(&[("pair", pair)]);
+    let report = versioning::run(corpus.path(), &repository());
+    assert_eq!(
+        results(&report),
+        [
+            triple("clause", "healthy-parent", "holds"),
+            triple("clause", "missing", "tool failure"),
+        ]
+    );
+    let failed = &listed(&report)[1];
+    assert!(failed["prior"].is_null() && failed["superseding"].is_null());
+    assert!(failed["defect"].as_str().unwrap().contains("missing.json"));
+    assert_eq!(report.verdict, Verdict::ToolFailure);
+    assert_eq!(report.exit, 30);
+}
+
 fn dummy_reference(identity: &str) -> RawSourceRef {
     RawSourceRef::new(
         AUTHORITY,
@@ -728,12 +761,12 @@ fn dummy_reference(identity: &str) -> RawSourceRef {
     .unwrap()
 }
 
-fn side(class: &'static str, stage: &'static str) -> SideReport {
-    SideReport {
+fn side(class: &'static str, stage: &'static str) -> Option<SideReport> {
+    Some(SideReport {
         class,
         stage,
         codes: Vec::new(),
-    }
+    })
 }
 
 fn entry(identity: &str, result: CaseResult) -> CaseEntry {
@@ -749,6 +782,7 @@ fn entry(identity: &str, result: CaseResult) -> CaseEntry {
         prior: side("admitted", "evaluate"),
         superseding: side("refused", "evaluate"),
         limits: Vec::new(),
+        defect: None,
         result,
     }
 }
@@ -843,7 +877,7 @@ fn cases_are_ordered_by_name_whatever_the_creation_order() {
         pair.cases = vec![clause_case("healthy-parent")];
         pair.write(&corpus.path().join(directory));
     }
-    let first = versioning::run(corpus.path());
+    let first = versioning::run(corpus.path(), &repository());
     let identities: Vec<String> = listed(&first)
         .iter()
         .map(|entry| {
@@ -856,7 +890,7 @@ fn cases_are_ordered_by_name_whatever_the_creation_order() {
     assert_eq!(identities, ["ix://spec/a", "ix://spec/m", "ix://spec/z"]);
     assert_eq!(
         first.to_json().unwrap(),
-        versioning::run(corpus.path()).to_json().unwrap()
+        versioning::run(corpus.path(), &repository()).to_json().unwrap()
     );
 }
 

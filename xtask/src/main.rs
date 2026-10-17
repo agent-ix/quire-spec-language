@@ -39,7 +39,7 @@ fn run(arguments: &[OsString]) -> Result<Outcome> {
         return test_suites::run(&workspace_root, operands).map(Outcome::success);
     }
     if command == "refinement" {
-        return refinement::run(operands);
+        return refinement::run(&workspace_root, operands);
     }
     let workspace_operand = match (command, operands) {
         (_, []) => None,
