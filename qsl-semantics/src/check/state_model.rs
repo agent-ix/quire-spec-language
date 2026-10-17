@@ -182,7 +182,9 @@ fn member_candidates(
 /// FR-365 "Checking" 2 to 5 for `reaches(a, b, name)` over `end`: the second
 /// operand's object type `other` conforms to the near end's type (the first
 /// operand's does by the end's resolution), then direction, destination
-/// multiplicity and destination type, stopping at the first failure.
+/// multiplicity and destination type, stopping at the first failure. A
+/// finite multi-valued destination end of the near end's own type is
+/// admitted as a single-valued one is.
 fn reaches_end(
     end: &Navigable<'_>,
     types: &quire_semantic_value::declaration::TypeEnvironment,
@@ -201,13 +203,13 @@ fn reaches_end(
     let multiplicity = destination
         .multiplicity
         .ok_or_else(|| unsupported(NavigationBound::Undeclared))?;
-    let upper = multiplicity
-        .upper
-        .ok_or_else(|| unsupported(NavigationBound::Unbounded))?;
+    if multiplicity.upper.is_none() {
+        return Err(unsupported(NavigationBound::Unbounded));
+    }
     if multiplicity.ordered {
         return Err(unsupported(NavigationBound::Ordered));
     }
-    if upper != 1 || destination.object != near {
+    if destination.object != near {
         return Err(ineligible());
     }
     Ok(())
