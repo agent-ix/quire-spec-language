@@ -1188,6 +1188,7 @@ impl Replay {
                 declaring: account,
                 declaration,
             }),
+            operations: Default::default(),
         }
     }
 
@@ -1354,42 +1355,56 @@ fn parsed_with_body(body: &str) -> (String, qsl_cst::ParsedSource) {
     (source, parsed)
 }
 
-/// FR-360-AC-5: a Text literal and `none` at a variant slot are admitted by S1
-/// and refused by S2 as `unsupported_construct`, cause `UnrepresentedConstruct`
-/// of the `Primary` production, at the literal's span: `qsl-forms` has no
-/// expression form for either, so no checker row exists for them.
+/// FR-360-AC-5: `none` at a variant slot is admitted by S1 and refused by S2
+/// as `unsupported_construct`, cause `UnrepresentedConstruct` of the
+/// `Primary` production, at the literal's span: `qsl-forms` has no expression
+/// form for it, so no checker row exists.
 #[trace("TC-1007", "FR-360-AC-5")]
 #[test]
-fn a_text_literal_and_none_are_refused_by_s2_as_unrepresented() {
-    for literal in ["\"Gold\"", "none"] {
-        let (source, parsed) = parsed_with_body(&format!("t = {literal}"));
-        assert!(
-            parsed.is_admissible(),
-            "{literal}: {:?}",
-            parsed.diagnostics()
-        );
-        let refusal = build_unit(&parsed).expect_err("S2 refuses the literal");
-        assert!(
-            matches!(
-                refusal.cause,
-                qsl_forms::FormsCause::UnrepresentedConstruct {
-                    production: qsl_cst::Production::Primary
-                }
-            ),
-            "{literal}: {refusal:?}"
-        );
-        assert_eq!(
-            refusal.catalog_code(),
-            qsl_foundation::Code::UnsupportedConstruct
-        );
-        let start = source.find(&format!("t = {literal}")).expect("in source") + "t = ".len();
-        let span = refusal.span.expect("the refusal names the literal");
-        assert_eq!(
-            (span.start, span.end),
-            (start, start + literal.len()),
-            "{literal}"
-        );
-    }
+fn none_at_a_variant_slot_is_refused_by_s2_as_unrepresented() {
+    let literal = "none";
+    let (source, parsed) = parsed_with_body(&format!("t = {literal}"));
+    assert!(
+        parsed.is_admissible(),
+        "{literal}: {:?}",
+        parsed.diagnostics()
+    );
+    let refusal = build_unit(&parsed).expect_err("S2 refuses the literal");
+    assert!(
+        matches!(
+            refusal.cause,
+            qsl_forms::FormsCause::UnrepresentedConstruct {
+                production: qsl_cst::Production::Primary
+            }
+        ),
+        "{literal}: {refusal:?}"
+    );
+    assert_eq!(
+        refusal.catalog_code(),
+        qsl_foundation::Code::UnsupportedConstruct
+    );
+    let start = source.find(&format!("t = {literal}")).expect("in source") + "t = ".len();
+    let span = refusal.span.expect("the refusal names the literal");
+    assert_eq!((span.start, span.end), (start, start + literal.len()));
+}
+
+/// FR-360-AC-5, FR-056-AC-41: the String literal `"Gold"` builds in S2 and is
+/// refused by the checker as `ill_typed`/`type-mismatch`, at a `Tier` slot and
+/// in a comparison with a `Tier` parameter; it never reads as a case.
+#[trace("TC-1007", "FR-360-AC-5")]
+#[test]
+fn a_string_literal_at_a_variant_slot_is_refused_by_the_checker() {
+    let c = checked();
+    let refusal = c
+        .check(&[], &Expression::string("Gold"), Some(&c.tier))
+        .expect_err("a String literal is not a Tier");
+    assert_eq!(refusal.cause, mismatch());
+    let refusals =
+        check_refusals("function f using v(t: Config::Tier): Boolean pure { t = \"Gold\" }");
+    assert!(
+        refusals.iter().any(|refusal| refusal.cause == mismatch()),
+        "the comparison refuses: {refusals:?}"
+    );
 }
 
 /// FR-360-AC-5: the `case <ident> when <block> <control>` control form is not

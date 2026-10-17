@@ -678,15 +678,16 @@ fn observations(graph: &CheckedGraph, view: &EffectiveView) -> AdmittedObservati
             declaring: operation.declaring,
             declaration: operation.declaration.clone(),
         }),
+        operations: Default::default(),
     };
     let selection = ClauseSelection {
         name: "F".to_owned(),
         input: ClauseSelectionInput::PreCall {
             snapshot,
-            self_object: SelectedObject {
+            self_object: Some(SelectedObject {
                 population: POPULATION.to_owned(),
                 key: "present".to_owned(),
-            },
+            }),
             parameters: BTreeMap::new(),
         },
     };

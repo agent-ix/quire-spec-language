@@ -146,7 +146,7 @@ fn run_pre_call() -> ClauseDisposition {
         name: PARENT_PRESENT.to_owned(),
         input: ClauseSelectionInput::PreCall {
             snapshot: pre.clone(),
-            self_object: self_child(),
+            self_object: Some(self_child()),
             parameters: BTreeMap::new(),
         },
     }));
@@ -244,10 +244,10 @@ fn a_precondition_over_an_invocation_reads_no_result_value() {
         name: "ReachesTarget".to_owned(),
         input: ClauseSelectionInput::PreCall {
             snapshot: pre.clone(),
-            self_object: SelectedObject {
+            self_object: Some(SelectedObject {
                 population: config_version_population_identity(),
                 key: "a".to_owned(),
-            },
+            }),
             parameters: BTreeMap::from([(
                 identifier("target"),
                 SnapshotValue::reference(SelectedObject {

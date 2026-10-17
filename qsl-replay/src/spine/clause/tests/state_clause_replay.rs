@@ -191,7 +191,7 @@ fn pre_call(target: &str) -> Documents {
     Documents {
         observation: ClauseSelectionInput::PreCall {
             snapshot: snapshot.clone(),
-            self_object: self_a(),
+            self_object: Some(self_a()),
             parameters: BTreeMap::from([(name("target"), reference(target))]),
         },
         read: vec![snapshot.clone()],
@@ -656,7 +656,7 @@ fn a_violated_precondition_reproduces_over_its_pre_call_state() {
     else {
         panic!("a pre-call observation: {:?}", result.observation());
     };
-    assert_eq!(self_object, &self_a());
+    assert_eq!(self_object, &Some(self_a()));
     assert_eq!(
         parameters,
         &BTreeMap::from([(name("target"), reference("a"))])
@@ -744,10 +744,10 @@ fn version_unchanged_pre_call() -> Documents {
     Documents {
         observation: ClauseSelectionInput::PreCall {
             snapshot: pre.clone(),
-            self_object: SelectedObject {
+            self_object: Some(SelectedObject {
                 population: config_version_population_identity(),
                 key: "child".to_owned(),
-            },
+            }),
             parameters: BTreeMap::new(),
         },
         read: vec![pre.clone()],

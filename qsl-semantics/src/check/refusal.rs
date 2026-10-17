@@ -665,6 +665,13 @@ pub enum CheckCause {
     /// `i128::MIN..=i128::MAX`, at the literal. Never a nonzero-magnitude
     /// rewrite: a literal is refused, not truncated.
     IntegerOutsideI128(super::type_form::IntegerOutsideI128),
+    /// `ill_typed` / `type-mismatch` (FR-091 "Native scalar literals"): the
+    /// text of a `UUID("...")` literal is not the canonical lowercase
+    /// `8-4-4-4-12` spelling, at the call.
+    MalformedUuidLiteral {
+        /// The argument text as written (decoded).
+        argument: String,
+    },
     /// `ill_typed` / `non-boolean-root` (FR-104): a state clause body whose
     /// type is not `Boolean`, at the body.
     NonBooleanRoot,
@@ -1058,9 +1065,10 @@ impl CheckCause {
             Self::ModelConformance(failure) => failure.code,
             Self::ModelIncomplete(_) => Code::ResourceExhausted,
             Self::TypeAdmission { code, .. } => *code,
-            Self::IllTyped(_) | Self::NonBooleanRoot | Self::IntegerOutsideI128(_) => {
-                Code::IllTyped
-            }
+            Self::IllTyped(_)
+            | Self::NonBooleanRoot
+            | Self::IntegerOutsideI128(_)
+            | Self::MalformedUuidLiteral { .. } => Code::IllTyped,
             Self::WrongSnapshot(_) | Self::UnanchoredResult { .. } => Code::WrongSnapshot,
             Self::MissingName(_) => Code::MissingDeclaration,
             Self::AmbiguousName { .. } | Self::AmbiguousMember(_) | Self::AmbiguousQualified(_) => {
@@ -1111,7 +1119,9 @@ impl CheckCause {
             Self::IllTyped(cause) => cause.tag(),
             Self::WrongSnapshot(cause) => Some(cause.as_str()),
             Self::NonBooleanRoot => Some("non-boolean-root"),
-            Self::IntegerOutsideI128(_) => Some("type-mismatch"),
+            Self::IntegerOutsideI128(_) | Self::MalformedUuidLiteral { .. } => {
+                Some("type-mismatch")
+            }
             Self::UnanchoredResult { .. } => Some("wrong-anchor"),
             Self::MissingName(_) => Some("missing-name"),
             Self::AmbiguousName { .. } | Self::AmbiguousMember(_) | Self::AmbiguousQualified(_) => {
