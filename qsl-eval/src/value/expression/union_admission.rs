@@ -18,6 +18,12 @@ use quire_exact::{
     compare_keys, Identifier, Integer, ObjectId, UnionMember, UnionValue, UniverseId,
 };
 
+/// The model object type `T` that `Holder` references; the kernel
+/// constructor is called here, in a test, not in the fixture.
+fn object_type() -> quire_exact::EffectiveId {
+    quire_exact::EffectiveId::from_digest([9; 32])
+}
+
 fn int(number: i64) -> Value {
     Value::Integer(Integer::from(number))
 }
@@ -35,7 +41,7 @@ fn admit(
         &[("s".to_owned(), parameter)],
         std::slice::from_ref(argument),
         objects,
-        &fixture::types(),
+        &fixture::types(object_type()),
         &mut run,
     )
 }
@@ -117,7 +123,7 @@ fn a_dangling_reference_in_a_union_payload_is_refused_by_the_reference_walk() {
     let holder = fixture::union_type("Holder");
     let reference = Value::Reference(quire_exact::ObjectReference::new(
         UniverseId::from_digest([1; 32]),
-        fixture::object_type(),
+        object_type(),
         ObjectId::new("i1").expect("an object id"),
     ));
     let dangling = fixture::value("Holder", "Some", vec![reference]);

@@ -17,6 +17,12 @@ use qsl_semantics::check::{
 use quire_exact::{CollectionType, ScalarLimits};
 use quire_semantic_value::checking::CheckingLimits;
 
+/// The model object type `T` that `Holder` references; the kernel
+/// constructor is called here, in a test, not in the fixture.
+fn object_type() -> quire_exact::EffectiveId {
+    quire_exact::EffectiveId::from_digest([9; 32])
+}
+
 struct World {
     scope: Scope,
     graph: CheckedGraph,
@@ -30,7 +36,7 @@ fn world() -> World {
     .check(CheckingLimits::default())
     .expect("the empty fixture package checks");
     World {
-        scope: scope_with(fixture::types(), Vec::new()),
+        scope: scope_with(fixture::types(object_type()), Vec::new()),
         graph,
     }
 }

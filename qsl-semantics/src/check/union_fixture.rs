@@ -43,15 +43,10 @@ pub fn union_type(union: &str) -> ValueType {
     ValueType::Composite(handle(union))
 }
 
-/// The model object type `T` that `Holder`'s `Some` references.
-pub fn object_type() -> EffectiveId {
-    EffectiveId::from_digest(digest("T"))
-}
-
 /// The members of the fixture union `union` in declared order, each with its
 /// payload types.
 #[qsl_attrs::string_edge]
-fn members(union: &str) -> Vec<(&'static str, Vec<ValueType>)> {
+fn members(union: &str, object_type: EffectiveId) -> Vec<(&'static str, Vec<ValueType>)> {
     match union {
         "Shape" => vec![
             ("Empty", vec![]),
@@ -67,7 +62,7 @@ fn members(union: &str) -> Vec<(&'static str, Vec<ValueType>)> {
             ),
         ],
         "Holder" => vec![
-            ("Some", vec![ValueType::Reference(object_type())]),
+            ("Some", vec![ValueType::Reference(object_type)]),
             ("Nothing", vec![]),
         ],
         other => panic!("{other} is no fixture union"),
@@ -90,15 +85,15 @@ pub fn value(union: &str, name: &str, payload: Vec<Value>) -> Value {
 }
 
 /// The type environment declaring every fixture union, each sealed, and the
-/// object type `T`.
-pub fn types() -> TypeEnvironment {
+/// model object type `T` (`object_type`) that `Holder`'s `Some` references.
+pub fn types(object_type: EffectiveId) -> TypeEnvironment {
     const UNIONS: [&str; 4] = ["Shape", "Other", "Tree", "Holder"];
     let declarations = UNIONS.iter().map(|union| {
         CompositeDeclaration::new(
             handle(union),
             *union,
             CompositeShape::Union(
-                members(union)
+                members(union, object_type)
                     .into_iter()
                     .map(|(name, payload)| {
                         UnionMemberDeclaration::resolved(
@@ -112,11 +107,11 @@ pub fn types() -> TypeEnvironment {
     });
     let mut types = TypeEnvironment::new(
         declarations,
-        [ObjectTypeDeclaration::new(object_type(), "T", Vec::new())],
+        [ObjectTypeDeclaration::new(object_type, "T", Vec::new())],
     )
     .expect("the fixture unions are well-formed");
     for union in UNIONS {
-        let bindings = members(union)
+        let bindings = members(union, object_type)
             .into_iter()
             .map(|(name, _)| member(union, name))
             .collect();
