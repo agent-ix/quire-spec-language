@@ -1964,7 +1964,7 @@ fn delete_granted(
 
 /// The one frame and delta decision (FR-046/FR-151, FR-106 check 11) over
 /// one population's `pre` and `post` objects, both in document order. Both
-/// [`enforce_frame`] and FR-106 admission (`model::observation::frame`)
+/// `enforce_frame` and FR-106 admission (`model::observation::frame`)
 /// call it, each building [`FrameObject`]s from its own input.
 ///
 /// The first violation, in this order, is returned:
@@ -1987,7 +1987,7 @@ fn delete_granted(
 ///    from it, stopping at the first member an entry names; the first
 ///    charge `charge` denies ends the decision as [`FrameStop::Denied`]
 ///    with no verdict.
-/// 4. the declared delta against the computed one ([`check_declared_delta`]).
+/// 4. the declared delta against the computed one (`check_declared_delta`).
 ///
 /// A deletion (step 2) is granted by a type-wide entry the object's type
 /// conforms to, by `deletes self` for the receiver, or by `deletes p` for
