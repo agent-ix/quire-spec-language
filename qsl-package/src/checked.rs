@@ -40,7 +40,9 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use qsl_foundation::Code;
-use qsl_semantics::check::CheckedGraph;
+use qsl_semantics::check::{
+    AbstractionRefusal, AuthoredBinding, CheckedAbstractionRelation, CheckedGraph,
+};
 use qsl_semantics::library::{LibraryName, PackageId};
 
 /// The limits the E4 emitter encodes a package's identity preimage and its
@@ -149,6 +151,9 @@ pub struct CheckedPackage {
     /// names. [`LibraryName`]'s order is UTF-8 byte order, the order FR-322
     /// writes (ADR-015 D-3).
     selections: BTreeMap<LibraryName, ResolvedDependency>,
+    /// FR-304, FR-306: this package's checked abstraction relation, when it
+    /// declares one. The checked package is its only authority.
+    abstraction: Option<CheckedAbstractionRelation>,
 }
 
 /// One library identity's selection in a package's resolved closure, and the
@@ -303,6 +308,7 @@ impl CheckedPackage {
             graph: Arc::new(graph),
             dependencies: BTreeMap::new(),
             selections: BTreeMap::new(),
+            abstraction: None,
         }
     }
 
@@ -353,7 +359,29 @@ impl CheckedPackage {
             graph: Arc::new(graph),
             dependencies,
             selections,
+            abstraction: None,
         })
+    }
+
+    /// FR-304: gives this package the abstraction relation `bindings` check
+    /// to against its own declarations. The relation is built only by S3's
+    /// checker.
+    ///
+    /// # Errors
+    ///
+    /// Every refusal of the bindings; a refusal leaves the package unchanged.
+    pub fn bind_abstraction(
+        &mut self,
+        bindings: &[AuthoredBinding],
+    ) -> Result<(), Vec<AbstractionRefusal>> {
+        self.abstraction = Some(self.graph.check_abstraction(bindings)?);
+        Ok(())
+    }
+
+    /// FR-304: this package's checked abstraction relation, when it declares
+    /// one.
+    pub fn abstraction(&self) -> Option<&CheckedAbstractionRelation> {
+        self.abstraction.as_ref()
     }
 
     /// This package's own checked declarations (S3's stage output) -- the
@@ -521,6 +549,7 @@ pub(crate) fn dependency_chain(length: usize) -> CheckedPackage {
             graph: Arc::clone(&graph),
             dependencies: BTreeMap::new(),
             selections: BTreeMap::new(),
+            abstraction: None,
         },
         |dependency, link| CheckedPackage {
             graph: Arc::clone(&graph),
@@ -529,6 +558,7 @@ pub(crate) fn dependency_chain(length: usize) -> CheckedPackage {
                 Arc::new(dependency),
             )]),
             selections: BTreeMap::new(),
+            abstraction: None,
         },
     )
 }
