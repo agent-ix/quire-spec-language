@@ -307,12 +307,12 @@ impl AdmittedModel {
             let Some(target) = &field.redefines else {
                 continue;
             };
-            if !self
-                .index
-                .field_lineage(&field.key)
-                .iter()
-                .any(|member| writer.effect.modifies.contains(member))
-            {
+            if !self.index.field_lineage(&field.key).iter().any(|member| {
+                writer
+                    .effect
+                    .written_fields()
+                    .any(|written| written == *member)
+            }) {
                 continue;
             }
             let slots = self.parent_slots(staged, &field.owner, target, ancestor_steps)?;
