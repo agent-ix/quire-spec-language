@@ -1,5 +1,5 @@
 ---
-id: SR-11758
+id: SR-11770
 title: "Code review of quire-spec-language PR #916: EffectiveView state_machine and conforms"
 type: SpecReview
 analysis: code-review

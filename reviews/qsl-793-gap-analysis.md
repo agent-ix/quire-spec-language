@@ -1,5 +1,5 @@
 ---
-id: SR-11759
+id: SR-11771
 title: "Gap analysis of quire-spec-language PR #916 against FR-081-AC-17..21 and TC-1049"
 type: SpecReview
 analysis: gap-analysis
@@ -40,7 +40,7 @@ behaviour; `conforms_admitted` is their shared helper.
 
 PASS. Every examined AC has a tagged test whose assertion can fail. Only
 residual: ordering by key bytes and a subtype-first walk coincide in the
-fixture (see SR-11758 Verdict); recorded, not blocking.
+fixture (see SR-11770 Verdict); recorded, not blocking.
 
 ## Findings
 
