@@ -173,7 +173,6 @@ fn coalescing_retains_incoming_back_self_parallel_and_repeated_edges() {
 }
 
 /// EN-1 SCC support, not the whole temporal example in this criterion.
-#[trace("TC-521", "FR-126-AC-1")]
 #[test]
 fn components_include_disconnected_cycles_self_loops_parallel_edges_and_isolates() {
     let graph = run(&Model::new(
@@ -205,7 +204,6 @@ fn components_include_disconnected_cycles_self_loops_parallel_edges_and_isolates
 }
 
 /// Detects recursion on a production path, not a separate SCC prototype.
-#[trace("TC-521", "FR-126-AC-1")]
 #[test]
 fn a_deep_chain_and_cycle_decompose_on_a_small_stack() {
     std::thread::Builder::new()
@@ -238,7 +236,6 @@ fn a_deep_chain_and_cycle_decompose_on_a_small_stack() {
 }
 
 #[trace("TC-453", "FR-101-AC-1")]
-#[trace("TC-521", "FR-126-AC-7")]
 #[test]
 fn canonical_order_is_independent_of_port_inventory_order() {
     let model = Model::new(
@@ -259,7 +256,6 @@ fn canonical_order_is_independent_of_port_inventory_order() {
 }
 
 #[trace("TC-455", "FR-101-AC-7")]
-#[trace("TC-521", "FR-126-AC-5")]
 #[test]
 fn inclusive_caps_complete_exact_graphs_and_preserve_partial_edges() {
     let model = Model::new(&[0], &[(0, "next", 1), (1, "back", 0), (1, "self", 1)]);
@@ -304,7 +300,6 @@ fn inclusive_caps_complete_exact_graphs_and_preserve_partial_edges() {
 }
 
 #[trace("TC-455", "FR-101-AC-7")]
-#[trace("TC-521", "FR-126-AC-5")]
 #[test]
 fn horizon_retains_closing_edges_from_states_below_the_bound() {
     let model = Model::new(&[0], &[(0, "next", 1), (1, "back", 0), (1, "next", 2)]);
@@ -482,7 +477,6 @@ fn counters() -> Model {
     model
 }
 
-#[trace("TC-521", "FR-126-AC-1", "FR-126-AC-7")]
 #[trace("TC-587", "FR-162-AC-2")]
 #[test]
 fn product_preserves_distinct_property_states_and_all_model_edges() {
@@ -589,7 +583,6 @@ fn product_preserves_distinct_property_states_and_all_model_edges() {
     );
 }
 
-#[trace("TC-521", "FR-126-AC-3")]
 #[test]
 fn bounded_terminal_closes_while_infinite_terminal_advances_property() {
     let model = Model::new(&[0], &[]);
@@ -659,7 +652,6 @@ fn bounded_terminal_closes_while_infinite_terminal_advances_property() {
         )));
 }
 
-#[trace("TC-521", "FR-126-AC-3")]
 #[trace("TC-453", "FR-101-AC-2")]
 #[test]
 fn product_keys_are_unambiguous_and_stutter_cannot_alias_model_identity() {
@@ -734,7 +726,6 @@ fn canonical_encoding_failures_are_typed_errors() {
 
 /// An independent transitive-closure oracle covers every three-node directed
 /// graph, including edges into a previously finished component.
-#[trace("TC-521", "FR-126-AC-1")]
 #[test]
 fn component_partition_agrees_with_mutual_reachability_on_all_three_node_graphs() {
     for mask in 0u16..512 {
@@ -829,7 +820,6 @@ impl PropertyComponent<Model> for AnchoredProperty {
     }
 }
 
-#[trace("TC-521", "FR-126-AC-7")]
 #[test]
 fn model_step_anchors_reach_the_property_component_even_at_the_same_model_state() {
     let model = Model::new(&[0], &[(0, "b", 0), (0, "a", 0)]);
