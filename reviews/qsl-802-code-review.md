@@ -73,8 +73,18 @@ Reviewed at 5f0bdccdc34d94dcd338da7f9085c482e709334e, over the delta from b7769a
 | FND-002 | high | FR-312 still says `self` is a required member of a current and a pre clause request (`{name, observation, self, anchor}` / `{name, observation, self, parameters}`). FR-312-AC-5 says omitting a required member refuses `invalid-request` at stage `request`, naming it. The fix makes `self` optional in the reader, so a request without `self` now reaches admission. The new test `clause_run_command_refuses_a_missing_self_of_an_object_receiver_at_admission` asserts stage `admit` / `wrong-observation`, which is the opposite of what AC-5 says. It is tagged `FR-312-AC-2`, an AC about `call`/`clause`/`selection` shape that says nothing about `self`. Fix: update FR-312's request forms and AC-5 so `self` is optional (absent for a state-machine receiver, and an object receiver without it refused at FR-106 check 2), then retag the test to the updated AC. | spec/functional/FR-312-read-a-clause-run-request-and-run-it.md:50-55, spec/functional/FR-312-read-a-clause-run-request-and-run-it.md:136, tests/it/config_version_spine.rs:336-358 |
 | FND-003 | low | `const CHARGES: usize = 48` in `machine_contexts.rs` is a fixture-size tally, not a check of any behaviour. `model_package` asserts the `normalize.record` charge count equals it, and no FR-106-AC-41..47/49 or TC-1045 row is about normalization charges. It had to go from 46 to 48 only because the fixture grew (the `Title` type). It passes whatever the charging is, provided someone re-counts. This is the count-pin antipattern. Fix: let this fixture call `model_package` without a charge count (for example `Option<usize>`, or a variant without the assertion), and delete `CHARGES`. | qsl-eval/tests/it/machine_contexts.rs:312, qsl-eval/tests/it/machine_contexts.rs:468 |
 
+## New findings (disposition pass 2)
+
+Reviewed at 6f0e24a11, over the fix commit 41e24df9d (the merges of main excluded).
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | medium | The reworded FR-312-AC-5 says "either request without `self` constructs the selection with no `self`, and admission ... admits it when the receiver is a state machine". For a current request that is never true. Only an invariant takes `Current`, and FR-106-AC-46 refuses a state machine's invariant selected by `Current` as `wrong_snapshot`/`wrong-observation` (it takes `Context`). So the AC contradicts FR-106 for the current form. No test runs the state-machine branch through the request path either: the reader unit test only checks that `self` passes through. Fix: limit the "admits ... state machine" clause to the pre request (a state machine's precondition), and optionally add one request-path test of it. Recorded, not blocking. | spec/functional/FR-312-read-a-clause-run-request-and-run-it.md:139 |
+
 ## Dispositions
 
 | FND | outcome | sha/reason |
 | --- | --- | --- |
 | FND-001 | fixed | 13e2c36ca, 5f0bdccdc: the reader passes `clause.self_object` through for current and pre, and admission check 2 decides `self` against the receiver |
+| FND-002 | fixed | 41e24df9d: FR-312's current and pre request forms make `self` optional and send a missing object `self` to FR-106 check 2; AC-5 and TC-891 step 5 are reworded; the test is retagged `FR-312-AC-5` (reviewed at 6f0e24a11) |
+| FND-003 | fixed | 41e24df9d: `CHARGES` deleted; the fixture calls `model_package_unpinned` (reviewed at 6f0e24a11) |
