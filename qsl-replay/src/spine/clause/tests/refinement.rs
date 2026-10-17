@@ -6,15 +6,19 @@
 
 use super::frame::{frame_input, object, run};
 use super::*;
+use crate::spine::ImportRefusal;
 use crate::spine::{
     classify_clause_run, classify_compile, classify_refusal, ClauseRunReport, CompileRefusal,
-    ReachedLimit, RefinementClass, RefusalCause, SuppliedLibrary,
+    ReachedLimit, RefinementClass, RefusalCause, RunRefusal, SuppliedLibrary,
 };
+use qsl_foundation::diagnostic::{LimitExceeded, StageFailure};
 use qsl_foundation::{Code, Setting, SettingLimits};
-use qsl_package::EmitRefusal;
+use qsl_package::{EmitRefusal, ImportViewRefusal};
+use qsl_semantics::check::{AssemblyCause, AssemblyError, AssemblyRefusal};
 use qsl_semantics::check::{
     CheckCause, CheckRefusal, KeyFault, ProtocolAnchorCause, ProtocolReferenceCause,
 };
+use qsl_semantics::library::LibraryName;
 use quire_semantic_value::location::{Location, Origin};
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
@@ -483,4 +487,164 @@ fn a_compile_refusal_classifies_as_fr_341_does() {
         panic!("expected a compile refusal, got {:?}", report.disposition);
     };
     assert_eq!(classified.classification, classify_refusal(refusal));
+}
+
+/// FR-341-AC-4: an assembly type-environment ceiling is `incomplete`, naming
+/// the limit and its value.
+#[trace("TC-861", "FR-341-AC-4")]
+#[test]
+fn an_assembly_type_limit_is_incomplete_naming_the_limit() {
+    let refusal = CompileRefusal::Assembly {
+        refusal: AssemblyRefusal {
+            errors: vec![AssemblyError {
+                cause: AssemblyCause::TypeLimit(LimitExceeded::new(
+                    Setting::EnvironmentWorkUnits,
+                    1,
+                    2,
+                )),
+                span: qsl_foundation::Span { start: 0, end: 1 },
+            }],
+        },
+        region: None,
+    };
+    let classified = classify_refusal(&refusal);
+    assert_eq!(classified.class, RefinementClass::Incomplete);
+    assert_eq!(
+        classified.limits(),
+        [ReachedLimit {
+            name: "environment.work_units",
+            bound: 1
+        }]
+    );
+}
+
+/// FR-341 rule 4: an import whose I2 read reached an `i2.*` ceiling is
+/// `incomplete`, naming the limit, not a broken setup.
+#[trace("TC-861", "FR-341-AC-4")]
+#[test]
+fn an_import_read_ceiling_is_incomplete_naming_the_limit() {
+    let identity = LibraryName::new("test/units").expect("a library identity");
+    let refusal = CompileRefusal::Import {
+        refusal: ImportRefusal::View {
+            identity: identity.clone(),
+            refusal: Box::new(ImportViewRefusal::Read {
+                package: identity,
+                refusal: StageFailure::Limit(LimitExceeded::new(Setting::I2Nodes, 1, 2)),
+            }),
+        },
+        region: None,
+    };
+    let classified = classify_refusal(&refusal);
+    assert_eq!(classified.class, RefinementClass::Incomplete);
+    assert_eq!(
+        classified.limits(),
+        [ReachedLimit {
+            name: "i2.nodes",
+            bound: 1
+        }]
+    );
+}
+
+/// A one-object `current` snapshot for `ParentOrder`: `child` at version 2
+/// naming `parent_key`, in a population that is `complete` or not.
+fn child_snapshot_report(identity: &str, complete: bool, parent_key: &str) -> ClauseRunReport {
+    let model_digest_hex = config_version_model_digest_hex();
+    let label = config_version_document_ref(identity);
+    let population = config_version_population_identity();
+    let value = json!({
+        "format": "quire.state.snapshot/v1",
+        "identity": {
+            "authority": label.authority, "identity": label.identity,
+            "revision_namespace": label.revision_namespace, "revision": label.revision,
+        },
+        "observation": "current",
+        "anchor": {"kind": "handler", "name": "validate"},
+        "model": {
+            "identity": CONFIG_VERSION_PACKAGE_IDENTITY, "version": "1.0.0",
+            "digest": format!("sha256-jcs:{model_digest_hex}"),
+        },
+        "populations": [{
+            "population": population,
+            "complete": complete,
+            "objects": [{
+                "key": "child", "type": config_version_type(),
+                "fields": {
+                    "versionNumber": {"integer": "2"},
+                    "parent": {"present": {"reference": {"population": population, "key": parent_key}}},
+                },
+            }],
+        }],
+    });
+    let bytes = value.to_string().into_bytes();
+    let digest = document_digest(&bytes);
+    let label = DocumentRef { digest, ..label };
+    let selection = config_version_current_selection("ParentOrder", label, "child");
+    let mut request = config_version_request(ClauseRunSelection::Clause(selection));
+    request.snapshots.insert(digest, bytes);
+    run_clause(request).unwrap()
+}
+
+/// FR-342-AC-2: a dangling parent refuses at `admit`.
+#[trace("TC-862", "FR-342-AC-2")]
+#[test]
+fn a_dangling_parent_is_refused_at_admit() {
+    let report = child_snapshot_report("dangling-parent", true, "ghost");
+    let classified = assert_run(&report, RefinementClass::Refused, ClauseRunStage::Admit);
+    assert_eq!(
+        classified.classification.causes.first().map(|c| c.code),
+        Some(Code::DanglingReference)
+    );
+}
+
+/// FR-342-AC-3: an incomplete population is `incomplete` at `admit`, naming
+/// its cause; the cause carries no numeric limit.
+#[trace("TC-862", "FR-342-AC-3")]
+#[test]
+fn an_incomplete_population_is_incomplete_at_admit() {
+    let report = child_snapshot_report("incomplete-population", false, "root");
+    let classified = assert_run(&report, RefinementClass::Incomplete, ClauseRunStage::Admit);
+    assert_eq!(
+        classified.classification.causes,
+        [cause(Code::IncompletePopulation, Some("incomplete-scope"))]
+    );
+    assert!(classified.classification.limits().is_empty());
+}
+
+/// FR-342-AC-4: a stale package is a `tool failure` at `compile`.
+#[trace("TC-862", "FR-342-AC-4")]
+#[test]
+fn a_stale_package_is_a_tool_failure_at_compile() {
+    let mut request = config_version_request(ClauseRunSelection::Function {
+        name: "n".to_owned(),
+        arguments: Vec::new(),
+        snapshot: config_version_document_ref("current-snap"),
+    });
+    request.expected_package_id = Some(compiled().emitted.package_id());
+    let report = run_clause(request).unwrap();
+    assert_run(
+        &report,
+        RefinementClass::ToolFailure,
+        ClauseRunStage::Compile,
+    );
+}
+
+/// FR-342: a cancelled argument refusal reads as the table's `refused`,
+/// carrying the `cancelled` code.
+#[trace("TC-862", "FR-342-AC-2")]
+#[test]
+fn a_cancelled_argument_refusal_is_refused_at_admit() {
+    let report = ClauseRunReport {
+        package_id: None,
+        usage: Default::default(),
+        basis: crate::proof_result::SettlementBasis::Unavailable,
+        witness: None,
+        disposition: ClauseDisposition::ArgumentRefusal(Box::new(RunRefusal::Cancelled(
+            quire_exact::CancelCause::Requested,
+        ))),
+    };
+    let classified = assert_run(&report, RefinementClass::Refused, ClauseRunStage::Admit);
+    assert_eq!(
+        classified.classification.causes,
+        [cause(Code::Cancelled, None)]
+    );
 }

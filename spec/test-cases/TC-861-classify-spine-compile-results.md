@@ -30,9 +30,10 @@ Scope: FR-341-AC-1 to FR-341-AC-6.
    `ill_typed`.
 4. Compile the unit with a forms-stage limit of one; with a type limit of
    one.
-5. Compile a unit with a protocol `compensate` construct (refused
-   `unsupported_construct`/`not-yet-implemented`). Build an `Omitted`
-   refusal and a refusal holding `unsupported_projection`.
+5. Build a `Check` refusal holding `unsupported_construct`/
+   `not-yet-implemented` (the refusal S3 gives a protocol `compensate`
+   construct). Build an `Omitted` refusal and an `Emit` refusal holding
+   `unsupported_projection`.
 6. Build a refusal whose causes are `unsupported_construct`/
    `declaration-form` and `unsupported_construct`/`expression-form`.
 

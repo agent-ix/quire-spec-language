@@ -161,14 +161,8 @@ impl CompileRefusal {
                     .errors
                     .iter()
                     .map(|error| {
-                        RefusalCause::new(error.cause.code(), None).reaching(match &error.cause {
-                            AssemblyCause::TypeLimit(limit)
-                            | AssemblyCause::IdentityLimit(limit)
-                            | AssemblyCause::DecimalScaleLimit(limit) => {
-                                Some(ReachedLimit::of(limit))
-                            }
-                            _ => None,
-                        })
+                        RefusalCause::new(error.cause.code(), None)
+                            .reaching(assembly_limit(&error.cause))
                     })
                     .collect(),
             ),
@@ -218,6 +212,43 @@ fn widen(bound: usize) -> u64 {
     u64::try_from(bound).unwrap_or(u64::MAX)
 }
 
+/// The limit an assembly cause reached, where it carries one.
+fn assembly_limit(cause: &AssemblyCause) -> Option<ReachedLimit> {
+    match cause {
+        AssemblyCause::TypeLimit(limit)
+        | AssemblyCause::IdentityLimit(limit)
+        | AssemblyCause::DecimalScaleLimit(limit) => Some(ReachedLimit::of(limit)),
+        AssemblyCause::UnresolvedTypeName { .. }
+        | AssemblyCause::ImportedTypeName { .. }
+        | AssemblyCause::AmbiguousTypeName { .. }
+        | AssemblyCause::IllFormedBounds(_)
+        | AssemblyCause::FloatingType { .. }
+        | AssemblyCause::AliasCycle { .. }
+        | AssemblyCause::UndeclaredAlias { .. }
+        | AssemblyCause::DuplicateAlias { .. }
+        | AssemblyCause::InvalidTypeDeclaration(_)
+        | AssemblyCause::IdentityAllocation { .. }
+        | AssemblyCause::StorageAllocation { .. }
+        | AssemblyCause::StorageCapacity { .. }
+        | AssemblyCause::Handle(_)
+        | AssemblyCause::DuplicateEnumMember { .. }
+        | AssemblyCause::DuplicateQuantityName { .. }
+        | AssemblyCause::UnresolvedQuantityName { .. }
+        | AssemblyCause::QuantityCycle { .. }
+        | AssemblyCause::ZeroDenominator
+        | AssemblyCause::UnitGraphTopology { .. }
+        | AssemblyCause::NominalAdmission(_)
+        | AssemblyCause::UnsuppliedImport { .. }
+        | AssemblyCause::UnadmittedModel { .. }
+        | AssemblyCause::UnsupportedModelMember { .. }
+        | AssemblyCause::ModelType { .. }
+        | AssemblyCause::UnresolvedOperation { .. }
+        | AssemblyCause::AmbiguousOperation { .. }
+        | AssemblyCause::DuplicateOperationBody { .. }
+        | AssemblyCause::AmbiguousPopulation { .. } => None,
+    }
+}
+
 /// The limit a check cause reached, where it carries one.
 fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
     match cause {
@@ -232,7 +263,39 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
             .denial
             .as_ref()
             .map(|denial| ReachedLimit::of_setting(denial.setting(), denial.limit())),
-        _ => None,
+        CheckCause::Identity(
+            IdentityRefusal::Allocation { .. } | IdentityRefusal::NonCanonical,
+        )
+        | CheckCause::ProfileProhibitedOperator(_)
+        | CheckCause::StateModel(_)
+        | CheckCause::ModelConformance(_)
+        | CheckCause::ModelIncomplete(_)
+        | CheckCause::TypeAdmission { .. }
+        | CheckCause::IllTyped(_)
+        | CheckCause::WrongSnapshot(_)
+        | CheckCause::MissingName(_)
+        | CheckCause::AmbiguousName { .. }
+        | CheckCause::AmbiguousMember(_)
+        | CheckCause::AmbiguousQualified(_)
+        | CheckCause::UnsupportedNavigation(_)
+        | CheckCause::NonBooleanRoot
+        | CheckCause::IntegerOutsideI128(_)
+        | CheckCause::UnanchoredResult { .. }
+        | CheckCause::Unproved(_)
+        | CheckCause::SumCase(_)
+        | CheckCause::UnprovedDecrease { .. }
+        | CheckCause::IeeeProfileNotAdmitted
+        | CheckCause::UnrepresentableBound
+        | CheckCause::DefinitionCycle { .. }
+        | CheckCause::InvalidDispatchDeclaration(_)
+        | CheckCause::MissingSelection { .. }
+        | CheckCause::UnsupportedFeature { .. }
+        | CheckCause::InternalFault(_)
+        | CheckCause::NodePreimage(_)
+        | CheckCause::ProtocolAnchor(_)
+        | CheckCause::ProtocolReference(_) => None,
+        #[cfg(seam_probe)]
+        CheckCause::__SeamProbe => None,
     }
 }
 
@@ -276,7 +339,7 @@ enum Group {
     /// I1's caller-budget ceiling on a `model` declaration.
     IntakeBudget,
     /// A stage limit raised outside the content stages: `Limit` and an
-    /// `Import` that reached its ceiling.
+    /// `Import` that reached its own or its I2 read's ceiling.
     Limit,
     /// The emitter would omit nodes.
     Omitted,
@@ -300,10 +363,19 @@ fn group(refusal: &CompileRefusal) -> Group {
         | CompileRefusal::Dependency { .. } => Group::Setup,
         CompileRefusal::Import { refusal, .. } => match refusal {
             ImportRefusal::Limit(_) => Group::Limit,
+            ImportRefusal::View { refusal, .. } => match refusal.as_ref() {
+                ImportViewRefusal::Read {
+                    refusal: StageFailure::Limit(_),
+                    ..
+                } => Group::Limit,
+                ImportViewRefusal::Read { .. }
+                | ImportViewRefusal::Emission { .. }
+                | ImportViewRefusal::UnheldDependency { .. }
+                | ImportViewRefusal::Evidence { .. } => Group::Setup,
+            },
             ImportRefusal::Cycle { .. }
             | ImportRefusal::MissingSelection { .. }
-            | ImportRefusal::UnnamedImport
-            | ImportRefusal::View { .. } => Group::Setup,
+            | ImportRefusal::UnnamedImport => Group::Setup,
         },
         CompileRefusal::Link(_) | CompileRefusal::Emit(_) => Group::Projection,
         CompileRefusal::Limit(_) => Group::Limit,
