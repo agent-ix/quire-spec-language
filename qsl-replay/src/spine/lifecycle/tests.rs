@@ -2077,3 +2077,56 @@ fn select_parses_kept_operation_clauses_and_refuses_text_that_does_not_parse() {
     );
     assert_eq!(refusal.code(), qsl_foundation::Code::InvalidSyntax);
 }
+
+/// A check refusal of the type invariant `Widget/Stable` carrying `cause`.
+fn type_invariant_check_refusal(cause: qsl_semantics::check::CheckCause) -> CompileRefusal {
+    use qsl_semantics::check::{CheckCause, CheckRefusal, TypeInvariantRefusal};
+    CompileRefusal::Check {
+        refusals: vec![CheckRefusal {
+            location: quire_semantic_value::location::Location::root(
+                quire_semantic_value::location::Origin::Expression,
+            ),
+            cause: CheckCause::TypeInvariant(Box::new(TypeInvariantRefusal {
+                clause: qsl_semantics::model::key::DeclarationKey {
+                    package: "acme/orders".to_owned(),
+                    node: "ix://acme/orders/Widget/Stable".to_owned(),
+                },
+                position: 1,
+                cause,
+            })),
+        }],
+        region: None,
+    }
+}
+
+/// FR-366: a stage limit or an internal fault reached while checking a type
+/// invariant is a limit or a fault, not a refusal of the input, and the
+/// native result names the clause and its `TypeDefinition.clauses[k]`.
+#[trace("TC-1050", "FR-366-AC-3")]
+#[test]
+fn a_limit_or_fault_inside_a_type_invariant_is_read_through_its_wrapper() {
+    use qsl_semantics::check::{
+        CheckCause, CheckingLimitKind, CheckingStage, KeyFault, StageLimitCause,
+    };
+    let limit =
+        type_invariant_check_refusal(CheckCause::ResourceExhausted(Box::new(StageLimitCause {
+            stage: CheckingStage::Typing,
+            kind: CheckingLimitKind::Nodes,
+            limit: 10,
+            actual: 11,
+            region: None,
+        })));
+    let reached = super::limit_of(&limit, &|_| None).expect("a node ceiling is a limit");
+    assert_eq!(reached.setting(), Setting::S3Nodes);
+
+    let fault = type_invariant_check_refusal(CheckCause::InternalFault(Box::new(
+        KeyFault::UnkeyableRequirements,
+    )));
+    assert!(super::fault_of(&fault).is_some());
+
+    let named = type_invariant_check_refusal(CheckCause::NonBooleanRoot);
+    let fields = named.fields().expect("the refusal names its clause");
+    assert_eq!(fields["clause"], "ix://acme/orders/Widget/Stable");
+    assert_eq!(fields["member"], "TypeDefinition.clauses[1]");
+    assert!(named.to_string().contains("TypeDefinition.clauses[1]"));
+}

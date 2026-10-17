@@ -285,6 +285,26 @@ pub(crate) fn check_type_invariant<'a>(
         &mut cx.reborrow(declarations.scope),
     )
     .map_err(|refusal| invariant.refusal(refusal))?;
+    // A record or event value is evaluated with no object universe (FR-366
+    // "Evaluation per reachable value"), so a read of an object, a
+    // relationship or a population has nothing to observe.
+    if matches!(invariant.self_type, ValueType::Composite(_)) {
+        let reads_objects = typed.body.root().descendants().into_iter().any(|node| {
+            matches!(
+                node.kind(),
+                NodeKind::Attribute { .. }
+                    | NodeKind::Navigate { .. }
+                    | NodeKind::AllInstances { .. }
+                    | NodeKind::Lookup { .. }
+            )
+        });
+        if reads_objects {
+            return Err(invariant.refusal(CheckRefusal {
+                location: declarations.location.clone(),
+                cause: CheckCause::ObjectReadInValueInvariant,
+            }));
+        }
+    }
     Ok((
         super::type_invariant::CheckedTypeInvariant {
             clause: invariant.invariant.clause.clone(),

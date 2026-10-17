@@ -272,12 +272,26 @@ impl CompileRefusal {
             // FR-302: a family that stopped on a caller-budget ceiling
             // reports its retained charge.
             Self::Check { refusals, .. } => {
-                refusals.iter().find_map(|refusal| match &refusal.cause {
-                    CheckCause::DispatchLink(cause) => {
-                        cause.denial.as_ref().map(|denial| denial.catalog_fields())
-                    }
+                let mut fields = refusals
+                    .iter()
+                    .find_map(|refusal| match refusal.cause.unwrapped() {
+                        CheckCause::DispatchLink(cause) => {
+                            cause.denial.as_ref().map(|denial| denial.catalog_fields())
+                        }
+                        _ => None,
+                    })
+                    .unwrap_or_default();
+                // FR-366: a refusal in a type-level invariant names the
+                // clause and the `TypeDefinition.clauses[k]` member it is at,
+                // since its location is a bare expression.
+                if let Some(refusal) = refusals.iter().find_map(|refusal| match &refusal.cause {
+                    CheckCause::TypeInvariant(refusal) => Some(refusal),
                     _ => None,
-                })
+                }) {
+                    fields.insert("clause", refusal.clause.node.clone());
+                    fields.insert("member", refusal.member().to_string());
+                }
+                (!fields.is_empty()).then_some(fields)
             }
             _ => None,
         }
@@ -600,6 +614,13 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
     let mut message = first.cause.code().as_str().to_owned();
     if let Some(cause) = first.cause.cause() {
         message = format!("{message} ({cause})");
+    }
+    if let CheckCause::TypeInvariant(refusal) = &first.cause {
+        message = format!(
+            "{message}: the invariant `{}` at {}",
+            refusal.clause.node,
+            refusal.member()
+        );
     }
     match &first.cause {
         CheckCause::MissingName(name) | CheckCause::AmbiguousName { name, .. } => {

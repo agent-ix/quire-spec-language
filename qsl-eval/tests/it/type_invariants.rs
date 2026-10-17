@@ -1034,16 +1034,16 @@ fn a_subtype_value_and_a_nested_record_are_evaluated_at_their_paths() {
     );
 }
 
-/// TC-1051 step 6: an event value passed as a parameter is evaluated at the
-/// parameter binding, rooted at the pre snapshot of the invocation.
+/// TC-1051 step 6: an event value is evaluated at the parameter binding it is
+/// bound to, rooted at the pre snapshot of the invocation.
 ///
 /// Intake refuses an event type as the declared type of an operation
-/// parameter (`which has a meaning forbidden as a signature value type`), so
-/// the parameter is supplied to the admitted observations here, as an
-/// invocation that admission accepted would have supplied it.
+/// parameter and of a field, so no admitted observation holds an event value
+/// (carried to QSL-793, FR-366-AC-7). The value is supplied to the admitted
+/// observations here, to test the evaluator.
 #[trace("TC-1051", "FR-366-AC-7")]
 #[test]
-fn an_event_value_passed_as_a_parameter_is_evaluated_at_the_binding() {
+fn an_event_value_is_evaluated_at_the_parameter_binding_it_is_bound_to() {
     let document = fixture_f(|document| {
         set_clauses(
             document,
@@ -1099,6 +1099,44 @@ fn an_event_value_passed_as_a_parameter_is_evaluated_at_the_binding() {
             parameter_path("s2", "i4", "placed"),
             false
         )]
+    );
+}
+
+/// An invariant of a record value type that reads an object, a relationship
+/// or a population is refused at check: a record value is evaluated with no
+/// object universe (FR-366).
+#[trace("TC-1050", "FR-366-AC-2")]
+#[test]
+fn a_record_invariant_that_reads_an_object_is_refused() {
+    let document = fixture_f(|document| {
+        let mut buddy = field("Pair", "buddy", &id("Order"));
+        buddy["presence"] = json!("optional");
+        document["types"].as_array_mut().unwrap().push(declaration(
+            "Pair",
+            "money",
+            json!({"fields": [buddy]}),
+        ));
+        set_clauses(
+            document,
+            "Pair",
+            vec![clause(
+                "Pair",
+                "Peer",
+                "present(self.buddy) implies value(self.buddy).total.amount_minor >= 0",
+            )],
+        );
+    });
+    let (compiled, _) = compile_unit(&document, UNIT_BODY);
+    let refusal = sole_refusal(compiled);
+    assert_eq!(refusal.type_invariant_clause(), Some(&key("Pair/Peer")));
+    assert_eq!(refusal.type_invariant_member(), Some(clauses_member(0)));
+    assert!(matches!(
+        refusal.type_invariant_cause(),
+        Some(CheckCause::ObjectReadInValueInvariant)
+    ));
+    assert_eq!(
+        refusal.cause.catalog_code(),
+        Some(CatalogCode::new("unsupported_construct", "expression-form"))
     );
 }
 
@@ -1176,8 +1214,15 @@ fn denying(point: ChargePoint, occurrence: u64) -> Meter {
 #[test]
 fn one_budget_is_shared_and_a_denied_charge_stops_the_evaluation() {
     let (documents, observations) = step_one(|fields| fields);
-    // Each value costs three charges; the fourth is the `ordering.operands`
-    // of the second value.
+    // Each value costs three charges, in this order.
+    let (_, charges) = run(&documents, &observations);
+    let per_value = [
+        ChargePoint::OrderingOperands,
+        ChargePoint::OrderingArithmetic,
+        ChargePoint::OrderingResultRetain,
+    ];
+    assert_eq!(charges, per_value.repeat(6));
+    // The fourth is the `ordering.operands` of the second value.
     let fourth = documents
         .package
         .evaluate_value_invariants(
@@ -1202,6 +1247,14 @@ fn one_budget_is_shared_and_a_denied_charge_stops_the_evaluation() {
         panic!("a denied charge is Incomplete, got {:?}", fourth.outcome);
     };
     assert_eq!(incomplete.charge_point, ChargePoint::OrderingOperands);
+    assert_eq!(
+        fourth.outcome.catalog_code(),
+        Some(CatalogCode::new(
+            "resource_exhausted",
+            "insufficient-next-charge"
+        ))
+    );
+    assert_eq!(evaluation_true_code(&documents, &observations), None);
 
     let third = documents
         .package
@@ -1409,4 +1462,14 @@ fn a_state_machine_invariant_is_evaluated_over_each_side_of_the_invocation() {
             .all(|(clause, _, _)| *clause != id("OrderLifecycle/NotYetPlaced")),
         "a guard has no result"
     );
+}
+
+fn evaluation_true_code(
+    documents: &Documents,
+    observations: &AdmittedObservations,
+) -> Option<CatalogCode> {
+    let completed = evaluate(documents, observations);
+    // The unlimited run of the same observation completes.
+    assert_eq!(completed.outcome, ValueInvariantOutcome::False);
+    completed.outcome.catalog_code()
 }

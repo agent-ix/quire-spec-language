@@ -61,6 +61,22 @@ pub enum ValueInvariantOutcome {
     Incomplete(Incomplete),
 }
 
+impl ValueInvariantOutcome {
+    /// The catalog code of an evaluation that stopped on a denied charge,
+    /// `resource_exhausted`/`insufficient-next-charge` (ADR-014 section 1);
+    /// `None` for an evaluation that completed.
+    #[must_use]
+    pub fn catalog_code(&self) -> Option<qsl_foundation::diagnostic::CatalogCode> {
+        match self {
+            Self::Incomplete(_) => Some(qsl_foundation::diagnostic::CatalogCode::new(
+                "resource_exhausted",
+                "insufficient-next-charge",
+            )),
+            Self::True | Self::False => None,
+        }
+    }
+}
+
 /// FR-366: the results of `CheckedPackageEvaluation::evaluate_value_invariants` and
 /// their outcome.
 #[derive(Debug)]

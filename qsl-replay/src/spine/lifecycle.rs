@@ -215,19 +215,23 @@ fn limit_of(
         CompileRefusal::Intake { .. } => None,
         CompileRefusal::Check { refusals, region } => {
             if let Some((bound, required)) =
-                refusals.iter().find_map(|refusal| match refusal.cause {
-                    CheckCause::Identity(IdentityRefusal::InputBytes { bound, required }) => {
-                        Some((bound, required))
-                    }
-                    _ => None,
-                })
+                refusals
+                    .iter()
+                    .find_map(|refusal| match refusal.cause.unwrapped() {
+                        CheckCause::Identity(IdentityRefusal::InputBytes { bound, required }) => {
+                            Some((*bound, *required))
+                        }
+                        _ => None,
+                    })
             {
                 return Some(at(identity_limit(bound, required), region.as_ref()));
             }
-            let cause = refusals.iter().find_map(|refusal| match &refusal.cause {
-                CheckCause::ResourceExhausted(cause) => Some(cause),
-                _ => None,
-            })?;
+            let cause = refusals
+                .iter()
+                .find_map(|refusal| match refusal.cause.unwrapped() {
+                    CheckCause::ResourceExhausted(cause) => Some(cause),
+                    _ => None,
+                })?;
             let locus = cause.region.as_ref().or(region.as_ref());
             Some(at(
                 LimitExceeded::new(cause.kind.setting(), cause.limit, cause.actual),
@@ -274,37 +278,38 @@ fn limit_of(
 /// the input.
 fn fault_of(refusal: &CompileRefusal) -> Option<InternalFault> {
     match refusal {
-        CompileRefusal::Check { refusals, .. } => {
-            refusals.iter().find_map(|refusal| match &refusal.cause {
-                CheckCause::InternalFault(fault) => {
-                    let named = match fault.as_ref() {
-                        KeyFault::CorrespondenceConflict(conflict) => match conflict.as_ref() {
-                            CorrespondenceConflict::NodeRebound {
-                                node,
-                                recorded,
-                                offered,
-                            } => vec![
-                                ("node", format!("{node:?}")),
-                                ("recorded", format!("{recorded:?}")),
-                                ("offered", format!("{offered:?}")),
-                            ],
-                            CorrespondenceConflict::DeclarationRebound {
-                                declaration,
-                                recorded,
-                                offered,
-                            } => vec![
-                                ("declaration", format!("{declaration:?}")),
-                                ("recorded", format!("{recorded:?}")),
-                                ("offered", format!("{offered:?}")),
-                            ],
-                        },
-                        _ => Vec::new(),
-                    };
-                    Some(InternalFault::new("S3", fault.invariant()).with_named(named))
-                }
-                _ => None,
-            })
-        }
+        CompileRefusal::Check { refusals, .. } => refusals.iter().find_map(|refusal| match refusal
+            .cause
+            .unwrapped()
+        {
+            CheckCause::InternalFault(fault) => {
+                let named = match fault.as_ref() {
+                    KeyFault::CorrespondenceConflict(conflict) => match conflict.as_ref() {
+                        CorrespondenceConflict::NodeRebound {
+                            node,
+                            recorded,
+                            offered,
+                        } => vec![
+                            ("node", format!("{node:?}")),
+                            ("recorded", format!("{recorded:?}")),
+                            ("offered", format!("{offered:?}")),
+                        ],
+                        CorrespondenceConflict::DeclarationRebound {
+                            declaration,
+                            recorded,
+                            offered,
+                        } => vec![
+                            ("declaration", format!("{declaration:?}")),
+                            ("recorded", format!("{recorded:?}")),
+                            ("offered", format!("{offered:?}")),
+                        ],
+                    },
+                    _ => Vec::new(),
+                };
+                Some(InternalFault::new("S3", fault.invariant()).with_named(named))
+            }
+            _ => None,
+        }),
         CompileRefusal::Intake { refusal, .. }
             if matches!(refusal.cause, UnitIntakeCause::Invariant) =>
         {
