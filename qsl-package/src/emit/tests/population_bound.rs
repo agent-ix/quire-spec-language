@@ -136,17 +136,12 @@ fn assert_population_node(wire: &Value, population: &Value, maximum: &str) {
     assert_anonymous(reference);
     let order = model_node(wire, "Order");
     assert_eq!(reference["body"]["members"][0]["target"], order["node_id"]);
-    let dependencies = population["dependencies"].as_array().unwrap();
-    assert!(
-        !dependencies.is_empty(),
-        "the node depends on its type chain"
-    );
-    for dependency in dependencies {
-        assert!(
-            [&integer["node_id"], &set["node_id"]].contains(&dependency),
-            "{dependency} is a node of the chain"
-        );
-    }
+    // FR-322 "References": a `bounded_domain` node lists exactly its
+    // `semantic_type`; the chain `Set<Reference<Order>>` -> `Reference<Order>`
+    // -> `Order` is each node's own exact list.
+    assert_eq!(population["dependencies"], json!([set["node_id"]]));
+    assert_eq!(set["dependencies"], json!([reference["node_id"]]));
+    assert_eq!(reference["dependencies"], json!([order["node_id"]]));
 }
 
 /// TC-1054 row 5 (FR-380-AC-4, FR-365-AC-13): the member holds `population`,
