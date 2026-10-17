@@ -295,6 +295,26 @@ fn an_implementation_gap_is_unsupported() {
     assert_eq!(class_of(&projection), RefinementClass::Unsupported);
 }
 
+/// FR-341-AC-5: an assembly refusal of a `temporal` clause no checker reads
+/// yet is `unsupported_construct`/`not-yet-implemented`, so it classifies
+/// `unsupported` and names no limit.
+#[trace("TC-861", "FR-341-AC-5")]
+#[test]
+fn an_unimplemented_temporal_clause_is_unsupported() {
+    let refusal = CompileRefusal::Assembly {
+        refusal: AssemblyRefusal {
+            errors: vec![AssemblyError {
+                cause: AssemblyCause::UnimplementedTemporalClause { name: "C".into() },
+                span: qsl_foundation::Span { start: 0, end: 1 },
+            }],
+        },
+        region: None,
+    };
+    let classified = classify_refusal(&refusal);
+    assert_eq!(classified.class, RefinementClass::Unsupported);
+    assert!(classified.limits().is_empty());
+}
+
 /// FR-341-AC-6: a refusal whose every cause is a profile-prohibited form
 /// classifies `prohibited`.
 #[trace("TC-861", "FR-341-AC-6")]

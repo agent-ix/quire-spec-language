@@ -94,7 +94,7 @@ pub(super) struct Request {
 #[serde(deny_unknown_fields)]
 pub(super) struct ClauseRun {
     #[serde(deserialize_with = "from_object")]
-    pub selection: ClauseRunSelection,
+    pub selection: qsl_replay::spine::ClauseRunSelectionWire,
     #[serde(deserialize_with = "from_object")]
     pub observations: std::collections::BTreeMap<String, String>,
     /// FR-312: optional clause-run accounting limits, using FR-100's closed
@@ -104,79 +104,7 @@ pub(super) struct ClauseRun {
     #[serde(default)]
     pub package_id: Option<String>,
     #[serde(default, deserialize_with = "from_object_opt")]
-    pub observation_limits: Option<ObservationLimitOverrides>,
-}
-
-/// Exactly one of these members is selected by the reader.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct ClauseRunSelection {
-    #[serde(default, deserialize_with = "from_object_opt")]
-    pub clause: Option<ClauseSelection>,
-    #[serde(default, deserialize_with = "from_object_opt")]
-    pub frame: Option<FrameSelection>,
-    #[serde(default, deserialize_with = "from_object_opt")]
-    pub function: Option<FunctionSelection>,
-}
-
-/// Role-specific members are checked against the selected document.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct ClauseSelection {
-    pub name: String,
-    pub observation: String,
-    #[serde(default, rename = "self", deserialize_with = "from_object_opt")]
-    pub self_object: Option<ObjectReference>,
-    #[serde(default, deserialize_with = "from_object_opt")]
-    pub anchor: Option<Anchor>,
-    #[serde(default, deserialize_with = "from_object_opt")]
-    pub parameters: Option<std::collections::BTreeMap<String, Box<RawValue>>>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct ObjectReference {
-    pub population: String,
-    pub key: String,
-}
-
-#[derive(Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub(super) enum Anchor {
-    Initialization { name: String },
-    Handler { name: String },
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct FrameSelection {
-    pub operation: String,
-    pub invocation: String,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct FunctionSelection {
-    pub name: String,
-    #[serde(deserialize_with = "deserialize_objects")]
-    pub arguments: Vec<ClauseArgument>,
-    pub snapshot: String,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct ClauseArgument {
-    pub parameter: String,
-    pub value: Box<RawValue>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct ObservationLimitOverrides {
-    pub document_bytes: Option<u64>,
-    pub objects_per_document: Option<u64>,
-    pub values_per_document: Option<u64>,
-    pub post_state: Option<String>,
+    pub observation_limits: Option<qsl_replay::spine::ObservationLimitsWire>,
 }
 
 // Present only when the field itself is present; `#[serde(default)]` alone

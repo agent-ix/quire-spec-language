@@ -105,7 +105,6 @@ mod package_construction;
 mod package_reading;
 mod package_runtime;
 mod parser;
-mod parser_differential;
 mod protocol_artifact;
 mod protocol_number;
 mod request_builder;

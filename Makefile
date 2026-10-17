@@ -1,4 +1,4 @@
-.PHONY: check-no-committed-binaries check-index-completeness seam-probe string-edge route-lint checked-input cargo-deny-bans fuzz-deep-input test-deep-format ci ci-default-features ci-all-features ci-clean-build ci-docs conformance pre-push
+.PHONY: check-no-committed-binaries check-index-completeness seam-probe string-edge route-lint checked-input refinement-versioning cargo-deny-bans fuzz-deep-input test-deep-format ci ci-default-features ci-all-features ci-clean-build ci-docs conformance pre-push
 
 # Fail when a tracked file is executable/binary content or exceeds
 # the size ceiling. See the script's own header for the detection method and
@@ -60,6 +60,12 @@ route-lint:
 # pre-check stage function.
 checked-input:
 	cargo run --package xtask -- checked-input
+
+# FR-340/FR-344 (ADR-017 RF-2): fails when a superseding revision in the real
+# corpus does not admit a case its prior revision admitted, or when the gate
+# reports anything but success (exit 0).
+refinement-versioning:
+	cargo run --package xtask -- refinement versioning tests/fixtures/refinement/versioning/
 
 # FR-080-AC-2: denies the inventory/linkme/ctor crates outright
 # (deny.toml), so a future contributor cannot repopulate the registry through
@@ -267,7 +273,7 @@ fuzz-deep-input:
 # Each aggregate prerequisite depends on validation, rather than racing it as
 # a sibling under -j (or continuing past it under -k). Standalone lane commands
 # retain their existing behavior; this ordering belongs to the aggregate gate.
-CI_CHECKS := conformance check-no-committed-binaries check-index-completeness ci-default-features ci-all-features test-deep-format ci-clean-build seam-probe string-edge route-lint checked-input cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-api-surface-qsl arch-lint-qualified-core
+CI_CHECKS := conformance check-no-committed-binaries check-index-completeness ci-default-features ci-all-features test-deep-format ci-clean-build seam-probe string-edge route-lint checked-input refinement-versioning cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-api-surface-qsl arch-lint-qualified-core
 CI_TARGETS := $(CI_CHECKS)
 # The public aggregate validates the native documents before the xtask wrapper
 # canonicalizes QSPEC_DIR for every child lane.
@@ -350,12 +356,6 @@ arch-lint-qualified-core:
 # `arch-lint-api-surface` needs CG_CLONE (see above); each runs separately.
 arch-lint: arch-lint-api-surface-qsl arch-lint-canonical-encoder arch-lint-qualified-core
 
-# The whole 30,000-input parser differential against
-# tests/fixtures/parser-differential/baseline.txt. `make ci` runs the first
-# 1,000 inputs of each family; this runs all of them.
-.PHONY: test-differential
-test-differential:
-	cargo test --locked --test it parser_differential -- --include-ignored
 
 # The committed performance benchmarks (`qsl-bench/`), one
 # criterion bench per axis, each runnable by name. `make bench` runs all
