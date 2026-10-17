@@ -80,7 +80,8 @@ lowered `reaches` of `NoCycle` names the node that says so.
 
 S1 SHALL parse `bound <label> on <model-alias>::<population> [<N>]` as a
 declaration. `bound` is a declaration-head spelling only, as `invariant`, `pre`,
-`post` and `body` are (FR-102): in an expression it stays an identifier. S2 SHALL
+`post` and `body` are (FR-102): as an expression identifier it parses in member position only (`b.bound`), because
+`bound` is also a reserved word (the verification step `bound N`). S2 SHALL
 build one `StateModel` form for it through the closed leading-token-kind entry
 table (ADR-012 §3, §4.3), keeping the label, the alias, the population name,
 the digits of `N` and the span of each, and SHALL NOT resolve the alias or the
@@ -111,7 +112,11 @@ When the evaluator reads a population that has an authored bound, an
 observation whose selected population holds more than `N` objects SHALL refuse
 `cardinality_out_of_bound`/`above-maximum`, naming `N` and the count, as FR-084
 states for `allInstances` over a population with a declared maximum; the bound
-is never converted into a resource outcome (ADR-014 B-1).
+is never converted into a resource outcome (ADR-014 B-1). The refusal's fields
+are `bound` `[0, N]`, `collection` `set` and `count`. It applies to the
+population a relationship-end `reaches` walks. A field-edge `reaches` walks
+object fields and no population, and `allInstances` reads the snapshot listing,
+so neither is bounded by this declaration.
 
 ### The population node
 
@@ -140,13 +145,13 @@ FR-365 "The population link".
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-380-AC-1 | `bound HistoryBound on Config::config_history [8]` builds one form with label `HistoryBound`, alias `Config`, population `config_history` and `N` `8`, each with a span that slices to its source text; `bound` as an identifier in an expression still parses; `[0]` is accepted and `[-1]` and `[x]` refuse at S1. | Test (TC-1054) |
+| FR-380-AC-1 | `bound HistoryBound on Config::config_history [8]` builds one form with label `HistoryBound`, alias `Config`, population `config_history` and `N` `8`, each with a span that slices to its source text; `bound` as an identifier parses in member position only (`b.bound`); `[0]` is accepted and `[-1]` and `[x]` refuse at S1. | Test (TC-1054) |
 | FR-380-AC-2 | An alias naming no model and a population name naming no population of the package each refuse `missing_declaration`/`missing-name` at the name; `[18446744073709551616]` refuses as FR-333 refuses it; a second bound with a used label, and two bounds naming one population (equal or different `N`), each refuse `ambiguous_declaration`/`ambiguous-name` at both declarations. | Test (TC-1054) |
 | FR-380-AC-3 | With a bound `N` on `config_history`, the requirements record of a clause over `ConfigVersion` holds the `config_history` domain as a `Population(Some(N))` domain with available finite bound `Cardinality{N}`, listed among no unbounded domain, for a context population and for a population a reachability walks; the clause extent is `Bounded` when no other domain is unbounded; two clause orders and two unit orders give equal records; without the bound the record is the unbounded one. | Test (TC-1054) |
 | FR-380-AC-4 | A reachability over a relationship end of `Order` that walks a population bounded at `3` lowers with a `bounded_domain`/`model_population` node whose body is the one binding `max` of the integer literal `3` typed at the `Integer` node and whose `semantic_type` is the `Set<Reference<Order>>` node over the `Reference<Order>` node; those nodes are anonymous, the package holds exactly one `Type` occurrence of the population node with one `source_map` row, and IR's v2 reader admits the package and selects the population by the node and that occurrence. A bound of `0` emits the node with `max` `0`. | Test (TC-1054) |
-| FR-380-AC-5 | When the walked population covers `Rush`, a subtype of `Order`, and the reachability's near-end type is `Order`, the node is that of `Population<Order>[N]`. A `Population<Order>[3]` parameter type in the same package and a bound of `3` walked by a reachability are one node holding two `Type` occurrences numbered in ascending source order. | Test (TC-1054) |
+| FR-380-AC-5 | When the walked population covers `Rush`, a subtype of `Order`, and the reachability's near-end type is `Order`, the node is that of `Population<Order>[N]`. A `Population<Order>[3]` parameter type in the same package and a bound of `3` walked by a reachability are one node holding two `Type` occurrences, ordinals 0 and 1, each with one `source_map` row. | Test (TC-1054) |
 | FR-380-AC-6 | A bound that no reachability walks, and a population with no bound, emit no population node, no `Type` occurrence for it and no link; the reachability of the second keeps the node identity it had before FR-380. | Test (TC-1054) |
-| FR-380-AC-7 | An observation whose selected population holds `N` objects evaluates a clause over it as for an unbounded population, and one holding `N + 1` refuses `cardinality_out_of_bound`/`above-maximum` naming `N` and `N + 1`, as a resource limit never does. | Test (TC-1054) |
+| FR-380-AC-7 | An observation whose selected population holds `N` objects evaluates a clause over it as for an unbounded population, and one holding `N + 1` refuses `cardinality_out_of_bound`/`above-maximum` naming `N` and `N + 1` (`bound` `[0, N]`, `collection` `set`, `count` `N + 1`), as a resource limit never does. | Test (TC-1054) |
 
 ## Dependencies
 
