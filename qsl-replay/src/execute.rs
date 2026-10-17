@@ -1368,4 +1368,4 @@ fn charges(consumed: impl IntoIterator<Item = (LimitKind, u64)>) -> ScalarLimits
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

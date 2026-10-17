@@ -988,3 +988,135 @@ fn tc_1053_step_1_a_unit_importing_a_library_binds() {
     );
     assert!(completed.is_ok(), "{completed:?}");
 }
+
+/// A unit over the `test/graph` model with one `Node` object `n1` whose
+/// `items` are `items`, and the reference to it.
+fn node_unit(
+    functions: &str,
+    items: &[i64],
+) -> (Unit, ObjectEnvironment, quire_exact::ObjectReference) {
+    use crate::execute::tests::object_environment::{domain_document, PACKAGE};
+    use qsl_semantics::model::intake::{package_input, PackageDocument};
+    use qsl_semantics::model::key::hex;
+    use quire_semantic_value::object_closure::ObjectClosure;
+
+    let document = domain_document();
+    let digest = hex(
+        &PackageDocument::parse(&document, qsl_foundation::IntakeLimits::default())
+            .expect("the model admits")
+            .jcs_digest(),
+    );
+    let source = format!(
+        "{HEADER}model M = {PACKAGE:?} version \"1.0.0\" digest \"sha256-jcs:{digest}\";\n\
+         type Digit = Int[0, 9];\n\
+         function shape using v(s: Sequence<Digit>[0, 3]): Boolean pure {{ true }}\n\
+         {functions}\n"
+    );
+    let unit = compile_source(source, package_input([document.as_slice()]));
+    let graph = unit.checked.package().graph();
+    let ValueType::Collection(declared) = &graph.callable("shape").expect("declared").parameters[0].1
+    else {
+        panic!("s is a collection");
+    };
+    let sequence = quire_exact::from_admitted(
+        quire_exact::CollectionType::clone(declared),
+        items
+            .iter()
+            .map(|item| Value::Integer(Integer::from(*item)))
+            .collect(),
+    );
+    let view = &unit.models.models()[0].view;
+    let (key, identity) = view
+        .type_identities()
+        .iter()
+        .find(|(key, _)| key.node.rsplit('/').next() == Some("Node"))
+        .map(|(key, identity)| (key.clone(), *identity))
+        .expect("Node is declared");
+    let reference = quire_exact::ObjectReference::new(
+        view.object_universe_of(&key).expect("a universe").identity(),
+        identity,
+        quire_exact::ObjectId::new("n1").unwrap(),
+    );
+    let world = ObjectClosure::new(
+        graph.scope().types(),
+        [(
+            reference.clone(),
+            vec![
+                ("items", quire_exact::FieldValue::Present(sequence)),
+                ("next", quire_exact::FieldValue::Absent),
+            ],
+        )],
+        &[],
+    )
+    .expect("the object closure admits");
+    (unit, ObjectEnvironment::new(world), reference)
+}
+
+fn node_call(function: &str, reference: &quire_exact::ObjectReference, rest: Vec<CallArgument>) -> Call {
+    let mut arguments = vec![CallArgument {
+        parameter: "n".to_owned(),
+        value: Value::Reference(reference.clone()),
+    }];
+    arguments.extend(rest);
+    call(function, arguments)
+}
+
+/// FR-367-AC-8: a call whose evaluation is `undefined` (a `sum` leaving its
+/// declared domain) and whose work limit is one unit still binds.
+#[trace("TC-1053", "FR-367-AC-8")]
+#[test]
+fn tc_1053_step_7_undefined_evaluation_still_binds() {
+    let (unit, objects, reference) = node_unit(
+        "function und using v(n: Reference<M::Node>, a: Digit): Boolean pure \
+         { sum<Digit>(x in deref(n).items: x) > 5 and a + 1 > 0 }",
+        &[9, 9],
+    );
+    let occurrence = the_application(&unit, "und", ScalarOperator::Add);
+    let evaluated = run(
+        identity(),
+        "bind.native",
+        unit.source.as_bytes(),
+        &unit.packages,
+        &unit.dependencies,
+        SpineLimits::default(),
+        &node_call("und", &reference, vec![arg("a", 4)]),
+        &objects,
+        &Cancel::new(),
+    )
+    .unwrap()
+    .1;
+    assert!(matches!(evaluated, CallOutcome::Undefined { .. }), "{evaluated:?}");
+
+    let mut starved = node_call("und", &reference, vec![arg("a", 4)]);
+    starved.accounting = default_accounting(1);
+    let Ok(BindOutcome::Bound(bound)) = bind_with(&unit, &starved, &occurrence, &objects) else {
+        panic!("an undefined call still binds");
+    };
+    assert_eq!(bound.values(), [4, 1]);
+}
+
+/// FR-367-AC-10: a quantifier-bound variable operand is a parameter node no
+/// argument supplies.
+#[trace("TC-1053", "FR-367-AC-10")]
+#[test]
+fn tc_1053_step_5_quantifier_binder_operand_is_not_an_argument() {
+    let (unit, objects, reference) = node_unit(
+        "function q using v(n: Reference<M::Node>): Boolean pure \
+         { forall(x in deref(n).items: x + 1 > 0) }",
+        &[1, 2],
+    );
+    let adds = occurrences_in(&unit, "q", |node| applies(node, ScalarOperator::Add));
+    assert_eq!(adds.len(), 1);
+    let request = node_call("q", &reference, Vec::new());
+    let Ok(BindOutcome::Refused(refusal)) = bind_with(&unit, &request, &adds[0], &objects) else {
+        panic!("a quantifier binder operand refuses");
+    };
+    assert_eq!(
+        refusal,
+        BindRefusal::OperandNotArgument {
+            ordinal: 0,
+            parameter: "x".to_owned(),
+            level: "1".to_owned()
+        }
+    );
+}

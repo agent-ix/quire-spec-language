@@ -28,7 +28,7 @@ mod child_composite;
 mod composite;
 mod composite_parity;
 mod native_scalar;
-mod object_environment;
+pub(crate) mod object_environment;
 mod supplied;
 mod variant_fields;
 
