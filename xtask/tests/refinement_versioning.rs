@@ -396,6 +396,14 @@ fn each_malformed_pair_is_one_tool_failure_and_the_rest_still_run() {
     let mut mismatch = base.clone();
     mismatch["superseding"]["identity"] = json!("ix://example/another-spec");
     write_pair("identity", &mismatch.to_string());
+    let mut repository_escape = base.clone();
+    repository_escape["packages"] = json!(["repo:../outside"]);
+    identity_pair().write(&root.join("repo-escape"));
+    write_pair("repo-escape", &repository_escape.to_string());
+    let mut repository_absolute = base.clone();
+    repository_absolute["packages"] = json!(["repo:/etc/hostname"]);
+    identity_pair().write(&root.join("repo-absolute"));
+    write_pair("repo-absolute", &repository_absolute.to_string());
 
     let report = versioning::run(root, &repository());
     let entries = listed(&report);
@@ -412,18 +420,20 @@ fn each_malformed_pair_is_one_tool_failure_and_the_rest_still_run() {
         assert_eq!(matching.len(), 1, "exactly one result for {pair}");
         matching[0]
     };
-    assert_eq!(failures.len(), 6);
+    assert_eq!(failures.len(), 8);
     assert!(defect_of("not-json/pair.json").contains("line 1"));
     assert!(defect_of("missing-superseding/pair.json").contains("missing field `superseding`"));
     assert!(defect_of("extra-member/pair.json").contains("unknown field `expected`"));
     assert!(defect_of("outside/pair.json")
         .contains("../outside.qsl resolves outside the pair directory"));
     assert!(defect_of("absolute/pair.json").contains("/outside.qsl is an absolute path"));
+    assert!(defect_of("repo-escape/pair.json").contains("repo:../outside resolves outside"));
+    assert!(defect_of("repo-absolute/pair.json").contains("repo:/etc/hostname is an absolute path"));
     let mismatch = defect_of("identity/pair.json");
     assert!(mismatch.contains(IDENTITY) && mismatch.contains("ix://example/another-spec"));
     assert!(mismatch.contains(AUTHORITY));
     // Tool-failure results come first, then the good pair's cases.
-    assert!(entries[..6].iter().all(|entry| entry.get("pair").is_some()));
+    assert!(entries[..8].iter().all(|entry| entry.get("pair").is_some()));
     assert_eq!(
         results(&report),
         [

@@ -29,10 +29,11 @@ violates it.
 1. One pair, `prior` the ConfigVersion unit and `superseding` the same unit
    as the same bytes, with two `Clause` cases (healthy-parent
    and violating-parent). Run `xtask refinement versioning`.
-2. Add six malformed pairs beside step 1's: a `pair.json` holding `{`; one
+2. Add eight malformed pairs beside step 1's: a `pair.json` holding `{`; one
    with no `superseding`; one with an extra member `expected`; one whose
    `prior.path` is `../outside.qsl`; one whose `prior.path` is absolute;
-   one whose `superseding.identity` differs from `prior.identity`. Run the
+   one whose `superseding.identity` differs from `prior.identity`; one
+   whose `packages` names `repo:../outside`; one naming `repo:/etc/hostname`. Run the
    gate. Add to step 1's pair a case naming a snapshot file that does not
    exist. Then run the gate over an empty corpus directory.
 3. One pair whose `prior` is the ConfigVersion unit and whose `superseding`
@@ -49,10 +50,11 @@ Tag the tests `#[trace("TC-860", "FR-340-AC-n")]`.
 
 - Step 1: two case results, each naming both `RawSourceRef`s and its
   selection; neither run was given an expected `package_id`.
-- Step 2: exactly six pair-level tool-failure results, each naming its
+- Step 2: exactly eight pair-level tool-failure results, each naming its
   `pair.json` path and its defect (not JSON; missing `superseding`; unknown
   member `expected`; path outside the pair directory; absolute path;
-  identity mismatch naming both label pairs). None of their cases ran.
+  identity mismatch naming both label pairs; `repo:` path outside the
+  repository; `repo:` absolute path). None of their cases ran.
   The missing-file case is one tool-failure case result naming the case
   and the defect; step 1's two case results are present. The empty corpus gives one
   tool-failure result naming the corpus path; verdict tool failure, exit 30.
