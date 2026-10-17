@@ -18,10 +18,10 @@
 //! budget H *before* its work, and the original `Cancel` is polled at each.
 //! The conversion events, one unit each, are: `witness-preflight` per witness
 //! node (preorder, before its local shape is read); `descriptor-query` per
-//! declaration header (a record's, tuple's or enum's, with its conformance
-//! to the slot) and per field, position or enum member then read; and
+//! declaration header (a record's, tuple's, union's or enum's, with its
+//! conformance to the slot) and per field, position or enum member then read; and
 //! `witness-materialization` per converted kernel node (a leaf before it is
-//! built, an option, record or collection after its children). Membership of
+//! built, an option, record, union or collection after its children). Membership of
 //! an option payload or collection element is QSV's, spending H event by
 //! event. The semantic counters stay per argument and separate: converted
 //! nodes against `work_units` and occurrences against `value_occurrences`.
@@ -41,7 +41,8 @@ use quire_exact::{
     admit_text, form, from_admitted_slots, CollectionKind, CollectionType, ConstructionRefusal,
     Decimal, EffectiveId, EnumMember, FieldValue, IeeeValue, IeeeWidth, Integer, Meter, NodeKey,
     NumericMembershipFailure, ObjectId, ObjectReference, OptionValue, Outcome, Presence, Quantity,
-    Rational, ScalarLimits, TextPayload, Timestamp, UniverseId, Uuid, Value, ValueType,
+    Rational, ScalarLimits, TextPayload, Timestamp, UnionMember, UnionValue, UniverseId, Uuid,
+    Value, ValueType,
 };
 use quire_semantic_value::call::InputRefusal;
 use quire_semantic_value::declaration::{CompositeDeclaration, CompositeShape, TypeEnvironment};
@@ -201,6 +202,11 @@ enum Step<'a> {
         slots: Vec<Slot>,
         position: u64,
     },
+    Union {
+        member: &'a UnionMember,
+        count: usize,
+        position: u64,
+    },
     Collection {
         declared: &'a CollectionType,
         count: usize,
@@ -280,8 +286,29 @@ pub(super) fn convert_arguments(
     run: &mut SuppliedRun,
     model: &ReferenceModel<'_>,
 ) -> Result<Converted, Stopped> {
-    let enums = enum_declarations(package);
-    let types = package.graph().scope().types();
+    convert_arguments_in(
+        package.graph().scope().types(),
+        enum_declarations(package),
+        declared,
+        values,
+        limits,
+        run,
+        model,
+    )
+}
+
+/// [`convert_arguments`] over a type environment and its enum declarations
+/// instead of a package's: no checked package can hold a union until its
+/// FR-319 lowering exists, so a union's conversion is reached through here.
+pub(super) fn convert_arguments_in(
+    types: &TypeEnvironment,
+    enums: Vec<EnumDeclaration>,
+    declared: &[ValueType],
+    values: &[WitnessValue],
+    limits: &ScalarLimits,
+    run: &mut SuppliedRun,
+    model: &ReferenceModel<'_>,
+) -> Result<Converted, Stopped> {
     let mut converter = Converter {
         types,
         run,
@@ -526,7 +553,15 @@ impl<'a> Converter<'a, '_> {
                         // record keeps its own type. `OptionValue::present`
                         // is the exact test.
                         Some(payload) => {
-                            self.admit(parameter, payload_type, &payload)?;
+                            // A union payload was converted against exactly
+                            // this slot's union (a union conforms to nothing
+                            // else), so its subtree needs no second walk per
+                            // enclosing option: that walk would make a
+                            // depth-n chain quadratic. The argument's final
+                            // membership still walks it once.
+                            if !matches!(payload, Value::Union(_)) {
+                                self.admit(parameter, payload_type, &payload)?;
+                            }
                             OptionValue::from_admitted(payload_type.clone(), Some(payload))
                         }
                     });
@@ -558,6 +593,20 @@ impl<'a> Converter<'a, '_> {
                         .ok_or_else(|| invariant("converted-slots"))?;
                     values.push(from_admitted_slots(key, slots));
                 }
+                Step::Union {
+                    member,
+                    count,
+                    position,
+                } => {
+                    self.position = position;
+                    self.charge(parameter, SuppliedEvent::WitnessMaterialization)?;
+                    let start = values
+                        .len()
+                        .checked_sub(count)
+                        .ok_or_else(|| invariant("converted-payload"))?;
+                    let payload = values.split_off(start);
+                    values.push(UnionValue::from_admitted(member.clone(), payload));
+                }
                 Step::Collection {
                     declared,
                     count,
@@ -577,7 +626,9 @@ impl<'a> Converter<'a, '_> {
                     // duplicate the kernel's equality relates, which a set or
                     // ordered set refuses.
                     for element in &elements {
-                        self.admit(parameter, declared.element(), element)?;
+                        if !matches!(element, Value::Union(_)) {
+                            self.admit(parameter, declared.element(), element)?;
+                        }
                     }
                     match form(declared, elements, &mut meter) {
                         Outcome::Completed(Value::Collection(formed)) => {
@@ -892,6 +943,51 @@ impl<'a> Converter<'a, '_> {
                         .map(|(value, declared)| Step::Convert { value, declared }),
                 );
             }
+            // FR-321: a union value is decoded by the union its slot declares,
+            // whose settled key the wire declaration must name, and by the
+            // member the wire names among that union's sealed members. A
+            // union takes no part in generalization, so no other declaration
+            // is admitted at the slot.
+            (
+                ValueType::Composite(slot_key),
+                WitnessValue::Union {
+                    declaration,
+                    member,
+                    components,
+                },
+            ) => {
+                let types: &'a TypeEnvironment = self.types;
+                self.charge(parameter, SuppliedEvent::DescriptorQuery)?;
+                let settled = types
+                    .union_key(*slot_key)
+                    .ok_or_else(|| self.wrong(parameter))?;
+                if declaration.as_bytes() != settled.as_bytes() {
+                    return Err(self.wrong(parameter));
+                }
+                let (_, declared) = types
+                    .union_member_named(*slot_key, member)
+                    .ok_or_else(|| self.wrong(parameter))?;
+                let binding = declared.member().ok_or_else(|| self.wrong(parameter))?;
+                let positions = declared.positions();
+                if components.len() != positions.len() {
+                    return Err(self.wrong(parameter));
+                }
+                for _ in positions {
+                    self.charge(parameter, SuppliedEvent::DescriptorQuery)?;
+                }
+                pending.push(Step::Union {
+                    member: binding,
+                    count: components.len(),
+                    position: self.position,
+                });
+                pending.extend(
+                    components
+                        .iter()
+                        .zip(positions)
+                        .rev()
+                        .map(|(value, declared)| Step::Convert { value, declared }),
+                );
+            }
             (ValueType::Collection(declared), _) => {
                 let (kind, elements) = match value {
                     WitnessValue::Sequence(elements) => (CollectionKind::Sequence, elements),
@@ -913,10 +1009,9 @@ impl<'a> Converter<'a, '_> {
                     declared: declared.element(),
                 }));
             }
-            // A declared type no witness value is a value of (a population),
-            // and a value no declared type of this package admits (a union:
-            // the checker has no union type), refuse; so does every pairing
-            // of a declared type with a value of another form.
+            // A declared type no witness value is a value of (a population)
+            // refuses; so does every pairing of a declared type with a value
+            // of another form.
             _ => return Err(self.wrong(parameter)),
         }
         Ok(())
