@@ -83,16 +83,12 @@ fn assert_format_identity(
     limits: SpineLimits,
     lock: &LockEvidence,
 ) {
-    let t = std::time::Instant::now();
     let parsed = qsl_cst::parse(source.clone(), path, bytes, limits.source).unwrap();
-    eprintln!("PHASE fmt-parse {:?}", t.elapsed());
     // AC-9 isolates semantic identity; the AC-4/5/6 tests exercise exhaustion.
     // Give a fixture with an exact original S1 byte bound enough bytes for
     // its formatted layout, retaining its model/dependency/checking authority.
     let format_limits = qsl_cst::format::FormatLimits::default().with_output_bytes(usize::MAX);
-    let t = std::time::Instant::now();
     let formatted = qsl_cst::format::format_with_limits(&parsed, format_limits).unwrap();
-    eprintln!("PHASE format {:?}", t.elapsed());
     let mut formatted_limits = limits;
     formatted_limits.source.source_bytes =
         formatted_limits.source.source_bytes.max(formatted.len());
@@ -149,19 +145,10 @@ fn emitted_once(
     limits: SpineLimits,
     lock: &LockEvidence,
 ) -> Result<EmittedUnit, Box<CompileRefusal>> {
-    let t = std::time::Instant::now();
     let checked = checked_once(&source, path, bytes, packages, dependencies, limits, lock)?;
-    eprintln!(
-        "PHASE parse+select+check {:?} ({} bytes)",
-        t.elapsed(),
-        bytes.len()
-    );
-    let t = std::time::Instant::now();
-    let out = package(&checked, PackageLimits::default(), &Cancel::new())
+    Ok(package(&checked, PackageLimits::default(), &Cancel::new())
         .map_err(refusal)?
-        .into_value();
-    eprintln!("PHASE package {:?}", t.elapsed());
-    Ok(out)
+        .into_value())
 }
 
 fn refusal(failure: qsl_replay::spine::FrontEndFailure) -> Box<CompileRefusal> {
