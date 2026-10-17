@@ -16,7 +16,7 @@ frame check, duplicate refusal, the bound checked before any element, the
 refusal of a form of another kind, an element type with no value form and the
 producer's canonical element order.
 
-Scope: FR-106-AC-50 to FR-106-AC-59.
+Scope: FR-106-AC-50 to FR-106-AC-60.
 
 ## Preconditions
 
@@ -25,7 +25,7 @@ Scope: FR-106-AC-50 to FR-106-AC-59.
   that say object field, an object type whose field `tags` has that type.
   `Int9` is `Int[0, 9]`; `Set<Int9>[0, 2]` is a set with that inclusive bound.
 - Rows 1 to 4, 6 to 15 and 21 are run two ways: as the `arg` of a `PreCall` selection, and as
-  the `arg` and the `result` of an invocation. Rows 19 and 20 are run over the
+  the `arg` and the `result` of an invocation. Rows 19, 20 and 22 are run over the
   TC-465 package variant whose `ConfigVersion` has the field `tags` typed
   `Set<Reference<ConfigVersion>>[0, 5]`, with `root` and `child` of the healthy
   parent snapshot.
@@ -55,6 +55,7 @@ Scope: FR-106-AC-50 to FR-106-AC-59.
 | 19 | the `tags` field, in the object fixture | `child.tags` `{"set":[root, child]}` then `{"set":[child, root]}`, `root.tags` `{"set":[]}` | both admit as one value |
 | 20 | the `tags` field | `child.tags` `{"set":[root, root]}`; then six entries; then `{"bag":[root]}`; then `{"sequence":[root]}` | `duplicate-member` at index 1 naming `earlier-index` `0`; `cardinality_out_of_bound`/`above-maximum` count 6; `wrong-value-kind`; `wrong-value-kind`, each naming `child` and `tags` |
 | 21 | `Set<Text[0, 8; nfc]>`; `Bag<Text[0, 8; nfc]>` | `U+00E9` and `U+0065 U+0301` | `duplicate-member` at index 1 naming `0`; admits, both elements retaining `U+00E9` |
+| 22 | the `tags` field | `child.tags` `{"set":[ghost]}` with `ghost` absent from the complete `config_history` | `dangling_reference`/`absent-target-in-complete-population` naming `ghost` and `config_history` |
 
 ## Expected Results
 
@@ -68,4 +69,4 @@ Scope: FR-106-AC-50 to FR-106-AC-59.
 - Rows 12 and 13 refuse as `wrong-value-kind` (FR-106-AC-54).
 - Rows 14 and 15 (FR-106-AC-55).
 - Row 16 and the integer part of row 18 (FR-106-AC-56); row 17 (FR-106-AC-59).
-- Rows 19 and 20 (FR-106-AC-57) and row 21 (FR-106-AC-58).
+- Rows 19 and 20 (FR-106-AC-57), row 21 (FR-106-AC-58) and row 22 (FR-106-AC-60).

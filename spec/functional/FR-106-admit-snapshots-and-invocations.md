@@ -240,7 +240,9 @@ element values; each element is a value of `T` in this same grammar. This
 grammar is externally tagged, so the kind is the tag, not a `type` member, and
 the QSpec FR-181 `elements` member does not exist here: QSpec FR-144 "Supplied
 collection values" and FR-181 state the admission rules that this section
-maps onto this grammar. A bag is repeated elements, one array entry per
+maps onto this grammar. FR-106 owns this dialect, so a payload that is not an
+array, a member beside the tag and a counted pair are `wrong-value-kind`, not
+QSpec's `missing-member` or `unknown-member`. A bag is repeated elements, one array entry per
 occurrence, never element-count pairs. Admission of one supplied collection
 runs in this order, the first defect refusing at the collection's value path
 or at the element named:
@@ -622,11 +624,10 @@ required; check 10 settles it.
    1. If the population names no population of the package, or the object's
       type is not one of its member types (FR-084), then admission SHALL
       refuse `invalid_runtime_input`/`wrong-role-mapping`.
-   2. If the object's type declares a set, bag or ordered-set field (or one
-      held through an optional or a collection) whose element type has no
-      value form in this grammar, then admission SHALL refuse
-      `unknown_required_feature`/`unsupported-feature` at that field, naming
-      the element type as `feature`.
+   2. A set, bag or ordered-set field whose element type has no value form in
+      this grammar is refused `unknown_required_feature`/`unsupported-feature`
+      when its value is read (check 6.5, step 2 of "Set, bag and ordered-set
+      values"); no model document declares one today.
    3. If an object's key repeats an earlier key of its population, then
       admission SHALL refuse `invalid_runtime_input`/`conflicting-identity`
       at the later object.
@@ -723,10 +724,7 @@ required; check 10 settles it.
        `duplicate-member` at the later entry (QSpec FR-208: one context per
        machine in an observation).
    12. For each entry, over the machine's effective fields in exposed
-       effective field order: if the machine declares a set, bag or
-       ordered-set field whose element type has no value form in this grammar
-       (check 6.2), then admission SHALL refuse `unknown_required_feature`/
-       `unsupported-feature` at that field; if a declared field is missing,
+       effective field order: if a declared field is missing,
        `invalid_runtime_input`/`missing-member` naming it; if a field of
        `fields` is not an effective field of the machine, `unknown-member`
        naming the first in document order (a member named `state` or
@@ -987,6 +985,7 @@ required; check 10 settles it.
 | FR-106-AC-57 | Over TC-1055's object fixture, whose `ConfigVersion` has the field `tags: Set<Reference<ConfigVersion>>[0, 5]`, `tags` holding references to `root` and `child` in either array order admits to one value; `tags` holding `root` twice refuses `invalid_runtime_input`/`duplicate-member` at element index 1 naming `earlier-index` `0`; six entries refuse `cardinality_out_of_bound`/`above-maximum` with count 6; and a `bag` or a `sequence` in `tags` refuses `wrong-value-kind`, each naming `child` and `tags`. | Test (TC-1055) |
 | FR-106-AC-58 | A `Set<Text[0, 8; nfc]>` holding U+00E9 and U+0065 U+0301 refuses `duplicate-member` at index 1 naming `earlier-index` `0`, because they are one Text by the compared form; a `Bag<Text[0, 8; nfc]>` holding them admits as one member of multiplicity 2 whose two elements retain U+00E9. | Test (TC-1055) |
 | FR-106-AC-59 | The encoder of a value writes every value inside a set's or a bag's element in its canonical encoding, so a `Bag<Text[0, 8; nfc]>` of U+0065 U+0301 twice is written as two identical Text objects of U+00E9, and writes a Text in a sequence with the payload it was admitted with. | Test (TC-1055) |
+| FR-106-AC-60 | A reference inside a `set` field naming an object absent from its complete population refuses `dangling_reference`/`absent-target-in-complete-population` naming the object and the population, as one outside a collection does. | Test (TC-1055) |
 
 
 ## Dependencies

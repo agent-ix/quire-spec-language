@@ -4898,6 +4898,34 @@ fn tc1055_a_set_field_refuses_duplicates_bounds_and_other_kinds() {
     );
 }
 
+/// FR-106-AC-60: a reference inside a set field is checked for closure.
+#[trace("TC-1055", "FR-106-AC-60")]
+#[test]
+fn tc1055_a_dangling_reference_inside_a_set_refuses_dangling_reference() {
+    let document = tc465_document_with_set_field();
+    let result = run_tc465_current(
+        &document,
+        tc1055_with_tags(
+            json!({"set": []}),
+            json!({"set": [tc1055_reference("ghost")]}),
+        ),
+        None,
+    );
+    let record = assert_tc465_refused(
+        result,
+        "dangling_reference",
+        "absent-target-in-complete-population",
+    );
+    assert_eq!(
+        record.fields.get("object").map(String::as_str),
+        Some("ghost")
+    );
+    assert_eq!(
+        record.fields.get("population").map(String::as_str),
+        Some("ix://example/config-version/config_history")
+    );
+}
+
 /// Row 35 (check 10): probe invocation with `parameters` `{}` (missing
 /// `target`).
 #[trace("TC-465", "FR-106-AC-3")]

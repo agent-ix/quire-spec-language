@@ -2346,24 +2346,11 @@ pub(super) fn admit_population_values<'t>(
                     "object-type-has-no-checked-attributes",
                 ))
             })?;
-            // 6.2: a set, bag or ordered-set field whose element type has no
-            // value form here.
-            for attribute in declared {
-                if let Some(feature) =
-                    unsupported_collection_element(attribute.field().value_type())
-                {
-                    return Err(refuse(
-                        admission_record(Code::UnknownRequiredFeature, "unsupported-feature")
-                            .with("field", attribute.field().name().to_owned())
-                            .with("feature", feature),
-                    ));
-                }
-            }
             // 6.3: duplicate key. `seen.insert` still runs first (its
             // result feeds `keys_by_population`, check 8's own input,
             // whichever way this object's own admission ends), but the
-            // refusal is raised only after 6.1 and 6.2 have already passed
-            // for this object.
+            // refusal is raised only after 6.1 has already passed for this
+            // object.
             let is_duplicate = !seen.insert(object.key.clone());
             if is_duplicate {
                 return Err(refuse(
@@ -2573,17 +2560,6 @@ fn admit_contexts<'t>(
             .attributes(effective)
             .ok_or_else(|| fault("context-machine-has-no-checked-attributes"))?;
         // 6.12: the fields, in the machine's exposed effective order.
-        for attribute in declared {
-            if let Some(feature) = unsupported_collection_element(attribute.field().value_type()) {
-                return Err(named(
-                    admission_record(Code::UnknownRequiredFeature, "unsupported-feature")
-                        .with("machine", machine.to_owned())
-                        .with("field", attribute.field().name().to_owned())
-                        .with("feature", feature),
-                    entry,
-                ));
-            }
-        }
         for attribute in declared {
             let name = attribute.field().name();
             if raw_field(&context.fields, name).is_none() {
