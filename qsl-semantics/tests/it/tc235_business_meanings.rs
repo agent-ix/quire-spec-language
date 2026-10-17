@@ -15,7 +15,8 @@ use qsl_semantics::model::intake::{
 };
 use qsl_semantics::model::key::{DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 use qsl_semantics::model::normalize::{
-    normalize_with_meter, MemberPath, ModelRefusal, ModelRefusalCause, NormalizeOutcome,
+    normalize_with_meter, EffectiveView, MemberPath, ModelRefusal, ModelRefusalCause,
+    NormalizeOutcome,
 };
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
