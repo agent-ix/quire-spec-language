@@ -364,13 +364,78 @@ fn a_parameter_type_and_a_bound_share_one_node_with_two_ordinals() {
     }
 }
 
-/// TC-1054 row 4's unit: IR's v2 reader admits the package. The remaining
-/// reader clauses (the population selection, and the packages of rows 5, 6,
-/// 8, 9 and 11) are not read here; they wait on the same reader change.
+/// The selector IR's reader returns for each reachability application of
+/// `lowered`, with the application's wire `population` member.
+fn selections(
+    lowered: &Lowered,
+) -> Vec<(
+    Value,
+    quire_contract_model::CheckedNodeId,
+    quire_contract_model::CheckedOccurrence,
+)> {
+    let ir = lowered
+        .ir
+        .as_ref()
+        .expect("IR's v2 reader admits the package");
+    applications(&lowered.wire, "quire.op.model.reaches")
+        .into_iter()
+        .map(|reach| {
+            let id = quire_contract_model::CheckedNodeId {
+                domain: reach["node_id"]["domain"].as_str().unwrap().into(),
+                digest: reach["node_id"]["digest"].as_str().unwrap().into(),
+            };
+            let selector = ir
+                .reaches_population(&id)
+                .expect("the reader resolves the population")
+                .expect("the application names a population");
+            (
+                reach["body"]["operation"]["member"]["population"].clone(),
+                selector.binding,
+                selector.occurrence,
+            )
+        })
+        .collect()
+}
+
+/// TC-1054 rows 5, 6, 8, 9 and 11, read through IR: the reader admits each
+/// package and its `reaches_population` selector names the node the member
+/// holds and that node's `Type` occurrence of least ordinal.
 #[trace("TC-1054")]
 #[test]
-#[ignore = "IR-852: the locked IR reader refuses the `population` member key"]
-fn ir_reads_the_bounded_package() {
-    let lowered = lower(&format!("{BOUND}\n{NO_LOOP}"));
-    assert!(lowered.verified, "IR's v2 reader admits the package");
+fn ir_reads_each_bounded_package_and_selects_its_population() {
+    let function = "function f using v(p: Population<M::Order>[3]): Integer pure { 0 }";
+    let units = [
+        format!("{BOUND}\n{NO_LOOP}"),
+        format!("bound OrdersBound on M::orders [0]\n{NO_LOOP}"),
+        format!(
+            "{BOUND}\n{NO_LOOP}\n\
+             invariant NoOut using v on M::Order at current {{ not reaches(self, self, outgoing) }}"
+        ),
+        format!("{BOUND}\nbound PeopleBound on M::people [2]\n{NO_LOOP}"),
+        format!("{BOUND}\n{NO_LOOP}\n{function}"),
+        format!("{function}\n{BOUND}\n{NO_LOOP}"),
+    ];
+    for unit in units {
+        let lowered = lower(&unit);
+        assert!(
+            lowered.verified,
+            "{unit}: IR's v2 reader admits the package"
+        );
+        for (member, binding, occurrence) in selections(&lowered) {
+            let population = node_of(&lowered.wire, &member);
+            assert_eq!(
+                json!(binding.digest.as_ref()),
+                population["node_id"]["digest"],
+                "{unit}: the selector names the member's node"
+            );
+            let least = type_occurrences(&lowered, population)
+                .first()
+                .map(|(ordinal, _)| *ordinal);
+            assert_eq!(Some(occurrence.ordinal), least, "{unit}");
+            assert_eq!(
+                occurrence.role,
+                quire_contract_model::CheckedOccurrenceRole::Type
+            );
+        }
+    }
 }

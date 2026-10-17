@@ -118,6 +118,8 @@ pub(super) struct Lowered {
     pub(super) text: String,
     pub(super) wire: Value,
     pub(super) verified: bool,
+    /// IR's v2 reading of the package alone, when it admits it.
+    pub(super) ir: Option<Box<quire_contract_model::CheckedPackageV2>>,
     /// The unbounded population domains each `claim` occurrence's
     /// requirement record names, from the checked graph.
     pub(super) claim_domains: Vec<usize>,
@@ -159,9 +161,23 @@ pub(super) fn lower_over(document: Vec<u8>, clauses: &str) -> Lowered {
     evidence
         .insert_domain_package_document(digest.as_str(), &document[..])
         .expect("a fresh evidence key");
+    let wire = wire(&emission);
+    let mut features = CheckedPackageEvidence::new();
+    for feature in wire["lock"]["required_features"].as_array().unwrap() {
+        features.support_feature(feature.as_str().unwrap());
+    }
+    let ir = match quire_contract_model::read_checked_package(
+        emission.package.bytes(),
+        quire_contract_model::CheckedPackageReadLimits::bounded(),
+        &features,
+    ) {
+        quire_contract_model::CheckedPackageDispatchResult::AdmittedV2(admitted) => Some(admitted),
+        _ => None,
+    };
     Lowered {
         text: unit,
-        wire: wire(&emission),
+        wire,
+        ir,
         verified: matches!(read_with(&emission, &evidence), Read::Verified { .. }),
         claim_domains,
     }
