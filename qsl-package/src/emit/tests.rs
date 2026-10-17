@@ -3008,6 +3008,7 @@ fn config_version_model(with_sub: bool) -> qsl_semantics::model::intake::Selecte
         span: SPAN,
         view,
         operation_clauses: Vec::new(),
+        type_invariants: Vec::new(),
     }
 }
 
