@@ -168,7 +168,7 @@ fn run_pre_call(history: &[i64]) -> super::super::ClauseRunReport {
         name: "MemberPre".to_owned(),
         input: ClauseSelectionInput::PreCall {
             snapshot: label.clone(),
-            self_object: mid(),
+            self_object: Some(mid()),
             parameters: BTreeMap::new(),
         },
     });

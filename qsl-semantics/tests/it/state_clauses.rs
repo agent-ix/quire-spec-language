@@ -1506,6 +1506,7 @@ fn run_frame_clause_with(
                 declaration: operation.declaration.clone(),
             }
         }),
+        operations: Default::default(),
     };
     qsl_semantics::model::observation::admit_observations(
         graph.model_selections(),
@@ -1873,10 +1874,10 @@ fn tc464_step2_a_reserialized_snapshot_gives_the_same_digest_and_an_equal_value(
             kind: qsl_semantics::model::observation::AnchorKind::Handler,
             name: "validate".to_owned(),
         },
-        self_object: qsl_semantics::model::observation::SelectedObject {
+        self_object: Some(qsl_semantics::model::observation::SelectedObject {
             population: "ix://example/config-version/config_history".to_owned(),
             key: "child".to_owned(),
-        },
+        }),
     };
     let from_canonical = run_tc465(
         &document,
@@ -2107,10 +2108,10 @@ fn run_tc464_pre_call(
         clause_name,
         qsl_semantics::model::observation::ClauseSelectionInput::PreCall {
             snapshot,
-            self_object: qsl_semantics::model::observation::SelectedObject {
+            self_object: Some(qsl_semantics::model::observation::SelectedObject {
                 population: "ix://example/config-version/config_history".to_owned(),
                 key: "a".to_owned(),
-            },
+            }),
             parameters: parameters
                 .into_iter()
                 .map(|(name, value)| (quire_exact::Identifier::new(name).unwrap(), value))
@@ -2331,10 +2332,10 @@ fn tc464_step5_a_non_reference_parameter_requires_no_population() {
         "FlagHolds",
         qsl_semantics::model::observation::ClauseSelectionInput::PreCall {
             snapshot: snapshot.clone(),
-            self_object: qsl_semantics::model::observation::SelectedObject {
+            self_object: Some(qsl_semantics::model::observation::SelectedObject {
                 population: TC464_CONFIG_HISTORY.to_owned(),
                 key: "a".to_owned(),
-            },
+            }),
             parameters: BTreeMap::from([(
                 quire_exact::Identifier::new("b").unwrap(),
                 tc464_reference(archive, "a1"),
@@ -2458,10 +2459,10 @@ fn a_supertype_object_refuses_a_subtype_parameter_with_wrong_value_kind() {
         "SubTargetHolds",
         qsl_semantics::model::observation::ClauseSelectionInput::PreCall {
             snapshot: snapshot.clone(),
-            self_object: qsl_semantics::model::observation::SelectedObject {
+            self_object: Some(qsl_semantics::model::observation::SelectedObject {
                 population: TC464_CONFIG_HISTORY.to_owned(),
                 key: "a".to_owned(),
-            },
+            }),
             parameters: BTreeMap::from([(
                 quire_exact::Identifier::new("target").unwrap(),
                 tc464_reference(TC464_CONFIG_HISTORY, "a"),
@@ -2877,6 +2878,7 @@ fn run_tc465_with_clauses_under(
                 declaration: operation.declaration.clone(),
             }
         }),
+        operations: Default::default(),
     };
     let selection = qsl_semantics::model::observation::ClauseSelection {
         name: clause_name.to_owned(),
@@ -2939,10 +2941,10 @@ fn run_tc465_current(
                 kind: qsl_semantics::model::observation::AnchorKind::Handler,
                 name: "validate".to_owned(),
             },
-            self_object: qsl_semantics::model::observation::SelectedObject {
+            self_object: Some(qsl_semantics::model::observation::SelectedObject {
                 population: "ix://example/config-version/config_history".to_owned(),
                 key: "child".to_owned(),
-            },
+            }),
         },
         snapshots,
         BTreeMap::new(),
@@ -2979,10 +2981,10 @@ fn run_tc465_current_with_limits(
                 kind: qsl_semantics::model::observation::AnchorKind::Handler,
                 name: "validate".to_owned(),
             },
-            self_object: qsl_semantics::model::observation::SelectedObject {
+            self_object: Some(qsl_semantics::model::observation::SelectedObject {
                 population: "ix://example/config-version/config_history".to_owned(),
                 key: "child".to_owned(),
-            },
+            }),
         },
         snapshots,
         BTreeMap::new(),
@@ -3327,10 +3329,10 @@ fn tc465_row1_missing_document_is_incomplete() {
                 kind: qsl_semantics::model::observation::AnchorKind::Handler,
                 name: "validate".to_owned(),
             },
-            self_object: qsl_semantics::model::observation::SelectedObject {
+            self_object: Some(qsl_semantics::model::observation::SelectedObject {
                 population: "ix://example/config-version/config_history".to_owned(),
                 key: "child".to_owned(),
-            },
+            }),
         },
         BTreeMap::new(),
         BTreeMap::new(),
@@ -3497,10 +3499,10 @@ fn run_tc465_current_text(
                 kind: qsl_semantics::model::observation::AnchorKind::Handler,
                 name: "validate".to_owned(),
             },
-            self_object: qsl_semantics::model::observation::SelectedObject {
+            self_object: Some(qsl_semantics::model::observation::SelectedObject {
                 population: "ix://example/config-version/config_history".to_owned(),
                 key: "child".to_owned(),
-            },
+            }),
         },
         snapshots,
         BTreeMap::new(),
@@ -3694,10 +3696,10 @@ fn tc465_row8_blank_authority_refuses_blank_label() {
                 kind: qsl_semantics::model::observation::AnchorKind::Handler,
                 name: "validate".to_owned(),
             },
-            self_object: qsl_semantics::model::observation::SelectedObject {
+            self_object: Some(qsl_semantics::model::observation::SelectedObject {
                 population: "ix://example/config-version/config_history".to_owned(),
                 key: "child".to_owned(),
-            },
+            }),
         },
         snapshots,
         BTreeMap::new(),
@@ -3732,10 +3734,10 @@ fn tc465_row10_current_selecting_a_postcondition_refuses_wrong_observation() {
                 kind: qsl_semantics::model::observation::AnchorKind::Handler,
                 name: "validate".to_owned(),
             },
-            self_object: qsl_semantics::model::observation::SelectedObject {
+            self_object: Some(qsl_semantics::model::observation::SelectedObject {
                 population: "ix://example/config-version/config_history".to_owned(),
                 key: "child".to_owned(),
-            },
+            }),
         },
         snapshots,
         BTreeMap::new(),
@@ -3782,10 +3784,10 @@ fn tc465_row12_anchor_mismatch_refuses_wrong_anchor() {
                 kind: qsl_semantics::model::observation::AnchorKind::Handler,
                 name: "other".to_owned(),
             },
-            self_object: qsl_semantics::model::observation::SelectedObject {
+            self_object: Some(qsl_semantics::model::observation::SelectedObject {
                 population: "ix://example/config-version/config_history".to_owned(),
                 key: "child".to_owned(),
-            },
+            }),
         },
         snapshots,
         BTreeMap::new(),
@@ -4128,10 +4130,10 @@ fn tc465_row21_unresolved_self_refuses_wrong_role_mapping() {
                 kind: qsl_semantics::model::observation::AnchorKind::Handler,
                 name: "validate".to_owned(),
             },
-            self_object: qsl_semantics::model::observation::SelectedObject {
+            self_object: Some(qsl_semantics::model::observation::SelectedObject {
                 population: "ix://example/config-version/config_history".to_owned(),
                 key: "ghost".to_owned(),
-            },
+            }),
         },
         snapshots,
         BTreeMap::new(),
@@ -4582,10 +4584,10 @@ fn a_deep_hierarchy_is_judged_by_the_callers_ancestor_steps_not_a_fixed_ceiling(
                     kind: qsl_semantics::model::observation::AnchorKind::Handler,
                     name: "validate".to_owned(),
                 },
-                self_object: qsl_semantics::model::observation::SelectedObject {
+                self_object: Some(qsl_semantics::model::observation::SelectedObject {
                     population: "ix://example/config-version/config_history".to_owned(),
                     key: "child".to_owned(),
-                },
+                }),
             },
             snapshots,
             BTreeMap::new(),
@@ -4967,10 +4969,10 @@ fn tc465_row42_two_blank_labels_names_the_first_in_order() {
                 kind: qsl_semantics::model::observation::AnchorKind::Handler,
                 name: "validate".to_owned(),
             },
-            self_object: qsl_semantics::model::observation::SelectedObject {
+            self_object: Some(qsl_semantics::model::observation::SelectedObject {
                 population: "ix://example/config-version/config_history".to_owned(),
                 key: "child".to_owned(),
-            },
+            }),
         },
         snapshots,
         BTreeMap::new(),
@@ -5241,10 +5243,10 @@ fn an_out_of_range_argument_refuses_whatever_the_limits() {
             "AmountHolds",
             qsl_semantics::model::observation::ClauseSelectionInput::PreCall {
                 snapshot: snapshot.clone(),
-                self_object: qsl_semantics::model::observation::SelectedObject {
+                self_object: Some(qsl_semantics::model::observation::SelectedObject {
                     population: TC464_CONFIG_HISTORY.to_owned(),
                     key: "a".to_owned(),
-                },
+                }),
                 parameters: BTreeMap::from([(
                     quire_exact::Identifier::new("amount").unwrap(),
                     qsl_semantics::model::observation::SnapshotValue::integer(amount),
