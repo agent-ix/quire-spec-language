@@ -557,6 +557,7 @@ pub(crate) fn resolve_type_form(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ix_trace_rs::trace;
     use crate::check::family::fixtures::{empty_scope, root_location, scope_with};
     use quire_exact::{CollectionKind, EffectiveId};
     use quire_semantic_value::declaration::{ObjectTypeDeclaration, TypeEnvironment};
@@ -734,7 +735,7 @@ mod tests {
     /// FR-333-AC-1: an absent collection bound resolves to `bound: None` for
     /// every kind, and a present bound is a different type; `[3, 2]` refuses
     /// `type-mismatch` at the form's span.
-    #[ix_trace_rs::trace("TC-843", "FR-333-AC-1", "FR-333-AC-3")]
+    #[trace("TC-843", "FR-333-AC-1", "FR-333-AC-3")]
     #[test]
     fn an_absent_collection_bound_resolves_to_none() {
         let collection = |kind: CollectionKind, bounds: &[&str]| {
@@ -784,7 +785,7 @@ mod tests {
 
     /// FR-333-AC-2: `Population<T>` resolves to `Population(None)` and
     /// `Population<T>[4]` to `Population(Some(4))`.
-    #[ix_trace_rs::trace("TC-843", "FR-333-AC-2")]
+    #[trace("TC-843", "FR-333-AC-2")]
     #[test]
     fn an_absent_population_maximum_resolves_to_none() {
         let population = |bounds: &[&str]| {
