@@ -680,8 +680,7 @@ impl Run<'_, '_, '_> {
                 // A field with no finite domain (an `Integer`, a string, an
                 // unbounded collection) is bounded by no frame that grants it,
                 // so it cannot be written here.
-                let Some(domain) = Domain::of(&field.value_type, &references, system.types)
-                else {
+                let Some(domain) = Domain::of(&field.value_type, &references, system.types) else {
                     continue;
                 };
                 let mut different: Option<Option<Value>> = None;
