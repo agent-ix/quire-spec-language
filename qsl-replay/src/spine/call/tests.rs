@@ -52,12 +52,12 @@ fn run_fixture(bytes: &str, call: &Call) -> Result<CallOutcome, Box<RunRefusal>>
     .map(|(_, outcome)| outcome)
 }
 
-struct LookupDriverFixture {
-    source: String,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
+pub(in crate::spine) struct LookupDriverFixture {
+    pub(in crate::spine) source: String,
+    pub(in crate::spine) packages: BTreeMap<[u8; 32], Vec<u8>>,
 }
 
-fn lookup_driver_fixture(functions: &str) -> LookupDriverFixture {
+pub(in crate::spine) fn lookup_driver_fixture(functions: &str) -> LookupDriverFixture {
     let mut document: serde_json::Value = serde_json::from_slice(include_bytes!(
         "../../../../tests/fixtures/spine-model.semantic-ir.json"
     ))
@@ -107,7 +107,7 @@ fn lookup_driver_fixture(functions: &str) -> LookupDriverFixture {
     LookupDriverFixture { source, packages }
 }
 
-fn lookup_driver_context(
+pub(in crate::spine) fn lookup_driver_context(
     fixture: &LookupDriverFixture,
 ) -> (
     qsl_semantics::model::object_environment::ObjectEnvironment,
@@ -722,6 +722,7 @@ fn tc_792_population_and_foreign_model_admission_keep_typed_causes() {
         span: qsl_foundation::Span { start: 0, end: 0 },
         view: selected_view,
         operation_clauses: Vec::new(),
+        type_invariants: Vec::new(),
     };
     let refusal = admit_model_arguments(
         &[selected],
@@ -751,12 +752,14 @@ fn tc_792_reference_foreign_model_precedes_universe_and_type_checks() {
         span: qsl_foundation::Span { start: 0, end: 0 },
         view: selected_view.clone(),
         operation_clauses: Vec::new(),
+        type_invariants: Vec::new(),
     };
     let foreign_model = SelectedModel {
         alias: "M2".to_owned(),
         span: qsl_foundation::Span { start: 0, end: 0 },
         view: foreign_view.clone(),
         operation_clauses: Vec::new(),
+        type_invariants: Vec::new(),
     };
     let declared = selected_view.type_identities()[&selected_type];
     let supplied = foreign_view.type_identities()[&foreign_type];
@@ -798,12 +801,14 @@ fn tc_792_foreign_type_maximum_and_dangling_controls_keep_admission_causes() {
             span: qsl_foundation::Span { start: 0, end: 0 },
             view: selected_view.clone(),
             operation_clauses: Vec::new(),
+            type_invariants: Vec::new(),
         },
         SelectedModel {
             alias: "M2".to_owned(),
             span: qsl_foundation::Span { start: 0, end: 0 },
             view: foreign_view.clone(),
             operation_clauses: Vec::new(),
+            type_invariants: Vec::new(),
         },
     ];
     let foreign_reference = Value::Reference(quire_exact::ObjectReference::new(
@@ -928,6 +933,7 @@ fn tc_792_reference_exact_subtype_and_unrelated_vectors_use_model_conformance() 
         span: qsl_foundation::Span { start: 0, end: 0 },
         view,
         operation_clauses: Vec::new(),
+        type_invariants: Vec::new(),
     };
     let parameter = [("key".to_owned(), ValueType::Reference(target_id))];
     for reference in [target_ref, subtype_ref] {

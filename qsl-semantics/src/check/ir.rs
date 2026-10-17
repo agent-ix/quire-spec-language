@@ -176,6 +176,31 @@ impl CheckedBody {
         Self { nodes }
     }
 
+    /// A body of `nodes`, each stored after the nodes it names, the last the
+    /// root, for evaluator tests of node kinds no checked package can hold
+    /// yet. A node names an operand by the [`NodeId`] of its position in
+    /// `nodes`, so a test builds operands first. Never shipped.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn from_nodes(nodes: Vec<(NodeKind, ValueType)>) -> Self {
+        assert!(!nodes.is_empty(), "a body holds its root");
+        Self {
+            nodes: nodes
+                .into_iter()
+                .map(|(kind, value_type)| Node {
+                    kind,
+                    value_type,
+                    location: Location::root(quire_semantic_value::location::Origin::Expression),
+                })
+                .collect(),
+        }
+    }
+
+    /// The id of the node at `index` of [`Self::from_nodes`]'s input.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn id_at(index: usize) -> NodeId {
+        NodeId(index)
+    }
+
     /// The root node.
     pub fn root(&self) -> CheckedNode<'_> {
         CheckedNode {
