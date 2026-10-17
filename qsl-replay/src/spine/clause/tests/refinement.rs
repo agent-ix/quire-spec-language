@@ -16,7 +16,8 @@ use qsl_foundation::{Code, Setting, SettingLimits};
 use qsl_package::{EmitRefusal, ImportViewRefusal};
 use qsl_semantics::check::{AssemblyCause, AssemblyError, AssemblyRefusal};
 use qsl_semantics::check::{
-    CheckCause, CheckRefusal, KeyFault, ProtocolAnchorCause, ProtocolReferenceCause,
+    CheckCause, CheckRefusal, DispatchLinkCause, KeyFault, ProtocolAnchorCause,
+    ProtocolReferenceCause,
 };
 use qsl_semantics::library::LibraryName;
 use quire_semantic_value::location::{Location, Origin};
@@ -647,4 +648,45 @@ fn a_cancelled_argument_refusal_is_refused_at_admit() {
         classified.classification.causes,
         [cause(Code::Cancelled, None)]
     );
+}
+
+/// FR-341 rules 3 and 4: the caller's model budget denied at S3 is
+/// `incomplete` naming its limit, as at I1, never `refused`.
+#[trace("TC-861", "FR-341-AC-4")]
+#[test]
+fn a_model_budget_denial_at_s3_is_incomplete_naming_the_limit() {
+    let incomplete = qsl_semantics::model::accounting::Incomplete {
+        limit_kind: qsl_semantics::model::accounting::LimitKind::WorkUnits,
+        limit: 7,
+        consumed: 7,
+        next_charge: 1,
+        charge_point: qsl_semantics::model::accounting::ChargePoint::NormalizeRecord,
+    };
+    let denial = incomplete.denial();
+    let expected = ReachedLimit {
+        name: denial.setting().name(),
+        bound: 7,
+    };
+
+    let model = classify_refusal(&check(vec![CheckCause::ModelIncomplete(incomplete)]));
+    assert_eq!(model.class, RefinementClass::Incomplete);
+    assert_eq!(model.limits(), [expected]);
+
+    let dispatch = classify_refusal(&check(vec![CheckCause::DispatchLink(Box::new(
+        DispatchLinkCause {
+            operation: qsl_semantics::model::key::DeclarationKey {
+                package: "test/orders".to_owned(),
+                node: "op".to_owned(),
+            },
+            code: Code::ResourceExhausted,
+            catalog: qsl_foundation::CatalogCode::new(
+                "resource_exhausted",
+                "insufficient-next-charge",
+            ),
+            denial: Some(denial),
+            subtype: None,
+        },
+    ))]));
+    assert_eq!(dispatch.class, RefinementClass::Incomplete);
+    assert_eq!(dispatch.limits(), [expected]);
 }

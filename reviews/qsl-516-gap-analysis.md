@@ -23,3 +23,16 @@ Ticket: QSL-516. PR quire-spec-language#924. A planless gap analysis of the 12 n
 FIX, because of FND-001 and FND-002.
 
 Covered with exact oracles (literal classes, codes and causes): FR-341-AC-1 (ConfigVersion admitted, no causes), AC-2 (Profile with exact cause, Intake, DependencyInput, Import, invariant plus typed cause in both orders), AC-3 (ill-typed unit, and the not-yet-implemented-then-typed vector with both causes in order), AC-5 (built `not-yet-implemented` check, `Omitted`, an `unsupported_projection` Emit), AC-6 (both catalog causes, exact). FR-342-AC-1 (healthy, violating, and frame violation with exact cause), AC-2 (Absent at select, Integer function at select, unknown parameter at admit), AC-3 (exhausted work at evaluate naming `work_units`/0), AC-4 (UnknownLanguage, Admit(Fault), EvaluateFault), AC-5 (missing-model compile classifies as `classify_refusal` gives it).
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | medium | FR-341-AC-4 and TC-861 step 4 still name "a forms-stage limit of one". S2 takes no limit set (FR-257), and the amended FR-341 Outputs says a `Forms` cause names no limit, so the AC requires a limit that does not exist and a named limit the Outputs rules out. The test sets `s1.nodes` (the source stage). The AC and the TC step should name the S1 limit the test uses. | spec/functional/FR-341-classify-a-spine-compile-result-for-a-refinement-gate.md:76, spec/test-cases/TC-861-classify-spine-compile-results.md:31, qsl-replay/src/spine/clause/tests/refinement.rs:218 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 2a0df8ad4127f28fe51c6ffa3f1e13b50ca1c83d: `an_assembly_type_limit_is_incomplete_naming_the_limit` builds an `Assembly` refusal with `AssemblyCause::TypeLimit` on `environment.work_units`, bound 1, and asserts `incomplete` with exactly that limit. The refusal is built in the test rather than compiled. That is acceptable because the classifier is the unit under test. |
+| FND-002 | fixed | 2a0df8ad4127f28fe51c6ffa3f1e13b50ca1c83d: `a_dangling_parent_is_refused_at_admit` asserts `refused`/`admit` with first cause `dangling_reference`. `an_incomplete_population_is_incomplete_at_admit` asserts `incomplete`/`admit` with exactly `incomplete_population`/`incomplete-scope`, and empty `limits()`, matching the amended FR-342-AC-3. |

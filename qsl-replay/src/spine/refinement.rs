@@ -259,6 +259,10 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
         CheckCause::Identity(IdentityRefusal::InputBytes { bound, .. }) => Some(
             ReachedLimit::of_setting(Setting::IdentityInputBytes, *bound),
         ),
+        CheckCause::ModelIncomplete(incomplete) => {
+            let denial = incomplete.denial();
+            Some(ReachedLimit::of_setting(denial.setting(), denial.limit()))
+        }
         CheckCause::DispatchLink(link) => link
             .denial
             .as_ref()
@@ -269,7 +273,6 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
         | CheckCause::ProfileProhibitedOperator(_)
         | CheckCause::StateModel(_)
         | CheckCause::ModelConformance(_)
-        | CheckCause::ModelIncomplete(_)
         | CheckCause::TypeAdmission { .. }
         | CheckCause::IllTyped(_)
         | CheckCause::WrongSnapshot(_)
@@ -383,14 +386,21 @@ fn group(refusal: &CompileRefusal) -> Group {
     }
 }
 
+/// Whether `code` records a reached stage limit or the caller's exhausted
+/// budget (`resource_exhausted`, at I1 or S3): incomplete work, not a defect.
+fn is_limit_code(code: Code) -> bool {
+    matches!(code, Code::StageLimitExceeded | Code::ResourceExhausted)
+}
+
 /// Whether `code` is a typed refusal code of the unit's content: neither a
-/// reached limit nor a construct or projection the build or profile does not
-/// admit.
+/// reached limit or budget nor a construct or projection the build or profile
+/// does not admit.
 fn is_typed_refusal(code: Code) -> bool {
-    !matches!(
-        code,
-        Code::StageLimitExceeded | Code::UnsupportedConstruct | Code::UnsupportedProjection
-    )
+    !is_limit_code(code)
+        && !matches!(
+            code,
+            Code::UnsupportedConstruct | Code::UnsupportedProjection
+        )
 }
 
 /// FR-341: classify a spine compile result into one refinement class.
@@ -414,7 +424,7 @@ pub fn classify_refusal(refusal: &CompileRefusal) -> Classification {
         RefinementClass::ToolFailure
     } else if group == Group::Content && causes.iter().any(|cause| is_typed_refusal(cause.code)) {
         RefinementClass::Refused
-    } else if group == Group::IntakeBudget || holds(Code::StageLimitExceeded) {
+    } else if group == Group::IntakeBudget || causes.iter().any(|cause| is_limit_code(cause.code)) {
         RefinementClass::Incomplete
     } else if group == Group::Omitted
         || holds(Code::UnsupportedProjection)
