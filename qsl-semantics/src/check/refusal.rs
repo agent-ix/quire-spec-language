@@ -621,6 +621,9 @@ pub enum CheckCause {
     ProfileProhibitedOperator(qsl_forms::BinaryOperator),
     /// FR-300: a nested model form retains StateModel ownership.
     StateModel(Box<super::state_model::StateModelRefusal>),
+    /// FR-366: a refusal in a type-level invariant clause, with the clause
+    /// it is about.
+    TypeInvariant(Box<super::type_invariant::TypeInvariantRefusal>),
     /// A completed model conformance stage retains every axis failure.
     ModelConformance(Box<super::model_conformance::ModelConformanceFailure>),
     /// An unfinished model stage exposes its exact five-field denial.
@@ -1029,6 +1032,7 @@ impl CheckCause {
     pub fn catalog_code(&self) -> Option<qsl_foundation::diagnostic::CatalogCode> {
         match self {
             Self::StateModel(cause) => cause.catalog_code(),
+            Self::TypeInvariant(cause) => cause.cause.catalog_code(),
             Self::DispatchLink(cause) => Some(cause.catalog),
             _ => Some(qsl_foundation::diagnostic::CatalogCode::new(
                 self.code().as_str(),
@@ -1055,6 +1059,7 @@ impl CheckCause {
         match self {
             Self::ProfileProhibitedOperator(_) => Code::UnsupportedConstruct,
             Self::StateModel(cause) => cause.cause.code(),
+            Self::TypeInvariant(cause) => cause.cause.code(),
             Self::ModelConformance(failure) => failure.code,
             Self::ModelIncomplete(_) => Code::ResourceExhausted,
             Self::TypeAdmission { code, .. } => *code,
@@ -1103,6 +1108,7 @@ impl CheckCause {
     pub fn cause(&self) -> Option<&'static str> {
         match self {
             Self::StateModel(cause) => cause.cause.cause(),
+            Self::TypeInvariant(cause) => cause.cause.cause(),
             Self::ModelConformance(failure) => Some(failure.cause.as_str()),
             // The model ceilings are the caller's budget (FR-255), so a denied
             // charge is an insufficient next charge, never a stage limit.

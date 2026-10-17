@@ -207,6 +207,7 @@ impl StateClauseDeclaration {
                     .entry(crate::value::definition::CatalogRole::Root)
                     .identity,
             context: self.context,
+            receiver: ValueType::Reference(self.context),
             operation: self.operation.as_ref(),
             context_population: self.context_population,
             frame_population: self.frame_population,
@@ -224,6 +225,9 @@ pub(crate) struct ClauseView<'a> {
     /// Whether the selected profile is the complete-value one.
     pub(crate) complete_value: bool,
     pub(crate) context: EffectiveId,
+    /// The type of `self`: a reference to the context for a state clause or
+    /// a kept operation clause, a value of the owner for a type invariant.
+    pub(crate) receiver: ValueType,
     pub(crate) operation: Option<&'a ClauseOperation>,
     pub(crate) context_population: Option<PopulationDomain>,
     pub(crate) frame_population: Option<PopulationDomain>,
@@ -251,7 +255,7 @@ impl ClauseView<'_> {
     /// clause, each typed as FR-103 declares it: the slots the body is
     /// typed over, in order. An invariant binds `self` alone.
     fn parameters(&self) -> (Vec<(String, ValueType)>, bool) {
-        let mut parameters = vec![("self".to_owned(), ValueType::Reference(self.context))];
+        let mut parameters = vec![("self".to_owned(), self.receiver.clone())];
         let Some(operation) = self.operation else {
             return (parameters, false);
         };
@@ -265,6 +269,33 @@ impl ClauseView<'_> {
         parameters.extend(operation.declaration.parameters().iter().cloned());
         (parameters, result)
     }
+}
+
+/// FR-366: checks a type invariant as `check_clause` checks a unit state
+/// clause, and returns the checked clause. A type invariant adds no claim or
+/// requirement record: its body is kept for evaluation per value.
+pub(crate) fn check_type_invariant<'a>(
+    invariant: &super::type_invariant::TypeInvariantDeclaration,
+    declarations: &ClauseDeclarations<'a>,
+    cx: &mut CheckContext<'a, ClauseDeclarations<'a>>,
+) -> Result<(super::type_invariant::CheckedTypeInvariant, u64), CheckRefusal> {
+    let typed = check_clause(
+        &invariant.view(),
+        declarations,
+        &mut cx.reborrow(declarations.scope),
+    )
+    .map_err(|refusal| invariant.refusal(refusal))?;
+    Ok((
+        super::type_invariant::CheckedTypeInvariant {
+            clause: invariant.invariant.clause.clone(),
+            owner: invariant.invariant.owner.clone(),
+            applies_to: invariant.applies_to.clone(),
+            parameters: typed.parameters,
+            body: typed.body,
+            slots: typed.slots,
+        },
+        typed.nodes_used,
+    ))
 }
 
 /// The read-only declarations a state clause checks against.

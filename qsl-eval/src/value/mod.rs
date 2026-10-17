@@ -20,5 +20,6 @@ pub use expression::{
     CheckedPackageEvaluation, ClauseEvaluation, ClauseRead, ClauseSetEntry, ClauseSetEvaluation,
     ClauseSetOutcome, Evaluation, FrameEvaluation, InvalidQualifiedName, InvocationBinding,
     ObservationIdentity, QualifiedName, RuntimeValuePath, Separation, SeparationStep, StopReport,
-    ValuePathStep, ValuePathSubject, WitnessClaim,
+    ValueInvariantEvaluation, ValueInvariantOutcome, ValueInvariantResult, ValuePathStep,
+    ValuePathSubject, WitnessClaim,
 };

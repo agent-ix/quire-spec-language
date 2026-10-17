@@ -133,6 +133,7 @@ fn declarations(body: &str, guard: bool) -> (PackageDeclarations, EffectiveView,
             span: model_span,
             view: view.clone(),
             operation_clauses: Vec::new(),
+            type_invariants: Vec::new(),
         }],
         vec![],
     )
@@ -473,6 +474,7 @@ fn tc790_all_instances_missing_target_type_refuses_during_assembly() {
             span: model_span,
             view,
             operation_clauses: Vec::new(),
+            type_invariants: Vec::new(),
         }],
         vec![],
     )
@@ -821,6 +823,7 @@ fn a_population_binding_over_a_non_object_target_refuses_type_mismatch() {
             span: model_span,
             view,
             operation_clauses: Vec::new(),
+            type_invariants: Vec::new(),
         }],
         vec![],
     );

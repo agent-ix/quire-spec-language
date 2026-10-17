@@ -260,6 +260,7 @@ fn limit_of(
         CompileRefusal::Limit(limit) => Some(limit.clone()),
         CompileRefusal::Forms { .. }
         | CompileRefusal::OperationClause { .. }
+        | CompileRefusal::TypeInvariant { .. }
         | CompileRefusal::Profile { .. }
         | CompileRefusal::DependencyInput(_)
         | CompileRefusal::Import { .. }
@@ -651,7 +652,26 @@ fn select_models(
             })
         })?;
     let source_limits = parsed.syntax.effective_limits();
-    parse_operation_clauses(models, source_limits)
+    parse_type_invariants(parse_operation_clauses(models, source_limits)?, source_limits)
+}
+
+/// FR-366: parses the text of each type-level `Invariant` clause of `model`
+/// with the unit clause production, and hands the parsed expressions to the
+/// assembler on the model. The first clause that does not parse refuses,
+/// located at its owner's `TypeDefinition.clauses[k]` member.
+fn parse_type_invariants(
+    models: SelectedModels,
+    limits: SourceLimits,
+) -> Result<SelectedModels, Box<CompileRefusal>> {
+    models
+        .with_parsed_type_invariants(|text| parse_clause_text(text, limits))
+        .map_err(|failure| {
+            Box::new(CompileRefusal::TypeInvariant {
+                clause: failure.clause,
+                member: failure.member,
+                failure: failure.cause,
+            })
+        })
 }
 
 /// FR-103: parses each kept `quire`-language `requires` and `ensures` clause

@@ -121,6 +121,17 @@ pub enum CompileRefusal {
         /// The S1 or S2 cause.
         failure: ClauseTextRefusal,
     },
+    /// FR-366: the text of a type-level invariant clause did not parse as an
+    /// expression.
+    #[error("the {member} clause of `{}` does not parse: {}", .clause.node, clause_text_message(.failure))]
+    TypeInvariant {
+        /// The clause that did not parse.
+        clause: DeclarationKey,
+        /// The member the clause is at: `TypeDefinition.clauses[k]`.
+        member: MemberPath,
+        /// The S1 or S2 cause.
+        failure: ClauseTextRefusal,
+    },
     /// E3 (FR-110): a header profile selection does not resolve against the
     /// `DefinitionLock` catalog.
     #[error("header profile `{}` does not resolve: {}/{}", .refusals[0].alias, .refusals[0].code().as_str(), .refusals[0].cause())]
@@ -196,7 +207,7 @@ impl CompileRefusal {
             Self::Source(diagnostic) => diagnostic.code,
             Self::Forms { failure, .. } => failure.catalog_code(),
             Self::Intake { refusal, .. } => refusal.cause.code(),
-            Self::OperationClause { failure, .. } => match failure {
+            Self::OperationClause { failure, .. } | Self::TypeInvariant { failure, .. } => match failure {
                 ClauseTextRefusal::Source(diagnostic) => diagnostic.code,
                 ClauseTextRefusal::Forms(failure) => failure.catalog_code(),
                 ClauseTextRefusal::NotOneExpression => Code::InvalidSyntax,
@@ -237,6 +248,7 @@ impl CompileRefusal {
             Self::Source(_)
             | Self::Forms { .. }
             | Self::OperationClause { .. }
+            | Self::TypeInvariant { .. }
             | Self::Assembly { .. }
             | Self::Emit(_)
             | Self::Omitted(_) => None,
@@ -276,6 +288,7 @@ impl CompileRefusal {
             Self::Forms { .. } => SpineStage::Forms,
             Self::Intake { .. }
             | Self::OperationClause { .. }
+            | Self::TypeInvariant { .. }
             | Self::DependencyInput(_)
             | Self::Import { .. } => SpineStage::Intake,
             Self::Dependency { refusal, .. } => refusal.stage(),
@@ -352,6 +365,7 @@ impl CompileRefusal {
                 Some(_) | None => None,
             },
             Self::OperationClause { .. }
+            | Self::TypeInvariant { .. }
             | Self::DependencyInput(_)
             | Self::Link(_)
             | Self::Emit(_)

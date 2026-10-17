@@ -81,7 +81,7 @@ fn lifecycle_document(requires: &str) -> serde_json::Value {
 }
 
 /// [`lifecycle_document`] with `extra` applied before the digests are taken.
-fn lifecycle_document_with(
+pub(crate) fn lifecycle_document_with(
     requires: &str,
     extra: impl FnOnce(&mut serde_json::Value),
 ) -> serde_json::Value {
@@ -143,7 +143,7 @@ fn lifecycle_document_with(
     document
 }
 
-fn read_k2(document: &serde_json::Value) -> (DomainPackage, BTreeMap<[u8; 32], Vec<u8>>) {
+pub(crate) fn read_k2(document: &serde_json::Value) -> (DomainPackage, BTreeMap<[u8; 32], Vec<u8>>) {
     let bytes = serde_json::to_vec(document).expect("lifecycle fixture serializes");
     let offered = package_input([bytes.as_slice()]);
     let digest = *offered.keys().next().expect("one lifecycle package");
@@ -235,7 +235,7 @@ fn model_package(
     Ok((CheckedPackage::link(graph), view, packages))
 }
 
-fn lifecycle_document_ref(label: &str, bytes: &[u8]) -> DocumentRef {
+pub(crate) fn lifecycle_document_ref(label: &str, bytes: &[u8]) -> DocumentRef {
     let document = quire_canonical::read(bytes, u64::MAX).expect("lifecycle document reads");
     let digest = *quire_canonical::sha256(&document, quire_canonical::Limits::new(u64::MAX))
         .expect("lifecycle document hashes")
@@ -249,7 +249,7 @@ fn lifecycle_document_ref(label: &str, bytes: &[u8]) -> DocumentRef {
     }
 }
 
-fn lifecycle_identity(reference: &DocumentRef) -> serde_json::Value {
+pub(crate) fn lifecycle_identity(reference: &DocumentRef) -> serde_json::Value {
     serde_json::json!({
         "authority": reference.authority,
         "identity": reference.identity,
@@ -258,7 +258,7 @@ fn lifecycle_identity(reference: &DocumentRef) -> serde_json::Value {
     })
 }
 
-fn lifecycle_observation(
+pub(crate) fn lifecycle_observation(
     model_digest: &[u8; 32],
     label: &str,
     observation: &str,
@@ -313,7 +313,7 @@ fn lifecycle_invocation(
     lifecycle_invocation_with(model_digest, pre, post, serde_json::json!({}))
 }
 
-fn lifecycle_invocation_with(
+pub(crate) fn lifecycle_invocation_with(
     model_digest: &[u8; 32],
     pre: &DocumentRef,
     post: &DocumentRef,
@@ -354,7 +354,7 @@ fn lifecycle_invocation_with(
     (lifecycle_document_ref("i1", &bytes), bytes)
 }
 
-fn lifecycle_observations(
+pub(crate) fn lifecycle_observations(
     package: &CheckedPackage,
     packages: &BTreeMap<[u8; 32], Vec<u8>>,
     clause: &str,

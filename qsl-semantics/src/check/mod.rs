@@ -120,6 +120,10 @@ pub use sum_case::{mint_union_member_key, ExhaustivenessObligation, SumCaseCause
 pub mod stratum;
 mod termination;
 mod type_form;
+mod type_invariant;
+pub use type_invariant::{
+    CheckedTypeInvariant, TypeInvariantDeclaration, TypeInvariantRefusal, TypeSlot,
+};
 
 use crate::model::domain_package::DomainPackageRef;
 use std::collections::BTreeMap;
@@ -390,6 +394,9 @@ pub struct CheckedGraph {
     model_selections: Vec<DomainPackageRef>,
     /// FR-104: every checked state clause, in declaration order.
     state_clauses: Vec<CheckedStateClause>,
+    /// FR-366: every checked type-level invariant, in declaration order of
+    /// the selected models and their clauses.
+    type_invariants: Vec<CheckedTypeInvariant>,
     /// FR-113: every checked protocol declaration, in declaration order.
     protocols: Vec<CheckedProtocol>,
     /// FR-115: every operation a state clause or attempt names, with its
@@ -1249,6 +1256,48 @@ impl PackageDeclarations {
                 }
             }
         }
+        // FR-366: each type-level invariant, checked as a Boolean invariant
+        // whose `self` is a value of its owner. A checked invariant adds no
+        // declaration, claim or requirement record; its body is kept for
+        // evaluation per value.
+        let mut type_invariants = Vec::with_capacity(self.type_invariants.len());
+        for invariant in &self.type_invariants {
+            let location = invariant.location();
+            let declarations = state_clause::ClauseDeclarations {
+                scope: &scope,
+                signatures: &signatures,
+                dispatch_tables: &dispatch_tables,
+                models: &models,
+                checking_limits: limits,
+                location: &location,
+                nodes_used,
+                cancel: Some(cancel),
+                staged: None,
+            };
+            let mut contract_cx = crate::family::CheckContext::new(
+                &declarations,
+                contract_limits,
+                &mut contract_meter,
+                &mut contract_diagnostics,
+                &mut contract_scopes,
+            );
+            match state_clause::check_type_invariant(invariant, &declarations, &mut contract_cx) {
+                Ok((checked, used)) => {
+                    nodes_used = used;
+                    type_invariants.push(checked);
+                }
+                Err(refusal) => {
+                    let exhausted = matches!(
+                        refusal.type_invariant_cause(),
+                        Some(CheckCause::ResourceExhausted(_))
+                    );
+                    refusals.push(refusal);
+                    if exhausted || cancel.tripped().is_some() {
+                        return Err(refusals);
+                    }
+                }
+            }
+        }
         // FR-218: a second reference to one protocol in the unit refuses at
         // the second: the function bodies in declaration order, then the
         // state clauses.
@@ -1885,6 +1934,7 @@ impl PackageDeclarations {
             embedding,
             model_selections,
             state_clauses,
+            type_invariants,
             protocols: checked_protocols,
             operation_frames,
             model_objects,
@@ -2134,6 +2184,11 @@ impl CheckedGraph {
     /// FR-104: every checked state clause, in declaration order.
     pub fn state_clauses(&self) -> &[CheckedStateClause] {
         &self.state_clauses
+    }
+
+    /// FR-366: every checked type-level invariant.
+    pub fn type_invariants(&self) -> &[CheckedTypeInvariant] {
+        &self.type_invariants
     }
 
     /// FR-113: every checked protocol declaration, in declaration order.
