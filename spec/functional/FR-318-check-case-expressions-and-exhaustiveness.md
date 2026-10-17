@@ -96,10 +96,9 @@ failed QSpec FR-146 exhaustiveness obligation, QSpec FR-146's order
 ### Requirements and clause kinds
 
 - A `case` SHALL check the same way in a function body, a state clause body
-  and a `decreases` measure, each under its clause kind. A clause that
-  contains a `case` SHALL record the clause's own claim through its own
-  family (`operation-contract` for a state clause, `value-validity` for a
-  predicate clause); the `case` and its exhaustiveness obligation SHALL
+  and a `decreases` measure, each under its clause kind. A state clause
+  that contains a `case` SHALL record one `operation-contract` claim, the
+  clause's own; the `case` and its exhaustiveness obligation SHALL
   add no claim and request no capability kind (FR-057).
 
 ### Resources
@@ -120,7 +119,7 @@ failed QSpec FR-146 exhaustiveness obligation, QSpec FR-146's order
 | FR-318-AC-2 | With no enclosing expectation, arms `Circle(r): r; Rect(w, h): true; Empty: 0;` refuse `ill_typed`/`type-mismatch` at the body `true`, by QSpec FR-146 "Case result type" (the first body whose type is neither the first body's nor, with an `Integer` first body, an integer type). | Test (TC-821) |
 | FR-318-AC-3 | One `case` per obligation refuses `undefined_expression`/`unproved-exhaustiveness` with that obligation, `Shape`'s identity and the arm set: two `Empty` arms (`duplicate-arm`, at the second); an arm `Other::X` naming a member of a second union (`unknown-member`); `Circle(a, b)` (`arm-arity`); arms for `Empty` and `Circle` only (`missing-arm`, at the `case`). QSpec TC-264's cases each give TC-264's verdict. | Test (TC-822) |
 | FR-318-AC-4 | A `case` with two `Empty` arms and no `Rect` arm reports only `duplicate-arm`. An `unknown-member` arm whose body is ill-typed reports only `unknown-member`, and an `arm-arity` arm `Circle(a, b)` whose body uses an unbound identifier `z` reports only `arm-arity`. A `case` with an ill-typed body in a resolved arm and a missing arm reports only `ill_typed` at that body. A scrutinee of type `Integer` followed by arms naming unknown members reports only the scrutinee's `ill_typed`/`type-mismatch`; a scrutinee of an enum type reports the same. | Test (TC-823) |
-| FR-318-AC-5 | The `case` of AC-1 checks inside a state clause body and inside a `decreases` measure, each under its clause kind. A state clause containing it yields exactly one `operation-contract` requirement record, its own, a `decreases` measure or pure Boolean predicate clause containing it yields one `value-validity` record, and a function containing it yields no record for the `case` or its exhaustiveness obligation. | Test (TC-824) |
+| FR-318-AC-5 | The `case` of AC-1 checks inside a state clause body and inside a `decreases` measure, each under its clause kind. A state clause containing it yields exactly one `operation-contract` requirement record, its own, and a function containing it yields no record for the `case` or its exhaustiveness obligation. | Test (TC-824) |
 | FR-318-AC-6 | A function whose body nests `case` 1,000 levels deep (each arm body a further `case`) checks under the default checking ceilings. Checking it with the node ceiling set one below the units it needs returns `StageFailure::Limit` with kind node count, the configured bound, the `CheckingLimits` field to raise and the region of the node whose charge was denied; raising the ceiling by one admits it. No outcome names a nesting-depth limit, and none is a host stack overflow. | Test (TC-825) |
 
 ## Dependencies
