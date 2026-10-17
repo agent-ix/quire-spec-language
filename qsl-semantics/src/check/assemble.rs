@@ -653,6 +653,8 @@ impl Unit {
                         members: Members::Union(union.members),
                     });
                 }
+                // Terminal declarations are checked by S3 later.
+                DeclarationForm::Terminal(_) => {}
                 DeclarationForm::Temporal(clause) => {
                     unit.temporal_clauses
                         .push(super::temporal_clause::TemporalDeclaration {
