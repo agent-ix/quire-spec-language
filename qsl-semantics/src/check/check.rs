@@ -433,6 +433,14 @@ pub struct PackageDeclarations {
     /// inner list is in the same order as its protocol's own
     /// `ProtocolDeclarationForm::attempts`.
     pub protocol_attempts: Vec<Vec<super::state_clause::AttemptDeclaration>>,
+    /// FR-325, FR-326: the unit's `temporal` clauses in declaration order,
+    /// each as S2 built it, for the `TemporalTrace` family's `check`.
+    pub temporal_clauses: Vec<super::temporal_clause::TemporalDeclaration>,
+    /// FR-110, FR-326: the unit's header profile selections the
+    /// `TemporalTrace` family's catalog holds, in source order. A clause is
+    /// checked under the one of them, or refuses when there is none or
+    /// several.
+    pub temporal_selections: Vec<super::temporal_clause::TemporalSelection>,
     /// FR-103: each domain-package operation `requires`/`ensures` clause the
     /// driver parsed, with its operation resolved, checked beside the state
     /// clauses. Checking yields a refusal or nothing.
@@ -521,6 +529,8 @@ impl PackageDeclarations {
             state_clauses: Vec::new(),
             protocols: Vec::new(),
             protocol_attempts: Vec::new(),
+            temporal_clauses: Vec::new(),
+            temporal_selections: Vec::new(),
             operation_clauses: Vec::new(),
             type_invariants: Vec::new(),
             operation_bodies: Vec::new(),
@@ -1029,6 +1039,55 @@ impl Scope {
     /// The package's composite and object type declarations.
     pub fn types(&self) -> &TypeEnvironment {
         &self.types
+    }
+
+    /// Seal every declared union under the checked node id of its type
+    /// node, `nodes` mapping each declaration to its node (FR-319): each
+    /// member is bound to its QSpec FR-441 key over that node id, minted
+    /// here once, so the `VariantId` to (union, member, position) index the
+    /// type environment keeps is built exactly once and no other stage
+    /// derives it. Lowering produced `nodes`; a union it left out is an
+    /// internal fault.
+    pub(crate) fn seal_unions(
+        &mut self,
+        nodes: &BTreeMap<quire_exact::NodeKey, quire_exact::NodeKey>,
+    ) -> Result<(), CheckRefusal> {
+        let fault = |invariant: &'static str| CheckRefusal {
+            location: Location::root(quire_semantic_value::location::Origin::Expression),
+            cause: CheckCause::InternalFault(Box::new(super::refusal::KeyFault::StageFault(
+                qsl_foundation::InternalFault::new("S3", invariant),
+            ))),
+        };
+        let unions: Vec<(quire_exact::NodeKey, Vec<quire_exact::Identifier>)> = self
+            .types
+            .composites()
+            .filter_map(|declaration| match declaration.shape() {
+                CompositeShape::Union(members) => Some((
+                    declaration.key(),
+                    members
+                        .iter()
+                        .map(|member| member.identifier().clone())
+                        .collect(),
+                )),
+                CompositeShape::Record(_) | CompositeShape::Tuple(_) => None,
+            })
+            .collect();
+        for (handle, members) in unions {
+            let node = *nodes
+                .get(&handle)
+                .ok_or_else(|| fault("union-node-missing"))?;
+            let bindings = members
+                .into_iter()
+                .map(|member| {
+                    let key = super::sum_case::mint_union_member_key(node, member.as_str());
+                    quire_exact::UnionMember::from_admitted(node, key, member)
+                })
+                .collect();
+            self.types
+                .seal_union_verified(handle, node, bindings)
+                .map_err(|_| fault("union-seal"))?;
+        }
+        Ok(())
     }
 
     /// Whether a value of `value_type` holds an event type anywhere inside

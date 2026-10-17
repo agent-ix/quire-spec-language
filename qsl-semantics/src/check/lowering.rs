@@ -60,16 +60,17 @@ use super::claims::BinderSite;
 use super::family::{OccurrenceMap, OccurrenceRole};
 use super::identity::ModelCorrespondence;
 use super::ir::{
-    Arithmetic, CheckedLiteral, CheckedNode, Connective, IntegerDivisionOperator, NodeId, NodeKind,
-    OrderedKind, RecordField, RecordSlot, Slot, Visit,
+    Arithmetic, CaseArm, CheckedLiteral, CheckedNode, Connective, IntegerDivisionOperator, NodeId,
+    NodeKind, OrderedKind, RecordField, RecordSlot, Slot, Visit,
 };
 use super::node_key::{
     group_keys, node_key, LawRole, LeafSegment, LiteralValue, NodeInput, NodeKeyRefusal, NodeTag,
     Operation, OperationLaw, OperationLeaf, OperationMode, Operator, Owner, PackageRef,
-    SourceOwner, WireNodeRef,
+    SourceOwner, WireNodeRef, UNION_VALUE_FORM,
 };
 use super::node_key::{
     AggregateTerm, Binding, BindingValue, BodyTerm, GroupMember, GroupTerm, LeafTerm, MemberTerm,
+    TupleMember, TupleTerm,
 };
 use super::refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, KeyFault, StageLimitCause,
@@ -80,7 +81,7 @@ use crate::value::enumeration::{member_preimage_bytes, EnumDeclarationPreimage};
 use crate::value::member::Member;
 use crate::value::unit::{DimensionPreimage, UnitPreimage};
 use quire_semantic_value::declaration::{
-    CompositeShape, EqualityOperator, FieldDeclaration, TypeEnvironment,
+    CompositeShape, EqualityOperator, FieldDeclaration, TypeEnvironment, UnionMemberDeclaration,
 };
 use quire_semantic_value::enumeration::EnumValue;
 use quire_semantic_value::location::{Location, Origin};
@@ -528,6 +529,9 @@ pub(crate) struct Lowered {
     /// the slot it binds: the roots a claim's extent is keyed by.
     pub(crate) binders: BTreeMap<BinderSite, NodeKey>,
     pub(crate) parameter_spans: BTreeMap<(NodeKey, OccurrenceOrigin), qsl_foundation::Span>,
+    /// Each declared composite's node key, by its declaration key: the final
+    /// key a union is sealed under (FR-319).
+    pub(crate) composites: BTreeMap<NodeKey, NodeKey>,
 }
 
 /// Builds and keys the nodes of one package.
@@ -641,10 +645,12 @@ fn refuse(location: &Location, cause: CheckCause) -> CheckRefusal {
     }
 }
 
-/// The invariant a composite frame breaks by holding a union, which
-/// `open_composite` refuses before a frame opens.
-fn union_frame() -> qsl_foundation::InternalFault {
-    qsl_foundation::InternalFault::new("S3", "union-composite-frame")
+/// A broken invariant of the union lowering, never a refusal of the input.
+fn union_fault(location: &Location, invariant: &'static str) -> CheckRefusal {
+    fault(
+        location,
+        KeyFault::StageFault(qsl_foundation::InternalFault::new("S3", invariant)),
+    )
 }
 
 fn fault(location: &Location, fault: KeyFault) -> CheckRefusal {
@@ -713,13 +719,20 @@ struct CompositeFrame<'v> {
     members: Vec<MemberTerm>,
     /// The record field whose type node is being built.
     awaiting: Option<&'v FieldDeclaration>,
+    /// The payload type nodes built so far of the union member being built,
+    /// in position order.
+    payload: Vec<NodeKey>,
 }
 
 impl CompositeFrame<'_> {
     /// Append the member whose type node is `key`: a record field's
-    /// binding (an optional one's through `optional`), or a tuple
-    /// position's reference.
+    /// binding (an optional one's through `optional`), a tuple position's
+    /// reference, or the next payload type of the union member being built.
     fn accept(&mut self, key: NodeKey) {
+        if matches!(self.shape, CompositeShape::Union(_)) {
+            self.payload.push(key);
+            return;
+        }
         let reference = LeafTerm::reference(key);
         self.members.push(match self.awaiting.take() {
             None => MemberTerm::Leaf(reference),
@@ -769,6 +782,8 @@ enum LowerFrame<'n> {
     /// `fold`/`reduce`: its source, its identity, then its step under the
     /// accumulator and element binders.
     Fold(Box<FoldFrame<'n>>),
+    /// `case`: its scrutinee, then each arm's body under the arm's binders.
+    Case(Box<CaseFrame<'n>>),
 }
 
 /// A checked node's operands, in order.
@@ -814,6 +829,13 @@ enum Keyed {
     /// A `value` node of this form, typed at this type node, whose body
     /// aggregates the operands.
     Value(&'static str, NodeKey),
+    /// A union construction (QSpec FR-440 "Union value node"): the
+    /// `union_value` node typed at the union's type node, whose body is one
+    /// binding of the active member's name over the payload terms.
+    UnionValue {
+        semantic_type: NodeKey,
+        member: String,
+    },
 }
 
 /// A node over its operands' terms.
@@ -857,6 +879,28 @@ struct RecordFrame<'n> {
     fields: Vec<FieldDeclaration>,
     slots: &'n [RecordSlot],
     members: Vec<MemberTerm>,
+}
+
+/// `case` over a union: the arms are lowered in the union's declared member
+/// order, which is the order the checked node holds them in.
+struct CaseFrame<'n> {
+    node: CheckedNode<'n>,
+    /// The scrutinee's union declaration.
+    declaration: NodeKey,
+    arms: &'n [CaseArm],
+    /// The scrutinee's term, once it is lowered.
+    scrutinee: Option<LeafTerm>,
+    /// The arms lowered so far: each a binding of the member's name over its
+    /// binder aggregate and its body.
+    lowered: Vec<MemberTerm>,
+    /// The arm whose body is being lowered.
+    open: Option<OpenArm>,
+}
+
+/// An arm whose binders are in scope and whose body is being lowered.
+struct OpenArm {
+    /// The parameter node of each binder, in payload position order.
+    parameters: Vec<NodeKey>,
 }
 
 /// `fold`/`reduce` over `source`.
@@ -971,6 +1015,8 @@ enum WalkSegment<'w> {
     Position(u64),
     /// `inner`.
     Inner,
+    /// `member:<name>`, the name already checked to be an identifier.
+    Member(&'w str),
 }
 
 impl WalkSegment<'_> {
@@ -982,6 +1028,7 @@ impl WalkSegment<'_> {
             Self::Field(name) => key_length("field:".len() + name.len()),
             Self::Position(position) => key_length("position:".len() + decimal_digits(position)),
             Self::Inner => key_length("inner".len()),
+            Self::Member(name) => key_length("member:".len() + name.len()),
         }
     }
 
@@ -993,6 +1040,9 @@ impl WalkSegment<'_> {
             ),
             Self::Position(position) => LeafSegment::Position(position),
             Self::Inner => LeafSegment::Inner,
+            Self::Member(name) => LeafSegment::Member(
+                Identifier::new(name).map_err(|_| NodeKeyRefusal::EmptyBindingName)?,
+            ),
         })
     }
 }
@@ -1074,6 +1124,10 @@ enum LeafVisit<'w> {
     /// A record field (rule 5): `field:<name>`, then the field's type, an
     /// optional field's through `inner`.
     Field(&'w FieldDeclaration),
+    /// A union member (QSpec FR-440 "Structural leaves"): `member:<name>`,
+    /// then each payload type at `position:<i>`, `i` its index in the
+    /// member's payload even when the payload is one type.
+    Member(&'w UnionMemberDeclaration),
 }
 
 /// One entered type: what leaving it undoes.
@@ -1107,6 +1161,28 @@ impl<'w> quire_walk::Walk for LeafWalk<'w> {
                 LeafFrame {
                     segment: segment.is_some(),
                     opened: into_flow(opened)?,
+                }
+            }
+            LeafVisit::Member(member) => {
+                let name = member.identifier().as_str();
+                if !quire_exact::is_identifier(name) {
+                    return ControlFlow::Break(refuse(
+                        self.location,
+                        CheckCause::NodePreimage(NodeKeyRefusal::EmptyBindingName),
+                    ));
+                }
+                self.push(WalkSegment::Member(name));
+                queued.extend(
+                    (0_u64..)
+                        .zip(member.positions())
+                        .map(|(position, value_type)| LeafVisit::Type {
+                            segment: Some(WalkSegment::Position(position)),
+                            value_type,
+                        }),
+                );
+                LeafFrame {
+                    segment: true,
+                    opened: None,
                 }
             }
             LeafVisit::Field(field) => {
@@ -1232,7 +1308,9 @@ impl<'w> LeafWalk<'w> {
                             }
                         }));
                     }
-                    CompositeShape::Union(_) => return Err(super::sum_case::unlowered(location)),
+                    CompositeShape::Union(members) => {
+                        queued.extend(members.iter().map(LeafVisit::Member));
+                    }
                 }
                 return Ok(Some(open));
             }
@@ -1529,6 +1607,7 @@ impl<'a> Lowering<'a> {
             functions: self.functions,
             binders: self.binders,
             parameter_spans,
+            composites: self.composites,
         }
     }
 
@@ -2083,10 +2162,7 @@ impl<'a> Lowering<'a> {
         let members = match shape {
             CompositeShape::Record(fields) => fields.len(),
             CompositeShape::Tuple(positions) => positions.len(),
-            CompositeShape::Union(_) => {
-                self.composites_in_progress.pop();
-                return Err(super::sum_case::unlowered(location));
-            }
+            CompositeShape::Union(members) => members.len(),
         };
         Ok(OpenComposite::Open(CompositeFrame {
             declaration,
@@ -2095,6 +2171,7 @@ impl<'a> Lowering<'a> {
             shape,
             members: Vec::with_capacity(members),
             awaiting: None,
+            payload: Vec::new(),
         }))
     }
 
@@ -2107,7 +2184,8 @@ impl<'a> Lowering<'a> {
         frames: &mut Vec<TypeFrame<'v>>,
     ) -> Result<TypeStep<'v>, CheckRefusal> {
         let at = composite.members.len();
-        let next = match composite.shape {
+        let shape: &'v CompositeShape = composite.shape;
+        let next = match shape {
             CompositeShape::Record(fields) => fields.get(at).map(|field| {
                 composite.awaiting = Some(field);
                 (field.value_type(), field.presence())
@@ -2115,9 +2193,8 @@ impl<'a> Lowering<'a> {
             CompositeShape::Tuple(positions) => positions
                 .get(at)
                 .map(|position| (position, Presence::Required)),
-            // `open_composite` refuses a union before a frame opens.
-            CompositeShape::Union(_) => {
-                return Err(fault(location, KeyFault::StageFault(union_frame())))
+            CompositeShape::Union(members) => {
+                return self.advance_union(composite, members, location, frames)
             }
         };
         let Some((value_type, presence)) = next else {
@@ -2133,6 +2210,38 @@ impl<'a> Lowering<'a> {
                 TypeStep::Descend(value_type)
             }
         })
+    }
+
+    /// Descend into the next payload type of the union `composite` being
+    /// built, closing each member whose payload is built as one binding of
+    /// the member's name over the references to its payload type nodes
+    /// (QSpec FR-440 "Union type node"), and finishing the node once every
+    /// member is closed.
+    fn advance_union<'v>(
+        &mut self,
+        mut composite: CompositeFrame<'v>,
+        members: &'v [UnionMemberDeclaration],
+        location: &Location,
+        frames: &mut Vec<TypeFrame<'v>>,
+    ) -> Result<TypeStep<'v>, CheckRefusal> {
+        loop {
+            let Some(member) = members.get(composite.members.len()) else {
+                return Ok(TypeStep::Built(self.close_composite(composite, location)?));
+            };
+            match member.positions().get(composite.payload.len()) {
+                Some(value_type) => {
+                    frames.push(TypeFrame::Composite(composite));
+                    return Ok(TypeStep::Descend(value_type));
+                }
+                None => {
+                    let payload = std::mem::take(&mut composite.payload);
+                    composite.members.push(MemberTerm::binding(
+                        member.identifier().as_str(),
+                        BindingValue::Group(GroupTerm::references(payload)),
+                    ));
+                }
+            }
+        }
     }
 
     /// Key the composite whose every member is built, and settle once no
@@ -2154,10 +2263,7 @@ impl<'a> Lowering<'a> {
         let form = match shape {
             CompositeShape::Record(_) => "record",
             CompositeShape::Tuple(_) => "tuple",
-            // `open_composite` refuses a union before a frame opens.
-            CompositeShape::Union(_) => {
-                return Err(fault(location, KeyFault::StageFault(union_frame())))
-            }
+            CompositeShape::Union(_) => "union",
         };
         let key = self.insert(
             location,
@@ -3766,10 +3872,41 @@ impl<'a> Lowering<'a> {
                     Operands::Receiver(receiver, arguments),
                 )
             }
-            // FR-319 keys a `case` node by its declared-order body; that
-            // lowering waits on the union wire vocabulary.
-            NodeKind::Case { .. } | NodeKind::UnionValue { .. } => {
-                return Err(super::sum_case::unlowered(node.location()))
+            // FR-319, FR-320: a construction is a `union_value` node over the
+            // union's type node.
+            NodeKind::UnionValue {
+                declaration,
+                member,
+                arguments,
+            } => {
+                let semantic_type = self.composite_type_node(*declaration, node.location())?;
+                let member = self.union_member_name(*declaration, *member, node.location())?;
+                (
+                    Keyed::UnionValue {
+                        semantic_type,
+                        member: member.to_owned(),
+                    },
+                    Operands::Each(arguments),
+                )
+            }
+            // FR-319, FR-320: a `case` is an `expression`/`case` node whose
+            // arms are in the union's declared member order.
+            NodeKind::Case {
+                scrutinee,
+                declaration,
+                arms,
+            } => {
+                // The union's type node, which the arm binders' types name.
+                self.composite_type_node(*declaration, node.location())?;
+                frames.push(LowerFrame::Case(Box::new(CaseFrame {
+                    node,
+                    declaration: *declaration,
+                    arms,
+                    scrutinee: None,
+                    lowered: Vec::with_capacity(arms.len()),
+                    open: None,
+                })));
+                return Ok(LowerStep::Descend(node.at(*scrutinee)));
             }
             NodeKind::Pre(operand) => (
                 Keyed::Application(Operator::Pre, plain("quire.op.state.pre")),
@@ -3837,6 +3974,21 @@ impl<'a> Lowering<'a> {
                 semantic_type,
                 BodyTerm::aggregate(terms.into_iter().map(MemberTerm::Leaf).collect()),
             ),
+            Keyed::UnionValue {
+                semantic_type,
+                member,
+            } => {
+                let payload = GroupTerm::new(terms.into_iter().map(GroupMember::Leaf).collect());
+                self.value_node(
+                    node,
+                    UNION_VALUE_FORM,
+                    semantic_type,
+                    BodyTerm::aggregate(vec![MemberTerm::binding(
+                        member,
+                        BindingValue::Group(payload),
+                    )]),
+                )
+            }
         }
         .map(LowerStep::Lowered)
     }
@@ -3986,7 +4138,133 @@ impl<'a> Lowering<'a> {
                 self.record_members(frame, frames)
             }
             LowerFrame::Fold(frame) => self.accept_fold(frame, term, binders, frames),
+            LowerFrame::Case(frame) => self.accept_case(frame, term, binders, frames),
         }
+    }
+
+    /// The declared members of the union `declaration`.
+    fn union_members(
+        &self,
+        declaration: NodeKey,
+        location: &Location,
+    ) -> Result<&'a [UnionMemberDeclaration], CheckRefusal> {
+        let scope: &'a Scope = self.scope;
+        match scope.types().composite(declaration).map(|c| c.shape()) {
+            Some(CompositeShape::Union(members)) => Ok(members),
+            Some(CompositeShape::Record(_) | CompositeShape::Tuple(_)) | None => {
+                Err(union_fault(location, "union-declaration"))
+            }
+        }
+    }
+
+    /// The declared member at position `member` of the union `declaration`.
+    fn union_member(
+        &self,
+        declaration: NodeKey,
+        member: usize,
+        location: &Location,
+    ) -> Result<&'a UnionMemberDeclaration, CheckRefusal> {
+        self.union_members(declaration, location)?
+            .get(member)
+            .ok_or_else(|| union_fault(location, "union-member-position"))
+    }
+
+    /// The name of the member at position `member` of the union
+    /// `declaration`.
+    fn union_member_name(
+        &self,
+        declaration: NodeKey,
+        member: usize,
+        location: &Location,
+    ) -> Result<&'a str, CheckRefusal> {
+        Ok(self
+            .union_member(declaration, member, location)?
+            .identifier()
+            .as_str())
+    }
+
+    /// Hand a `case` its lowered scrutinee, or the lowered body of its open
+    /// arm.
+    fn accept_case<'n>(
+        &mut self,
+        mut frame: Box<CaseFrame<'n>>,
+        term: LeafTerm,
+        binders: &mut Binders<'_>,
+        frames: &mut Vec<LowerFrame<'n>>,
+    ) -> Result<LowerStep<'n>, CheckRefusal> {
+        let location = frame.node.location();
+        match frame.open.take() {
+            None if frame.scrutinee.is_none() => frame.scrutinee = Some(term),
+            None => return Err(union_fault(location, "case-arm-body-unexpected")),
+            Some(open) => {
+                let at = frame.lowered.len();
+                let arm = frame
+                    .arms
+                    .get(at)
+                    .ok_or_else(|| union_fault(location, "case-arm-position"))?;
+                for _ in &arm.binders {
+                    binders.pop();
+                }
+                let name = self.union_member_name(frame.declaration, arm.member, location)?;
+                let parameters = GroupTerm::references(open.parameters);
+                frame.lowered.push(MemberTerm::binding(
+                    name,
+                    BindingValue::Tuple(TupleTerm::new(vec![
+                        TupleMember::Group(parameters),
+                        TupleMember::Leaf(term),
+                    ])),
+                ));
+            }
+        }
+        self.open_arm(frame, binders, frames)
+    }
+
+    /// Bind the next arm's payload binders and descend into its body, or key
+    /// the `case` node once every arm is lowered.
+    fn open_arm<'n>(
+        &mut self,
+        mut frame: Box<CaseFrame<'n>>,
+        binders: &mut Binders<'_>,
+        frames: &mut Vec<LowerFrame<'n>>,
+    ) -> Result<LowerStep<'n>, CheckRefusal> {
+        let node = frame.node;
+        let location = node.location();
+        let Some(arm) = frame.arms.get(frame.lowered.len()) else {
+            let CaseFrame {
+                scrutinee, lowered, ..
+            } = *frame;
+            let scrutinee = scrutinee.ok_or_else(|| union_fault(location, "case-scrutinee"))?;
+            let mut arguments = Vec::with_capacity(lowered.len() + 1);
+            arguments.push(MemberTerm::Leaf(scrutinee));
+            arguments.extend(lowered);
+            return self
+                .application(
+                    node,
+                    Operator::Case,
+                    Operation::plain("quire.op.control.case"),
+                    arguments,
+                )
+                .map(LowerStep::Lowered);
+        };
+        let member = self.union_member(frame.declaration, arm.member, location)?;
+        let payload = member.positions();
+        if payload.len() != arm.binders.len() {
+            return Err(union_fault(location, "case-arm-binders"));
+        }
+        let mut parameters = Vec::with_capacity(payload.len());
+        for (slot, value_type) in arm.binders.iter().zip(payload) {
+            let semantic_type = self.type_node(value_type, location)?;
+            self.bind(binders, *slot, semantic_type, location)?;
+            let parameter = binders
+                .find(*slot)
+                .map(|binder| binder.parameter)
+                .ok_or_else(|| union_fault(location, "case-arm-binder"))?;
+            parameters.push(parameter);
+        }
+        frame.open = Some(OpenArm { parameters });
+        let body = node.at(arm.body);
+        frames.push(LowerFrame::Case(frame));
+        Ok(LowerStep::Descend(body))
     }
 
     /// Hand a `fold`/`reduce` its lowered source, identity or step.

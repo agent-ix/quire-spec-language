@@ -3,9 +3,10 @@
 //! its slot's union declares, round-trips through the witness value text, and
 //! is bounded by the request's `value_occurrences` at any depth.
 //!
-//! No checked package can hold a union until the FR-319 lowering exists, so
-//! these tests reach the conversion over the sealed fixture unions
-//! (`qsl_semantics::check::union_fixture`) through `convert_arguments_in`.
+//! The conversion's adversarial and deep cases are reached over the sealed
+//! fixture unions (`qsl_semantics::check::union_fixture`) through
+//! `convert_arguments_in`; `a_union_input_evaluates_a_checked_case_through_replay`
+//! runs a union from source, through the spine and `replay`.
 
 use std::cmp::Ordering;
 
@@ -15,7 +16,10 @@ use qsl_semantics::check::union_fixture as fixture;
 use qsl_semantics::value::supplied::{SuppliedFailure, SuppliedLimitKind, SuppliedPhase};
 use quire_exact::{compare_keys, ScalarLimits, Value, ValueType};
 
-use super::{default_run, refused_parameter, WitnessValue, UNLIMITED};
+use super::{
+    default_run, name, parameter, refused_parameter, replay, request, spine, typed_input,
+    EvaluatedValue, ReplayLimits, ReplayResult, WitnessValue, UNLIMITED,
+};
 use crate::execute::argument::{convert_arguments_in, ReferenceModel, Stopped};
 
 /// An integer inside a value text, which reads back as an exact integer.
@@ -169,4 +173,57 @@ fn a_ten_thousand_level_witness_tree_converts_and_is_bounded_by_occurrences() {
         assert_eq!(limit.limit, 29_998);
         assert_eq!(limit.next_charge, 29_999);
     });
+}
+
+const SHAPE_UNIT: &str = "language \"ix:native\" edition \"1-draft\";\n\
+    profile v = \"quire.value.complete/v1\";\n\
+    union Shape { Empty, Circle(Integer), Rect(Integer, Integer) }\n\
+    function big using v(s: Shape): Boolean pure \
+    { case s { Empty: false; Circle(r): r > 3; Rect(w, h): w * h > 5; } }\n";
+
+/// A union value supplied to a function compiled from source: the witness
+/// names the union by the node id the emitted package gives it, the sealed
+/// declaration converts it, and the checked `case` evaluates it.
+#[trace("FR-321-AC-3", "FR-320-AC-1", "TC-830")]
+#[test]
+fn a_union_input_evaluates_a_checked_case_through_replay() {
+    let compiled = spine(SHAPE_UNIT, &std::collections::BTreeMap::new());
+    let graph = compiled.package.graph();
+    let types = graph.scope().types();
+    let shape = types
+        .composites()
+        .find(|declaration| declaration.name() == "Shape")
+        .expect("Shape is declared")
+        .key();
+    let node = types.union_key(shape).expect("check sealed the union");
+    let declaration = WireNodeId::from_digest(*node.as_bytes());
+    let supplied = |member: &str, components: Vec<WitnessValue>| WitnessValue::Union {
+        declaration,
+        member: member.to_owned(),
+        components,
+    };
+    for (value, expected) in [
+        (supplied("Empty", vec![]), false),
+        (supplied("Circle", vec![int(4)]), true),
+        (supplied("Circle", vec![int(2)]), false),
+        (supplied("Rect", vec![int(2), int(3)]), true),
+        (supplied("Rect", vec![int(1), int(2)]), false),
+    ] {
+        let request = request(
+            SHAPE_UNIT.as_bytes(),
+            compiled.emitted.package_id(),
+            name(&["big"]),
+            typed_input(parameter(&compiled, "big", 0), value.clone()),
+        );
+        let ReplayResult::Input(result) =
+            replay(request, ReplayLimits::default()).expect("the replay runs")
+        else {
+            panic!("an Input-sourced request settles on the Input arm");
+        };
+        assert_eq!(
+            result.value(),
+            Some(EvaluatedValue::Boolean(expected)),
+            "{value:?}"
+        );
+    }
 }
