@@ -50,6 +50,7 @@ pub fn object_type() -> EffectiveId {
 
 /// The members of the fixture union `union` in declared order, each with its
 /// payload types.
+#[qsl_attrs::string_edge]
 fn members(union: &str) -> Vec<(&'static str, Vec<ValueType>)> {
     match union {
         "Shape" => vec![
