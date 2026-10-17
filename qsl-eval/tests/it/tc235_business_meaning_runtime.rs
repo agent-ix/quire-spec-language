@@ -143,7 +143,9 @@ pub(crate) fn lifecycle_document_with(
     document
 }
 
-fn read_k2(document: &serde_json::Value) -> (DomainPackage, BTreeMap<[u8; 32], Vec<u8>>) {
+pub(crate) fn read_k2(
+    document: &serde_json::Value,
+) -> (DomainPackage, BTreeMap<[u8; 32], Vec<u8>>) {
     let bytes = serde_json::to_vec(document).expect("lifecycle fixture serializes");
     let offered = package_input([bytes.as_slice()]);
     let digest = *offered.keys().next().expect("one lifecycle package");
@@ -276,7 +278,7 @@ pub(crate) fn lifecycle_identity(reference: &DocumentRef) -> serde_json::Value {
     })
 }
 
-fn lifecycle_observation(
+pub(crate) fn lifecycle_observation(
     model_digest: &[u8; 32],
     label: &str,
     observation: &str,
@@ -326,7 +328,7 @@ fn lifecycle_invocation(
     lifecycle_invocation_with(model_digest, pre, post, serde_json::json!({}))
 }
 
-fn lifecycle_invocation_with(
+pub(crate) fn lifecycle_invocation_with(
     model_digest: &[u8; 32],
     pre: &DocumentRef,
     post: &DocumentRef,
@@ -367,7 +369,7 @@ fn lifecycle_invocation_with(
     (lifecycle_document_ref("i1", &bytes), bytes)
 }
 
-fn lifecycle_observations(
+pub(crate) fn lifecycle_observations(
     package: &CheckedPackage,
     packages: &BTreeMap<[u8; 32], Vec<u8>>,
     clause: &str,

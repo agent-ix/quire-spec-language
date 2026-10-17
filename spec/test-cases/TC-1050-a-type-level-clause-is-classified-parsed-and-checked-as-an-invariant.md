@@ -46,6 +46,9 @@ effective invariants. Tag the tests `#[trace("TC-1050", "FR-366-AC-n")]`.
    `self.amount_minor >=`, then in `ocl` as `this is not quire (`.
 8. K2 with `Money` given the clauses `Stable` (`true`) and `NonNegative` as
    `pre(self.amount_minor) >= 0`, in that order.
+9. K2 with a record value type `Pair` given an optional `Reference<Order>`
+   field `buddy` and the invariant `Peer`
+   (`present(self.buddy) implies value(self.buddy).total.amount_minor >= 0`).
 
 ## Expected Results
 
@@ -68,3 +71,5 @@ effective invariants. Tag the tests `#[trace("TC-1050", "FR-366-AC-n")]`.
    `TypeDefinition.clauses[0]`, the second the parser's refusal at the same
    location, and the third succeeds: an `ocl` text is never parsed.
 8. The refusal of `NonNegative` is located at `TypeDefinition.clauses[1]`.
+9. The compile refuses `unsupported_construct`/`expression-form` naming
+   `ix://test/orders/Pair/Peer` at `TypeDefinition.clauses[0]`.

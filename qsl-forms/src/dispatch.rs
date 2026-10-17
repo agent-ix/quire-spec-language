@@ -26,6 +26,7 @@ use qsl_foundation::{Code, Span};
 use super::protocol_clause;
 use super::sum_case;
 use super::syntax::DeclarationForm;
+use super::temporal_clause;
 use super::value;
 
 /// A parsed form built from one declaration of a lossless CST with no
@@ -171,6 +172,10 @@ pub enum LeadingTokenKind {
     /// `protocol`: the `ProtocolClause` protocol declaration form, holding
     /// its scoped anchors (FR-112, ADR-012 §12.2).
     Protocol,
+    /// `temporal`: the `TemporalTrace` temporal clause form, holding its
+    /// formula with each operator's optional interval (FR-325, ADR-011
+    /// M-3b).
+    Temporal,
     /// Test-only: never constructed outside this crate's own tests, and
     /// absent from every non-test build.
     #[cfg(test)]
@@ -374,6 +379,7 @@ fn dispatch(
         LeadingTokenKind::Post => protocol_clause::state_clause(construct),
         LeadingTokenKind::Body => protocol_clause::operation_body(construct),
         LeadingTokenKind::Protocol => protocol_clause::protocol_declaration(construct),
+        LeadingTokenKind::Temporal => temporal_clause::temporal_clause(construct),
         #[cfg(test)]
         LeadingTokenKind::TestProbe => test_support::stub_production(construct),
     }
@@ -411,6 +417,7 @@ fn from_spelling(spelling: &[u8]) -> Option<LeadingTokenKind> {
         b"post" => Some(LeadingTokenKind::Post),
         b"body" => Some(LeadingTokenKind::Body),
         b"protocol" => Some(LeadingTokenKind::Protocol),
+        b"temporal" => Some(LeadingTokenKind::Temporal),
         _ => None,
     }
 }
@@ -644,17 +651,17 @@ mod tests {
 
     /// FR-091: the `record` entry replaced the M-3a no-entry fixture token;
     /// FR-102 (TC-457) claims `invariant`, so FR-067-AC-3's
-    /// no-entry case moves to `temporal`, a spelling no family claims.
+    /// no-entry case moves to `verify`, a spelling no family claims.
     #[trace("TC-167", "FR-067-AC-3")]
     #[trace("TC-457", "FR-102-AC-4")]
     #[test]
     fn no_dispatch_entry_refuses_a_clean_cst_with_no_matching_leading_token() {
-        let cst = LosslessCst::fixture(&HEADER, &["temporal"], Vec::new());
-        let failure = build(&cst).expect_err("no entry matches \"temporal\"");
+        let cst = LosslessCst::fixture(&HEADER, &["verify"], Vec::new());
+        let failure = build(&cst).expect_err("no entry matches \"verify\"");
         assert_eq!(
             cause(failure),
             FormsCause::NoDispatchEntry {
-                spelling: "temporal".into()
+                spelling: "verify".into()
             }
         );
     }

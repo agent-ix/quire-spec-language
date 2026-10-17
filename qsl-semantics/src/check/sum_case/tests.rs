@@ -3,9 +3,9 @@
 //! registry, then the S3 typer on a function body. Every assertion reads a
 //! typed cause, location or checked node, never message text.
 //!
-//! The checked graph a `case` yields cannot lower to a package yet (FR-319),
-//! so these tests type the body directly, through the same `Typer` that
-//! `PackageDeclarations::check` drives.
+//! These tests type a body directly, through the same `Typer` that
+//! `PackageDeclarations::check` drives; `tests/keys.rs` checks whole packages
+//! and reads the keys lowering gives their union nodes (FR-319).
 
 use ix_trace_rs::trace;
 use qsl_forms::{build_unit, ClauseKind};
@@ -426,33 +426,6 @@ fn nesting_is_bounded_only_by_the_node_ceiling() {
     };
     assert_eq!(limit.kind, CheckingLimitKind::Nodes);
     assert!(limit.region.is_some(), "the denied node is located");
-}
-
-/// A well-typed `case` checks, but FR-093 keys no union type or `case` node
-/// yet, so the package that holds one is refused at lowering with the
-/// unsupported-feature cause: an explicit refusal, never a package built
-/// without the node (FR-319, FR-320).
-#[test]
-fn a_package_holding_a_union_is_refused_at_lowering_until_unions_are_keyed() {
-    let unit = unit(&format!(
-        "{SHAPE}{}",
-        function(
-            "Integer",
-            "case s { Circle(r): r; Rect(w, h): w; Empty: 0; }"
-        )
-    ));
-    let refusals = unit
-        .package
-        .check(CheckingLimits::default())
-        .expect_err("the checked graph cannot lower a union yet");
-    assert!(!refusals.is_empty());
-    for refusal in &refusals {
-        assert!(
-            matches!(refusal.cause, CheckCause::UnsupportedFeature { .. }),
-            "{refusal:?}"
-        );
-        assert_eq!(refusal.cause.code(), Code::UnknownRequiredFeature);
-    }
 }
 
 /// A `case` and its exhaustiveness obligation add no claim (FR-057); the
@@ -958,3 +931,5 @@ fn union_equality_compares_one_union_and_refuses_two() {
     );
     assert_eq!(refusal.location, Unit::body());
 }
+
+mod keys;

@@ -133,6 +133,7 @@ fn declarations(body: &str, guard: bool) -> (PackageDeclarations, EffectiveView,
             span: model_span,
             view: view.clone(),
             operation_clauses: Vec::new(),
+            type_invariants: Vec::new(),
         }],
         vec![],
     )
@@ -212,6 +213,23 @@ fn declarations(body: &str, guard: bool) -> (PackageDeclarations, EffectiveView,
         })
         .collect();
     (declarations, view, source)
+}
+
+/// FR-120-AC-9's fixture: the checked package of `body` over this dispatch
+/// model, and the domain package bytes it was checked against.
+pub(crate) fn simulation_package(
+    body: &str,
+    guard: bool,
+) -> (qsl_package::CheckedPackage, BTreeMap<[u8; 32], Vec<u8>>) {
+    let (declarations, _, _) = declarations(body, guard);
+    let graph = declarations
+        .check(CheckingLimits::default())
+        .expect("S3 checks source");
+    let document = model_document();
+    (
+        qsl_package::CheckedPackage::link(graph),
+        qsl_semantics::model::intake::package_input([document.as_slice()]),
+    )
 }
 
 fn graph(body: &str, guard: bool) -> (CheckedGraph, EffectiveView) {
@@ -473,6 +491,7 @@ fn tc790_all_instances_missing_target_type_refuses_during_assembly() {
             span: model_span,
             view,
             operation_clauses: Vec::new(),
+            type_invariants: Vec::new(),
         }],
         vec![],
     )
@@ -822,6 +841,7 @@ fn a_population_binding_over_a_non_object_target_refuses_type_mismatch() {
             span: model_span,
             view,
             operation_clauses: Vec::new(),
+            type_invariants: Vec::new(),
         }],
         vec![],
     );

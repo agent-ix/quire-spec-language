@@ -437,6 +437,10 @@ pub struct PackageDeclarations {
     /// driver parsed, with its operation resolved, checked beside the state
     /// clauses. Checking yields a refusal or nothing.
     pub operation_clauses: Vec<super::OperationClauseDeclaration>,
+    /// FR-366: each type-level `Invariant` clause the driver parsed, with its
+    /// owner resolved, checked beside the state clauses. A checked invariant
+    /// adds no declaration, claim or requirement record.
+    pub type_invariants: Vec<super::TypeInvariantDeclaration>,
     /// FR-103, FR-302: the unit's `operation-body` declarations in
     /// declaration order, each resolved to its operation's `DeclarationKey`
     /// by the FR-091 assembler. At most one per key.
@@ -518,6 +522,7 @@ impl PackageDeclarations {
             protocols: Vec::new(),
             protocol_attempts: Vec::new(),
             operation_clauses: Vec::new(),
+            type_invariants: Vec::new(),
             operation_bodies: Vec::new(),
             selected_views: BTreeMap::new(),
             identity,
@@ -1024,6 +1029,55 @@ impl Scope {
     /// The package's composite and object type declarations.
     pub fn types(&self) -> &TypeEnvironment {
         &self.types
+    }
+
+    /// Seal every declared union under the checked node id of its type
+    /// node, `nodes` mapping each declaration to its node (FR-319): each
+    /// member is bound to its QSpec FR-441 key over that node id, minted
+    /// here once, so the `VariantId` to (union, member, position) index the
+    /// type environment keeps is built exactly once and no other stage
+    /// derives it. Lowering produced `nodes`; a union it left out is an
+    /// internal fault.
+    pub(crate) fn seal_unions(
+        &mut self,
+        nodes: &BTreeMap<quire_exact::NodeKey, quire_exact::NodeKey>,
+    ) -> Result<(), CheckRefusal> {
+        let fault = |invariant: &'static str| CheckRefusal {
+            location: Location::root(quire_semantic_value::location::Origin::Expression),
+            cause: CheckCause::InternalFault(Box::new(super::refusal::KeyFault::StageFault(
+                qsl_foundation::InternalFault::new("S3", invariant),
+            ))),
+        };
+        let unions: Vec<(quire_exact::NodeKey, Vec<quire_exact::Identifier>)> = self
+            .types
+            .composites()
+            .filter_map(|declaration| match declaration.shape() {
+                CompositeShape::Union(members) => Some((
+                    declaration.key(),
+                    members
+                        .iter()
+                        .map(|member| member.identifier().clone())
+                        .collect(),
+                )),
+                CompositeShape::Record(_) | CompositeShape::Tuple(_) => None,
+            })
+            .collect();
+        for (handle, members) in unions {
+            let node = *nodes
+                .get(&handle)
+                .ok_or_else(|| fault("union-node-missing"))?;
+            let bindings = members
+                .into_iter()
+                .map(|member| {
+                    let key = super::sum_case::mint_union_member_key(node, member.as_str());
+                    quire_exact::UnionMember::from_admitted(node, key, member)
+                })
+                .collect();
+            self.types
+                .seal_union_verified(handle, node, bindings)
+                .map_err(|_| fault("union-seal"))?;
+        }
+        Ok(())
     }
 
     /// Whether a value of `value_type` holds an event type anywhere inside

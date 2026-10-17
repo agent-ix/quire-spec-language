@@ -90,6 +90,10 @@ mod navigation;
 // package emitter's tests, so only `test-support` exposes them.
 #[cfg(any(test, feature = "test-support"))]
 pub mod depth_forms;
+// The sealed unions the evaluator's and replay's union tests run over, while
+// no checked package can hold a union (FR-319).
+#[cfg(any(test, feature = "test-support"))]
+pub mod union_fixture;
 // `imports` has no production caller yet (E3 imported-name resolution,
 // FR-087-AC-13). Only the layer-4 reader's tests use it, so it is public
 // only under `test-support` (no test-only `pub`).
@@ -120,6 +124,10 @@ pub use sum_case::{mint_union_member_key, ExhaustivenessObligation, SumCaseCause
 pub mod stratum;
 mod termination;
 mod type_form;
+mod type_invariant;
+pub use type_invariant::{
+    CheckedTypeInvariant, TypeInvariantDeclaration, TypeInvariantRefusal, TypeSlot,
+};
 
 use crate::model::domain_package::DomainPackageRef;
 use std::collections::BTreeMap;
@@ -390,6 +398,9 @@ pub struct CheckedGraph {
     model_selections: Vec<DomainPackageRef>,
     /// FR-104: every checked state clause, in declaration order.
     state_clauses: Vec<CheckedStateClause>,
+    /// FR-366: every checked type-level invariant, in declaration order of
+    /// the selected models and their clauses.
+    type_invariants: Vec<CheckedTypeInvariant>,
     /// FR-113: every checked protocol declaration, in declaration order.
     protocols: Vec<CheckedProtocol>,
     /// FR-115: every operation a state clause or attempt names, with its
@@ -778,7 +789,7 @@ impl PackageDeclarations {
         // Carry that selection into S3 so the inherited-edge rule is
         // confined to a package with an admitted model.
         let complete_model = !self.models.is_empty();
-        let scope = Scope::new(
+        let mut scope = Scope::new(
             self.types,
             self.operations,
             self.enums,
@@ -1065,6 +1076,45 @@ impl PackageDeclarations {
         };
         let mut contract_meter =
             quire_exact::Meter::new(contract_meter_limits).with_cancel(cancel.clone());
+        // FR-319: a body's equality over a union is typed against the sealed
+        // declaration, so each union is sealed under the node id of its type
+        // node before any body is typed. A union's type closure needs no
+        // body: a throwaway lowering over the declarations keys it. The
+        // lowering below keys the same content, so it reaches the same ids.
+        {
+            let mut sealing_meter =
+                quire_exact::Meter::new(contract_meter_limits).with_cancel(cancel.clone());
+            let mut sealing_occurrences = family::OccurrenceMap::default();
+            let mut sealing = lowering::Lowering::new(
+                &scope,
+                &owner,
+                &models,
+                scope.types().units().clone(),
+                &lock_evidence,
+                0,
+                &mut sealing_occurrences,
+                &mut sealing_meter,
+                self.identity,
+            );
+            let mut sealed_refusals = Vec::new();
+            for declaration in scope.types().composites() {
+                if matches!(
+                    declaration.shape(),
+                    quire_semantic_value::declaration::CompositeShape::Union(_)
+                ) {
+                    if let Err(refusal) = sealing.composite_node(declaration.key()) {
+                        sealed_refusals.push(refusal);
+                    }
+                }
+            }
+            let nodes = sealing.finish(&lowering::generated_location()).composites;
+            if !sealed_refusals.is_empty() {
+                return Err(sealed_refusals);
+            }
+            if let Err(refusal) = scope.seal_unions(&nodes) {
+                return Err(vec![refusal]);
+            }
+        }
         let mut contract_diagnostics = crate::family::DiagnosticSink::default();
         let mut contract_scopes = crate::family::ScopeStack::default();
         // PR #303 review round 3, finding F1: the running total of
@@ -1242,6 +1292,48 @@ impl PackageDeclarations {
                 Ok(used) => nodes_used = used,
                 Err(refusal) => {
                     let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
+                    refusals.push(refusal);
+                    if exhausted || cancel.tripped().is_some() {
+                        return Err(refusals);
+                    }
+                }
+            }
+        }
+        // FR-366: each type-level invariant, checked as a Boolean invariant
+        // whose `self` is a value of its owner. A checked invariant adds no
+        // declaration, claim or requirement record; its body is kept for
+        // evaluation per value.
+        let mut type_invariants = Vec::with_capacity(self.type_invariants.len());
+        for invariant in &self.type_invariants {
+            let location = invariant.location();
+            let declarations = state_clause::ClauseDeclarations {
+                scope: &scope,
+                signatures: &signatures,
+                dispatch_tables: &dispatch_tables,
+                models: &models,
+                checking_limits: limits,
+                location: &location,
+                nodes_used,
+                cancel: Some(cancel),
+                staged: None,
+            };
+            let mut contract_cx = crate::family::CheckContext::new(
+                &declarations,
+                contract_limits,
+                &mut contract_meter,
+                &mut contract_diagnostics,
+                &mut contract_scopes,
+            );
+            match state_clause::check_type_invariant(invariant, &declarations, &mut contract_cx) {
+                Ok((checked, used)) => {
+                    nodes_used = used;
+                    type_invariants.push(checked);
+                }
+                Err(refusal) => {
+                    let exhausted = matches!(
+                        refusal.type_invariant_cause(),
+                        Some(CheckCause::ResourceExhausted(_))
+                    );
                     refusals.push(refusal);
                     if exhausted || cancel.tripped().is_some() {
                         return Err(refusals);
@@ -1885,6 +1977,7 @@ impl PackageDeclarations {
             embedding,
             model_selections,
             state_clauses,
+            type_invariants,
             protocols: checked_protocols,
             operation_frames,
             model_objects,
@@ -2134,6 +2227,11 @@ impl CheckedGraph {
     /// FR-104: every checked state clause, in declaration order.
     pub fn state_clauses(&self) -> &[CheckedStateClause] {
         &self.state_clauses
+    }
+
+    /// FR-366: every checked type-level invariant.
+    pub fn type_invariants(&self) -> &[CheckedTypeInvariant] {
+        &self.type_invariants
     }
 
     /// FR-113: every checked protocol declaration, in declaration order.

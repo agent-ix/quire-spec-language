@@ -36,7 +36,7 @@ use qsl_semantics::value::{divide as integer_divide, modulo as integer_modulo};
 use quire_exact::Rational;
 use quire_exact::{
     compare_keys, form, form_grouped, member_equal, retain_composite, CollectionValue,
-    CompositeValue, FieldValue, ObjectReference, OptionValue, Value, ValueType,
+    CompositeValue, FieldValue, ObjectReference, OptionValue, UnionValue, Value, ValueType,
 };
 use quire_exact::{compare_text, ComparisonOperator};
 use quire_exact::{
@@ -402,6 +402,9 @@ enum Task<'a> {
     Apply(CheckedNode<'a>),
     Branch(CheckedNode<'a>),
     Short(CheckedNode<'a>),
+    /// FR-322: the `case` at this node has evaluated its scrutinee; select
+    /// the arm of its active member and evaluate only that arm's body.
+    Select(CheckedNode<'a>),
     Retain(CheckedNode<'a>),
     Bind(Slot),
     ChargeElement(CheckedNode<'a>),
@@ -739,6 +742,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 | Task::Apply(node)
                 | Task::Branch(node)
                 | Task::Short(node)
+                | Task::Select(node)
                 | Task::Retain(node)
                 | Task::ChargeElement(node) => *node,
                 Task::Iterate(iteration) => iteration.node,
@@ -963,6 +967,49 @@ impl<'a, 'm> Machine<'a, 'm> {
         Ok(Value::Decimal(result.value().clone()))
     }
 
+    /// Bind `value` to `slot` in the current frame.
+    fn bind(&mut self, slot: Slot, value: Value) -> Result<(), Halt> {
+        if let Some(trail) = self.trail.as_mut() {
+            trail.element_paths.remove(&slot);
+        }
+        *self.slot(slot)? = Some(value);
+        Ok(())
+    }
+
+    /// FR-322: select the one arm of the `case` at `node` whose member is the
+    /// scrutinee's active member, bind its payload positionally and queue only
+    /// that arm's body. Selecting and binding charge nothing. A scrutinee that
+    /// matches no arm broke an invariant admission (FR-321) and
+    /// exhaustiveness (FR-318) establish.
+    fn select_arm(&mut self, node: CheckedNode<'a>) -> Result<(), Halt> {
+        let NodeKind::Case {
+            declaration, arms, ..
+        } = node.kind()
+        else {
+            return Err(invariant("evaluation-case-node-expected"));
+        };
+        let Value::Union(scrutinee) = self.pop()? else {
+            return Err(invariant("case-scrutinee-union-expected"));
+        };
+        let (position, _) = self
+            .scope
+            .types()
+            .union_member(*declaration, scrutinee.variant())
+            .ok_or_else(|| invariant("case-scrutinee-member-unresolved"))?;
+        let arm = arms
+            .iter()
+            .find(|arm| arm.member == position)
+            .ok_or_else(|| invariant("case-arm-unmatched"))?;
+        if arm.binders.len() != scrutinee.payload().len() {
+            return Err(invariant("case-arm-binder-arity"));
+        }
+        for (slot, value) in arm.binders.iter().zip(scrutinee.payload()) {
+            self.bind(*slot, value.clone())?;
+        }
+        self.tasks.push(Task::Eval(node.at(arm.body)));
+        Ok(())
+    }
+
     fn slot(&mut self, slot: Slot) -> Result<&mut Option<Value>, Halt> {
         self.frames
             .last_mut()
@@ -1102,13 +1149,10 @@ impl<'a, 'm> Machine<'a, 'm> {
                 Ok(())
             }
             Task::Bind(slot) => {
-                if let Some(trail) = self.trail.as_mut() {
-                    trail.element_paths.remove(&slot);
-                }
                 let value = self.pop()?;
-                *self.slot(slot)? = Some(value);
-                Ok(())
+                self.bind(slot, value)
             }
+            Task::Select(node) => self.select_arm(node),
             Task::ChargeElement(_) => charge_element(self.meter).map_err(Into::into),
             Task::Return => {
                 self.frames
@@ -1202,6 +1246,13 @@ impl<'a, 'm> Machine<'a, 'm> {
                 self.tasks.push(Task::Eval(node.at(*source)));
                 return Ok(());
             }
+            // FR-322: only the scrutinee is a child to evaluate now; the arm
+            // bodies are reached through `Task::Select`.
+            NodeKind::Case { scrutinee, .. } => {
+                self.tasks.push(Task::Select(node));
+                self.tasks.push(Task::Eval(node.at(*scrutinee)));
+                return Ok(());
+            }
             NodeKind::Fold {
                 source, identity, ..
             } => {
@@ -1248,10 +1299,40 @@ impl<'a, 'm> Machine<'a, 'm> {
             | NodeKind::If { .. }
             | NodeKind::Connective(..)
             | NodeKind::Pre(_) => return Err(invariant("evaluation-apply-node-invalid")),
-            // FR-318 checks a `case`, but FR-093 lowers none yet, so no
-            // checked package holds one and nothing evaluates it (FR-322).
-            NodeKind::Case { .. } => return Err(invariant("case-node-not-lowered")),
-            NodeKind::UnionValue { .. } => return Err(invariant("union-value-not-lowered")),
+            // FR-322: `eval` queues a `case` through `Task::Select`, never
+            // `Task::Apply`.
+            NodeKind::Case { .. } => return Err(invariant("evaluation-apply-node-invalid")),
+            // FR-322: the payload arguments are evaluated and on the stack in
+            // position order; the first stopped one never reaches here. Type
+            // checking proved each payload against its position (FR-317), so
+            // the member is only resolved and its arity confirmed -- a
+            // re-admission of each payload would walk every nested union again
+            // and make a depth-n construction chain quadratic. One
+            // `composite.result-retain` follows the arguments.
+            NodeKind::UnionValue {
+                declaration,
+                member,
+                arguments,
+            } => {
+                let payload = self.pop_many(arguments.len())?;
+                let binding = match self
+                    .scope
+                    .types()
+                    .composite(*declaration)
+                    .map(|union| union.shape())
+                {
+                    Some(CompositeShape::Union(members)) => members
+                        .get(*member)
+                        .filter(|declared| declared.positions().len() == payload.len())
+                        .and_then(|declared| declared.member()),
+                    _ => None,
+                }
+                .ok_or_else(|| invariant("union-member-unresolved"))?;
+                outcome_into_stop(retain_composite(
+                    UnionValue::from_admitted(binding.clone(), payload),
+                    self.meter,
+                ))?
+            }
             // FR-107: `reaches(source, target, edge)`, checked
             // only inside a state clause.
             NodeKind::Reaches { edge, .. } => {
@@ -3086,6 +3167,9 @@ impl<'a, 'm> Machine<'a, 'm> {
 
 #[cfg(test)]
 mod invariants;
+
+#[cfg(test)]
+mod union_case;
 
 #[cfg(test)]
 mod tests {
