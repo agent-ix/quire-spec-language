@@ -39,3 +39,13 @@ yields `value-validity`. FR-057-AC-10 and FR-320 do not conflict. FND-001 and
 FND-002 add predicate-family records that conflict with FR-062's
 per-occurrence record model. FND-003 is a stale ADR statement of the old
 rule.
+
+## Dispositions
+
+Round 1, reviewed at `0a1a6a4c6e166fec2faca69d88988896a6b2acea`.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 10ad0e5819f8badb0e1fda1354a0ae1df4cead77 |
+| FND-002 | fixed | 10ad0e5819f8badb0e1fda1354a0ae1df4cead77 |
+| FND-003 | fixed | 10ad0e5819f8badb0e1fda1354a0ae1df4cead77 |
