@@ -220,6 +220,7 @@ and the QSpec FR-331 terminal record carrying the value, its QSpec FR-360 label,
 | FR-127-AC-8 | FR-339-AC-1's weak `each` proof with its accepted certificate settles `Proved{Exhaustive, Certified}`; with FR-339-AC-2's `upd(a)` witness it settles `Inconclusive(CertificateRejected{WitnessFails, ...})` naming that component's first state. | Test (TC-522) |
 | FR-127-AC-9 | The `TerminalValue`s `Proved{Checks{3}, Certified}`, `Proved{BoundedComplete{depth: 5}, Certified}`, `Proved{BoundedComplete{depth: 5}, Uncertified}`, `Proved{Inductive{depth: 2}, Uncertified}` and a plugin's `Proved{Exhaustive, Trusted}`, as CG's maps and the settlement map construct them, each read `proved` with category success, never `inconclusive`, and each keeps its one certification. `Inconclusive(CertificateRejected)` maps to category inconclusive. | Test (TC-522) |
 | FR-127-AC-10 | A replay result with cause `Verdicts` settles the item `inconclusive`, cause `ReplayParity`, written `replay-parity` in the QSpec FR-331 record. | Test (TC-522) |
+| FR-127-AC-11 | When replay receives the typed `InternalFault` provenance produced by FR-096 for a kernel `CheckedInvariant`, the settlement map records `failed`, basis `unavailable`, `TerminalValue::Failed` and the internal-failure category. It SHALL NOT map that fault to `Proved{..., Uncertified}`, `Inconclusive(CertificateRejected{...})`, or any other proof or certificate disposition. | Test |
 
 ## Dependencies
 
