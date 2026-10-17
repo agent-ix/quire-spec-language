@@ -508,7 +508,7 @@ fn frame_and_postcondition_items_reference_the_operation_key() {
 }
 
 #[test]
-#[trace("TC-798", "FR-304-AC-3")]
+#[trace("TC-798")]
 fn a_key_naming_a_declaration_of_another_kind_refuses_malformed_declaration() {
     let package = package(CLAUSES);
     let field = AuthoredBinding::Object {
@@ -535,5 +535,42 @@ fn a_key_naming_a_declaration_of_another_kind_refuses_malformed_declaration() {
                 entry,
             }
         );
+    }
+}
+
+#[test]
+#[trace("TC-800")]
+fn a_parameter_mapped_to_the_receivers_spelling_refuses_malformed_declaration() {
+    let package = package(CLAUSES);
+    let mut binding = frame("ConfigVersion", "attemptUpdate", &[("n", "store"), ("m", "limit")]);
+    let AuthoredBinding::Frame { value, .. } = &mut binding else {
+        panic!("a frame binding");
+    };
+    value.receiver = RustReceiver::Parameter(RustParameter::new("store"));
+    assert_eq!(
+        sole(refused(&package, std::slice::from_ref(&binding))),
+        AbstractionRefusal::MalformedDeclaration {
+            key: binding.key(),
+            entry: MalformedEntry::ReceiverParameter {
+                parameter: name("n"),
+                rust: RustParameter::new("store"),
+            },
+        }
+    );
+}
+
+#[test]
+#[trace("TC-806", "FR-307-AC-1")]
+fn a_let_bound_read_references_the_same_object_types_as_the_inline_read() {
+    let through_let = package(
+        "function bump using v(c: M::ConfigVersion): Integer pure { let x = deref(c).version in x + 1 }\n",
+    );
+    let inline = package(CLAUSES);
+    for package in [&through_let, &inline] {
+        let results = export_bindings(package, &[function_item(package)]);
+        let [Err(refusal)] = &results[..] else {
+            panic!("{results:?}: ConfigVersion is unbound, so the item refuses");
+        };
+        assert_eq!(unbound_keys(refusal), [(&config_key(), fixture::PACKAGE)]);
     }
 }

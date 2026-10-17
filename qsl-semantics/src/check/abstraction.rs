@@ -247,6 +247,13 @@ impl CheckedAbstractionRelation {
 /// The entry of a binding that is not admissible (ADR-017 AR-3).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum MalformedEntry {
+    /// A frame binding maps a parameter to the receiver's spelling.
+    ReceiverParameter {
+        /// The operation parameter.
+        parameter: Identifier,
+        /// The Rust parameter, which is also the receiver.
+        rust: RustParameter,
+    },
     /// The key names a declaration that is not an object type.
     NotAnObjectType,
     /// The key names a declaration that is not a population.
@@ -295,6 +302,9 @@ pub enum AbstractionRefusal {
         /// The defective entry.
         entry: MalformedEntry,
     },
+    /// An admitted operation declares a parameter whose name is not an
+    /// identifier: a broken check invariant.
+    Internal(InternalFault),
 }
 
 impl AbstractionRefusal {
@@ -305,6 +315,7 @@ impl AbstractionRefusal {
             Self::ConflictingBinding { .. } | Self::MalformedDeclaration { .. } => {
                 Code::InvalidModelBinding
             }
+            Self::Internal(_) => Code::RuntimeInvariant,
         }
     }
 
@@ -314,6 +325,7 @@ impl AbstractionRefusal {
             Self::MissingDeclaration { .. } => "missing-name",
             Self::ConflictingBinding { .. } => "conflicting-binding",
             Self::MalformedDeclaration { .. } => "malformed-declaration",
+            Self::Internal(_) => "established-invariant-broken",
         }
     }
 }
@@ -466,8 +478,25 @@ impl CheckedGraph {
                     .find(|(name, _)| !value.parameters.keys().any(|bound| bound.as_str() == name))
                 {
                     return Err(malformed(MalformedEntry::OmittedParameter(
-                        Identifier::new(omitted).map_err(|_| missing(binding.key()))?,
+                        Identifier::new(omitted).map_err(|_| {
+                            Box::new(AbstractionRefusal::Internal(InternalFault::new(
+                                "check.abstraction",
+                                "operation-parameter-is-an-identifier",
+                            )))
+                        })?,
                     )));
+                }
+                if let RustReceiver::Parameter(receiver) = &value.receiver {
+                    if let Some((parameter, _)) = value
+                        .parameters
+                        .iter()
+                        .find(|(_, rust)| *rust == receiver)
+                    {
+                        return Err(malformed(MalformedEntry::ReceiverParameter {
+                            parameter: parameter.clone(),
+                            rust: receiver.clone(),
+                        }));
+                    }
                 }
                 let mut seen: BTreeMap<&RustParameter, &Identifier> = BTreeMap::new();
                 for (parameter, rust) in &value.parameters {

@@ -451,6 +451,9 @@ struct Roots {
     /// The roots a read of each slot contributes: a root binder's slot
     /// itself, a `let` slot the roots its bound value reads.
     slots: BTreeMap<Slot, BTreeSet<BinderSite>>,
+    /// The object types a `let` slot's bound value reads model members of,
+    /// which a read of the slot references too.
+    slot_objects: BTreeMap<Slot, BTreeSet<EffectiveId>>,
 }
 
 impl Roots {
@@ -603,6 +606,9 @@ impl<'n> ClaimsWalk<'n, '_> {
             }
             (NodeKind::Let { slot, .. }, 1) => {
                 self.roots.slots.insert(*slot, frame.first_reads.clone());
+                self.roots
+                    .slot_objects
+                    .insert(*slot, frame.first_objects.clone());
             }
             (NodeKind::Query { slot, source, .. }, 1) => {
                 self.roots
@@ -671,6 +677,9 @@ impl<'n> ClaimsWalk<'n, '_> {
                 )));
             };
             reads.extend(read.iter().cloned());
+            if let Some(read_objects) = self.roots.slot_objects.get(slot) {
+                objects.extend(read_objects.iter().copied());
+            }
         }
         if is_scalar_application(frame.node) {
             let narrow = self

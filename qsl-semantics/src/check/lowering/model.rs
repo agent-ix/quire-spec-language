@@ -515,6 +515,11 @@ impl AdmittedModel {
             .collect()
     }
 
+    /// The key of every declaration record of the package, of any kind.
+    pub(crate) fn record_keys(&self) -> impl Iterator<Item = &DeclarationKey> {
+        self.records.keys()
+    }
+
     /// Every population declaration of this package, in ascending
     /// `DeclarationKey` order, with its ordinal in that order and the
     /// `EffectiveId` of its canonical member type (the least declared
@@ -523,11 +528,6 @@ impl AdmittedModel {
     /// `CheckedGraph::population_domain` names a population by. A
     /// population whose canonical member is not an admitted type is
     /// skipped, keeping its ordinal.
-    /// The key of every declaration record of the package, of any kind.
-    pub(crate) fn record_keys(&self) -> impl Iterator<Item = &DeclarationKey> {
-        self.records.keys()
-    }
-
     pub(crate) fn population_domains(
         &self,
     ) -> impl Iterator<Item = (usize, &PopulationRecord, EffectiveId)> {
