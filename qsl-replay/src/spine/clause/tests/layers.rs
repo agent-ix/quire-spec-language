@@ -250,3 +250,232 @@ fn a_layer_refusal_is_prohibited() {
         }]
     );
 }
+
+/// One form of the unit language, the unit text that writes it under the
+/// profile alias `v`, the text the refusal locates, and the layers that
+/// admit it, written out literally.
+struct FormCase {
+    name: &'static str,
+    declarations: String,
+    located: &'static str,
+    form: LayerForm,
+    admitted: &'static [HeaderLayer],
+}
+
+/// The expression form `body` as the body of an invariant under `v`.
+fn expression(
+    name: &'static str,
+    body: &'static str,
+    form: LayerForm,
+    admitted: &'static [HeaderLayer],
+) -> FormCase {
+    FormCase {
+        name,
+        declarations: format!("invariant I using v on M::Node at current {{ {body} }}\n"),
+        located: body,
+        form,
+        admitted,
+    }
+}
+
+/// The declaration `text` under `v`.
+fn declaration(
+    name: &'static str,
+    text: &'static str,
+    form: LayerForm,
+    admitted: &'static [HeaderLayer],
+) -> FormCase {
+    FormCase {
+        name,
+        declarations: format!("{text}\n"),
+        located: text,
+        form,
+        admitted,
+    }
+}
+
+fn form_cases() -> Vec<FormCase> {
+    use HeaderLayer::{ModelComplete, StateGraph, StateQueries, ValueComplete};
+    const FROM_QUERIES: &[HeaderLayer] = &[StateQueries, StateGraph, ValueComplete, ModelComplete];
+    const VALUE_AND_UP: &[HeaderLayer] = &[ValueComplete, ModelComplete];
+    const NAVIGATION: &[HeaderLayer] = &[StateGraph, ValueComplete, ModelComplete];
+    const EVERY: &[HeaderLayer] = &HeaderLayer::ALL;
+    vec![
+        declaration(
+            "state clause",
+            "invariant I using v on M::Node at current { true }",
+            LayerForm::StateClause,
+            EVERY,
+        ),
+        declaration(
+            "predicate declaration",
+            "predicate P using v(x: Boolean): Boolean { x }",
+            LayerForm::PredicateDeclaration,
+            FROM_QUERIES,
+        ),
+        declaration(
+            "function declaration",
+            "function g using v(x: Boolean): Boolean pure { x }",
+            LayerForm::FunctionDeclaration,
+            VALUE_AND_UP,
+        ),
+        expression(
+            "named predicate call",
+            "Id(c)",
+            LayerForm::NamedPredicateCall,
+            FROM_QUERIES,
+        ),
+        expression("filter", "filter(x in c: true)", LayerForm::SequenceQuery, FROM_QUERIES),
+        expression("map", "map(x in c: x)", LayerForm::SequenceQuery, FROM_QUERIES),
+        expression(
+            "count",
+            "count<Integer>(x in c: true)",
+            LayerForm::SequenceQuery,
+            FROM_QUERIES,
+        ),
+        expression(
+            "sum",
+            "sum<Integer>(x in c: x)",
+            LayerForm::SequenceQuery,
+            FROM_QUERIES,
+        ),
+        expression(
+            "reachability",
+            "reaches(self, self, next)",
+            LayerForm::ObjectNavigation,
+            NAVIGATION,
+        ),
+        expression("flatMap", "flatMap(x in c: x)", LayerForm::ValueConstruct, VALUE_AND_UP),
+        expression("flatten", "flatten(c)", LayerForm::ValueConstruct, VALUE_AND_UP),
+        expression(
+            "collection literal",
+            "sequence[c]",
+            LayerForm::ValueConstruct,
+            VALUE_AND_UP,
+        ),
+        expression("record literal", "R { f: c }", LayerForm::ValueConstruct, VALUE_AND_UP),
+        expression(
+            "case",
+            "case c { Circle(r): true; Empty: false; }",
+            LayerForm::ValueConstruct,
+            VALUE_AND_UP,
+        ),
+        expression(
+            "convert",
+            "convert<Integer>(c)",
+            LayerForm::ValueConstruct,
+            VALUE_AND_UP,
+        ),
+        expression(
+            "fold",
+            "fold<Integer>(acc, x in c: acc, identity: 0)",
+            LayerForm::ValueConstruct,
+            VALUE_AND_UP,
+        ),
+        expression(
+            "reduce",
+            "reduce<Integer>(acc, x in c: acc)",
+            LayerForm::ValueConstruct,
+            VALUE_AND_UP,
+        ),
+        expression(
+            "function call",
+            "g(c)",
+            LayerForm::ValueConstruct,
+            VALUE_AND_UP,
+        ),
+    ]
+}
+
+/// Declarations every case may name, under the value layer as `w`.
+const PRELUDE: &str = "record R { f: Integer; }\n\
+    union Shape { Empty, Circle(Integer) }\n\
+    function g using w(x: Boolean): Boolean pure { x }\n\
+    predicate Id using w(x: Boolean): Boolean { x }\n";
+
+/// Every case under `layer` as `v`: a form outside the layer's row refuses
+/// `unsupported_construct` at its own text, naming the layer; a form in it
+/// raises no layer refusal.
+fn every_form_under(identity: &str) {
+    let layer = HeaderLayer::from_identity(identity).expect("a layer");
+    for case in form_cases() {
+        let declarations = if case.name == "function declaration" || case.name == "predicate declaration"
+        {
+            case.declarations.clone()
+        } else {
+            format!("{PRELUDE}{}", case.declarations)
+        };
+        let (unit, compiled) = compile(&[("v", identity), ("w", VALUE)], &declarations);
+        let found: Vec<AssemblyError> = match compiled {
+            Err(refusal) => match *refusal {
+                CompileRefusal::Assembly { refusal, .. } => refusal
+                    .errors
+                    .into_iter()
+                    .filter(|error| matches!(error.cause, AssemblyCause::UnsupportedLayerForm { .. }))
+                    .collect(),
+                _ => Vec::new(),
+            },
+            Ok(_) => Vec::new(),
+        };
+        let context = format!("{} under {identity}", case.name);
+        if case.admitted.contains(&layer) {
+            assert!(found.is_empty(), "{context}: refused {found:?}");
+            continue;
+        }
+        let [error] = found.as_slice() else {
+            panic!("{context}: expected one layer refusal, got {found:?}");
+        };
+        assert_eq!(
+            error.cause,
+            AssemblyCause::UnsupportedLayerForm {
+                layer,
+                form: case.form
+            },
+            "{context}"
+        );
+        assert_eq!(&unit[error.span.start..error.span.end], case.located, "{context}");
+        assert_eq!(
+            error.cause.catalog_code().to_string(),
+            format!("unsupported_construct/{}", case.form.refusal_cause()),
+            "{context}"
+        );
+    }
+}
+
+/// FR-110-AC-8: under state core a form is admitted exactly when state core
+/// writes it, and refused at its own text otherwise.
+#[trace("TC-490", "FR-110-AC-8")]
+#[test]
+fn state_core_admits_only_its_own_forms() {
+    every_form_under(CORE);
+}
+
+/// FR-110-AC-8: state queries adds named predicates and the ordered queries
+/// to state core and nothing else.
+#[trace("TC-490", "FR-110-AC-8")]
+#[test]
+fn state_queries_admits_only_its_closure() {
+    every_form_under(QUERIES);
+}
+
+/// FR-110-AC-8: state graph adds object navigation to state queries and
+/// nothing else.
+#[trace("TC-490", "FR-110-AC-8")]
+#[test]
+fn state_graph_admits_only_its_closure() {
+    every_form_under(GRAPH);
+}
+
+/// FR-110-AC-8: the value layer admits complete values and functions.
+#[trace("TC-490", "FR-110-AC-8")]
+#[test]
+fn value_complete_admits_its_forms() {
+    every_form_under(VALUE);
+}
+
+/// FR-110-AC-8: the model layer's closure admits every form.
+#[trace("TC-490", "FR-110-AC-8")]
+#[test]
+fn model_complete_admits_every_form() {
+    every_form_under(MODEL);
+}
