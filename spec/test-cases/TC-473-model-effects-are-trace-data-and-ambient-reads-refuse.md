@@ -27,14 +27,14 @@ state-key digests written out in the test), which is the path
 
 1. `isZero(): Boolean` (empty frame, `post Z { result = (self.value = 0)
    }`): expand `v0` and `v1`, and read `domains()`. Replay the one-step
-   trace `v0 --isZero[<c1>]--> v0` and read its effect.
+   trace `v0 --isZero--> v0` with receiver `<c1>` and arguments `[]` and read its effect.
 2. `increment` with `post Inc`, `spawn` and `remove`, no `pre` clause.
    Replay each one-step trace:
-   - `v0 --increment[<c1>]--> v1`;
-   - `s0 --spawn[<c1>]--> s0 ∪ {c2: value 1, label 0, next absent}`;
-   - `w --remove[<c1>]--> {c2: value 0, label 0, next absent}`, where `w`
+   - `v0 --increment--> v1`, receiver `<c1>`, arguments `[]`;
+   - `s0 --spawn--> s0 ∪ {c2: value 1, label 0, next absent}`, receiver `<c1>`, arguments `[]`;
+   - `w --remove--> {c2: value 0, label 0, next absent}`, where `w`
      is {`c1`, `c2`}, each `value` 0, `label` 0, `next` absent, as an
-     initial snapshot.
+     initial snapshot; receiver `<c1>`, arguments `[]`.
    Read each effect.
 3. Explore step 2's package in the test process, reading `s0`'s key bytes
    before and after. Then run the same exploration in a child process of

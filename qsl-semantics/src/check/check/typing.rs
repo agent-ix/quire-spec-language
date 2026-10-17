@@ -23,13 +23,14 @@ use super::{
     catalogued_step, contains_pre_eligible_read, contextual, ineligible, is_integer, mismatch,
     node, refuse, LocalKind, Typer,
 };
+use crate::check::call_target::{resolve_target, ResolvedTarget};
 use crate::check::family::Application;
 use crate::check::ir::{
     CheckedBody, CheckedLiteral, Connective, IntegerDivisionOperator, Node, NodeId, NodeKind,
     RecordSlot, Slot, Visit,
 };
 use crate::check::refusal::{CheckCause, CheckRefusal, KeyFault, WrongSnapshotCause};
-use crate::check::sum_case::{ArmHead, CaseBuilder, UnionRef};
+use crate::check::sum_case::{ArmHead, CaseBuilder, UnionMember, UnionRef};
 use crate::check::type_form::{IntegerOutsideI128, IntegerSite};
 use crate::check::DispatchOperation;
 use qsl_forms::{
@@ -303,9 +304,34 @@ struct AttributeFrame<'e> {
     location: Location,
 }
 
-/// A function or tuple-constructor call.
+/// What an [`ApplicationFrame`] applies: `Value`'s call target, or the
+/// `SumCase` family's union member (FR-317).
+enum Callee<'r> {
+    Value(Application<'r>),
+    Union(UnionMember<'r>),
+}
+
+impl<'r> Callee<'r> {
+    /// The type the argument at `index` is checked against.
+    fn parameter(&self, index: usize) -> Option<&'r ValueType> {
+        match self {
+            Self::Value(application) => application.parameter(index),
+            Self::Union(member) => member.parameter(index),
+        }
+    }
+
+    /// The node over its checked `arguments`.
+    fn finish(self, arguments: Vec<NodeId>, location: &Location) -> Node {
+        match self {
+            Self::Value(application) => application.finish(arguments, location),
+            Self::Union(member) => member.finish(arguments, location),
+        }
+    }
+}
+
+/// A function, tuple-constructor or union-member call.
 struct ApplicationFrame<'e, 'r> {
-    application: Application<'r>,
+    application: Callee<'r>,
     arguments: Vec<ExprRef<'e>>,
     location: Location,
     typed: Vec<NodeId>,
@@ -746,7 +772,13 @@ impl<'a> Typer<'a> {
             ExprNode::Rational(numerator, denominator) => {
                 self.rational_literal(numerator, denominator, hint.as_deref(), &location)?
             }
-            ExprNode::Name(name) => self.name(name, hint.as_deref(), &location)?,
+            ExprNode::Name(name) => match resolve_target(self, name, &location, || Ok(()))? {
+                ResolvedTarget::UnionMember(member) => {
+                    member.admit_shape(None, &location)?;
+                    member.finish(Vec::new(), &location)
+                }
+                ResolvedTarget::Value(()) => self.name(name, hint.as_deref(), &location)?,
+            },
             ExprNode::ProtocolReference { target } => self.protocol_reference(target, &location)?,
             ExprNode::Case(case) => {
                 return Ok(Self::case(
@@ -922,7 +954,16 @@ impl<'a> Typer<'a> {
                 return Ok(Step::Descend(Goal::Infer(source, None, source_location)));
             }
             ExprNode::Call { name, arguments } => {
-                let application = Application::resolve(self, name, arguments.len(), &location)?;
+                let arity = arguments.len();
+                let application = match resolve_target(self, name, &location, || {
+                    Application::resolve(self, name, arity, &location)
+                })? {
+                    ResolvedTarget::UnionMember(member) => {
+                        member.admit_shape(Some(arity), &location)?;
+                        Callee::Union(member)
+                    }
+                    ResolvedTarget::Value(application) => Callee::Value(application),
+                };
                 return Ok(Self::application(
                     Box::new(ApplicationFrame {
                         application,
