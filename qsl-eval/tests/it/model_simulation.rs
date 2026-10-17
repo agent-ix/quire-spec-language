@@ -193,6 +193,7 @@ fn counters_document(operations: Vec<Json>) -> Vec<u8> {
                     wire_field("next", &counter_identity, "optional"),
                     // Granted by no frame and with no finite domain.
                     wire_field("tag", "ix://quire/native/Integer", "optional"),
+                    wire_field("id", "ix://quire/native/Integer", "required"),
                 ],
                 "operations": operations,
                 "relationships": [],
@@ -735,7 +736,8 @@ fn the_state_key_is_the_simulation_state_envelope() {
             {"name": "value", "value": {"type": "integer", "value": "0"}},
             {"name": "label", "value": {"type": "integer", "value": label.to_string()}},
             {"name": "next", "value": next},
-            {"name": "tag", "value": null}]})
+            {"name": "tag", "value": null},
+            {"name": "id", "value": {"type": "integer", "value": "0"}}]})
     };
     let envelope = |label: i64, next: Json| {
         let empty = json!({"type": "map", "entries": []});
@@ -1595,7 +1597,7 @@ fn a_child_process_in_an_empty_directory_explores_the_same() {
 }
 
 /// FR-120 "Post-states": a field no frame grants and whose type has no finite
-/// domain (here `tag: Integer?`) neither stops an expansion nor becomes a
+/// domain (here `tag: Integer?` and `id: Integer`) neither stops an expansion nor becomes a
 /// requires-bound root.
 #[trace("TC-471", "FR-120-AC-1")]
 #[test]

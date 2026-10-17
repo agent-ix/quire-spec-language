@@ -20,7 +20,7 @@ Scope: FR-120-AC-1, FR-120-AC-2, FR-120-AC-3, FR-120-AC-4.
 
 Integration tests in `qsl-eval/tests/it/`. Build FR-120's `test/counters`
 domain package (package identity `test/counters`, nodes
-`test/counters/Counter`, `test/counters/Counter/value`, `…/label`, `…/next`, `…/tag` (an `Integer?` no frame grants),
+`test/counters/Counter`, `test/counters/Counter/value`, `…/label`, `…/next`, `…/tag` (an `Integer?`) and `…/id` (an `Integer`), neither granted by any frame,
 `test/counters/counters` and `test/counters/Counter/<operation>`) as a
 hand-authored domain package in TC-458's fixture shape, with the operations
 each step names, selected as model alias `Counters`. The bound scalar types
