@@ -671,9 +671,15 @@ fn resolve_signature(
 /// A refused or exhausted type admission as the check refusal that reports it.
 fn type_admission(failure: quire_semantic_value::declaration::EnvironmentFailure) -> CheckCause {
     let cause = assemble::environment_cause(failure);
+    let limit = if let AssemblyCause::TypeLimit(limit) = &cause {
+        Some(limit.clone())
+    } else {
+        None
+    };
     CheckCause::TypeAdmission {
         code: cause.code(),
         cause: cause.catalog_code().cause(),
+        limit,
     }
 }
 
