@@ -121,4 +121,5 @@ mod source_map;
 mod spine_run;
 mod state_scalar_lowering;
 mod text_enum_identity;
+mod unbounded_declarations;
 mod verified_binding_witness;
