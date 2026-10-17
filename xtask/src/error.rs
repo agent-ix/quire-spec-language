@@ -2,6 +2,8 @@
 //! Typed errors for the workspace xtask gates.
 use std::{fmt, io, path::PathBuf};
 
+use crate::refinement::report::Verdict;
+
 /// Stable failure category, independent of message prose.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Code {
@@ -33,6 +35,8 @@ pub enum Code {
     /// QSL#157: `cargo xtask test-suites` found an undeclared empty suite or
     /// a wrong declaration, or `cargo` itself failed.
     TestSuites,
+    /// FR-344: a refinement gate's report could not be written as JSON.
+    Refinement,
 }
 
 impl Code {
@@ -49,6 +53,7 @@ impl Code {
             Self::Metadata => "metadata",
             Self::Conformance => "conformance",
             Self::TestSuites => "test-suites",
+            Self::Refinement => "refinement",
         }
     }
 }
@@ -352,6 +357,13 @@ pub enum Error {
         /// The findings, one per line.
         summary: String,
     },
+    /// FR-344: a refinement gate's report could not be encoded as JSON.
+    #[error("refinement: cannot encode the report: {source}")]
+    RefinementReport {
+        /// The encoding failure.
+        #[source]
+        source: serde_json::Error,
+    },
 }
 
 impl Error {
@@ -398,6 +410,7 @@ impl Error {
             | Self::TestSuitesUnknownPackage { .. } => Code::Usage,
             Self::TestSuitesIo { .. } | Self::TestSuitesArtifacts { .. } => Code::Io,
             Self::TestSuitesCargoFailed { .. } | Self::TestSuitesFound { .. } => Code::TestSuites,
+            Self::RefinementReport { .. } => Code::Refinement,
         }
     }
 
@@ -427,6 +440,8 @@ impl Error {
             | Code::Conformance
             | Code::TestSuites => 1,
             Code::Usage | Code::Io | Code::Metadata => 2,
+            // QSpec FR-301's tool-failure code: the gate could not report.
+            Code::Refinement => Verdict::ToolFailure.exit_code(),
         }
     }
 }

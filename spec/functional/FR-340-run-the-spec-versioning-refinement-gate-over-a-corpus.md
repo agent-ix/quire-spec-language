@@ -64,7 +64,10 @@ never settles `proved` for any claim.
     optionally any of the four limit sets `run_clause` takes (`limits`,
     `observation_limits`, `model_limits`, `accounting`).
 
-  Every file is named by a path relative to the pair's directory.
+  Every file is named by a path relative to the pair's directory, or by
+  `repo:` followed by a path relative to the repository root, which names an
+  existing repository file in place. A pair never holds a copy of a file the
+  repository already holds.
 
 ## Outputs
 
@@ -81,19 +84,24 @@ passed to FR-344's report.
   success.
 - The gate SHALL read every byte a pair's runs use from the files its
   `pair.json` names, and SHALL read no environment variable, clock, search
-  location or path outside the pair's directory.
+  location or path outside the pair's directory or, for a `repo:` path, the
+  repository.
 - If a `pair.json` cannot be read, is not a JSON object, holds a member this
   requirement does not list or lacks one it lists, or names a path that is
-  absolute or resolves outside the pair's directory, then the gate SHALL
+  absolute or resolves outside its directory, then the gate SHALL
   record one tool-failure result for that pair, naming the `pair.json` path
   and the defect, run none of its cases, and continue with the other pairs.
+- If a case names a file that cannot be read or holds a member that does not
+  form a request, then the gate SHALL record a tool-failure case result
+  naming the case and the defect, run neither side of it, and run the
+  pair's other cases.
 - If the `prior` and `superseding` sources differ in `authority` or
   `identity`, then the gate SHALL record one tool-failure result for that
   pair, naming the `pair.json` path and both label pairs. The two units are
   revisions of one specification.
 - The pair's direction SHALL be the one its members name: `prior` is the
   prior revision and `superseding` the superseding one. The gate SHALL read
-  no order from the revision labels and compare nothing about them.
+  no order from the sources' content and compare nothing about it.
 
 ### Running a case
 
@@ -126,8 +134,8 @@ passed to FR-344's report.
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-340-AC-1 | A corpus holding one well-formed ConfigVersion pair with two `Clause` cases runs each case against both revisions with no expected `package_id`, and FR-344's report holds exactly two case results, each naming the pair's prior and superseding `RawSourceRef`s and its selection. | Test (TC-860) |
-| FR-340-AC-2 | In a corpus of one well-formed pair and six malformed ones (a `pair.json` that is not JSON; one missing `superseding`; one with an extra member `expected`; one naming `../outside.qsl`; one naming an absolute path; one whose two sources differ in `identity`), each malformed pair yields exactly one tool-failure result naming its `pair.json` path and its defect, none of its cases runs, and the well-formed pair's cases still run. A corpus directory with no pair subdirectory yields one tool-failure result naming the corpus path; verdict tool failure, exit 30. | Test (TC-860) |
-| FR-340-AC-3 | A pair whose `prior` carries revision `b` and `superseding` revision `a` is compared in that direction: a case the `prior` unit admits and the `superseding` unit refuses is a regression. Swapping only the two revision labels leaves every case's two classes and its result unchanged. | Test (TC-860) |
+| FR-340-AC-2 | In a corpus of one well-formed pair and eight malformed ones (a `pair.json` that is not JSON; one missing `superseding`; one with an extra member `expected`; one naming `../outside.qsl`; one naming an absolute path; one whose two sources differ in `identity`; one naming `repo:../outside`; one naming `repo:/etc/hostname`), each malformed pair yields exactly one tool-failure result naming its `pair.json` path and its defect, none of its cases runs, and the well-formed pair's cases still run. A corpus directory with no pair subdirectory yields one tool-failure result naming the corpus path; verdict tool failure, exit 30. A case naming a file that does not exist yields one tool-failure case result naming the case and the defect, and the pair's other case still runs. | Test (TC-860) |
+| FR-340-AC-3 | A pair whose `prior` unit admits a case and whose `superseding` unit refuses it is compared in that direction: the case is a regression; the same two units named the other way round give `not applicable`. | Test (TC-860) |
 | FR-340-AC-4 | A case stating no limit sets runs with each set's published default; the same case stating `accounting` with a work budget of one unit runs both revisions with that budget: both classes are `incomplete` and the case is `unresolved (incomplete)`. | Test (TC-860) |
 | FR-340-AC-5 | Copying a corpus to another directory and running the gate there gives a report byte-equal to the original's. | Test (TC-860) |
 | FR-340-AC-6 | `make refinement-versioning` runs the gate over `tests/fixtures/refinement/versioning/` and passes; adding the seeded-regression pair of TC-864 to that corpus makes the target fail. | Test (TC-864) |
