@@ -134,7 +134,7 @@ fn resolve<'s>(
 /// as if there were no embedding. A span the map splits into more than one
 /// document region (a layout deletion) is FR-096's fourth no-region case:
 /// no single document region names it.
-fn region(
+pub(super) fn region(
     source: &RawSourceRef,
     embedding: Option<&SourceMap>,
     span: Span,
@@ -254,14 +254,17 @@ impl DeclarationRegions {
 
     /// FR-096: the region a check refusal names. A stage limit a family
     /// `check` located carries its own region (a declaration's span, or the
-    /// node `Typer`'s depth stop failed at); a `ProtocolAnchor` cause
-    /// (FR-113) carries its own span directly, since a protocol has no
+    /// node `Typer`'s depth stop failed at); a `ProtocolAnchor` or `Temporal` cause
+    /// (FR-113, FR-326) carries its own span directly, since a protocol has no
     /// expression tree for a `Location` path to walk; every other refusal
     /// is located by its `location`.
     pub fn refusal_region(&self, refusal: &CheckRefusal) -> Option<SourceRegion> {
         match &refusal.cause {
             CheckCause::ResourceExhausted(limit) if limit.region.is_some() => limit.region.clone(),
             CheckCause::ProtocolAnchor(cause) => {
+                region(&self.source, self.embedding.as_deref(), cause.span())
+            }
+            CheckCause::Temporal(cause) => {
                 region(&self.source, self.embedding.as_deref(), cause.span())
             }
             _ => self.region(&refusal.location),
