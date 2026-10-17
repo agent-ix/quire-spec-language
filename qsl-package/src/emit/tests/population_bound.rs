@@ -386,7 +386,9 @@ fn selections(
             };
             let selector = ir
                 .reaches_population(&id)
-                .expect("the reader resolves the population")
+                .unwrap_or_else(|error| {
+                    panic!("the reader cannot resolve the population: {error:?}")
+                })
                 .expect("the application names a population");
             (
                 reach["body"]["operation"]["member"]["population"].clone(),
