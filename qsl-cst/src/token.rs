@@ -28,7 +28,14 @@ fn integer(lex: &mut logos::Lexer<'_, Kind>) -> Result<String, LexError> {
 // Recognize the complete quoted region, then let the JSON implementation
 // validate escapes, controls and surrogate pairs. No second escape grammar.
 fn string(lex: &mut logos::Lexer<'_, Kind>) -> Result<String, LexError> {
-    serde_json::from_str(lex.slice()).map_err(|_| LexError::String)
+    decode_quoted(lex.slice()).ok_or(LexError::String)
+}
+
+/// The Unicode scalar sequence a quoted text token spells, decoded exactly as
+/// the lexer decodes it (JSON escapes, surrogate pairs), or `None` when the
+/// spelling is not a well-formed quoted text.
+pub fn decode_quoted(spelling: &str) -> Option<String> {
+    serde_json::from_str(spelling).ok()
 }
 
 /// Whether `value` is entirely lexer-skipped whitespace (spaces, tabs,

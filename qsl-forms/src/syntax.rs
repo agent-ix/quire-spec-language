@@ -492,6 +492,9 @@ pub enum ExprNode {
     Integer(Integer),
     /// `rational(n, d)`; it takes its unique expected `Rational[..]` type.
     Rational(Integer, Integer),
+    /// A quoted text literal (FR-091 "Native scalar literals"): the decoded
+    /// Unicode scalar sequence, kept exactly. It is always a `String`.
+    String(String),
     /// A parameter, `let` or binder name, or a qualified enum member.
     Name(String),
     /// `let name = value in body`.
@@ -732,6 +735,7 @@ impl ExprNode {
             Self::Boolean(_)
             | Self::Integer(_)
             | Self::Rational(..)
+            | Self::String(_)
             | Self::Name(_)
             | Self::SelfRef
             | Self::Result
@@ -824,6 +828,7 @@ impl ExprNode {
             Self::Boolean(_)
             | Self::Integer(_)
             | Self::Rational(..)
+            | Self::String(_)
             | Self::Name(_)
             | Self::SelfRef
             | Self::Result
@@ -889,6 +894,7 @@ impl ExprNode {
             Self::Boolean(_)
             | Self::Integer(_)
             | Self::Rational(..)
+            | Self::String(_)
             | Self::SelfRef
             | Self::Result
             | Self::If { .. }
@@ -933,6 +939,7 @@ impl ExprNode {
             Self::Boolean(_)
             | Self::Integer(_)
             | Self::Rational(..)
+            | Self::String(_)
             | Self::Name(_)
             | Self::SelfRef
             | Self::Result
@@ -1123,6 +1130,11 @@ impl Expression {
     /// An integer literal.
     pub fn integer(value: impl Into<Integer>) -> Self {
         Self::single(ExprNode::Integer(value.into()))
+    }
+
+    /// A quoted text literal holding the decoded scalar sequence `text`.
+    pub fn string(text: impl Into<String>) -> Self {
+        Self::single(ExprNode::String(text.into()))
     }
 
     /// `rational(numerator, denominator)`.

@@ -571,6 +571,7 @@ enum Shape {
     Boolean(bool),
     Integer(Integer),
     Rational(Integer, Integer),
+    String(String),
     Name(String),
     Let(String),
     If,
@@ -654,6 +655,10 @@ impl Shape {
             Self::Rational(numerator, denominator) => {
                 arity(0)?;
                 ExprNode::Rational(numerator, denominator)
+            }
+            Self::String(text) => {
+                arity(0)?;
+                ExprNode::String(text)
             }
             Self::Name(name) => {
                 arity(0)?;
@@ -1368,7 +1373,13 @@ impl<'c> Mapping<'c> {
                     let value = integer(&text(token, node)?, node)?;
                     self.leaf(Shape::Integer(value), &task)
                 }
-                TokenKind::Text => Err(unrepresented(Production::Primary, node.span())),
+                TokenKind::Text => {
+                    // The lexer admitted the token, so its JSON decoding
+                    // cannot fail; a refusal here is an unexpected shape.
+                    let decoded = qsl_cst::token::decode_quoted(&text(token, node)?)
+                        .ok_or_else(|| unexpected(node))?;
+                    self.leaf(Shape::String(decoded), &task)
+                }
                 TokenKind::Identifier => {
                     // `name(arguments)`: a call of an unqualified name.
                     self.with_children(Shape::Call(text(token, node)?), &task, operands)

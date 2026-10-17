@@ -77,7 +77,7 @@ use qsl_foundation::IdentityLimits;
 use quire_semantic_value::semantic_node::IdentityRefusal;
 
 use qsl_foundation::absence::AbsenceMode;
-use quire_exact::{Identifier, Integer, Rational, RoundingMode, TextProfile};
+use quire_exact::{Identifier, Integer, Rational, RoundingMode, TextProfile, Timestamp, Uuid};
 
 use crate::value::counter::Counter;
 use crate::value::definition::DefinitionReference;
@@ -1163,6 +1163,14 @@ pub enum LiteralValue {
     Rational(Rational),
     /// `text`: the text as a JSON string.
     Text(String),
+    /// `string`: the exact scalar sequence as a JSON string, with no
+    /// normalization.
+    String(String),
+    /// `uuid`: the canonical lowercase `8-4-4-4-12` text.
+    Uuid(Uuid),
+    /// `timestamp`: the canonical decimal string of the signed 128-bit
+    /// nanosecond count.
+    Timestamp(Timestamp),
     /// `none`: `null`.
     None,
     /// `enum`: the member's case identifier, the body of an enum member's
@@ -1181,6 +1189,9 @@ impl LiteralValue {
                 LiteralJson::Spelled(format!("{}/{}", value.numerator(), value.denominator())),
             ),
             Self::Text(value) => ("text", LiteralJson::Text(value)),
+            Self::String(value) => ("string", LiteralJson::Text(value)),
+            Self::Uuid(value) => ("uuid", LiteralJson::Spelled(value.to_string())),
+            Self::Timestamp(value) => ("timestamp", LiteralJson::Spelled(value.to_string())),
             Self::None => ("none", LiteralJson::Null(())),
             Self::Enum(case) => ("enum", LiteralJson::Text(case)),
         };
