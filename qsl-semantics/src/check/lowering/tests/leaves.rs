@@ -343,6 +343,75 @@ fn leaf_paths_follow_fr093_text_leaves() {
     assert_eq!(contains["body"]["operation"]["leaves"], json!([]));
 }
 
+/// A union `name` declaring `members`, each with its payload types.
+fn union_declaration(name: &str, members: Vec<(&str, Vec<ValueType>)>) -> CompositeDeclaration {
+    CompositeDeclaration::new(
+        handle(name),
+        name,
+        CompositeShape::Union(
+            members
+                .into_iter()
+                .map(|(member, payload)| {
+                    quire_semantic_value::declaration::UnionMemberDeclaration::resolved(
+                        quire_exact::Identifier::new(member).expect("a member identifier"),
+                        payload,
+                    )
+                })
+                .collect(),
+        ),
+    )
+}
+
+/// QSpec FR-440's "Structural leaves": every declared member is an anchor,
+/// its text leaves at `member:<Name>` then `position:<i>`, `i` the index in
+/// the member's payload; a cycle through a union is a recursion leaf when a
+/// text type is reachable and adds nothing when none is.
+#[trace("FR-093-AC-11", "TC-415", "QSpec-FR-440-AC-8")]
+#[test]
+fn union_leaf_paths_follow_member_then_position() {
+    let t8 = || text(8, TextProfile::Nfc);
+    let label = union_declaration(
+        "Label",
+        vec![
+            ("Named", vec![t8()]),
+            ("Tagged", vec![ValueType::Integer, t8()]),
+            ("Empty", vec![]),
+        ],
+    );
+    assert_eq!(
+        equality_leaves(vec![label], "Label"),
+        [
+            "member:Named/position:0 (nfc)",
+            "member:Tagged/position:1 (nfc)"
+        ]
+    );
+    let chain = union_declaration(
+        "Chain",
+        vec![
+            ("Link", vec![t8(), ValueType::Composite(handle("Chain"))]),
+            ("End", vec![]),
+        ],
+    );
+    assert_eq!(
+        equality_leaves(vec![chain], "Chain"),
+        [
+            "member:Link/position:0 (nfc)",
+            "member:Link/position:1/recursion:0 (-)"
+        ]
+    );
+    let list = union_declaration(
+        "List",
+        vec![
+            (
+                "Cons",
+                vec![ValueType::Integer, ValueType::Composite(handle("List"))],
+            ),
+            ("Nil", vec![]),
+        ],
+    );
+    assert!(equality_leaves(vec![list], "List").is_empty());
+}
+
 /// FR-092 "Recursion groups" (FR-093-AC-10's P15 and P16): `Option<Node>`
 /// is G17 wherever it is named, whichever function names it first, and
 /// the vectors key the same under every order of the functions.

@@ -43,6 +43,7 @@ mod owners;
 mod protocol_reference;
 mod reachability;
 mod receiver_frames;
+mod union_nodes;
 mod variant_types;
 
 /// The unit the fixture packages are read from; every occurrence's region is
@@ -3436,7 +3437,7 @@ fn emit_from_text(declarations: &str) -> (String, Emission) {
 /// `declarations` after the complete-V1 profile header, run S1, S2, the
 /// assembler, check and link as spine `compile` runs them: the unit's text
 /// and the linked package.
-fn package_from_text(declarations: &str) -> (String, CheckedPackage) {
+pub(crate) fn package_from_text(declarations: &str) -> (String, CheckedPackage) {
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\

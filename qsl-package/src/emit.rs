@@ -443,8 +443,9 @@ impl<'g> Candidate<'g> {
         }
     }
 
-    fn form_is_supported(&self) -> bool {
-        CheckedNodeKind::decode(self.tag, self.node.semantic_form()).is_some()
+    /// Whether `decodes` admits the node's (`node_tag`, `semantic_form`).
+    fn form_is_supported(&self, decodes: &dyn Fn(CheckedNodeTag, &str) -> bool) -> bool {
+        decodes(self.tag, self.node.semantic_form())
     }
 
     /// FR-322's declaration rule, as IR applies it: `declaration` is absent
@@ -648,10 +649,11 @@ fn owner_is_locked(nominal: Option<&NominalNode>, source: &RawSourceRef) -> bool
 fn omissions(
     candidates: &BTreeMap<CheckedNodeId, Candidate<'_>>,
     source: &RawSourceRef,
+    decodes: &dyn Fn(CheckedNodeTag, &str) -> bool,
 ) -> Vec<OmittedNode> {
     let mut omitted: BTreeMap<CheckedNodeId, OmissionCause> = BTreeMap::new();
     for (id, candidate) in candidates {
-        let cause = if !candidate.form_is_supported() {
+        let cause = if !candidate.form_is_supported(decodes) {
             Some(OmissionCause::UnsupportedForm {
                 node_tag: candidate.node.node_tag(),
                 semantic_form: candidate.node.semantic_form(),
@@ -954,7 +956,13 @@ pub fn emit_checked_with_cancel(
     cancel: &Cancel,
 ) -> Result<Emission, EmitRefusal> {
     let graph = package.graph();
-    emit_package_inner(package, graph.memoized_regions(), |_| None, cancel)
+    emit_package_inner(
+        package,
+        graph.memoized_regions(),
+        |_| None,
+        cancel,
+        &ir_decodes,
+    )
 }
 
 /// Emit `package` as `quire.checked-package/v2` bytes (FR-322). `regions`
@@ -965,7 +973,7 @@ pub fn emit_package(
     package: &CheckedPackage,
     regions: impl Fn(&Location) -> Option<SourceRegion>,
 ) -> Result<Emission, EmitRefusal> {
-    emit_package_inner(package, regions, |_| None, &Cancel::new())
+    emit_package_inner(package, regions, |_| None, &Cancel::new(), &ir_decodes)
 }
 
 /// As [`emit_package`], but lets a caller force a specific node's wire
@@ -984,7 +992,21 @@ fn emit_package_with_fault(
     regions: impl Fn(&Location) -> Option<SourceRegion>,
     fault: impl Fn(&CheckedNodeId) -> Option<EmitRefusal>,
 ) -> Result<Emission, EmitRefusal> {
-    emit_package_inner(package, regions, fault, &Cancel::new())
+    emit_package_inner(package, regions, fault, &Cancel::new(), &ir_decodes)
+}
+
+/// As [`emit_package`], but against an IR whose v2 vocabulary `decodes`
+/// describes in place of the one this build links: a node whose tag and form
+/// it refuses is omitted with [`OmissionCause::UnsupportedForm`], together
+/// with every node that names it (FR-320-AC-2). Only this module's own tests
+/// call it.
+#[cfg(test)]
+fn emit_package_decoding(
+    package: &CheckedPackage,
+    regions: impl Fn(&Location) -> Option<SourceRegion>,
+    decodes: &dyn Fn(CheckedNodeTag, &str) -> bool,
+) -> Result<Emission, EmitRefusal> {
+    emit_package_inner(package, regions, |_| None, &Cancel::new(), decodes)
 }
 
 /// As [`emit_checked`], but lets a caller force a specific node's wire
@@ -1015,6 +1037,27 @@ pub fn checked_node_id_of(key: NodeKey) -> CheckedNodeId {
     node_id(key)
 }
 
+/// Whether IR's v2 vocabulary has the form `semantic_form` under `tag`.
+fn ir_decodes(tag: CheckedNodeTag, semantic_form: &str) -> bool {
+    CheckedNodeKind::decode(tag, semantic_form).is_some()
+}
+
+/// Every node of `graph` read for the wire, by its id.
+fn candidates_of(
+    graph: &CheckedGraph,
+) -> Result<BTreeMap<CheckedNodeId, Candidate<'_>>, EmitRefusal> {
+    let mut recorded = recorded_occurrences(graph)?;
+    Ok(graph
+        .semantic_graph()
+        .nodes()
+        .map(|node| {
+            let occurrences = recorded.remove(&node.key()).unwrap_or_default();
+            let candidate = Candidate::of(node, occurrences);
+            (candidate.id.clone(), candidate)
+        })
+        .collect())
+}
+
 /// The body shared by [`emit_package`] and [`emit_package_with_fault`].
 /// `fault` runs against each node's id, in graph order, just before that
 /// node would be written; every production call site is `emit_package`,
@@ -1025,6 +1068,7 @@ fn emit_package_inner(
     regions: impl Fn(&Location) -> Option<SourceRegion>,
     fault: impl Fn(&CheckedNodeId) -> Option<EmitRefusal>,
     cancel: &Cancel,
+    decodes: &dyn Fn(CheckedNodeTag, &str) -> bool,
 ) -> Result<Emission, EmitRefusal> {
     let denied = || {
         cancel
@@ -1037,17 +1081,8 @@ fn emit_package_inner(
         return Err(refusal);
     }
     let graph = package.graph();
-    let mut recorded = recorded_occurrences(graph)?;
-    let candidates: BTreeMap<CheckedNodeId, Candidate<'_>> = graph
-        .semantic_graph()
-        .nodes()
-        .map(|node| {
-            let occurrences = recorded.remove(&node.key()).unwrap_or_default();
-            let candidate = Candidate::of(node, occurrences);
-            (candidate.id.clone(), candidate)
-        })
-        .collect();
-    let omitted = omissions(&candidates, graph.source());
+    let candidates = candidates_of(graph)?;
+    let omitted = omissions(&candidates, graph.source(), decodes);
     stale_protocol_reference(&candidates, &omitted)?;
     let dropped: BTreeSet<&CheckedNodeId> = omitted.iter().map(|omission| &omission.node).collect();
     let kept: Vec<&Candidate<'_>> = candidates

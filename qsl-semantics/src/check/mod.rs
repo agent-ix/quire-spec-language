@@ -782,7 +782,7 @@ impl PackageDeclarations {
         // Carry that selection into S3 so the inherited-edge rule is
         // confined to a package with an admitted model.
         let complete_model = !self.models.is_empty();
-        let scope = Scope::new(
+        let mut scope = Scope::new(
             self.types,
             self.operations,
             self.enums,
@@ -1658,6 +1658,13 @@ impl PackageDeclarations {
             }
         }
         let lowered = lowering.finish(&lowering::generated_location());
+        // FR-319: each union is sealed under the checked node id of its type
+        // node, which lowering has now keyed, with its members' FR-441 keys.
+        if refusals.is_empty() {
+            if let Err(refusal) = scope.seal_unions(&lowered.composites) {
+                refusals.push(refusal);
+            }
+        }
         let parameter_spans = lowered.parameter_spans;
         if !refusals.is_empty() {
             return Err(refusals);
