@@ -22,11 +22,11 @@ use quire_contract_model::{
     CheckedPackageV2, CheckedParameterDeclarationError, CheckedScalarOperand,
     CheckedScalarOperandChild, CheckedScalarOperandError, CheckedScalarOperandRange,
 };
-use quire_exact::{Cancel, ChargePoint, Incomplete, Integer, LimitKind, Value, ValueType};
+use quire_exact::{Cancel, Integer, Value, ValueType};
 use quire_semantic_value::location::Origin as BodyOrigin;
 
 use super::call::{admit_model_arguments, bind_arguments, convert_call_failure, select};
-use super::{AdmittedModels, Call, CallIncomplete, CheckedUnit, EmittedUnit, RunRefusal};
+use super::{AdmittedModels, Call, CheckedUnit, EmittedUnit, RunRefusal};
 use crate::execute::callable_parameter_keys;
 use crate::execute::scalar_site::{applies, in_body};
 use crate::scalar::ScalarOperator;
@@ -57,10 +57,14 @@ pub struct BindPackage<'a> {
 impl<'a> BindPackage<'a> {
     /// Read `emitted` back through Contract IR. The bytes were just written
     /// by the emitter, so a refusal is an internal failure.
+    ///
+    /// `imports` is the I2 reader's ceilings for the dependency closure the
+    /// unit's `import`s reached ([`super::SpineLimits::imports`]).
     pub fn read(
         models: &'a AdmittedModels,
         checked: &'a CheckedUnit,
         emitted: &'a EmittedUnit,
+        imports: qsl_package::V2ReadLimits,
     ) -> Result<Self, Box<RunRefusal>> {
         let mut evidence = emitted.evidence().clone();
         for (digest, document) in models.packages() {
@@ -68,6 +72,13 @@ impl<'a> BindPackage<'a> {
                 .insert_domain_package_document(hex(digest), document.as_slice())
                 .map_err(|_| fault("domain-package-documents-do-not-conflict"))?;
         }
+        qsl_package::supply_closure(
+            checked.package(),
+            models.packages(),
+            imports,
+            &mut evidence,
+        )
+        .map_err(|_| fault("dependency-closure-reads-back"))?;
         let CheckedPackageDispatchResult::AdmittedV2(ir) = read_checked_package(
             emitted.package().bytes(),
             CheckedPackageReadLimits::bounded(),
@@ -96,8 +107,6 @@ pub enum BindOutcome {
     Bound(BoundScalarOperands),
     /// The occurrence or an operand refused; no operand list.
     Refused(BindRefusal),
-    /// The argument conversion reached an accounting limit; no binding.
-    Incomplete(CallIncomplete),
 }
 
 /// The operands of one scalar application occurrence, bound to a call.
@@ -264,7 +273,6 @@ impl BindRefusal {
 enum Halt {
     Run(Box<RunRefusal>),
     Refused(BindRefusal),
-    Incomplete(Box<CallIncomplete>),
 }
 
 impl From<Box<RunRefusal>> for Halt {
@@ -297,7 +305,6 @@ pub fn bind_scalar_operands(
     match bind(package, call, occurrence, objects, cancel) {
         Ok(bound) => Ok(BindOutcome::Bound(bound)),
         Err(Halt::Refused(refusal)) => Ok(BindOutcome::Refused(refusal)),
-        Err(Halt::Incomplete(incomplete)) => Ok(BindOutcome::Incomplete(*incomplete)),
         Err(Halt::Run(refusal)) => Err(refusal),
     }
 }
@@ -328,9 +335,6 @@ fn bind(
         types,
         cancel,
     )?;
-    if let Some(incomplete) = value_occurrences_exceeded(call, &arguments) {
-        return Err(Halt::Incomplete(Box::new(incomplete)));
-    }
     let (application, origin) = locate(checked, call, occurrence)?;
     let operands = package
         .ir
@@ -370,25 +374,6 @@ fn admit_values(
         Some(cause) => Err(cancelled(cause)),
         None => Ok(()),
     }
-}
-
-/// FR-098's occurrence count of each converted argument against the call's
-/// `value_occurrences`. Nothing is charged to a meter.
-fn value_occurrences_exceeded(call: &Call, arguments: &[Value]) -> Option<CallIncomplete> {
-    let limit = call.accounting.value_occurrences;
-    arguments.iter().find_map(|argument| {
-        let occurrences = argument.occ();
-        (occurrences > Integer::from(limit)).then(|| CallIncomplete {
-            record: Incomplete {
-                limit_kind: LimitKind::ValueOccurrences,
-                limit,
-                consumed: 0,
-                next_charge: occurrences,
-                charge_point: ChargePoint::FunctionCall,
-            },
-            location: None,
-        })
-    })
 }
 
 /// For each declared parameter, the index of its argument in

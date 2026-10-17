@@ -62,9 +62,12 @@ Behavior 1 and the internal failure (`RunRefusal::Fault`, FR-100 "Internal
 failure at S6a"). The `Ok` arm is exactly one of:
 
 - `BindOutcome::Bound(BoundScalarOperands)`;
-- `BindOutcome::Refused(BindRefusal)`, an occurrence or operand refusal below;
-- `BindOutcome::Incomplete(CallIncomplete)`, FR-100's `CallIncomplete`
-  unchanged, when the argument conversion reaches an accounting limit.
+- `BindOutcome::Refused(BindRefusal)`, an occurrence or operand refusal below.
+
+The binding evaluates nothing, so it reports no `Incomplete` outcome: an
+accounting limit the evaluation would reach does not stop it, and a
+supplied-value admission stop is the `Err` arm's `RunRefusal::Supplied`, as
+`run` returns it.
 
 `BoundScalarOperands` has accessors for these typed members:
 
@@ -189,9 +192,12 @@ the joined node, are internal failures (`RunRefusal::Fault`), never a
    order. Binding the same `Call` and occurrence twice SHALL give equal
    results. The order of `Call.arguments` SHALL NOT change `values()`; it
    changes only the `argument` indices in the provenance.
-7. The entry SHALL charge only the argument conversion FR-098 states under
-   `Call.accounting`. A conversion that reaches a limit returns
-   `Incomplete(CallIncomplete)` as FR-100 reports it, and no binding.
+7. The entry SHALL charge nothing to a meter and SHALL report an accounting
+   limit only where `run` reports it before its evaluation: a supplied-value
+   admission stop is `Err(RunRefusal::Supplied)`, as `run` returns it. A call
+   that `run` reports `Incomplete` because its evaluation reaches a limit
+   (`work_units`, or `value_occurrences` charged by the evaluation) still
+   binds.
 8. This requirement changes no catalog code, no FR-357 request member and no
    FR-100 behavior: `run` is unchanged, and the driver passes `values()` and
    `operands` unchanged to the generated oracle and its receipt.
@@ -207,7 +213,7 @@ the joined node, are internal failures (`RunRefusal::Fault`), never a
 | FR-367-AC-5 | An occurrence key the application node does not have returns `Refused(ScalarIdentity(Occurrence))` (`stale_dependency`/`content-mismatch`) even when the node has another occurrence and the arguments are valid; an `application` node of another function, a node outside the called function's body and a node absent from the package each return `ScalarIdentity(Node)`; a `ScalarOccurrence.function` that differs from `Call.function` returns `ScalarIdentity(Function)` (the cause this requirement adds); an equality application returns `ScalarIdentity(Operator)`. Two functions of one package that share parameter nodes (FR-092-AC-5) bind each to its own body's application only. | Test (TC-1053) |
 | FR-367-AC-6 | `function w using v(a: Integer): Integer pure { a + 1 }` returns `Refused(Operands(UnboundedRange))` (`unsupported_construct`/`expression-form`) with no operand list. In `function n using v(a: Int[0, 9]): Int[0, 12] pure { (a + 1) + 2 }` compiled from source, the inner application binds `[a, 1]` and the outer returns `Refused(Operands(UnboundedRange))` with no partial list: source compilation types the inner application as an unbounded `Integer`, and Contract IR's errors precede operand classification (Behavior 3). `Refused(OperandNotParameter { ordinal })` is the case of an operand list Contract IR admitted whose graph child is neither a literal nor a parameter; it is tested with a hand-built operand naming the nested application's node, resolved against the compiled package, and binds no partial list. | Test (TC-1053) |
 | FR-367-AC-7 | For `function big using v(a: Int[0, 100000000000000000000]): Int[0, 100000000000000000001] pure { a + 1 }`, whose range endpoint exceeds `i64`, the value `9223372036854775807` binds as `[9223372036854775807, 1]` and `9223372036854775808` returns `Refused(OperandNotNative)` at ordinal 0 (`invalid_runtime_input`), never a wrapped or saturated value. A literal operand whose value exceeds `i64` (`a + 9223372036854775808`) returns `Refused(OperandNotNative)` at its ordinal. | Test (TC-1053) |
-| FR-367-AC-8 | Binding the same request twice gives equal results. Binding does not call the function: a call whose evaluation would be `undefined` or exceed `work_units` still binds when its arguments are admitted. A conversion that reaches `value_occurrences` returns `Incomplete(CallIncomplete)` naming that limit, as `run` does, and no binding. | Test (TC-1053) |
+| FR-367-AC-8 | Binding the same request twice gives equal results. Binding does not call the function: a call whose evaluation would be `undefined` or exceed `work_units` still binds when its arguments are admitted. A call that `run` reports `Incomplete` at `work_units` still binds, and binding reports no `Incomplete` outcome. | Test (TC-1053) |
 | FR-367-AC-9 | The `BoundScalarOperands` returned for a claim equals, member for member, what FR-357's operator-level claim for the same occurrence holds as its ordered operand values, and `values()` is accepted unchanged as the `operands` of a generated oracle's native request (CG `KaniScalarNativeRequest.operands`); a differently ordered or reconstructed vector is a different binding. | Test (TC-1053) |
 | FR-367-AC-10 | Over `function lt using v(a: Int[0, 9]): Int[0, 10] pure { let x = a in x + 1 }`, the `+` occurrence returns `Refused(OperandNotArgument { ordinal: 0, parameter: x, level })` with the binder's declared name and level (`unsupported_construct`/`expression-form`) and binds no partial list; the same holds for a quantifier-bound variable operand. | Test (TC-1053) |
 

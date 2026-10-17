@@ -25,6 +25,7 @@ const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
 struct Unit {
     source: String,
     packages: BTreeMap<[u8; 32], Vec<u8>>,
+    dependencies: DependencyInput,
     models: AdmittedModels,
     checked: CheckedUnit,
     emitted: EmittedUnit,
@@ -35,6 +36,14 @@ fn identity() -> qsl_foundation::SourceIdentity {
 }
 
 fn compile_source(source: String, packages: BTreeMap<[u8; 32], Vec<u8>>) -> Unit {
+    compile_with(source, packages, DependencyInput::default())
+}
+
+fn compile_with(
+    source: String,
+    packages: BTreeMap<[u8; 32], Vec<u8>>,
+    dependencies: DependencyInput,
+) -> Unit {
     let cancel = Cancel::new();
     let identity = identity();
     let limits = SpineLimits::default();
@@ -55,7 +64,7 @@ fn compile_source(source: String, packages: BTreeMap<[u8; 32], Vec<u8>>) -> Unit
     let checked = check(
         &parsed,
         &models,
-        &DependencyInput::default(),
+        &dependencies,
         &LockEvidence::default(),
         limits,
         &cancel,
@@ -68,6 +77,7 @@ fn compile_source(source: String, packages: BTreeMap<[u8; 32], Vec<u8>>) -> Unit
     Unit {
         source,
         packages,
+        dependencies,
         models,
         checked,
         emitted,
@@ -79,7 +89,13 @@ fn compile(functions: &str) -> Unit {
 }
 
 fn read(unit: &Unit) -> BindPackage<'_> {
-    BindPackage::read(&unit.models, &unit.checked, &unit.emitted).expect("the package reads")
+    BindPackage::read(
+        &unit.models,
+        &unit.checked,
+        &unit.emitted,
+        SpineLimits::default().imports,
+    )
+    .expect("the package reads")
 }
 
 fn arg(parameter: &str, value: i64) -> CallArgument {
@@ -203,7 +219,7 @@ fn run_refusal(unit: &Unit, call: &Call, objects: &ObjectEnvironment) -> Box<Run
         "bind.native",
         unit.source.as_bytes(),
         &unit.packages,
-        &DependencyInput::default(),
+        &unit.dependencies,
         SpineLimits::default(),
         call,
         objects,
@@ -757,7 +773,7 @@ fn tc_1053_step_7_binding_does_not_evaluate() {
         "bind.native",
         unit.source.as_bytes(),
         &BTreeMap::new(),
-        &DependencyInput::default(),
+        &unit.dependencies,
         SpineLimits::default(),
         &starved,
         &ObjectEnvironment::default(),
@@ -770,18 +786,6 @@ fn tc_1053_step_7_binding_does_not_evaluate() {
     };
     assert_eq!(incomplete.limits_field(), "work_units");
     assert_eq!(bound(&unit, &starved, &occurrence).values(), [4, 1]);
-
-    // A conversion past `value_occurrences` is incomplete and binds nothing.
-    let occurrence = the_application(&unit, "plus", ScalarOperator::Add);
-    let mut limited = call("plus", vec![arg("a", 4)]);
-    limited.accounting.value_occurrences = 0;
-    let Ok(BindOutcome::Incomplete(incomplete)) = bind_call(&unit, &limited, &occurrence) else {
-        panic!("a conversion past value_occurrences is incomplete");
-    };
-    assert_eq!(incomplete.limits_field(), "value_occurrences");
-    assert_eq!(incomplete.record.limit, 0);
-    assert_eq!(incomplete.record.consumed, 0);
-    assert_eq!(incomplete.record.next_charge, Integer::from(1_i64));
 }
 
 /// FR-367-AC-9: the binding is FR-357's operator-level operand list, and its
@@ -947,7 +951,7 @@ fn tc_1053_step_7_undefined_evaluation_still_binds() {
         "bind.native",
         unit.source.as_bytes(),
         &BTreeMap::new(),
-        &DependencyInput::default(),
+        &unit.dependencies,
         SpineLimits::default(),
         &call("und", vec![arg("a", 4), arg("b", 0)]),
         &ObjectEnvironment::default(),
@@ -1002,4 +1006,44 @@ fn tc_1053_step_5_quantifier_binder_operand_is_not_an_argument() {
             level: "1".to_owned()
         }
     );
+}
+
+/// FR-367-AC-1: a unit that imports a library binds, as `run` accepts it with
+/// the same dependency input.
+#[trace("TC-1053", "FR-367-AC-1")]
+#[test]
+fn tc_1053_step_1_a_unit_importing_a_library_binds() {
+    let geometry = crate::spine::SuppliedLibrary {
+        identity: "test/geometry".to_owned(),
+        source: qsl_foundation::SourceIdentity::new("a", "geometry", "git", "1"),
+        path: "geometry.native".to_owned(),
+        bytes: format!(
+            "{HEADER}function f using v(x: Int[0, 9]): Boolean pure {{ x < 5 }}\n"
+        )
+        .into_bytes(),
+    };
+    let unit = compile_with(
+        format!(
+            "{HEADER}import \"test/geometry\" as g;\n\
+             function plus using v(a: Int[0, 9]): Int[1, 10] pure {{ a + 1 }}\n"
+        ),
+        BTreeMap::new(),
+        DependencyInput::new(vec![geometry]).expect("an admissible dependency input"),
+    );
+    assert_eq!(unit.checked.package().dependencies().len(), 1);
+    let occurrence = the_application(&unit, "plus", ScalarOperator::Add);
+    let request = call("plus", vec![arg("a", 4)]);
+    assert_eq!(bound(&unit, &request, &occurrence).values(), [4, 1]);
+    let completed = run(
+        identity(),
+        "bind.native",
+        unit.source.as_bytes(),
+        &unit.packages,
+        &unit.dependencies,
+        SpineLimits::default(),
+        &request,
+        &ObjectEnvironment::default(),
+        &Cancel::new(),
+    );
+    assert!(completed.is_ok(), "{completed:?}");
 }
