@@ -542,7 +542,11 @@ fn a_key_naming_a_declaration_of_another_kind_refuses_malformed_declaration() {
 #[trace("TC-800")]
 fn a_parameter_mapped_to_the_receivers_spelling_refuses_malformed_declaration() {
     let package = package(CLAUSES);
-    let mut binding = frame("ConfigVersion", "attemptUpdate", &[("n", "store"), ("m", "limit")]);
+    let mut binding = frame(
+        "ConfigVersion",
+        "attemptUpdate",
+        &[("n", "store"), ("m", "limit")],
+    );
     let AuthoredBinding::Frame { value, .. } = &mut binding else {
         panic!("a frame binding");
     };

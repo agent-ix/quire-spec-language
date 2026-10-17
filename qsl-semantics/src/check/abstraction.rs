@@ -487,10 +487,8 @@ impl CheckedGraph {
                     )));
                 }
                 if let RustReceiver::Parameter(receiver) = &value.receiver {
-                    if let Some((parameter, _)) = value
-                        .parameters
-                        .iter()
-                        .find(|(_, rust)| *rust == receiver)
+                    if let Some((parameter, _)) =
+                        value.parameters.iter().find(|(_, rust)| *rust == receiver)
                     {
                         return Err(malformed(MalformedEntry::ReceiverParameter {
                             parameter: parameter.clone(),
