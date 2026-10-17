@@ -10,7 +10,7 @@ use qsl_forms::{
     ExpressionForm, FormsCause, IntervalUpper, ParsedUnit, ProtocolDeclarationForm,
     ProtocolNodeDeclaration, TypeFormHead,
 };
-use qsl_foundation::{SourceIdentity, Span};
+use qsl_foundation::{Code, SourceIdentity, Span};
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
     profile v = \"quire.value.complete/v1\";\n\
@@ -356,6 +356,7 @@ fn a_compensation_builds_every_member_as_written() {
     let text = source("", &undo, RUN);
     let parsed = parse(&text);
     assert!(!parsed.is_admissible(), "{text}");
+    assert_eq!(parsed.diagnostics()[0].code, Code::InvalidSyntax);
     let at = parsed.diagnostics()[0]
         .byte_span()
         .expect("the diagnostic is located")
