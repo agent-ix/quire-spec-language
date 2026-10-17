@@ -151,7 +151,11 @@ fn emitted_once(
 ) -> Result<EmittedUnit, Box<CompileRefusal>> {
     let t = std::time::Instant::now();
     let checked = checked_once(&source, path, bytes, packages, dependencies, limits, lock)?;
-    eprintln!("PHASE parse+select+check {:?} ({} bytes)", t.elapsed(), bytes.len());
+    eprintln!(
+        "PHASE parse+select+check {:?} ({} bytes)",
+        t.elapsed(),
+        bytes.len()
+    );
     let t = std::time::Instant::now();
     let out = package(&checked, PackageLimits::default(), &Cancel::new())
         .map_err(refusal)?
