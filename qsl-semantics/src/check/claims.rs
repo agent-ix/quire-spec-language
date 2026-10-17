@@ -49,8 +49,8 @@ use super::ir::{
     coerce_builds_narrow, scalar_conversion_target, CheckedNode, NodeKind, Slot, Visit,
 };
 use super::lowering::SemanticGraph;
-use super::references::{read_object, ModelReferences};
 use super::node_key::{ApplicationTerm, BodyTerm, LeafTerm, MemberTerm};
+use super::references::{read_object, ModelReferences};
 use super::refusal::KeyFault;
 use super::{
     family::{OccurrenceMap, OccurrenceRole},

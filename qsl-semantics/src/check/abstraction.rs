@@ -454,9 +454,7 @@ impl CheckedGraph {
                     .keys()
                     .find(|name| !declared.contains(name.as_str()))
                 {
-                    return Err(malformed(MalformedEntry::UnknownParameter(
-                        unknown.clone(),
-                    )));
+                    return Err(malformed(MalformedEntry::UnknownParameter(unknown.clone())));
                 }
                 if let Some((omitted, _)) = operation
                     .parameters()

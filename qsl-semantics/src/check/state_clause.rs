@@ -780,10 +780,7 @@ fn record(
 /// The declaring object type and name of `operation`, as a record
 /// references it (ADR-017 AR-4).
 fn operation_reference(operation: &ClauseOperation) -> (EffectiveId, String) {
-    (
-        operation.declaring,
-        operation.declaration.name().to_owned(),
-    )
+    (operation.declaring, operation.declaration.name().to_owned())
 }
 
 /// `domain`'s ADR-012 §15.7 key, `object` being its member type's

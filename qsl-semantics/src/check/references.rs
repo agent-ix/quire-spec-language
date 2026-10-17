@@ -106,5 +106,8 @@ pub(crate) fn read_object(node: CheckedNode<'_>) -> Option<EffectiveId> {
 /// The static object types every model member read under `root` goes
 /// through.
 pub(crate) fn body_objects(root: CheckedNode<'_>) -> BTreeSet<EffectiveId> {
-    root.descendants().into_iter().filter_map(read_object).collect()
+    root.descendants()
+        .into_iter()
+        .filter_map(read_object)
+        .collect()
 }

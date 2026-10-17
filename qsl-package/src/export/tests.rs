@@ -11,7 +11,7 @@ use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::Code;
 use qsl_semantics::check::{
     AbstractionKey, AbstractionRefusal, AuthoredBinding, Capability, CheckedBinding, FrameBinding,
-    MalformedEntry, ObjectBinding, OperationKey, PopulationBinding, PackageDeclarations, RustField,
+    MalformedEntry, ObjectBinding, OperationKey, PackageDeclarations, PopulationBinding, RustField,
     RustParameter, RustPath, RustReceiver,
 };
 use qsl_semantics::model::key::DeclarationKey;
@@ -122,7 +122,11 @@ fn frame(owner: &str, operation: &str, parameters: &[(&str, &str)]) -> AuthoredB
 }
 
 fn attempt_update() -> AuthoredBinding {
-    frame("ConfigVersion", "attemptUpdate", &[("n", "count"), ("m", "limit")])
+    frame(
+        "ConfigVersion",
+        "attemptUpdate",
+        &[("n", "count"), ("m", "limit")],
+    )
 }
 
 fn config_object() -> AuthoredBinding {
@@ -159,7 +163,9 @@ fn frame_item(package: &CheckedPackage) -> OccurrenceKey {
     let selection = graph
         .resolve_operation(&name("M"), &name("ConfigVersion"), &name("attemptUpdate"))
         .expect("the operation resolves");
-    let (_, frame) = graph.operation_frame(&selection).expect("the unit has the frame");
+    let (_, frame) = graph
+        .operation_frame(&selection)
+        .expect("the unit has the frame");
     OccurrenceKey::new(wire(frame.frame()), frame.frame_origin().clone())
 }
 
@@ -289,7 +295,11 @@ fn malformed_parameter_and_field_maps_refuse_malformed_declaration() {
             MalformedEntry::UnknownParameter(name("z")),
         ),
         (
-            frame("ConfigVersion", "attemptUpdate", &[("n", "same"), ("m", "same")]),
+            frame(
+                "ConfigVersion",
+                "attemptUpdate",
+                &[("n", "same"), ("m", "same")],
+            ),
             MalformedEntry::SharedRustParameter {
                 first: name("m"),
                 second: name("n"),
@@ -318,7 +328,8 @@ fn malformed_parameter_and_field_maps_refuse_malformed_declaration() {
         .graph()
         .check_abstraction(&[inherited])
         .expect("a subtype binds a field its supertype declares");
-    let Some(CheckedBinding::Object(bound)) = relation.get(&AbstractionKey::Object(declaration("Sub")))
+    let Some(CheckedBinding::Object(bound)) =
+        relation.get(&AbstractionKey::Object(declaration("Sub")))
     else {
         panic!("Sub is bound");
     };
@@ -435,15 +446,9 @@ fn the_export_refuses_each_item_with_an_unbound_element_and_returns_the_others()
             .claim()
             .clone(),
     );
-    let mixed = export_bindings(
-        &package,
-        &[reads_fields, over_population, unknown.clone()],
-    );
+    let mixed = export_bindings(&package, &[reads_fields, over_population, unknown.clone()]);
     assert_eq!(mixed[..2], results[..]);
-    assert_eq!(
-        mixed[2],
-        Err(ExportRefusal::UnknownItem { item: unknown })
-    );
+    assert_eq!(mixed[2], Err(ExportRefusal::UnknownItem { item: unknown }));
 }
 
 #[test]
@@ -457,7 +462,10 @@ fn the_export_references_the_receivers_static_type() {
     };
     assert_eq!(
         unbound_keys(refusal),
-        [(&AbstractionKey::Object(declaration("Sub")), fixture::PACKAGE)]
+        [(
+            &AbstractionKey::Object(declaration("Sub")),
+            fixture::PACKAGE
+        )]
     );
 
     let with_sub = bound(&[object("Sub", "Sub", &[("f", "f")])]);
@@ -466,7 +474,11 @@ fn the_export_references_the_receivers_static_type() {
         panic!("{results:?}: expected one bound item");
     };
     assert_eq!(
-        exported.bindings.iter().map(|(key, _)| key).collect::<Vec<_>>(),
+        exported
+            .bindings
+            .iter()
+            .map(|(key, _)| key)
+            .collect::<Vec<_>>(),
         [&AbstractionKey::Object(declaration("Sub"))]
     );
 }

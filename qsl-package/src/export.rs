@@ -66,7 +66,10 @@ pub fn export_bindings(
     package: &CheckedPackage,
     items: &[OccurrenceKey],
 ) -> Vec<Result<BoundItem, ExportRefusal>> {
-    items.iter().map(|item| export_item(package, item)).collect()
+    items
+        .iter()
+        .map(|item| export_item(package, item))
+        .collect()
 }
 
 fn export_item(package: &CheckedPackage, item: &OccurrenceKey) -> Result<BoundItem, ExportRefusal> {
