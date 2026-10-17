@@ -22,8 +22,8 @@ pub use checked_v2::{
     V2ReadLimits, V2ReadRefusal,
 };
 pub use emit::{
-    emit_checked, emit_checked_with_cancel, emit_package, Emission, EmitRefusal, OmissionCause,
-    OmittedNode,
+    checked_node_id, checked_occurrence, emit_checked, emit_checked_with_cancel, emit_package,
+    Emission, EmitRefusal, OmissionCause, OmittedNode,
 };
 
 // The FR-105-AC-6 fault-injection seam. Public only under

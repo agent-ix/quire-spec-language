@@ -78,7 +78,7 @@ mod parity_identity;
 pub use parity_identity::{
     parity_obligation, BoundEntries, Domain, IdentityEncodeError, ParityArgument, ParityPreimage,
 };
-mod scalar_site;
+pub(crate) mod scalar_site;
 pub use composite_domain::ParityBoundRefusal;
 pub use composite_parity::{replay_composite_parity, settle_verified_shadow};
 pub use operator_parity::{replay_operator_parity, ScalarIdentityMismatch};

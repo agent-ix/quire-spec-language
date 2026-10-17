@@ -52,12 +52,12 @@ fn run_fixture(bytes: &str, call: &Call) -> Result<CallOutcome, Box<RunRefusal>>
     .map(|(_, outcome)| outcome)
 }
 
-struct LookupDriverFixture {
-    source: String,
-    packages: BTreeMap<[u8; 32], Vec<u8>>,
+pub(in crate::spine) struct LookupDriverFixture {
+    pub(in crate::spine) source: String,
+    pub(in crate::spine) packages: BTreeMap<[u8; 32], Vec<u8>>,
 }
 
-fn lookup_driver_fixture(functions: &str) -> LookupDriverFixture {
+pub(in crate::spine) fn lookup_driver_fixture(functions: &str) -> LookupDriverFixture {
     let mut document: serde_json::Value = serde_json::from_slice(include_bytes!(
         "../../../../tests/fixtures/spine-model.semantic-ir.json"
     ))
@@ -107,7 +107,7 @@ fn lookup_driver_fixture(functions: &str) -> LookupDriverFixture {
     LookupDriverFixture { source, packages }
 }
 
-fn lookup_driver_context(
+pub(in crate::spine) fn lookup_driver_context(
     fixture: &LookupDriverFixture,
 ) -> (
     qsl_semantics::model::object_environment::ObjectEnvironment,

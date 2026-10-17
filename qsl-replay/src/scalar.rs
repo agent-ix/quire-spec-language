@@ -208,6 +208,9 @@ pub enum ScalarOperator {
 }
 
 impl ScalarOperator {
+    /// Every catalog operator, in declaration order.
+    pub(crate) const ALL: [Self; 4] = [Self::Add, Self::Subtract, Self::Multiply, Self::Negate];
+
     /// The operation identity a checked application node of this operator
     /// carries.
     pub(crate) fn catalog_identity(self) -> &'static str {
