@@ -61,7 +61,8 @@ pub enum ValueInvariantOutcome {
     Incomplete(Incomplete),
 }
 
-/// FR-366: the results of [`evaluate`] and their outcome.
+/// FR-366: the results of `CheckedPackageEvaluation::evaluate_value_invariants` and
+/// their outcome.
 #[derive(Debug)]
 pub struct ValueInvariantEvaluation {
     /// One result for each invariant and value, in the FR-207 key order of
