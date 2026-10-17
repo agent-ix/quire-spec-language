@@ -40,3 +40,5 @@ Reviewed at agent-ix/quire-spec-language@530ecc8c4 (`git diff 35042dc..530ecc8`)
 | FND-001 | fixed | 530ecc8c4 |
 | FND-002 | fixed | 530ecc8c4 |
 | FND-003 | fixed | 530ecc8c4 |
+| FND-004 | fixed | a844450cd |
+| FND-005 | fixed | a844450cd |
