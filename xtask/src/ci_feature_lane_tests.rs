@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! NFR-013 / TC-915: actual Make routing, separate from real extraction qualification.
 
+use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use ix_trace_rs::trace;
+
+use crate::feature_scope::{skipped, KeepReason, Verdict};
+use crate::test_suites::all_features_decisions;
 
 // Independent complete argv expectations, including standalone default checks.
 const DEFAULT_COMMANDS: &[&[&str]] = &[
@@ -577,5 +581,38 @@ fn clean_and_core_tooling_retain_their_own_target_and_features() {
                 &["run", "--package", "xtask", "--", "checked-input"],
             ]
         )
+    );
+}
+
+/// QSL-825: the all-features lane's package scope, from the real workspace's
+/// `cargo metadata`. Prints the decision table (`--nocapture`).
+#[test]
+#[trace("TC-915", "NFR-013-AC-3")]
+fn real_workspace_decisions_keep_every_package_whose_compile_changes() {
+    let decisions = all_features_decisions(workspace(), &[OsString::from("--locked")])
+        .expect("the workspace resolves in both feature selections");
+    for decision in &decisions {
+        println!("{decision}");
+    }
+    println!("--exclude {}", skipped(&decisions).join(" --exclude "));
+    let verdict = |name: &str| {
+        &decisions
+            .iter()
+            .find(|decision| decision.package == name)
+            .unwrap_or_else(|| panic!("{name} is a workspace package"))
+            .verdict
+    };
+    // Optional features no default build turns on.
+    assert_eq!(
+        verdict("quire-spec-language"),
+        &Verdict::Run(KeepReason::OwnFeatures)
+    );
+    assert_eq!(verdict("qsl-source"), &Verdict::Run(KeepReason::OwnFeatures));
+    // No optional features of its own, but a dependency's features change.
+    assert_eq!(
+        verdict("qsl-bench"),
+        &Verdict::Run(KeepReason::DependencyResolvesDifferently {
+            dependency: "qsl-replay".to_owned()
+        })
     );
 }

@@ -55,6 +55,7 @@ use std::process::{Command, Stdio};
 use qsl_attrs::string_edge;
 
 use crate::error::{Error, Result};
+use crate::feature_scope::{decide, skipped, Decision, Resolution};
 
 /// What a suite is.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -553,7 +554,7 @@ pub struct Workspace {
     defaults: BTreeSet<String>,
 }
 
-fn string_field<'a>(
+pub(crate) fn string_field<'a>(
     value: &'a serde_json::Value,
     name: &'static str,
     path: &'static str,
@@ -563,7 +564,7 @@ fn string_field<'a>(
         .ok_or(ArtifactError::MalformedField { field: path })
 }
 
-fn array_field<'a>(
+pub(crate) fn array_field<'a>(
     value: &'a serde_json::Value,
     name: &'static str,
 ) -> std::result::Result<&'a Vec<serde_json::Value>, ArtifactError> {
@@ -610,6 +611,23 @@ impl Workspace {
         })
     }
 
+    /// The member that owns `source`, a path relative to `workspace_root`:
+    /// the one whose directory is the longest prefix of it. `None` when no
+    /// member directory contains it.
+    fn owner(&self, workspace_root: &Path, source: &str) -> Option<&str> {
+        let source = Path::new(source);
+        self.members
+            .iter()
+            .filter_map(|(name, manifest)| {
+                let directory = manifest.parent()?.strip_prefix(workspace_root).ok()?;
+                source
+                    .starts_with(directory)
+                    .then(|| (directory.components().count(), name.as_str()))
+            })
+            .max_by_key(|(depth, _)| *depth)
+            .map(|(_, name)| name)
+    }
+
     /// The manifests of the packages `packages` selects. A named package
     /// that is not a member is an error; an `--exclude`d name that is not a
     /// member excludes nothing.
@@ -648,7 +666,7 @@ pub struct Artifacts {
     doc_libraries: BTreeMap<String, DocLibrary>,
 }
 
-fn field<'a>(
+pub(crate) fn field<'a>(
     value: &'a serde_json::Value,
     name: &'static str,
     path: &'static str,
@@ -1003,9 +1021,20 @@ pub fn evaluate(
     lane: &Lane,
     expected: &BTreeSet<SuiteId>,
     suites: &[SuiteOutcome],
+    findings: Vec<Finding>,
+) -> Vec<Finding> {
+    evaluate_declared(lane.empty, expected, suites, findings)
+}
+
+/// [`evaluate`] with the empty suites given directly, for a run that leaves
+/// some of the lane's packages out.
+fn evaluate_declared(
+    empty: &[EmptySuite],
+    expected: &BTreeSet<SuiteId>,
+    suites: &[SuiteOutcome],
     mut findings: Vec<Finding>,
 ) -> Vec<Finding> {
-    let declared: BTreeSet<SuiteId> = lane.empty.iter().map(EmptySuite::id).collect();
+    let declared: BTreeSet<SuiteId> = empty.iter().map(EmptySuite::id).collect();
     let mut ran = BTreeSet::new();
     for suite in suites {
         ran.insert(&suite.id);
@@ -1166,11 +1195,22 @@ fn read_artifacts(
 /// flags that decide whether cargo may touch the lock file or the network
 /// (`--locked`, `--offline`, `--frozen`) are passed on from the test
 /// arguments; nothing else is.
-#[string_edge]
 fn metadata_command(workspace_root: &Path, cargo_args: &[OsString]) -> Command {
+    metadata_command_with(workspace_root, cargo_args, &["--no-deps"])
+}
+
+/// `cargo metadata` with `scope` (`--no-deps`, `--all-features`, ...) in the
+/// form [`metadata_command`] describes.
+#[string_edge]
+fn metadata_command_with(
+    workspace_root: &Path,
+    cargo_args: &[OsString],
+    scope: &[&str],
+) -> Command {
     let mut command = Command::new(cargo());
     command
-        .args(["metadata", "--no-deps", "--format-version", "1"])
+        .args(["metadata", "--format-version", "1"])
+        .args(scope)
         .current_dir(workspace_root)
         .stdin(Stdio::null())
         .stderr(Stdio::inherit());
@@ -1196,6 +1236,55 @@ fn read_workspace(workspace_root: &Path, cargo_args: &[OsString]) -> Result<Work
     }
     Workspace::from_cargo_metadata(&String::from_utf8_lossy(&output.stdout))
         .map_err(|source| Error::TestSuitesArtifacts { source })
+}
+
+/// The resolve of the whole workspace, with dependencies, under the default
+/// features or under `--all-features`.
+fn read_resolution(
+    workspace_root: &Path,
+    cargo_args: &[OsString],
+    all_features: bool,
+) -> Result<Resolution> {
+    let scope: &[&str] = if all_features { &["--all-features"] } else { &[] };
+    let output = metadata_command_with(workspace_root, cargo_args, scope)
+        .output()
+        .map_err(io_error("cannot spawn cargo metadata"))?;
+    if !output.status.success() {
+        return Err(cargo_failed("cargo metadata", output.status));
+    }
+    Resolution::from_cargo_metadata(&String::from_utf8_lossy(&output.stdout))
+        .map_err(|source| Error::TestSuitesArtifacts { source })
+}
+
+/// What the all-features lane does with each package (QSL-825), proven from
+/// the resolve of the workspace in both lanes.
+pub(crate) fn all_features_decisions(
+    workspace_root: &Path,
+    cargo_args: &[OsString],
+) -> Result<Vec<Decision>> {
+    let default = read_resolution(workspace_root, cargo_args, false)?;
+    let all = read_resolution(workspace_root, cargo_args, true)?;
+    decide(&default, &all).map_err(|source| Error::TestSuitesArtifacts { source })
+}
+
+/// `cargo_args` plus one `--exclude` per skipped package, placed before any
+/// `--` because cargo reads package selection only there.
+#[string_edge]
+fn exclude_arguments(cargo_args: &[OsString], skipped: &[String]) -> Vec<OsString> {
+    let at = cargo_args
+        .iter()
+        .position(|argument| argument.to_str() == Some("--"))
+        .unwrap_or(cargo_args.len());
+    let (selection, rest) = cargo_args.split_at(at);
+    let excludes = skipped
+        .iter()
+        .flat_map(|name| [OsString::from("--exclude"), OsString::from(name)]);
+    selection
+        .iter()
+        .cloned()
+        .chain(excludes)
+        .chain(rest.iter().cloned())
+        .collect()
 }
 
 /// Run `cargo test <args>`, echoing its output as it arrives and feeding it to
@@ -1270,6 +1359,30 @@ fn reap(child: &mut std::process::Child, streamed: Result<()>) -> Result<std::pr
     streamed.and(waited)
 }
 
+/// The lane's empty-suite declarations that belong to a package the run
+/// selects: a suite of an `--exclude`d package does not run, so declaring it
+/// empty would be a stale declaration.
+fn in_scope(
+    declared: &[EmptySuite],
+    workspace: Option<&Workspace>,
+    workspace_root: &Path,
+    selection: &Selection,
+) -> Vec<EmptySuite> {
+    let (Some(workspace), Packages::Workspace { excluded }) = (workspace, &selection.packages)
+    else {
+        return declared.to_vec();
+    };
+    declared
+        .iter()
+        .filter(|suite| {
+            workspace
+                .owner(workspace_root, suite.source)
+                .is_none_or(|owner| !excluded.iter().any(|name| name == owner))
+        })
+        .copied()
+        .collect()
+}
+
 /// Run the lane's `cargo test` and check its suites. `target_dir` overrides
 /// cargo's own build directory for both cargo invocations; `echo` receives
 /// the test run's output as it arrives.
@@ -1282,16 +1395,23 @@ pub fn run_lane(
 ) -> Result<String> {
     let selection = Selection::from_cargo_args(cargo_args)?;
     let artifacts = read_artifacts(workspace_root, cargo_args, target_dir)?;
-    let doc_packages = if selection.doctests {
-        Some(read_workspace(workspace_root, cargo_args)?.select(&selection.packages)?)
+    let left_out =
+        matches!(&selection.packages, Packages::Workspace { excluded } if !excluded.is_empty());
+    let workspace = if selection.doctests || left_out {
+        Some(read_workspace(workspace_root, cargo_args)?)
     } else {
         None
     };
+    let doc_packages = match (&workspace, selection.doctests) {
+        (Some(workspace), true) => Some(workspace.select(&selection.packages)?),
+        _ => None,
+    };
+    let empty = in_scope(lane.empty, workspace.as_ref(), workspace_root, &selection);
     let mut parser = RunParser::new(&artifacts, workspace_root);
     run_tests(workspace_root, cargo_args, target_dir, &mut parser, echo)?;
     let (suites, findings) = parser.finish();
-    let findings = evaluate(
-        lane,
+    let findings = evaluate_declared(
+        &empty,
         &artifacts.expected_suites(doc_packages.as_ref()),
         &suites,
         findings,
@@ -1310,10 +1430,10 @@ pub fn run_lane(
     let mut summary = format!(
         "test-suites: lane {}: {} suites ran tests, {} declared empty:\n",
         lane.name,
-        suites.len().saturating_sub(lane.empty.len()),
-        lane.empty.len()
+        suites.len().saturating_sub(empty.len()),
+        empty.len()
     );
-    for empty in lane.empty {
+    for empty in &empty {
         summary.push_str(&format!("  {}: {}\n", empty.id(), empty.reason));
     }
     Ok(summary)
@@ -1341,13 +1461,19 @@ pub fn run(workspace_root: &Path, operands: &[OsString]) -> Result<String> {
         known: known(),
     })?;
     validate_lane_selection(lane, cargo_args)?;
-    run_lane(
-        workspace_root,
-        lane,
-        cargo_args,
-        None,
-        &mut io::stdout().lock(),
-    )
+    let mut stdout = io::stdout().lock();
+    if !matches!(LaneKind::from_name(lane.name), LaneKind::AllFeaturesWorkspace) {
+        return run_lane(workspace_root, lane, cargo_args, None, &mut stdout);
+    }
+    // QSL-825: the default lane ran every package; this one runs those whose
+    // compile `--all-features` can change.
+    let decisions = all_features_decisions(workspace_root, cargo_args)?;
+    for decision in &decisions {
+        writeln!(stdout, "test-suites: {decision}")
+            .map_err(io_error("cannot echo the package decisions"))?;
+    }
+    let cargo_args = exclude_arguments(cargo_args, &skipped(&decisions));
+    run_lane(workspace_root, lane, &cargo_args, None, &mut stdout)
 }
 
 #[cfg(test)]
@@ -2325,6 +2451,114 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
             .collect()
     }
 
+    fn empty_at(source: &'static str, kind: SuiteKind) -> EmptySuite {
+        EmptySuite {
+            source,
+            kind,
+            reason: "authored",
+        }
+    }
+
+    #[test]
+    #[trace("TC-915", "NFR-013-AC-3")]
+    fn skipped_packages_are_excluded_before_any_test_binary_argument() {
+        let skipped = names(&["b", "c"]);
+        let out = |arguments: &[&str]| -> Vec<String> {
+            exclude_arguments(&cargo_args(arguments), &skipped)
+                .iter()
+                .map(|argument| argument.to_string_lossy().into_owned())
+                .collect()
+        };
+        assert_eq!(
+            out(&["--locked", "--workspace", "--all-features"]),
+            names(&[
+                "--locked",
+                "--workspace",
+                "--all-features",
+                "--exclude",
+                "b",
+                "--exclude",
+                "c"
+            ])
+        );
+        assert_eq!(
+            out(&["--workspace", "--", "--nocapture"]),
+            names(&[
+                "--workspace",
+                "--exclude",
+                "b",
+                "--exclude",
+                "c",
+                "--",
+                "--nocapture"
+            ])
+        );
+        let parsed = select(&["--workspace", "--exclude", "b", "--exclude", "c"]);
+        assert_eq!(
+            Selection::from_cargo_args(&exclude_arguments(&cargo_args(&["--workspace"]), &skipped))
+                .expect("the exclusions parse as a selection"),
+            parsed
+        );
+    }
+
+    #[test]
+    #[trace("TC-915", "NFR-013-AC-3")]
+    fn the_longest_member_directory_owns_a_source() {
+        let metadata = serde_json::json!({
+            "packages": [
+                {"name": "root", "id": "root", "manifest_path": format!("{ROOT}/Cargo.toml")},
+                {"name": "a", "id": "a", "manifest_path": format!("{ROOT}/a/Cargo.toml")},
+                {"name": "tool", "id": "tool", "manifest_path": format!("{ROOT}/tools/x/Cargo.toml")},
+            ],
+            "workspace_members": ["root", "a", "tool"],
+            "workspace_default_members": ["root"],
+        });
+        let workspace = Workspace::from_cargo_metadata(&metadata.to_string()).expect("authored");
+        let owner = |source| workspace.owner(Path::new(ROOT), source);
+        assert_eq!(owner("src/main.rs"), Some("root"));
+        assert_eq!(owner("a/src/lib.rs"), Some("a"));
+        assert_eq!(owner("tools/x/lib.rs"), Some("tool"));
+        // `ab` is not inside `a`: ownership is by path component.
+        assert_eq!(owner("ab/src/lib.rs"), Some("root"));
+        assert_eq!(workspace.owner(Path::new("/elsewhere"), "a/src/lib.rs"), None);
+    }
+
+    #[test]
+    #[trace("TC-915", "NFR-013-AC-3")]
+    fn empty_declarations_of_excluded_packages_leave_the_lane() {
+        let workspace = workspace();
+        let declared = [
+            empty_at("a/src/lib.rs", SuiteKind::Tests),
+            empty_at("b/src/lib.rs", SuiteKind::Tests),
+            empty_at("b/src/lib.rs", SuiteKind::Doctests),
+            empty_at("c/src/main.rs", SuiteKind::Tests),
+        ];
+        let sources = |arguments: &[&str]| -> Vec<(&'static str, SuiteKind)> {
+            in_scope(
+                &declared,
+                Some(&workspace),
+                Path::new(ROOT),
+                &select(arguments),
+            )
+            .iter()
+            .map(|suite| (suite.source, suite.kind))
+            .collect()
+        };
+        assert_eq!(
+            sources(&["--workspace", "--exclude", "b"]),
+            vec![
+                ("a/src/lib.rs", SuiteKind::Tests),
+                ("c/src/main.rs", SuiteKind::Tests)
+            ]
+        );
+        assert_eq!(sources(&["--workspace"]).len(), 4);
+        assert_eq!(sources(&["-p", "b"]).len(), 4);
+        assert_eq!(
+            in_scope(&declared, None, Path::new(ROOT), &select(&["--workspace"])).len(),
+            4
+        );
+    }
+
     #[test]
     #[trace("TC-950", "NFR-014-AC-1")]
     fn the_selected_packages_follow_the_arguments_and_the_workspace() {
@@ -3068,6 +3302,69 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
             write(root, "b/src/lib.rs", "pub fn b() {}\n");
             write(root, "b/tests/base.rs", "#[test]\nfn t() {}\n");
             dir
+        }
+
+        /// `leaf` has no features and no dependencies; `featured` has one
+        /// feature; `user` has no features but depends on `featured`. Each
+        /// library has one unit test and one doc-test.
+        fn feature_workspace() -> tempfile::TempDir {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let root = dir.path();
+            write(
+                root,
+                "Cargo.toml",
+                "[workspace]\nmembers = [\"leaf\", \"featured\", \"user\"]\nresolver = \"2\"\n",
+            );
+            for (name, manifest_tail) in [
+                ("leaf", ""),
+                ("featured", "\n[features]\nextra = []\n"),
+                ("user", "\n[dependencies]\nfeatured = { path = \"../featured\" }\n"),
+            ] {
+                write(
+                    root,
+                    &format!("{name}/Cargo.toml"),
+                    &format!(
+                        "[package]\nname = \"{name}\"\nversion = \"0.0.0\"\nedition = \"2021\"\n{manifest_tail}"
+                    ),
+                );
+                write(
+                    root,
+                    &format!("{name}/src/lib.rs"),
+                    &format!(
+                        "/// ```\n/// assert_eq!({name}::one(), 1);\n/// ```\npub fn one() -> u32 {{ 1 }}\n\n#[cfg(test)]\nmod tests {{\n    #[test]\n    fn {name}_unit() {{ assert_eq!(super::one(), 1); }}\n}}\n"
+                    ),
+                );
+            }
+            dir
+        }
+
+        /// The decisions come from the fixture's real `cargo metadata`; the
+        /// package whose compile `--all-features` cannot change is left out
+        /// of the real run, and the two that can change stay in it.
+        #[test]
+        #[trace("TC-915", "NFR-013-AC-3")]
+        fn only_packages_whose_compile_changes_run_under_all_features() {
+            let dir = feature_workspace();
+            let arguments = cargo_args(&["--workspace", "--all-features"]);
+            let decisions = all_features_decisions(dir.path(), &arguments).expect("decisions");
+            assert_eq!(skipped(&decisions), names(&["leaf"]), "{decisions:?}");
+            let target = dir.path().join("target");
+            let mut echo = Vec::new();
+            let summary = run_lane(
+                dir.path(),
+                &lane(&[]),
+                &exclude_arguments(&arguments, &skipped(&decisions)),
+                Some(&target),
+                &mut echo,
+            )
+            .expect("the kept packages' suites all run tests");
+            // featured and user: a unit-test suite and a doc-test suite each.
+            assert!(summary.contains("4 suites ran tests"), "{summary}");
+            let echo = String::from_utf8_lossy(&echo);
+            for ran in ["featured_unit", "user_unit"] {
+                assert!(echo.contains(ran), "{ran} did not run: {echo}");
+            }
+            assert!(!echo.contains("leaf_unit"), "{echo}");
         }
 
         fn run_workspace(
