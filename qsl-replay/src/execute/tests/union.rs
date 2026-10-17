@@ -139,7 +139,8 @@ fn a_witness_union_that_is_not_a_member_of_its_slots_union_is_refused() {
 }
 
 /// FR-321-AC-4: a `Tree` 10,000 levels deep converts, on a small stack, to
-/// the kernel value that equals itself; a `value_occurrences` limit one below
+/// the kernel value that equals itself; admission of the supplied value is
+/// bounded by occurrences: a `value_occurrences` limit one below
 /// its 29,999 occurrences stops the conversion naming that limit.
 #[trace("FR-321-AC-4", "TC-830")]
 #[test]
