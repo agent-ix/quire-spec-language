@@ -427,7 +427,8 @@ fn clause_input_document(input: &ClauseSelectionInput) -> &DocumentRef {
     match input {
         ClauseSelectionInput::Current { snapshot, .. }
         | ClauseSelectionInput::PreCall { snapshot, .. } => snapshot,
-        ClauseSelectionInput::Invocation { invocation } => invocation,
+        ClauseSelectionInput::Invocation { invocation }
+        | ClauseSelectionInput::Context { invocation, .. } => invocation,
     }
 }
 
@@ -440,7 +441,8 @@ fn admitted_documents(
     observations: &AdmittedObservations,
 ) -> Vec<DocumentRef> {
     let invocation = match input {
-        ClauseSelectionInput::Invocation { invocation } => Some(invocation),
+        ClauseSelectionInput::Invocation { invocation }
+        | ClauseSelectionInput::Context { invocation, .. } => Some(invocation),
         ClauseSelectionInput::Current { .. } | ClauseSelectionInput::PreCall { .. } => None,
     };
     invocation
@@ -482,6 +484,7 @@ pub(crate) fn admit_clause_observations(
             declaring: operation.declaring,
             declaration: operation.declaration.clone(),
         }),
+        operations: graph.scope().operations().clone(),
     };
     admit_observations(
         graph.model_selections(),

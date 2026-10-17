@@ -28,11 +28,12 @@ Scope: FR-341-AC-1 to FR-341-AC-6.
 3. Compile a unit with an ill-typed function body. Build a `Check` refusal
    whose causes are `unsupported_construct`/`not-yet-implemented` then
    `ill_typed`.
-4. Compile the unit with a forms-stage limit of one; with a type limit of
+4. Compile the unit with an S1 source-stage limit of one (`s1.nodes`); with a type limit of
    one.
-5. Compile a unit with a protocol `compensate` construct (refused
-   `unsupported_construct`/`not-yet-implemented`). Build an `Omitted`
-   refusal and a refusal holding `unsupported_projection`.
+5. Build a `Check` refusal holding `unsupported_construct`/
+   `not-yet-implemented` (the refusal S3 gives a protocol `compensate`
+   construct). Build an `Omitted` refusal and an `Emit` refusal holding
+   `unsupported_projection`.
 6. Build a refusal whose causes are `unsupported_construct`/
    `declaration-form` and `unsupported_construct`/`expression-form`.
 
@@ -45,7 +46,7 @@ Every expected class below is a literal in the test. Tag the tests
 - Step 2: `tool failure`, six times.
 - Step 3: `refused` carrying `ill_typed`; `refused` carrying both causes in
   order.
-- Step 4: `incomplete`, naming the forms limit and value one; `incomplete`,
+- Step 4: `incomplete`, naming the S1 limit and value one; `incomplete`,
   naming the type limit and value one.
 - Step 5: `unsupported`, three times.
 - Step 6: `prohibited`.

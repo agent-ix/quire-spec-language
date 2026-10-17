@@ -65,6 +65,11 @@ pub use clause::{
     ClauseRunReport, ClauseRunRequest, ClauseRunSelection, ClauseRunSource, ClauseRunStage,
     OperationName,
 };
+mod refinement;
+pub use refinement::{
+    classify_clause_run, classify_compile, classify_refusal, Classification, ReachedLimit,
+    RefinementClass, RefusalCause, RunClassification,
+};
 mod native_result;
 pub use native_result::{
     read_native_run_result, write_clause_run_result, CallLocationRead, CallLocusRead,
