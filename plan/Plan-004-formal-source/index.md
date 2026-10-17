@@ -10,4 +10,3 @@ okf_version: "0.1"
 
 - [Plan](plan.md) — scope, dependency ordering and verification.
 - [Task-007](tasks/Task-007-formal-source.md) — bridge and qualification.
-- [Log](log.md) — actual lifecycle events.

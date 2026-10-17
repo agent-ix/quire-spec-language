@@ -11,4 +11,3 @@ okf_version: "0.1"
 - [Plan](plan.md)
 - [Task-005](tasks/Task-005-native-linker.md)
 - [Task-006](tasks/Task-006-linker-qualification.md)
-- [Log](log.md)

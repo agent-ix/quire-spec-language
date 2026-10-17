@@ -13,4 +13,3 @@ okf_version: "0.1"
 - [Task-013: Validate finite snapshots and recorded invocations](./tasks/Task-013-runtime-validation.md)
 - [Task-014: Execute the native reference semantics and exact cost model](./tasks/Task-014-reference-evaluation.md)
 - [Task-015: Qualify review and hand off the complete native runtime slice](./tasks/Task-015-runtime-qualification.md)
-- [Update log](./log.md) — Dated progress and evidence.
