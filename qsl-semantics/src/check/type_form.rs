@@ -557,8 +557,8 @@ pub(crate) fn resolve_type_form(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ix_trace_rs::trace;
     use crate::check::family::fixtures::{empty_scope, root_location, scope_with};
+    use ix_trace_rs::trace;
     use quire_exact::{CollectionKind, EffectiveId};
     use quire_semantic_value::declaration::{ObjectTypeDeclaration, TypeEnvironment};
 
