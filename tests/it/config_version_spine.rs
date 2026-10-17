@@ -1130,7 +1130,7 @@ fn tc_469_step_4_generation_and_reports_are_deterministic() {
 /// identity).
 #[cfg(feature = "quire-extraction")]
 mod extraction {
-    use super::{build, run_clause, Case, ClauseRunRequest};
+    use super::{build, run_clause, Case, ClauseRunRequest, CASES};
     use ix_trace_rs::trace;
     use qsl_foundation::{Source, SourceIdentity};
 
