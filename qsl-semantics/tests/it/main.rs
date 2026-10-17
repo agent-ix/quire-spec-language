@@ -44,9 +44,12 @@ mod model_receiver_frames;
 #[cfg(feature = "test-support")]
 mod model_relationship;
 #[cfg(feature = "test-support")]
+mod model_state;
+#[cfg(feature = "test-support")]
 mod model_systems;
 #[cfg(feature = "test-support")]
 mod model_systems_resolve;
+mod native_literals;
 mod native_scalar_equality;
 mod native_snapshot_values;
 mod observation_composites;

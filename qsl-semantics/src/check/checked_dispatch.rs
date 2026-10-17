@@ -1658,6 +1658,7 @@ mod tests {
             Expression::boolean(true),
             Expression::integer(3_i64),
             Expression::rational(Integer::from(1_i64), Integer::from(3_i64)),
+            Expression::string("abc"),
             o(),
         ];
         let mut boxed = o;
@@ -1751,11 +1752,12 @@ mod tests {
     }
 
     /// Every name [`form_name`] gives, one per `Expression` form.
-    const FORM_NAMES: [&str; 32] = [
+    const FORM_NAMES: [&str; 33] = [
         "Case",
         "Boolean",
         "Integer",
         "Rational",
+        "String",
         "Name",
         "Let",
         "If",
@@ -1796,6 +1798,7 @@ mod tests {
             ExprNode::Boolean(_) => "Boolean",
             ExprNode::Integer(_) => "Integer",
             ExprNode::Rational(..) => "Rational",
+            ExprNode::String(_) => "String",
             ExprNode::Name(_) => "Name",
             ExprNode::Let { .. } => "Let",
             ExprNode::If { .. } => "If",

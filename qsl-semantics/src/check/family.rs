@@ -415,6 +415,10 @@ fn encode_expression(
                 out.write_str(&numerator.to_string());
                 out.write_str(&denominator.to_string());
             }
+            ExprNode::String(text) => {
+                out.write_str("string");
+                out.write_str(text);
+            }
             ExprNode::Name(name) => {
                 out.write_str("name");
                 out.write_str(name);

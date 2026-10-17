@@ -41,7 +41,7 @@ use crate::model::intake::{admit_selections, read_records, DigestMismatch};
 use crate::model::key::{hex, DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 use crate::model::normalize::{normalize, EffectiveView, NormalizeOutcome};
 use crate::model::object_environment::ObjectEnvironment;
-use crate::model::operation::OperationDeclaration;
+use crate::model::operation::{OperationDeclaration, OperationLookup, OperationTable};
 use quire_semantic_value::declaration::TypeEnvironment;
 
 // ---------------------------------------------------------------------------
@@ -76,6 +76,11 @@ pub struct ClauseFacts {
     /// The operation a precondition or postcondition names; `None` for an
     /// invariant.
     pub operation: Option<OperationFacts>,
+    /// The package's declared operations. An invariant of a state machine
+    /// selected by [`ClauseSelectionInput::Context`] names no operation, and
+    /// the invocation's own is resolved in the machine it names (FR-106
+    /// check 5).
+    pub operations: OperationTable,
 }
 
 // ---------------------------------------------------------------------------
@@ -271,8 +276,9 @@ pub enum ClauseSelectionInput {
         snapshot: DocumentRef,
         /// The selected anchor.
         anchor: SelectedAnchor,
-        /// The selected self object.
-        self_object: SelectedObject,
+        /// The selected self object: none for a clause whose receiver is a
+        /// state machine's context, which has no object identity.
+        self_object: Option<SelectedObject>,
     },
     /// A precondition's pre-call observation: the operation's pre state,
     /// the self object and the parameter values, before the operation
@@ -280,8 +286,9 @@ pub enum ClauseSelectionInput {
     PreCall {
         /// The pre snapshot document.
         snapshot: DocumentRef,
-        /// The selected self object.
-        self_object: SelectedObject,
+        /// The selected self object: none for a clause whose receiver is a
+        /// state machine's context.
+        self_object: Option<SelectedObject>,
         /// Each declared parameter's value, by parameter name.
         parameters: BTreeMap<Identifier, SnapshotValue>,
     },
@@ -290,15 +297,34 @@ pub enum ClauseSelectionInput {
         /// The invocation document.
         invocation: DocumentRef,
     },
+    /// The invariant of a state machine over one side of an invocation of
+    /// one of its operations: the machine's context in the invocation's `pre`
+    /// or its `post` snapshot (QSpec FR-208-AC-10).
+    Context {
+        /// The invocation document.
+        invocation: DocumentRef,
+        /// Which of the invocation's snapshots the invariant is read in.
+        side: ContextSide,
+    },
+}
+
+/// The snapshot of an invocation a [`ClauseSelectionInput::Context`] reads.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ContextSide {
+    /// The invocation's `pre` snapshot.
+    Pre,
+    /// The invocation's `post` snapshot.
+    Post,
 }
 
 impl ClauseSelectionInput {
-    /// Which of the three observation forms this input is.
+    /// Which of the four observation forms this input is.
     pub fn form(&self) -> ObservationForm {
         match self {
             Self::Current { .. } => ObservationForm::Current,
             Self::PreCall { .. } => ObservationForm::PreCall,
             Self::Invocation { .. } => ObservationForm::Invocation,
+            Self::Context { .. } => ObservationForm::Context,
         }
     }
 }
@@ -312,6 +338,8 @@ pub enum ObservationForm {
     PreCall,
     /// An invocation document.
     Invocation,
+    /// One side of an invocation document, for a state machine's invariant.
+    Context,
 }
 
 impl std::fmt::Display for ObservationForm {
@@ -320,6 +348,7 @@ impl std::fmt::Display for ObservationForm {
             Self::Current => "current",
             Self::PreCall => "pre-call",
             Self::Invocation => "invocation",
+            Self::Context => "context",
         })
     }
 }
@@ -508,7 +537,9 @@ pub struct AdmittedObservations {
     /// The node identity of the state clause these observations were
     /// admitted for (FR-107's `ObservationsMismatch` check).
     pub clause: quire_exact::NodeKey,
-    /// The current observation (invariant only).
+    /// The observation an invariant is evaluated in: a current snapshot, or
+    /// for a state machine's invariant selected by `Context` the snapshot of
+    /// the selected side, holding the machine's one context.
     pub current: Option<Observation>,
     /// The pre observation: an invocation's pre snapshot, or a pre-call
     /// observation's one snapshot.
@@ -1086,8 +1117,9 @@ impl<'v> RawItems<'v> {
 /// `EffectiveId -> DeclarationKey` index admission needs (the forward
 /// direction, [`EffectiveView::type_identities`], is a checked package's own
 /// input, never admission's own name-first lookup).
-struct ModelView {
-    view: EffectiveView,
+#[derive(Debug)]
+pub(crate) struct ModelView {
+    pub(crate) view: EffectiveView,
     by_effective_id: BTreeMap<EffectiveId, DeclarationKey>,
 }
 
@@ -1098,7 +1130,7 @@ impl ModelView {
             .map(|key| key.node.as_str())
     }
 
-    fn declaration_key(&self, effective: EffectiveId) -> Option<&DeclarationKey> {
+    pub(crate) fn declaration_key(&self, effective: EffectiveId) -> Option<&DeclarationKey> {
         self.by_effective_id.get(&effective)
     }
 }
@@ -1107,7 +1139,7 @@ impl ModelView {
 /// names (the caller's own `CheckedGraph::model_selections()`), against the
 /// same package input a caller's `compile` already used. See the module
 /// doc's design note.
-fn model_views(
+pub(crate) fn model_views(
     model_selections: &[DomainPackageRef],
     packages: &BTreeMap<[u8; 32], Vec<u8>>,
     limits: ModelNormalizationLimits,
@@ -1166,7 +1198,7 @@ fn model_views(
 /// [`DeclarationKey`] it resolves to. `None` when no re-derived view names
 /// it -- a broken invariant, since `effective` came from the same checked
 /// package these views were re-derived from.
-fn view_of(views: &[ModelView], effective: EffectiveId) -> Option<&ModelView> {
+pub(crate) fn view_of(views: &[ModelView], effective: EffectiveId) -> Option<&ModelView> {
     views
         .iter()
         .find(|view| view.declaration_key(effective).is_some())
@@ -1647,8 +1679,8 @@ pub fn admit_object_environment(
     let admitted = document::admit_argument_populations(
         &views,
         types,
-        &snapshot.populations,
-        &snapshot.relationships,
+        snapshot,
+        &read.identity,
         arguments,
         model_limits.ancestor_steps,
     )?;
@@ -1726,9 +1758,16 @@ pub fn admit_observations(
     selection: &ClauseSelection,
     limits: ObservationLimits,
 ) -> Result<AdmittedObservations, AdmissionFailure> {
+    let wrong_observation = || {
+        refuse(AdmissionRecord::new(
+            Code::WrongSnapshot,
+            "wrong-observation",
+        ))
+    };
     // Check 2: selection form.
     match (clause.kind, &selection.input) {
         (StateClauseKind::Invariant, ClauseSelectionInput::Current { .. })
+        | (StateClauseKind::Invariant, ClauseSelectionInput::Context { .. })
         | (StateClauseKind::Precondition, ClauseSelectionInput::PreCall { .. })
         | (
             StateClauseKind::Precondition | StateClauseKind::Postcondition,
@@ -1736,17 +1775,14 @@ pub fn admit_observations(
         ) => {}
         (
             StateClauseKind::Precondition | StateClauseKind::Postcondition,
-            ClauseSelectionInput::Current { .. },
+            ClauseSelectionInput::Current { .. } | ClauseSelectionInput::Context { .. },
         )
         | (
             StateClauseKind::Invariant | StateClauseKind::Postcondition,
             ClauseSelectionInput::PreCall { .. },
         )
         | (StateClauseKind::Invariant, ClauseSelectionInput::Invocation { .. }) => {
-            return Err(refuse(AdmissionRecord::new(
-                Code::WrongSnapshot,
-                "wrong-observation",
-            )))
+            return Err(wrong_observation())
         }
     }
 
@@ -1757,22 +1793,49 @@ pub fn admit_observations(
         .type_name(clause.context)
         .ok_or_else(|| fault("unresolved-context-name"))?
         .to_owned();
+    let state_machine = is_state_machine_context(context_view, &context_name);
+
+    // Check 2, by the clause's receiver: a state machine's invariant is
+    // selected by `Context` alone, an object type's never is, and a
+    // `Current` or `PreCall` selection names a `self` exactly when the
+    // receiver is an object.
+    let named_self = match &selection.input {
+        ClauseSelectionInput::Current { self_object, .. }
+        | ClauseSelectionInput::PreCall { self_object, .. } => Some(self_object.is_some()),
+        ClauseSelectionInput::Invocation { .. } | ClauseSelectionInput::Context { .. } => None,
+    };
+    let context_selected = matches!(selection.input, ClauseSelectionInput::Context { .. });
+    if (clause.kind == StateClauseKind::Invariant && context_selected != state_machine)
+        || named_self.is_some_and(|named| named == state_machine)
+    {
+        return Err(wrong_observation());
+    }
 
     // A precondition's pre-call observation, selected by `PreCall` or by
-    // `Invocation`, is admitted against this one context.
-    let pre_call_context = || -> Result<PreCallContext<'_>, AdmissionFailure> {
-        Ok(PreCallContext {
-            views: &views,
-            types,
-            context_view,
-            context_name: &context_name,
-            clause: clause.identity,
-            operation: clause
-                .operation
-                .as_ref()
-                .ok_or_else(|| fault("clause-declares-no-operation"))?,
-            ancestor_steps: model_limits.ancestor_steps,
-        })
+    // `Invocation`, and a state machine's invariant on side `pre`, are
+    // admitted against this one context.
+    macro_rules! pre_call_context {
+        ($operation:expr, $as_context:expr) => {
+            PreCallContext {
+                views: &views,
+                types,
+                context_view,
+                context_name: &context_name,
+                clause_context: clause.context,
+                state_machine,
+                clause: clause.identity,
+                operation: $operation,
+                as_context: $as_context,
+                ancestor_steps: model_limits.ancestor_steps,
+            }
+        };
+    }
+    let clause_operation = || -> Result<OperationSource<'_>, AdmissionFailure> {
+        clause
+            .operation
+            .as_ref()
+            .map(OperationSource::Clause)
+            .ok_or_else(|| fault("clause-declares-no-operation"))
     };
 
     match &selection.input {
@@ -1789,7 +1852,9 @@ pub fn admit_observations(
             provisions,
             snapshot,
             anchor,
-            self_object,
+            self_object
+                .as_ref()
+                .ok_or_else(|| fault("object-invariant-names-no-self"))?,
             limits,
             model_limits.ancestor_steps,
         ),
@@ -1798,7 +1863,7 @@ pub fn admit_observations(
             self_object,
             parameters,
         } => {
-            let context = pre_call_context()?;
+            let context = pre_call_context!(clause_operation()?, false);
             let read = read_document(
                 DocumentKind::Snapshot,
                 provisions.snapshots,
@@ -1817,22 +1882,32 @@ pub fn admit_observations(
                     invocation: None,
                     invocation_usage: AdmissionUsage::default(),
                     pre: read,
-                    self_object,
+                    self_object: self_object.as_ref(),
                     parameters: &parameters,
                 },
             )
         }
         ClauseSelectionInput::Invocation { invocation } => match clause.kind {
-            StateClauseKind::Precondition => {
-                admit_pre_call_invocation(&pre_call_context()?, provisions, invocation, limits)
-            }
+            StateClauseKind::Precondition => admit_pre_call_invocation(
+                &pre_call_context!(clause_operation()?, false),
+                provisions,
+                invocation,
+                limits,
+            ),
             StateClauseKind::Postcondition => admit_operation(
                 &views,
                 types,
                 context_view,
                 &context_name,
                 clause.identity,
-                clause.operation.as_ref(),
+                clause.context,
+                OperationSource::Clause(
+                    clause
+                        .operation
+                        .as_ref()
+                        .ok_or_else(|| fault("clause-declares-no-operation"))?,
+                ),
+                false,
                 provisions,
                 invocation,
                 limits,
@@ -1840,6 +1915,28 @@ pub fn admit_observations(
             ),
             // Check 2 above refused an invariant's `Invocation` selection.
             StateClauseKind::Invariant => Err(fault("invariant-selected-by-invocation")),
+        },
+        ClauseSelectionInput::Context { invocation, side } => match side {
+            ContextSide::Pre => admit_pre_call_invocation(
+                &pre_call_context!(OperationSource::Any(&clause.operations), true),
+                provisions,
+                invocation,
+                limits,
+            ),
+            ContextSide::Post => admit_operation(
+                &views,
+                types,
+                context_view,
+                &context_name,
+                clause.identity,
+                clause.context,
+                OperationSource::Any(&clause.operations),
+                true,
+                provisions,
+                invocation,
+                limits,
+                model_limits,
+            ),
         },
     }
 }
@@ -1852,6 +1949,7 @@ mod document;
 mod encode;
 mod extents;
 mod frame;
+mod initial;
 mod relationships;
 mod tree;
 mod write;
@@ -1863,6 +1961,7 @@ pub use extents::{
     BundleKey, BundlePart, BundleRefusal, Keyed, ObservationOrigin, PopulationEnumerationFailure,
     PopulationManifest, RelationshipExtents, ResolveBundle,
 };
+pub(crate) use initial::{admit_initial_state, observe_state};
 pub use write::{
     write_environment_document, EnvironmentLabels, EnvironmentModel, EnvironmentObject,
     EnvironmentPopulation,
@@ -1928,8 +2027,8 @@ fn admit_invariant(
     let environment = document::admit_populations(
         views,
         types,
-        &snapshot.populations,
-        &snapshot.relationships,
+        snapshot,
+        &read.identity,
         Some(&self_object.population),
         ancestor_steps,
     )?;
@@ -2054,6 +2153,8 @@ struct InvocationAdmission {
     self_kind: SelfKind,
     receiver_pre: Option<ObjectReference>,
     receiver_post: Option<ObjectReference>,
+    /// The operation the invocation names, resolved by check 5.
+    operation: OperationDeclaration,
     parameters: Vec<(String, Value)>,
     result: Option<Value>,
 }
@@ -2073,6 +2174,26 @@ fn is_state_machine_context(context_view: &ModelView, context_name: &str) -> boo
         })
 }
 
+/// Where FR-106 check 5 takes the invocation's operation from.
+#[derive(Clone, Copy)]
+enum OperationSource<'a> {
+    /// The operation the clause names.
+    Clause(&'a OperationFacts),
+    /// Any effective operation of the state machine the invocation's
+    /// `context` names, which a state machine's invariant allows, naming no
+    /// operation of its own (QSpec FR-208-AC-10).
+    Any(&'a OperationTable),
+}
+
+/// The clause's receiver as check 5 compares an invocation with it.
+struct Receiver<'a> {
+    views: &'a [ModelView],
+    types: &'a TypeEnvironment,
+    context_name: &'a str,
+    context: EffectiveId,
+    state_machine: bool,
+}
+
 impl InvocationAdmission {
     /// Every document's read usage.
     fn usage(&self) -> AdmissionUsage {
@@ -2084,17 +2205,26 @@ impl InvocationAdmission {
     }
 }
 
-/// FR-106 checks 1 and 3 to 10 over the invocation `selected` of
-/// `operation` on `context_view`'s type `context_name`. `self` is required
-/// in the post snapshot only when `post_self` (a postcondition, SR-750
-/// FND-006).
+/// FR-106 check 9's `self` rule: an object receiver needs an object
+/// reference, a state machine's context has none, so its `self` is `null`.
+fn wrong_self_kind() -> AdmissionFailure {
+    refuse(
+        AdmissionRecord::new(Code::InvalidRuntimeInput, "wrong-value-kind").with("field", "self"),
+    )
+}
+
+/// FR-106 checks 1 and 3 to 10 over the invocation `selected`, of the
+/// operation `source` names, on `context_view`'s type `context_name`.
+/// `self` is required in the post snapshot only when `post_self` (a
+/// postcondition, SR-750 FND-006).
 #[allow(clippy::too_many_arguments)]
 fn admit_invocation_documents(
     views: &[ModelView],
     types: &TypeEnvironment,
     context_view: &ModelView,
     context_name: &str,
-    operation: &OperationFacts,
+    clause_context: EffectiveId,
+    source: OperationSource<'_>,
     post_self: bool,
     provisions: &Provisions<'_>,
     selected: &DocumentRef,
@@ -2155,7 +2285,18 @@ fn admit_invocation_documents(
     check_model(context_view, &post_snapshot.model)?;
 
     // Check 5: operation, then the invocation each snapshot names.
-    check_operation(&invocation.call, context_name, operation)?;
+    let state_machine = is_state_machine_context(context_view, context_name);
+    let operation = check_operation(
+        &invocation.call,
+        &Receiver {
+            views,
+            types,
+            context_name,
+            context: clause_context,
+            state_machine,
+        },
+        source,
+    )?;
     document::check_snapshot_invocation(
         pre_snapshot,
         &documents.pre.identity,
@@ -2171,83 +2312,53 @@ fn admit_invocation_documents(
     // then post's, then pre's check 8, then post's -- never fully
     // finishing one snapshot's checks 6 to 8 before starting the other's
     // check 6 (SR-750 FND-005).
-    let self_object = &invocation.call.self_object;
+    let self_object = invocation.call.self_object.as_ref();
     // FR-106 check 9: `self` is required in the post snapshot only for a
     // postcondition (SR-750 FND-006), never for a `Frame` run, whose
     // operation may delete it.
-    let state_machine = is_state_machine_context(context_view, context_name);
     let post_range = if post_self {
         limits.post_state
     } else {
         PostStateRange::Refuse
     };
-    let (pre_values, receiver_pre, post_values, receiver_post) = if state_machine {
-        let (pre, pre_reference) = document::admit_state_machine_context_values(
-            views,
-            types,
-            context_view,
-            context_name,
-            &pre_snapshot.populations,
-            &pre_snapshot.relationships,
-            &documents.pre.identity,
-            selected,
-            PostStateRange::Refuse,
-            ancestor_steps,
-        )?;
-        let (post, post_reference) = document::admit_state_machine_context_values(
-            views,
-            types,
-            context_view,
-            context_name,
-            &post_snapshot.populations,
-            &post_snapshot.relationships,
-            &documents.post.identity,
-            selected,
-            post_range,
-            ancestor_steps,
-        )?;
-        (pre, Some(pre_reference), post, Some(post_reference))
-    } else {
-        (
-            document::admit_population_values(
-                views,
-                types,
-                &pre_snapshot.populations,
-                &pre_snapshot.relationships,
-                PostStateRange::Refuse,
-                ancestor_steps,
-            )?,
-            None,
-            document::admit_population_values(
-                views,
-                types,
-                &post_snapshot.populations,
-                &post_snapshot.relationships,
-                post_range,
-                ancestor_steps,
-            )?,
-            None,
-        )
-    };
-    let pre_self_population = (!state_machine).then_some(self_object.population.as_str());
-    let post_self_population =
-        (!state_machine && post_self).then_some(self_object.population.as_str());
+    let read_machine = state_machine.then_some(clause_context);
+    let mut pre_values = document::admit_population_values(
+        views,
+        types,
+        pre_snapshot,
+        &documents.pre.identity,
+        read_machine,
+        PostStateRange::Refuse,
+        ancestor_steps,
+    )?;
+    let mut post_values = document::admit_population_values(
+        views,
+        types,
+        post_snapshot,
+        &documents.post.identity,
+        read_machine,
+        post_range,
+        ancestor_steps,
+    )?;
+    let pre_self_population =
+        self_object.and_then(|object| (!state_machine).then_some(object.population.as_str()));
+    let post_self_population = self_object
+        .and_then(|object| (!state_machine && post_self).then_some(object.population.as_str()));
+    let mut pre_required =
+        document::parameter_populations(views, &operation, &invocation.call.parameters);
+    pre_required.extend(pre_values.read_context_populations());
     document::check_population_completeness(
         &pre_snapshot.populations,
         &pre_values.completeness,
         pre_self_population,
-        &document::parameter_populations(
-            views,
-            &operation.declaration,
-            &invocation.call.parameters,
-        ),
+        &pre_required,
         &pre_values.extents,
     )?;
     document::check_population_completeness(
         &post_snapshot.populations,
         &post_values.completeness,
         post_self_population,
-        &[],
+        &post_values.read_context_populations(),
         &post_values.extents,
     )?;
     document::check_population_closure(
@@ -2262,42 +2373,61 @@ fn admit_invocation_documents(
         &post_values.keys_by_population,
         &post_values.extents,
     )?;
-    let pre_admitted = document::finish_populations(types, pre_values)?;
-    let post_admitted = document::finish_populations(types, post_values)?;
+    document::check_context_closure(&[&pre_values, &post_values])?;
 
-    let self_reference = if state_machine {
-        if post_self {
-            receiver_post
-                .as_ref()
-                .ok_or_else(|| fault("post-context-reference-missing"))?
+    // Check 9: self and context.
+    let (pre_admitted, post_admitted, self_reference, receiver_pre, receiver_post) =
+        if state_machine {
+            if self_object.is_some() {
+                return Err(wrong_self_kind());
+            }
+            let receiver_pre =
+                pre_values.attach_read_context(context_name, &documents.pre.identity, selected)?;
+            let receiver_post = if post_self {
+                Some(post_values.attach_read_context(
+                    context_name,
+                    &documents.post.identity,
+                    selected,
+                )?)
+            } else {
+                None
+            };
+            let pre_admitted = document::finish_populations(types, pre_values)?;
+            let post_admitted = document::finish_populations(types, post_values)?;
+            let self_reference = receiver_post
                 .clone()
+                .unwrap_or_else(|| receiver_pre.clone());
+            (
+                pre_admitted,
+                post_admitted,
+                self_reference,
+                Some(receiver_pre),
+                receiver_post,
+            )
         } else {
-            receiver_pre
-                .as_ref()
-                .ok_or_else(|| fault("pre-context-reference-missing"))?
-                .clone()
-        }
-    } else {
-        let reference = document::resolve_self(
-            views,
-            types,
-            context_view,
-            context_name,
-            &pre_admitted.environment,
-            self_object,
-        )?;
-        if post_self {
-            let _ = document::resolve_self(
+            let pre_admitted = document::finish_populations(types, pre_values)?;
+            let post_admitted = document::finish_populations(types, post_values)?;
+            let self_object = self_object.ok_or_else(wrong_self_kind)?;
+            let reference = document::resolve_self(
                 views,
                 types,
                 context_view,
                 context_name,
-                &post_admitted.environment,
+                &pre_admitted.environment,
                 self_object,
             )?;
-        }
-        reference
-    };
+            if post_self {
+                let _ = document::resolve_self(
+                    views,
+                    types,
+                    context_view,
+                    context_name,
+                    &post_admitted.environment,
+                    self_object,
+                )?;
+            }
+            (pre_admitted, post_admitted, reference, None, None)
+        };
 
     // Check 10: parameters and result.
     // A reference parameter resolves against the pre snapshot's objects, a
@@ -2310,14 +2440,10 @@ fn admit_invocation_documents(
         document::References::over(views, types, &post_snapshot.populations);
     let parameters = document::admit_parameters(
         &mut parameter_references,
-        &operation.declaration,
+        &operation,
         &invocation.call.parameters,
     )?;
-    let result = document::admit_result(
-        &mut result_references,
-        &operation.declaration,
-        &invocation.result,
-    )?;
+    let result = document::admit_result(&mut result_references, &operation, &invocation.result)?;
 
     Ok(InvocationAdmission {
         documents,
@@ -2328,37 +2454,72 @@ fn admit_invocation_documents(
         self_kind: SelfKind::of(state_machine),
         receiver_pre,
         receiver_post,
+        operation,
         parameters,
         result,
     })
 }
 
-/// What a pre-call admission reads about the selected precondition,
-/// whether the precondition is selected by `PreCall` or by `Invocation`.
+/// What a pre-call admission reads about the selected clause, whether the
+/// precondition is selected by `PreCall` or by `Invocation`, or a state
+/// machine's invariant by `Context` on side `pre`.
 struct PreCallContext<'a> {
     views: &'a [ModelView],
     types: &'a TypeEnvironment,
     context_view: &'a ModelView,
     context_name: &'a str,
+    clause_context: EffectiveId,
+    state_machine: bool,
     clause: quire_exact::NodeKey,
-    operation: &'a OperationFacts,
+    operation: OperationSource<'a>,
+    /// Whether this is the invariant of a state machine on side `pre`: the
+    /// invocation's `parameters` are neither read nor checked.
+    as_context: bool,
     ancestor_steps: u64,
 }
 
-/// FR-106 check 5: an invocation's `context` and `operation` must be the
-/// selected clause's.
+/// FR-106 check 5: an invocation's `context` and `operation` against the
+/// clause's. For an object receiver they must be the clause's. For a state
+/// machine's clause the `context` must be the clause's machine or a
+/// specialization of it, and the `operation` the clause's, or for an
+/// invariant any effective operation of the machine the `context` names.
+/// Returns the operation the invocation names.
 fn check_operation(
     call: &document::InvocationCall,
-    context_name: &str,
-    operation: &OperationFacts,
-) -> Result<(), AdmissionFailure> {
-    if call.context != context_name || call.operation != operation.declaration.name() {
-        return Err(refuse(AdmissionRecord::new(
+    receiver: &Receiver<'_>,
+    source: OperationSource<'_>,
+) -> Result<OperationDeclaration, AdmissionFailure> {
+    let wrong_invocation = || {
+        refuse(AdmissionRecord::new(
             Code::WrongSnapshot,
             "wrong-invocation",
-        )));
+        ))
+    };
+    if !receiver.state_machine {
+        let OperationSource::Clause(operation) = source else {
+            return Err(fault("context-selection-of-an-object-receiver"));
+        };
+        if call.context != receiver.context_name || call.operation != operation.declaration.name() {
+            return Err(wrong_invocation());
+        }
+        return Ok(operation.declaration.clone());
     }
-    Ok(())
+    let invoked = document::find_declaration(receiver.views, &call.context)
+        .and_then(|(view, key)| view.view.type_identities().get(&key).copied())
+        .filter(|invoked| receiver.types.conforms(*invoked, receiver.context))
+        .ok_or_else(wrong_invocation)?;
+    match source {
+        OperationSource::Clause(operation) if call.operation == operation.declaration.name() => {
+            Ok(operation.declaration.clone())
+        }
+        OperationSource::Clause(_) => Err(wrong_invocation()),
+        OperationSource::Any(table) => {
+            match table.resolve(receiver.types, invoked, &call.operation) {
+                OperationLookup::Declared { operation, .. } => Ok(operation.clone()),
+                OperationLookup::Missing | OperationLookup::Ambiguous(_) => Err(wrong_invocation()),
+            }
+        }
+    }
 }
 
 /// One pre-call observation's documents, already read by check 1: the
@@ -2372,7 +2533,7 @@ struct PreCallInput<'a> {
     invocation: Option<&'a DocumentRef>,
     invocation_usage: AdmissionUsage,
     pre: document::ReadDocument,
-    self_object: &'a SelectedObject,
+    self_object: Option<&'a SelectedObject>,
     parameters: &'a [(String, SnapshotValue)],
 }
 
@@ -2381,7 +2542,9 @@ struct PreCallInput<'a> {
 /// nothing of its post side -- not its `post` snapshot, `result`,
 /// `created` or `deleted` -- and check 11 does not run. The rest is
 /// [`admit_pre_call`], the one path a `PreCall` selection takes too, so
-/// both admit the same observation.
+/// both admit the same observation. A state machine's invariant on side
+/// `pre` reads the same documents and, binding no parameter, not the
+/// invocation's `parameters` either.
 fn admit_pre_call_invocation(
     context: &PreCallContext<'_>,
     provisions: &Provisions<'_>,
@@ -2389,7 +2552,11 @@ fn admit_pre_call_invocation(
     limits: ObservationLimits,
 ) -> Result<AdmittedObservations, AdmissionFailure> {
     let invocation_read = read_document(
-        DocumentKind::InvocationCall,
+        if context.as_context {
+            DocumentKind::InvocationContext
+        } else {
+            DocumentKind::InvocationCall
+        },
         provisions.invocations,
         selected,
         limits,
@@ -2411,7 +2578,7 @@ fn admit_pre_call_invocation(
             invocation: Some(&invocation_read.identity),
             invocation_usage: invocation_read.usage,
             pre: pre_read,
-            self_object: &call.self_object,
+            self_object: call.self_object.as_ref(),
             parameters: &call.parameters,
         },
     )
@@ -2447,56 +2614,54 @@ fn admit_pre_call(
     check_model(context.context_view, &snapshot.model)?;
 
     // Check 5: operation.
-    if let Some(call) = call {
-        check_operation(call, context.context_name, context.operation)?;
-    }
+    let operation = match (call, context.operation) {
+        (Some(call), source) => check_operation(
+            call,
+            &Receiver {
+                views: context.views,
+                types: context.types,
+                context_name: context.context_name,
+                context: context.clause_context,
+                state_machine: context.state_machine,
+            },
+            source,
+        )?,
+        (None, OperationSource::Clause(operation)) => operation.declaration.clone(),
+        (None, OperationSource::Any(_)) => return Err(fault("context-selection-names-no-call")),
+    };
     if let Some(invocation) = input.invocation {
         document::check_snapshot_invocation(snapshot, &input.pre.identity, invocation)?;
     }
 
     // Checks 6 to 8, with every declared population a reference parameter
     // names required alongside `self`'s.
-    let state_machine = is_state_machine_context(context.context_view, context.context_name);
+    let state_machine = context.state_machine;
     let receiver_identity = input
         .receiver_invocation
         .cloned()
         .unwrap_or_else(|| input.pre.identity.clone());
-    let (values, receiver_pre) = if state_machine {
-        let (values, reference) = document::admit_state_machine_context_values(
-            context.views,
-            context.types,
-            context.context_view,
-            context.context_name,
-            &snapshot.populations,
-            &snapshot.relationships,
-            &input.pre.identity,
-            &receiver_identity,
-            PostStateRange::Refuse,
-            context.ancestor_steps,
-        )?;
-        (values, Some(reference))
+    let mut values = document::admit_population_values(
+        context.views,
+        context.types,
+        snapshot,
+        &input.pre.identity,
+        state_machine.then_some(context.clause_context),
+        PostStateRange::Refuse,
+        context.ancestor_steps,
+    )?;
+    let mut required = if context.as_context {
+        Vec::new()
     } else {
-        (
-            document::admit_population_values(
-                context.views,
-                context.types,
-                &snapshot.populations,
-                &snapshot.relationships,
-                PostStateRange::Refuse,
-                context.ancestor_steps,
-            )?,
-            None,
-        )
+        document::parameter_populations(context.views, &operation, input.parameters)
     };
+    required.extend(values.read_context_populations());
     document::check_population_completeness(
         &snapshot.populations,
         &values.completeness,
-        (!state_machine).then_some(input.self_object.population.as_str()),
-        &document::parameter_populations(
-            context.views,
-            &context.operation.declaration,
-            input.parameters,
-        ),
+        input
+            .self_object
+            .and_then(|object| (!state_machine).then_some(object.population.as_str())),
+        &required,
         &values.extents,
     )?;
     document::check_population_closure(
@@ -2505,43 +2670,62 @@ fn admit_pre_call(
         &values.keys_by_population,
         &values.extents,
     )?;
-    let admitted = document::finish_populations(context.types, values)?;
+    document::check_context_closure(&[&values])?;
 
-    // Check 9: self.
-    let self_reference = if let Some(reference) = receiver_pre.as_ref() {
-        reference.clone()
+    // Check 9: self and context.
+    let (admitted, self_reference, receiver_pre) = if state_machine {
+        if input.self_object.is_some() {
+            return Err(wrong_self_kind());
+        }
+        let reference = values.attach_read_context(
+            context.context_name,
+            &input.pre.identity,
+            &receiver_identity,
+        )?;
+        let admitted = document::finish_populations(context.types, values)?;
+        (admitted, reference.clone(), Some(reference))
     } else {
-        document::resolve_self(
+        let admitted = document::finish_populations(context.types, values)?;
+        let self_object = input.self_object.ok_or_else(wrong_self_kind)?;
+        let reference = document::resolve_self(
             context.views,
             context.types,
             context.context_view,
             context.context_name,
             &admitted.environment,
-            input.self_object,
-        )?
+            self_object,
+        )?;
+        (admitted, reference, None)
     };
 
     // Check 10: parameters, resolved against the pre snapshot. A pre-call
-    // observation carries no result.
-    let mut references =
-        document::References::over(context.views, context.types, &snapshot.populations);
-    let parameters = document::admit_parameters(
-        &mut references,
-        &context.operation.declaration,
-        input.parameters,
-    )?;
+    // observation carries no result, and a state machine's invariant binds
+    // no parameter.
+    let parameters = if context.as_context {
+        Vec::new()
+    } else {
+        let mut references =
+            document::References::over(context.views, context.types, &snapshot.populations);
+        document::admit_parameters(&mut references, &operation, input.parameters)?
+    };
 
     let usage = input.invocation_usage.merged_with(input.pre.usage);
+    let observation = Observation {
+        identity: input.pre.identity,
+        environment: admitted.environment,
+        populations: admitted.completeness,
+        out_of_range: admitted.out_of_range,
+    };
+    let (current, pre) = if context.as_context {
+        (Some(observation), None)
+    } else {
+        (None, Some(observation))
+    };
     Ok(AdmittedObservations {
         usage,
         clause: context.clause,
-        current: None,
-        pre: Some(Observation {
-            identity: input.pre.identity,
-            environment: admitted.environment,
-            populations: admitted.completeness,
-            out_of_range: admitted.out_of_range,
-        }),
+        current,
+        pre,
         post: None,
         self_object: self_reference,
         invocation: input.receiver_invocation.cloned(),
@@ -2555,6 +2739,9 @@ fn admit_pre_call(
     })
 }
 
+/// A postcondition's invocation, or a state machine's invariant on side
+/// `post` (`as_context`): FR-106 checks 1 and 3 to 11. A `Context`
+/// selection's observation is the post snapshot alone.
 #[allow(clippy::too_many_arguments)]
 fn admit_operation(
     views: &[ModelView],
@@ -2562,19 +2749,21 @@ fn admit_operation(
     context_view: &ModelView,
     context_name: &str,
     clause_identity: quire_exact::NodeKey,
-    operation: Option<&OperationFacts>,
+    clause_context: EffectiveId,
+    source: OperationSource<'_>,
+    as_context: bool,
     provisions: &Provisions<'_>,
     selected: &DocumentRef,
     limits: ObservationLimits,
     model_limits: ModelNormalizationLimits,
 ) -> Result<AdmittedObservations, AdmissionFailure> {
-    let operation = operation.ok_or_else(|| fault("clause-declares-no-operation"))?;
     let admitted = admit_invocation_documents(
         views,
         types,
         context_view,
         context_name,
-        operation,
+        clause_context,
+        source,
         true,
         provisions,
         selected,
@@ -2589,7 +2778,7 @@ fn admit_operation(
         types,
         context_view,
         limits: model_limits,
-        effect: operation.declaration.effect(),
+        effect: admitted.operation.effect(),
     };
     let binding = frame_binding(invocation);
     let (created, deleted) = frame::enforce(
@@ -2600,24 +2789,53 @@ fn admit_operation(
         &invocation.created,
         &invocation.deleted,
     )?;
+    // Check 11.6: the pre and the post context of a state machine's clause.
+    if admitted.self_kind == SelfKind::Context {
+        frame::enforce_contexts(
+            &frame_context,
+            clause_context,
+            admitted.documents.pre()?,
+            admitted.documents.post()?,
+        )?;
+    }
 
     let usage = admitted.usage();
+    let pre = Observation {
+        identity: admitted.documents.pre.identity,
+        environment: admitted.pre.environment,
+        populations: admitted.pre.completeness,
+        out_of_range: admitted.pre.out_of_range,
+    };
+    let post = Observation {
+        identity: admitted.documents.post.identity,
+        environment: admitted.post.environment,
+        populations: admitted.post.completeness,
+        out_of_range: admitted.post.out_of_range,
+    };
+    if as_context {
+        return Ok(AdmittedObservations {
+            usage,
+            clause: clause_identity,
+            current: Some(post),
+            pre: None,
+            post: None,
+            self_object: admitted.self_reference,
+            invocation: Some(admitted.invocation),
+            self_kind: admitted.self_kind,
+            receiver_pre: None,
+            receiver_post: admitted.receiver_post,
+            parameters: Vec::new(),
+            result: None,
+            created: Vec::new(),
+            deleted: Vec::new(),
+        });
+    }
     Ok(AdmittedObservations {
         usage,
         clause: clause_identity,
         current: None,
-        pre: Some(Observation {
-            identity: admitted.documents.pre.identity,
-            environment: admitted.pre.environment,
-            populations: admitted.pre.completeness,
-            out_of_range: admitted.pre.out_of_range,
-        }),
-        post: Some(Observation {
-            identity: admitted.documents.post.identity,
-            environment: admitted.post.environment,
-            populations: admitted.post.completeness,
-            out_of_range: admitted.post.out_of_range,
-        }),
+        pre: Some(pre),
+        post: Some(post),
         self_object: admitted.self_reference,
         invocation: Some(admitted.invocation),
         self_kind: admitted.self_kind,
@@ -2693,7 +2911,7 @@ fn frame_snapshot(snapshot: &document::SnapshotDocument) -> frame::FrameSnapshot
 fn frame_binding(invocation: &document::InvocationDocument) -> frame::FrameBinding<'_> {
     let call = &invocation.call;
     frame::FrameBinding {
-        receiver: &call.self_object,
+        receiver: call.self_object.as_ref(),
         arguments: call
             .parameters
             .iter()
@@ -2876,7 +3094,8 @@ pub fn admit_frame_invocation<'t>(
         types,
         context_view,
         &context_name,
-        &frame.operation,
+        frame.context,
+        OperationSource::Clause(&frame.operation),
         false,
         provisions,
         selected,

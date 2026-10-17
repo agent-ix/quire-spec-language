@@ -41,6 +41,10 @@ pub(super) enum DocumentKind {
     /// read (FR-106 "Behavior": a precondition's input is the pre-call
     /// observation).
     InvocationCall,
+    /// An invocation read for a state machine's invariant on side `pre`: its
+    /// call alone, and not its `parameters` either, which an invariant binds
+    /// none of (FR-106 "Behavior").
+    InvocationContext,
 }
 
 #[derive(Clone, Debug)]
@@ -113,6 +117,68 @@ pub(super) struct SnapshotDocument {
     pub(super) populations: Vec<RawPopulation>,
     /// The snapshot's `relationships` entries, in document order (FR-106).
     pub(super) relationships: Vec<super::relationships::RawEntry>,
+    /// The snapshot's `contexts` member (FR-106 checks 6.10 to 6.12).
+    pub(super) contexts: RawContexts,
+}
+
+/// One context of a `pre` or `post` snapshot: the state of one instance of a
+/// state machine, as written (FR-106 "Document forms").
+#[derive(Clone, Debug)]
+pub(super) struct RawContext {
+    /// The declaration identity of the most-specific state machine.
+    pub(super) machine: String,
+    /// The machine's effective field values, in document order.
+    pub(super) fields: Vec<(String, SnapshotValue)>,
+}
+
+/// One entry of `contexts`, or the shape defect check 6.10 refuses it for.
+/// A defect is kept with the entry at read and refused when the check walk
+/// reaches it, so an earlier object's or relationship's defect is reported
+/// first, as FR-106's walk order says.
+#[derive(Clone, Debug)]
+pub(super) struct RawContextEntry(Result<RawContext, AdmissionRecord>);
+
+/// A snapshot's `contexts` member as read.
+#[derive(Clone, Debug)]
+pub(super) enum RawContexts {
+    /// No `contexts` member.
+    Absent,
+    /// A `contexts` member that is not an array.
+    Malformed(AdmissionRecord),
+    /// The entries, in document order.
+    Entries(Vec<RawContextEntry>),
+}
+
+impl RawContexts {
+    /// The context entries that read as contexts, with their position.
+    pub(super) fn contexts(&self) -> impl Iterator<Item = (usize, &RawContext)> {
+        let entries: &[RawContextEntry] = match self {
+            Self::Entries(entries) => entries,
+            Self::Absent | Self::Malformed(_) => &[],
+        };
+        entries
+            .iter()
+            .enumerate()
+            .filter_map(|(at, entry)| entry.0.as_ref().ok().map(|context| (at, context)))
+    }
+}
+
+/// A member of a context entry, converted once at read.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ContextMember {
+    Machine,
+    Fields,
+}
+
+impl ContextMember {
+    #[qsl_attrs::string_edge]
+    fn read(name: &str) -> Option<Self> {
+        match name {
+            "machine" => Some(Self::Machine),
+            "fields" => Some(Self::Fields),
+            _ => None,
+        }
+    }
 }
 
 /// The four FR-001 labels of an invocation document's own `identity`: how
@@ -167,9 +233,12 @@ pub(super) struct InvocationCall {
     pub(super) model: ModelHeader,
     pub(super) context: String,
     pub(super) operation: String,
-    pub(super) self_object: SelectedObject,
+    /// The invocation's `self`: an object reference, or `None` for JSON
+    /// `null`, which check 9 decides against the receiver's kind.
+    pub(super) self_object: Option<SelectedObject>,
     pub(super) pre: DocumentRef,
-    /// The invocation's own `parameters` member, in document order.
+    /// The invocation's own `parameters` member, in document order (empty
+    /// when the read skipped it).
     pub(super) parameters: Vec<(String, SnapshotValue)>,
 }
 
@@ -295,7 +364,9 @@ pub(super) fn read_document(
     // 1.4: format.
     let expected_format = match kind {
         DocumentKind::Snapshot => "quire.state.snapshot/v1",
-        DocumentKind::Invocation | DocumentKind::InvocationCall => "quire.state.invocation/v1",
+        DocumentKind::Invocation
+        | DocumentKind::InvocationCall
+        | DocumentKind::InvocationContext => "quire.state.invocation/v1",
     };
     if object.member("format").and_then(|value| value.as_str()) != Some(expected_format) {
         return Err(refuse(admission_record(
@@ -335,6 +406,15 @@ pub(super) fn read_document(
             "pre",
             "parameters",
         ],
+        DocumentKind::InvocationContext => &[
+            "format",
+            "identity",
+            "model",
+            "context",
+            "operation",
+            "self",
+            "pre",
+        ],
     };
     let allowed: &[&str] = match kind {
         DocumentKind::Snapshot => &[
@@ -346,8 +426,11 @@ pub(super) fn read_document(
             "model",
             "populations",
             "relationships",
+            "contexts",
         ],
-        DocumentKind::Invocation | DocumentKind::InvocationCall => INVOCATION_MEMBERS,
+        DocumentKind::Invocation
+        | DocumentKind::InvocationCall
+        | DocumentKind::InvocationContext => INVOCATION_MEMBERS,
     };
     for member in always_required {
         if !object.contains_key(member) {
@@ -410,9 +493,12 @@ pub(super) fn read_document(
         DocumentKind::Invocation => {
             Body::Invocation(Box::new(read_invocation_body(object, model, &mut meter)?))
         }
-        DocumentKind::InvocationCall => {
-            Body::InvocationCall(Box::new(read_invocation_call(object, model, &mut meter)?))
-        }
+        DocumentKind::InvocationCall => Body::InvocationCall(Box::new(read_invocation_call(
+            object, model, true, &mut meter,
+        )?)),
+        DocumentKind::InvocationContext => Body::InvocationCall(Box::new(read_invocation_call(
+            object, model, false, &mut meter,
+        )?)),
     };
     Ok(ReadDocument {
         identity: document_identity,
@@ -624,6 +710,7 @@ fn read_snapshot_body(
     };
     let populations = read_populations(object, meter)?;
     let relationships = super::relationships::read_relationships(object, meter)?;
+    let contexts = read_contexts(object, meter)?;
     Ok(SnapshotDocument {
         observation,
         anchor,
@@ -631,7 +718,110 @@ fn read_snapshot_body(
         model,
         populations,
         relationships,
+        contexts,
     })
+}
+
+fn context_defect(cause: &'static str, member: &'static str) -> AdmissionRecord {
+    admission_record(Code::InvalidRuntimeInput, cause).with("member", member)
+}
+
+/// Reads a snapshot's optional `contexts` member, charging one value per
+/// entry and one per field value against `observation.values`.
+///
+/// # Errors
+///
+/// A limit refusal.
+fn read_contexts(
+    object: Object<'_>,
+    meter: &mut ReadMeter,
+) -> Result<RawContexts, AdmissionFailure> {
+    let Some(member) = object.member("contexts") else {
+        return Ok(RawContexts::Absent);
+    };
+    let Some(items) = member.as_array() else {
+        return Ok(RawContexts::Malformed(context_defect(
+            "wrong-value-kind",
+            "contexts",
+        )));
+    };
+    let mut entries = Vec::with_capacity(items.len());
+    for item in items {
+        meter.value()?;
+        entries.push(read_context_entry(item, meter)?);
+    }
+    Ok(RawContexts::Entries(entries))
+}
+
+/// One `contexts` entry: its first shape defect in FR-106 check 6.10's order
+/// (a wrong kind, then a missing member, then an unknown one), else its
+/// machine and field values.
+fn read_context_entry(
+    item: Json<'_>,
+    meter: &mut ReadMeter,
+) -> Result<RawContextEntry, AdmissionFailure> {
+    let Some(entry) = item.as_object() else {
+        return Ok(RawContextEntry(Err(context_defect(
+            "wrong-value-kind",
+            "contexts",
+        ))));
+    };
+    let machine = entry.member("machine");
+    let fields = entry.member("fields");
+    if machine.is_some_and(|value| value.as_str().is_none()) {
+        return Ok(RawContextEntry(Err(context_defect(
+            "wrong-value-kind",
+            "machine",
+        ))));
+    }
+    if fields.is_some_and(|value| value.as_object().is_none()) {
+        return Ok(RawContextEntry(Err(context_defect(
+            "wrong-value-kind",
+            "fields",
+        ))));
+    }
+    let (Some(machine), Some(fields)) = (machine, fields) else {
+        let missing = if machine.is_none() {
+            "machine"
+        } else {
+            "fields"
+        };
+        return Ok(RawContextEntry(Err(context_defect(
+            "missing-member",
+            missing,
+        ))));
+    };
+    if let Some((unknown, _)) = entry
+        .iter()
+        .find(|(name, _)| ContextMember::read(name).is_none())
+    {
+        return Ok(RawContextEntry(Err(admission_record(
+            Code::InvalidRuntimeInput,
+            "unknown-member",
+        )
+        .with("member", unknown))));
+    }
+    let (Some(machine), Some(field_members)) = (machine.as_str(), fields.as_object()) else {
+        return Err(fault("context-entry-members-after-check"));
+    };
+    let mut values = Vec::new();
+    for (name, value) in field_members.iter() {
+        match read_raw_value(value, &mut || meter.value())? {
+            Some(raw) => values.push((name.to_owned(), raw)),
+            None => {
+                return Ok(RawContextEntry(Err(admission_record(
+                    Code::InvalidRuntimeInput,
+                    "wrong-value-kind",
+                )
+                .with("machine", machine.to_owned())
+                .with("field", name.to_owned()))));
+            }
+        }
+    }
+    Ok(RawContextEntry(Ok(RawContext {
+        machine: machine.to_owned(),
+        fields: values,
+    })))
 }
 
 /// Reads a snapshot's `invocation` member: the invocation's four identity
@@ -725,6 +915,7 @@ fn read_populations(
 fn read_invocation_call(
     object: Object<'_>,
     model: ModelHeader,
+    read_parameters: bool,
     meter: &mut ReadMeter,
 ) -> Result<InvocationCall, AdmissionFailure> {
     let context = object
@@ -737,22 +928,29 @@ fn read_invocation_call(
         .and_then(|value| value.as_str())
         .ok_or_else(|| missing_member("operation"))?
         .to_owned();
-    let self_object = object
+    let self_member = object
         .member("self")
-        .ok_or_else(|| missing_member("self"))
-        .and_then(|value| read_object_ref(value, "self"))?;
+        .ok_or_else(|| missing_member("self"))?;
+    let self_object = if self_member.is_null() {
+        None
+    } else {
+        Some(read_object_ref(self_member, "self")?)
+    };
     let pre = object
         .member("pre")
         .ok_or_else(|| missing_member("pre"))
         .and_then(|value| read_document_ref(value, "pre"))?;
-    let parameter_items = object
-        .member("parameters")
-        .and_then(|value| value.as_object())
-        .ok_or_else(|| wrong_kind("parameters"))?;
     let mut parameters = Vec::new();
-    for (name, value) in parameter_items.iter() {
-        let raw = read_raw_value(value, &mut || meter.value())?.ok_or_else(|| wrong_kind(name))?;
-        parameters.push((name.to_owned(), raw));
+    if read_parameters {
+        let parameter_items = object
+            .member("parameters")
+            .and_then(|value| value.as_object())
+            .ok_or_else(|| wrong_kind("parameters"))?;
+        for (name, value) in parameter_items.iter() {
+            let raw =
+                read_raw_value(value, &mut || meter.value())?.ok_or_else(|| wrong_kind(name))?;
+            parameters.push((name.to_owned(), raw));
+        }
     }
     Ok(InvocationCall {
         model,
@@ -771,7 +969,7 @@ fn read_invocation_body(
     model: ModelHeader,
     meter: &mut ReadMeter,
 ) -> Result<InvocationDocument, AdmissionFailure> {
-    let call = read_invocation_call(object, model, meter)?;
+    let call = read_invocation_call(object, model, true, meter)?;
     let post = object
         .member("post")
         .ok_or_else(|| missing_member("post"))
@@ -826,6 +1024,7 @@ pub(super) fn find_declaration<'v>(
 }
 
 struct PopulationInfo {
+    key: DeclarationKey,
     member_types: Vec<DeclarationKey>,
 }
 
@@ -842,6 +1041,7 @@ fn find_population<'v>(
                     return Some((
                         view,
                         PopulationInfo {
+                            key: population.key.clone(),
                             member_types: population.member_types.clone(),
                         },
                     ));
@@ -1767,6 +1967,104 @@ pub(super) struct PopulationValues<'t> {
     /// Each post-state integer admitted outside its declared range, in
     /// walk order.
     out_of_range: Vec<OutOfRange>,
+    /// The contexts of the snapshot the clause reads (FR-106 "Behavior",
+    /// "read contexts"), in document order: empty for a clause whose
+    /// receiver is an object.
+    read_contexts: Vec<ReadContext<'t>>,
+}
+
+/// One reference value in a field of a read context.
+#[derive(Clone, Debug)]
+struct ContextReference {
+    field: String,
+    population: String,
+    key: String,
+}
+
+/// One context entry the clause reads, admitted by checks 6.10 to 6.12.
+pub(super) struct ReadContext<'t> {
+    /// The `machine` member as written.
+    machine: String,
+    /// Its position among the snapshot's `contexts` entries.
+    entry: usize,
+    /// The most-specific machine's effective identity.
+    pub(super) effective: quire_exact::EffectiveId,
+    attributes: Vec<(&'t str, FieldValue)>,
+    /// The reference values of its fields, in effective field order.
+    references: Vec<ContextReference>,
+    /// Each post-state integer admitted outside its declared range.
+    breaches: Vec<(FieldRef, RangeBreach)>,
+}
+
+impl<'t> PopulationValues<'t> {
+    /// The populations a reference in a read context names, in field order:
+    /// required by check 7, as a reference in an object field is.
+    pub(super) fn read_context_populations(&self) -> Vec<String> {
+        self.read_contexts
+            .iter()
+            .flat_map(|context| &context.references)
+            .map(|reference| reference.population.clone())
+            .collect()
+    }
+
+    /// FR-106 check 9's context rule: the snapshot holds exactly one read
+    /// context. Gives it the observation-scoped reference an evaluator looks
+    /// its fields up by (a context has no object identity, QSpec FR-208) and
+    /// adds it to the objects of the observation.
+    ///
+    /// # Errors
+    ///
+    /// `invalid_model_binding`/`wrong-context` when the snapshot holds none,
+    /// `invalid_runtime_input`/`duplicate-member` at a second.
+    pub(super) fn attach_read_context(
+        &mut self,
+        machine: &str,
+        snapshot: &DocumentRef,
+        receiver: &DocumentRef,
+    ) -> Result<ObjectReference, AdmissionFailure> {
+        let mut read = std::mem::take(&mut self.read_contexts).into_iter();
+        let Some(context) = read.next() else {
+            return Err(refuse(
+                admission_record(Code::InvalidModelBinding, "wrong-context")
+                    .with("machine", machine.to_owned())
+                    .with("document", snapshot.identity.clone()),
+            ));
+        };
+        if let Some(second) = read.next() {
+            return Err(refuse(
+                admission_record(Code::InvalidRuntimeInput, "duplicate-member")
+                    .with("machine", second.machine)
+                    .with("document", snapshot.identity.clone())
+                    .with("entry", second.entry.to_string()),
+            ));
+        }
+        let object = ObjectId::new(receiver.identity.clone()).map_err(|_| {
+            refuse(
+                admission_record(Code::InvalidRuntimeInput, "invalid-value")
+                    .with("field", "identity"),
+            )
+        })?;
+        let reference = ObjectReference::new(
+            UniverseId::from_digest(snapshot.digest),
+            context.effective,
+            object,
+        );
+        self.out_of_range.extend(
+            context
+                .breaches
+                .into_iter()
+                .map(|(field, breach)| OutOfRange {
+                    object: reference.clone(),
+                    field,
+                    index: breach.index,
+                    range: breach.range,
+                    observed: breach.observed,
+                    steps: breach.steps,
+                }),
+        );
+        self.objects.push((reference.clone(), context.attributes));
+        Ok(reference)
+    }
 }
 
 impl PopulationValues<'_> {
@@ -1794,11 +2092,13 @@ impl PopulationValues<'_> {
 pub(super) fn admit_population_values<'t>(
     views: &[ModelView],
     types: &'t TypeEnvironment,
-    populations: &[RawPopulation],
-    relationships: &[super::relationships::RawEntry],
+    snapshot: &SnapshotDocument,
+    document: &DocumentRef,
+    read_machine: Option<quire_exact::EffectiveId>,
     range: PostStateRange,
     ancestor_steps: u64,
 ) -> Result<PopulationValues<'t>, AdmissionFailure> {
+    let populations = &snapshot.populations[..];
     let mut objects: Vec<(ObjectReference, Vec<(&str, FieldValue)>)> = Vec::new();
     let mut holders: Vec<String> = Vec::new();
     let mut listed = super::relationships::Listed::new();
@@ -1988,7 +2288,19 @@ pub(super) fn admit_population_values<'t>(
 
     // 6.6 to 6.9: the `relationships` entries, after the last object.
     let facts = super::relationships::model_facts(views, types);
-    let extents = super::relationships::check_entries(types, &facts, relationships, &listed)?;
+    let extents =
+        super::relationships::check_entries(types, &facts, &snapshot.relationships, &listed)?;
+
+    // 6.10 to 6.12: the `contexts` entries, after the last relationship.
+    let read_contexts = admit_contexts(
+        views,
+        types,
+        snapshot,
+        document,
+        read_machine,
+        range,
+        &mut references,
+    )?;
 
     Ok(PopulationValues {
         objects,
@@ -1999,182 +2311,247 @@ pub(super) fn admit_population_values<'t>(
         facts,
         unresolved: references.unresolved,
         out_of_range,
+        read_contexts,
     })
 }
 
-/// Admit one state-machine context alongside any ordinary declared
-/// populations in the same snapshot. A machine context is owned by its
-/// observation and therefore receives an internal observation-scoped
-/// reference only for evaluator lookup; that reference is never exposed as
-/// a declared-object path subject.
-#[allow(clippy::too_many_arguments)]
-pub(super) fn admit_state_machine_context_values<'t>(
+/// Whether the declaration `key` of `view` is a state machine (FR-208).
+fn is_state_machine(view: &ModelView, key: &DeclarationKey) -> bool {
+    view.view.domain_package().records.iter().any(|record| {
+        matches!(
+            record,
+            crate::model::domain_package::DomainPackageRecord::StateMachine(machine)
+                if machine.key == *key
+        )
+    })
+}
+
+/// FR-106 checks 6.10 to 6.12 over a snapshot's `contexts`, entry by entry in
+/// document order. Every entry is validated, whichever machine it is of;
+/// those whose machine is `read_machine` or specializes it are the read
+/// contexts the clause evaluates over, and are returned.
+fn admit_contexts<'t>(
     views: &[ModelView],
     types: &'t TypeEnvironment,
-    context_view: &ModelView,
-    context_name: &str,
-    populations: &[RawPopulation],
-    relationships: &[super::relationships::RawEntry],
-    observation: &DocumentRef,
-    invocation: &DocumentRef,
+    snapshot: &SnapshotDocument,
+    document: &DocumentRef,
+    read_machine: Option<quire_exact::EffectiveId>,
     range: PostStateRange,
-    ancestor_steps: u64,
-) -> Result<(PopulationValues<'t>, ObjectReference), AdmissionFailure> {
-    let mut contexts = Vec::new();
-    let mut ordinary = Vec::new();
-    for (population_index, population) in populations.iter().enumerate() {
-        if population.population == context_name {
-            for (object_index, object) in population.objects.iter().enumerate() {
-                contexts.push((population_index, object_index, object));
+    references: &mut References<'_>,
+) -> Result<Vec<ReadContext<'t>>, AdmissionFailure> {
+    // Every refusal of checks 6.10 to 6.12 names the snapshot and the entry.
+    let named = |record: AdmissionRecord, entry: usize| {
+        refuse(
+            record
+                .with("document", document.identity.clone())
+                .with("entry", entry.to_string()),
+        )
+    };
+    let entries = match &snapshot.contexts {
+        RawContexts::Absent => return Ok(Vec::new()),
+        // A current observation names no invocation, so it holds no context.
+        _ if snapshot.observation == ObservationRole::Current => {
+            return Err(refuse(
+                admission_record(Code::InvalidRuntimeInput, "unknown-member")
+                    .with("document", document.identity.clone())
+                    .with("field", "contexts"),
+            ));
+        }
+        RawContexts::Malformed(record) => {
+            return Err(refuse(
+                record.clone().with("document", document.identity.clone()),
+            ))
+        }
+        RawContexts::Entries(entries) => entries,
+    };
+    let mut machines: Vec<&str> = Vec::new();
+    let mut read = Vec::new();
+    for (entry, raw) in entries.iter().enumerate() {
+        // 6.10: the entry's shape.
+        let context = raw
+            .0
+            .as_ref()
+            .map_err(|record| named(record.clone(), entry))?;
+        // 6.11: the machine, and one context per machine.
+        let machine = context.machine.as_str();
+        let Some((view, key)) =
+            find_declaration(views, machine).filter(|(view, key)| is_state_machine(view, key))
+        else {
+            return Err(named(
+                admission_record(Code::InvalidRuntimeInput, "wrong-role-mapping")
+                    .with("machine", machine.to_owned()),
+                entry,
+            ));
+        };
+        if machines.contains(&machine) {
+            return Err(named(
+                admission_record(Code::InvalidRuntimeInput, "duplicate-member")
+                    .with("machine", machine.to_owned()),
+                entry,
+            ));
+        }
+        machines.push(machine);
+        let effective = *view
+            .view
+            .type_identities()
+            .get(&key)
+            .ok_or_else(|| fault("context-machine-has-no-effective-id"))?;
+        let declared = types
+            .attributes(effective)
+            .ok_or_else(|| fault("context-machine-has-no-checked-attributes"))?;
+        // 6.12: the fields, in the machine's exposed effective order.
+        for attribute in declared {
+            if let quire_exact::ValueType::Collection(collection) = attribute.field().value_type() {
+                if collection.kind() != CollectionKind::Sequence {
+                    return Err(named(
+                        admission_record(Code::UnknownRequiredFeature, "unsupported-feature")
+                            .with("machine", machine.to_owned())
+                            .with("field", attribute.field().name().to_owned()),
+                        entry,
+                    ));
+                }
             }
-        } else {
-            ordinary.push(population.clone());
+        }
+        for attribute in declared {
+            let name = attribute.field().name();
+            if raw_field(&context.fields, name).is_none() {
+                return Err(named(
+                    admission_record(Code::InvalidRuntimeInput, "missing-member")
+                        .with("machine", machine.to_owned())
+                        .with("field", name.to_owned()),
+                    entry,
+                ));
+            }
+        }
+        for (name, _) in &context.fields {
+            if !declared
+                .iter()
+                .any(|attribute| attribute.field().name() == name)
+            {
+                return Err(named(
+                    admission_record(Code::InvalidRuntimeInput, "unknown-member")
+                        .with("machine", machine.to_owned())
+                        .with("field", name.clone()),
+                    entry,
+                ));
+            }
+        }
+        let mut attributes = Vec::with_capacity(declared.len());
+        let mut breaches = Vec::new();
+        let mut context_references = Vec::new();
+        for attribute in declared {
+            let name = attribute.field().name();
+            let value_type = attribute.field().value_type();
+            let presence = attribute.field().presence();
+            let raw = raw_field(&context.fields, name)
+                .ok_or_else(|| fault("context-field-missing-after-check"))?;
+            if !object_field_kind_matches(raw.form(), value_type, presence) {
+                return Err(named(
+                    admission_record(Code::InvalidRuntimeInput, "wrong-value-kind")
+                        .with("machine", machine.to_owned())
+                        .with("field", name.to_owned()),
+                    entry,
+                ));
+            }
+            let mut found = Vec::new();
+            let witness = match range {
+                PostStateRange::Witness => Some(&mut found),
+                PostStateRange::Refuse => None,
+            };
+            let value = admit_object_field(references, raw, value_type, presence, witness)
+                .map_err(|record| {
+                    named(
+                        record
+                            .with("machine", machine.to_owned())
+                            .with("field", name.to_owned()),
+                        entry,
+                    )
+                })?;
+            breaches.extend(
+                found
+                    .into_iter()
+                    .map(|breach| (attribute.identity(), breach)),
+            );
+            let mut found_references = Vec::new();
+            collect_references(raw, &mut found_references);
+            context_references.extend(found_references.into_iter().map(|(population, key)| {
+                ContextReference {
+                    field: name.to_owned(),
+                    population,
+                    key,
+                }
+            }));
+            attributes.push((name, value));
+        }
+        if read_machine.is_some_and(|clause| types.conforms(effective, clause)) {
+            read.push(ReadContext {
+                machine: machine.to_owned(),
+                entry,
+                effective,
+                attributes,
+                references: context_references,
+                breaches,
+            });
         }
     }
+    Ok(read)
+}
 
-    let required = format!("({context_name}, {})", invocation.identity);
-    let Some((_, _, context)) = contexts.first().copied() else {
-        return Err(refuse(
-            admission_record(Code::InvalidModelBinding, "wrong-context")
-                .with("document", observation.identity.clone())
-                .with("required", required)
-                .with("actual", "none"),
-        ));
-    };
-    if let Some((population_index, object_index, _)) = contexts.get(1).copied() {
-        return Err(refuse(
-            admission_record(Code::InvalidRuntimeInput, "duplicate-member")
-                .with("document", observation.identity.clone())
-                .with(
-                    "path",
-                    format!("/populations/{population_index}/objects/{object_index}"),
-                ),
-        ));
-    }
+/// The read context of `snapshot` for a clause of the state machine `machine`
+/// (FR-106 "Behavior": the entry whose `machine` is `machine` or specializes
+/// it), with its most-specific machine. Decided from the entries' `machine`
+/// member alone, so it is the context check 9 found once admission passed.
+pub(super) fn read_context<'s>(
+    views: &[ModelView],
+    types: &TypeEnvironment,
+    snapshot: &'s SnapshotDocument,
+    machine: quire_exact::EffectiveId,
+) -> Option<(&'s RawContext, quire_exact::EffectiveId)> {
+    snapshot.contexts.contexts().find_map(|(_, context)| {
+        let (view, key) = find_declaration(views, &context.machine)?;
+        let effective = *view.view.type_identities().get(&key)?;
+        types
+            .conforms(effective, machine)
+            .then_some((context, effective))
+    })
+}
 
-    let context_key = context_view
-        .view
-        .type_identities()
-        .keys()
-        .find(|key| key.node == context_name)
-        .ok_or_else(|| fault("context-type-unresolved"))?;
-    if context.type_identity.as_str() != context_name {
-        return Err(refuse(
-            admission_record(Code::InvalidModelBinding, "wrong-context")
-                .with("document", observation.identity.clone())
-                .with("required", required)
-                .with("actual", context.type_identity.as_str().to_owned()),
-        ));
-    }
-    let effective_type = *context_view
-        .view
-        .type_identities()
-        .get(context_key)
-        .ok_or_else(|| fault("context-type-has-no-effective-id"))?;
-    let declared = types
-        .attributes(effective_type)
-        .ok_or_else(|| fault("context-type-has-no-checked-attributes"))?;
-
-    for attribute in declared {
-        if let quire_exact::ValueType::Collection(collection) = attribute.field().value_type() {
-            if collection.kind() != CollectionKind::Sequence {
+/// FR-106 check 8 over the reference values of the read contexts, in the
+/// order given (`pre` before `post`): a reference naming a key absent from
+/// its complete population refuses `dangling_reference`, naming the machine,
+/// the field, the key and the population, in effective field order. The
+/// population of a context reference that the snapshot does not list is left
+/// to the object closure, as it is for an object field.
+pub(super) fn check_context_closure(
+    observations: &[&PopulationValues<'_>],
+) -> Result<(), AdmissionFailure> {
+    for values in observations {
+        for context in &values.read_contexts {
+            for reference in &context.references {
+                if values.completeness.get(&reference.population).copied() != Some(true) {
+                    continue;
+                }
+                let known = values
+                    .keys_by_population
+                    .get(&reference.population)
+                    .is_some_and(|keys| keys.contains(&reference.key));
+                if known {
+                    continue;
+                }
                 return Err(refuse(
-                    admission_record(Code::UnknownRequiredFeature, "unsupported-feature")
-                        .with("field", attribute.field().name().to_owned()),
+                    admission_record(
+                        Code::DanglingReference,
+                        "absent-target-in-complete-population",
+                    )
+                    .with("machine", context.machine.clone())
+                    .with("field", reference.field.clone())
+                    .with("population", reference.population.clone())
+                    .with("object", reference.key.clone()),
                 ));
             }
         }
     }
-    for attribute in declared {
-        let name = attribute.field().name();
-        if raw_field(&context.fields, name).is_none() {
-            return Err(refuse(
-                admission_record(Code::InvalidRuntimeInput, "missing-member")
-                    .with("document", observation.identity.clone())
-                    .with("field", name.to_owned()),
-            ));
-        }
-    }
-    for (name, _) in &context.fields {
-        if !declared
-            .iter()
-            .any(|attribute| attribute.field().name() == name)
-        {
-            return Err(refuse(
-                admission_record(Code::InvalidRuntimeInput, "unknown-member")
-                    .with("document", observation.identity.clone())
-                    .with("field", name.clone()),
-            ));
-        }
-    }
-
-    let mut references = References::over(views, types, &ordinary);
-    let mut attributes = Vec::with_capacity(declared.len());
-    let mut breaches = Vec::new();
-    for attribute in declared {
-        let name = attribute.field().name();
-        let value_type = attribute.field().value_type();
-        let presence = attribute.field().presence();
-        let raw = raw_field(&context.fields, name)
-            .ok_or_else(|| fault("context-field-missing-after-check"))?;
-        if !object_field_kind_matches(raw.form(), value_type, presence) {
-            return Err(refuse(
-                admission_record(Code::InvalidRuntimeInput, "wrong-value-kind")
-                    .with("document", observation.identity.clone())
-                    .with("field", name.to_owned()),
-            ));
-        }
-        let mut found = Vec::new();
-        let witness = match range {
-            PostStateRange::Witness => Some(&mut found),
-            PostStateRange::Refuse => None,
-        };
-        let value = admit_object_field(&mut references, raw, value_type, presence, witness)
-            .map_err(|record| {
-                refuse(
-                    record
-                        .with("document", observation.identity.clone())
-                        .with("field", name.to_owned()),
-                )
-            })?;
-        breaches.extend(
-            found
-                .into_iter()
-                .map(|breach| (attribute.identity(), breach)),
-        );
-        attributes.push((name, value));
-    }
-
-    let object = ObjectId::new(invocation.identity.clone()).map_err(|_| {
-        refuse(
-            admission_record(Code::InvalidRuntimeInput, "invalid-value").with("field", "identity"),
-        )
-    })?;
-    let reference = ObjectReference::new(
-        UniverseId::from_digest(observation.digest),
-        effective_type,
-        object,
-    );
-    let mut values = admit_population_values(
-        views,
-        types,
-        &ordinary,
-        relationships,
-        range,
-        ancestor_steps,
-    )?;
-    values
-        .out_of_range
-        .extend(breaches.into_iter().map(|(field, breach)| OutOfRange {
-            object: reference.clone(),
-            field,
-            index: breach.index,
-            range: breach.range,
-            observed: breach.observed,
-            steps: breach.steps,
-        }));
-    values.objects.push((reference.clone(), attributes));
-    Ok((values, reference))
+    Ok(())
 }
 
 /// FR-106's required populations from parameters: every population of the
@@ -2459,28 +2836,29 @@ fn widen_ranges(types: &TypeEnvironment) -> Result<TypeEnvironment, AdmissionFai
 pub(super) fn admit_populations(
     views: &[ModelView],
     types: &TypeEnvironment,
-    populations: &[RawPopulation],
-    relationships: &[super::relationships::RawEntry],
+    snapshot: &SnapshotDocument,
+    document: &DocumentRef,
     self_population: Option<&str>,
     ancestor_steps: u64,
 ) -> Result<AdmittedEnvironment, AdmissionFailure> {
     let values = admit_population_values(
         views,
         types,
-        populations,
-        relationships,
+        snapshot,
+        document,
+        None,
         PostStateRange::Refuse,
         ancestor_steps,
     )?;
     check_population_completeness(
-        populations,
+        &snapshot.populations,
         &values.completeness,
         self_population,
         &[],
         &values.extents,
     )?;
     check_population_closure(
-        populations,
+        &snapshot.populations,
         &values.completeness,
         &values.keys_by_population,
         &values.extents,
@@ -2488,27 +2866,52 @@ pub(super) fn admit_populations(
     finish_populations(types, values)
 }
 
-/// FR-098 step 3: FR-106 checks 6 to 8 over a function's one environment
-/// document. The populations holding an object that equals one of the
-/// converted `arguments` are required (check 7), and so is, repeatedly, what
-/// their reference fields and relationship ends name.
-pub(super) fn admit_argument_populations(
+/// One population of an admitted initial state: its declaration key and
+/// every object it lists, with each field's admitted slot.
+pub(super) struct AdmittedPopulation {
+    pub(super) key: DeclarationKey,
+    pub(super) objects: Vec<AdmittedObject>,
+}
+
+/// An admitted initial state: its populations and the relationship extents
+/// its snapshot listed.
+pub(super) struct AdmittedInitial {
+    pub(super) populations: Vec<AdmittedPopulation>,
+    pub(super) extents:
+        Vec<quire_semantic_value::relationship_extent::RelationshipExtent<DeclarationKey>>,
+}
+
+/// One object of an admitted initial state.
+pub(super) struct AdmittedObject {
+    pub(super) reference: ObjectReference,
+    pub(super) fields: Vec<(String, FieldValue)>,
+}
+
+/// FR-106 checks 6 to 8 over an initial state's one snapshot, where check 7
+/// requires every population the snapshot lists: every population the
+/// document lists, in the document's order, with its objects.
+pub(super) fn admit_initial_populations(
     views: &[ModelView],
     types: &TypeEnvironment,
-    populations: &[RawPopulation],
-    relationships: &[super::relationships::RawEntry],
-    arguments: &[ObjectReference],
+    snapshot: &SnapshotDocument,
+    document: &DocumentRef,
     ancestor_steps: u64,
-) -> Result<AdmittedEnvironment, AdmissionFailure> {
+) -> Result<AdmittedInitial, AdmissionFailure> {
+    // An initialization snapshot is `current`: it holds no machine context.
+    let populations = &snapshot.populations[..];
     let values = admit_population_values(
         views,
         types,
-        populations,
-        relationships,
+        snapshot,
+        document,
+        None,
         PostStateRange::Refuse,
         ancestor_steps,
     )?;
-    let required = values.populations_holding(arguments);
+    let required: Vec<String> = populations
+        .iter()
+        .map(|entry| entry.population.clone())
+        .collect();
     check_population_completeness(
         populations,
         &values.completeness,
@@ -2522,10 +2925,84 @@ pub(super) fn admit_argument_populations(
         &values.keys_by_population,
         &values.extents,
     )?;
+    let mut admitted: Vec<(String, AdmittedPopulation)> = Vec::new();
+    for entry in populations {
+        if admitted.iter().any(|(name, _)| *name == entry.population) {
+            continue;
+        }
+        let (_, info) = find_population(views, &entry.population)
+            .ok_or_else(|| fault("listed-population-unresolved"))?;
+        admitted.push((
+            entry.population.clone(),
+            AdmittedPopulation {
+                key: info.key,
+                objects: Vec::new(),
+            },
+        ));
+    }
+    for ((reference, fields), holder) in values.objects.iter().zip(&values.holders) {
+        let (_, population) = admitted
+            .iter_mut()
+            .find(|(name, _)| name == holder)
+            .ok_or_else(|| fault("object-holder-unlisted"))?;
+        population.objects.push(AdmittedObject {
+            reference: reference.clone(),
+            fields: fields
+                .iter()
+                .map(|(name, value)| ((*name).to_owned(), value.clone()))
+                .collect(),
+        });
+    }
+    let extents = super::relationships::supplied_extents(&values.extents)?;
+    finish_populations(types, values)?;
+    Ok(AdmittedInitial {
+        populations: admitted
+            .into_iter()
+            .map(|(_, population)| population)
+            .collect(),
+        extents,
+    })
+}
+
+/// FR-098 step 3: FR-106 checks 6 to 8 over a function's one environment
+/// document. The populations holding an object that equals one of the
+/// converted `arguments` are required (check 7), and so is, repeatedly, what
+/// their reference fields and relationship ends name.
+pub(super) fn admit_argument_populations(
+    views: &[ModelView],
+    types: &TypeEnvironment,
+    snapshot: &SnapshotDocument,
+    document: &DocumentRef,
+    arguments: &[ObjectReference],
+    ancestor_steps: u64,
+) -> Result<AdmittedEnvironment, AdmissionFailure> {
+    let values = admit_population_values(
+        views,
+        types,
+        snapshot,
+        document,
+        None,
+        PostStateRange::Refuse,
+        ancestor_steps,
+    )?;
+    let required = values.populations_holding(arguments);
+    check_population_completeness(
+        &snapshot.populations,
+        &values.completeness,
+        None,
+        &required,
+        &values.extents,
+    )?;
+    check_population_closure(
+        &snapshot.populations,
+        &values.completeness,
+        &values.keys_by_population,
+        &values.extents,
+    )?;
     finish_populations(types, values)
 }
 
-fn map_environment_refusal(error: ObjectClosureRefusal) -> AdmissionFailure {
+pub(super) fn map_environment_refusal(error: ObjectClosureRefusal) -> AdmissionFailure {
     match error.cause {
         ObjectClosureCause::DanglingReference(target) => refuse(
             admission_record(
