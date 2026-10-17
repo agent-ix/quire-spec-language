@@ -34,3 +34,10 @@ The following are sound:
 - **Visibility changes.** They are crate-scoped except `checked_node_id`, `checked_occurrence` and `admit_arguments`, whose signatures expose no internals.
 
 No unsafe code or new panics are introduced, and test `expect`s are confined to fixtures.
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 3e4664769: `BindPackage::read` now takes the I2 reader limits (`SpineLimits::imports`) and calls the now-public `qsl_package::supply_closure` to supply the dependency closure before `read_checked_package`. `tc_1053_step_1_a_unit_importing_a_library_binds` binds `[4, 1]` over a unit that imports `test/geometry`, and `run` accepts the same unit. |
+| FND-002 | fixed | 3e4664769: `value_occurrences_exceeded`, `Halt::Incomplete` and `BindOutcome::Incomplete` are removed, so binding charges nothing. FR-367's Outputs and Behavior 7 now say the binding reports no `Incomplete` (planner ruling option (a)), and AC-8 was amended in c749543de. No remaining code reads `BindOutcome::Incomplete`. |

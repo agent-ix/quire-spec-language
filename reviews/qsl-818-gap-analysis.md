@@ -40,3 +40,16 @@ The other oracles are strong:
 - **AC-10:** the exact name and level.
 
 The AC-6 `OperandNotParameter` sub-test feeds the outer application's own node as its operand child, not the inner `a + 1`. It still exercises the application-node branch.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-002 | medium | The amended FR-367-AC-8 says: "The checker refuses every integer division that can divide by zero, so no source-compiled function with an `add`, `sub`, `mul` or `negate` occurrence evaluates to `undefined`". The premise covers only `division-by-zero`, which is one of the five kernel `undefined` reasons; `precondition-false` and `absent-key` are family reasons. A `sum<T>(x in deref(n).items: x)` over a reference argument's collection field compiles from source (the `forall(x in deref(n).items: ...)` form is in `qsl-replay/src/execute/tests/object_environment.rs:202`), and it can leave its domain at run time (`sum-out-of-domain`) in a function that also holds `a + 1`. FR-100 admits that reference argument. The universal claim therefore looks false, and the undefined half was dropped because of it. | spec/functional/FR-367-bind-a-call-s-named-values-to-a-scalar-application-occurrence.md:215 |
+| FND-003 | medium | The amended FR-367-AC-10 says the quantifier-bound case "is not exercised separately, because a `Call` cannot carry the collection a quantifier ranges over". A quantifier can range over a collection that is not an argument. `forall(x in deref(n).items: x < 5)` compiles from source over a `Reference<M::Node>` parameter (`qsl-replay/src/execute/tests/object_environment.rs:201-206`), and FR-100 admits that reference argument. So `forall(x in deref(n).items: x + 1 > 0)` makes the quantifier binder a reachable `+` operand at bind level. The stated reason is unsound. The conclusion (same binder node kind as `let`) may still hold, but it rests on that wrong reason. | spec/functional/FR-367-bind-a-call-s-named-values-to-a-scalar-application-occurrence.md:217 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 3e4664769: the AC-8 `value_occurrences` clause and its hand-built-record test are removed, because binding now charges nothing (planner ruling option (a)). The AC-8 test that remains, `tc_1053_step_7_binding_does_not_evaluate`, runs `run` on the same `work_units = 0` call, asserts `run` is `Incomplete` at `work_units`, and asserts the binding is `Bound` `[4, 1]`. |
