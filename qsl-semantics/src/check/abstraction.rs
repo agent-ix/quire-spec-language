@@ -247,6 +247,10 @@ impl CheckedAbstractionRelation {
 /// The entry of a binding that is not admissible (ADR-017 AR-3).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum MalformedEntry {
+    /// The key names a declaration that is not an object type.
+    NotAnObjectType,
+    /// The key names a declaration that is not a population.
+    NotAPopulation,
     /// An object binding names a field the type does not declare.
     UnknownField(Identifier),
     /// A frame binding names a parameter the operation does not declare.
@@ -377,12 +381,24 @@ impl CheckedGraph {
             package: key.package().to_owned(),
             key,
         };
+        // QSpec FR-450 rule 2: a key that names a declaration of another
+        // kind is malformed, not missing.
+        let unresolved = |key: &DeclarationKey, wrong: MalformedEntry| {
+            if self.declaration_keys.contains(key) {
+                AbstractionRefusal::MalformedDeclaration {
+                    key: binding.key(),
+                    entry: wrong,
+                }
+            } else {
+                missing(binding.key())
+            }
+        };
         match binding {
             AuthoredBinding::Object { key, value } => {
                 let context = self
                     .object_types
                     .get(key)
-                    .ok_or_else(|| missing(binding.key()))?;
+                    .ok_or_else(|| unresolved(key, MalformedEntry::NotAnObjectType))?;
                 for field in value.fields.keys() {
                     if self
                         .scope
@@ -402,14 +418,14 @@ impl CheckedGraph {
                 if self.population_keys.contains_key(key) {
                     Ok(())
                 } else {
-                    Err(missing(binding.key()))
+                    Err(unresolved(key, MalformedEntry::NotAPopulation))
                 }
             }
             AuthoredBinding::Frame { key, value } => {
                 let context = self
                     .object_types
                     .get(&key.declaring)
-                    .ok_or_else(|| missing(binding.key()))?;
+                    .ok_or_else(|| unresolved(&key.declaring, MalformedEntry::NotAnObjectType))?;
                 let OperationLookup::Declared {
                     declaring,
                     operation,

@@ -423,6 +423,10 @@ pub struct CheckedGraph {
     /// FR-304: every admitted population's declaration key, with its
     /// population domain.
     population_keys: BTreeMap<crate::model::key::DeclarationKey, state_clause::PopulationDomain>,
+    /// FR-304: the key of every declaration of every admitted domain
+    /// package, of any kind, so a binding keyed by a declaration of the wrong
+    /// kind refuses as malformed rather than missing.
+    declaration_keys: std::collections::BTreeSet<crate::model::key::DeclarationKey>,
     /// FR-096: each protocol's own attempts' declared name spans,
     /// index-aligned with `protocols`, so an `Origin::ProtocolAttempt`
     /// resolves.
@@ -930,6 +934,11 @@ impl PackageDeclarations {
         let (model_objects, object_types) = model_object_tables(&models);
         let model_populations = model_population_tables(&models);
         let population_keys = population_key_table(&models);
+        let declaration_keys = models
+            .iter()
+            .flat_map(AdmittedModel::record_keys)
+            .cloned()
+            .collect();
         let object_nodes = object_types
             .keys()
             .filter_map(|declaration| {
@@ -1903,6 +1912,7 @@ impl PackageDeclarations {
             object_nodes,
             model_populations,
             population_keys,
+            declaration_keys,
             attempt_spans: regions.attempt_spans,
         })
     }

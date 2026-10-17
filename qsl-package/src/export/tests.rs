@@ -494,3 +494,34 @@ fn frame_and_postcondition_items_reference_the_operation_key() {
         );
     }
 }
+
+#[test]
+#[trace("TC-798", "FR-304-AC-3")]
+fn a_key_naming_a_declaration_of_another_kind_refuses_malformed_declaration() {
+    let package = package(CLAUSES);
+    let field = AuthoredBinding::Object {
+        key: declaration("ConfigVersion/version"),
+        value: ObjectBinding {
+            rust_type: RustPath::new("Version"),
+            fields: BTreeMap::new(),
+        },
+    };
+    let not_a_population = AuthoredBinding::Population {
+        key: declaration("ConfigVersion"),
+        value: PopulationBinding {
+            collection: RustPath::new("state::configs"),
+        },
+    };
+    for (binding, entry) in [
+        (field, MalformedEntry::NotAnObjectType),
+        (not_a_population, MalformedEntry::NotAPopulation),
+    ] {
+        assert_eq!(
+            sole(refused(&package, std::slice::from_ref(&binding))),
+            AbstractionRefusal::MalformedDeclaration {
+                key: binding.key(),
+                entry,
+            }
+        );
+    }
+}
