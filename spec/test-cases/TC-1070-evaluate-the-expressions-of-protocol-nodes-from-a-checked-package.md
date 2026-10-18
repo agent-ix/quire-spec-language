@@ -80,16 +80,35 @@ protocol Refunds using P over (view: M::Node)
 }
 ```
 
-Fixture **L** is the protocol `Pipeline` of TC-1056, with its row 19 `related by
-Pipe (sent, view)` on `Got` and its row 28 `choice Decide` (`visible
-(got.ready)`, cases `yes` and `no`), over TC-1056's model. L requires of that
-model the object populations `plains` (of `Plain`) and `nodes` (of `Node`).
+Fixture **L** is a second protocol over the same `M`, which adds the
+relationship `owns` between `Node` and `Node`. Its channel carries a record, as
+FR-218-AC-24 requires, and every binder its `visible` entry and case guards read
+is a record value:
+
+```
+protocol Pipeline using P over (view: M::Node) on origin {
+  role Seller on M::Node;
+  role Buyer on M::Node;
+  relationship Owns = M::owns;
+  channel Pay from Seller to Buyer carries M::Flag
+      ordering unordered delivery at-least-once capacity 2 overflow block;
+  run sequence Main {
+    send Sent via Pay as (sent: M::Flag) { true };
+    receive Got via Pay of Main::Sent as (got: M::Flag)
+        related by Owns (view, view) { true };
+    choice Decide by Buyer visible (got.ready) {
+      case yes when { got.ready } check A using P { true };
+      case no when { not got.ready } check B using P { true };
+    };
+  }
+  finish Closed as (closed: M::Flag) { true };
+}
+```
 
 The package is the checked package QSL compiles from the unit, which carries
 the protocol as the v2 protocol nodes FR-383 emits. The observation is one
 current snapshot with every population complete: `nodes` holds `n5`
-(`total` 5); for L, `plains` holds `p1` (`ready` true) and `p0` (`ready`
-false). Record values are written `Type(field value)`: `Receipt(total 5)`,
+(`total` 5). Record values are written `Type(field value)`: `Receipt(total 5)`,
 `Attempt(tally 0)`, `Flag(ready true)`. A slot is written `node.member[index]`,
 the node named by its source name (`Refund` is the node of `compensate Refund`,
 `Applied` the `effect`, `Committed` the `commit`, `Closed` the `finish`,
@@ -133,10 +152,11 @@ values are what rows 4 to 21 supply as captured values.
 | 26 | each of `Refund.trigger.guard`, `Refund.recovery.predicate`, `Partial.retry.relation`, `Partial.recovery.predicate` | none | refuses `missing-member` naming `target` (`partialTarget`) |
 | 27 | `Refund.registration_captures[0]` and `Refund.activation_captures[0]` | none | refuses `missing-member` naming `forward` and `trigger` |
 | 28 | `Refund.retry.relation` | row 8's supply and `forward = Receipt(total 5)` | refuses `unknown-member` naming `forward`: the retry relation does not read it |
-| 29 | `Got.related.from[0]` (L) | `sent = p1` | the reference `p1` |
+| 29 | `Got.related.from[0]` (L) | `view = n5` | the reference `n5` |
 | 30 | `Got.related.to[0]` (L) | `view = n5` | the reference `n5` |
-| 31 | `Decide.visible[0]` (L) | `got = p1` | true (`got.ready`) |
-| 32 | `Decide.cases.guard[0]` and `[1]` (L) | `got = p1` | true (`yes`), false (`no`) |
+| 31 | `Decide.visible[0]` (L) | `got = Flag(ready true)` | true (`got.ready`) |
+| 32 | `Decide.cases.guard[0]` and `[1]` (L) | `got = Flag(ready true)` | true (`yes`), false (`no`) |
+| 33 | `Decide.cases.guard[1]` (L) | `got = Flag(ready false)` | true (`no`) |
 
 Row 26's four refusals name `target`, the lowest source of each slot (its level
 is below the trigger's, the activation capture's and the recovery binder's).
