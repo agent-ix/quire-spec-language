@@ -49,3 +49,11 @@ runtime, recorded as SR-12121 FND-003.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | medium | `lower_refuses_a_complete_v1_program_as_unknown_edition` is tagged `#[trace("TC-107", "FR-029-AC-3")]`, and its doc comment cites FR-029. This PR deletes TC-107 and FR-029, so the tag binds a test to criteria that no longer exist and the matrix carries a dangling row. The test should be deleted with them (see SR-12121 FND-003). | tests/it/compile_command.rs:422-436 |
+
+## Dispositions
+
+Round 1, reviewed at ddbd07a2697a417a6dba220afc3dae80f045cc0e.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 0fcc33d2e: the test tagged `TC-107`/`FR-029-AC-3` is deleted; no `#[trace]` under tests/ or src/ names TC-107 or an FR-029 criterion. |

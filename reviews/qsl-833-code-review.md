@@ -71,3 +71,18 @@ test function (FND-002), and a surviving test that still runs `lower`
 | FND-004 | low | FR-031's Behavior still says the command refuses extraction combined with "source-only compile/lower export". There is no `lower` export now; the sentence should name `compile` only, matching the updated `extraction-requires-run` row in docs/native-error-codes.md. | spec/functional/FR-031-run-extracted-native-source.md:63 |
 | FND-005 | low | Stale prose that still names the deleted capability: README.md:248 says `MappedPackage` exposes the package for "validation, evaluation and lowering"; xtask/src/import_graph.rs:386 lists `lowering` among later-layer modules in crates depending on `qsl-semantics`; docs/native-linked-packages.md:183,191 describe LC04 lowering, which spec.md section 2.1 no longer lists in scope; ADR-030 lines 435-436 list FR-009, FR-033 and FR-034 among the native-profile requirements. | README.md:248; xtask/src/import_graph.rs:386; docs/native-linked-packages.md:183; spec/decisions/ADR-030-arbitrary-nesting-depth-no-fixed-caps.md:435 |
 | FND-006 | low | The new test's second half asserts the repository layout (`src/lowering.rs` and `src/lowering/` do not exist, `lib.rs` does not contain `mod lowering`). That checks files, not behaviour, and the compiler already guarantees no caller reaches a deleted module. The CLI half (`lower` exits 20 with `unknown command: lower`) is the behaviour FR-010-AC-3 states; the file-existence asserts can go. | tests/it/compile_command.rs:385-389 |
+
+## Dispositions
+
+Round 1, reviewed at ddbd07a2697a417a6dba220afc3dae80f045cc0e (fix commit
+0fcc33d2e, merge of origin/main e2c6cae34, review records ddbd07a26). The
+merge touches none of the reviewed lines.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 0fcc33d2e: `CATALOG_CATEGORIES: [(&str, Category); 49]`, and the table holds 49 entries at the head. |
+| FND-002 | fixed | 0fcc33d2e: the second `a_complete_v1_program_compiles_through_the_spine` is deleted; one definition remains (tests/it/compile_command.rs:342). |
+| FND-003 | fixed | 0fcc33d2e: `lower_refuses_a_complete_v1_program_as_unknown_edition` is deleted; no test under tests/ or src/ runs `lower` except `lower_is_an_unknown_command`. |
+| FND-004 | fixed | 0fcc33d2e: FR-031 line 63 now reads "selected-package execution or source-only compile export". |
+| FND-005 | fixed | 0fcc33d2e: README.md:248, xtask/src/import_graph.rs:385-386, docs/native-linked-packages.md:183,191 and ADR-030:435-436 no longer name lowering, LC04 or FR-009/033/034. |
+| FND-006 | fixed | 0fcc33d2e: the file-layout asserts are removed; the test is renamed `lower_is_an_unknown_command` and asserts exit 20, empty stdout and the stderr line. `Path` stays imported and used (lines 14, 18). |
