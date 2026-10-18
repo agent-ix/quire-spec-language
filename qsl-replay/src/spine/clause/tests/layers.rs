@@ -245,7 +245,7 @@ fn a_layer_refusal_is_prohibited() {
         classified.causes,
         [crate::spine::RefusalCause {
             code: Code::UnsupportedConstruct,
-            cause: Some("declaration-form".to_owned()),
+            cause: Some("declaration-form"),
             limit: None,
         }]
     );
