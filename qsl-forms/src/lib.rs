@@ -31,6 +31,7 @@
 mod clause_text;
 mod dispatch;
 mod protocol_clause;
+mod protocol_control;
 mod spans;
 mod sum_case;
 mod syntax;
@@ -40,6 +41,11 @@ mod value;
 pub use clause_text::{parse_clause_text, ClauseTextRefusal};
 pub use dispatch::{
     build_unit, FormsCause, FormsRefusal, LeadingTokenKind, ParsedForm, ParsedUnit,
+};
+pub use protocol_control::{
+    AwaitForm, ChannelCapacity, ChannelDelivery, ChannelForm, ChannelOrdering, ChannelOverflow,
+    JoinPolicy, LoopProofForm, LossSelector, Outstanding, ParallelForm, ProtocolMemberForm,
+    RepeatForm, SchedulingForm, TerminalForm,
 };
 pub use spans::{DeclarationSpans, ExpressionSpans, SpanId, SpanRefusal, SpansMismatch};
 pub use syntax::{
