@@ -16,10 +16,9 @@ use crate::formal_source::FormalSource;
 use crate::lowering::{self, LoweringError, LoweringLimits, ProjectionTarget};
 use crate::model_source::ModelSourceError;
 use crate::package::{NativePackage, NativePackageRef, PackageError};
-use crate::protocol_artifact::DOMAIN_PACKAGE_PROFILE;
-use crate::runtime::InputReadError;
 use qsl_foundation::serde_object::Object;
 use qsl_foundation::{ByteDigest, Code, Diagnostic, Source};
+use qsl_semantics::model::domain_package::DOMAIN_PACKAGE_PROFILE;
 use quire_contract_model as ir;
 use std::{
     fs::File,
@@ -237,9 +236,6 @@ pub enum RunCause {
         #[source]
         error: Box<PackageError>,
     },
-    /// Existing selected runtime artifact failure.
-    #[error("{0}")]
-    Input(#[from] Box<InputReadError>),
     /// A `1-draft` program's request selects what spine compile does not
     /// take.
     #[error("a complete-V1 program compiles alone; the request selects {0}")]
@@ -350,7 +346,6 @@ impl RunCause {
             Self::Checking(error) => error.diagnostic.code,
             Self::Model(error) => error.code(),
             Self::Package(error) | Self::SelectedPackage { error, .. } => error.code,
-            Self::Input(error) => error.code,
             Self::Lowering { error, .. } => error.code.code(),
             Self::CompleteSelection(_)
             | Self::Libraries(_)

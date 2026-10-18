@@ -296,11 +296,11 @@ fn written(directory: &Path, case: Case) -> io::Result<Written> {
     }
 }
 
-/// Emits FR-108's spine files beside the native ones `fixtures::write`
-/// already wrote in `directory`: the unit, the domain package, the FR-106
-/// documents, and a `clause-run-request.json` (reproducibility only, see
-/// this module's own doc).
+/// Emits FR-108's spine files into `directory`, creating it: the unit, the
+/// domain package, the FR-106 documents, and a `clause-run-request.json`
+/// (reproducibility only, see this module's own doc).
 pub fn write(directory: &Path, case: Case) -> io::Result<()> {
+    std::fs::create_dir_all(directory)?;
     let unit = unit_text();
     write_json(directory, "spine-unit.native", unit.as_bytes())?;
     write_json(
