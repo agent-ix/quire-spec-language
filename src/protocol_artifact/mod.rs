@@ -31,7 +31,7 @@ pub use number::{
     NUMERIC_PROFILE,
 };
 
-pub use domain::{AdmittedDomainPackage, DOMAIN_PACKAGE_PROFILE, DOMAIN_PACKAGE_VERSION_NAMESPACE};
+pub use domain::{AdmittedDomainPackage, DOMAIN_PACKAGE_VERSION_NAMESPACE};
 pub use encoding::encode_candidate;
 pub use intake::read;
 pub use occurrence::{

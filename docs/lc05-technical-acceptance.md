@@ -40,7 +40,7 @@ nice -n 10 cargo run --locked --offline --target-dir target -j 1 --features quir
 | Stage | Owned artifact or interface |
 | --- | --- |
 | Authored model | `examples/config-version/model.json`, AGPL-3.0-only |
-| Case catalog and generator | `examples/config-version/cases.rs` and `fixtures.rs`, Rust |
+| Case catalog and generator | `examples/config-version/cases.rs`, `spine_corpus.rs` and `fixtures.rs`, Rust |
 | Native source path | generated `program.native` → model/link/check/package pipeline |
 | Quire source path | generated `rules.md` → Rust extractor → mapped compiler intake |
 | Runtime inputs | generated snapshot/invocation files with case-specific identities |

@@ -2,9 +2,9 @@
 //! FR-108: TC-469's 17-case ConfigVersion spine corpus. Runs the
 //! same `examples/config-version/cases.rs` catalog as the fixture test,
 //! through `run_clause` (FR-109) over the spine files
-//! `crate::support::config_version::spine` writes beside the native ones.
+//! `crate::support::config_version_spine::spine` writes.
 
-use crate::support::config_version::{spine, Case};
+use crate::support::config_version_spine::{cases::CASES, spine, Case};
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::{Category, Code};
 use qsl_replay::spine::{
@@ -193,9 +193,7 @@ fn run_case(directory: &Path, case: Case) -> qsl_replay::spine::ClauseRunReport 
 }
 
 fn build(directory: &Path, case: Case) -> ClauseRunRequest {
-    let model = crate::support::config_version::model().expect("native model admits");
-    crate::support::config_version::write(directory, &model, case)
-        .expect("fixtures::write emits every case's native and spine files");
+    spine::write(directory, case).expect("spine::write emits every case's spine files");
     spine::request(directory, case).expect("the written spine files reconstruct a request")
 }
 
@@ -926,7 +924,7 @@ fn clause_run_command_honors_caller_byte_ceilings() {
 fn tc_469_step_1_every_case_matches_the_independent_expected_table() {
     let directory = tempfile::tempdir().unwrap();
     let mut seen = BTreeSet::new();
-    for &case in crate::support::config_version::CASES {
+    for &case in CASES {
         let path = directory.path().join(case.id());
         let report = run_case(&path, case);
         assert_expected(case, &report);
@@ -934,10 +932,7 @@ fn tc_469_step_1_every_case_matches_the_independent_expected_table() {
     }
     assert_eq!(
         seen,
-        crate::support::config_version::CASES
-            .iter()
-            .map(|case| case.id())
-            .collect::<BTreeSet<_>>()
+        CASES.iter().map(|case| case.id()).collect::<BTreeSet<_>>()
     );
 }
 
@@ -947,7 +942,7 @@ fn tc_469_step_1_every_case_matches_the_independent_expected_table() {
 #[test]
 fn tc_469_every_case_survives_result_two_round_trip() {
     let directory = tempfile::tempdir().unwrap();
-    for &case in crate::support::config_version::CASES {
+    for &case in CASES {
         let report = run_case(&directory.path().join(case.id()), case);
         assert_expected(case, &report);
         let bytes = qsl_replay::spine::write_clause_run_result(&report).unwrap();
@@ -1015,10 +1010,9 @@ fn tc_469_step_4_generation_and_reports_are_deterministic() {
     let root = tempfile::tempdir().unwrap();
     let first = root.path().join("first");
     let second = root.path().join("second");
-    let model = crate::support::config_version::model().unwrap();
-    for &case in crate::support::config_version::CASES {
-        crate::support::config_version::write(&first.join(case.id()), &model, case).unwrap();
-        crate::support::config_version::write(&second.join(case.id()), &model, case).unwrap();
+    for &case in CASES {
+        spine::write(&first.join(case.id()), case).unwrap();
+        spine::write(&second.join(case.id()), case).unwrap();
         let names = |directory: &Path| -> BTreeSet<std::ffi::OsString> {
             std::fs::read_dir(directory)
                 .unwrap()
@@ -1043,7 +1037,7 @@ fn tc_469_step_4_generation_and_reports_are_deterministic() {
         }
     }
 
-    for &case in crate::support::config_version::CASES {
+    for &case in CASES {
         let path = first.join(case.id());
         let request_a = spine::request(&path, case).unwrap();
         let limits_a = (
@@ -1136,7 +1130,7 @@ fn tc_469_step_4_generation_and_reports_are_deterministic() {
 /// identity).
 #[cfg(feature = "quire-extraction")]
 mod extraction {
-    use super::{build, run_clause, Case, ClauseRunRequest};
+    use super::{build, run_clause, Case, ClauseRunRequest, CASES};
     use ix_trace_rs::trace;
     use qsl_foundation::{Source, SourceIdentity};
 
@@ -1205,7 +1199,7 @@ mod extraction {
     #[test]
     fn tc_469_step_5_markdown_run_matches_the_direct_run_via_i3() {
         let directory = tempfile::tempdir().unwrap();
-        for &case in crate::support::config_version::CASES {
+        for &case in CASES {
             let path = directory.path().join(case.id());
             let direct_request = build(&path, case);
             let extracted = extracted(case, &direct_request);
@@ -1271,7 +1265,7 @@ mod extraction {
 fn tc_469_step_6_package_id_is_pinned_across_every_case() {
     let directory = tempfile::tempdir().unwrap();
     let mut pinned = None;
-    for &case in crate::support::config_version::CASES {
+    for &case in CASES {
         // `missing-model` never reaches compile with a package to pin.
         if matches!(case, Case::MissingModel) {
             continue;
