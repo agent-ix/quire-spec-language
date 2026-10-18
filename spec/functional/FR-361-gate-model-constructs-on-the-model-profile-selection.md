@@ -217,8 +217,8 @@ DefinitionLock catalog's `header_selectable_layers` (FR-110).
   requirement adds the unit-level model test and the complete-model lock rows.
   FR-110's layer selection (FR-110-AC-1, AC-7, AC-8) is built; this
   requirement reads it (items 2 to 4).
-- FR-102 and FR-302 record that the `operation-body` gate is not enforced;
-  they cross-reference this requirement. FR-304 states the abstraction
+- FR-102 and FR-302 state the `operation-body` form and its dispatch linking,
+  which this requirement gates. FR-304 states the abstraction
   refusal this requirement places at S3. FR-308 and FR-309 name the protocol
   facet, which this requirement does not gate. FR-056 states the `model`
   declaration and domain-package intake, FR-103 the model operations.

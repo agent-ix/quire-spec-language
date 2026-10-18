@@ -180,12 +180,22 @@ fn a_dispatched_call_and_a_lookup_need_the_model_profile() {
         "lookup<Config::ConfigVersion>(p, r) absent refused"
     );
     assert_eq!(lookup_refusal.family, ModelFamily::Lookup);
+    assert_eq!(
+        refusals(&[("v", VALUE)], LOOKUP)[0]
+            .0
+            .cause
+            .catalog_code()
+            .to_string(),
+        "unsupported_construct/expression-form"
+    );
     assert_eq!(lookup_refusal.owner_kind, OwnerKind::Function);
     assert_eq!(lookup_refusal.owner, "q");
 
-    compile(&[("v", MODEL)], &format!("{BODY}\n{CALL}"))
-        .1
-        .expect("the model profile admits the call");
+    let (_, compiled) = compile(&[("v", MODEL)], &format!("{BODY}\n{CALL}"));
+    let compiled = compiled.expect("the model profile admits the call");
+    let tables = compiled.package.graph().dispatch_tables();
+    assert_eq!(tables.len(), 1, "the call resolves to size's table");
+    assert_eq!(tables[0].candidate_count(), 1);
     compile(&[("v", MODEL)], LOOKUP)
         .1
         .expect("the model profile admits the lookup");
@@ -209,8 +219,10 @@ fn state_clauses_need_no_model_profile() {
 
 /// FR-361-AC-6: a value-profile unit holding a construct of every family
 /// refuses once per construct, in source order, each retaining the selected
-/// layers and the required layer, though nothing uses a declaration.
-#[trace("FR-361-AC-6", "TC-1017")]
+/// layers and the required layer, though nothing uses a declaration. Verifies
+/// the `operation-body`, `dispatch-call` and `lookup` families; `abstraction`
+/// has no form yet, so FR-361-AC-6 is not bound.
+#[trace("TC-1017")]
 #[test]
 fn every_construct_is_refused_once_in_source_order() {
     let declarations = format!("{LOOKUP}\n{BODY}\n{CALL}");
@@ -269,8 +281,10 @@ fn compile_importing(
 }
 
 /// FR-361-AC-6: the test is per unit. A library that selects the model
-/// profile does not give its importer the selection, and the reverse.
-#[trace("FR-361-AC-6", "TC-1017")]
+/// profile does not give its importer the selection, and the reverse. The
+/// importer's forms against the library's import alias are not tested
+/// (FR-361-AC-6 is not bound).
+#[trace("TC-1017")]
 #[test]
 fn the_selection_belongs_to_the_unit() {
     let (unit, compiled) = compile_importing(
@@ -384,8 +398,9 @@ fn an_e3_refusal_is_the_only_one_reported() {
 }
 
 /// FR-361-AC-11: in a value-profile unit S2 builds the forms of every family
-/// and reports no refusal; the refusals are S3's.
-#[trace("FR-361-AC-11", "TC-1017")]
+/// and reports no refusal; the refusals are S3's. Verifies three families
+/// (`abstraction` has no form), so FR-361-AC-11 is not bound.
+#[trace("TC-1017")]
 #[test]
 fn the_refusals_are_s3s_not_s2s() {
     let declarations = format!("{LOOKUP}\n{BODY}\n{CALL}");
