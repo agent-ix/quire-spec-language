@@ -23,13 +23,19 @@ struct Emitted {
     evidence: CheckedPackageEvidence,
 }
 
+/// What [`unit_of`] builds: the unit text, the package document, the package
+/// input keyed by digest, and the hex digest the unit pins the package by.
+struct UnitParts {
+    unit: String,
+    document: Vec<u8>,
+    packages: BTreeMap<[u8; 32], Vec<u8>>,
+    digest: String,
+}
+
 /// The unit text selecting the package holding `operations` of `Counter`
 /// (each named by its own postcondition clause) with the frames of
 /// `overrides`, the package document, and the digest the unit pins it by.
-fn unit_of(
-    operations: &[&str],
-    overrides: &[(&str, Value)],
-) -> (String, Vec<u8>, BTreeMap<[u8; 32], Vec<u8>>, String) {
+fn unit_of(operations: &[&str], overrides: &[(&str, Value)]) -> UnitParts {
     let document = serde_json::to_vec(&fixture::document(operations, overrides))
         .expect("the fixture serializes");
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
@@ -45,13 +51,23 @@ fn unit_of(
         package = fixture::PACKAGE,
         posts = fixture::posts(operations),
     );
-    (unit, document, packages, digest)
+    UnitParts {
+        unit,
+        document,
+        packages,
+        digest,
+    }
 }
 
 /// The package holding `operations` of `Counter` (each named by its own
 /// postcondition clause), with the frames of `overrides`.
 fn emit(operations: &[&str], overrides: &[(&str, Value)]) -> Emitted {
-    let (unit, document, packages, digest) = unit_of(operations, overrides);
+    let UnitParts {
+        unit,
+        document,
+        packages,
+        digest,
+    } = unit_of(operations, overrides);
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
         .check(CheckingLimits::default())
@@ -245,7 +261,7 @@ fn the_two_scopes_of_one_field_differ_in_the_node_and_both_at_once_refuse_at_int
     let both = json!({
         "modifies": [value], "modifies_receiver": [value], "creates": [], "deletes": [],
     });
-    let (unit, _, packages, _) = unit_of(&["own"], &[("own", both)]);
+    let UnitParts { unit, packages, .. } = unit_of(&["own"], &[("own", both)]);
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("agent-ix", "test:tc-573", "fixture", "fixture:1"),
         "program.native",
@@ -263,9 +279,8 @@ fn the_two_scopes_of_one_field_differ_in_the_node_and_both_at_once_refuse_at_int
     let UnitIntakeCause::Refused(refusals) = refusal.cause else {
         panic!("{refusal:?}: expected a Refused cause");
     };
-    let [refusal] = &refusals[..] else {
-        panic!("one refusal: {refusals:?}");
-    };
+    assert_eq!(refusals.len(), 1, "one refusal: {refusals:?}");
+    let refusal = &refusals[0];
     assert_eq!(refusal.code.as_str(), "invalid_model_binding");
     let ModelRefusalCause::ConflictingBinding { key, .. } = &refusal.cause else {
         panic!("{:?}: expected ConflictingBinding", refusal.cause);

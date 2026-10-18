@@ -2663,7 +2663,7 @@ fn checked_dispatch_operation_refuses_a_target_with_only_a_receiver_scoped_effec
         },
     ];
     for effect in effects {
-        let domain_package = not_a_query_bundle(
+        let mut domain_package = not_a_query_bundle(
             Some(OperationResult {
                 value_type: ValueTypeRef::Package(DeclarationKey::fixture("model.A")),
                 multiplicity: Multiplicity {
@@ -2675,6 +2675,24 @@ fn checked_dispatch_operation_refuses_a_target_with_only_a_receiver_scoped_effec
             }),
             effect.clone(),
         );
+        // `model.A.x` must be a declared field for the receiver-scoped write
+        // to reach the query-only check.
+        domain_package
+            .records
+            .push(DomainPackageRecord::FieldMember(FieldMemberRecord {
+                key: DeclarationKey::fixture("model.A.x"),
+                owner: DeclarationKey::fixture("model.A"),
+                value_type: ValueTypeRef::Package(DeclarationKey::fixture("model.A")),
+                multiplicity: Multiplicity {
+                    lower: 0,
+                    upper: Some(1),
+                    ordered: false,
+                    unique: true,
+                },
+                presence: quire_exact::Presence::Required,
+                subsets: Vec::new(),
+                redefines: None,
+            }));
         match not_a_query_refusal(&domain_package) {
             DispatchBridgeRefusal::NotAQuery(refusal) => {
                 assert_eq!(refusal.code, Code::IllTyped, "{effect:?}");
