@@ -40,7 +40,7 @@ second anchor, no second frame node and no second frame requirement record.
 
 A protocol holding the attempt compiles when every other part of it is
 checked (FR-218, FR-381). The package then holds the attempt's anchor, frame
-and frame record, and the protocol's one `protocol_clause` node (FR-092). The
+and frame record, and the protocol's nodes (FR-092, FR-383). The
 emitted spellings follow
 FR-105's and are pending STD-111, as FR-105's are.
 
