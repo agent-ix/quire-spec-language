@@ -210,6 +210,9 @@ pub(super) fn complete_reserved_words(
 
 pub(super) fn complete_compound_spellings(grammar: &Grammar) -> Vec<&'static str> {
     fn is_compound(value: &str) -> bool {
+        if value == "->" {
+            return true;
+        }
         let mut parts = value.split('-');
         let Some(first) = parts.next() else {
             return false;
@@ -286,6 +289,7 @@ fn source_and_types(g: &mut Grammar) {
         r(P::PopulationBound),
         r(P::TemporalClause),
         r(P::TerminalDeclaration),
+        r(P::RefinementDeclaration),
         r(P::ProtocolClause),
         r(P::RelationClause),
         r(P::HyperClause),
@@ -1082,6 +1086,7 @@ fn temporal(g: &mut Grammar) {
             x(";"),
         ]),
     );
+    refinement(g);
     g.insert(
         P::Interval,
         s(vec![
@@ -1605,6 +1610,95 @@ fn protocol(g: &mut Grammar) {
             r(P::Control),
             r(P::Finish),
             x("}"),
+        ]),
+    );
+}
+
+/// A refinement declaration and its rows (ADR-020 §1, QSpec FR-375). Every
+/// row-leading word is contextual, so a name spelled like one stays an
+/// identifier everywhere else.
+fn refinement(g: &mut Grammar) {
+    g.insert(
+        P::RefinementDeclaration,
+        s(vec![
+            literal("refinement"),
+            ident(),
+            x("using"),
+            ident(),
+            literal("abstract"),
+            ident(),
+            literal("concrete"),
+            ident(),
+            x("{"),
+            star(c(vec![
+                r(P::PopulationRow),
+                r(P::ObjectRow),
+                r(P::StepRow),
+                r(P::FairnessRow),
+            ])),
+            x("}"),
+        ]),
+    );
+    g.insert(
+        P::PopulationRow,
+        s(vec![
+            literal("population"),
+            r(P::ModelName),
+            x("from"),
+            r(P::ModelName),
+            x(";"),
+        ]),
+    );
+    g.insert(
+        P::ObjectRow,
+        s(vec![
+            literal("object"),
+            r(P::TypeName),
+            x("from"),
+            r(P::TypeName),
+            x("{"),
+            star(r(P::FieldRow)),
+            x("}"),
+        ]),
+    );
+    g.insert(
+        P::FieldRow,
+        s(vec![member(), x("="), r(P::Expression), x(";")]),
+    );
+    g.insert(
+        P::StepRow,
+        s(vec![
+            literal("step"),
+            r(P::OperationName),
+            x("->"),
+            r(P::StepTarget),
+            x(";"),
+        ]),
+    );
+    g.insert(
+        P::StepTarget,
+        c(vec![
+            s(vec![
+                r(P::OperationName),
+                x("("),
+                r(P::Expression),
+                star(s(vec![x(","), r(P::StepArgument)])),
+                x(")"),
+            ]),
+            literal("stutter"),
+            x("any"),
+        ]),
+    );
+    g.insert(P::StepArgument, c(vec![literal("_"), r(P::Expression)]));
+    g.insert(
+        P::FairnessRow,
+        s(vec![
+            c(vec![literal("assume"), literal("ensure")]),
+            x("fair"),
+            opt(c(vec![x("weak"), x("strong")])),
+            opt(c(vec![x("whole"), x("each")])),
+            r(P::OperationName),
+            x(";"),
         ]),
     );
 }

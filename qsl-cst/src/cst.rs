@@ -133,6 +133,22 @@ productions! {
     TemporalConjunction, TemporalRelation, TemporalUnary, TemporalPrimary,
     #[doc = "`terminal <identifier> using <identifier> on <identifier> (when <block> | any) ;`: a model's intended terminal states."]
     TerminalDeclaration,
+    #[doc = "`refinement <identifier> using <identifier> abstract <identifier> concrete <identifier> { <row>* }`: a refinement mapping from a concrete model to an abstract one."]
+    RefinementDeclaration,
+    #[doc = "`population <model-name> from <model-name> ;`: a refinement's abstract population and its concrete source."]
+    PopulationRow,
+    #[doc = "`object <type-name> from <type-name> { <field-row>* }`: a refinement's abstract object type, its concrete source and its mapped fields."]
+    ObjectRow,
+    #[doc = "`<member-name> = <expression> ;`: one abstract field defined over the concrete object."]
+    FieldRow,
+    #[doc = "`step <operation-name> -> <step-target> ;`: the abstract step a concrete operation maps to."]
+    StepRow,
+    #[doc = "`<operation-name> ( <expression> {, <step-argument>} )`, `stutter` or `any`: the right side of a refinement step row."]
+    StepTarget,
+    #[doc = "`<expression>` or `_`: one argument of an abstract step, `_` leaving it open."]
+    StepArgument,
+    #[doc = "`(assume | ensure) fair [weak | strong] [whole | each] <qualified-name> ;`: one fairness row of a refinement."]
+    FairnessRow,
     ProtocolClause, Role, RoleLifetime, Relationship, Channel, Ordering, DeliveryPolicy,
     Capacity, OverflowPolicy, ProtocolRequirement, NodeReference, Compensation,
     #[doc = "`terminal when <block>;` or `terminal any;`: a protocol clause's intended terminal states."]

@@ -1048,6 +1048,14 @@ impl<'c> Mapping<'c> {
             | Production::TemporalUnary
             | Production::TemporalPrimary
             | Production::TerminalDeclaration
+            | Production::RefinementDeclaration
+            | Production::PopulationRow
+            | Production::ObjectRow
+            | Production::FieldRow
+            | Production::StepRow
+            | Production::StepTarget
+            | Production::StepArgument
+            | Production::FairnessRow
             | Production::ProtocolClause
             | Production::Role
             | Production::RoleLifetime
@@ -1624,6 +1632,14 @@ impl<'c> Mapping<'c> {
             | Production::TemporalUnary
             | Production::TemporalPrimary
             | Production::TerminalDeclaration
+            | Production::RefinementDeclaration
+            | Production::PopulationRow
+            | Production::ObjectRow
+            | Production::FieldRow
+            | Production::StepRow
+            | Production::StepTarget
+            | Production::StepArgument
+            | Production::FairnessRow
             | Production::ProtocolClause
             | Production::Role
             | Production::RoleLifetime

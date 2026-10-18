@@ -90,6 +90,14 @@ const ACCEPTED_PRODUCTIONS: &[Production] = &[
     Production::TemporalUnary,
     Production::TemporalPrimary,
     Production::TerminalDeclaration,
+    Production::RefinementDeclaration,
+    Production::PopulationRow,
+    Production::ObjectRow,
+    Production::FieldRow,
+    Production::StepRow,
+    Production::StepTarget,
+    Production::StepArgument,
+    Production::FairnessRow,
     Production::ProtocolClause,
     Production::Role,
     Production::RoleLifetime,
@@ -206,6 +214,20 @@ fn corpus() -> Vec<(&'static str, String)> {
             source(concat!(
                 "terminal Done using Complete on M when { true };\n",
                 "terminal Halt using Complete on M any;",
+            )),
+        ),
+        (
+            "refinement",
+            source(concat!(
+                "refinement Maps using Complete abstract A concrete C {\n",
+                "population A::items from C::items;\n",
+                "object A::Item from C::Item { value = self.value; }\n",
+                "step C::Item::go -> A::Item::inc(self, _, 1);\n",
+                "step C::Item::wait -> stutter;\n",
+                "step C::Item::skip -> any;\n",
+                "assume fair weak each C::Item::go;\n",
+                "ensure fair A::Item::inc;\n",
+                "}",
             )),
         ),
         (
@@ -516,6 +538,15 @@ fn contextual_complete_words_remain_eligible_identifiers() {
         "rec",
         "cast",
         "Tuple",
+        "refinement",
+        "population",
+        "object",
+        "step",
+        "stutter",
+        "abstract",
+        "concrete",
+        "assume",
+        "ensure",
     ];
     let declarations = contextual
         .iter()
