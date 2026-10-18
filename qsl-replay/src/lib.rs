@@ -58,6 +58,16 @@ pub use call_site::{
     call_site, CallSite, CallSiteRefusal, CallSiteSelection, ClauseName, ClauseSite, FieldName,
     FieldSite, FunctionSite, OperationSite, PopulationName, PopulationSite,
 };
+pub use certificate::closed_form::outcome::{
+    AmcEvidence, ClosedFormAnalysis, ClosedFormEvidence, ClosedFormOutcome, DemandWitness,
+    HighModeMiss, JobIterates, MissEvidence, ScheduleLimit, TaskFixpoint,
+};
+pub use certificate::closed_form::recompute::{recompute, ClosedFormCheck, ClosedFormDisagreement};
+pub use certificate::closed_form::settle::settle;
+pub use certificate::closed_form::task_set::{
+    Arrival, Criticality, ScheduleClaim, ScheduleSubject, SchedulingPolicy, Task, TaskSet,
+    TaskSetRefusal, TimeMember, Wcet,
+};
 pub use certificate::{CertificateLocus, CertificateRule, QueryPart};
 pub use compile::{compile_package, CompiledPackage};
 pub use composite::{
