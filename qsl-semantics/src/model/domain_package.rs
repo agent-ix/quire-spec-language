@@ -19,6 +19,11 @@ use quire_canonical::FixedShape;
 use quire_exact::{Presence, TextType};
 use quire_semantic_value::location::OperationClauseKind;
 
+/// `Model.profile` of a domain-package model: the Semantic IR contract its
+/// document is admitted under (FR-056). The one supported domain-package
+/// wire `format`.
+pub const DOMAIN_PACKAGE_PROFILE: &str = "semantic-ir/2.0.0";
+
 /// A field or association-end multiplicity (FCD FR-113).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Multiplicity {

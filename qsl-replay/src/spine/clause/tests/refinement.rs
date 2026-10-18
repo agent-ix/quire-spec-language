@@ -646,6 +646,87 @@ fn a_population_bound_refusal_is_a_typed_refusal_of_the_content() {
     }
 }
 
+/// FR-341-AC-4: a type-admission ceiling reached in the check stage is
+/// `incomplete`, naming the limit and its value; a type-admission refusal that
+/// reached no limit names none.
+#[trace("TC-861", "FR-341-AC-4")]
+#[test]
+fn a_check_type_admission_limit_is_incomplete_naming_the_limit() {
+    let limited = check(vec![CheckCause::TypeAdmission {
+        code: Code::StageLimitExceeded,
+        cause: "type-limit",
+        limit: Some(Box::new(LimitExceeded::new(
+            Setting::EnvironmentWorkUnits,
+            1,
+            2,
+        ))),
+    }]);
+    let classified = classify_refusal(&limited);
+    assert_eq!(classified.class, RefinementClass::Incomplete);
+    assert_eq!(
+        classified.causes,
+        [RefusalCause {
+            code: Code::StageLimitExceeded,
+            cause: Some("type-limit"),
+            limit: Some(ReachedLimit {
+                name: "environment.work_units",
+                bound: 1
+            }),
+        }]
+    );
+    assert_eq!(
+        classified.limits(),
+        [ReachedLimit {
+            name: "environment.work_units",
+            bound: 1
+        }]
+    );
+
+    let refused = check(vec![CheckCause::TypeAdmission {
+        code: Code::IllTyped,
+        cause: "type-mismatch",
+        limit: None,
+    }]);
+    let classified = classify_refusal(&refused);
+    assert_eq!(classified.class, RefinementClass::Refused);
+    assert_eq!(classified.causes[0].limit, None);
+    assert!(classified.limits().is_empty());
+}
+
+/// FR-342-AC-3: a clause run whose compile reaches a type-admission ceiling
+/// classifies `incomplete` at `compile`, naming the limit and its value.
+#[trace("TC-862", "FR-342-AC-3")]
+#[test]
+fn a_clause_run_compile_type_admission_limit_names_the_limit() {
+    let report = ClauseRunReport {
+        package_id: None,
+        usage: Default::default(),
+        basis: crate::proof_result::SettlementBasis::Unavailable,
+        witness: None,
+        disposition: ClauseDisposition::Compile(Box::new(check(vec![CheckCause::TypeAdmission {
+            code: Code::StageLimitExceeded,
+            cause: "type-limit",
+            limit: Some(Box::new(LimitExceeded::new(
+                Setting::EnvironmentAncestorSteps,
+                3,
+                4,
+            ))),
+        }]))),
+    };
+    let classified = assert_run(
+        &report,
+        RefinementClass::Incomplete,
+        ClauseRunStage::Compile,
+    );
+    assert_eq!(
+        classified.classification.limits(),
+        [ReachedLimit {
+            name: "environment.ancestor_steps",
+            bound: 3
+        }]
+    );
+}
+
 /// FR-341 rule 4: an import whose I2 read reached an `i2.*` ceiling is
 /// `incomplete`, naming the limit, not a broken setup.
 #[trace("TC-861", "FR-341-AC-4")]
