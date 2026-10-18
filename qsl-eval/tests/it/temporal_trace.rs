@@ -11,7 +11,7 @@
 
 use ix_trace_rs::trace;
 use qsl_eval::temporal::{
-    evaluate, evaluate_at, unrolling, AtomReading, PositionRefusal, TemporalLetters,
+    evaluate, evaluate_at, unrolling, AtomReading, LetterStop, PositionRefusal, TemporalLetters,
     TemporalOutcome, TemporalPosition, TemporalRefusal, TemporalTrace, UndefinedCause, Unrolling,
 };
 use qsl_foundation::diagnostic::{Category, StageFailure};
@@ -167,7 +167,7 @@ impl TemporalLetters for Letters<'_> {
         atom: FormulaNodeId,
         position: TemporalPosition,
         _meter: &mut Meter,
-    ) -> Result<AtomReading, quire_exact::Incomplete> {
+    ) -> Result<AtomReading, LetterStop> {
         self.reads.push(position.index());
         let Some(FormulaNode::Holds { span }) =
             self.fixture.clause.formula().nodes().get(atom.index())
@@ -188,7 +188,7 @@ impl TemporalLetters for Letters<'_> {
         &mut self,
         _position: TemporalPosition,
         _meter: &mut Meter,
-    ) -> Result<AtomReading, quire_exact::Incomplete> {
+    ) -> Result<AtomReading, LetterStop> {
         panic!("these clauses have no `when` condition");
     }
 }

@@ -30,13 +30,13 @@ mod window;
 
 pub use engine::{unrolling, Unrolling};
 pub use input::TemporalTrace;
-pub use letters::{AtomReading, TemporalLetters, UndefinedCause};
+pub use letters::{AtomReading, LetterStop, TemporalLetters, UndefinedCause};
 pub use outcome::{TemporalOutcome, TemporalRefusal, UndefinedEvaluation};
 pub use position::{PositionRefusal, TemporalPosition};
 pub use window::{
-    AggregateAtom, AggregateKind, AggregateStop, AggregateTerm, InsufficientData, PastWindow,
-    TermRefusal, WindowLimitReached, WindowRefusal, WindowSource, WindowTrace,
-    DEFAULT_MAX_WINDOW_VALUES, MAX_WINDOW_VALUES_SETTING,
+    AggregateAtom, AggregateKind, AggregateTerm, InsufficientData, PastWindow, TermRefusal,
+    WindowLimitReached, WindowRefusal, WindowSource, WindowTrace, DEFAULT_MAX_WINDOW_VALUES,
+    MAX_WINDOW_VALUES_SETTING,
 };
 
 use qsl_semantics::check::CheckedTemporalClause;

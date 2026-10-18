@@ -9,6 +9,7 @@ use quire_exact::Incomplete;
 
 use super::letters::UndefinedCause;
 use super::position::{PositionRefusal, TemporalPosition};
+use super::window::{WindowLimitReached, WindowRefusal};
 
 /// A claim that is not defined on the trace (ADR-018 UE-2): where it first
 /// reads an undefined atom, and why.
@@ -46,6 +47,9 @@ pub enum TemporalOutcome {
     },
     /// The work budget ran out; no truth value (ADR-014 TR-5).
     Incomplete(Incomplete),
+    /// A window aggregate outgrew `max_window_values` (FR-194; ADR-018
+    /// V-7); no truth value.
+    WindowLimitReached(WindowLimitReached),
 }
 
 impl TemporalOutcome {
@@ -56,7 +60,7 @@ impl TemporalOutcome {
             Self::Violated { .. } | Self::Undefined(_) => Category::Violation,
             Self::Pending => Category::Inconclusive,
             Self::MissingFairnessPremise { .. } => Category::Unsupported,
-            Self::Incomplete(_) => Category::Incomplete,
+            Self::Incomplete(_) | Self::WindowLimitReached(_) => Category::Incomplete,
         }
     }
 }
@@ -90,6 +94,9 @@ pub enum TemporalRefusal {
     /// A position is outside the represented trace (FR-327 "Positions").
     #[error(transparent)]
     Position(#[from] PositionRefusal),
+    /// A window aggregate cannot be read on the trace.
+    #[error(transparent)]
+    Window(#[from] WindowRefusal),
     /// An invariant of the checked clause or the evaluator broke.
     #[error("temporal evaluation broke invariant {0:?}")]
     Fault(InternalFault),
@@ -103,7 +110,7 @@ impl TemporalRefusal {
     /// `runtime_invariant`/`established-invariant-broken` for a fault.
     pub fn catalog_code(&self) -> CatalogCode {
         match self {
-            Self::EmptyTrace | Self::EmptyLoop | Self::TraceTooLong => {
+            Self::EmptyTrace | Self::EmptyLoop | Self::TraceTooLong | Self::Window(_) => {
                 CatalogCode::new("invalid_runtime_input", "invalid-value")
             }
             Self::LassoUnderBoundedProfile { .. } | Self::ProfileNotEvaluated { .. } => {

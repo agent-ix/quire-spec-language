@@ -3,12 +3,12 @@
 //! (FR-107): the evaluator owns the temporal meaning of a trace, and a
 //! [`TemporalLetters`] reads each atom of the clause at a position.
 
-use qsl_foundation::UndefinedRecord;
+use qsl_foundation::{InternalFault, UndefinedRecord};
 use qsl_semantics::check::FormulaNodeId;
 use quire_exact::{Incomplete, Meter};
 
 use super::position::TemporalPosition;
-use super::window::InsufficientData;
+use super::window::{InsufficientData, WindowLimitReached, WindowRefusal};
 
 /// Why an atom has no value at a position (ADR-018 UE-2): the kernel's
 /// undefined outcome, a family's `UndefinedRecord`, or a window aggregate
@@ -34,12 +34,43 @@ pub enum AtomReading {
     Undefined(UndefinedCause),
 }
 
+/// Why a letter cannot give a reading: the run stops, with no truth value.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum LetterStop {
+    /// The work budget ran out (ADR-014 TR-5).
+    Incomplete(Incomplete),
+    /// A window aggregate outgrew `max_window_values` (ADR-018 V-7).
+    WindowLimit(WindowLimitReached),
+    /// A window cannot be read on the trace.
+    Window(WindowRefusal),
+    /// An invariant of the letter broke.
+    Fault(InternalFault),
+}
+
+impl From<Incomplete> for LetterStop {
+    fn from(incomplete: Incomplete) -> Self {
+        Self::Incomplete(incomplete)
+    }
+}
+
+impl From<WindowRefusal> for LetterStop {
+    fn from(refusal: WindowRefusal) -> Self {
+        Self::Window(refusal)
+    }
+}
+
+impl From<InternalFault> for LetterStop {
+    fn from(fault: InternalFault) -> Self {
+        Self::Fault(fault)
+    }
+}
+
 /// Reads the clause's letter, the value of each atom of the clause at a
 /// position (ADR-018 UE-1).
 ///
 /// Every method charges the caller's `meter` for its own work; the evaluator
 /// charges one work unit for the read itself. An exhausted meter is
-/// returned as `Err(Incomplete)`, never as a reading.
+/// returned as `Err(LetterStop::Incomplete)`, never as a reading.
 pub trait TemporalLetters {
     /// The `holds` atom `atom` at the represented `position`.
     fn atom(
@@ -47,7 +78,7 @@ pub trait TemporalLetters {
         atom: FormulaNodeId,
         position: TemporalPosition,
         meter: &mut Meter,
-    ) -> Result<AtomReading, Incomplete>;
+    ) -> Result<AtomReading, LetterStop>;
 
     /// The `when` condition of an `on each` activation at the represented
     /// `position`. Called only for a clause whose activation has one.
@@ -55,5 +86,5 @@ pub trait TemporalLetters {
         &mut self,
         position: TemporalPosition,
         meter: &mut Meter,
-    ) -> Result<AtomReading, Incomplete>;
+    ) -> Result<AtomReading, LetterStop>;
 }

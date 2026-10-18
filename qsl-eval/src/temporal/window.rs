@@ -17,15 +17,18 @@
 //! [`WindowSource`].
 //!
 //! **Work and memory.** One work unit is charged for each window position
-//! visited. The values a window gathers are kept, and a window that would
-//! hold more than the run's `max_window_values` stops the evaluation.
+//! visited, whether or not its filter admits it, so a filtered scan pays
+//! for every position it reads. The values a window gathers are kept, and a
+//! window that would hold more than the run's `max_window_values` stops the
+//! evaluation. A quantile sorts the gathered values once; that sort is
+//! bounded by `max_window_values` and is not charged separately.
 
 use std::cmp::Ordering;
 
 use qsl_foundation::InternalFault;
 use quire_exact::{Charge, ChargePoint, ComparisonOperator, Incomplete, Integer, Meter, Rational};
 
-use super::letters::{AtomReading, UndefinedCause};
+use super::letters::{AtomReading, LetterStop, UndefinedCause};
 use super::plan::fault;
 use super::position::TemporalPosition;
 
@@ -252,37 +255,6 @@ pub enum WindowRefusal {
     TimestampsDecrease,
 }
 
-/// Why an aggregate atom has no reading.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum AggregateStop {
-    /// The work budget ran out (ADR-014 TR-5).
-    Incomplete(Incomplete),
-    /// The window outgrew `max_window_values`.
-    LimitReached(WindowLimitReached),
-    /// The trace and window cannot be read together.
-    Refused(WindowRefusal),
-    /// An invariant of the evaluator broke.
-    Fault(InternalFault),
-}
-
-impl From<Incomplete> for AggregateStop {
-    fn from(incomplete: Incomplete) -> Self {
-        Self::Incomplete(incomplete)
-    }
-}
-
-impl From<WindowRefusal> for AggregateStop {
-    fn from(refusal: WindowRefusal) -> Self {
-        Self::Refused(refusal)
-    }
-}
-
-impl From<InternalFault> for AggregateStop {
-    fn from(fault: InternalFault) -> Self {
-        Self::Fault(fault)
-    }
-}
-
 /// Reads what an aggregate gathers at a trace position. The caller owns the
 /// observations and their expressions (FR-107); each method charges the
 /// meter for its own work.
@@ -437,7 +409,7 @@ impl AggregateAtom {
         max_window_values: u64,
         position: TemporalPosition,
         meter: &mut Meter,
-    ) -> Result<AtomReading, AggregateStop> {
+    ) -> Result<AtomReading, LetterStop> {
         let window = trace.window(&self.term.window, position.index())?;
         let mut gathered = Gathered::new(&self.term.kind);
         let mut count = 0_u64;
@@ -448,7 +420,7 @@ impl AggregateAtom {
                 continue;
             }
             if count >= max_window_values {
-                return Err(AggregateStop::LimitReached(WindowLimitReached::at(
+                return Err(LetterStop::WindowLimit(WindowLimitReached::at(
                     max_window_values,
                 )));
             }

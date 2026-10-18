@@ -5,18 +5,21 @@
 
 use ix_trace_rs::trace;
 use qsl_eval::temporal::{
-    evaluate, AggregateAtom, AggregateKind, AggregateStop, AggregateTerm, AtomReading,
-    InsufficientData, PastWindow, TemporalLetters, TemporalOutcome, TemporalPosition,
-    TemporalTrace, TermRefusal, UndefinedCause, WindowLimitReached, WindowRefusal, WindowSource,
-    WindowTrace, DEFAULT_MAX_WINDOW_VALUES, MAX_WINDOW_VALUES_SETTING,
+    evaluate, AggregateAtom, AggregateKind, AggregateTerm, AtomReading, InsufficientData,
+    LetterStop, PastWindow, TemporalLetters, TemporalOutcome, TemporalPosition, TemporalTrace,
+    TermRefusal, UndefinedCause, WindowLimitReached, WindowRefusal, WindowSource, WindowTrace,
+    DEFAULT_MAX_WINDOW_VALUES, MAX_WINDOW_VALUES_SETTING,
 };
+use qsl_foundation::diagnostic::Category;
 use qsl_foundation::SourceIdentity;
 use qsl_semantics::check::{
     check_clauses, CheckedTemporalClause, FormulaNodeId, PackageDeclarations,
     SCALAR_LIMITS_UNLIMITED,
 };
 use qsl_semantics::model::intake::SelectedModels;
-use quire_exact::{ComparisonOperator, Incomplete, Integer, LimitKind, Meter, Rational};
+use quire_exact::{
+    ComparisonOperator, Incomplete, Integer, LimitKind, Meter, Rational, ScalarLimits,
+};
 
 const UNLIMITED: u64 = u64::MAX;
 
@@ -93,7 +96,7 @@ fn read(
     rows: &mut Rows,
     limit: u64,
     position: u64,
-) -> Result<AtomReading, AggregateStop> {
+) -> Result<AtomReading, LetterStop> {
     let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
     atom.evaluate(
         trace,
@@ -104,7 +107,7 @@ fn read(
     )
 }
 
-fn truth(reading: Result<AtomReading, AggregateStop>) -> bool {
+fn truth(reading: Result<AtomReading, LetterStop>) -> bool {
     match reading {
         Ok(AtomReading::True) => true,
         Ok(AtomReading::False) => false,
@@ -129,10 +132,13 @@ fn responses(unit: i64) -> (WindowTrace, Rows) {
 
 /// FR-194-AC-1: the nearest-rank 95th percentile of the 20 latencies is the
 /// 19th smallest, 6 ms, so `<= 5 ms` is false; the 90th is the 18th, 1 ms,
-/// so it is true. The threshold `0.005 s` over values in seconds agrees.
+/// so it is true. The second pass states the latencies pre-scaled to seconds
+/// against `5/1000`: it shows the arithmetic is exact in either scale, not
+/// that a threshold in another unit is converted (the checker's step, which
+/// is not implemented here).
 #[trace("TC-629", "FR-194-AC-1")]
 #[test]
-fn a_timestamped_quantile_takes_the_nearest_rank_value() {
+fn a_timestamped_quantile_takes_the_nearest_rank_value_in_either_prescaled_unit() {
     let at_last = 19;
     for (unit, threshold) in [(1, whole(5)), (1000, ratio(5, 1000))] {
         for (q, expected) in [(ratio(95, 100), false), (ratio(9, 10), true)] {
@@ -196,6 +202,38 @@ fn an_event_position_window_reads_back_from_the_current_position_only() {
     // Errors at 10 and 15 within 6..=15: count 2.
     assert!(truth(read(&atom, &trace, &mut rows, UNLIMITED, 15)));
     assert_eq!(rows.visited, (6..=15).collect::<Vec<u64>>());
+}
+
+/// FR-194-AC-2: `past[2, 3]` at position 5 holds positions 2 and 3, and at
+/// position 1, before its nearest offset, holds nothing.
+#[trace("TC-629", "FR-194-AC-2")]
+#[test]
+fn an_event_position_window_with_a_nearest_offset_skips_the_newest_positions() {
+    let atom = AggregateAtom::new(
+        term(
+            AggregateKind::Count,
+            PastWindow::Positions { a: 2, b: 3 },
+            1,
+        ),
+        ComparisonOperator::Equal,
+        whole(2),
+    );
+    let trace = WindowTrace::positions(6);
+    let mut rows = Rows::values(&[1; 6]);
+    assert!(truth(read(&atom, &trace, &mut rows, UNLIMITED, 5)));
+    assert_eq!(rows.visited, [2, 3]);
+
+    let mut rows = Rows::values(&[1; 6]);
+    assert_eq!(
+        read(&atom, &trace, &mut rows, UNLIMITED, 1),
+        Ok(AtomReading::Undefined(UndefinedCause::InsufficientData(
+            InsufficientData {
+                count: 0,
+                min_count: 1
+            }
+        )))
+    );
+    assert!(rows.visited.is_empty());
 }
 
 /// FR-194-AC-2: `fraction holds(e.ok)` over `true, false, true, true` is
@@ -289,22 +327,28 @@ fn a_sparse_window_is_undefined_with_insufficient_data() {
     );
 }
 
-/// FR-194-AC-3: with `max_window_values` 10 and 20 values in the window the
-/// evaluation stops naming `max_window_values` and 10; with no ceiling it
-/// charges exactly 20 work units.
+/// FR-194-AC-3: a window of exactly `max_window_values` values is read, and
+/// one more stops the evaluation naming `max_window_values` and the limit.
 #[trace("TC-629", "FR-194-AC-3")]
 #[test]
-fn a_window_over_the_limit_stops_and_each_value_charges_one_unit() {
+fn a_window_one_value_over_the_limit_stops() {
     let atom = AggregateAtom::new(
         term(AggregateKind::Sum, PastWindow::Positions { a: 0, b: 19 }, 1),
         ComparisonOperator::GreaterOrEqual,
         whole(0),
     );
     let trace = WindowTrace::positions(20);
-    let mut rows = Rows::values(&[1; 20]);
+    // Position 9 holds 10 values, position 10 holds 11.
+    assert!(truth(read(
+        &atom,
+        &trace,
+        &mut Rows::values(&[1; 20]),
+        10,
+        9
+    )));
     assert_eq!(
-        read(&atom, &trace, &mut rows, 10, 19),
-        Err(AggregateStop::LimitReached(WindowLimitReached {
+        read(&atom, &trace, &mut Rows::values(&[1; 20]), 10, 10),
+        Err(LetterStop::WindowLimit(WindowLimitReached {
             limit: "max_window_values",
             value: 10,
             setting: "monitor.max_window_values",
@@ -312,12 +356,30 @@ fn a_window_over_the_limit_stops_and_each_value_charges_one_unit() {
     );
     assert_eq!(MAX_WINDOW_VALUES_SETTING, "monitor.max_window_values");
     assert_eq!(DEFAULT_MAX_WINDOW_VALUES, 1_048_576);
+}
 
-    let mut rows = Rows::values(&[1; 20]);
-    let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
-    atom.evaluate(&trace, &mut rows, 20, TemporalPosition::new(19), &mut meter)
-        .expect("exactly the limit is allowed");
-    assert_eq!(meter.consumed(LimitKind::WorkUnits), 20);
+/// FR-194-AC-3: one evaluation over 20 values charges 20 work units. A
+/// filter that admits 10 of 20 positions still charges 20: the unit is the
+/// window position visited, not the value gathered.
+#[trace("TC-629", "FR-194-AC-3")]
+#[test]
+fn each_window_position_visited_charges_one_work_unit() {
+    let atom = AggregateAtom::new(
+        term(AggregateKind::Sum, PastWindow::Positions { a: 0, b: 19 }, 1),
+        ComparisonOperator::GreaterOrEqual,
+        whole(0),
+    );
+    let trace = WindowTrace::positions(20);
+    let work = |mut rows: Rows| {
+        let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+        atom.evaluate(&trace, &mut rows, 20, TemporalPosition::new(19), &mut meter)
+            .expect("the window is within the limit");
+        meter.consumed(LimitKind::WorkUnits)
+    };
+    assert_eq!(work(Rows::values(&[1; 20])), 20);
+    let half: Vec<bool> = (0..20).map(|position| position % 2 == 0).collect();
+    let filtered = Rows::new(half, vec![whole(1); 20], vec![false; 20]);
+    assert_eq!(work(filtered), 20);
 }
 
 /// FR-194-AC-3: an exhausted work budget stops the aggregate `Incomplete`.
@@ -334,7 +396,7 @@ fn an_exhausted_budget_stops_the_aggregate_without_a_value() {
         whole(0),
     );
     let mut rows = Rows::values(&[1; 20]);
-    let mut meter = Meter::new(quire_exact::ScalarLimits {
+    let mut meter = Meter::new(ScalarLimits {
         work_units: 5,
         ..SCALAR_LIMITS_UNLIMITED
     });
@@ -348,29 +410,36 @@ fn an_exhausted_budget_stops_the_aggregate_without_a_value() {
         )
         .expect_err("five units cannot visit twenty values");
     assert!(
-        matches!(&stop, AggregateStop::Incomplete(record) if record.limit_kind == LimitKind::WorkUnits),
+        matches!(&stop, LetterStop::Incomplete(record) if record.limit_kind == LimitKind::WorkUnits),
         "{stop:?}"
     );
 }
 
-/// FR-194-AC-4: a quantile of 1 or 0, `min_count` 0 and a reversed window
-/// are refused as terms, and a window of the other profile's kind is
-/// refused on a trace.
+/// FR-194-AC-4: a quantile of 1 and a `min_count` of 0 are refused when the
+/// term is formed.
 #[trace("TC-629", "FR-194-AC-4")]
 #[test]
-fn ill_formed_terms_and_mismatched_windows_are_refused() {
+fn a_quantile_of_one_and_a_zero_min_count_are_refused() {
     let positions = || PastWindow::Positions { a: 0, b: 3 };
     assert_eq!(
         AggregateTerm::new(AggregateKind::Quantile(whole(1)), positions(), 1),
         Err(TermRefusal::QuantileOutOfRange)
     );
     assert_eq!(
-        AggregateTerm::new(AggregateKind::Quantile(whole(0)), positions(), 1),
-        Err(TermRefusal::QuantileOutOfRange)
-    );
-    assert_eq!(
         AggregateTerm::new(AggregateKind::Count, positions(), 0),
         Err(TermRefusal::ZeroMinCount)
+    );
+}
+
+/// A quantile of 0, a reversed or negative window, a window of the other
+/// profile's kind, decreasing time stamps and a position off the trace are
+/// refused.
+#[test]
+fn other_ill_formed_terms_and_unreadable_windows_are_refused() {
+    let positions = || PastWindow::Positions { a: 0, b: 3 };
+    assert_eq!(
+        AggregateTerm::new(AggregateKind::Quantile(whole(0)), positions(), 1),
+        Err(TermRefusal::QuantileOutOfRange)
     );
     assert_eq!(
         AggregateTerm::new(
@@ -398,7 +467,7 @@ fn ill_formed_terms_and_mismatched_windows_are_refused() {
             UNLIMITED,
             1
         ),
-        Err(AggregateStop::Refused(WindowRefusal::WindowKindMismatch))
+        Err(LetterStop::Window(WindowRefusal::WindowKindMismatch))
     );
     assert_eq!(
         WindowTrace::timed(vec![whole(2), whole(1)]),
@@ -412,7 +481,7 @@ fn ill_formed_terms_and_mismatched_windows_are_refused() {
             UNLIMITED,
             2
         ),
-        Err(AggregateStop::Refused(WindowRefusal::OutsideTrace {
+        Err(LetterStop::Window(WindowRefusal::OutsideTrace {
             position: 2
         }))
     );
@@ -458,6 +527,7 @@ struct Derived<'a> {
     atom: &'a AggregateAtom,
     trace: &'a WindowTrace,
     rows: Rows,
+    limit: u64,
     readings: Vec<AtomReading>,
 }
 
@@ -467,11 +537,10 @@ impl TemporalLetters for Derived<'_> {
         _: FormulaNodeId,
         position: TemporalPosition,
         meter: &mut Meter,
-    ) -> Result<AtomReading, Incomplete> {
-        let reading = self
-            .atom
-            .evaluate(self.trace, &mut self.rows, UNLIMITED, position, meter)
-            .expect("the window is readable");
+    ) -> Result<AtomReading, LetterStop> {
+        let reading =
+            self.atom
+                .evaluate(self.trace, &mut self.rows, self.limit, position, meter)?;
         self.readings.push(reading.clone());
         Ok(reading)
     }
@@ -480,21 +549,27 @@ impl TemporalLetters for Derived<'_> {
         &mut self,
         _: TemporalPosition,
         _: &mut Meter,
-    ) -> Result<AtomReading, Incomplete> {
+    ) -> Result<AtomReading, LetterStop> {
         Ok(AtomReading::True)
     }
 }
 
-fn settle(atom: &AggregateAtom, errors: Vec<bool>) -> (TemporalOutcome, Vec<AtomReading>) {
+fn run(
+    atom: &AggregateAtom,
+    errors: Vec<bool>,
+    limit: u64,
+    budget: ScalarLimits,
+) -> (TemporalOutcome, Vec<AtomReading>) {
     let len = errors.len();
     let trace = WindowTrace::positions(u64::try_from(len).expect("small"));
     let mut letters = Derived {
         atom,
         trace: &trace,
         rows: Rows::new(errors, vec![whole(0); len], vec![false; len]),
+        limit,
         readings: Vec::new(),
     };
-    let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+    let mut meter = Meter::new(budget);
     let outcome = evaluate(
         &clause(),
         TemporalTrace::Finite {
@@ -507,9 +582,12 @@ fn settle(atom: &AggregateAtom, errors: Vec<bool>) -> (TemporalOutcome, Vec<Atom
     (outcome, letters.readings)
 }
 
-/// FR-194-AC-4 and AC-3: the temporal evaluator receives the aggregate as a
-/// Boolean per position, a holding clause settles `Holds`, and an atom
-/// undefined for too few values makes the clause undefined at that position.
+fn settle(atom: &AggregateAtom, errors: Vec<bool>) -> (TemporalOutcome, Vec<AtomReading>) {
+    run(atom, errors, UNLIMITED, SCALAR_LIMITS_UNLIMITED)
+}
+
+/// FR-194-AC-4: the temporal evaluator receives the aggregate as a Boolean
+/// per position, and a holding clause settles `Holds`.
 #[trace("TC-629", "FR-194-AC-4")]
 #[test]
 fn the_temporal_layer_reads_the_aggregate_as_a_boolean_signal() {
@@ -528,7 +606,8 @@ fn the_temporal_layer_reads_the_aggregate_as_a_boolean_signal() {
         .iter()
         .all(|reading| matches!(reading, AtomReading::True | AtomReading::False)));
 
-    // Two errors inside the window falsify the atom at position 1.
+    // Two errors inside the window falsify the atom at position 1, and the
+    // clause is violated at its activation, position 0.
     let (outcome, _) = settle(&errors_at_most_one, vec![true, true, false, false]);
     assert_eq!(
         outcome,
@@ -536,7 +615,13 @@ fn the_temporal_layer_reads_the_aggregate_as_a_boolean_signal() {
             at: TemporalPosition::new(0)
         }
     );
+}
 
+/// FR-194-AC-3: an atom undefined for too few values makes the clause
+/// undefined at that position, with the insufficient-data cause.
+#[trace("TC-629", "FR-194-AC-3")]
+#[test]
+fn an_atom_with_too_few_values_makes_the_clause_undefined() {
     let needs_five = AggregateAtom::new(
         term(
             AggregateKind::Count,
@@ -557,4 +642,50 @@ fn the_temporal_layer_reads_the_aggregate_as_a_boolean_signal() {
         ),
         other => panic!("an undefined clause, not {other:?}"),
     }
+}
+
+/// FR-194-AC-3: the stop for a window over `max_window_values` reaches the
+/// run's outcome as the limit record, not as a work-budget `Incomplete`; an
+/// exhausted work budget stays the ordinary `Incomplete`.
+#[trace("TC-629", "FR-194-AC-3")]
+#[test]
+fn a_window_over_the_limit_settles_the_run_with_the_limit_record() {
+    let count = AggregateAtom::new(
+        term(
+            AggregateKind::Count,
+            PastWindow::Positions { a: 0, b: 19 },
+            1,
+        ),
+        ComparisonOperator::GreaterOrEqual,
+        whole(0),
+    );
+    // The window at position 2 holds 3 values, one more than the limit 2.
+    let (outcome, _) = run(&count, vec![true; 20], 2, SCALAR_LIMITS_UNLIMITED);
+    assert_eq!(
+        outcome,
+        TemporalOutcome::WindowLimitReached(WindowLimitReached {
+            limit: "max_window_values",
+            value: 2,
+            setting: "monitor.max_window_values",
+        })
+    );
+    assert_eq!(outcome.category(), Category::Incomplete);
+
+    // A limit that admits every window the clause reads does not stop it.
+    let (outcome, _) = run(&count, vec![true; 20], 20, SCALAR_LIMITS_UNLIMITED);
+    assert_eq!(outcome, TemporalOutcome::Holds);
+
+    let (outcome, _) = run(
+        &count,
+        vec![true; 20],
+        UNLIMITED,
+        ScalarLimits {
+            work_units: 3,
+            ..SCALAR_LIMITS_UNLIMITED
+        },
+    );
+    assert!(
+        matches!(&outcome, TemporalOutcome::Incomplete(record) if record.limit_kind == LimitKind::WorkUnits),
+        "{outcome:?}"
+    );
 }
