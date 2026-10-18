@@ -4,8 +4,8 @@
 use semantics::model::accounting::ModelNormalizationLimits;
 use semantics::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, EventTypeRecord, FieldMemberRecord,
-    Multiplicity, NativeValueType, ObjectTypeRecord, OperationEffect, OperationMemberRecord,
-    RecordValueTypeRecord, ScalarTypeRecord, ScalarValueDomain, ValueTypeRef,
+    EnumRecord, Multiplicity, NativeValueType, ObjectTypeRecord, OperationEffect, OperationMemberRecord,
+    RecordValueTypeRecord, ScalarTypeRecord, ScalarValueDomain, ValueTypeRef, VariantRecord,
 };
 use semantics::model::intake::SelectedModel;
 use semantics::model::key::DeclarationKey;
@@ -66,7 +66,7 @@ fn native(native: NativeValueType) -> ValueTypeRef {
 }
 
 /// The TC-1057 fixture R: the scalar types `Total` (`0..1000`), `Tally`
-/// (`0..3`) and `Digit` (`0..9`); the object type `Node{total, tally, n}`
+/// (`0..3`) and `Digit` (`0..9`); the variant type `Mode`; the object type `Node{total, tally, n}`
 /// with the operation `step`; the record value types `Receipt{total, tally,
 /// n}`, `Attempt{tally}`, `Flag{ready}`, `Tick{ready, count}` and
 /// `Hop{ready, node}`; and the event type `Pulse{ready, occurred}`; all
@@ -76,6 +76,21 @@ pub fn obligation_model() -> SelectedModel {
         scalar("Total", 0, 1000),
         scalar("Tally", 0, 3),
         scalar("Digit", 0, 9),
+        DomainPackageRecord::Enum(EnumRecord {
+            key: key("Mode"),
+            name: "Mode".to_owned(),
+            members: vec!["Off".to_owned(), "On".to_owned()],
+        }),
+        DomainPackageRecord::Variant(VariantRecord {
+            key: key("Mode/Off"),
+            owner: key("Mode"),
+            case: "Off".to_owned(),
+        }),
+        DomainPackageRecord::Variant(VariantRecord {
+            key: key("Mode/On"),
+            owner: key("Mode"),
+            case: "On".to_owned(),
+        }),
         DomainPackageRecord::ObjectType(ObjectTypeRecord {
             key: key("Node"),
             interface_features: None,

@@ -21,7 +21,9 @@ use super::{
     CaptureOwner, CaptureStage, CheckedActivation, ObligationCause, ObligationOwner,
     ObligationStage, ReadClass, Site, Universe,
 };
-use crate::check::{CheckCause, CheckRefusal, CheckedGraph, PackageDeclarations};
+use crate::check::{
+    CheckCause, CheckRefusal, CheckedGraph, PackageDeclarations, ProtocolAnchorCause,
+};
 
 mod fixture {
     use crate as semantics;
@@ -69,13 +71,25 @@ fn checked(declarations: &str) -> CheckedGraph {
         .unwrap_or_else(|refusals| panic!("{declarations}: {refusals:?}"))
 }
 
-/// The obligation refusals among `refusals`, in order.
+/// The obligation refusals among `refusals`, in order. Every other refusal
+/// must be the not-yet-implemented one for the uncovered `effect`/`commit`
+/// nodes, or `content`'s unresolved binder type: a limit, a fault or any other cause would otherwise let a
+/// "checks" assertion pass because the stage never ran.
 fn obligation_causes(refusals: &[CheckRefusal]) -> Vec<ObligationCause> {
     refusals
         .iter()
         .filter_map(|refusal| match &refusal.cause {
             CheckCause::ProtocolObligation(cause) => Some((**cause).clone()),
-            _ => None,
+            CheckCause::ProtocolAnchor(cause)
+                if matches!(
+                    **cause,
+                    ProtocolAnchorCause::Unimplemented { .. }
+                        | ProtocolAnchorCause::BinderType { .. }
+                ) =>
+            {
+                None
+            }
+            other => panic!("a refusal outside the obligation stage: {other:?}"),
         })
         .collect()
 }
@@ -830,10 +844,15 @@ fn an_attempt_type_must_be_a_record_or_an_event() {
             &format!("retry (earlier: {attempt}, later: {attempt}) {{ true }};"),
         )
     };
+    // The variant type `M::Mode` is a named attempt type too (FR-381-AC-13).
     // TC-1058 row 15c's inline `Set<M::Total>[0, 3]` attempt type is not
     // reachable: the `attempts N of` member's grammar takes a model name
     // (QSpec FR-239's EBNF), so S1 refuses an inline type.
-    for (attempt, name) in [("M::Node", Some("M::Node")), ("M::Total", Some("M::Total"))] {
+    for (attempt, name) in [
+        ("M::Node", Some("M::Node")),
+        ("M::Total", Some("M::Total")),
+        ("M::Mode", Some("M::Mode")),
+    ] {
         let (text, cause) = only(&relation_true(attempt));
         let ObligationCause::AttemptType {
             compensation,
