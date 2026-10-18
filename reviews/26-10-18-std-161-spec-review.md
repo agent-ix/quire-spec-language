@@ -40,3 +40,17 @@ scope:
 | FND-001 | low | AC-13's last sentence ("the layer table's `quire.value.complete/v1` row holds no `ObjectNavigation` entry") is a code-structure claim inside a `Test (TC-1015)` AC, and no TC-1015 step checks it. The behavioural step 3 already subsumes it; drop the sentence or add an inspection step. | spec/functional/FR-361-gate-model-constructs-on-the-model-profile-selection.md:241; spec/test-cases/TC-1015-forms-not-gated-raise-no-model-gate-refusal.md:18-25 |
 | FND-002 | low | TC-1015 Description still says the case "catches a gate that refuses a state clause or another form"; step 3 catches the opposite defect (an admission that must be refused). Add one sentence naming it. | spec/test-cases/TC-1015-forms-not-gated-raise-no-model-gate-refusal.md:13 |
 | FND-003 | low | Item 17 (a)-(c) is a list of edits to make ("Building this requirement SHALL delete ... the comment", "the FR-110 bullet"), a build instruction rather than system behaviour. It was the ticket's explicit ask and matches the description paragraph's existing pattern, so this is wording only. | spec/functional/FR-361-gate-model-constructs-on-the-model-profile-selection.md:206-219 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | medium | TC-1015 step 3's repetition "in a unit whose header also selects a second profile" leaves the second profile unnamed, so it does not pin the case FND-001 of SR-12805 fixed. Failure: an implementation that admits `deref`/`reaches` when the unit's union of closures names `quire.state.graph/v1` (the unit-level reading) passes step 3 when the tester picks `quire.state.core/v1` as the second profile, because the value-alias declaration is refused either way. Only a second alias resolving to `quire.state.graph/v1` (or `quire.model.complete/v1`) beside the value alias makes the value-alias refusal discriminate. Fix: name it, e.g. "repeat with the value-profile alias in a unit whose header also selects `quire.state.graph/v1` through a second alias". | spec/test-cases/TC-1015-forms-not-gated-raise-no-model-gate-refusal.md:19,25 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | AC-13's layer-table sentence is removed (a425f7631, FR-361:242). |
+| FND-002 | fixed | TC-1015 Description now names the admitted-that-must-be-refused defect (a425f7631, TC-1015:13). |
+| FND-003 | fixed | Item 17 now states the deletion as a fact ("The exception is deleted as one change with the gate, and the deletion covers:") rather than a SHALL build step (343edd4a2, FR-361:210-211). |
