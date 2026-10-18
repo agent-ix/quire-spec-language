@@ -258,7 +258,7 @@ fn verified_exports(emission: &Emission) -> BTreeMap<String, String> {
 
 /// The small checked producer's canonical envelope and identity are fixed by
 /// the owned-projection emission, then admitted by the independent V2 reader.
-#[trace("TC-416", "FR-093-AC-17", "FR-087-AC-3")]
+#[trace("TC-416", "FR-087-AC-3")]
 #[test]
 fn emitted_package_preserves_the_owned_projection_golden() {
     let emission = emit(&package(vec![f()]));
