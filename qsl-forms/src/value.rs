@@ -1058,6 +1058,8 @@ impl<'c> Mapping<'c> {
             | Production::ProtocolRequirement
             | Production::NodeReference
             | Production::Compensation
+            | Production::ProtocolTerminal
+            | Production::ProtocolScheduling
             | Production::Control
             | Production::Sequence
             | Production::Visibility
@@ -1630,6 +1632,8 @@ impl<'c> Mapping<'c> {
             | Production::ProtocolRequirement
             | Production::NodeReference
             | Production::Compensation
+            | Production::ProtocolTerminal
+            | Production::ProtocolScheduling
             | Production::Control
             | Production::Sequence
             | Production::Visibility
