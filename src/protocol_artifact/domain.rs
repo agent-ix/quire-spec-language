@@ -24,10 +24,6 @@ use qsl_semantics::model::domain_package::{
 use qsl_semantics::model::key::{DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 use qsl_semantics::model::refusal::ModelRefusalCause;
 
-/// `Model.profile` of a domain-package model: the Semantic IR contract its
-/// document is admitted under (FR-056).
-pub const DOMAIN_PACKAGE_PROFILE: &str = "semantic-ir/2.0.0";
-
 /// Revision namespace of a domain-package export locus: the formal revision
 /// is the package's own version.
 pub const DOMAIN_PACKAGE_VERSION_NAMESPACE: &str = "ix:domain-package-version";
