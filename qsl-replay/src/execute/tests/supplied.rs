@@ -647,8 +647,8 @@ fn a_decimal_parameter_replays_and_is_bounded_by_b() {
 /// FR-277: at their published defaults both ceilings admit a large supplied
 /// argument, and at that size A and H are still exactly the executed event
 /// sequences: the exact ceiling admits and one less denies the last event.
-/// This is a flat sequence, not TC-830's Tree, which needs the union
-/// frontend and QSV's union membership.
+/// This is a flat sequence; TC-830's Tree is
+/// `the_full_size_supplied_tree_is_bounded_by_occurrences_and_admission_events`.
 #[trace("TC-906", "FR-098-AC-12", "FR-277-AC-4")]
 #[test]
 fn a_large_flat_argument_is_admitted_by_the_defaults_and_counted_exactly() {
@@ -684,6 +684,144 @@ fn a_large_flat_argument_is_admitted_by_the_defaults_and_counted_exactly() {
     assert_eq!(stop.context.phase, SuppliedPhase::Admission);
     assert_eq!(stop.context.consumed, a - 1);
     assert_eq!(stop.context.event, admission_events(count).last().copied());
+}
+
+/// TC-830 step 4's unit: QSL-503's `Tree { Leaf(Integer), Branch(Integer,
+/// Option<Tree>) }`, declared in source and supplied to a function.
+fn tree_unit() -> Unit {
+    let source = format!(
+        "language \"ix:native\" edition \"1-draft\";\n{PROFILE}\
+         union Tree {{ Leaf(Integer), Branch(Integer, Option<Tree>) }}\n\
+         function weigh using v(t: Tree): Boolean pure {{ false }}\n"
+    );
+    let compiled = spine(&source, &BTreeMap::new());
+    Unit { source, compiled }
+}
+
+/// The `Tree` of `depth` levels QSL-503's fixture builds (`depth - 1`
+/// branches, each holding 1 and the present next level, over a leaf holding
+/// 1), as the witness spelling of the unit's own union.
+fn tree_witness(unit: &Unit, depth: usize) -> WitnessValue {
+    let types = unit.compiled.package.graph().scope().types();
+    let handle = types
+        .composites()
+        .find(|declaration| declaration.name() == "Tree")
+        .expect("Tree is declared")
+        .key();
+    let key = types.union_key(handle).expect("check sealed the union");
+    let declaration = WireNodeId::from_digest(*key.as_bytes());
+    let member = |name: &str, components| WitnessValue::Union {
+        declaration,
+        member: name.to_owned(),
+        components,
+    };
+    let one = || WitnessValue::Integer(1);
+    let mut tree = member("Leaf", vec![one()]);
+    for _ in 1..depth {
+        tree = member(
+            "Branch",
+            vec![one(), WitnessValue::Option(Some(Box::new(tree)))],
+        );
+    }
+    tree
+}
+
+/// The QSV membership events A spends admitting the 10,000-level `Tree`, in
+/// order, enumerated by hand from QSV FR-109. The worklist is last-in
+/// first-out and children are scheduled last to first, so each `Branch` level
+/// is: the union visit, its descriptor query, the scheduling of the option
+/// and then of the integer, the integer's visit, the option's visit, the
+/// option's one type-link comparison (its retained payload type against the
+/// declared one), and the scheduling of the present next level. The `Leaf`
+/// is the union visit, its descriptor query, the scheduling of its one
+/// integer and that integer's visit. An unbounded `Integer` runs no numeric
+/// helper, so it adds nothing to a visit.
+fn tree_admission_events(depth: usize) -> Vec<SuppliedEvent> {
+    use SuppliedEvent::{ChildScheduling, DescriptorQuery, TypeComparison, ValueVisit};
+    let mut events = Vec::new();
+    for _ in 1..depth {
+        events.extend([
+            ValueVisit,
+            DescriptorQuery,
+            ChildScheduling,
+            ChildScheduling,
+            ValueVisit,
+            ValueVisit,
+            TypeComparison,
+            ChildScheduling,
+        ]);
+    }
+    events.extend([ValueVisit, DescriptorQuery, ChildScheduling, ValueVisit]);
+    events
+}
+
+/// The 10,000-level `Tree` encodes to about 1.8 MB, over the 1 MiB default of
+/// `replay.input_bytes`; the caller raises that reader bound (FR-255) and every
+/// other limit stays at its default.
+fn run_wide(wire: ReplayRequestWire) -> Result<ReplayResult, ReplayRefusal> {
+    replay(wire, ReplayLimits::default().with_input_bytes(1 << 24))
+}
+
+/// TC-830 step 4 through the public `replay`, with the unchanged shape of
+/// QSL-503's full-size fixture (10,000 levels, 29,999 semantic occurrences):
+/// the occurrence bound 29,998 denies before evaluation and 29,999 admits,
+/// and with the evaluation limits identical and sufficient the admission
+/// ceiling A-1 denies its actual next event unspent while A admits, where A
+/// is the hand-enumerated event sequence above.
+#[trace("TC-830")]
+#[test]
+fn the_full_size_supplied_tree_is_bounded_by_occurrences_and_admission_events() {
+    const DEPTH: usize = 10_000;
+    let unit = tree_unit();
+    let occurrences = 29_999_u64;
+
+    // Hand arithmetic, independent of the enumerator: 9,999 branch levels of
+    // 8 events and the leaf's 4.
+    let events = tree_admission_events(DEPTH);
+    let a = total(&events);
+    assert_eq!(a, 9_999 * 8 + 4);
+    assert_eq!(a, 79_996);
+
+    let request = |limits: SuppliedLimits, bound: u64| {
+        let mut wire = unit.with("weigh", vec![tree_witness(&unit, DEPTH)], limits);
+        wire.accounting_limits.value_occurrences = bound;
+        wire
+    };
+
+    // The occurrence bound: one below denies before evaluation, naming the
+    // limit and the count reached; the count itself admits.
+    let over_bound = run_wide(request(SuppliedLimits::default(), occurrences - 1));
+    let stop = pre_call(&over_bound);
+    assert_eq!(stop.context.phase, SuppliedPhase::Conversion);
+    assert_eq!(stop.context.parameter, Some(0));
+    assert_eq!(stop.context.event, Some(SuppliedEvent::ValueOccurrence));
+    let limit = stop.limit().expect("a limit");
+    assert_eq!(limit.limit_kind, SuppliedLimitKind::ValueOccurrences);
+    assert_eq!(limit.limit, occurrences - 1);
+    assert_eq!(limit.next_charge, occurrences);
+    assert_reproduced(&run_wide(request(SuppliedLimits::default(), occurrences)));
+
+    // The admission ceiling, under the same sufficient evaluation limits.
+    assert_reproduced(&run_wide(request(only_a(a), occurrences)));
+    let last_level = 8 * (DEPTH / 2);
+    let sampled = (0..=8)
+        .chain(last_level..last_level + 8)
+        .chain(events.len() - 4..events.len());
+    for denied in sampled.map(|index| u64::try_from(index).unwrap()) {
+        let result = run_wide(request(only_a(denied), occurrences));
+        let stop = pre_call(&result);
+        let index = usize::try_from(denied).unwrap();
+        assert_eq!(stop.context.phase, SuppliedPhase::Admission, "{denied}");
+        assert_eq!(stop.context.parameter, Some(0));
+        assert_eq!(stop.context.event, Some(events[index]), "{denied}");
+        assert_eq!(stop.context.consumed, denied, "the denied step is unspent");
+        let limit = stop.limit().expect("a limit");
+        assert_eq!(limit.limit_kind, SuppliedLimitKind::AdmissionWorkUnits);
+        assert_eq!(limit.field(), "supplied.admission_work_units");
+        assert_eq!(limit.limit, denied);
+        assert_eq!(limit.next_charge, 1);
+        assert_eq!(limit.counter, AttemptedCount::Count(denied + 1));
+    }
 }
 
 fn exact(bits: u64) -> WitnessValue {

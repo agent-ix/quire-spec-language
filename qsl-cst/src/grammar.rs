@@ -13,7 +13,8 @@ pub(super) enum Terminal {
     Text,
     TextValue(&'static str),
     UnsignedInteger,
-    /// An unsigned integer that fits `u64`: an interval bound.
+    /// An unsigned integer that fits `u64`: an interval bound or a
+    /// compensation's `attempts` count.
     Bound,
     End,
 }
@@ -381,11 +382,7 @@ fn source_and_types(g: &mut Grammar) {
                 x("<"),
                 r(P::TypeReference),
                 x(">"),
-                x("["),
-                uint(),
-                x(","),
-                uint(),
-                x("]"),
+                opt(s(vec![x("["), uint(), x(","), uint(), x("]")])),
             ]),
             s(vec![x("Reference"), x("<"), r(P::QualifiedName), x(">")]),
             s(vec![
@@ -1292,7 +1289,7 @@ fn protocol(g: &mut Grammar) {
             r(P::Interval),
             x(";"),
             x("attempts"),
-            uint(),
+            bound(),
             x("of"),
             r(P::TypeName),
             x(";"),

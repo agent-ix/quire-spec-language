@@ -43,7 +43,6 @@ These are new repositories. Missing formal plans, TC records, suites, and matric
 | [FR-006](../functional/FR-006-check-defined-expressions.md) | event-driven | Explicit subject and shall outcome; condition/trigger is stated where applicable |
 | [FR-007](../functional/FR-007-validate-runtime-inputs.md) | event-driven | Explicit subject and shall outcome; condition/trigger is stated where applicable |
 | [FR-008](../functional/FR-008-evaluate-state-reference.md) | event-driven | Explicit subject and shall outcome; condition/trigger is stated where applicable |
-| [FR-009](../functional/FR-009-lower-qualified-projections.md) | event-driven | Explicit subject and shall outcome; condition/trigger is stated where applicable |
 | [FR-010](../functional/FR-010-report-native-outcomes.md) | event-driven | Explicit subject and shall outcome; condition/trigger is stated where applicable |
 | [FR-011](../functional/FR-011-integrate-opaque-extraction.md) | event-driven | Explicit subject and shall outcome; condition/trigger is stated where applicable |
 | [NFR-001](../non-functional/NFR-001-bound-syntax-work.md) | event-driven | Explicit subject and shall outcome; condition/trigger is stated where applicable |

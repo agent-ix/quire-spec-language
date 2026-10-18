@@ -37,8 +37,7 @@
 //! names exactly one value or is refused. There is no default for an
 //! unrecognized string. The enum, [`Capability::ALL`] and
 //! [`Capability::to_wire`] are generated together from one `capability_kinds!`
-//! macro table below -- the same technique `ProjectionTarget`'s `targets!`
-//! macro (`src/lowering/target.rs`) uses -- so there is exactly one
+//! macro table below, so there is exactly one
 //! hand-written list of the ten labels; the variant set, `ALL` and the wire
 //! spelling all expand from it in one place and cannot drift apart the way
 //! three separately maintained lists could. [`Capability::from_wire`]

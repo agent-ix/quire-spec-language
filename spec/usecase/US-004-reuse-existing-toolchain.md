@@ -9,8 +9,6 @@ relationships:
     type: exercises
   - target: "ix://agent-ix/quire-spec-language/StR-001"
     type: traces_to
-  - target: "ix://agent-ix/quire-spec-language/FR-009"
-    type: exercises
   - target: "ix://agent-ix/quire-spec-language/FR-011"
     type: exercises
   - target: "ix://agent-ix/quire-spec-language/FR-045"
@@ -52,7 +50,6 @@ Priority: High. Confusing a source/model identity or incomplete execution with a
 
 ## Traceability (Informative)
 
-- [FR-009](../functional/FR-009-lower-qualified-projections.md)
 - [FR-011](../functional/FR-011-integrate-opaque-extraction.md)
 - [FR-038](../functional/FR-038-encode-exact-protocol-numbers.md) preserves exact integer/rational wire values for protocol consumers.
 - [FR-042](../functional/FR-042-publish-compiled-protocol-artifacts.md) defines the full compiled artifact and real Rust consumer handoff.

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-026: typed native result views; upstream identities retain their serializers.
 
-use qsl_foundation::{LocatedSpan, SourceIdentity, Span};
+use qsl_foundation::{LocatedSpan, SourceIdentity};
 use quire_contract_model as ir;
 use serde::Serialize;
 use std::borrow::Cow;
@@ -20,7 +20,6 @@ pub(super) enum Stage {
     Model,
     Package,
     SelectedPackage,
-    Lower,
     /// The spine stage that refused a `1-draft` program.
     Spine(qsl_replay::spine::SpineStage),
     /// The stage a `1-draft` spine `run` refused at: the wrapped compile
@@ -42,7 +41,6 @@ impl Serialize for Stage {
             Self::Model => "model",
             Self::Package => "package",
             Self::SelectedPackage => "selected_package",
-            Self::Lower => "lower",
             Self::Spine(stage) => stage.as_str(),
             Self::SpineRun(stage) => stage,
         })
@@ -116,15 +114,6 @@ pub(super) enum Details<'a> {
         stage: String,
         path: Vec<PackagePath<'a>>,
         cause: Option<PackageCause<'a>>,
-    },
-    Lowering {
-        profile: &'static str,
-        package: PackageReference,
-        source: Source<'a>,
-        clause: Option<&'a ir::ClauseRef>,
-        #[serde(flatten)]
-        location: ProjectionLocation,
-        upstream: &'a [ir::Diagnostic],
     },
     Spine {
         source: &'a SourceIdentity,
@@ -310,22 +299,6 @@ pub(super) struct SpineRunReport<'a> {
     pub source: RunSource<'a>,
     pub function: &'a str,
     pub outcome: SpineOutcome,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "snake_case")]
-pub(super) enum SpanStatus {
-    Absent,
-    Located,
-    Invalid,
-}
-
-#[derive(Serialize)]
-pub(super) struct ProjectionLocation {
-    pub span_status: SpanStatus,
-    pub span: Option<LocatedSpan>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub unmapped_span: Option<Span>,
 }
 
 #[derive(Serialize)]

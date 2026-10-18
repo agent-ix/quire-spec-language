@@ -10,4 +10,5 @@
 
 #![forbid(unsafe_code)]
 
+pub mod model_check;
 pub mod zone_check;

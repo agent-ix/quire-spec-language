@@ -6,8 +6,6 @@ quality_attribute: compliance
 relationships:
   - target: "ix://agent-ix/quire-spec-language/FR-002"
     type: constrains
-  - target: "ix://agent-ix/quire-spec-language/FR-009"
-    type: constrains
   - target: "ix://agent-ix/quire-spec-language/FR-011"
     type: constrains
 ---
@@ -35,5 +33,4 @@ Check the owner-approved AGPL-3.0-or-later terms for new implementation and pres
 ## Dependencies
 
 - [FR-002](../functional/FR-002-parse-native-units.md)
-- [FR-009](../functional/FR-009-lower-qualified-projections.md)
 - [FR-011](../functional/FR-011-integrate-opaque-extraction.md)

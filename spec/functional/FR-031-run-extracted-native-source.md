@@ -60,7 +60,7 @@ The command shall use existing bounded file intake, model frontend, FR-030 consu
 The command shall validate the fixed clause-only context through Quire's public semantic-block validator.
 The command shall validate and retain exactly one authored binding before dependent file I/O.
 The command shall retain original byte correspondence and producer availability separately from native truth.
-If the request combines extraction with selected-package execution or source-only compile/lower export, then the command shall refuse the unsupported combination before dependent files are read.
+If the request combines extraction with selected-package execution or source-only compile export, then the command shall refuse the unsupported combination before dependent files are read.
 If extraction is supplied to a build without quire-extraction, then the request decoder shall refuse the unknown field.
 The command shall preserve existing byte/file/runtime limits and fresh retries.
 
