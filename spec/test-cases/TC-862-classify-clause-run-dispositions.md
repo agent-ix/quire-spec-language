@@ -23,7 +23,7 @@ Scope: FR-342-AC-1 to FR-342-AC-5.
 2. Run a `Clause` selection naming `Absent`; a `Function` selection of a
    function returning `Integer`; dangling-parent; a `Function` selection
    of `sameIdentity` with an argument named `c`.
-3. Run incomplete-population; run exhausted-work (work budget zero).
+3. Run incomplete-population; run exhausted-work (work budget zero); build a `Compile` disposition holding a check refusal whose type admission reached a ceiling.
 4. Build `StalePackage`, `UnknownLanguage`, `Admit(Fault)` and
    `EvaluateFault` dispositions.
 5. Run missing-model (no package supplied).
@@ -37,7 +37,7 @@ tests `#[trace("TC-862", "FR-342-AC-n")]`.
 - Step 2: `absent`/`select`; `refused`/`select`; `refused`/`admit`;
   `refused`/`admit`.
 - Step 3: `incomplete`/`admit` naming `incomplete_population`/`incomplete-scope`; `incomplete`/`evaluate`
-  naming `work_units` and value zero.
+  naming `work_units` and value zero; `incomplete`/`compile` naming the ceiling's setting and bound.
 - Step 4: `tool failure`, four times.
 - Step 5: `tool failure`/`compile`, equal to FR-341's class of its
   `CompileRefusal`.

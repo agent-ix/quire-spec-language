@@ -31,8 +31,8 @@ Scope: FR-341-AC-1 to FR-341-AC-6.
 4. Compile the unit with an S1 source-stage limit of one (`s1.nodes`); with a type limit of
    one.
 5. Build a `Check` refusal holding `unsupported_construct`/
-   `not-yet-implemented` (the refusal S3 gives a protocol `compensate`
-   construct). Build an `Omitted` refusal and an `Emit` refusal holding
+   `not-yet-implemented` (the refusal S3 gives a construct it has
+   no checker for). Build an `Omitted` refusal and an `Emit` refusal holding
    `unsupported_projection`.
 6. Build a refusal whose causes are `unsupported_construct`/
    `declaration-form` and `unsupported_construct`/`expression-form`.

@@ -2100,12 +2100,12 @@ fn checked_file_fixtures_keep_package_identity_and_second_pass_bytes() {
 #[trace("TC-885", "FR-003-AC-9")]
 #[test]
 fn generated_config_version_unit_keeps_checked_identity() {
-    let source = crate::support::config_version::spine::unit_text();
+    let source = crate::support::config_version_spine::spine::unit_text();
     emitted(
-        crate::support::config_version::spine::unit_identity(),
+        crate::support::config_version_spine::spine::unit_identity(),
         "config-version.native",
         source.as_bytes(),
-        &crate::support::config_version::spine::domain_packages(),
+        &crate::support::config_version_spine::spine::domain_packages(),
         &DependencyInput::default(),
     )
     .expect("ConfigVersion fixture checks before and after formatting");

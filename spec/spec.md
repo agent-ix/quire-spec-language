@@ -740,6 +740,14 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-380
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-381
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-383
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-384
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-390
+    type: contains
   - target: ix://agent-ix/quire-spec-language/US-027
     type: contains
 ---
@@ -1262,6 +1270,10 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-366](functional/FR-366-classify-check-and-evaluate-the-invariant-clauses-of-a-model-type.md) | FR |
 | [FR-367](functional/FR-367-bind-a-call-s-named-values-to-a-scalar-application-occurrence.md) | FR |
 | [FR-380](functional/FR-380-bound-a-domain-package-population-and-link-a-reachability-to-its-node.md) | FR |
+| [FR-381](functional/FR-381-check-protocol-captures-activation-and-compensation-recovery-at-s3.md) | FR |
+| [FR-383](functional/FR-383-emit-a-checked-protocol-as-v2-protocol-nodes.md) | FR |
+| [FR-384](functional/FR-384-derive-the-protocol-occurrence-schema-and-runtime-binding-requirements.md) | FR |
+| [FR-390](functional/FR-390-evaluate-a-protocol-node-expression-from-a-checked-package.md) | FR |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR |
 | [NFR-013](non-functional/NFR-013-isolate-native-ci-feature-artifacts.md) | NFR |
 | [ADR-014](decisions/ADR-014-temporal-trace-and-boundedness-architecture.md) | ADR |

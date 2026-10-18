@@ -315,13 +315,6 @@ pub enum AssemblyCause {
         /// The library identity the import names.
         identity: String,
     },
-    /// A `temporal` clause: no checker reads one yet (the TemporalTrace
-    /// family checks them), so it is refused rather than compiled and
-    /// silently missing from the emitted package.
-    UnimplementedTemporalClause {
-        /// The declared clause name.
-        name: String,
-    },
     /// A `model` declaration names no domain package admitted at I1.
     UnadmittedModel {
         /// The declaration's alias.
@@ -409,7 +402,6 @@ impl AssemblyCause {
             Self::FloatingType { .. } | Self::UnsupportedModelMember { .. } => {
                 Code::UnknownRequiredFeature
             }
-            Self::UnimplementedTemporalClause { .. } => Code::UnsupportedConstruct,
             Self::AliasCycle { .. } => Code::InvalidPackage,
             Self::InvalidTypeDeclaration(invalid) => match &invalid.cause {
                 DeclarationCause::DuplicateMember(_) => Code::AmbiguousDeclaration,
@@ -484,7 +476,6 @@ impl AssemblyCause {
             Self::FloatingType { .. } | Self::UnsupportedModelMember { .. } => {
                 "unsupported-feature"
             }
-            Self::UnimplementedTemporalClause { .. } => "not-yet-implemented",
             Self::AliasCycle { .. } => "definition-cycle",
             Self::UndeclaredAlias { .. }
             | Self::UnadmittedModel { .. }
@@ -604,10 +595,9 @@ struct Unit {
     /// Each `protocol` declaration's form, in source order, for FR-113's
     /// `check::protocol_clause` checker to resolve at S3.
     protocols: Vec<qsl_forms::ProtocolDeclarationForm>,
-    /// One refusal per `temporal` clause: no checker reads a clause yet, so
-    /// it is refused rather than compiled and silently missing from the
-    /// emitted package.
-    temporal_refusals: Vec<AssemblyError>,
+    /// Each `temporal` clause's form, in source order, for FR-326's
+    /// `check::temporal_clause` checker to resolve at S3.
+    temporal_clauses: Vec<super::temporal_clause::TemporalDeclaration>,
 }
 
 impl Unit {
@@ -623,7 +613,7 @@ impl Unit {
             state_clauses: Vec::new(),
             operation_bodies: Vec::new(),
             protocols: Vec::new(),
-            temporal_refusals: Vec::new(),
+            temporal_clauses: Vec::new(),
         };
         for form in forms {
             let span = form.span();
@@ -663,12 +653,13 @@ impl Unit {
                         members: Members::Union(union.members),
                     });
                 }
-                DeclarationForm::Temporal(clause) => unit.temporal_refusals.push(AssemblyError {
-                    cause: AssemblyCause::UnimplementedTemporalClause {
-                        name: clause.name.name,
-                    },
-                    span,
-                }),
+                DeclarationForm::Temporal(clause) => {
+                    unit.temporal_clauses
+                        .push(super::temporal_clause::TemporalDeclaration {
+                            form: *clause,
+                            span,
+                        });
+                }
             }
         }
         unit
@@ -2219,8 +2210,8 @@ impl PackageDeclarations {
         cancel: &Cancel,
     ) -> Result<Self, AssemblyRefusal> {
         let (selections, forms) = unit.into_parts();
-        let mut unit = Unit::new(forms);
-        let mut errors = std::mem::take(&mut unit.temporal_refusals);
+        let unit = Unit::new(forms);
+        let mut errors = Vec::new();
         let owner = SourceOwner::from(&source);
         // The models and the one meter their admission counted on; checking
         // continues that meter into the conformance stage.
@@ -2347,6 +2338,25 @@ impl PackageDeclarations {
                         identity: import.identity.clone(),
                     },
                     span: import.span,
+                });
+            }
+        }
+        // FR-326: a `temporal` clause's `using` alias names one of the
+        // unit's profile selections, as a function's does. Which temporal
+        // profile the clause is checked under is the unit's, not the
+        // alias's (ADR-014 A-2), and `check::temporal_clause` decides it.
+        for clause in &unit.temporal_clauses {
+            let using = &clause.form.profile;
+            if !selections
+                .profiles
+                .iter()
+                .any(|profile| profile.alias == using.alias)
+            {
+                errors.push(AssemblyError {
+                    cause: AssemblyCause::UndeclaredAlias {
+                        alias: using.alias.clone(),
+                    },
+                    span: using.span,
                 });
             }
         }
@@ -2903,6 +2913,17 @@ impl PackageDeclarations {
             package.lock_evidence = package.lock_evidence.with_protocol_profile(definition);
         }
         package.protocols = unit.protocols;
+        package.temporal_clauses = unit.temporal_clauses;
+        package.temporal_selections = selections
+            .profiles
+            .iter()
+            .filter_map(|profile| {
+                Some(super::temporal_clause::TemporalSelection {
+                    profile: super::profile::TemporalProfile::from_identity(&profile.identity)?,
+                    span: profile.span,
+                })
+            })
+            .collect();
         package.protocol_attempts = protocol_attempts;
         package.declared_type_spans = declared_type_spans;
         package.model_records = model_records;
