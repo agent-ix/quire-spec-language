@@ -207,20 +207,21 @@ DefinitionLock catalog's `header_selectable_layers` (FR-110).
     navigation form.** QSpec's `quire.state.graph/v1` adds the object
     navigation forms (`deref`, `reaches`) and `quire.value.complete/v1` does
     not require it. FR-110 records a temporary exception by which the
-    admitted-form set of `quire.value.complete/v1` also holds them. Building
-    this requirement SHALL delete that exception, as one change with the
-    gate:
+    admitted-form set of `quire.value.complete/v1` also holds them. The
+    exception is deleted as one change with the gate, which leaves:
     (a) the `ObjectNavigation` entry of the `ValueComplete` row of the layer
     table, with the comment that records the exception;
     (b) the FR-110 bullet that records the exception; and
-    (c) the fixtures whose unit writes `deref` or `reaches` under a header
-    that selects only `quire.value.complete/v1`, each of which moves to a
-    header that selects `quire.state.graph/v1` or `quire.model.complete/v1`
-    (both resolve the layer that admits the forms).
-    After the deletion a unit holding `deref` or `reaches` is admitted
-    exactly when its selected layers' closure names `quire.state.graph/v1`,
-    and otherwise is refused by FR-110's layer rule naming the selected
-    layers. No model-gate refusal (item 11) applies to the forms.
+    (c) the fixtures whose declaration writes `deref` or `reaches` against a
+    `using` alias that resolves to `quire.value.complete/v1`, each of which
+    moves to an alias that resolves to `quire.state.graph/v1` or
+    `quire.model.complete/v1` (both admit the forms), whatever other profiles
+    the unit's header selects.
+    After the deletion a declaration that writes `deref` or `reaches` is
+    admitted exactly when its `using` alias resolves to a layer whose
+    `requires` closure names `quire.state.graph/v1`, and otherwise is refused
+    by FR-110's layer rule naming that layer. No model-gate refusal (item 11)
+    applies to the forms.
 
 ## Acceptance Criteria
 
@@ -238,7 +239,7 @@ DefinitionLock catalog's `header_selectable_layers` (FR-110).
 | FR-361-AC-10 | Under `make conformance`, the rows of `DefinitionLock::pinned()` that come from the complete-model lock (role, authority and identity, in order, and its package-selection rules) equal QSpec's complete-model lock, read at run time. | Test (TC-1017) |
 | FR-361-AC-11 | In a value-profile unit, S2 builds the forms of all four families and reports no refusal; the refusals of AC-1 to AC-3 are S3's. | Test (TC-1017) |
 | FR-361-AC-12 | A `body ... using V` where `V` resolves to `quire.value.complete/v1` in a unit that selects only that profile receives one refusal (the family refusal of item 11), not two; the same declaration in a unit that also selects the model profile through another alias receives FR-110's layer refusal alone. | Test (TC-1017) |
-| FR-361-AC-13 | A unit that holds a `deref` and a unit that holds a `reaches`, each under a header that selects only `quire.value.complete/v1`, refuse once with FR-110's layer rule naming the selected layer and retain no family of item 5; the same units under `quire.state.graph/v1` and under `quire.model.complete/v1` compile. The layer table's `quire.value.complete/v1` row holds no `ObjectNavigation` entry. | Test (TC-1015) |
+| FR-361-AC-13 | A declaration that writes a `deref` and a declaration that writes a `reaches`, each with a `using` alias that resolves to `quire.value.complete/v1`, are each refused once by FR-110's layer rule naming that layer and retain no family of item 5; the same declarations with an alias that resolves to `quire.state.graph/v1` and with one that resolves to `quire.model.complete/v1` compile, including in a unit whose header also selects another profile. | Test (TC-1015) |
 
 ## Dependencies
 
