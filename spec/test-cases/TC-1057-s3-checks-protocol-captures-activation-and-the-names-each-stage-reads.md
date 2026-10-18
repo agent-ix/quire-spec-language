@@ -14,7 +14,7 @@ Verify that S3 checks `activation`, the protocol's captures and a compensation's
 registration and activation captures through the clause checker over the names
 each stage may read, and refuses a read of a name outside its stage, a capture
 that reads itself or a capture written later, and a capture of the wrong type or
-without a total initializer. Scope: FR-381-AC-1 to FR-381-AC-4 and FR-381-AC-14.
+without a total initializer. Scope: FR-381-AC-1 to FR-381-AC-4, FR-381-AC-14 and FR-381-AC-15.
 
 Catches a registration capture that reads a recovery binder, an activation
 guard that reads the forward record, a retry relation that reads the trigger, a
@@ -27,7 +27,8 @@ Fixture **R**: a domain package `M` with `Total = Int[0, 1000]` and `Tally =
 Int[0, 3]`; the object type `Node{total: Total, tally: Tally, n: Int[0, 9]}`
 with population `nodes` and the operation `Node::step`; the record value types
 `Receipt{total: Total, tally: Tally, n: Int[0, 9]}`, `Attempt{tally: Tally}`,
-`Flag{ready: Boolean}` and `Tick{ready: Boolean, count: Int[0, 9]}`; the event
+`Flag{ready: Boolean}`, `Tick{ready: Boolean, count: Int[0, 9]}` and
+`Hop{ready: Boolean, node: Reference<Node>}`; the event
 type `Pulse{ready: Boolean}`; model alias `M`, profile aliases `P` and `T`.
 Every binder that a protocol activation guard, trigger guard, retry relation or
 recovery predicate reads through its fields has a record or event type, because
@@ -96,11 +97,14 @@ named read, retaining `name`, `stage`, `owner` and `read`.
 | 20 | `when (opened.count)` | `ill_typed`/`non-boolean-root` at the guard |
 | 21 | `on origin` replacing the `on each` header, and the base `order` capture | checks; the clause holds activation `Origin`, no binder, no guard |
 | 22 | `on each (opened: M::Tick)` with no `when` | checks; the guard is the always-true guard |
-| 23 | `activate first (trigger: M::Node) when { trigger.n = 1 }` | `ill_typed`/`operator-ineligible` at `trigger.n`, naming the trigger-guard stage |
+| 23 | `activate first (trigger: M::Node) when { trigger.n = 1 } { capture activated: Boolean = trigger.n = 1; }` | `ill_typed`/`operator-ineligible` at `trigger.n`, naming the trigger-guard stage |
 | 24 | `recover (recovered: M::Node) { recovered.n = 1 }` | `ill_typed`/`operator-ineligible` at `recovered.n`, naming the recovery stage |
 | 25 | `on each (opened: M::Node) when (opened.n = 1)` | `ill_typed`/`operator-ineligible` at `opened.n`, naming the activation guard |
 | 26 | `attempts 3 of M::Node` with `retry (earlier: M::Node, later: M::Node) { earlier.n = later.n }` | `invalid_model_binding`/`malformed-declaration` at `M::Node` in `attempts`, then `ill_typed`/`operator-ineligible` at `earlier.n` and at `later.n`, naming the retry stage, in source order |
 | 27 | `on each (opened: M::Node)` with no `when`, and the registration capture `capture seen: M::Total = opened.total;` | checks: a registration capture may read model state |
+| 28 | `activate first (trigger: M::Hop) when { trigger.node.n = 1 }` | `ill_typed`/`operator-ineligible` at `trigger.node.n`, naming the trigger-guard stage: a read through a reference is a model-state read |
+| 29 | `recover (recovered: M::Hop) { deref(recovered.node).n = 1 }` | `ill_typed`/`operator-ineligible` at the `deref`, naming the recovery stage |
+| 30 | `activate first (trigger: M::Hop) when { not trigger.ready } { capture activated: Boolean = trigger.node.n = 1; }` | checks: an activation capture may read model state |
 
 ## Expected Results
 

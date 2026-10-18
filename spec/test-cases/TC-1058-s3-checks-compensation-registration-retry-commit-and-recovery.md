@@ -23,7 +23,7 @@ type, an unsafe retry arithmetic that checks, a commit
 that precedes its effect, and a `Full` and a `Partial` recovery merged into one.
 
 Fixture **R** is TC-1057's, with its record value types `Receipt`, `Attempt` and
-`Flag`, its event type `Pulse` and its object type `Node`. Every row changes the base protocol `Refunds` and
+`Flag`, its event type `Pulse`, its object type `Node`, a composite type `Totals` (a set of `Total`) and a variant type `Mode`. Every row changes the base protocol `Refunds` and
 asserts the checked clause or the refusal's code, cause, span text and retained
 members.
 
@@ -48,6 +48,7 @@ members.
 | 15 | `attempts 3 of M::Flag`, `retry (earlier: M::Flag, later: M::Flag) { earlier.ready = later.ready }`; and `attempts 3 of M::Pulse`, `retry (earlier: M::Pulse, later: M::Pulse) { earlier.ready = later.ready }` | each checks: a record type and an event type are admitted |
 | 15a | `attempts 3 of M::Node`, an object type, with `retry (earlier: M::Node, later: M::Node) { true }` | exactly one refusal, `invalid_model_binding`/`malformed-declaration` at `M::Node` in `attempts`; `compensation` `Refund`, `member` `attempts`, `name` `M::Node`; none at the retry binders |
 | 15b | `attempts 3 of M::Total`, a scalar type, with `retry (earlier: M::Total, later: M::Total) { true }`; and `attempts 3 of M::Absent` | the first the refusal of row 15a at `M::Total`; the second `missing_declaration`/`missing-name` at `Absent` |
+| 15c | `attempts 3 of M::Totals` and `attempts 3 of M::Mode`, each with `retry (earlier: M::Totals, later: M::Totals) { true }` and the matching `Mode` binders | the refusal of row 15a at `M::Totals` and at `M::Mode`, one each |
 | 16 | the retry relation without `earlier.tally < 3 and` | `undefined_expression`/`unproved-range` at `earlier.tally + 1` |
 | 17 | the retry relation `earlier.tally` | `ill_typed`/`non-boolean-root` at the relation |
 | 18 | `commit never` | checks; the clause holds `Never` |

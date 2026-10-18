@@ -14,7 +14,7 @@ Verify that S3 checks each channel's roles, payload, ordering and premises,
 each relationship declaration and `related by` clause, each `requires temporal`
 requirement and the owner and visible facts of each `choice` and `repeat`, and
 refuses each mutation with its code, cause, span and retained members. Scope:
-FR-218-AC-10 to FR-218-AC-20.
+FR-218-AC-10 to FR-218-AC-20 and FR-218-AC-26.
 
 Catches a channel with an undeclared role that checks, a send typed differently
 from its channel that checks, a relationship bound to its written name instead of
@@ -23,7 +23,7 @@ through an import, a decision on a fact its owner cannot observe, and a gap or
 overlap that passes because the guards are constant.
 
 Fixture **P**: a domain package `M` with the object types `Node{total: Total,
-tally: Int[0, 3], n: Int[0, 9]}` and `Peer{id: Int[0, 9]}`; the record value type
+tally: Int[0, 3], n: Int[0, 9], ok: Boolean}` with the operation `Node::step`, and `Peer{id: Int[0, 9]}`; the record value type
 `Plain{ready: Boolean, peer: Reference<Peer>}`; a relationship `pipe` whose
 first end is `Peer` and second end is `Node`; a relationship `owns` between the
 same two types; a port `out`; model alias `M`, profile alias
@@ -36,7 +36,7 @@ unordered delivery at-least-once capacity 2 overflow block;` and a `run`
 The channel carries a record, because a channel does not carry an object type
 (FR-218), and every binder a decision reads through its fields is a record: a
 field read of an object binder is a model-state read, which a guard, a
-`visible` entry and a FIFO key bar (FR-381). The protocol input `view` is the
+`visible` entry and a FIFO key bar (FR-218). The protocol input `view` is the
 one object-typed binder, read only as a relationship end and in the rows that
 name it.
 
@@ -89,6 +89,8 @@ checked clause or the refusal's code, cause, span text and retained members.
 | 40 | complementary guards `gotA.ready and gotB.ready`, `gotA.ready and not gotB.ready`, `not gotA.ready and gotB.ready`, `not gotA.ready and not gotB.ready` over both listed facts | checks |
 | 41 | row 28 with a protocol capture `lim` and a guard `got.ready and lim >= 0` not listed in `visible` | checks: a protocol capture needs no listing |
 | 42 | row 10 with key `{m}` (a record type) and with a key of a type over which the clause checker admits no `=` | the first checks; the second `ill_typed`/`operator-ineligible` at the key, `operator` `=` and the type |
+| 43 | before `Got`, `attempt Tried by Seller on M::Node::step contracts [] as (attempted: M::Node) { true };`, and after `Got` `choice Decide by Seller visible (attempted.ok) { case yes when { attempted.ok } check A using P { true }; case no when { not attempted.ok } check B using P { true }; }` | `ill_typed`/`operator-ineligible` at the `visible` entry and at each guard read of `attempted.ok`, naming the `visible` entry and the guards: a field read of an object binder is a model-state read; with `attempted: M::Plain` and `visible (attempted.ready)` the same choice checks |
+| 44 | row 10 with key `{m.peer.id = 1}` | `ill_typed`/`operator-ineligible` at `m.peer.id`, naming the key: a read through a reference field is a model-state read |
 
 ## Expected Results
 
