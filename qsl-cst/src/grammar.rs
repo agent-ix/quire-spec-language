@@ -286,6 +286,7 @@ fn source_and_types(g: &mut Grammar) {
         r(P::PopulationBound),
         r(P::TemporalClause),
         r(P::TerminalDeclaration),
+        r(P::StateGraphClaim),
         r(P::ProtocolClause),
         r(P::RelationClause),
         r(P::HyperClause),
@@ -1080,6 +1081,91 @@ fn temporal(g: &mut Grammar) {
             ident(),
             c(vec![s(vec![x("when"), r(P::Block)]), x("any")]),
             x(";"),
+        ]),
+    );
+    g.insert(
+        P::StateGraphClaim,
+        c(vec![
+            s(vec![
+                literal("possible"),
+                ident(),
+                x("using"),
+                ident(),
+                x("over"),
+                bound_parameter(),
+                r(P::StateGraphBody),
+            ]),
+            s(vec![
+                x("always"),
+                literal("possible"),
+                ident(),
+                x("using"),
+                ident(),
+                x("over"),
+                bound_parameter(),
+                opt(s(vec![
+                    x("from"),
+                    x("("),
+                    r(P::StateGraphPredicate),
+                    x(")"),
+                ])),
+                r(P::StateGraphBody),
+            ]),
+            s(vec![
+                literal("unique"),
+                literal("path"),
+                ident(),
+                x("using"),
+                ident(),
+                x("over"),
+                bound_parameter(),
+                x("from"),
+                x("("),
+                r(P::StateGraphPredicate),
+                x(")"),
+                x("to"),
+                x("("),
+                r(P::StateGraphPredicate),
+                x(")"),
+            ]),
+        ]),
+    );
+    g.insert(
+        P::StateGraphBody,
+        s(vec![
+            x("{"),
+            star(r(P::Fairness)),
+            r(P::StateGraphPredicate),
+            x("}"),
+        ]),
+    );
+    g.insert(
+        P::StateGraphPredicate,
+        s(vec![
+            star(s(vec![
+                c(vec![
+                    x("eventually"),
+                    x("always"),
+                    x("once"),
+                    x("historically"),
+                ]),
+                opt(r(P::Interval)),
+            ])),
+            r(P::Expression),
+            star(s(vec![
+                c(vec![x("until"), x("release"), x("since"), x("triggered")]),
+                opt(r(P::Interval)),
+                star(s(vec![
+                    c(vec![
+                        x("eventually"),
+                        x("always"),
+                        x("once"),
+                        x("historically"),
+                    ]),
+                    opt(r(P::Interval)),
+                ])),
+                r(P::Expression),
+            ])),
         ]),
     );
     g.insert(

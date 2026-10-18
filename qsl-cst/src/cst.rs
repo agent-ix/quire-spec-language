@@ -133,6 +133,12 @@ productions! {
     TemporalConjunction, TemporalRelation, TemporalUnary, TemporalPrimary,
     #[doc = "`terminal <identifier> using <identifier> on <identifier> (when <block> | any) ;`: a model's intended terminal states."]
     TerminalDeclaration,
+    #[doc = "`possible`, `always possible` or `unique path` followed by a name, `using`, `over ( <parameter> )` and the form's predicates: a claim about a model's state graph."]
+    StateGraphClaim,
+    #[doc = "`{ <fairness>* <predicate> }`: the braced predicate of a `possible` or `always possible` claim, whose fairness constraints the checker refuses."]
+    StateGraphBody,
+    #[doc = "A state-graph claim predicate: an expression, which may carry leading or joining temporal operators for the checker to refuse at their spans."]
+    StateGraphPredicate,
     ProtocolClause, Role, RoleLifetime, Relationship, Channel, Ordering, DeliveryPolicy,
     Capacity, OverflowPolicy, ProtocolRequirement, NodeReference, Compensation,
     #[doc = "`terminal when <block>;` or `terminal any;`: a protocol clause's intended terminal states."]

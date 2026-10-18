@@ -1,0 +1,144 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//! The `StateGraph` family's S2 production (FR-165, ADR-022 SG-1 to SG-3):
+//! a `possible`, `always possible` or `unique path` claim.
+//!
+//! This module reads the CST of one `StateGraphClaim` declaration and builds
+//! its [`StateGraphClaimForm`]. It selects no meaning, the same contract
+//! `value`'s productions keep (FR-091): the `using` alias and the `over` type
+//! stay spelled and spanned, a fairness constraint is kept as written, and a
+//! predicate keeps every temporal operator written around its operands.
+
+use qsl_cst::{CstNode, LosslessCst, Production, TokenKind};
+
+use super::dispatch::{Construct, FormsRefusal};
+use super::syntax::{
+    DeclarationForm, StateGraphClaimForm, StateGraphClaimKind, StateGraphPredicateForm,
+    TemporalOperatorUse, UsingAlias,
+};
+use super::temporal_clause::{expression_form, fairness_form, operator_of, parameter_form};
+use super::value::{
+    declared_name, items, nodes_of, only, production_node, text, tokens_of, unexpected, Item,
+};
+
+/// `possible Name using p over (x: T) { fairness* P }`, `always possible
+/// Name using p over (x: T) [from (Q)] { fairness* P }` or `unique path Name
+/// using p over (x: T) from (X) to (Y)` (FR-165 "Forms").
+pub(crate) fn state_graph_claim(construct: Construct<'_>) -> Result<DeclarationForm, FormsRefusal> {
+    let cst = construct.cst;
+    let node = production_node(construct)?;
+    let claim_items = items(cst, node);
+    let head = match claim_items.first() {
+        Some(Item::Token(token)) => token.spelling(),
+        Some(Item::Node(_)) | None => return Err(unexpected(node)),
+    };
+    // The claim's own name and its `using` alias are its last two direct
+    // identifier tokens; the head words (`possible`, `unique path`) come
+    // before them.
+    let identifiers = tokens_of(&claim_items, TokenKind::Identifier);
+    let [.., name, alias] = identifiers[..] else {
+        return Err(unexpected(node));
+    };
+    let (fairness, kind) = match head {
+        b"possible" => {
+            let body = body_of(cst, &claim_items, node)?;
+            (body.0, StateGraphClaimKind::Possible { target: body.1 })
+        }
+        b"always" => {
+            let from = match nodes_of(&claim_items, Production::StateGraphPredicate)[..] {
+                [] => None,
+                [from] => Some(predicate_form(cst, from)?),
+                _ => return Err(unexpected(node)),
+            };
+            let body = body_of(cst, &claim_items, node)?;
+            (
+                body.0,
+                StateGraphClaimKind::AlwaysPossible {
+                    from,
+                    target: body.1,
+                },
+            )
+        }
+        b"unique" => {
+            let [from, to] = nodes_of(&claim_items, Production::StateGraphPredicate)[..] else {
+                return Err(unexpected(node));
+            };
+            (
+                Vec::new(),
+                StateGraphClaimKind::UniquePath {
+                    from: predicate_form(cst, from)?,
+                    to: predicate_form(cst, to)?,
+                },
+            )
+        }
+        _ => return Err(unexpected(node)),
+    };
+    Ok(DeclarationForm::StateGraphClaim(Box::new(
+        StateGraphClaimForm {
+            name: declared_name_of(name, node)?,
+            profile: UsingAlias {
+                alias: text(alias, node)?,
+                span: alias.span(),
+            },
+            over: parameter_form(cst, only(&claim_items, Production::Parameter, node)?)?,
+            fairness,
+            kind,
+            span: node.span(),
+        },
+    )))
+}
+
+fn declared_name_of(
+    token: &qsl_cst::CstToken,
+    node: &CstNode,
+) -> Result<super::syntax::DeclaredName, FormsRefusal> {
+    declared_name(&[Item::Token(token)], node)
+}
+
+/// The braced body's fairness constraints and predicate.
+fn body_of(
+    cst: &LosslessCst,
+    claim_items: &[Item<'_>],
+    node: &CstNode,
+) -> Result<
+    (
+        Vec<super::syntax::FairnessConstraintForm>,
+        StateGraphPredicateForm,
+    ),
+    FormsRefusal,
+> {
+    let body = only(claim_items, Production::StateGraphBody, node)?;
+    let body_items = items(cst, body);
+    let fairness = nodes_of(&body_items, Production::Fairness)
+        .into_iter()
+        .map(|constraint| fairness_form(cst, constraint))
+        .collect::<Result<_, _>>()?;
+    let predicate = only(&body_items, Production::StateGraphPredicate, body)?;
+    Ok((fairness, predicate_form(cst, predicate)?))
+}
+
+/// One `StateGraphPredicate` node: its expression operands and the temporal
+/// operators written around them, in source order.
+fn predicate_form(
+    cst: &LosslessCst,
+    predicate: &CstNode,
+) -> Result<StateGraphPredicateForm, FormsRefusal> {
+    let mut operands = Vec::new();
+    let mut temporal_operators = Vec::new();
+    for item in items(cst, predicate) {
+        match item {
+            Item::Node(operand) if operand.production() == Production::Expression => {
+                operands.push(expression_form(cst, operand)?);
+            }
+            Item::Node(interval) if interval.production() == Production::Interval => {}
+            Item::Node(_) => return Err(unexpected(predicate)),
+            Item::Token(token) => temporal_operators.push(TemporalOperatorUse {
+                operator: operator_of(token.spelling()).ok_or_else(|| unexpected(predicate))?,
+                span: token.span(),
+            }),
+        }
+    }
+    Ok(StateGraphPredicateForm {
+        operands,
+        temporal_operators,
+    })
+}

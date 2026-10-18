@@ -380,6 +380,7 @@ fn is_symbol(production: Production) -> bool {
             | Production::PopulationBound
             | Production::TemporalClause
             | Production::TerminalDeclaration
+            | Production::StateGraphClaim
             | Production::ProtocolClause
             | Production::RelationClause
             | Production::HyperClause
