@@ -2238,6 +2238,28 @@ pub struct OperationBodyForm {
     pub spans: DeclarationSpans,
 }
 
+/// `bound L on M::p [N]` (FR-380 "The declaration"): an authored finite
+/// maximum for the domain-package population `p` of the model `M`. S2 keeps
+/// the label, the model alias, the population name and the digits of `N`,
+/// each spelled and spanned, and resolves none of them: the assembler
+/// resolves the alias to a `model` declaration and `p` to a population of
+/// its domain package.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PopulationBoundForm {
+    /// The declared label.
+    pub label: DeclaredName,
+    /// The model alias, as written.
+    pub model: DeclaredName,
+    /// The population name, as written.
+    pub population: DeclaredName,
+    /// The digits of `N` exactly as written; the assembler reads them.
+    pub maximum: DeclaredName,
+    /// The span of the bracketed `[N]`.
+    pub bracketed: Span,
+    /// The span of the whole declaration.
+    pub span: Span,
+}
+
 /// One segment of a `NodeReference`, exactly as written: its text and the
 /// span of that segment alone (FR-112 "Outputs"). `Main::Applied` has two
 /// segments, `Tried` has one.
@@ -3045,6 +3067,32 @@ pub struct TemporalClauseForm {
     pub formula: TemporalFormulaForm,
 }
 
+/// Which states a `terminal` declaration marks intended, as written.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TerminalDeclarationKind {
+    /// `when { P }`: the states where the predicate holds.
+    When(ExpressionForm),
+    /// `any`: every terminal state.
+    Any,
+}
+
+/// A `terminal Name using p on Model (when { P } | any);` declaration (FR-124,
+/// FR-382). S2 resolves nothing: the `using` alias and the model alias stay
+/// spelled and spanned, and the predicate is built as written.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TerminalDeclarationForm {
+    /// The declared name.
+    pub name: DeclaredName,
+    /// The `using` alias.
+    pub profile: UsingAlias,
+    /// The `on` model alias.
+    pub model: DeclaredName,
+    /// The `when` predicate or `any`.
+    pub kind: TerminalDeclarationKind,
+    /// The span of the whole declaration, `;` included.
+    pub span: Span,
+}
+
 /// One `Value` parsed declaration form (FR-091 "What a `Value` parsed form
 /// carries").
 #[derive(Clone, Debug)]
@@ -3072,11 +3120,16 @@ pub enum DeclarationForm {
     /// A `body` operation-body declaration, boxed for the same reason
     /// (FR-102).
     OperationBody(Box<OperationBodyForm>),
+    /// A `bound` population-bound declaration (FR-380).
+    PopulationBound(PopulationBoundForm),
     /// A `protocol` declaration (FR-112).
     Protocol(ProtocolDeclarationForm),
     /// A `temporal` clause (FR-325), boxed for the same reason as
     /// [`Self::Function`].
     Temporal(Box<TemporalClauseForm>),
+    /// A `terminal` declaration (FR-382), boxed for the same reason as
+    /// [`Self::Function`].
+    Terminal(Box<TerminalDeclarationForm>),
 }
 
 /// The longest each explicit heap stack grew in this thread, by name, so a

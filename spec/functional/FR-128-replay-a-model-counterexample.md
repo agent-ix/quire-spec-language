@@ -146,8 +146,8 @@ member of its own.
 - For `kind: UndefinedEvaluation{where, cause}` the executor SHALL
   evaluate the letters of the replayed positions in order by FR-125, and
   check no fairness (ADR-018 UE-3, UE-5). For the deadlock-freedom item a
-  letter at a terminal state holds the state model's `terminal when`
-  predicate `P` (FR-124, FR-125), so an undefined `P` there reproduces as
+  letter at a terminal state holds the `terminal when`
+  predicate `P` declared for the state model (FR-124, FR-125), so an undefined `P` there reproduces as
   an undefined letter. At each replayed state the executor SHALL also
   recompute the contract conjunctions of the expansion, and an undefined
   one (an undefined precondition guard included, FR-120
@@ -167,8 +167,8 @@ member of its own.
     `inconclusive`, `ReplayParity`.
 - For `kind: Deadlock` the executor SHALL enumerate the transition
   identities enabled at the last replayed state through `ModelSystem`, and
-  evaluate the state model's `terminal when` predicate there when it has
-  one. No enabled identity and the predicate `false` or absent SHALL settle
+  evaluate the `terminal when` predicate declared for the state model
+  there when it has one. No enabled identity and the predicate `false` or absent SHALL settle
   `reproduced-with-evaluated-witness`. The predicate undefined SHALL settle
   `reproduced-with-evaluated-witness` with value
   `Undefined(UndefinedEvaluation{where, cause})` at that state, so the item

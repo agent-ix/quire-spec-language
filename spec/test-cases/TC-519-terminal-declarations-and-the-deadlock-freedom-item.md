@@ -10,7 +10,7 @@ relationships:
 
 ## Description
 
-Verify the `terminal` member's forms and refusals, the classification of
+Verify the `terminal` declaration's forms and refusals, the classification of
 terminal states as intended or deadlocked, and the request writer's
 deadlock-freedom item with its per-model opt-out.
 
@@ -19,11 +19,11 @@ Scope: FR-124-AC-1 to FR-124-AC-3.
 ## Test Procedure
 
 Use the `Counter` unit of FR-124-AC-1 with universe `{c}` and initial value
-0, in three variants: no `terminal` member, `terminal when` a predicate true
+0, in three variants: no `terminal` declaration, `terminal when` a predicate true
 exactly when every counter is at 3, and `terminal any`.
 
 1. Check each variant and compare package identities. Check a unit with two
-   `terminal` members, and one whose `terminal when` predicate reads
+   `terminal` declarations, and one whose `terminal when` predicate reads
    `pre(self.value)`.
 2. Write a request with two temporal items over the same subject, for each
    variant; read its items.
