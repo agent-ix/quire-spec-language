@@ -40,6 +40,7 @@ mod golden;
 mod identity_depth;
 mod navigation;
 mod owners;
+mod population_bound;
 mod protocol_reference;
 mod reachability;
 mod receiver_frames;
@@ -653,7 +654,7 @@ fn recursion_group_members_are_written_in_ordinal_order() {
 }
 
 /// FR-093 "Node dependencies" rules 1 to 3, rebuilt from a written node by a
-/// test-side walker: body reference targets, operation member declarations,
+/// test-side walker: body reference targets, operation member declarations and populations,
 /// and a `bounded_domain` node's semantic type.
 fn rebuilt_dependencies(node: &Value) -> Vec<Value> {
     fn walk(term: &Value, found: &mut BTreeSet<String>) {
@@ -662,12 +663,14 @@ fn rebuilt_dependencies(node: &Value) -> Vec<Value> {
                 if members.get("term") == Some(&json!("reference")) {
                     found.insert(members["target"]["digest"].as_str().unwrap().to_owned());
                 }
-                if let Some(declaration) = members
-                    .get("operation")
-                    .and_then(|operation| operation.get("member"))
-                    .and_then(|member| member.get("declaration"))
-                {
-                    found.insert(declaration["digest"].as_str().unwrap().to_owned());
+                for key in ["declaration", "population"] {
+                    if let Some(named) = members
+                        .get("operation")
+                        .and_then(|operation| operation.get("member"))
+                        .and_then(|member| member.get(key))
+                    {
+                        found.insert(named["digest"].as_str().unwrap().to_owned());
+                    }
                 }
                 members.values().for_each(|value| walk(value, found));
             }

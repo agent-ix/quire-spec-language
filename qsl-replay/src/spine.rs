@@ -607,6 +607,12 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
             bodies.len(),
             operation.node
         ),
+        AssemblyCause::UnresolvedPopulationBound { name } => {
+            format!("`bound` names `{name}`, which no declaration resolves")
+        }
+        AssemblyCause::AmbiguousPopulationBound { name, spans } => {
+            format!("{} `bound` declarations share `{name}`", spans.len())
+        }
         AssemblyCause::AmbiguousPopulation {
             context,
             populations,

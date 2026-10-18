@@ -110,7 +110,7 @@ productions! {
     RoundingMode, TextProfile,
     DimensionDeclaration, DimensionTerm, UnitDeclaration, EnumDeclaration,
     EnumMember, RecordDeclaration, Field, TupleDeclaration, UnionDeclaration, UnionMember, AliasDeclaration,
-    FunctionDeclaration, Predicate, Parameter, StateClause, OperationBody, Block, Expression,
+    FunctionDeclaration, Predicate, Parameter, StateClause, OperationBody, PopulationBound, Block, Expression,
     Implication, Disjunction, Conjunction, Comparison, Sum, Product, Unary,
     Postfix, Primary, CaseExpression, CaseArm, CaseBinder,
     ScrutineeExpression, ScrutineeImplication, ScrutineeDisjunction,

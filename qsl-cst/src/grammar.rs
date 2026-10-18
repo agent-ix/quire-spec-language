@@ -283,6 +283,7 @@ fn source_and_types(g: &mut Grammar) {
         r(P::Predicate),
         r(P::StateClause),
         r(P::OperationBody),
+        r(P::PopulationBound),
         r(P::TemporalClause),
         r(P::TerminalDeclaration),
         r(P::ProtocolClause),
@@ -576,6 +577,20 @@ fn source_and_types(g: &mut Grammar) {
             opt(list(ident)),
             x(")"),
             r(P::Block),
+        ]),
+    );
+    // `bound <label> on <alias>::<population> [ <digits> ]` (FR-380): an
+    // authored finite maximum for a domain-package population.
+    g.insert(
+        P::PopulationBound,
+        s(vec![
+            x("bound"),
+            ident(),
+            x("on"),
+            r(P::ModelName),
+            x("["),
+            uint(),
+            x("]"),
         ]),
     );
     g.insert(P::Block, s(vec![x("{"), r(P::Expression), x("}")]));

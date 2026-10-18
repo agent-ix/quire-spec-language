@@ -32,6 +32,7 @@ mod clause_text;
 mod dispatch;
 mod protocol_clause;
 mod spans;
+mod state_model;
 mod sum_case;
 mod syntax;
 mod temporal_clause;
@@ -52,13 +53,14 @@ pub use syntax::{
     ExactNumberKind, ExprId, ExprNode, ExprRef, Expression, ExpressionBuilder, ExpressionForm,
     FairnessConstraintForm, FairnessGranularity, FairnessKind, FieldInitializer,
     FunctionDeclaration, IntervalForm, IntervalUpper, NameForm, OperationBodyForm, ParameterForm,
-    ProtocolBodyForm, ProtocolConstructForm, ProtocolConstructKind, ProtocolDeclarationForm,
-    ProtocolNodeDeclaration, ProtocolNodeKind, RecordFieldForm, RecordForm, RelatedForm,
-    RelationshipForm, RequirementForm, RoleForm, ScopeEntry, ScopeId, ScopeName, ScopedAnchorForm,
-    ShapeChanged, Spellings, StateClauseForm, StateClauseKind, TemporalClauseForm,
-    TemporalFormulaForm, TemporalNodeForm, TemporalNodeId, TemporalOperator, TemporalOperatorForm,
-    TermOperator, TerminalDeclarationForm, TerminalDeclarationKind, TreeRefusal, TupleForm,
-    TypeForm, TypeFormHead, UnionForm, UnionMemberForm, UnitForm, UsingAlias,
+    PopulationBoundForm, ProtocolBodyForm, ProtocolConstructForm, ProtocolConstructKind,
+    ProtocolDeclarationForm, ProtocolNodeDeclaration, ProtocolNodeKind, RecordFieldForm,
+    RecordForm, RelatedForm, RelationshipForm, RequirementForm, RoleForm, ScopeEntry, ScopeId,
+    ScopeName, ScopedAnchorForm, ShapeChanged, Spellings, StateClauseForm, StateClauseKind,
+    TemporalClauseForm, TemporalFormulaForm, TemporalNodeForm, TemporalNodeId, TemporalOperator,
+    TemporalOperatorForm, TermOperator, TerminalDeclarationForm, TerminalDeclarationKind,
+    TreeRefusal, TupleForm, TypeForm, TypeFormHead, UnionForm, UnionMemberForm, UnitForm,
+    UsingAlias,
 };
 
 /// Each explicit heap stack S2 and the form traits keep grows by at most a

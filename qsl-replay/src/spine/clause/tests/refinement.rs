@@ -606,6 +606,46 @@ fn an_assembly_type_limit_is_incomplete_naming_the_limit() {
     );
 }
 
+/// FR-341-AC-3 (FR-380): the two refusals of a `bound` declaration that name
+/// a catalog code are typed refusals of the unit's content, so each
+/// classifies `refused`, carries its code and no limit.
+#[trace("TC-861", "FR-341-AC-3")]
+#[test]
+fn a_population_bound_refusal_is_a_typed_refusal_of_the_content() {
+    let span = qsl_foundation::Span { start: 0, end: 1 };
+    for (assembly_cause, code, catalog_cause) in [
+        (
+            AssemblyCause::UnresolvedPopulationBound {
+                name: "nothing".to_owned(),
+            },
+            Code::MissingDeclaration,
+            "missing-name",
+        ),
+        (
+            AssemblyCause::AmbiguousPopulationBound {
+                name: "OrdersBound".to_owned(),
+                spans: vec![span, span],
+            },
+            Code::AmbiguousDeclaration,
+            "ambiguous-name",
+        ),
+    ] {
+        let refusal = CompileRefusal::Assembly {
+            refusal: AssemblyRefusal {
+                errors: vec![AssemblyError {
+                    cause: assembly_cause,
+                    span,
+                }],
+            },
+            region: None,
+        };
+        let classified = classify_refusal(&refusal);
+        assert_eq!(classified.class, RefinementClass::Refused);
+        assert_eq!(classified.causes, [cause(code, Some(catalog_cause))]);
+        assert!(classified.limits().is_empty());
+    }
+}
+
 /// FR-341-AC-4: a type-admission ceiling reached in the check stage is
 /// `incomplete`, naming the limit and its value; a type-admission refusal that
 /// reached no limit names none.

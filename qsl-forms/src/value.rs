@@ -1021,6 +1021,7 @@ impl<'c> Mapping<'c> {
             | Production::Parameter
             | Production::StateClause
             | Production::OperationBody
+            | Production::PopulationBound
             | Production::Block
             | Production::ExactNumber
             | Production::FloatValue
@@ -1591,6 +1592,7 @@ impl<'c> Mapping<'c> {
             | Production::Parameter
             | Production::StateClause
             | Production::OperationBody
+            | Production::PopulationBound
             | Production::Block
             | Production::Expression
             | Production::Implication
