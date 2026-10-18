@@ -46,6 +46,7 @@ use quire_exact::{
 use super::check::{
     EnumBinding, ModelRecords, PackageDeclarations, ResolvedSignature, VariantTypeDeclaration,
 };
+use super::layer::LayerAdmission;
 use super::lowering::{
     record_node_key, strongly_connected, variant_type_node_key, AdmittedModel, AuthoredBound,
     RecordKeyError,
@@ -78,10 +79,12 @@ use crate::model::intake::{
 };
 use crate::model::key::DeclarationKey;
 use crate::model::operation::{OperationDeclaration, OperationLookup, OperationTable};
+use crate::value::definition::DefinitionLock;
 use crate::value::enumeration::{
     AdmittedEnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
 };
 use crate::value::environment_stage::stage_limit;
+use crate::value::layer::{HeaderLayer, LayerForm};
 use crate::value::semantic_node::{identity_limit, NominalRefusal, OwnerSelection};
 use quire_semantic_value::declaration::{
     CompositeDeclaration, CompositeShape, DeclarationCause, EnvironmentFailure, FieldDeclaration,
@@ -419,6 +422,16 @@ pub enum AssemblyCause {
         /// The span of each declaration for the alias, in source order.
         spans: Vec<Span>,
     },
+    /// A declaration whose `using` alias names a header profile resolved to
+    /// `layer` writes a form outside the admitted-form set of that layer's
+    /// `requires` closure (FR-110 "Layer selection"):
+    /// `unsupported_construct`/`declaration-form` or `expression-form`.
+    UnsupportedLayerForm {
+        /// The selected layer.
+        layer: HeaderLayer,
+        /// The form outside its admitted-form set.
+        form: LayerForm,
+    },
 }
 
 impl AssemblyCause {
@@ -475,6 +488,7 @@ impl AssemblyCause {
             | Self::StorageAllocation { .. }
             | Self::StorageCapacity { .. } => Code::ResourceExhausted,
             Self::Handle(_) | Self::NominalAdmission(_) => Code::RuntimeInvariant,
+            Self::UnsupportedLayerForm { .. } => Code::UnsupportedConstruct,
         }
     }
 
@@ -556,6 +570,7 @@ impl AssemblyCause {
             Self::IdentityAllocation { .. } | Self::StorageAllocation { .. } => "allocation-failed",
             Self::StorageCapacity { .. } => "reservation-size-overflow",
             Self::Handle(_) | Self::NominalAdmission(_) => "established-invariant-broken",
+            Self::UnsupportedLayerForm { form, .. } => form.refusal_cause(),
         };
         CatalogCode::new(self.code().as_str(), cause)
     }
@@ -2409,6 +2424,13 @@ impl PackageDeclarations {
                 });
             }
         }
+        let lock = DefinitionLock::pinned();
+        let predicates: BTreeSet<&str> = unit
+            .functions
+            .iter()
+            .filter(|function| function.kind() == qsl_forms::DeclarationKind::Predicate)
+            .map(|function| function.name.as_str())
+            .collect();
         // FR-326: a `temporal` clause's `using` alias names one of the
         // unit's profile selections, as a function's does. Which temporal
         // profile the clause is checked under is the unit's, not the
@@ -2441,6 +2463,12 @@ impl PackageDeclarations {
                 {
                     Some(profile) => {
                         function_selections.insert(index, profile.clone());
+                        // FR-110 "Layer selection".
+                        if let Some(layer) = HeaderLayer::from_identity(&profile.identity) {
+                            errors.extend(
+                                LayerAdmission::new(&lock, layer, &predicates).function(function),
+                            );
+                        }
                     }
                     None => errors.push(AssemblyError {
                         cause: AssemblyCause::UndeclaredAlias {
@@ -2886,7 +2914,12 @@ impl PackageDeclarations {
             Ok(bounds) => (apply_population_bounds(admitted, bounds), Vec::new()),
             Err(errors) => (admitted, errors),
         };
-        let state_clauses = state_clauses(unit.state_clauses, &resolve, &admitted);
+        let state_clauses = state_clauses(
+            unit.state_clauses,
+            &resolve,
+            &admitted,
+            (&lock, &predicates),
+        );
         let operation_bodies = operation_bodies(unit.operation_bodies, &resolve);
         let protocol_attempts = protocol_attempts(
             &unit.protocols,
@@ -3008,6 +3041,13 @@ impl PackageDeclarations {
         {
             package.lock_evidence = package.lock_evidence.with_protocol_profile(definition);
         }
+        package.header_layers = selections
+            .profiles
+            .iter()
+            .filter_map(|profile| HeaderLayer::from_identity(&profile.identity))
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
         package.protocols = unit.protocols;
         package.temporal_clauses = unit.temporal_clauses;
         package.temporal_selections = selections
@@ -3054,6 +3094,7 @@ fn state_clauses(
     forms: Vec<StateClauseForm>,
     resolve: &Resolve<'_>,
     models: &[AdmittedModel],
+    (lock, predicates): (&DefinitionLock, &BTreeSet<&str>),
 ) -> Result<Vec<StateClauseDeclaration>, AssemblyRefusal> {
     let Resolve {
         profiles,
@@ -3070,13 +3111,19 @@ fn state_clauses(
             .iter()
             .find(|profile| profile.alias == form.profile.alias)
             .cloned();
-        if selection.is_none() {
-            errors.push(error(
+        match &selection {
+            None => errors.push(error(
                 AssemblyCause::UndeclaredAlias {
                     alias: form.profile.alias.clone(),
                 },
                 form.profile.span,
-            ));
+            )),
+            // FR-110 "Layer selection".
+            Some(selection) => {
+                if let Some(layer) = HeaderLayer::from_identity(&selection.identity) {
+                    errors.extend(LayerAdmission::new(lock, layer, predicates).state_clause(&form));
+                }
+            }
         }
         let context = object_names.get(&form.context.name).copied();
         let Some(context) = context else {

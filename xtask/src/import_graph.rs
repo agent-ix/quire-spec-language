@@ -405,6 +405,8 @@ const LAYER_PERMITTED_MODULES: &[&str] = &[
     // Layer 3, before `check` core (ADR-011 §6.1: `semantic_value < model <
     // library < check core`).
     "value::definition",
+    // FR-110 header layers and their admitted-form sets.
+    "value::layer",
     "value::enumeration",
     "value::unit",
     "value::semantic_node",

@@ -256,7 +256,8 @@ fn assembly_limit(cause: &AssemblyCause) -> Option<ReachedLimit> {
         | AssemblyCause::UnresolvedTerminalState { .. }
         | AssemblyCause::AmbiguousTerminal { .. }
         | AssemblyCause::AmbiguousTerminalState { .. }
-        | AssemblyCause::AmbiguousPopulation { .. } => None,
+        | AssemblyCause::AmbiguousPopulation { .. }
+        | AssemblyCause::UnsupportedLayerForm { .. } => None,
     }
 }
 

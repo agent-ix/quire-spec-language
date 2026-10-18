@@ -29,6 +29,7 @@ use serde::{Deserialize, Serialize};
 
 use quire_semantic_value::definition::{PackageCause, PackageRefusal, SelectionRefusalCode};
 
+use super::layer::{HeaderLayer, LayerForm, LayerRow, LAYER_ROWS};
 use quire_exact::{
     ieee_intrinsic_identities, DivisionMember, DivisionProfile, Integer, IntegerDomain, Meter,
     Outcome,
@@ -124,6 +125,10 @@ enum SelectionRule {
     /// share it; one without the trigger selects none of them.
     OneOf(Trigger),
 }
+
+/// The lock's `package_selection.without_layer` rows: the roles a package
+/// selects when its layers do not hold `package_selection.layer`.
+const WITHOUT_LAYER: [CatalogRole; 1] = [CatalogRole::Edition];
 
 /// The publishing authority of every catalog definition.
 const AUTHORITY: &str = "agent-ix";
@@ -309,6 +314,7 @@ pub struct DefinitionLock {
     always: Vec<CatalogRole>,
     conditional: Vec<(Trigger, CatalogRole)>,
     exactly_one: Vec<(Trigger, Vec<CatalogRole>)>,
+    layers: [LayerRow; HeaderLayer::ALL.len()],
 }
 
 impl DefinitionLock {
@@ -340,6 +346,66 @@ impl DefinitionLock {
             always,
             conditional,
             exactly_one,
+            layers: LAYER_ROWS,
+        }
+    }
+
+    /// The `header_selectable_layers` rows, in the lock's order.
+    pub fn layers(&self) -> &[LayerRow] {
+        &self.layers
+    }
+
+    /// The row of `layer`. The table has one row per layer, in the
+    /// declaration order of [`HeaderLayer::ALL`], so the lookup is total.
+    pub fn layer_row(&self, layer: HeaderLayer) -> &LayerRow {
+        &self.layers[layer as usize]
+    }
+
+    /// The `DefinitionRef` a package lock selects for `layer`.
+    pub fn layer_reference(&self, layer: HeaderLayer) -> DefinitionReference {
+        DefinitionReference {
+            authority: AUTHORITY.to_owned(),
+            identity: layer.identity().to_owned(),
+        }
+    }
+
+    /// The `requires` closure of `selected`: the selected layers and every
+    /// layer they require, transitively, in the lock's row order. A layer
+    /// that requires a selected layer is not in it.
+    pub fn closure(&self, selected: &[HeaderLayer]) -> Vec<HeaderLayer> {
+        let mut reached: BTreeSet<HeaderLayer> = BTreeSet::new();
+        let mut pending: Vec<HeaderLayer> = selected.to_vec();
+        while let Some(layer) = pending.pop() {
+            if reached.insert(layer) {
+                pending.extend_from_slice(self.layer_row(layer).requires);
+            }
+        }
+        reached.into_iter().collect()
+    }
+
+    /// The admitted-form set of `selected`: the forms of every layer in its
+    /// `requires` closure, and no form of a wider layer.
+    pub fn admitted_forms(&self, selected: HeaderLayer) -> BTreeSet<LayerForm> {
+        self.closure(&[selected])
+            .into_iter()
+            .flat_map(|layer| self.layer_row(layer).forms.iter().copied())
+            .collect()
+    }
+
+    /// Whether `selected`'s admitted-form set holds `form`.
+    pub fn admits(&self, selected: HeaderLayer, form: LayerForm) -> bool {
+        self.admitted_forms(selected).contains(&form)
+    }
+
+    /// The qualification-catalog roles QSpec FR-001 selects for a union of
+    /// layers: the `always` rules when the union holds `quire.value.complete/v1`
+    /// (the lock's `package_selection.layer`), and the `without_layer` rows
+    /// otherwise.
+    pub fn qualification_roles(&self, union: &[HeaderLayer]) -> &[CatalogRole] {
+        if union.contains(&HeaderLayer::ValueComplete) {
+            &self.always
+        } else {
+            &WITHOUT_LAYER
         }
     }
 
