@@ -393,9 +393,11 @@ impl Derivation<'_> {
                 continue;
             }
             for (location, observation) in self.clause_reads(clause)? {
-                let post_state =
-                    clause.observation() == Observation::Post && observation == Observation::Post;
-                if !post_state || !writes.iter().any(|written| written.covers(&location)) {
+                // A post-state read inside the write footprint reads a value
+                // the step itself chooses.
+                let chosen = observation == Observation::Post
+                    && writes.iter().any(|written| written.covers(&location));
+                if !chosen {
                     reads.insert(location);
                 }
             }

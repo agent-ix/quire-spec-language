@@ -24,6 +24,7 @@ mod evaluation_ignores_display_strings;
 mod fairness_kernels;
 mod finite_simulation;
 mod float_rounding;
+mod footprints;
 mod inherited_attributes;
 mod kernel_refusal_payloads;
 mod machine_contexts;
