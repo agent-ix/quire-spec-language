@@ -265,7 +265,9 @@ impl ItemCause {
                 item.depth = Some(*depth);
             }
             ReportedInconclusiveCause::Cause(
-                InconclusiveCause::UndecidedSuccessor | InconclusiveCause::NoInitialState,
+                InconclusiveCause::UndecidedSuccessor
+                | InconclusiveCause::NoInitialState
+                | InconclusiveCause::SufficientTestFailed,
             ) => {}
             ReportedInconclusiveCause::KaniVacuousProof => {}
             ReportedInconclusiveCause::Cause(InconclusiveCause::ReplayParity(parity)) => {

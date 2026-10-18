@@ -2,3 +2,4 @@
 //! Public API tests for the unreduced graph core.
 
 mod graph_core;
+mod schedulability;

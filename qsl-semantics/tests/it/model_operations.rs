@@ -916,6 +916,16 @@ pub(super) fn config_unit_with_body(
     document: &[u8],
     body: &str,
 ) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
+    config_unit_with_profiles(document, "", body)
+}
+
+/// [`config_unit_with_body`], with the `profile` declarations `profiles`
+/// written after `profile v`, in the header.
+pub(super) fn config_unit_with_profiles(
+    document: &[u8],
+    profiles: &str,
+    body: &str,
+) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
     let packages = package_input([document]);
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
         panic!("one supplied document");
@@ -924,6 +934,7 @@ pub(super) fn config_unit_with_body(
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
+         {profiles}\
          model Config = {PACKAGE_IDENTITY:?} version \"1.0.0\" digest \"sha256-jcs:{digest}\";\n\
          {body}\n"
     );
@@ -937,7 +948,16 @@ pub(super) fn admit_and_assemble_with_body(
     document: &[u8],
     body: &str,
 ) -> Result<PackageDeclarations, qsl_semantics::check::AssemblyRefusal> {
-    let (unit, packages) = config_unit_with_body(document, body);
+    admit_and_assemble_with_profiles(document, "", body)
+}
+
+/// [`admit_and_assemble_with_body`] over [`config_unit_with_profiles`].
+pub(super) fn admit_and_assemble_with_profiles(
+    document: &[u8],
+    profiles: &str,
+    body: &str,
+) -> Result<PackageDeclarations, qsl_semantics::check::AssemblyRefusal> {
+    let (unit, packages) = config_unit_with_profiles(document, profiles, body);
     let built = parse_and_build(&unit);
     let models = admit_unit(
         &built.selections().models,
