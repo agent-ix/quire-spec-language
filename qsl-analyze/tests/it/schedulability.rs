@@ -378,8 +378,10 @@ fn proved(analysis: ClosedFormAnalysis) -> TerminalValue {
     }
 }
 
-/// The verdict only; the evidence half of FR-248-AC-1 is not asserted, so no
-/// criterion is bound.
+/// QSpec FR-419-AC-1: `Ctl` at utilization exactly 1 settles `Proved` under
+/// fixed priority, with the fixpoints, and under EDF. FR-248-AC-1's evidence
+/// half is not asserted, so it is not bound.
+#[trace("TC-703", "QSpec-FR-419-AC-1")]
 #[test]
 fn ctl_settles_proved_with_its_fixpoints_and_a_third_wcet_of_six_settles_refuted() {
     let fixed = schedulable(ctl(5), SchedulingPolicy::FixedPriority);
@@ -390,6 +392,17 @@ fn ctl_settles_proved_with_its_fixpoints_and_a_third_wcet_of_six_settles_refuted
         proved(ClosedFormAnalysis::FixedPriorityRta)
     );
     let edf = schedulable(ctl(5), SchedulingPolicy::Edf);
+    let utilization =
+        edf.task_set()
+            .tasks()
+            .iter()
+            .fold(n(0), |sum, task| match (&task.wcet, &task.arrival) {
+                (Wcet::Single(c), Arrival::Periodic { period }) => {
+                    sum.add(&c.div(period).expect("a positive period"))
+                }
+                _ => panic!("Ctl is periodic with single budgets"),
+            });
+    assert_eq!(utilization, n(1));
     assert_eq!(
         settled(&edf, &run(&edf)),
         proved(ClosedFormAnalysis::EdfQpa)
