@@ -33,3 +33,11 @@ Criteria examined with no finding (oracle strength confirmed):
 - FR-218-AC-2's join clause: `a_join_naming_no_branch_refuses_at_the_label` asserts `missing-name` at `middle` with segments and scope. It is untagged, which is correct, because the rest of AC-2 is out of scope.
 - FR-308-AC-2, AC-3, AC-4, AC-5 and AC-13: the form values and the span slices are asserted, including labels that exclude `outstanding cancel`, the repeat shapes the parser refuses, the parser failure offsets, `RecoveringCst` for four broken members, and rebuild equality.
 - FR-211 and FR-212's second-member refusal (TC-656) is asserted with both loci.
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | e6619b051: the doc comment now reads "The record and object cases only (no criterion is claimed whole)", and `quire matrix` on e6619b051 reports FR-218-AC-24 untagged. The role-on-process and role-on-state-machine behaviour is still unimplemented and the criterion stays honestly untagged. |
+| FND-002 | fixed | e6619b051: the doc comment now says "Part of FR-218-AC-22" and that a sound `choice` is not verified; `quire matrix` on e6619b051 reports FR-218-AC-22 untagged. |
+| FND-003 | fixed | e6619b051: the doc comment now reads "Channel form only (no criterion is claimed)"; `quire matrix` on e6619b051 reports FR-308-AC-1 untagged. |
