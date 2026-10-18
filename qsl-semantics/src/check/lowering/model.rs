@@ -877,22 +877,16 @@ impl<'a> Lowering<'a> {
     }
 
     /// `Population<T>[N]`: `bounded_domain`/`model_population` over the
-    /// `Set<Reference<T>>` node, binding `max` = `N`.
-    ///
-    /// A population with no declared maximum refuses
-    /// (`CheckCause::UnrepresentableBound`). Its bare `Set<Reference<T>>`
-    /// node would be the same node as an unbounded `Set<Reference<T>>`, so
-    /// the population role would be lost. No source spells `Population<T>`
-    /// without a maximum until QSL-42, which gives it its own node.
+    /// `Set<Reference<T>>` node, binding `max` = `N`. `Population<T>` with
+    /// no maximum is the same `model_population` node with no `max`
+    /// member (FR-334), so it is distinct from a bare unbounded
+    /// `Set<Reference<T>>` and from every bounded population.
     pub(super) fn population_type(
         &mut self,
         target: EffectiveId,
         maximum: Option<u64>,
         location: &Location,
     ) -> Result<NodeKey, CheckRefusal> {
-        let Some(maximum) = maximum else {
-            return Err(refuse(location, CheckCause::UnrepresentableBound));
-        };
         let reference = self.reference_type(target, location)?;
         let set = self.insert(
             location,
@@ -902,8 +896,14 @@ impl<'a> Lowering<'a> {
             None,
             BodyTerm::aggregate(vec![MemberTerm::reference(reference)]),
         )?;
-        let max = self.integer_literal(Integer::from(maximum), location)?;
-        self.bounded("model_population", set, vec![("max", max)], location)
+        let bindings = match maximum {
+            Some(maximum) => vec![(
+                "max",
+                self.integer_literal(Integer::from(maximum), location)?,
+            )],
+            None => Vec::new(),
+        };
+        self.bounded("model_population", set, bindings, location)
     }
 
     /// A quantity's type node: a declared unit's nominal node, or a

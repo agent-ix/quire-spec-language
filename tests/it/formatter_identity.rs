@@ -234,7 +234,7 @@ fn private_protocol_shared_binder_keeps_format_identity() {
 #[trace("FR-003-AC-9")]
 #[test]
 fn private_protocol_named_contract_keeps_format_identity() {
-    let source = include_str!("../../qsl-semantics/src/check/protocol_clause.rs");
+    let source = include_str!("../../qsl-semantics/src/check/protocol_clause/tests/attempts.rs");
     let template = function_literal(
         source,
         "an_empty_contracts_list_binds_with_no_refusal",

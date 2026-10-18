@@ -54,7 +54,12 @@ every later refusal points at the text the operator wrote.
 
 ## Outputs
 
-In `forms::protocol_clause` (crate `qsl-forms`):
+In crate `qsl-forms`, the protocol form is `ProtocolDeclarationForm`. The
+fields below name its members, written `ProtocolClauseForm` where they are
+the target model. Today it builds `roles` (`RoleForm{name, context}`),
+`captures`, `relationships`, `requirements`, `compensations`, and `related`
+on each node declaration; the control constructs, channels, replicated roles
+and activation forms below are the target for their owning slices:
 
 - `ProtocolClauseForm` with its activation (`OnOrigin` or `OnEach{binder,
   guard}`), roles, channels, compensations, an ordered list of
@@ -78,15 +83,23 @@ In `forms::protocol_clause` (crate `qsl-forms`):
 - `ProtocolClauseForm.requirements`: one `RequirementForm{temporal: Name,
   span}` per `requires temporal` member.
 - On each `send`, `receive`, `attempt`, `effect` and `event` node form,
-  `related: Vec<RelatedForm{relationship: Name, ends: [ExpressionForm; 2],
-  span}>`, one per `related by` clause.
-- `CompensationForm{name, target: NodeRef, forward: ParameterForm, role:
-  Name, operation: QualifiedName, using: Name, clock: {text, span},
+  `related: Vec<RelatedForm{relationship: DeclaredName, ends:
+  [ExpressionForm; 2], span}>`, one per `related by` clause. The node form
+  is `ProtocolNodeDeclaration`, which carries `related`.
+- `CompensationForm{name, target: NameForm, forward: ParameterForm, role:
+  DeclaredName, operation: NameForm, using: UsingAlias, clock: ClockForm,
   registration_captures: Vec<CaptureForm>, trigger: ParameterForm, guard:
-  Block, activation_captures: Vec<CaptureForm>, within: IntervalForm,
-  attempts: {count: u64, record: TypeForm}, retry: {earlier: ParameterForm,
-  later: ParameterForm, relation: Block}, commit: Node(NodeRef) | Never,
-  recover: {binder: ParameterForm, predicate: Block}, span}`.
+  ExpressionForm, activation_captures: Vec<CaptureForm>, within:
+  IntervalForm, attempts: CompensationAttempts{count: u64, count_span,
+  record: TypeForm}, retry: CompensationRetry{earlier: ParameterForm, later:
+  ParameterForm, relation: ExpressionForm}, commit:
+  CompensationCommit::Node(NameForm) | CompensationCommit::Never(Span),
+  recover: CompensationRecover{binder: ParameterForm, predicate:
+  ExpressionForm}, span}`. A `NameForm` is the name as spelled with its
+  span. `guard`, `relation` and `predicate` are the `ExpressionForm` of the
+  body expression, with the braces outside its span. `attempts.record` is
+  `TypeForm::name` of the written `M::T`. `Never` carries the span of
+  `never`.
 - `ExprNode::ProtocolReference{target}` (the span is the expression's own span in the S2 span tree), the form
   of a protocol reference expression (Protocol reference expression).
 
@@ -114,10 +127,10 @@ In `forms::protocol_clause` (crate `qsl-forms`):
   written. A target or relationship named twice builds twice; S2 merges and
   resolves nothing.
 - S2 SHALL build a compensation's `commit` member as `Never` for `commit
-  never` and as `Node(NodeRef)` for a node reference, and its `attempts`
+  never` and as `Node` for a node reference, and its `attempts`
   count and `within` interval as written, with no S2 diagnostic for a zero
   count or an inverted interval. A count that is not a decimal `u64` fails at
-  S1 (FR-325).
+  S1 with an `invalid_syntax` diagnostic at the count (FR-325).
 - S2 SHALL build a channel's overflow policy as written: `overflow reject`
   as `Reject`, `overflow block` as `Block` and `overflow loss head`,
   `overflow loss tail` and `overflow loss new` as `Loss(Head)`, `Loss(Tail)`

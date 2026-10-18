@@ -860,3 +860,75 @@ fn a_population_binding_over_a_non_object_target_refuses_type_mismatch() {
         "{refusal:?}"
     );
 }
+
+/// The type node of the one parameter of function `F`.
+fn parameter_type_node(graph: &CheckedGraph) -> quire_exact::NodeKey {
+    let semantic = graph.semantic_graph();
+    let parameters = semantic
+        .node(graph.function_identity("F").expect("F is declared"))
+        .and_then(|function| function.function_parameters())
+        .expect("F's function node");
+    semantic
+        .node(parameters[0])
+        .and_then(|parameter| parameter.semantic_type())
+        .expect("a typed parameter")
+}
+
+/// FR-333-AC-2, FR-334-AC-2, FR-097-AC-8: `Population<T>` resolves to
+/// `Population(None)` and lowers to its own population node with no maximum,
+/// distinct from `Population<T>[4]` and from an unbounded `Set<Reference<T>>`
+/// (here `Set<M::A>`), with no refusal; `allInstances` over it is the
+/// unbounded set.
+#[trace(
+    "TC-843",
+    "FR-333-AC-2",
+    "TC-844",
+    "FR-334-AC-2",
+    "TC-441",
+    "FR-097-AC-8"
+)]
+#[test]
+fn an_unbounded_population_has_its_own_node_and_no_maximum() {
+    let parameter = |spelling: &str| {
+        let (graph, _) = graph(
+            &format!("function F using v(p: {spelling}): Boolean pure {{ true }}"),
+            true,
+        );
+        graph
+    };
+    let unbounded = parameter("Population<M::A>");
+    let bounded = parameter("Population<M::A>[4]");
+    let set = parameter("Set<M::A>");
+    let keys = [
+        parameter_type_node(&unbounded),
+        parameter_type_node(&bounded),
+        parameter_type_node(&set),
+    ];
+    assert_ne!(keys[0], keys[1]);
+    assert_ne!(keys[0], keys[2]);
+    assert_ne!(keys[1], keys[2]);
+
+    let node = |graph: &CheckedGraph| {
+        let node = graph
+            .semantic_graph()
+            .node(parameter_type_node(graph))
+            .expect("the type node");
+        (node.semantic_form(), format!("{:?}", node.body()))
+    };
+    let (form, body) = node(&unbounded);
+    assert_eq!(form, "model_population");
+    assert!(!body.contains("max"), "{body}");
+    let (form, body) = node(&bounded);
+    assert_eq!(form, "model_population");
+    assert!(body.contains("max"), "{body}");
+
+    let (all, view) = graph(
+        "function F using v(p: Population<M::A>): Set<M::A> pure { allInstances<M::A>(p) }",
+        true,
+    );
+    let ValueType::Collection(result) = function(&all, "F").value_type() else {
+        panic!("a Set result");
+    };
+    assert_eq!(result.element(), &ValueType::Reference(object_type(&view)));
+    assert_eq!(result.bound(), None);
+}
