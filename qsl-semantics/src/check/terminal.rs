@@ -156,16 +156,15 @@ pub(crate) fn check_terminal<'a>(
         frame_population: None,
         body: &predicate.expression,
     };
-    let typed =
-        check_clause(&view, declarations, &mut cx.reborrow(declarations.scope)).map_err(
-            |refusal| CheckRefusal {
-                location: refusal.location,
-                cause: CheckCause::Terminal(Box::new(TerminalRefusal {
-                    declaration: index,
-                    cause: refusal.cause,
-                })),
-            },
-        )?;
+    let typed = check_clause(&view, declarations, &mut cx.reborrow(declarations.scope)).map_err(
+        |refusal| CheckRefusal {
+            location: refusal.location,
+            cause: CheckCause::Terminal(Box::new(TerminalRefusal {
+                declaration: index,
+                cause: refusal.cause,
+            })),
+        },
+    )?;
     Ok((
         TerminalDeclaration::When(CheckedTerminalPredicate {
             parameters: typed.parameters,

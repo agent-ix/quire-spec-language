@@ -2896,29 +2896,26 @@ impl PackageDeclarations {
             &admitted,
         );
         let terminals = terminal_declarations(unit.terminals, &resolve, &admitted);
-        let (state_clauses, protocol_attempts, operation_bodies, terminals) =
-            match (state_clauses, protocol_attempts, operation_bodies, terminals) {
-                (Ok(clauses), Ok(attempts), Ok(bodies), Ok(terminals))
-                    if bound_errors.is_empty() =>
+        let (state_clauses, protocol_attempts, operation_bodies, terminals) = match (
+            state_clauses,
+            protocol_attempts,
+            operation_bodies,
+            terminals,
+        ) {
+            (Ok(clauses), Ok(attempts), Ok(bodies), Ok(terminals)) if bound_errors.is_empty() => {
+                (clauses, attempts, bodies, terminals)
+            }
+            (clauses, attempts, bodies, terminals) => {
+                let mut errors = bound_errors;
+                for refusal in [clauses.err(), attempts.err(), bodies.err(), terminals.err()]
+                    .into_iter()
+                    .flatten()
                 {
-                    (clauses, attempts, bodies, terminals)
+                    errors.extend(refusal.errors);
                 }
-                (clauses, attempts, bodies, terminals) => {
-                    let mut errors = bound_errors;
-                    for refusal in [
-                        clauses.err(),
-                        attempts.err(),
-                        bodies.err(),
-                        terminals.err(),
-                    ]
-                        .into_iter()
-                        .flatten()
-                    {
-                        errors.extend(refusal.errors);
-                    }
-                    return refuse(errors);
-                }
-            };
+                return refuse(errors);
+            }
+        };
         // FR-103, FR-302: the view of each selected model, with `has_body`
         // set from the bodies that resolved into it. A model no body names
         // keeps the view intake admitted, whose `has_body` is false

@@ -263,8 +263,8 @@ pub use refusal::{
 pub use temporal_clause::check_clauses;
 pub use temporal_clause::{
     Activation, BinaryTemporal, CheckedFormula, CheckedOperator, CheckedTemporalClause,
-    FormulaNode, FormulaNodeId, TemporalClaim, TemporalDeclaration, TemporalDeclarations, TemporalSelection,
-    TemporalTraceFamily, UnaryTemporal,
+    FormulaNode, FormulaNodeId, TemporalClaim, TemporalDeclaration, TemporalDeclarations,
+    TemporalSelection, TemporalTraceFamily, UnaryTemporal,
 };
 
 /// A checked function.
@@ -1422,10 +1422,8 @@ impl PackageDeclarations {
                     });
                 }
                 Err(refusal) => {
-                    let exhausted = matches!(
-                        refusal.cause.unwrapped(),
-                        CheckCause::ResourceExhausted(_)
-                    );
+                    let exhausted =
+                        matches!(refusal.cause.unwrapped(), CheckCause::ResourceExhausted(_));
                     refusals.push(refusal);
                     if exhausted || cancel.tripped().is_some() {
                         return Err(refusals);
@@ -1434,7 +1432,8 @@ impl PackageDeclarations {
             }
         }
         for (alias, kind) in &self.alias_names {
-            if *kind == AliasKind::Model && !terminals.iter().any(|terminal| terminal.model == *alias)
+            if *kind == AliasKind::Model
+                && !terminals.iter().any(|terminal| terminal.model == *alias)
             {
                 terminals.push(CheckedTerminal {
                     model: alias.clone(),
@@ -2483,7 +2482,9 @@ impl CheckedGraph {
     /// FR-124: the intended terminal states of the model `alias`; `None` when
     /// no selected model has that alias.
     pub fn terminal(&self, alias: &str) -> Option<&CheckedTerminal> {
-        self.terminals.iter().find(|terminal| terminal.model == alias)
+        self.terminals
+            .iter()
+            .find(|terminal| terminal.model == alias)
     }
 
     /// FR-113: every checked protocol declaration, in declaration order.

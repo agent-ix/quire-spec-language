@@ -5,7 +5,7 @@
 //!
 //! Each clause is real complete-V1 source taken through S1, S2, the
 //! assembler and the `TemporalTrace` family's check. The `holds` conditions
-//! are not checked until FR-123 lands, so the letter is a [`TemporalLetters`]
+//! are not checked at S3, so the letter is a [`TemporalLetters`]
 //! that reads each atom from its source text, the seam the one clause
 //! evaluator (FR-107) fills.
 
@@ -17,11 +17,16 @@ use qsl_eval::temporal::{
 use qsl_foundation::diagnostic::{Category, StageFailure};
 use qsl_foundation::{CatalogCode, SourceIdentity};
 use qsl_semantics::check::{
-    check_clauses, CheckedTemporalClause, FairnessConstraint, FairnessGranularity, FairnessKind,
-    FormulaNode, FormulaNodeId, PackageDeclarations, SCALAR_LIMITS_UNLIMITED,
+    check_clauses, CheckedTemporalClause, FormulaNode, FormulaNodeId, PackageDeclarations,
+    SCALAR_LIMITS_UNLIMITED,
 };
-use qsl_semantics::model::intake::SelectedModels;
+use qsl_semantics::model::accounting::ModelNormalizationLimits;
+use qsl_semantics::model::intake::{admit_unit, package_input, SelectedModels};
+use qsl_semantics::model::key::hex;
 use quire_exact::{ChargePoint, LimitKind, Meter, ScalarLimits, Undefined};
+use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
+
+use crate::model_simulation::{counters_document, increment, PACKAGE};
 
 const EVENT: &str = "quire.temporal.event-position.false-extension/v1";
 const INFINITE: &str = "quire.temporal.infinite-trace/v1";
@@ -62,6 +67,51 @@ fn fixture(profile: &str, over: &str, activation: &str, body: &str) -> Fixture {
     let clause = match checked.pop() {
         Some(Ok(clause)) if checked.is_empty() => clause,
         Some(Err(StageFailure::Refused(refusal))) => panic!("{body}: refused: {refusal:?}"),
+        other => panic!("{body}: one checked clause, not {other:?}"),
+    };
+    Fixture { text, clause }
+}
+
+/// A unit over the `test/counters` model `M` with one infinite-trace `temporal`
+/// clause `C` over `c: M::Counter`, `on origin`, so a fairness constraint can
+/// name the model operation `M::Counter::increment`.
+fn modelled(body: &str) -> Fixture {
+    let document = counters_document(vec![increment()], false);
+    let packages = package_input([document.as_slice()]);
+    let digest = *packages.keys().next().expect("one model");
+    let text = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"{VALUE}\";\n\
+         profile t0 = \"{INFINITE}\";\n\
+         model M = \"{PACKAGE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         temporal C using t0 over (c: M::Counter) clock \"model-steps\" on origin {{ {body} }}\n",
+        hex(&digest)
+    );
+    let parsed = qsl_cst::parse(
+        SourceIdentity::new("a", "u", "git", "1"),
+        "unit.native",
+        text.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 reads the unit");
+    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+    let built = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
+    let models = admit_unit(
+        &built.selections().models,
+        &packages,
+        ModelNormalizationLimits::default(),
+    )
+    .expect("the model selection admits");
+    let package = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        built,
+        models,
+        Vec::new(),
+    )
+    .expect("the unit assembles");
+    let mut checked = check_clauses(&package);
+    let clause = match checked.pop() {
+        Some(Ok(clause)) if checked.is_empty() => clause,
         other => panic!("{body}: one checked clause, not {other:?}"),
     };
     Fixture { text, clause }
@@ -469,33 +519,35 @@ fn an_undefined_letter_in_a_prefix_is_undefined_whatever_the_fragment() {
     );
 }
 
-fn weak_whole(operation: &str) -> FairnessConstraint {
-    FairnessConstraint {
-        kind: FairnessKind::Weak,
-        operation: operation.to_owned(),
-        granularity: FairnessGranularity::Whole,
-    }
+/// The one constraint of `fixture`'s fairness set, which must be
+/// `fair weak whole increment`.
+fn the_weak_whole_increment(
+    fixture: &Fixture,
+) -> quire_semantic_value::fairness::FairnessConstraint {
+    let [constraint] = fixture.clause.fairness() else {
+        panic!("one constraint: {:?}", fixture.clause.fairness());
+    };
+    assert_eq!(constraint.kind(), FairnessKind::Weak);
+    assert_eq!(constraint.operation().name(), "increment");
+    assert_eq!(constraint.granularity(), FairnessGranularity::Whole);
+    constraint.clone()
 }
 
-/// FR-328-AC-6: with the fairness set `fair weak inc` over a supplied
+/// FR-328-AC-6: with the fairness set `fair weak increment` over a supplied
 /// prefix, `always holds(c.level <= 1)` is `MissingFairnessPremise` naming
-/// `fair weak whole inc`, O-16 unsupported, with no position evaluated and
-/// no work charged; with an empty fairness set it is false at position 0.
+/// `fair weak whole increment`, O-16 unsupported, with no position evaluated
+/// and no work charged; with an empty fairness set it is false at position 0.
 #[trace("TC-848", "FR-328-AC-6")]
 #[test]
 fn a_fairness_set_over_a_supplied_prefix_is_a_missing_premise_and_evaluates_nothing() {
-    let fair = counter(INFINITE, "fair weak inc; always holds(c.level <= 1)");
+    let fair = modelled("fair weak M::Counter::increment; always holds(c.level <= 1)");
     let (settled, spent, reads) = run(&fair, finite(3), counters(&[0, 1, 2]), limits(0));
     assert_eq!(
         settled,
         TemporalOutcome::MissingFairnessPremise {
-            constraint: weak_whole("inc")
+            constraint: the_weak_whole_increment(&fair)
         }
     );
-    let TemporalOutcome::MissingFairnessPremise { constraint } = &settled else {
-        panic!("a missing premise");
-    };
-    assert_eq!(constraint.to_string(), "fair weak whole inc");
     assert_eq!(settled.category(), Category::Unsupported);
     assert_eq!((spent, reads), (0, Vec::new()));
 
@@ -626,8 +678,8 @@ fn an_undefined_atom_in_a_lasso_loop_is_returned_at_its_first_position() {
     assert_eq!(settled.category(), Category::Violation);
 }
 
-/// FR-329-AC-7: with `fair weak attemptUpdate` over an observed lasso the
-/// clause is `MissingFairnessPremise` naming `fair weak whole attemptUpdate`,
+/// FR-329-AC-7: with `fair weak increment` over an observed lasso the
+/// clause is `MissingFairnessPremise` naming `fair weak whole increment`,
 /// O-16 unsupported, with no position read; with an empty fairness set it is
 /// false at position 0.
 #[trace("TC-848", "FR-329-AC-7")]
@@ -640,18 +692,14 @@ fn a_fairness_set_over_an_observed_lasso_is_a_missing_premise_and_evaluates_noth
             .collect::<Vec<_>>()
     };
     let clause = "always eventually holds(b.versionNumber = 2)";
-    let fair = config(&format!("fair weak attemptUpdate; {clause}"));
+    let fair = modelled(&format!("fair weak M::Counter::increment; {clause}"));
     let (settled, spent, reads) = run(&fair, lasso(0, 3), observations(), limits(0));
     assert_eq!(
         settled,
         TemporalOutcome::MissingFairnessPremise {
-            constraint: weak_whole("attemptUpdate")
+            constraint: the_weak_whole_increment(&fair)
         }
     );
-    let TemporalOutcome::MissingFairnessPremise { constraint } = &settled else {
-        panic!("a missing premise");
-    };
-    assert_eq!(constraint.to_string(), "fair weak whole attemptUpdate");
     assert_eq!(settled.category(), Category::Unsupported);
     assert_eq!((spent, reads), (0, Vec::new()));
 

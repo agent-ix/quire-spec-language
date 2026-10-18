@@ -484,12 +484,12 @@ fn the_assembler_keeps_temporal_clauses_and_refuses_an_undeclared_alias() {
     );
 }
 
-/// A `terminal` declaration that S2 builds and no check admits yet refuses
-/// `unsupported_construct`/`declaration-form` at the declaration's span,
-/// rather than compiling and being silently ignored.
+/// FR-124: a `terminal` declaration resolves its `using` alias and its model
+/// alias; one on an alias that names no `model` declaration refuses
+/// `missing_declaration`/`missing-name` at the alias.
 #[trace("TC-1059", "FR-382-AC-6")]
 #[test]
-fn a_terminal_declaration_refuses_as_an_unsupported_declaration_form() {
+fn a_terminal_declaration_on_no_model_refuses_at_the_model_alias() {
     for declaration in [
         "terminal Done using v on M when { true };",
         "terminal Halt using v on M any;",
@@ -498,17 +498,34 @@ fn a_terminal_declaration_refuses_as_an_unsupported_declaration_form() {
         assert_eq!(
             found,
             [AssemblyError {
-                cause: AssemblyCause::UnsupportedDeclarationForm { form: "terminal" },
-                span: last(&text, declaration),
+                cause: AssemblyCause::UnresolvedTerminalModel { alias: "M".into() },
+                span: after(&text, "on", "M"),
             }],
             "{declaration}"
         );
-        assert_eq!(found[0].cause.code(), Code::UnsupportedConstruct);
+        assert_eq!(found[0].cause.code(), Code::MissingDeclaration);
         assert_eq!(
             found[0].cause.catalog_code(),
-            qsl_foundation::CatalogCode::new("unsupported_construct", "declaration-form")
+            qsl_foundation::CatalogCode::new("missing_declaration", "missing-name")
         );
     }
+}
+
+/// FR-124: a `terminal` declaration's `using` alias names a profile
+/// selection of the unit.
+#[trace("TC-519", "FR-124-AC-1")]
+#[test]
+fn a_terminal_declaration_using_no_profile_refuses_at_the_alias() {
+    let (text, found) = errors("terminal Halt using missing on M any;");
+    assert!(
+        found.contains(&AssemblyError {
+            cause: AssemblyCause::UndeclaredAlias {
+                alias: "missing".into()
+            },
+            span: last(&text, "missing"),
+        }),
+        "{found:?}"
+    );
 }
 
 #[trace("FR-091-AC-8", "TC-396")]
