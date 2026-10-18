@@ -7,8 +7,12 @@
 //! matrices (ADR-026 EZ-2, FR-238). The zone certificate checker in
 //! `qsl-replay` keeps its own DBM code and never calls this one (ADR-026
 //! CF-6).
+//!
+//! [`schedulability`] holds EN-7, the closed-form schedulability engine
+//! (ADR-026 §12, FR-247).
 
 #![forbid(unsafe_code)]
 
 pub mod model_check;
+pub mod schedulability;
 pub mod zone_check;
