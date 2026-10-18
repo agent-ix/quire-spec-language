@@ -70,13 +70,10 @@ pub enum Code {
     InvalidIdentifier,
     /// A typed command result could not be serialized.
     OutputFailure,
-    /// A real, admitted capability this build does not implement yet:
-    /// checked native expressions outside the selected executable
-    /// projection (`lowering`), or a `quire.checked-package/v2` emission
-    /// path (`qsl-package`'s `emit`) not yet built.
+    /// A real, admitted capability this build does not implement yet: a
+    /// `quire.checked-package/v2` emission path (`qsl-package`'s `emit`) not
+    /// yet built.
     UnsupportedProjection,
-    /// The existing IR rejected an executable derivation.
-    ProjectionBinding,
     /// Checked native correspondence could not be preserved in the projection.
     InvalidProjectionCorrespondence,
     /// Source-only export cannot use extracted Markdown.
@@ -190,7 +187,6 @@ impl Code {
             Self::InvalidIdentifier => "invalid-identifier",
             Self::OutputFailure => "output-failure",
             Self::UnsupportedProjection => "unsupported_projection",
-            Self::ProjectionBinding => "projection_binding",
             Self::InvalidProjectionCorrespondence => "invalid_projection_correspondence",
             Self::ExtractionRequiresRun => "extraction-requires-run",
             Self::ExtractionPackageConflict => "extraction-package-conflict",
@@ -246,7 +242,6 @@ impl Code {
             Self::InvalidIdentifier,
             Self::OutputFailure,
             Self::UnsupportedProjection,
-            Self::ProjectionBinding,
             Self::InvalidProjectionCorrespondence,
             Self::ExtractionRequiresRun,
             Self::ExtractionPackageConflict,
@@ -982,7 +977,7 @@ impl InternalFault {
 /// codes (`unsupported_construct`, `unknown_required_feature`,
 /// `unsupported_projection`) and the incomplete `resource_exhausted` that
 /// this table files under `Refusal`.
-const CATALOG_CATEGORIES: [(&str, Category); 50] = [
+const CATALOG_CATEGORIES: [(&str, Category); 49] = [
     ("invalid_syntax", Category::Refusal),
     ("unsupported_construct", Category::Refusal),
     ("unknown_language", Category::Refusal),
@@ -1027,7 +1022,6 @@ const CATALOG_CATEGORIES: [(&str, Category); 50] = [
     ("noncanonical_wire", Category::Refusal),
     ("unsupported_projection", Category::Refusal),
     ("invalid_capability", Category::Refusal),
-    ("projection_binding", Category::Refusal),
     ("invalid_projection_correspondence", Category::Refusal),
     ("extraction-requires-run", Category::Refusal),
     ("extraction-package-conflict", Category::Refusal),

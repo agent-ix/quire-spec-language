@@ -192,7 +192,7 @@ automaton states and the depth reached.
   lower bound 0 over an operand with no interval operator the occurrence
   keeps one counter with `b + 1` values; a past interval operator with
   lower bound 0 keeps one counter of positions since its operand last held,
-  saturating at `b + 1`; an `[a,*]` occurrence keeps a shift counter with
+  saturating past `b` (the ages `0..=b` and one saturated value, `b + 2` values); an `[a,*]` occurrence keeps a shift counter with
   `a + 1` values, then the unbounded operator's states; any other
   occurrence keeps a set of offsets in `[0, b]`.
 - The engine SHALL materialize automaton states as the product exploration
@@ -276,8 +276,8 @@ automaton states and the depth reached.
 
 - The engine SHALL run the second phase only when the first phase ended
   with no violation.
-- The engine SHALL decompose the retained product graph into SCCs, in
-  discovery order and never in hash-map iteration order.
+- The engine SHALL decompose the retained product graph into SCCs,
+  ordered by least vertex index and never in hash-map iteration order.
 - The engine SHALL treat an SCC as a candidate when it is non-trivial (it
   has an edge) and holds a state of every acceptance set of the
   generalized Büchi automaton.

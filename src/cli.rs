@@ -3,7 +3,6 @@
 
 use qsl_foundation::SourceIdentity;
 use quire_spec_language::command::RunLimits;
-use quire_spec_language::lowering::{ProjectionTarget, UnknownProjectionTarget};
 use quire_spec_language::Limits;
 use std::ffi::OsString;
 use std::path::Path;
@@ -30,22 +29,16 @@ pub(super) enum Command<'a> {
     Compile {
         path: &'a Path,
     },
-    Lower {
-        path: &'a Path,
-        target: ProjectionTarget,
-    },
 }
 
 #[derive(Debug, thiserror::Error)]
 pub(super) enum UsageError<'a> {
-    #[error("usage: quire-spec <parse|format> <source-authority> <source-id> <revision-namespace> <revision> <file> [--source-bytes <n>] [--tokens <n>] [--nodes <n>] (limits for parse only) | quire-spec <run|compile|lower> <request-file>")]
+    #[error("usage: quire-spec <parse|format> <source-authority> <source-id> <revision-namespace> <revision> <file> [--source-bytes <n>] [--tokens <n>] [--nodes <n>] (limits for parse only) | quire-spec <run|compile> <request-file>")]
     MissingCommand,
     #[error("{operand} must be UTF-8")]
     NonUtf8 { operand: &'static str },
     #[error("unknown command: {0}")]
     UnknownCommand(&'a str),
-    #[error("{0}")]
-    UnknownTarget(#[from] UnknownProjectionTarget),
     #[error("usage: quire-spec {command} {operands}")]
     Arity {
         command: &'a str,
@@ -127,27 +120,6 @@ impl<'a> TryFrom<&'a [OsString]> for Command<'a> {
                 };
                 Ok(Self::Compile {
                     path: Path::new(path),
-                })
-            }
-            "lower" => {
-                let (path, target) = match operands {
-                    [path] => (path, ProjectionTarget::BooleanOracleV1),
-                    [path, option, target] if option == "--target" => {
-                        let name = target.to_str().ok_or(UsageError::NonUtf8 {
-                            operand: "lowering target",
-                        })?;
-                        (path, name.parse()?)
-                    }
-                    _ => {
-                        return Err(UsageError::Arity {
-                            command,
-                            operands: "<request-file> [--target <target>]",
-                        })
-                    }
-                };
-                Ok(Self::Lower {
-                    path: Path::new(path),
-                    target,
                 })
             }
             _ => Err(UsageError::UnknownCommand(command)),

@@ -50,21 +50,6 @@ same directory: `spine-unit.native` (the shared `1-draft` unit),
 Completed false and refusal exit 1; incomplete exits 3. Only completed execution
 includes truth. The Markdown path retains Quire's unchecked-language advisory
 and available/lossy extraction separately from native execution. These are real
-reference-runtime examples. The numeric backend accepts the primitive
-`VersionUnchanged` state comparison and generates Rust oracle, proptest and Kani
-artifacts. Object/graph clauses still refuse explicitly at their first
-unrepresentable source locus. The model declares integer bounds and explicit
+reference-runtime examples. The model declares integer bounds and explicit
 finite input populations, without adding a new schema-level
 population-cardinality feature.
-
-Export the update rule's primitive state projection:
-
-```sh
-nice -n 10 cargo run --locked --offline --target-dir target-codex-backends -j 1 -- lower /tmp/config-version/unchanged-version/compile.json --target state-scalar-ir/v1
-```
-
-The strict IR binder accepts this rule with separate pre/post version inputs.
-Library consumers use `NativeProjection::inputs` after native runtime validation
-to obtain actual values and their artifact/object provenance. quire-integration's
-[IT-010](ix://agent-ix/quire-integration/IT-010) composes this projection with
-the code generator's generated oracle, strategies and Kani proof.

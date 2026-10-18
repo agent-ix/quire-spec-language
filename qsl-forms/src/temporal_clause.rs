@@ -80,7 +80,10 @@ pub(crate) fn temporal_clause(construct: Construct<'_>) -> Result<DeclarationFor
 }
 
 /// One `Parameter` node (`ident : ParameterType`) as a parameter form.
-fn parameter_form(cst: &LosslessCst, parameter: &CstNode) -> Result<ParameterForm, FormsRefusal> {
+pub(crate) fn parameter_form(
+    cst: &LosslessCst,
+    parameter: &CstNode,
+) -> Result<ParameterForm, FormsRefusal> {
     let parameter_items = items(cst, parameter);
     let declared = only(&parameter_items, Production::ParameterType, parameter)?;
     let declared_items = items(cst, declared);
@@ -92,7 +95,10 @@ fn parameter_form(cst: &LosslessCst, parameter: &CstNode) -> Result<ParameterFor
 }
 
 /// `capture name: Type = value ;`.
-fn capture_form(cst: &LosslessCst, capture: &CstNode) -> Result<CaptureForm, FormsRefusal> {
+pub(crate) fn capture_form(
+    cst: &LosslessCst,
+    capture: &CstNode,
+) -> Result<CaptureForm, FormsRefusal> {
     let capture_items = items(cst, capture);
     Ok(CaptureForm {
         parameter: parameter_form(cst, only(&capture_items, Production::Parameter, capture)?)?,
@@ -102,7 +108,10 @@ fn capture_form(cst: &LosslessCst, capture: &CstNode) -> Result<CaptureForm, For
 }
 
 /// One `Expression` node as a condition with its spans.
-fn expression_form(cst: &LosslessCst, node: &CstNode) -> Result<ExpressionForm, FormsRefusal> {
+pub(crate) fn expression_form(
+    cst: &LosslessCst,
+    node: &CstNode,
+) -> Result<ExpressionForm, FormsRefusal> {
     let (expression, spans) = expression(cst, node)?;
     Ok(ExpressionForm { expression, spans })
 }
@@ -147,7 +156,10 @@ fn fairness_form(
 /// One `Interval` node (`[a, b]` or `[a, *]`) as written. S1 admits only
 /// bounds that fit `u64`, so a bound that does not parse here is a broken
 /// invariant between the two stages.
-fn interval_form(cst: &LosslessCst, interval: &CstNode) -> Result<IntervalForm, FormsRefusal> {
+pub(crate) fn interval_form(
+    cst: &LosslessCst,
+    interval: &CstNode,
+) -> Result<IntervalForm, FormsRefusal> {
     let interval_items = items(cst, interval);
     let bound = |token: &qsl_cst::CstToken| {
         text(token, interval)?

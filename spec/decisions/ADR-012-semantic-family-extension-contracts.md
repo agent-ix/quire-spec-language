@@ -1766,7 +1766,7 @@ composite shape gets a forced arm under part 2. Those matches are in
 **Excluded.** #187 changes no `StateModel`, `TemporalTrace`,
 `ProtocolClause` or `Relation` family module:
 
-- `check/state_clause.rs`, `check/protocol_clause.rs`,
+- `check/state_clause.rs`, `check/protocol_clause/`,
   `check/lowering/state*`;
 - `s6a/protocol_clause.rs`;
 - `model/*`;
