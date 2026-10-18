@@ -11,103 +11,142 @@ relationships:
 ## Description
 
 Verify that S6a evaluates each expression slot of a protocol node of a checked
-package over the sources the caller supplies, computes every capture itself from
-its initializer, reads a capture only when the expression reaches it, and keeps
-the two templates of one effect apart. Scope: FR-390-AC-1 to FR-390-AC-3.
+package over the sources the caller supplies, that a capture slot returns a
+frozen value which later slots read only when the caller supplies it, and that
+the two templates of one effect stay apart. Scope: FR-390-AC-1 to FR-390-AC-3.
 
-Catches a caller that must supply a captured total, a capture evaluated though a
-short-circuit skipped it, a capture evaluated twice in one call, a retry
-relation read through the wrong template's binders, and a slot that returns the
-value of its neighbour.
+Catches a retry relation or recovery predicate that recomputes a capture from
+the current state, a caller that must supply a source the expression does not
+read, a template that reads the other template's binders, and a slot that
+returns the value of its neighbour.
 
-Fixture **E** is TC-1057's fixture **R** with two additions. The domain package
-`M` declares the populations `nodes` (of `Node`), `plains` (of `Plain`) and
-`ticks` (of `Tick`). The protocol `Refunds` of TC-1057 gains a second template
-after `Refund`:
+Fixture **E** is a domain package `M` and the protocol `Refunds` below. E
+differs from TC-1057's fixture R in that every binder a trigger guard, retry
+relation or recovery predicate reads is a record value, because those slots bar
+model state and a compensation's attempt record type is a record value type
+(QSpec FR-464, FR-466). Fixture E requires of `M`:
+
+- `Total = Int[0, 1000]` and `Tally = Int[0, 3]`;
+- the object type `Node{total: Total}`, with population `nodes`, and the
+  operation `Node::step`;
+- the record value types `Receipt{total: Total}`, `Attempt{tally: Tally}`,
+  `Flag{ready: Boolean}` and `Tick{ready: Boolean, count: Int[0, 9]}`;
+- model alias `M` and profile aliases `P` and `T`.
 
 ```
-compensate Partial for Main::Applied as (partialForward: M::Node)
-    by Service on M::Node::step using T clock "partial-clock" {
-  capture partialTarget: M::Total = partialForward.total;
-  activate first (partialTrigger: M::Plain)
-      when { not partialTrigger.ready and partialTarget >= 0 } {
-    capture partialActivated: Boolean = partialTrigger.ready;
+protocol Refunds using P over (view: M::Node)
+    on each (opened: M::Tick) when (opened.ready) {
+  capture order: M::Total = view.total;
+  role Service on M::Node;
+  compensate Refund for Main::Applied as (forward: M::Receipt)
+      by Service on M::Node::step using T clock "refund-clock" {
+    capture target: M::Total = forward.total;
+    activate first (trigger: M::Flag)
+        when { not trigger.ready and target >= 0 } {
+      capture activated: Boolean = trigger.ready;
+    }
+    within [0,30]; attempts 3 of M::Attempt;
+    retry (earlier: M::Attempt, later: M::Attempt) {
+      earlier.tally < 3 and later.tally = earlier.tally + 1
+      and target >= 0 and not activated
+    };
+    commit Main::Committed;
+    recover (recovered: M::Receipt) { recovered.total = target and not activated };
   }
-  within [0,30]; attempts 3 of M::Node;
-  retry (partialEarlier: M::Node, partialLater: M::Node) {
-    partialEarlier.tally < 3 and partialLater.tally = partialEarlier.tally + 1
-    and partialTarget >= 0 and not partialActivated
-  };
-  commit never;
-  recover (partialRecovered: M::Node) {
-    partialRecovered.n = 1 and partialTarget >= 0 and not partialActivated
-  };
+  compensate Partial for Main::Applied as (partialForward: M::Receipt)
+      by Service on M::Node::step using T clock "partial-clock" {
+    capture partialTarget: M::Total = partialForward.total;
+    activate first (partialTrigger: M::Flag)
+        when { not partialTrigger.ready and partialTarget >= 0 } {
+      capture partialActivated: Boolean = partialTrigger.ready;
+    }
+    within [0,30]; attempts 3 of M::Attempt;
+    retry (partialEarlier: M::Attempt, partialLater: M::Attempt) {
+      partialEarlier.tally < 3 and partialLater.tally = partialEarlier.tally + 1
+      and partialTarget >= 0 and not partialActivated
+    };
+    commit never;
+    recover (partialRecovered: M::Receipt) {
+      partialRecovered.total = partialTarget and not partialActivated
+    };
+  }
+  run sequence Main {
+    attempt Tried by Service on M::Node::step contracts []
+        as (attempted: M::Flag) { attempted.ready };
+    effect Applied of Main::Tried as (applied: M::Receipt) { order >= 0 };
+    commit Committed by Service as (committed: M::Flag) { committed.ready };
+  }
+  finish Closed as (closed: M::Receipt) { true };
 }
 ```
 
+Fixture **L** is the protocol `Pipeline` of TC-1056, with its row 19 `related by
+Pipe (sent, view)` on `Got` and its row 28 `choice Decide` (`visible
+(got.ready)`, cases `yes` and `no`), over TC-1056's model. L requires of that
+model the object populations `plains` (of `Plain`) and `nodes` (of `Node`).
+
 The package is the checked package QSL compiles from the unit, which carries
-the protocol as the v2 protocol nodes FR-383 emits. Fixture E requires of its
-domain package: `Node`, `Plain` and `Tick` are object types (as TC-1057's R
-declares them), and each has the population named above, which TC-1057's R does
-not declare and E adds. The observation is one current snapshot with every population complete:
-
-| Population | Key | Fields |
-| --- | --- | --- |
-| `nodes` | `a` | `total` 5, `tally` 0, `n` 1 |
-| `nodes` | `b` | `total` 5, `tally` 1, `n` 0 |
-| `nodes` | `c` | `total` 5, `tally` 3, `n` 0 |
-| `plains` | `off` | `ready` false |
-| `plains` | `on` | `ready` true |
-| `ticks` | `go` | `ready` true, `count` 2 |
-
-A slot is written `node.member[index]`, the node named by its source name
-(`Refund` is the node of `compensate Refund`, `Applied` the `effect`,
-`Committed` the `commit`, `Closed` the `finish`, `Refunds` the clause). A supply is the list
-of `binder = value` pairs, every value a reference into the observation. The
-meter is the default meter.
+the protocol as the v2 protocol nodes FR-383 emits. The observation is one
+current snapshot with every population complete: `nodes` holds `n5`
+(`total` 5); for L, `plains` holds `p1` (`ready` true) and `p0` (`ready`
+false). Record values are written `Type(field value)`: `Receipt(total 5)`,
+`Attempt(tally 0)`, `Flag(ready true)`. A slot is written `node.member[index]`,
+the node named by its source name (`Refund` is the node of `compensate Refund`,
+`Applied` the `effect`, `Committed` the `commit`, `Closed` the `finish`,
+`Refunds` the clause). A supply is the list of `binder = value` pairs; a
+captured value is supplied under its capture's binder name. The meter is the
+default meter.
 
 ## Test Procedure
 
 Evaluate one slot per row with the supply the row gives and assert the
-`ProtocolSlotEvaluation`: its value and its `captures()`.
+`ProtocolSlotEvaluation`'s value. Rows 2, 3 and 6 are capture slots; their
+values are what rows 4 to 21 supply as captured values.
 
-| # | Slot | Supply | Expected value | `captures()` |
-| --- | --- | --- | --- | --- |
-| 1 | `Refunds.activation.guard` | `opened = go` | true | none |
-| 2 | `Refunds.captures[0]` | `view = a` | 5, type `M::Total` | none |
-| 3 | `Refund.registration_captures[0]` | `forward = a` | 5 | none |
-| 4 | `Refund.trigger.guard` | `forward = a`, `trigger = off` | true | `target` |
-| 5 | `Refund.trigger.guard` | `forward = a`, `trigger = on` | false | none |
-| 6 | `Refund.activation_captures[0]` | `trigger = on` | true | none |
-| 7 | `Refund.activation_captures[0]` | `trigger = off` | false | none |
-| 8 | `Refund.retry.relation` | `earlier = a`, `later = b`, `forward = a`, `trigger = off` | true | `target`, `activated` |
-| 9 | `Refund.retry.relation` | as row 8 with `trigger = on` | false | `target`, `activated` |
-| 10 | `Refund.retry.relation` | as row 8 with `earlier = c` | false | none |
-| 11 | `Refund.retry.relation` | as row 8 with `later = a` | false | none |
-| 12 | `Refund.recovery.predicate` | `recovered = a`, `forward = a`, `trigger = off` | true | `target`, `activated` |
-| 13 | `Refund.recovery.predicate` | as row 12 with `recovered = b` | false | none |
-| 14 | `Refund.recovery.predicate` | as row 12 with `trigger = on` | false | `target`, `activated` |
-| 15 | `Partial.retry.relation` | `partialEarlier = a`, `partialLater = b`, `partialForward = a`, `partialTrigger = off` | true | `partialTarget`, `partialActivated` |
-| 16 | `Partial.recovery.predicate` | `partialRecovered = a`, `partialForward = a`, `partialTrigger = off` | true | `partialTarget`, `partialActivated` |
-| 17 | `Partial.recovery.predicate` | as row 16 with `partialRecovered = b` | false | none |
-| 18 | `Applied.constraint` | `view = a` | true (`order >= 0`) | `order` |
-| 19 | `Committed.constraint` | `committed = on` | true | none |
-| 20 | `Closed.constraint` | none | true (`true`) | none |
-| 21 | `Refund.retry.relation` | none | refuses `invalid_runtime_input`/`missing-member` naming `forward`, never `target` or `activated` | |
-| 22 | each of `Refund.trigger.guard`, `Refund.recovery.predicate`, `Partial.retry.relation`, `Partial.recovery.predicate` | none | refuses `missing-member` naming `forward` (`partialForward`), never a capture | |
-| 23 | `Refund.activation_captures[0]` | none | refuses `missing-member` naming `trigger` | |
-| 24 | `Refund.retry.relation` | row 8's supply and `target = a` | refuses `invalid_runtime_input`/`unknown-member` naming `target` | |
-| 25 | `Refund.retry.relation` | row 8's supply and `activated = on` | refuses `unknown-member` naming `activated` | |
+| # | Slot | Supply | Expected |
+| --- | --- | --- | --- |
+| 1 | `Refunds.activation.guard` | `opened = Tick(ready true, count 2)` | true |
+| 2 | `Refunds.captures[0]` | `view = n5` | 5, type `M::Total` |
+| 3 | `Refund.registration_captures[0]` | `forward = Receipt(total 5)` | 5 |
+| 4 | `Refund.trigger.guard` | `trigger = Flag(ready false)`, `target = 5` | true |
+| 5 | `Refund.trigger.guard` | `trigger = Flag(ready true)`, `target = 5` | false |
+| 6 | `Refund.activation_captures[0]` | `trigger = Flag(ready true)` | true |
+| 7 | `Refund.activation_captures[0]` | `trigger = Flag(ready false)` | false |
+| 8 | `Refund.retry.relation` | `earlier = Attempt(tally 0)`, `later = Attempt(tally 1)`, `target = 5`, `activated = false` | true |
+| 9 | `Refund.retry.relation` | row 8 with `activated = true` | false |
+| 10 | `Refund.retry.relation` | row 8 with `earlier = Attempt(tally 3)` | false |
+| 11 | `Refund.retry.relation` | row 8 with `later = Attempt(tally 0)` | false |
+| 12 | `Refund.recovery.predicate` | `recovered = Receipt(total 5)`, `target = 5`, `activated = false` | true |
+| 13 | `Refund.recovery.predicate` | row 12 with `recovered = Receipt(total 9)` | false |
+| 14 | `Refund.recovery.predicate` | row 12 with `activated = true` | false |
+| 15 | `Partial.retry.relation` | `partialEarlier = Attempt(tally 0)`, `partialLater = Attempt(tally 1)`, `partialTarget = 5`, `partialActivated = false` | true |
+| 16 | `Partial.retry.relation` | row 15 with `partialActivated = true` | false |
+| 17 | `Partial.recovery.predicate` | `partialRecovered = Receipt(total 5)`, `partialTarget = 5`, `partialActivated = false` | true |
+| 18 | `Partial.recovery.predicate` | row 17 with `partialRecovered = Receipt(total 9)` | false |
+| 19 | `Partial.recovery.predicate` | row 17 with `partialActivated = true` | false |
+| 20 | `Applied.constraint` | `order = 5` | true (`order >= 0`) |
+| 21 | `Committed.constraint` | `committed = Flag(ready true)` | true |
+| 22 | `Closed.constraint` | none | true |
+| 23 | the registration capture of row 3 again with `forward = Receipt(total 9)`, then the recovery predicate of row 12 with `recovered = Receipt(total 9)` and `target = 5` | the capture slot gives 9; the recovery predicate gives false: the total registered earlier (5) is the one it reads, whatever the record now holds |
+| 24 | `Refund.recovery.predicate` | `recovered = Receipt(total 9)`, `target = 9`, `activated = false` | true: the evaluator reads the captured value it is given and recomputes nothing |
+| 25 | `Refund.retry.relation` | none | refuses `invalid_runtime_input`/`missing-member` naming `target`, the lowest source |
+| 26 | each of `Refund.trigger.guard`, `Refund.recovery.predicate`, `Partial.retry.relation`, `Partial.recovery.predicate` | none | refuses `missing-member` naming `target` (`partialTarget`) |
+| 27 | `Refund.registration_captures[0]` and `Refund.activation_captures[0]` | none | refuses `missing-member` naming `forward` and `trigger` |
+| 28 | `Refund.retry.relation` | row 8's supply and `forward = Receipt(total 5)` | refuses `unknown-member` naming `forward`: the retry relation does not read it |
+| 29 | `Got.related.from[0]` (L) | `sent = p1` | the reference `p1` |
+| 30 | `Got.related.to[0]` (L) | `view = n5` | the reference `n5` |
+| 31 | `Decide.visible[0]` (L) | `got = p1` | true (`got.ready`) |
+| 32 | `Decide.cases.guard[0]` and `[1]` (L) | `got = p1` | true (`yes`), false (`no`) |
 
-Row 22's four refusals name the template's own forward binder because the
-sources are checked in ascending level and the forward binder is the lowest.
+Row 26's four refusals name `target`, the lowest source of each slot (its level
+is below the trigger's, the activation capture's and the recovery binder's).
 
 ## Expected Results
 
-Every slot returns the Boolean or the capture value its row gives, from
-sources alone. A capture is computed from its initializer and is never
-supplied: rows 21 to 25 ask for a source, never a capture, and refuse a supplied
-capture. `captures()` lists a capture only when the expression reaches it: rows
-10, 11 and 13 decide on the first operand and read none, and rows 8, 9 and 12
-read `target` before `activated`, once each. The two templates read their own
-binders only.
+Every slot returns the value its row gives from the supplied values alone. A
+capture slot returns its initializer's value and nothing keeps it: rows 23 and
+24 show that a later slot reads the captured value the caller supplies, 5 or 9,
+and never the record the capture once read. A supply holds exactly the
+binders and captured values the expression reads, so rows 25 to 28 name a
+source or refuse a supplied value the expression does not read. The two
+templates read their own binders only.
