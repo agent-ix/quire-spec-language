@@ -18,6 +18,9 @@ use qsl_foundation::absence::AbsenceMode;
 use qsl_foundation::Span;
 use quire_exact::{CollectionKind, Integer};
 
+use super::protocol_control::{
+    AwaitForm, ChannelForm, ParallelForm, ProtocolMemberForm, RepeatForm,
+};
 use super::spans::{DeclarationSpans, ExpressionSpans, SpansMismatch};
 
 /// A builtin type keyword a [`TypeForm`] can be headed by, other than a
@@ -2553,6 +2556,12 @@ pub enum ProtocolConstructKind {
     Requirement,
     /// A `related by r (e, e)` clause of an event node.
     Related,
+    /// A channel written `ordering fifo by (m: T) { key }`.
+    FifoOrdering,
+    /// A `parallel` joined by `predicate(name)`.
+    JoinPredicate,
+    /// A `terminal when { predicate };` member.
+    TerminalWhen,
 }
 
 impl ProtocolConstructKind {
@@ -2566,6 +2575,9 @@ impl ProtocolConstructKind {
             Self::Channel => "channel",
             Self::Requirement => "requires temporal",
             Self::Related => "related by",
+            Self::FifoOrdering => "channel ordering fifo",
+            Self::JoinPredicate => "join predicate",
+            Self::TerminalWhen => "terminal when",
         }
     }
 }
@@ -2786,6 +2798,19 @@ pub struct ProtocolDeclarationForm {
     pub requirements: Vec<RequirementForm>,
     /// Every `compensate` template, in source order (FR-308).
     pub compensations: Vec<CompensationForm>,
+    /// Every `channel` member, in source order (FR-308).
+    pub channels: Vec<ChannelForm>,
+    /// Every `parallel` control of the `run` tree, in source order of the
+    /// controls (FR-308).
+    pub parallels: Vec<ParallelForm>,
+    /// Every `repeat` control of the `run` tree, in source order of the
+    /// controls (FR-308).
+    pub repeats: Vec<RepeatForm>,
+    /// Every `await` control of the `run` tree, in source order of the
+    /// controls (FR-308).
+    pub awaits: Vec<AwaitForm>,
+    /// Every `terminal` and `scheduling` member, in source order (FR-308).
+    pub members: Vec<ProtocolMemberForm>,
 }
 
 impl ProtocolDeclarationForm {

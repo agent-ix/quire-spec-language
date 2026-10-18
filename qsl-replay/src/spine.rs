@@ -746,6 +746,27 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 ProtocolAnchorCause::BinderType { binder, fault, .. } => {
                     format!("{message}: binder `{binder}`'s type does not resolve ({fault:?})")
                 }
+                ProtocolAnchorCause::ChannelRole {
+                    channel, end, name, ..
+                } => format!(
+                    "{message}: channel `{channel}` names `{name}` as its {end:?} role, which the \
+                     protocol does not declare"
+                ),
+                ProtocolAnchorCause::ChannelType { channel, fault, .. } => {
+                    format!(
+                        "{message}: channel `{channel}`'s carried type does not resolve ({fault:?})"
+                    )
+                }
+                ProtocolAnchorCause::ChannelCarriesObject { channel, name, .. } => format!(
+                    "{message}: channel `{channel}` carries the object type `{name}`, not a message \
+                     type"
+                ),
+                ProtocolAnchorCause::RoleModel { role, context, .. } => format!(
+                    "{message}: role `{role}` is on `{context}`, which is not a type a role takes"
+                ),
+                ProtocolAnchorCause::JoinList {
+                    parallel, fault, ..
+                } => format!("{message}: the join of `{parallel}` is unsound ({fault:?})"),
             };
         }
         CheckCause::TerminalNotEmitted { name, .. } => {

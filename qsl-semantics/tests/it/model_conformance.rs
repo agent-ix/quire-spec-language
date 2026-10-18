@@ -116,6 +116,21 @@ fn operation(
     )
 }
 
+/// `operation` with its `modifies` entries made receiver-scoped when
+/// `receiver_scoped` (`modifies self.f` rather than `modifies f`).
+fn receiver_scoped_writes(
+    record: DomainPackageRecord,
+    receiver_scoped: bool,
+) -> DomainPackageRecord {
+    let DomainPackageRecord::OperationMember(mut operation) = record else {
+        panic!("an operation record: {record:?}");
+    };
+    if receiver_scoped {
+        operation.effect.receiver_modifies = std::mem::take(&mut operation.effect.modifies);
+    }
+    DomainPackageRecord::OperationMember(operation)
+}
+
 /// `operation`, plus this operation's own inline `redefines`
 /// (`model-complete.md`:162) property -- never a separate redefinition
 /// record.
@@ -1069,10 +1084,13 @@ fn a_wide_domain_and_a_literal_above_i64_max_are_decided_exactly() {
     use quire_semantic_value::checking::CheckingLimits;
 
     // The exact record fixture avoids a lossy JCS encoding above 2^53,
-    // while its source clauses use the normal parser and checker.
-    for (literal, succeeds) in [
-        (9_223_372_036_854_775_808_i128, true),
-        (9_223_372_036_854_775_809, false),
+    // while its source clauses use the normal parser and checker. The writer
+    // is decided the same whether its write is type-wide or receiver-scoped.
+    for (literal, succeeds, receiver_scoped) in [
+        (9_223_372_036_854_775_808_i128, true, false),
+        (9_223_372_036_854_775_809, false, false),
+        (9_223_372_036_854_775_808, true, true),
+        (9_223_372_036_854_775_809, false, true),
     ] {
         let package = DomainPackage::new(
             DomainPackageRef::fixture("bundle.wide"),
@@ -1104,15 +1122,18 @@ fn a_wide_domain_and_a_literal_above_i64_max_are_decided_exactly() {
                     vec![],
                     vec![],
                 ),
-                operation_redefining(
-                    "ix://test/orders/B/set",
-                    "ix://test/orders/B",
-                    vec![],
-                    None,
-                    vec!["ix://test/orders/A/f"],
-                    vec![],
-                    vec![],
-                    Some("ix://test/orders/A/set"),
+                receiver_scoped_writes(
+                    operation_redefining(
+                        "ix://test/orders/B/set",
+                        "ix://test/orders/B",
+                        vec![],
+                        None,
+                        vec!["ix://test/orders/A/f"],
+                        vec![],
+                        vec![],
+                        Some("ix://test/orders/A/set"),
+                    ),
+                    receiver_scoped,
                 ),
             ],
         );
