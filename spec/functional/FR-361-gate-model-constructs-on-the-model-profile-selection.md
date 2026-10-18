@@ -208,7 +208,7 @@ DefinitionLock catalog's `header_selectable_layers` (FR-110).
     navigation forms (`deref`, `reaches`) and `quire.value.complete/v1` does
     not require it. FR-110 records a temporary exception by which the
     admitted-form set of `quire.value.complete/v1` also holds them. The
-    exception is deleted as one change with the gate, which leaves:
+    exception is deleted as one change with the gate, and the deletion covers:
     (a) the `ObjectNavigation` entry of the `ValueComplete` row of the layer
     table, with the comment that records the exception;
     (b) the FR-110 bullet that records the exception; and
