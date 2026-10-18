@@ -9,7 +9,7 @@ use super::assemble;
 /// clause's preimage) of one protocol and its reference, lowered with
 /// `protocol` as the unit's `protocol_profile` selection.
 fn protocol_nodes_under(
-    protocol: &crate::value::DefinitionReference,
+    protocol: &crate::value::definition::DefinitionReference,
 ) -> [(quire_exact::NodeKey, Vec<u8>); 2] {
     let (_, mut assembled) = assemble(
         "function refers using v(): Boolean pure { protocol Flow }\n\
@@ -43,7 +43,7 @@ fn protocol_nodes_under(
 /// is the binding's, and an old binding does not silently match).
 #[test]
 fn a_changed_protocol_profile_binding_changes_the_node_keys() {
-    let binding = |identity: &str| crate::value::DefinitionReference {
+    let binding = |identity: &str| crate::value::definition::DefinitionReference {
         authority: "agent-ix".to_owned(),
         identity: identity.to_owned(),
     };
