@@ -211,6 +211,9 @@ binding receipt when CG consumes the serialized result.
   boundary).
 - QSpec FR-301 (exit codes); ADR-018 RU-5 (an undefined claim is
   refuted).
+- [FR-390](FR-390-evaluate-a-protocol-node-expression-from-a-checked-package.md)
+  evaluates a protocol node's expression from a checked package through the same
+  S6a `ProtocolClause` arm.
 - The clause-run result document is the library's serialization of
   `run_clause`'s `ClauseRunReport` as `native-run-result/2`
   ([FR-267](FR-267-write-run-results-as-native-run-result-2.md)).
