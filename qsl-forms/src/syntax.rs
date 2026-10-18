@@ -3150,8 +3150,8 @@ pub enum DeclarationForm {
     OperationBody(Box<OperationBodyForm>),
     /// A `bound` population-bound declaration (FR-380).
     PopulationBound(PopulationBoundForm),
-    /// A `protocol` declaration (FR-112).
-    Protocol(ProtocolDeclarationForm),
+    /// A `protocol` declaration (FR-112), boxed for the same reason as `Function`.
+    Protocol(Box<ProtocolDeclarationForm>),
     /// A `temporal` clause (FR-325), boxed for the same reason as
     /// [`Self::Function`].
     Temporal(Box<TemporalClauseForm>),

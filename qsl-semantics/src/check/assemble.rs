@@ -684,7 +684,7 @@ impl Unit {
                 DeclarationForm::StateClause(clause) => unit.state_clauses.push(*clause),
                 DeclarationForm::OperationBody(body) => unit.operation_bodies.push(*body),
                 DeclarationForm::PopulationBound(bound) => unit.population_bounds.push(bound),
-                DeclarationForm::Protocol(protocol) => unit.protocols.push(protocol),
+                DeclarationForm::Protocol(protocol) => unit.protocols.push(*protocol),
                 DeclarationForm::Union(union) => {
                     unit.declare(&union.name, Declared::Composite);
                     unit.composites.push(Composite {

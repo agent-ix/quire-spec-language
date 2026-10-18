@@ -386,28 +386,30 @@ pub(crate) fn protocol_declaration(
     constructs.sort_by_key(|construct| construct.span.start);
     bodies.sort_by_key(|body| body.span.start);
 
-    Ok(DeclarationForm::Protocol(ProtocolDeclarationForm {
-        name,
-        using,
-        roles,
-        bodies,
-        constructs,
-        scopes,
-        scoped_anchors,
-        declarations,
-        binders,
-        attempts,
-        activation: activation_form,
-        captures,
-        relationships,
-        requirements,
-        compensations,
-        channels,
-        parallels,
-        repeats,
-        awaits,
-        members,
-    }))
+    Ok(DeclarationForm::Protocol(Box::new(
+        ProtocolDeclarationForm {
+            name,
+            using,
+            roles,
+            bodies,
+            constructs,
+            scopes,
+            scoped_anchors,
+            declarations,
+            binders,
+            attempts,
+            activation: activation_form,
+            captures,
+            relationships,
+            requirements,
+            compensations,
+            channels,
+            parallels,
+            repeats,
+            awaits,
+            members,
+        },
+    )))
 }
 
 impl Collector<'_> {
