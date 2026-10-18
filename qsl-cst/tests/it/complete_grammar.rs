@@ -90,6 +90,9 @@ const ACCEPTED_PRODUCTIONS: &[Production] = &[
     Production::TemporalUnary,
     Production::TemporalPrimary,
     Production::TerminalDeclaration,
+    Production::StateGraphClaim,
+    Production::StateGraphBody,
+    Production::StateGraphPredicate,
     Production::ProtocolClause,
     Production::Role,
     Production::RoleLifetime,
@@ -206,6 +209,15 @@ fn corpus() -> Vec<(&'static str, String)> {
             source(concat!(
                 "terminal Done using Complete on M when { true };\n",
                 "terminal Halt using Complete on M any;",
+            )),
+        ),
+        (
+            "state-graph",
+            source(concat!(
+                "possible Reach using Complete over (c: M::Thing) { fair weak M::Thing::act; c.n = 2 }\n",
+                "always possible Still using Complete over (c: M::Thing) from (c.n != 0) { c.n = 2 }\n",
+                "always possible Always using Complete over (c: M::Thing) { eventually[0,3] c.n = 2 until once c.n = 1 }\n",
+                "unique path One using Complete over (c: M::Thing) from (c.n = 0) to (c.n = 2)",
             )),
         ),
         (
