@@ -73,30 +73,6 @@ fn refusal(cause: ProtocolAnchorCause) -> CheckRefusal {
     }
 }
 
-/// The kinds `site` admits, and the word FR-113 names `site` by.
-fn admitted_kinds(site: AnchorSite) -> (&'static str, &'static [ProtocolNodeKind]) {
-    use ProtocolNodeKind as K;
-    match site {
-        AnchorSite::ReceiveOf => ("receive-of", &[K::Send]),
-        AnchorSite::EffectOf => ("effect-of", &[K::Attempt]),
-        AnchorSite::EventFor => ("event-for", &[K::CompensateTemplate]),
-        AnchorSite::CompensateFor => ("compensate-for", &[K::Effect]),
-        AnchorSite::CompensateCommit => ("compensate-commit", &[K::Commit]),
-        AnchorSite::AwaitAfter => (
-            "await-after",
-            &[
-                K::Send,
-                K::Receive,
-                K::Attempt,
-                K::Effect,
-                K::Event,
-                K::Commit,
-                K::CompensateTemplate,
-            ],
-        ),
-    }
-}
-
 /// FR-113: the protocol node `protocol`'s scoped anchors resolve to, and
 /// FR-114: each `attempt`'s own `contracts` list checked against its
 /// already-resolved operation -- or the refusals below, in source
