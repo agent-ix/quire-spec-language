@@ -977,7 +977,7 @@ impl InternalFault {
 /// codes (`unsupported_construct`, `unknown_required_feature`,
 /// `unsupported_projection`) and the incomplete `resource_exhausted` that
 /// this table files under `Refusal`.
-const CATALOG_CATEGORIES: [(&str, Category); 50] = [
+const CATALOG_CATEGORIES: [(&str, Category); 49] = [
     ("invalid_syntax", Category::Refusal),
     ("unsupported_construct", Category::Refusal),
     ("unknown_language", Category::Refusal),

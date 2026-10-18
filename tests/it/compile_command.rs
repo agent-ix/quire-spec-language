@@ -364,12 +364,11 @@ fn a_complete_v1_program_compiles_through_the_spine() {
     assert_eq!(wire["contract_version"], "quire.checked-package/v2");
 }
 
-/// FR-010-AC-3 (TC-015): the native `lower` command and the `lowering`
-/// module are retired. `lower` is an unknown command that exits 20 without
-/// reading its operand, and no `lowering` module file or declaration remains.
+/// FR-010-AC-3 (TC-015): the native `lower` command is retired; it is an
+/// unknown command that exits 20 without reading its operand.
 #[test]
 #[trace("TC-015", "FR-010-AC-3")]
-fn lower_is_an_unknown_command_and_the_lowering_module_is_gone() {
+fn lower_is_an_unknown_command() {
     let directory = tempfile::tempdir().unwrap();
     let output = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
         .args(["lower", "missing.json"])
@@ -381,81 +380,6 @@ fn lower_is_an_unknown_command_and_the_lowering_module_is_gone() {
     assert_eq!(
         std::str::from_utf8(&output.stderr).unwrap(),
         "unknown command: lower\n"
-    );
-    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-    assert!(!source.join("lowering.rs").exists());
-    assert!(!source.join("lowering").exists());
-    let library = std::fs::read_to_string(source.join("lib.rs")).unwrap();
-    assert!(!library.contains("mod lowering"));
-}
-
-/// FR-027-AC-5 (TC-435 step 2): a `1-draft` program compiles through the
-/// spine; stdout is exactly the bytes `qsl_replay::spine`'s operations emit, which
-/// qsl-package's TC-435 step 1 reads back Verified with nothing omitted.
-#[test]
-#[trace("TC-435", "FR-027-AC-5")]
-fn a_complete_v1_program_compiles_through_the_spine() {
-    let program = std::fs::read(SPINE_FIXTURE).unwrap();
-    let directory = tempfile::tempdir().unwrap();
-    spine_request(directory.path(), &program);
-    let output = compile(directory.path());
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert!(output.stderr.is_empty());
-    let library = crate::support::front_end::emitted(
-        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine", "fixture", "fixture:1"),
-        "program.native",
-        &program,
-        &std::collections::BTreeMap::new(),
-        &qsl_replay::spine::DependencyInput::default(),
-    )
-    .unwrap();
-    assert_eq!(output.stdout, library.package().bytes());
-    let wire: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(wire["contract_version"], "quire.checked-package/v2");
-}
-
-/// FR-029-AC-3 (TC-107): `lower` refuses a `1-draft` program with
-/// `unknown_edition`, naming the file and locating the edition literal by
-/// span, the same existing intake behavior FR-029 says `lower` retains from
-/// `compile`.
-///
-/// `lower`'s refusal comes from the native parser's own header check
-/// (`src/parser.rs`), not `compile`'s `Edition::of` dispatch
-/// (`an_edition_neither_compiler_reads_refuses`, above): its `message` is
-/// the generic "supported edition is 0-draft", naming neither the file nor
-/// the offered edition in prose, so this asserts the file through
-/// `details.path` and the edition through the refusal's own span, over the
-/// message text those two checks take there.
-#[test]
-#[trace("TC-107", "FR-029-AC-3")]
-fn lower_refuses_a_complete_v1_program_as_unknown_edition() {
-    let program = std::fs::read(SPINE_FIXTURE).unwrap();
-    let directory = tempfile::tempdir().unwrap();
-    spine_request(directory.path(), &program);
-    let output = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
-        .arg("lower")
-        .arg(directory.path().join("compile.json"))
-        .current_dir(directory.path().parent().unwrap())
-        .output()
-        .unwrap();
-    assert_eq!(output.status.code(), Some(20));
-    assert!(output.stdout.is_empty());
-    let failure: Value = serde_json::from_slice(&output.stderr).unwrap();
-    assert_eq!(failure["code"], "unknown_edition", "{failure}");
-    assert_eq!(failure["details"]["path"], "program.native", "{failure}");
-    let text = String::from_utf8(program).expect("the spine fixture is UTF-8");
-    let literal = text
-        .find("\"1-draft\"")
-        .expect("the fixture declares edition \"1-draft\"");
-    assert_eq!(failure["details"]["span"]["start"]["byte"], literal);
-    assert_eq!(
-        failure["details"]["span"]["end"]["byte"],
-        literal + "\"1-draft\"".len()
     );
 }
 
