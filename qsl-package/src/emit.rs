@@ -96,7 +96,7 @@ use qsl_semantics::library::PackageId;
 use qsl_semantics::model::key::hex;
 use qsl_semantics::value::{
     native_diagnostics_catalog, CatalogEntry, CatalogRole, DefinitionLock, DefinitionReference,
-    Member, NodeOwner,
+    HeaderLayer, Member, NodeOwner,
 };
 use quire_exact::{Cancel, Integer, NodeKey, Origin, NODE_KEY_DOMAIN};
 use quire_semantic_value::location::Location;
@@ -837,11 +837,19 @@ fn catalog_entry(lock: &DefinitionLock, role: CatalogRole) -> &CatalogEntry {
     lock.entry(role)
 }
 
-/// The lock's `edition` and `definition_selections`: the catalog's edition,
-/// then its other always-selected roles in catalog order, then each law
-/// definition the bodies name that is not already selected.
+/// The lock's `edition` and `definition_selections` (FR-110 "Lock rows"):
+/// the catalog's edition; then the header-selected layers and every layer
+/// their `requires` closure names, in the lock's row order, and no layer
+/// that requires a selected layer; then the qualification-catalog rows
+/// QSpec FR-001 selects for those layers; then each law definition the
+/// bodies name that is not already selected.
+///
+/// A unit whose header selects no layer selects the `always` rows: the
+/// lock's `without_layer` rows are for a unit that selects layers none of
+/// which is `quire.value.complete/v1`.
 fn catalog_selections(
     lock: &DefinitionLock,
+    layers: &[HeaderLayer],
     laws: &[DefinitionReference],
 ) -> (CheckedSelection, Vec<CheckedArtifactRef>) {
     // A law's `DefinitionRef` is also part of the application-node keys that
@@ -850,16 +858,27 @@ fn catalog_selections(
         role: CheckedSelectionRole::Edition,
         definition: artifact(&catalog_entry(lock, CatalogRole::Edition).reference()),
     };
-    let mut definitions: Vec<CheckedArtifactRef> = lock
-        .always_roles()
+    let closure = lock.closure(layers);
+    let qualification = if layers.is_empty() {
+        lock.always_roles()
+    } else {
+        lock.qualification_roles(&closure)
+    };
+    let selected = closure
         .iter()
-        .filter(|role| **role != CatalogRole::Edition)
-        .map(|role| artifact(&catalog_entry(lock, *role).reference()))
-        .collect();
-    for law in laws {
-        let law = artifact(law);
-        if !definitions.contains(&law) {
-            definitions.push(law);
+        .map(|layer| lock.layer_reference(*layer))
+        .chain(
+            qualification
+                .iter()
+                .filter(|role| **role != CatalogRole::Edition)
+                .map(|role| catalog_entry(lock, *role).reference()),
+        )
+        .chain(laws.iter().cloned());
+    let mut definitions: Vec<CheckedArtifactRef> = Vec::new();
+    for definition in selected {
+        let definition = artifact(&definition);
+        if !definitions.contains(&definition) {
+            definitions.push(definition);
         }
     }
     (edition, definitions)
@@ -1129,7 +1148,8 @@ fn emit_package_inner(
     let (profile_selections, laws) = split_laws(&order);
 
     let catalog = DefinitionLock::pinned();
-    let (edition, definition_selections) = catalog_selections(&catalog, &laws);
+    let (edition, definition_selections) =
+        catalog_selections(&catalog, graph.header_layers(), &laws);
     let model_selections: Vec<CheckedDomainPackageRef> = graph
         .model_selections()
         .iter()
