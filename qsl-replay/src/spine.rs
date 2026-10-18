@@ -596,6 +596,9 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
         AssemblyCause::UnresolvedOperation { context, operation } => {
             format!("`{context}` has no operation `{operation}`")
         }
+        AssemblyCause::UnsupportedDeclarationForm { form } => {
+            format!("a `{form}` declaration is not admitted yet")
+        }
         AssemblyCause::AmbiguousOperation { context, operation } => {
             format!("`{context}` inherits more than one operation `{operation}`")
         }
@@ -604,6 +607,12 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
             bodies.len(),
             operation.node
         ),
+        AssemblyCause::UnresolvedPopulationBound { name } => {
+            format!("`bound` names `{name}`, which no declaration resolves")
+        }
+        AssemblyCause::AmbiguousPopulationBound { name, spans } => {
+            format!("{} `bound` declarations share `{name}`", spans.len())
+        }
         AssemblyCause::AmbiguousPopulation {
             context,
             populations,

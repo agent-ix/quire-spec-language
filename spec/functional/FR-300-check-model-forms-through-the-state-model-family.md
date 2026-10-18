@@ -84,12 +84,14 @@ dereferenced object uses `ill_typed`/`type-mismatch` (FR-056-AC-9), as does a
 
 Each `match` that calls a family's S3 hook SHALL have a `StateModel` arm and
 no `_` arm, and the `catalog_code()` family-prefix match SHALL keep its
-`StateModel` arm. The declaration dispatch at S2 SHALL have no `StateModel`
-arm: the five model forms are expressions nested in `Value` and
-`ProtocolClause` bodies, which those families' S2 builders already produce,
-and no `StateModel` declaration has a leading token (ADR-016 FP-1, FP-3).
+`StateModel` arm. The declaration dispatch at S2 SHALL have exactly one
+`StateModel` arm, `LeadingTokenKind::Bound => state_model::population_bound`,
+the `bound` declaration of FR-380: the five model forms are expressions nested
+in `Value` and `ProtocolClause` bodies, which those families' S2 builders
+already produce, and the `bound` declaration is the one `StateModel`
+declaration with a leading token (ADR-016 FP-1, FP-3).
 The FR-063 seam probe SHALL report the S1 `catalog_code()` prefix arm and the
-S3 hook arm, and SHALL report the S2 absence as expected. `StateModel` takes
+S3 hook arm, and SHALL report the one S2 `Bound` arm as expected. `StateModel` takes
 part in no S6a seam (ADR-016 FP-3).
 
 ## Acceptance Criteria
@@ -98,7 +100,7 @@ part in no S6a seam (ADR-016 FP-3).
 | --- | --- | --- |
 | FR-300-AC-1 | For each of the five model forms, a unit whose form is well-typed compiles, and the form's checked node and static type are the ones QSpec FR-151 and FR-153 fix (`deref` typed by its declared field type, `allInstances<T>(p)` as `Set<Reference<T>>[0,N]` for `p: Population<T>[N]` or unbounded `Set<Reference<T>>` for `p: Population<T>`, `lookup<T>(p, r) absent m` as `Reference<T>` for `undefined` or `refused` and `Option<Reference<T>>` for `empty`). | Test |
 | FR-300-AC-2 | For each of the five model forms, an ill-formed instance (a read of a member the static type does not declare, a `lookup` key whose static type does not conform, a dispatched call to an undeclared operation) refuses at S3 with a cause whose family is `FamilyKind::StateModel`, whose catalog code carries the `state-model` prefix, and whose QSpec code and cause are the ones QSpec FR-151 or FR-153 fix. | Test |
-| FR-300-AC-3 | `xtask seam-probe` reports the `StateModel` arm of the S1 `catalog_code()` prefix match and of the S3 hook match as seam locations and fails when either is absent from its report; it reports the S2 declaration dispatch as having no `StateModel` arm by design, and fails when a `state_model::` arm appears there. | Test |
+| FR-300-AC-3 | `xtask seam-probe` reports the `StateModel` arm of the S1 `catalog_code()` prefix match and of the S3 hook match as seam locations and fails when either is absent from its report; it reports the S2 declaration dispatch as having exactly the one `StateModel` arm `Bound => state_model::population_bound`, and fails when that arm is absent or any other `state_model::` arm appears there. | Test |
 
 ## Dependencies
 

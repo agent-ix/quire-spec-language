@@ -2783,6 +2783,16 @@ pub(super) fn finish_populations(
         &values.extents,
         &values.completeness,
     )?;
+    let population_sizes = values
+        .keys_by_population
+        .iter()
+        .map(|(population, keys)| {
+            (
+                population.clone(),
+                u64::try_from(keys.len()).unwrap_or(u64::MAX),
+            )
+        })
+        .collect();
     let references: Vec<ObjectReference> = values
         .objects
         .iter()
@@ -2794,7 +2804,8 @@ pub(super) fn finish_populations(
     )
     .with_references(references)
     .with_out_of_range(out_of_range.clone())
-    .with_extents(extents);
+    .with_extents(extents)
+    .with_population_sizes(population_sizes);
     Ok(AdmittedEnvironment {
         environment,
         completeness: values.completeness,

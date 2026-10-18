@@ -18,4 +18,5 @@
 pub mod automaton;
 pub mod fairness;
 pub mod simulation;
+pub mod temporal;
 pub mod value;

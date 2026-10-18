@@ -24,7 +24,9 @@ Use ADR-018 §6's ConfigVersion example unit (post clause `Cycles`) and the
 
 1. Check `always eventually holds(c.versionNumber = 2)` with a weak
    constraint on `attemptUpdate` written with no granularity, with `whole`
-   and with `each`; compare fairness sets and node identities.
+   and with `each`; compare fairness sets and node identities. Check
+   same-named operations declared by two distinct admitted model types and
+   compare the resolved `FairnessOperation` values.
 2. Check a weak constraint on `Absent`; a fairness constraint on a clause
    under the event-position false-extension profile; one constraint written
    twice.
@@ -42,7 +44,8 @@ Tag the tests `#[trace("TC-518", "FR-123-AC-n")]`.
 
 - Step 1: the first two fairness sets are equal, granularity `Whole`; the
   third is `Each`; the clause node identities differ between `Whole` and
-  `Each`.
+  `Each`. The same-named operations retain different declaring-type
+  `EffectiveId` values and their fairness constraints are unequal.
 - Step 2: `missing_declaration`/`missing-name` at `Absent`;
   `unsupported_construct`/`expression-form` at the constraint; a one-member
   fairness set.

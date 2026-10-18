@@ -523,6 +523,33 @@ fn the_assembler_keeps_temporal_clauses_and_refuses_an_undeclared_alias() {
     );
 }
 
+/// A `terminal` declaration that S2 builds and no check admits yet refuses
+/// `unsupported_construct`/`declaration-form` at the declaration's span,
+/// rather than compiling and being silently ignored.
+#[trace("TC-1059", "FR-382-AC-6")]
+#[test]
+fn a_terminal_declaration_refuses_as_an_unsupported_declaration_form() {
+    for declaration in [
+        "terminal Done using v on M when { true };",
+        "terminal Halt using v on M any;",
+    ] {
+        let (text, found) = errors(declaration);
+        assert_eq!(
+            found,
+            [AssemblyError {
+                cause: AssemblyCause::UnsupportedDeclarationForm { form: "terminal" },
+                span: last(&text, declaration),
+            }],
+            "{declaration}"
+        );
+        assert_eq!(found[0].cause.code(), Code::UnsupportedConstruct);
+        assert_eq!(
+            found[0].cause.catalog_code(),
+            qsl_foundation::CatalogCode::new("unsupported_construct", "declaration-form")
+        );
+    }
+}
+
 #[trace("FR-091-AC-8", "TC-396")]
 #[test]
 fn nested_constructs_of_other_families_refuse_with_their_own_causes() {
