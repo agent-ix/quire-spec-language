@@ -54,3 +54,4 @@ scope:
 | FND-001 | fixed | AC-13's layer-table sentence is removed (a425f7631, FR-361:242). |
 | FND-002 | fixed | TC-1015 Description now names the admitted-that-must-be-refused defect (a425f7631, TC-1015:13). |
 | FND-003 | fixed | Item 17 now states the deletion as a fact ("The exception is deleted as one change with the gate, and the deletion covers:") rather than a SHALL build step (343edd4a2, FR-361:210-211). |
+| FND-004 | fixed | TC-1015 step 3 now repeats with the value-profile alias in a unit that also selects `quire.state.graph/v1` through a second alias, and expects the refusal; AC-13 states the same case (603eac4e8). |
