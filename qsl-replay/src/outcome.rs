@@ -201,6 +201,12 @@ pub struct ItemCause {
     parity: Option<ParityReason>,
     #[serde(skip_serializing_if = "Option::is_none")]
     depth: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    limit: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    value: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    setting: Option<&'static str>,
     #[serde(
         serialize_with = "cancel_source",
         skip_serializing_if = "Option::is_none"
@@ -232,6 +238,9 @@ impl ItemCause {
             code: None,
             parity: None,
             depth: None,
+            limit: None,
+            value: None,
+            setting: None,
             source: None,
             rule: None,
             certificate_at: None,
@@ -281,6 +290,7 @@ impl ItemCause {
             // The kind alone: the claim identity and outcome stay on the
             // typed cause, which holds them for the caller.
             ReportedInconclusiveCause::Cause(InconclusiveCause::ScalarAgrees(_)) => {}
+            ReportedInconclusiveCause::Cause(InconclusiveCause::SolverInconclusive) => {}
         }
         item
     }
@@ -338,6 +348,11 @@ impl OutcomeItem {
                 let mut item = ItemCause::kind(cause.as_str());
                 match cause {
                     IncompleteCause::Cancelled { source } => item.source = Some(*source),
+                    IncompleteCause::LimitReached { limit, value } => {
+                        item.limit = Some(limit.as_str());
+                        item.value = Some(*value);
+                        item.setting = Some(limit.setting());
+                    }
                     IncompleteCause::TimedOut | IncompleteCause::ResourceExhausted => {}
                 }
                 (ItemLabel::Incomplete, Some(item))

@@ -41,6 +41,7 @@ mod compile;
 mod certificate;
 mod composite;
 mod execute;
+mod hybrid;
 mod identity;
 mod limits;
 mod object_environment;
@@ -72,6 +73,9 @@ pub use execute::{
     DependencySelectionsCause, Domain, FrameIdentityMismatch, FrameReplayResult,
     IdentityEncodeError, LimitAboveReader, ParityArgument, ParityBoundRefusal, ParityPreimage,
     ReplayRefusal, ScalarIdentityMismatch, ValueParityReport, ValueParityResult,
+};
+pub use hybrid::{
+    SolverBudget, SolverHorizon, SolverLimit, SolverMethod, SolverOutcome, SolverResult,
 };
 pub use identity::{
     DeclaredDomain, EmptyQualifiedName, ObligationIdentity, ProfileSelection, QualifiedName,

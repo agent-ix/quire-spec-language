@@ -11,6 +11,7 @@ use crate::bounds::{BoundExceeded, ReplayLimits};
 use crate::call_site::CallSiteRefusal;
 use crate::certificate::{CertificateLocus, CertificateRule};
 use crate::execute::ReplayRefusal;
+use crate::hybrid::{SolverBudget, SolverHorizon, SolverMethod};
 use crate::result::{DisagreementCause, ReplayResult, WitnessSettlement};
 use crate::scalar::ScalarAgreement;
 use qsl_foundation::diagnostic::{Category, Code};
@@ -43,6 +44,16 @@ pub enum ProofBasis {
     Inductive {
         /// Induction depth.
         depth: u64,
+    },
+    /// FR-250: a hybrid solver's sound result, holding for the claim within
+    /// its time horizon and jump bound.
+    BoundedSolver {
+        /// The kind of method that produced the result.
+        method: SolverMethod,
+        /// The time horizon the proof covers.
+        horizon: SolverHorizon,
+        /// The jump bound the proof covers.
+        jumps: u64,
     },
 }
 
@@ -134,6 +145,13 @@ pub enum IncompleteCause {
     },
     /// The run exhausted a configured resource bound before completing.
     ResourceExhausted,
+    /// FR-250 (ADR-018 V-7): a hybrid solver stopped at one of its budgets.
+    LimitReached {
+        /// The budget that stopped the solver.
+        limit: SolverBudget,
+        /// The budget's value for the run.
+        value: u64,
+    },
 }
 
 impl IncompleteCause {
@@ -142,7 +160,7 @@ impl IncompleteCause {
         match self {
             Self::TimedOut => "timed-out",
             Self::Cancelled { .. } => "cancelled",
-            Self::ResourceExhausted => "limit-reached",
+            Self::ResourceExhausted | Self::LimitReached { .. } => "limit-reached",
         }
     }
 }
@@ -235,6 +253,10 @@ pub enum InconclusiveCause {
     /// none of: a harness defect. The agreement names the claim and the
     /// outcome, and no predicate verdict.
     ScalarAgrees(ScalarAgreement),
+    /// FR-250: a hybrid solver result that proves nothing (`δ-sat`, a
+    /// flowpipe meeting the unsafe set, `unknown`, or a method not sound for
+    /// its outcome).
+    SolverInconclusive,
 }
 
 impl InconclusiveCause {
@@ -249,6 +271,7 @@ impl InconclusiveCause {
             Self::ReplayParity(_) => "replay-parity",
             Self::ReplayRefused(_) => "replay-refused",
             Self::ScalarAgrees(_) => "scalar-agrees",
+            Self::SolverInconclusive => "solver-inconclusive",
         }
     }
 
@@ -260,7 +283,8 @@ impl InconclusiveCause {
             | Self::InductionNotClosed { .. }
             | Self::UndecidedSuccessor
             | Self::NoInitialState
-            | Self::CertificateRejected { .. } => 0,
+            | Self::CertificateRejected { .. }
+            | Self::SolverInconclusive => 0,
             Self::ReplayParity(cause) => cause.measured_bytes(),
             Self::ReplayRefused(_) => 0,
             Self::ScalarAgrees(agreement) => agreement.measured_bytes(),
@@ -365,7 +389,8 @@ impl TerminalValue {
                     ProofBasis::Checks { .. }
                     | ProofBasis::Exhaustive
                     | ProofBasis::BoundedComplete { .. }
-                    | ProofBasis::Inductive { .. },
+                    | ProofBasis::Inductive { .. }
+                    | ProofBasis::BoundedSolver { .. },
                 ..
             }
             | Self::Tested => Category::Success,
