@@ -26,10 +26,10 @@ pub(crate) fn terminal_declaration(
     let cst = construct.cst;
     let node = production_node(construct)?;
     let declaration_items = items(cst, node);
-    // `terminal Name using p on Model ...`: the declaration's own name, its
-    // `using` alias and its model alias are its only three direct identifier
-    // tokens, in that order.
-    let [name, alias, model] = tokens_of(&declaration_items, TokenKind::Identifier)[..] else {
+    // `terminal Name using p on Model ...`: `terminal` is a contextual word
+    // (an identifier token), then the declaration's own name, its `using`
+    // alias and its model alias, in that order.
+    let [_, name, alias, model] = tokens_of(&declaration_items, TokenKind::Identifier)[..] else {
         return Err(unexpected(node));
     };
     let kind = match nodes_of(&declaration_items, Production::Block)[..] {

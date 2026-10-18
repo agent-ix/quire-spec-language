@@ -49,14 +49,11 @@ dispatched operation call and `lookup` form, and QSpec FR-450-AC-3 states it
 for the `abstraction-decl`; QSL FR-304 applies it to the abstraction form.
 Until this requirement is built, QSL accepts every one of them under a package
 that selects only `quire.value.complete/v1`, and FR-102 and FR-302 record that
-the gate is not enforced. This requirement is the target state. Its build
-depends on FR-110's layer selection, which is not yet built: the header
-resolution accepts only the root row today, so the model layer cannot yet be
-selected. This requirement adds no workaround for that. FR-110 layer selection
-(FR-110-AC-1, AC-7, AC-8) is built first, then the gate. The sentences that
-record the missing gate in FR-102, FR-302 and in this paragraph are deleted
-when FR-110 layer selection is built and the gate of this requirement is
-implemented.
+the gate is not enforced. This requirement is the target state. FR-110's
+layer selection (FR-110-AC-1, AC-7, AC-8) is built, so the header resolves
+`quire.model.complete/v1`; the gate of this requirement is not. The sentences
+that record the missing gate in FR-102, FR-302 and in this paragraph are
+deleted when the gate of this requirement is implemented.
 
 A **model construct** is a syntactic form listed in item 5. The unit
 **selects the model profile** when at least one of its header `profile`
@@ -225,8 +222,8 @@ DefinitionLock catalog's `header_selectable_layers` (FR-110).
 - FR-110 states header profile resolution, the `header_selectable_layers`
   rows and the layer rule; the model layer is one of its five layers and this
   requirement adds the unit-level model test and the complete-model lock rows.
-  FR-110's layer selection (FR-110-AC-1, AC-7, AC-8) is not yet built, and
-  this requirement's build depends on it (items 2 to 4).
+  FR-110's layer selection (FR-110-AC-1, AC-7, AC-8) is built; this
+  requirement reads it (items 2 to 4).
 - FR-102 and FR-302 record that the `operation-body` gate is not enforced;
   they cross-reference this requirement. FR-304 states the abstraction
   refusal this requirement places at S3. FR-308 and FR-309 name the protocol
