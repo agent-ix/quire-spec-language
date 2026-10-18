@@ -199,7 +199,8 @@ fn an_event_position_window_reads_back_from_the_current_position_only() {
 }
 
 /// FR-194-AC-2: `fraction holds(e.ok)` over `true, false, true, true` is
-/// exactly 3/4, and `sum`, `min` and `max` of 1, 4, 2 are 7, 1 and 4.
+/// exactly 3/4, and `sum`, `min` and `max` of 1, 4, 2 are 7, 1 and 4; a
+/// quantile whose rank is not whole rounds up.
 #[trace("TC-629", "FR-194-AC-2")]
 #[test]
 fn fraction_sum_min_and_max_are_exact() {
@@ -236,6 +237,8 @@ fn fraction_sum_min_and_max_are_exact() {
         (AggregateKind::Sum, 7),
         (AggregateKind::Min, 1),
         (AggregateKind::Max, 4),
+        // ceil(1/2 * 3) = 2: the second smallest of 1, 2, 4.
+        (AggregateKind::Quantile(ratio(1, 2)), 2),
     ] {
         let atom = AggregateAtom::new(
             term(kind.clone(), PastWindow::Positions { a: 0, b: 2 }, 1),
