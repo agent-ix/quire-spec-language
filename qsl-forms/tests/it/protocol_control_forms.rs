@@ -90,7 +90,7 @@ fn only_channel(form: &ProtocolDeclarationForm) -> &ChannelForm {
     channel
 }
 
-/// FR-308-AC-1, the channel part: a bounded channel builds its roles, its
+/// Channel form only (no criterion is claimed): a bounded channel builds its roles, its
 /// payload type and each premise as written, with the span of its text.
 #[trace("TC-887")]
 #[test]

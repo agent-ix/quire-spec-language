@@ -658,9 +658,12 @@ mod tests {
         assert_ne!(same_but_place(tail), same_but_place(new));
     }
 
-    /// FR-218-AC-22 (TC-1065 rows 4 and 5): two cases or two branches of one
-    /// label refuse at both labels in source order; a `choice` with one case
-    /// and a `parallel` with one branch fail at the parser.
+    /// Part of FR-218-AC-22 (TC-1065 rows 4 and 5): two cases or two
+    /// branches of one label refuse at both labels in source order, and a
+    /// `choice` with one case and a `parallel` with one branch fail at the
+    /// parser. Only a sound `parallel` is shown to check: a sound `choice`
+    /// still refuses `not-yet-implemented`, so the acceptance half of the
+    /// criterion is not verified for `choice`.
     #[trace("TC-1065")]
     #[test]
     fn equal_case_or_branch_labels_refuse_and_a_single_one_fails_at_the_parser() {
@@ -784,7 +787,7 @@ mod tests {
         assert_eq!(located(&text, &cause), "middle");
     }
 
-    /// FR-218-AC-24 (TC-1065 rows 8 and 9), the record and object cases: a
+    /// The record and object cases only (no criterion is claimed whole): a
     /// role on a record type and a channel carrying an object type refuse
     /// `invalid_model_binding`/`malformed-declaration` at the type name, and
     /// a role on an object type and channels carrying a record, an enum and
