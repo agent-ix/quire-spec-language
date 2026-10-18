@@ -36,3 +36,9 @@ Merged-tree validation: `make check-spec-validation` exited 0 on scratch merge o
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | Three changed author self-review artifacts record “No ... found” as Findings instead of clean placeholders; this makes positive results look like defects to review-data consumers. | spec/reviews/qsv-fairness-reference/dependency.md:25; integrity.md:28; scope-boundary.md:25 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | At `ed2d905f3a3d8b96b225eb6634f0f944fef416e2`, the dependency, integrity and scope-boundary author reviews each use `No findings (placeholder)` in the Findings row. The ten independent review artifacts were copied byte-identically. Scratch merge `50ef861687bf0269a6a4d2b2a4a8cb30ac202cc2` of QSL main `33066f7656e7091eaafe015f0a8b645aecd09508` and this PR head passes `make check-spec-validation`. |
