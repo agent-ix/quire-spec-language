@@ -692,7 +692,7 @@ fn tree_unit() -> Unit {
     let source = format!(
         "language \"ix:native\" edition \"1-draft\";\n{PROFILE}\
          union Tree {{ Leaf(Integer), Branch(Integer, Option<Tree>) }}\n\
-         function size using v(t: Tree): Boolean pure {{ false }}\n"
+         function weigh using v(t: Tree): Boolean pure {{ false }}\n"
     );
     let compiled = spine(&source, &BTreeMap::new());
     Unit { source, compiled }
@@ -755,6 +755,13 @@ fn tree_admission_events(depth: usize) -> Vec<SuppliedEvent> {
     events
 }
 
+/// The 10,000-level `Tree` encodes to about 1.8 MB, over the 1 MiB default of
+/// `replay.input_bytes`; the caller raises that reader bound (FR-255) and every
+/// other limit stays at its default.
+fn run_wide(wire: ReplayRequestWire) -> Result<ReplayResult, ReplayRefusal> {
+    replay(wire, ReplayLimits::default().with_input_bytes(1 << 24))
+}
+
 /// TC-830 step 4 through the public `replay`, with the unchanged shape of
 /// QSL-503's full-size fixture (10,000 levels, 29,999 semantic occurrences):
 /// the occurrence bound 29,998 denies before evaluation and 29,999 admits,
@@ -776,14 +783,14 @@ fn the_full_size_supplied_tree_is_bounded_by_occurrences_and_admission_events() 
     assert_eq!(a, 79_996);
 
     let request = |limits: SuppliedLimits, bound: u64| {
-        let mut wire = unit.with("size", vec![tree_witness(&unit, DEPTH)], limits);
+        let mut wire = unit.with("weigh", vec![tree_witness(&unit, DEPTH)], limits);
         wire.accounting_limits.value_occurrences = bound;
         wire
     };
 
     // The occurrence bound: one below denies before evaluation, naming the
     // limit and the count reached; the count itself admits.
-    let over_bound = run(request(SuppliedLimits::default(), occurrences - 1));
+    let over_bound = run_wide(request(SuppliedLimits::default(), occurrences - 1));
     let stop = pre_call(&over_bound);
     assert_eq!(stop.context.phase, SuppliedPhase::Conversion);
     assert_eq!(stop.context.parameter, Some(0));
@@ -792,16 +799,16 @@ fn the_full_size_supplied_tree_is_bounded_by_occurrences_and_admission_events() 
     assert_eq!(limit.limit_kind, SuppliedLimitKind::ValueOccurrences);
     assert_eq!(limit.limit, occurrences - 1);
     assert_eq!(limit.next_charge, occurrences);
-    assert_reproduced(&run(request(SuppliedLimits::default(), occurrences)));
+    assert_reproduced(&run_wide(request(SuppliedLimits::default(), occurrences)));
 
     // The admission ceiling, under the same sufficient evaluation limits.
-    assert_reproduced(&run(request(only_a(a), occurrences)));
+    assert_reproduced(&run_wide(request(only_a(a), occurrences)));
     let last_level = 8 * (DEPTH / 2);
     let sampled = (0..=8)
         .chain(last_level..last_level + 8)
         .chain(events.len() - 4..events.len());
     for denied in sampled.map(|index| u64::try_from(index).unwrap()) {
-        let result = run(request(only_a(denied), occurrences));
+        let result = run_wide(request(only_a(denied), occurrences));
         let stop = pre_call(&result);
         let index = usize::try_from(denied).unwrap();
         assert_eq!(stop.context.phase, SuppliedPhase::Admission, "{denied}");
