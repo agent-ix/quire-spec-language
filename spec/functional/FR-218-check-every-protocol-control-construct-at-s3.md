@@ -142,9 +142,9 @@ construct never reaches S4 (FR-383).
 - S3 SHALL refuse two cases of one `choice`, or two branches of one
   `parallel`, with equal labels with `ambiguous_declaration`/`ambiguous-name`
   at both labels, naming the label, in source order.
-- S3 SHALL refuse a `choice` with fewer than two cases and a `parallel` with
-  fewer than two branches with `unsupported_construct`/`declaration-form` at
-  the construct, naming it and the number of cases or branches written.
+- A `choice` with fewer than two cases and a `parallel` with fewer than two
+  branches are not in the grammar and fail at the parser with its syntax
+  diagnostic, before any form is built (FR-308).
 - S3 SHALL refuse `join all` whose list omits a branch, a `quorum(n)` whose
   `n` is below one or above the number of distinct labels joined, and a
   `join any` or `join predicate` that lists no label, with
@@ -248,6 +248,11 @@ that relationship with those two typed ends (QSpec FR-051).
   naming the resolved kind.
 - A target named by two requirements SHALL be recorded once, in the position of
   its first requirement.
+- A requirement whose temporal clause reaches the requiring protocol through a
+  protocol reference, directly or through other clauses, is a definition cycle.
+  S3 SHALL refuse it with `invalid_package`/`definition-cycle` at the
+  requirement, naming the protocol and the temporal clause, as it refuses a
+  causal cycle.
 
 ### Choice and repeat decisions
 
@@ -371,9 +376,10 @@ one protocol declared in the same unit. It carries no package selector.
 | FR-218-AC-19 | Over two visible facts, guards that leave both facts true uncovered, that overlap on both true, that leave one fact out, and constant guards `true`/`not false` or `false`/`not true` each refuse `undefined_expression`/`unproved-exhaustiveness` at the choice, retaining `failed` (`[missing-arm]`, `[duplicate-arm]` or `[missing-arm, duplicate-arm]`) and the case names; complementary guards over the individually listed facts check. | Test (TC-1056) |
 | FR-218-AC-20 | A FIFO key of type `Boolean`, and a key of a record type, check because the clause checker admits `=` over them; a key of a type over which it admits no `=` refuses `ill_typed`/`operator-ineligible` at the key, retaining `operator` `=` and the type. | Test (TC-1056) |
 | FR-218-AC-21 | Channels written `overflow reject`, `overflow block`, `overflow loss head`, `overflow loss tail` and `overflow loss new` record `Reject`, `Block`, `Loss(Head)`, `Loss(Tail)` and `Loss(New)`; no other overflow policy records a selector, and a delivery policy never changes the recorded overflow policy. | Test (TC-1065) |
-| FR-218-AC-22 | A `choice` with cases `shipped` and `shipped` and a `parallel` with branches `east` and `east` each refuse `ambiguous_declaration`/`ambiguous-name` at both labels, in source order, naming the label; a `choice` with one case and a `parallel` with one branch each refuse `unsupported_construct`/`declaration-form` at the construct; two cases and two branches check. | Test (TC-1065) |
+| FR-218-AC-22 | A `choice` with cases `shipped` and `shipped` and a `parallel` with branches `east` and `east` each refuse `ambiguous_declaration`/`ambiguous-name` at both labels, in source order, naming the label; a `choice` with one case and a `parallel` with one branch each fail at the parser with a syntax diagnostic and build no form; two cases and two branches check. | Test (TC-1065) |
 | FR-218-AC-23 | Over branches `east` and `west`, `join all [east]` and `join quorum(0) [east, west]` and `join quorum(3) [east, west]` and `join any []` each refuse `invalid_package`/`invalid-value` at the list (the count for `quorum`); `join all [east, west]`, `join quorum(2) [east, west]`, `join any [east]` and `join all [east, west, east]` check, the last joining each label once. | Test (TC-1065) |
 | FR-218-AC-24 | A role `on M::Pt` where `Pt` is a record type refuses `invalid_model_binding`/`malformed-declaration` at `M::Pt`; a role on an object type, a process and a state machine checks; a channel `carries M::Node` where `Node` is an object type refuses the same at `M::Node`, and a channel carrying a record, an event type, a variant type and a scalar type checks. | Test (TC-1065) |
+| FR-218-AC-25 | `requires temporal Due;` where `Due`'s formula holds `protocol Fill` and the requiring protocol is `Fill`, and the same through a second temporal clause that names `Fill`, each refuse `invalid_package`/`definition-cycle` at the requirement, naming `Fill` and the clause; the same requirement from a protocol `Drain` that no clause names checks. Each refusal produces no package. | Test (TC-1065) |
 
 ## Dependencies
 

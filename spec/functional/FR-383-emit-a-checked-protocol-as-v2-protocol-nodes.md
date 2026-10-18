@@ -242,11 +242,9 @@ FR-105).
   `missing-selection` at the first such construct.
 - A unit that selects no protocol profile emits no protocol node and no
   refusal for the declaration (FR-092-AC-18).
-- A protocol whose required temporal clause reaches the protocol through a
-  protocol reference (FR-218) closes a dependency cycle between the clause
-  node and the temporal clause. `check` SHALL refuse it with
-  `invalid_package`/`definition-cycle` at the requirement, naming the protocol
-  and the temporal clause, and SHALL mint no key for either.
+- A requirement cycle between a protocol and a temporal clause is refused at S3
+  (FR-218). S4 treats it as unreachable and asserts that the emitted graph is
+  acyclic.
 - A protocol with any S3 refusal emits no protocol node (FR-113).
 - The emitter adds no limit of its own, and a protocol of any size and nesting
   depth emits. The node count is bounded when the package is read, by the
@@ -263,8 +261,8 @@ FR-105).
   channel premises and queue bounds, and the same derived causal relation.
 - QSL's I2 reader SHALL refuse a node that breaks a QSpec FR-464, FR-465 or
   FR-466 rule with that requirement's code and cause at its locus, in its
-  reader order. QSL's conformance run reads the vectors QSpec publishes for
-  these nodes (QSpec TC-946, TC-947, TC-948) from the `QSPEC_DIR` checkout,
+  reader order. QSL's conformance run reads the QSpec protocol vectors file
+  `proposals/checked-package-v2/fixtures/protocol-node-vectors.json`,
   admits each positive one and refuses each mutation with the recorded code
   and locus. It copies none of them.
 
@@ -288,10 +286,10 @@ FR-105).
 | FR-383-AC-14 | Each protocol node's key equals the SHA-256 of the RFC 8785 bytes of its `quire.application-node/v1` preimage computed independently. Reformatting **W**, adding a comment and adding a second `protocol OrderFlow` reference leave every protocol key and the `package_id` unchanged; renaming a role, retargeting a reference, changing one literal, changing a capacity, a selector, a join policy or a loop-proof term, and adding `scheduling adversarial` each change the changed node's key, the clause key and the `package_id`. | Test (TC-1062) |
 | FR-383-AC-15 | Emitting **W** twice, and in a unit that declares an unrelated protocol before it and one after it, gives the same protocol nodes, bytes and `package_id` for **W**; the clause key changes when, and only when, any node it reaches changes. | Test (TC-1062) |
 | FR-383-AC-16 | No emitted node carries a causal edge, a relationship alias, a runtime subject, an instance, an ordinal, a delivery or clock observation or an `internal`/`external` member. The causal relation derived from **W**'s emitted nodes by QSpec FR-464's rules holds the same (source port, target port) pairs as the compiled edge relation of **W**'s checked clause, back edges of the `repeat` included. | Test (TC-1062) |
-| FR-383-AC-17 | A graph in which **W**'s required temporal clause key, its model relationship key or an attempt's operation anchor key is bound to a key no emitted node carries refuses `missing_declaration`/`missing-name` at the construct that bound it, naming the bound key, with no protocol node and no package; **W** with an `await` in a package whose lock selects no `temporal_profile` refuses `missing_declaration`/`missing-selection` at the `await`, and so does a `compensate`; a unit that selects no protocol profile emits no protocol node and no refusal for the declaration; a protocol that requires a temporal clause that holds a reference to that protocol refuses `invalid_package`/`definition-cycle` at the requirement. | Test (TC-1063) |
+| FR-383-AC-17 | A graph in which **W**'s required temporal clause key, its model relationship key or an attempt's operation anchor key is bound to a key no emitted node carries refuses `missing_declaration`/`missing-name` at the construct that bound it, naming the bound key, with no protocol node and no package; **W** with an `await` in a package whose lock selects no `temporal_profile` refuses `missing_declaration`/`missing-selection` at the `await`, and so does a `compensate`; a unit that selects no protocol profile emits no protocol node and no refusal for the declaration; a requirement cycle never reaches S4 (FR-218-AC-25). | Test (TC-1063) |
 | FR-383-AC-18 | A protocol with an S3 refusal (a join naming a missing branch) in a unit that also holds a good protocol emits no node of either protocol and no package; emitting the good protocol alone succeeds. | Test (TC-1063) |
 | FR-383-AC-19 | Reading **W**'s package through QSL's I2 reader admits it and returns every protocol node with the key, tag, form, type, declaration, body, dependencies and occurrences emitted; the protocol rebuilt from the read-back nodes equals the protocol rebuilt from the in-process checked clause in keys, set order, ordered lists, binder levels, channel premises, queue bounds and derived causal relation. | Test (TC-1063) |
-| FR-383-AC-20 | Over **W**'s package, each mutation of the table in TC-1063 (a set out of ascending digest order, a repeated set entry, a channel with no queue, a second queue for one channel, a control held by nothing, a `receive` sequenced before its `send`, an argument missing, a layout out of order, a model of the wrong kind) is refused by QSL's I2 reader with the code, cause and locus QSpec FR-464, FR-465 or FR-466 gives it, and QSL's conformance run admits each positive and refuses each mutation of QSpec TC-946, TC-947 and TC-948 read from `QSPEC_DIR`. | Test (TC-1063) |
+| FR-383-AC-20 | Over **W**'s package, each mutation of the table in TC-1063 (a set out of ascending digest order, a repeated set entry, a channel with no queue, a second queue for one channel, a control held by nothing, a `receive` sequenced before its `send`, an argument missing, a layout out of order, a model of the wrong kind) is refused by QSL's I2 reader with the code, cause and locus QSpec FR-464, FR-465 or FR-466 gives it, and QSL's conformance run admits each positive and refuses each mutation of the QSpec protocol vectors file `protocol-node-vectors.json`. | Test (TC-1063) |
 | FR-383-AC-21 | A protocol whose controls outnumber `i2.nodes`, emitted with the limit raised, reads back under the default limit as `StageFailure::Limit` of kind node count with setting `i2.nodes`, and verifies when the setting is raised; a protocol with a `parallel` inside a `repeat` inside a branch of another `parallel`, three levels, and a `sequence` of 5,000 children each emit with no limit or depth refusal at S4. | Test (TC-1063) |
 
 ## Dependencies
@@ -315,7 +313,6 @@ FR-105).
 - QSpec FR-464 (the protocol node family: operation, keys, clause body,
   binders, reader order), FR-465 (role, channel, queue, `finish` and
   `terminal` bodies), FR-466 (control and compensation bodies), FR-322 (the
-  artifact and its reader order) and the vectors of QSpec TC-946, TC-947 and
-  TC-948.
+  artifact and its reader order) and the vectors file `protocol-node-vectors.json` and QSpec TC-946, TC-947 and TC-948.
 - [FR-337](FR-337-emit-a-checked-temporal-clause-as-a-v2-temporal-clause-node.md)
   (the temporal clause emission this requirement follows).

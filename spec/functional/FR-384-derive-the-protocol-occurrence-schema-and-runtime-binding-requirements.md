@@ -57,7 +57,6 @@ consumer's.
 
 - The protocol nodes of one `protocol_clause` (FR-383) and the nodes they
   reach: from the in-process `CheckedPackage` or from QSL's I2 read.
-- The package lock's `binding_contract` selection when it holds one.
 
 ## Outputs
 
@@ -79,7 +78,7 @@ consumer's.
 `RuntimeBindingRequirement` records for the protocol: one record for each
 (subject kind, subject node) the operators of the protocol's nodes imply,
 each holding its subject kind, the subject node's key, its scope (the key of
-the `protocol_clause` node) and its authority and contract.
+the `protocol_clause` node) and its authority and contract, both absent.
 
 ## Behavior
 
@@ -125,10 +124,9 @@ the `protocol_clause` node) and its authority and contract.
 
   Every other operator implies none.
 - A record's scope SHALL be the key of the `protocol_clause` node, and its
-  authority and contract SHALL be the lock's `binding_contract` selection
-  (QSpec FR-465). The record is the same for equal selections, names no
-  concrete value, and is absent of authority and contract when the lock holds
-  no such selection: the derivation never guesses an authority or a contract.
+  authority and contract SHALL be absent: the consumer's binding supplies
+  them (QSpec FR-465), and the derivation never guesses an authority or a
+  contract. A record names no concrete value.
 - A requirement is derived for a node the package holds. A construct the
   package does not hold has no requirement, and the derivation reads no
   source text, display string or name for a node's key.
@@ -144,7 +142,7 @@ the `protocol_clause` node) and its authority and contract.
 | FR-384-AC-3 | The schema and requirements of **W** hold no workflow identity, role instance, ordinal, delivery or clock observation; compiling **W** with no runtime input succeeds; the schema and requirements derived from the in-process package equal those derived from the package read back through the I2 reader. | Test (TC-1064) |
 | FR-384-AC-4 | Two protocols in one package that each declare a role `Payer` on the same model and a control `Charge` give distinct role keys and distinct control keys, so four distinct schema entries; **W** with its roles, channels and compensations declared in another order gives the same schema. | Test (TC-1064) |
 | FR-384-AC-5 | Over a variant of **W** with a `commit`, an `effect`, a `send`, a `receive`, an `attempt`, a replicated role and a template, the requirements hold exactly the subject kinds of the table for each node: one `workflow-instance` for the clause; `role-instance` for each role, with the replicated role's marked as one for each spawned object; `message` and `send` for the `send`; `receive` and `delivery` for the `receive`; `operation-attempt`; `business-effect`; `commit`; `compensation`, `compensation-attempt` and `compensation-effect` for the template; the workflow-closure observation for `finish`; and none for a `sequence`, `choice`, `parallel`, `repeat`, `await`, `check`, `fence`, `event`, channel, queue or `terminal`. | Test (TC-1064) |
-| FR-384-AC-6 | Each requirement names its subject node's key, the `protocol_clause` key as its scope and, when the lock holds a `binding_contract` selection, that selection as authority and contract; with no such selection the authority and contract are absent; changing the selection changes the records and no protocol node key. | Test (TC-1064) |
+| FR-384-AC-6 | Each requirement names its subject node's key, the `protocol_clause` key as its scope and an absent authority and contract. | Test (TC-1064) |
 | FR-384-AC-7 | No protocol node holds a requirement, a schema entry, an instance or an ordinal: the nodes of **W** contain none, and an `internal` or `external` member added to a role node is refused by QSL's I2 reader with `malformed_wire`. | Test (TC-1064) |
 | FR-384-AC-8 | A `Full` and a `Partial` template for one effect give two compensation entries and two sets of `compensation`, `compensation-attempt` and `compensation-effect` requirements, each naming its own template's key. | Test (TC-1064) |
 
