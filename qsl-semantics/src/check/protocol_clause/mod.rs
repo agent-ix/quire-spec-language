@@ -176,6 +176,7 @@ pub fn check(
             name: protocol.name.name.clone(),
             resolved_anchors: resolved,
             attempts: Vec::new(),
+            channels: Vec::new(),
         },
         bound_attempts,
     ))

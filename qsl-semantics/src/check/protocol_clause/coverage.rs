@@ -4,7 +4,7 @@
 
 use std::collections::BTreeMap;
 
-use qsl_forms::{ProtocolDeclarationForm, ProtocolNodeKind};
+use qsl_forms::{ProtocolConstructKind, ProtocolDeclarationForm, ProtocolNodeKind};
 use qsl_foundation::Span;
 
 use super::refusal;
@@ -12,7 +12,8 @@ use crate::check::refusal::{AliasKind, CheckRefusal, ProtocolAnchorCause};
 use crate::check::Scope;
 
 /// Whether this checker covers every part of a static node of `kind`:
-/// a `sequence` (a name and its children), an `attempt` (its
+/// a `sequence` (a name and its children), a `parallel` and its `branch`es
+/// (their join, checked by `protocol_controls`), an `attempt` (its
 /// operation and `contracts`, FR-114; its role, binder and body are checked
 /// by [`content`]) and the `finish` node (its binder and body, the same).
 /// Every other kind carries content -- a channel, a guard, a join policy,
@@ -21,7 +22,7 @@ use crate::check::Scope;
 fn covered_kind(kind: ProtocolNodeKind) -> bool {
     use ProtocolNodeKind as K;
     match kind {
-        K::Sequence | K::Attempt | K::Finish => true,
+        K::Sequence | K::Parallel | K::Branch | K::Attempt | K::Finish => true,
         K::Send
         | K::Receive
         | K::Effect
@@ -29,9 +30,7 @@ fn covered_kind(kind: ProtocolNodeKind) -> bool {
         | K::Commit
         | K::CompensateTemplate
         | K::Choice
-        | K::Parallel
         | K::Repeat
-        | K::Branch
         | K::Case
         | K::Await
         | K::Check => false,
@@ -43,8 +42,10 @@ fn covered_kind(kind: ProtocolNodeKind) -> bool {
 ///
 /// FR-113 and FR-114 check only those three parts. A protocol holding
 /// anything else -- a node kind [`covered_kind`] rejects, any
-/// [`qsl_forms::ProtocolConstructKind`] (channel, relationship, requirement,
-/// capture, `activation on each`, replicated role, `related by`), or a body
+/// [`qsl_forms::ProtocolConstructKind`] other than a plain channel
+/// (relationship, requirement, capture, `activation on each`, replicated
+/// role, `related by`, a `fifo` ordering, a `predicate` join, a `terminal
+/// when` member), or a body
 /// other than a bare Boolean literal -- refuses `unsupported_construct`/
 /// `not-yet-implemented` once, at the earliest such construct, rather than
 /// compiling with unchecked content that the emitted package then silently
@@ -71,6 +72,7 @@ pub fn content(
             protocol
                 .constructs
                 .iter()
+                .filter(|construct| construct.kind != ProtocolConstructKind::Channel)
                 .map(|construct| (construct.span, construct.kind.label())),
         )
         .chain(
@@ -106,7 +108,9 @@ pub fn content(
             .entry(role.name.name.as_str())
             .or_default()
             .push(role.name.span);
-        if scope.object_type_named(&role.context.name).is_none() {
+        if scope.object_type_named(&role.context.name).is_none()
+            && scope.named_types(&role.context.name).is_empty()
+        {
             refusals.push((
                 role.context.span,
                 refusal(ProtocolAnchorCause::MissingRoleType {
