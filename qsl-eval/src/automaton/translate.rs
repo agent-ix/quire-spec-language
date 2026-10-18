@@ -22,8 +22,15 @@
 //! automaton of the formula itself, with no acceptance set; its bad-prefix
 //! [`Monitor`](crate::automaton::Monitor) is the deterministic monitor
 //! (SM-6). A liveness formula translates to the automaton of its negation.
+//!
+//! The automaton is lazy (ADR-018 IV-6, QSpec FR-338): a state is numbered
+//! when the caller first reaches it through [`PropertyAutomaton::initial`] or
+//! [`PropertyAutomaton::successors`], and `max_states` counts the states
+//! reached, so an interval of any length costs only the counter values the
+//! product visits. [`PropertyAutomaton::explore`] builds the explicit [`Gba`]
+//! of everything reachable, for a caller that needs the whole graph.
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_semantics::check::{Activation, CheckedTemporalClause, FormulaNodeId, TemporalProfile};
 
@@ -32,7 +39,7 @@ use crate::automaton::dnf::Dnf;
 use crate::automaton::error::AutomatonError;
 use crate::automaton::formula::{invariant, lower, FutureKind, Ir, Lowered, Node, NodeId, Window};
 use crate::automaton::gba::{Gba, GbaBuilder};
-use crate::automaton::letter::{Atom, Guard};
+use crate::automaton::letter::{Atom, Guard, Letter};
 use crate::automaton::numbering::Numbering;
 use crate::automaton::past::{Memory, Outcome, Past};
 use crate::automaton::state::StateId;
@@ -58,10 +65,22 @@ pub enum AutomatonKind {
 /// has one; then, for a bounded `on each` clause, one that is true at every
 /// represented position and false at the positions the profile's false
 /// extension adds (its activations stop at the end of the trace).
-#[derive(Clone, Debug)]
+///
+/// The automaton is materialized as the caller reaches states (ADR-018 IV-6):
+/// [`initial`](Self::initial) is always state 0, and every other state is
+/// numbered by the first [`successors`](Self::successors) call that reaches
+/// it. A state number is storage local to this automaton, never a state's
+/// identity (ADR-018 section 12).
+#[derive(Debug)]
 pub struct PropertyAutomaton {
     kind: AutomatonKind,
-    automaton: Gba,
+    translator: Translator,
+    initial: Config,
+    /// The unbounded `eventually` and `until` cores, one acceptance set each.
+    eventualities: Vec<NodeId>,
+    reached: Numbering<Config>,
+    /// For each reached state, once expanded, its guarded successors.
+    expanded: Vec<Option<Vec<(Guard, Config)>>>,
     atoms: Vec<FormulaNodeId>,
     when: Option<Atom>,
     live: Option<Atom>,
@@ -71,11 +90,6 @@ impl PropertyAutomaton {
     /// Which representation the property got.
     pub fn kind(&self) -> AutomatonKind {
         self.kind
-    }
-
-    /// The automaton.
-    pub fn automaton(&self) -> &Gba {
-        &self.automaton
     }
 
     /// The `holds` atoms of the clause: atom `i` of the letter is
@@ -94,19 +108,152 @@ impl PropertyAutomaton {
     pub fn live(&self) -> Option<Atom> {
         self.live
     }
+
+    /// The initial state, read before position 0's letter. It is state 0.
+    ///
+    /// # Errors
+    ///
+    /// [`AutomatonError::StateLimit`] when the limit admits no state.
+    pub fn initial(&mut self) -> Result<StateId, AutomatonError> {
+        Ok(self.reached.intern(self.initial.clone())?.state)
+    }
+
+    /// The states reached from `from` by reading `letter`, ascending and
+    /// without repeats. Each one is numbered the first time it is reached.
+    ///
+    /// # Errors
+    ///
+    /// [`AutomatonError::UnknownState`] when `from` has not been reached;
+    /// [`AutomatonError::StateLimit`] when reaching a state would exceed the
+    /// limit, which counts the states reached so far.
+    pub fn successors(
+        &mut self,
+        from: StateId,
+        letter: Letter,
+    ) -> Result<Vec<StateId>, AutomatonError> {
+        self.expand(from)?;
+        let targets: Vec<Config> = self
+            .expanded
+            .get(from.index())
+            .and_then(Option::as_ref)
+            .ok_or_else(|| invariant("state-expanded"))?
+            .iter()
+            .filter(|(guard, _)| guard.admits(letter))
+            .map(|(_, config)| config.clone())
+            .collect();
+        let mut states = Vec::new();
+        for target in targets {
+            states.push(self.reached.intern(target)?.state);
+        }
+        states.sort_unstable();
+        states.dedup();
+        Ok(states)
+    }
+
+    /// The number of acceptance sets: one for each unbounded `eventually`
+    /// or `until` of the translated formula. A run accepts when it visits
+    /// every set infinitely often; with none it is a safety automaton.
+    pub fn acceptance_set_count(&self) -> usize {
+        self.eventualities.len()
+    }
+
+    /// Whether the reached `state` belongs to acceptance set `set`: it does
+    /// not carry that eventuality's promise.
+    pub fn is_accepting_in(&self, set: usize, state: StateId) -> bool {
+        match (self.eventualities.get(set), self.reached.key(state)) {
+            (Some(core), Some(config)) => !config.must.contains(core),
+            _ => false,
+        }
+    }
+
+    /// The number of states reached so far.
+    pub fn reached_states(&self) -> usize {
+        self.reached.len()
+    }
+
+    /// The explicit automaton of every state reachable on some letter, built
+    /// by reaching them all. This is for a caller that needs the whole graph
+    /// (the bad-prefix [`Monitor`](crate::automaton::Monitor) trims one, and
+    /// tests compare it); a product reaches states through
+    /// [`successors`](Self::successors) instead.
+    ///
+    /// # Errors
+    ///
+    /// [`AutomatonError::StateLimit`] when the reachable states exceed the
+    /// limit.
+    pub fn explore(&mut self) -> Result<Gba, AutomatonError> {
+        self.initial()?;
+        let mut builder = GbaBuilder::new();
+        let mut added = 1;
+        let mut index = 0;
+        while index < self.reached.len() {
+            let state = StateId::new(index);
+            self.expand(state)?;
+            let row = self
+                .expanded
+                .get(index)
+                .and_then(Option::as_ref)
+                .ok_or_else(|| invariant("state-expanded"))?
+                .clone();
+            for (guard, target) in row {
+                let reached = self.reached.intern(target)?.state;
+                while added <= reached.index() {
+                    builder.add_state();
+                    added += 1;
+                }
+                builder.add_transition(state, guard, reached)?;
+            }
+            index += 1;
+        }
+        while added < self.reached.len() {
+            builder.add_state();
+            added += 1;
+        }
+        for set in 0..self.eventualities.len() {
+            let quiet: Vec<StateId> = (0..self.reached.len())
+                .map(StateId::new)
+                .filter(|state| self.is_accepting_in(set, *state))
+                .collect();
+            if quiet.len() < self.reached.len() {
+                builder.add_acceptance_set(quiet)?;
+            }
+        }
+        Ok(builder.build())
+    }
+
+    /// Compute the guarded successors of `state` once.
+    fn expand(&mut self, state: StateId) -> Result<(), AutomatonError> {
+        if self
+            .expanded
+            .get(state.index())
+            .is_some_and(Option::is_some)
+        {
+            return Ok(());
+        }
+        let config = self
+            .reached
+            .key(state)
+            .cloned()
+            .ok_or(AutomatonError::UnknownState { state })?;
+        let row = self.translator.expand(&config)?;
+        self.expanded.resize_with(self.reached.len(), || None);
+        if let Some(slot) = self.expanded.get_mut(state.index()) {
+            *slot = Some(row);
+        }
+        Ok(())
+    }
 }
 
-/// Translate `clause`, numbering at most `max_states` automaton states
-/// (`max_automaton_states`, ADR-018 IV-6). The numbering covers every
-/// state reachable on some letter.
+/// Translate `clause`, to an automaton that numbers at most `max_states`
+/// states (`max_automaton_states`, ADR-018 IV-6) as the caller reaches them.
+/// Translation itself reaches none, so an interval of any length translates.
 ///
 /// # Errors
 ///
 /// [`AutomatonError::PastOverFuture`] for a past operator whose operand holds
 /// a future operator; [`AutomatonError::ProfileNotTranslated`] for the
 /// timestamped profile; [`AutomatonError::AtomOutOfRange`] when the letter
-/// needs more atoms than it holds; [`AutomatonError::StateLimit`] when the
-/// automaton has more than `max_states` states.
+/// needs more atoms than it holds.
 pub fn translate(
     clause: &CheckedTemporalClause,
     max_states: u64,
@@ -162,10 +309,16 @@ pub fn translate(
         (AutomatonKind::Liveness, negation)
     };
     let order = ir.reachable(target)?;
-    let translator = Translator { ir: &ir, order };
+    let translator = Translator { ir, order };
+    let eventualities = translator.eventualities()?.into_iter().collect();
+    let initial = translator.initial(target)?;
     Ok(PropertyAutomaton {
         kind,
-        automaton: translator.automaton(target, max_states)?,
+        translator,
+        initial,
+        eventualities,
+        reached: Numbering::new(max_states),
+        expanded: Vec::new(),
         atoms,
         when,
         live,
@@ -275,47 +428,14 @@ impl Truths {
     }
 }
 
-struct Translator<'a> {
-    ir: &'a Ir,
+#[derive(Debug)]
+struct Translator {
+    ir: Ir,
     /// The nodes the target reaches, in ascending order.
     order: Vec<NodeId>,
 }
 
-impl Translator<'_> {
-    fn automaton(&self, root: NodeId, max_states: u64) -> Result<Gba, AutomatonError> {
-        let initial = self.initial(root)?;
-        let mut numbering = Numbering::new(max_states);
-        let mut builder = GbaBuilder::new();
-        let first = numbering.intern(initial.clone())?;
-        let mut queue = VecDeque::from([(first.state, initial)]);
-        while let Some((state, config)) = queue.pop_front() {
-            for (guard, next) in self.expand(&config)? {
-                let reached = numbering.intern(next.clone())?;
-                if reached.created {
-                    if builder.add_state() != reached.state {
-                        return Err(invariant("states-numbered-in-order"));
-                    }
-                    queue.push_back((reached.state, next));
-                }
-                builder.add_transition(state, guard, reached.state)?;
-            }
-        }
-        for eventuality in self.eventualities()? {
-            let quiet: Vec<StateId> = (0..numbering.len())
-                .map(StateId::new)
-                .filter(|state| {
-                    numbering
-                        .key(*state)
-                        .is_some_and(|config| !config.must.contains(&eventuality))
-                })
-                .collect();
-            if quiet.len() < numbering.len() {
-                builder.add_acceptance_set(quiet)?;
-            }
-        }
-        Ok(builder.build())
-    }
-
+impl Translator {
     /// The unbounded `eventually` and `until` cores: what a state may carry
     /// forever without the run being accepted.
     fn eventualities(&self) -> Result<BTreeSet<NodeId>, AutomatonError> {
@@ -572,6 +692,15 @@ impl Translator<'_> {
                 let mut other = branch.clone();
                 other.todo.push(Task::Assert(right));
                 branch.todo.push(Task::Assert(left));
+                // `l or r` is `l or (not l and r)`: a state-formula operand
+                // that holds settles the disjunction, so the other branch is
+                // only for the letters that make it false. Without this,
+                // `p implies eventually[0,b] q` would open its counter at a
+                // position where `p` is false.
+                self.exclude(&mut other, left)?;
+                if self.ir.has_future(left) {
+                    self.exclude(&mut branch, right)?;
+                }
                 Ok(Progress::Continue(vec![branch, other]))
             }
             Node::Future { window, .. } => {
@@ -753,30 +882,25 @@ impl Translator<'_> {
     }
 
     /// Record that the operator whose lower-bound-0 core is `core` starts
-    /// `delay` positions after the next one (ADR-018 IV-3). An open
-    /// `eventually` keeps only its latest start and an open `always` only
-    /// its earliest, because each subsumes the others (the `[a,*]` shift
-    /// counter).
+    /// `delay` positions after the next one (ADR-018 IV-3). An open `always`
+    /// keeps only its earliest start, because it subsumes the others (the
+    /// `[a,*]` shift counter). Every other operator keeps each delay: a later
+    /// `eventually` start does not replace an earlier one, since a start that
+    /// arrives every position would otherwise reset the delay before it ever
+    /// reached 0 and the eventuality would never be promised.
     fn add_shift(&self, next: &mut Next, core: NodeId, delay: u64) -> Result<(), AutomatonError> {
         let Node::Future { kind, window, .. } = self.ir.node(core)? else {
             return Err(invariant("shifted-node-is-a-future-operator"));
         };
         let delays = next.shifts.entry(core).or_default();
-        match (window, kind) {
-            (Window::From { .. }, FutureKind::Eventually) => {
-                let latest = delays.last().copied().map_or(delay, |last| last.max(delay));
-                *delays = BTreeSet::from([latest]);
-            }
-            (Window::From { .. }, FutureKind::Always) => {
-                let earliest = delays
-                    .first()
-                    .copied()
-                    .map_or(delay, |first| first.min(delay));
-                *delays = BTreeSet::from([earliest]);
-            }
-            _ => {
-                delays.insert(delay);
-            }
+        if matches!((window, kind), (Window::From { .. }, FutureKind::Always)) {
+            let earliest = delays
+                .first()
+                .copied()
+                .map_or(delay, |first| first.min(delay));
+            *delays = BTreeSet::from([earliest]);
+        } else {
+            delays.insert(delay);
         }
         Ok(())
     }

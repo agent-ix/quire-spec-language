@@ -14,6 +14,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use qsl_eval::automaton::{
     translate, Atom, AutomatonError, AutomatonKind, Gba, Letter, Monitor, PropertyAutomaton,
+    StateId,
 };
 use qsl_eval::temporal::{
     evaluate, AtomReading, TemporalLetters, TemporalOutcome, TemporalPosition, TemporalTrace,
@@ -28,20 +29,28 @@ const WHEN: &str = "on each (q: Counter) when (true)";
 const EACH: &str = "on each (q: Counter)";
 const ORIGIN: &str = "on origin";
 
-/// A clause, its automaton and the letter it reads.
+/// A clause, its automaton and the letter it reads. `gba` is the explicit
+/// automaton of every reachable state, which the oracle batteries compare;
+/// a product reaches states lazily instead.
 struct Subject {
     body: String,
     fixture: Fixture,
     property: PropertyAutomaton,
+    gba: Gba,
 }
 
 fn subject_with(profile: &str, activation: &str, body: &str) -> Subject {
     let fixture = fixture(profile, "c: Counter", activation, body);
-    let property = translate(&fixture.clause, LIMIT).unwrap_or_else(|why| panic!("{body}: {why}"));
+    let mut property =
+        translate(&fixture.clause, LIMIT).unwrap_or_else(|why| panic!("{body}: {why}"));
+    let gba = property
+        .explore()
+        .unwrap_or_else(|why| panic!("{body}: {why}"));
     Subject {
         body: body.to_owned(),
         fixture,
         property,
+        gba,
     }
 }
 
@@ -244,7 +253,7 @@ fn agree(subject: &Subject, longest: usize) -> usize {
                     })
                     .collect();
                 extended.push(Letter::default());
-                let accepted = accepts(property.automaton(), &extended, word.len());
+                let accepted = accepts(&subject.gba, &extended, word.len());
                 assert_eq!(
                     accepted,
                     expected,
@@ -265,7 +274,7 @@ fn agree(subject: &Subject, longest: usize) -> usize {
                             loop_len: (word.len() - prefix) as u64,
                         },
                     );
-                    let accepted = accepts(property.automaton(), &word, prefix);
+                    let accepted = accepts(&subject.gba, &word, prefix);
                     let violating = property.kind() == AutomatonKind::Liveness;
                     assert_eq!(
                         accepted,
@@ -389,11 +398,11 @@ fn a_safety_clause_translates_to_the_automaton_of_the_formula_itself() {
     ] {
         let width = if body.contains("holds(r)") { 3 } else { 2 };
         infinite_agrees(body, AutomatonKind::Safety, if width == 3 { 3 } else { 5 });
-        assert!(translation_of(body).is_ok());
     }
     for body in ["always holds(p)", "always (holds(p) implies once holds(q))"] {
-        let automaton = infinite(body).property;
-        assert!(automaton.automaton().acceptance_sets().is_empty());
+        let subject = infinite(body);
+        assert!(subject.gba.acceptance_sets().is_empty());
+        assert_eq!(subject.property.acceptance_set_count(), 0);
     }
 }
 
@@ -418,6 +427,9 @@ fn a_liveness_clause_translates_to_the_automaton_of_its_negation() {
         "eventually (holds(p) and (holds(q) since holds(r)))",
         "always (holds(p) implies eventually[0,1] eventually holds(q))",
         "always eventually (holds(p) and eventually[1,2] holds(q))",
+        "eventually always[2,*] holds(p)",
+        "eventually always[3,*] holds(p)",
+        "always (holds(p) implies eventually always[2,*] holds(q))",
     ] {
         let width = if body.contains("holds(r)") { 3 } else { 2 };
         infinite_agrees(
@@ -436,7 +448,7 @@ fn a_past_operator_is_tracked_as_automaton_state_across_the_loop_edge() {
     let body = "always eventually (holds(p) and once[1,1] holds(q))";
     let subject = infinite(body);
     assert_eq!(subject.property.kind(), AutomatonKind::Liveness);
-    assert!(subject.property.automaton().state_count() < 16);
+    assert!(subject.gba.state_count() < 16);
     // `p` holds at the loop's first position, `q` at its last: the position
     // before the first is the last, across the edge.
     let word = [
@@ -449,14 +461,14 @@ fn a_past_operator_is_tracked_as_automaton_state_across_the_loop_edge() {
         loop_len: 3,
     };
     assert!(evaluator_holds(&subject, &word, lasso));
-    assert!(!accepts(subject.property.automaton(), &word, 0));
+    assert!(!accepts(&subject.gba, &word, 0));
     let without = [Letter::from_bits(0b01), Letter::from_bits(0b00)];
     let lasso = TemporalTrace::Lasso {
         prefix: 0,
         loop_len: 2,
     };
     assert!(!evaluator_holds(&subject, &without, lasso));
-    assert!(accepts(subject.property.automaton(), &without, 0));
+    assert!(accepts(&subject.gba, &without, 0));
 }
 
 /// SM-6: the bad-prefix monitor of a safety automaton rejects exactly when
@@ -472,8 +484,8 @@ fn a_safety_monitor_rejects_exactly_the_bad_prefixes() {
     ] {
         let subject = infinite(body);
         assert_eq!(subject.property.kind(), AutomatonKind::Safety);
-        let mut monitor = Monitor::bad_prefix(subject.property.automaton(), LIMIT)
-            .expect("a safety automaton has a monitor");
+        let mut monitor =
+            Monitor::bad_prefix(&subject.gba, LIMIT).expect("a safety automaton has a monitor");
         let continuations = words(width(&subject), 2);
         for prefix in words(width(&subject), 4) {
             let mut state = monitor.initial().expect("within the limit");
@@ -503,19 +515,25 @@ fn a_safety_monitor_rejects_exactly_the_bad_prefixes() {
 }
 
 /// SM-6: a bounded formula's monitor is deterministic and finite: reading
-/// the same word always reaches the same state, and its state count stays
-/// within the counter bound.
+/// the same word twice reaches the same state, a window that passes with no
+/// witness is rejecting, and the state count stays within the counter bound.
 #[test]
 fn a_bounded_monitor_is_deterministic_and_finite() {
     let subject = bounded("eventually[0,3] holds(p)");
-    let mut monitor =
-        Monitor::bad_prefix(subject.property.automaton(), LIMIT).expect("no acceptance set");
-    let mut state = monitor.initial().expect("within the limit");
-    for _ in 0..8 {
-        state = monitor
-            .step(state, Letter::default())
-            .expect("within the limit");
-    }
+    let mut monitor = Monitor::bad_prefix(&subject.gba, LIMIT).expect("no acceptance set");
+    let read = |monitor: &mut Monitor, word: &[Letter]| {
+        let mut state = monitor.initial().expect("within the limit");
+        for letter in word {
+            state = monitor.step(state, *letter).expect("within the limit");
+        }
+        state
+    };
+    let word = [Letter::from_bits(0b00), Letter::from_bits(0b00)];
+    assert_eq!(read(&mut monitor, &word), read(&mut monitor, &word));
+    let waiting = read(&mut monitor, &word);
+    assert!(!monitor.is_rejecting(waiting).expect("a monitor state"));
+    let silent = [Letter::default(); 8];
+    let state = read(&mut monitor, &silent);
     assert!(monitor.is_rejecting(state).expect("a monitor state"));
     assert!(monitor.state_count() <= 6);
 }
@@ -530,11 +548,7 @@ fn the_recovery_stability_negation_has_a_counter_of_b_plus_two_states() {
         let body = format!("always (holds(p) implies eventually always[0,{bound}] holds(q))");
         let subject = infinite(&body);
         assert_eq!(subject.property.kind(), AutomatonKind::Liveness);
-        assert_eq!(
-            subject.property.automaton().state_count() as u64,
-            bound + 2,
-            "{body}"
-        );
+        assert_eq!(subject.gba.state_count() as u64, bound + 2, "{body}");
         assert!(agree(&subject, if bound > 3 { 3 } else { 5 }) > 0, "{body}");
     }
 }
@@ -555,9 +569,9 @@ fn an_interval_occurrence_with_lower_bound_zero_keeps_one_counter() {
         ] {
             let inner = shape.replace('B', &bound.to_string());
             let body = format!("always (holds(p) implies {inner})");
-            let automaton = infinite(&body).property;
-            assert_eq!(automaton.kind(), AutomatonKind::Safety, "{body}");
-            assert_eq!(automaton.automaton().state_count() as u64, states, "{body}");
+            let subject = infinite(&body);
+            assert_eq!(subject.property.kind(), AutomatonKind::Safety, "{body}");
+            assert_eq!(subject.gba.state_count() as u64, states, "{body}");
         }
     }
 }
@@ -584,22 +598,59 @@ fn a_nonzero_lower_bound_is_a_shift_then_the_counter() {
     }
 }
 
-/// IV-3: a state limit stops the translation of an interval whose counter
-/// would pass it (IV-6), and an unbounded past operator needs no counter.
+/// IV-6, FR-338: the automaton-state limit counts the states the product
+/// reaches, not the states the translation could reach. An interval of any
+/// length translates; a run that never opens it reaches few states; a run
+/// that counts it down stops at the limit.
 #[test]
-fn the_automaton_state_limit_stops_a_long_interval() {
+fn the_automaton_state_limit_counts_the_states_the_product_reaches() {
     let fixture = fixture(
         INFINITE,
         "c: Counter",
         ORIGIN,
-        "always (holds(p) implies eventually[0,1000000] holds(q))",
+        "always (holds(p) implies eventually[0,2000000] holds(q))",
     );
+    let (p, quiet) = (Letter::from_bits(0b01), Letter::default());
+    let step = |property: &mut PropertyAutomaton,
+                states: &BTreeSet<StateId>,
+                letter: Letter|
+     -> Result<BTreeSet<StateId>, AutomatonError> {
+        let mut next = BTreeSet::new();
+        for state in states {
+            next.extend(property.successors(*state, letter)?);
+        }
+        Ok(next)
+    };
+    let mut property = translate(&fixture.clause, 100).expect("translation reaches no state");
+    assert_eq!(property.reached_states(), 0);
+    let start = BTreeSet::from([property.initial().expect("within the limit")]);
+    let mut states = start.clone();
+    for _ in 0..1000 {
+        states = step(&mut property, &states, quiet).expect("within the limit");
+    }
+    let idle = property.reached_states();
+    assert!(idle <= 3, "{idle} states reached with `p` never holding");
+
+    // `p` opens the interval, and `q` never arrives: each position reaches
+    // a new counter value, up to the limit.
+    let mut states = step(&mut property, &start, p);
+    let error = loop {
+        match states {
+            Ok(reached) => states = step(&mut property, &reached, quiet),
+            Err(error) => break error,
+        }
+    };
+    assert_eq!(error, AutomatonError::StateLimit { limit: 100 });
+    assert_eq!(property.reached_states(), 100);
+
+    // The whole reachable graph does not fit under that limit.
+    let mut whole = translate(&fixture.clause, 100).expect("translation reaches no state");
     assert_eq!(
-        translate(&fixture.clause, 100).unwrap_err(),
+        whole.explore().unwrap_err(),
         AutomatonError::StateLimit { limit: 100 }
     );
     let past = infinite("always (holds(p) implies once holds(q))");
-    assert_eq!(past.property.automaton().state_count(), 2);
+    assert_eq!(past.gba.state_count(), 2);
 }
 
 /// SM-6: a past operator over a future operator has no history to track, so
