@@ -2755,6 +2755,9 @@ pub struct ProtocolDeclarationForm {
     /// Every `attempt`'s operation name and `contracts` list, in source
     /// order (FR-114 "Inputs").
     pub attempts: Vec<AttemptForm>,
+    /// The protocol's `activation`: `on origin`, or `on each (p: T) [when
+    /// (e)]` with its binder and optional guard (FR-308).
+    pub activation: ActivationForm,
     /// The protocol's own captures, written before its roles, in source
     /// order (FR-308).
     pub captures: Vec<CaptureForm>,
