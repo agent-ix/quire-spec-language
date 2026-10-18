@@ -151,7 +151,7 @@ pub enum TaskSetRefusal {
     Empty,
     /// A period, minimum inter-arrival time, deadline or WCET is not
     /// positive.
-    #[error("invalid_model_binding/malformed-declaration: task {task} states a non-positive {member:?}")]
+    #[error("invalid_model_binding/malformed-declaration: task {} states a non-positive {member:?}", .task.as_str())]
     NotPositive {
         /// The task.
         task: Identifier,
@@ -159,7 +159,7 @@ pub enum TaskSetRefusal {
         member: TimeMember,
     },
     /// A jitter or blocking term is negative.
-    #[error("invalid_model_binding/malformed-declaration: task {task} states a negative {member:?}")]
+    #[error("invalid_model_binding/malformed-declaration: task {} states a negative {member:?}", .task.as_str())]
     Negative {
         /// The task.
         task: Identifier,
@@ -167,31 +167,31 @@ pub enum TaskSetRefusal {
         member: TimeMember,
     },
     /// A `HI` task's `C(LO)` exceeds its `C(HI)`.
-    #[error("invalid_model_binding/malformed-declaration: task {task} has C(LO) above C(HI)")]
+    #[error("invalid_model_binding/malformed-declaration: task {} has C(LO) above C(HI)", .task.as_str())]
     BudgetOrder {
         /// The task.
         task: Identifier,
     },
     /// A `LO` task states dual budgets.
-    #[error("invalid_model_binding/malformed-declaration: LO task {task} states dual budgets")]
+    #[error("invalid_model_binding/malformed-declaration: LO task {} states dual budgets", .task.as_str())]
     LoDualBudgets {
         /// The task.
         task: Identifier,
     },
     /// Two tasks share a name.
-    #[error("conflicting_declaration/duplicate-declaration: two tasks are named {task}")]
+    #[error("conflicting_declaration/duplicate-declaration: two tasks are named {}", .task.as_str())]
     DuplicateTask {
         /// The shared name.
         task: Identifier,
     },
     /// A fixed-priority or AMC claim over a task with no priority.
-    #[error("invalid_model_binding/malformed-declaration: task {task} states no priority")]
+    #[error("invalid_model_binding/malformed-declaration: task {} states no priority", .task.as_str())]
     MissingPriority {
         /// The task.
         task: Identifier,
     },
     /// A fixed-priority or AMC claim over two tasks of one priority.
-    #[error("invalid_model_binding/malformed-declaration: tasks {first} and {second} share priority {priority}")]
+    #[error("invalid_model_binding/malformed-declaration: tasks {} and {} share priority {priority}", .first.as_str(), .second.as_str())]
     PriorityClash {
         /// The earlier task.
         first: Identifier,
@@ -201,14 +201,14 @@ pub enum TaskSetRefusal {
         priority: u64,
     },
     /// A response claim names a task the set does not hold.
-    #[error("missing_declaration/missing-name: the task set holds no task {task}")]
+    #[error("missing_declaration/missing-name: the task set holds no task {}", .task.as_str())]
     UnknownTask {
         /// The named task.
         task: Identifier,
     },
     /// An AMC claim over a task whose deadline exceeds its period, which
     /// AMC-rtb does not cover.
-    #[error("invalid_model_binding/malformed-declaration: AMC-rtb covers no deadline beyond the period, task {task} states one")]
+    #[error("invalid_model_binding/malformed-declaration: AMC-rtb covers no deadline beyond the period, task {} states one", .task.as_str())]
     AmcDeadlineBeyondPeriod {
         /// The task.
         task: Identifier,
