@@ -117,6 +117,7 @@ mod operation_body;
 mod operation_clause;
 mod profile;
 mod protocol_clause;
+mod protocol_obligation;
 mod protocol_reference;
 mod references;
 mod refusal;
@@ -246,6 +247,11 @@ pub use model_conformance::ModelConformanceFailure;
 pub use navigation::{EndDeclaration, EndSide, RelationshipDeclaration, Relationships};
 pub use profile::TemporalProfile;
 pub use protocol_clause::{CheckedAttempt, CheckedProtocol, ProtocolNodeId};
+pub use protocol_obligation::{
+    CaptureOwner, CaptureStage, CheckedActivation, CheckedBinder, CheckedCapture, CheckedCommit,
+    CheckedCompensation, CheckedDeadline, CheckedObligations, CheckedRecovery, CheckedRetry,
+    ObligationCause, ObligationOwner, ObligationStage, ReadClass,
+};
 pub use refusal::{
     AliasKind, AmbiguousMember, AmbiguousQualified, CheckCause, CheckRefusal, CheckingLimitKind,
     CheckingStage, DispatchFunctionRole, DispatchLinkCause, DispatchSubtypeFailure,
@@ -1450,10 +1456,10 @@ impl PackageDeclarations {
         // content` checks the rest -- the `using` alias, roles, attempt
         // roles and binder types -- and refuses `unsupported_construct`/
         // `not-yet-implemented` at any construct no checker reads yet
-        // (every node kind but `sequence`/`attempt`/`finish`, channels,
-        // relationships, requirements, captures, `activation on each`,
-        // replicated roles, `related by`, and any body but a bare Boolean
-        // literal). A protocol compiles only when every part is checked.
+        // (every node kind but `sequence`/`attempt`/`finish`/`compensate`,
+        // channels, relationships, requirements, replicated roles,
+        // `related by`, and any body but a bare Boolean literal). A protocol
+        // compiles only when every part is checked.
         let mut checked_protocols = Vec::with_capacity(self.protocols.len());
         let mut protocol_bindings = Vec::with_capacity(self.protocols.len());
         for (index, protocol) in self.protocols.iter().enumerate() {
@@ -1461,7 +1467,7 @@ impl PackageDeclarations {
                 .protocol_attempts
                 .get(index)
                 .map_or(&[][..], Vec::as_slice);
-            match protocol_clause::check(
+            let anchored = protocol_clause::check(
                 protocol,
                 &self.alias_names,
                 &self.native_names,
@@ -1469,17 +1475,70 @@ impl PackageDeclarations {
                 &signatures,
                 attempts,
                 &state_clause_forms,
-            ) {
-                Ok((checked, bound)) => {
-                    refusals.extend(protocol_clause::content(
-                        protocol,
-                        &self.alias_names,
-                        &scope,
-                    ));
+            );
+            // FR-381: the protocol's activation, captures and compensation
+            // templates, through the clause checker over the names each
+            // stage may read.
+            let obligation_location = root(Origin::Expression);
+            let obligation_declarations = state_clause::ClauseDeclarations {
+                scope: &scope,
+                signatures: &signatures,
+                dispatch_tables: &dispatch_tables,
+                models: &models,
+                checking_limits: limits,
+                location: &obligation_location,
+                nodes_used,
+                cancel: Some(cancel),
+                staged: None,
+            };
+            let mut obligation_cx = crate::family::CheckContext::new(
+                &obligation_declarations,
+                contract_limits,
+                &mut contract_meter,
+                &mut contract_diagnostics,
+                &mut contract_scopes,
+            );
+            let obligations = protocol_obligation::check(
+                protocol,
+                anchored.as_ref().ok().map(|(checked, _)| checked),
+                &obligation_declarations,
+                &mut obligation_cx,
+            );
+            match anchored {
+                Ok((mut checked, bound)) => {
+                    let content = protocol_clause::content(protocol, &self.alias_names, &scope);
+                    let content_refused = !content.is_empty();
+                    refusals.extend(content);
+                    match obligations {
+                        protocol_obligation::Obligations::Checked(checked_obligations, used) => {
+                            checked.obligations = *checked_obligations;
+                            nodes_used = used;
+                        }
+                        protocol_obligation::Obligations::Refused(obligation_refusals) => {
+                            refusals.extend(obligation_refusals);
+                        }
+                        // `content` refuses a declared type that does not
+                        // resolve; with none refused the protocol would be
+                        // compiled without its obligations.
+                        protocol_obligation::Obligations::Unresolved if !content_refused => {
+                            refusals.push(protocol_obligation::unresolved_fault());
+                        }
+                        protocol_obligation::Obligations::Unresolved => {}
+                    }
                     protocol_bindings.push(bound);
                     checked_protocols.push(checked);
                 }
-                Err(protocol_refusals) => refusals.extend(protocol_refusals),
+                Err(protocol_refusals) => {
+                    refusals.extend(protocol_refusals);
+                    if let protocol_obligation::Obligations::Refused(obligation_refusals) =
+                        obligations
+                    {
+                        refusals.extend(obligation_refusals);
+                    }
+                }
+            }
+            if cancel.tripped().is_some() {
+                return Err(refusals);
             }
         }
         // FR-326: each `temporal` clause, checked through the `TemporalTrace`

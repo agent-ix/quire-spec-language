@@ -54,6 +54,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use qsl_forms::ProtocolDeclarationForm;
 use qsl_foundation::Span;
 
+use super::protocol_obligation::CheckedObligations;
 use super::refusal::{AliasKind, CheckCause, CheckRefusal, ProtocolAnchorCause};
 use super::state_clause::{AttemptDeclaration, StateClauseDeclaration};
 use super::{Scope, Signatures};
@@ -176,6 +177,7 @@ pub fn check(
             name: protocol.name.name.clone(),
             resolved_anchors: resolved,
             attempts: Vec::new(),
+            obligations: CheckedObligations::default(),
         },
         bound_attempts,
     ))

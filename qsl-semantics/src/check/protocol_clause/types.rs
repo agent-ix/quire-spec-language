@@ -2,6 +2,7 @@
 //! [`BoundAttempt`] and the lowered [`CheckedAttempt`] and
 //! [`CheckedProtocol`] (FR-113 Outputs, FR-114 Outputs).
 
+use crate::check::protocol_obligation::CheckedObligations;
 use crate::check::state_clause::{ClauseOperation, PopulationDomain};
 
 /// The identity of one static protocol node: its index into the
@@ -70,4 +71,8 @@ pub struct CheckedProtocol {
     pub resolved_anchors: Vec<ProtocolNodeId>,
     /// Every `attempt`'s own fully checked binding, filled in after S4.
     pub attempts: Vec<CheckedAttempt>,
+    /// The protocol's activation, captures and compensation templates
+    /// (FR-381), filled in by `check::mod`'s own pipeline once their
+    /// expressions are checked.
+    pub obligations: CheckedObligations,
 }
