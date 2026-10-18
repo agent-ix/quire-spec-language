@@ -253,7 +253,8 @@ fn assembly_limit(cause: &AssemblyCause) -> Option<ReachedLimit> {
         | AssemblyCause::UnresolvedPopulationBound { .. }
         | AssemblyCause::AmbiguousPopulationBound { .. }
         | AssemblyCause::UnsupportedDeclarationForm { .. }
-        | AssemblyCause::AmbiguousPopulation { .. } => None,
+        | AssemblyCause::AmbiguousPopulation { .. }
+        | AssemblyCause::UnsupportedLayerForm { .. } => None,
     }
 }
 
