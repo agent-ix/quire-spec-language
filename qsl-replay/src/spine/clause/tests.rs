@@ -5154,6 +5154,7 @@ mod frame_replay;
 mod invocation_parameters;
 mod layers;
 mod link_replay;
+mod model_gate;
 mod pre_call_invocation;
 mod receiver_frames;
 mod refinement;

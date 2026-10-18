@@ -47,13 +47,6 @@ the construct, and SHALL produce no checked package.
 QSpec's shared grammar states the rule for the `operation-body`, the
 dispatched operation call and `lookup` form, and QSpec FR-450-AC-3 states it
 for the `abstraction-decl`; QSL FR-304 applies it to the abstraction form.
-Until this requirement is built, QSL accepts every one of them under a package
-that selects only `quire.value.complete/v1`, and FR-102 and FR-302 record that
-the gate is not enforced. This requirement is the target state. FR-110's
-layer selection (FR-110-AC-1, AC-7, AC-8) is built, so the header resolves
-`quire.model.complete/v1`; the gate of this requirement is not. The sentences
-that record the missing gate in FR-102, FR-302 and in this paragraph are
-deleted when the gate of this requirement is implemented.
 
 A **model construct** is a syntactic form listed in item 5. The unit
 **selects the model profile** when at least one of its header `profile`

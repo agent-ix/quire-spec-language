@@ -254,7 +254,8 @@ fn assembly_limit(cause: &AssemblyCause) -> Option<ReachedLimit> {
         | AssemblyCause::AmbiguousPopulationBound { .. }
         | AssemblyCause::UnsupportedDeclarationForm { .. }
         | AssemblyCause::AmbiguousPopulation { .. }
-        | AssemblyCause::UnsupportedLayerForm { .. } => None,
+        | AssemblyCause::UnsupportedLayerForm { .. }
+        | AssemblyCause::UnselectedModelConstruct(_) => None,
     }
 }
 
