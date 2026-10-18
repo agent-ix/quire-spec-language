@@ -61,6 +61,17 @@
 //! `protocol_reference` carrier whose target the wire does not write is not
 //! omitted: it refuses the emission ([`EmitRefusal::StaleProtocolReference`]).
 //!
+//! # Abstraction relation
+//!
+//! A package that carries a checked abstraction relation
+//! ([`CheckedPackage::abstraction`], FR-304) writes it as the one
+//! `correspondence`/`abstraction_relation` node of QSpec FR-451 (FR-306),
+//! with the `model`/`object_type`, `relation`/`population` and
+//! `scalar_type`/`text` nodes it names that the graph does not hold.
+//! `check` builds and keys these ([`CheckedGraph::abstraction_nodes`]); the
+//! relation node's one occurrence has role `declaration`, the others
+//! `generated`, all at [`AbstractionNodes::site`].
+//!
 //! # Nominal nodes
 //!
 //! An enum declaration or enum member node carries the QSpec nominal
@@ -89,8 +100,8 @@ use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
 use qsl_foundation::Code;
 use qsl_semantics::check::{
-    BodyTerm, CheckedGraph, LawRole, LeafTerm, NodeTag, NominalNode, OperationLaw, Owner,
-    SemanticNode,
+    AbstractionNodeRefusal, AbstractionNodes, BodyTerm, CheckedGraph, LawRole, LeafTerm, NodeTag,
+    NominalNode, OperationLaw, Owner, SemanticNode,
 };
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::key::hex;
@@ -162,6 +173,9 @@ pub enum EmitRefusal {
         /// The key it is bound to.
         target: CheckedNodeId,
     },
+    /// The package's abstraction relation has no node to write (FR-306).
+    #[error("the abstraction relation cannot be written: {0}")]
+    Abstraction(AbstractionNodeRefusal),
     /// The caller's [`quire_exact::Cancel`] handle was cancelled, and the
     /// emitter stopped at its next charge (FR-276).
     #[error("the emitter was cancelled ({cause:?})")]
@@ -185,6 +199,8 @@ impl EmitRefusal {
             | Self::UnlocatedOccurrence { .. }
             | Self::UnknownOccurrenceRole { .. } => Code::UnsupportedProjection,
             Self::Encoding { .. } => Code::OutputFailure,
+            Self::Abstraction(AbstractionNodeRefusal::Internal(_)) => Code::RuntimeInvariant,
+            Self::Abstraction(_) => Code::UnsupportedProjection,
             Self::StaleProtocolReference { .. } => Code::MissingDeclaration,
             Self::Cancelled { .. } => Code::Cancelled,
         }
@@ -198,6 +214,7 @@ impl EmitRefusal {
             | Self::UnlocatedOccurrence { .. }
             | Self::UnknownOccurrenceRole { .. }
             | Self::Encoding { .. }
+            | Self::Abstraction(_)
             | Self::Cancelled { .. } => None,
         }
     }
@@ -357,6 +374,13 @@ impl BodyNames {
                         .chain(&frame.deletes)
                         .map(|node| node_id(node.0)),
                 );
+            }
+            // QSpec FR-451: `dependencies` are exactly the unique set of every
+            // `type`, `population` and `context` target of the body.
+            BodyTerm::Abstraction(term) => {
+                names
+                    .dependencies
+                    .extend(term.targets().into_iter().map(node_id));
             }
             BodyTerm::Leaf(_) | BodyTerm::Aggregate(_) => {}
         }
@@ -1061,11 +1085,12 @@ fn ir_decodes(tag: CheckedNodeTag, semantic_form: &str) -> bool {
 }
 
 /// Every node of `graph` read for the wire, by its id.
-fn candidates_of(
-    graph: &CheckedGraph,
-) -> Result<BTreeMap<CheckedNodeId, Candidate<'_>>, EmitRefusal> {
+fn candidates_of<'g>(
+    graph: &'g CheckedGraph,
+    abstraction: Option<&'g AbstractionNodes>,
+) -> Result<BTreeMap<CheckedNodeId, Candidate<'g>>, EmitRefusal> {
     let mut recorded = recorded_occurrences(graph)?;
-    Ok(graph
+    let mut candidates: BTreeMap<CheckedNodeId, Candidate<'g>> = graph
         .semantic_graph()
         .nodes()
         .map(|node| {
@@ -1073,7 +1098,23 @@ fn candidates_of(
             let candidate = Candidate::of(node, occurrences);
             (candidate.id.clone(), candidate)
         })
-        .collect())
+        .collect();
+    // QSpec FR-451: the relation node's occurrences are all `declaration`;
+    // the nodes it names that the graph does not hold are `generated`.
+    if let Some(nodes) = abstraction {
+        let site = nodes.site();
+        let mut add = |node: &'g SemanticNode, role: CheckedOccurrenceRole| {
+            let occurrence = CheckedOccurrence { role, ordinal: 0 };
+            let candidate =
+                Candidate::of(node, vec![(occurrence, RecordedLocation::Expression(site))]);
+            candidates.entry(candidate.id.clone()).or_insert(candidate);
+        };
+        add(nodes.relation(), CheckedOccurrenceRole::Declaration);
+        for node in nodes.support() {
+            add(node, CheckedOccurrenceRole::Generated);
+        }
+    }
+    Ok(candidates)
 }
 
 /// The body shared by [`emit_package`] and [`emit_package_with_fault`].
@@ -1099,7 +1140,12 @@ fn emit_package_inner(
         return Err(refusal);
     }
     let graph = package.graph();
-    let candidates = candidates_of(graph)?;
+    let abstraction = package
+        .abstraction()
+        .map(|relation| graph.abstraction_nodes(relation))
+        .transpose()
+        .map_err(EmitRefusal::Abstraction)?;
+    let candidates = candidates_of(graph, abstraction.as_ref())?;
     let omitted = omissions(&candidates, graph.source(), decodes);
     stale_protocol_reference(&candidates, &omitted)?;
     let dropped: BTreeSet<&CheckedNodeId> = omitted.iter().map(|omission| &omission.node).collect();

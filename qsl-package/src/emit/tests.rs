@@ -32,6 +32,7 @@ use sha2::{Digest as _, Sha256};
 use super::*;
 use crate::checked_v2::{read_v2, Read, V2ReadLimits};
 
+mod abstraction;
 mod admission_corpus;
 mod child_composite;
 mod deep_bodies;

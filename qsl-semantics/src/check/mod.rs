@@ -82,6 +82,7 @@ pub use abstraction::{
     CheckedBinding, CheckedFrameBinding, FrameBinding, FrameNodes, MalformedEntry, ObjectBinding,
     OperationKey, PopulationBinding, RustField, RustParameter, RustPath, RustReceiver,
 };
+pub use abstraction::{AbstractionNodeRefusal, AbstractionNodes};
 pub use dispatch_link::PendingLinks;
 mod facts;
 mod family;
@@ -167,6 +168,7 @@ pub use family::DeclarationMetrics;
 pub use lowering::{
     AdmittedModel, ForeignView, LockEvidence, ModelClause, NominalNode, SemanticGraph, SemanticNode,
 };
+pub use node_key::AbstractionTerm;
 pub use node_key::{
     AggregateTerm, ApplicationTerm, Binding, BindingValue, BodyTerm, FrameDeletesScoped,
     FrameField, FrameModifies, FrameScope, FrameTerm, GroupMember, GroupTerm, InvalidModelOwner,
@@ -448,6 +450,9 @@ pub struct CheckedGraph {
     /// index-aligned with `protocols`, so an `Origin::ProtocolAttempt`
     /// resolves.
     attempt_spans: Vec<Vec<Option<qsl_foundation::Span>>>,
+    /// The byte limit every node identity of this package encodes under,
+    /// kept for the nodes built from it after `check` (FR-306).
+    identity: qsl_foundation::IdentityLimits,
 }
 
 /// A checked standalone expression over named parameters. Its constructor
@@ -2055,6 +2060,7 @@ impl PackageDeclarations {
             population_keys,
             declaration_keys,
             attempt_spans: regions.attempt_spans,
+            identity: self.identity,
         })
     }
 }

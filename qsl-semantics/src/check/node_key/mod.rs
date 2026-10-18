@@ -497,6 +497,8 @@ pub enum BodyTerm {
     Aggregate(AggregateTerm),
     /// A `state`/`frame` node's body.
     Frame(FrameTerm),
+    /// A `correspondence`/`abstraction_relation` node's body (QSpec FR-451).
+    Abstraction(AbstractionTerm),
 }
 
 /// One `modifies` entry of a `state`/`frame` node's body (QSpec FR-340's
@@ -1047,7 +1049,7 @@ impl BodyTerm {
     pub fn application_term(&self) -> Option<&ApplicationTerm> {
         match self {
             Self::Application(application) => Some(application),
-            Self::Leaf(_) | Self::Aggregate(_) | Self::Frame(_) => None,
+            Self::Leaf(_) | Self::Aggregate(_) | Self::Frame(_) | Self::Abstraction(_) => None,
         }
     }
 
@@ -1062,7 +1064,7 @@ impl BodyTerm {
             | Self::Aggregate(AggregateTerm { members: arguments }) => {
                 arguments.iter().flat_map(MemberTerm::leaves).collect()
             }
-            Self::Frame(_) => Vec::new(),
+            Self::Frame(_) | Self::Abstraction(_) => Vec::new(),
         }
     }
 
@@ -1092,6 +1094,11 @@ impl BodyTerm {
                 }
                 for reference in creates.iter().chain(deletes) {
                     visit(reference.0);
+                }
+            }
+            Self::Abstraction(term) => {
+                for target in term.targets() {
+                    visit(target);
                 }
             }
             Self::Leaf(_) | Self::Aggregate(_) => {}
@@ -1149,6 +1156,7 @@ impl BodyTerm {
                 deletes: deletes.iter().map(|node| NodeRef(map(node.0))).collect(),
                 deletes_scoped: deletes_scoped.clone(),
             }),
+            Self::Abstraction(term) => Self::Abstraction(term.map_keys(map)),
         }
     }
 }
@@ -1575,6 +1583,10 @@ pub enum NodeKeyRefusal {
     /// or both absent.
     #[error("a declared node's owner and declaration disagree")]
     OwnerDeclarationMismatch,
+    /// The body is an abstraction relation's, which QSpec FR-451 keys by its
+    /// own preimage.
+    #[error("an abstraction relation body is keyed by its own preimage")]
+    AbstractionBody,
     /// The `semantic_form` is empty.
     #[error("the semantic form is empty")]
     EmptySemanticForm,
@@ -2406,6 +2418,9 @@ impl Walk<'_> {
                 },
                 false,
             ),
+            // QSpec FR-451 keys an abstraction relation by a preimage of its
+            // own, `abstraction_node_key`, never by FR-092's.
+            BodyTerm::Abstraction(_) => return Err(NodeKeyRefusal::AbstractionBody),
             // QSpec FR-340: a frame body holds no application, and its
             // `modifies`/`creates`/`deletes` entries are plain `NodeRef`
             // members, never `reference` terms -- so, unlike every other
@@ -2431,7 +2446,11 @@ impl Walk<'_> {
     }
 }
 
+mod abstraction;
 mod shape;
+
+pub use abstraction::AbstractionTerm;
+pub(crate) use abstraction::{abstraction_node_key, FrameEntry, ObjectEntry, PopulationEntry};
 
 #[cfg(test)]
 mod tests;

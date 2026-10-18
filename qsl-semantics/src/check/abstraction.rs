@@ -14,8 +14,9 @@
 //! item that references the element (FR-307), not to the relation.
 //!
 //! The Rust spellings are lexical keys that compare by bytes. This module
-//! checks no Rust syntax; the S2 declaration form that reads them from
-//! source owns that (FR-304-AC-6, AC-8).
+//! checks no Rust syntax (FR-304-AC-6); the S2 declaration form
+//! (`qsl_forms::AbstractionDeclarationForm`) carries each spelling as
+//! written.
 
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
@@ -23,7 +24,13 @@ use std::collections::BTreeSet;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::{Code, InternalFault};
 use quire_exact::{Identifier, NodeKey};
+use quire_semantic_value::location::Location;
 
+use super::lowering::{
+    generated_location, object_type_node, population_node, relation_node, text_scalar_node,
+    SemanticNode,
+};
+use super::node_key::{AbstractionTerm, FrameEntry, NodeKeyRefusal, ObjectEntry, PopulationEntry};
 use super::CheckedGraph;
 use crate::model::key::DeclarationKey;
 use crate::model::operation::OperationLookup;
@@ -570,5 +577,217 @@ impl CheckedGraph {
             Ok(())
         })();
         Some(resolved.map(|()| elements))
+    }
+}
+
+/// The nodes the emitter writes for a checked relation (QSpec FR-451,
+/// FR-306): the one `correspondence`/`abstraction_relation` node, and the
+/// `model`/`object_type`, `relation`/`population` and `scalar_type`/`text`
+/// nodes it names that the checked graph does not hold.
+#[derive(Clone, Debug)]
+pub struct AbstractionNodes {
+    relation: SemanticNode,
+    support: Vec<SemanticNode>,
+    site: Location,
+}
+
+impl AbstractionNodes {
+    /// The relation node.
+    pub fn relation(&self) -> &SemanticNode {
+        &self.relation
+    }
+
+    /// The nodes the relation names that the checked graph does not hold,
+    /// ascending by key.
+    pub fn support(&self) -> &[SemanticNode] {
+        &self.support
+    }
+
+    /// The location of the relation node's one `declaration` occurrence and
+    /// of each supporting node's `generated` one: the package root, as no
+    /// source declaration is read yet.
+    pub fn site(&self) -> &Location {
+        &self.site
+    }
+}
+
+/// Why a checked relation has no nodes.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum AbstractionNodeRefusal {
+    /// The key names no `model`/`object_type` node of an admitted domain
+    /// package: the declaration is not an object type, or its node is a
+    /// systems interface, which QSpec FR-451 does not admit as a target.
+    #[error("{key:?} is no `model`/`object_type` node of an admitted domain package")]
+    NotAnObjectTypeNode {
+        /// The declaration.
+        key: DeclarationKey,
+    },
+    /// A Rust path has an empty segment, so it has no array of segments.
+    #[error("the Rust path {spelling:?} has an empty segment")]
+    EmptyRustSegment {
+        /// The path as authored.
+        spelling: String,
+    },
+    /// A node has no key.
+    #[error(transparent)]
+    Key(#[from] NodeKeyRefusal),
+    /// A binding's kind disagrees with its key's: a broken check invariant.
+    #[error("a check invariant is broken: {0:?}")]
+    Internal(Box<InternalFault>),
+}
+
+/// `path` as QSpec FR-451's `RustPath`: its `::`-separated segments.
+fn rust_path(path: &RustPath) -> Result<Vec<String>, AbstractionNodeRefusal> {
+    let segments: Vec<String> = path.as_str().split("::").map(str::to_owned).collect();
+    if segments.iter().any(String::is_empty) {
+        return Err(AbstractionNodeRefusal::EmptyRustSegment {
+            spelling: path.as_str().to_owned(),
+        });
+    }
+    Ok(segments)
+}
+
+/// `receiver` as QSpec FR-451's `RustReceiver`: `"self"` or the parameter.
+fn receiver_spelling(receiver: &RustReceiver) -> String {
+    match receiver {
+        RustReceiver::SelfValue => "self".to_owned(),
+        RustReceiver::Parameter(parameter) => parameter.as_str().to_owned(),
+    }
+}
+
+/// The nodes a relation names that the checked graph does not hold, as they
+/// are found.
+#[derive(Default)]
+struct Support {
+    nodes: BTreeMap<NodeKey, SemanticNode>,
+    text: Option<NodeKey>,
+}
+
+impl CheckedGraph {
+    /// QSpec FR-451, FR-306: the nodes the emitter writes for `relation`. The
+    /// relation node's key is the digest of its body, so every binding is
+    /// part of it, and its `dependencies` are the unique digest-ascending set
+    /// of every target.
+    ///
+    /// # Errors
+    ///
+    /// An [`AbstractionNodeRefusal`] when a binding names no object type node
+    /// or a Rust path has no segments.
+    pub fn abstraction_nodes(
+        &self,
+        relation: &CheckedAbstractionRelation,
+    ) -> Result<AbstractionNodes, AbstractionNodeRefusal> {
+        let mut support = Support::default();
+        let mut objects = Vec::new();
+        let mut populations = Vec::new();
+        let mut frames = Vec::new();
+        for (key, binding) in relation.iter() {
+            match (key, binding) {
+                (AbstractionKey::Object(declaration), CheckedBinding::Object(value)) => {
+                    objects.push(ObjectEntry::new(
+                        self.object_target(declaration, &mut support)?,
+                        rust_path(&value.rust_type)?,
+                        value
+                            .fields
+                            .iter()
+                            .map(|(field, rust)| {
+                                (field.as_str().to_owned(), rust.as_str().to_owned())
+                            })
+                            .collect(),
+                    ));
+                }
+                (AbstractionKey::Population(declaration), CheckedBinding::Population(value)) => {
+                    populations.push(PopulationEntry::new(
+                        self.population_target(declaration, &mut support)?,
+                        rust_path(&value.collection)?,
+                    ));
+                }
+                (AbstractionKey::Frame(operation), CheckedBinding::Frame(checked)) => {
+                    let value = checked.binding();
+                    frames.push(FrameEntry::new(
+                        self.object_target(&operation.declaring, &mut support)?,
+                        operation.operation.as_str().to_owned(),
+                        rust_path(&value.function)?,
+                        receiver_spelling(&value.receiver),
+                        value
+                            .parameters
+                            .iter()
+                            .map(|(parameter, rust)| {
+                                (parameter.as_str().to_owned(), rust.as_str().to_owned())
+                            })
+                            .collect(),
+                    ));
+                }
+                (
+                    AbstractionKey::Object(_)
+                    | AbstractionKey::Population(_)
+                    | AbstractionKey::Frame(_),
+                    CheckedBinding::Object(_)
+                    | CheckedBinding::Population(_)
+                    | CheckedBinding::Frame(_),
+                ) => {
+                    return Err(AbstractionNodeRefusal::Internal(Box::new(
+                        InternalFault::new("check.abstraction", "binding-kind-matches-key-kind"),
+                    )));
+                }
+            }
+        }
+        let relation = relation_node(
+            AbstractionTerm::new(objects, populations, frames),
+            self.identity,
+        )?;
+        Ok(AbstractionNodes {
+            relation,
+            support: support.nodes.into_values().collect(),
+            site: generated_location(),
+        })
+    }
+
+    /// The key of the `model`/`object_type` node of `declaration`, adding the
+    /// node to `support` when the checked graph does not hold it.
+    fn object_target(
+        &self,
+        declaration: &DeclarationKey,
+        support: &mut Support,
+    ) -> Result<NodeKey, AbstractionNodeRefusal> {
+        let refused = || AbstractionNodeRefusal::NotAnObjectTypeNode {
+            key: declaration.clone(),
+        };
+        let key = *self.object_nodes.get(declaration).ok_or_else(refused)?;
+        if self.semantic_graph.node(key).is_some() || support.nodes.contains_key(&key) {
+            return Ok(key);
+        }
+        // A domain record whose node is not an `object_type` (a systems
+        // interface) keys to another node than this content does.
+        let node = object_type_node(declaration, self.identity)?
+            .filter(|node| node.key() == key)
+            .ok_or_else(refused)?;
+        support.nodes.insert(key, node);
+        Ok(key)
+    }
+
+    /// The key of the `relation`/`population` node of `declaration`, adding
+    /// it and the text scalar node it is typed at to `support`.
+    fn population_target(
+        &self,
+        declaration: &DeclarationKey,
+        support: &mut Support,
+    ) -> Result<NodeKey, AbstractionNodeRefusal> {
+        let text = match support.text {
+            Some(text) => text,
+            None => {
+                let node = text_scalar_node(self.identity)?;
+                let text = node.key();
+                if self.semantic_graph.node(text).is_none() {
+                    support.nodes.insert(text, node);
+                }
+                support.text = Some(text);
+                text
+            }
+        };
+        let node = population_node(declaration, text, self.identity)?;
+        let key = node.key();
+        support.nodes.insert(key, node);
+        Ok(key)
     }
 }
