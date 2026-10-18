@@ -29,7 +29,7 @@ use qsl_semantics::check::{
 use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::family::FamilyResult;
 use qsl_semantics::model::key::DeclarationKey;
-use qsl_semantics::model::object_environment::ObjectEnvironment;
+use qsl_semantics::model::object_environment::{ObjectEnvironment, ObservedRead};
 use qsl_semantics::model::population::PopulationBinding;
 use qsl_semantics::value::model_query::{evaluate_all_instances, evaluate_lookup, ModelQueryHalt};
 use qsl_semantics::value::{divide as integer_divide, modulo as integer_modulo};
@@ -1728,6 +1728,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                     .objects()
                     .attribute(self.scope.types(), &reference, field)
                     .ok_or_else(|| invariant("attribute-slot-unresolved"))?;
+                self.log_field_read(node, objects, &reference, field);
                 let witnessed = objects.is_witnessed(self.scope.types(), &reference, field);
                 if witnessed {
                     self.witnessed_reads.insert(node.location().clone());
@@ -2004,6 +2005,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 };
                 let binding = self.resolve_population(population_id, *maximum)?;
                 let binding = self.select_anchor(binding)?;
+                self.log_membership_read(binding, None);
                 evaluate_all_instances(binding, collection_type, self.meter)?
             }
             NodeKind::Lookup {
@@ -2042,6 +2044,12 @@ impl<'a, 'm> Machine<'a, 'm> {
                     _ => return Err(invariant("lookup-reference-result-expected")),
                 };
                 let binding = self.select_anchor(binding)?;
+                let looked_up = if let Value::Reference(looked_up) = &reference_value {
+                    Some(looked_up.clone())
+                } else {
+                    None
+                };
+                self.log_membership_read(binding, looked_up);
                 evaluate_lookup(
                     binding,
                     target_key,
@@ -2168,6 +2176,58 @@ impl<'a, 'm> Machine<'a, 'm> {
             }
             _ => Ok(self.objects),
         }
+    }
+
+    /// Records the read of `reference`'s `field` in `objects`' read log,
+    /// when it keeps one, under the instant the attribute node observes.
+    fn log_field_read(
+        &self,
+        node: CheckedNode<'_>,
+        objects: &ObjectEnvironment,
+        reference: &ObjectReference,
+        field: &FieldRef,
+    ) {
+        let Some(log) = objects.read_log() else {
+            return;
+        };
+        let Some(attribute) = self
+            .scope
+            .types()
+            .attributes(reference.object_type())
+            .and_then(|attributes| {
+                attributes
+                    .iter()
+                    .find(|attribute| attribute.stands_for(field))
+            })
+        else {
+            return;
+        };
+        let observation = self
+            .reads
+            .and_then(|reads| reads.get(node.location()).copied())
+            .unwrap_or(qsl_semantics::check::Observation::Current);
+        log.record(ObservedRead::Field {
+            observation,
+            object: reference.clone(),
+            owner: attribute.owner(),
+            name: attribute.field().name().to_owned(),
+        });
+    }
+
+    /// Records the read of `binding`'s population, at the anchor the
+    /// evaluation selected, in the read log of the evaluation's objects.
+    fn log_membership_read(&self, binding: &PopulationBinding, object: Option<ObjectReference>) {
+        let Some(log) = self.objects.read_log() else {
+            return;
+        };
+        log.record(ObservedRead::Membership {
+            observation: match self.anchor {
+                Anchor::Pre => qsl_semantics::check::Observation::Pre,
+                Anchor::Post => qsl_semantics::check::Observation::Post,
+            },
+            population: binding.population_key().clone(),
+            object,
+        });
     }
 
     /// FR-364 "Runtime navigation reads only the extent of its relationship":

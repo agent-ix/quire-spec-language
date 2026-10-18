@@ -13,6 +13,7 @@
 mod contracts;
 mod domain;
 mod encode;
+mod footprints;
 mod frames;
 mod walk;
 
@@ -26,6 +27,7 @@ use qsl_package::CheckedPackage;
 use qsl_semantics::check::Observation;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::domain_package::OperationEffect;
+use qsl_semantics::model::footprint::{derive_footprint, FootprintRefusal, SymbolicFootprint};
 use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::observation::{
     AdmissionFailure, AdmissionRecord, AnchorKind, DocumentRef, ObservationLimits, SelectedAnchor,
@@ -49,6 +51,7 @@ use crate::value::QualifiedName;
 
 pub use encode::ModelKey;
 use encode::{declaration_enc, declaration_text, Enc};
+pub use footprints::{FootprintError, FootprintViolation, WithinStop};
 
 /// `resource_exhausted`/`insufficient-next-charge`: a candidate count, or an
 /// evaluation meter, ran out (FR-120 "Post-states", "Contract clauses").
@@ -243,6 +246,7 @@ struct Application {
     declaring: EffectiveId,
     declaration: OperationDeclaration,
     text: String,
+    footprint: Result<SymbolicFootprint, FootprintRefusal>,
 }
 
 /// A checked state clause, resolved for evaluation.
@@ -400,10 +404,7 @@ impl<'a> ModelSystem<'a> {
                 .fields(&type_key)?
                 .ok_or_else(|| fault("type-fields"))?;
             fields.insert(type_key, declared);
-            applications.insert(
-                identity,
-                Self::applications_of(&model, graph.scope().operations(), types, identity)?,
-            );
+            applications.insert(identity, Self::applications_of(graph, &model, identity)?);
         }
 
         Ok(Self {
@@ -424,11 +425,12 @@ impl<'a> ModelSystem<'a> {
 
     /// The operations in `identity`'s effective view (FR-103, FR-081), by name.
     fn applications_of(
+        graph: &qsl_semantics::check::CheckedGraph,
         model: &StateModel,
-        operations: &qsl_semantics::model::operation::OperationTable,
-        types: &TypeEnvironment,
         identity: EffectiveId,
     ) -> Result<Vec<Application>, AdmissionFailure> {
+        let operations = graph.scope().operations();
+        let types = graph.scope().types();
         let mut names = BTreeSet::new();
         for declaring in types.object_types() {
             if types.conforms(identity, declaring.key()) {
@@ -458,6 +460,7 @@ impl<'a> ModelSystem<'a> {
             applications.push(Application {
                 name,
                 declaring,
+                footprint: derive_footprint(graph, model, declaring, operation),
                 declaration: operation.clone(),
                 text,
             });
@@ -631,7 +634,7 @@ impl TransitionSystem for ModelSystem<'_> {
         &self,
         state: &Self::State,
     ) -> Result<Expansion<Self::TransitionId, Self::State, Self::Finding>, ExpansionStop> {
-        walk::expand_state(self, state)
+        walk::expand_state(self, state, None)
     }
 }
 

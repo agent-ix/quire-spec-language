@@ -18,6 +18,7 @@
 
 mod expansion;
 mod explore;
+mod footprint;
 mod frontier;
 mod key;
 pub mod model;
@@ -28,6 +29,7 @@ mod trace;
 
 pub use expansion::{Expansion, ExpansionStop, StateFindings};
 pub use explore::{explore_request, Exploration, Limits, Outcome, Stats, TransitionSystem};
+pub use footprint::{independent, Footprint, Location};
 pub use frontier::{Frontier, Limit};
 pub use key::EncodingRefusal;
 pub use not_simulated::{NotSimulated, RequiresBound};

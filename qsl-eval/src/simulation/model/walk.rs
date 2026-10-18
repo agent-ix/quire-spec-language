@@ -8,6 +8,7 @@ use qsl_semantics::model::observation::Observation;
 use quire_exact::{EffectiveId, ObjectReference};
 use quire_semantic_value::model_transition::ModelTransition;
 
+use super::footprints::Enforcement;
 use super::{
     contracts, encode, frames, identity_limits, state_document, ClauseInfo, ModelFinding,
     ModelSimState, ModelSystem, BROKEN, EXHAUSTED,
@@ -65,6 +66,9 @@ pub(super) struct Walk<'s, 'a> {
     pub(super) state: &'s ModelSimState,
     pub(super) observation: Observation,
     pub(super) rows: Vec<Row>,
+    /// The footprints each step's clauses are held to, when the expansion
+    /// enforces them.
+    pub(super) enforcement: Option<&'s Enforcement<'s>>,
 }
 
 impl Walk<'_, '_> {
@@ -111,7 +115,7 @@ pub(super) struct ContractFinding {
 pub(super) type Successor = (ModelTransition, ModelSimState);
 
 /// The objects of `state`, in ascending (population, key) order.
-fn rows_of(
+pub(super) fn rows_of(
     system: &ModelSystem<'_>,
     state: &qsl_semantics::model::state::ModelState,
 ) -> Result<Vec<Row>, ExpansionStop> {
@@ -136,6 +140,7 @@ fn rows_of(
 pub(super) fn expand_state(
     system: &ModelSystem<'_>,
     state: &ModelSimState,
+    enforcement: Option<&Enforcement<'_>>,
 ) -> Result<Expansion<ModelTransition, ModelSimState, ModelFinding>, ExpansionStop> {
     let identity = identity_limits();
     let state_key = encode::model_key(&system.model, &state.state);
@@ -149,6 +154,7 @@ pub(super) fn expand_state(
         state,
         observation,
         rows: rows_of(system, &state.state)?,
+        enforcement,
     };
     let mut budget = Budget {
         used: 0,
