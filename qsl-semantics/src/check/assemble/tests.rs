@@ -212,6 +212,45 @@ fn a_state_machine_meaning_is_emitted_as_an_object_type() {
     );
 }
 
+/// A model scalar type is a nameable type: `M::Total` carries its
+/// `Int[lower, upper]` (FR-218-AC-24, FR-381-AC-13).
+#[test]
+fn a_model_scalar_is_named_with_its_integer_interval() {
+    let total = DeclarationKey::fixture("ix://test/orders/Total");
+    let package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.model-scalar-name"),
+        vec![DomainPackageRecord::ScalarType(ScalarTypeRecord {
+            key: total,
+            domain: ScalarValueDomain::Integer {
+                lower: 0,
+                upper: 1000,
+            },
+        })],
+    );
+    let NormalizeOutcome::Completed(view) =
+        normalize(&package, ModelNormalizationLimits::default())
+    else {
+        panic!("the scalar domain package normalizes");
+    };
+    let selected = SelectedModel {
+        alias: "M".to_owned(),
+        span: Span { start: 0, end: 0 },
+        view,
+        operation_clauses: Vec::new(),
+        type_invariants: Vec::new(),
+    };
+    let mut operations = super::OperationTable::default();
+    let types = super::model_object_types(
+        "M",
+        &selected,
+        selected.span,
+        &mut operations,
+        IdentityLimits::default(),
+    )
+    .expect("a scalar-only model is supported");
+    assert_eq!(types.scalars, [("M::Total".to_owned(), int(0, 1000))]);
+}
+
 /// The span of the last occurrence of `needle` in `text`.
 fn last(text: &str, needle: &str) -> Span {
     let start = text.rfind(needle).expect("the needle is in the unit");
