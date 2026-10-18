@@ -52,8 +52,8 @@ checked clause or the refusal's code, cause, span text and retained members.
 | 10 | `ordering fifo by (m: M::Plain) {m.ready}` | checks; the checked channel holds `Fifo` with binder `m` and key `m.ready` |
 | 11 | row 10 with `(m: M::Node)` | `ill_typed`/`type-mismatch` at `M::Node`; `expected` `M::Plain`, `actual` `M::Node` |
 | 12 | row 10 with key `{m.ready and view.total > 0}`, `view` the protocol input | `ill_typed`/`operator-ineligible` at the read of `view.total`, naming the key |
-| 13 | delivery `exactly-once-premise`, capacity `symbolic(Bound)`, overflow `loss`, `ordering unordered` | checks; the checked channel records those four premises, `Bound` unresolved |
-| 14 | row 13 with delivery `at-most-once` | checks; a different checked channel from row 13's; ordering, capacity and overflow unchanged |
+| 13 | delivery `exactly-once-premise`, capacity `symbolic(Bound)`, overflow `loss head`, `ordering unordered` | checks; the checked channel records those four premises, `Bound` unresolved and the selector `Head` |
+| 14 | row 13 with delivery `at-most-once` | checks; a different checked channel from row 13's; ordering, capacity and overflow unchanged; the same with `loss tail` and with `loss new` are two further different checked channels |
 | 15 | `relationship Pipe = M::pipe;` | checks; the checked relationship holds `pipe`'s declaration key and end types `Plain`, `Node` in that order |
 | 16 | `relationship Pipe = M::nothing;` | `missing_declaration`/`missing-name` at `nothing` |
 | 17 | `relationship Pipe = M::out;` and `relationship Pipe = M::Node;` | each `invalid_model_binding`/`wrong-export` at the name; required kind `relationship`, actual kind `port` and `object type`, both declaration keys |

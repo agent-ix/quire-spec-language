@@ -72,8 +72,8 @@ behaviours of two QSL state models:
   against a specification under a trace, failure and observation relation,
   with permitted internal steps, refusal sets, divergence and environment
   assumptions. It is QSpec FR-290's `refinement` kind, a `protocol`-family
-  member. QSL's S4 emits no protocol node, and no QSL engine explores a
-  protocol.
+  member. QSL's S4 emits the nodes of a checked protocol (FR-383) and no
+  refinement member, and no QSL engine explores a protocol refinement.
 - **The abstraction relation** is QSpec FR-353 and ADR-017 §3: an authored
   binding from model objects, populations and operation frames to Rust types,
   collections and functions. QSL checks its keys and the syntax of its Rust
