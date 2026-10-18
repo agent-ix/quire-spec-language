@@ -318,6 +318,102 @@ impl ProtocolAnchorCause {
     }
 }
 
+/// FR-326: why the `TemporalTrace` family's `check` refused one `temporal`
+/// clause. Each variant carries its own span, which
+/// `region::DeclarationRegions::refusal_region` reads directly: a clause has
+/// no expression tree for a `Location` path to walk.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum TemporalCause {
+    /// FR-326 "Profile identity": the unit selects no temporal profile, or
+    /// more than one. `found` names the identity of each selection it
+    /// found, in source order. Located at the clause.
+    ProfileSelection {
+        /// The identity of each temporal profile the unit selects.
+        found: Vec<&'static str>,
+        /// The clause's span.
+        span: Span,
+    },
+    /// FR-326 "Bounded profiles": an operator with no interval under a
+    /// bounded profile. Located at the operator.
+    MissingInterval {
+        /// The operator's own token.
+        span: Span,
+    },
+    /// FR-326 "Bounded profiles": an `[a,*]` interval under a bounded
+    /// profile. Located at the interval.
+    OpenInterval {
+        /// The interval's span.
+        span: Span,
+    },
+    /// FR-326 "Bounded profiles": an interval with `a > b`, under every
+    /// profile. Located at the interval.
+    InvertedInterval {
+        /// The written lower bound.
+        lower: u64,
+        /// The written upper bound.
+        upper: u64,
+        /// The interval's span.
+        span: Span,
+    },
+    /// A parameter of the clause (`over`, `on each` or a capture) declares
+    /// a type that does not resolve.
+    ParameterType {
+        /// The parameter's name.
+        parameter: String,
+        /// Why its type form did not resolve.
+        fault: super::type_form::TypeFormFault,
+        /// The type form's span.
+        span: Span,
+    },
+    /// A clause whose checked parts all hold, but that no S4 emission
+    /// writes yet (FR-337): refused rather than compiled and silently
+    /// missing from the emitted package.
+    NotEmitted {
+        /// The declared clause name.
+        name: String,
+        /// The clause's span.
+        span: Span,
+    },
+}
+
+impl TemporalCause {
+    /// The refusal's own span (FR-096: read directly, not through a
+    /// `Location`'s path).
+    pub fn span(&self) -> Span {
+        match self {
+            Self::ProfileSelection { span, .. }
+            | Self::MissingInterval { span }
+            | Self::OpenInterval { span }
+            | Self::InvertedInterval { span, .. }
+            | Self::ParameterType { span, .. }
+            | Self::NotEmitted { span, .. } => *span,
+        }
+    }
+
+    /// This cause's catalog code.
+    pub fn code(&self) -> Code {
+        match self {
+            Self::ProfileSelection { .. } => Code::UnknownProfile,
+            Self::MissingInterval { .. } | Self::OpenInterval { .. } | Self::NotEmitted { .. } => {
+                Code::UnsupportedConstruct
+            }
+            Self::InvertedInterval { .. } => Code::IllTyped,
+            Self::ParameterType { fault, .. } => type_fault_class(fault).0,
+        }
+    }
+
+    /// This cause's catalog tag.
+    pub fn tag(&self) -> &'static str {
+        match self {
+            Self::ProfileSelection { .. } => "unsupported-selection",
+            Self::MissingInterval { .. } | Self::OpenInterval { .. } => "expression-form",
+            Self::InvertedInterval { .. } => "type-mismatch",
+            Self::NotEmitted { .. } => "not-yet-implemented",
+            Self::ParameterType { fault, .. } => type_fault_class(fault).1,
+        }
+    }
+}
+
 /// An inclusive mathematical integer interval whose missing ends are
 /// unbounded.
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
@@ -790,6 +886,9 @@ pub enum CheckCause {
     /// FR-218: a protocol reference expression refused after it resolved.
     /// Boxed for the same reason as `ProtocolAnchor` above.
     ProtocolReference(Box<ProtocolReferenceCause>),
+    /// FR-326: the `TemporalTrace` family refused a `temporal` clause.
+    /// Boxed for the same reason as `ProtocolAnchor` above.
+    Temporal(Box<TemporalCause>),
     /// FR-302: a called operation's dispatch family did not link at S3.
     /// Boxed for the same reason as `ProtocolAnchor` above.
     DispatchLink(Box<DispatchLinkCause>),
@@ -1118,6 +1217,7 @@ impl CheckCause {
             Self::Identity(IdentityRefusal::NonCanonical) => Code::RuntimeInvariant,
             Self::ProtocolAnchor(cause) => cause.code(),
             Self::ProtocolReference(cause) => cause.code(),
+            Self::Temporal(cause) => cause.code(),
             Self::DispatchLink(cause) => cause.code,
             // Downstream crates (`qsl-eval`, `qsl-route`, the root crate)
             // have their own real seams over other enums, probed in the
@@ -1185,6 +1285,7 @@ impl CheckCause {
             }
             Self::ProtocolAnchor(cause) => Some(cause.tag()),
             Self::ProtocolReference(cause) => Some(cause.tag()),
+            Self::Temporal(cause) => Some(cause.tag()),
             Self::DispatchLink(cause) => Some(cause.catalog.cause()),
             // Not a seam-probe location (unlike `code()`, above --
             // deliberately left non-exhaustive there): this arm keeps

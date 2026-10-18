@@ -245,7 +245,6 @@ fn assembly_limit(cause: &AssemblyCause) -> Option<ReachedLimit> {
         | AssemblyCause::NominalAdmission(_)
         | AssemblyCause::UnsuppliedImport { .. }
         | AssemblyCause::UnadmittedModel { .. }
-        | AssemblyCause::UnimplementedTemporalClause { .. }
         | AssemblyCause::UnsupportedModelMember { .. }
         | AssemblyCause::ModelType { .. }
         | AssemblyCause::UnresolvedOperation { .. }
@@ -306,7 +305,8 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
         | CheckCause::InternalFault(_)
         | CheckCause::NodePreimage(_)
         | CheckCause::ProtocolAnchor(_)
-        | CheckCause::ProtocolReference(_) => None,
+        | CheckCause::ProtocolReference(_)
+        | CheckCause::Temporal(_) => None,
         #[cfg(seam_probe)]
         CheckCause::__SeamProbe => None,
     }
