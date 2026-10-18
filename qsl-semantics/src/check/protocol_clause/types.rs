@@ -5,7 +5,7 @@
 use crate::check::state_clause::{ClauseOperation, PopulationDomain};
 
 /// The identity of one static protocol node: its index into the
-/// declaration's own [`ProtocolDeclarationForm::declarations`] (FR-113
+/// declaration's own [`ProtocolDeclarationForm::declarations`](qsl_forms::ProtocolDeclarationForm::declarations) (FR-113
 /// Outputs: "recorded on the checked protocol by that node's identity"). No
 /// later stage recovers a target from a name.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
