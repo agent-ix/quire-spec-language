@@ -67,6 +67,9 @@ In `forms::terminal_declaration` (crate `qsl-forms`):
   (FR-124).
 - S2 SHALL resolve neither alias, so a model alias that names no model gives
   no S2 refusal.
+- No S3 check admits a `terminal` declaration, so assembling a unit that holds
+  one refuses `unsupported_construct`/`declaration-form` at the declaration's
+  span, and the declaration never compiles as silently ignored.
 - A well-formed CST adds no S2 refusal. A CST that carries an error or
   recovery node SHALL refuse as `FormsCause::RecoveringCst`, with no partial
   form. Building the same unit twice gives equal forms.
@@ -80,6 +83,7 @@ In `forms::terminal_declaration` (crate `qsl-forms`):
 | FR-382-AC-3 | A unit that writes `terminal First using t on Config any;`, a `temporal` clause, then `terminal Second using t on Config when { true };` builds three forms in that order: a `Terminal` form of kind `Any`, a `Temporal` form and a `Terminal` form of kind `When`. The two terminal forms name the same model alias and neither is merged or refused. | Test (TC-1059) |
 | FR-382-AC-4 | A `terminal` declaration that omits its closing `;`, or whose `when` is not followed by a block, has a recovering CST and refuses `FormsCause::RecoveringCst` with no form. | Test (TC-1059) |
 | FR-382-AC-5 | Building the same unit twice gives equal `TerminalDeclarationForm`s, for both a `When` and an `Any` declaration. | Test (TC-1059) |
+| FR-382-AC-6 | A unit that holds `terminal Done using v on M when { true };`, and a unit that holds `terminal Halt using v on M any;`, each assemble to one refusal with code `unsupported_construct`, cause `declaration-form` and the span of the whole declaration. | Test (TC-1059) |
 
 ## Dependencies
 

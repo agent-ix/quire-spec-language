@@ -13,7 +13,7 @@ relationships:
 Verify that S2 builds one typed form for each `terminal` declaration a unit
 writes, in source order, with its name, `using` alias, model alias, kind and
 spans, resolves nothing, and refuses a recovering CST with no partial form.
-Scope: FR-382-AC-1 to FR-382-AC-5.
+Scope: FR-382-AC-1 to FR-382-AC-6.
 
 Catches a `when` predicate dropped or built as `Any`, an `any` declaration built
 with an invented predicate, a second declaration for one model alias merged or
@@ -33,6 +33,7 @@ fields, never a rendered message.
 | 3 | `terminal First ... any;`, a `temporal` clause, `terminal Second ... when { true };` | three forms in source order: `Terminal` (`Any`), `Temporal`, `Terminal` (`When`); both terminal forms name `Config` |
 | 4 | a `terminal` declaration missing its `;`, and one whose `when` has no block | each refuses `FormsCause::RecoveringCst`; no form |
 | 5 | rows 1 and 2, each built twice | equal forms |
+| 6 | rows 1 and 2, each assembled | one refusal, `unsupported_construct`/`declaration-form`, at the span of the declaration |
 
 ## Expected Results
 
