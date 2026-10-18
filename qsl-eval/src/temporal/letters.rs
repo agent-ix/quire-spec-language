@@ -8,15 +8,19 @@ use qsl_semantics::check::FormulaNodeId;
 use quire_exact::{Incomplete, Meter};
 
 use super::position::TemporalPosition;
+use super::window::InsufficientData;
 
 /// Why an atom has no value at a position (ADR-018 UE-2): the kernel's
-/// undefined outcome, or a family's `UndefinedRecord`.
+/// undefined outcome, a family's `UndefinedRecord`, or a window aggregate
+/// that found too few values (ADR-024 WA-4).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum UndefinedCause {
     /// The kernel `Outcome::Undefined`, for example division by zero.
     Kernel(quire_exact::Undefined),
     /// A family's `FamilyResult::Undefined` record.
     Family(UndefinedRecord),
+    /// A window aggregate held fewer values than its `min_count`.
+    InsufficientData(InsufficientData),
 }
 
 /// The value of one atom at one position.

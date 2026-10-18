@@ -43,3 +43,4 @@ mod total_functions;
 mod type_invariants;
 mod unbounded_set_call;
 mod variant_fields;
+mod window_aggregates;

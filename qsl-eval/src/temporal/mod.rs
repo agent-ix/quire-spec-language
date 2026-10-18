@@ -11,6 +11,11 @@
 //! cannot read. [`evaluate_at`] reads the formula at one position, and
 //! [`unrolling`] states the positions a lasso is unrolled to (ADR-018 SM-8).
 //!
+//! [`AggregateAtom`] is the other kind of atom a monitor reads: a window
+//! aggregate over the positions before the current one (FR-194), computed
+//! at atom evaluation as an exact function of the trace, so the temporal
+//! evaluator receives a Boolean per position.
+//!
 //! The trace's observations and the `holds` conditions are the caller's:
 //! the evaluator reaches them only through [`TemporalLetters`], the seam to
 //! the one clause evaluator (FR-107).
@@ -21,12 +26,18 @@ mod letters;
 mod outcome;
 mod plan;
 mod position;
+mod window;
 
 pub use engine::{unrolling, Unrolling};
 pub use input::TemporalTrace;
 pub use letters::{AtomReading, TemporalLetters, UndefinedCause};
 pub use outcome::{TemporalOutcome, TemporalRefusal, UndefinedEvaluation};
 pub use position::{PositionRefusal, TemporalPosition};
+pub use window::{
+    AggregateAtom, AggregateKind, AggregateStop, AggregateTerm, InsufficientData, PastWindow,
+    TermRefusal, WindowLimitReached, WindowRefusal, WindowSource, WindowTrace,
+    DEFAULT_MAX_WINDOW_VALUES, MAX_WINDOW_VALUES_SETTING,
+};
 
 use qsl_semantics::check::CheckedTemporalClause;
 use quire_exact::Meter;
