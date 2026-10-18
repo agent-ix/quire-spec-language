@@ -39,7 +39,7 @@ use qsl_semantics::{
 use quire_contract_model::{
     derive_application_node_id, derive_structural_candidates, encode_checked_package_v2,
     ApplicationNodeDraft, BoundedDomainForm, CheckedNodeId, CheckedNodeKind,
-    CheckedPackageEvidence, CheckedPackageReadLimits, CheckedPackageV2, CheckedPackageV2ReadResult,
+    CheckedPackageEvidence, CheckedPackageIdentityPreimageRefV2, CheckedPackageReadLimits, CheckedPackageV2, CheckedPackageV2ReadResult,
     CheckedSemanticGraphV2, CheckedSemanticId, CheckedSemanticNodeV2, CheckedSourceMapEntry,
 };
 use quire_semantic_value::checking::CheckingLimits;
@@ -439,8 +439,21 @@ fn retarget(
     source_map.sort_by(|left, right| left.node_id.digest.cmp(&right.node_id.digest));
 
     let limits = quire_canonical::Limits::new(u64::MAX);
-    let mut preimage = base.identity_preimage().clone();
-    preimage.identity_projection = nodes.iter().map(Into::into).collect();
+    let graph = CheckedSemanticGraphV2 {
+        graph_version: base.graph().graph_version.clone(),
+        nodes,
+    };
+    let base_preimage = base.identity_preimage();
+    let preimage = CheckedPackageIdentityPreimageRefV2 {
+        version: base_preimage.version.as_ref(),
+        edition: &base_preimage.edition,
+        profile_selections: &base_preimage.profile_selections,
+        definition_selections: &base_preimage.definition_selections,
+        model_selections: &base_preimage.model_selections,
+        required_features: &base_preimage.required_features,
+        dependency_selections: &base_preimage.dependency_selections,
+        identity_projection: &graph.nodes,
+    };
     let digest = quire_canonical::sha256(&preimage, limits)
         .map_err(|error| refuse(RetargetRefusal::Encode(error.to_string())))?;
     let package_id = CheckedSemanticId {
@@ -451,10 +464,6 @@ fn retarget(
             .collect::<String>()
             .into(),
         ..base.package_id().clone()
-    };
-    let graph = CheckedSemanticGraphV2 {
-        graph_version: base.graph().graph_version.clone(),
-        nodes,
     };
     let bytes = encode_checked_package_v2(
         &preimage,
