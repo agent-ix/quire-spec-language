@@ -33,10 +33,11 @@ binders and attempt bindings all resolve is then checked for the rest of
 its content by FR-218 (control nodes, channels, relationships, requirements,
 decisions) and FR-381 (captures, activation, compensation), which check every
 construct FR-308 builds. Such a protocol compiles, and
-the package holds one `protocol`/`protocol_clause` node for its name (FR-092)
-and no node for its roles, `run` tree or `finish`. Only each attempt's
-operation anchor, frame and frame record reach the package beyond it (FR-114,
-ADR-012 §12.2 Package row).
+the package holds the protocol nodes FR-383 specifies for it: the
+`protocol_clause` node of its name (FR-092) and the nodes of its roles,
+channels, queues, `run` tree, `finish`, `terminal` and compensation
+templates. Each attempt's operation anchor, frame and frame record reach the
+package beside them (FR-114, ADR-012 §12.2 Package row).
 
 ## Inputs
 
