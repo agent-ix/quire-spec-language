@@ -267,6 +267,9 @@ impl DeclarationRegions {
             CheckCause::Temporal(cause) => {
                 region(&self.source, self.embedding.as_deref(), cause.span())
             }
+            CheckCause::StateGraph(cause) => {
+                region(&self.source, self.embedding.as_deref(), cause.span()?)
+            }
             _ => self.region(&refusal.location),
         }
     }

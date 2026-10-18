@@ -208,6 +208,7 @@ impl StateClauseDeclaration {
                     .entry(crate::value::definition::CatalogRole::Root)
                     .identity,
             context: self.context,
+            receiver_name: "self",
             receiver: ValueType::Reference(self.context),
             operation: self.operation.as_ref(),
             context_population: self.context_population,
@@ -226,8 +227,13 @@ pub(crate) struct ClauseView<'a> {
     /// Whether the selected profile is the complete-value one.
     pub(crate) complete_value: bool,
     pub(crate) context: EffectiveId,
-    /// The type of `self`: a reference to the context for a state clause or
-    /// a kept operation clause, a value of the owner for a type invariant.
+    /// The name slot 0 is bound under: `self` for a state clause, a kept
+    /// operation clause and a type invariant, the `over` parameter's name for
+    /// a state-graph claim's predicate.
+    pub(crate) receiver_name: &'a str,
+    /// The type of the receiver: a reference to the context for a state
+    /// clause, a kept operation clause or a claim predicate, a value of the
+    /// owner for a type invariant.
     pub(crate) receiver: ValueType,
     pub(crate) operation: Option<&'a ClauseOperation>,
     pub(crate) context_population: Option<PopulationDomain>,
@@ -256,7 +262,7 @@ impl ClauseView<'_> {
     /// clause, each typed as FR-103 declares it: the slots the body is
     /// typed over, in order. An invariant binds `self` alone.
     fn parameters(&self) -> (Vec<(String, ValueType)>, bool) {
-        let mut parameters = vec![("self".to_owned(), self.receiver.clone())];
+        let mut parameters = vec![(self.receiver_name.to_owned(), self.receiver.clone())];
         let Some(operation) = self.operation else {
             return (parameters, false);
         };

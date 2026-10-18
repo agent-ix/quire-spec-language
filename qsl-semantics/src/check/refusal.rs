@@ -515,6 +515,86 @@ impl TemporalCause {
     }
 }
 
+/// Why the `StateGraph` family refused a state-graph claim (FR-165). Each
+/// cause carries the span it is located at, read directly, since a claim's
+/// predicates are not the expression tree of a declaration a `Location`
+/// path resolves in.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum StateGraphCause {
+    /// A predicate reads an operation anchor (`self`), a result or a
+    /// pre-state (`pre(e)`), not the state alone (ADR-022 GM-3). Located at
+    /// the read.
+    ReadsBeyondState {
+        /// The read's span.
+        span: Span,
+    },
+    /// A predicate contains a temporal operator. Located at the operator.
+    TemporalOperator {
+        /// The operator's span.
+        span: Span,
+    },
+    /// The claim carries a fairness constraint (ADR-022 GM-7). Located at
+    /// the constraint.
+    Fairness {
+        /// The constraint's span.
+        span: Span,
+    },
+    /// The state clause checker refused a predicate, as it refuses an
+    /// invariant body.
+    Predicate {
+        /// The refused predicate's role in the claim.
+        role: PredicateRole,
+        /// The span of the node the refusal names, when the predicate's
+        /// spans reach it.
+        span: Option<Span>,
+        /// The clause checker's refusal.
+        cause: Box<CheckCause>,
+    },
+}
+
+/// Which predicate of a state-graph claim a refusal is about.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum PredicateRole {
+    /// `possible`'s and `always possible`'s `P`.
+    Target,
+    /// `always possible`'s `Q` and `unique path`'s `X`.
+    From,
+    /// `unique path`'s `Y`.
+    To,
+}
+
+impl StateGraphCause {
+    /// The refusal's own span (FR-096), when it has one.
+    pub fn span(&self) -> Option<Span> {
+        match self {
+            Self::ReadsBeyondState { span }
+            | Self::TemporalOperator { span }
+            | Self::Fairness { span } => Some(*span),
+            Self::Predicate { span, .. } => *span,
+        }
+    }
+
+    /// This cause's catalog code.
+    pub fn code(&self) -> Code {
+        match self {
+            Self::ReadsBeyondState { .. }
+            | Self::TemporalOperator { .. }
+            | Self::Fairness { .. } => Code::UnsupportedConstruct,
+            Self::Predicate { cause, .. } => cause.code(),
+        }
+    }
+
+    /// This cause's catalog tag.
+    pub fn tag(&self) -> Option<&'static str> {
+        match self {
+            Self::ReadsBeyondState { .. }
+            | Self::TemporalOperator { .. }
+            | Self::Fairness { .. } => Some("expression-form"),
+            Self::Predicate { cause, .. } => cause.cause(),
+        }
+    }
+}
+
 /// An inclusive mathematical integer interval whose missing ends are
 /// unbounded.
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
@@ -990,6 +1070,9 @@ pub enum CheckCause {
     /// FR-326: the `TemporalTrace` family refused a `temporal` clause.
     /// Boxed for the same reason as `ProtocolAnchor` above.
     Temporal(Box<TemporalCause>),
+    /// FR-165: the `StateGraph` family refused a state-graph claim. Boxed
+    /// for the same reason as `ProtocolAnchor` above.
+    StateGraph(Box<StateGraphCause>),
     /// FR-302: a called operation's dispatch family did not link at S3.
     /// Boxed for the same reason as `ProtocolAnchor` above.
     DispatchLink(Box<DispatchLinkCause>),
@@ -1319,6 +1402,7 @@ impl CheckCause {
             Self::ProtocolAnchor(cause) => cause.code(),
             Self::ProtocolReference(cause) => cause.code(),
             Self::Temporal(cause) => cause.code(),
+            Self::StateGraph(cause) => cause.code(),
             Self::DispatchLink(cause) => cause.code,
             // Downstream crates (`qsl-eval`, `qsl-route`, the root crate)
             // have their own real seams over other enums, probed in the
@@ -1387,6 +1471,7 @@ impl CheckCause {
             Self::ProtocolAnchor(cause) => Some(cause.tag()),
             Self::ProtocolReference(cause) => Some(cause.tag()),
             Self::Temporal(cause) => Some(cause.tag()),
+            Self::StateGraph(cause) => cause.tag(),
             Self::DispatchLink(cause) => Some(cause.catalog.cause()),
             // Not a seam-probe location (unlike `code()`, above --
             // deliberately left non-exhaustive there): this arm keeps

@@ -57,6 +57,7 @@ use super::refusal::AliasKind;
 use super::state_clause::{
     population_of, AttemptDeclaration, ClauseOperation, StateClauseDeclaration,
 };
+use super::state_graph_claim::StateGraphDeclaration;
 use super::type_form::{
     native_scalar_named, parse_rounding_mode, resolve_form, TypeFormError, TypeFormFault, TypeNames,
 };
@@ -649,6 +650,9 @@ struct Unit {
     temporal_clauses: Vec<super::temporal_clause::TemporalDeclaration>,
     /// The span of each `terminal` declaration, in source order.
     terminal_declarations: Vec<Span>,
+    /// Each state-graph claim's form, in source order, resolved by the
+    /// caller into `StateGraphDeclaration`s (FR-165).
+    state_graph_claims: Vec<qsl_forms::StateGraphClaimForm>,
 }
 
 impl Unit {
@@ -667,6 +671,7 @@ impl Unit {
             protocols: Vec::new(),
             temporal_clauses: Vec::new(),
             terminal_declarations: Vec::new(),
+            state_graph_claims: Vec::new(),
         };
         for form in forms {
             let span = form.span();
@@ -711,6 +716,7 @@ impl Unit {
                 DeclarationForm::Terminal(terminal) => {
                     unit.terminal_declarations.push(terminal.span)
                 }
+                DeclarationForm::StateGraphClaim(claim) => unit.state_graph_claims.push(*claim),
                 DeclarationForm::Temporal(clause) => {
                     unit.temporal_clauses
                         .push(super::temporal_clause::TemporalDeclaration {
@@ -2599,6 +2605,22 @@ impl PackageDeclarations {
                 );
             }
         }
+        for claim in &unit.state_graph_claims {
+            let operands = super::state_graph_claim::predicates(&claim.kind)
+                .into_iter()
+                .flat_map(|(_, predicate)| &predicate.operands)
+                .map(|operand| &operand.expression);
+            for form in expression_type_forms(operands) {
+                check_names(
+                    &unit,
+                    &object_names,
+                    &model_composite_names,
+                    &qualified,
+                    &form,
+                    &mut errors,
+                );
+            }
+        }
         for clause in &unit.state_clauses {
             for form in expression_type_forms([&clause.body]) {
                 check_names(
@@ -2901,6 +2923,12 @@ impl PackageDeclarations {
             &admitted,
             (&lock, &predicates),
         );
+        let state_graph_claims = state_graph_claims(
+            unit.state_graph_claims,
+            &resolve,
+            &admitted,
+            (&lock, &predicates),
+        );
         let operation_bodies = operation_bodies(unit.operation_bodies, &resolve);
         let protocol_attempts = protocol_attempts(
             &unit.protocols,
@@ -2909,22 +2937,26 @@ impl PackageDeclarations {
             &operations,
             &admitted,
         );
-        let (state_clauses, protocol_attempts, operation_bodies) =
-            match (state_clauses, protocol_attempts, operation_bodies) {
-                (Ok(clauses), Ok(attempts), Ok(bodies)) if bound_errors.is_empty() => {
-                    (clauses, attempts, bodies)
+        let (state_clauses, state_graph_claims, protocol_attempts, operation_bodies) = match (
+            state_clauses,
+            state_graph_claims,
+            protocol_attempts,
+            operation_bodies,
+        ) {
+            (Ok(clauses), Ok(claims), Ok(attempts), Ok(bodies)) if bound_errors.is_empty() => {
+                (clauses, claims, attempts, bodies)
+            }
+            (clauses, claims, attempts, bodies) => {
+                let mut errors = bound_errors;
+                for refusal in [clauses.err(), claims.err(), attempts.err(), bodies.err()]
+                    .into_iter()
+                    .flatten()
+                {
+                    errors.extend(refusal.errors);
                 }
-                (clauses, attempts, bodies) => {
-                    let mut errors = bound_errors;
-                    for refusal in [clauses.err(), attempts.err(), bodies.err()]
-                        .into_iter()
-                        .flatten()
-                    {
-                        errors.extend(refusal.errors);
-                    }
-                    return refuse(errors);
-                }
-            };
+                return refuse(errors);
+            }
+        };
         // FR-103, FR-302: the view of each selected model, with `has_body`
         // set from the bodies that resolved into it. A model no body names
         // keeps the view intake admitted, whose `has_body` is false
@@ -2998,6 +3030,7 @@ impl PackageDeclarations {
         package.functions = unit.functions;
         package.function_selections = function_selections;
         package.state_clauses = state_clauses;
+        package.state_graph_claims = state_graph_claims;
         package.operation_bodies = operation_bodies;
         package.selected_views = selected_views;
         // FR-092: a protocol's node is declared at the protocol's name.
@@ -3208,6 +3241,93 @@ fn state_clauses(
     }
     if errors.is_empty() {
         Ok(clauses)
+    } else {
+        refuse(errors)
+    }
+}
+
+/// FR-165 "Forms": each state-graph claim's `using` alias resolved to one of
+/// the unit's profile selections and its `over` type to an object type of an
+/// admitted domain package, whose population must be exactly one or none. A
+/// predicate form outside the selected layer's admitted set refuses as a
+/// state clause body's does (FR-110).
+fn state_graph_claims(
+    forms: Vec<qsl_forms::StateGraphClaimForm>,
+    resolve: &Resolve<'_>,
+    models: &[AdmittedModel],
+    (lock, predicates): (&DefinitionLock, &BTreeSet<&str>),
+) -> Result<Vec<StateGraphDeclaration>, AssemblyRefusal> {
+    let Resolve {
+        profiles,
+        object_names,
+        types,
+        ..
+    } = *resolve;
+    let mut errors = Vec::new();
+    let mut claims = Vec::with_capacity(forms.len());
+    for form in forms {
+        let error = |cause, span| AssemblyError { cause, span };
+        let selection = profiles
+            .iter()
+            .find(|profile| profile.alias == form.profile.alias)
+            .cloned();
+        match &selection {
+            None => errors.push(error(
+                AssemblyCause::UndeclaredAlias {
+                    alias: form.profile.alias.clone(),
+                },
+                form.profile.span,
+            )),
+            Some(selection) => {
+                if let Some(layer) = HeaderLayer::from_identity(&selection.identity) {
+                    errors.extend(
+                        LayerAdmission::new(lock, layer, predicates).state_graph_claim(&form),
+                    );
+                }
+            }
+        }
+        let over = &form.over.value_type;
+        let TypeFormHead::Name(name) = &over.head else {
+            errors.push(error(
+                AssemblyCause::UnsupportedDeclarationForm {
+                    form: "state-graph claim over a type that is not an object type",
+                },
+                over.span,
+            ));
+            continue;
+        };
+        let Some(context) = object_names.get(name).copied() else {
+            errors.push(error(
+                AssemblyCause::UnresolvedTypeName { name: name.clone() },
+                over.span,
+            ));
+            continue;
+        };
+        let context_population = match population_of(models, context, types) {
+            Ok(domain) => domain,
+            Err(populations) => {
+                errors.push(error(
+                    AssemblyCause::AmbiguousPopulation {
+                        context: name.clone(),
+                        populations,
+                    },
+                    over.span,
+                ));
+                continue;
+            }
+        };
+        let Some(selection) = selection else {
+            continue;
+        };
+        claims.push(StateGraphDeclaration {
+            form,
+            selection,
+            context,
+            context_population,
+        });
+    }
+    if errors.is_empty() {
+        Ok(claims)
     } else {
         refuse(errors)
     }
