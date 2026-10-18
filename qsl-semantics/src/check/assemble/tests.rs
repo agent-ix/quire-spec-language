@@ -513,7 +513,6 @@ fn a_terminal_declaration_on_no_model_refuses_at_the_model_alias() {
 
 /// FR-124: a `terminal` declaration's `using` alias names a profile
 /// selection of the unit.
-#[trace("TC-519", "FR-124-AC-1")]
 #[test]
 fn a_terminal_declaration_using_no_profile_refuses_at_the_alias() {
     let (text, found) = errors("terminal Halt using missing on M any;");

@@ -270,6 +270,9 @@ impl DeclarationRegions {
             CheckCause::Temporal(cause) => {
                 region(&self.source, self.embedding.as_deref(), cause.span())
             }
+            CheckCause::TerminalNotEmitted { span, .. } => {
+                region(&self.source, self.embedding.as_deref(), *span)
+            }
             CheckCause::Terminal(cause) => {
                 let spans = self.terminal_spans.get(cause.declaration)?.as_ref()?;
                 let span = SpanMemo::default().at(spans, &refusal.location)?;

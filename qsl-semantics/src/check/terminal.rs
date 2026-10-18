@@ -174,3 +174,15 @@ pub(crate) fn check_terminal<'a>(
         typed.nodes_used,
     ))
 }
+
+/// The refusal for a `terminal` declaration that checks but that no S4
+/// emission writes yet (FR-124): refused rather than compiled and silently
+/// missing from the package's identity.
+pub(crate) fn not_emitted(name: String, span: qsl_foundation::Span) -> CheckRefusal {
+    CheckRefusal {
+        location: quire_semantic_value::location::Location::root(
+            quire_semantic_value::location::Origin::Expression,
+        ),
+        cause: CheckCause::TerminalNotEmitted { name, span },
+    }
+}

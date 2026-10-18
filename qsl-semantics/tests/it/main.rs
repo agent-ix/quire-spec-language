@@ -71,6 +71,7 @@ mod state_clauses;
 mod tc235_business_meanings;
 #[cfg(feature = "test-support")]
 mod temporal_fairness;
+#[cfg(feature = "test-support")]
 mod terminal_declarations;
 #[cfg(feature = "test-support")]
 mod type_environment_model;

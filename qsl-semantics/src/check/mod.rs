@@ -750,6 +750,41 @@ impl PackageDeclarations {
         limits: CheckingLimits,
         cancel: &Cancel,
     ) -> Result<CheckedGraph, Vec<CheckRefusal>> {
+        // FR-124, FR-382: no S4 emission writes a `terminal` declaration yet,
+        // so a package that checks with one is refused rather than compiled
+        // with an identity equal to the same package without it
+        // (`terminal::not_emitted`).
+        let terminals: Vec<(String, qsl_foundation::Span)> = self
+            .terminals
+            .iter()
+            .map(|terminal| (terminal.name.clone(), terminal.span))
+            .collect();
+        let graph = self.check_declarations(limits, cancel)?;
+        if terminals.is_empty() {
+            return Ok(graph);
+        }
+        Err(terminals
+            .into_iter()
+            .map(|(name, span)| terminal::not_emitted(name, span))
+            .collect())
+    }
+
+    /// [`Self::check_with_cancel`] without the refusal of a checked `terminal`
+    /// declaration, so the S3 value (`CheckedGraph::terminals`) stays
+    /// testable until S4 emits it (FR-124).
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn check_unemitted(
+        self,
+        limits: CheckingLimits,
+    ) -> Result<CheckedGraph, Vec<CheckRefusal>> {
+        self.check_declarations(limits, &Cancel::new())
+    }
+
+    fn check_declarations(
+        self,
+        limits: CheckingLimits,
+        cancel: &Cancel,
+    ) -> Result<CheckedGraph, Vec<CheckRefusal>> {
         // FR-096: a family limit's locus resolves through the unit's spans.
         let regions = self.regions();
         let body_location = |index: usize, name: &str| {

@@ -112,12 +112,13 @@ fn only_constraint(clause: &CheckedTemporalClause) -> &FairnessConstraint {
 
 const EVENTUALLY_TWO: &str = "always eventually holds(c.versionNumber = 2)";
 
-/// FR-123-AC-1: a weak constraint written with no granularity and one
+/// Verifies the fairness-set half of FR-123-AC-1 (the node-identity half
+/// needs S4 emission and is not tested): a weak constraint written with no granularity and one
 /// written `whole` check to equal sets with granularity `Whole`; one written
 /// `each` checks to `Each`; the operation is read as `Model::Type::op` or,
 /// written alone, in the view of the clause's `over` type, and resolves to
 /// the declaring type's identity.
-#[trace("TC-518", "FR-123-AC-1")]
+#[trace("TC-518")]
 #[test]
 fn an_unmarked_granularity_checks_as_whole_and_each_differs() {
     let fair = |written: &str| {
@@ -151,10 +152,11 @@ fn an_unmarked_granularity_checks_as_whole_and_each_differs() {
     assert_eq!(alone.fairness(), unmarked.fairness());
 }
 
-/// FR-123-AC-1: same-named operations declared by two distinct model types
+/// Verifies the distinct-constraint half of FR-123-AC-1 (not node identity):
+/// same-named operations declared by two distinct model types
 /// check to distinct constraints with distinct declaring-type identities; an
 /// operation both of two unrelated supertypes declare is ambiguous.
-#[trace("TC-518", "FR-123-AC-1")]
+#[trace("TC-518")]
 #[test]
 fn same_named_operations_of_different_types_stay_distinct() {
     let document = ambiguous_operation_document();
