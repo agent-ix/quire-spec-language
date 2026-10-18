@@ -1,4 +1,4 @@
-.PHONY: check-no-committed-binaries check-index-completeness seam-probe string-edge route-lint checked-input cargo-deny-bans fuzz-deep-input test-deep-format ci ci-default-features ci-all-features ci-clean-build ci-docs conformance pre-push
+.PHONY: check-no-committed-binaries check-index-completeness seam-probe string-edge route-lint checked-input refinement-versioning cargo-deny-bans fuzz-deep-input test-deep-format ci ci-default-features ci-all-features ci-clean-build ci-docs conformance pre-push
 
 # Fail when a tracked file is executable/binary content or exceeds
 # the size ceiling. See the script's own header for the detection method and
@@ -60,6 +60,12 @@ route-lint:
 # pre-check stage function.
 checked-input:
 	cargo run --package xtask -- checked-input
+
+# FR-340/FR-344 (ADR-017 RF-2): fails when a superseding revision in the real
+# corpus does not admit a case its prior revision admitted, or when the gate
+# reports anything but success (exit 0).
+refinement-versioning:
+	cargo run --package xtask -- refinement versioning tests/fixtures/refinement/versioning/
 
 # FR-080-AC-2: denies the inventory/linkme/ctor crates outright
 # (deny.toml), so a future contributor cannot repopulate the registry through
@@ -211,20 +217,31 @@ ci-all-features:
 
 # Full-depth formatter identity checks are isolated by their exact test name
 # from root IT and remain part of the aggregate gate in this named target.
+# They run in the default lane's artifact directory with the same
+# `--workspace` feature selection as `ci-default-features`, so the test
+# executables that lane already built are reused. `--tests` selects the test
+# targets implicitly, so a target whose required features are off (qsl-source's
+# `it`) is skipped as in that lane; naming `--test it` would make it an error.
+# Nothing is recompiled in a directory of its own. The three tests run serially in one process
+# (`--test-threads=1`: deep-stack tests must not share a thread pool); each
+# name must still select exactly one ignored test.
 test-deep-format:
 	@set -eu; \
 	for test in \
 		formatter_identity::all_three_deep_source_generators_keep_format_identity \
 		formatter_identity::replay_large_source_generator_keeps_format_identity \
 		formatter_identity::dependency_chain_and_order_variants_keep_format_identity; do \
-		listing=$$(CARGO_TARGET_DIR="$${CARGO_TARGET_DIR:-target}/test-deep-format" cargo test --locked --test it "$$test" -- --ignored --exact --list); \
+		listing=$$(CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo test --locked --workspace --tests -- --ignored --exact "$$test" --list); \
 		count=$$(printf '%s\n' "$$listing" | awk -v expected="$$test: test" '$$0 == expected { count++ } END { print count+0 }'); \
 		if [ "$$count" -ne 1 ]; then \
 			echo "test-deep-format: expected exactly one ignored test for $$test, found $$count" >&2; \
 			exit 1; \
 		fi; \
-		CARGO_TARGET_DIR="$${CARGO_TARGET_DIR:-target}/test-deep-format" cargo test --locked --test it "$$test" -- --ignored --exact --test-threads=1; \
-	done
+	done; \
+	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo test --locked --workspace --tests -- --ignored --exact --test-threads=1 \
+		formatter_identity::all_three_deep_source_generators_keep_format_identity \
+		formatter_identity::replay_large_source_generator_keeps_format_identity \
+		formatter_identity::dependency_chain_and_order_variants_keep_format_identity
 
 # The no-default-features checks: a from-clean build (its own target-dir, so
 # it never reuses this build's cached artifacts) and the parse example.
@@ -267,7 +284,7 @@ fuzz-deep-input:
 # Each aggregate prerequisite depends on validation, rather than racing it as
 # a sibling under -j (or continuing past it under -k). Standalone lane commands
 # retain their existing behavior; this ordering belongs to the aggregate gate.
-CI_CHECKS := conformance check-no-committed-binaries check-index-completeness ci-default-features ci-all-features test-deep-format ci-clean-build seam-probe string-edge route-lint checked-input cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-api-surface-qsl arch-lint-qualified-core
+CI_CHECKS := conformance check-no-committed-binaries check-index-completeness ci-default-features ci-all-features test-deep-format ci-clean-build seam-probe string-edge route-lint checked-input refinement-versioning cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-api-surface-qsl arch-lint-qualified-core
 CI_TARGETS := $(CI_CHECKS)
 # The public aggregate validates the native documents before the xtask wrapper
 # canonicalizes QSPEC_DIR for every child lane.
@@ -350,12 +367,6 @@ arch-lint-qualified-core:
 # `arch-lint-api-surface` needs CG_CLONE (see above); each runs separately.
 arch-lint: arch-lint-api-surface-qsl arch-lint-canonical-encoder arch-lint-qualified-core
 
-# The whole 30,000-input parser differential against
-# tests/fixtures/parser-differential/baseline.txt. `make ci` runs the first
-# 1,000 inputs of each family; this runs all of them.
-.PHONY: test-differential
-test-differential:
-	cargo test --locked --test it parser_differential -- --include-ignored
 
 # The committed performance benchmarks (`qsl-bench/`), one
 # criterion bench per axis, each runnable by name. `make bench` runs all

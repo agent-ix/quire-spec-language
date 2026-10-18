@@ -1,0 +1,56 @@
+{
+  "prior": {
+    "path": "unit.native",
+    "authority": "agent-ix",
+    "identity": "ix://example/config-version/spine/unit"
+  },
+  "superseding": {
+    "path": "superseding.native",
+    "authority": "agent-ix",
+    "identity": "ix://example/config-version/spine/unit"
+  },
+  "packages": [
+    "repo:examples/config-version/model.semantic-ir.json"
+  ],
+  "dependencies": [],
+  "cases": [
+    {
+      "selection": {
+        "clause": {
+          "name": "ParentOrder",
+          "observation": "healthy-parent",
+          "self": {
+            "population": "ix://example/config-version/config_history",
+            "key": "child"
+          },
+          "anchor": {
+            "kind": "handler",
+            "name": "validate"
+          }
+        }
+      },
+      "observations": {
+        "healthy-parent": "healthy-parent.json"
+      }
+    },
+    {
+      "selection": {
+        "clause": {
+          "name": "ParentOrder",
+          "observation": "violating-parent",
+          "self": {
+            "population": "ix://example/config-version/config_history",
+            "key": "child"
+          },
+          "anchor": {
+            "kind": "handler",
+            "name": "validate"
+          }
+        }
+      },
+      "observations": {
+        "violating-parent": "violating-parent.json"
+      }
+    }
+  ]
+}

@@ -92,7 +92,7 @@ impl LimitKind {
 /// where no producer can know one: a position in a tree not read from a
 /// source unit, the I2 reader's own artifact byte ceiling, and an IR limit
 /// IR reports no position for.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct LimitExceeded {
     setting: Setting,
     configured_bound: u64,

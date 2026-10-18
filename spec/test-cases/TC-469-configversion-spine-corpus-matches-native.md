@@ -20,9 +20,11 @@ Scope: FR-108-AC-1 to FR-108-AC-6.
 ## Test Procedure
 
 The tests live in `tests/it/config_version_spine.rs`, with
-`mod config_version_spine;` in `tests/it/main.rs` (AGENTS.md). The fixtures
-generator (`examples/config-version/fixtures.rs`) writes, per case, the native
-files it writes today and the spine files: the FR-108 unit, the domain package
+`mod config_version_spine;` in `tests/it/main.rs` (AGENTS.md). The spine
+corpus generator (`examples/config-version/spine_corpus.rs`, reached through
+the `config_version_spine` support module) writes, per case, the spine files;
+the native fixtures generator (`examples/config-version/fixtures.rs`) writes
+the native files and delegates the spine files to the same module: the FR-108 unit, the domain package
 `model.semantic-ir.json`, the FR-106 documents and the `ClauseRunRequest`
 inputs. `cases.rs` gains `BoundaryZero` (root 0, child 1), `BoundaryMax`
 (root 999, child 1000), `BelowRange` (root -1) and `AboveRange` (child 1001),

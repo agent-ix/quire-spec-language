@@ -51,9 +51,9 @@ ADR-018 §6 and are illustrative.
 ## Inputs
 
 - Parsed temporal clause forms (S2) with their fairness constraint forms and
-  temporal operators. A fairness constraint form carries a kind, an
-  operation name and an optional granularity. A temporal operator carries an
-  optional interval form.
+  temporal operators. A fairness constraint form carries an optional kind
+  (FR-129), an operation name and an optional granularity. A temporal
+  operator carries an optional interval form.
 - The unit's resolved temporal profile selection (FR-110).
 - The admitted domain packages and the unit's model operations (FR-103).
 
@@ -75,8 +75,8 @@ ADR-018 §6 and are illustrative.
 ### Fairness constraints
 
 - The checker SHALL check each parsed fairness constraint form into one
-  `FairnessConstraint` carrying the form's kind, its resolved operation and
-  its granularity.
+  `FairnessConstraint` carrying its kind as FR-129 resolves it, its resolved
+  operation and its granularity.
 - When a constraint form has no granularity, the checker SHALL check it as
   `Whole` (ADR-018 FA-6). When it names one, the checker SHALL check it as
   that granularity.
@@ -88,7 +88,7 @@ ADR-018 §6 and are illustrative.
   `unsupported_construct`/`expression-form` at the constraint's span.
 - The checker SHALL hold each constraint once in the checked fairness set,
   in source order of first occurrence, checking two constraints with equal
-  kind, operation and granularity as one.
+  resolved kind, operation and granularity as one.
 - The checker SHALL include the fairness set in the clause's checked
   identity, so two clauses that differ only in their fairness sets have
   different node identities.

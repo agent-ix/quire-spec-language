@@ -595,6 +595,9 @@ struct Unit {
     /// Each `protocol` declaration's form, in source order, for FR-113's
     /// `check::protocol_clause` checker to resolve at S3.
     protocols: Vec<qsl_forms::ProtocolDeclarationForm>,
+    /// Each `temporal` clause's form, in source order, for FR-326's
+    /// `check::temporal_clause` checker to resolve at S3.
+    temporal_clauses: Vec<super::temporal_clause::TemporalDeclaration>,
 }
 
 impl Unit {
@@ -610,8 +613,10 @@ impl Unit {
             state_clauses: Vec::new(),
             operation_bodies: Vec::new(),
             protocols: Vec::new(),
+            temporal_clauses: Vec::new(),
         };
         for form in forms {
+            let span = form.span();
             match form.into_form() {
                 DeclarationForm::Function(function) => unit.functions.push(*function),
                 DeclarationForm::Alias(alias) => {
@@ -647,6 +652,13 @@ impl Unit {
                         name: union.name,
                         members: Members::Union(union.members),
                     });
+                }
+                DeclarationForm::Temporal(clause) => {
+                    unit.temporal_clauses
+                        .push(super::temporal_clause::TemporalDeclaration {
+                            form: *clause,
+                            span,
+                        });
                 }
             }
         }
@@ -2329,6 +2341,25 @@ impl PackageDeclarations {
                 });
             }
         }
+        // FR-326: a `temporal` clause's `using` alias names one of the
+        // unit's profile selections, as a function's does. Which temporal
+        // profile the clause is checked under is the unit's, not the
+        // alias's (ADR-014 A-2), and `check::temporal_clause` decides it.
+        for clause in &unit.temporal_clauses {
+            let using = &clause.form.profile;
+            if !selections
+                .profiles
+                .iter()
+                .any(|profile| profile.alias == using.alias)
+            {
+                errors.push(AssemblyError {
+                    cause: AssemblyCause::UndeclaredAlias {
+                        alias: using.alias.clone(),
+                    },
+                    span: using.span,
+                });
+            }
+        }
         let mut function_selections = BTreeMap::new();
         for (index, function) in unit.functions.iter().enumerate() {
             if let Some(using) = function.using() {
@@ -2882,6 +2913,17 @@ impl PackageDeclarations {
             package.lock_evidence = package.lock_evidence.with_protocol_profile(definition);
         }
         package.protocols = unit.protocols;
+        package.temporal_clauses = unit.temporal_clauses;
+        package.temporal_selections = selections
+            .profiles
+            .iter()
+            .filter_map(|profile| {
+                Some(super::temporal_clause::TemporalSelection {
+                    profile: super::profile::TemporalProfile::from_identity(&profile.identity)?,
+                    span: profile.span,
+                })
+            })
+            .collect();
         package.protocol_attempts = protocol_attempts;
         package.declared_type_spans = declared_type_spans;
         package.model_records = model_records;

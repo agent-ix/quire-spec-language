@@ -16,7 +16,7 @@ use crate::digest::DigestRecord;
 use crate::source::provenance::{PackageSourceMap, SourceRegion, UnresolvedOccurrence};
 
 /// ADR-013 T-5: where a diagnostic points.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Locus {
     /// An O-07 source region, used by S0 to S2.
     Region(SourceRegion),

@@ -447,6 +447,43 @@ fn floating_types_are_admitted_and_reference_types_are_refused() {
     );
 }
 
+/// FR-326: the assembler keeps each `temporal` clause's form for the
+/// `TemporalTrace` check, and records the unit's temporal profile
+/// selections; it refuses a clause whose `using` alias names no profile
+/// selection at that alias.
+#[trace("FR-326")]
+#[test]
+fn the_assembler_keeps_temporal_clauses_and_refuses_an_undeclared_alias() {
+    let clause = |alias: &str| {
+        format!(
+            "temporal A using {alias} over (p: Boolean) clock \"s\" on origin {{ holds(true) }}"
+        )
+    };
+    let profiles = format!("{PROFILE_V}profile t = \"quire.temporal.infinite-trace/v1\";\n");
+    let text = text(&profiles, &clause("t"));
+    let assembled = assemble_as("a", "u", &text).expect("the unit assembles");
+    assert_eq!(assembled.temporal_clauses.len(), 1);
+    assert_eq!(
+        assembled
+            .temporal_selections
+            .iter()
+            .map(|selection| selection.profile)
+            .collect::<Vec<_>>(),
+        [crate::check::TemporalProfile::InfiniteTrace]
+    );
+
+    let (text, found) = errors(&clause("missing"));
+    assert_eq!(
+        found,
+        [AssemblyError {
+            cause: AssemblyCause::UndeclaredAlias {
+                alias: "missing".into()
+            },
+            span: last(&text, "missing"),
+        }]
+    );
+}
+
 #[trace("FR-091-AC-8", "TC-396")]
 #[test]
 fn nested_constructs_of_other_families_refuse_with_their_own_causes() {

@@ -19,12 +19,11 @@ use crate::support::native_protocol::{Inputs, Unit};
 
 use ix_trace_rs::trace;
 use qsl_foundation::ByteDigest;
-use qsl_semantics::model::domain_package::DomainPackageRef;
+use qsl_semantics::model::domain_package::{DomainPackageRef, DOMAIN_PACKAGE_PROFILE};
 use quire_contract_model as ir;
 use quire_spec_language::checking::composed::{proofs, TypeDisposition, TypeLimits};
 use quire_spec_language::protocol_artifact::{
     self as artifact, native, wire as w, Error, Invalid, Limits, Unsupported,
-    DOMAIN_PACKAGE_PROFILE,
 };
 
 const SIMPLE: &str = "protocol Simple using P over (view: M::Node) on origin {\n role Service on M::Node;\n run sequence Main { check Ready using S { true }; }\n finish Closed as (closed: M::Node) { true };\n}";

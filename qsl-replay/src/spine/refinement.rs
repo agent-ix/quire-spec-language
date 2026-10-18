@@ -163,8 +163,11 @@ impl CompileRefusal {
                     .errors
                     .iter()
                     .map(|error| {
-                        RefusalCause::new(error.cause.code(), None)
-                            .reaching(assembly_limit(&error.cause))
+                        RefusalCause::new(
+                            error.cause.code(),
+                            Some(error.cause.catalog_code().cause()),
+                        )
+                        .reaching(assembly_limit(&error.cause))
                     })
                     .collect(),
             ),
@@ -265,6 +268,7 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
             let denial = incomplete.denial();
             Some(ReachedLimit::of_setting(denial.setting(), denial.limit()))
         }
+        CheckCause::TypeAdmission { limit, .. } => limit.as_deref().map(ReachedLimit::of),
         // A type invariant's wrapper classifies as the cause it wraps.
         CheckCause::TypeInvariant(refusal) => check_limit(&refusal.cause),
         CheckCause::DispatchLink(link) => link
@@ -278,7 +282,6 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
         | CheckCause::StateModel(_)
         | CheckCause::ObjectReadInValueInvariant
         | CheckCause::ModelConformance(_)
-        | CheckCause::TypeAdmission { .. }
         | CheckCause::IllTyped(_)
         | CheckCause::WrongSnapshot(_)
         | CheckCause::MissingName(_)
@@ -302,7 +305,8 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
         | CheckCause::InternalFault(_)
         | CheckCause::NodePreimage(_)
         | CheckCause::ProtocolAnchor(_)
-        | CheckCause::ProtocolReference(_) => None,
+        | CheckCause::ProtocolReference(_)
+        | CheckCause::Temporal(_) => None,
         #[cfg(seam_probe)]
         CheckCause::__SeamProbe => None,
     }
