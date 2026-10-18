@@ -214,10 +214,13 @@ fn width(subject: &Subject) -> usize {
 }
 
 /// Compare the automaton of `subject` with the evaluator on every word of up
-/// to `longest` positions, and return how many words were compared.
+/// to `longest` positions, and return how many words were compared. The
+/// clause both holds on some word and fails on another, so neither answer is
+/// trivially right.
 fn agree(subject: &Subject, longest: usize) -> usize {
     let property = &subject.property;
     let mut compared = 0;
+    let mut verdicts = BTreeSet::new();
     for word in words(width(subject), longest) {
         match property.kind() {
             AutomatonKind::Bounded => {
@@ -246,6 +249,7 @@ fn agree(subject: &Subject, longest: usize) -> usize {
                     subject.body,
                     bits(&word)
                 );
+                verdicts.insert(expected);
                 compared += 1;
             }
             AutomatonKind::Safety | AutomatonKind::Liveness => {
@@ -268,11 +272,13 @@ fn agree(subject: &Subject, longest: usize) -> usize {
                         subject.body,
                         bits(&word)
                     );
+                    verdicts.insert(expected);
                     compared += 1;
                 }
             }
         }
     }
+    assert_eq!(verdicts.len(), 2, "{}: one verdict on every word", subject.body);
     compared
 }
 
@@ -328,9 +334,10 @@ fn a_bounded_clause_translates_to_a_finite_monitor_that_answers_to_the_closed_tr
 fn a_bounded_each_clause_activates_only_at_the_positions_of_the_closed_trace() {
     for activation in [EACH, WHEN] {
         for body in [
-            "always[0,1] holds(p)",
-            "eventually[1,2] holds(p)",
+            "holds(p)",
+            "not holds(p) implies holds(q)",
             "holds(p) implies once[0,1] holds(q)",
+            "eventually[0,1] holds(p)",
         ] {
             let subject = subject_with(EVENT, activation, body);
             assert_eq!(subject.property.kind(), AutomatonKind::Bounded);
