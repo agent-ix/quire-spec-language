@@ -192,8 +192,14 @@ fn conformance_catalog_matches_qspec_complete_model_lock() {
     assert!(selection["conditional"].as_array().unwrap().is_empty());
     assert!(selection["exactly_one"].as_array().unwrap().is_empty());
     // The root is the model layer and `state_graph` the state-graph layer.
-    assert_eq!(ModelRole::Root.identity(), HeaderLayer::ModelComplete.identity());
-    assert_eq!(ModelRole::StateGraph.identity(), HeaderLayer::StateGraph.identity());
+    assert_eq!(
+        ModelRole::Root.identity(),
+        HeaderLayer::ModelComplete.identity()
+    );
+    assert_eq!(
+        ModelRole::StateGraph.identity(),
+        HeaderLayer::StateGraph.identity()
+    );
     println!(
         "conformance: {} model catalog rows match QSpec's lock",
         catalog.len()

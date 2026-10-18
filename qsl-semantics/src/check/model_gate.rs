@@ -114,9 +114,9 @@ fn selected_layers(profiles: &[ProfileSelection]) -> Vec<HeaderLayer> {
 
 /// Whether the unit's header names the model profile (FR-361 item 1).
 pub(super) fn selects_model(profiles: &[ProfileSelection]) -> bool {
-    profiles
-        .iter()
-        .any(|profile| HeaderLayer::from_identity(&profile.identity) == Some(HeaderLayer::ModelComplete))
+    profiles.iter().any(|profile| {
+        HeaderLayer::from_identity(&profile.identity) == Some(HeaderLayer::ModelComplete)
+    })
 }
 
 /// The declarations of a unit the gate reads.
@@ -154,12 +154,8 @@ pub(super) fn refusals(
             continue;
         };
         let whole = spans.declaration;
-        let bodies = std::iter::once((&function.body, &spans.body)).chain(
-            function
-                .measure
-                .as_ref()
-                .zip(spans.measure.as_ref()),
-        );
+        let bodies = std::iter::once((&function.body, &spans.body))
+            .chain(function.measure.as_ref().zip(spans.measure.as_ref()));
         for (body, body_spans) in bodies {
             visit_located(body, body_spans, whole, |node, span| {
                 let family = expression_form(node, &none).and_then(ModelFamily::of);
@@ -171,13 +167,18 @@ pub(super) fn refusals(
         }
     }
     for clause in declarations.state_clauses {
-        visit_located(&clause.body, &clause.spans.body, clause.spans.declaration, |node, span| {
-            let family = expression_form(node, &none).and_then(ModelFamily::of);
-            if let Some(family) = family {
-                refuse(family, OwnerKind::StateClause, &clause.name.name, span);
-            }
-            None
-        });
+        visit_located(
+            &clause.body,
+            &clause.spans.body,
+            clause.spans.declaration,
+            |node, span| {
+                let family = expression_form(node, &none).and_then(ModelFamily::of);
+                if let Some(family) = family {
+                    refuse(family, OwnerKind::StateClause, &clause.name.name, span);
+                }
+                None
+            },
+        );
     }
     for body in declarations.operation_bodies {
         let name = &body.label.name;
@@ -187,13 +188,18 @@ pub(super) fn refusals(
             name,
             body.spans.declaration,
         );
-        visit_located(&body.body, &body.spans.body, body.spans.declaration, |node, span| {
-            let family = expression_form(node, &none).and_then(ModelFamily::of);
-            if let Some(family) = family {
-                refuse(family, OwnerKind::OperationBody, name, span);
-            }
-            None
-        });
+        visit_located(
+            &body.body,
+            &body.spans.body,
+            body.spans.declaration,
+            |node, span| {
+                let family = expression_form(node, &none).and_then(ModelFamily::of);
+                if let Some(family) = family {
+                    refuse(family, OwnerKind::OperationBody, name, span);
+                }
+                None
+            },
+        );
     }
     errors.sort_by_key(|error| (error.span.start, error.span.end));
     errors

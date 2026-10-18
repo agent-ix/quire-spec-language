@@ -9,9 +9,7 @@ use std::collections::BTreeSet;
 
 use super::*;
 use crate::spine::{CompileRefusal, SuppliedLibrary};
-use qsl_semantics::check::{
-    AssemblyCause, AssemblyError, ModelFamily, OwnerKind, ProfileCause,
-};
+use qsl_semantics::check::{AssemblyCause, AssemblyError, ModelFamily, OwnerKind, ProfileCause};
 use qsl_semantics::value::{CatalogRole, DefinitionLock, HeaderLayer, LayerForm};
 
 const CORE: &str = "quire.state.core/v1";
@@ -20,16 +18,44 @@ const GRAPH: &str = "quire.state.graph/v1";
 const VALUE: &str = "quire.value.complete/v1";
 const MODEL: &str = "quire.model.complete/v1";
 
-const BODY: &str = "body ok using v on Config::ConfigVersion::attemptUpdate() { true }";
-const CALL: &str = "pre c using v on Config::ConfigVersion::attemptUpdate { self.attemptUpdate() }";
+const BODY: &str = "body ok using v on Config::ConfigVersion::size() { 1 }";
+const CALL: &str = "pre c using v on Config::ConfigVersion::probe { self.size() > 0 }";
+const NOOP: &str = "function noop using v(): Boolean pure { true }";
 const LOOKUP: &str = "function q using v(p: Population<Config::ConfigVersion>[1], \
                       r: Config::ConfigVersion): Config::ConfigVersion pure \
                       { lookup<Config::ConfigVersion>(p, r) absent refused }";
 
+/// The `size` operation: no parameters, returns an `Integer`.
+fn size_operation() -> serde_json::Value {
+    let identity = format!("{}/size", config_version_type());
+    json!({
+        "identity": identity,
+        "name": "size",
+        "params": [],
+        "returns": {
+            "typeRef": "ix://quire/native/Integer",
+            "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
+            "nullable": false,
+        },
+        "pre": [],
+        "post": [],
+        "origin": {"source": {
+            "sourceIdentity": format!("ix://{CONFIG_VERSION_PACKAGE_IDENTITY}/spec"),
+            "path": "spec.qspec",
+            "startLine": 1,
+            "startColumn": 1,
+        }},
+        "frame": {"modifies": [], "creates": [], "deletes": []},
+    })
+}
+
 /// The header of a unit selecting `profiles` (alias, identity) and the
 /// `Config` model, with the packages that supply it.
-fn header(profiles: &[(&str, &str)]) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
-    let document = config_version_domain_document();
+fn header(profiles: &[(&str, &str)], imports: &str) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
+    let document = config_version_domain_document_with_operations(vec![
+        size_operation(),
+        config_version_probe_operation(),
+    ]);
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
         panic!("one supplied document");
@@ -39,7 +65,7 @@ fn header(profiles: &[(&str, &str)]) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
         .map(|(alias, identity)| format!("profile {alias} = \"{identity}\";\n"))
         .collect();
     let header = format!(
-        "language \"ix:native\" edition \"1-draft\";\n{profiles}\
+        "language \"ix:native\" edition \"1-draft\";\n{profiles}{imports}\
          model Config = {CONFIG_VERSION_PACKAGE_IDENTITY:?} version \"1.0.0\" \
          digest \"sha256-jcs:{}\";\n",
         hex(digest)
@@ -51,7 +77,7 @@ fn compile(
     profiles: &[(&str, &str)],
     declarations: &str,
 ) -> (String, Result<ComposedUnit, Box<CompileRefusal>>) {
-    let (header, packages) = header(profiles);
+    let (header, packages) = header(profiles, "");
     let unit = format!("{header}{declarations}\n");
     let compiled = crate::spine::compose(
         source(),
@@ -85,7 +111,10 @@ fn refusals(profiles: &[(&str, &str)], declarations: &str) -> Vec<(AssemblyError
 }
 
 /// The one model-gate refusal a unit holds, and the text it is located at.
-fn gate(profiles: &[(&str, &str)], declarations: &str) -> (qsl_semantics::check::ModelGateRefusal, String) {
+fn gate(
+    profiles: &[(&str, &str)],
+    declarations: &str,
+) -> (qsl_semantics::check::ModelGateRefusal, String) {
     let found = refusals(profiles, declarations);
     let [(error, located)] = found.as_slice() else {
         panic!("one refusal, not {found:?}");
@@ -132,7 +161,7 @@ fn an_operation_body_needs_the_model_profile() {
 #[test]
 fn a_dispatched_call_and_a_lookup_need_the_model_profile() {
     let (call_refusal, located) = gate(&[("v", VALUE)], CALL);
-    assert_eq!(located, "self.attemptUpdate()");
+    assert_eq!(located, "self.size()");
     assert_eq!(call_refusal.family, ModelFamily::DispatchCall);
     assert_eq!(call_refusal.owner_kind, OwnerKind::StateClause);
     assert_eq!(call_refusal.owner, "c");
@@ -205,14 +234,14 @@ fn every_construct_is_refused_once_in_source_order() {
                 layers.clone()
             ),
             (ModelFamily::OperationBody, BODY, layers.clone()),
-            (ModelFamily::DispatchCall, "self.attemptUpdate()", layers),
+            (ModelFamily::DispatchCall, "self.size()", layers),
         ]
     );
 }
 
 /// The importing unit's text, importing `test/lib` as `l`.
 fn library(profiles: &[(&str, &str)], declarations: &str) -> SuppliedLibrary {
-    let (header, _) = header(profiles);
+    let (header, _) = header(profiles, "");
     SuppliedLibrary {
         identity: "test/lib".to_owned(),
         source: qsl_foundation::SourceIdentity::new("agent-ix", "gate-lib", "git", "1"),
@@ -226,8 +255,8 @@ fn compile_importing(
     unit_declarations: &str,
     library: SuppliedLibrary,
 ) -> (String, Result<ComposedUnit, Box<CompileRefusal>>) {
-    let (header, packages) = header(unit_profiles);
-    let unit = format!("{header}import \"test/lib\" as l;\n{unit_declarations}\n");
+    let (header, packages) = header(unit_profiles, "import \"test/lib\" as l;\n");
+    let unit = format!("{header}{unit_declarations}\n");
     let compiled = crate::spine::compose(
         source(),
         "gate.native",
@@ -247,7 +276,7 @@ fn the_selection_belongs_to_the_unit() {
     let (unit, compiled) = compile_importing(
         &[("v", VALUE)],
         BODY,
-        library(&[("v", MODEL)], BODY),
+        library(&[("v", MODEL)], &format!("{NOOP}\n{BODY}")),
     );
     let found = errors(*compiled.expect_err("the importer lacks the selection"));
     let [error] = found.as_slice() else {
@@ -262,7 +291,7 @@ fn the_selection_belongs_to_the_unit() {
     let (_, compiled) = compile_importing(
         &[("v", MODEL)],
         BODY,
-        library(&[("v", VALUE)], BODY),
+        library(&[("v", VALUE)], &format!("{NOOP}\n{BODY}")),
     );
     match *compiled.expect_err("the library lacks the selection") {
         CompileRefusal::Dependency { refusal, .. } => match *refusal {
@@ -285,8 +314,8 @@ fn the_selection_belongs_to_the_unit() {
 #[trace("FR-361-AC-7", "TC-1017")]
 #[test]
 fn the_selection_is_the_header_and_nothing_else() {
-    for alias in ["v", "model", "complete"] {
-        let body = format!("body ok using {alias} on Config::ConfigVersion::attemptUpdate() {{ true }}");
+    for alias in ["v", "mc", "complete"] {
+        let body = format!("body ok using {alias} on Config::ConfigVersion::size() {{ 1 }}");
         let (refusal, _) = gate(&[(alias, VALUE)], &body);
         assert_eq!(refusal.family, ModelFamily::OperationBody);
     }
@@ -300,7 +329,7 @@ fn the_selection_is_the_header_and_nothing_else() {
 #[trace("FR-361-AC-8", "TC-1017")]
 #[test]
 fn the_model_layer_selects_its_closure_and_both_locks_rows() {
-    let (_, compiled) = compile(&[("v", MODEL)], "");
+    let (_, compiled) = compile(&[("v", MODEL)], NOOP);
     let compiled = compiled.expect("the model profile compiles");
     let wire: serde_json::Value = serde_json::from_slice(compiled.emitted.bytes()).unwrap();
     let selected: BTreeSet<String> = wire["lock"]["definition_selections"]
@@ -319,7 +348,11 @@ fn the_model_layer_selects_its_closure_and_both_locks_rows() {
             .filter(|role| **role != CatalogRole::Edition)
             .map(|role| lock.entry(*role).identity.to_owned()),
     );
-    expected.extend(lock.model_catalog().iter().map(|entry| entry.identity.to_owned()));
+    expected.extend(
+        lock.model_catalog()
+            .iter()
+            .map(|entry| entry.identity.to_owned()),
+    );
     assert_eq!(selected, expected);
 }
 
@@ -331,7 +364,10 @@ fn the_model_layer_selects_its_closure_and_both_locks_rows() {
 #[test]
 fn an_e3_refusal_is_the_only_one_reported() {
     for (identity, cause) in [
-        ("quire.value.ieee754-2019-default/v1", ProfileCause::WrongSelectionRole),
+        (
+            "quire.value.ieee754-2019-default/v1",
+            ProfileCause::WrongSelectionRole,
+        ),
         ("test:unknown-profile", ProfileCause::UnsupportedSelection),
     ] {
         let (_, compiled) = compile(&[("v", VALUE), ("p", identity)], BODY);
@@ -396,10 +432,10 @@ fn one_refusal_per_construct() {
 #[test]
 fn forms_no_gate_covers_stay_ungated() {
     let declarations = "\
-        function count using v(p: Population<Config::ConfigVersion>[1]): Integer pure \
+        function total using v(p: Population<Config::ConfigVersion>[1]): Integer pure \
         { size(allInstances<Config::ConfigVersion>(p)) }\n\
         invariant Navigates using v on Config::ConfigVersion at current { self.versionNumber >= 0 }\n\
-        pre P using v on Config::ConfigVersion::attemptUpdate { self.versionNumber >= 0 }";
+        pre P using v on Config::ConfigVersion::probe { self.versionNumber >= 0 }";
     for identity in [VALUE, MODEL] {
         compile(&[("v", identity)], declarations)
             .1

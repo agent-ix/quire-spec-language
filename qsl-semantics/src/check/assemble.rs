@@ -46,11 +46,11 @@ use super::check::{
     EnumBinding, ModelRecords, PackageDeclarations, ResolvedSignature, VariantTypeDeclaration,
 };
 use super::layer::LayerAdmission;
-use super::model_gate::{self, ModelGateRefusal};
 use super::lowering::{
     record_node_key, strongly_connected, variant_type_node_key, AdmittedModel, AuthoredBound,
     RecordKeyError,
 };
+use super::model_gate::{self, ModelGateRefusal};
 use super::node_key::{declared_type_handle, nominal_key, NodeKeyRefusal, SourceOwner};
 use super::operation_body::OperationBodyDeclaration;
 use super::operation_clause::OperationClauseDeclaration;
@@ -2921,11 +2921,8 @@ impl PackageDeclarations {
             &admitted,
             (&lock, &predicates),
         );
-        let operation_bodies = operation_bodies(
-            unit.operation_bodies,
-            &resolve,
-            (&lock, &predicates),
-        );
+        let operation_bodies =
+            operation_bodies(unit.operation_bodies, &resolve, (&lock, &predicates));
         let protocol_attempts = protocol_attempts(
             &unit.protocols,
             &object_names,
