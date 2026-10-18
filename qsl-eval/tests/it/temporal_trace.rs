@@ -23,17 +23,17 @@ use qsl_semantics::check::{
 use qsl_semantics::model::intake::SelectedModels;
 use quire_exact::{ChargePoint, LimitKind, Meter, ScalarLimits, Undefined};
 
-const EVENT: &str = "quire.temporal.event-position.false-extension/v1";
-const INFINITE: &str = "quire.temporal.infinite-trace/v1";
+pub(crate) const EVENT: &str = "quire.temporal.event-position.false-extension/v1";
+pub(crate) const INFINITE: &str = "quire.temporal.infinite-trace/v1";
 const VALUE: &str = "quire.value.complete/v1";
 
 /// A unit with one `temporal` clause `C` whose formula is `body`.
-struct Fixture {
-    text: String,
-    clause: CheckedTemporalClause,
+pub(crate) struct Fixture {
+    pub(crate) text: String,
+    pub(crate) clause: CheckedTemporalClause,
 }
 
-fn fixture(profile: &str, over: &str, activation: &str, body: &str) -> Fixture {
+pub(crate) fn fixture(profile: &str, over: &str, activation: &str, body: &str) -> Fixture {
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"{VALUE}\";\n\
