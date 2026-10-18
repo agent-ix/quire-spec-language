@@ -182,7 +182,10 @@ fn verify(subject: &ScheduleSubject, outcome: &ClosedFormOutcome, cancel: &Cance
             }),
             ClosedFormAnalysis::FixedPriorityRta | ClosedFormAnalysis::AmcRtb,
         ) => fixed_priority_miss(subject, task, *job, iterates, cancel),
-        (ClosedFormOutcome::Miss(MissEvidence::Utilization(stated)), ClosedFormAnalysis::EdfQpa) => {
+        (
+            ClosedFormOutcome::Miss(MissEvidence::Utilization(stated)),
+            ClosedFormAnalysis::EdfQpa,
+        ) => {
             let actual = utilization(subject);
             if actual == *stated && actual > int(1) {
                 Ok(())
@@ -332,8 +335,7 @@ fn recurrence<'a>(
 
 /// `J_i - q * T_i`, which turns a job's iterate into its response time.
 fn shift(task: &Task, job: u64) -> Rational {
-    task.jitter
-        .sub(&int(job).mul(task.arrival.interval()))
+    task.jitter.sub(&int(job).mul(task.arrival.interval()))
 }
 
 /// The time the job after `job` is released, relative to the critical
@@ -613,40 +615,34 @@ fn amc(
 }
 
 fn utilization(subject: &ScheduleSubject) -> Rational {
-    subject
-        .task_set()
-        .tasks()
-        .iter()
-        .fold(int(0), |sum, task| {
-            sum.add(&ratio_or_zero(task.wcet.hi(), task.arrival.interval()))
-        })
+    subject.task_set().tasks().iter().fold(int(0), |sum, task| {
+        sum.add(&ratio_or_zero(task.wcet.hi(), task.arrival.interval()))
+    })
 }
 
 /// `dbf(t) = sum of max(0, floor((t - D) / T) + 1) * C`.
 fn demand_bound(subject: &ScheduleSubject, t: &Rational) -> Rational {
-    subject
-        .task_set()
-        .tasks()
-        .iter()
-        .fold(int(0), |sum, task| {
-            let jobs = floor(&ratio_or_zero(
-                &t.sub(&task.deadline),
-                task.arrival.interval(),
-            ))
-            .add(&int(1));
-            if jobs > int(0) {
-                sum.add(&jobs.mul(task.wcet.hi()))
-            } else {
-                sum
-            }
-        })
+    subject.task_set().tasks().iter().fold(int(0), |sum, task| {
+        let jobs = floor(&ratio_or_zero(
+            &t.sub(&task.deadline),
+            task.arrival.interval(),
+        ))
+        .add(&int(1));
+        if jobs > int(0) {
+            sum.add(&jobs.mul(task.wcet.hi()))
+        } else {
+            sum
+        }
+    })
 }
 
 /// The synchronous busy period: the least `w` with
 /// `w = sum of ceil(w / T) * C`.
 fn busy_period(subject: &ScheduleSubject, cancel: &Cancel) -> Checked<Rational> {
     let tasks = subject.task_set().tasks();
-    let mut window = tasks.iter().fold(int(0), |sum, task| sum.add(task.wcet.hi()));
+    let mut window = tasks
+        .iter()
+        .fold(int(0), |sum, task| sum.add(task.wcet.hi()));
     loop {
         poll(cancel)?;
         let next = tasks.iter().fold(int(0), |sum, task| {

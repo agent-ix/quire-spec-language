@@ -6,15 +6,14 @@
 
 use ix_trace_rs::trace;
 use qsl_analyze::schedulability::{analyze, ScheduleLimits};
+use qsl_replay::IncompleteCause;
 use qsl_replay::{
     recompute, settle, AmcEvidence, Arrival, Category, Certification, ClosedFormAnalysis,
     ClosedFormCheck, ClosedFormDisagreement, ClosedFormEvidence, ClosedFormOutcome, Code,
-    Criticality, DisagreementCause, Identifier, InconclusiveCause, JobIterates,
-    MissEvidence, ProofBasis, QualifiedName, ScheduleClaim, ScheduleLimit,
-    ScheduleSubject, SchedulingPolicy, Task, TaskFixpoint, TaskSet, TaskSetRefusal, TerminalValue,
-    Verdict, Wcet,
+    Criticality, DisagreementCause, Identifier, InconclusiveCause, JobIterates, MissEvidence,
+    ProofBasis, QualifiedName, ScheduleClaim, ScheduleLimit, ScheduleSubject, SchedulingPolicy,
+    Task, TaskFixpoint, TaskSet, TaskSetRefusal, TerminalValue, Verdict, Wcet,
 };
-use qsl_replay::IncompleteCause;
 use quire_exact::{Cancel, CancelCause, Integer, Rational};
 
 fn r(numerator: i64, denominator: i64) -> Rational {
@@ -50,7 +49,10 @@ fn task(name: &str, wcet: i64, period: i64, priority: u64) -> Task {
 fn hi_task(name: &str, lo: i64, hi: i64, period: i64, priority: u64) -> Task {
     Task {
         criticality: Criticality::Hi,
-        wcet: Wcet::Dual { lo: n(lo), hi: n(hi) },
+        wcet: Wcet::Dual {
+            lo: n(lo),
+            hi: n(hi),
+        },
         ..task(name, lo, period, priority)
     }
 }
@@ -60,7 +62,11 @@ fn hi_task(name: &str, lo: i64, hi: i64, period: i64, priority: u64) -> Task {
 fn ctl(third: i64) -> TaskSet {
     TaskSet::new(
         set_name("Ctl"),
-        vec![task("a", 1, 4, 1), task("b", 2, 6, 2), task("c", third, 12, 3)],
+        vec![
+            task("a", 1, 4, 1),
+            task("b", 2, 6, 2),
+            task("c", third, 12, 3),
+        ],
     )
     .expect("an admitted task set")
 }
@@ -133,7 +139,10 @@ fn jitter_and_blocking() -> TaskSet {
 fn mc(high_budget: i64, low_budget: i64) -> TaskSet {
     TaskSet::new(
         set_name("Mc"),
-        vec![task("a", 1, 4, 1), hi_task("b", low_budget, high_budget, 6, 2)],
+        vec![
+            task("a", 1, 4, 1),
+            hi_task("b", low_budget, high_budget, 6, 2),
+        ],
     )
     .expect("an admitted task set")
 }
@@ -219,10 +228,7 @@ fn ctl_is_schedulable_under_fixed_priority_and_edf() {
     let fixed = run(&schedulable(ctl(5), SchedulingPolicy::FixedPriority));
     let listed = fixed_points(&fixed);
     assert_eq!(fixpoints(listed), vec![n(1), n(3), n(12)]);
-    assert_eq!(
-        listed[2].jobs,
-        vec![JobIterates(iterates(&[5, 9, 12, 12]))]
-    );
+    assert_eq!(listed[2].jobs, vec![JobIterates(iterates(&[5, 9, 12, 12]))]);
 
     let edf = run(&schedulable(ctl(5), SchedulingPolicy::Edf));
     assert_eq!(
@@ -296,7 +302,10 @@ fn amc_decides_schedulable_sufficient_test_failed_and_a_low_mode_miss() {
     assert!(matches!(base, ClosedFormOutcome::Schedulable(_)));
 
     let high_fails = run(&schedulable(mc(6, 1), SchedulingPolicy::Amc));
-    assert!(matches!(high_fails, ClosedFormOutcome::SufficientTestFailed(_)));
+    assert!(matches!(
+        high_fails,
+        ClosedFormOutcome::SufficientTestFailed(_)
+    ));
 
     assert_eq!(
         run(&schedulable(mc(5, 5), SchedulingPolicy::Amc)),
@@ -378,7 +387,10 @@ fn ctl_settles_proved_with_its_fixpoints_and_a_third_wcet_of_six_settles_refuted
         proved(ClosedFormAnalysis::FixedPriorityRta)
     );
     let edf = schedulable(ctl(5), SchedulingPolicy::Edf);
-    assert_eq!(settled(&edf, &run(&edf)), proved(ClosedFormAnalysis::EdfQpa));
+    assert_eq!(
+        settled(&edf, &run(&edf)),
+        proved(ClosedFormAnalysis::EdfQpa)
+    );
 
     for policy in [SchedulingPolicy::FixedPriority, SchedulingPolicy::Edf] {
         let missing = schedulable(ctl(6), policy);
@@ -390,10 +402,12 @@ fn ctl_settles_proved_with_its_fixpoints_and_a_third_wcet_of_six_settles_refuted
 }
 
 fn parity() -> TerminalValue {
-    TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(DisagreementCause::NoValue {
-        proved: Verdict::from_category(Category::Success),
-        replayed: Verdict::from_category(Category::Inconclusive),
-    }))
+    TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(
+        DisagreementCause::NoValue {
+            proved: Verdict::from_category(Category::Success),
+            replayed: Verdict::from_category(Category::Inconclusive),
+        },
+    ))
 }
 
 #[trace("TC-703", "FR-248-AC-2", "QSpec-FR-419-AC-4")]
@@ -408,7 +422,7 @@ fn altered_evidence_settles_inconclusive_replay_parity() {
     listed[2].jobs[0] = JobIterates(iterates(&[5, 9, 11, 11]));
     assert!(matches!(
         check(&fixed, &tampered),
-        ClosedFormCheck::Disagrees(ClosedFormDisagreement::Iterate { index: 3, .. })
+        ClosedFormCheck::Disagrees(ClosedFormDisagreement::Iterate { index: 2, .. })
     ));
     assert_eq!(settled(&fixed, &tampered), parity());
 
@@ -463,15 +477,20 @@ fn a_miss_for_a_job_past_the_busy_period_names_the_job_that_closes_it() {
             job: 1,
         })
     );
-    assert_eq!(settled(&subject, &miss_of(2, &[4, 6, 7, 8])), parity_violation());
+    assert_eq!(
+        settled(&subject, &miss_of(2, &[4, 6, 7, 8])),
+        parity_violation()
+    );
     assert_eq!(settled(&subject, &miss_of(0, &[2])), TerminalValue::Refuted);
 }
 
 fn parity_violation() -> TerminalValue {
-    TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(DisagreementCause::NoValue {
-        proved: Verdict::from_category(Category::Violation),
-        replayed: Verdict::from_category(Category::Inconclusive),
-    }))
+    TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(
+        DisagreementCause::NoValue {
+            proved: Verdict::from_category(Category::Violation),
+            replayed: Verdict::from_category(Category::Inconclusive),
+        },
+    ))
 }
 
 #[trace("TC-703", "FR-248-AC-3", "QSpec-FR-419-AC-3")]

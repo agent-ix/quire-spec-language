@@ -418,9 +418,7 @@ impl ScheduleSubject {
     /// for a response claim, every task otherwise, highest priority first.
     pub fn analysed(&self) -> Vec<&Task> {
         match &self.claim {
-            ScheduleClaim::Response { task, .. } => {
-                self.task_set.task(task).into_iter().collect()
-            }
+            ScheduleClaim::Response { task, .. } => self.task_set.task(task).into_iter().collect(),
             ScheduleClaim::Schedulable(_) => self.by_priority(),
         }
     }
