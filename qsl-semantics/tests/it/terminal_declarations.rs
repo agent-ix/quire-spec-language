@@ -39,7 +39,7 @@ fn checked(body: &str) -> CheckedGraph {
         .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}"))
 }
 
-fn declaration<'g>(graph: &'g CheckedGraph) -> &'g TerminalDeclaration {
+fn declaration(graph: &CheckedGraph) -> &TerminalDeclaration {
     graph
         .terminal("Config")
         .expect("the selected model has a terminal declaration")
