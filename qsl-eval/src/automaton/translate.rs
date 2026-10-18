@@ -563,7 +563,9 @@ impl Translator<'_> {
         }
         match self.ir.node(id)? {
             Node::And(left, right) => {
-                branch.todo.extend([Task::Assert(left), Task::Assert(right)]);
+                branch
+                    .todo
+                    .extend([Task::Assert(left), Task::Assert(right)]);
                 Ok(Progress::Continue(vec![branch]))
             }
             Node::Or(left, right) => {
@@ -671,7 +673,12 @@ impl Translator<'_> {
                 // The operand holds here: the obligations are discharged.
                 let mut claimed = branch.clone();
                 claimed.todo.push(Task::Assert(right));
-                Self::keep(&mut claimed, id, counter.step(opens, true), Counter::Deadline)?;
+                Self::keep(
+                    &mut claimed,
+                    id,
+                    counter.step(opens, true),
+                    Counter::Deadline,
+                )?;
                 let mut branches = vec![claimed];
                 // It does not, and an obligation waits for a later position.
                 if let Ok(aged) = counter.step(opens, false) {
@@ -706,7 +713,9 @@ impl Translator<'_> {
                     self.exclude(&mut branch, guard)?;
                 }
                 Self::keep(&mut branch, id, counter.step(opens, true), Counter::Extent)?;
-                Ok(Progress::Continue(released.into_iter().chain([branch]).collect()))
+                Ok(Progress::Continue(
+                    released.into_iter().chain([branch]).collect(),
+                ))
             }
         }
     }
@@ -759,7 +768,10 @@ impl Translator<'_> {
                 *delays = BTreeSet::from([latest]);
             }
             (Window::From { .. }, FutureKind::Always) => {
-                let earliest = delays.first().copied().map_or(delay, |first| first.min(delay));
+                let earliest = delays
+                    .first()
+                    .copied()
+                    .map_or(delay, |first| first.min(delay));
                 *delays = BTreeSet::from([earliest]);
             }
             _ => {

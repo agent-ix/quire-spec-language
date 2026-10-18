@@ -106,7 +106,13 @@ impl Past {
             Base::Age(counter) => counter.within_bound(),
         };
         if self.lower == 0 {
-            return (part, Memory { base, ages: Vec::new() });
+            return (
+                part,
+                Memory {
+                    base,
+                    ages: Vec::new(),
+                },
+            );
         }
         let holds = memory
             .ages
@@ -123,7 +129,13 @@ impl Past {
         if part {
             ages.insert(0, (1, 1));
         }
-        (holds, Memory { base, ages: merged(ages) })
+        (
+            holds,
+            Memory {
+                base,
+                ages: merged(ages),
+            },
+        )
     }
 
     /// Every case of the step from `memory`, given the conditions under

@@ -278,9 +278,7 @@ impl Ir {
         left: Option<NodeId>,
         right: NodeId,
     ) -> NodeId {
-        let core = (window.lower() != 0).then(|| {
-            self.future(kind, window.shifted(), left, right)
-        });
+        let core = (window.lower() != 0).then(|| self.future(kind, window.shifted(), left, right));
         self.intern(
             Node::Future {
                 kind,

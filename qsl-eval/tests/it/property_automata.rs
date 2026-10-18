@@ -143,7 +143,10 @@ fn accepts(gba: &Gba, word: &[Letter], prefix: usize) -> bool {
     while let Some(node) = queue.pop_front() {
         let (state, position) = *nodes.get(node).expect("a numbered node");
         let letter = *word.get(position).expect("a position of the word");
-        for target in gba.successors(state, letter).expect("a state of the automaton") {
+        for target in gba
+            .successors(state, letter)
+            .expect("a state of the automaton")
+        {
             let key = (target.index(), after(position));
             let next = *numbers.entry(key).or_insert_with(|| {
                 nodes.push((target, key.1));
@@ -278,7 +281,12 @@ fn agree(subject: &Subject, longest: usize) -> usize {
             }
         }
     }
-    assert_eq!(verdicts.len(), 2, "{}: one verdict on every word", subject.body);
+    assert_eq!(
+        verdicts.len(),
+        2,
+        "{}: one verdict on every word",
+        subject.body
+    );
     compared
 }
 
@@ -412,7 +420,11 @@ fn a_liveness_clause_translates_to_the_automaton_of_its_negation() {
         "always eventually (holds(p) and eventually[1,2] holds(q))",
     ] {
         let width = if body.contains("holds(r)") { 3 } else { 2 };
-        infinite_agrees(body, AutomatonKind::Liveness, if width == 3 { 3 } else { 5 });
+        infinite_agrees(
+            body,
+            AutomatonKind::Liveness,
+            if width == 3 { 3 } else { 5 },
+        );
     }
 }
 
@@ -480,7 +492,12 @@ fn a_safety_monitor_rejects_exactly_the_bad_prefixes() {
                     },
                 )
             });
-            assert_eq!(rejects, !satisfiable, "{body}: the prefix {:?}", bits(&prefix));
+            assert_eq!(
+                rejects,
+                !satisfiable,
+                "{body}: the prefix {:?}",
+                bits(&prefix)
+            );
         }
     }
 }
