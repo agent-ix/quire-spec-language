@@ -1114,7 +1114,7 @@ impl Checker<'_, '_> {
             }
         }
         match cause {
-            CheckCause::MissingName(name) if !name.contains("::") => {
+            CheckCause::MissingName(name) if !is_qualified(&name) => {
                 let read = self.universe.classify(&name, site);
                 self.refuse(ObligationCause::StageRead {
                     name,
@@ -1201,6 +1201,15 @@ fn type_body(
         }
         Goal::Infer => typer.infer(&form.expression, None, input.location),
     }
+}
+
+/// Whether the clause checker's missing name was written with a `::`
+/// qualifier. The expression tree carries a name only as its spelling
+/// (`ExprNode::Name`), so the qualifier is read from that spelling: a
+/// qualified name is a missing declaration, not a stage's unreadable name.
+#[qsl_attrs::string_edge]
+fn is_qualified(name: &str) -> bool {
+    name.contains("::")
 }
 
 /// The span of the node `location` reaches in `form`, or the whole
