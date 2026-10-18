@@ -484,6 +484,30 @@ fn the_assembler_keeps_temporal_clauses_and_refuses_an_undeclared_alias() {
     );
 }
 
+/// An `abstraction` declaration that S2 builds and no check admits yet
+/// refuses `unsupported_construct`/`declaration-form` at the declaration's
+/// span, rather than compiling and being silently ignored.
+#[trace("FR-304")]
+#[test]
+fn an_abstraction_declaration_refuses_as_an_unsupported_declaration_form() {
+    let declaration = "abstraction Link using v { population M::configs to \"state::configs\"; }";
+    let (text, found) = errors(declaration);
+    assert_eq!(
+        found,
+        [AssemblyError {
+            cause: AssemblyCause::UnsupportedDeclarationForm {
+                form: "abstraction"
+            },
+            span: last(&text, declaration),
+        }]
+    );
+    assert_eq!(found[0].cause.code(), Code::UnsupportedConstruct);
+    assert_eq!(
+        found[0].cause.catalog_code(),
+        qsl_foundation::CatalogCode::new("unsupported_construct", "declaration-form")
+    );
+}
+
 #[trace("FR-091-AC-8", "TC-396")]
 #[test]
 fn nested_constructs_of_other_families_refuse_with_their_own_causes() {

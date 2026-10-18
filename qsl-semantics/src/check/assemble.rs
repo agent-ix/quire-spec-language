@@ -374,6 +374,12 @@ pub enum AssemblyCause {
         /// The populations, in ascending `DeclarationKey` order.
         populations: Vec<DeclarationKey>,
     },
+    /// A declaration form S2 builds that no check admits yet: refused
+    /// rather than compiled and silently missing from the package.
+    UnsupportedDeclarationForm {
+        /// The declaration's leading keyword, such as `terminal`.
+        form: &'static str,
+    },
 }
 
 impl AssemblyCause {
@@ -392,6 +398,7 @@ impl AssemblyCause {
             | Self::AmbiguousOperation { .. }
             | Self::AmbiguousPopulation { .. } => Code::AmbiguousDeclaration,
             Self::UnresolvedQuantityName { .. } => Code::MissingDeclaration,
+            Self::UnsupportedDeclarationForm { .. } => Code::UnsupportedConstruct,
             Self::DuplicateOperationBody { .. } => Code::ConflictingDeclaration,
             Self::QuantityCycle { .. } => Code::InvalidPackage,
             Self::ZeroDenominator => Code::UndefinedExpression,
@@ -464,6 +471,7 @@ impl AssemblyCause {
             | Self::AmbiguousOperation { .. }
             | Self::AmbiguousPopulation { .. } => "ambiguous-name",
             Self::UnresolvedQuantityName { .. } => "missing-name",
+            Self::UnsupportedDeclarationForm { .. } => "declaration-form",
             Self::DuplicateOperationBody { .. } => "duplicate-declaration",
             Self::QuantityCycle { .. } => "definition-cycle",
             Self::ZeroDenominator => "unproved-nonzero",
@@ -598,6 +606,8 @@ struct Unit {
     /// Each `temporal` clause's form, in source order, for FR-326's
     /// `check::temporal_clause` checker to resolve at S3.
     temporal_clauses: Vec<super::temporal_clause::TemporalDeclaration>,
+    /// The span of each `abstraction` declaration, in source order.
+    abstraction_declarations: Vec<Span>,
 }
 
 impl Unit {
@@ -614,15 +624,16 @@ impl Unit {
             operation_bodies: Vec::new(),
             protocols: Vec::new(),
             temporal_clauses: Vec::new(),
+            abstraction_declarations: Vec::new(),
         };
         for form in forms {
             let span = form.span();
             match form.into_form() {
                 DeclarationForm::Function(function) => unit.functions.push(*function),
-                // An abstraction relation (FR-304) is compiled from source once a
-                // header selects the model layer; until then
-                // S3 reads none.
-                DeclarationForm::Abstraction(_) => {}
+                // Abstraction declarations are refused until a check admits them.
+                DeclarationForm::Abstraction(abstraction) => {
+                    unit.abstraction_declarations.push(abstraction.span)
+                }
                 DeclarationForm::Alias(alias) => {
                     unit.declare(&alias.name, Declared::Alias(unit.aliases.len()));
                     unit.aliases.push(alias);
@@ -2216,6 +2227,14 @@ impl PackageDeclarations {
         let (selections, forms) = unit.into_parts();
         let unit = Unit::new(forms);
         let mut errors = Vec::new();
+        for span in &unit.abstraction_declarations {
+            errors.push(AssemblyError {
+                cause: AssemblyCause::UnsupportedDeclarationForm {
+                    form: "abstraction",
+                },
+                span: *span,
+            });
+        }
         let owner = SourceOwner::from(&source);
         // The models and the one meter their admission counted on; checking
         // continues that meter into the conformance stage.

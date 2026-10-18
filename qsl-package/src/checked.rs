@@ -378,6 +378,24 @@ impl CheckedPackage {
         Ok(())
     }
 
+    /// As [`Self::bind_abstraction`], for a relation read from the
+    /// `abstraction` declarations located at `sites`, one per declaration:
+    /// the emitter writes one `declaration` occurrence of the relation node at
+    /// each (QSpec FR-451).
+    ///
+    /// # Errors
+    ///
+    /// Every refusal of the bindings; a refusal leaves the package unchanged.
+    pub fn bind_abstraction_at(
+        &mut self,
+        bindings: &[AuthoredBinding],
+        sites: Vec<quire_semantic_value::location::Location>,
+    ) -> Result<(), Vec<AbstractionRefusal>> {
+        let relation = self.graph.check_abstraction(bindings)?;
+        self.abstraction = Some(relation.with_sites(sites));
+        Ok(())
+    }
+
     /// FR-304: this package's checked abstraction relation, when it declares
     /// one.
     pub fn abstraction(&self) -> Option<&CheckedAbstractionRelation> {

@@ -538,6 +538,30 @@ fn a_key_naming_a_declaration_of_another_kind_refuses_malformed_declaration() {
     }
 }
 
+/// FR-304-AC-9: a systems interface is no object type, so a binding of it, or
+/// of an operation it declares, refuses `MalformedDeclaration`.
+#[test]
+#[trace("FR-304-AC-9")]
+fn a_systems_interface_bound_as_an_object_type_refuses_malformed_declaration() {
+    let package = package(CLAUSES);
+    let panel = object("Panel", "Panel", &[("level", "level")]);
+    assert_eq!(
+        sole(refused(&package, std::slice::from_ref(&panel))),
+        AbstractionRefusal::MalformedDeclaration {
+            key: panel.key(),
+            entry: MalformedEntry::NotAnObjectType,
+        }
+    );
+    let operation = frame("Panel", "adjust", &[]);
+    assert_eq!(
+        sole(refused(&package, std::slice::from_ref(&operation))),
+        AbstractionRefusal::MalformedDeclaration {
+            key: operation.key(),
+            entry: MalformedEntry::NotAnObjectType,
+        }
+    );
+}
+
 #[test]
 #[trace("TC-800")]
 fn a_parameter_mapped_to_the_receivers_spelling_refuses_malformed_declaration() {

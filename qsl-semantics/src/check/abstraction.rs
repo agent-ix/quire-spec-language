@@ -227,9 +227,26 @@ pub enum CheckedBinding {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct CheckedAbstractionRelation {
     bindings: BTreeMap<AbstractionKey, CheckedBinding>,
+    /// The location of each `abstraction` declaration the bindings were read
+    /// from, in source order; empty for a relation bound without source.
+    sites: Vec<Location>,
 }
 
 impl CheckedAbstractionRelation {
+    /// This relation read from the declarations located at `sites`: the
+    /// emitter writes one `declaration` occurrence of the relation node at
+    /// each (QSpec FR-451).
+    #[must_use]
+    pub fn with_sites(mut self, sites: Vec<Location>) -> Self {
+        self.sites = sites;
+        self
+    }
+
+    /// The location of each declaration the bindings were read from.
+    pub fn sites(&self) -> &[Location] {
+        &self.sites
+    }
+
     /// The binding of `key`, if bound.
     pub fn get(&self, key: &AbstractionKey) -> Option<&CheckedBinding> {
         self.bindings.get(key)
@@ -390,7 +407,10 @@ impl CheckedGraph {
                 (key, checked)
             })
             .collect();
-        Ok(CheckedAbstractionRelation { bindings })
+        Ok(CheckedAbstractionRelation {
+            bindings,
+            sites: Vec::new(),
+        })
     }
 
     /// Whether `binding` is admissible on its own: its key resolves and its
@@ -420,6 +440,12 @@ impl CheckedGraph {
                     .object_types
                     .get(key)
                     .ok_or_else(|| unresolved(key, MalformedEntry::NotAnObjectType))?;
+                if !self.is_object_type_node(key) {
+                    return Err(Box::new(AbstractionRefusal::MalformedDeclaration {
+                        key: binding.key(),
+                        entry: MalformedEntry::NotAnObjectType,
+                    }));
+                }
                 for field in value.fields.keys() {
                     if self
                         .scope
@@ -447,6 +473,12 @@ impl CheckedGraph {
                     .object_types
                     .get(&key.declaring)
                     .ok_or_else(|| unresolved(&key.declaring, MalformedEntry::NotAnObjectType))?;
+                if !self.is_object_type_node(&key.declaring) {
+                    return Err(Box::new(AbstractionRefusal::MalformedDeclaration {
+                        key: binding.key(),
+                        entry: MalformedEntry::NotAnObjectType,
+                    }));
+                }
                 let OperationLookup::Declared {
                     declaring,
                     operation,
@@ -516,6 +548,19 @@ impl CheckedGraph {
                 Ok(())
             }
         }
+    }
+
+    /// Whether the node of `declaration` is a `model`/`object_type` node, the
+    /// only target kind QSpec FR-451 admits: a systems interface is an object
+    /// type record whose node is another form.
+    fn is_object_type_node(&self, declaration: &DeclarationKey) -> bool {
+        let Some(node) = self.object_nodes.get(declaration) else {
+            return false;
+        };
+        matches!(
+            object_type_node(declaration, self.identity),
+            Ok(Some(plain)) if plain.key() == *node
+        )
     }
 
     /// FR-305: the nodes of the frame of the operation `key` names, when a
@@ -588,7 +633,7 @@ impl CheckedGraph {
 pub struct AbstractionNodes {
     relation: SemanticNode,
     support: Vec<SemanticNode>,
-    site: Location,
+    sites: Vec<Location>,
 }
 
 impl AbstractionNodes {
@@ -603,11 +648,12 @@ impl AbstractionNodes {
         &self.support
     }
 
-    /// The location of the relation node's one `declaration` occurrence and
-    /// of each supporting node's `generated` one: the package root, as no
-    /// source declaration is read yet.
-    pub fn site(&self) -> &Location {
-        &self.site
+    /// The location of each of the relation node's `declaration`
+    /// occurrences, in order: one per declaration the relation was read from,
+    /// or the package root for a relation bound without source. Each
+    /// supporting node has one `generated` occurrence at the first.
+    pub fn sites(&self) -> &[Location] {
+        &self.sites
     }
 }
 
@@ -732,14 +778,17 @@ impl CheckedGraph {
                 }
             }
         }
-        let relation = relation_node(
+        let node = relation_node(
             AbstractionTerm::new(objects, populations, frames),
             self.identity,
         )?;
         Ok(AbstractionNodes {
-            relation,
+            relation: node,
             support: support.nodes.into_values().collect(),
-            site: generated_location(),
+            sites: match relation.sites() {
+                [] => vec![generated_location()],
+                declared => declared.to_vec(),
+            },
         })
     }
 

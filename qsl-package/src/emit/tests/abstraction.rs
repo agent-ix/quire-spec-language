@@ -244,6 +244,44 @@ fn the_relation_is_written_as_one_node_holding_the_three_bindings() {
     );
 }
 
+/// QSpec FR-451: a relation read from two `abstraction` declarations is one
+/// node with a `declaration` occurrence for each, ordinals in source order.
+#[trace("FR-306-AC-1")]
+#[test]
+fn a_relation_read_from_two_declarations_has_an_occurrence_for_each() {
+    use quire_semantic_value::location::{Location, Origin};
+
+    let (_, _, mut package) = linked();
+    let site = |name: &str| {
+        Location::root(Origin::TypeDeclaration {
+            name: name.to_owned(),
+        })
+    };
+    package
+        .bind_abstraction_at(
+            &three_bindings("version"),
+            vec![site("first"), site("second")],
+        )
+        .expect("the relation checks");
+    let source = package.graph().source().clone();
+    let emission = emit_package(&package, move |_| {
+        Some(SourceRegion::new(source.clone(), 0, 1).expect("a nonempty region"))
+    })
+    .expect("the package emits");
+    let wire = wire(&emission);
+    let [relation] = super::owners::node_where(&wire, "correspondence", "abstraction_relation")[..]
+    else {
+        panic!("one relation node");
+    };
+    assert_eq!(
+        relation["occurrences"],
+        json!([
+            {"role": "declaration", "ordinal": 0},
+            {"role": "declaration", "ordinal": 1},
+        ])
+    );
+}
+
 /// TC-804 step 1: a package that declares no relation holds no relation node.
 #[test]
 fn a_package_with_no_relation_writes_no_relation_node() {

@@ -3,7 +3,8 @@
 //! type `ConfigVersion` (fields `version` and `note`, the operation
 //! `attemptUpdate(n, m)` framed on `version`) in the population `configs`,
 //! and `Base` (field `f`, operation `op`) with its subtype `Sub`, outside
-//! any population.
+//! any population. `Panel` is a systems interface, which has an object type
+//! record but no object type node.
 
 #![allow(dead_code, reason = "each test binary uses part of the fixture")]
 
@@ -90,12 +91,23 @@ pub(crate) fn document() -> Value {
             vec![operation("Base", "op", &[], &nothing)],
         ),
         object_type("Sub", &["Base"], &[], Vec::new()),
+        base::declaration(
+            "Panel",
+            "interface",
+            json!({
+                "supertypes": [],
+                "fields": [base::field("Panel", "level", INTEGER)],
+                "operations": [],
+                "featureOrder": [id("Panel/level")],
+            }),
+        ),
     ];
     let mut document = base::domain_document(
         types,
         vec![
             base::construct("thing", meaning::OBJECT_TYPE),
             base::construct("population", meaning::POPULATION),
+            base::construct("interface", meaning::SYSTEMS_INTERFACE),
         ],
     );
     document["populations"] = json!([{

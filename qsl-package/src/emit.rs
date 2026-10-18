@@ -69,8 +69,8 @@
 //! with the `model`/`object_type`, `relation`/`population` and
 //! `scalar_type`/`text` nodes it names that the graph does not hold.
 //! `check` builds and keys these ([`CheckedGraph::abstraction_nodes`]); the
-//! relation node's one occurrence has role `declaration`, the others
-//! `generated`, all at [`AbstractionNodes::site`].
+//! relation node has one `declaration` occurrence per declaration, the
+//! others one `generated`, at [`AbstractionNodes::sites`].
 //!
 //! # Nominal nodes
 //!
@@ -1099,19 +1099,43 @@ fn candidates_of<'g>(
             (candidate.id.clone(), candidate)
         })
         .collect();
-    // QSpec FR-451: the relation node's occurrences are all `declaration`;
-    // the nodes it names that the graph does not hold are `generated`.
+    // QSpec FR-451: the relation node has one `declaration` occurrence per
+    // declaration it was read from; the nodes it names that the graph does not
+    // hold are `generated`, at the first.
     if let Some(nodes) = abstraction {
-        let site = nodes.site();
-        let mut add = |node: &'g SemanticNode, role: CheckedOccurrenceRole| {
-            let occurrence = CheckedOccurrence { role, ordinal: 0 };
-            let candidate =
-                Candidate::of(node, vec![(occurrence, RecordedLocation::Expression(site))]);
+        let mut add = |node: &'g SemanticNode, occurrences: Recorded<'g>| {
+            let candidate = Candidate::of(node, occurrences);
             candidates.entry(candidate.id.clone()).or_insert(candidate);
         };
-        add(nodes.relation(), CheckedOccurrenceRole::Declaration);
+        let declared = (0_u64..)
+            .zip(nodes.sites())
+            .map(|(ordinal, site)| {
+                (
+                    CheckedOccurrence {
+                        role: CheckedOccurrenceRole::Declaration,
+                        ordinal,
+                    },
+                    RecordedLocation::Expression(site),
+                )
+            })
+            .collect();
+        add(nodes.relation(), declared);
         for node in nodes.support() {
-            add(node, CheckedOccurrenceRole::Generated);
+            let generated = nodes
+                .sites()
+                .first()
+                .map(|site| {
+                    (
+                        CheckedOccurrence {
+                            role: CheckedOccurrenceRole::Generated,
+                            ordinal: 0,
+                        },
+                        RecordedLocation::Expression(site),
+                    )
+                })
+                .into_iter()
+                .collect();
+            add(node, generated);
         }
     }
     Ok(candidates)
