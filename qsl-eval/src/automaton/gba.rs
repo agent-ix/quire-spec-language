@@ -135,8 +135,8 @@ impl GbaBuilder {
         guard: Guard,
         to: StateId,
     ) -> Result<(), AutomatonError> {
-        self.check(from)?;
-        self.check(to)?;
+        self.require_state(from)?;
+        self.require_state(to)?;
         if let Some(row) = self.rows.get_mut(from.index()) {
             row.push(Transition { guard, target: to });
         }
@@ -154,7 +154,7 @@ impl GbaBuilder {
     ) -> Result<(), AutomatonError> {
         let set: BTreeSet<StateId> = members.into_iter().collect();
         for state in &set {
-            self.check(*state)?;
+            self.require_state(*state)?;
         }
         self.acceptance.push(set);
         Ok(())
@@ -173,7 +173,7 @@ impl GbaBuilder {
         }
     }
 
-    fn check(&self, state: StateId) -> Result<(), AutomatonError> {
+    fn require_state(&self, state: StateId) -> Result<(), AutomatonError> {
         if state.index() < self.rows.len() {
             Ok(())
         } else {

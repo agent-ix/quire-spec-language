@@ -99,8 +99,8 @@ impl Graph {
         to: Vertex,
         label: EdgeLabel,
     ) -> Result<(), FairnessError> {
-        self.check(to)?;
-        self.check(from)?;
+        self.require_vertex(to)?;
+        self.require_vertex(from)?;
         if let Some(out) = self.edges.get_mut(from.index()) {
             out.push(Edge { target: to, label });
         }
@@ -118,7 +118,7 @@ impl Graph {
     ) -> Result<(), FairnessError> {
         let set: BTreeSet<Vertex> = members.into_iter().collect();
         for vertex in &set {
-            self.check(*vertex)?;
+            self.require_vertex(*vertex)?;
         }
         self.acceptance.push(set);
         Ok(())
@@ -154,7 +154,7 @@ impl Graph {
     }
 
     /// Refuse a vertex that is not in the graph.
-    pub(crate) fn check(&self, vertex: Vertex) -> Result<(), FairnessError> {
+    pub(crate) fn require_vertex(&self, vertex: Vertex) -> Result<(), FairnessError> {
         if vertex.index() < self.edges.len() {
             Ok(())
         } else {

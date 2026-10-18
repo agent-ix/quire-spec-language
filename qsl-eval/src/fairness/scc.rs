@@ -121,7 +121,7 @@ pub fn components(
 ) -> Result<Vec<Component>, FairnessError> {
     charge(cancel)?;
     for vertex in within {
-        graph.check(*vertex)?;
+        graph.require_vertex(*vertex)?;
     }
     let mut walk = Walk::new(graph.vertex_count());
     let mut found: Vec<Vec<usize>> = Vec::new();
