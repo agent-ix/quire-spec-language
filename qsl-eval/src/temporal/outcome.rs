@@ -4,8 +4,9 @@
 
 use qsl_foundation::diagnostic::Category;
 use qsl_foundation::{CatalogCode, InternalFault};
-use qsl_semantics::check::{FairnessConstraint, TemporalProfile};
+use qsl_semantics::check::TemporalProfile;
 use quire_exact::Incomplete;
+use quire_semantic_value::fairness::FairnessConstraint;
 
 use super::letters::UndefinedCause;
 use super::position::{PositionRefusal, TemporalPosition};

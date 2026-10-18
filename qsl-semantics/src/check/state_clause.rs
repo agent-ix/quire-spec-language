@@ -203,10 +203,7 @@ impl StateClauseDeclaration {
     fn view(&self) -> ClauseView<'_> {
         ClauseView {
             kind: self.kind,
-            complete_value: self.selection.identity
-                == crate::value::definition::DefinitionLock::pinned()
-                    .entry(crate::value::definition::CatalogRole::Root)
-                    .identity,
+            complete_value: is_complete_value(&self.selection),
             context: self.context,
             receiver: ValueType::Reference(self.context),
             operation: self.operation.as_ref(),
@@ -215,6 +212,14 @@ impl StateClauseDeclaration {
             body: &self.body,
         }
     }
+}
+
+/// Whether `selection` is the complete-value profile.
+pub(crate) fn is_complete_value(selection: &ProfileSelection) -> bool {
+    selection.identity
+        == crate::value::definition::DefinitionLock::pinned()
+            .entry(crate::value::definition::CatalogRole::Root)
+            .identity
 }
 
 /// What [`check_clause`] reads of a clause: a unit's state clause
