@@ -30,6 +30,13 @@ on a fresh meter with every counter unbounded, measured by running it. `Uw` and
 `Ur` are its `work_units` and `result_units`. The meter takes its limits from
 FR-255's accounting table: a counter at a bound `B` is set by its name.
 
+Every row asserts relations and boundaries, never an absolute count: `U` is
+measured on the row's own call, and a row compares a call's usage with another
+measured usage, with `U` and `U` less one, or with the sum of measured usages.
+The charge points and their order are FR-390's: expression nodes in evaluation
+order, a capture's initializer nodes at its first read and once, field reads,
+then `result_units`.
+
 ## Test Procedure
 
 | # | Run | Expected |
@@ -45,7 +52,7 @@ FR-255's accounting table: a counter at a bound `B` is set by its name.
 | 9 | one meter with `work_units` = that sum - 1; run G, T, V in turn | G and T complete; V returns `Incomplete` naming `work_units`; the meter holds G's and T's charges plus V's up to the denial |
 | 10 | one meter with the sum as `work_units`; run V, T, G in turn | all three complete; the consumed total equals row 8's |
 | 11 | T with the retry relation `... and target >= 0 and target <= 1000 and not activated` (`target` read twice) | `captures()` lists `target` once; the usage exceeds T's by the nodes of the added operand and not by a second evaluation of `target`'s initializer |
-| 12 | T over the checked package and over the package read back from the bytes S4 emits for it | equal results, equal `captures()`, equal charge logs |
+| 12 | T over the checked package and over the package the contract reader returns for the bytes FR-383 emits for it (once the reader's protocol step exists; before it, the row runs the in-process package only) | equal results, equal `captures()`, equal charge logs |
 | 13 | a refused call (TC-1071 row 14) on a meter, then T on that meter | the meter after the refusal equals the meter before it; T completes |
 
 ## Expected Results

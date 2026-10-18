@@ -20,10 +20,12 @@ unavailable source that stops a call whose short-circuit never reads it, a stop
 that discards the work done before it, and an undefined capture that completes
 as a Boolean.
 
-Fixture **E** and the observation of TC-1070. Fixture **U** is E with a query
-operation `check` of `Node`, with result type `Boolean`, whose effective
-precondition is false for the object `a` and true for `b`, and a second
-protocol capture after `order` in `Refunds`:
+Fixture **E** and the observation of TC-1070. Fixture **U** is E with two
+additions that U defines for itself. First, the model `M` declares a query
+operation `check(): Boolean` of `Node`, declared as TC-1039 step 7 declares its
+query operation `ready(): Boolean`, with an effective precondition that is
+`false` for the object `a` and `true` for `b`, and returning `true`. Second, the
+protocol `Refunds` has a second protocol capture after `order`:
 
 ```
 capture gate: Boolean = view.check();

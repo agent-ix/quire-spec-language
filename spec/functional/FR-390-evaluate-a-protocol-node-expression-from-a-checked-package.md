@@ -27,6 +27,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-381
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-383
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-049
     type: references
   - target: ix://agent-ix/quire-specification/FR-322
@@ -78,7 +80,8 @@ computes that from the capture's own initializer.
 
 ## Inputs
 
-- A `CheckedPackage` that carries the protocol (QSpec FR-464).
+- A `CheckedPackage` that carries the protocol as the v2 protocol nodes FR-383
+  emits (QSpec FR-464).
 - A `ProtocolSlot { node, member, index }`:
   - `node` is the node key of a `protocol` node;
   - `member` is the name of the node's body binding that holds the expression,
@@ -154,6 +157,35 @@ FR-100's outcome mapping, unchanged: a completed value 0, an undefined result
   holds no second interpreter and reads no serialized form: a package read
   back from emitted bytes (the I2 reader) and the checked package that was
   emitted give the same `ProtocolSlotEvaluation` and the same charge log.
+
+- The evaluator runs against the in-process checked package. Evaluation from
+  emitted bytes is the same evaluation over the package the contract reader
+  returns for FR-383's nodes; once the reader's protocol step exists, its
+  result and charge log equal the in-process evaluation's (FR-390-AC-12).
+
+### API contract
+
+The result of `evaluate_protocol_slot` is `Result<ProtocolSlotEvaluation,
+CallFailure>` with exactly these shapes: `ProtocolSlotEvaluation::Evaluated`
+and `ProtocolSlotEvaluation::Unavailable`; a selection or supply refused before
+S6a is `CallFailure::Input(InputRefusal::Supply(AdmissionFailure))`, and an S6a
+invariant break is `CallFailure::Fault(InternalFault)`. The protocol slot is
+selected only by this call: `run_clause` and FR-312's request carry no protocol
+slot.
+
+### Charge points and their order
+
+Within one call the evaluator charges, in this order: the nodes of the slot's
+expression in evaluation order (left to right, short-circuited operands
+skipped); at the first read of a capture, the nodes of that capture's
+initializer, charged at the point of the read and before the read's operator
+continues, each capture once; `model.navigate` for each field read and
+`model.deref` for each dereference, as FR-107 states; and `result_units` for the
+completed value. Admission charges nothing. Across calls on one meter the
+charges accumulate in call order, each call's charges depending on its own
+package, slot and supply only. Tests assert these relations and the
+boundaries measured by a call's usage `U` (exact `U` completes, `U` less one
+stops naming the counter, calls on one meter add), and never an absolute count.
 
 ### Selection and supply admission
 

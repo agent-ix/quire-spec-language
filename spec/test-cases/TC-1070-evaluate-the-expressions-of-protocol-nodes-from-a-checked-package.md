@@ -45,8 +45,11 @@ compensate Partial for Main::Applied as (partialForward: M::Node)
 }
 ```
 
-The package is the checked package QSL compiles from the unit (the S4 protocol
-nodes). The observation is one current snapshot with every population complete:
+The package is the checked package QSL compiles from the unit, which carries
+the protocol as the v2 protocol nodes FR-383 emits. Fixture E requires of its
+domain package: `Node`, `Plain` and `Tick` are object types (as TC-1057's R
+declares them), and each has the population named above, which TC-1057's R does
+not declare and E adds. The observation is one current snapshot with every population complete:
 
 | Population | Key | Fields |
 | --- | --- | --- |
