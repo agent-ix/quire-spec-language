@@ -23,7 +23,7 @@ use qsl_semantics::check::{
 use quire_exact::{Integer, IntegerInterval, NodeKey, ValueType};
 use quire_semantic_value::checking::CheckingLimits;
 
-const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
+pub(super) const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
     profile v = \"quire.value.complete/v1\";\n";
 
 /// FR-062's RR-5.
@@ -49,7 +49,7 @@ const TWO_CALLEES: &str = "function g using v(p: Int[0, 10]): Boolean pure { tru
 
 /// `declarations` checked through S1, S2 and S3.
 /// Trace: FR-003-AC-9
-fn check(declarations: &str) -> CheckedGraph {
+pub(super) fn check(declarations: &str) -> CheckedGraph {
     let text = format!("{HEADER}{declarations}\n");
     crate::support::front_end::emitted(
         SourceIdentity::new("a", "u", "git", "1"),
@@ -80,7 +80,7 @@ fn check(declarations: &str) -> CheckedGraph {
 }
 
 /// `declarations` checked and linked into an S4 package.
-fn package(declarations: &str) -> CheckedPackage {
+pub(super) fn package(declarations: &str) -> CheckedPackage {
     CheckedPackage::link(check(declarations))
 }
 
@@ -96,7 +96,7 @@ fn backend(id: &str, advertises: (Capability, Mode)) -> BackendDescriptor {
 }
 
 /// A registry holding the one backend `kani`, advertising `kind` bounded.
-fn registry(kind: Capability) -> (Registry, Candidate) {
+pub(super) fn registry(kind: Capability) -> (Registry, Candidate) {
     let descriptor = backend("kani", (kind, Mode::Bounded));
     let candidate = descriptor.candidate().clone();
     let mut registry = Registry::new();

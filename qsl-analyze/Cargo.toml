@@ -5,14 +5,18 @@ publish = false
 edition = "2021"
 rust-version = "1.98"
 license = "AGPL-3.0-or-later"
-description = "ADR-011 §6.1 layer A: the in-process analysis engines above the qualified core, starting with the zone engine's difference-bound matrices."
+description = "ADR-011 §6.1 layer A: in-process analysis engines, including retained graphs, generic products and zone difference-bound matrices."
 
-# ADR-011 §6.1 layer A may depend on "6, 5, 4, 3, R, F, SV, K". The zone
-# engine's DBM needs only layer K's exact rationals (the constants it
+# ADR-011 §6.1 layer A may depend on "6, 5, 4, 3, R, F, SV, K". The graph
+# engine uses layer 5's existing transition seam and foundation identities.
+# The zone engine's DBM needs only layer K's exact rationals (the constants it
 # scales) and arbitrary-precision integers for its bounds. It names no
 # `qsl-replay` item: the certificate checker's DBM there is separate code
 # (ADR-026 CF-6).
 [dependencies]
+qsl-eval = { path = "../qsl-eval" }
+qsl-foundation = { path = "../qsl-foundation" }
+quire-canonical = { workspace = true }
 quire-exact = { workspace = true }
 num-bigint = "0.4.8"
 num-integer = "0.1.47"
@@ -21,6 +25,10 @@ thiserror = "2.0.20"
 
 [dev-dependencies]
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
+
+[[test]]
+name = "it"
+path = "tests/it/main.rs"
 
 [lints.rust]
 unsafe_code = "forbid"

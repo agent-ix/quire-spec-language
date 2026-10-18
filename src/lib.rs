@@ -16,7 +16,6 @@ pub mod complete;
 pub mod formal_source;
 pub mod linking;
 pub mod located_json;
-pub mod lowering;
 pub mod mapped;
 pub mod model_source;
 pub mod native_model;

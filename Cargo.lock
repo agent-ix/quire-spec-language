@@ -1366,6 +1366,9 @@ dependencies = [
  "num-bigint",
  "num-integer",
  "num-traits",
+ "qsl-eval",
+ "qsl-foundation",
+ "quire-canonical",
  "quire-exact",
  "thiserror",
 ]

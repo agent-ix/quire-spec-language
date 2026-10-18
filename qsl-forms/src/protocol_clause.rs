@@ -19,12 +19,15 @@ use std::ops::ControlFlow;
 use super::dispatch::{Construct, FormsRefusal};
 use super::spans::DeclarationSpans;
 use super::syntax::{
-    AnchorForm, AnchorSegment, AnchorSite, AttemptForm, BinderForm, BinderKind, DeclarationForm,
-    DeclaredName, OperationBodyForm, ProtocolBodyForm, ProtocolConstructForm,
-    ProtocolConstructKind, ProtocolDeclarationForm, ProtocolNodeDeclaration, ProtocolNodeKind,
+    AnchorForm, AnchorSegment, AnchorSite, AttemptForm, BinderForm, BinderKind, ClockForm,
+    CompensationAttempts, CompensationCommit, CompensationForm, CompensationRecover,
+    CompensationRetry, DeclarationForm, DeclaredName, ExpressionForm, OperationBodyForm,
+    ProtocolBodyForm, ProtocolConstructForm, ProtocolConstructKind, ProtocolDeclarationForm,
+    ProtocolNodeDeclaration, ProtocolNodeKind, RelatedForm, RelationshipForm, RequirementForm,
     RoleForm, ScopeEntry, ScopeId, ScopeName, ScopedAnchorForm, StateClauseForm, StateClauseKind,
-    UsingAlias,
+    TypeForm, UsingAlias,
 };
+use super::temporal_clause::{capture_form, expression_form, interval_form, parameter_form};
 use super::value::{
     declared_name, expression, has_token, items, name_form, nodes_of, only, production_node, text,
     tokens_of, type_form, unexpected, Item,
@@ -212,6 +215,24 @@ pub(crate) fn protocol_declaration(
     let mut roles = Vec::new();
     let mut bodies = Vec::new();
     let mut constructs = Vec::new();
+    // The complete-form members FR-308 builds beside the checker's inputs,
+    // each in source order and resolved to nothing.
+    let captures = nodes_of(&clause_items, Production::Capture)
+        .into_iter()
+        .map(|capture| capture_form(cst, capture))
+        .collect::<Result<Vec<_>, _>>()?;
+    let relationships = nodes_of(&clause_items, Production::Relationship)
+        .into_iter()
+        .map(|relationship| relationship_form(cst, relationship))
+        .collect::<Result<Vec<_>, _>>()?;
+    let requirements = nodes_of(&clause_items, Production::ProtocolRequirement)
+        .into_iter()
+        .map(|requirement| requirement_form(cst, requirement))
+        .collect::<Result<Vec<_>, _>>()?;
+    let compensations = nodes_of(&clause_items, Production::Compensation)
+        .into_iter()
+        .map(|compensation| compensation_form(cst, compensation))
+        .collect::<Result<Vec<_>, _>>()?;
     // The protocol's own `over (p)` input parameter (FR-113 "Refusals"
     // binder no-shadowing rule): visible everywhere in the protocol, at the
     // empty top-level scope (composed lane: `BinderKind::Input`).
@@ -300,6 +321,7 @@ pub(crate) fn protocol_declaration(
             name: declared_name(&finish_items, finish)?,
             scope: None,
             channel: None,
+            related: Vec::new(),
         });
         collector
             .binders
@@ -323,6 +345,10 @@ pub(crate) fn protocol_declaration(
         declarations,
         binders,
         attempts,
+        captures,
+        relationships,
+        requirements,
+        compensations,
     }))
 }
 
@@ -418,6 +444,165 @@ fn parameter_binder(
     })
 }
 
+/// `relationship Name = M::target;` (FR-308): the name and the target as
+/// written.
+fn relationship_form(
+    cst: &LosslessCst,
+    relationship: &CstNode,
+) -> Result<RelationshipForm, FormsRefusal> {
+    let relationship_items = items(cst, relationship);
+    Ok(RelationshipForm {
+        name: declared_name(&relationship_items, relationship)?,
+        target: name_form(
+            cst,
+            only(&relationship_items, Production::ModelName, relationship)?,
+        )?,
+        span: relationship.span(),
+    })
+}
+
+/// `requires temporal Name;` (FR-308): the name as written.
+fn requirement_form(
+    cst: &LosslessCst,
+    requirement: &CstNode,
+) -> Result<RequirementForm, FormsRefusal> {
+    let requirement_items = items(cst, requirement);
+    Ok(RequirementForm {
+        temporal: declared_name(&requirement_items, requirement)?,
+        span: requirement.span(),
+    })
+}
+
+/// `related by Name (e1, e2)` (FR-308): the relationship name and both end
+/// expressions in written order.
+fn related_form(cst: &LosslessCst, related: &CstNode) -> Result<RelatedForm, FormsRefusal> {
+    let related_items = items(cst, related);
+    let [first, second] = nodes_of(&related_items, Production::Expression)[..] else {
+        return Err(unexpected(related));
+    };
+    Ok(RelatedForm {
+        relationship: declared_name(&related_items, related)?,
+        ends: [expression_form(cst, first)?, expression_form(cst, second)?],
+        span: related.span(),
+    })
+}
+
+/// The token directly after the own token spelled `keyword`, when it is a
+/// token rather than a node.
+fn token_after<'c>(items: &[Item<'c>], keyword: &[u8]) -> Option<&'c qsl_cst::CstToken> {
+    let at = items
+        .iter()
+        .position(|item| matches!(item, Item::Token(token) if token.spelling() == keyword))?;
+    match items.get(at + 1)? {
+        Item::Token(token) => Some(*token),
+        Item::Node(_) => None,
+    }
+}
+
+/// One `Block` node's body expression.
+fn block_form(cst: &LosslessCst, block: &CstNode) -> Result<ExpressionForm, FormsRefusal> {
+    let block_items = items(cst, block);
+    expression_form(cst, only(&block_items, Production::Expression, block)?)
+}
+
+/// One `compensate` template with every member as written (FR-308). The
+/// template's flat child list is read by the grammar's own keywords and
+/// positions: the captures before the `when` guard block are the
+/// registration stage, the ones after it the activation stage. A zero
+/// count or an inverted interval is built, never refused: S3 decides.
+fn compensation_form(cst: &LosslessCst, node: &CstNode) -> Result<CompensationForm, FormsRefusal> {
+    let compensation_items = items(cst, node);
+    let declared = |token: Option<&qsl_cst::CstToken>| -> Result<DeclaredName, FormsRefusal> {
+        let token = token
+            .filter(|token| token.kind() == TokenKind::Identifier)
+            .ok_or_else(|| unexpected(node))?;
+        Ok(DeclaredName {
+            name: text(token, node)?,
+            span: token.span(),
+        })
+    };
+    let [forward, trigger, earlier, later, recover_binder] =
+        nodes_of(&compensation_items, Production::Parameter)[..]
+    else {
+        return Err(unexpected(node));
+    };
+    let [guard, relation, predicate] = nodes_of(&compensation_items, Production::Block)[..] else {
+        return Err(unexpected(node));
+    };
+    let (registration, activation): (Vec<_>, Vec<_>) =
+        nodes_of(&compensation_items, Production::Capture)
+            .into_iter()
+            .partition(|capture| capture.span().start < guard.span().start);
+    let capture_forms = |captures: Vec<&CstNode>| {
+        captures
+            .into_iter()
+            .map(|capture| capture_form(cst, capture))
+            .collect::<Result<Vec<_>, _>>()
+    };
+    let clock = token_after(&compensation_items, b"clock")
+        .filter(|token| token.kind() == TokenKind::Text)
+        .ok_or_else(|| unexpected(node))?;
+    let count = token_after(&compensation_items, b"attempts")
+        .filter(|token| token.kind() == TokenKind::Integer)
+        .ok_or_else(|| unexpected(node))?;
+    let record = name_form(cst, only(&compensation_items, Production::TypeName, node)?)?;
+    let references = nodes_of(&compensation_items, Production::NodeReference);
+    let never = compensation_items.iter().find_map(|item| match item {
+        Item::Token(token) if token.spelling() == b"never" => Some(token.span()),
+        Item::Token(_) | Item::Node(_) => None,
+    });
+    let commit = match (references.get(1), never) {
+        (Some(reference), None) => CompensationCommit::Node(name_form(cst, reference)?),
+        (None, Some(span)) => CompensationCommit::Never(span),
+        (Some(_), Some(_)) | (None, None) => return Err(unexpected(node)),
+    };
+    Ok(CompensationForm {
+        name: declared_name(&compensation_items, node)?,
+        target: name_form(cst, references.first().ok_or_else(|| unexpected(node))?)?,
+        forward: parameter_form(cst, forward)?,
+        role: declared(token_after(&compensation_items, b"by"))?,
+        operation: name_form(
+            cst,
+            only(&compensation_items, Production::OperationName, node)?,
+        )?,
+        using: {
+            let alias = declared(token_after(&compensation_items, b"using"))?;
+            UsingAlias {
+                alias: alias.name,
+                span: alias.span,
+            }
+        },
+        clock: ClockForm {
+            text: qsl_cst::token::decode_quoted(&text(clock, node)?)
+                .ok_or_else(|| unexpected(node))?,
+            span: clock.span(),
+        },
+        registration_captures: capture_forms(registration)?,
+        trigger: parameter_form(cst, trigger)?,
+        guard: block_form(cst, guard)?,
+        activation_captures: capture_forms(activation)?,
+        within: interval_form(cst, only(&compensation_items, Production::Interval, node)?)?,
+        attempts: CompensationAttempts {
+            count: text(count, node)?
+                .parse::<u64>()
+                .map_err(|_| unexpected(node))?,
+            count_span: count.span(),
+            record: TypeForm::name(record.name, record.span),
+        },
+        retry: CompensationRetry {
+            earlier: parameter_form(cst, earlier)?,
+            later: parameter_form(cst, later)?,
+            relation: block_form(cst, relation)?,
+        },
+        commit,
+        recover: CompensationRecover {
+            binder: parameter_form(cst, recover_binder)?,
+            predicate: block_form(cst, predicate)?,
+        },
+        span: node.span(),
+    })
+}
+
 /// `compensate N for R as (p) by role on Op using alias clock "c" { ...
 /// commit (R2 | never); ... }`: the template's own declaration (FR-113
 /// Inputs: the top level declares the protocol's `compensate` templates),
@@ -437,6 +622,7 @@ fn compensation_anchors(
         name: name.clone(),
         scope: None,
         channel: None,
+        related: Vec::new(),
     });
     let references = nodes_of(&compensation_items, Production::NodeReference);
     let for_reference = references.first().ok_or_else(|| unexpected(node))?;
@@ -783,6 +969,7 @@ fn declare(
         name,
         scope,
         channel: None,
+        related: Vec::new(),
     });
 }
 
@@ -831,11 +1018,16 @@ fn event_node_anchors(
         _ => None,
     };
     let declaration_index = collector.declarations.len();
+    let related = nodes_of(&event_items, Production::Related)
+        .into_iter()
+        .map(|clause| related_form(cst, clause))
+        .collect::<Result<Vec<_>, _>>()?;
     collector.declarations.push(ProtocolNodeDeclaration {
         kind,
         name,
         scope,
         channel: channel.clone(),
+        related,
     });
     // Every event node kind (`send` and `attempt` included) carries its own
     // `as (x: T)` record binder (FR-113 "Refusals"), its own body block and

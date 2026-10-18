@@ -76,7 +76,6 @@ type is named by its owner crate and module.
 | same | root `model_source::wire::Value` | a value-declaration wire record (name, kind, type) | delete; removed with M-6c (ADR-011 §7.3) |
 | same | root `checking::proof::Value` | a proof-graph value node | delete; removed with M-6e, SEAM-2, which still imports it (ADR-011 §7.3 and the SEAM-1 row) |
 | same | root `checking::composed::proofs::engine::Value` | a proof-graph value node | delete; removed with M-6e, SEAM-2 (ADR-011 §7.3) |
-| `quire_exact::value::ValueType` (O-14) | root `lowering::wire::ValueType` | the serialization form of an IR value type | delete; removed with M-6c (ADR-011 §7.3) |
 | `quire_exact::integer::Integer` (O-13) | root `protocol_artifact::wire::Integer` | an integer-only wire position | delete; removed with M-6d, SEAM-3 (ADR-011 §7.3) |
 | `quire_exact::outcome::Outcome` (O-16) | `qsl_eval::simulation::explore::Outcome` | the result of one exploration run | rename `ExplorationOutcome` |
 | same | `qsl_cst::parser::Outcome` | the result of matching one grammar rule | rename `MatchOutcome` |

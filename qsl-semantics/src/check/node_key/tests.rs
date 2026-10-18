@@ -877,6 +877,98 @@ fn conformance_fr322_application_keys_match_qspec_operation_vectors() {
     );
 }
 
+/// FR-334-AC-4 (TC-844): the keys QSpec's FR-322 publishes for the unbounded
+/// `Set<Reference<Order>>` (S1), the bounded population PO1 (`max` 3), the
+/// unbounded population PO0 (no `max` member) and the population with `max`
+/// 0 are read at run time from `$QSPEC_DIR`, and this module's key function
+/// keys the same nodes to them: S1 from its reference body, each population
+/// from S1 and its `max` binding. Skipped (and passing) when `QSPEC_DIR` is
+/// unset; `make conformance` requires it. Nothing of QSpec is copied here.
+#[trace("TC-844", "FR-334-AC-4")]
+#[test]
+fn conformance_fr334_collection_and_population_keys_match_qspec() {
+    let Some(qspec) = std::env::var_os("QSPEC_DIR") else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
+    let path = std::path::Path::new(&qspec)
+        .join("spec/objects/interfaces/FR-322-checked-package-artifact.md");
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("reading {}: {error}", path.display()));
+    // The 64 hex digits of the backticked key that follows `marker`.
+    let published = |marker: &str| -> NodeKey {
+        let start = text
+            .find(marker)
+            .unwrap_or_else(|| panic!("{} does not publish `{marker}`", path.display()))
+            + marker.len();
+        let digits = text
+            .get(start..start + 64)
+            .unwrap_or_else(|| panic!("`{marker}` is not followed by a key"));
+        assert!(
+            text[start + 64..].starts_with('`'),
+            "`{marker}` is not followed by a 64-digit key"
+        );
+        let mut bytes = [0_u8; 32];
+        for (byte, pair) in bytes.iter_mut().zip(digits.as_bytes().chunks(2)) {
+            let pair = std::str::from_utf8(pair).expect("hex digits are ASCII");
+            *byte = u8::from_str_radix(pair, 16)
+                .unwrap_or_else(|_| panic!("`{marker}` is followed by `{digits}`, not hex"));
+        }
+        NodeKey::from_digest(bytes)
+    };
+    let reference_target = published("both name R1 (`");
+    let set_key = published("PO1's `semantic_type` is S1 (`");
+    let po1 = published("names PO1 (`");
+    let po0 = published("names PO0 (`");
+    let po_max_0 = published("key PO0 differs from the key (`");
+
+    let key_of = |tag: NodeTag, form: &str, semantic_type: Option<NodeKey>, body: &BodyTerm| {
+        node_key(
+            &NodeInput {
+                owner: None,
+                node_tag: tag,
+                semantic_form: form,
+                semantic_type,
+                declaration: None,
+                body,
+            },
+            IdentityLimits::default(),
+        )
+        .unwrap_or_else(|refusal| panic!("{form}: refused: {refusal}"))
+        .key
+    };
+    let integer = key_of(NodeTag::ScalarType, "integer", None, &empty_aggregate());
+    let reference_body = BodyTerm::aggregate(vec![MemberTerm::reference(reference_target)]);
+    assert_eq!(
+        key_of(NodeTag::CompositeType, "set", None, &reference_body),
+        set_key,
+        "the unbounded Set<Reference<Order>>"
+    );
+    let population = |maximum: Option<u64>| {
+        let members: Vec<MemberTerm> = maximum
+            .map(|maximum| {
+                MemberTerm::bound(
+                    "max",
+                    LeafTerm::literal(integer, LiteralValue::Integer(Integer::from(maximum))),
+                )
+            })
+            .into_iter()
+            .collect();
+        key_of(
+            NodeTag::BoundedDomain,
+            "model_population",
+            Some(set_key),
+            &BodyTerm::aggregate(members),
+        )
+    };
+    assert_eq!(population(Some(3)), po1, "Population<Order>[3]");
+    assert_eq!(population(None), po0, "Population<Order>");
+    assert_eq!(population(Some(0)), po_max_0, "Population<Order>[0]");
+    assert_ne!(po0, po1);
+    assert_ne!(po0, po_max_0);
+    assert_ne!(po0, set_key);
+}
+
 // ---------------------------------------------------------------------
 // FR-092 `quire.structural-node/v1`.
 // ---------------------------------------------------------------------

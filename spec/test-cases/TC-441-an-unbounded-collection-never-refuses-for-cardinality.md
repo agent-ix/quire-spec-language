@@ -31,6 +31,7 @@ Verify the optional kernel bounds (ADR-014 N-3) end to end. Scope: FR-097-AC-7, 
   bound.
 - Step 4: an unbounded `Set` with the selected members; each mismatch is an
   input refusal.
-- Step 5 (interim, until QSL-42 gives an unbounded population its own
-  node): `UnrepresentableBound`, with no node written. The target is
-  FR-097-AC-8's own node, distinct from an unbounded `Set<Reference<T>>`.
+- Step 5: an unbounded population has no bound (`None`); it lowers to a
+  `model_population` node with no `max` member, distinct from
+  an unbounded `Set<Reference<T>>` and from a bounded population; no
+  refusal.

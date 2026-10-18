@@ -27,12 +27,9 @@ from that registry's current contents, matching on capability kind and, for
 `probabilistic-satisfaction`, the item's exact evidence kind (ADR-012 §7.1,
 §7.2; FR-290, "Evidence kinds").
 
-The registry sits alongside the fixed `ProjectionTarget` catalog at
-`src/lowering/target.rs` (the `targets!` macro block), which remains the
-lowering-target selector. Resolving a backend by `BackendId` in `route` is
-this requirement's work (#185). The catalog is deleted with
-`lowering` in ADR-011 §7.3 M-6a, once the skeleton spine is green (ADR-011
-§6.2, the `lowering` row).
+Resolving a backend by `BackendId` in `route` is this requirement's work
+(#185). The native `lowering` module and its fixed `ProjectionTarget` catalog
+are deleted.
 The registry SHALL define no local capability-kind type. The registry SHALL
 consume the canonical `Capability` value type
 ([quire-spec-language#213](https://github.com/agent-ix/quire-spec-language/issues/213)),

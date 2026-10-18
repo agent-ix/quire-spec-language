@@ -34,8 +34,6 @@ adoption and assurance remain explicit acceptance work.
   actual native package bytes for existing consumers.
 - [Task-027](tasks/Task-027-selected-package-run.md): verify and execute selected
   package artifacts with the existing source/model authority and reader.
-- [Task-028](tasks/Task-028-lowering-export.md): export the existing Boolean
-  projection through the standalone compiler for existing IR/backend consumers.
 - [Task-029](tasks/Task-029-quire-consumer.md): join the current real Quire Rust
   extractor to mapped native compilation and runtime, preserving producer metadata.
 - [Task-030](tasks/Task-030-extracted-command.md): run selected Markdown clauses

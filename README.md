@@ -166,30 +166,8 @@ refusal, incomplete outcomes and fresh retry budgets. Qualification is tracked i
 [Plan-007](plan/Plan-007-native-packages/index.md).
 See [the package contract](docs/native-linked-packages.md).
 
-`lowering::lower` derives complete Boolean executable projections through the
-existing strict IR binder, retaining original native authority and explicit
-model/read/observation correspondence. Object and graph expressions refuse.
-`lowering::lower_for` with `ProjectionTarget::IntegerIrV1` additionally exports
-bounded integer arithmetic and comparisons accepted by the strict IR binder.
-Use `quire-spec lower <compile.json> --target integer-ir/v1` for this target;
-codegen emits executable numeric Rust for obligation-free comparisons.
-The `standalone_fixtures`
-example emits `integer-healthy` and `integer-violating` requests for `amount < 7`.
-Their native runs return true and false; both export the same integer projection.
-`ProjectionTarget::StateScalarIrV1` additionally projects primitive self fields
-and `pre` expressions. `NativeProjection::inputs` supplies their actual values
-from a context validated against that exact checked package, retaining snapshot,
-invocation and object provenance. For the concrete update example, run
-`quire-spec lower <unchanged-version/compile.json> --target state-scalar-ir/v1`.
-This binds `self.versionNumber = pre(self.versionNumber)` with separate pre/post
-inputs; native population and frame validation still precedes materialization.
-Object/graph expressions refuse at the earliest source-owned boundary without a
-substitute IR expression. Tests that compose these projections with the code
-generator (generated Rust, strategies, Kani and native parity:
-[IT-008](ix://agent-ix/quire-integration/IT-008),
-[IT-010](ix://agent-ix/quire-integration/IT-010) and
-[TC-094](ix://agent-ix/quire-integration/TC-094)) live in
-`agent-ix/quire-integration`. See [Plan-008](plan/Plan-008-native-lowering/plan.md).
+The native `lower` command and the `lowering` module are retired. A `1-draft`
+program reaches the backends through `quire.checked-package/v2`, chosen by `BackendId`.
 
 CLI command and source identity/revision labels must be UTF-8; invalid encoding
 returns usage exit 20. File operands remain OS paths. JSON paths are display text,
@@ -267,7 +245,7 @@ exhaustion. Wire decoding and existing-repository extraction remain separate.
 
 `mapped::compile` carries a verified map and one authored `ClauseBinding` through
 the existing parse/link/check/package stages. Its immutable `MappedPackage`
-exposes the native package for validation, evaluation and lowering while keeping
+exposes the native package for validation and evaluation while keeping
 the original document available for source locations. Failures preserve the
 native diagnostic or package path; the API does not manufacture source wrappers
 or change extraction availability. Run `cargo test --test it mapped::` for the
@@ -305,7 +283,7 @@ example, then run `cargo run --locked --features quire-extraction -- run
 /tmp/native-workflow/markdown-healthy/request.json`. The sibling
 `markdown-violating` and `markdown-refused` requests reproduce false and frame
 refusal. These requests support source compilation through `run`; combining them
-with selected-package execution or `compile`/`lower` export refuses explicitly.
+with selected-package execution refuses explicitly.
 Default builds reject the extraction field; ordinary native requests are unchanged.
 
 `runtime::execute(package, input, selection, limits, poll)` now runs native
