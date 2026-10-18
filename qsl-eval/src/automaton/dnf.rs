@@ -3,7 +3,7 @@
 //! translation reads a state formula as, so a transition's condition stays a
 //! set of [`Guard`]s.
 
-use crate::automaton::letter::{Atom, Guard, Letter};
+use crate::automaton::letter::{Atom, Guard};
 
 /// A disjunction of satisfiable guards, sorted, none covered by another.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -33,11 +33,6 @@ impl Dnf {
     /// Whether no letter meets the condition.
     pub(super) fn is_never(&self) -> bool {
         self.0.is_empty()
-    }
-
-    /// Whether `letter` meets the condition.
-    pub(super) fn admits(&self, letter: Letter) -> bool {
-        self.0.iter().any(|guard| guard.admits(letter))
     }
 
     /// The letters both conditions admit.
