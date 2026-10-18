@@ -28,8 +28,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_forms::{
     ActivationForm, AnchorSite, BinderKind, CaptureForm, ClauseKind, CompensationCommit,
-    CompensationForm, ExpressionForm, IntervalUpper, ProtocolDeclarationForm, RoleForm,
-    StateClauseKind, TypeForm, TypeFormHead,
+    CompensationForm, ExpressionForm, IntervalUpper, ProtocolDeclarationForm, StateClauseKind,
+    TypeForm, TypeFormHead,
 };
 use qsl_foundation::Span;
 use quire_exact::{IllTypedCause, ValueType};
@@ -399,16 +399,6 @@ pub(crate) fn check<'a>(
     let mut scope_cx = cx.reborrow(declarations.scope);
     let checked = checker.run(&mut scope_cx);
     checker.finish(checked)
-}
-
-/// The refusal of a role whose model resolves to a type that is not an
-/// object type (FR-218-AC-24).
-pub(crate) fn role_model_refusal(role: &RoleForm) -> CheckRefusal {
-    refusal(ObligationCause::RoleModel {
-        role: role.name.name.clone(),
-        name: role.context.name.clone(),
-        span: role.context.span,
-    })
 }
 
 fn refusal(cause: ObligationCause) -> CheckRefusal {

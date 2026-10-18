@@ -178,6 +178,7 @@ pub fn check(
             resolved_anchors: resolved,
             attempts: Vec::new(),
             obligations: CheckedObligations::default(),
+            channels: Vec::new(),
         },
         bound_attempts,
     ))

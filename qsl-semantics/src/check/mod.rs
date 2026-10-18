@@ -117,6 +117,7 @@ mod operation_body;
 mod operation_clause;
 mod profile;
 mod protocol_clause;
+mod protocol_controls;
 mod protocol_obligation;
 mod protocol_reference;
 mod references;
@@ -248,17 +249,19 @@ pub use model_conformance::ModelConformanceFailure;
 pub use navigation::{EndDeclaration, EndSide, RelationshipDeclaration, Relationships};
 pub use profile::TemporalProfile;
 pub use protocol_clause::{CheckedAttempt, CheckedProtocol, ProtocolNodeId};
+pub use protocol_controls::CheckedChannel;
 pub use protocol_obligation::{
     CaptureOwner, CaptureStage, CheckedActivation, CheckedBinder, CheckedCapture, CheckedCommit,
     CheckedCompensation, CheckedDeadline, CheckedObligations, CheckedRecovery, CheckedRetry,
     ObligationCause, ObligationOwner, ObligationStage, ReadClass,
 };
 pub use refusal::{
-    AliasKind, AmbiguousMember, AmbiguousQualified, CheckCause, CheckRefusal, CheckingLimitKind,
-    CheckingStage, DispatchFunctionRole, DispatchLinkCause, DispatchSubtypeFailure,
-    InvalidDispatchDeclaration, KeyFault, MeasureObligation, MemberCandidate, NavigationBound,
-    Obligation, ProtocolAnchorCause, ProtocolReferenceCause, ProvedInterval, QualifiedCandidate,
-    ShadowedDeclaration, StageLimitCause, TemporalCause, WrongSnapshotCause,
+    AliasKind, AmbiguousMember, AmbiguousQualified, ChannelEnd, CheckCause, CheckRefusal,
+    CheckingLimitKind, CheckingStage, DispatchFunctionRole, DispatchLinkCause,
+    DispatchSubtypeFailure, InvalidDispatchDeclaration, JoinFault, KeyFault, MeasureObligation,
+    MemberCandidate, NavigationBound, Obligation, ProtocolAnchorCause, ProtocolReferenceCause,
+    ProvedInterval, QualifiedCandidate, ShadowedDeclaration, StageLimitCause, TemporalCause,
+    WrongSnapshotCause,
 };
 #[cfg(any(test, feature = "test-support"))]
 pub use temporal_clause::check_clauses;
@@ -1464,10 +1467,13 @@ impl PackageDeclarations {
         // content` checks the rest -- the `using` alias, roles, attempt
         // roles and binder types -- and refuses `unsupported_construct`/
         // `not-yet-implemented` at any construct no checker reads yet
-        // (every node kind but `sequence`/`attempt`/`finish`/`compensate`,
-        // channels, relationships, requirements, replicated roles,
-        // `related by`, and any body but a bare Boolean literal). A protocol
-        // compiles only when every part is checked.
+        // (every node kind but `sequence`/`parallel`/`attempt`/`finish`/
+        // `compensate`, a `fifo` channel ordering, a `predicate` join, a
+        // `terminal when` member, relationships, requirements, replicated
+        // roles, `related by`, and any body but a bare Boolean literal).
+        // `protocol_controls::check` then checks the channels, joins and
+        // `terminal`/`scheduling` members (FR-218). A protocol compiles only
+        // when every part is checked.
         let mut checked_protocols = Vec::with_capacity(self.protocols.len());
         let mut protocol_bindings = Vec::with_capacity(self.protocols.len());
         for (index, protocol) in self.protocols.iter().enumerate() {
@@ -1532,6 +1538,12 @@ impl PackageDeclarations {
                             refusals.push(protocol_obligation::unresolved_fault());
                         }
                         protocol_obligation::Obligations::Unresolved => {}
+                    }
+                    // FR-218: the protocol's channels, joins and
+                    // `terminal`/`scheduling` members.
+                    match protocol_controls::check(protocol, &scope) {
+                        Ok(channels) => checked.channels = channels,
+                        Err(control_refusals) => refusals.extend(control_refusals),
                     }
                     protocol_bindings.push(bound);
                     checked_protocols.push(checked);

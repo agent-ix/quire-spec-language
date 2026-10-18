@@ -17,6 +17,10 @@ use qsl_cst::{CstNode, LosslessCst, Production, TokenKind};
 use std::ops::ControlFlow;
 
 use super::dispatch::{Construct, FormsRefusal};
+use super::protocol_control::{
+    await_form, channel_form, member_forms, parallel_form, repeat_form, AwaitForm, ChannelOrdering,
+    JoinPolicy, ParallelForm, ProtocolMemberForm, RepeatForm, TerminalForm,
+};
 use super::spans::DeclarationSpans;
 use super::syntax::{
     ActivationForm, AnchorForm, AnchorSegment, AnchorSite, AttemptForm, BinderForm, BinderKind,
@@ -55,6 +59,12 @@ struct Collector<'a> {
     /// Every `related by` clause of an event node, alongside the
     /// protocol's top-level constructs.
     constructs: &'a mut Vec<ProtocolConstructForm>,
+    /// Every `parallel` control, in source order.
+    parallels: &'a mut Vec<ParallelForm>,
+    /// Every `repeat` control, in source order.
+    repeats: &'a mut Vec<RepeatForm>,
+    /// Every `await` control, in source order.
+    awaits: &'a mut Vec<AwaitForm>,
 }
 
 /// `invariant N using p on M::T at current { e }`, `pre N using p on
@@ -215,6 +225,9 @@ pub(crate) fn protocol_declaration(
     let mut roles = Vec::new();
     let mut bodies = Vec::new();
     let mut constructs = Vec::new();
+    let mut parallels = Vec::new();
+    let mut repeats = Vec::new();
+    let mut awaits = Vec::new();
     // The complete-form members FR-308 builds beside the checker's inputs,
     // each in source order and resolved to nothing.
     let captures = nodes_of(&clause_items, Production::Capture)
@@ -233,6 +246,11 @@ pub(crate) fn protocol_declaration(
         .into_iter()
         .map(|compensation| compensation_form(cst, compensation))
         .collect::<Result<Vec<_>, _>>()?;
+    let channels = nodes_of(&clause_items, Production::Channel)
+        .into_iter()
+        .map(|channel| channel_form(cst, channel))
+        .collect::<Result<Vec<_>, _>>()?;
+    let members = member_forms(cst, &clause_items)?;
     // The protocol's own `over (p)` input parameter (FR-113 "Refusals"
     // binder no-shadowing rule): visible everywhere in the protocol, at the
     // empty top-level scope (composed lane: `BinderKind::Input`).
@@ -308,6 +326,27 @@ pub(crate) fn protocol_declaration(
             });
         }
     }
+    // The members whose content no checker reads yet are recorded beside the
+    // channels and members themselves.
+    constructs.extend(
+        channels
+            .iter()
+            .filter(|channel| matches!(channel.ordering.value, ChannelOrdering::Fifo { .. }))
+            .map(|channel| ProtocolConstructForm {
+                kind: ProtocolConstructKind::FifoOrdering,
+                span: channel.ordering.span,
+            }),
+    );
+    constructs.extend(members.iter().filter_map(|member| match member {
+        ProtocolMemberForm::Terminal(TerminalForm::When { span, .. }) => {
+            Some(ProtocolConstructForm {
+                kind: ProtocolConstructKind::TerminalWhen,
+                span: *span,
+            })
+        }
+        ProtocolMemberForm::Terminal(TerminalForm::Any { .. })
+        | ProtocolMemberForm::Scheduling(_) => None,
+    }));
     {
         let mut collector = Collector {
             scopes: &mut scopes,
@@ -317,6 +356,9 @@ pub(crate) fn protocol_declaration(
             attempts: &mut attempts,
             bodies: &mut bodies,
             constructs: &mut constructs,
+            parallels: &mut parallels,
+            repeats: &mut repeats,
+            awaits: &mut awaits,
         };
         for compensation in nodes_of(&clause_items, Production::Compensation) {
             compensation_anchors(cst, compensation, &mut collector)?;
@@ -360,6 +402,11 @@ pub(crate) fn protocol_declaration(
         relationships,
         requirements,
         compensations,
+        channels,
+        parallels,
+        repeats,
+        awaits,
+        members,
     }))
 }
 
@@ -838,6 +885,12 @@ impl<'c> ControlWalk<'c, '_, '_> {
                 } else {
                     ProtocolNodeKind::Repeat
                 };
+                if kind == ProtocolNodeKind::Repeat {
+                    let declaration = self.collector.declarations.len();
+                    self.collector
+                        .repeats
+                        .push(repeat_form(cst, matched, declaration)?);
+                }
                 let (kind, name) = named(kind)?;
                 declare(self.collector.declarations, kind, name.clone(), self.scope);
                 self.open(name);
@@ -861,6 +914,14 @@ impl<'c> ControlWalk<'c, '_, '_> {
             }
             Production::Parallel => {
                 let (kind, name) = named(ProtocolNodeKind::Parallel)?;
+                let form = parallel_form(cst, matched, self.collector.declarations.len())?;
+                if matches!(form.join.value, JoinPolicy::Predicate(_)) {
+                    self.collector.constructs.push(ProtocolConstructForm {
+                        kind: ProtocolConstructKind::JoinPredicate,
+                        span: form.join.span,
+                    });
+                }
+                self.collector.parallels.push(form);
                 declare(self.collector.declarations, kind, name.clone(), self.scope);
                 self.open(name);
                 children.extend(
@@ -928,6 +989,10 @@ impl<'c> ControlWalk<'c, '_, '_> {
             None,
         )?);
         let name = declared_name(await_items, node)?;
+        let declaration = self.collector.declarations.len();
+        self.collector
+            .awaits
+            .push(await_form(cst, node, declaration)?);
         declare(
             self.collector.declarations,
             ProtocolNodeKind::Await,

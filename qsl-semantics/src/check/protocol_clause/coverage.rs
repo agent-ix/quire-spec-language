@@ -8,12 +8,12 @@ use qsl_forms::{ProtocolConstructKind, ProtocolDeclarationForm, ProtocolNodeKind
 use qsl_foundation::Span;
 
 use super::refusal;
-use crate::check::protocol_obligation::role_model_refusal;
 use crate::check::refusal::{AliasKind, CheckRefusal, ProtocolAnchorCause};
 use crate::check::Scope;
 
 /// Whether this checker covers every part of a static node of `kind`:
-/// a `sequence` (a name and its children), an `attempt` (its
+/// a `sequence` (a name and its children), a `parallel` and its `branch`es
+/// (their join, checked by `protocol_controls`), an `attempt` (its
 /// operation and `contracts`, FR-114; its role, binder and body are checked
 /// by [`content`]), the `finish` node (its binder and body, the same) and a
 /// `compensate` template (its stages, FR-381, are checked by
@@ -23,16 +23,16 @@ use crate::check::Scope;
 fn covered_kind(kind: ProtocolNodeKind) -> bool {
     use ProtocolNodeKind as K;
     match kind {
-        K::Sequence | K::Attempt | K::Finish | K::CompensateTemplate => true,
+        K::Sequence | K::Parallel | K::Branch | K::Attempt | K::Finish | K::CompensateTemplate => {
+            true
+        }
         K::Send
         | K::Receive
         | K::Effect
         | K::Event
         | K::Commit
         | K::Choice
-        | K::Parallel
         | K::Repeat
-        | K::Branch
         | K::Case
         | K::Await
         | K::Check => false,
@@ -40,13 +40,20 @@ fn covered_kind(kind: ProtocolNodeKind) -> bool {
 }
 
 /// Whether a protocol construct of `kind` is checked: a protocol-level
-/// `capture` and an `activation on each` are (FR-381, `protocol_obligation`).
+/// `capture` and an `activation on each` are (FR-381, `protocol_obligation`),
+/// and a plain `channel` is (FR-218, `protocol_controls`).
 /// Exhaustive, so a new construct kind must be classified here.
 fn covered_construct(kind: ProtocolConstructKind) -> bool {
     use ProtocolConstructKind as K;
     match kind {
-        K::Capture | K::ActivationEach => true,
-        K::ReplicatedRole | K::Relationship | K::Channel | K::Requirement | K::Related => false,
+        K::Capture | K::ActivationEach | K::Channel => true,
+        K::ReplicatedRole
+        | K::Relationship
+        | K::Requirement
+        | K::Related
+        | K::FifoOrdering
+        | K::JoinPredicate
+        | K::TerminalWhen => false,
     }
 }
 
@@ -119,20 +126,17 @@ pub fn content(
             .entry(role.name.name.as_str())
             .or_default()
             .push(role.name.span);
-        if scope.object_type_named(&role.context.name).is_none() {
-            // A name that binds another kind of type is a model that is not
-            // an object type (FR-218-AC-24); one that binds nothing is
-            // missing.
-            let refused = if scope.named_types(&role.context.name).is_empty() {
+        if scope.object_type_named(&role.context.name).is_none()
+            && scope.named_types(&role.context.name).is_empty()
+        {
+            refusals.push((
+                role.context.span,
                 refusal(ProtocolAnchorCause::MissingRoleType {
                     role: role.name.name.clone(),
                     context: role.context.name.clone(),
                     span: role.context.span,
-                })
-            } else {
-                role_model_refusal(role)
-            };
-            refusals.push((role.context.span, refused));
+                }),
+            ));
         }
     }
     for (name, loci) in &roles {

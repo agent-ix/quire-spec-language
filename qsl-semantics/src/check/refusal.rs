@@ -157,6 +157,92 @@ pub enum ProtocolAnchorCause {
         /// The span of the type form (or nested argument form) at fault.
         span: Span,
     },
+    /// FR-218 "Channels": a channel's `from` or `to` names no role the
+    /// protocol declares. `missing_declaration`/`missing-name`, at the role
+    /// name; both ends refuse independently.
+    ChannelRole {
+        /// The channel's declared name.
+        channel: String,
+        /// Which end of the channel names the role.
+        end: ChannelEnd,
+        /// The role name as written.
+        name: String,
+        /// The role name's own span.
+        span: Span,
+    },
+    /// FR-218 "Channels": a channel's `carries` type does not resolve.
+    /// `missing_declaration`/`missing-name` for a missing name, at the type
+    /// name.
+    ChannelType {
+        /// The channel's declared name.
+        channel: String,
+        /// Why the type did not resolve.
+        fault: super::type_form::TypeFormFault,
+        /// The span of the type form (or nested argument form) at fault.
+        span: Span,
+    },
+    /// FR-218 "Admission for emission": a channel carries an object type,
+    /// which is not a message type. `invalid_model_binding`/
+    /// `malformed-declaration`, once, at the type name.
+    ChannelCarriesObject {
+        /// The channel's declared name.
+        channel: String,
+        /// The `carries` type as written.
+        name: String,
+        /// The type name's own span.
+        span: Span,
+    },
+    /// FR-218 "Admission for emission": a role's model is a type that does
+    /// not take part in a protocol. `invalid_model_binding`/
+    /// `malformed-declaration`, at the model name.
+    RoleModel {
+        /// The role's declared name.
+        role: String,
+        /// The model as written.
+        context: String,
+        /// The model name's own span.
+        span: Span,
+    },
+    /// FR-218 "Admission for emission": a `parallel`'s join list or quorum
+    /// count is unsound. `invalid_package`/`invalid-value`, at the list, or
+    /// at the count for a quorum.
+    JoinList {
+        /// The `parallel` control's declared name.
+        parallel: String,
+        /// What is unsound.
+        fault: JoinFault,
+        /// The list's span, or the quorum count's.
+        span: Span,
+    },
+}
+
+/// Which end of a channel names a role (FR-218 "Channels").
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ChannelEnd {
+    /// The `from` role.
+    From,
+    /// The `to` role.
+    To,
+}
+
+/// Why a `parallel`'s join list or quorum count is refused (FR-218
+/// "Admission for emission").
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum JoinFault {
+    /// `join all` whose list omits a branch.
+    OmitsBranch {
+        /// The first omitted branch label, in source order.
+        branch: String,
+    },
+    /// `join quorum(n)` with `n` below one.
+    QuorumBelowOne,
+    /// `join quorum(n)` with `n` above the number of distinct labels joined.
+    QuorumAboveLabels {
+        /// The number of distinct labels the list holds.
+        labels: usize,
+    },
+    /// A `join any` or `join predicate` that lists no label.
+    NoLabel,
 }
 
 /// Why a protocol reference expression that resolved is still refused
@@ -278,7 +364,12 @@ impl ProtocolAnchorCause {
             | Self::MissingProfile { span, .. }
             | Self::MissingRoleType { span, .. }
             | Self::MissingRole { span, .. }
-            | Self::BinderType { span, .. } => *span,
+            | Self::BinderType { span, .. }
+            | Self::ChannelRole { span, .. }
+            | Self::ChannelType { span, .. }
+            | Self::ChannelCarriesObject { span, .. }
+            | Self::RoleModel { span, .. }
+            | Self::JoinList { span, .. } => *span,
         }
     }
 
@@ -289,12 +380,17 @@ impl ProtocolAnchorCause {
             | Self::MissingContract { .. }
             | Self::MissingProfile { .. }
             | Self::MissingRoleType { .. }
-            | Self::MissingRole { .. } => Code::MissingDeclaration,
+            | Self::MissingRole { .. }
+            | Self::ChannelRole { .. } => Code::MissingDeclaration,
             Self::Ambiguous { .. } | Self::Shadow { .. } => Code::AmbiguousDeclaration,
             Self::WrongKind { .. } | Self::ChannelMismatch { .. } => Code::IllTyped,
             Self::WrongContractAnchor { .. } => Code::WrongSnapshot,
             Self::Unimplemented { .. } => Code::UnsupportedConstruct,
-            Self::BinderType { fault, .. } => type_fault_class(fault).0,
+            Self::BinderType { fault, .. } | Self::ChannelType { fault, .. } => {
+                type_fault_class(fault).0
+            }
+            Self::ChannelCarriesObject { .. } | Self::RoleModel { .. } => Code::InvalidModelBinding,
+            Self::JoinList { .. } => Code::InvalidPackage,
         }
     }
 
@@ -307,12 +403,17 @@ impl ProtocolAnchorCause {
             | Self::MissingContract { .. }
             | Self::MissingProfile { .. }
             | Self::MissingRoleType { .. }
-            | Self::MissingRole { .. } => "missing-name",
+            | Self::MissingRole { .. }
+            | Self::ChannelRole { .. } => "missing-name",
             Self::Ambiguous { .. } | Self::Shadow { .. } => "ambiguous-name",
             Self::WrongKind { .. } | Self::ChannelMismatch { .. } => "type-mismatch",
             Self::WrongContractAnchor { .. } => "wrong-anchor",
             Self::Unimplemented { .. } => "not-yet-implemented",
-            Self::BinderType { fault, .. } => type_fault_class(fault).1,
+            Self::BinderType { fault, .. } | Self::ChannelType { fault, .. } => {
+                type_fault_class(fault).1
+            }
+            Self::ChannelCarriesObject { .. } | Self::RoleModel { .. } => "malformed-declaration",
+            Self::JoinList { .. } => "invalid-value",
         }
     }
 }

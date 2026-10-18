@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-381 (TC-1057, TC-1058) and the role half of FR-218-AC-24: S3 checks a
-//! protocol's activation, captures, compensation templates and roles over
+//! FR-381 (TC-1057, TC-1058): S3 checks a protocol's activation, captures,
+//! compensation templates over
 //! fixture R. Every assertion is on the refusal's typed code, cause, members
 //! and span text, never on a message.
 //!
@@ -990,43 +990,6 @@ fn every_template_is_checked_and_refusals_come_in_source_order() {
     assert_eq!(names, ["Refund", "Other"]);
 }
 
-/// FR-218-AC-24, the role half: a role on a record type refuses
-/// `invalid_model_binding`/`malformed-declaration` at the model name; a role
-/// on an object type checks; a role on a name that binds no type is missing.
-#[test]
-fn a_role_must_be_on_an_object_type() {
-    let role = |model: &str| {
-        edit(
-            &plain(TICK, ""),
-            "role Service on M::Node;",
-            &format!("role Service on {model};"),
-        )
-    };
-
-    let (text, cause) = only(&role("M::Receipt"));
-    let ObligationCause::RoleModel {
-        role: refused_role,
-        name,
-        ..
-    } = &cause
-    else {
-        panic!("a role model refusal, got {cause:?}");
-    };
-    assert_eq!(
-        (refused_role.as_str(), name.as_str()),
-        ("Service", "M::Receipt")
-    );
-    assert_eq!(cause.code(), Code::InvalidModelBinding);
-    assert_eq!(cause.tag(), Some("malformed-declaration"));
-    assert_eq!(at(&text, &cause), "M::Receipt");
-
-    let (_, found) = obligations(&role("M::Node"));
-    assert!(found.is_empty(), "{found:?}");
-
-    let (_, found) = refusals(&role("M::Absent"));
-    assert!(obligation_causes(&found).is_empty(), "{found:?}");
-}
-
 /// The catalog pair of every cause is the one FR-381 and FR-218 name.
 #[test]
 fn every_cause_maps_to_its_catalog_pair() {
@@ -1074,15 +1037,6 @@ fn every_cause_maps_to_its_catalog_pair() {
             ObligationCause::AttemptType {
                 compensation: compensation(),
                 name: None,
-                span,
-            },
-            Code::InvalidModelBinding,
-            "malformed-declaration",
-        ),
-        (
-            ObligationCause::RoleModel {
-                role: "R".to_owned(),
-                name: "M::T".to_owned(),
                 span,
             },
             Code::InvalidModelBinding,

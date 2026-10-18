@@ -242,16 +242,6 @@ pub enum ObligationCause {
         /// The interval.
         span: Span,
     },
-    /// `invalid_model_binding`/`malformed-declaration`: a role's model
-    /// resolves to a type that is not an object type.
-    RoleModel {
-        /// The role.
-        role: String,
-        /// The model as written.
-        name: String,
-        /// The model name.
-        span: Span,
-    },
 }
 
 impl ObligationCause {
@@ -270,8 +260,7 @@ impl ObligationCause {
             | Self::AttemptTypeName { span, .. }
             | Self::AttemptType { span, .. }
             | Self::RetryBinder { span, .. }
-            | Self::Deadline { span, .. }
-            | Self::RoleModel { span, .. } => *span,
+            | Self::Deadline { span, .. } => *span,
         }
     }
 
@@ -290,7 +279,7 @@ impl ObligationCause {
             Self::Clause { cause, .. } => cause.code(),
             Self::AmbiguousOperation { .. } => Code::AmbiguousDeclaration,
             Self::AttemptTypeName { fault, .. } => type_fault_class(fault).0,
-            Self::AttemptType { .. } | Self::RoleModel { .. } => Code::InvalidModelBinding,
+            Self::AttemptType { .. } => Code::InvalidModelBinding,
         }
     }
 
@@ -309,7 +298,7 @@ impl ObligationCause {
             Self::Clause { cause, .. } => cause.cause(),
             Self::AmbiguousOperation { .. } => Some("ambiguous-name"),
             Self::AttemptTypeName { fault, .. } => Some(type_fault_class(fault).1),
-            Self::AttemptType { .. } | Self::RoleModel { .. } => Some("malformed-declaration"),
+            Self::AttemptType { .. } => Some("malformed-declaration"),
         }
     }
 }

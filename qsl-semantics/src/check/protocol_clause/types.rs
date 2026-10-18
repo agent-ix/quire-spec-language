@@ -2,6 +2,7 @@
 //! [`BoundAttempt`] and the lowered [`CheckedAttempt`] and
 //! [`CheckedProtocol`] (FR-113 Outputs, FR-114 Outputs).
 
+use crate::check::protocol_controls::CheckedChannel;
 use crate::check::protocol_obligation::CheckedObligations;
 use crate::check::state_clause::{ClauseOperation, PopulationDomain};
 
@@ -75,4 +76,6 @@ pub struct CheckedProtocol {
     /// (FR-381), filled in by `check::mod`'s own pipeline once their
     /// expressions are checked.
     pub obligations: CheckedObligations,
+    /// Every channel with its premises, in source order (FR-218 "Channels").
+    pub channels: Vec<CheckedChannel>,
 }
