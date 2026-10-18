@@ -68,6 +68,7 @@
 // file (`check.rs`, holding `Typer`/`Scope`/`bind_parameters` -- name
 // resolution and typing) -- the inception is the spec's own naming, not an
 // accidental collision this file introduced.
+mod abstraction;
 mod assemble;
 mod call_target;
 mod capability;
@@ -76,6 +77,11 @@ mod check;
 mod checked_dispatch;
 mod claims;
 mod dispatch_link;
+pub use abstraction::{
+    AbstractionKey, AbstractionRefusal, AuthoredBinding, CheckedAbstractionRelation,
+    CheckedBinding, CheckedFrameBinding, FrameBinding, FrameNodes, MalformedEntry, ObjectBinding,
+    OperationKey, PopulationBinding, RustField, RustParameter, RustPath, RustReceiver,
+};
 pub use dispatch_link::PendingLinks;
 mod facts;
 mod family;
@@ -112,6 +118,7 @@ mod operation_clause;
 mod profile;
 mod protocol_clause;
 mod protocol_reference;
+mod references;
 mod refusal;
 mod region;
 mod settings;
@@ -430,6 +437,13 @@ pub struct CheckedGraph {
     /// [`AdmittedModel::population_domains`] orders them: the table
     /// [`Self::population_domain`] resolves a population in.
     model_populations: BTreeMap<String, BTreeMap<Identifier, state_clause::PopulationDomain>>,
+    /// FR-304: every admitted population's declaration key, with its
+    /// population domain.
+    population_keys: BTreeMap<crate::model::key::DeclarationKey, state_clause::PopulationDomain>,
+    /// FR-304: the key of every declaration of every admitted domain
+    /// package, of any kind, so a binding keyed by a declaration of the wrong
+    /// kind refuses as malformed rather than missing.
+    declaration_keys: std::collections::BTreeSet<crate::model::key::DeclarationKey>,
     /// FR-096: each protocol's own attempts' declared name spans,
     /// index-aligned with `protocols`, so an `Origin::ProtocolAttempt`
     /// resolves.
@@ -677,9 +691,15 @@ fn resolve_signature(
 /// A refused or exhausted type admission as the check refusal that reports it.
 fn type_admission(failure: quire_semantic_value::declaration::EnvironmentFailure) -> CheckCause {
     let cause = assemble::environment_cause(failure);
+    let limit = if let AssemblyCause::TypeLimit(limit) = &cause {
+        Some(Box::new(limit.clone()))
+    } else {
+        None
+    };
     CheckCause::TypeAdmission {
         code: cause.code(),
         cause: cause.catalog_code().cause(),
+        limit,
     }
 }
 
@@ -936,6 +956,12 @@ impl PackageDeclarations {
             .map(|staged| std::cell::RefCell::new(staged.0));
         let (model_objects, object_types) = model_object_tables(&models);
         let model_populations = model_population_tables(&models);
+        let population_keys = population_key_table(&models);
+        let declaration_keys = models
+            .iter()
+            .flat_map(AdmittedModel::record_keys)
+            .cloned()
+            .collect();
         let object_nodes = object_types
             .keys()
             .filter_map(|declaration| {
@@ -2032,6 +2058,8 @@ impl PackageDeclarations {
             object_types,
             object_nodes,
             model_populations,
+            population_keys,
+            declaration_keys,
             attempt_spans: regions.attempt_spans,
         })
     }
@@ -2090,6 +2118,23 @@ fn model_population_tables(
                 })
                 .collect();
             Some((model.alias()?.to_owned(), populations))
+        })
+        .collect()
+}
+
+/// FR-304: each admitted population's declaration key, with the population
+/// domain [`AdmittedModel::population_domains`] gives it.
+fn population_key_table(
+    models: &[AdmittedModel],
+) -> BTreeMap<crate::model::key::DeclarationKey, state_clause::PopulationDomain> {
+    models
+        .iter()
+        .flat_map(AdmittedModel::population_domains)
+        .map(|(ordinal, population, object)| {
+            (
+                population.key.clone(),
+                state_clause::PopulationDomain { object, ordinal },
+            )
         })
         .collect()
 }
@@ -2602,6 +2647,45 @@ mod tests {
     use quire_exact::{Origin, Role};
 
     use super::*;
+
+    /// QSL-821: `type_admission` and `pending_refusal` keep the reached
+    /// ceiling, so the refinement classifier can name it; a failure that is
+    /// no ceiling keeps none.
+    #[test]
+    fn a_type_admission_ceiling_keeps_its_limit() {
+        use quire_semantic_value::declaration::{
+            EnvironmentFailure, EnvironmentLimit, EnvironmentLimitKind, PendingFieldFailure,
+            StorageRequest, StorageUnit,
+        };
+        let ceiling = || EnvironmentLimit::new(EnvironmentLimitKind::AncestorSteps, 5, 6);
+        let expected = Some(Box::new(qsl_foundation::diagnostic::LimitExceeded::new(
+            qsl_foundation::Setting::EnvironmentAncestorSteps,
+            5,
+            6,
+        )));
+
+        let CheckCause::TypeAdmission { code, limit, .. } =
+            type_admission(EnvironmentFailure::Limit(ceiling()))
+        else {
+            panic!("expected a type admission cause");
+        };
+        assert_eq!(code, qsl_foundation::Code::StageLimitExceeded);
+        assert_eq!(limit, expected);
+
+        let CheckCause::TypeAdmission { limit, .. } =
+            pending_refusal(PendingFieldFailure::Limit(ceiling()))
+        else {
+            panic!("expected a type admission cause");
+        };
+        assert_eq!(limit, expected);
+
+        let CheckCause::TypeAdmission { limit, .. } = type_admission(
+            EnvironmentFailure::Allocation(StorageRequest::new(8, StorageUnit::Bytes)),
+        ) else {
+            panic!("expected a type admission cause");
+        };
+        assert_eq!(limit, None);
+    }
 
     fn declarations(functions: Vec<FunctionDeclaration>) -> PackageDeclarations {
         PackageDeclarations {

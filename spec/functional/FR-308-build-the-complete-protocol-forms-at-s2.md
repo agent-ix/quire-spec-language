@@ -67,7 +67,8 @@ and activation forms below are the target for their owning slices:
 - `RoleForm::{Static{name, model}, Replicated{name, model, population, max,
   lifetime: Workflow | Scope | Until(expr)}}`.
 - `ChannelForm{name, from, to, carries, ordering, delivery, capacity:
-  Literal(u64) | Symbolic(ident), overflow}`.
+  Literal(u64) | Symbolic(ident), overflow: Reject | Block | Loss(Head |
+  Tail | New)}`.
 - `ParallelForm{name, branches, join: All | Any | Quorum(u64) |
   Predicate(ident), outstanding: Option<Continue | Cancel>}`, and the
   memory part of FR-309.
@@ -130,6 +131,13 @@ and activation forms below are the target for their owning slices:
   count and `within` interval as written, with no S2 diagnostic for a zero
   count or an inverted interval. A count that is not a decimal `u64` fails at
   S1 with an `invalid_syntax` diagnostic at the count (FR-325).
+- S2 SHALL build a channel's overflow policy as written: `overflow reject`
+  as `Reject`, `overflow block` as `Block` and `overflow loss head`,
+  `overflow loss tail` and `overflow loss new` as `Loss(Head)`, `Loss(Tail)`
+  and `Loss(New)`. The selector token follows `loss` and no other overflow
+  policy takes one, so `overflow loss` with no selector, and `overflow block
+  head`, are not in the grammar and fail at the parser with its existing
+  syntax refusal, before any form is built.
 - A well-formed CST adds no S2 refusal. A CST that carries an error or
   recovery node SHALL refuse as `FormsCause::RecoveringCst`, with no
   partial form.
@@ -174,6 +182,7 @@ and activation forms below are the target for their owning slices:
 | FR-308-AC-10 | An `effect` node with `related by Pays (applied.order, opened.order)` builds one `RelatedForm` with relationship `Pays` and both ends as full expression forms in written order; a node with two `related by` clauses, one naming `Pays` twice, builds three forms in source order. | Test (TC-1055) |
 | FR-308-AC-11 | A compensation builds every member of its `CompensationForm`: `commit Main::Committed` builds `Node` and `commit never` builds `Never`; `attempts 0` builds count 0 and `within [31,30]` builds the interval as written, each with no S2 diagnostic; `attempts 18446744073709551616` fails at S1 with a parse diagnostic at the count. | Test (TC-1055) |
 | FR-308-AC-12 | A protocol whose CST holds a recovery node inside a `capture`, a `relationship`, a `requires temporal`, a `related by` or a compensation refuses `FormsCause::RecoveringCst` for each, with no partial form. A protocol that writes all five builds equal forms when built twice. | Test (TC-1055) |
+| FR-308-AC-13 | Channels written `overflow reject`, `overflow block`, `overflow loss head`, `overflow loss tail` and `overflow loss new` build `Reject`, `Block`, `Loss(Head)`, `Loss(Tail)` and `Loss(New)`, each span slicing to its text; `overflow loss` with no selector and `overflow block head` fail at the parser with a syntax diagnostic and build no form. | Test (TC-1065) |
 
 ## Dependencies
 

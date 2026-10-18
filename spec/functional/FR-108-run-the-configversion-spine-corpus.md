@@ -64,8 +64,8 @@ function sameIdentity using v(a: Config::ConfigVersion, b: Config::ConfigVersion
 ## Outputs
 
 - Per case: FR-106 snapshot and invocation documents and a
-  `ClauseRunRequest`, written beside the native files by the fixtures
-  generator.
+  `ClauseRunRequest`, written by the spine corpus generator
+  (`examples/config-version/spine_corpus.rs`).
 - Per case: one `ClauseRunReport` (FR-109).
 
 ## Corpus
@@ -102,7 +102,7 @@ snapshot data (ADR-012 §15.1).
 
 ## Behavior
 
-- The fixtures generator SHALL write the spine files from the same catalog
+- The spine corpus generator SHALL write the spine files from the same catalog
   rows as the historical native files, so a case's object keys, field values,
   completeness, frame and limits remain one datum.
 - The spine test SHALL check each report against the independent expected
