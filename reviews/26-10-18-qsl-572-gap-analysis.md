@@ -52,3 +52,14 @@ cover less than half of it, and no follow-up ticket for the S3 half was found.
 - Partially exercised: AC-3 (run-level stop), AC-4 (S3 half, horizon and evidence).
 - Semantic review: focused per-AC intent check done inline. No per-FR fan-out.
 - Plan completion: not assessed
+
+## Dispositions
+
+Round 1, reviewed at `e52200e1bd4915a04840647411cd0809683b5736`. No new
+findings.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | deferred | QSL-864 (E17w-b) now tracks the S3 half of FR-194-AC-4: model-subject refusal, window-kind refusals, threshold dimension and conversion, zero horizon, Observed evidence. The AC-4-tagged tests were narrowed to what they show, and the remaining refusals moved to an untagged test. |
+| FND-002 | fixed | `a_window_over_the_limit_settles_the_run_with_the_limit_record` (tagged FR-194-AC-3) asserts that the run outcome is `WindowLimitReached{max_window_values, 2, monitor.max_window_values}` with category Incomplete, distinct from a work-budget Incomplete. |
+| FND-003 | deferred | QSL-864 tracks threshold unit conversion. The test is renamed `..._in_either_prescaled_unit`, and its comment now says it does not test conversion. |

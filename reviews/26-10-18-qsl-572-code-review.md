@@ -62,3 +62,20 @@ cannot be produced), one medium finding that needs a spec ruling, and lows.
 | FND-005 | low | `quantile` sorts up to `max_window_values` (2^20) rationals in `finish` without charging the meter, so sort work is outside the TR-5 budget. The bound holds through the limit, but the work goes unmetered. | qsl-eval/src/temporal/window.rs:388 |
 | FND-006 | low | No test covers an event-position window with `a > 0`, which is the `checked_sub(a)` path that gives an empty window when `a > i`. The code is correct by reading, but the path is unpinned. | qsl-eval/src/temporal/window.rs:212-217 |
 | FND-007 | low | A test comment says two errors "falsify the atom at position 1", but the assertion is `Violated { at: 0 }`, the activation position. The comment misleads. | qsl-eval/tests/it/window_aggregates.rs:531-538 |
+
+## Dispositions
+
+Round 1, reviewed at `e52200e1bd4915a04840647411cd0809683b5736`. Focused
+checks: `cargo test -p qsl-eval` (533 integration tests, 82 unit tests, all
+pass), `cargo clippy -p qsl-eval --all-targets -D warnings` (clean) and
+`cargo fmt --check` (clean). No new findings.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | `TemporalLetters` now returns `LetterStop` (Incomplete / WindowLimit / Window / Fault). The engine maps `WindowLimit` to `TemporalOutcome::WindowLimitReached` (category Incomplete) and a window refusal to `TemporalRefusal::Window`. `a_window_over_the_limit_settles_the_run_with_the_limit_record` drives `evaluate` to that outcome. |
+| FND-002 | deferred | STD-163. Planner ruling: an undefined value, filter or predicate at a position makes that atom Undefined, never skips it. The spec is to state this before the seam changes. |
+| FND-003 | fixed | `a_window_one_value_over_the_limit_stops` reads 10 values under limit 10 and stops at 11, so an off-by-one that admits `max + 1` now fails. |
+| FND-004 | fixed | `each_window_position_visited_charges_one_work_unit` charges 20 when a filter admits 10 of 20, which pins per-position charging. The FR-194 wording fix is tracked in STD-163. |
+| FND-005 | accepted-no-change | Module docs now state that the quantile sort is bounded by `max_window_values` and is not charged separately. It stays a documented design choice. |
+| FND-006 | fixed | `an_event_position_window_with_a_nearest_offset_skips_the_newest_positions` covers `past[2, 3]` at positions 5 and 1. |
+| FND-007 | fixed | The comment now says the atom is falsified at position 1 and the clause is violated at its activation, position 0. |
