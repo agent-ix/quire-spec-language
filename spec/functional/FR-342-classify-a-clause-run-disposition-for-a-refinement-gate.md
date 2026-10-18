@@ -56,7 +56,7 @@ The classification SHALL be one exhaustive `match` over
 | `Evaluate(Incomplete)` | `incomplete` |
 
 - For an `incomplete` class the classification SHALL carry the limit the
-  disposition names (a model limit or FR-100's `work_units`) and its value.
+  disposition names (a model limit, FR-100's `work_units` or a type-admission ceiling) and its value.
   A cause that names no numeric limit (an admission `Incomplete` such as
   `incomplete_population`/`incomplete-scope`) carries its code and cause only.
 
@@ -72,7 +72,7 @@ The classification SHALL be one exhaustive `match` over
 | --- | --- | --- |
 | FR-342-AC-1 | Over FR-109's ConfigVersion fixtures: healthy-parent classifies `admitted` at stage `evaluate`; violating-parent classifies `refused` at `evaluate`; FR-115's forbidden-parent-change frame run classifies `refused` at `evaluate`. | Test (TC-862) |
 | FR-342-AC-2 | A `Clause` selection naming `Absent` classifies `absent` at `select`; a `Function` selection of a function returning `Integer` classifies `refused` at `select`; dangling-parent classifies `refused` at `admit`; a `Function` selection with an argument naming an unknown parameter classifies `refused` at `admit`. | Test (TC-862) |
-| FR-342-AC-3 | incomplete-population classifies `incomplete` at `admit`, naming its cause `incomplete_population`/`incomplete-scope`; exhausted-work (work budget zero) classifies `incomplete` at `evaluate`, naming `work_units` and the value zero. | Test (TC-862) |
+| FR-342-AC-3 | incomplete-population classifies `incomplete` at `admit`, naming its cause `incomplete_population`/`incomplete-scope`; exhausted-work (work budget zero) classifies `incomplete` at `evaluate`, naming `work_units` and the value zero; a run whose compile reaches a type-admission ceiling classifies `incomplete` at `compile`, naming that ceiling and its value. | Test (TC-862) |
 | FR-342-AC-4 | A `StalePackage` and an `UnknownLanguage` disposition, an `Admit(Fault)` and an `EvaluateFault` each classify `tool failure`. | Test (TC-862) |
 | FR-342-AC-5 | A run whose compile refuses classifies at stage `compile` with exactly the class FR-341 gives its `CompileRefusal`: `missing-model` (no package supplied) classifies `tool failure` at `compile`. | Test (TC-862) |
 
