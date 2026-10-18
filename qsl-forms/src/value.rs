@@ -1047,6 +1047,7 @@ impl<'c> Mapping<'c> {
             | Production::TemporalRelation
             | Production::TemporalUnary
             | Production::TemporalPrimary
+            | Production::TerminalDeclaration
             | Production::ProtocolClause
             | Production::Role
             | Production::RoleLifetime
@@ -1620,6 +1621,7 @@ impl<'c> Mapping<'c> {
             | Production::TemporalRelation
             | Production::TemporalUnary
             | Production::TemporalPrimary
+            | Production::TerminalDeclaration
             | Production::ProtocolClause
             | Production::Role
             | Production::RoleLifetime

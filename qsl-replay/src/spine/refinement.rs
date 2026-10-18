@@ -252,6 +252,7 @@ fn assembly_limit(cause: &AssemblyCause) -> Option<ReachedLimit> {
         | AssemblyCause::DuplicateOperationBody { .. }
         | AssemblyCause::UnresolvedPopulationBound { .. }
         | AssemblyCause::AmbiguousPopulationBound { .. }
+        | AssemblyCause::UnsupportedDeclarationForm { .. }
         | AssemblyCause::AmbiguousPopulation { .. } => None,
     }
 }
