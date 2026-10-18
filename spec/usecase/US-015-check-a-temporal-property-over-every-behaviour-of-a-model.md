@@ -70,7 +70,7 @@ QSpec FR-360's vocabulary.
 ### US-015-EX-3: A stuck state is reported
 
 - **Given** a model with a reachable state where no operation is enabled
-  and no `terminal` member.
+  and no `terminal` declaration.
 - **When** the operator requests any temporal claim over it.
 - **Then** the request also carries the subject's deadlock-freedom item,
   which settles `refuted` with a prefix to the stuck state.

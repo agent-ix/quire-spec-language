@@ -188,8 +188,8 @@ position and is not an authored operator.
 | `A R B` | Require `B` now and either require `A` now or carry this `R` to the next position. |
 | finite interval with lower `l>0` | Carry without reading its operands until the lower distance is reached. Finite until/release retain FR-091's lower-bound convention, with no prefix operand debt. |
 | open-upper `F[l,open] A` / `G[l,open] A`, `l>0` | Carry the shift without reading A before the lower distance. |
-| `A U[l,open] B`, `l>0` | Require A at every prefix position before the lower distance, and carry the shift. This is IV-2's prefix conjunction followed by unbounded until. |
-| `A R[l,open] B`, `l>0` | Require A now and discharge, or carry the shift. This is the Boolean dual of the preceding until rule; B is not required in the prefix. |
+| `A U[l,open] B`, `l>0` | Carry the shift without reading A or B before the lower distance, then run unbounded until: A is required only from the lower distance to the witness, as for a finite interval. |
+| `A R[l,open] B`, `l>0` | Carry the shift without reading A or B before the lower distance, then run unbounded release. This is the Boolean dual of the preceding until rule. |
 | `F[0,u] A`, finite `u` | Require A now, or carry the same debt until the distance region closes. An undischarged F debt fails when a move would pass u. |
 | `G[0,u] A`, finite `u` | Require A now and carry until the region closes; discharge at its closed upper boundary. |
 | `A U[0,u] B`, finite `u` | Require B now, or require A now and carry until the region closes. An undischarged U debt fails when a move would pass u. |
@@ -227,8 +227,7 @@ is read: an undischarged F/U fails, a surviving G/R discharges. A debt with
 upper zero remains live across zero-distance successors, whose letters
 must still be read. Fulfilled obligations disappear, and a new activation
 adds its checked interval. Open-upper U/R shift entries retain the signed
-operator occurrence, which selects the prefix rule above; a shift counter
-alone never erases prefix debt.
+operator occurrence, which selects the shift rule above.
 Only the common lower-zero/no-nested-interval shapes use the one-counter
 subsumption. General offset sets preserve distinct lower shifts and nested
 obligations; neither earliest nor largest alone represents them. A state
@@ -502,10 +501,10 @@ also refuses. The clause-root lexical vector above independently checks
 string ordinal zero/max versus number zero/overflow.
 
 Additional semantic vectors: for `p until[1,*] q`, p false at origin and
-q true at distance one rejects immediately at origin; finite
-`p until[1,1] q` on the same letters accepts. The dual open release
-accepts when its left operand holds in the pre-shift prefix, regardless
-of its right operand there. For `eventually[0,1] p`, false origin, false
+q true at distance one accepts, as finite `p until[1,1] q` on the same
+letters does. The dual open release accepts when its right operand holds
+at every position from the lower distance on, regardless of its left
+operand and of its right operand before the lower distance. For `eventually[0,1] p`, false origin, false
 fork, true counted operation accepts; replacing the fork with a counted
 operation closes the false final region before that later true letter.
 At distance one, a false letter followed by an uncounted p-true letter
@@ -581,7 +580,7 @@ different materialization orders SHALL produce identical full octets.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-338-AC-1 | Accepted vector: over ADR-018 §6's subject, FR-126-AC-2's TP-1 claim `always holds(c.versionNumber <= 1000)` returns `Holds` with a `ClosureCertificate` of its explored product states, and `check_closure` accepts it. | Test (TC-525) |
-| FR-338-AC-2 | Rejected vectors: AC-1's certificate with the product state for model state `(1, 0)` removed is rejected `SuccessorMissing` at that state; with the initial product state removed, `InitialMissing` at it; over the `Counter` subject with no `terminal` member, a certificate holding every reachable state, offered for the deadlock-freedom item, is rejected `BadState` at value 3 (deadlocked), while the same certificate for `always holds(c.value <= 3)` is accepted, since the deadlock at 3 changes no authored claim (ADR-018 DL-6). | Test (TC-525) |
+| FR-338-AC-2 | Rejected vectors: AC-1's certificate with the product state for model state `(1, 0)` removed is rejected `SuccessorMissing` at that state; with the initial product state removed, `InitialMissing` at it; over the `Counter` subject with no `terminal` declaration, a certificate holding every reachable state, offered for the deadlock-freedom item, is rejected `BadState` at value 3 (deadlocked), while the same certificate for `always holds(c.value <= 3)` is accepted, since the deadlock at 3 changes no authored claim (ADR-018 DL-6). | Test (TC-525) |
 | FR-338-AC-3 | Over FR-120-AC-9's `test/tallies` subject, a certificate holding `t1` for `always holds(true)` is rejected `BadState` at `t1`, whose expansion records `ContractUndetermined` for the undefined `pre Low`. | Test (TC-525) |
 | FR-338-AC-4 | The canonical octet vectors have exactly the specified state bodies and full `K_C` octets; reversing subset/window insertion order leaves bytes equal, distinct occurrence paths and differing live facts leave bytes unequal, and no graph enumeration index enters the key. | Test |
 | FR-338-AC-5 | Each listed admission negative refuses before the key is used for membership; the same state under a different item/profile/activation is not admitted by the original context. | Test |

@@ -141,8 +141,13 @@ pub(crate) fn observe_state(
 ) -> Result<Observation, AdmissionFailure> {
     let mut objects = Vec::new();
     let mut completeness = BTreeMap::new();
+    let mut sizes = BTreeMap::new();
     for (population, members) in &state.populations {
         completeness.insert(population.node.clone(), true);
+        sizes.insert(
+            population.node.clone(),
+            u64::try_from(members.len()).unwrap_or(u64::MAX),
+        );
         for (key, object) in members {
             let effective = views
                 .iter()
@@ -175,7 +180,9 @@ pub(crate) fn observe_state(
     )?;
     Ok(Observation {
         identity,
-        environment: ObjectEnvironment::new(closure).with_extents(extents),
+        environment: ObjectEnvironment::new(closure)
+            .with_extents(extents)
+            .with_population_sizes(sizes),
         populations: completeness,
         out_of_range: Vec::new(),
     })

@@ -18,7 +18,7 @@ Scope: FR-125-AC-1 to FR-125-AC-5.
 
 ## Test Procedure
 
-1. Build the `Counter` subject (FR-124-AC-1, no `terminal` member); read its
+1. Build the `Counter` subject (FR-124-AC-1, no `terminal` declaration); read its
    behaviour's positions and anchors, under event-position false-extension
    and under infinite-trace.
 2. Evaluate FR-125-AC-2's three formulas over that behaviour.

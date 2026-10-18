@@ -351,6 +351,7 @@ impl FamilyContract for StateModelFamily {
                                     relationship: end.relationship.key.clone(),
                                     role: end.role.to_owned(),
                                     near: end.near,
+                                    population: None,
                                 },
                                 ValueType::Boolean,
                             ));

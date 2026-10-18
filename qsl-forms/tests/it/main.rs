@@ -11,6 +11,8 @@ mod protocol_control_forms;
 mod protocol_member_forms;
 mod protocol_reference_forms;
 mod source_grammar_vectors;
+mod state_model_forms;
 mod sum_case_forms;
 mod temporal_clause_forms;
+mod terminal_declaration_forms;
 mod value_forms;

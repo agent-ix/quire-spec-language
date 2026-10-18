@@ -15,6 +15,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-110
     type: depends_on
+  - target: ix://agent-ix/quire-semantic-value/FR-121
+    type: references
 ---
 # FR-123: Check fairness constraints and interval operators of infinite-trace clauses
 
@@ -60,14 +62,14 @@ ADR-018 §6 and are illustrative.
 ## Outputs
 
 - A checked temporal clause holding its formula and its fairness set:
-  `Vec<FairnessConstraint>`, where
-  `FairnessConstraint{kind: FairnessKind, operation: DeclarationKey,
-  granularity: FairnessGranularity}`, `FairnessKind::Weak`, and
-  `FairnessGranularity::{Whole, Each}`.
+  `Vec<quire_semantic_value::fairness::FairnessConstraint>`. QSV FR-121 owns
+  `FairnessKind::{Weak, Strong}`, `FairnessGranularity::{Whole, Each}` and
+  `FairnessOperation`, whose identity pairs the declaring model type's
+  caller-minted `quire_exact::EffectiveId` with the resolved operation name.
 - Each checked operator holding `Option<TemporalInterval>` (ADR-014 TR-3).
-- The clause's `PropertyForm::{ReachableInvariant, BoundedMltl, Safety,
-  Liveness}` (TP-1 to TP-4), recorded beside its `Requirements` (ADR-014
-  A-3).
+- The clause's `quire_semantic_value::fairness::PropertyForm` (QSV FR-121),
+  classified as `ReachableInvariant`, `BoundedMltl`, `Safety` or `Liveness`
+  (TP-1 to TP-4) and recorded beside its `Requirements` (ADR-014 A-3).
 - A typed `CheckRefusal` with a span, and no checked clause, on refusal.
 
 ## Behavior
@@ -81,14 +83,17 @@ ADR-018 §6 and are illustrative.
   `Whole` (ADR-018 FA-6). When it names one, the checker SHALL check it as
   that granularity.
 - The checker SHALL resolve the operation to one operation of an admitted
-  model (FR-103). If the name resolves to no operation, then the checker
-  SHALL refuse `missing_declaration`/`missing-name` at the operation's span.
+  model (FR-103) and construct QSV's `FairnessOperation` from that operation's
+  declaring type `EffectiveId` and resolved name. Same-named operations on
+  different declaring types SHALL remain distinct. If the name resolves to
+  no operation, then the checker SHALL refuse `missing_declaration`/`missing-name`
+  at the operation's span.
 - If a fairness constraint sits on a clause whose unit selects a bounded
   profile, then the checker SHALL refuse
   `unsupported_construct`/`expression-form` at the constraint's span.
 - The checker SHALL hold each constraint once in the checked fairness set,
   in source order of first occurrence, checking two constraints with equal
-  resolved kind, operation and granularity as one.
+  resolved kind, operation pair and granularity as one.
 - The checker SHALL include the fairness set in the clause's checked
   identity, so two clauses that differ only in their fairness sets have
   different node identities.
@@ -132,7 +137,7 @@ ADR-018 §6 and are illustrative.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-123-AC-1 | Over ADR-018 §6's ConfigVersion example unit, a weak constraint on `attemptUpdate` written with no granularity and one written `whole` check to equal fairness sets with granularity `Whole`; one written `each` checks to granularity `Each`; and a clause with each fairness set has a different node identity from the same clause with the other. | Test (TC-518) |
+| FR-123-AC-1 | Over ADR-018 §6's ConfigVersion example unit, a weak constraint on `attemptUpdate` written with no granularity and one written `whole` check to equal fairness sets with granularity `Whole`; one written `each` checks to granularity `Each`; and a clause with each fairness set has a different node identity from the same clause with the other. Resolved same-named operations declared by different model types retain their distinct declaring-type `EffectiveId` values and check to distinct fairness constraints. | Test (TC-518) |
 | FR-123-AC-2 | A weak constraint on `Absent`, which names no operation, refuses `missing_declaration`/`missing-name` at `Absent`'s span. A fairness constraint on a clause under `quire.temporal.event-position.false-extension/v1` refuses `unsupported_construct`/`expression-form` at the constraint's span. A constraint written twice checks to a set holding it once. | Test (TC-518) |
 | FR-123-AC-3 | Under infinite-trace, `always (holds(not s.healthy) implies eventually always[0,2] holds(s.healthy))` checks, with `Some([0,2])` on the inner `always` and `None` on the outer `always` and on `eventually`. `eventually[3,*] holds(p)` checks with `Some([3,Open])`, and the same operator under `quire.temporal.event-position.false-extension/v1` refuses at the interval's span; `eventually[5,3] holds(p)` refuses at the interval's span. The `[0,2]` interval's key differs from the key of `[0,2]` under the event-position profile. | Test (TC-518) |
 | FR-123-AC-4 | Property forms: `always holds(c.versionNumber <= 1000)` is `ReachableInvariant`; `eventually[0,5] holds(c.versionNumber = 2)` under event-position false-extension is `BoundedMltl`; `always (holds(req) implies eventually[0,5] holds(ack))` under infinite-trace is `Safety`; `always eventually holds(c.versionNumber = 2)` and the recovery-stability formula are `Liveness`. Each infinite-trace clause records (`temporal-satisfaction`, `Unbounded`). A clause over the ConfigVersion subject under the fixed-sample profile records no property form and keeps that profile in its requirement record. | Test (TC-518) |
@@ -147,6 +152,9 @@ ADR-018 §6 and are illustrative.
   (operations), [FR-110](FR-110-resolve-header-profile-selections-at-e3.md)
   (profile selection), [FR-057](FR-057-admit-shared-capability-kinds.md)
   (`temporal-satisfaction`).
+- [QSV FR-121](ix://agent-ix/quire-semantic-value/FR-121) owns the shared
+  checked property-form and fairness value types and their canonical encoding;
+  this requirement owns their selection, construction and ordered collection.
 
 ## References
 

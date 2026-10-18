@@ -40,6 +40,7 @@ const ACCEPTED_PRODUCTIONS: &[Production] = &[
     Production::Parameter,
     Production::StateClause,
     Production::OperationBody,
+    Production::PopulationBound,
     Production::Block,
     Production::Expression,
     Production::Implication,
@@ -88,6 +89,7 @@ const ACCEPTED_PRODUCTIONS: &[Production] = &[
     Production::TemporalRelation,
     Production::TemporalUnary,
     Production::TemporalPrimary,
+    Production::TerminalDeclaration,
     Production::ProtocolClause,
     Production::Role,
     Production::RoleLifetime,
@@ -178,6 +180,7 @@ fn corpus() -> Vec<(&'static str, String)> {
                     "invariant Stable using Complete on M::Thing at current { allInstances<M::Thing>(self)[0].ready }\n",
                     "pre Before using Complete on M::Thing::act { true }\n",
                     "body Impl using Complete on M::Thing::act (amount, extra) { true }\n",
+                    "bound ThingBound on M::Thing [8]\n",
                     "relation Same using Complete over (left: M::Execution, right: M::Execution) { true }\n",
                     "hyper Secret using Complete over traces in M::Execution bounded 2 forall trace a exists trace b { true }\n",
                     "hybrid Plant using Complete { mode Idle invariant { true } flow { M::x' = 0; } transition to Idle when { true } reset { true }; }\n",
@@ -197,6 +200,13 @@ fn corpus() -> Vec<(&'static str, String)> {
                     "}",
                 ),
             ),
+        ),
+        (
+            "terminal",
+            source(concat!(
+                "terminal Done using Complete on M when { true };\n",
+                "terminal Halt using Complete on M any;",
+            )),
         ),
         (
             "protocol",
