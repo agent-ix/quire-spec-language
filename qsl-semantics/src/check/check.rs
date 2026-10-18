@@ -449,6 +449,9 @@ pub struct PackageDeclarations {
     /// owner resolved, checked beside the state clauses. A checked invariant
     /// adds no declaration, claim or requirement record.
     pub type_invariants: Vec<super::TypeInvariantDeclaration>,
+    /// FR-124: the unit's `terminal` declarations in declaration order, each
+    /// resolved by the FR-091 assembler and checked beside the state clauses.
+    pub terminals: Vec<super::TerminalClauseDeclaration>,
     /// FR-103, FR-302: the unit's `operation-body` declarations in
     /// declaration order, each resolved to its operation's `DeclarationKey`
     /// by the FR-091 assembler. At most one per key.
@@ -533,6 +536,7 @@ impl PackageDeclarations {
             temporal_selections: Vec::new(),
             operation_clauses: Vec::new(),
             type_invariants: Vec::new(),
+            terminals: Vec::new(),
             operation_bodies: Vec::new(),
             selected_views: BTreeMap::new(),
             identity,

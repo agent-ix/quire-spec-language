@@ -753,6 +753,9 @@ pub enum CheckCause {
     /// FR-366: a refusal in a type-level invariant clause, with the clause
     /// it is about.
     TypeInvariant(Box<super::type_invariant::TypeInvariantRefusal>),
+    /// A `terminal when` predicate's checking refused (FR-124), with the
+    /// declaration it is about.
+    Terminal(Box<super::terminal::TerminalRefusal>),
     /// A completed model conformance stage retains every axis failure.
     ModelConformance(Box<super::model_conformance::ModelConformanceFailure>),
     /// An unfinished model stage exposes its exact five-field denial.
@@ -1183,6 +1186,7 @@ impl CheckCause {
     pub fn unwrapped(&self) -> &Self {
         match self {
             Self::TypeInvariant(refusal) => refusal.cause.unwrapped(),
+            Self::Terminal(refusal) => refusal.cause.unwrapped(),
             other => other,
         }
     }
@@ -1192,6 +1196,7 @@ impl CheckCause {
         match self {
             Self::StateModel(cause) => cause.catalog_code(),
             Self::TypeInvariant(cause) => cause.cause.catalog_code(),
+            Self::Terminal(cause) => cause.cause.catalog_code(),
             Self::DispatchLink(cause) => Some(cause.catalog),
             _ => Some(qsl_foundation::diagnostic::CatalogCode::new(
                 self.code().as_str(),
@@ -1219,6 +1224,7 @@ impl CheckCause {
             Self::ProfileProhibitedOperator(_) => Code::UnsupportedConstruct,
             Self::StateModel(cause) => cause.cause.code(),
             Self::TypeInvariant(cause) => cause.cause.code(),
+            Self::Terminal(cause) => cause.cause.code(),
             Self::ModelConformance(failure) => failure.code,
             Self::ModelIncomplete(_) => Code::ResourceExhausted,
             Self::TypeAdmission { code, .. } => *code,
@@ -1272,6 +1278,7 @@ impl CheckCause {
         match self {
             Self::StateModel(cause) => cause.cause.cause(),
             Self::TypeInvariant(cause) => cause.cause.cause(),
+            Self::Terminal(cause) => cause.cause.cause(),
             Self::ModelConformance(failure) => Some(failure.cause.as_str()),
             // The model ceilings are the caller's budget (FR-255), so a denied
             // charge is an insufficient next charge, never a stage limit.

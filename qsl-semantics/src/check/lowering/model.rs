@@ -570,6 +570,15 @@ impl AdmittedModel {
             .collect()
     }
 
+    /// FR-124: the canonical member object type of each population of this
+    /// package, once each, in ascending order: the objects the package's
+    /// state is made of.
+    pub(crate) fn population_objects(&self) -> std::collections::BTreeSet<EffectiveId> {
+        self.population_domains()
+            .map(|(_, _, canonical)| canonical)
+            .collect()
+    }
+
     /// The key of every declaration record of the package, of any kind.
     pub(crate) fn record_keys(&self) -> impl Iterator<Item = &DeclarationKey> {
         self.records.keys()

@@ -126,11 +126,16 @@ mod state_clause;
 mod state_model;
 mod sum_case;
 mod temporal_clause;
+mod terminal;
 pub use state_model::StateModelRefusal;
 pub use sum_case::{mint_union_member_key, ExhaustivenessObligation, SumCaseCause};
 #[cfg(any(test, feature = "test-support"))]
 pub mod stratum;
 mod termination;
+pub use terminal::{
+    CheckedTerminal, CheckedTerminalPredicate, TerminalClauseDeclaration, TerminalClauseKind,
+    TerminalDeclaration, TerminalRefusal,
+};
 mod type_form;
 mod type_invariant;
 pub use type_invariant::{
@@ -418,6 +423,9 @@ pub struct CheckedGraph {
     /// FR-366: every checked type-level invariant, in declaration order of
     /// the selected models and their clauses.
     type_invariants: Vec<CheckedTypeInvariant>,
+    /// FR-124: the intended terminal states of each selected model, by
+    /// alias.
+    terminals: Vec<CheckedTerminal>,
     /// FR-113: every checked protocol declaration, in declaration order.
     protocols: Vec<CheckedProtocol>,
     /// FR-115: every operation a state clause or attempt names, with its
@@ -1380,6 +1388,62 @@ impl PackageDeclarations {
                 }
             }
         }
+        // FR-124: each `terminal` declaration, a `when` predicate checked as a
+        // Boolean invariant (FR-104). A model with no declaration is checked
+        // to `TerminalDeclaration::None`.
+        let mut terminals = Vec::new();
+        for (index, terminal) in self.terminals.iter().enumerate() {
+            let location = Location::root(Origin::Expression);
+            let declarations = state_clause::ClauseDeclarations {
+                scope: &scope,
+                signatures: &signatures,
+                dispatch_tables: &dispatch_tables,
+                models: &models,
+                checking_limits: limits,
+                location: &location,
+                nodes_used,
+                cancel: Some(cancel),
+                staged: None,
+            };
+            let mut contract_cx = crate::family::CheckContext::new(
+                &declarations,
+                contract_limits,
+                &mut contract_meter,
+                &mut contract_diagnostics,
+                &mut contract_scopes,
+            );
+            match terminal::check_terminal(index, terminal, &declarations, &mut contract_cx) {
+                Ok((declaration, used)) => {
+                    nodes_used = used;
+                    terminals.push(CheckedTerminal {
+                        model: terminal.model.clone(),
+                        name: Some(terminal.name.clone()),
+                        declaration,
+                    });
+                }
+                Err(refusal) => {
+                    let exhausted = matches!(
+                        refusal.cause.unwrapped(),
+                        CheckCause::ResourceExhausted(_)
+                    );
+                    refusals.push(refusal);
+                    if exhausted || cancel.tripped().is_some() {
+                        return Err(refusals);
+                    }
+                }
+            }
+        }
+        for (alias, kind) in &self.alias_names {
+            if *kind == AliasKind::Model && !terminals.iter().any(|terminal| terminal.model == *alias)
+            {
+                terminals.push(CheckedTerminal {
+                    model: alias.clone(),
+                    name: None,
+                    declaration: TerminalDeclaration::None,
+                });
+            }
+        }
+        terminals.sort_by(|left, right| left.model.cmp(&right.model));
         // FR-218: a second reference to one protocol in the unit refuses at
         // the second: the function bodies in declaration order, then the
         // state clauses.
@@ -2067,6 +2131,7 @@ impl PackageDeclarations {
             model_selections,
             state_clauses,
             type_invariants,
+            terminals,
             protocols: checked_protocols,
             operation_frames,
             model_objects,
@@ -2407,6 +2472,18 @@ impl CheckedGraph {
     /// FR-366: every checked type-level invariant.
     pub fn type_invariants(&self) -> &[CheckedTypeInvariant] {
         &self.type_invariants
+    }
+
+    /// FR-124: the intended terminal states of each selected model, by alias
+    /// in ascending order.
+    pub fn terminals(&self) -> &[CheckedTerminal] {
+        &self.terminals
+    }
+
+    /// FR-124: the intended terminal states of the model `alias`; `None` when
+    /// no selected model has that alias.
+    pub fn terminal(&self, alias: &str) -> Option<&CheckedTerminal> {
+        self.terminals.iter().find(|terminal| terminal.model == alias)
     }
 
     /// FR-113: every checked protocol declaration, in declaration order.
