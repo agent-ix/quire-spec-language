@@ -109,6 +109,15 @@ protocol system only ever runs a protocol whose meaning is fixed.
 - A choice guard, repeat guard or `check` SHALL read binders, protocol captures and constants
   only. S3 SHALL refuse one that reads model state with `ill_typed`/
   `operator-ineligible` at the read, naming the guard.
+- Model state is what a read that lowers to a model-state operation reads (QSpec
+  FR-464, "Slots that bar model state"): a field read of a binder whose type is
+  an object type, a field read through a reference-typed value, an explicit
+  dereference, a navigation or reachability over a relationship end, a lookup
+  or population read, a dispatch call and a pre-state read. A choice guard, a
+  repeat guard, a `check`, a `visible` entry and a FIFO key bar it, as the
+  activation guard, trigger guard, retry relation and recovery predicate do
+  (FR-381). A field read of a record binder or an event binder is not a
+  model-state read.
 - S3 SHALL refuse a choice whose guards are not proved exhaustive and
   exclusive (QSpec FR-053) with `undefined_expression`/
   `unproved-exhaustiveness` at the choice (Choice and repeat decisions).
@@ -156,7 +165,8 @@ reaches S4 (FR-383).
   `invalid_model_binding`/`malformed-declaration` at the model name, and a
   channel whose `carries` type is none of a scalar type, a composite type, a
   record, an event type or a variant type with the same refusal at the type
-  name.
+  name. S3 SHALL NOT compare a `send` or `receive` binder, or a FIFO binder,
+  with a refused `carries` type.
 
 ### Channels
 
@@ -381,6 +391,7 @@ one protocol declared in the same unit. It carries no package selector.
 | FR-218-AC-23 | Over branches `east` and `west`, `join all [east]` and `join quorum(0) [east, west]` and `join quorum(3) [east, west]` and `join any []` each refuse `invalid_package`/`invalid-value` at the list (the count for `quorum`); `join all [east, west]`, `join quorum(2) [east, west]`, `join any [east]` and `join all [east, west, east]` check, the last joining each label once. | Test (TC-1065) |
 | FR-218-AC-24 | A role `on M::Pt` where `Pt` is a record type refuses `invalid_model_binding`/`malformed-declaration` at `M::Pt`; a role on an object type, a process and a state machine checks; a channel `carries M::Node` where `Node` is an object type refuses the same at `M::Node`, and a channel carrying a record, an event type, a variant type and a scalar type checks. | Test (TC-1065) |
 | FR-218-AC-25 | `requires temporal Due;` where `Due`'s formula holds `protocol Fill` and the requiring protocol is `Fill`, and the same through a second temporal clause that names `Fill`, each refuse `invalid_package`/`definition-cycle` at the requirement, naming `Fill` and the clause; the same requirement from a protocol `Drain` that no clause names checks. Each refusal produces no package. | Test (TC-1065) |
+| FR-218-AC-26 | A choice guard and a `visible` entry that read a field of an object-typed attempt binder, and a FIFO key that reads a field through a reference-typed field of its record binder, each refuse `ill_typed`/`operator-ineligible` at the read, naming the guard, the `visible` entry or the key; the same reads over a record binder's own fields check. A channel that carries an object type refuses once, at the type, and gives no refusal at its `send`, `receive` or FIFO binders. | Test (TC-1056, TC-1065) |
 
 ## Dependencies
 
