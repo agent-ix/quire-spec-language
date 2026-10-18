@@ -25,4 +25,4 @@ check pending independent review.
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | low | No conflicting type definition or displaced QSL checking duty remains in the amended text. | FR-123 Outputs and Behavior; QSV FR-121 |
+| FND-001 | low | No findings (placeholder) | - |

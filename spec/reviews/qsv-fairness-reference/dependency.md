@@ -22,4 +22,4 @@ so the proposed dependency order has no cycle.
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | low | No new dependency cycle or hidden implementation prerequisite found. | QSV FR-121; FR-123; FR-129 |
+| FND-001 | low | No findings (placeholder) | - |

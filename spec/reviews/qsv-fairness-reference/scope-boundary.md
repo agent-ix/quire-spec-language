@@ -22,4 +22,4 @@ to the lower shared-value layer.
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | low | No amendment-specific ownership overlap found. | FR-123 Outputs and Behavior; QSV FR-121 |
+| FND-001 | low | No findings (placeholder) | - |
