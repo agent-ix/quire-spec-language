@@ -365,6 +365,29 @@ pub enum TemporalCause {
         /// The type form's span.
         span: Span,
     },
+    /// FR-123 "Fairness constraints": a fairness constraint names no
+    /// operation of an admitted model. Located at the operation's name.
+    UnresolvedFairnessOperation {
+        /// The operation as written.
+        name: String,
+        /// The operation name's span.
+        span: Span,
+    },
+    /// FR-123 "Fairness constraints": a fairness constraint's operation
+    /// names operations of several declaring types, none more derived than
+    /// the others. Located at the operation's name.
+    AmbiguousFairnessOperation {
+        /// The operation as written.
+        name: String,
+        /// The operation name's span.
+        span: Span,
+    },
+    /// FR-123 "Fairness constraints": a fairness constraint on a clause
+    /// whose unit selects a bounded profile. Located at the constraint.
+    FairnessUnderBoundedProfile {
+        /// The constraint's span.
+        span: Span,
+    },
     /// A clause whose checked parts all hold, but that no S4 emission
     /// writes yet (FR-337): refused rather than compiled and silently
     /// missing from the emitted package.
@@ -386,6 +409,9 @@ impl TemporalCause {
             | Self::OpenInterval { span }
             | Self::InvertedInterval { span, .. }
             | Self::ParameterType { span, .. }
+            | Self::UnresolvedFairnessOperation { span, .. }
+            | Self::AmbiguousFairnessOperation { span, .. }
+            | Self::FairnessUnderBoundedProfile { span }
             | Self::NotEmitted { span, .. } => *span,
         }
     }
@@ -394,9 +420,12 @@ impl TemporalCause {
     pub fn code(&self) -> Code {
         match self {
             Self::ProfileSelection { .. } => Code::UnknownProfile,
-            Self::MissingInterval { .. } | Self::OpenInterval { .. } | Self::NotEmitted { .. } => {
-                Code::UnsupportedConstruct
-            }
+            Self::MissingInterval { .. }
+            | Self::OpenInterval { .. }
+            | Self::FairnessUnderBoundedProfile { .. }
+            | Self::NotEmitted { .. } => Code::UnsupportedConstruct,
+            Self::UnresolvedFairnessOperation { .. } => Code::MissingDeclaration,
+            Self::AmbiguousFairnessOperation { .. } => Code::AmbiguousDeclaration,
             Self::InvertedInterval { .. } => Code::IllTyped,
             Self::ParameterType { fault, .. } => type_fault_class(fault).0,
         }
@@ -406,7 +435,11 @@ impl TemporalCause {
     pub fn tag(&self) -> &'static str {
         match self {
             Self::ProfileSelection { .. } => "unsupported-selection",
-            Self::MissingInterval { .. } | Self::OpenInterval { .. } => "expression-form",
+            Self::MissingInterval { .. }
+            | Self::OpenInterval { .. }
+            | Self::FairnessUnderBoundedProfile { .. } => "expression-form",
+            Self::UnresolvedFairnessOperation { .. } => "missing-name",
+            Self::AmbiguousFairnessOperation { .. } => "ambiguous-name",
             Self::InvertedInterval { .. } => "type-mismatch",
             Self::NotEmitted { .. } => "not-yet-implemented",
             Self::ParameterType { fault, .. } => type_fault_class(fault).1,

@@ -258,8 +258,7 @@ pub use refusal::{
 pub use temporal_clause::check_clauses;
 pub use temporal_clause::{
     Activation, BinaryTemporal, CheckedFormula, CheckedOperator, CheckedTemporalClause,
-    FairnessConstraint, FairnessGranularity, FairnessKind, FormulaNode, FormulaNodeId,
-    TemporalClaim, TemporalDeclaration, TemporalDeclarations, TemporalSelection,
+    FormulaNode, FormulaNodeId, TemporalClaim, TemporalDeclaration, TemporalDeclarations, TemporalSelection,
     TemporalTraceFamily, UnaryTemporal,
 };
 
