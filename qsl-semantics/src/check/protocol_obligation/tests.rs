@@ -830,11 +830,10 @@ fn an_attempt_type_must_be_a_record_or_an_event() {
             &format!("retry (earlier: {attempt}, later: {attempt}) {{ true }};"),
         )
     };
-    for (attempt, name) in [
-        ("M::Node", Some("M::Node")),
-        ("M::Total", Some("M::Total")),
-        ("Set<M::Total>[0, 3]", None),
-    ] {
+    // TC-1058 row 15c's inline `Set<M::Total>[0, 3]` attempt type is not
+    // reachable: the `attempts N of` member's grammar takes a model name
+    // (QSpec FR-239's EBNF), so S1 refuses an inline type.
+    for (attempt, name) in [("M::Node", Some("M::Node")), ("M::Total", Some("M::Total"))] {
         let (text, cause) = only(&relation_true(attempt));
         let ObligationCause::AttemptType {
             compensation,
@@ -921,14 +920,53 @@ fn the_recovery_predicate_is_a_total_boolean() {
         "recover (recovered: M::Absent) { true };",
     ));
     assert!(obligation_causes(&found).is_empty(), "{found:?}");
+    // The unresolved binder type is `protocol_clause::content`'s refusal
+    // (`missing_declaration`/`missing-name`), and `content` reports only the
+    // earliest uncovered construct while the template's `effect` node is
+    // uncovered; S3 itself gives no cause for it.
     assert!(
         found.iter().any(|refusal| matches!(
             &refusal.cause,
-            CheckCause::ProtocolAnchor(cause)
-                if cause.code() == Code::MissingDeclaration && cause.tag() == "missing-name"
+            CheckCause::ProtocolAnchor(cause) if cause.tag() == "not-yet-implemented"
         )),
         "{found:?}"
     );
+}
+
+/// FR-381-AC-10, the typing it rests on: `=` between an `Int[..]` operand and
+/// an `Integer`-typed sum admits the sum into the interval with a range
+/// obligation, so the guard decides the relation; a bare `Integer` operand
+/// and an explicit `convert<Integer>` keep the equality matrix's rules.
+#[trace("TC-1058", "FR-381-AC-10")]
+#[test]
+fn an_int_equals_a_sum_is_range_obligated_and_other_mixes_keep_the_matrix() {
+    let (_, found) = obligations(BASE);
+    assert!(found.is_empty(), "the guarded sum checks: {found:?}");
+
+    let (text, cause) = only(&changed(
+        "earlier.tally < 3 and later.tally = earlier.tally + 1\nand target",
+        "later.tally = earlier.tally + 1\nand target",
+    ));
+    assert_eq!(cause.tag(), Some("unproved-range"));
+    assert_eq!(at(&text, &cause), "earlier.tally + 1");
+
+    let wide = changed(
+        "capture order: M::Total = view.total;",
+        "capture order: M::Total = view.total;\n capture wide: Integer = view.total + 1;",
+    );
+    let (_, cause) = only(&edit(
+        &wide,
+        "later.tally = earlier.tally + 1\nand target",
+        "later.tally = wide\nand target",
+    ));
+    assert_eq!(cause.tag(), Some("type-mismatch"), "{cause:?}");
+
+    let converted = changed(
+        "earlier.tally < 3 and later.tally = earlier.tally + 1",
+        "convert<Integer>(later.tally) = earlier.tally + 1",
+    );
+    let (_, found) = obligations(&converted);
+    assert!(found.is_empty(), "{found:?}");
 }
 
 /// FR-381: a refusal inside one template does not hide another's, and the
