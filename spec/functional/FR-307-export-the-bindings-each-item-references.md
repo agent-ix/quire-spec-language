@@ -71,7 +71,7 @@ An item references:
   `missing_declaration`/`missing-name`, naming the key.
 - An item that references an element with no binding SHALL refuse
   `missing_declaration`/`missing-name`. The refusal SHALL name every unbound
-  element of the item, in ascending key order, each with its owning
+  element of the item, in ascending key order (ordered by element kind: object type, population, operation frame; then by key), each with its owning
   `DomainPackageRef` identity (QSpec FR-353-AC-3). A refused item returns no
   bindings.
 - A bound item SHALL return every binding it references.

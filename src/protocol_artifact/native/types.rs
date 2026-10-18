@@ -9,9 +9,10 @@ use crate::checking::{DomainType, NativeType};
 use crate::native_model::{NativeModel, ScalarKind, Unit};
 use crate::protocol_artifact::{
     domain, wire as w, work::Work, AdmittedDomainPackage, AdmittedModel, Dimension, Error, Invalid,
-    NumberWire, Unsupported, DOMAIN_PACKAGE_PROFILE,
+    NumberWire, Unsupported,
 };
 use qsl_semantics::model::admitted::AdmittedPackage;
+use qsl_semantics::model::domain_package::DOMAIN_PACKAGE_PROFILE;
 
 pub(super) struct ValueBuilder<'a> {
     selected: Vec<Selected<'a>>,
