@@ -3155,6 +3155,9 @@ pub enum DeclarationForm {
     /// A `terminal` declaration (FR-382), boxed for the same reason as
     /// [`Self::Function`].
     Terminal(Box<TerminalDeclarationForm>),
+    /// A `refinement` declaration (FR-310), boxed for the same reason as
+    /// [`Self::Function`].
+    Refinement(Box<super::refinement::RefinementForm>),
 }
 
 /// The longest each explicit heap stack grew in this thread, by name, so a

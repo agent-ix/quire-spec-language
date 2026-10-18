@@ -24,6 +24,7 @@ use qsl_foundation::selection::SourceSelections;
 use qsl_foundation::{Code, Span};
 
 use super::protocol_clause;
+use super::refinement;
 use super::state_model;
 use super::sum_case;
 use super::syntax::DeclarationForm;
@@ -185,6 +186,9 @@ pub enum LeadingTokenKind {
     /// `terminal`: the `TemporalTrace` terminal declaration form, holding
     /// its `when` predicate or `any` (FR-382).
     Terminal,
+    /// `refinement`: the refinement declaration form, holding its rows in
+    /// source order (FR-310).
+    Refinement,
     /// Test-only: never constructed outside this crate's own tests, and
     /// absent from every non-test build.
     #[cfg(test)]
@@ -391,6 +395,7 @@ fn dispatch(
         LeadingTokenKind::Protocol => protocol_clause::protocol_declaration(construct),
         LeadingTokenKind::Temporal => temporal_clause::temporal_clause(construct),
         LeadingTokenKind::Terminal => terminal_declaration::terminal_declaration(construct),
+        LeadingTokenKind::Refinement => refinement::refinement_declaration(construct),
         #[cfg(test)]
         LeadingTokenKind::TestProbe => test_support::stub_production(construct),
     }
@@ -431,6 +436,7 @@ fn from_spelling(spelling: &[u8]) -> Option<LeadingTokenKind> {
         b"protocol" => Some(LeadingTokenKind::Protocol),
         b"temporal" => Some(LeadingTokenKind::Temporal),
         b"terminal" => Some(LeadingTokenKind::Terminal),
+        b"refinement" => Some(LeadingTokenKind::Refinement),
         _ => None,
     }
 }

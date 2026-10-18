@@ -1697,7 +1697,7 @@ fn refinement(g: &mut Grammar) {
             x("fair"),
             opt(c(vec![x("weak"), x("strong")])),
             opt(c(vec![x("whole"), x("each")])),
-            r(P::OperationName),
+            r(P::QualifiedName),
             x(";"),
         ]),
     );

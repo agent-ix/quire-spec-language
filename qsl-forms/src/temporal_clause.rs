@@ -119,7 +119,7 @@ pub(crate) fn expression_form(
 /// `fair [weak | strong] [whole | each] Operation ;`: an unwritten kind or
 /// granularity stays `None`, for S3 to read as `weak` (FR-129) or `whole`
 /// (FR-123).
-fn fairness_form(
+pub(crate) fn fairness_form(
     cst: &LosslessCst,
     constraint: &CstNode,
 ) -> Result<FairnessConstraintForm, FormsRefusal> {

@@ -32,6 +32,7 @@ mod clause_text;
 mod dispatch;
 mod protocol_clause;
 mod protocol_control;
+mod refinement;
 mod spans;
 mod state_model;
 mod sum_case;
@@ -48,6 +49,10 @@ pub use protocol_control::{
     AwaitForm, ChannelCapacity, ChannelDelivery, ChannelForm, ChannelOrdering, ChannelOverflow,
     JoinPolicy, LoopProofForm, LossSelector, Outstanding, ParallelForm, ProtocolMemberForm,
     RepeatForm, SchedulingForm, TerminalForm,
+};
+pub use refinement::{
+    ArgumentForm, FairnessRowForm, FairnessSide, FieldRowForm, ObjectRowForm, PopulationRowForm,
+    RefinementForm, RefinementRowForm, StepRowForm, StepTargetForm,
 };
 pub use spans::{DeclarationSpans, ExpressionSpans, SpanId, SpanRefusal, SpansMismatch};
 pub use syntax::{

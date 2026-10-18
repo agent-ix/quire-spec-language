@@ -58,7 +58,8 @@ fn function(form: &DeclarationForm) -> &FunctionDeclaration {
         | DeclarationForm::PopulationBound(_)
         | DeclarationForm::Protocol(_)
         | DeclarationForm::Temporal(_)
-        | DeclarationForm::Terminal(_) => panic!("a function form, not {form:?}"),
+        | DeclarationForm::Terminal(_)
+        | DeclarationForm::Refinement(_) => panic!("a function form, not {form:?}"),
     }
 }
 
@@ -199,6 +200,7 @@ fn a_unit_builds_one_form_per_declaration_in_source_order() {
             DeclarationForm::Protocol(_) => "protocol",
             DeclarationForm::Temporal(_) => "temporal",
             DeclarationForm::Terminal(_) => "terminal",
+            DeclarationForm::Refinement(_) => "refinement",
         })
         .collect();
     assert_eq!(kinds, ["alias", "function", "record", "tuple"]);
