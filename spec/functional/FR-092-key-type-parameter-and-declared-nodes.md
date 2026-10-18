@@ -447,15 +447,18 @@ target.
 
 #### The protocol node a reference targets
 
-`check` SHALL build one node for each protocol declaration that checks
-(FR-218, FR-113), and S4 SHALL emit it, as follows. The IR reader admits any
-local `protocol`-tagged node as a reference target; QSL emits this one:
+`check` SHALL build one `protocol`/`protocol_clause` node for each protocol
+declaration that checks (FR-218, FR-113), and S4 SHALL emit it, together with
+the role, channel, queue, obligation, control and compensation nodes it
+lists, as FR-383 specifies. The IR reader admits any local `protocol`-tagged
+node as a reference target; QSL emits the clause node:
 
 - `node_tag` `protocol`, `semantic_form` `protocol_clause` (the target form
   QSpec FR-322-AC-66 and TC-931 name);
 - body: the `quire.op.protocol.control` application carrying the selected
-  `protocol_profile` law and the catalogued `profile_operator` member, as
-  QSpec FR-322-AC-22 requires;
+  `protocol_profile` law and the `protocol` `profile_operator` member, with
+  the clause arguments FR-383 lists, as QSpec FR-322-AC-22 and FR-464
+  require;
 - `semantic_type`: the node of the Boolean scalar type, the semantic type
   every clause node carries (TC-931's fixture);
 - key: `quire.application-node/v1`, by rule 2, because the body holds an
@@ -463,8 +466,9 @@ local `protocol`-tagged node as a reference target; QSL emits this one:
 - `declaration` and `owner` as FR-322 gives a declared clause node, and one
   `declaration` occurrence at the protocol declaration's region.
 
-The protocol's roles, `run` tree and `finish` have no node of their own
-(FR-113). The reference binds this node's key (FR-218).
+The reference binds this node's key (FR-218). A change to any member of the
+protocol changes the clause node's key (FR-383), and a reference bound to
+the old key is stale.
 
 ### Golden vectors
 
@@ -1075,7 +1079,7 @@ G10-G15, group digest `8383f625c29862ff9fe9bc66d7a03140f76a54e39153e9158c4f40cec
 | FR-092-AC-15 | Keying writes each counter by the 2^53-1 rule and never refuses one for its magnitude: `NodeKeyRefusal` has no magnitude variant. Encoding QSpec's `integer_encoding_vectors` preimages (`proposals/checked-package-v2/node-identity-vectors.json`, QSpec FR-322) through QSL's key function gives their recorded keys: `recursion-size-safe-maximum` (`recursion` `{size: 9007199254740991, ordinal: 9007199254740990}`, both JSON numbers) keys to `bc6fe35a2c34a7162fe0ed0a20473ffb3284bd70236f96feb75b386c55992874`, and `recursion-size-two-pow-53` (`size` the string `"9007199254740992"`, `ordinal` the number 9007199254740991) keys to `89ec1ac87a8b82a05d5414f0c3b314f363e49328988ff5d8c3fc9a88014839bc`. A `group_reference` `ordinal` and an `operation.member` `position` take the same two spellings at 9007199254740991 and 9007199254740992. | Test (TC-910) |
 | FR-092-AC-16 | A unit that declares `protocol Fill` and holds `protocol Fill` as an expression emits a graph with one `protocol`/`protocol_reference` node whose body is exactly `{term: "reference", target: Fill's node key}`, whose `semantic_type` equals the `Fill` node's, whose `dependencies` are exactly that key, and which has one `expression` occurrence at the reference's region (ordinal 0) and no `declaration`, `owner`, nominal preimage or recursion group. The graph has one node collection and no protocol-reference collection. The emitted package admits through the IR v2 reader as `ProtocolForm::ProtocolReference`. | Test (TC-1021) |
 | FR-092-AC-17 | Changing the target protocol so its node key changes, and re-emitting, changes the reference node's key and the package identity; a unit with two protocols and the reference written against each gives two different reference keys; the same unit emitted twice gives equal keys. A unit that holds `protocol Fill` twice emits one `protocol_reference` node for `Fill` with two `expression` occurrences, ordinals 0 and 1 in source order at the two references' regions, each with its own source-map row, and the node's key, body and `dependencies` equal the one-reference unit's carrier. Removing the second occurrence and its source-map row from that emitted package leaves the carrier key and the package identity unchanged. The reference's key equals the SHA-256 of the RFC 8785 bytes of its `quire.structural-node/v1` preimage. | Test (TC-1021) |
-| FR-092-AC-18 | A unit that declares `protocol Fill` that checks emits one `protocol`/`protocol_clause` node whose body is a `quire.op.protocol.control` application carrying the selected `protocol_profile` law and `profile_operator` member, whose `semantic_type` is the Boolean scalar type node, which is keyed by `quire.application-node/v1`, and which has one `declaration` occurrence at the declaration's region. The IR v2 reader admits it, and a reference to `Fill` (AC-16) resolves to this node's key. No node is emitted for its roles, `run` tree or `finish`. The unit selects a protocol profile by a header `profile` (FR-110): QSpec FR-322-AC-22 admits no `protocol_control` application without a selected law, so a unit that selects none emits no protocol node and no refusal. With a profile selected, a protocol whose `run` root is not a `sequence`, `choice`, `parallel` or `repeat` names no `profile_operator` and refuses `unsupported_construct`/`declaration-form` at its declaration. | Test (TC-1021) |
+| FR-092-AC-18 | A unit that declares `protocol Fill` that checks emits one `protocol`/`protocol_clause` node whose body is a `quire.op.protocol.control` application carrying the selected `protocol_profile` law and the `protocol` `profile_operator` member and the thirteen clause arguments of FR-383, whose `semantic_type` is the Boolean scalar type node, which is keyed by `quire.application-node/v1`, and which has one `declaration` occurrence at the declaration's region. The IR v2 reader admits it, and a reference to `Fill` (AC-16) resolves to this node's key. The unit selects a protocol profile by a header `profile` (FR-110): QSpec FR-322-AC-22 admits no `protocol_control` application without a selected law, so a unit that selects none emits no protocol node and no refusal for the declaration, and a reference to a protocol in it refuses `missing_declaration`/`missing-selection` (FR-218-AC-8). | Test (TC-1021) |
 
 ## Dependencies
 
@@ -1099,6 +1103,8 @@ G10-G15, group digest `8383f625c29862ff9fe9bc66d7a03140f76a54e39153e9158c4f40cec
   to a declared type resolves to its one node id, the FR-092 key.
 - [FR-218](FR-218-check-every-protocol-control-construct-at-s3.md): the
   protocol reference's binding to its target key, and its refusals.
+- [FR-383](FR-383-emit-a-checked-protocol-as-v2-protocol-nodes.md): the
+  protocol nodes the clause node lists and its argument layout.
 - QSpec FR-322-AC-66: the protocol-reference carrier this emission writes.
 - QSpec FR-143 and FR-146: the recursive records and recursive functions
   that form recursion groups.
