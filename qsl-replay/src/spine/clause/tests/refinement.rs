@@ -48,10 +48,6 @@ fn cause(code: Code, cause: Option<&'static str>) -> RefusalCause {
     }
 }
 
-fn cause_of(code: Code) -> RefusalCause {
-    cause(code, None)
-}
-
 fn location() -> Location {
     Location::root(Origin::Expression)
 }
@@ -617,12 +613,13 @@ fn an_assembly_type_limit_is_incomplete_naming_the_limit() {
 #[test]
 fn a_population_bound_refusal_is_a_typed_refusal_of_the_content() {
     let span = qsl_foundation::Span { start: 0, end: 1 };
-    for (cause, code) in [
+    for (assembly_cause, code, catalog_cause) in [
         (
             AssemblyCause::UnresolvedPopulationBound {
                 name: "nothing".to_owned(),
             },
             Code::MissingDeclaration,
+            "missing-name",
         ),
         (
             AssemblyCause::AmbiguousPopulationBound {
@@ -630,17 +627,21 @@ fn a_population_bound_refusal_is_a_typed_refusal_of_the_content() {
                 spans: vec![span, span],
             },
             Code::AmbiguousDeclaration,
+            "ambiguous-name",
         ),
     ] {
         let refusal = CompileRefusal::Assembly {
             refusal: AssemblyRefusal {
-                errors: vec![AssemblyError { cause, span }],
+                errors: vec![AssemblyError {
+                    cause: assembly_cause,
+                    span,
+                }],
             },
             region: None,
         };
         let classified = classify_refusal(&refusal);
         assert_eq!(classified.class, RefinementClass::Refused);
-        assert_eq!(classified.causes, [cause_of(code)]);
+        assert_eq!(classified.causes, [cause(code, Some(catalog_cause))]);
         assert!(classified.limits().is_empty());
     }
 }
