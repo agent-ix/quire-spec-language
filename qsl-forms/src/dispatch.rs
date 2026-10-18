@@ -27,6 +27,7 @@ use super::protocol_clause;
 use super::sum_case;
 use super::syntax::DeclarationForm;
 use super::temporal_clause;
+use super::terminal_declaration;
 use super::value;
 
 /// A parsed form built from one declaration of a lossless CST with no
@@ -176,6 +177,9 @@ pub enum LeadingTokenKind {
     /// formula with each operator's optional interval (FR-325, ADR-011
     /// M-3b).
     Temporal,
+    /// `terminal`: the `TemporalTrace` terminal declaration form, holding
+    /// its `when` predicate or `any` (FR-382).
+    Terminal,
     /// Test-only: never constructed outside this crate's own tests, and
     /// absent from every non-test build.
     #[cfg(test)]
@@ -380,6 +384,7 @@ fn dispatch(
         LeadingTokenKind::Body => protocol_clause::operation_body(construct),
         LeadingTokenKind::Protocol => protocol_clause::protocol_declaration(construct),
         LeadingTokenKind::Temporal => temporal_clause::temporal_clause(construct),
+        LeadingTokenKind::Terminal => terminal_declaration::terminal_declaration(construct),
         #[cfg(test)]
         LeadingTokenKind::TestProbe => test_support::stub_production(construct),
     }
@@ -418,6 +423,7 @@ fn from_spelling(spelling: &[u8]) -> Option<LeadingTokenKind> {
         b"body" => Some(LeadingTokenKind::Body),
         b"protocol" => Some(LeadingTokenKind::Protocol),
         b"temporal" => Some(LeadingTokenKind::Temporal),
+        b"terminal" => Some(LeadingTokenKind::Terminal),
         _ => None,
     }
 }

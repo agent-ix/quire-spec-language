@@ -12,7 +12,7 @@ relationships:
 
 Verify the second phase: no liveness half without `ensure` rows,
 `Divergence` and `AbstractUnfair` lassos, concrete halts read through the
-terminal stutter independently of `terminal` members, `unsupported` with
+terminal stutter independently of `terminal` declarations, `unsupported` with
 hidden fields, and the scheduler constraints in the `F_C` filter.
 
 Scope: FR-143-AC-1 to FR-143-AC-5.
@@ -26,7 +26,7 @@ Fixtures: `CasRefinesCounter` and its divergence variant (ADR-020 §8);
 1. Check `CasRefinesCounter`; the divergence variant; the divergence variant
    without its `ensure` row.
 2. Check `Halting`; without its `ensure` row; with precondition `self.value
-   < 2`; each under every combination of `terminal` members.
+   < 2`; each under every combination of `terminal` declarations.
 3. Check `Pair`; with `assume fair weak each Impl::Pair::flipB` added.
 4. Check `RegisterHistory` without `prev`, with and without `ensure fair
    weak Spec::Register::write`.

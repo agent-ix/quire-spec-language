@@ -28,7 +28,7 @@ universe `{a, b}`, both versions 0; the `Counter` unit (FR-124-AC-1); the
    `each` constraint over the shipped unit.
 2. The TP-2 `on origin` variant and the TP-1 invariant over the example
    unit; the two TP-2 `on each` clauses of FR-126-AC-2 over `Counter`.
-3. `DeadlockFreedom` over `Counter` with no `terminal` member and with a
+3. `DeadlockFreedom` over `Counter` with no `terminal` declaration and with a
    `When` member covering value 3; `always eventually holds(c.value = 0)`
    under infinite-trace.
 4. The recovery-stability formula over `Health` and over `Restless`.

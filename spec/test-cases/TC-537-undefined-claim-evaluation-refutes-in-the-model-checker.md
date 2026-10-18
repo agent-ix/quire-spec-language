@@ -27,7 +27,7 @@ Use the `Counter` subject of FR-124-AC-1 (universe `{c}`, initial value 0).
    infinite-trace at positions 0, 1 and 2 of the subject's behaviour.
 2. Evaluate `eventually[0,1] holds(6 / (2 - c.value) = 6)` under
    event-position false-extension, `on origin`, over the same behaviour.
-3. With no `terminal` member, run `check_model` on
+3. With no `terminal` declaration, run `check_model` on
    `always holds(6 / (2 - c.value) >= 0)` under infinite-trace, then on
    `always eventually holds(6 / (2 - c.value) = 6)`, then on
    `always (holds(c.value <= 0) and holds(6 / (2 - c.value) >= 0))`, then

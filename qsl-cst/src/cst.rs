@@ -131,6 +131,8 @@ productions! {
     Fairness,
     Interval, TemporalExpression, TemporalImplication, TemporalDisjunction,
     TemporalConjunction, TemporalRelation, TemporalUnary, TemporalPrimary,
+    #[doc = "`terminal <identifier> using <identifier> on <identifier> (when <block> | any) ;`: a model's intended terminal states."]
+    TerminalDeclaration,
     ProtocolClause, Role, RoleLifetime, Relationship, Channel, Ordering, DeliveryPolicy,
     Capacity, OverflowPolicy, ProtocolRequirement, NodeReference, Compensation,
     Control, Sequence,

@@ -3045,6 +3045,32 @@ pub struct TemporalClauseForm {
     pub formula: TemporalFormulaForm,
 }
 
+/// Which states a `terminal` declaration marks intended, as written.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TerminalDeclarationKind {
+    /// `when { P }`: the states where the predicate holds.
+    When(ExpressionForm),
+    /// `any`: every terminal state.
+    Any,
+}
+
+/// A `terminal Name using p on Model (when { P } | any);` declaration (FR-124,
+/// FR-382). S2 resolves nothing: the `using` alias and the model alias stay
+/// spelled and spanned, and the predicate is built as written.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TerminalDeclarationForm {
+    /// The declared name.
+    pub name: DeclaredName,
+    /// The `using` alias.
+    pub profile: UsingAlias,
+    /// The `on` model alias.
+    pub model: DeclaredName,
+    /// The `when` predicate or `any`.
+    pub kind: TerminalDeclarationKind,
+    /// The span of the whole declaration, `;` included.
+    pub span: Span,
+}
+
 /// One `Value` parsed declaration form (FR-091 "What a `Value` parsed form
 /// carries").
 #[derive(Clone, Debug)]
@@ -3077,6 +3103,9 @@ pub enum DeclarationForm {
     /// A `temporal` clause (FR-325), boxed for the same reason as
     /// [`Self::Function`].
     Temporal(Box<TemporalClauseForm>),
+    /// A `terminal` declaration (FR-382), boxed for the same reason as
+    /// [`Self::Function`].
+    Terminal(Box<TerminalDeclarationForm>),
 }
 
 /// The longest each explicit heap stack grew in this thread, by name, so a
