@@ -70,6 +70,13 @@ TC-1065 row 9 (pre-existing) has no rule saying the send and receive binders
 are not compared with a refused `carries` type, unlike FR-381's new "SHALL NOT
 compare" rule for `attempts`.
 
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | medium | TC-1056 row 43's positive half is not checkable as written. It says that with `attempted: M::Plain` and `visible (attempted.ready)` "the same choice checks". The same choice keeps the guards `attempted.ok` and `not attempted.ok`, and `Plain{ready, peer}` has no `ok` field. So the row gives an unresolved-field refusal, plus an unlisted-fact refusal against the changed `visible` entry, instead of checking. FR-218-AC-26's "the same reads over a record binder's own fields check" has no row that checks. The positive case should state its guards (`attempted.ready` / `not attempted.ready`). | spec/test-cases/TC-1056-s3-checks-channels-relationships-requirements-and-choice-visibility.md:92 |
+| FND-006 | medium | TC-1058 row 15c's composite attempt type cannot be declared. Fixture R adds "a composite type `Totals` (a set of `Total`)" to the domain package `M`, and the row writes `attempts 3 of M::Totals`. FR-056 admits no named composite declaration in a domain package: a collection arises only from a field's multiplicity. The record, object, scalar and variant declarations under "Meaning binding" and "Variant types" are the only named type exports. So `M::Totals` cannot exist, and FR-381-AC-13's composite case has no buildable fixture. Write the composite inline as a declared type FR-104 resolves (for example `Set<M::Total>[0, 3]`), or as a unit-level type form. The variant `Mode` is declarable under FR-056 "Variant types". | spec/test-cases/TC-1058-s3-checks-compensation-registration-retry-commit-and-recovery.md:26,51; spec/functional/FR-381-check-protocol-captures-activation-and-compensation-recovery-at-s3.md |
+
 ## Dispositions
 
 | FND | Outcome | Reason |
@@ -81,3 +88,9 @@ compare" rule for `attempts`.
 | Note: composite and variant attempt types | fixed | FR-381-AC-13 and TC-1058 row 15c |
 | Note: TC-1065 row 9 | fixed | FR-218 states a refused `carries` type is not compared with send, receive or FIFO binders; TC-1065 row 9 and FR-218-AC-26 assert it |
 | Note: TC-1070 fixture E prose | not changed | the open SP-D PR owns TC-1070; it drops the sentence on rebase |
+| FND-001 | fixed 97017d78c | Reviewer, round 1. Row 23 now replaces the body with `capture activated: Boolean = trigger.n = 1;`, which an activation capture may read. Only the trigger-guard refusal at `trigger.n` arises. Rows 24 to 30 recomputed: 28 to 30 resolve against `Hop{ready, node}`, and the base relation's `not activated` stays Boolean. |
+| FND-002 | fixed 97017d78c | Reviewer, round 1. FR-381-AC-9 now reads attempts `M::Flag`, binders `M::Attempt`, expected `M::Flag`, actual `M::Attempt`. This matches TC-1058 row 14, and the positive case matches row 15. |
+| FND-003 | fixed 97017d78c | Reviewer, round 1. FR-381 bars every model-state read "as FR-218 defines it". The FR-218 definition covers an object-binder field read, a read through a reference, explicit deref, navigation/reachability, lookup/population, dispatch and pre. It cites QSpec FR-464 by id and section name, in QSL's own wording, with no copied text. FR-381-AC-15 is verified by TC-1057 rows 28 to 30. Fixture R's `Hop{ready: Boolean, node: Reference<Node>}` is a record with a reference field, which FR-056 admits, and the base protocol does not read it, so R stays reader-valid. |
+| FND-004 | fixed 97017d78c | Reviewer, round 1. FR-218 defines model state once, bars it in the choice/repeat/check/visible/FIFO-key slots, and points to FR-381 for the four compensation and activation slots. TC-1056 now cites FR-218. FR-218-AC-26 is verified by TC-1056 rows 43 and 44 and TC-1065 row 9, with the scope line updated. Fixture P (Node gains `ok` and `step`) is still reader-valid under FR-218-AC-24. Row 44 recomputes. Row 43's positive half is FND-005. |
+| FND-005 | fixed | TC-1056 row 43's positive half now states the guards over `attempted.ready` as well as the `visible` entry, so it checks against `Plain`; row 44 unchanged |
+| FND-006 | fixed | the composite attempt type is written inline as `Set<M::Total>[0, 3]`, a type form FR-308 accepts for `attempts` and FR-104 resolves; fixture R no longer declares `Totals`; row 15c recomputed |
