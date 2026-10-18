@@ -1072,7 +1072,7 @@ fn temporal(g: &mut Grammar) {
     g.insert(
         P::TerminalDeclaration,
         s(vec![
-            x("terminal"),
+            literal("terminal"),
             ident(),
             x("using"),
             ident(),
