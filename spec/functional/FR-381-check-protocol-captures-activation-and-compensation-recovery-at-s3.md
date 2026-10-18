@@ -146,7 +146,9 @@ reading stage may not read, and `unbound` for a name nothing declares.
   `missing-name` at the type name, SHALL check `g` as a Boolean through the
   clause checker, refusing a non-Boolean with `ill_typed`/`non-boolean-root` at
   the guard, and SHALL record `OnEach{binder, record_type, guard}`. An absent
-  guard is the guard that is always true.
+  guard is the guard that is always true, and S3 records it as absent: a
+  protocol that writes `when ({true})` and one that writes no guard are
+  different checked clauses (FR-383).
 
 ### Compensation registration
 
