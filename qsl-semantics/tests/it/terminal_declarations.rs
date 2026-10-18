@@ -35,7 +35,8 @@ fn checked(body: &str) -> CheckedGraph {
     let declarations = admit_and_assemble_with_body(&document(), body)
         .unwrap_or_else(|refusal| panic!("{body}: the unit assembles: {refusal:?}"));
     declarations
-        .check_unemitted(CheckingLimits::default())
+        .with_unwritten_terminals()
+        .check(CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}"))
 }
 
@@ -120,7 +121,7 @@ fn refusals_of(declarations: &str) -> Vec<CheckRefusal> {
     let declarations =
         admit_and_assemble_with_body(&document(), declarations).expect("the unit assembles");
     declarations
-        .check_unemitted(CheckingLimits::default())
+        .check(CheckingLimits::default())
         .expect_err("the unit refuses")
 }
 
