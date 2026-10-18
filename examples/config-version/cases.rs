@@ -2,7 +2,7 @@
 //! FR-032: one catalog of authored case inputs; expected results stay in tests.
 
 #[derive(Clone, Copy)]
-pub(super) struct Row {
+pub(crate) struct Row {
     pub key: &'static str,
     pub version: i64,
     pub parent: Option<&'static str>,
@@ -21,7 +21,7 @@ const CHILD: Row = Row {
 const HEALTHY: &[Row] = &[ROOT, CHILD];
 
 #[derive(Clone, Copy)]
-pub(super) struct Clause {
+pub(crate) struct Clause {
     pub name: &'static str,
     pub id: &'static str,
     pub expression: &'static str,
@@ -50,7 +50,7 @@ const UNCHANGED: Clause = Clause {
 };
 
 #[derive(Clone, Copy)]
-pub(super) enum Input {
+pub(crate) enum Input {
     Current {
         rows: &'static [Row],
         self_key: &'static str,
@@ -63,7 +63,7 @@ pub(super) enum Input {
 }
 
 #[derive(Clone, Copy)]
-pub(super) struct CaseSpec {
+pub(crate) struct CaseSpec {
     pub id: &'static str,
     pub clause: Clause,
     pub input: Input,
@@ -97,7 +97,7 @@ macro_rules! cases {
         pub const CASES: &[Case] = &[$(Case::$name),+];
 
         impl Case {
-            pub(super) fn spec(self) -> CaseSpec {
+            pub(crate) fn spec(self) -> CaseSpec {
                 match self { $(Self::$name => $spec),+ }
             }
 

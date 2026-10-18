@@ -13,7 +13,8 @@ pub(super) enum Terminal {
     Text,
     TextValue(&'static str),
     UnsignedInteger,
-    /// An unsigned integer that fits `u64`: an interval bound.
+    /// An unsigned integer that fits `u64`: an interval bound or a
+    /// compensation's `attempts` count.
     Bound,
     End,
 }
@@ -282,7 +283,9 @@ fn source_and_types(g: &mut Grammar) {
         r(P::Predicate),
         r(P::StateClause),
         r(P::OperationBody),
+        r(P::PopulationBound),
         r(P::TemporalClause),
+        r(P::TerminalDeclaration),
         r(P::ProtocolClause),
         r(P::RelationClause),
         r(P::HyperClause),
@@ -380,11 +383,7 @@ fn source_and_types(g: &mut Grammar) {
                 x("<"),
                 r(P::TypeReference),
                 x(">"),
-                x("["),
-                uint(),
-                x(","),
-                uint(),
-                x("]"),
+                opt(s(vec![x("["), uint(), x(","), uint(), x("]")])),
             ]),
             s(vec![x("Reference"), x("<"), r(P::QualifiedName), x(">")]),
             s(vec![
@@ -578,6 +577,20 @@ fn source_and_types(g: &mut Grammar) {
             opt(list(ident)),
             x(")"),
             r(P::Block),
+        ]),
+    );
+    // `bound <label> on <alias>::<population> [ <digits> ]` (FR-380): an
+    // authored finite maximum for a domain-package population.
+    g.insert(
+        P::PopulationBound,
+        s(vec![
+            x("bound"),
+            ident(),
+            x("on"),
+            r(P::ModelName),
+            x("["),
+            uint(),
+            x("]"),
         ]),
     );
     g.insert(P::Block, s(vec![x("{"), r(P::Expression), x("}")]));
@@ -1057,6 +1070,19 @@ fn temporal(g: &mut Grammar) {
         ]),
     );
     g.insert(
+        P::TerminalDeclaration,
+        s(vec![
+            x("terminal"),
+            ident(),
+            x("using"),
+            ident(),
+            x("on"),
+            ident(),
+            c(vec![s(vec![x("when"), r(P::Block)]), x("any")]),
+            x(";"),
+        ]),
+    );
+    g.insert(
         P::Interval,
         s(vec![
             x("["),
@@ -1278,7 +1304,7 @@ fn protocol(g: &mut Grammar) {
             r(P::Interval),
             x(";"),
             x("attempts"),
-            uint(),
+            bound(),
             x("of"),
             r(P::TypeName),
             x(";"),

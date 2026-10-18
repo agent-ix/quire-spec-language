@@ -2238,6 +2238,28 @@ pub struct OperationBodyForm {
     pub spans: DeclarationSpans,
 }
 
+/// `bound L on M::p [N]` (FR-380 "The declaration"): an authored finite
+/// maximum for the domain-package population `p` of the model `M`. S2 keeps
+/// the label, the model alias, the population name and the digits of `N`,
+/// each spelled and spanned, and resolves none of them: the assembler
+/// resolves the alias to a `model` declaration and `p` to a population of
+/// its domain package.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PopulationBoundForm {
+    /// The declared label.
+    pub label: DeclaredName,
+    /// The model alias, as written.
+    pub model: DeclaredName,
+    /// The population name, as written.
+    pub population: DeclaredName,
+    /// The digits of `N` exactly as written; the assembler reads them.
+    pub maximum: DeclaredName,
+    /// The span of the bracketed `[N]`.
+    pub bracketed: Span,
+    /// The span of the whole declaration.
+    pub span: Span,
+}
+
 /// One segment of a `NodeReference`, exactly as written: its text and the
 /// span of that segment alone (FR-112 "Outputs"). `Main::Applied` has two
 /// segments, `Tried` has one.
@@ -2428,6 +2450,10 @@ pub struct ProtocolNodeDeclaration {
     /// The channel a `send` or `receive` is written `via`; `None` for
     /// every other kind.
     pub channel: Option<String>,
+    /// The `related by` clauses of a `send`, `receive`, `attempt`, `effect`
+    /// or `event` node, one per clause in source order (FR-308); empty for
+    /// every other kind.
+    pub related: Vec<RelatedForm>,
 }
 
 /// A binder's syntactic role (FR-113 "Refusals": a record binder, a
@@ -2553,6 +2579,123 @@ pub struct ProtocolConstructForm {
     pub span: Span,
 }
 
+/// One `relationship Name = M::target;` member of a protocol (FR-308): the
+/// name and the target as written. S2 merges and resolves nothing, so a
+/// target or name written twice builds twice.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RelationshipForm {
+    /// The declared relationship name.
+    pub name: DeclaredName,
+    /// The `M::r` target, as spelled.
+    pub target: NameForm,
+    /// The span of the whole member, `;` included.
+    pub span: Span,
+}
+
+/// One `requires temporal Name;` member of a protocol (FR-308): the name as
+/// written, unresolved.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RequirementForm {
+    /// The temporal clause name the protocol requires.
+    pub temporal: DeclaredName,
+    /// The span of the whole member, `;` included.
+    pub span: Span,
+}
+
+/// One `related by Name (e, e)` clause of an event node (FR-308): the
+/// relationship name and both end expressions in written order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RelatedForm {
+    /// The relationship name.
+    pub relationship: DeclaredName,
+    /// The two end expressions, first then second.
+    pub ends: [ExpressionForm; 2],
+    /// The span of the whole clause.
+    pub span: Span,
+}
+
+/// A compensation's `attempts N of T;` member, as written (FR-308): a zero
+/// count is built, not refused.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CompensationAttempts {
+    /// The attempt count; S1 admits only a decimal `u64`.
+    pub count: u64,
+    /// The span of the count literal.
+    pub count_span: Span,
+    /// The `M::T` record type of one attempt, as spelled.
+    pub record: TypeForm,
+}
+
+/// A compensation's `retry (earlier: T, later: T) { relation };` member.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CompensationRetry {
+    /// The first retry parameter.
+    pub earlier: ParameterForm,
+    /// The second retry parameter.
+    pub later: ParameterForm,
+    /// The relation body expression.
+    pub relation: ExpressionForm,
+}
+
+/// A compensation's `commit` member: a node reference or `never`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CompensationCommit {
+    /// `commit M::Node;`, the reference as spelled.
+    Node(NameForm),
+    /// `commit never;`, with the span of `never`.
+    Never(Span),
+}
+
+/// A compensation's `recover (p: T) { predicate };` member.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CompensationRecover {
+    /// The recovery binder.
+    pub binder: ParameterForm,
+    /// The recovery predicate body expression.
+    pub predicate: ExpressionForm,
+}
+
+/// One `compensate` template with every member as written (FR-308). S2
+/// resolves nothing and decides no stage or ordering; S3 checks it
+/// (FR-381).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CompensationForm {
+    /// The declared template name.
+    pub name: DeclaredName,
+    /// The `for` node reference, as spelled.
+    pub target: NameForm,
+    /// The `as (forward: T)` binder.
+    pub forward: ParameterForm,
+    /// The role the compensation runs `by`.
+    pub role: DeclaredName,
+    /// The `M::T::op` operation, as spelled.
+    pub operation: NameForm,
+    /// The `using` profile alias.
+    pub using: UsingAlias,
+    /// The `clock "<string>"`.
+    pub clock: ClockForm,
+    /// The captures written before `activate`, in source order.
+    pub registration_captures: Vec<CaptureForm>,
+    /// The `activate first (trigger: T)` binder.
+    pub trigger: ParameterForm,
+    /// The `when { guard }` body expression.
+    pub guard: ExpressionForm,
+    /// The captures written in the activation block, in source order.
+    pub activation_captures: Vec<CaptureForm>,
+    /// The `within` interval, as written.
+    pub within: IntervalForm,
+    /// The `attempts` member.
+    pub attempts: CompensationAttempts,
+    /// The `retry` member.
+    pub retry: CompensationRetry,
+    /// The `commit` member.
+    pub commit: CompensationCommit,
+    /// The `recover` member.
+    pub recover: CompensationRecover,
+    /// The span of the whole template.
+    pub span: Span,
+}
+
 /// The `{ e }` body block of an event node, a `commit`, a `check` or the
 /// `finish` node, recorded by the index of the static declaration
 /// that owns it. `constant` is `Some(b)` exactly when the body is the bare
@@ -2634,6 +2777,15 @@ pub struct ProtocolDeclarationForm {
     /// Every `attempt`'s operation name and `contracts` list, in source
     /// order (FR-114 "Inputs").
     pub attempts: Vec<AttemptForm>,
+    /// The protocol's own captures, written before its roles, in source
+    /// order (FR-308).
+    pub captures: Vec<CaptureForm>,
+    /// Every `relationship` member, in source order (FR-308).
+    pub relationships: Vec<RelationshipForm>,
+    /// Every `requires temporal` member, in source order (FR-308).
+    pub requirements: Vec<RequirementForm>,
+    /// Every `compensate` template, in source order (FR-308).
+    pub compensations: Vec<CompensationForm>,
 }
 
 impl ProtocolDeclarationForm {
@@ -2801,6 +2953,15 @@ impl TemporalFormulaForm {
     pub fn nodes(&self) -> &[TemporalNodeForm] {
         &self.nodes
     }
+
+    /// Every node with its id, in arena order. An operator's operands
+    /// follow it, so the root is first.
+    pub fn iter(&self) -> impl Iterator<Item = (TemporalNodeId, &TemporalNodeForm)> {
+        self.nodes
+            .iter()
+            .enumerate()
+            .map(|(index, node)| (TemporalNodeId(index), node))
+    }
 }
 
 /// A `( name : Type )` parameter as written.
@@ -2906,6 +3067,32 @@ pub struct TemporalClauseForm {
     pub formula: TemporalFormulaForm,
 }
 
+/// Which states a `terminal` declaration marks intended, as written.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TerminalDeclarationKind {
+    /// `when { P }`: the states where the predicate holds.
+    When(ExpressionForm),
+    /// `any`: every terminal state.
+    Any,
+}
+
+/// A `terminal Name using p on Model (when { P } | any);` declaration (FR-124,
+/// FR-382). S2 resolves nothing: the `using` alias and the model alias stay
+/// spelled and spanned, and the predicate is built as written.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TerminalDeclarationForm {
+    /// The declared name.
+    pub name: DeclaredName,
+    /// The `using` alias.
+    pub profile: UsingAlias,
+    /// The `on` model alias.
+    pub model: DeclaredName,
+    /// The `when` predicate or `any`.
+    pub kind: TerminalDeclarationKind,
+    /// The span of the whole declaration, `;` included.
+    pub span: Span,
+}
+
 /// One `Value` parsed declaration form (FR-091 "What a `Value` parsed form
 /// carries").
 #[derive(Clone, Debug)]
@@ -2933,11 +3120,16 @@ pub enum DeclarationForm {
     /// A `body` operation-body declaration, boxed for the same reason
     /// (FR-102).
     OperationBody(Box<OperationBodyForm>),
+    /// A `bound` population-bound declaration (FR-380).
+    PopulationBound(PopulationBoundForm),
     /// A `protocol` declaration (FR-112).
     Protocol(ProtocolDeclarationForm),
     /// A `temporal` clause (FR-325), boxed for the same reason as
     /// [`Self::Function`].
     Temporal(Box<TemporalClauseForm>),
+    /// A `terminal` declaration (FR-382), boxed for the same reason as
+    /// [`Self::Function`].
+    Terminal(Box<TerminalDeclarationForm>),
 }
 
 /// The longest each explicit heap stack grew in this thread, by name, so a

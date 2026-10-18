@@ -36,15 +36,6 @@ pub(super) fn models(
         .collect()
 }
 
-pub(super) fn package<'model>(
-    intake: &mut Intake<'_>,
-    program: &wire::Program,
-    models: &'model [NativeModel],
-) -> Result<NativePackage<'model>> {
-    let source = intake.source(&program.source)?;
-    package_of(source, program, models)
-}
-
 /// The native package of `program`, whose `source` intake has already read.
 pub(super) fn package_of<'model>(
     source: FormalSource,

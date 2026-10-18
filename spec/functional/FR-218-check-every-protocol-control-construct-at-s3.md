@@ -27,6 +27,20 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-228
     type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-051
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-054
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-086
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-088
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-308
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-056
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-381
+    type: traces_to
 ---
 # FR-218: Check every protocol control construct the protocol system runs at S3
 
@@ -35,12 +49,17 @@ relationships:
 When S3 checks a protocol declaration, the `ProtocolClause` family SHALL
 check `parallel` with its branches and its join policy and `outstanding`
 rule, `choice`, `repeat`, `await`, `check`, `send`, `receive`, `effect`,
-`event` and `commit` nodes, channels, captures, compensation templates,
-replicated roles, `activation on each`, and node bodies, and SHALL produce
+`event` and `commit` nodes, channels with their premises, relationship
+declarations and `related by` clauses, `requires temporal` requirements,
+replicated roles, the owner and visible facts of each `choice` and `repeat`,
+and node bodies, and SHALL produce
 an in-process `CheckedProtocolClause` holding the control tree, the
 compiled causal edge relation and the scopes the protocol system reads
-(ADR-027 §9 DS-1, PS-5, RR-4). The `ProtocolClause` family's identities
-stay as they are (ADR-017 PF-7, scenario 5).
+(ADR-027 §9 DS-1, PS-5, RR-4). S4 emits the checked clause as the protocol
+nodes of FR-383 and reads them back equal to it. The `ProtocolClause` family's identities
+stay as they are (ADR-017 PF-7, scenario 5). The obligation members of a
+protocol (its captures, `activation on each` and compensation templates) are
+checked by FR-381 and held by the same checked clause.
 
 ## Use case
 
@@ -62,10 +81,18 @@ protocol system only ever runs a protocol whose meaning is fixed.
   relation (structural, `branch`, `join`, send.out → receive.in,
   attempt.out → effect.in and await anchor edges); each binder's reader set
   by S3's scope; each replicated role's `scope` region; channels with
-  capacity, overflow, delivery and ordering; compensation templates; roles;
-  the activation; and the protocol's `terminal` and `scheduling` members
-  (FR-211, FR-212).
+  capacity, overflow, delivery and ordering; roles; the declared
+  relationships, each with the key of its model relationship and the types of
+  its two ends; each event node's `related by` clauses, in source order; the
+  `requires temporal` requirements, each bound to the key of the temporal
+  clause it names; the owner and visible facts of each `choice` and `repeat`;
+  the compensation templates and the activation (FR-381); and the protocol's
+  `terminal` and `scheduling` members (FR-211, FR-212).
 - A typed `CheckRefusal` with a span on refusal, and no checked clause.
+  Every refusal in this requirement holds the S3 stage, the `ProtocolClause`
+  family, the code and cause named at it, the located span named at it and the
+  members named at it (for example `channel`, `expected`, `actual`), so a
+  consumer reads each as a field and never from a message.
 
 ## Behavior
 
@@ -79,12 +106,21 @@ protocol system only ever runs a protocol whose meaning is fixed.
   constraints, guards, activation guards, retry relations and recovery
   predicates) through the one clause checker (FR-104) over its declared
   inputs.
-- A choice guard, repeat guard or `check` SHALL read binders and constants
+- A choice guard, repeat guard or `check` SHALL read binders, protocol captures and constants
   only. S3 SHALL refuse one that reads model state with `ill_typed`/
   `operator-ineligible` at the read, naming the guard.
+- Model state is what a read that lowers to a model-state operation reads (QSpec
+  FR-464, "Slots that bar model state"): a field read of a binder whose type is
+  an object type, a field read through a reference-typed value, an explicit
+  dereference, a navigation or reachability over a relationship end, a lookup
+  or population read, a dispatch call and a pre-state read. A choice guard, a
+  repeat guard, a `check`, a `visible` entry and a FIFO key bar it, as the
+  activation guard, trigger guard, retry relation and recovery predicate do
+  (FR-381). A field read of a record binder or an event binder is not a
+  model-state read.
 - S3 SHALL refuse a choice whose guards are not proved exhaustive and
   exclusive (QSpec FR-053) with `undefined_expression`/
-  `unproved-exhaustiveness` at the choice.
+  `unproved-exhaustiveness` at the choice (Choice and repeat decisions).
 - S3 SHALL refuse a join that names a label that is not a branch of its
   `parallel` with `missing_declaration`/`missing-name` at the label.
 - S3 SHALL refuse a causal edge relation with a cycle with
@@ -105,6 +141,179 @@ protocol system only ever runs a protocol whose meaning is fixed.
 - `parallel`, `repeat`, `choice` and `sequence` SHALL nest with no ceiling
   of their own; only the caller's resource limits bound a declaration's
   size.
+
+### Admission for emission
+
+The QSpec protocol node contract (QSpec FR-464, FR-465, FR-466) refuses the
+nodes of each rule below, so each rule is refused before S4, by S3 at its
+construct or, where a bullet says so, by the parser, and the construct never
+reaches S4 (FR-383).
+
+- S3 SHALL refuse two cases of one `choice`, or two branches of one
+  `parallel`, with equal labels with `ambiguous_declaration`/`ambiguous-name`
+  at both labels, naming the label, in source order.
+- A `choice` with fewer than two cases and a `parallel` with fewer than two
+  branches are not in the grammar and fail at the parser with its syntax
+  diagnostic, before any form is built (FR-308).
+- S3 SHALL refuse `join all` whose list omits a branch, a `quorum(n)` whose
+  `n` is below one or above the number of distinct labels joined, and a
+  `join any` or `join predicate` that lists no label, with
+  `invalid_package`/`invalid-value` at the list (the count for `quorum`). A
+  label listed twice is one joined label.
+- S3 SHALL refuse a role whose model is not an object type, a process, a
+  state machine, a systems interface or a persistence interface with
+  `invalid_model_binding`/`malformed-declaration` at the model name, and a
+  channel whose `carries` type is none of a scalar type, a composite type, a
+  record, an event type or a variant type with the same refusal at the type
+  name. S3 SHALL NOT compare a `send` or `receive` binder, or a FIFO binder,
+  with a refused `carries` type.
+
+### Channels
+
+A channel declares its two roles, its payload type, its ordering, its delivery
+policy, its capacity and its overflow policy (QSpec FR-054, FR-170). Each
+premise is a separate fact; S3 SHALL NOT derive one from another.
+
+- S3 SHALL resolve a channel's `from` and `to` to roles the protocol declares.
+  A name that is no declared role SHALL refuse with `missing_declaration`/
+  `missing-name` at that role name, retaining `channel`, `end` (`from` or
+  `to`) and `name`. Both ends refuse independently, `from` first.
+- S3 SHALL resolve a channel's `carries` type as FR-104 resolves a declared
+  type, and SHALL refuse an unresolved name with `missing_declaration`/
+  `missing-name` at the type name, retaining `channel` and `name`.
+- If a scope declares two channels of one name, then S3 SHALL refuse
+  `ambiguous_declaration`/`ambiguous-name` at each declaration, naming both in
+  source order, as FR-113 refuses two nodes of one name. Channels and
+  relationships have separate namespaces.
+- A `send` or `receive` names a channel with `via`. S3 SHALL refuse a name
+  that is no declared channel with `missing_declaration`/`missing-name` at the
+  name, retaining `node` and `name`. It SHALL refuse a record binder whose
+  declared type is not the channel's `carries` type, by type identity
+  (FR-088), with `ill_typed`/`type-mismatch` at the binder's type, retaining
+  `channel`, `expected` (the `carries` type) and `actual`. The rule that a
+  `receive` names the channel of the `send` its `of` anchor names is FR-113's.
+- For `ordering fifo by (m: T) {key}` S3 SHALL refuse a binder type `T` that
+  is not the channel's `carries` type with `ill_typed`/`type-mismatch` at `T`,
+  retaining `channel`, `expected` and `actual`. It SHALL check `key` through
+  the clause checker over `m` and constants only, and SHALL refuse a read of
+  model state with `ill_typed`/`operator-ineligible` at the read, naming the
+  key. The key's result type SHALL be one over which the clause checker
+  admits `=` (QSpec FR-054: stable equality); another type refuses
+  `ill_typed`/`operator-ineligible` at the key, retaining `operator` (`=`) and
+  the type. `ordering unordered` holds no binder and no key.
+- S3 SHALL record on the checked channel the ordering (`Unordered` or
+  `Fifo{binder, key}`), the delivery policy, the capacity (`Literal(u64)` or
+  `Symbolic(name)`, the name unresolved) and the overflow policy (`Reject`,
+  `Block` or `Loss(selector)`, the selector `Head` for the oldest queued
+  message, `Tail` for the newest queued message and `New` for the arriving
+  message, QSpec FR-170) exactly as written. A loss selector is a premise
+  like the others and S3 derives none from the delivery policy. Two channels
+  that differ in exactly one premise, the selector included, are different
+  checked channels.
+
+### Relationships
+
+A relationship member `relationship r = M::R;` declares the protocol-local name
+`r` for a relationship of the selected domain package (FR-056, FR-086). A
+`related by r (a, b)` clause on an event node requires the supplied instance of
+that relationship with those two typed ends (QSpec FR-051).
+
+- S3 SHALL resolve `M::R` in the unit's own declaration scope. A name that
+  resolves to no export of the package SHALL refuse with `missing_declaration`/
+  `missing-name` at the name. A name that resolves to an export that is not a
+  relationship SHALL refuse with `invalid_model_binding`/`wrong-export` at the
+  name, retaining the required kind `relationship`, the actual kind and both
+  declaration keys, as FR-086 refuses a wrong kind.
+- If a scope declares two relationships of one name, then S3 SHALL refuse
+  `ambiguous_declaration`/`ambiguous-name` at each declaration, naming both in
+  source order.
+- S3 SHALL bind each checked relationship to its model relationship's
+  declaration key and the types of its two ends, in the order the model
+  declares them, never to the written name.
+- S3 SHALL resolve a `related by` clause's relationship name among the
+  protocol's relationship declarations. A name that is no declared relationship
+  SHALL refuse with `missing_declaration`/`missing-name` at the name, retaining
+  `node` and `name`.
+- S3 SHALL check each of the clause's two ends through the clause checker over
+  the binders readable at the node and the protocol's `over` input (an end is a value, not a guard), and SHALL refuse an end whose type is not
+  its relationship end's type with `ill_typed`/`type-mismatch` at the end
+  expression, retaining `relationship`, `end` (`first` or `second`),
+  `expected` and `actual`. Two equal scalar ids never satisfy a relationship
+  end.
+- S3 SHALL check every `related by` clause of a node independently, so a node
+  holds one checked clause per written clause, in source order, and an order
+  relation never stands in for another clause.
+
+### Requirements
+
+- A `requires temporal T;` member names one temporal clause declared in the
+  same unit. S3 SHALL resolve the written name once, in the unit's own
+  declaration scope, and SHALL bind the checked requirement to that clause's
+  typed node key (`quire.checked-semantic-node/v1`), never to the name. No
+  later stage looks the name up again (FR-088).
+- A name that resolves to no declaration of the unit SHALL refuse with
+  `missing_declaration`/`missing-name` at the name. A name that resolves only
+  through an import SHALL refuse the same way: a requirement binds a local
+  clause only. A name that resolves to a declaration that is not a temporal
+  clause SHALL refuse with `ill_typed`/`operator-ineligible` at the name,
+  naming the resolved kind.
+- A target named by two requirements SHALL be recorded once, in the position of
+  its first requirement.
+- A requirement whose temporal clause reaches the requiring protocol through a
+  protocol reference, directly or through other clauses, is a definition cycle.
+  S3 SHALL refuse it with `invalid_package`/`definition-cycle` at the
+  requirement, naming the protocol and the temporal clause, as it refuses a
+  causal cycle.
+
+### Choice and repeat decisions
+
+A `choice` and a `repeat` have one owning role, written `by R`, and a
+`visible(...)` list of the facts the owner observes at the decision (QSpec
+FR-053, FR-172). A decision fact is a Boolean field read of a record binder.
+
+- S3 SHALL refuse an owner that is no declared role with
+  `missing_declaration`/`missing-name` at the owner name, retaining `node` and
+  `name`.
+- A record binder is eligible for owner `R` only as this table gives, and a
+  binder of any other kind is never eligible:
+
+  | Binder | Eligible for `R` when |
+  | --- | --- |
+  | `receive` record | `R` is the `to` role of the receive's channel |
+  | `attempt` record | the attempt is `by R` |
+  | `event` record | the event is `by R`, with or without `for` |
+  | `send`, `effect`, `commit` and `finish` records, the protocol's activation binder, a compensation's binders | never |
+
+  The protocol's `over` input is model state, not a record binder. A guard,
+  a `visible` entry or a FIFO key that reads it refuses `ill_typed`/
+  `operator-ineligible` at the read, naming the guard; this rule has
+  precedence over the table, which classifies record binders only. A protocol
+  capture is a frozen value that every role holds: a guard or a `visible`
+  entry may read one, and it needs no listing.
+
+- Each `visible` entry and each guard (a `case when`, a `repeat while`) SHALL
+  read decision facts of eligible binders, protocol captures and constants
+  only. A guard SHALL
+  read a fact only when the fact is an individual `visible` entry; a composite
+  entry makes its whole value visible and none of its operands. S3 SHALL count
+  a read inside a discarded `let` initializer as a read.
+- S3 SHALL refuse a read of a fact that is not an eligible, individually listed
+  fact of the owner with `wrong_snapshot`/`wrong-observation` at the read, retaining `node`,
+  `owner`, `read` (the binder and field) and `reason`: `other-role` when the
+  binder is eligible only for a different role, `ineligible-kind` when its kind
+  is in the table's last row, and `unlisted` when it is eligible but no
+  individual `visible` entry lists the fact. An eligible record that is not
+  readable at the decision, such as a parallel sibling's record before the join,
+  an optional branch's record, an `await` match read outside its `then` path or
+  a record bound inside the `repeat` body, refuses as an out-of-scope read
+  (Scopes).
+- The partition of a `choice` SHALL be proved over the visible facts as
+  independent Booleans (QSpec FR-053). S3 SHALL refuse a gap or an overlap,
+  including a gap or overlap between constant guards, with `undefined_expression`/
+  `unproved-exhaustiveness` at the choice, retaining the choice's node identity
+  in place of a `union-decl`, the names of the cases involved and `failed`, the
+  non-empty ordered subset of `missing-arm` (a valuation no guard covers) and
+  `duplicate-arm` (a valuation two guards cover) that the valuations show.
 
 ### Scopes
 
@@ -164,8 +373,25 @@ one protocol declared in the same unit. It carries no package selector.
 | FR-218-AC-5 | A `repeat` whose body is one attempt checks with a maximum, with an invariant and variant and no maximum, with both, and with neither, and the checked clause records the maximum, invariant and variant each has. A `repeat` whose body is only a `check` refuses `unsupported_construct`/`declaration-form` at the `repeat`, naming it, and so does a `repeat` whose body is a `choice` with one attempt in one case and an empty `sequence` in the other. | Test (TC-663) |
 | FR-218-AC-6 | A protocol whose `send Tx` on channel `ch` follows `receive Rx` on the same thread, while `Rx` receives only from `Tx`, refuses `invalid_package`/`definition-cycle` naming `Tx` and `Rx`; with `Tx` on one branch and `Rx` on another, the protocol checks. | Test (TC-663) |
 | FR-218-AC-7 | A `repeat` whose body is a `choice` with an attempt in one case and a nested `repeat` around an attempt in the other refuses `unsupported_construct`/`declaration-form` at the outer `repeat`, because the nested `repeat`'s skip edge closes a cycle with no step; a `repeat` whose body is one `await` with a `timeout` control, or one `parallel` with a `join`, checks. | Test (TC-663) |
-| FR-218-AC-8 | In a unit that declares `protocol Fill`, `protocol Fill` as an expression checks to a reference bound to `Fill`'s node key, typed with `Fill`'s semantic type. `protocol Missing` refuses `missing_declaration`/`missing-name` at the reference naming `Missing`; the same name offered only through an import alias refuses the same way; a name that resolves to a function refuses `ill_typed`/`operator-ineligible`. A second `protocol Fill` checks to a second reference bound to the same node key. A reference to a protocol requires a selected protocol profile (FR-092-AC-18): with none it refuses `missing_declaration`/`missing-selection`, and with one selected a reference to a protocol whose `run` root names no `profile_operator` refuses `unsupported_construct`/`declaration-form` at the reference. Each refusal produces no package. | Test (TC-1021) |
+| FR-218-AC-8 | In a unit that declares `protocol Fill`, `protocol Fill` as an expression checks to a reference bound to `Fill`'s node key, typed with `Fill`'s semantic type. `protocol Missing` refuses `missing_declaration`/`missing-name` at the reference naming `Missing`; the same name offered only through an import alias refuses the same way; a name that resolves to a function refuses `ill_typed`/`operator-ineligible`. A second `protocol Fill` checks to a second reference bound to the same node key. A reference to a protocol requires a selected protocol profile (FR-092-AC-18): with none it refuses `missing_declaration`/`missing-selection`. Each refusal produces no package. | Test (TC-1021) |
 | FR-218-AC-9 | A checked graph whose reference is bound to a key that no node of the graph carries, because the target protocol was re-keyed after binding, refuses `missing_declaration`/`missing-name` at the reference, naming the bound key, with no package and no name lookup. | Test (TC-1021) |
+| FR-218-AC-10 | A channel `from Seller to Buyer` with no role `Buyer` refuses `missing_declaration`/`missing-name` at `Buyer`, retaining channel, `end` `to` and the name; with neither role declared both ends refuse, `from` first; `carries M::Absent` refuses `missing_declaration`/`missing-name` at `Absent`. Two channels `Pay` in one protocol refuse `ambiguous_declaration`/`ambiguous-name` at both declarations, and a channel and a relationship of one name check. | Test (TC-1056) |
+| FR-218-AC-11 | A `send` via a name that is no channel refuses `missing_declaration`/`missing-name` at the name. A `send` or `receive` whose binder type differs from the channel's `carries` type refuses `ill_typed`/`type-mismatch` at the binder type, retaining channel, expected and actual; the same node with the channel's type checks, and a `receive` via a channel other than its `send`'s still refuses as FR-113-AC-7 states. | Test (TC-1056) |
+| FR-218-AC-12 | `ordering fifo by (m: M::Plain) {m.ready}` on a channel carrying `M::Plain` checks and the checked channel holds `Fifo` with that binder and key; a binder of another type refuses `ill_typed`/`type-mismatch` at the type; a key that reads model state refuses `ill_typed`/`operator-ineligible` at the read; `ordering unordered` holds no key. | Test (TC-1056) |
+| FR-218-AC-13 | A channel written with delivery `exactly-once-premise`, capacity `symbolic(Bound)`, overflow `loss head` and `ordering unordered` records exactly those four premises, `Bound` unresolved and the selector `Head`; the same channel with delivery `at-most-once` is a different checked channel, so is the same channel with `loss tail` and with `loss new`, and no premise changes another. | Test (TC-1056) |
+| FR-218-AC-14 | `relationship Pipe = M::pipe;` over an exported relationship binds the checked relationship to the export's key and the types of its two ends; `M::nothing` refuses `missing_declaration`/`missing-name` at the name; `M::out`, a port, and `M::Node`, an object type, each refuse `invalid_model_binding`/`wrong-export` at the name retaining required kind `relationship`, the actual kind and both keys; two relationships `Pipe` refuse `ambiguous_declaration`/`ambiguous-name` at both. | Test (TC-1056) |
+| FR-218-AC-15 | `related by Pipe (a, b)` checks when `a` and `b` have the types of the relationship's first and second ends, and the node holds the clause; `related by Absent (a, b)` refuses `missing_declaration`/`missing-name` at `Absent`; swapped ends, or an end of another type, refuse `ill_typed`/`type-mismatch` at that end, retaining relationship, `end`, expected and actual. A node with `related by Pipe (a, b)` and `related by Owns (c, d)` holds two checked clauses in source order. | Test (TC-1056) |
+| FR-218-AC-16 | `requires temporal Due;` over a temporal clause `Due` binds the requirement to `Due`'s node key; `requires temporal Nothing;` and a clause offered only through an import alias each refuse `missing_declaration`/`missing-name` at the name; `requires temporal Accept;` naming a predicate refuses `ill_typed`/`operator-ineligible` at the name, naming the kind; `Due` required twice is recorded once. Each refusal produces no package. | Test (TC-1056) |
+| FR-218-AC-17 | A `choice` or `repeat` owned by an undeclared role refuses `missing_declaration`/`missing-name` at the owner. An owner that is the channel's `to` role decides on its `receive` record's Boolean field listed individually in `visible`; the other role, a `send`, `effect`, `commit` or `finish` record, the protocol's activation binder, an unlisted fact and a fact reachable only inside a composite entry each refuse `wrong_snapshot`/`wrong-observation` at the read, retaining node, owner, read and `reason` `other-role`, `ineligible-kind`, `unlisted`. A discarded `let` that reads a fact still needs the fact listed. A read of the `over` input refuses `ill_typed`/`operator-ineligible` at the read, naming the guard; a read of a protocol capture checks without listing. | Test (TC-1056) |
+| FR-218-AC-18 | A sibling branch's record before its join, an optional choice branch's record, an `await` match read after the `await`, and a record bound inside a `repeat` body read by that `repeat`'s own `visible` entry or guard each refuse `missing_declaration`/`missing-name` at every original use, retaining `name`. | Test (TC-1056) |
+| FR-218-AC-19 | Over two visible facts, guards that leave both facts true uncovered, that overlap on both true, that leave one fact out, and constant guards `true`/`not false` or `false`/`not true` each refuse `undefined_expression`/`unproved-exhaustiveness` at the choice, retaining `failed` (`[missing-arm]`, `[duplicate-arm]` or `[missing-arm, duplicate-arm]`) and the case names; complementary guards over the individually listed facts check. | Test (TC-1056) |
+| FR-218-AC-20 | A FIFO key of type `Boolean`, and a key of a record type, check because the clause checker admits `=` over them; a key of a type over which it admits no `=` refuses `ill_typed`/`operator-ineligible` at the key, retaining `operator` `=` and the type. | Test (TC-1056) |
+| FR-218-AC-21 | Channels written `overflow reject`, `overflow block`, `overflow loss head`, `overflow loss tail` and `overflow loss new` record `Reject`, `Block`, `Loss(Head)`, `Loss(Tail)` and `Loss(New)`; no other overflow policy records a selector, and a delivery policy never changes the recorded overflow policy. | Test (TC-1065) |
+| FR-218-AC-22 | A `choice` with cases `shipped` and `shipped` and a `parallel` with branches `east` and `east` each refuse `ambiguous_declaration`/`ambiguous-name` at both labels, in source order, naming the label; a `choice` with one case and a `parallel` with one branch each fail at the parser with a syntax diagnostic and build no form; two cases and two branches check. | Test (TC-1065) |
+| FR-218-AC-23 | Over branches `east` and `west`, `join all [east]` and `join quorum(0) [east, west]` and `join quorum(3) [east, west]` and `join any []` each refuse `invalid_package`/`invalid-value` at the list (the count for `quorum`); `join all [east, west]`, `join quorum(2) [east, west]`, `join any [east]` and `join all [east, west, east]` check, the last joining each label once. | Test (TC-1065) |
+| FR-218-AC-24 | A role `on M::Pt` where `Pt` is a record type refuses `invalid_model_binding`/`malformed-declaration` at `M::Pt`; a role on an object type, a process and a state machine checks; a channel `carries M::Node` where `Node` is an object type refuses the same at `M::Node`, and a channel carrying a record, an event type, a variant type and a scalar type checks. | Test (TC-1065) |
+| FR-218-AC-25 | `requires temporal Due;` where `Due`'s formula holds `protocol Fill` and the requiring protocol is `Fill`, and the same through a second temporal clause that names `Fill`, each refuse `invalid_package`/`definition-cycle` at the requirement, naming `Fill` and the clause; the same requirement from a protocol `Drain` that no clause names checks. Each refusal produces no package. | Test (TC-1065) |
+| FR-218-AC-26 | A choice guard and a `visible` entry that read a field of an object-typed attempt binder, and a FIFO key that reads a field through a reference-typed field of its record binder, each refuse `ill_typed`/`operator-ineligible` at the read, naming the guard, the `visible` entry or the key; the same reads over a record binder's own fields check. A channel that carries an object type refuses once, at the type, and gives no refusal at its `send`, `receive` or FIFO binders. | Test (TC-1056, TC-1065) |
 
 ## Dependencies
 
@@ -175,8 +401,11 @@ one protocol declared in the same unit. It carries no package selector.
   [FR-113](FR-113-resolve-scoped-anchors-in-nested-control-scopes.md),
   [FR-114](FR-114-bind-a-protocol-attempt-to-its-operation-frame.md),
   [FR-104](FR-104-check-state-clauses.md).
+- FR-381 (captures, activation and compensation), FR-308 (the forms),
+  FR-383 (the emission of the checked clause), FR-086 (relationship kinds), FR-088 (type identity).
 - QSpec owns the grammar and contracts of every construct, and the catalog
-  spellings of its refusals: QSpec FR-052, FR-053, FR-170, FR-171, FR-228.
+  spellings of its refusals: QSpec FR-051, FR-052, FR-053, FR-054, FR-170,
+  FR-171, FR-172, FR-228.
   The protocol reference's resolution rules follow QSpec FR-322-AC-66, and
   its production and meaning are QSpec FR-463's.
 

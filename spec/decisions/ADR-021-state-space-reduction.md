@@ -101,7 +101,7 @@ What QSL has that bears on each:
   formula counts positions too.
 - **Deadlocks are an item.** For each model subject, the request writer adds a
   derived deadlock-freedom item, a TP-1 invariant `always holds(not
-  deadlocked)`, unless the model declares `terminal any`; `terminal when P`
+  deadlocked)`, unless the package declares `terminal any` for the model; `terminal when P`
   marks intended terminal states (ADR-018 DL-1 to DL-3).
 
 "QSpec FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
@@ -504,7 +504,7 @@ Every behaviour ends in the terminal state `(2,2,2)`, where `a.v = 2`, so no
 accepting cycle exists. The instance settles `proved`,
 `Proved{basis: Reduced{[PartialOrder{BreadthFirstRevisit}]}, certification: Uncertified}`; the instances
 `x = b` and `x = c` reduce the same way with the roles exchanged. The
-model declares no `terminal` member, so the request adds the deadlock-freedom
+unit declares no `terminal` declaration, so the request adds the deadlock-freedom
 item (ADR-018 DL-3). Both searches reach `(2,2,2)`, which has no successor,
 and settle it `refuted` with a six-step prefix: in the reduced search, the
 path of the table (C0, C1). By ADR-018 DL-6 that refutation leaves the

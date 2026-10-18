@@ -245,12 +245,14 @@ fn assembly_limit(cause: &AssemblyCause) -> Option<ReachedLimit> {
         | AssemblyCause::NominalAdmission(_)
         | AssemblyCause::UnsuppliedImport { .. }
         | AssemblyCause::UnadmittedModel { .. }
-        | AssemblyCause::UnimplementedTemporalClause { .. }
         | AssemblyCause::UnsupportedModelMember { .. }
         | AssemblyCause::ModelType { .. }
         | AssemblyCause::UnresolvedOperation { .. }
         | AssemblyCause::AmbiguousOperation { .. }
         | AssemblyCause::DuplicateOperationBody { .. }
+        | AssemblyCause::UnresolvedPopulationBound { .. }
+        | AssemblyCause::AmbiguousPopulationBound { .. }
+        | AssemblyCause::UnsupportedDeclarationForm { .. }
         | AssemblyCause::AmbiguousPopulation { .. } => None,
     }
 }
@@ -269,6 +271,7 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
             let denial = incomplete.denial();
             Some(ReachedLimit::of_setting(denial.setting(), denial.limit()))
         }
+        CheckCause::TypeAdmission { limit, .. } => limit.as_deref().map(ReachedLimit::of),
         // A type invariant's wrapper classifies as the cause it wraps.
         CheckCause::TypeInvariant(refusal) => check_limit(&refusal.cause),
         CheckCause::DispatchLink(link) => link
@@ -282,7 +285,6 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
         | CheckCause::StateModel(_)
         | CheckCause::ObjectReadInValueInvariant
         | CheckCause::ModelConformance(_)
-        | CheckCause::TypeAdmission { .. }
         | CheckCause::IllTyped(_)
         | CheckCause::WrongSnapshot(_)
         | CheckCause::MissingName(_)
@@ -306,7 +308,8 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
         | CheckCause::InternalFault(_)
         | CheckCause::NodePreimage(_)
         | CheckCause::ProtocolAnchor(_)
-        | CheckCause::ProtocolReference(_) => None,
+        | CheckCause::ProtocolReference(_)
+        | CheckCause::Temporal(_) => None,
         #[cfg(seam_probe)]
         CheckCause::__SeamProbe => None,
     }

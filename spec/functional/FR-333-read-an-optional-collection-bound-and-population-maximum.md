@@ -67,9 +67,9 @@ never chose.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-333-AC-1 | `function f using v(s: Set<Int>): Integer pure { 0 }` compiles through the spine, and `s`'s resolved type is a `Set` with element `Int` and `bound: None`; with `Set<Int>[0, 8]` the bound is `Some{0, 8}`, and the two parameters' types are unequal. Each of `Sequence`, `Bag` and `OrderedSet` with no bound resolves to `bound: None`. | Test (TC-843) |
+| FR-333-AC-1 | `function f using v(s: Set<Integer>): Integer pure { 0 }` compiles through the spine, and `s`'s resolved type is a `Set` with element `Int` and `bound: None`; with `Set<Integer>[0, 8]` the bound is `Some{0, 8}`, and the two parameters' types are unequal. Each of `Sequence`, `Bag` and `OrderedSet` with no bound resolves to `bound: None`. | Test (TC-843) |
 | FR-333-AC-2 | A parameter `p: Population<Account>` resolves to `ValueType::Population(None)` and `p: Population<Account>[4]` to `Population(Some(4))`. | Test (TC-843) |
-| FR-333-AC-3 | `Set<Int>[3, 2]` refuses `ill_typed`/`type-mismatch` at the type form's span; `Set<Int>[0, x]` fails at S1 with a parse diagnostic at `x`'s span. | Test (TC-843) |
+| FR-333-AC-3 | `Set<Integer>[3, 2]` refuses `ill_typed`/`type-mismatch` at the type form's span; `Set<Integer>[0, x]` fails at S1 with a parse diagnostic at `x`'s span. | Test (TC-843) |
 
 ## Dependencies
 

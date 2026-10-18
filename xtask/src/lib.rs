@@ -15,6 +15,7 @@ pub mod checked_input;
 pub mod conformance;
 pub mod definition_scan;
 pub mod error;
+pub mod feature_scope;
 pub mod import_graph;
 pub mod refinement;
 pub mod route_lint;

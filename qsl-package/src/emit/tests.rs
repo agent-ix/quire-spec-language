@@ -40,9 +40,11 @@ mod golden;
 mod identity_depth;
 mod navigation;
 mod owners;
+mod population_bound;
 mod protocol_reference;
 mod reachability;
 mod receiver_frames;
+mod union_nodes;
 mod variant_types;
 
 /// The unit the fixture packages are read from; every occurrence's region is
@@ -652,7 +654,7 @@ fn recursion_group_members_are_written_in_ordinal_order() {
 }
 
 /// FR-093 "Node dependencies" rules 1 to 3, rebuilt from a written node by a
-/// test-side walker: body reference targets, operation member declarations,
+/// test-side walker: body reference targets, operation member declarations and populations,
 /// and a `bounded_domain` node's semantic type.
 fn rebuilt_dependencies(node: &Value) -> Vec<Value> {
     fn walk(term: &Value, found: &mut BTreeSet<String>) {
@@ -661,12 +663,14 @@ fn rebuilt_dependencies(node: &Value) -> Vec<Value> {
                 if members.get("term") == Some(&json!("reference")) {
                     found.insert(members["target"]["digest"].as_str().unwrap().to_owned());
                 }
-                if let Some(declaration) = members
-                    .get("operation")
-                    .and_then(|operation| operation.get("member"))
-                    .and_then(|member| member.get("declaration"))
-                {
-                    found.insert(declaration["digest"].as_str().unwrap().to_owned());
+                for key in ["declaration", "population"] {
+                    if let Some(named) = members
+                        .get("operation")
+                        .and_then(|operation| operation.get("member"))
+                        .and_then(|member| member.get(key))
+                    {
+                        found.insert(named["digest"].as_str().unwrap().to_owned());
+                    }
                 }
                 members.values().for_each(|value| walk(value, found));
             }
@@ -941,7 +945,7 @@ fn a_declaration_without_its_occurrence_is_omitted() {
             (candidate.id.clone(), candidate)
         })
         .collect();
-    let omitted = omissions(&candidates, graph.source());
+    let omitted = omissions(&candidates, graph.source(), &ir_decodes);
     assert_eq!(
         omitted,
         [OmittedNode {
@@ -3443,7 +3447,7 @@ fn emit_from_text(declarations: &str) -> (String, Emission) {
 /// `declarations` after the complete-V1 profile header, run S1, S2, the
 /// assembler, check and link as spine `compile` runs them: the unit's text
 /// and the linked package.
-fn package_from_text(declarations: &str) -> (String, CheckedPackage) {
+pub(crate) fn package_from_text(declarations: &str) -> (String, CheckedPackage) {
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\

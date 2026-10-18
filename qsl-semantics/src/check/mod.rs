@@ -68,6 +68,7 @@
 // file (`check.rs`, holding `Typer`/`Scope`/`bind_parameters` -- name
 // resolution and typing) -- the inception is the spec's own naming, not an
 // accidental collision this file introduced.
+mod abstraction;
 mod assemble;
 mod call_target;
 mod capability;
@@ -76,6 +77,11 @@ mod check;
 mod checked_dispatch;
 mod claims;
 mod dispatch_link;
+pub use abstraction::{
+    AbstractionKey, AbstractionRefusal, AuthoredBinding, CheckedAbstractionRelation,
+    CheckedBinding, CheckedFrameBinding, FrameBinding, FrameNodes, MalformedEntry, ObjectBinding,
+    OperationKey, PopulationBinding, RustField, RustParameter, RustPath, RustReceiver,
+};
 pub use dispatch_link::PendingLinks;
 mod facts;
 mod family;
@@ -112,12 +118,14 @@ mod operation_clause;
 mod profile;
 mod protocol_clause;
 mod protocol_reference;
+mod references;
 mod refusal;
 mod region;
 mod settings;
 mod state_clause;
 mod state_model;
 mod sum_case;
+mod temporal_clause;
 pub use state_model::StateModelRefusal;
 pub use sum_case::{mint_union_member_key, ExhaustivenessObligation, SumCaseCause};
 #[cfg(any(test, feature = "test-support"))]
@@ -157,7 +165,8 @@ pub use profile::{resolve_profiles, ProfileCause, ProfileRefusal};
 #[cfg(any(test, feature = "test-support"))]
 pub use family::DeclarationMetrics;
 pub use lowering::{
-    AdmittedModel, ForeignView, LockEvidence, ModelClause, NominalNode, SemanticGraph, SemanticNode,
+    AdmittedModel, AuthoredBound, ForeignView, LockEvidence, ModelClause, NominalNode,
+    SemanticGraph, SemanticNode,
 };
 pub use node_key::{
     AggregateTerm, ApplicationTerm, Binding, BindingValue, BodyTerm, FrameDeletesScoped,
@@ -236,13 +245,22 @@ pub use identity::{
 pub use ir::{CollectionLoss, CollectionProperty, DispatchCandidate, DispatchTable};
 pub use model_conformance::ModelConformanceFailure;
 pub use navigation::{EndDeclaration, EndSide, RelationshipDeclaration, Relationships};
+pub use profile::TemporalProfile;
 pub use protocol_clause::{CheckedAttempt, CheckedProtocol, ProtocolNodeId};
 pub use refusal::{
     AliasKind, AmbiguousMember, AmbiguousQualified, CheckCause, CheckRefusal, CheckingLimitKind,
     CheckingStage, DispatchFunctionRole, DispatchLinkCause, DispatchSubtypeFailure,
     InvalidDispatchDeclaration, KeyFault, MeasureObligation, MemberCandidate, NavigationBound,
     Obligation, ProtocolAnchorCause, ProtocolReferenceCause, ProvedInterval, QualifiedCandidate,
-    ShadowedDeclaration, StageLimitCause, WrongSnapshotCause,
+    ShadowedDeclaration, StageLimitCause, TemporalCause, WrongSnapshotCause,
+};
+#[cfg(any(test, feature = "test-support"))]
+pub use temporal_clause::check_clauses;
+pub use temporal_clause::{
+    Activation, BinaryTemporal, CheckedFormula, CheckedOperator, CheckedTemporalClause,
+    FairnessConstraint, FairnessGranularity, FairnessKind, FormulaNode, FormulaNodeId,
+    TemporalClaim, TemporalDeclaration, TemporalDeclarations, TemporalSelection,
+    TemporalTraceFamily, UnaryTemporal,
 };
 
 /// A checked function.
@@ -424,6 +442,15 @@ pub struct CheckedGraph {
     /// [`AdmittedModel::population_domains`] orders them: the table
     /// [`Self::population_domain`] resolves a population in.
     model_populations: BTreeMap<String, BTreeMap<Identifier, state_clause::PopulationDomain>>,
+    /// FR-380: every `bound` declaration, ascending by label.
+    population_bounds: Vec<CheckedPopulationBound>,
+    /// FR-304: every admitted population's declaration key, with its
+    /// population domain.
+    population_keys: BTreeMap<crate::model::key::DeclarationKey, state_clause::PopulationDomain>,
+    /// FR-304: the key of every declaration of every admitted domain
+    /// package, of any kind, so a binding keyed by a declaration of the wrong
+    /// kind refuses as malformed rather than missing.
+    declaration_keys: std::collections::BTreeSet<crate::model::key::DeclarationKey>,
     /// FR-096: each protocol's own attempts' declared name spans,
     /// index-aligned with `protocols`, so an `Origin::ProtocolAttempt`
     /// resolves.
@@ -671,9 +698,15 @@ fn resolve_signature(
 /// A refused or exhausted type admission as the check refusal that reports it.
 fn type_admission(failure: quire_semantic_value::declaration::EnvironmentFailure) -> CheckCause {
     let cause = assemble::environment_cause(failure);
+    let limit = if let AssemblyCause::TypeLimit(limit) = &cause {
+        Some(Box::new(limit.clone()))
+    } else {
+        None
+    };
     CheckCause::TypeAdmission {
         code: cause.code(),
         cause: cause.catalog_code().cause(),
+        limit,
     }
 }
 
@@ -789,7 +822,7 @@ impl PackageDeclarations {
         // Carry that selection into S3 so the inherited-edge rule is
         // confined to a package with an admitted model.
         let complete_model = !self.models.is_empty();
-        let scope = Scope::new(
+        let mut scope = Scope::new(
             self.types,
             self.operations,
             self.enums,
@@ -930,6 +963,13 @@ impl PackageDeclarations {
             .map(|staged| std::cell::RefCell::new(staged.0));
         let (model_objects, object_types) = model_object_tables(&models);
         let model_populations = model_population_tables(&models);
+        let population_bounds = checked_population_bounds(&models);
+        let population_keys = population_key_table(&models);
+        let declaration_keys = models
+            .iter()
+            .flat_map(AdmittedModel::record_keys)
+            .cloned()
+            .collect();
         let object_nodes = object_types
             .keys()
             .filter_map(|declaration| {
@@ -1076,6 +1116,45 @@ impl PackageDeclarations {
         };
         let mut contract_meter =
             quire_exact::Meter::new(contract_meter_limits).with_cancel(cancel.clone());
+        // FR-319: a body's equality over a union is typed against the sealed
+        // declaration, so each union is sealed under the node id of its type
+        // node before any body is typed. A union's type closure needs no
+        // body: a throwaway lowering over the declarations keys it. The
+        // lowering below keys the same content, so it reaches the same ids.
+        {
+            let mut sealing_meter =
+                quire_exact::Meter::new(contract_meter_limits).with_cancel(cancel.clone());
+            let mut sealing_occurrences = family::OccurrenceMap::default();
+            let mut sealing = lowering::Lowering::new(
+                &scope,
+                &owner,
+                &models,
+                scope.types().units().clone(),
+                &lock_evidence,
+                0,
+                &mut sealing_occurrences,
+                &mut sealing_meter,
+                self.identity,
+            );
+            let mut sealed_refusals = Vec::new();
+            for declaration in scope.types().composites() {
+                if matches!(
+                    declaration.shape(),
+                    quire_semantic_value::declaration::CompositeShape::Union(_)
+                ) {
+                    if let Err(refusal) = sealing.composite_node(declaration.key()) {
+                        sealed_refusals.push(refusal);
+                    }
+                }
+            }
+            let nodes = sealing.finish(&lowering::generated_location()).composites;
+            if !sealed_refusals.is_empty() {
+                return Err(sealed_refusals);
+            }
+            if let Err(refusal) = scope.seal_unions(&nodes) {
+                return Err(vec![refusal]);
+            }
+        }
         let mut contract_diagnostics = crate::family::DiagnosticSink::default();
         let mut contract_scopes = crate::family::ScopeStack::default();
         // PR #303 review round 3, finding F1: the running total of
@@ -1411,6 +1490,48 @@ impl PackageDeclarations {
                 Err(protocol_refusals) => refusals.extend(protocol_refusals),
             }
         }
+        // FR-326: each `temporal` clause, checked through the `TemporalTrace`
+        // family's contract under the unit's one temporal profile. No S4
+        // emission writes a temporal node yet (FR-337), so a clause that
+        // checks is refused rather than compiled and silently missing from
+        // the package (`temporal_clause::not_emitted`).
+        let temporal_declarations = temporal_clause::TemporalDeclarations {
+            scope: &scope,
+            selections: &self.temporal_selections,
+            source: &source,
+            embedding: embedding.as_deref(),
+            position_limit: limits.nodes(),
+        };
+        for clause in &self.temporal_clauses {
+            let mut contract_cx = crate::family::CheckContext::new(
+                &temporal_declarations,
+                contract_limits,
+                &mut contract_meter,
+                &mut contract_diagnostics,
+                &mut contract_scopes,
+            );
+            match temporal_clause::TemporalTraceFamily::check(clause, &mut contract_cx) {
+                Ok(staged) => refusals.push(temporal_clause::not_emitted(&staged.into_value())),
+                Err(StageFailure::Limit(limit)) => {
+                    refusals.push(CheckRefusal {
+                        location: root(Origin::Expression),
+                        cause: limit_cause(&limit),
+                    });
+                    if cancel.tripped().is_some() {
+                        return Err(refusals);
+                    }
+                }
+                Err(StageFailure::Cancelled(_)) => return Err(refusals),
+                Err(StageFailure::Fault(fault)) => {
+                    refusals.push(CheckRefusal {
+                        location: root(Origin::Expression),
+                        cause: CheckCause::InternalFault(Box::new(KeyFault::StageFault(fault))),
+                    });
+                    return Err(refusals);
+                }
+                Err(StageFailure::Refused(refusal)) => refusals.push(refusal),
+            }
+        }
         if !refusals.is_empty() {
             return Err(refusals);
         }
@@ -1707,6 +1828,13 @@ impl PackageDeclarations {
             }
         }
         let lowered = lowering.finish(&lowering::generated_location());
+        // FR-380: a population node's `Type` occurrences take their ordinals
+        // in ascending source order, whichever writer recorded one first.
+        occurrences.order_by(
+            family::OccurrenceRole::Type,
+            &lowered.population_nodes,
+            |location| regions.region(location).map(|region| region.start()),
+        );
         let parameter_spans = lowered.parameter_spans;
         if !refusals.is_empty() {
             return Err(refusals);
@@ -1832,6 +1960,7 @@ impl PackageDeclarations {
                     claim,
                     spans: form.spans,
                     has_result: typed.has_result,
+                    bounds: typed.bounds,
                 })
             })
             .collect::<Result<Vec<_>, Vec<CheckRefusal>>>()?;
@@ -1945,6 +2074,9 @@ impl PackageDeclarations {
             object_types,
             object_nodes,
             model_populations,
+            population_bounds,
+            population_keys,
+            declaration_keys,
             attempt_spans: regions.attempt_spans,
         })
     }
@@ -1999,7 +2131,17 @@ fn model_population_tables(
                         &population.key.node,
                     )
                     .and_then(|artifact| Identifier::new(artifact).ok())?;
-                    Some((artifact, state_clause::PopulationDomain { object, ordinal }))
+                    let maximum = model
+                        .population_bound(&population.key)
+                        .map(|bound| bound.maximum);
+                    Some((
+                        artifact,
+                        state_clause::PopulationDomain {
+                            object,
+                            ordinal,
+                            maximum,
+                        },
+                    ))
                 })
                 .collect();
             Some((model.alias()?.to_owned(), populations))
@@ -2007,7 +2149,80 @@ fn model_population_tables(
         .collect()
 }
 
+/// One `bound` declaration as checked (FR-380): the population it bounds
+/// and its authored maximum. The bound is part of the population's meaning
+/// (ADR-014 B-1), never a resource limit.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedPopulationBound {
+    /// The declared label.
+    pub label: String,
+    /// The alias of the `model` declaration whose population it bounds.
+    pub model: String,
+    /// The population's artifact id, the `P` of `M::P`.
+    pub population: Identifier,
+    /// The inclusive maximum object count `N`.
+    pub maximum: u64,
+}
+
+/// FR-380: each `bound` declaration the admitted models hold, ascending by
+/// label (a label names one bound, so the order depends on no declaration
+/// order).
+fn checked_population_bounds(models: &[AdmittedModel]) -> Vec<CheckedPopulationBound> {
+    let mut bounds: Vec<CheckedPopulationBound> = models
+        .iter()
+        .flat_map(|model| {
+            model.population_bounds().filter_map(|bound| {
+                let population = crate::model::intake::type_identity_segment(
+                    &bound.population.package,
+                    &bound.population.node,
+                )
+                .and_then(|artifact| Identifier::new(artifact).ok())?;
+                Some(CheckedPopulationBound {
+                    label: bound.label.clone(),
+                    model: model.alias()?.to_owned(),
+                    population,
+                    maximum: bound.maximum,
+                })
+            })
+        })
+        .collect();
+    bounds.sort_by(|left, right| left.label.cmp(&right.label));
+    bounds
+}
+
+/// FR-304: each admitted population's declaration key, with the population
+/// domain [`AdmittedModel::population_domains`] gives it.
+fn population_key_table(
+    models: &[AdmittedModel],
+) -> BTreeMap<crate::model::key::DeclarationKey, state_clause::PopulationDomain> {
+    models
+        .iter()
+        .flat_map(|model| {
+            model
+                .population_domains()
+                .map(|(ordinal, population, object)| {
+                    let maximum = model
+                        .population_bound(&population.key)
+                        .map(|bound| bound.maximum);
+                    (
+                        population.key.clone(),
+                        state_clause::PopulationDomain {
+                            object,
+                            ordinal,
+                            maximum,
+                        },
+                    )
+                })
+        })
+        .collect()
+}
+
 impl CheckedGraph {
+    /// FR-380: every `bound` declaration of the unit, ascending by label.
+    pub fn population_bounds(&self) -> &[CheckedPopulationBound] {
+        &self.population_bounds
+    }
+
     /// ADR-011 §2.4: the selection of each domain package this package was
     /// checked against, ascending by identity: the lock's
     /// `model_selections`.
@@ -2515,6 +2730,45 @@ mod tests {
     use quire_exact::{Origin, Role};
 
     use super::*;
+
+    /// QSL-821: `type_admission` and `pending_refusal` keep the reached
+    /// ceiling, so the refinement classifier can name it; a failure that is
+    /// no ceiling keeps none.
+    #[test]
+    fn a_type_admission_ceiling_keeps_its_limit() {
+        use quire_semantic_value::declaration::{
+            EnvironmentFailure, EnvironmentLimit, EnvironmentLimitKind, PendingFieldFailure,
+            StorageRequest, StorageUnit,
+        };
+        let ceiling = || EnvironmentLimit::new(EnvironmentLimitKind::AncestorSteps, 5, 6);
+        let expected = Some(Box::new(qsl_foundation::diagnostic::LimitExceeded::new(
+            qsl_foundation::Setting::EnvironmentAncestorSteps,
+            5,
+            6,
+        )));
+
+        let CheckCause::TypeAdmission { code, limit, .. } =
+            type_admission(EnvironmentFailure::Limit(ceiling()))
+        else {
+            panic!("expected a type admission cause");
+        };
+        assert_eq!(code, qsl_foundation::Code::StageLimitExceeded);
+        assert_eq!(limit, expected);
+
+        let CheckCause::TypeAdmission { limit, .. } =
+            pending_refusal(PendingFieldFailure::Limit(ceiling()))
+        else {
+            panic!("expected a type admission cause");
+        };
+        assert_eq!(limit, expected);
+
+        let CheckCause::TypeAdmission { limit, .. } = type_admission(
+            EnvironmentFailure::Allocation(StorageRequest::new(8, StorageUnit::Bytes)),
+        ) else {
+            panic!("expected a type admission cause");
+        };
+        assert_eq!(limit, None);
+    }
 
     fn declarations(functions: Vec<FunctionDeclaration>) -> PackageDeclarations {
         PackageDeclarations {

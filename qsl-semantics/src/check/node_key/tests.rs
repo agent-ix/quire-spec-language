@@ -41,6 +41,11 @@ impl<'de> Deserialize<'de> for LeafSegment {
                 .map(Self::Field)
                 .map_err(D::Error::custom);
         }
+        if let Some(name) = text.strip_prefix("member:") {
+            return Identifier::new(name)
+                .map(Self::Member)
+                .map_err(D::Error::custom);
+        }
         let digits = |prefix: &str| {
             text.strip_prefix(prefix)
                 .filter(|digits| *digits == "0" || !digits.starts_with('0'))
@@ -93,6 +98,14 @@ pub(super) fn member<'de, D: Deserializer<'de>>(
         "relationship_end" => Member::RelationshipEnd {
             declaration: declaration()?,
             name: identifier("name")?,
+            population: match wire.get("population") {
+                None => None,
+                Some(population) => Some(
+                    NodeRef::deserialize(population)
+                        .map(|node| node.0)
+                        .map_err(D::Error::custom)?,
+                ),
+            },
         },
         "operation" => Member::Operation {
             declaration: declaration()?,
@@ -864,6 +877,98 @@ fn conformance_fr322_application_keys_match_qspec_operation_vectors() {
     );
 }
 
+/// FR-334-AC-4 (TC-844): the keys QSpec's FR-322 publishes for the unbounded
+/// `Set<Reference<Order>>` (S1), the bounded population PO1 (`max` 3), the
+/// unbounded population PO0 (no `max` member) and the population with `max`
+/// 0 are read at run time from `$QSPEC_DIR`, and this module's key function
+/// keys the same nodes to them: S1 from its reference body, each population
+/// from S1 and its `max` binding. Skipped (and passing) when `QSPEC_DIR` is
+/// unset; `make conformance` requires it. Nothing of QSpec is copied here.
+#[trace("TC-844", "FR-334-AC-4")]
+#[test]
+fn conformance_fr334_collection_and_population_keys_match_qspec() {
+    let Some(qspec) = std::env::var_os("QSPEC_DIR") else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
+    let path = std::path::Path::new(&qspec)
+        .join("spec/objects/interfaces/FR-322-checked-package-artifact.md");
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("reading {}: {error}", path.display()));
+    // The 64 hex digits of the backticked key that follows `marker`.
+    let published = |marker: &str| -> NodeKey {
+        let start = text
+            .find(marker)
+            .unwrap_or_else(|| panic!("{} does not publish `{marker}`", path.display()))
+            + marker.len();
+        let digits = text
+            .get(start..start + 64)
+            .unwrap_or_else(|| panic!("`{marker}` is not followed by a key"));
+        assert!(
+            text[start + 64..].starts_with('`'),
+            "`{marker}` is not followed by a 64-digit key"
+        );
+        let mut bytes = [0_u8; 32];
+        for (byte, pair) in bytes.iter_mut().zip(digits.as_bytes().chunks(2)) {
+            let pair = std::str::from_utf8(pair).expect("hex digits are ASCII");
+            *byte = u8::from_str_radix(pair, 16)
+                .unwrap_or_else(|_| panic!("`{marker}` is followed by `{digits}`, not hex"));
+        }
+        NodeKey::from_digest(bytes)
+    };
+    let reference_target = published("both name R1 (`");
+    let set_key = published("PO1's `semantic_type` is S1 (`");
+    let po1 = published("names PO1 (`");
+    let po0 = published("names PO0 (`");
+    let po_max_0 = published("key PO0 differs from the key (`");
+
+    let key_of = |tag: NodeTag, form: &str, semantic_type: Option<NodeKey>, body: &BodyTerm| {
+        node_key(
+            &NodeInput {
+                owner: None,
+                node_tag: tag,
+                semantic_form: form,
+                semantic_type,
+                declaration: None,
+                body,
+            },
+            IdentityLimits::default(),
+        )
+        .unwrap_or_else(|refusal| panic!("{form}: refused: {refusal}"))
+        .key
+    };
+    let integer = key_of(NodeTag::ScalarType, "integer", None, &empty_aggregate());
+    let reference_body = BodyTerm::aggregate(vec![MemberTerm::reference(reference_target)]);
+    assert_eq!(
+        key_of(NodeTag::CompositeType, "set", None, &reference_body),
+        set_key,
+        "the unbounded Set<Reference<Order>>"
+    );
+    let population = |maximum: Option<u64>| {
+        let members: Vec<MemberTerm> = maximum
+            .map(|maximum| {
+                MemberTerm::bound(
+                    "max",
+                    LeafTerm::literal(integer, LiteralValue::Integer(Integer::from(maximum))),
+                )
+            })
+            .into_iter()
+            .collect();
+        key_of(
+            NodeTag::BoundedDomain,
+            "model_population",
+            Some(set_key),
+            &BodyTerm::aggregate(members),
+        )
+    };
+    assert_eq!(population(Some(3)), po1, "Population<Order>[3]");
+    assert_eq!(population(None), po0, "Population<Order>");
+    assert_eq!(population(Some(0)), po_max_0, "Population<Order>[0]");
+    assert_ne!(po0, po1);
+    assert_ne!(po0, po_max_0);
+    assert_ne!(po0, set_key);
+}
+
 // ---------------------------------------------------------------------
 // FR-092 `quire.structural-node/v1`.
 // ---------------------------------------------------------------------
@@ -1091,4 +1196,160 @@ fn a_node_preimage_over_the_identity_byte_limit_is_the_identity_limit() {
         crate::check::CheckCause::Identity(IdentityRefusal::InputBytes { bound, required });
     assert_eq!(refused.code(), qsl_foundation::Code::StageLimitExceeded);
     assert_eq!(refused.cause(), Some("input-bytes-exceeded"));
+}
+
+/// A `Shape::Rect` over two payload terms, as a `union_value` node's body:
+/// one binding of the member over an aggregate of the payload references.
+fn rect_body(payload: NodeKey) -> BodyTerm {
+    BodyTerm::aggregate(vec![MemberTerm::binding(
+        "Rect",
+        BindingValue::Group(GroupTerm::references([payload, payload])),
+    )])
+}
+
+/// QSpec FR-440 and FR-319: a `value`/`union_value` node is keyed by
+/// `quire.application-node/v1` although its aggregate body holds no
+/// `application`, with `declaration: null`, no `owner` and `recursion:
+/// null`; a `tuple_value` over the same body keeps its structural preimage.
+/// The expected bytes are written out here, in RFC 8785 order, and hashed by
+/// the test; they are not read back from the producer.
+#[trace("FR-319-AC-4", "FR-319-AC-5", "TC-826")]
+#[test]
+fn a_union_value_is_keyed_by_the_application_preimage_and_a_tuple_value_is_not() {
+    let union = NodeKey::from_digest([0xbb; 32]);
+    let payload = NodeKey::from_digest([0x11; 32]);
+    let body = rect_body(payload);
+    let node_id =
+        |key: NodeKey| format!(r#"{{"digest":"{key}","domain":"quire.checked-semantic-node/v1"}}"#);
+    let reference = format!(r#"{{"target":{},"term":"reference"}}"#, node_id(payload));
+    let aggregate = format!(r#"{{"members":[{reference},{reference}],"term":"aggregate"}}"#);
+    let expected_body = format!(
+        r#"{{"members":[{{"name":"Rect","term":"binding","value":{aggregate}}}],"term":"aggregate"}}"#
+    );
+    let expected = |version: &str, form: &str| {
+        format!(
+            r#"{{"body":{expected_body},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"{form}","semantic_type":{},"version":"{version}"}}"#,
+            node_id(union)
+        )
+    };
+    let key_of = |form: &str| {
+        node_key(
+            &NodeInput {
+                owner: None,
+                node_tag: NodeTag::Value,
+                semantic_form: form,
+                semantic_type: Some(union),
+                declaration: None,
+                body: &body,
+            },
+            IdentityLimits::default(),
+        )
+        .expect("the node keys")
+    };
+
+    let value = key_of("union_value");
+    let application = expected("quire.application-node/v1", "union_value");
+    assert_eq!(
+        std::str::from_utf8(&value.preimage),
+        Ok(application.as_str())
+    );
+    assert_eq!(
+        value.key,
+        NodeKey::from_digest(Sha256::digest(application.as_bytes()).into())
+    );
+
+    let tuple = key_of("tuple_value");
+    let structural = expected("quire.structural-node/v1", "tuple_value");
+    assert_eq!(
+        std::str::from_utf8(&tuple.preimage),
+        Ok(structural.as_str())
+    );
+    assert_eq!(
+        tuple.key,
+        NodeKey::from_digest(Sha256::digest(structural.as_bytes()).into())
+    );
+}
+
+/// QSpec FR-440: a `case` is the `case` operator class, spelled `case`
+/// whether as the application's `operator` or the node's `semantic_form`.
+#[trace("FR-320-AC-1", "TC-827")]
+#[test]
+fn the_case_operator_class_is_spelled_case() {
+    assert_eq!(Operator::Case.semantic_form(), "case");
+    assert_eq!(
+        serde_json::to_value(Operator::Case).expect("an operator serializes"),
+        json!("case")
+    );
+}
+
+/// QSpec FR-440-AC-11 and FR-441: the nullary and reference-payload
+/// `union_value` vectors of QSpec's `positive-union-nodes.json`, read at run
+/// time from `$QSPEC_DIR`, key through this module's key function to the node
+/// ids QSpec fixes for them. Skipped (and passing) when `QSPEC_DIR` is unset;
+/// `make conformance` requires it. Nothing of QSpec is copied here.
+#[trace("FR-319-AC-4", "FR-320-AC-4", "TC-826")]
+#[test]
+fn conformance_fr440_union_value_keys_match_qspec_union_fixture() {
+    let Some(qspec) = std::env::var_os("QSPEC_DIR") else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
+    let path = std::path::Path::new(&qspec)
+        .join("proposals/checked-package-v2/fixtures/positive-union-nodes.json");
+    let bytes =
+        std::fs::read(&path).unwrap_or_else(|error| panic!("reading {}: {error}", path.display()));
+    let document: Value = serde_json::from_slice(&bytes)
+        .unwrap_or_else(|error| panic!("parsing {}: {error}", path.display()));
+    let nodes = document["semantic_graph"]["nodes"]
+        .as_array()
+        .unwrap_or_else(|| panic!("{} has no semantic graph nodes", path.display()));
+    let node_ref = |value: &Value| {
+        NodeRef::deserialize(value)
+            .unwrap_or_else(|error| panic!("not a node reference: {error}: {value}"))
+            .0
+    };
+    let mut members = BTreeSet::new();
+    for node in nodes
+        .iter()
+        .filter(|node| node["node_tag"] == "value" && node["semantic_form"] == "union_value")
+    {
+        let binding = &node["body"]["members"][0];
+        let member = binding["name"].as_str().expect("a member name");
+        let payload: Vec<NodeKey> = binding["value"]["members"]
+            .as_array()
+            .expect("a payload aggregate")
+            .iter()
+            .map(|term| {
+                assert_eq!(term["term"], "reference", "{member}: a reference payload");
+                node_ref(&term["target"])
+            })
+            .collect();
+        let body = BodyTerm::aggregate(vec![MemberTerm::binding(
+            member,
+            BindingValue::Group(GroupTerm::references(payload)),
+        )]);
+        let keyed = node_key(
+            &NodeInput {
+                owner: None,
+                node_tag: NodeTag::Value,
+                semantic_form: "union_value",
+                semantic_type: Some(node_ref(&node["semantic_type"])),
+                declaration: None,
+                body: &body,
+            },
+            IdentityLimits::default(),
+        )
+        .unwrap_or_else(|refusal| panic!("{member}: {refusal}"));
+        assert_eq!(
+            keyed.key,
+            node_ref(&node["node_id"]),
+            "{member}: the application-node key QSpec fixes"
+        );
+        members.insert(member.to_owned());
+    }
+    assert_eq!(
+        members,
+        BTreeSet::from(["Empty".to_owned(), "Rect".to_owned()]),
+        "the fixture holds the nullary and the reference-payload vector"
+    );
 }

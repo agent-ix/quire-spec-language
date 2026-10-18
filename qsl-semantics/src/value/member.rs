@@ -70,6 +70,11 @@ pub enum Member {
         declaration: NodeKey,
         /// The end's own identifier.
         name: Identifier,
+        /// The `bounded_domain`/`model_population` node of the population a
+        /// reachability over this end walks, when the unit bounds that
+        /// population (FR-365 "The population link", FR-380). Absent from
+        /// the wire form, not `null`, when it is `None`.
+        population: Option<NodeKey>,
     },
     /// A type's named operation.
     Operation {
@@ -119,6 +124,20 @@ impl Member {
         }
     }
 
+    /// The population node this member links, when it links one.
+    pub fn population(&self) -> Option<NodeKey> {
+        match self {
+            Self::RelationshipEnd { population, .. } => *population,
+            Self::Field { .. }
+            | Self::Position { .. }
+            | Self::Element { .. }
+            | Self::Operation { .. }
+            | Self::TypeArgument { .. }
+            | Self::ProfileOperator { .. }
+            | Self::StateClause { .. } => None,
+        }
+    }
+
     /// This member's total v2 wire encoding (C-18): exactly the
     /// `node-identity-preimage.schema.json` `OperationMember` shape, over
     /// every variant with no `_` arm, so a new variant fails to compile here
@@ -154,9 +173,14 @@ impl Member {
             Self::Element { declaration } => MemberWire::Element {
                 declaration: declaration_wire(declaration),
             },
-            Self::RelationshipEnd { declaration, name } => MemberWire::RelationshipEnd {
+            Self::RelationshipEnd {
+                declaration,
+                name,
+                population,
+            } => MemberWire::RelationshipEnd {
                 declaration: declaration_wire(declaration),
                 name: name.as_str(),
+                population: population.as_ref().map(declaration_wire),
             },
             Self::Operation { declaration, name } => MemberWire::Operation {
                 declaration: declaration_wire(declaration),
@@ -193,6 +217,8 @@ enum MemberWire<'a> {
     RelationshipEnd {
         declaration: DeclarationWire,
         name: &'a str,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        population: Option<DeclarationWire>,
     },
     Operation {
         declaration: DeclarationWire,
@@ -241,6 +267,8 @@ impl FixedShape for Member {
 
 #[cfg(test)]
 mod tests {
+    use ix_trace_rs::trace;
+
     use super::*;
     use serde_json::{json, Value};
 
@@ -309,6 +337,7 @@ mod tests {
         let member = Member::RelationshipEnd {
             declaration: node(4),
             name: Identifier::new("source").unwrap(),
+            population: None,
         };
         let wire = to_wire(&member);
         assert_eq!(
@@ -319,6 +348,29 @@ mod tests {
                 "name": "source",
             })
         );
+    }
+
+    /// FR-365 "The population link": the key is present only when the member
+    /// links a population node, and then names it as `declaration` names its
+    /// node.
+    #[trace("TC-1054")]
+    #[test]
+    fn relationship_end_renders_its_population_link_only_when_it_has_one() {
+        let member = Member::RelationshipEnd {
+            declaration: node(4),
+            name: Identifier::new("source").unwrap(),
+            population: Some(node(9)),
+        };
+        assert_eq!(
+            to_wire(&member),
+            json!({
+                "kind": "relationship_end",
+                "declaration": {"domain": NODE_KEY_DOMAIN, "digest": node(4).to_string()},
+                "name": "source",
+                "population": {"domain": NODE_KEY_DOMAIN, "digest": node(9).to_string()},
+            })
+        );
+        assert_eq!(member.population(), Some(node(9)));
     }
 
     #[test]

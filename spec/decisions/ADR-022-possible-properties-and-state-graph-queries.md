@@ -118,7 +118,7 @@ and evidence shape.
 | GM-5 | **Paths and SG-3.** A path from a node `x` to `Y` is a finite edge sequence from `x` whose last node satisfies `Y` and no earlier node does. When `x` satisfies `Y` the empty path is its only path. Two paths are distinct when their edge sequences differ, an edge being (source, transition identity, post-state). SG-3 holds when every reachable node where `X` holds has exactly one path to `Y`. A cycle on a path from `x` to `Y` gives `x` unboundedly many paths. |
 | GM-6 | **Open nodes.** A node EN-1 has not fully expanded is **open**: a node at `max_depth` (ADR-018 §3), a boundary state of a state constraint (ADR-021 SC-2), a node whose expansion evaluated a contract conjunction undecided (ADR-018 V-6 `UndecidedSuccessor`), and every discovered node not expanded when a run limit stopped the run. Its outgoing edges are not known. Every other node is **closed**: its outgoing edges are exactly its FR-120 successors. Decisive evidence (GV-2) reads only facts that open nodes cannot change. |
 | GM-7 | **Fairness plays no part.** S3 refuses a fairness constraint on a state-graph claim, `unsupported_construct`/`expression-form`. Weak and strong fairness of operations are machine-closed (ADR-018 §4, ADR-019 SF-7): every finite path from an initial state extends to a fair behaviour. So every reachable node lies on a fair behaviour, and every finite path to `P` is a prefix of one. Fairness therefore changes no state-graph verdict, and admitting it would only add a premise with no effect. |
-| GM-8 | **Terminal states and deadlocks.** A terminal state, intended or not (ADR-018 DL-1, DL-2), is a node with no outgoing edge and reads by GM-4 and GM-5 like any node. A reachable terminal state where `Q` holds and `P` does not refutes SG-2. The model's `terminal` member changes no state-graph verdict, as it changes no temporal verdict (ADR-018 DL-6). The derived deadlock-freedom item (ADR-018 DL-3) is added for each distinct model subject among a request's temporal and state-graph items, so a request whose only claims are state-graph claims still reports its subject's deadlocks. |
+| GM-8 | **Terminal states and deadlocks.** A terminal state, intended or not (ADR-018 DL-1, DL-2), is a node with no outgoing edge and reads by GM-4 and GM-5 like any node. A reachable terminal state where `Q` holds and `P` does not refutes SG-2. The model's `terminal` declaration changes no state-graph verdict, as it changes no temporal verdict (ADR-018 DL-6). The derived deadlock-freedom item (ADR-018 DL-3) is added for each distinct model subject among a request's temporal and state-graph items, so a request whose only claims are state-graph claims still reports its subject's deadlocks. |
 
 ### 3. Engines and algorithms
 
@@ -353,7 +353,7 @@ terminal, so it is a trap. The item settles `refuted`, `closed-scope`
 the two steps, then explores the closure of `Lost`, which is `{Lost}`, and
 finds `phase = Won` false there.
 
-The model declares no `terminal` member, so the deadlock-freedom item is
+The unit declares no `terminal` declaration, so the deadlock-freedom item is
 refuted at `Lost`, the first terminal state in discovery order, with the same
 two-step prefix. A `terminal when` predicate that holds where the phase is
 `Won` or `Lost` settles the deadlock-freedom item `proved` and leaves
@@ -397,7 +397,7 @@ and 3 edges, `fff`, `tff`, `ttf`, `ttt`, and `fff` counts 1. The item settles
 `proved`, `closed-scope`, `Proved{basis: Exhaustive, certification: Certified}` (V-1), once GC-2 accepts its counts.
 
 In both models `ttt` is terminal, so the deadlock-freedom item is refuted at
-`ttt` unless the model declares `terminal when` a predicate that holds there.
+`ttt` unless the package declares `terminal when` for the model a predicate that holds there.
 
 ### 8. Downstream impact and sequencing
 

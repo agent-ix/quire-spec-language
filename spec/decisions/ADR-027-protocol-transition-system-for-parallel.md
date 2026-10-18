@@ -93,10 +93,9 @@ FR-170 gives channels a queue transition system: `send`, `deliver`,
 
 **What explores it.** Nothing. FR-120's `ModelSystem` is QSL's only
 `TransitionSystem` (ADR-016 FP-4). Its successor relation interleaves every
-operation on every receiver; it has no control state. S3 checks a protocol's
-`sequence`, `attempt` and `finish` nodes and refuses the other kinds with
-`unsupported_construct`/`not-yet-implemented` (ADR-017 PF-7). S4 emits no
-protocol node.
+operation on every receiver; it has no control state. S3 checks every
+protocol construct (FR-218, FR-381). S4 emits the checked protocol as v2
+protocol nodes (FR-383).
 
 **What ADR-018 gives.** A model subject (SM-2), behaviours as maximal paths
 (SM-3), terminal stutter (SM-4), weak fairness over operations (FA-1 to
@@ -245,7 +244,7 @@ read.
 
 | ID | Rule |
 | --- | --- |
-| PD-1 | **Intended terminal states.** A protocol clause declares intended terminal states with at most one `terminal` member, the protocol-level form of ADR-018 DL-1: `terminal when P`, where `P` is a Boolean state predicate over the model observation and the protocol's captures, evaluated at a terminal state through the one clause evaluator; or `terminal any`, every terminal state is intended, which is the per-protocol opt-out. A terminal state is intended when it holds no live instance (every instance has finished and been removed), or when the clause declares `terminal when P` and `P` holds there. The model's own `terminal` member is not read: it classifies the terminal states of the model's successor relation, which a protocol subject does not run. The spelling is illustrative; QSpec's shared grammar owns it. The member is part of the checked package and so of the obligation identity. |
+| PD-1 | **Intended terminal states.** A protocol clause declares intended terminal states with at most one `terminal` member, the protocol-level form of ADR-018 DL-1: `terminal when P`, where `P` is a Boolean state predicate over the model observation and the protocol's captures, evaluated at a terminal state through the one clause evaluator; or `terminal any`, every terminal state is intended, which is the per-protocol opt-out. A terminal state is intended when it holds no live instance (every instance has finished and been removed), or when the clause declares `terminal when P` and `P` holds there. The model's own `terminal` declaration is not read: it classifies the terminal states of the model's successor relation, which a protocol subject does not run. The spelling is illustrative; QSpec's shared grammar owns it. The member is part of the checked package and so of the obligation identity. |
 | PD-2 | **Deadlock.** A deadlock of a protocol subject is a reachable terminal state that is not intended (PD-1): some thread waits (§2.2) and no step of any thread, channel, environment or memory model is enabled. A join waiting on a branch that waits at a disabled attempt, an empty queue or a false `check` is the common case. Under `on each`, `activate` may stay enabled for ever; there a state is also a deadlock when at least one instance is live, every step enabled at it is an `activate`, and `P` does not hold: no live instance can move until a new trigger arrives, and no trigger is promised. Enabledness is ST-1 to ST-15's, which ADR-018 FA-2 reads (PA-2). |
 | PD-3 | **Reported by default, with a per-protocol opt-out.** The request writer adds one deadlock-freedom item per distinct protocol subject among a request's temporal items (ADR-018 DL-3), with `deadlocked` read by PD-2, unless the protocol clause declares `terminal any`. Verdicts, the counterexample kind `Deadlock` and DL-6's reading of claims at terminal states apply unchanged. |
 | PD-4 | **Blocked threads.** A deadlock counterexample also carries, for its last state, each waiting thread's path, rest point and **wait cause**: `Precondition{clause}`, `NoPostState`, `Constraint`, `EmptyQueue{channel}`, `JoinWaiting{threads}`, `CheckFalse{node}` or `Gate`. Replay recomputes the list (PX-2); it is data for the reader, as the memory component is in the weak-memory record. |

@@ -160,7 +160,7 @@ span on refusal.
 - [FR-103](FR-103-admit-model-operations-and-frames-on-the-spine.md)
   (operations and frames), [FR-104](FR-104-check-state-clauses.md) (state
   predicates), [FR-124](FR-124-declare-intended-terminal-states-and-derive-deadlock-freedom.md)
-  (the sibling `terminal` member).
+  (the sibling `terminal` declaration).
 - QSpec FR-142 (the time dimension and exact unit conversion) and QSpec
   FR-205 (exact quantities).
 

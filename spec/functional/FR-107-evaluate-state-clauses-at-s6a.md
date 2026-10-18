@@ -59,7 +59,10 @@ object environment.
 
 - `S6aFamilyKind` SHALL gain `ProtocolClause`, matched with one arm and no
   `_` arm (ADR-012 §5.1 S1). The S6a seam's `ProtocolClause` arm SHALL make
-  one call to the `ProtocolClause` `evaluate` hook.
+  one call to the `ProtocolClause` `evaluate` hook. The hook serves a state
+  clause (this requirement) and the expression slot of a protocol node of a
+  checked package ([FR-390](FR-390-evaluate-a-protocol-node-expression-from-a-checked-package.md)),
+  which share the arm, the `Meter` and the charges of an expression's nodes.
 - `CheckedPackageEvaluation` SHALL gain `evaluate_clause(&self, clause:
   &QualifiedName, observations: &AdmittedObservations, meter: &mut Meter)
   -> Result<ClauseEvaluation, CallFailure>`.

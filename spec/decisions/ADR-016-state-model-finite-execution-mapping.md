@@ -141,12 +141,12 @@ untrusted data, recorded as found.
   FR-084-AC-2, AC-5 (partial), AC-7 and FR-086-AC-1, AC-2, AC-4, AC-5, whose
   TCs are planned.
 - The native state lane still exists: `src/state` (typed on IR `ValueType`,
-  `src/state/evaluation.rs:15`), `src/native_model`, `src/protocol_artifact`,
-  and the FR-108 parity test
-  `tc_469_step_2_and_3_native_and_spine_agree_and_name_the_boundary_locus`
-  (`tests/it/config_version_spine.rs:324`). TC-469's own `build()` reaches
-  the native `runtime`, `model_source` and `native_model` modules through
-  `examples/config-version/fixtures.rs:6-15`.
+  `src/state/evaluation.rs:15`), `src/native_model` and
+  `src/protocol_artifact`. TC-469's own `build()` calls
+  `spine::write` through the `config_version_spine` support module over
+  `examples/config-version/spine_corpus.rs`, which imports no native module;
+  `fixtures.rs` (native model, runtime) delegates its spine files to the same
+  module.
 
 **IR dependencies.** QSL consumes IR-370's checked-package reader, which
 decides the reference edge of a `quire.op.model.reaches_field` application.
@@ -347,9 +347,9 @@ and a QSpec FR-331 terminal record, and its counterexample is a
 
 | ID | Decision |
 | --- | --- |
-| FP-1 | `StateModel` owns model declarations, population extent, redefinition, dispatch and the model expression forms (`deref`, `allInstances`, `lookup`, dispatched calls, `reaches` inside a clause), as ADR-012 §3 and §15.2 state. Its checked outputs are `check`-core types (ADR-012 §1): `NodeKind::Attribute`, `AllInstances`, `Lookup`, `Reaches` and the dispatch table. |
+| FP-1 | `StateModel` owns model declarations, population extent, redefinition, dispatch and the model expression forms (`deref`, `allInstances`, `lookup`, dispatched calls, `reaches` inside a clause), as ADR-012 §3 and §15.2 state. Its checked outputs are `check`-core types (ADR-012 §1): `NodeKind::Attribute`, `AllInstances`, `Lookup`, `Reaches` and the dispatch table. Amended by FR-380: the declaration `bound <label> on <alias>::<population> [N]` is the one `StateModel` declaration with a leading token. S2 builds it through the declaration dispatch arm `LeadingTokenKind::Bound => state_model::population_bound`, and that is the only `StateModel` arm there. |
 | FP-2 | `StateModel`'s `check` hook takes one model expression form, the way `Value`'s function-application checker (`check::family::Application`, ADR-012 §14.1 FR-065-AC-4 row) takes one nested call: the enclosing family's typer calls it from a thin arm with the shared `CheckContext`. Today that work sits inside the `Value` typer (`check/check.rs:1659`, `:2164`, `:2214`). Moving it is G-2. |
-| FP-3 | `StateModel` implements `FamilyContract` and not `ReferenceEvaluation`, and no `StateModel` variant is added to `S6aFamilyKind`. No S6a input is a `StateModel` item: a model form is always nested in a `Value` function body or a `ProtocolClause` body, and it evaluates inside that family's `evaluate` hook through `value::model_query`, raising `StateModel`-owned causes (ADR-013 O-16). This applies ADR-012 §2's #214 rule (a contract part nothing can construct is left out). ADR-012 §2, §3, §5.1 S1 and §13.5 are amended to say so. Reopen condition: an S6a entry whose selected item is a `StateModel` declaration. |
+| FP-3 | `StateModel` implements `FamilyContract` and not `ReferenceEvaluation`, and no `StateModel` variant is added to `S6aFamilyKind`. No S6a input is a `StateModel` item: a model form is always nested in a `Value` function body or a `ProtocolClause` body, and it evaluates inside that family's `evaluate` hook through `value::model_query`, raising `StateModel`-owned causes (ADR-013 O-16). This applies ADR-012 §2's #214 rule (a contract part nothing can construct is left out). ADR-012 §2, §3, §5.1 S1 and §13.5 are amended to say so. Reopen condition: an S6a entry whose selected item is a `StateModel` declaration. Amended by FR-380: the `bound` declaration is a `StateModel` declaration with an S2 entry (FP-1) and no S6a entry: it is a package-level declaration that the checker resolves (FR-380) and the evaluator reads as a bound on a population (the `cardinality_out_of_bound` refusal travels in the enclosing family's result), so the reopen condition is not met for S6a and there is still no `evaluate` hook and no `S6aFamilyKind::StateModel`. |
 | FP-4 | Simulation is a layer-5 consumer of checked packages (ADR-011 §6.1 `simulation`), not a family. `ModelSystem` is a production `TransitionSystem`, and it evaluates through the `ProtocolClause` evaluator (FE-3), which is ADR-011 §8's "through a family evaluator". With it, lane D has converged, and `qsl_eval::simulation::Outcome` is a canonical S6a-layer outcome whose O-16 map is `Outcome::category()` (ADR-014 §7). Amended by ADR-027 TS-1: `ProtocolSystem`, the protocol transition system, is the second production `TransitionSystem`, beside `ModelSystem`; it applies each attempt through `ModelSystem`'s application rule (TS-3). |
 
 ### 8. Conformance summary
@@ -380,7 +380,7 @@ successor.
 | G-3 | ID-5 population identity | QSL-68 (#120) | `population_id_preimage` builds FR-089's seven-member preimage; `with_population` keeps `PopulationConflict` | FR-089-AC-1 (amended) and FR-089-AC-7 | TC-291 (the 3-and-7 conflict test at `qsl-eval/tests/it/model_reference_queries.rs:2834` changes to expect two ids) | before G-4 |
 | G-4 | FR-120 `ModelSystem`, `model::state::StateModel`, `explore_model`, `sample_model` | QSL-67 (#121) | as FR-120 "Outputs" and "Frame and observation seam"; the expansion calls `decide_frame` (FE-1); candidates generated lazily in canonical order, each generated candidate charged to `max_candidates` | FR-120-AC-1 to AC-13 | TC-471 to TC-473 | after G-1, G-3 and QSL-48 |
 | G-5 | FR-085 relationship-end resolution | QSL-68 (#120) | FR-085's resolution step over `RelationshipEnd` | FR-085-AC-1 to AC-3 | TC-230 to TC-232 | independent |
-| G-6 | M-6c state lane deletion | QSL-67 (#121), with QSL-68 for the model half (ADR-011 M-6c row) | first split the spine generator in `examples/config-version/` from `fixtures.rs`'s native imports, so TC-469's `build()` needs no native module | ADR-012 §15.8 step 2 and ADR-011 M-6c exactly, including the SEAM-3 reads and the IR import that feed `state` (`src/state/evaluation.rs:15`), `lowering`, IT-010 and the dev dependencies, in one PR; FR-108's independent table stays | TC-469 step 1 passes with the native modules deleted; the parity test is gone | independent of G-4 |
+| G-6 | M-6c state lane deletion | QSL-67 (#121), with QSL-68 for the model half (ADR-011 M-6c row) | the spine generator `examples/config-version/spine_corpus.rs` has no native import, so TC-469's `build()` needs no native module | ADR-012 §15.8 step 2 and ADR-011 M-6c exactly, including the SEAM-3 reads and the IR import that feed `state` (`src/state/evaluation.rs:15`), `lowering`, IT-010 and the dev dependencies, in one PR; FR-108's independent table stays | TC-469 step 1 passes with the native modules deleted; the parity test is gone | independent of G-4 |
 | G-7 | Dispatch at S3 | QSL-68 (#120) | spine `compile` links dispatch through `check::checked_dispatch_operation` | FR-302-AC-1 to FR-302-AC-6: spine `compile` carries one dispatch table per called operation and refuses an ambiguous or empty dispatch at S3 with no checked package | TC-793 to TC-795, TC-809 | independent |
 | G-8 | One-to-one model correspondence | QSL-68 (#120) | `ModelCorrespondence::record` returns an internal fault for a second, different entry for one key in either direction | FR-303-AC-1 to FR-303-AC-4: a second, different entry for one key in either direction faults | TC-796 | independent |
 | G-9 | Planned model criteria | QSL-68 (#120) | as each FR states | FR-084-AC-2, AC-5, AC-7; FR-086-AC-1, AC-2, AC-4, AC-5 | TC-227, TC-240, TC-410; TC-233, TC-234, TC-236, TC-241 | independent |

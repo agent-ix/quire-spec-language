@@ -23,7 +23,7 @@ are prospective qualification procedures; this artifact claims no execution.
 2. Check it with the product state for model state `(1, 0)` removed; with
    the initial product state removed.
 3. Check a certificate holding every reachable `Counter` state for the
-   deadlock-freedom item, with no `terminal` member; then the same states
+   deadlock-freedom item, with no `terminal` declaration; then the same states
    for `always holds(c.value <= 3)`.
 4. Check a certificate holding `t1` for `always holds(true)` over
    `test/tallies`.

@@ -13,7 +13,9 @@
 //! `ModelOwner` with a `null` `declaration`, FR-094), and a `null`
 //! `semantic_type` for a self-typed node.
 //! [`node_key`] makes that choice from the body alone, so the two preimages
-//! cannot disagree about which applies. The nominal enum, enum member,
+//! cannot disagree about which applies; the one exception is a
+//! `value`/`union_value` node, which QSpec FR-440 keys by FR-322's preimage
+//! although its aggregate body holds no `application`. The nominal enum, enum member,
 //! dimension and unit preimages (FR-092 rule 1) are QSpec's own, built by
 //! `value::enumeration` and `value::unit`.
 //!
@@ -1077,6 +1079,9 @@ impl BodyTerm {
                 if let Some(declaration) = operation.member.as_ref().and_then(Member::declaration) {
                     visit(declaration);
                 }
+                if let Some(population) = operation.member.as_ref().and_then(Member::population) {
+                    visit(population);
+                }
                 visit(result_type.0);
             }
             Self::Frame(FrameTerm {
@@ -1282,6 +1287,8 @@ pub enum Operator {
     StateClause,
     /// `claim`.
     Claim,
+    /// `case`: the body root of an `expression`/`case` node (QSpec FR-440).
+    Case,
 }
 
 impl Operator {
@@ -1317,6 +1324,7 @@ impl Operator {
             // its own case.
             Self::StateClause => "state_clause",
             Self::Claim => "claim",
+            Self::Case => "case",
         }
     }
 }
@@ -1466,8 +1474,8 @@ pub struct OperationLeaf {
     pub mode: Option<OperationMode>,
 }
 
-/// One schema `LeafSegment`: `field:<identifier>`, `position:<n>` or
-/// `inner`, and FR-093's `recursion:<d>`, which ends a recursion leaf's path
+/// One schema `LeafSegment`: `field:<identifier>`, `member:<identifier>`,
+/// `position:<n>` or `inner`, and FR-093's `recursion:<d>`, which ends a recursion leaf's path
 /// (a QSL proposal, ADR-013 QC-24).
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum LeafSegment {
@@ -1477,6 +1485,8 @@ pub enum LeafSegment {
     Position(u64),
     /// `inner`.
     Inner,
+    /// `member:<name>`: a union member, QSpec FR-440's "Structural leaves".
+    Member(Identifier),
     /// `recursion:<d>`: the path reenters the composite it entered after
     /// `d` segments.
     Recursion(usize),
@@ -1490,6 +1500,7 @@ impl Serialize for LeafSegment {
                 serializer.collect_str(&format_args!("position:{position}"))
             }
             Self::Inner => serializer.serialize_str("inner"),
+            Self::Member(name) => serializer.collect_str(&format_args!("member:{}", name.as_str())),
             Self::Recursion(depth) => serializer.collect_str(&format_args!("recursion:{depth}")),
         }
     }
@@ -1960,6 +1971,10 @@ fn typed_preimage<'a>(
         return Err(NodeKeyRefusal::EmptyQualifiedName);
     }
     let (body, has_application) = walk.body(node.body)?;
+    // QSpec FR-440 and FR-319: a `union_value` node is keyed by the
+    // application preimage even though its body, an aggregate over the
+    // member binding, contains no `application` term.
+    let has_application = has_application || is_union_value(node);
     let (version, recursion) = if has_application {
         if node.owner.is_some() {
             return Err(NodeKeyRefusal::OwnedApplication);
@@ -2007,6 +2022,16 @@ fn typed_preimage<'a>(
     };
     Ok((preimage, has_application))
 }
+
+/// Whether `node` is a `value`/`union_value` node, which QSpec FR-440 keys by
+/// `quire.application-node/v1` whatever its body holds.
+#[qsl_attrs::string_edge]
+fn is_union_value(node: &NodeInput<'_>) -> bool {
+    node.node_tag == NodeTag::Value && node.semantic_form == UNION_VALUE_FORM
+}
+
+/// The `semantic_form` of a union construction node.
+pub(crate) const UNION_VALUE_FORM: &str = "union_value";
 
 /// A node's preimage. Its `body` nests as deep as the term it keys, so it
 /// is written through `quire-canonical`'s event API from an explicit stack
@@ -2214,9 +2239,14 @@ fn map_member(member: Member, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Membe
         Member::Element { declaration } => Member::Element {
             declaration: map(declaration),
         },
-        Member::RelationshipEnd { declaration, name } => Member::RelationshipEnd {
+        Member::RelationshipEnd {
+            declaration,
+            name,
+            population,
+        } => Member::RelationshipEnd {
             declaration: map(declaration),
             name,
+            population: population.map(&mut *map),
         },
         Member::Operation { declaration, name } => Member::Operation {
             declaration: map(declaration),

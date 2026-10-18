@@ -888,6 +888,25 @@ impl CheckedPackageEvaluation for CheckedPackage {
     ) -> Result<ClauseEvaluation, CallFailure> {
         let setup = ClauseSetup::of(self, clause, observations)?;
         let identity = setup.declaration.identity();
+        // FR-380-AC-7: an observation listing more objects of a bounded
+        // population the clause ranges over than its maximum refuses before
+        // any charge, whether or not a `reaches` of the body is evaluated.
+        for bound in setup.declaration.population_bounds() {
+            for instant in [&observations.current, &observations.pre, &observations.post]
+                .into_iter()
+                .flatten()
+            {
+                if let Some(refusal) = evaluate::authored_bound_refusal(&instant.environment, bound)
+                    .map_err(CallFailure::Fault)?
+                {
+                    return Ok(ClauseEvaluation::new(
+                        evaluate::refused_evaluation(refusal),
+                        setup.trail,
+                        setup.receiver_path,
+                    ));
+                }
+            }
+        }
         let mut env = s6a::protocol_clause::ProtocolClauseEnv::new(
             self.graph(),
             setup.current,

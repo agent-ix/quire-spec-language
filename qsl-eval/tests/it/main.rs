@@ -10,6 +10,7 @@ pub(crate) mod support;
 #[allow(dead_code)]
 mod tc235_k2;
 
+mod automaton_kernels;
 mod call_verdicts;
 mod checked_package_call;
 mod child_composite;
@@ -20,6 +21,7 @@ mod composite_values;
 mod dispatch_calls;
 mod equality_matrix;
 mod evaluation_ignores_display_strings;
+mod fairness_kernels;
 mod finite_simulation;
 mod float_rounding;
 mod inherited_attributes;
@@ -36,6 +38,8 @@ mod source_call;
 mod state_model_family;
 mod supplied_phases;
 mod tc235_business_meaning_runtime;
+mod temporal_trace;
 mod total_functions;
 mod type_invariants;
+mod unbounded_set_call;
 mod variant_fields;

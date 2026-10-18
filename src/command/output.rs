@@ -7,7 +7,6 @@ mod types;
 
 use super::{LimitKind, RunCause, RunError, RunResult};
 use crate::formal_source::FormalSource;
-use crate::runtime::RuntimeReference;
 use qsl_foundation::source::SourceReadCause;
 use qsl_foundation::{ByteDigest, Diagnostic};
 use quire_contract_model as ir;
@@ -38,13 +37,6 @@ fn source(value: &FormalSource) -> types::Source<'_> {
         digest: value.source().digest().to_string(),
         path: value.source().path(),
         formal: value.identity(),
-    }
-}
-
-fn reference(value: &RuntimeReference) -> types::Reference<'_> {
-    match value {
-        RuntimeReference::Snapshot(value) => types::Reference::Snapshot(value),
-        RuntimeReference::Invocation(value) => types::Reference::Invocation(value),
     }
 }
 
@@ -99,19 +91,6 @@ fn package_cause(value: &crate::package::PackageCause) -> types::PackageCause<'_
             column: value.column(),
             message: value.to_string(),
         },
-    }
-}
-
-fn projection_location(value: super::ProjectionLocation) -> types::ProjectionLocation {
-    let (span_status, span, unmapped_span) = match value {
-        super::ProjectionLocation::Absent => (types::SpanStatus::Absent, None, None),
-        super::ProjectionLocation::Located(span) => (types::SpanStatus::Located, Some(span), None),
-        super::ProjectionLocation::Invalid(span) => (types::SpanStatus::Invalid, None, Some(span)),
-    };
-    types::ProjectionLocation {
-        span_status,
-        span,
-        unmapped_span,
     }
 }
 
@@ -208,13 +187,6 @@ pub(super) fn error(error: &RunError, artifact: bool) -> Result<Value, serde_jso
             types::Stage::Package,
             types::Details::Package {
                 stage: error.stage.to_string(),
-            },
-        ),
-        RunCause::Input(error) => (
-            types::Stage::Input,
-            types::Details::Input {
-                expected: reference(&error.expected),
-                stage: error.stage.as_str(),
             },
         ),
         RunCause::SelectedPackage {
@@ -350,31 +322,6 @@ pub(super) fn error(error: &RunError, artifact: bool) -> Result<Value, serde_jso
                     stage: fault.stage(),
                     invariant: fault.invariant(),
                 },
-            },
-        ),
-        RunCause::Lowering {
-            target,
-            package,
-            program,
-            location,
-            error,
-        } => (
-            types::Stage::Lower,
-            types::Details::Lowering {
-                profile: target.name(),
-                package: types::PackageReference {
-                    format: package.format(),
-                    digest: package.digest().to_string(),
-                },
-                source: types::Source {
-                    identity: &program.identity,
-                    digest: program.digest.to_string(),
-                    path: &program.path,
-                    formal: &program.formal,
-                },
-                clause: error.clause.as_ref(),
-                location: projection_location(*location),
-                upstream: &error.upstream,
             },
         ),
     };

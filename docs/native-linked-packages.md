@@ -180,7 +180,7 @@ Each clause has exactly:
    it carries no predicate result or promise that runtime input is available.
 2. `{target: quire.contract.executable-projection/v1, status: unlowered,
    code: unsupported_construct, span: <original root expression byte span>}`.
-   It retains the original source obligation while LC04 lowering remains absent.
+   It retains the original source obligation while no lowering exists.
 
 No branch supplies a fake IR projection, executable AST, proof-as-code conversion
 or omitted clause. A later available IR disposition requires reviewed lowering,
@@ -188,7 +188,7 @@ actual BoundPackage construction and separate backend qualification. That change
 reopens this closed artifact contract; this version cannot be read as promising
 an available backend. The current package API exposes no successful BoundPackage
 accessor. The actual backend/full ConfigVersion workflow remains mandatory work
-under LC04/IT-002; it is not satisfied by unlowered descriptors.
+under IT-002; it is not satisfied by unlowered descriptors.
 
 ## Required feature derivation
 
