@@ -245,7 +245,7 @@ fn a_layer_refusal_is_prohibited() {
         classified.causes,
         [crate::spine::RefusalCause {
             code: Code::UnsupportedConstruct,
-            cause: None,
+            cause: Some("declaration-form".to_owned()),
             limit: None,
         }]
     );
@@ -339,13 +339,13 @@ fn form_cases() -> Vec<FormCase> {
         ),
         expression(
             "count",
-            "count<Integer>(x in c: true)",
+            "count<Total>(x in c: true)",
             LayerForm::SequenceQuery,
             FROM_QUERIES,
         ),
         expression(
             "sum",
-            "sum<Integer>(x in c: x)",
+            "sum<Total>(x in c: x)",
             LayerForm::SequenceQuery,
             FROM_QUERIES,
         ),
@@ -393,13 +393,13 @@ fn form_cases() -> Vec<FormCase> {
         ),
         expression(
             "fold",
-            "fold<Integer>(acc, x in c: acc, identity: 0)",
+            "fold<Total>(acc, x in c: acc, identity: 0)",
             LayerForm::ValueConstruct,
             VALUE_AND_UP,
         ),
         expression(
             "reduce",
-            "reduce<Integer>(acc, x in c: acc)",
+            "reduce<Total>(acc, x in c: acc)",
             LayerForm::ValueConstruct,
             VALUE_AND_UP,
         ),
@@ -413,7 +413,8 @@ fn form_cases() -> Vec<FormCase> {
 }
 
 /// Declarations every case may name, under the value layer as `w`.
-const PRELUDE: &str = "record R { f: Integer; }\n\
+const PRELUDE: &str = "type Total = Integer;\n\
+    record R { f: Integer; }\n\
     union Shape { Empty, Circle(Integer) }\n\
     function g using w(x: Boolean): Boolean pure { x }\n\
     predicate Id using w(x: Boolean): Boolean { x }\n";
