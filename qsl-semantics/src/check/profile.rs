@@ -7,8 +7,9 @@
 //! `quire.value.complete/v1`); the catalog's `qualification_catalog` rows
 //! come from its own package-selection rules. A clause
 //! profile resolves in its clause family's catalog (ADR-012 §2): the
-//! `ProtocolClause` family's is [`protocol_profile`]. Every other header
-//! profile reaches the `Value` table.
+//! `ProtocolClause` family's is [`protocol_profile`] and the `TemporalTrace`
+//! family's is [`TemporalProfile`]. Every other header profile reaches the
+//! `Value` table.
 
 use qsl_foundation::selection::ProfileSelection;
 use qsl_foundation::{Code, Span};
@@ -16,8 +17,8 @@ use qsl_foundation::{Code, Span};
 use crate::value::definition::{CatalogEntry, CatalogRole, DefinitionLock, DefinitionReference};
 use crate::value::HeaderLayer;
 
-/// The publishing authority of the protocol profile.
-const PROTOCOL_AUTHORITY: &str = "agent-ix";
+/// The publishing authority of the clause families' profiles.
+pub(super) const CLAUSE_PROFILE_AUTHORITY: &str = "agent-ix";
 
 /// The protocol clause family's one profile: bounded finite global
 /// choreography (QSpec FR-322 `protocol_profile`).
@@ -29,9 +30,76 @@ const PROTOCOL_PROFILE: &str = "quire.protocol.finite-global/v1";
 #[qsl_attrs::string_edge]
 pub(crate) fn protocol_profile(identity: &str) -> Option<DefinitionReference> {
     (identity == PROTOCOL_PROFILE).then(|| DefinitionReference {
-        authority: PROTOCOL_AUTHORITY.to_owned(),
+        authority: CLAUSE_PROFILE_AUTHORITY.to_owned(),
         identity: PROTOCOL_PROFILE.to_owned(),
     })
+}
+
+/// The `TemporalTrace` family's temporal profile catalog (QSpec FR-250 as
+/// FR-326 admits it): the four profiles a `temporal` clause is checked under.
+/// A clause is checked under exactly one, selected by identity.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum TemporalProfile {
+    /// `quire.temporal.event-position.false-extension/v1`.
+    EventPositionFalseExtension,
+    /// `quire.temporal.fixed-sample.false-extension/v1`.
+    FixedSampleFalseExtension,
+    /// `quire.temporal.timestamped-event.finite-window/v1`.
+    TimestampedEventFiniteWindow,
+    /// `quire.temporal.infinite-trace/v1`.
+    InfiniteTrace,
+}
+
+impl TemporalProfile {
+    /// Every profile, in catalog order.
+    pub const ALL: [Self; 4] = [
+        Self::EventPositionFalseExtension,
+        Self::FixedSampleFalseExtension,
+        Self::TimestampedEventFiniteWindow,
+        Self::InfiniteTrace,
+    ];
+
+    /// The profile's definition identity.
+    pub const fn identity(self) -> &'static str {
+        match self {
+            Self::EventPositionFalseExtension => "quire.temporal.event-position.false-extension/v1",
+            Self::FixedSampleFalseExtension => "quire.temporal.fixed-sample.false-extension/v1",
+            Self::TimestampedEventFiniteWindow => {
+                "quire.temporal.timestamped-event.finite-window/v1"
+            }
+            Self::InfiniteTrace => "quire.temporal.infinite-trace/v1",
+        }
+    }
+
+    /// The profile a header identity selects, if the `TemporalTrace`
+    /// family's catalog holds it (FR-110). The one place a header profile's
+    /// spelling is read for that family.
+    #[qsl_attrs::string_edge]
+    pub fn from_identity(identity: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|profile| profile.identity() == identity)
+    }
+
+    /// Whether every operator needs a closed interval and the clause has a
+    /// finite horizon (FR-326 "Bounded profiles"); `false` for
+    /// infinite-trace.
+    pub const fn is_bounded(self) -> bool {
+        match self {
+            Self::EventPositionFalseExtension
+            | Self::FixedSampleFalseExtension
+            | Self::TimestampedEventFiniteWindow => true,
+            Self::InfiniteTrace => false,
+        }
+    }
+
+    /// The profile's definition as a [`DefinitionReference`].
+    pub fn definition(self) -> DefinitionReference {
+        DefinitionReference {
+            authority: CLAUSE_PROFILE_AUTHORITY.to_owned(),
+            identity: self.identity().to_owned(),
+        }
+    }
 }
 
 /// Why a header profile does not resolve (FR-110's table).
@@ -94,6 +162,7 @@ pub fn resolve_profiles(profiles: &[ProfileSelection]) -> Result<(), Vec<Profile
             let selected = profile.identity.as_str();
             let cause = if HeaderLayer::from_identity(selected).is_some()
                 || protocol_profile(selected).is_some()
+                || TemporalProfile::from_identity(selected).is_some()
             {
                 return None;
             } else if lock
@@ -153,6 +222,41 @@ mod tests {
         assert_eq!(protocol_profile(&unknown.identity), None);
         let refused = resolve_profiles(&[unknown]).expect_err("an unknown profile refuses");
         assert_eq!(refused[0].cause, ProfileCause::UnsupportedSelection);
+    }
+
+    /// FR-326, FR-110: the four temporal profiles resolve in the
+    /// `TemporalTrace` family's catalog by identity, each as bounded or
+    /// not; a near-miss identity and the timed profile (FR-234) are in no
+    /// catalog yet and refuse.
+    #[trace("FR-110")]
+    #[test]
+    fn the_temporal_profiles_resolve_in_the_temporal_catalog() {
+        let selection = |identity: &str| ProfileSelection {
+            alias: "t".to_owned(),
+            identity: identity.to_owned(),
+            span: Span { start: 0, end: 0 },
+            identity_span: Span { start: 0, end: 0 },
+        };
+        for profile in TemporalProfile::ALL {
+            assert_eq!(
+                TemporalProfile::from_identity(profile.identity()),
+                Some(profile)
+            );
+            assert_eq!(resolve_profiles(&[selection(profile.identity())]), Ok(()));
+            assert_eq!(
+                profile.is_bounded(),
+                profile != TemporalProfile::InfiniteTrace
+            );
+        }
+        for unknown in [
+            "quire.temporal.timed/v1",
+            "quire.temporal.infinite-trace/v2",
+            "quire.temporal.Infinite-trace/v1",
+        ] {
+            assert_eq!(TemporalProfile::from_identity(unknown), None);
+            let refused = resolve_profiles(&[selection(unknown)]).expect_err("refuses");
+            assert_eq!(refused[0].cause, ProfileCause::UnsupportedSelection);
+        }
     }
 
     /// FR-110's table against QSpec's own catalog: every (code, cause) pair

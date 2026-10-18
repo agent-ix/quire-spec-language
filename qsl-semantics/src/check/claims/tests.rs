@@ -589,6 +589,7 @@ fn narrowed_claim(location: Location, bound: IntegerInterval) -> ValueClaim {
             path_condition: Vec::new(),
         },
         domains: BTreeMap::new(),
+        objects: std::collections::BTreeSet::new(),
     }
 }
 
@@ -739,6 +740,7 @@ fn claim_at(location: Location) -> ValueClaim {
             path_condition: Vec::new(),
         },
         domains: BTreeMap::new(),
+        objects: std::collections::BTreeSet::new(),
     }
 }
 

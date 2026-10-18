@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! NFR-013 / TC-915: actual Make routing, separate from real extraction qualification.
 
+use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use ix_trace_rs::trace;
+
+use crate::feature_scope::{skipped, KeepReason, Verdict};
+use crate::test_suites::{all_features_decisions, read_tree_features};
 
 // Independent complete argv expectations, including standalone default checks.
 const DEFAULT_COMMANDS: &[&[&str]] = &[
@@ -220,6 +224,47 @@ fn expected(root: &str, commands: &[&[&str]]) -> String {
         .collect()
 }
 
+const DEEP_CASES: [&str; 3] = [
+    "formatter_identity::all_three_deep_source_generators_keep_format_identity",
+    "formatter_identity::replay_large_source_generator_keeps_format_identity",
+    "formatter_identity::dependency_chain_and_order_variants_keep_format_identity",
+];
+
+/// The deep-format calls in recipe order: one exact listing per case, then the
+/// three cases serially in a single run, all in the default lane's directory.
+fn deep_calls(directory: &str) -> String {
+    let listings: Vec<Vec<&str>> = DEEP_CASES
+        .iter()
+        .map(|&case| {
+            vec![
+                "test",
+                "--locked",
+                "--workspace",
+                "--tests",
+                "--",
+                "--ignored",
+                "--exact",
+                case,
+                "--list",
+            ]
+        })
+        .collect();
+    let mut run = vec![
+        "test",
+        "--locked",
+        "--workspace",
+        "--tests",
+        "--",
+        "--ignored",
+        "--exact",
+        "--test-threads=1",
+    ];
+    run.extend(DEEP_CASES);
+    let mut commands: Vec<&[&str]> = listings.iter().map(Vec::as_slice).collect();
+    commands.push(&run);
+    expected(directory, &commands)
+}
+
 #[test]
 #[trace(
     "TC-915",
@@ -325,51 +370,25 @@ fn explicit_roots_and_lane_overrides_are_one_quoted_argument() {
 #[test]
 #[trace("TC-915", "NFR-013-AC-1", "NFR-013-AC-3")]
 fn deep_formatter_target_runs_each_full_size_case_and_is_in_ci() {
-    const CASES: &[&str] = &[
-        "formatter_identity::all_three_deep_source_generators_keep_format_identity",
-        "formatter_identity::replay_large_source_generator_keeps_format_identity",
-        "formatter_identity::dependency_chain_and_order_variants_keep_format_identity",
-    ];
     let recipe = Recipe::new();
-    let expected_calls: String = CASES
-        .iter()
-        .flat_map(|case| {
-            [
-                expected(
-                    "target/test-deep-format",
-                    &[&[
-                        "test",
-                        "--locked",
-                        "--test",
-                        "it",
-                        case,
-                        "--",
-                        "--ignored",
-                        "--exact",
-                        "--list",
-                    ]],
-                ),
-                expected(
-                    "target/test-deep-format",
-                    &[&[
-                        "test",
-                        "--locked",
-                        "--test",
-                        "it",
-                        case,
-                        "--",
-                        "--ignored",
-                        "--exact",
-                        "--test-threads=1",
-                    ]],
-                ),
-            ]
-        })
-        .collect();
     assert_eq!(
         recipe.run(&["test-deep-format"], None, &[]),
-        expected_calls,
-        "the full-size depth and volume regressions run in the named target"
+        deep_calls("target/ci-default-features"),
+        "the full-size depth and volume regressions run once, in the default lane's directory"
+    );
+    assert_eq!(
+        recipe.run(&["test-deep-format"], Some("caller target"), &[]),
+        deep_calls("caller target/ci-default-features"),
+        "a caller root selects the default lane's child, not a directory of its own"
+    );
+    assert_eq!(
+        recipe.run(
+            &["test-deep-format"],
+            Some("caller target"),
+            &["CI_DEFAULT_TARGET_DIR=default override"]
+        ),
+        deep_calls("default override"),
+        "the default lane override moves the deep target with its lane"
     );
 
     let makefile = fs::read_to_string(recipe.directory.path().join("Makefile")).unwrap();
@@ -488,6 +507,7 @@ fn aggregate_reaches_default_then_all_features_without_changing_recipe_order() {
         "string-edge",
         "route-lint",
         "checked-input",
+        "refinement-versioning",
         "cargo-deny-bans",
         "ci-docs",
         "arch-lint-canonical-encoder",
@@ -502,77 +522,7 @@ fn aggregate_reaches_default_then_all_features_without_changing_recipe_order() {
         recipe.run(&["ci-internal"], Some("caller target"), &overrides),
         expected("caller target/ci-default-features", DEFAULT_COMMANDS)
             + &expected("caller target/ci-all-features", ALL_COMMANDS)
-            + &expected(
-                "caller target/test-deep-format",
-                &[
-                    &[
-                        "test",
-                        "--locked",
-                        "--test",
-                        "it",
-                        "formatter_identity::all_three_deep_source_generators_keep_format_identity",
-                        "--",
-                        "--ignored",
-                        "--exact",
-                        "--list",
-                    ],
-                    &[
-                        "test",
-                        "--locked",
-                        "--test",
-                        "it",
-                        "formatter_identity::all_three_deep_source_generators_keep_format_identity",
-                        "--",
-                        "--ignored",
-                        "--exact",
-                        "--test-threads=1",
-                    ],
-                    &[
-                        "test",
-                        "--locked",
-                        "--test",
-                        "it",
-                        "formatter_identity::replay_large_source_generator_keeps_format_identity",
-                        "--",
-                        "--ignored",
-                        "--exact",
-                        "--list",
-                    ],
-                    &[
-                        "test",
-                        "--locked",
-                        "--test",
-                        "it",
-                        "formatter_identity::replay_large_source_generator_keeps_format_identity",
-                        "--",
-                        "--ignored",
-                        "--exact",
-                        "--test-threads=1",
-                    ],
-                    &[
-                        "test",
-                        "--locked",
-                        "--test",
-                        "it",
-                        "formatter_identity::dependency_chain_and_order_variants_keep_format_identity",
-                        "--",
-                        "--ignored",
-                        "--exact",
-                        "--list",
-                    ],
-                    &[
-                        "test",
-                        "--locked",
-                        "--test",
-                        "it",
-                        "formatter_identity::dependency_chain_and_order_variants_keep_format_identity",
-                        "--",
-                        "--ignored",
-                        "--exact",
-                        "--test-threads=1",
-                    ],
-                ],
-            )
+            + &deep_calls("caller target/ci-default-features")
     );
 }
 
@@ -631,5 +581,55 @@ fn clean_and_core_tooling_retain_their_own_target_and_features() {
                 &["run", "--package", "xtask", "--", "checked-input"],
             ]
         )
+    );
+}
+
+/// QSL-825: the all-features lane's package scope, from the real workspace's
+/// `cargo metadata`. Prints the decision table (`--nocapture`).
+#[test]
+#[trace("TC-915", "NFR-013-AC-4", "NFR-013-AC-5")]
+fn real_workspace_decisions_keep_every_package_whose_compile_changes() {
+    let decisions = all_features_decisions(workspace(), &[OsString::from("--locked")])
+        .expect("the workspace resolves in both feature selections");
+    for decision in &decisions {
+        println!("{decision}");
+    }
+    let skip = skipped(&decisions);
+    println!("--exclude {}", skip.join(" --exclude "));
+    // The invariant the exclusions rest on: with them left out, every package
+    // that stays resolves to exactly the feature sets of the full
+    // `--all-features` workspace, host and target units apart.
+    let arguments = [OsString::from("--locked")];
+    let full = read_tree_features(workspace(), &arguments, true, &[]).expect("full tree");
+    let without =
+        read_tree_features(workspace(), &arguments, true, &skip).expect("tree without skips");
+    assert_eq!(without.differences(&full), Vec::<String>::new());
+    // And each skipped package compiles on the same units in the default run.
+    let default = read_tree_features(workspace(), &arguments, false, &[]).expect("default tree");
+    for name in &skip {
+        assert!(default.compiles_same_as(&full, name), "{name}");
+    }
+    let verdict = |name: &str| {
+        &decisions
+            .iter()
+            .find(|decision| decision.package == name)
+            .unwrap_or_else(|| panic!("{name} is a workspace package"))
+            .verdict
+    };
+    // Optional features no default build turns on.
+    assert_eq!(
+        verdict("quire-spec-language"),
+        &Verdict::Run(KeepReason::OwnFeatures)
+    );
+    assert_eq!(
+        verdict("qsl-source"),
+        &Verdict::Run(KeepReason::OwnFeatures)
+    );
+    // No optional features of its own, but a dependency's features change.
+    assert_eq!(
+        verdict("qsl-bench"),
+        &Verdict::Run(KeepReason::DependencyResolvesDifferently {
+            dependency: "qsl-replay".to_owned()
+        })
     );
 }

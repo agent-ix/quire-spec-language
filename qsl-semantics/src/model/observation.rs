@@ -1961,7 +1961,7 @@ pub use extents::{
     BundleKey, BundlePart, BundleRefusal, Keyed, ObservationOrigin, PopulationEnumerationFailure,
     PopulationManifest, RelationshipExtents, ResolveBundle,
 };
-pub(crate) use initial::{admit_initial_state, observe_state};
+pub(crate) use initial::{admit_initial_state, observe_state, state_fields, state_reference};
 pub use write::{
     write_environment_document, EnvironmentLabels, EnvironmentModel, EnvironmentObject,
     EnvironmentPopulation,

@@ -19,7 +19,7 @@ use qsl_semantics::check::TypeInvariantRefusal;
 use qsl_semantics::check::{AssemblyCause, AssemblyError, AssemblyRefusal};
 use qsl_semantics::check::{
     CheckCause, CheckRefusal, DispatchLinkCause, KeyFault, ProtocolAnchorCause,
-    ProtocolReferenceCause,
+    ProtocolReferenceCause, TemporalCause,
 };
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::key::DeclarationKey;
@@ -295,6 +295,71 @@ fn an_implementation_gap_is_unsupported() {
     assert_eq!(class_of(&projection), RefinementClass::Unsupported);
 }
 
+/// FR-341-AC-5, AC-6, AC-3: a `temporal` clause that checks but that no
+/// emission writes yet is `unsupported_construct`/`not-yet-implemented` and
+/// classifies `unsupported`; a profile that does not admit an operator's
+/// interval form is `unsupported_construct`/`expression-form`, `prohibited`;
+/// a wrong profile selection, an inverted interval and an unresolved
+/// parameter type are typed refusals, `refused`. None names a limit.
+#[trace("TC-861", "FR-341-AC-5", "FR-341-AC-6", "FR-341-AC-3")]
+#[test]
+fn each_temporal_clause_refusal_has_its_class() {
+    let span = qsl_foundation::Span { start: 0, end: 1 };
+    let temporal = |cause| check(vec![CheckCause::Temporal(Box::new(cause))]);
+    let cases = [
+        (
+            TemporalCause::NotEmitted {
+                name: "C".into(),
+                span,
+            },
+            RefinementClass::Unsupported,
+            cause(Code::UnsupportedConstruct, Some("not-yet-implemented")),
+        ),
+        (
+            TemporalCause::MissingInterval { span },
+            RefinementClass::Prohibited,
+            cause(Code::UnsupportedConstruct, Some("expression-form")),
+        ),
+        (
+            TemporalCause::OpenInterval { span },
+            RefinementClass::Prohibited,
+            cause(Code::UnsupportedConstruct, Some("expression-form")),
+        ),
+        (
+            TemporalCause::ProfileSelection {
+                found: Vec::new(),
+                span,
+            },
+            RefinementClass::Refused,
+            cause(Code::UnknownProfile, Some("unsupported-selection")),
+        ),
+        (
+            TemporalCause::InvertedInterval {
+                lower: 5,
+                upper: 3,
+                span,
+            },
+            RefinementClass::Refused,
+            cause(Code::IllTyped, Some("type-mismatch")),
+        ),
+        (
+            TemporalCause::ParameterType {
+                parameter: "c".into(),
+                fault: qsl_semantics::check::TypeFormFault::MissingName("T".into()),
+                span,
+            },
+            RefinementClass::Refused,
+            cause(Code::MissingDeclaration, Some("missing-name")),
+        ),
+    ];
+    for (temporal_cause, class, expected) in cases {
+        let classified = classify_refusal(&temporal(temporal_cause.clone()));
+        assert_eq!(classified.class, class, "{temporal_cause:?}");
+        assert_eq!(classified.causes, [expected], "{temporal_cause:?}");
+        assert!(classified.limits().is_empty(), "{temporal_cause:?}");
+    }
+}
+
 /// FR-341-AC-6: a refusal whose every cause is a profile-prohibited form
 /// classifies `prohibited`.
 #[trace("TC-861", "FR-341-AC-6")]
@@ -537,6 +602,87 @@ fn an_assembly_type_limit_is_incomplete_naming_the_limit() {
         [ReachedLimit {
             name: "environment.work_units",
             bound: 1
+        }]
+    );
+}
+
+/// FR-341-AC-4: a type-admission ceiling reached in the check stage is
+/// `incomplete`, naming the limit and its value; a type-admission refusal that
+/// reached no limit names none.
+#[trace("TC-861", "FR-341-AC-4")]
+#[test]
+fn a_check_type_admission_limit_is_incomplete_naming_the_limit() {
+    let limited = check(vec![CheckCause::TypeAdmission {
+        code: Code::StageLimitExceeded,
+        cause: "type-limit",
+        limit: Some(Box::new(LimitExceeded::new(
+            Setting::EnvironmentWorkUnits,
+            1,
+            2,
+        ))),
+    }]);
+    let classified = classify_refusal(&limited);
+    assert_eq!(classified.class, RefinementClass::Incomplete);
+    assert_eq!(
+        classified.causes,
+        [RefusalCause {
+            code: Code::StageLimitExceeded,
+            cause: Some("type-limit"),
+            limit: Some(ReachedLimit {
+                name: "environment.work_units",
+                bound: 1
+            }),
+        }]
+    );
+    assert_eq!(
+        classified.limits(),
+        [ReachedLimit {
+            name: "environment.work_units",
+            bound: 1
+        }]
+    );
+
+    let refused = check(vec![CheckCause::TypeAdmission {
+        code: Code::IllTyped,
+        cause: "type-mismatch",
+        limit: None,
+    }]);
+    let classified = classify_refusal(&refused);
+    assert_eq!(classified.class, RefinementClass::Refused);
+    assert_eq!(classified.causes[0].limit, None);
+    assert!(classified.limits().is_empty());
+}
+
+/// FR-342-AC-3: a clause run whose compile reaches a type-admission ceiling
+/// classifies `incomplete` at `compile`, naming the limit and its value.
+#[trace("TC-862", "FR-342-AC-3")]
+#[test]
+fn a_clause_run_compile_type_admission_limit_names_the_limit() {
+    let report = ClauseRunReport {
+        package_id: None,
+        usage: Default::default(),
+        basis: crate::proof_result::SettlementBasis::Unavailable,
+        witness: None,
+        disposition: ClauseDisposition::Compile(Box::new(check(vec![CheckCause::TypeAdmission {
+            code: Code::StageLimitExceeded,
+            cause: "type-limit",
+            limit: Some(Box::new(LimitExceeded::new(
+                Setting::EnvironmentAncestorSteps,
+                3,
+                4,
+            ))),
+        }]))),
+    };
+    let classified = assert_run(
+        &report,
+        RefinementClass::Incomplete,
+        ClauseRunStage::Compile,
+    );
+    assert_eq!(
+        classified.classification.limits(),
+        [ReachedLimit {
+            name: "environment.ancestor_steps",
+            bound: 3
         }]
     );
 }
