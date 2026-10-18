@@ -328,7 +328,7 @@ pub struct PackageDeclarations {
     /// FR-110: the header-selectable layers the unit's header profiles
     /// resolve to, ascending; the lock's `definition_selections` hold their
     /// `requires` closure.
-    pub header_layers: Vec<crate::value::HeaderLayer>,
+    pub header_layers: Vec<crate::value::layer::HeaderLayer>,
     /// Record, tuple and model object-type declarations.
     pub types: TypeEnvironment,
     /// Where each record keeps the fields its ancestors name (FR-359).

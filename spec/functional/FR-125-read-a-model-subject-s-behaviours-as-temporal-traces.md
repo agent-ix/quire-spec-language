@@ -112,8 +112,9 @@ reports.
   0, QSpec FR-092's complete-history rule.
 - Under infinite-trace the evaluator SHALL give an interval operator QSpec
   FR-091's (future) or FR-092's (past) offset meaning, with no
-  closed-boundary rule, and an `[a,*]` operator the meaning of its
-  unbounded operator shifted by `a` (ADR-018 IV-2).
+  closed-boundary rule, and an `[a,*]` operator the limit of the closed
+  interval `[a,b]` as `b` grows, whose `until` and `since` keep the left
+  operand's range `[a,d)` (ADR-018 IV-2).
 
 ### Undefined evaluation
 
@@ -140,7 +141,7 @@ reports.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-125-AC-1 | Over the `Counter` subject (universe `{c}`, initial value 0, no `terminal` member), the one behaviour is positions `0, 1, 2, 3` with anchors `initialization`, `inc`, `inc`, `inc`. Under infinite-trace it continues with the terminal stutter step repeating position 3, whose transition identity differs from every `inc` identity. | Test (TC-520) |
+| FR-125-AC-1 | Over the `Counter` subject (universe `{c}`, initial value 0, no `terminal` declaration), the one behaviour is positions `0, 1, 2, 3` with anchors `initialization`, `inc`, `inc`, `inc`. Under infinite-trace it continues with the terminal stutter step repeating position 3, whose transition identity differs from every `inc` identity. | Test (TC-520) |
 | FR-125-AC-2 | Over that behaviour, `always[0,5] holds(c.value <= 3)` from position 0 evaluates `false` under event-position false-extension (positions 4 and 5 are past closure) and `true` under infinite-trace (the stutter repeats `value = 3`); `eventually holds(c.value = 3)` under infinite-trace evaluates `true`, and `always eventually holds(c.value = 0)` evaluates `false`. | Test (TC-520) |
 | FR-125-AC-3 | On ADR-018 §6's lasso (empty prefix, loop `(0,0) (1,0) (2,0)`), `eventually[0,4] holds(a.versionNumber = 0)` at position 2 reads the states of positions 2 to 6 by wrapping and evaluates `true` (position 3 holds `(0,0)`); `once[0,3] holds(a.versionNumber = 2)` at position 1 reads positions 1 and 0, the rest before position 0 as false, and evaluates `false`; each visit charges one work unit. | Test (TC-520) |
 | FR-125-AC-4 | Over ADR-018 §6's subject, a clause with `over (c: Config::ConfigVersion)` yields one instance per object of `{a, b}`. A subject whose `initial` list is empty is `NoInitialState` before any state is explored. | Test (TC-520) |

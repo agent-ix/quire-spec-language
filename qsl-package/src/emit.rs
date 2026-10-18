@@ -334,6 +334,10 @@ impl BodyNames {
                 if let Some(declaration) = operation.member().and_then(Member::declaration) {
                     names.dependencies.insert(node_id(declaration));
                 }
+                // FR-380: the population node a reachability links to.
+                if let Some(population) = operation.member().and_then(Member::population) {
+                    names.dependencies.insert(node_id(population));
+                }
                 let leaf_laws = operation.leaves().iter().flat_map(|leaf| &leaf.laws);
                 names
                     .laws

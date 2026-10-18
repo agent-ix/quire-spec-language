@@ -11,3 +11,4 @@ mod limits;
 mod model_source;
 mod nesting_levels;
 mod selection;
+mod terminal_declaration;

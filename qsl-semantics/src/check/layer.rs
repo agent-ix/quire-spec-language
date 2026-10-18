@@ -18,7 +18,8 @@ use qsl_forms::{
 use qsl_foundation::Span;
 
 use super::assemble::{AssemblyCause, AssemblyError};
-use crate::value::{DefinitionLock, HeaderLayer, LayerForm};
+use crate::value::definition::DefinitionLock;
+use crate::value::layer::{HeaderLayer, LayerForm};
 
 /// The admitted-form set one `using` alias selects, with the names of the
 /// unit's own predicates, which tell a named predicate call from any other

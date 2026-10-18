@@ -1021,6 +1021,7 @@ impl<'c> Mapping<'c> {
             | Production::Parameter
             | Production::StateClause
             | Production::OperationBody
+            | Production::PopulationBound
             | Production::Block
             | Production::ExactNumber
             | Production::FloatValue
@@ -1046,6 +1047,7 @@ impl<'c> Mapping<'c> {
             | Production::TemporalRelation
             | Production::TemporalUnary
             | Production::TemporalPrimary
+            | Production::TerminalDeclaration
             | Production::ProtocolClause
             | Production::Role
             | Production::RoleLifetime
@@ -1590,6 +1592,7 @@ impl<'c> Mapping<'c> {
             | Production::Parameter
             | Production::StateClause
             | Production::OperationBody
+            | Production::PopulationBound
             | Production::Block
             | Production::Expression
             | Production::Implication
@@ -1618,6 +1621,7 @@ impl<'c> Mapping<'c> {
             | Production::TemporalRelation
             | Production::TemporalUnary
             | Production::TemporalPrimary
+            | Production::TerminalDeclaration
             | Production::ProtocolClause
             | Production::Role
             | Production::RoleLifetime

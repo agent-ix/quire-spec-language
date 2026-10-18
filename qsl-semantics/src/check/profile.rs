@@ -15,7 +15,7 @@ use qsl_foundation::selection::ProfileSelection;
 use qsl_foundation::{Code, Span};
 
 use crate::value::definition::{CatalogEntry, CatalogRole, DefinitionLock, DefinitionReference};
-use crate::value::HeaderLayer;
+use crate::value::layer::HeaderLayer;
 
 /// The publishing authority of the clause families' profiles.
 pub(super) const CLAUSE_PROFILE_AUTHORITY: &str = "agent-ix";
