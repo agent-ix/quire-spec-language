@@ -38,7 +38,7 @@ fn fixture(profile: &str, over: &str, activation: &str, body: &str) -> Fixture {
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"{VALUE}\";\n\
          profile t0 = \"{profile}\";\n\
-         record Counter {{ value: Int[0, 9]; }}\n\
+         record Counter {{ level: Int[0, 9]; }}\n\
          record Config {{ versionNumber: Int[0, 9]; }}\n\
          temporal C using t0 over ({over}) clock \"model-steps\" {activation} {{ {body} }}\n"
     );
@@ -67,7 +67,7 @@ fn fixture(profile: &str, over: &str, activation: &str, body: &str) -> Fixture {
     Fixture { text, clause }
 }
 
-/// `c.value` over `Counter`, `on origin`.
+/// `c.level` over `Counter`, `on origin`.
 fn counter(profile: &str, body: &str) -> Fixture {
     fixture(profile, "c: Counter", "on origin", body)
 }
@@ -101,7 +101,7 @@ fn versions(values: &[i64]) -> Vec<Observation> {
 
 /// A letter that reads each `holds(...)` atom from its source text over an
 /// observation: `holds(<var> <op> <k>)` and
-/// `holds(<n> / (2 - c.value) <op> <k>)` (integer division; a zero divisor is
+/// `holds(<n> / (2 - c.level) <op> <k>)` (integer division; a zero divisor is
 /// the kernel's `DivisionByZero`).
 struct Letters<'a> {
     fixture: &'a Fixture,
@@ -125,7 +125,7 @@ impl<'a> Letters<'a> {
             .expect("a holds atom");
         let words: Vec<&str> = inner.split_whitespace().collect();
         let variable = |name: &str| match name {
-            "c.value" => observation.c,
+            "c.level" => observation.c,
             "a.versionNumber" => observation.a,
             "b.versionNumber" => observation.b,
             other => panic!("unmodelled variable {other}"),
@@ -237,35 +237,35 @@ fn violated(index: u64) -> TemporalOutcome {
     }
 }
 
-/// The closed `Counter` trace `c.value` 0, 1, 2 under event-position.
+/// The closed `Counter` trace `c.level` 0, 1, 2 under event-position.
 fn closed(body: &str) -> TemporalOutcome {
     outcome(&counter(EVENT, body), finite(3), counters(&[0, 1, 2]))
 }
 
-/// The `Counter` prefix `c.value` 0, 1, 2 under infinite-trace.
+/// The `Counter` prefix `c.level` 0, 1, 2 under infinite-trace.
 fn prefix(body: &str) -> TemporalOutcome {
     outcome(&counter(INFINITE, body), finite(3), counters(&[0, 1, 2]))
 }
 
-/// FR-327-AC-1: over the closed `Counter` trace with `c.value` 0, 1, 2 under
+/// FR-327-AC-1: over the closed `Counter` trace with `c.level` 0, 1, 2 under
 /// event-position false-extension, `on origin`, the four bounded clauses
 /// settle as the AC states, position 3 being past closure.
 #[trace("TC-837", "FR-327-AC-1")]
 #[test]
 fn a_closed_trace_settles_bounded_clauses_with_false_extension_past_its_end() {
     assert_eq!(
-        closed("eventually[0,2] holds(c.value = 2)"),
+        closed("eventually[0,2] holds(c.level = 2)"),
         TemporalOutcome::Holds
     );
-    assert_eq!(closed("eventually[0,1] holds(c.value = 2)"), violated(0));
-    assert_eq!(closed("always[0,3] holds(c.value <= 2)"), violated(0));
+    assert_eq!(closed("eventually[0,1] holds(c.level = 2)"), violated(0));
+    assert_eq!(closed("always[0,3] holds(c.level <= 2)"), violated(0));
     assert_eq!(
-        closed("always[0,3] not holds(c.value > 2)"),
+        closed("always[0,3] not holds(c.level > 2)"),
         TemporalOutcome::Holds
     );
 }
 
-/// FR-327-AC-2: `always[0,0] holds(c.value <= 1)` with activation `on each`
+/// FR-327-AC-2: `always[0,0] holds(c.level <= 1)` with activation `on each`
 /// is false at position 2.
 #[trace("TC-837", "FR-327-AC-2")]
 #[test]
@@ -274,7 +274,7 @@ fn an_each_activation_names_the_first_activating_position_that_fails() {
         EVENT,
         "c: Counter",
         "on each (q: Counter)",
-        "always[0,0] holds(c.value <= 1)",
+        "always[0,0] holds(c.level <= 1)",
     );
     assert_eq!(outcome(&each, finite(3), counters(&[0, 1, 2])), violated(2));
 }
@@ -310,14 +310,14 @@ fn positions_decode_from_decimal_ascii_and_refuse_everything_else() {
     assert_eq!(TemporalPosition::new(0).descriptor(), "0");
 }
 
-/// FR-327-AC-4: `eventually[0,2] holds(c.value = 2)` `on origin` makes 4
+/// FR-327-AC-4: `eventually[0,2] holds(c.level = 2)` `on origin` makes 4
 /// visits (the `eventually` node at position 0 and the atom at positions 0,
 /// 1 and 2); a meter of 3 work units is `Incomplete` at the `WorkUnits`
 /// charge point with no truth value, a meter of 4 completes and charges 4.
 #[trace("TC-837", "FR-327-AC-4")]
 #[test]
 fn work_is_charged_per_visit_and_exhaustion_returns_no_truth_value() {
-    let fx = counter(EVENT, "eventually[0,2] holds(c.value = 2)");
+    let fx = counter(EVENT, "eventually[0,2] holds(c.level = 2)");
     let (settled, spent, reads) = run(&fx, finite(3), counters(&[0, 1, 2]), limits(4));
     assert_eq!(settled, TemporalOutcome::Holds);
     assert_eq!(spent, 4);
@@ -345,14 +345,14 @@ fn undefined_at(index: u64, cause: Undefined) -> TemporalOutcome {
     })
 }
 
-/// FR-327-AC-5: `always[0,2] holds(2 / (2 - c.value) >= 1)` `on origin`
+/// FR-327-AC-5: `always[0,2] holds(2 / (2 - c.level) >= 1)` `on origin`
 /// returns `Undefined` at position 2 with division by zero, category
-/// violation; `eventually[0,1] holds(2 / (2 - c.value) = 2)` reads positions
+/// violation; `eventually[0,1] holds(2 / (2 - c.level) = 2)` reads positions
 /// 0 and 1 only and completes true.
 #[trace("TC-847", "FR-327-AC-5")]
 #[test]
 fn an_undefined_atom_at_a_position_the_clause_reads_is_returned_with_its_cause() {
-    let fx = counter(EVENT, "always[0,2] holds(2 / (2 - c.value) >= 1)");
+    let fx = counter(EVENT, "always[0,2] holds(2 / (2 - c.level) >= 1)");
     let (settled, _, _) = run(
         &fx,
         finite(3),
@@ -362,7 +362,7 @@ fn an_undefined_atom_at_a_position_the_clause_reads_is_returned_with_its_cause()
     assert_eq!(settled, undefined_at(2, Undefined::DivisionByZero));
     assert_eq!(settled.category(), Category::Violation);
 
-    let fx = counter(EVENT, "eventually[0,1] holds(2 / (2 - c.value) = 2)");
+    let fx = counter(EVENT, "eventually[0,1] holds(2 / (2 - c.level) = 2)");
     let (settled, _, reads) = run(
         &fx,
         finite(3),
@@ -374,23 +374,23 @@ fn an_undefined_atom_at_a_position_the_clause_reads_is_returned_with_its_cause()
 }
 
 /// FR-328-AC-1: over the `Counter` prefix 0, 1, 2 under infinite-trace,
-/// `always holds(c.value <= 1)` is false at position 0, `always
-/// holds(c.value <= 5)` is pending, and `eventually` is pending whether its
+/// `always holds(c.level <= 1)` is false at position 0, `always
+/// holds(c.level <= 5)` is pending, and `eventually` is pending whether its
 /// atom is reached or not.
 #[trace("TC-838", "FR-328-AC-1")]
 #[test]
 fn a_prefix_reports_a_bad_prefix_of_a_safety_formula_and_pends_the_rest() {
-    assert_eq!(prefix("always holds(c.value <= 1)"), violated(0));
+    assert_eq!(prefix("always holds(c.level <= 1)"), violated(0));
     assert_eq!(
-        prefix("always holds(c.value <= 5)"),
+        prefix("always holds(c.level <= 5)"),
         TemporalOutcome::Pending
     );
     assert_eq!(
-        prefix("eventually holds(c.value = 2)"),
+        prefix("eventually holds(c.level = 2)"),
         TemporalOutcome::Pending
     );
     assert_eq!(
-        prefix("eventually holds(c.value = 9)"),
+        prefix("eventually holds(c.level = 9)"),
         TemporalOutcome::Pending
     );
 }
@@ -402,11 +402,11 @@ fn a_prefix_reports_a_bad_prefix_of_a_safety_formula_and_pends_the_rest() {
 #[test]
 fn an_interval_response_is_refuted_by_present_positions_and_pends_on_unknown_ones() {
     assert_eq!(
-        prefix("always (holds(c.value = 1) implies eventually[0,1] holds(c.value = 3))"),
+        prefix("always (holds(c.level = 1) implies eventually[0,1] holds(c.level = 3))"),
         violated(0)
     );
     assert_eq!(
-        prefix("always (holds(c.value = 2) implies eventually[0,1] holds(c.value = 3))"),
+        prefix("always (holds(c.level = 2) implies eventually[0,1] holds(c.level = 3))"),
         TemporalOutcome::Pending
     );
 }
@@ -417,7 +417,7 @@ fn an_interval_response_is_refuted_by_present_positions_and_pends_on_unknown_one
 #[test]
 fn a_past_operator_reads_atoms_as_false_before_position_zero() {
     assert_eq!(
-        prefix("always (holds(c.value = 0) implies once[1,1] holds(c.value = 9))"),
+        prefix("always (holds(c.level = 0) implies once[1,1] holds(c.level = 9))"),
         violated(0)
     );
 }
@@ -428,13 +428,13 @@ fn a_past_operator_reads_atoms_as_false_before_position_zero() {
 #[test]
 fn a_prefix_never_settles_tested_and_pending_is_inconclusive() {
     let clauses = [
-        "always holds(c.value <= 1)",
-        "always holds(c.value <= 5)",
-        "eventually holds(c.value = 2)",
-        "eventually holds(c.value = 9)",
-        "always (holds(c.value = 1) implies eventually[0,1] holds(c.value = 3))",
-        "always (holds(c.value = 2) implies eventually[0,1] holds(c.value = 3))",
-        "always (holds(c.value = 0) implies once[1,1] holds(c.value = 9))",
+        "always holds(c.level <= 1)",
+        "always holds(c.level <= 5)",
+        "eventually holds(c.level = 2)",
+        "eventually holds(c.level = 9)",
+        "always (holds(c.level = 1) implies eventually[0,1] holds(c.level = 3))",
+        "always (holds(c.level = 2) implies eventually[0,1] holds(c.level = 3))",
+        "always (holds(c.level = 0) implies once[1,1] holds(c.level = 9))",
     ];
     let categories: Vec<Category> = clauses
         .iter()
@@ -458,13 +458,13 @@ fn a_prefix_never_settles_tested_and_pending_is_inconclusive() {
     );
 }
 
-/// FR-328-AC-5: `eventually holds(2 / (2 - c.value) = 3)`, outside the
+/// FR-328-AC-5: `eventually holds(2 / (2 - c.level) = 3)`, outside the
 /// safety fragment, is `Undefined` at position 2, not pending.
 #[trace("TC-847", "FR-328-AC-5")]
 #[test]
 fn an_undefined_letter_in_a_prefix_is_undefined_whatever_the_fragment() {
     assert_eq!(
-        prefix("eventually holds(2 / (2 - c.value) = 3)"),
+        prefix("eventually holds(2 / (2 - c.level) = 3)"),
         undefined_at(2, Undefined::DivisionByZero)
     );
 }
@@ -478,13 +478,13 @@ fn weak_whole(operation: &str) -> FairnessConstraint {
 }
 
 /// FR-328-AC-6: with the fairness set `fair weak inc` over a supplied
-/// prefix, `always holds(c.value <= 1)` is `MissingFairnessPremise` naming
+/// prefix, `always holds(c.level <= 1)` is `MissingFairnessPremise` naming
 /// `fair weak whole inc`, O-16 unsupported, with no position evaluated and
 /// no work charged; with an empty fairness set it is false at position 0.
 #[trace("TC-848", "FR-328-AC-6")]
 #[test]
 fn a_fairness_set_over_a_supplied_prefix_is_a_missing_premise_and_evaluates_nothing() {
-    let fair = counter(INFINITE, "fair weak inc; always holds(c.value <= 1)");
+    let fair = counter(INFINITE, "fair weak inc; always holds(c.level <= 1)");
     let (settled, spent, reads) = run(&fair, finite(3), counters(&[0, 1, 2]), limits(0));
     assert_eq!(
         settled,
@@ -499,7 +499,7 @@ fn a_fairness_set_over_a_supplied_prefix_is_a_missing_premise_and_evaluates_noth
     assert_eq!(settled.category(), Category::Unsupported);
     assert_eq!((spent, reads), (0, Vec::new()));
 
-    assert_eq!(prefix("always holds(c.value <= 1)"), violated(0));
+    assert_eq!(prefix("always holds(c.level <= 1)"), violated(0));
 }
 
 fn lasso(prefix: u64, loop_len: u64) -> TemporalTrace {
@@ -615,12 +615,12 @@ fn a_lasso_one_work_unit_short_returns_incomplete() {
 }
 
 /// FR-329-AC-6: on the observed `Counter` lasso with an empty prefix and loop
-/// `c.value` 0, 1, 2, `always eventually holds(2 / (2 - c.value) = 2)` is
+/// `c.level` 0, 1, 2, `always eventually holds(2 / (2 - c.level) = 2)` is
 /// `Undefined` at position 2, category violation.
 #[trace("TC-847", "FR-329-AC-6")]
 #[test]
 fn an_undefined_atom_in_a_lasso_loop_is_returned_at_its_first_position() {
-    let fx = counter(INFINITE, "always eventually holds(2 / (2 - c.value) = 2)");
+    let fx = counter(INFINITE, "always eventually holds(2 / (2 - c.level) = 2)");
     let settled = outcome(&fx, lasso(0, 3), counters(&[0, 1, 2]));
     assert_eq!(settled, undefined_at(2, Undefined::DivisionByZero));
     assert_eq!(settled.category(), Category::Violation);
@@ -732,15 +732,15 @@ fn the_unrolling_follows_the_past_reach_and_reads_past_it_by_congruence() {
     assert_eq!(at(9), TemporalOutcome::Holds);
 }
 
-/// FR-125-AC-6: the letter of `always holds(6 / (2 - c.value) >= 0)` under
+/// FR-125-AC-6: the letter of `always holds(6 / (2 - c.level) >= 0)` under
 /// infinite-trace is defined at positions 0 and 1 and undefined at position
-/// 2, cause division by zero; `eventually[0,1] holds(6 / (2 - c.value) =
+/// 2, cause division by zero; `eventually[0,1] holds(6 / (2 - c.level) =
 /// 6)` under event-position, `on origin`, reads positions 0 and 1 only and
 /// is true.
 #[trace("TC-537", "FR-125-AC-6")]
 #[test]
 fn the_letter_is_read_up_to_its_first_undefined_position_and_a_bounded_origin_to_its_horizon() {
-    let fx = counter(INFINITE, "always holds(6 / (2 - c.value) >= 0)");
+    let fx = counter(INFINITE, "always holds(6 / (2 - c.level) >= 0)");
     let (settled, _, reads) = run(
         &fx,
         finite(4),
@@ -750,7 +750,7 @@ fn the_letter_is_read_up_to_its_first_undefined_position_and_a_bounded_origin_to
     assert_eq!(settled, undefined_at(2, Undefined::DivisionByZero));
     assert_eq!(reads, [0, 1, 2]);
 
-    let fx = counter(EVENT, "eventually[0,1] holds(6 / (2 - c.value) = 6)");
+    let fx = counter(EVENT, "eventually[0,1] holds(6 / (2 - c.level) = 6)");
     let (settled, _, reads) = run(
         &fx,
         finite(4),
@@ -767,11 +767,11 @@ fn the_letter_is_read_up_to_its_first_undefined_position_and_a_bounded_origin_to
 #[test]
 fn until_with_a_lower_bound_does_not_require_its_left_operand_before_the_bound() {
     assert_eq!(
-        closed("holds(c.value = 9) until[1,2] holds(c.value = 1)"),
+        closed("holds(c.level = 9) until[1,2] holds(c.level = 1)"),
         TemporalOutcome::Holds
     );
     assert_eq!(
-        closed("holds(c.value = 9) until[1,2] holds(c.value = 2)"),
+        closed("holds(c.level = 9) until[1,2] holds(c.level = 2)"),
         violated(0)
     );
 }
@@ -810,7 +810,7 @@ fn an_open_window_reads_from_its_lower_bound_on_or_back_from_it() {
 /// A lasso is read under the infinite-trace profile only.
 #[test]
 fn a_lasso_under_a_bounded_profile_is_refused() {
-    let fx = counter(EVENT, "eventually[0,2] holds(c.value = 2)");
+    let fx = counter(EVENT, "eventually[0,2] holds(c.level = 2)");
     let mut letters = Letters::new(&fx, counters(&[0, 1, 2]));
     let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
     let refused = evaluate(&fx.clause, lasso(0, 3), &mut letters, &mut meter);
@@ -829,7 +829,7 @@ fn a_lasso_under_a_bounded_profile_is_refused() {
 fn a_node_visit_is_charged_once_per_position() {
     let fx = counter(
         EVENT,
-        "eventually[0,1] eventually[0,1] eventually[0,1] holds(c.value > 5)",
+        "eventually[0,1] eventually[0,1] eventually[0,1] holds(c.level > 5)",
     );
     let (settled, spent, reads) = run(
         &fx,
