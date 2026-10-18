@@ -39,8 +39,9 @@ use qsl_semantics::{
 use quire_contract_model::{
     derive_application_node_id, derive_structural_candidates, encode_checked_package_v2,
     ApplicationNodeDraft, BoundedDomainForm, CheckedNodeId, CheckedNodeKind,
-    CheckedPackageEvidence, CheckedPackageIdentityPreimageRefV2, CheckedPackageReadLimits, CheckedPackageV2, CheckedPackageV2ReadResult,
-    CheckedSemanticGraphV2, CheckedSemanticId, CheckedSemanticNodeV2, CheckedSourceMapEntry,
+    CheckedPackageEvidence, CheckedPackageIdentityPreimageRefV2, CheckedPackageReadLimits,
+    CheckedPackageV2, CheckedPackageV2ReadResult, CheckedSemanticGraphV2, CheckedSemanticId,
+    CheckedSemanticNodeV2, CheckedSourceMapEntry,
 };
 use quire_semantic_value::checking::CheckingLimits;
 
