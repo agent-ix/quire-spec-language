@@ -91,6 +91,7 @@ pub(crate) use family::SCALAR_LIMITS_UNLIMITED as UNBOUNDED_SCALAR_LIMITS;
 mod field_refinement;
 mod identity;
 mod model_conformance;
+mod model_gate;
 mod navigation;
 // The nested expression forms of TC-415, shared by this crate's tests and the
 // package emitter's tests, so only `test-support` exposes them.
@@ -162,6 +163,7 @@ use quire_exact::{Cancel, ValueType};
 pub use check::Scope;
 pub use claims::{ClaimSite, PathGuard, RequirementRecord, ResultBound, SiteGuard, ValueClaim};
 pub use family::{CheckedDeclaration, ValueDeclarations, ValueFunctionFamily};
+pub use model_gate::{ModelFamily, ModelGateRefusal, OwnerKind};
 pub use profile::{resolve_profiles, ProfileCause, ProfileRefusal};
 // Named only by `fixtures::measure_resolved`'s return type.
 #[cfg(any(test, feature = "test-support"))]

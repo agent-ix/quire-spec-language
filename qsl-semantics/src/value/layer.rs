@@ -105,6 +105,8 @@ pub enum LayerForm {
     PredicateDeclaration,
     /// A `function` declaration.
     FunctionDeclaration,
+    /// A `body` operation-body declaration (FR-361 item 5).
+    OperationBody,
     /// A call of a named predicate.
     NamedPredicateCall,
     /// `filter`, `map`, `flatMap`, `count` or `sum` over a sequence.
@@ -115,6 +117,10 @@ pub enum LayerForm {
     /// `convert`, `flatten`, `fold`, `reduce`, a union `case`, a function
     /// call, integer `div`, `rem` or `mod`.
     ValueConstruct,
+    /// A postfix `receiver.member(args)` operation call (FR-361 item 5).
+    DispatchCall,
+    /// The `lookup<T>(p, r) absent m` expression (FR-361 item 5).
+    Lookup,
 }
 
 impl LayerForm {
@@ -123,8 +129,28 @@ impl LayerForm {
     /// `unsupported_construct`/`expression-form`.
     pub fn is_declaration(self) -> bool {
         match self {
-            Self::StateClause | Self::PredicateDeclaration | Self::FunctionDeclaration => true,
+            Self::StateClause
+            | Self::PredicateDeclaration
+            | Self::FunctionDeclaration
+            | Self::OperationBody => true,
             Self::NamedPredicateCall
+            | Self::SequenceQuery
+            | Self::ObjectNavigation
+            | Self::ValueConstruct
+            | Self::DispatchCall
+            | Self::Lookup => false,
+        }
+    }
+
+    /// Whether the form is a model construct (FR-361 item 5): one the model
+    /// layer adds, and one the unit's own selection of that layer gates.
+    pub fn is_model_construct(self) -> bool {
+        match self {
+            Self::OperationBody | Self::DispatchCall | Self::Lookup => true,
+            Self::StateClause
+            | Self::PredicateDeclaration
+            | Self::FunctionDeclaration
+            | Self::NamedPredicateCall
             | Self::SequenceQuery
             | Self::ObjectNavigation
             | Self::ValueConstruct => false,
@@ -217,13 +243,17 @@ pub(super) const LAYER_ROWS: [LayerRow; 5] = [
             LayerForm::ObjectNavigation,
         ],
     },
-    // The model constructs (`operation-body`, a dispatched call, `lookup`,
-    // `abstraction-decl`) are FR-361's: it gates them on this layer.
+    // The model constructs (FR-361 item 5): an `operation-body`, a dispatched
+    // call and `lookup`.
     LayerRow {
         layer: HeaderLayer::ModelComplete,
         requires: &[HeaderLayer::StateGraph, HeaderLayer::ValueComplete],
         admitted_forms: "model-complete.md",
         witness_request: OPERATION_CONTRACT,
-        forms: &[],
+        forms: &[
+            LayerForm::OperationBody,
+            LayerForm::DispatchCall,
+            LayerForm::Lookup,
+        ],
     },
 ];
