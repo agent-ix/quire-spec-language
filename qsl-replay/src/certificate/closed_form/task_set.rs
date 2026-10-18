@@ -206,6 +206,16 @@ pub enum TaskSetRefusal {
         /// The named task.
         task: Identifier,
     },
+    /// An `edf` claim over a task that states jitter or blocking, which the
+    /// processor-demand test does not account for: it would settle a
+    /// schedule that fixed priority refutes.
+    #[error("invalid_model_binding/malformed-declaration: an edf claim ignores {member:?}, task {} states one", .task.as_str())]
+    EdfIgnoresTerm {
+        /// The task.
+        task: Identifier,
+        /// The member the test does not account for.
+        member: TimeMember,
+    },
     /// An AMC claim over a task whose deadline exceeds its period, which
     /// AMC-rtb does not cover.
     #[error("invalid_model_binding/malformed-declaration: AMC-rtb covers no deadline beyond the period, task {} states one", .task.as_str())]
@@ -228,6 +238,7 @@ impl TaskSetRefusal {
             | Self::LoDualBudgets { .. }
             | Self::MissingPriority { .. }
             | Self::PriorityClash { .. }
+            | Self::EdfIgnoresTerm { .. }
             | Self::AmcDeadlineBeyondPeriod { .. } => Code::InvalidModelBinding,
         }
     }
@@ -244,6 +255,7 @@ impl TaskSetRefusal {
             | Self::LoDualBudgets { .. }
             | Self::MissingPriority { .. }
             | Self::PriorityClash { .. }
+            | Self::EdfIgnoresTerm { .. }
             | Self::AmcDeadlineBeyondPeriod { .. } => "malformed-declaration",
         }
     }
@@ -341,10 +353,26 @@ pub struct ScheduleSubject {
 impl ScheduleSubject {
     /// Admit `claim` over `task_set`: a fixed-priority, AMC or response
     /// claim needs a distinct priority on every task, a response claim
-    /// names a task of the set, and an `edf` claim reads no priority.
+    /// names a task of the set, and an `edf` claim reads no priority and
+    /// refuses a task with jitter or blocking, which its test ignores.
     pub fn new(task_set: TaskSet, claim: ScheduleClaim) -> Result<Self, TaskSetRefusal> {
         match &claim {
-            ScheduleClaim::Schedulable(SchedulingPolicy::Edf) => {}
+            ScheduleClaim::Schedulable(SchedulingPolicy::Edf) => {
+                let zero = Rational::from_integer(quire_exact::Integer::zero());
+                for task in task_set.tasks() {
+                    for (member, value) in [
+                        (TimeMember::Jitter, &task.jitter),
+                        (TimeMember::Blocking, &task.blocking),
+                    ] {
+                        if *value != zero {
+                            return Err(TaskSetRefusal::EdfIgnoresTerm {
+                                task: task.name.clone(),
+                                member,
+                            });
+                        }
+                    }
+                }
+            }
             ScheduleClaim::Schedulable(policy) => {
                 check_priorities(&task_set)?;
                 if *policy == SchedulingPolicy::Amc {

@@ -3,16 +3,18 @@
 //! checker has answered.
 
 use qsl_foundation::diagnostic::Category;
+use quire_exact::Cancel;
 
 use crate::certificate::closed_form::outcome::ClosedFormOutcome;
-use crate::certificate::closed_form::recompute::ClosedFormCheck;
+use crate::certificate::closed_form::recompute::{recompute, ClosedFormCheck};
 use crate::certificate::closed_form::task_set::ScheduleSubject;
 use crate::proof_result::{
     Certification, IncompleteCause, InconclusiveCause, ProofBasis, TerminalValue,
 };
 use crate::result::{DisagreementCause, Verdict};
 
-/// The terminal value `outcome` settles as, given `check` (FR-248):
+/// The terminal value `outcome` settles as once [`recompute`] has checked
+/// it (FR-248), so no caller can settle an outcome the checker did not see:
 /// `Proved{ClosedForm{analysis}, Certified}` for a schedule the checker
 /// agrees with, `Refuted` for a miss it agrees with, `Inconclusive(
 /// SufficientTestFailed)` for a failed sufficient test it agrees with,
@@ -21,7 +23,7 @@ use crate::result::{DisagreementCause, Verdict};
 pub fn settle(
     subject: &ScheduleSubject,
     outcome: &ClosedFormOutcome,
-    check: &ClosedFormCheck,
+    cancel: &Cancel,
 ) -> TerminalValue {
     let (claimed, agreed) = match outcome {
         ClosedFormOutcome::Stopped(cause, _) => return TerminalValue::Incomplete(*cause),
@@ -40,10 +42,10 @@ pub fn settle(
             TerminalValue::Inconclusive(InconclusiveCause::SufficientTestFailed),
         ),
     };
-    match check {
+    match recompute(subject, outcome, cancel) {
         ClosedFormCheck::Agrees => agreed,
         ClosedFormCheck::Cancelled(source) => {
-            TerminalValue::Incomplete(IncompleteCause::Cancelled { source: *source })
+            TerminalValue::Incomplete(IncompleteCause::Cancelled { source })
         }
         // The checker reproduced no value for the evidence, so the replayed
         // verdict is the inconclusive one.

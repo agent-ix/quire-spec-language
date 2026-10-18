@@ -12,7 +12,7 @@ use qsl_replay::{
     ClosedFormCheck, ClosedFormDisagreement, ClosedFormEvidence, ClosedFormOutcome, Code,
     Criticality, DisagreementCause, Identifier, InconclusiveCause, JobIterates, MissEvidence,
     ProofBasis, QualifiedName, ScheduleClaim, ScheduleLimit, ScheduleSubject, SchedulingPolicy,
-    Task, TaskFixpoint, TaskSet, TaskSetRefusal, TerminalValue, Verdict, Wcet,
+    Task, TaskFixpoint, TaskSet, TaskSetRefusal, TerminalValue, TimeMember, Verdict, Wcet,
 };
 use quire_exact::{Cancel, CancelCause, Integer, Rational};
 
@@ -88,7 +88,7 @@ fn check(subject: &ScheduleSubject, outcome: &ClosedFormOutcome) -> ClosedFormCh
 }
 
 fn settled(subject: &ScheduleSubject, outcome: &ClosedFormOutcome) -> TerminalValue {
-    settle(subject, outcome, &check(subject, outcome))
+    settle(subject, outcome, &Cancel::new())
 }
 
 /// Each task's job-0 fixpoint, in the evidence's order.
@@ -147,7 +147,8 @@ fn mc(high_budget: i64, low_budget: i64) -> TaskSet {
     .expect("an admitted task set")
 }
 
-#[trace("TC-701", "FR-246-AC-1")]
+/// Premises are part of the subject; routing and the obligation identity are
+/// not implemented, so no criterion is bound.
 #[test]
 fn ctl_is_admitted_under_both_policies_and_its_premises_are_its_identity() {
     let fixed = schedulable(ctl(5), SchedulingPolicy::FixedPriority);
@@ -162,7 +163,8 @@ fn ctl_is_admitted_under_both_policies_and_its_premises_are_its_identity() {
     assert_eq!(edf.analysis(), ClosedFormAnalysis::EdfQpa);
 }
 
-#[trace("TC-701", "FR-246-AC-2")]
+/// The admission codes only; spans and the `3 m` refusal are not covered, so
+/// no criterion is bound.
 #[test]
 fn a_task_set_or_claim_that_breaks_a_rule_is_refused_with_its_code() {
     let name = || set_name("S");
@@ -259,7 +261,7 @@ fn a_response_claim_holds_at_twelve_and_misses_at_eleven() {
     );
 }
 
-#[trace("TC-702", "FR-247-AC-2", "QSpec-FR-419-AC-2")]
+#[trace("TC-702", "FR-247-AC-2")]
 #[test]
 fn a_third_wcet_of_six_misses_under_fixed_priority_and_edf() {
     assert_eq!(
@@ -376,7 +378,8 @@ fn proved(analysis: ClosedFormAnalysis) -> TerminalValue {
     }
 }
 
-#[trace("TC-703", "FR-248-AC-1", "QSpec-FR-419-AC-1", "QSpec-FR-419-AC-2")]
+/// The verdict only; the evidence half of FR-248-AC-1 is not asserted, so no
+/// criterion is bound.
 #[test]
 fn ctl_settles_proved_with_its_fixpoints_and_a_third_wcet_of_six_settles_refuted() {
     let fixed = schedulable(ctl(5), SchedulingPolicy::FixedPriority);
@@ -510,7 +513,6 @@ fn amc_settles_proved_and_a_failed_sufficient_test_settles_inconclusive() {
     assert_eq!(settled(&low_miss, &run(&low_miss)), TerminalValue::Refuted);
 }
 
-#[trace("TC-703", "FR-248-AC-1")]
 #[test]
 fn a_stopped_analysis_settles_incomplete() {
     let subject = schedulable(ctl(5), SchedulingPolicy::Edf);
@@ -560,4 +562,39 @@ fn evidence_of_another_analysis_or_for_another_subject_disagrees() {
         check(&edf, &wrong),
         ClosedFormCheck::Disagrees(ClosedFormDisagreement::BusyPeriodLength)
     );
+}
+
+/// An `edf` claim refuses jitter and blocking, which the demand test ignores
+/// and fixed priority accounts for; the same sets analyse under fixed
+/// priority and an EDF set without them is unchanged.
+#[test]
+fn an_edf_claim_refuses_jitter_and_blocking() {
+    let with = |jitter: i64, blocking: i64| {
+        let t = Task {
+            deadline: n(1),
+            jitter: n(jitter),
+            blocking: n(blocking),
+            ..task("t", 1, 2, 1)
+        };
+        TaskSet::new(set_name("E"), vec![t]).expect("an admitted task set")
+    };
+    for (jitter, blocking, member) in [(1, 0, TimeMember::Jitter), (0, 1, TimeMember::Blocking)] {
+        let refused = ScheduleSubject::new(
+            with(jitter, blocking),
+            ScheduleClaim::Schedulable(SchedulingPolicy::Edf),
+        )
+        .expect_err("an edf claim over jitter or blocking");
+        assert_eq!(
+            refused,
+            TaskSetRefusal::EdfIgnoresTerm {
+                task: id("t"),
+                member,
+            }
+        );
+        assert_eq!(refused.code(), Code::InvalidModelBinding);
+        let fixed = schedulable(with(jitter, blocking), SchedulingPolicy::FixedPriority);
+        assert!(matches!(run(&fixed), ClosedFormOutcome::Miss(_)));
+    }
+    let plain = schedulable(ctl(5), SchedulingPolicy::Edf);
+    assert!(matches!(run(&plain), ClosedFormOutcome::Schedulable(_)));
 }
