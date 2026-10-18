@@ -11,21 +11,20 @@ use ix_trace_rs::trace;
 use qsl_forms::build_unit;
 use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound, ProofBound};
 use qsl_foundation::digest::WireNodeId;
-use qsl_foundation::{RequestIndex, SourceIdentity};
+use qsl_foundation::{Code, RequestIndex, SourceIdentity};
 use qsl_route::request::{items_from_requirements, ExtentClassification, RequestWriter};
 use qsl_route::routing::{route, Disposition};
 use qsl_route::{CandidateOutcome, Registry};
 use qsl_semantics::check::{
-    Capability, CheckCause, CheckRefusal, CheckedGraph, PackageDeclarations,
+    AssemblyCause, AssemblyRefusal, Capability, CheckedGraph, PackageDeclarations, TypeFormFault,
 };
 use qsl_semantics::family::{ClaimExtent, Requirements};
-use quire_exact::{IllTypedCause, NodeKey};
-use quire_semantic_value::checking::CheckingLimits;
+use quire_exact::NodeKey;
 
 use super::request_builder::{check, package, registry, HEADER};
 
-/// `declarations` through S1, S2 and S3, whose refusals are returned.
-fn try_check(declarations: &str) -> Result<CheckedGraph, Vec<CheckRefusal>> {
+/// `declarations` through S1, S2 and the assembler, whose refusal is returned.
+fn try_assemble(declarations: &str) -> Result<PackageDeclarations, AssemblyRefusal> {
     let text = format!("{HEADER}{declarations}\n");
     let parsed = qsl_cst::parse(
         SourceIdentity::new("a", "u", "git", "1"),
@@ -42,8 +41,6 @@ fn try_check(declarations: &str) -> Result<CheckedGraph, Vec<CheckRefusal>> {
         Vec::new(),
         Vec::new(),
     )
-    .expect("the unit assembles")
-    .check(CheckingLimits::default())
 }
 
 /// The `package_id` the spine emits for `declarations`.
@@ -95,13 +92,6 @@ fn has_collection_bounds(graph: &CheckedGraph) -> bool {
         .any(|node| node.semantic_form() == "collection_bounds")
 }
 
-fn is_type_mismatch(refusals: &[CheckRefusal]) -> bool {
-    matches!(
-        refusals,
-        [refusal] if matches!(refusal.cause, CheckCause::IllTyped(IllTypedCause::TypeMismatch))
-    )
-}
-
 /// FR-333-AC-1: a collection type with no bound compiles through the spine
 /// as its composite node alone, for every kind, and differs from the same
 /// type with a bound.
@@ -136,9 +126,27 @@ fn an_absent_collection_bound_compiles_to_the_unbounded_type() {
 #[trace("TC-843", "FR-333-AC-3")]
 #[test]
 fn an_inverted_bound_refuses_and_a_non_numeric_bound_fails_at_s1() {
-    let refusals = try_check("function f using v(s: Set<Integer>[3, 2]): Integer pure { 0 }")
-        .expect_err("an inverted bound refuses");
-    assert!(is_type_mismatch(&refusals), "{refusals:?}");
+    let declaration = "function f using v(s: Set<Integer>[3, 2]): Integer pure { 0 }";
+    let refusal = try_assemble(declaration)
+        .map(|_| ())
+        .expect_err("an inverted bound refuses at assembly");
+    let [error] = refusal.errors.as_slice() else {
+        panic!("one error: {refusal:?}");
+    };
+    assert_eq!(
+        error.cause,
+        AssemblyCause::IllFormedBounds(TypeFormFault::EmptyCardinality)
+    );
+    assert_eq!(error.cause.code(), Code::IllTyped);
+    assert_eq!(error.cause.catalog_code().cause(), "type-mismatch");
+    let source = format!("{HEADER}{declaration}\n");
+    let start = source
+        .find("Set<Integer>[3, 2]")
+        .expect("the type is in the source");
+    assert_eq!(
+        (error.span.start, error.span.end),
+        (start, start + "Set<Integer>[3, 2]".len())
+    );
 
     let text = format!("{HEADER}function f using v(s: Set<Integer>[0, x]): Integer pure {{ 0 }}\n");
     let parsed = qsl_cst::parse(
