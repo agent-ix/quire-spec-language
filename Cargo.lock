@@ -1368,6 +1368,7 @@ dependencies = [
  "num-traits",
  "qsl-eval",
  "qsl-foundation",
+ "qsl-replay",
  "quire-canonical",
  "quire-exact",
  "thiserror",
@@ -1482,6 +1483,8 @@ name = "qsl-replay"
 version = "0.1.0"
 dependencies = [
  "ix-trace-rs",
+ "num-bigint",
+ "num-integer",
  "qsl-attrs",
  "qsl-cst",
  "qsl-eval",
