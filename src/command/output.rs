@@ -94,19 +94,6 @@ fn package_cause(value: &crate::package::PackageCause) -> types::PackageCause<'_
     }
 }
 
-fn projection_location(value: super::ProjectionLocation) -> types::ProjectionLocation {
-    let (span_status, span, unmapped_span) = match value {
-        super::ProjectionLocation::Absent => (types::SpanStatus::Absent, None, None),
-        super::ProjectionLocation::Located(span) => (types::SpanStatus::Located, Some(span), None),
-        super::ProjectionLocation::Invalid(span) => (types::SpanStatus::Invalid, None, Some(span)),
-    };
-    types::ProjectionLocation {
-        span_status,
-        span,
-        unmapped_span,
-    }
-}
-
 pub(super) fn error(error: &RunError, artifact: bool) -> Result<Value, serde_json::Error> {
     let (stage, details) = match &error.cause {
         #[cfg(feature = "quire-extraction")]
@@ -335,31 +322,6 @@ pub(super) fn error(error: &RunError, artifact: bool) -> Result<Value, serde_jso
                     stage: fault.stage(),
                     invariant: fault.invariant(),
                 },
-            },
-        ),
-        RunCause::Lowering {
-            target,
-            package,
-            program,
-            location,
-            error,
-        } => (
-            types::Stage::Lower,
-            types::Details::Lowering {
-                profile: target.name(),
-                package: types::PackageReference {
-                    format: package.format(),
-                    digest: package.digest().to_string(),
-                },
-                source: types::Source {
-                    identity: &program.identity,
-                    digest: program.digest.to_string(),
-                    path: &program.path,
-                    formal: &program.formal,
-                },
-                clause: error.clause.as_ref(),
-                location: projection_location(*location),
-                upstream: &error.upstream,
             },
         ),
     };

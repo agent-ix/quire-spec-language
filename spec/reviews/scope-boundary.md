@@ -74,7 +74,6 @@ flowchart LR
 | [FR-006](../functional/FR-006-check-defined-expressions.md) | A: type/definedness module | core |
 | [FR-007](../functional/FR-007-validate-runtime-inputs.md) | A: runtime-input validation module | core |
 | [FR-008](../functional/FR-008-evaluate-state-reference.md) | A: reference evaluator module | core |
-| [FR-009](../functional/FR-009-lower-qualified-projections.md) | A: native lowering module | core |
 | [FR-010](../functional/FR-010-report-native-outcomes.md) | A: native CLI boundary | infrastructure |
 | [FR-011](../functional/FR-011-integrate-opaque-extraction.md) | A: native side of opaque extraction adapter | infrastructure |
 | [NFR-001](../non-functional/NFR-001-bound-syntax-work.md) | A: resource/diagnostic contract across phases | cross-cutting |

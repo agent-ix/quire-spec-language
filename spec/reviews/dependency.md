@@ -43,7 +43,6 @@ These are new repositories. Missing formal plans, TC records, suites, and matric
 | [FR-006](../functional/FR-006-check-defined-expressions.md) | feature | States observable native behavior or an operator-facing quality/acceptance guarantee. |
 | [FR-007](../functional/FR-007-validate-runtime-inputs.md) | enablement | Provides a shared checked representation/boundary consumed by downstream behavior. |
 | [FR-008](../functional/FR-008-evaluate-state-reference.md) | feature | States observable native behavior or an operator-facing quality/acceptance guarantee. |
-| [FR-009](../functional/FR-009-lower-qualified-projections.md) | feature | States observable native behavior or an operator-facing quality/acceptance guarantee. |
 | [FR-010](../functional/FR-010-report-native-outcomes.md) | feature | States observable native behavior or an operator-facing quality/acceptance guarantee. |
 | [FR-011](../functional/FR-011-integrate-opaque-extraction.md) | feature | States observable native behavior or an operator-facing quality/acceptance guarantee. |
 | [NFR-001](../non-functional/NFR-001-bound-syntax-work.md) | feature | States observable native behavior or an operator-facing quality/acceptance guarantee. |

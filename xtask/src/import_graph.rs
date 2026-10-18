@@ -382,8 +382,8 @@ const LAYER3_CRATE: &str = "qsl_semantics";
 // item. The number of items imported from a permitted module is not checked.
 //
 // Cargo is the gate for crate direction: every later-layer module
-// (`checked_package`, `package`, `value::expression`, `route`, `replay`,
-// `lowering`, the SEAM modules) is in a crate that depends on
+// (`checked_package`, `package`, `value::expression`, `route`, `replay`, the SEAM
+// modules) is in a crate that depends on
 // `qsl-semantics`, so an import of one from here does not compile. This scan
 // checks what Cargo cannot see: the module order inside `qsl-semantics`.
 // ---------------------------------------------------------------------

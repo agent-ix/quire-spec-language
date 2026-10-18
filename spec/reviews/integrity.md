@@ -46,7 +46,6 @@ These are new repositories. Missing formal plans, TC records, suites, and matric
 | [US-002](../usecase/US-002-link-exact-models.md) | [FR-006](../functional/FR-006-check-defined-expressions.md) | [StR-001](../stakeholder/StR-001-native-assessment-trust.md) | Test; 5 ACs; no TC/matrix binding yet |
 | [US-003](../usecase/US-003-evaluate-bounded-state.md) | [FR-007](../functional/FR-007-validate-runtime-inputs.md) | [StR-001](../stakeholder/StR-001-native-assessment-trust.md) | Test; 5 ACs; no TC/matrix binding yet |
 | [US-003](../usecase/US-003-evaluate-bounded-state.md) | [FR-008](../functional/FR-008-evaluate-state-reference.md) | [StR-001](../stakeholder/StR-001-native-assessment-trust.md) | Test; 10 ACs; no TC/matrix binding yet |
-| [US-004](../usecase/US-004-reuse-existing-toolchain.md) | [FR-009](../functional/FR-009-lower-qualified-projections.md) | [StR-001](../stakeholder/StR-001-native-assessment-trust.md) | Test; 4 ACs; no TC/matrix binding yet |
 | [US-001](../usecase/US-001-author-native-source.md) | [FR-010](../functional/FR-010-report-native-outcomes.md) | [StR-001](../stakeholder/StR-001-native-assessment-trust.md) | Test; 5 ACs; no TC/matrix binding yet |
 | [US-004](../usecase/US-004-reuse-existing-toolchain.md) | [FR-011](../functional/FR-011-integrate-opaque-extraction.md) | [StR-001](../stakeholder/StR-001-native-assessment-trust.md) | Test; 4 ACs; no TC/matrix binding yet |
 

@@ -432,8 +432,8 @@ requirements work that follows this record.
   nesting-depth limit kind now bound it by the node, preimage-byte and work
   limits.
 - **No native limit is clamped and none bounds depth.** NFR-007, NFR-008 and
-  the native-profile requirements (FR-002, FR-003, FR-009, FR-013, FR-015,
-  FR-016, FR-024, FR-025, FR-033, FR-034, FR-036, FR-040, FR-041, FR-042,
+  the native-profile requirements (FR-002, FR-003, FR-013, FR-015,
+  FR-016, FR-024, FR-025, FR-036, FR-040, FR-041, FR-042,
   FR-051, FR-052) take each caller limit as
   given, with a published default the caller may raise, and bound nesting by
   bytes, nodes, entries and work.

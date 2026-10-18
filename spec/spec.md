@@ -8,8 +8,6 @@ standards_alignment:
   - iso-iec-ieee-29148
   - ieee-828
 relationships:
-  - target: ix://agent-ix/quire-spec-language/FR-034
-    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-035
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-036
@@ -70,15 +68,11 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/NFR-008
     type: contains
-  - target: ix://agent-ix/quire-spec-language/FR-033
-    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-032
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-031
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-030
-    type: contains
-  - target: ix://agent-ix/quire-spec-language/FR-029
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-028
     type: contains
@@ -101,8 +95,6 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-007
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-008
-    type: contains
-  - target: ix://agent-ix/quire-spec-language/FR-009
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-010
     type: contains
@@ -768,7 +760,7 @@ qualification.
 
 ### 2.1 In Scope
 
-LC01 native source/parse/format/diagnostics; LC02 model linking and typing; LC03 reference evaluation; LC04 qualified existing-IR lowering; LC05 existing-extractor integration; Rust-owned verification under NFR-005.
+LC01 native source/parse/format/diagnostics; LC02 model linking and typing; LC03 reference evaluation; LC05 existing-extractor integration; Rust-owned verification under NFR-005.
 
 L2 admits Semantic IR 2.0.0 domain packages as Quire model declarations through
 [FR-056](functional/FR-056-admit-domain-package-model-declarations.md) and adds edition-selected syntax and exact package linking across state, temporal
@@ -906,7 +898,6 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-006](functional/FR-006-check-defined-expressions.md) | FR |
 | [FR-007](functional/FR-007-validate-runtime-inputs.md) | FR |
 | [FR-008](functional/FR-008-evaluate-state-reference.md) | FR |
-| [FR-009](functional/FR-009-lower-qualified-projections.md) | FR |
 | [FR-010](functional/FR-010-report-native-outcomes.md) | FR |
 | [FR-011](functional/FR-011-integrate-opaque-extraction.md) | FR |
 | [US-001](usecase/US-001-author-native-source.md) | US |
@@ -962,12 +953,9 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-026](functional/FR-026-run-standalone-native-workflow.md) | FR |
 | [FR-027](functional/FR-027-export-compiled-native-package.md) | FR |
 | [FR-028](functional/FR-028-run-selected-native-package.md) | FR |
-| [FR-029](functional/FR-029-export-executable-projection.md) | FR |
 | [FR-030](functional/FR-030-consume-quire-extraction.md) | FR |
 | [FR-031](functional/FR-031-run-extracted-native-source.md) | FR |
 | [FR-032](functional/FR-032-realize-config-version-workflow.md) | FR |
-| [FR-033](functional/FR-033-lower-bounded-integer-ir.md) | FR |
-| [FR-034](functional/FR-034-project-state-scalars.md) | FR |
 | [FR-035](functional/FR-035-parse-composed-native-units.md) | FR |
 | [FR-036](functional/FR-036-link-composed-native-packages.md) | FR |
 | [FR-040](functional/FR-040-check-composed-values.md) | FR |
