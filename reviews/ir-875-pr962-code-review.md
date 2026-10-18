@@ -42,3 +42,14 @@ Measured by the reviewer:
 FAIL for this method because of FND-001: with the PR as it stands, the workspace does not build under `--all-features`. The emitter change itself is correct. It is minimal and byte-identical to the old producer (verified independently against the pre-change commit), and it removes the per-node owned projection clone. FND-001 is fixed by migrating `population_fixtures::retarget` to the borrowed view, built over `graph.nodes` and used for both the `sha256` and the encode, which also removes that function's body clones. Then re-run `cargo check --workspace --all-targets --all-features`. FND-002 is fixed by retagging the test with `TC-253`.
 
 Gates run: `cargo test -p qsl-package` passed. `cargo fmt --check` was clean. `cargo check --all-features` failed (FND-001). Clippy with `--all-features` was not run separately, because it cannot pass while the crate does not compile. `make ci` was not run: main is red at the known qsl-forms `protocol_control_forms` parser test, and cargo-deny rejects the Makefile `--config` on main too. Neither is attributed to this PR. Main has moved to a0ffcac since the merge base. A merge-tree with it is conflict-free, and its `catalog_selections` change does not affect the no-layer golden package by inspection, but a rebase test run is still advised before merge.
+
+## Dispositions
+
+Disposition pass round 1, re-measured at rebased head 7d66d8d4bc9daf73003fa92ac337b7fcd7dcc7cd (merge base bec89ae). `git range-diff` shows the three reviewed commits unchanged and two new commits: 08d096cb8 (the fix) and 7d66d8d4b (fmt plus the review records). The two copied `reviews/` files are byte-identical to the review-pass artifacts and pass `quire validate`.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | `retarget` now builds `CheckedPackageIdentityPreimageRefV2` over `&graph.nodes` with no per-node clone, and uses it for both `sha256` and `encode_checked_package_v2`. `cargo check --locked --workspace --all-targets --all-features` passes. The 10 `population_fixtures` tests and 7 `handoff_writer` tests pass with `--all-features`. The 8 population fixture files written at head are byte-identical to main's (bec89ae, IR 30c3e4e). |
+| FND-002 | fixed | The test is now tagged `#[trace("TC-253", "FR-087-AC-3")]`. |
+
+No new findings in the round-1 delta. The golden tests still pass at head; the fixture is unchanged at 8034 bytes and the asserted `package_id` is still f2332c7e....

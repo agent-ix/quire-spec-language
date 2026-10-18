@@ -31,3 +31,11 @@ Ticket: IR-875. Planless, diff-scoped gap analysis of agent-ix/quire-spec-langua
 ## Verdict
 
 CONDITIONAL: one medium finding, which is resolved by the fix for SR-12880 FND-001. There is no untagged criterion and no unowned or stubbed code in the diff.
+
+## Dispositions
+
+Disposition pass round 1 at rebased head 7d66d8d4bc9daf73003fa92ac337b7fcd7dcc7cd.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The workspace builds under `--all-features` again, and the feature-gated binders run: the 7 `handoff_writer` tests, which cover FR-050-AC-1 and AC-4, pass under `--all-features`. The PR still adds no criterion and leaves none untagged. |
