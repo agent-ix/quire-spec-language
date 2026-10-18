@@ -22,8 +22,7 @@ reused; prose may change without changing classification.
 | invalid-digest | A selected command digest has an invalid spelling. |
 | invalid-identifier | A selected command identifier fails its constructor. |
 | output-failure | A typed command result could not be serialized. |
-| unsupported_projection | A real, admitted capability this build does not implement yet: native expressions outside the selected executable projection, or a checked-package/v2 emission path not yet built. |
-| projection_binding | The existing IR rejected the derived executable projection. |
+| unsupported_projection | A real, admitted capability this build does not implement yet: a checked-package/v2 emission path not yet built. |
 | invalid_projection_correspondence | Checked native correspondence could not be retained by the projection. |
 | extraction-requires-run | The source-only compile command does not admit extracted programs. |
 | extraction-package-conflict | Selected package bytes and extracted compilation were both requested. |
