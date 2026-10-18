@@ -20,11 +20,11 @@ the current state, a caller that must supply a source the expression does not
 read, a template that reads the other template's binders, and a slot that
 returns the value of its neighbour.
 
-Fixture **E** is a domain package `M` and the protocol `Refunds` below. E
-differs from TC-1057's fixture R in that every binder a trigger guard, retry
-relation or recovery predicate reads is a record value, because those slots bar
-model state and a compensation's attempt record type is a record value type
-(QSpec FR-464, FR-466). Fixture E requires of `M`:
+Fixture **E** is a domain package `M` and the protocol `Refunds` below. Like
+TC-1057's fixture R, every binder a trigger guard, retry relation or recovery
+predicate reads is a record value, because those slots bar model state and a
+compensation's attempt record type is a record value type (QSpec FR-464,
+FR-466). Fixture E requires of `M`:
 
 - `Total = Int[0, 1000]` and `Tally = Int[0, 3]`;
 - the object type `Node{total: Total}`, with population `nodes`, and the
