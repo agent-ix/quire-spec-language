@@ -23,6 +23,7 @@ use qsl_cst::{CstElement, CstNode, LosslessCst, ParsedSource, Production, Recove
 use qsl_foundation::selection::SourceSelections;
 use qsl_foundation::{Code, Span};
 
+use super::abstraction_declaration;
 use super::protocol_clause;
 use super::sum_case;
 use super::syntax::DeclarationForm;
@@ -139,6 +140,9 @@ impl ParsedUnit {
 pub enum LeadingTokenKind {
     /// `union`: the `SumCase` declaration form (FR-313).
     Union,
+    /// `abstraction`: the abstraction relation declaration form (FR-304,
+    /// QSpec FR-450).
+    Abstraction,
     /// `function`: the `Value` function form.
     Function,
     /// `type`: the `Value` alias form.
@@ -366,6 +370,9 @@ fn dispatch(
 ) -> Result<DeclarationForm, FormsRefusal> {
     match kind {
         LeadingTokenKind::Union => sum_case::union_declaration(construct),
+        LeadingTokenKind::Abstraction => {
+            abstraction_declaration::abstraction_declaration(construct)
+        }
         LeadingTokenKind::Function => value::function(construct),
         LeadingTokenKind::Type => value::alias(construct),
         LeadingTokenKind::Record => value::record(construct),
@@ -403,6 +410,7 @@ fn from_spelling(spelling: &[u8]) -> Option<LeadingTokenKind> {
     }
     match spelling {
         b"union" => Some(LeadingTokenKind::Union),
+        b"abstraction" => Some(LeadingTokenKind::Abstraction),
         b"function" => Some(LeadingTokenKind::Function),
         b"type" => Some(LeadingTokenKind::Type),
         b"record" => Some(LeadingTokenKind::Record),

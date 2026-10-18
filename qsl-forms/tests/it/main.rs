@@ -3,6 +3,7 @@
 //! pattern as the root crate (`tests/it/main.rs`), `qsl-cst` and
 //! `qsl-source`.
 
+mod abstraction_declaration_forms;
 mod clause_text;
 mod identity_free_forms;
 mod model_source_forms;

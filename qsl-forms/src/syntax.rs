@@ -2921,6 +2921,9 @@ pub struct TemporalClauseForm {
 pub enum DeclarationForm {
     /// A `union` declaration (FR-313).
     Union(UnionForm),
+    /// An `abstraction` declaration (FR-304), boxed for the same reason as
+    /// [`Self::Function`].
+    Abstraction(Box<super::abstraction_declaration::AbstractionDeclarationForm>),
     /// A `function` declaration, boxed: it is several times the size of
     /// the other forms.
     Function(Box<FunctionDeclaration>),

@@ -126,6 +126,12 @@ const ACCEPTED_PRODUCTIONS: &[Production] = &[
     Production::SynthesisDeclaration,
     Production::VerificationPlan,
     Production::VerificationStep,
+    Production::AbstractionDeclaration,
+    Production::ObjectBinding,
+    Production::FieldBinding,
+    Production::PopulationBinding,
+    Production::FrameBinding,
+    Production::ParameterBinding,
 ];
 
 fn source(declarations: &str) -> String {
@@ -180,7 +186,8 @@ fn corpus() -> Vec<(&'static str, String)> {
                     "hyper Secret using Complete over traces in M::Execution bounded 2 forall trace a exists trace b { true }\n",
                     "hybrid Plant using Complete { mode Idle invariant { true } flow { M::x' = 0; } transition to Idle when { true } reset { true }; }\n",
                     "synthesis Find using Complete grammar M::Grammar domain M::Domain satisfies { true };\n",
-                    "verify Portfolio using Complete { check Safety claim M::Claim method M::Method domain M::Domain depends [Earlier] bound 10; }",
+                    "verify Portfolio using Complete { check Safety claim M::Claim method M::Method domain M::Domain depends [Earlier] bound 10; }\n",
+                    "abstraction Link using Complete { type M::Thing to \"store::Thing\" { ready to \"is_ready\"; } population M::Things to \"things\"; operation M::Thing::act to \"store::act\" receiver \"self\" (amount to \"amount\", extra to \"extra\"); }",
                 ),
             ),
         ),

@@ -619,6 +619,10 @@ impl Unit {
             let span = form.span();
             match form.into_form() {
                 DeclarationForm::Function(function) => unit.functions.push(*function),
+                // An abstraction relation (FR-304) is compiled from source once a
+                // header selects the model layer; until then
+                // S3 reads none.
+                DeclarationForm::Abstraction(_) => {}
                 DeclarationForm::Alias(alias) => {
                     unit.declare(&alias.name, Declared::Alias(unit.aliases.len()));
                     unit.aliases.push(alias);
