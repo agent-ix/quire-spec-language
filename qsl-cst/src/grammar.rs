@@ -1235,13 +1235,20 @@ fn protocol(g: &mut Grammar) {
     g.insert(
         P::Capacity,
         c(vec![
-            uint(),
+            bound(),
             s(vec![x("symbolic"), x("("), ident(), x(")")]),
         ]),
     );
     g.insert(
         P::OverflowPolicy,
-        c(vec![x("reject"), x("block"), x("loss")]),
+        c(vec![
+            x("reject"),
+            x("block"),
+            s(vec![
+                x("loss"),
+                c(vec![literal("head"), literal("tail"), literal("new")]),
+            ]),
+        ]),
     );
     g.insert(
         P::Channel,
@@ -1327,6 +1334,18 @@ fn protocol(g: &mut Grammar) {
         ]),
     );
     g.insert(
+        P::ProtocolTerminal,
+        s(vec![
+            literal("terminal"),
+            c(vec![s(vec![x("when"), r(P::Block)]), x("any")]),
+            x(";"),
+        ]),
+    );
+    g.insert(
+        P::ProtocolScheduling,
+        s(vec![literal("scheduling"), literal("adversarial"), x(";")]),
+    );
+    g.insert(
         P::Visibility,
         s(vec![
             x("visible"),
@@ -1376,7 +1395,7 @@ fn protocol(g: &mut Grammar) {
         c(vec![
             x("all"),
             x("any"),
-            s(vec![x("quorum"), x("("), uint(), x(")")]),
+            s(vec![x("quorum"), x("("), bound(), x(")")]),
             s(vec![x("predicate"), x("("), ident(), x(")")]),
         ]),
     );
@@ -1393,7 +1412,7 @@ fn protocol(g: &mut Grammar) {
             x("join"),
             r(P::JoinPolicy),
             x("["),
-            list(ident),
+            opt(list(ident)),
             x("]"),
             opt(s(vec![
                 x("outstanding"),
@@ -1402,6 +1421,7 @@ fn protocol(g: &mut Grammar) {
             x(";"),
         ]),
     );
+    let loop_proof = || s(vec![x("invariant"), r(P::Block), x("variant"), r(P::Block)]);
     g.insert(
         P::Repetition,
         s(vec![
@@ -1410,17 +1430,24 @@ fn protocol(g: &mut Grammar) {
             x("by"),
             ident(),
             r(P::Visibility),
-            x("max"),
-            uint(),
-            x("invariant"),
-            r(P::Block),
-            x("variant"),
-            r(P::Block),
-            x("while"),
-            r(P::Block),
-            r(P::Control),
-            x("exhausted"),
-            r(P::Control),
+            c(vec![
+                s(vec![
+                    x("max"),
+                    bound(),
+                    opt(loop_proof()),
+                    x("while"),
+                    r(P::Block),
+                    r(P::Control),
+                    x("exhausted"),
+                    r(P::Control),
+                ]),
+                s(vec![
+                    opt(loop_proof()),
+                    x("while"),
+                    r(P::Block),
+                    r(P::Control),
+                ]),
+            ]),
         ]),
     );
     g.insert(
@@ -1573,6 +1600,7 @@ fn protocol(g: &mut Grammar) {
             star(r(P::Relationship)),
             star(r(P::Channel)),
             star(c(vec![r(P::ProtocolRequirement), r(P::Compensation)])),
+            star(c(vec![r(P::ProtocolTerminal), r(P::ProtocolScheduling)])),
             x("run"),
             r(P::Control),
             r(P::Finish),
