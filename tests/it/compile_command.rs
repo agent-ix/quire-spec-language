@@ -156,11 +156,7 @@ fn incompatible_request_and_static_failures_emit_no_package_bytes() {
 #[test]
 #[trace("TC-105", "FR-027-AC-3")]
 fn compile_arity_is_checked_before_opening_any_request() {
-    for arguments in [
-        vec!["compile"],
-        vec!["compile", "missing.json", "extra"],
-        vec!["compile", "missing.json", "--target", "integer-ir/v1"],
-    ] {
+    for arguments in [vec!["compile"], vec!["compile", "missing.json", "extra"]] {
         let output = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
             .args(arguments)
             .output()
@@ -336,6 +332,61 @@ fn spine_request(directory: &Path, program: &[u8]) {
         serde_json::to_vec(&request).unwrap(),
     )
     .unwrap();
+}
+
+/// FR-027-AC-5 (TC-435 step 2): a `1-draft` program compiles through the
+/// spine; stdout is exactly the bytes `qsl_replay::spine`'s operations emit, which
+/// qsl-package's TC-435 step 1 reads back Verified with nothing omitted.
+#[test]
+#[trace("TC-435", "FR-027-AC-5")]
+fn a_complete_v1_program_compiles_through_the_spine() {
+    let program = std::fs::read(SPINE_FIXTURE).unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    spine_request(directory.path(), &program);
+    let output = compile(directory.path());
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.stderr.is_empty());
+    let library = crate::support::front_end::emitted(
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine", "fixture", "fixture:1"),
+        "program.native",
+        &program,
+        &std::collections::BTreeMap::new(),
+        &qsl_replay::spine::DependencyInput::default(),
+    )
+    .unwrap();
+    assert_eq!(output.stdout, library.package().bytes());
+    let wire: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(wire["contract_version"], "quire.checked-package/v2");
+}
+
+/// FR-010-AC-3 (TC-015): the native `lower` command and the `lowering`
+/// module are retired. `lower` is an unknown command that exits 20 without
+/// reading its operand, and no `lowering` module file or declaration remains.
+#[test]
+#[trace("TC-015", "FR-010-AC-3")]
+fn lower_is_an_unknown_command_and_the_lowering_module_is_gone() {
+    let directory = tempfile::tempdir().unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
+        .args(["lower", "missing.json"])
+        .current_dir(directory.path())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(20));
+    assert!(output.stdout.is_empty());
+    assert_eq!(
+        std::str::from_utf8(&output.stderr).unwrap(),
+        "unknown command: lower\n"
+    );
+    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    assert!(!source.join("lowering.rs").exists());
+    assert!(!source.join("lowering").exists());
+    let library = std::fs::read_to_string(source.join("lib.rs")).unwrap();
+    assert!(!library.contains("mod lowering"));
 }
 
 /// FR-027-AC-5 (TC-435 step 2): a `1-draft` program compiles through the

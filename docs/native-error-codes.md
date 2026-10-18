@@ -25,7 +25,7 @@ reused; prose may change without changing classification.
 | unsupported_projection | A real, admitted capability this build does not implement yet: native expressions outside the selected executable projection, or a checked-package/v2 emission path not yet built. |
 | projection_binding | The existing IR rejected the derived executable projection. |
 | invalid_projection_correspondence | Checked native correspondence could not be retained by the projection. |
-| extraction-requires-run | Source-only compile/lower commands do not admit extracted programs. |
+| extraction-requires-run | The source-only compile command does not admit extracted programs. |
 | extraction-package-conflict | Selected package bytes and extracted compilation were both requested. |
 | extraction-clause-count | Extracted compilation requires exactly one authored binding; details retain the actual count. |
 | invalid-quire-context | Quire rejected the semantic context; details identify its contract versions and original diagnostics. |
