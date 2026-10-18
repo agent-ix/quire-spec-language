@@ -136,8 +136,9 @@ protocol system only ever runs a protocol whose meaning is fixed.
 ### Admission for emission
 
 The QSpec protocol node contract (QSpec FR-464, FR-465, FR-466) refuses the
-nodes of each rule below, so S3 refuses each rule at its construct and the
-construct never reaches S4 (FR-383).
+nodes of each rule below, so each rule is refused before S4, by S3 at its
+construct or, where a bullet says so, by the parser, and the construct never
+reaches S4 (FR-383).
 
 - S3 SHALL refuse two cases of one `choice`, or two branches of one
   `parallel`, with equal labels with `ambiguous_declaration`/`ambiguous-name`

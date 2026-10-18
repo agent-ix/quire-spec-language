@@ -13,9 +13,10 @@ relationships:
 ## Description
 
 Verify that S2 builds a channel's overflow policy with its loss selector, that
-S3 records it as a premise of its own, and that S3 refuses a duplicate label,
-a degenerate choice or parallel, an unsound join, a role on a non-participant
-model and a channel carrying a non-message type. Scope: FR-308-AC-13 and
+S3 records it as a premise of its own, that the parser refuses a choice or
+parallel with fewer than two cases or branches, and that S3 refuses a
+duplicate label, an unsound join, a role on a non-participant model, a channel
+carrying a non-message type and a requirement cycle. Scope: FR-308-AC-13 and
 FR-218-AC-21 to FR-218-AC-25.
 
 Catches an overflow built without its selector, a selector accepted after

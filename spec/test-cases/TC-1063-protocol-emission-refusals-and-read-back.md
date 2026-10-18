@@ -17,7 +17,7 @@ emitted package with QSpec's code at QSpec's locus, and that emission has no
 limit or depth of its own. Scope: FR-383-AC-17 to FR-383-AC-21.
 
 Catches a stale key repaired by a name lookup, a protocol dropped silently
-when its temporal profile is missing, a requirement cycle that mints keys, a
+when its temporal profile is missing, a
 partial package after a refusal, a read-back that differs from the checked
 clause in set order or binder level, a mutation the reader admits, and an
 emitter that refuses a deep or wide protocol.
