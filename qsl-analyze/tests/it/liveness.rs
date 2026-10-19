@@ -44,6 +44,8 @@ pub(crate) struct Fixture {
     documents: Documents,
     initial: Vec<DocumentRef>,
     keys: Vec<&'static str>,
+    /// The instances the clause binds; the objects of the subject by default.
+    bindings: Vec<&'static str>,
 }
 
 /// The world over `document` with `body`, one start with the counters
@@ -64,6 +66,7 @@ fn fixture(
         documents,
         initial,
         keys: starts.iter().map(|(key, _)| *key).collect(),
+        bindings: starts.iter().map(|(key, _)| *key).collect(),
     }
 }
 
@@ -73,10 +76,16 @@ pub(crate) fn counter(document: Vec<u8>, fairness: &str, formula: &str) -> Fixtu
 }
 
 impl Fixture {
+    /// This fixture with the clause bound to `bindings` alone.
+    fn bound_to(mut self, bindings: &[&'static str]) -> Self {
+        self.bindings = bindings.to_vec();
+        self
+    }
+
     fn letters(&self, atom: fn(i64) -> Option<bool>) -> Letters {
         Letters {
             bindings: self
-                .keys
+                .bindings
                 .iter()
                 .map(|key| reference(&self.package, &self.documents, key))
                 .collect(),
@@ -716,4 +725,51 @@ fn a_strong_constraint_is_refused_not_ignored() {
         ),
         "{refusal:?}"
     );
+}
+
+/// FR-126 "Explicit-state limits": the model-only pass's states are charged
+/// to the run's `max_states`, across instances. Over two counters, with the
+/// clause bound to `a` alone, to `b` alone and to both, the least `max_states`
+/// that lets a run finish (it ends in the certificate refusal) is the sum of
+/// the two single-instance least budgets: the second instance gets only what
+/// the first left, passes included.
+#[test]
+fn the_model_only_pass_spends_the_budget_the_next_instance_gets() {
+    let formula = "eventually holds(c.value = 1)";
+    let build = |bindings: &[&'static str]| {
+        fixture(
+            document(false),
+            CONTRACT,
+            "",
+            formula,
+            &[("a", 0), ("b", 0)],
+        )
+        .bound_to(bindings)
+    };
+    // The negation dies where the bound counter is 1; the rest of the model
+    // is read by the model-only pass.
+    let least = |bindings: &[&'static str]| {
+        let fixture = build(bindings);
+        (1..=200)
+            .find(|budget| {
+                let mut limits = ModelCheckLimits::default();
+                limits.limits.max_states = *budget;
+                !matches!(
+                    fixture
+                        .run(|v| Some(v == 1), None, limits, UNLIMITED, &Cancel::new())
+                        .expect("checked"),
+                    ModelCheckOutcome::Stopped { .. }
+                )
+            })
+            .expect("a budget finishes the run")
+    };
+    let (a, b, both) = (least(&["a"]), least(&["b"]), least(&["a", "b"]));
+    assert!(a > 1 && b > 1, "the model-only pass costs budget: {a} {b}");
+    assert_eq!(both, a + b);
+    // The reported product states leave the pass out.
+    let counted = build(&["a", "b"])
+        .decide(|v| Some(v == 1))
+        .expect("checked")
+        .stats();
+    assert!(usize::try_from(counted.product_states).expect("small") < both);
 }

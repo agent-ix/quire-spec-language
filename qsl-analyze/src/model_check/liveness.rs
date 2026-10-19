@@ -230,9 +230,29 @@ struct Totals {
     edges: u64,
     automaton_states: u64,
     depth: u64,
+    /// The states and edges the model-only passes were charged: budget used,
+    /// but in no product total.
+    charged_states: u64,
+    charged_edges: u64,
 }
 
 impl Totals {
+    /// What is left of `max_states` and `max_transitions`: the products' and
+    /// the model-only passes' use subtracted.
+    fn remaining(&self, limits: Limits) -> (usize, usize) {
+        let used = |counted: u64, charged: u64| {
+            usize::try_from(counted.saturating_add(charged)).unwrap_or(usize::MAX)
+        };
+        (
+            limits
+                .max_states
+                .saturating_sub(used(self.states, self.charged_states)),
+            limits
+                .max_transitions
+                .saturating_sub(used(self.edges, self.charged_edges)),
+        )
+    }
+
     fn stats(&self) -> RunStats {
         RunStats {
             product_states: self.states,
@@ -720,7 +740,8 @@ impl<'r, 'a> Run<'r, 'a> {
                     None => stopped(*cause, *limit, totals.stats()),
                 });
             }
-            let dead = self.dead_phase(&run, live.as_ref().map(|(depth, _)| *depth), &totals)?;
+            let dead =
+                self.dead_phase(&run, live.as_ref().map(|(depth, _)| *depth), &mut totals)?;
             run.dead_cut = dead.cut;
             if let Some(Ending::Stopped(cause, limit)) = dead.stopped {
                 return Ok(match live {
@@ -822,13 +843,10 @@ impl<'r, 'a> Run<'r, 'a> {
         }
         // The budgets are the run's, shared by every binding.
         let spent = self.request.limits.limits;
+        let (max_states, max_transitions) = totals.remaining(spent);
         let remaining = Limits {
-            max_states: spent
-                .max_states
-                .saturating_sub(usize::try_from(totals.states).unwrap_or(usize::MAX)),
-            max_transitions: spent
-                .max_transitions
-                .saturating_sub(usize::try_from(totals.edges).unwrap_or(usize::MAX)),
+            max_states,
+            max_transitions,
         };
         let exploration = retain(&product, remaining, IdentityLimits::default(), None, || {
             self.cancel.poll() && self.cancel.cause().is_some()
@@ -998,7 +1016,27 @@ impl<'r, 'a> Run<'r, 'a> {
         &self,
         run: &Explored<'_, '_>,
         bound: Option<usize>,
-        spent: &Totals,
+        spent: &mut Totals,
+    ) -> Result<DeadPhase, ModelCheckRefusal> {
+        let (mut states_left, mut edges_left) = spent.remaining(self.request.limits.limits);
+        let (states_before, edges_before) = (states_left, edges_left);
+        let phase = self.dead_walk(run, bound, &mut states_left, &mut edges_left);
+        spent.charged_states = spent
+            .charged_states
+            .saturating_add(widen(states_before - states_left));
+        spent.charged_edges = spent
+            .charged_edges
+            .saturating_add(widen(edges_before - edges_left));
+        phase
+    }
+
+    /// [`Self::dead_phase`]'s walk, decrementing the budget it is given.
+    fn dead_walk(
+        &self,
+        run: &Explored<'_, '_>,
+        bound: Option<usize>,
+        states_left: &mut usize,
+        edges_left: &mut usize,
     ) -> Result<DeadPhase, ModelCheckRefusal> {
         let roots = std::mem::take(&mut *run.product.dead.borrow_mut());
         let mut phase = DeadPhase::default();
@@ -1006,12 +1044,6 @@ impl<'r, 'a> Run<'r, 'a> {
             return Ok(phase);
         }
         let limits = self.request.limits.limits;
-        let mut states_left = limits
-            .max_states
-            .saturating_sub(usize::try_from(spent.states).unwrap_or(usize::MAX));
-        let mut edges_left = limits
-            .max_transitions
-            .saturating_sub(usize::try_from(spent.edges).unwrap_or(usize::MAX));
         let out_of = |limit, value: usize| {
             Some(Ending::Stopped(
                 IncompleteCause::ResourceExhausted,
@@ -1034,11 +1066,11 @@ impl<'r, 'a> Run<'r, 'a> {
         let mut frontier: BTreeSet<(usize, usize)> = BTreeSet::new();
         for (root, entry) in roots.iter().enumerate() {
             if examined.reach(self.digest(&entry.model)?, entry.depth) {
-                if states_left == 0 {
+                if *states_left == 0 {
                     phase.stopped = out_of(ModelCheckLimit::MaxStates, limits.max_states);
                     return Ok(phase);
                 }
-                states_left -= 1;
+                *states_left -= 1;
                 frontier.insert((entry.depth, nodes.len()));
                 nodes.push(DeadNode {
                     model: entry.model.clone(),
@@ -1128,17 +1160,17 @@ impl<'r, 'a> Run<'r, 'a> {
             }
             let root = nodes.get(index).map_or(0, |node| node.root);
             for (transition, next) in expansion.successors {
-                if edges_left == 0 {
+                if *edges_left == 0 {
                     phase.stopped = out_of(ModelCheckLimit::MaxTransitions, limits.max_transitions);
                     return Ok(phase);
                 }
-                edges_left -= 1;
+                *edges_left -= 1;
                 if examined.reach(self.digest(&next)?, depth.saturating_add(1)) {
-                    if states_left == 0 {
+                    if *states_left == 0 {
                         phase.stopped = out_of(ModelCheckLimit::MaxStates, limits.max_states);
                         return Ok(phase);
                     }
-                    states_left -= 1;
+                    *states_left -= 1;
                     frontier.insert((depth.saturating_add(1), nodes.len()));
                     nodes.push(DeadNode {
                         model: next,
