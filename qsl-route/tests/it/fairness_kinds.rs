@@ -6,9 +6,11 @@ use std::collections::BTreeSet;
 
 use ix_trace_rs::trace;
 use qsl_foundation::BackendId;
+use qsl_foundation::CatalogCode;
 use qsl_route::{
-    BackendDescriptor, Candidate, CandidateOutcome, CandidateSet, ManifestDigest, Mode,
-    ProviderOrigin, Registry,
+    descriptor_from_manifest, BackendDescriptor, Candidate, CandidateOutcome, CandidateSet,
+    FairnessKindsMember, FairnessLabel, ManifestDigest, Mode, ProviderOrigin, RegistrationCause,
+    Registry,
 };
 use qsl_semantics::check::Capability;
 use quire_semantic_value::fairness::FairnessKind;
@@ -140,4 +142,223 @@ fn registrations_differing_in_fairness_kinds_conflict() {
         .register(temporal("EN-1", 1, &[Weak, Strong]))
         .is_err());
     assert_eq!(registry.backends().count(), 0);
+}
+
+use FairnessLabel::{Other, Text};
+
+type Admission = Result<BackendDescriptor, qsl_route::RegistrationRefusal>;
+
+/// A manifest for `id` advertising `pairs` over `domains`, with the
+/// `fairness_kinds` member as supplied (`None` = absent).
+fn admit(
+    id: &str,
+    pairs: &[(&str, &str)],
+    domains: Option<&[&str]>,
+    member: Option<FairnessKindsMember<'_>>,
+) -> Admission {
+    descriptor_from_manifest(
+        candidate(id),
+        ProviderOrigin::Process,
+        ManifestDigest::from_digest([9; 32]),
+        pairs.iter().map(|&(kind, mode)| (Some(kind), Some(mode))),
+        domains,
+        member,
+    )
+}
+
+const TEMPORAL: &[(&str, &str)] = &[("temporal-satisfaction", "unbounded")];
+
+/// A temporal manifest with the `fairness_kinds` list `labels`.
+fn listed(labels: &[FairnessLabel<'_>]) -> Admission {
+    admit("b", TEMPORAL, None, Some(FairnessKindsMember::List(labels)))
+}
+
+fn manifest(id: &str, seed: u8, labels: &[FairnessLabel<'_>]) -> BackendDescriptor {
+    descriptor_from_manifest(
+        candidate(id),
+        ProviderOrigin::Process,
+        ManifestDigest::from_digest([seed; 32]),
+        [(Some("temporal-satisfaction"), Some("unbounded"))],
+        None,
+        Some(FairnessKindsMember::List(labels)),
+    )
+    .expect("a valid manifest")
+}
+
+/// The refusal's catalog cause and the value it names.
+fn refused(admission: Admission) -> (CatalogCode, String) {
+    let refusal = admission.expect_err("the manifest is refused");
+    assert_eq!(refusal.identity(), &BackendId::new("b"));
+    let named = match refusal.cause() {
+        RegistrationCause::UnknownFairnessKind(value)
+        | RegistrationCause::DuplicateFairnessKind(value) => value.clone(),
+        _ => String::new(),
+    };
+    (refusal.catalog_code(), named)
+}
+
+fn code(cause: &'static str) -> CatalogCode {
+    CatalogCode::new("invalid_capability", cause)
+}
+
+/// TC-535 V1 to V3: admitted manifests advertise exactly their kinds, and a
+/// present empty list is a candidate only for an item with no fairness.
+#[test]
+#[trace("TC-535", "FR-134-AC-5")]
+fn v1_to_v3_admitted_lists_advertise_their_kinds() {
+    assert_eq!(
+        listed(&[Text("weak")]).unwrap().fairness_kinds(),
+        &BTreeSet::from([Weak])
+    );
+    assert_eq!(
+        listed(&[Text("weak"), Text("strong")])
+            .unwrap()
+            .fairness_kinds(),
+        &BTreeSet::from([Weak, Strong])
+    );
+    let registry = registry([listed(&[]).unwrap()]);
+    assert!(listed(&[]).unwrap().fairness_kinds().is_empty());
+    assert!(set_for(&registry, &[Weak]).is_empty());
+    assert!(set_for(&registry, &[Strong]).is_empty());
+    assert_eq!(set_for(&registry, &[]).candidates().len(), 1);
+}
+
+/// TC-535 V4 to V6, V11, V14: an element not byte-equal to `weak` or `strong`
+/// is refused `unknown-fairness-kind`, naming the first such element.
+#[test]
+#[trace("TC-535", "FR-134-AC-3")]
+fn v4_v5_v6_v11_v14_an_unknown_element_is_refused_naming_the_first() {
+    let unknown = code("unknown-fairness-kind");
+    for (labels, named) in [
+        (vec![Text("Weak")], "Weak"),
+        (vec![Text("weak"), Text("eventual")], "eventual"),
+        (vec![Text("")], ""),
+        (vec![Text("weak"), Other("1")], "1"),
+        (vec![Text("x"), Text("y")], "x"),
+    ] {
+        assert_eq!(refused(listed(&labels)), (unknown, named.to_owned()));
+    }
+}
+
+/// TC-535 V12 and V13: a member that is not a list is refused
+/// `unknown-fairness-kind`, naming the member as supplied.
+#[test]
+#[trace("TC-535", "FR-134-AC-3")]
+fn v12_v13_a_member_that_is_not_a_list_is_refused() {
+    for value in ["null", "\"weak\"", "{}"] {
+        let admission = admit(
+            "b",
+            TEMPORAL,
+            None,
+            Some(FairnessKindsMember::NotAList(value)),
+        );
+        assert_eq!(
+            refused(admission),
+            (code("unknown-fairness-kind"), value.to_owned())
+        );
+    }
+}
+
+/// TC-535 V7, V8, V10, V15: a repeat is refused `duplicate-fairness-kind`
+/// naming the first element that repeats an earlier one, and is never
+/// collapsed; an unknown element wins over a repeat.
+#[test]
+#[trace("TC-535", "FR-134-AC-4")]
+fn v7_v8_v10_v15_a_repeat_is_refused_and_an_unknown_element_wins() {
+    let duplicate = code("duplicate-fairness-kind");
+    for labels in [
+        vec![Text("weak"), Text("weak")],
+        vec![Text("weak"), Text("strong"), Text("weak")],
+        vec![Text("strong"), Text("weak"), Text("weak"), Text("strong")],
+    ] {
+        assert_eq!(refused(listed(&labels)), (duplicate, "weak".to_owned()));
+    }
+    assert_eq!(
+        refused(listed(&[Text("weak"), Text("weak"), Text("eventual")])).0,
+        code("unknown-fairness-kind")
+    );
+}
+
+/// TC-535 V9: a temporal manifest with no `fairness_kinds` is refused
+/// `absent-fairness-kinds`.
+#[test]
+#[trace("TC-535", "FR-134-AC-5")]
+fn v9_an_absent_member_of_a_temporal_backend_is_refused() {
+    assert_eq!(
+        refused(admit("b", TEMPORAL, None, None)).0,
+        code("absent-fairness-kinds")
+    );
+}
+
+/// TC-535 V16 and V17: a pair or `domains` defect is judged first.
+#[test]
+#[trace("TC-535", "FR-134-AC-6")]
+fn v16_v17_a_pair_or_domains_defect_wins_over_a_fairness_defect() {
+    let both = [("temporal-satisfaction", "unbounded"), ("Foo", "unbounded")];
+    let bad_member = Some(FairnessKindsMember::List(&[Text("Weak")]));
+    assert_eq!(
+        refused(admit("b", &both, None, bad_member)).0,
+        code("unknown-kind")
+    );
+    assert_eq!(
+        refused(admit(
+            "b",
+            &[("temporal-satisfaction", "bounded")],
+            None,
+            None
+        ))
+        .0,
+        code("invalid-domains")
+    );
+}
+
+/// TC-535 step 4: a refused manifest under an identity that already holds a
+/// registration leaves that registration and its candidates standing.
+#[test]
+#[trace("TC-535", "FR-134-AC-5")]
+fn a_refusal_leaves_the_earlier_registration_standing() {
+    let registry = registry([manifest("b", 1, &[Text("weak"), Text("strong")])]);
+    for member in [
+        Some(FairnessKindsMember::List(&[Text("Weak")])),
+        Some(FairnessKindsMember::List(&[Text("weak"), Text("weak")])),
+        None,
+    ] {
+        assert!(admit("b", TEMPORAL, None, member).is_err());
+        assert_eq!(set_for(&registry, &[Strong]).candidates(), [candidate("b")]);
+    }
+}
+
+/// TC-535 step 5: a backend with no temporal pair is admitted whatever its
+/// `fairness_kinds` member, which is not validated and keeps no kind.
+#[test]
+#[trace("TC-535", "FR-134-AC-5")]
+fn a_non_temporal_backend_ignores_the_fairness_member() {
+    let pairs = [("local-projection", "unbounded")];
+    for member in [
+        None,
+        Some(FairnessKindsMember::List(&[Text("Weak")])),
+        Some(FairnessKindsMember::NotAList("null")),
+    ] {
+        let descriptor = admit("b", &pairs, None, member).expect("admitted");
+        assert!(descriptor.fairness_kinds().is_empty());
+    }
+}
+
+/// QSpec FR-368 through the registry: manifest-registered backends are
+/// filtered by their `fairness_kinds`.
+#[test]
+#[trace("TC-535")]
+fn manifest_fairness_kinds_filter_candidates() {
+    let registry = registry([
+        manifest("both", 1, &[Text("weak"), Text("strong")]),
+        manifest("weak-only", 2, &[Text("weak")]),
+    ]);
+    assert_eq!(
+        set_for(&registry, &[Strong]).candidates(),
+        [candidate("both")]
+    );
+    assert_eq!(
+        set_for(&registry, &[Weak]).candidates(),
+        [candidate("both"), candidate("weak-only")]
+    );
 }

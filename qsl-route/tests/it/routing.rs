@@ -35,6 +35,7 @@ fn admit(
         ManifestDigest::from_digest([digest_byte; 32]),
         advertised.iter().map(|&(kind, mode)| (kind, Some(mode))),
         Some(&["collection", "integer"]),
+        None,
     )
 }
 
@@ -61,11 +62,18 @@ fn descriptor_from_manifest_is_the_shared_conversion_entry_point() {
         digest,
         advertised,
         None,
+        None,
     )
     .expect("the manifest labels are valid");
-    let process =
-        descriptor_from_manifest(backend, ProviderOrigin::Process, digest, advertised, None)
-            .expect("the same manifest is valid for a process provider");
+    let process = descriptor_from_manifest(
+        backend,
+        ProviderOrigin::Process,
+        digest,
+        advertised,
+        None,
+        None,
+    )
+    .expect("the same manifest is valid for a process provider");
 
     assert_eq!(linked.id(), process.id());
     assert_eq!(linked.manifest_digest(), process.manifest_digest());
@@ -166,6 +174,7 @@ fn absent_mode_and_a_doubly_bad_pair_refuse_with_the_pinned_cause() {
         ManifestDigest::from_digest([1; 32]),
         [(Some("value-validity"), None)],
         Some(&["collection"]),
+        None,
     )
     .expect_err("an absent mode is never defaulted");
     assert_eq!(absent_mode.cause(), &RegistrationCause::UnknownMode(None));
@@ -330,6 +339,7 @@ fn admit_domains(
         ManifestDigest::from_digest([4; 32]),
         advertised.iter().map(|&(kind, mode)| (kind, Some(mode))),
         domains,
+        None,
     )
 }
 
