@@ -12,6 +12,7 @@ use crate::call_site::CallSiteRefusal;
 use crate::certificate::closed_form::outcome::ClosedFormAnalysis;
 use crate::certificate::{CertificateLocus, CertificateRule};
 use crate::execute::ReplayRefusal;
+use crate::hybrid::{SolverHorizon, SolverMethod};
 use crate::model_check::limits::ModelCheckLimit;
 use crate::result::{DisagreementCause, ReplayResult, WitnessSettlement};
 use crate::scalar::ScalarAgreement;
@@ -53,6 +54,16 @@ pub enum ProofBasis {
     ClosedForm {
         /// The analysis.
         analysis: ClosedFormAnalysis,
+    },
+    /// FR-250: a hybrid solver's sound result, holding for the claim within
+    /// its time horizon and jump bound.
+    BoundedSolver {
+        /// The kind of method that produced the result.
+        method: SolverMethod,
+        /// The time horizon the proof covers.
+        horizon: SolverHorizon,
+        /// The jump bound the proof covers.
+        jumps: u64,
     },
 }
 
@@ -317,6 +328,7 @@ impl InconclusiveCause {
             Self::ReplayParity(_) => "replay-parity",
             Self::ReplayRefused(_) => "replay-refused",
             Self::ScalarAgrees(_) => "scalar-agrees",
+            Self::SolverInconclusive => "solver-inconclusive",
             Self::SufficientTestFailed => "sufficient-test-failed",
         }
     }
@@ -331,7 +343,8 @@ impl InconclusiveCause {
             | Self::NoInitialState
             | Self::NoInstance
             | Self::SufficientTestFailed
-            | Self::CertificateRejected { .. } => 0,
+            | Self::CertificateRejected { .. }
+            | Self::SolverInconclusive => 0,
             Self::ReplayParity(cause) => cause.measured_bytes(),
             Self::ReplayRefused(_) => 0,
             Self::ScalarAgrees(agreement) => agreement.measured_bytes(),
@@ -437,7 +450,8 @@ impl TerminalValue {
                     | ProofBasis::Exhaustive
                     | ProofBasis::BoundedComplete { .. }
                     | ProofBasis::Inductive { .. }
-                    | ProofBasis::ClosedForm { .. },
+                    | ProofBasis::ClosedForm { .. }
+                    | ProofBasis::BoundedSolver { .. },
                 ..
             }
             | Self::Tested => Category::Success,

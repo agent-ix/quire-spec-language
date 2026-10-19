@@ -61,6 +61,10 @@ pub enum ModelCheckLimit {
     EvaluationMeter,
     /// The subject's `ExpansionLimits::max_candidates`.
     MaxCandidates,
+    /// FR-250: a hybrid solver's time budget.
+    SolverTime,
+    /// FR-250: a hybrid solver's step budget.
+    SolverSteps,
 }
 
 impl ModelCheckLimit {
@@ -72,6 +76,8 @@ impl ModelCheckLimit {
             Self::MaxAutomatonStates => "max-automaton-states",
             Self::EvaluationMeter => "evaluation-meter",
             Self::MaxCandidates => "max-candidates",
+            Self::SolverTime => "solver-time",
+            Self::SolverSteps => "solver-steps",
         }
     }
 
@@ -83,6 +89,8 @@ impl ModelCheckLimit {
             Self::MaxAutomatonStates => "max_automaton_states",
             Self::EvaluationMeter => "meter",
             Self::MaxCandidates => "max_candidates",
+            Self::SolverTime => "max_solver_time",
+            Self::SolverSteps => "max_solver_steps",
         }
     }
 }
