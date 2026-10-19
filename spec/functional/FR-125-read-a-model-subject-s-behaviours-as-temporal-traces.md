@@ -249,8 +249,7 @@ reports.
   from the Instancing rule that an instance is its population's declaration
   identity text and its key, neither carrying an object type. Two admitting
   populations that share a key therefore share a key context. Remaining
-  work: the key context binds the (population, key) pair; no ticket is filed
-  yet.
+  work: QSL-890 (the key context binds the (population, key) pair).
 - FR-169 (state-graph claims) instances under these rules. FR-182 (hyper
   clauses) instances by the hyper bullet above and takes the reference reading
   (the bound value is the state's own reference) and the `absent-key` rule;
