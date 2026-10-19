@@ -1454,6 +1454,8 @@ fn check_match(
                 | ExprNode::Accumulate { .. }
                 | ExprNode::Count { .. }
                 | ExprNode::Sum { .. }
+                | ExprNode::Population { .. }
+                | ExprNode::Seq { .. }
                 | ExprNode::Size(_)
                 | ExprNode::Contains { .. }
                 | ExprNode::AllInstances { .. }
@@ -1729,6 +1731,8 @@ fn is_opaque(node: &ExprNode) -> bool {
         | ExprNode::Accumulate { .. }
         | ExprNode::Count { .. }
         | ExprNode::Sum { .. }
+        | ExprNode::Population { .. }
+        | ExprNode::Seq { .. }
         | ExprNode::AllInstances { .. }
         | ExprNode::Lookup { .. }
         | ExprNode::Dispatch { .. }
@@ -1950,6 +1954,8 @@ fn leaf_payload(node: &ExprNode, swap: Swap<'_>) -> (Vec<u8>, Vec<u8>) {
         | ExprNode::Accumulate { .. }
         | ExprNode::Count { .. }
         | ExprNode::Sum { .. }
+        | ExprNode::Population { .. }
+        | ExprNode::Seq { .. }
         | ExprNode::AllInstances { .. }
         | ExprNode::Lookup { .. }
         | ExprNode::Dispatch { .. }

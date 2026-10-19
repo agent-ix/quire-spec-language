@@ -138,6 +138,7 @@ mod settings;
 mod state_clause;
 mod state_graph_claim;
 mod state_model;
+mod step_simulation;
 mod sum_case;
 mod temporal_clause;
 mod terminal;
@@ -150,9 +151,9 @@ pub use sum_case::{mint_union_member_key, ExhaustivenessObligation, SumCaseCause
 pub mod stratum;
 mod termination;
 pub use refinement::{
-    CheckedRefinement, CheckedRow, FieldRow, ObjectRow, PopulationRow, RefinementCause,
-    RefinementDeclaration, RefinementRefusal, RowClass, StepClass, StepRow, StepTarget,
-    UnsupportedFeature,
+    CheckedRefinement, CheckedRow, FieldRow, ObjectRow, PopulationRow, PopulationUse,
+    PopulationValue, RefinementCause, RefinementDeclaration, RefinementRefusal, RowClass,
+    StepClass, StepRow, StepTarget, UnsupportedFeature,
 };
 pub use terminal::{
     CheckedTerminal, CheckedTerminalPredicate, TerminalClauseDeclaration, TerminalClauseKind,
@@ -256,6 +257,7 @@ pub use state_clause::{
     AttemptDeclaration, CheckedOperationFrame, CheckedStateClause, ClauseOperation,
     OperationSelection, PopulationDomain, ProtocolClauseFamily, StateClauseDeclaration,
 };
+pub use step_simulation::{step_row_refs, step_simulation_records, StepRowOverflow};
 pub use type_form::{I128Limit, IntegerOutsideI128, IntegerSite, TypeFormFault};
 // PR #300 review finding 4: `mint_type_declaration_identity` was `pub(super)`
 // in `identity` for the same reason: no consumer outside `check` minted an
@@ -959,6 +961,7 @@ impl PackageDeclarations {
         .with_imports(self.imports)
         .with_integer_division(self.integer_division)
         .with_complete_value(complete_value)
+        .with_known_populations(refinement::population_names(&self.models))
         .with_complete_model(complete_model)
         .with_protocols(
             self.protocols
