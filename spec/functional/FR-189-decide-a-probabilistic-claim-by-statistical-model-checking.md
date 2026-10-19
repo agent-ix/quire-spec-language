@@ -149,7 +149,8 @@ the claim's form does not admit (FR-190, SPRT below).
   `ExpansionStop` SHALL return `Stopped` with its cause; a budget reached
   SHALL return `Stopped` naming it (FR-191).
 - A `SampleStop::TotalAboveDrawRange` SHALL return
-  `Unsupported(TotalAboveDrawRange{total})`; a `SampleStop::GeneratorMismatch`
+  `Unsupported(TotalAboveDrawRange{total})`, whose wire cause is QSpec's
+  `total-above-draw-range{total}` (FR-181-AC-14, FR-331); a `SampleStop::GeneratorMismatch`
   SHALL refuse with `StatisticalRefusal`'s `GeneratorMismatch`.
 - The outcome SHALL be a function of the subject, the claim, the method,
   `min_cycles`, the seed, the sampler and the limits.
