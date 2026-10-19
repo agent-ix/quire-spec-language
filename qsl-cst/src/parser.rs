@@ -1599,17 +1599,17 @@ impl<'a> Engine<'a> {
                     Terminal::Bound => {
                         matches!(&token.kind, Some(Kind::Integer(digits)) if digits.parse::<u64>().is_ok())
                     }
-                    Terminal::ClockType => {
-                        token.spelling.as_ref() == "Clock"
+                    Terminal::ClockType { word, qualifier } => {
+                        token.spelling.as_ref() == *word
                             && self
                                 .tokens
                                 .get(position + 1)
-                                .is_none_or(|next| next.spelling.as_ref() != "::")
+                                .is_none_or(|next| next.spelling.as_ref() != *qualifier)
                     }
-                    Terminal::TypeIdentifier => {
+                    Terminal::TypeIdentifier { except } => {
                         crate::token::identifier_spelling(&token.spelling)
                             && !self.reserved_words.contains(token.spelling.as_ref())
-                            && token.spelling.as_ref() != "Clock"
+                            && token.spelling.as_ref() != *except
                     }
                     Terminal::End => false,
                 }
@@ -1636,8 +1636,8 @@ impl Terminal {
             Self::DecimalLiteral => "decimal literal".into(),
             Self::Peek(spellings) => format!("one of `{}`", spellings.join("`, `")),
             Self::Bound => "unsigned 64-bit integer".into(),
-            Self::ClockType => "`Clock`".into(),
-            Self::TypeIdentifier => "type name other than `Clock`".into(),
+            Self::ClockType { word, .. } => format!("`{word}`"),
+            Self::TypeIdentifier { except } => format!("type name other than `{except}`"),
             Self::End => "end of source".into(),
         }
     }
