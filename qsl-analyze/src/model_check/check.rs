@@ -211,6 +211,9 @@ impl Finish {
 
 type Step<T> = Result<T, Halt>;
 
+/// What reading a position found, and the instance that found it.
+type Finding = (CounterexampleKind, usize);
+
 /// An ended run, or a refusal discovered after exploration started.
 enum Halt {
     Finish(Finish),
@@ -659,7 +662,7 @@ impl Run<'_, '_> {
         &mut self,
         node: &Node,
         before: &[StateId],
-    ) -> Step<(Vec<StateId>, Option<(CounterexampleKind, usize)>)> {
+    ) -> Step<(Vec<StateId>, Option<Finding>)> {
         if matches!(self.item, Item::Deadlock) {
             return Ok((before.to_vec(), None));
         }
