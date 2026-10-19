@@ -92,7 +92,7 @@ pub enum StepTargetForm {
 - S2 SHALL build the rows QSpec FR-375 and FR-432 define and no others. The
   grammar has no `internal` or `visible` row: a concrete step is internal
   when its step row is `stutter`, and an abstract step is internal only when
-  the refinement profile's list names it (QSpec FR-432), so the form holds
+  the refinement's internal list (the compilation's `refinement_internals` input) names it (QSpec FR-432), so the form holds
   neither a row nor a list for it.
 - S2 SHALL build a step row's source as `Named` with the keyword exactly as
   written (absent when none is written) or as `Memory`, and SHALL NOT

@@ -123,13 +123,13 @@ whitespace and no other characters; it is its own canonical spelling.
 abstract protocol. QSpec's alias-free spelling, which the refinement node
 carries, is the same text with `<A>::` removed.
 
-| Abstract step class | Spelling | Alias-free |
+| Abstract step class | Spelling | Alias-free (the spelling with `<A>::` removed) |
 | --- | --- | --- |
-| `attempt`, `event`, `send`, `receive`, `timeout`, `finish` or `fence` of one node; `cattempt` of one template | `<A>::<protocol>::<node>`, or `<A>::<protocol>::<template>` | `<protocol>::<node>` |
-| `fork`, `join` of one `parallel` node | `fork <A>::<protocol>::<node>`, `join <A>::<protocol>::<node>` | `fork <protocol>::<node>` |
+| `attempt`, `event`, `send`, `receive`, `timeout`, `finish` or `fence` of one node; `cattempt` of one template | `<A>::<protocol>::<node>`, or `<A>::<protocol>::<template>` | `<protocol>::<node>`, or `<protocol>::<template>` |
+| `fork`, `join` of one `parallel` node | `fork <A>::<protocol>::<node>`, `join <A>::<protocol>::<node>` | `fork <protocol>::<node>`, `join <protocol>::<node>` |
 | `cend` of one template | `cend <A>::<protocol>::<template>` | `cend <protocol>::<template>` |
-| `duplicate`, `lose` on one channel | `duplicate <A>::<protocol>::<channel>`, `lose <A>::<protocol>::<channel>` | `lose <protocol>::<channel>` |
-| `spawn`, `retire` of one role | `spawn <A>::<protocol>::<role>`, `retire <A>::<protocol>::<role>` | `spawn <protocol>::<role>` |
+| `duplicate`, `lose` on one channel | `duplicate <A>::<protocol>::<channel>`, `lose <A>::<protocol>::<channel>` | `duplicate <protocol>::<channel>`, `lose <protocol>::<channel>` |
+| `spawn`, `retire` of one role | `spawn <A>::<protocol>::<role>`, `retire <A>::<protocol>::<role>` | `spawn <protocol>::<role>`, `retire <protocol>::<role>` |
 | `activate` of the clause's trigger | `activate <A>::<protocol>` | `activate <protocol>` |
 | one memory step kind | `memory <kind>` | `memory <kind>` |
 
@@ -139,7 +139,7 @@ node has the two classes `fork` and `join`, so its bare path is not a class.
 `<A>`, `<protocol>`, `<node>`, `<template>`, `<channel>`, `<role>` and
 `<kind>` are identifiers.
 
-**Resolution.** S3 resolves one refinement's entries against its selected
+**Resolution.** S3 SHALL resolve one refinement's entries against its selected
 abstract protocol clause (and, for `memory`, the abstract model's memory
 model). The resolved classes, in ascending order of the UTF-8 bytes of their
 alias-free spellings, are `abstract_internal`. The order of objects in the
@@ -152,7 +152,7 @@ alias, with the value's spellings renamed to match, changes neither
 value, has an empty list: every abstract step class is visible. Absence is
 not a refusal (QSpec FR-432).
 
-**Defects.** Each refusal below is located by a pair, the **input** (the
+**Defects.** S3 SHALL refuse each defect below with no `CheckedRefinement`, located by a pair, the **input** (the
 unit's `refinement_internals` value, or the value of one named supplied
 library) and the RFC 6901 JSON Pointer of the offending value inside it (such
 as `/0/internal/1`); a JSON value has no source span and no IR node. The pair
@@ -180,20 +180,27 @@ refuses `invalid_model_binding`/`conflicting-binding`, naming the row and the
 list entry; neither wins. The conflict exists only for a class a right side
 can name.
 
-**Precedence and the unbuilt feature.** S3 resolves the list first, and every
-defect above is reported whatever the build supports, except the
+**Precedence and the unbuilt feature.** S3 SHALL resolve the list first and
+SHALL report every defect above whatever the build supports, except the
 model-subject row. Only a **non-empty resolved** list then reaches the
 feature check: where the build's support set omits `refinement-internal-list`
-(FR-135), the refinement check refuses it
+(FR-135), the refinement check SHALL refuse it
 `unsupported_construct`/`not-yet-implemented` (FR-341-AC-5), once per
 refinement, at the first token of the name written after `abstract` (which
 both subject forms have), naming the feature, the refinement's name and the
 exact selected profile identity, with no `CheckedRefinement`. An empty list
 never refuses for the feature, and a list with a resolution defect reports
-that defect and no not-yet-built refusal. For a model-subject refinement the
-entries resolve against no protocol, so only the not-yet-built refusal is
-reported for a well-formed non-empty list; the `malformed-declaration` row
-applies once the feature is built. A protocol abstract side the build has not
+that defect and no not-yet-built refusal. **A model-subject refinement.** A model subject selects no protocol, so for
+its list S3 SHALL check the value's shape, the spelling of each entry, the
+repetition of an object or of a spelling, and that `refinement` names a
+refinement of the compiled source; it SHALL NOT resolve an entry's alias,
+protocol, node, template, channel, role or memory kind, since there is
+nothing to resolve them against. A well-formed non-empty list is then refused
+only as not yet built, at the name after `abstract`, in a build that omits
+`refinement-internal-list`; in a build that has it, the list is refused
+`invalid_model_binding`/`malformed-declaration` at the object's pointer
+(QSpec FR-432). 
+**Both features.** A protocol abstract side the build has not
 built gives its own refusal beside it (FR-135-AC-5), so a non-empty list
 under `abstract Spec::Twice` in a build omitting both features gives two.
 
@@ -245,17 +252,18 @@ selects it.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-147-AC-1 | `CasTwice` checks with `AbstractSide::Protocol` naming `Twice` and `abstract_internal = [Twice::finish]`, and writes one requirement record of kind `refinement` and no `temporal-satisfaction` record for the declaration. A row `step Impl::Counter::commitA -> node Spec::Twice::a1(self);` checks, naming node `a1`. | Test (TC-552) |
-| FR-147-AC-2 | Refusals: `abstract Spec::Thrice` (`missing_declaration`/`missing-name`); an internal list naming `Spec::Twice::zz` (`missing_declaration`/`missing-name`); an internal list naming `Spec::Twice::a1` beside a row `-> node Spec::Twice::a1(self)` (`invalid_model_binding`/`conflicting-binding`, naming the row and the entry); `-> node Spec::Twice::a1(self)` in `CasRefinesCounter`, whose abstract side is a model (`invalid_model_binding`/`malformed-declaration`). A non-empty list on `CasRefinesCounter` is AC-7's, not a binding refusal. | Test (TC-552) |
-| FR-147-AC-3 | `CasTwice` with `ensure fair weak Spec::Counter::inc` settles its liveness half `unsupported`, `unsupported-requested-capability`, naming hidden abstract fields, beside the safety result of FR-148. | Test (TC-552) |
-| FR-147-AC-4 | `CasTwice` with `finish` removed from its `refinement_internals` list checks, with `finish` visible and `abstract_internal` empty; with the list naming `finish` it checks with `finish` internal; with the list naming `finish` and a step row `-> node Spec::Twice::finish(self)` it refuses `invalid_model_binding`/`conflicting-binding`. | Test (TC-552) |
-| FR-147-AC-5 | Resolution of the shape. For `CasTwice`, the value above resolves to `abstract_internal = [Twice::finish]`. The value absent, `[]`, and `[{"refinement": "CasRefinesCounter", "internal": []}]` each resolve `CasTwice` to the empty list. A value naming `["Spec::Twice::finish", "lose Spec::Twice::ch"]` and its permutation, and the same two inside two arrays swapped, resolve to the same list, in the byte order of `Twice::finish` then `lose Twice::ch`. | Test (TC-552) |
-| FR-147-AC-6 | Defects, each refused with no list, located at (the unit's value, pointer): `{"refinement": "CasTwice"}` at `/0`, `"internal": "Spec::Twice::finish"` at `/0/internal`, a non-string entry at `/0/internal/0`, `"refinement": 7` at `/0`, and an object key `visible` at `/0` (each `invalid_model_binding`/`malformed-declaration`); the entries `""`, `frob x`, `Spec::Twice` and ` Spec::Twice::finish` (each `malformed-declaration` at its pointer); `{"refinement": "Nope", ...}` at `/0/refinement`, the entries `Other::Twice::finish`, `Spec::Twice::zz`, `spawn Spec::Twice::r` (`Twice` declares no role `r`), `lose Spec::Twice::nochan` and `Spec::Twice::par` (the bare path of a `parallel` node) (each `missing_declaration`/`missing-name` at its pointer); two objects for `CasTwice` at `/1` and `/0`, and `["Spec::Twice::finish", "Spec::Twice::finish"]` at `/0/internal/1` and `/0/internal/0` (each `invalid_model_binding`/`conflicting-binding`). | Test (TC-552) |
-| FR-147-AC-7 | The refinement check given a non-empty resolved list for `CasRefinesCounter` (model side), in a build whose support set omits `refinement-internal-list`, refuses exactly once, `unsupported_construct`/`not-yet-implemented` at the first token of the name after `abstract` (its model alias), naming `refinement-internal-list`, the refinement and the profile identity, classifies `unsupported` (FR-341-AC-5), produces no `CheckedRefinement` and no `invalid_model_binding`. Given a non-empty resolved list for `CasTwice` (protocol side), in a build that also omits `protocol-abstract-side`, it refuses exactly twice, each once: `protocol-abstract-side` at `Twice` and `refinement-internal-list` at `Spec` (the first token of `Spec::Twice`), both classified `unsupported`, with no `CheckedRefinement`. Given an empty list it does not refuse for the list. | Test (TC-552) |
-| FR-147-AC-8 | Each class spells and resolves over `Full`: a node path for an attempt, event, send, receive, timeout, finish and fence node and a template path for a `cattempt`, and `fork`, `join`, `cend`, `duplicate`, `lose`, `spawn`, `retire`, `activate` and `memory flush` entries, each making exactly its own class internal; the resolved list for all of them is in the byte order of their alias-free spellings. | Test (TC-552) |
-| FR-147-AC-9 | `abstract_internal` is alias-free: for `CasTwice`, `Twice::finish`. Renaming the abstract alias `Spec` to `S`, with the value's spellings renamed to match, gives the same `abstract_internal` and the same refinement node identity; the empty list and `[Twice::finish]` give different node identities. | Test (TC-552) |
-| FR-147-AC-10 | The locus of a list defect is the pair (input, pointer): a defect in the unit's value is located at (the unit's value, its pointer); the same defect in a supplied library's value is located at (that library's value, its pointer) and refuses the whole compilation, the unit included. No refusal names a compile-request member. | Test (TC-552) |
-| FR-147-AC-11 | Precedence, in a build whose support set omits `refinement-internal-list`: a list with an unresolved entry (`Spec::Twice::zz`) reports `missing_declaration`/`missing-name` and no `not-yet-implemented`; a value attributable to no refinement (`{}`, `"refinement": 7`) reports its defect alone; a non-empty resolved list on `CasRefinesCounter` reports only AC-7's refusal, and a malformed entry on it still reports `malformed-declaration`. | Test (TC-552) |
+| FR-147-AC-1 | In a build whose support set holds `protocol-abstract-side` and `refinement-internal-list`, `CasTwice` checks with `AbstractSide::Protocol` naming `Twice` and `abstract_internal = [Twice::finish]`, and writes one requirement record of kind `refinement` and no `temporal-satisfaction` record for the declaration. A row `step Impl::Counter::commitA -> node Spec::Twice::a1(self);` checks, naming node `a1`. | Test (TC-552) |
+| FR-147-AC-2 | Refusals: `abstract Spec::Thrice` (`missing_declaration`/`missing-name`); an internal list naming `Spec::Twice::zz` (`missing_declaration`/`missing-name`); an internal list naming `Spec::Twice::a1` beside a row `-> node Spec::Twice::a1(self)` (`invalid_model_binding`/`conflicting-binding`, naming the row and the entry); `-> node Spec::Twice::a1(self)` in `CasRefinesCounter`, whose abstract side is a model (`invalid_model_binding`/`malformed-declaration`). In a build whose support set omits `refinement-internal-list`, a non-empty list on `CasRefinesCounter` is AC-7's, not a binding refusal; in a build that has it, AC-12's. A producer that has built a feature is checked by that feature's own criteria. The first three vectors need a build that holds `protocol-abstract-side` and `refinement-internal-list`; the `CasRefinesCounter` node-row vector runs in any build. | Test (TC-552) |
+| FR-147-AC-3 | In a build that holds both features, `CasTwice` with `ensure fair weak Spec::Counter::inc` settles its liveness half `unsupported`, `unsupported-requested-capability`, naming hidden abstract fields, beside the safety result of FR-148. | Test (TC-552) |
+| FR-147-AC-4 | In a build that holds both features, `CasTwice` with `finish` removed from its `refinement_internals` list checks, with `finish` visible and `abstract_internal` empty; with the list naming `finish` it checks with `finish` internal; with the list naming `finish` and a step row `-> node Spec::Twice::finish(self)` it refuses `invalid_model_binding`/`conflicting-binding`. | Test (TC-552) |
+| FR-147-AC-5 | Resolution of the shape, in any build (the resolver only). For `CasTwice`, the value above resolves to `abstract_internal = [Twice::finish]`. The value absent, `[]`, and `[{"refinement": "CasRefinesCounter", "internal": []}]` each resolve `CasTwice` to the empty list. A value naming `["Spec::Twice::finish", "lose Spec::Twice::ch"]` and its permutation, and the same two inside two arrays swapped, resolve to the same list, in the byte order of `Twice::finish` then `lose Twice::ch`. For a refinement with the lower-case alias `spec` over `Twice`, the value `["spec::Twice::finish", "lose spec::Twice::ch"]` and its permutation resolve to `[Twice::finish, lose Twice::ch]`, the order of the alias-free spellings, which the alias-including spellings (`lose spec::Twice::ch` first) would reverse. | Test (TC-552) |
+| FR-147-AC-6 | Defects, in any build, each refused with no list, located at (the unit's value, pointer): `{"refinement": "CasTwice"}` at `/0`, `"internal": "Spec::Twice::finish"` at `/0/internal`, a non-string entry at `/0/internal/0`, `"refinement": 7` at `/0/refinement`, and an object key `visible` at `/0` (each `invalid_model_binding`/`malformed-declaration`); the entries `""`, `frob x`, `Spec::Twice` and ` Spec::Twice::finish` (each `malformed-declaration` at its pointer); `{"refinement": "Nope", ...}` at `/0/refinement`, the entries `Other::Twice::finish`, `Spec::Twice::zz`, `spawn Spec::Twice::r` (`Twice` declares no role `r`), `lose Spec::Twice::nochan` and `Spec::Twice::par` (the bare path of a `parallel` node) (each `missing_declaration`/`missing-name` at its pointer); two objects for `CasTwice` at `/1` and `/0`, and `["Spec::Twice::finish", "Spec::Twice::finish"]` at `/0/internal/1` and `/0/internal/0` (each `invalid_model_binding`/`conflicting-binding`). | Test (TC-552) |
+| FR-147-AC-7 | In a build whose support set omits the features named, the refinement check given a non-empty resolved list for `CasRefinesCounter` (model side), in a build whose support set omits `refinement-internal-list`, refuses exactly once, `unsupported_construct`/`not-yet-implemented` at the first token of the name after `abstract` (its model alias), naming `refinement-internal-list`, the refinement and the profile identity, classifies `unsupported` (FR-341-AC-5), produces no `CheckedRefinement` and no `invalid_model_binding`. Given a non-empty resolved list for `CasTwice` (protocol side), in a build that also omits `protocol-abstract-side`, it refuses exactly twice, each once: `protocol-abstract-side` at `Twice` and `refinement-internal-list` at `Spec` (the first token of `Spec::Twice`), both classified `unsupported`, with no `CheckedRefinement`. Given an empty list it does not refuse for the list. | Test (TC-552) |
+| FR-147-AC-8 | In any build, each class spells and resolves over `Full`: a node path for an attempt, event, send, receive, timeout, finish and fence node and a template path for a `cattempt`, and `fork`, `join`, `cend`, `duplicate`, `lose`, `spawn`, `retire`, `activate` and `memory flush` entries, each making exactly its own class internal; the resolved list for all of them is in the byte order of their alias-free spellings. | Test (TC-552) |
+| FR-147-AC-9 | In a build that holds both features, `abstract_internal` is alias-free: for `CasTwice`, `Twice::finish`. Renaming the abstract alias `Spec` to `S`, with the value's spellings renamed to match, gives the same `abstract_internal` and the same refinement node identity; the empty list and `[Twice::finish]` give different node identities. | Test (TC-552) |
+| FR-147-AC-10 | In any build, the locus of a list defect is the pair (input, pointer): a defect in the unit's value is located at (the unit's value, its pointer); the same defect in a supplied library's value is located at (that library's value, its pointer) and refuses the whole compilation, the unit included, whether or not the unit imports that library (a unit with no import of it is refused all the same). No refusal names a compile-request member. | Test (TC-552) |
+| FR-147-AC-11 | Precedence, in a build whose support set omits `refinement-internal-list`: a list with an unresolved entry (`Spec::Twice::zz`) reports `missing_declaration`/`missing-name` and no `not-yet-implemented`; a value attributable to no refinement (`{}`, `"refinement": 7`) reports its defect alone; a non-empty resolved list on `CasRefinesCounter` reports only AC-7's refusal, and a malformed entry, a repeated spelling or a `refinement` naming no refinement on it is still reported while an entry such as `Other::Twice::finish` or `Spec::Twice::zz` is not resolved and gives no `missing-name`. | Test (TC-552) |
+| FR-147-AC-12 | In a build that holds `refinement-internal-list`, a non-empty list for `CasRefinesCounter` (model side) refuses `invalid_model_binding`/`malformed-declaration` at (the unit's value, `/0`), with no `CheckedRefinement` and no `not-yet-implemented`; an empty list does not refuse. | Test (TC-552) |
 
 ## Dependencies
 
