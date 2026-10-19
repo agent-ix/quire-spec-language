@@ -445,9 +445,9 @@ fn a_violation_names_the_first_bound_instance_that_is_false() {
 #[test]
 fn an_undefined_atom_refutes_at_the_first_position_it_is_undefined() {
     let world = self::world("", &[&[("c", 0)]]);
-    let formula = "always holds(c.value / (2 - c.value) >= 0)";
+    let formula = "always holds(6 mod (2 - c.value) >= 0)";
     let outcome = invariant(&world, &["c"], formula, |v| {
-        (v != 2).then(|| v / (2 - v) >= 0)
+        (v != 2).then(|| 6 % (2 - v) >= 0)
     });
     let counterexample = violated(&outcome);
     assert_eq!(values(&world, counterexample, "c"), [0, 1, 2]);

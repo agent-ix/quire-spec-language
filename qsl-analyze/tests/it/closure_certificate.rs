@@ -462,8 +462,8 @@ fn an_undetermined_contract_or_a_failing_atom_is_a_bad_state() {
             "always holds(c.value != 2)",
             (|v| Some(v != 2)) as fn(i64) -> Option<bool>,
         ),
-        ("always holds(c.value / (2 - c.value) >= 0)", |v| {
-            (v != 2).then(|| v / (2 - v) >= 0)
+        ("always holds(6 mod (2 - c.value) >= 0)", |v| {
+            (v != 2).then(|| 6 % (2 - v) >= 0)
         }),
     ] {
         let invariant = world.invariant(formula, atom);
