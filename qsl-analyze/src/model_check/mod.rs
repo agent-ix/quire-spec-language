@@ -13,7 +13,7 @@ mod graph;
 mod product;
 mod scc;
 
-pub use check::{check_model, ModelCheckItem, ModelCheckRefusal, ModelCheckRequest};
+pub use check::{check_model, ModelCheckRefusal, ModelCheckRequest};
 pub use graph::{
     retain, GraphExploration, IdentityPermutation, ProductStateId, RetainedEdge, RetainedGraph,
     RetainedState,
