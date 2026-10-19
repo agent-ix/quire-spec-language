@@ -677,6 +677,9 @@ struct Unit {
     /// Each `terminal` declaration's form, in source order, resolved by the
     /// caller into the model's `TerminalClauseDeclaration`s (FR-124).
     terminals: Vec<TerminalDeclarationForm>,
+    /// Each `refinement` declaration's form, in source order, resolved by the
+    /// caller into the unit's `RefinementDeclaration`s (FR-135).
+    refinements: Vec<qsl_forms::RefinementForm>,
 }
 
 impl Unit {
@@ -695,6 +698,7 @@ impl Unit {
             protocols: Vec::new(),
             temporal_clauses: Vec::new(),
             terminals: Vec::new(),
+            refinements: Vec::new(),
         };
         for form in forms {
             let span = form.span();
@@ -736,6 +740,7 @@ impl Unit {
                     });
                 }
                 DeclarationForm::Terminal(terminal) => unit.terminals.push(*terminal),
+                DeclarationForm::Refinement(refinement) => unit.refinements.push(*refinement),
                 DeclarationForm::Temporal(clause) => {
                     unit.temporal_clauses
                         .push(super::temporal_clause::TemporalDeclaration {
@@ -2929,20 +2934,30 @@ impl PackageDeclarations {
             &admitted,
         );
         let terminals = terminal_declarations(unit.terminals, &resolve, &admitted);
-        let (state_clauses, protocol_attempts, operation_bodies, terminals) = match (
+        let refinements = refinement_declarations(unit.refinements, &resolve);
+        let (state_clauses, protocol_attempts, operation_bodies, terminals, refinements) = match (
             state_clauses,
             protocol_attempts,
             operation_bodies,
             terminals,
+            refinements,
         ) {
-            (Ok(clauses), Ok(attempts), Ok(bodies), Ok(terminals)) if bound_errors.is_empty() => {
-                (clauses, attempts, bodies, terminals)
+            (Ok(clauses), Ok(attempts), Ok(bodies), Ok(terminals), Ok(refinements))
+                if bound_errors.is_empty() =>
+            {
+                (clauses, attempts, bodies, terminals, refinements)
             }
-            (clauses, attempts, bodies, terminals) => {
+            (clauses, attempts, bodies, terminals, refinements) => {
                 let mut errors = bound_errors;
-                for refusal in [clauses.err(), attempts.err(), bodies.err(), terminals.err()]
-                    .into_iter()
-                    .flatten()
+                for refusal in [
+                    clauses.err(),
+                    attempts.err(),
+                    bodies.err(),
+                    terminals.err(),
+                    refinements.err(),
+                ]
+                .into_iter()
+                .flatten()
                 {
                     errors.extend(refusal.errors);
                 }
@@ -3023,6 +3038,7 @@ impl PackageDeclarations {
         package.function_selections = function_selections;
         package.state_clauses = state_clauses;
         package.terminals = terminals;
+        package.refinements = refinements;
         package.operation_bodies = operation_bodies;
         package.selected_views = selected_views;
         // FR-092: a protocol's node is declared at the protocol's name.
@@ -3233,6 +3249,38 @@ fn state_clauses(
     }
     if errors.is_empty() {
         Ok(clauses)
+    } else {
+        refuse(errors)
+    }
+}
+
+/// FR-135: each `refinement` declaration's `using` alias resolved to one of
+/// the unit's profile selections. The model aliases and every row resolve at
+/// S3, where the models' declarations are checked.
+fn refinement_declarations(
+    forms: Vec<qsl_forms::RefinementForm>,
+    resolve: &Resolve<'_>,
+) -> Result<Vec<super::RefinementDeclaration>, AssemblyRefusal> {
+    let mut errors = Vec::new();
+    let mut declarations = Vec::with_capacity(forms.len());
+    for form in forms {
+        let selection = resolve
+            .profiles
+            .iter()
+            .find(|profile| profile.alias == form.profile.alias)
+            .cloned();
+        match selection {
+            Some(selection) => declarations.push(super::RefinementDeclaration { form, selection }),
+            None => errors.push(AssemblyError {
+                cause: AssemblyCause::UndeclaredAlias {
+                    alias: form.profile.alias.clone(),
+                },
+                span: form.profile.span,
+            }),
+        }
+    }
+    if errors.is_empty() {
+        Ok(declarations)
     } else {
         refuse(errors)
     }
