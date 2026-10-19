@@ -214,6 +214,8 @@ pub fn check(
             attempts: Vec::new(),
             obligations: CheckedObligations::default(),
             channels: Vec::new(),
+            parallels: Vec::new(),
+            fences: Vec::new(),
             controls: compiled.tree,
             edges: compiled.edges,
             slots: crate::check::protocol_slots::CheckedSlots::default(),

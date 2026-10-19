@@ -786,6 +786,28 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 ProtocolAnchorCause::JoinList {
                     parallel, fault, ..
                 } => format!("{message}: the join of `{parallel}` is unsound ({fault:?})"),
+                ProtocolAnchorCause::ConflictingMemory {
+                    parallel,
+                    model,
+                    outermost,
+                    outermost_model,
+                    ..
+                } => format!(
+                    "{message}: `{parallel}` declares memory `{}` inside `{outermost}`, whose \
+                     default is `{}`",
+                    model.spelling(),
+                    outermost_model.spelling()
+                ),
+                ProtocolAnchorCause::WeakJoin {
+                    parallel,
+                    model,
+                    policy,
+                    ..
+                } => format!(
+                    "{message}: `{parallel}` declares memory `{}` and joins `{policy}`, not `all` \
+                     with no `outstanding` clause",
+                    model.spelling()
+                ),
                 ProtocolAnchorCause::NodeRole { node, name, .. } => {
                     format!("{message}: `{node}` names `{name}`, which is no role of the protocol")
                 }

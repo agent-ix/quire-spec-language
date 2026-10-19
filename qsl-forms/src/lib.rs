@@ -55,8 +55,8 @@ pub use hyper_clause::{
 };
 pub use protocol_control::{
     AwaitForm, ChannelCapacity, ChannelDelivery, ChannelForm, ChannelOrdering, ChannelOverflow,
-    JoinPolicy, LoopProofForm, LossSelector, Outstanding, ParallelForm, ProtocolMemberForm,
-    RepeatForm, SchedulingForm, TerminalForm,
+    FenceForm, FenceOrdering, JoinPolicy, LoopProofForm, LossSelector, MemoryModelName,
+    Outstanding, ParallelForm, ProtocolMemberForm, RepeatForm, SchedulingForm, TerminalForm,
 };
 pub use refinement::{
     AbstractSideForm, ArgumentForm, FairnessRowForm, FairnessSide, FieldRowForm,

@@ -78,6 +78,11 @@ pub struct CheckedProtocol {
     pub obligations: CheckedObligations,
     /// Every channel with its premises, in source order (FR-218 "Channels").
     pub channels: Vec<CheckedChannel>,
+    /// Every `parallel` with its source default memory model, in source
+    /// order (FR-219).
+    pub parallels: Vec<crate::check::protocol_memory::CheckedParallel>,
+    /// Every `fence` with its ordering, in source order (FR-220).
+    pub fences: Vec<crate::check::protocol_memory::CheckedFence>,
     /// The `run` control tree (FR-218 "Outputs").
     pub controls: CheckedControlTree,
     /// The compiled causal edge relation, the `repeat` back edges included

@@ -19,7 +19,7 @@ use qsl_foundation::{Span, Spanned};
 use quire_exact::{CollectionKind, Integer};
 
 use super::protocol_control::{
-    AwaitForm, ChannelForm, ParallelForm, ProtocolMemberForm, RepeatForm,
+    AwaitForm, ChannelForm, FenceForm, ParallelForm, ProtocolMemberForm, RepeatForm,
 };
 use super::spans::{DeclarationSpans, ExpressionSpans, SpansMismatch};
 
@@ -2753,8 +2753,6 @@ pub enum ProtocolConstructKind {
     JoinPredicate,
     /// A `terminal when { predicate };` member.
     TerminalWhen,
-    /// A `parallel`'s `memory sc | tso | ra` clause.
-    MemoryClause,
     /// An `attempt`'s `ordering o` memory order.
     AccessOrdering,
 }
@@ -2773,7 +2771,6 @@ impl ProtocolConstructKind {
             Self::FifoOrdering => "channel ordering fifo",
             Self::JoinPredicate => "join predicate",
             Self::TerminalWhen => "terminal when",
-            Self::MemoryClause => "parallel memory",
             Self::AccessOrdering => "attempt ordering",
         }
     }
@@ -3001,6 +2998,9 @@ pub struct ProtocolDeclarationForm {
     /// Every `parallel` control of the `run` tree, in source order of the
     /// controls (FR-308).
     pub parallels: Vec<ParallelForm>,
+    /// Every `fence` control of the `run` tree, in source order of the
+    /// controls (FR-220).
+    pub fences: Vec<FenceForm>,
     /// Every `repeat` control of the `run` tree, in source order of the
     /// controls (FR-308).
     pub repeats: Vec<RepeatForm>,

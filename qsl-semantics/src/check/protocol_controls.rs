@@ -587,7 +587,7 @@ fn refuse_repeated_members(
 mod model_state_tests;
 
 #[cfg(test)]
-mod tests {
+pub(in crate::check) mod tests {
     use ix_trace_rs::trace;
     use qsl_forms::{build_unit, ChannelCapacity, ChannelDelivery, ChannelOverflow, LossSelector};
     use qsl_foundation::SourceIdentity;
@@ -608,14 +608,15 @@ mod tests {
     const RECORD: &str = "record Plain { ready: Boolean; }\n\
         enum Color { Red, Blue, }\n";
 
-    const RUN: &str = "sequence Main { attempt Tried by Seller on M::Actor::op contracts [] \
+    pub(in crate::check) const RUN: &str =
+        "sequence Main { attempt Tried by Seller on M::Actor::op contracts [] \
         as (tried: Boolean) { true }; }";
 
     const ENDS: &str = "from Seller to Buyer";
 
     /// The base protocol of these tests: two roles on `M::Actor`, `members`
     /// between the roles and `run`, and the given run control.
-    fn pipeline(members: &str, run: &str) -> String {
+    pub(in crate::check) fn pipeline(members: &str, run: &str) -> String {
         format!(
             "{RECORD}protocol Pipeline using v over (input: Boolean) on origin {{\n\
              role Seller on M::Actor;\n\
@@ -676,7 +677,7 @@ mod tests {
         (text, assembled)
     }
 
-    fn refusals(declarations: &str) -> (String, Vec<CheckRefusal>) {
+    pub(in crate::check) fn refusals(declarations: &str) -> (String, Vec<CheckRefusal>) {
         let (text, assembled) = assemble(declarations);
         match assembled.check(CheckingLimits::default()) {
             Err(refusals) => (text, refusals),
@@ -684,14 +685,14 @@ mod tests {
         }
     }
 
-    fn checks(declarations: &str) -> CheckedGraph {
+    pub(in crate::check) fn checks(declarations: &str) -> CheckedGraph {
         let (_, assembled) = assemble(declarations);
         assembled
             .check(CheckingLimits::default())
             .unwrap_or_else(|refusals| panic!("{declarations}: {refusals:?}"))
     }
 
-    fn causes(refusals: &[CheckRefusal]) -> Vec<&ProtocolAnchorCause> {
+    pub(in crate::check) fn causes(refusals: &[CheckRefusal]) -> Vec<&ProtocolAnchorCause> {
         refusals
             .iter()
             .map(|refusal| match &refusal.cause {
@@ -701,14 +702,16 @@ mod tests {
             .collect()
     }
 
-    fn located<'t>(text: &'t str, cause: &ProtocolAnchorCause) -> &'t str {
+    pub(in crate::check) fn located<'t>(text: &'t str, cause: &ProtocolAnchorCause) -> &'t str {
         let span = cause.span();
         &text[span.start..span.end]
     }
 
     /// The one refusal `declarations` checks to, as its text, cause, code
     /// and tag.
-    fn only_refusal(declarations: &str) -> (String, ProtocolAnchorCause, &'static str, String) {
+    pub(in crate::check) fn only_refusal(
+        declarations: &str,
+    ) -> (String, ProtocolAnchorCause, &'static str, String) {
         let (text, found) = refusals(declarations);
         let [refusal] = &found[..] else {
             panic!("{declarations}: one refusal, got {found:?}");
@@ -1122,27 +1125,14 @@ mod tests {
     /// rather than compile unchecked.
     #[trace("TC-1065")]
     #[test]
-    fn a_predicate_join_and_memory_constructs_are_not_compiled_unchecked() {
+    fn a_predicate_join_and_an_attempt_ordering_are_not_compiled_unchecked() {
         let predicate_join = parallel("predicate(done) [east, west]");
-        let with_memory = |model: &str| {
-            parallel("all [east, west]").replacen(
-                "parallel P ",
-                &format!("parallel P memory {model} "),
-                1,
-            )
-        };
-        let (sc, tso, ra) = (with_memory("sc"), with_memory("tso"), with_memory("ra"));
         let ordered = RUN.replacen("contracts", "ordering seq_cst contracts", 1);
-        let fence = "sequence Main { fence F ordering seq_cst; }";
-        for (members, run, construct) in [
-            ("", predicate_join.as_str(), "join predicate"),
-            ("", sc.as_str(), "parallel memory"),
-            ("", tso.as_str(), "parallel memory"),
-            ("", ra.as_str(), "parallel memory"),
-            ("", ordered.as_str(), "attempt ordering"),
-            ("", fence, "fence"),
+        for (run, construct) in [
+            (predicate_join.as_str(), "join predicate"),
+            (ordered.as_str(), "attempt ordering"),
         ] {
-            let (_, cause, code, tag) = only_refusal(&pipeline(members, run));
+            let (_, cause, code, tag) = only_refusal(&pipeline("", run));
             assert_eq!(
                 (code, tag.as_str()),
                 ("unsupported_construct", "not-yet-implemented")

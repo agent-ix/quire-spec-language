@@ -108,8 +108,7 @@ pub enum ProtocolAnchorCause {
     },
     /// A protocol whose anchors, binders and attempt bindings all check,
     /// but which holds a construct no checker reads yet (a `predicate`
-    /// join, a `parallel`'s memory clause, an attempt's memory order, a
-    /// `fence`, or a relationship between two ends that are not object
+    /// join, an attempt's memory order, or a relationship between two ends that are not object
     /// types). Refused rather than compiled with
     /// unchecked content and silently missing from the emitted package
     /// (SR-753 FND-002, SR-761 FND-001, SR-770 FND-001).
@@ -212,6 +211,35 @@ pub enum ProtocolAnchorCause {
         /// What is unsound.
         fault: JoinFault,
         /// The list's span, or the quorum count's.
+        span: Span,
+    },
+    /// FR-219 (ADR-025 MM-3): a `parallel` nested in another declares a
+    /// `memory` default other than its outermost `parallel`'s.
+    /// `invalid_model_binding`/`conflicting-binding`, at the nested clause,
+    /// naming both controls.
+    ConflictingMemory {
+        /// The nested `parallel`'s declared name.
+        parallel: String,
+        /// The default the nested `parallel` declares.
+        model: qsl_forms::MemoryModelName,
+        /// The outermost `parallel`'s declared name.
+        outermost: String,
+        /// The outermost `parallel`'s default.
+        outermost_model: qsl_forms::MemoryModelName,
+        /// The nested `memory` clause's span.
+        span: Span,
+    },
+    /// FR-219 (ADR-025 MM-3): a `parallel` declaring a weak default whose
+    /// join is not `all`, or that has an `outstanding` clause.
+    /// `unsupported_construct`/`declaration-form`, at the join.
+    WeakJoin {
+        /// The `parallel`'s declared name.
+        parallel: String,
+        /// The weak default.
+        model: qsl_forms::MemoryModelName,
+        /// The join policy as written, `outstanding` clause included.
+        policy: String,
+        /// The join policy's span.
         span: Span,
     },
     /// FR-218 "Constructs": an `event` or `commit` written `by`, or a
@@ -774,6 +802,8 @@ impl ProtocolAnchorCause {
             | Self::ChannelCarriesObject { span, .. }
             | Self::RoleModel { span, .. }
             | Self::JoinList { span, .. }
+            | Self::ConflictingMemory { span, .. }
+            | Self::WeakJoin { span, .. }
             | Self::NodeRole { span, .. }
             | Self::MissingChannel { span, .. }
             | Self::CarriesMismatch { span, .. }
@@ -829,9 +859,10 @@ impl ProtocolAnchorCause {
             Self::KeyClause { cause, .. } | Self::SlotClause { cause, .. } => cause.code(),
             Self::WrongObservation { .. } => Code::WrongSnapshot,
             Self::WrongContractAnchor { .. } => Code::WrongSnapshot,
-            Self::Unimplemented { .. } | Self::NoProgress { .. } | Self::AwaitedForm { .. } => {
-                Code::UnsupportedConstruct
-            }
+            Self::Unimplemented { .. }
+            | Self::NoProgress { .. }
+            | Self::AwaitedForm { .. }
+            | Self::WeakJoin { .. } => Code::UnsupportedConstruct,
             Self::CausalCycle { .. } | Self::RequirementCycle { .. } => Code::InvalidPackage,
             Self::Exhaustiveness { .. } => Code::UndefinedExpression,
             Self::BinderType { fault, .. } | Self::ChannelType { fault, .. } => {
@@ -839,6 +870,7 @@ impl ProtocolAnchorCause {
             }
             Self::ChannelCarriesObject { .. }
             | Self::RoleModel { .. }
+            | Self::ConflictingMemory { .. }
             | Self::RelationshipExport { .. } => Code::InvalidModelBinding,
             Self::JoinList { .. } => Code::InvalidPackage,
         }
@@ -879,7 +911,9 @@ impl ProtocolAnchorCause {
             Self::WrongObservation { .. } => "wrong-observation",
             Self::WrongContractAnchor { .. } => "wrong-anchor",
             Self::Unimplemented { .. } => "not-yet-implemented",
-            Self::NoProgress { .. } | Self::AwaitedForm { .. } => "declaration-form",
+            Self::NoProgress { .. } | Self::AwaitedForm { .. } | Self::WeakJoin { .. } => {
+                "declaration-form"
+            }
             Self::MissingTemporalProfile { .. } => "missing-selection",
             Self::CausalCycle { .. } | Self::RequirementCycle { .. } => "definition-cycle",
             Self::Exhaustiveness { .. } => "unproved-exhaustiveness",
@@ -887,6 +921,7 @@ impl ProtocolAnchorCause {
                 type_fault_class(fault).1
             }
             Self::ChannelCarriesObject { .. } | Self::RoleModel { .. } => "malformed-declaration",
+            Self::ConflictingMemory { .. } => "conflicting-binding",
             Self::RelationshipExport { .. } => "wrong-export",
             Self::JoinList { .. } => "invalid-value",
         }

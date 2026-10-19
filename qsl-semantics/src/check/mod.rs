@@ -124,6 +124,7 @@ mod probabilistic;
 mod profile;
 mod protocol_clause;
 mod protocol_controls;
+mod protocol_memory;
 mod protocol_obligation;
 mod protocol_reference;
 mod protocol_relationship;
@@ -286,6 +287,7 @@ pub use protocol_clause::{
     CheckedOperationNodes, CheckedProtocol, EdgeKind, Port, PortRef, ProtocolNodeId,
 };
 pub use protocol_controls::{CheckedChannel, CheckedOrdering};
+pub use protocol_memory::{CheckedFence, CheckedParallel};
 pub use protocol_obligation::{
     CaptureOwner, CaptureStage, CheckedActivation, CheckedBinder, CheckedCapture, CheckedCommit,
     CheckedCompensation, CheckedDeadline, CheckedObligations, CheckedRecovery, CheckedRetry,
@@ -1696,8 +1698,8 @@ impl PackageDeclarations {
         // (FR-218), `protocol_clause::content` checks the rest -- the `using`
         // aliases, roles, node roles and owners, and binder types -- and
         // refuses `unsupported_construct`/`not-yet-implemented` at any
-        // construct no checker reads yet (a `predicate` join, a `parallel`'s
-        // memory clause, an attempt's memory order and a `fence`).
+        // construct no checker reads yet (a `predicate` join and an attempt's
+        // memory order).
         // `protocol_requirement::check` binds each `requires temporal` and
         // `protocol_relationship::check` each `relationship` (FR-218).
         // `protocol_slots::check` checks every body, guard, `visible` entry,
@@ -1893,6 +1895,14 @@ impl PackageDeclarations {
                             nodes_used = used;
                         }
                         Err(control_refusals) => refusals.extend(control_refusals),
+                    }
+                    // FR-219, FR-220: the `memory` defaults and the fences.
+                    match protocol_memory::check(protocol) {
+                        Ok((parallels, fences)) => {
+                            checked.parallels = parallels;
+                            checked.fences = fences;
+                        }
+                        Err(memory_refusals) => refusals.extend(memory_refusals),
                     }
                     protocol_bindings.push(bound);
                     checked_protocols.push(checked);

@@ -130,6 +130,59 @@ pub enum Outstanding {
     Cancel,
 }
 
+/// The memory model a `parallel` declares with `memory M` (FR-219,
+/// ADR-025 MM-1).
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum MemoryModelName {
+    /// `memory sc`: sequential consistency, the default of a `parallel`
+    /// with no clause.
+    Sc,
+    /// `memory tso`: x86-TSO.
+    Tso,
+    /// `memory ra`: release/acquire.
+    Ra,
+}
+
+impl MemoryModelName {
+    /// The model's source spelling.
+    pub fn spelling(self) -> &'static str {
+        match self {
+            Self::Sc => "sc",
+            Self::Tso => "tso",
+            Self::Ra => "ra",
+        }
+    }
+
+    /// Whether the model is weak (`tso` or `ra`).
+    pub fn is_weak(self) -> bool {
+        self != Self::Sc
+    }
+}
+
+/// The ordering of a `fence` control (FR-220, ADR-025 MM-6). The shared
+/// grammar admits no `relaxed` fence.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum FenceOrdering {
+    /// `acquire`.
+    Acquire,
+    /// `release`.
+    Release,
+    /// `acq_rel`.
+    AcqRel,
+    /// `seq_cst`.
+    SeqCst,
+}
+
+/// One `fence Name ordering o;` control as written (FR-220).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FenceForm {
+    /// The index into `ProtocolDeclarationForm::declarations` of the node
+    /// this control declares.
+    pub declaration: usize,
+    /// The fence's ordering, with the span of its text.
+    pub ordering: Spanned<FenceOrdering>,
+}
+
 /// One `parallel` control as written (FR-308).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ParallelForm {
@@ -150,6 +203,8 @@ pub struct ParallelForm {
     pub labels_span: Span,
     /// The `outstanding` rule with the span of its text, when written.
     pub outstanding: Option<Spanned<Outstanding>>,
+    /// The `memory M` clause with the span of its text, when written.
+    pub memory: Option<Spanned<MemoryModelName>>,
     /// The span of the whole control.
     pub span: Span,
 }
@@ -519,7 +574,66 @@ pub(crate) fn parallel_form(
             end: close.span().end,
         },
         outstanding: outstanding(&parallel_items, parallel)?,
+        memory: memory_clause(cst, &parallel_items, parallel)?,
         span: parallel.span(),
+    })
+}
+
+/// A `parallel`'s optional `memory M` clause (FR-219).
+fn memory_clause(
+    cst: &LosslessCst,
+    parallel_items: &[Item<'_>],
+    parallel: &CstNode,
+) -> Result<Option<Spanned<MemoryModelName>>, FormsRefusal> {
+    let Some(clause) = nodes_of(parallel_items, Production::MemoryClause)
+        .into_iter()
+        .next()
+    else {
+        return Ok(None);
+    };
+    let clause_items = items(cst, clause);
+    let tokens = own_tokens(&clause_items);
+    let Some(model) = tokens.last() else {
+        return Err(unexpected(parallel));
+    };
+    let value = match model.spelling() {
+        b"sc" => MemoryModelName::Sc,
+        b"tso" => MemoryModelName::Tso,
+        b"ra" => MemoryModelName::Ra,
+        _ => return Err(unexpected(parallel)),
+    };
+    Ok(Some(Spanned {
+        value,
+        span: clause.span(),
+    }))
+}
+
+/// A `fence Name ordering o;` control's ordering (FR-220).
+pub(crate) fn fence_form(
+    cst: &LosslessCst,
+    fence: &CstNode,
+    declaration: usize,
+) -> Result<FenceForm, FormsRefusal> {
+    let fence_items = items(cst, fence);
+    let order = only(&fence_items, Production::FenceOrder, fence)?;
+    let order_items = items(cst, order);
+    let tokens = own_tokens(&order_items);
+    let Some(token) = tokens.first() else {
+        return Err(unexpected(fence));
+    };
+    let value = match token.spelling() {
+        b"acquire" => FenceOrdering::Acquire,
+        b"release" => FenceOrdering::Release,
+        b"acq_rel" => FenceOrdering::AcqRel,
+        b"seq_cst" => FenceOrdering::SeqCst,
+        _ => return Err(unexpected(fence)),
+    };
+    Ok(FenceForm {
+        declaration,
+        ordering: Spanned {
+            value,
+            span: order.span(),
+        },
     })
 }
 
