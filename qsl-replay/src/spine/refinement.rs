@@ -291,7 +291,8 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
             | RefinementCause::MissingRow { .. }
             | RefinementCause::Conflicting { .. }
             | RefinementCause::Malformed { .. }
-            | RefinementCause::Unsupported { .. } => None,
+            | RefinementCause::Unsupported { .. }
+            | RefinementCause::PopulationBound { .. } => None,
         },
         CheckCause::DispatchLink(link) => link
             .denial
@@ -303,6 +304,8 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
         | CheckCause::ProfileProhibitedOperator(_)
         | CheckCause::StateModel(_)
         | CheckCause::ObjectReadInValueInvariant
+        | CheckCause::PopulationFormOutsideRefinement
+        | CheckCause::PopulationFormNotChecked { .. }
         | CheckCause::ModelConformance(_)
         | CheckCause::IllTyped(_)
         | CheckCause::IdentityObservingForm(_)
