@@ -438,6 +438,37 @@ fn a_liveness_violation_settles_refuted_through_replay() {
     );
 }
 
+/// A `Counter` fixture whose one clause `formula` is under the event-position
+/// false-extension profile, `on origin`.
+pub(crate) fn bounded_fixture(formula: &str) -> Fixture {
+    let doc = document(false);
+    let body = CONTRACT.to_owned()
+        + &format!(
+            "temporal C using tb over (c: M::Counter) clock \"model-steps\" on origin {{ {formula} }}\n"
+        );
+    let text = unit_text(&doc, &body).replace(
+        "profile t0 = \"quire.temporal.infinite-trace/v1\";\n",
+        "profile tb = \"quire.temporal.event-position.false-extension/v1\";\n",
+    );
+    let package = package_from_text(&doc, &text);
+    let clauses = package
+        .graph()
+        .temporal_clauses()
+        .iter()
+        .map(|node| node.clause().clone())
+        .collect();
+    let mut documents = Documents::new(doc);
+    let initial = vec![documents.start("s0", &[("c", 0)])];
+    Fixture {
+        package,
+        clauses,
+        documents,
+        initial,
+        keys: vec!["c"],
+        unit: text.into_bytes(),
+    }
+}
+
 /// A bad prefix refutes a safety clause whatever its fairness set says of
 /// the continuation: `fair weak inc; always holds(c.value < 2)` is refuted by
 /// `0 -inc-> 1 -inc-> 2`, which reproduces at position 2.
@@ -491,35 +522,7 @@ fn an_authored_clauses_undefined_evaluation_is_refused_until_it_is_built() {
 #[trace("TC-523")]
 #[test]
 fn a_bounded_prefix_that_is_cut_short_refuses_and_a_covering_one_reproduces() {
-    fn bounded(formula: &str) -> Fixture {
-        let doc = document(false);
-        let body = CONTRACT.to_owned()
-            + &format!(
-                "temporal C using tb over (c: M::Counter) clock \"model-steps\" on origin {{ {formula} }}\n"
-            );
-        let text = unit_text(&doc, &body).replace(
-            "profile t0 = \"quire.temporal.infinite-trace/v1\";\n",
-            "profile tb = \"quire.temporal.event-position.false-extension/v1\";\n",
-        );
-        let package = package_from_text(&doc, &text);
-        let clauses = package
-            .graph()
-            .temporal_clauses()
-            .iter()
-            .map(|node| node.clause().clone())
-            .collect();
-        let mut documents = Documents::new(doc);
-        let initial = vec![documents.start("s0", &[("c", 0)])];
-        Fixture {
-            package,
-            clauses,
-            documents,
-            initial,
-            keys: vec!["c"],
-            unit: text.into_bytes(),
-        }
-    }
-    let holds = bounded("always[0,2] holds(c.value >= 0)");
+    let holds = bounded_fixture("always[0,2] holds(c.value >= 0)");
     assert!(matches!(
         holds.decide(|value| Some(value >= 0)).expect("checked"),
         ModelCheckOutcome::Holds { .. }
@@ -550,7 +553,7 @@ fn a_bounded_prefix_that_is_cut_short_refuses_and_a_covering_one_reproduces() {
     );
     assert_eq!((code, tag), (Code::InvalidRuntimeInput, "invalid-value"));
 
-    let violated = bounded("always[0,2] holds(c.value < 2)");
+    let violated = bounded_fixture("always[0,2] holds(c.value < 2)");
     let payload = found(&violated, below_two);
     assert_eq!(payload.prefix.len(), 2);
     assert_eq!(
@@ -585,7 +588,7 @@ fn a_bounded_prefix_that_is_cut_short_refuses_and_a_covering_one_reproduces() {
             0,
         ),
     ] {
-        let decided = bounded(formula);
+        let decided = bounded_fixture(formula);
         let payload = found(&decided, atom);
         assert_eq!(payload.prefix.len(), steps, "{formula}");
         assert_eq!(payload.lasso, None);

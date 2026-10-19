@@ -19,6 +19,7 @@ mod reduction_world;
 mod schedulability;
 mod state_graph;
 mod state_graph_certificate;
+mod state_graph_settle;
 mod strong_hint;
 mod units;
 mod universe_obligation;

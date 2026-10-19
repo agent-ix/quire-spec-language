@@ -3,29 +3,32 @@
 //! constraints that would exclude it, as warning hints on the item's terminal
 //! record beside the counterexample, changing no verdict.
 //!
-//! Over ADR-018 §6's ConfigVersion unit (`crate::example_units`) and the
-//! `Counter` subject (`crate::counter`). Not covered: FR-133-AC-1's mutex,
-//! which is ADR-019's subject and needs a strong-fairness engine, and the
+//! Over ADR-018 section 6's ConfigVersion unit (`crate::example_units`), the
+//! `Counter` subject (`crate::counter`) and ADR-019 section 6's mutex written
+//! over `Counter`. Not covered: FR-133-AC-1's `strong` (whole) half, which
+//! needs replay of a strong constraint (FR-131, QSL-532), and the
 //! suppression of a hint for a constraint the clause already holds, which
-//! needs a clause with a strong constraint (replay refuses one, QSL-895).
+//! needs a clause with a strong constraint (replay refuses one today).
 
 use ix_trace_rs::trace;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::SourceIdentity;
 use qsl_replay::{
-    compile_package, replay_model_trace, settle_model_check, CertificateRequest, DependencyInput,
-    DigestRecord, ModelCheckItem, ModelCheckLimits, ModelCheckOutcome, ModelCheckRecord,
-    ModelTraceReplayResult, ModelTraceSubject, ReplayLimits, ResultLabel, StrongFairnessHint,
-    TemporalCounterexample, TerminalValue, WireNodeId,
+    compile_package, replay_model_trace, settle_model_check, CertificateRequest,
+    CounterexampleKind, DependencyInput, DigestRecord, ModelCheckItem, ModelCheckLimits,
+    ModelCheckOutcome, ModelCheckRecord, ModelTraceReplayResult, ModelTraceSettlement,
+    ModelTraceSubject, ReplayLimits, ResultLabel, StrongFairnessHint, TemporalCounterexample,
+    TerminalValue, WireNodeId,
 };
 use qsl_semantics::check::CheckedTemporalClause;
 use quire_exact::Cancel;
 use quire_semantic_value::fairness::{FairnessConstraint, FairnessGranularity, FairnessKind};
 
-use crate::counter::{document, document_with_ranged_parameter};
+use crate::counter::{document, document_with_ranged_parameter, CONTRACT};
 use crate::example_units::{config_over, decide, receiver, violated, Versions, FORMULA, WHOLE};
-use crate::lasso_replay::hints_of;
+use crate::lasso_replay::{bounded_fixture, hints_of};
 use crate::liveness::{counter, is_zero};
+use crate::model_settle;
 use crate::model_settle::{envelope_at, request};
 use crate::units::World;
 
@@ -35,10 +38,6 @@ fn is_two(version: i64) -> Option<bool> {
 
 fn is_three(value: i64) -> Option<bool> {
     Some(value == 3)
-}
-
-fn below_two(value: i64) -> Option<bool> {
-    Some(value < 2)
 }
 
 /// The config world's replay of `payload`, and the record `outcome` settles
@@ -202,11 +201,13 @@ fn an_operation_the_loop_takes_in_part_is_named_each_with_the_identity_it_leaves
 }
 
 /// FR-133-AC-3: the terminal stutter refutation over `Counter` carries no
-/// hint (nothing is enabled at its loop), nor does a bounded refutation,
-/// which is no lasso.
-#[trace("TC-534", "FR-133-AC-3")]
+/// hint (nothing is enabled at its loop), nor does FR-126-AC-2's bounded
+/// refutation (`eventually[0,1] holds(c.value = 3)`, the prefix `0 -inc-> 1`)
+/// or the deadlock-freedom refutation (`0 -inc-> 1 -inc-> 2 -inc-> 3`), which
+/// are no lasso.
+#[trace("TC-534")]
 #[test]
-fn a_stutter_loop_and_a_prefix_carry_no_hint() {
+fn a_stutter_loop_a_bounded_prefix_and_a_deadlock_carry_no_hint() {
     let stutter = counter(document(false), "", "always eventually holds(c.value = 0)");
     let outcome = stutter.decide(is_zero).expect("checked");
     let ModelCheckOutcome::Violated { counterexample, .. } = &outcome else {
@@ -217,11 +218,111 @@ fn a_stutter_loop_and_a_prefix_carry_no_hint() {
         .is_some_and(|lasso| lasso.terminal_stutter));
     assert!(hints_of(&stutter, counterexample, is_zero).is_empty());
 
-    let safety = counter(document(false), "", "always holds(c.value < 2)");
-    let outcome = safety.decide(below_two).expect("checked");
+    let bounded = bounded_fixture("eventually[0,1] holds(c.value = 3)");
+    let outcome = bounded.decide(is_three).expect("checked");
     let ModelCheckOutcome::Violated { counterexample, .. } = &outcome else {
         panic!("expected a violation, got {outcome:?}");
     };
     assert!(counterexample.lasso.is_none());
-    assert!(hints_of(&safety, counterexample, below_two).is_empty());
+    assert_eq!(counterexample.prefix.len(), 1);
+    assert!(hints_of(&bounded, counterexample, is_three).is_empty());
+
+    let case = model_settle::case(CONTRACT, &[0]);
+    let deadlock = model_settle::counterexample(&case);
+    assert_eq!(deadlock.kind, CounterexampleKind::Deadlock);
+    let replayed = model_settle::replay(&case, deadlock).expect("replays");
+    assert!(matches!(
+        replayed.settlement,
+        ModelTraceSettlement::Reproduced { .. }
+    ));
+    assert!(replayed.hints.is_empty());
+}
+
+/// FR-133-AC-1's `weak each` half over ADR-019 section 6's mutex, written
+/// over `Counter`: `acquire(p)` is `setTo(n)` (precondition `value = 0`,
+/// `n` in 1 to 2) and `release` is `inc` (precondition `value != 0`,
+/// post-state 0). Under `fair weak each acquire`, `always eventually
+/// holds(value = 1)` is refuted by `0 -acq(2)-> 2 -rel-> 0` with an empty
+/// stem; the one hint is `{Strong, acquire, Each}`, identity `acq(1)`, loop
+/// position 0, and `release`, taken in the loop, gets none. The strong
+/// (whole) half waits on replay of a strong constraint (FR-131).
+#[trace("TC-534")]
+#[test]
+fn the_weak_each_mutex_refutation_names_acq_one_at_loop_position_zero() {
+    let fixture = mutex("fair weak each M::Counter::setTo;");
+    let outcome = fixture.decide(is_one).expect("checked");
+    let ModelCheckOutcome::Violated { counterexample, .. } = &outcome else {
+        panic!("expected a violation, got {outcome:?}");
+    };
+    assert_eq!(fixture.values(counterexample, "c"), [0, 2, 0]);
+    assert_eq!(counterexample.lasso.map(|lasso| lasso.entry), Some(0));
+    let hints = hints_of(&fixture, counterexample, is_one);
+    assert_eq!(hints.len(), 1, "{hints:?}");
+    let hint = &hints[0];
+    assert_eq!(hint.suggested.kind(), FairnessKind::Strong);
+    assert_eq!(hint.suggested.granularity(), FairnessGranularity::Each);
+    assert_eq!(hint.suggested.operation().name(), "setTo");
+    assert_eq!(hint.first_enabled_position, 0);
+    let identity = hint.identity.as_ref().expect("an identity");
+    assert!(identity.operation().contains("Counter/setTo"));
+    assert!(counterexample
+        .prefix
+        .iter()
+        .all(|step| step.transition != *identity));
+
+    // The same loop behind a stem: the position is the loop's, not the
+    // trace's, so it is still 0 where `acq(1)` is first enabled in the loop.
+    let mut stemmed = counterexample.clone();
+    let loop_steps = stemmed.prefix.clone();
+    stemmed.prefix.extend(loop_steps);
+    stemmed.lasso = Some(qsl_replay::Lasso {
+        entry: 2,
+        terminal_stutter: false,
+    });
+    let hints = hints_of(&fixture, &stemmed, is_one);
+    assert_eq!(hints.len(), 1, "{hints:?}");
+    assert_eq!(hints[0].first_enabled_position, 0);
+}
+
+/// The hints come in the model's operation order: its types by effective
+/// identity, then each type's operations in its effective view's order (the
+/// spec's "canonical declaration order" is not defined further). Over
+/// `Counter`'s `setTo` variant with no constraint, `inc` precedes `setTo`.
+#[trace("TC-534")]
+#[test]
+fn hints_come_in_the_models_operation_order() {
+    let free = counter(
+        document_with_ranged_parameter(),
+        "",
+        "always eventually holds(c.value = 3)",
+    );
+    let outcome = free.decide(is_three).expect("checked");
+    let ModelCheckOutcome::Violated { counterexample, .. } = &outcome else {
+        panic!("expected a violation, got {outcome:?}");
+    };
+    let names: Vec<_> = hints_of(&free, counterexample, is_three)
+        .iter()
+        .map(|hint| hint.suggested.operation().name().to_owned())
+        .collect();
+    assert_eq!(names, ["inc", "setTo"]);
+}
+
+fn is_one(value: i64) -> Option<bool> {
+    Some(value == 1)
+}
+
+/// ADR-019 section 6's mutex over `Counter`'s ranged `setTo`, with
+/// `fairness`.
+fn mutex(fairness: &str) -> crate::liveness::Fixture {
+    let body = "pre Free using v on M::Counter::setTo { self.value = 0 and n >= 1 and n <= 2 }\n\
+        post Takes using v on M::Counter::setTo { self.value = n }\n\
+        pre Held using v on M::Counter::inc { self.value != 0 }\n\
+        post Frees using v on M::Counter::inc { self.value = 0 }\n";
+    crate::liveness::fixture(
+        document_with_ranged_parameter(),
+        body,
+        fairness,
+        "always eventually holds(c.value = 1)",
+        &[("c", 0)],
+    )
 }

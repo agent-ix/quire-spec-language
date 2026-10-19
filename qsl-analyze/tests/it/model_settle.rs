@@ -49,7 +49,7 @@ const IDENTITY: &str = "counter";
 
 /// A compiled Counter unit with its documents, initial snapshots and the
 /// engine's deadlock-freedom outcome over universe `{c}`.
-struct Case {
+pub(crate) struct Case {
     unit: Vec<u8>,
     documents: Documents,
     initial: Vec<DocumentRef>,
@@ -75,7 +75,7 @@ impl Case {
     }
 }
 
-fn case(body: &str, values: &[i64]) -> Case {
+pub(crate) fn case(body: &str, values: &[i64]) -> Case {
     let document = document(false);
     let unit = unit_text(&document, body).into_bytes();
     let package_id = compile_package(
@@ -254,7 +254,7 @@ fn trace_subject(case: &Case) -> ModelTraceSubject {
     }
 }
 
-fn replay(
+pub(crate) fn replay(
     case: &Case,
     payload: TemporalCounterexample,
 ) -> Result<ModelTraceReplayResult, ReplayRefusal> {
@@ -272,7 +272,7 @@ fn replay(
     )
 }
 
-fn counterexample(case: &Case) -> TemporalCounterexample {
+pub(crate) fn counterexample(case: &Case) -> TemporalCounterexample {
     match &case.outcome {
         ModelCheckOutcome::Violated { counterexample, .. } => counterexample.as_ref().clone(),
         other => panic!("expected a violation, got {other:?}"),

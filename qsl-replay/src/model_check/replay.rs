@@ -266,8 +266,9 @@ pub struct StrongFairnessHint {
     /// For a `Each` hint, the transition identity that is enabled in the
     /// loop and never taken.
     pub identity: Option<ModelTransition>,
-    /// The first loop position (zero-based, in the lasso's trace) at which
-    /// the operation, or for `Each` the identity, is enabled.
+    /// The first loop position (zero-based from the loop's entry, so the
+    /// loop's first state is 0 whatever the stem's length) at which the
+    /// operation, or for `Each` the identity, is enabled.
     pub first_enabled_position: u64,
 }
 
@@ -680,6 +681,15 @@ fn check_formula(
     let mut loop_states = Vec::new();
     let trace = match payload.lasso {
         Some(lasso) => {
+            // Refuse a strong constraint before any expansion is read.
+            if formula
+                .clause
+                .fairness()
+                .iter()
+                .any(|constraint| constraint.kind() == FairnessKind::Strong)
+            {
+                return Err(refused(ModelTraceRefusal::StrongFairness));
+            }
             match loop_states_of(system, payload, positions, lasso)? {
                 Some(states) => loop_states = states,
                 None => return Ok((no_value(), Vec::new())),
@@ -771,6 +781,7 @@ fn ends_terminal(system: &ModelSystem<'_>, positions: &[Position]) -> Result<boo
 /// One model step of a lasso's loop: where it starts, the transition
 /// identities enabled there (FA-2) and the one it takes.
 struct LoopState {
+    /// The step's position in the loop, from its entry.
     position: usize,
     enabled: Vec<ModelTransition>,
     taken: ModelTransition,
@@ -800,7 +811,7 @@ fn loop_states_of(
             return Ok(None);
         };
         states.push(LoopState {
-            position: index,
+            position: index - lasso.entry,
             enabled: expansion
                 .successors
                 .into_iter()
@@ -822,13 +833,6 @@ fn unfair_constraint(
     lasso: Lasso,
     clause: &CheckedTemporalClause,
 ) -> Result<Option<FairnessConstraint>, ReplayRefusal> {
-    if clause
-        .fairness()
-        .iter()
-        .any(|constraint| constraint.kind() == FairnessKind::Strong)
-    {
-        return Err(refused(ModelTraceRefusal::StrongFairness));
-    }
     let mut numbered: BTreeMap<ModelTransition, Identity> = BTreeMap::new();
     let mut number = |transition: &ModelTransition| {
         let next = u64::try_from(numbered.len()).unwrap_or(u64::MAX);

@@ -73,12 +73,9 @@ use quire_exact::{Cancel, CancelCause, Meter, ScalarLimits};
 use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
 use quire_semantic_value::model_transition::ModelTransition;
 
-use super::check::{not_simulated, ModelCheckRefusal, ModelCheckRequest};
+use super::check::{not_simulated, ModelCheckRefusal, ModelCheckRequest, BOUND_POSITIONS};
 use super::graph::{retain, ProductStateId, RetainedEdge, RetainedGraph};
 use super::product::{ProductKey, ProductTransition};
-
-/// The type positions the requires-bound pre-check may visit.
-const BOUND_POSITIONS: u64 = 1 << 20;
 
 /// `resource_exhausted`/`insufficient-next-charge`, the code of an expansion
 /// that stopped; [`Halt`] records which budget it was.
