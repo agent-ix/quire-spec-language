@@ -41,6 +41,13 @@ The rest of `tuple.rs` is sound: the joint stem (max) and period (lcm via gcd wi
 | FND-005 | medium | The position search reads joint positions from `represented` up to the unrolled length through the caller's `TupleLetters`, and charges them to the search's own `UNBOUNDED` meter. The `readings` cache is keyed by joint position, so joint position 2 on a period-2 tuple is a fresh read of the same component positions as joint position 0. Probe: the past-operator tuple `[lasso(0,2), lasso(0,2)]` reads atoms at joint positions 2 and 3, after the clause-metered pass read only 0 and 1. Any work those letter calls do (FR-107's clause evaluator) is outside the clause meter, against FR-175 "Work" ("a clause meter SHALL stop it"). The doc comment's "no atom the first pass read is read twice" also holds only by index. Fix: before the cache lookup, map a joint position at or past `represented` to its congruent represented position (prefix + (j - prefix) mod period). Every search read is then a cache hit, and the separate meter is no longer needed. | qsl-eval/src/temporal/tuple.rs:150-169, 215-237 |
 | FND-006 | low | `UNBOUNDED` copies, field by field, an all-`u64::MAX` `ScalarLimits` that `qsl_semantics::check::SCALAR_LIMITS_UNLIMITED` already provides. A field later added to `ScalarLimits` has to be kept in step in two places. Reuse the existing constant, or drop the separate meter altogether under FND-005's fix. | qsl-eval/src/temporal/tuple.rs:190-202 |
 
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | medium | Regression of FND-002, which round 1 had fixed. The position search runs on the caller's meter again, so locating `trace_position` re-charges node visits for every bisection step. Probe on an 8-period tuple violated at joint position 6: 40 work units, against 9 for the same tuple when it holds. A work limit of 11, above what the evaluation needs, returns `Incomplete` instead of `Violated`. FR-175 "Work" asks for one unit per (temporal node, joint position) visit. `the_position_search_reads_each_represented_position_once_on_the_callers_meter` asserts only that `work` fits and `work - 1` does not, so it pins the over-charge rather than the rule. Every lasso read is now cached by its matching represented position, so the search no longer reaches the caller's letters (except FND-008's terminal path). The search can therefore go back on its own meter without hiding letter work. Alternatively, get the spec to state that the search is charged. | qsl-eval/src/temporal/tuple.rs:222-275, 312-319 |
+| FND-008 | medium | Missed in the review pass. `Terminal { len }` is indexed as the lasso `(len - 1, 1)`, so the loop-entry joint position is the terminal state reached by a real step. The lasso evaluation reads every later joint step through that entry with `stutter = false`. Probe: `[Terminal{len:2}, lasso(0,1)]` gives stutter flags only `(0,[F,F])` and `(1,[F,F])`, never `true`, although `a` stutters at every joint step from 2 on (FR-175 "Terminal stutter", AC-3 "at every later joint step"). The AC-3 test sees `true` only because `b`'s period of 3 makes joint positions 2 and 3 represented. The position search does see the flag: `congruent` refuses the match there, so search steps make fresh letter reads at joint positions 2 and 3 with `stutter = true`. The main pass and the search therefore read different letters for the same position, and `false_position`'s doc ("Every atom it reads is a reading the first pass made") is false. Fix: give a terminal component one stutter position after its last state, as the lasso (len, 1) reading index len - 1. Add an AC-3 case whose other component has period 1. | qsl-eval/src/temporal/tuple.rs:55-77, 163-176 |
+
 ## Dispositions
 
 | FND | outcome | reason |
@@ -49,3 +56,6 @@ The rest of `tuple.rs` is sound: the joint stem (max) and period (lcm via gcd wi
 | FND-002 | fixed | fixed at dc63ebd86 |
 | FND-003 | fixed | fixed at dc63ebd86 |
 | FND-004 | fixed | fixed at dc63ebd86 |
+| FND-001 | fixed | fixed at 158d7c97c |
+| FND-005 | fixed | fixed at 158d7c97c |
+| FND-006 | fixed | fixed at 158d7c97c |

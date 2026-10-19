@@ -49,3 +49,5 @@ FR-175-AC-2 assessment: for two loops of lengths 2 and 3, joint-loop offset k re
 | FND-003 | fixed | fixed at dc63ebd86 |
 | FND-004 | fixed | fixed at dc63ebd86 |
 | FND-005 | fixed | fixed at dc63ebd86 |
+| FND-006 | fixed | fixed at 158d7c97c |
+| FND-007 | fixed | fixed at 158d7c97c |

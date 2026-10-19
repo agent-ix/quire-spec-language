@@ -20,7 +20,7 @@
 use std::collections::HashMap;
 
 use qsl_semantics::check::{Activation, CheckedHyperClause, FormulaNodeId};
-use quire_exact::Meter;
+use quire_exact::{Meter, ScalarLimits};
 
 use super::engine::{self, bad_prefix_bound, Goal, Subject};
 use super::input::TemporalTrace;
@@ -51,14 +51,15 @@ pub enum ComponentTrace {
 }
 
 impl ComponentTrace {
-    /// The component as the lasso it indexes by: a terminal trace repeats its
-    /// last position.
+    /// The component as the lasso it indexes by. A terminal trace is a lasso
+    /// whose loop is one stutter position after its last state, so the joint
+    /// position of every later step is a loop copy of the stutter step.
     fn lasso(self) -> Result<(u64, u64), TemporalRefusal> {
         match self {
             Self::Lasso { loop_len: 0, .. } => Err(TemporalRefusal::EmptyLoop),
             Self::Lasso { prefix, loop_len } => Ok((prefix, loop_len)),
             Self::Terminal { len: 0 } => Err(TemporalRefusal::EmptyTrace),
-            Self::Terminal { len } => Ok((len - 1, 1)),
+            Self::Terminal { len } => Ok((len, 1)),
         }
     }
 
@@ -66,7 +67,10 @@ impl ComponentTrace {
     /// step into `joint` is the stutter step.
     fn read(self, joint: u64) -> Result<ComponentPosition, TemporalRefusal> {
         let (prefix, loop_len) = self.lasso()?;
-        let index = if joint < prefix {
+        let index = if let Self::Terminal { len } = self {
+            // The stutter position reads the terminal state.
+            joint.min(len - 1)
+        } else if joint < prefix {
             joint
         } else {
             // `joint - prefix` is the offset into the unrolled loop.
@@ -140,7 +144,7 @@ fn gcd(mut left: u64, mut right: u64) -> u64 {
 /// made once per (atom, represented position), through the caller's meter in
 /// the first pass, and the position search below, which evaluates the body
 /// over longer and shorter prefixes of the unrolled word, takes every reading
-/// from the record.
+/// from the record and reaches no letter.
 struct Lockstep<'a, L> {
     components: &'a [ComponentTrace],
     letters: &'a mut L,
@@ -149,6 +153,9 @@ struct Lockstep<'a, L> {
     period: u64,
     scratch: Vec<ComponentPosition>,
     readings: HashMap<(FormulaNodeId, u64), AtomReading>,
+    /// Set once the first pass is done: no further reading reaches the
+    /// caller's letters.
+    sealed: bool,
 }
 
 impl<L> Lockstep<'_, L> {
@@ -161,18 +168,14 @@ impl<L> Lockstep<'_, L> {
     }
 
     /// The represented joint position whose reading is `joint`'s: the same
-    /// component positions and the same stutter flags.
-    fn congruent(&self, joint: u64) -> Result<u64, TemporalRefusal> {
-        let represented = self.stem + self.period;
-        if joint < represented {
-            return Ok(joint);
-        }
-        let matching = self.stem + (joint - self.stem) % self.period;
-        Ok(if self.reads(matching)? == self.reads(joint)? {
-            matching
-        } else {
+    /// component positions and the same stutter flags, since both are
+    /// periodic from the joint stem.
+    fn congruent(&self, joint: u64) -> u64 {
+        if joint < self.stem + self.period {
             joint
-        })
+        } else {
+            self.stem + (joint - self.stem) % self.period
+        }
     }
 }
 
@@ -183,11 +186,13 @@ impl<L: TupleLetters> TemporalLetters for Lockstep<'_, L> {
         position: TemporalPosition,
         meter: &mut Meter,
     ) -> Result<AtomReading, LetterStop> {
-        let keyed = self
-            .congruent(position.index())
-            .map_err(|_| LetterStop::Fault(fault("tuple-component-readable")))?;
+        let keyed = self.congruent(position.index());
         if let Some(reading) = self.readings.get(&(atom, keyed)) {
             return Ok(reading.clone());
+        }
+        if self.sealed {
+            // The position search takes every reading from the first pass.
+            return Err(LetterStop::Fault(fault("search-reads-recorded-readings")));
         }
         self.scratch = self
             .reads(position.index())
@@ -223,27 +228,35 @@ fn subject(body: &CheckedHyperClause) -> Subject<'_> {
 /// shows, a liveness body, is fixed only when the joint loop closes, at the
 /// last represented position.
 ///
-/// The search evaluates the body on shorter and longer prefixes through the
-/// caller's `meter`, so a meter that stops the evaluation stops it. Every
-/// atom it reads is a reading the first pass made, taken from `lockstep`.
+/// The search evaluates the body on shorter and longer prefixes. It reaches
+/// no letter: `lockstep` is sealed, so every atom it reads is a reading the
+/// first pass made and a miss is a fault, never hidden letter work. Its node
+/// visits are the search's own and run on a meter with the caller's limits
+/// but no work cap, so locating `trace_position` does not charge the caller's
+/// work (one unit per node and joint position, FR-175 "Work").
 fn false_position<L: TupleLetters>(
     body: &CheckedHyperClause,
     trace: TemporalTrace,
     represented: u64,
     lockstep: &mut Lockstep<'_, L>,
-    meter: &mut Meter,
+    meter: &Meter,
 ) -> Result<Result<TemporalPosition, TemporalOutcome>, TemporalRefusal> {
     let longest = u64::try_from(bad_prefix_bound(subject(body), trace)?)
         .map_err(|_| TemporalRefusal::TraceTooLong)?;
     // `Err` carries the outcome of a search step the meter or a window limit
     // stopped: it has no truth value, so it ends the evaluation.
+    lockstep.sealed = true;
+    let mut search = Meter::new(ScalarLimits {
+        work_units: u64::MAX,
+        ..*meter.limits()
+    });
     let mut bad = |len: u64| {
         engine::run(
             subject(body),
             TemporalTrace::Finite { len },
             Goal::Clause,
             lockstep,
-            meter,
+            &mut search,
         )
         .map(|outcome| match outcome {
             TemporalOutcome::Violated { .. } => Ok(true),
@@ -308,6 +321,7 @@ pub fn evaluate_tuple<L: TupleLetters>(
         period: loop_len,
         scratch: Vec::with_capacity(components.len()),
         readings: HashMap::new(),
+        sealed: false,
     };
     let outcome = engine::run(subject(body), trace, Goal::Clause, &mut lockstep, meter)?;
     match outcome {

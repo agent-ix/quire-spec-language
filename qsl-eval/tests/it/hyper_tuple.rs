@@ -333,36 +333,39 @@ fn a_past_operator_gives_the_same_outcome_at_a_loop_position_and_its_unrolled_co
     }
 }
 
-/// FR-175 "Work": every reading, those of the position search included, is
-/// made once per represented joint position through the caller's meter, and a
-/// meter that stops the evaluation stops the search.
+/// FR-175 "Work": one unit per (node, joint position) visit, whether the
+/// tuple holds or is violated, so locating `trace_position` costs the caller
+/// nothing more; and each atom is read once per represented joint position.
 #[trace("TC-600")]
 #[test]
-fn the_position_search_reads_each_represented_position_once_on_the_callers_meter() {
-    let fixture =
-        fixture("always (holds(c.value @ a = 1) implies not once[2,2] holds(c.value @ b = 2))");
-    let shape = [lasso(0, 2), lasso(0, 2)];
-    let consumed = |limits: ScalarLimits| {
-        let mut letters = Letters::new(&fixture, vec![vec![1, 0], vec![2, 0]]);
+fn locating_the_false_position_costs_no_more_work_than_the_evaluation() {
+    let fixture = fixture(ALWAYS_EQUAL);
+    let shape = [lasso(0, 8), lasso(0, 8)];
+    let holding = vec![vec![5; 8], vec![5; 8]];
+    let mut differing = holding.clone();
+    differing[1][6] = 6;
+    let consumed = |limits: ScalarLimits, values: Vec<Vec<i64>>| {
+        let mut letters = Letters::new(&fixture, values);
         let mut meter = Meter::new(limits);
         let outcome =
             evaluate_tuple(&fixture.clause, &shape, &mut letters, &mut meter).expect("readable");
         (outcome, meter.consumed(LimitKind::WorkUnits), letters.reads)
     };
-    let (outcome, work, reads) = consumed(SCALAR_LIMITS_UNLIMITED);
-    assert_eq!(outcome, violated(2));
-    // Two atoms at the two represented joint positions, none read twice and
-    // none read past the represented length.
+    let (held, held_work, _) = consumed(SCALAR_LIMITS_UNLIMITED, holding);
+    assert_eq!(held, TemporalOutcome::Holds);
+    let (violated_outcome, work, reads) = consumed(SCALAR_LIMITS_UNLIMITED, differing.clone());
+    assert_eq!(violated_outcome, violated(6));
+    assert_eq!(work, held_work);
     let distinct: std::collections::BTreeSet<_> = reads.iter().collect();
     assert_eq!(distinct.len(), reads.len());
-    assert_eq!(reads.len(), 4);
-    assert!(reads.iter().all(|(_, joint)| *joint < 2));
+    assert!(reads.iter().all(|(_, joint)| *joint < 8));
     let within = |work_units| ScalarLimits {
         work_units,
         ..SCALAR_LIMITS_UNLIMITED
     };
-    assert_eq!(consumed(within(work)).0, violated(2));
-    let (short, _, _) = consumed(within(work - 1));
+    // Headroom above what the evaluation needs still gives the verdict.
+    assert_eq!(consumed(within(work + 2), differing.clone()).0, violated(6));
+    let (short, _, _) = consumed(within(work - 1), differing);
     assert!(matches!(short, TemporalOutcome::Incomplete(_)), "{short:?}");
 }
 
@@ -449,7 +452,7 @@ fn a_clause_with_align_skip_is_refused_as_not_yet_implemented() {
 fn a_terminal_component_stutters_at_its_terminal_state_and_intervals_count_joint_positions() {
     let fixture = fixture(ALWAYS_EQUAL);
     // `a` ends at its terminal state (position 1, value 1); `b` loops over
-    // three positions, so the joint behaviour runs to joint position 3. `a`
+    // three positions, so the joint behaviour runs to joint position 4. `a`
     // reads its terminal value 1 at every later joint position, so the pair
     // is equal throughout, and `a`'s step into joint positions 2 and 3 is the
     // stutter step.
@@ -463,12 +466,30 @@ fn a_terminal_component_stutters_at_its_terminal_state_and_intervals_count_joint
             (1, vec![false, false]),
             (2, vec![true, false]),
             (3, vec![true, false]),
+            (4, vec![true, false]),
         ]
     );
     // The terminal observation is what `a` reads: a `b` that differs from it
     // at joint position 2 is false there.
     let (outcome, _) = run(&fixture, &shape, vec![vec![1, 1], vec![1, 1, 2]]);
     assert_eq!(outcome, violated(2));
+
+    // The other component has period 1: the joint stem is `a`'s stutter
+    // position, so the flag is read there and at every later joint step.
+    let (outcome, letters) = run(
+        &fixture,
+        &[ComponentTrace::Terminal { len: 2 }, lasso(0, 1)],
+        vec![vec![1, 1], vec![1]],
+    );
+    assert_eq!(outcome, TemporalOutcome::Holds);
+    assert_eq!(
+        letters.stutters,
+        [
+            (0, vec![false, false]),
+            (1, vec![false, false]),
+            (2, vec![true, false]),
+        ]
+    );
 
     let interval = self::fixture("eventually[0,2] holds(c.value @ a = 1)");
     let a_terminal = |len, values: Vec<i64>| {
