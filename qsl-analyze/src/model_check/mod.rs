@@ -10,16 +10,18 @@
 //! outcome, never a proof of a temporal property.
 
 mod check;
+mod concretise;
 mod graph;
 mod liveness;
 mod product;
+mod quotient;
 mod reduce;
 mod scc;
 mod state_graph;
 
 pub use check::{check_model, ModelCheckRefusal, ModelCheckRequest};
 pub use graph::{
-    retain, GraphExploration, IdentityPermutation, ProductStateId, RetainedEdge, RetainedGraph,
+    retain, retain_reduced, GraphExploration, ProductStateId, RetainedEdge, RetainedGraph,
     RetainedState,
 };
 pub use liveness::LivenessRefusal;

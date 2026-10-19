@@ -34,7 +34,7 @@ use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
 use qsl_semantics::model::key::{hex, DeclarationKey};
 use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
-use quire_exact::{Cancel, Identifier, Incomplete, Meter, Value};
+use quire_exact::{Cancel, Identifier, Incomplete, Meter, ScalarLimits, Value};
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
 
@@ -200,6 +200,8 @@ pub(crate) struct World {
     pub(crate) initial: Vec<DocumentRef>,
     /// The universe of `counters`; `None` gives the subject no universe.
     pub(crate) keys: Option<Vec<String>>,
+    /// The subject's evaluation meter.
+    pub(crate) meter: ScalarLimits,
     digest: [u8; 32],
     document: Vec<u8>,
     text: String,
@@ -291,6 +293,7 @@ impl World {
             snapshots: BTreeMap::new(),
             initial: Vec::new(),
             keys: Some(keys.iter().map(|key| (*key).to_owned()).collect()),
+            meter: UNLIMITED,
             digest,
             document,
             text,
@@ -354,7 +357,7 @@ impl World {
                 expansion: ExpansionLimits {
                     max_candidates: 1_000_000,
                 },
-                meter: UNLIMITED,
+                meter: self.meter,
             },
             proof_bounds: Vec::new(),
         }

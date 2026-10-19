@@ -152,8 +152,7 @@ fn coalescing_retains_incoming_back_self_parallel_and_repeated_edges() {
     );
     assert_eq!(graph.initial().len(), 2);
     for edge in graph.edges() {
-        let target = &graph.state(edge.target).unwrap().state;
-        assert_eq!(edge.permutation.apply(target), target);
+        assert!(edge.permutation.is_identity());
     }
     for (index, state) in graph.states().iter().enumerate() {
         assert!(state.expanded);
@@ -534,7 +533,7 @@ fn product_preserves_distinct_property_states_and_all_model_edges() {
                 (target.model, target.property),
             ))
             .or_insert(0) += 1;
-        assert_eq!(edge.permutation.apply(target), target);
+        assert!(edge.permutation.is_identity());
     }
     // Independently authored transition relation for the supplied automaton.
     let mut expected_edges = BTreeMap::new();
