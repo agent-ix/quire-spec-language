@@ -38,3 +38,13 @@ The PR adds six tests in `qsl-analyze/tests/it/state_graph_settle.rs`, and each 
 ## Verdict
 
 **PASS for AC-8 to AC-11 and the package_id binding. Mergeable, with no major finding.** Every tagged test binds to the right AC, asserts the full record row and can fail on the behaviour it claims. FND-001 is the real gap: the map ships the rows of AC-1 to AC-7 with no test. Close it in this PR unless another ticket owns those ACs. FND-002 waits on reduction support. FND-003 is low coverage breadth.
+
+## Dispositions
+
+Round 1, at 3aa1addf20576f12c5c08adecd96a5c7d3e474c7. Each outcome was checked against the fix commit's tests, not against the coordinator's claims.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 3aa1addf2. Six new tests cover the rest of the table. `an_explored_witness_proves_and_a_replayed_trap_refutes` covers AC-1 and AC-2. `a_replayed_trap_and_path_pair_refute` covers AC-1 and AC-3. `horizon_limit_undecided_and_empty_runs_settle_their_rows` covers AC-1 and AC-4: `BoundReached{3}` with `max_depth` 3 as a method parameter, `LimitReached` `max_states`, `UndecidedSuccessor` and `NoInitialState`. `a_disagreeing_or_stopped_replay_never_settles_decisively` covers AC-1 and AC-5. `an_undefined_target_settles_refuted_with_its_site` covers AC-6 at `(2, 0)` with division by zero. `a_sampled_witness_never_hides_an_undefined_refutation` covers AC-7. Each one drives engine outcomes and asserts the full row. |
+| FND-002 | deferred | No reduced `StateGraphOutcome` exists at 3aa1addf2: there is no `Reduced` in `state_graph.rs` or `graph_settle.rs`. The test waits on the reduction slice. |
+| FND-003 | fixed | 3aa1addf2. `a_certificate_or_evidence_of_another_package_never_settles` now covers a stale run package for `Witnessed` and `Holds` (no replay), and a stale replay for `Witnessed`, `WitnessedUnchecked`, `Trapped` and `PathPair`. It also covers `Row::bound` under a cancelled handle settling `Incomplete(Cancelled)`. Not covered: `Row::bound`'s `failed` branch for a package that fails to emit with no cancellation. No fixture produces that case, so it is left untested. |

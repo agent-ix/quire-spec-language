@@ -35,3 +35,14 @@ What was checked, and holds:
 ## Verdict
 
 **Mergeable. There is no major finding.** The map cannot settle `proved` without a package match, an accepted core check and, for `Witnessed`, a reproduced replay against the run's package. Its tests show this for rejected, stopped and stale certificates. The FR-127 refactor keeps every row it had. FND-001 and FND-004 are medium spec-conformance gaps worth fixing in this PR or routing. FND-002 and FND-003 are low.
+
+## Dispositions
+
+Round 1, at 3aa1addf20576f12c5c08adecd96a5c7d3e474c7. Each outcome was checked against the fix commit's code, not against the coordinator's claims.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 3aa1addf2. `ItemCause` gains `sources`, which the `WellDefinednessUnchecked` arm fills. `well_definedness_unchecked_wire_keeps_its_sources` pins the wire. |
+| FND-002 | fixed | 3aa1addf2. `end` and `limit_reached` are now set inside the reproduced closure only. The stale-replay test asserts `(end, limit_reached) == (None, None)` for `WitnessedUnchecked`. |
+| FND-003 | fixed | 3aa1addf2. `one_per_initial(paths, subject.simulation.initial.len())` guards `Witnessed` and `WitnessedUnchecked` before any check or replay, and settles `failed`. The engine builds one `ModelSimState` per initial document and one witness per `graph.initial` index, so the counts agree on real runs. `a_witnessed_outcome_missing_a_witness_never_settles_proved` pins the guard. |
+| FND-004 | deferred | Pre-existing. The `stale_dependency` cause is FR-127's existing binding, now shared by both maps. Naming both identities, as FR-282 asks, is a spec-level change to the cause for FR-127 and FR-282 together, outside this PR. It is sound as is: a mismatch never settles `proved`. |
