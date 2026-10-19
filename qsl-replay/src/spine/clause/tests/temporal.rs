@@ -7,7 +7,6 @@
 //! Each clause below is the spec's, with `Counters::Counter` for the model
 //! alias and `noop` for the fairness operation.
 
-use qsl_eval::temporal::{TemporalOutcome, TemporalPosition, TemporalRefusal};
 use qsl_foundation::diagnostic::Category;
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
@@ -15,7 +14,9 @@ use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
 use super::receiver_frames::{counter, fixture, snapshot, unit_and_packages};
 use super::*;
 use crate::proof_result::SettlementBasis;
-use crate::spine::{ClauseRunReport, OverObject, TraceInput};
+use crate::spine::{
+    ClauseRunReport, OverObject, TemporalTraceRefusal, TemporalVerdict, TraceInput,
+};
 
 const OPERATIONS: &[&str] = &["noop"];
 
@@ -143,7 +144,7 @@ fn report(request: ClauseRunRequest) -> ClauseRunReport {
     run_clause(request).expect("a well-formed request always reports")
 }
 
-fn outcome(report: &ClauseRunReport) -> &TemporalOutcome {
+fn outcome(report: &ClauseRunReport) -> &TemporalVerdict {
     let ClauseDisposition::Temporal(outcome) = &report.disposition else {
         panic!("expected a temporal outcome, got {:?}", report.disposition);
     };
@@ -161,12 +162,7 @@ fn exit_code(report: &ClauseRunReport) -> u8 {
 fn a_bounded_clause_over_a_finite_trace_violates_at_its_position() {
     let report = report(finite(Unit::Bounded, "Bounded", &[0, 1, 2]));
     assert_eq!(report.disposition.stage(), ClauseRunStage::Evaluate);
-    assert_eq!(
-        outcome(&report),
-        &TemporalOutcome::Violated {
-            at: TemporalPosition::new(0)
-        }
-    );
+    assert_eq!(outcome(&report), &TemporalVerdict::Violated { at: 0 });
     assert_eq!(report.disposition.category(), Category::Violation);
     assert_eq!(exit_code(&report), 10);
     assert!(report.package_id.is_some());
@@ -179,21 +175,16 @@ fn a_bounded_clause_over_a_finite_trace_violates_at_its_position() {
 #[test]
 fn an_infinite_trace_clause_reads_a_finite_prefix_as_pending_and_a_lasso_exactly() {
     let pending = report(finite(Unit::Infinite, "Reaches", &[0, 1, 2]));
-    assert_eq!(outcome(&pending), &TemporalOutcome::Pending);
+    assert_eq!(outcome(&pending), &TemporalVerdict::Pending);
     assert_eq!(pending.disposition.category(), Category::Inconclusive);
     assert_eq!(exit_code(&pending), 0);
     assert_eq!(pending.disposition.truth(), None);
 
     let violated = report(lasso(Unit::Infinite, "Reaches", 0, &[0, 1]));
-    assert_eq!(
-        outcome(&violated),
-        &TemporalOutcome::Violated {
-            at: TemporalPosition::new(0)
-        }
-    );
+    assert_eq!(outcome(&violated), &TemporalVerdict::Violated { at: 0 });
 
     let holds = report(lasso(Unit::Infinite, "Reaches", 0, &[0, 1, 2]));
-    assert_eq!(outcome(&holds), &TemporalOutcome::Holds);
+    assert_eq!(outcome(&holds), &TemporalVerdict::Holds);
     assert_eq!(holds.disposition.category(), Category::Success);
     assert_eq!(exit_code(&holds), 0);
     assert_eq!(holds.disposition.truth(), Some(true));
@@ -243,7 +234,7 @@ fn a_selection_that_cannot_run_reports_its_stage_and_cause() {
     let ClauseDisposition::TemporalRefusal(refusal) = &empty_loop.disposition else {
         panic!("expected a trace refusal, got {:?}", empty_loop.disposition);
     };
-    assert_eq!(refusal, &TemporalRefusal::EmptyLoop);
+    assert_eq!(refusal, &TemporalTraceRefusal::EmptyLoop);
     let code = refusal.catalog_code();
     assert_eq!(
         (code.code(), code.cause()),
@@ -260,7 +251,7 @@ fn a_zero_work_budget_is_incomplete_and_a_repeated_run_reports_equal() {
     starved.accounting = default_accounting(0);
     let starved = report(starved);
     assert!(
-        matches!(outcome(&starved), TemporalOutcome::Incomplete(_)),
+        matches!(outcome(&starved), TemporalVerdict::Incomplete(_)),
         "{:?}",
         starved.disposition
     );
@@ -297,7 +288,7 @@ fn a_zero_work_budget_is_incomplete_and_a_repeated_run_reports_equal() {
 fn a_fairness_premise_over_a_supplied_trace_is_unsupported() {
     let report = report(lasso(Unit::Infinite, "Fair", 0, &[0, 1, 2]));
     assert_eq!(report.disposition.stage(), ClauseRunStage::Evaluate);
-    let TemporalOutcome::MissingFairnessPremise { constraint } = outcome(&report) else {
+    let TemporalVerdict::MissingFairnessPremise { constraint } = outcome(&report) else {
         panic!("expected a missing premise, got {:?}", report.disposition);
     };
     assert_eq!(constraint.kind(), FairnessKind::Weak);
@@ -314,7 +305,7 @@ fn a_fairness_premise_over_a_supplied_trace_is_unsupported() {
 #[test]
 fn a_clause_run_over_a_trace_settles_no_item() {
     let held = report(lasso(Unit::Infinite, "Reaches", 0, &[0, 1, 2]));
-    assert_eq!(outcome(&held), &TemporalOutcome::Holds);
+    assert_eq!(outcome(&held), &TemporalVerdict::Holds);
     assert_eq!(held.basis, SettlementBasis::Unavailable);
     assert!(held.witness.is_none());
 
@@ -330,15 +321,15 @@ fn a_clause_run_over_a_trace_settles_no_item() {
 fn a_temporal_refusal_takes_its_category_from_its_catalog_code() {
     use qsl_semantics::check::TemporalProfile;
     let category = |refusal| ClauseDisposition::TemporalRefusal(refusal).category();
-    assert_eq!(category(TemporalRefusal::EmptyLoop), Category::Refusal);
+    assert_eq!(category(TemporalTraceRefusal::EmptyLoop), Category::Refusal);
     assert_eq!(
-        category(TemporalRefusal::ProfileNotEvaluated {
+        category(TemporalTraceRefusal::ProfileNotEvaluated {
             profile: TemporalProfile::TimestampedEventFiniteWindow
         }),
         Category::Unsupported
     );
     assert_eq!(
-        category(TemporalRefusal::Fault(
+        category(TemporalTraceRefusal::Fault(
             qsl_foundation::diagnostic::InternalFault::new("temporal", "broken")
         )),
         Category::InternalFailure

@@ -57,6 +57,7 @@ fn run(
             },
             max_depth: None,
             limits,
+            reductions: Default::default(),
         },
         &Cancel::new(),
     )

@@ -32,8 +32,8 @@ use qsl_foundation::{Code, SourceIdentity, Span};
 use qsl_package::{EmitRefusal, ImportViewRefusal, LinkRefusal, OmittedNode};
 use qsl_semantics::check::AssemblyLimits;
 use qsl_semantics::check::{
-    AssemblyCause, AssemblyRefusal, CheckCause, CheckRefusal, ProbabilisticCause, ProfileRefusal,
-    ProtocolAnchorCause, ShadowedDeclaration, TemporalCause,
+    AccessClass, AssemblyCause, AssemblyRefusal, CheckCause, CheckRefusal, ProbabilisticCause,
+    ProfileRefusal, ProtocolAnchorCause, ShadowedDeclaration, TemporalCause,
 };
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -69,7 +69,8 @@ mod clause;
 pub use clause::{
     run_clause, ClauseArgument, ClauseArgumentValue, ClauseDisposition, ClauseRunRefusal,
     ClauseRunReport, ClauseRunRequest, ClauseRunSelection, ClauseRunSource, ClauseRunStage,
-    OperationName, OverObject, TraceInput,
+    OperationName, OverObject, TemporalPositionRefusal, TemporalTraceRefusal,
+    TemporalUndefinedCause, TemporalVerdict, TemporalWindowRefusal, TraceInput,
 };
 mod refinement;
 pub use refinement::{
@@ -786,6 +787,49 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 ProtocolAnchorCause::JoinList {
                     parallel, fault, ..
                 } => format!("{message}: the join of `{parallel}` is unsound ({fault:?})"),
+                ProtocolAnchorCause::MemoryConflict {
+                    outermost, nested, ..
+                } => format!(
+                    "{message}: `{nested}` declares a memory default other than its outermost \
+                     `{outermost}`'s"
+                ),
+                ProtocolAnchorCause::WeakJoin {
+                    parallel,
+                    model,
+                    policy,
+                    ..
+                } => format!(
+                    "{message}: `{parallel}` declares `memory {}` and joins `{policy}`",
+                    model.label()
+                ),
+                ProtocolAnchorCause::AccessOrdering {
+                    attempt,
+                    class,
+                    ordering,
+                    ..
+                } => {
+                    let kind = match class {
+                        AccessClass::Load => "load",
+                        AccessClass::Store => "store",
+                        AccessClass::Rmw => "read-modify-write",
+                        AccessClass::Local => "local",
+                    };
+                    match ordering {
+                        Some(ordering) => format!(
+                            "{message}: `{attempt}` is a {kind} access and takes no `{}` ordering",
+                            ordering.label()
+                        ),
+                        None => format!(
+                            "{message}: `{attempt}` is a {kind} access and needs an `ordering`"
+                        ),
+                    }
+                }
+                ProtocolAnchorCause::AccessShape {
+                    attempt, locations, ..
+                } => format!(
+                    "{message}: `{attempt}` is not one memory access ({})",
+                    locations.join(", ")
+                ),
                 ProtocolAnchorCause::NodeRole { node, name, .. } => {
                     format!("{message}: `{node}` names `{name}`, which is no role of the protocol")
                 }

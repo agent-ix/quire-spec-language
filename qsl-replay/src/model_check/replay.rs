@@ -13,8 +13,9 @@
 //!   enabled at the last state and no `terminal` declaration intends it;
 //! - an undefined-evaluation counterexample of the deadlock-freedom item
 //!   (UE-5, UE-6): the first replayed position at which a contract
-//!   conjunction or a `terminal when` predicate is undefined is the
-//!   payload's `where`, at its locus, with its cause.
+//!   conjunction or a `terminal when` predicate is undefined, or the state
+//!   constraint the payload names (ADR-021 SC-2), is the payload's `where`,
+//!   at its locus, with its cause.
 //!
 //! The envelope's `clause_node` and `occurrence_key` resolve the item
 //! before any admission. The deadlock-freedom item's identity is
@@ -32,7 +33,7 @@ use qsl_eval::simulation::model::{
     ExpansionLimits, ModelFinding, ModelSimState, ModelSimulationRequest, ModelSystem,
     PopulationUniverse, TerminalClass,
 };
-use qsl_eval::simulation::{ExpansionStop, TransitionSystem};
+use qsl_eval::simulation::{ConstraintValue, ExpansionStop, TransitionSystem};
 use qsl_foundation::diagnostic::{Category, Code, InternalFault};
 use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
@@ -458,16 +459,47 @@ fn undefined(
     positions: &[Position],
     claimed: &UndefinedEvaluation,
 ) -> Result<ModelTraceSettlement, ReplayRefusal> {
+    // ADR-021 SC-2, EI-7: a counterexample of an undefined state constraint
+    // names it, and replay re-evaluates it at each position, where the
+    // engine reads it: when the state is reached, before it is expanded.
+    let constraint = match &claimed.site.locus {
+        UndefinedLocus::Constraint(name) => Some(name.as_str()),
+        UndefinedLocus::Atom(_) | UndefinedLocus::Contract(_) | UndefinedLocus::Terminal(_) => None,
+    };
+    if constraint.is_some_and(|name| !system.has_constraint(name)) {
+        return Ok(disagrees(Category::Success));
+    }
     for (index, position) in positions.iter().enumerate() {
-        let expansion = match expand(system, &position.state)? {
-            Ok(expansion) => expansion,
-            Err(_) => return Ok(no_value()),
-        };
         let site = |locus, transition| UndefinedSite {
             position: position_of(index),
             state_key: position.digest,
             locus,
             transition,
+        };
+        if let Some(name) = constraint {
+            match system.constraint_value(&position.state, name) {
+                Ok(ConstraintValue::Undefined { cause, .. }) => {
+                    let found = UndefinedEvaluation {
+                        site: site(UndefinedLocus::Constraint(name.to_owned()), None),
+                        cause,
+                    };
+                    return Ok(if found == *claimed {
+                        ModelTraceSettlement::Reproduced {
+                            value: ModelTraceValue::Undefined(found),
+                            trace_position: payload.trace_position(),
+                        }
+                    } else {
+                        disagrees(Category::Violation)
+                    });
+                }
+                Ok(ConstraintValue::Holds | ConstraintValue::Boundary) => {}
+                Err(stop) if stop.is_internal_failure() => return Err(fault("state-constraint")),
+                Err(_) => return Ok(no_value()),
+            }
+        }
+        let expansion = match expand(system, &position.state)? {
+            Ok(expansion) => expansion,
+            Err(_) => return Ok(no_value()),
         };
         let found = if let Some(contract) = expansion
             .findings

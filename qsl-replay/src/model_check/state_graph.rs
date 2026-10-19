@@ -14,6 +14,7 @@ use qsl_semantics::check::PredicateRole;
 use quire_exact::ObjectReference;
 use quire_semantic_value::location::Location;
 
+use crate::certificate::state_graph::StateGraphCertificate;
 use crate::model_check::counterexample::ModelStep;
 use crate::model_check::limits::ReachedLimit;
 use crate::proof_result::IncompleteCause;
@@ -100,6 +101,9 @@ pub enum StateGraphOutcome {
     Witnessed {
         /// One witness per initial state.
         paths: Vec<GraphWitness>,
+        /// The run's certificate that every initial state reaches a target
+        /// (FR-169, ADR-022 GC-1).
+        certificate: StateGraphCertificate,
     },
     /// A witness for every initial state on a run that a limit stopped or
     /// that ended with open nodes: a reachable undefined evaluation of the
@@ -130,7 +134,10 @@ pub enum StateGraphOutcome {
     },
     /// The claim holds over every reachable node: the run completed with no
     /// open node, unreduced.
-    Holds,
+    Holds {
+        /// The run's certificate of the claim (FR-169, ADR-022 GC-1).
+        certificate: StateGraphCertificate,
+    },
     /// No decisive evidence.
     NoDecision {
         /// How the run ended.

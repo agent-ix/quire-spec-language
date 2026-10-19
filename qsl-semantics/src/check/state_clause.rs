@@ -158,6 +158,9 @@ pub struct AttemptDeclaration {
     pub declaration: usize,
     /// The resolved operation `on M::T::op` names.
     pub operation: ClauseOperation,
+    /// The object type the attempt's `on M::T::op` names: the type of its
+    /// receiver.
+    pub receiver: quire_exact::EffectiveId,
     /// The population domain of the type declaring the operation, resolved
     /// the same way a state clause's own `frame_population` is
     /// (FR-104 "Requirements"): `None` when the declaring type shares no
