@@ -78,3 +78,4 @@ The decisions the author made:
 | FND-001 | fixed | TC-543 Step 2 now asserts that `true` and `5` refuse at the literal's span (2c0bd426d). |
 | FND-002 | fixed | FR-138 no longer states its own `none` and enum-path SHALLs. Its S3 bullet defers to FR-375's history-literal rule, and References names FR-375-AC-9 as the coverage for the `none`, `true`/`false` and enum-member cases. No FR-138 rule is left without a test. QSL-866 implements against FR-375-AC-9 (2c0bd426d). |
 | FND-003 | fixed | The fixture paragraph is rewrapped to 80 columns (2c0bd426d). |
+| FND-004 | fixed | FR-138 References now names QSpec TC-310 mutation 10 (FR-375-AC-9) as the covering test (a08bae161). |
