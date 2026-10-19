@@ -9,4 +9,7 @@ mod parse_outcome_facade;
 #[path = "../../../tests/support/refinement_cas.rs"]
 mod refinement_fixture;
 mod refinement_mapping;
+mod refinement_ring;
 mod refinement_step;
+#[path = "../../../tests/support/ring_world.rs"]
+mod ring_world;

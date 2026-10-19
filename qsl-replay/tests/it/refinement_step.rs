@@ -273,3 +273,32 @@ fn an_increment_at_the_top_is_rejected_by_its_precondition() {
     );
     let _ = SPEC;
 }
+
+/// FR-141-AC-8 (TC-555 step 4): the two systems passed swapped are a
+/// `WrongSystem` of FR-140 inside `check_step` and `check_initial`, which is
+/// an internal fault of the caller, never a verdict.
+#[trace("TC-555", "FR-141-AC-8")]
+#[test]
+fn a_swapped_system_is_a_fault_not_a_verdict() {
+    let world = World::new(&cas_refines_counter());
+    let pre = cas_state(0, 0, false, 0, false);
+    let post = cas_state(0, 0, true, 0, false);
+    let (transition, reached) = step(&world, &pre, "beginA", &post);
+    let concrete = world.concrete_system(UNLIMITED);
+    let abstracted = world.abstract_system(UNLIMITED);
+    let verdict = check_step(
+        world.refinement(),
+        &abstracted,
+        &concrete,
+        &position(&world, &pre),
+        &ConcreteStep {
+            position: 1,
+            transition: Some(&transition),
+            post: &reached,
+        },
+        &mut 0,
+    );
+    assert!(matches!(verdict, StepVerdict::Fault(_)), "{verdict:?}");
+    let verdict = check_initial(world.refinement(), &abstracted, &concrete, 0, &pre);
+    assert!(matches!(verdict, StepVerdict::Fault(_)), "{verdict:?}");
+}

@@ -17,8 +17,10 @@ use qsl_eval::simulation::model::{
     operation_identity_text, AbstractApplication, Judgement, ModelFinding, ModelSimState,
     ModelSystem, Rejection, RowReading,
 };
+use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::InternalFault;
 use qsl_semantics::check::{CheckedRefinement, CheckedRow, StepClass, StepRow, StepTarget};
+use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::state::ModelState;
 use quire_exact::{ObjectReference, Value};
 use quire_semantic_value::model_transition::ModelTransition;
@@ -28,7 +30,7 @@ use crate::refinement::failure::{
     RefinementFailure, StepRejection, StepVerdict, Taken, Undetermined,
 };
 use crate::refinement::map::{
-    lift_value, map_state, EvalFailure, MappedState, MappingFailure, MappingRowRef,
+    lift_value, map_state, EvalFailure, Lifting, MappedState, MappingFailure, MappingRowRef,
     MappingUndetermined, ObjectKey, StepArgument,
 };
 
@@ -80,7 +82,13 @@ pub fn check_initial(
         concrete_initial,
     ) {
         Ok(mapped) => mapped,
-        Err(failure) => return mapping_verdict(concrete_system, concrete_initial, 0, failure),
+        Err(failure) => {
+            return mapping_verdict(
+                || state_digest(concrete_system, concrete_initial),
+                0,
+                failure,
+            )
+        }
     };
     if !mapped.hidden.is_empty() {
         return fault("hidden-fields-need-candidate-sets");
@@ -127,6 +135,24 @@ pub fn check_step(
             None => return fault("every-concrete-operation-has-a-step-row"),
         },
     };
+    // The row's receiver and arguments are read at the pre-state, before the
+    // post-state is mapped.
+    let arguments = match (row.map(|row| &row.target), step.transition) {
+        (Some(StepTarget::Abstract { .. }), Some(transition)) => {
+            match evaluate_arguments(
+                refinement,
+                concrete_system,
+                abstract_system,
+                pre,
+                step,
+                (row, transition),
+            ) {
+                Ok(arguments) => Some(arguments),
+                Err(verdict) => return verdict,
+            }
+        }
+        _ => None,
+    };
     let mapped = match map_state(
         refinement,
         concrete_system,
@@ -135,7 +161,11 @@ pub fn check_step(
     ) {
         Ok(mapped) => mapped,
         Err(failure) => {
-            return mapping_verdict(concrete_system, step.post.state(), step.position, failure)
+            return mapping_verdict(
+                || state_digest(concrete_system, step.post.state()),
+                step.position,
+                failure,
+            )
         }
     };
     if !mapped.hidden.is_empty() {
@@ -194,18 +224,17 @@ pub fn check_step(
                 position: step.position,
             })
         }
-        StepTarget::Abstract { .. } => {
-            let Some(transition) = step.transition else {
-                return fault("an-abstract-row-has-a-transition");
+        StepTarget::Abstract { operation, .. } => {
+            let Some(arguments) = arguments else {
+                return fault("an-abstract-row-evaluates-its-arguments");
             };
-            abstract_operation(
-                refinement,
-                concrete_system,
+            judge_operation(
                 abstract_system,
-                pre,
+                (before, &mapped),
+                operation,
+                arguments,
                 step,
-                (row, transition),
-                (&mapped, abstract_successors),
+                abstract_successors,
                 passes,
             )
         }
@@ -255,122 +284,136 @@ fn canonical(
     Ok(keyed.into_iter().map(|(_, identity)| identity).collect())
 }
 
-/// RS-4: the abstract operation the row names, over the receiver and the
-/// arguments evaluated at the pre-state.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "the step's two systems, its rows and its verdict constructor are all inputs of one decision"
-)]
-fn abstract_operation(
+/// What an abstract-operation row reads at the pre-state: the abstract
+/// receiver, one value for each argument (`None` is `_`) and the abstract
+/// result the concrete step's result binds, when the row binds one.
+struct Arguments {
+    receiver: ObjectReference,
+    supplied: Vec<Option<Value>>,
+    result: Option<Value>,
+}
+
+/// RS-4: the receiver and arguments of the abstract-operation row `row`,
+/// evaluated at the pre-state over the concrete step's receiver and
+/// arguments (FR-141 "Abstract-operation evaluation").
+fn evaluate_arguments(
     refinement: &CheckedRefinement,
     concrete_system: &ModelSystem<'_>,
     abstract_system: &ModelSystem<'_>,
     pre: &RefinementPosition,
     step: &ConcreteStep<'_>,
-    (row, transition): (&StepRow, &ModelTransition),
-    (mapped, abstract_successors): (&MappedState, &mut u64),
-    passes: impl FnOnce(Taken) -> StepVerdict,
-) -> StepVerdict {
-    let StepTarget::Abstract {
-        operation,
-        receiver,
-        arguments,
-        binds_result,
-    } = &row.target
+    (row, transition): (Option<&StepRow>, &ModelTransition),
+) -> Result<Arguments, StepVerdict> {
+    let Some(StepRow {
+        class: StepClass::Operation(concrete_operation),
+        target:
+            StepTarget::Abstract {
+                receiver,
+                arguments,
+                binds_result,
+                ..
+            },
+    }) = row
     else {
-        return fault("an-abstract-row-names-an-operation");
+        return Err(fault("an-abstract-row-names-an-operation"));
     };
-    let StepClass::Operation(concrete_operation) = &row.class;
     let Ok(resolved) = concrete_system.resolve_step(&pre.concrete, transition, step.post) else {
-        return fault("concrete-step-resolves");
+        return Err(fault("concrete-step-resolves"));
     };
     let Some(resolved) = resolved else {
-        return fault("concrete-step-names-an-argument-vector");
+        return Err(fault("concrete-step-names-an-argument-vector"));
     };
     let Ok(observed) = concrete_system.observe(&pre.concrete) else {
-        return fault("pre-state-observes");
+        return Err(fault("pre-state-observes"));
     };
     let mut bindings = vec![Value::Reference(resolved.receiver.clone())];
     bindings.extend(resolved.arguments.iter().cloned());
     let object = object_of(&pre.concrete, &resolved.receiver);
-    let evaluate = |expression: &CheckedRow,
-                    argument: StepArgument|
-     -> Result<Value, StepVerdict> {
-        let at = MappingRowRef::Argument {
-            operation: concrete_operation.clone(),
-            argument,
-        };
-        match concrete_system.read_row(expression, &observed, bindings.clone()) {
-            Err(_) => Err(fault("argument-row-evaluates")),
-            Ok(RowReading::Value(value)) => {
-                lift_value(refinement, concrete_system, abstract_system, value).map_err(|lifting| {
-                    match lifting {
-                        crate::refinement::map::Lifting::Unmapped(concrete_type) => {
-                            StepVerdict::Undetermined(Undetermined::Mapping(MappingUndetermined {
-                                row: at.clone(),
-                                object: object.clone(),
-                                cause: EvalFailure::UnmappedType(concrete_type),
-                            }))
-                        }
-                        crate::refinement::map::Lifting::Fault => fault("argument-lifts"),
-                    }
-                })
-            }
-            Ok(RowReading::Undefined(cause)) => {
-                let Ok((_, digest)) = concrete_system.state_key_of(step.post.state()) else {
-                    return Err(fault("post-state-encodes"));
-                };
-                Err(StepVerdict::Undefined(UndefinedEvaluation {
-                    site: UndefinedSite {
-                        position: step.position,
-                        state_key: digest,
-                        locus: UndefinedLocus::Mapping {
-                            row: at,
-                            object: object.clone(),
+    let evaluate =
+        |expression: &CheckedRow, argument: StepArgument| -> Result<Value, StepVerdict> {
+            let at = MappingRowRef::Argument {
+                operation: concrete_operation.clone(),
+                argument,
+            };
+            match concrete_system.read_row(expression, &observed, bindings.clone()) {
+                Err(_) => Err(fault("argument-row-evaluates")),
+                Ok(RowReading::Value(value)) => {
+                    lift_value(refinement, concrete_system, abstract_system, value).map_err(
+                        |lifting| match lifting {
+                            Lifting::Unmapped(concrete_type) => StepVerdict::Undetermined(
+                                Undetermined::Mapping(MappingUndetermined {
+                                    row: at.clone(),
+                                    object: object.clone(),
+                                    cause: EvalFailure::UnmappedType(concrete_type),
+                                }),
+                            ),
+                            Lifting::Fault => fault("argument-lifts"),
                         },
-                        transition: None,
-                    },
-                    cause,
-                }))
+                    )
+                }
+                Ok(RowReading::Undefined(cause)) => {
+                    let Ok((_, digest)) = concrete_system.state_key_of(step.post.state()) else {
+                        return Err(fault("post-state-encodes"));
+                    };
+                    Err(StepVerdict::Undefined(UndefinedEvaluation {
+                        site: UndefinedSite {
+                            position: step.position,
+                            state_key: digest,
+                            locus: UndefinedLocus::Mapping {
+                                row: at,
+                                object: object.clone(),
+                            },
+                            transition: None,
+                        },
+                        cause,
+                    }))
+                }
+                Ok(RowReading::Undetermined(outcome)) => Err(StepVerdict::Undetermined(
+                    Undetermined::Mapping(MappingUndetermined {
+                        row: at,
+                        object: object.clone(),
+                        cause: EvalFailure::Evaluation(Box::new(outcome)),
+                    }),
+                )),
             }
-            Ok(RowReading::Undetermined(outcome)) => Err(StepVerdict::Undetermined(
-                Undetermined::Mapping(MappingUndetermined {
-                    row: at,
-                    object: object.clone(),
-                    cause: EvalFailure::Evaluation(Box::new(outcome)),
-                }),
-            )),
-        }
-    };
-    let abstract_receiver = match evaluate(receiver, StepArgument::Receiver) {
-        Ok(Value::Reference(reference)) => reference,
-        Ok(_) => return fault("a-receiver-row-is-a-reference"),
-        Err(verdict) => return verdict,
+        };
+    let receiver = match evaluate(receiver, StepArgument::Receiver)? {
+        Value::Reference(reference) => reference,
+        _ => return Err(fault("a-receiver-row-is-a-reference")),
     };
     let mut supplied = Vec::with_capacity(arguments.len());
     for (index, argument) in arguments.iter().enumerate() {
         supplied.push(match argument {
             None => None,
-            Some(expression) => match evaluate(expression, StepArgument::Parameter(index)) {
-                Ok(value) => Some(value),
-                Err(verdict) => return verdict,
-            },
+            Some(expression) => Some(evaluate(expression, StepArgument::Parameter(index))?),
         });
     }
-    let Some(before) = pre.abstract_states.first() else {
-        return fault("one-abstract-state-without-hidden-fields");
-    };
+    Ok(Arguments {
+        receiver,
+        supplied,
+        result: if *binds_result { resolved.result } else { None },
+    })
+}
+
+/// RS-4: the abstract operation `operation` over the evaluated `arguments`,
+/// judged against the mapped post-state with the calls the abstract system
+/// makes when it expands the mapped pre-state.
+fn judge_operation(
+    abstract_system: &ModelSystem<'_>,
+    (before, mapped): (&ModelState, &MappedState),
+    operation: &DeclarationKey,
+    arguments: Arguments,
+    step: &ConcreteStep<'_>,
+    abstract_successors: &mut u64,
+    passes: impl FnOnce(Taken) -> StepVerdict,
+) -> StepVerdict {
     let judged = match abstract_system.judge_application(&AbstractApplication {
         pre: before,
-        receiver: &abstract_receiver,
+        receiver: &arguments.receiver,
         operation,
-        arguments: &supplied,
+        arguments: &arguments.supplied,
         post: &mapped.visible,
-        result: if *binds_result {
-            resolved.result.as_ref()
-        } else {
-            None
-        },
+        result: arguments.result.as_ref(),
     }) {
         Ok(judged) => judged,
         Err(_) => return fault("abstract-judgement"),
@@ -420,6 +463,11 @@ fn abstract_operation(
     }
 }
 
+/// The state-key digest of `state` in `system`.
+fn state_digest(system: &ModelSystem<'_>, state: &ModelState) -> Option<DigestRecord> {
+    system.state_key_of(state).ok().map(|(_, digest)| digest)
+}
+
 /// The population and key of `reference` in `state`.
 fn object_of(state: &ModelState, reference: &ObjectReference) -> Option<ObjectKey> {
     state.populations.iter().find_map(|(population, objects)| {
@@ -432,16 +480,16 @@ fn object_of(state: &ModelState, reference: &ObjectReference) -> Option<ObjectKe
     })
 }
 
-/// The verdict of a mapping that gave no state, for the state at `position`.
+/// The verdict of a mapping that gave no state, for the state at `position`,
+/// whose state-key digest `digest` reads.
 fn mapping_verdict(
-    concrete_system: &ModelSystem<'_>,
-    state: &ModelState,
+    digest: impl FnOnce() -> Option<DigestRecord>,
     position: u64,
     failure: MappingFailure,
 ) -> StepVerdict {
     match failure {
         MappingFailure::Undefined { row, object, cause } => {
-            let Ok((_, digest)) = concrete_system.state_key_of(state) else {
+            let Some(digest) = digest() else {
                 return fault("concrete-state-encodes");
             };
             StepVerdict::Undefined(UndefinedEvaluation {
@@ -459,5 +507,29 @@ fn mapping_verdict(
         }
         MappingFailure::WrongSystem(_) => fault("the-engine-passed-the-refinements-own-systems"),
         MappingFailure::Fault(_) => fault("mapping-evaluation"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ix_trace_rs::trace;
+    use qsl_foundation::CatalogCode;
+
+    use super::*;
+
+    /// FR-141-AC-8 (TC-555 step 4): a `Fault` and a `WrongSystem` from
+    /// FR-140 are each a `StepVerdict::Fault`, never `Undefined`,
+    /// `Undetermined` or `Fails`, and the state is not even keyed for them.
+    #[trace("TC-555", "FR-141-AC-8")]
+    #[test]
+    fn a_mapping_fault_and_a_wrong_system_are_faults() {
+        let code = CatalogCode::new("runtime_invariant", "established-invariant-broken");
+        for failure in [
+            MappingFailure::Fault(code),
+            MappingFailure::WrongSystem(code),
+        ] {
+            let verdict = mapping_verdict(|| unreachable!("a fault keys no state"), 3, failure);
+            assert!(matches!(verdict, StepVerdict::Fault(_)), "{verdict:?}");
+        }
     }
 }
