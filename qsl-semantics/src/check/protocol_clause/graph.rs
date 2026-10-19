@@ -579,6 +579,76 @@ fn progress(
     refusals
 }
 
+/// Whether `commit` and `effect` lie in different branches of one
+/// `parallel` and a cross-branch causal edge orders the commit before the
+/// effect: the entry of the effect is reachable from the exit of the commit
+/// in the edge relation without the `repeat` back edges. The control tree
+/// alone cannot decide dominance then, so FR-381's check refuses the form
+/// as not yet implemented rather than admit it.
+pub(crate) fn ordered_across_branches(
+    tree: &CheckedControlTree,
+    edges: &[CausalEdge],
+    commit: ProtocolNodeId,
+    effect: ProtocolNodeId,
+) -> bool {
+    let mut parent: BTreeMap<ProtocolNodeId, ProtocolNodeId> = BTreeMap::new();
+    for control in &tree.controls {
+        for child in &control.children {
+            parent.insert(*child, control.node);
+        }
+    }
+    // The ancestors of `node`, nearest first; each step is to a strict
+    // ancestor, so the walk ends within the tree's size.
+    let ancestors = |node: ProtocolNodeId| {
+        let mut chain = Vec::new();
+        let mut current = node;
+        while let Some(&up) = parent
+            .get(&current)
+            .filter(|_| chain.len() < tree.controls.len())
+        {
+            chain.push(up);
+            current = up;
+        }
+        chain
+    };
+    let above_commit: BTreeSet<ProtocolNodeId> = ancestors(commit).into_iter().collect();
+    let common = ancestors(effect)
+        .into_iter()
+        .find(|node| above_commit.contains(node));
+    let across = common
+        .and_then(|node| tree.control(node))
+        .is_some_and(|control| control.kind == ProtocolNodeKind::Parallel);
+    if !across {
+        return false;
+    }
+    let graph = PortGraph::new(tree, edges, |edge| edge.kind != EdgeKind::RepeatBack);
+    let index = |port: PortRef| graph.ports.iter().position(|candidate| *candidate == port);
+    let (Some(start), Some(target)) = (
+        index(PortRef {
+            node: commit,
+            port: Port::Exit,
+        }),
+        index(PortRef {
+            node: effect,
+            port: Port::Enter,
+        }),
+    ) else {
+        return false;
+    };
+    let mut visited = vec![false; graph.ports.len()];
+    let mut stack = vec![start];
+    while let Some(port) = stack.pop() {
+        if port == target {
+            return true;
+        }
+        if std::mem::replace(&mut visited[port], true) {
+            continue;
+        }
+        stack.extend(graph.next[port].iter().copied().filter(|&to| !visited[to]));
+    }
+    false
+}
+
 /// The labels of `parallel`'s branches its join requires: those in every
 /// set of completed branches that satisfies the policy (FR-381 "Retry,
 /// commit and recovery"). `join all` requires every branch it lists; a

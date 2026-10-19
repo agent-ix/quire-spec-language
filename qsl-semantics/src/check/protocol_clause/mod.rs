@@ -50,7 +50,7 @@ mod tests;
 
 pub use awaits::Selections;
 pub use coverage::content;
-pub(crate) use graph::dominates;
+pub(crate) use graph::{dominates, ordered_across_branches};
 pub use types::{
     BoundAttempt, CausalEdge, CheckedAttempt, CheckedAwait, CheckedControl, CheckedControlTree,
     CheckedOperationNodes, CheckedProtocol, EdgeKind, Port, PortRef, ProtocolNodeId,

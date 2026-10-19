@@ -752,7 +752,9 @@ impl Checker<'_, '_> {
 
     /// FR-381 "Retry, commit and recovery": a `commit` node that dominates
     /// the forward effect -- every execution reaching the effect has passed
-    /// it -- refuses at the commit anchor.
+    /// it -- refuses at the commit anchor. A commit and effect in different
+    /// branches of a `parallel` that a cross-branch edge orders are refused
+    /// as not yet implemented (STD-189).
     fn commit_dominance(
         &mut self,
         form: &CompensationForm,
@@ -762,9 +764,6 @@ impl Checker<'_, '_> {
         let (Some(checked), CompensationCommit::Node(anchor)) = (self.anchors, &form.commit) else {
             return;
         };
-        if !super::protocol_clause::dominates(self.protocol, &checked.controls, commit, effect) {
-            return;
-        }
         let name = |node: ProtocolNodeId| {
             self.protocol
                 .declarations
@@ -772,6 +771,25 @@ impl Checker<'_, '_> {
                 .map(|declaration| declaration.name.name.clone())
                 .unwrap_or_default()
         };
+        if !super::protocol_clause::dominates(self.protocol, &checked.controls, commit, effect) {
+            // STD-189: dominance is decided on the control tree; a commit a
+            // cross-branch edge orders before an effect in another branch
+            // is refused until dominance reads those edges.
+            if super::protocol_clause::ordered_across_branches(
+                &checked.controls,
+                &checked.edges,
+                commit,
+                effect,
+            ) {
+                self.refuse(ObligationCause::CommitAcrossBranches {
+                    compensation: form.name.name.clone(),
+                    commit: name(commit),
+                    effect: name(effect),
+                    span: anchor.span,
+                });
+            }
+            return;
+        }
         self.refuse(ObligationCause::CommitPrecedesEffect {
             profile: self.profile.map(str::to_owned),
             compensation: form.name.name.clone(),

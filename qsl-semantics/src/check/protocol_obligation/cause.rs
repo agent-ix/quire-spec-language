@@ -256,11 +256,30 @@ pub enum ObligationCause {
     },
     /// `unsupported_construct`/`declaration-form`: a template's `commit`
     /// node dominates its forward effect: every execution that reaches the
-    /// effect has passed it, before the effect registers the obligation (member `commit`, reason `commit-precedes-effect`).
+    /// effect has passed it, before the effect registers the obligation
+    /// (member `commit`, reason `commit-precedes-effect`).
     CommitPrecedesEffect {
         /// The identity of the selected protocol profile that prohibits the
         /// form, when one is selected.
         profile: Option<String>,
+        /// The template.
+        compensation: String,
+        /// The `commit` node's name.
+        commit: String,
+        /// The forward `effect` node's name.
+        effect: String,
+        /// The commit anchor.
+        span: Span,
+    },
+    /// `unsupported_construct`/`not-yet-implemented`: a template's `commit`
+    /// node and its forward effect lie in different branches of one
+    /// `parallel`, and a cross-branch causal edge (a message, an `await`
+    /// anchor) orders the commit before the effect. Dominance is decided on
+    /// the control tree alone, which cannot tell whether every execution
+    /// reaching the effect has passed the commit, so the form is refused
+    /// until dominance reads those edges (member `commit`, reason
+    /// `commit-dominance-across-branches`).
+    CommitAcrossBranches {
         /// The template.
         compensation: String,
         /// The `commit` node's name.
@@ -290,7 +309,8 @@ impl ObligationCause {
             | Self::AttemptType { span, .. }
             | Self::RetryBinder { span, .. }
             | Self::Deadline { span, .. }
-            | Self::CommitPrecedesEffect { span, .. } => *span,
+            | Self::CommitPrecedesEffect { span, .. }
+            | Self::CommitAcrossBranches { span, .. } => *span,
         }
     }
 
@@ -312,7 +332,9 @@ impl ObligationCause {
             }
             Self::AttemptTypeName { fault, .. } => type_fault_class(fault).0,
             Self::AttemptType { .. } => Code::InvalidModelBinding,
-            Self::CommitPrecedesEffect { .. } => Code::UnsupportedConstruct,
+            Self::CommitPrecedesEffect { .. } | Self::CommitAcrossBranches { .. } => {
+                Code::UnsupportedConstruct
+            }
         }
     }
 
@@ -335,6 +357,7 @@ impl ObligationCause {
             Self::AttemptTypeName { fault, .. } => Some(type_fault_class(fault).1),
             Self::AttemptType { .. } => Some("malformed-declaration"),
             Self::CommitPrecedesEffect { .. } => Some("declaration-form"),
+            Self::CommitAcrossBranches { .. } => Some("not-yet-implemented"),
         }
     }
 
@@ -342,7 +365,7 @@ impl ObligationCause {
     /// FR-381 states one for.
     pub const fn member(&self) -> Option<&'static str> {
         match self {
-            Self::CommitPrecedesEffect { .. } => Some("commit"),
+            Self::CommitPrecedesEffect { .. } | Self::CommitAcrossBranches { .. } => Some("commit"),
             Self::ZeroAttempts { .. } | Self::AttemptType { .. } => Some("attempts"),
             Self::Deadline { .. } => Some("within"),
             Self::StageRead { .. }
@@ -363,6 +386,7 @@ impl ObligationCause {
     pub const fn reason(&self) -> Option<&'static str> {
         match self {
             Self::CommitPrecedesEffect { .. } => Some("commit-precedes-effect"),
+            Self::CommitAcrossBranches { .. } => Some("commit-dominance-across-branches"),
             Self::StageRead { .. }
             | Self::ModelStateRead { .. }
             | Self::CaptureType { .. }

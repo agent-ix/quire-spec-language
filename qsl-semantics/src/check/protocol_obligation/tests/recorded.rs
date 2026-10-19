@@ -445,6 +445,71 @@ fn a_commit_that_dominates_its_effect_refuses() {
     }
 }
 
+/// SR-12153 FND-008, STD-189: under `join all [s, r]`, branch `s` holds the
+/// commit and then a `send`, and branch `r` an attempt, the `receive` of
+/// that `send` and then the effect. Every execution reaching the effect has
+/// passed the commit, but dominance is decided on the control tree alone,
+/// so the form refuses `unsupported_construct`/`not-yet-implemented` at the
+/// commit anchor, naming the commit and the effect, with member `commit`
+/// and reason `commit-dominance-across-branches`. The same shape with no
+/// cross-branch edge (an `event` in place of the `receive`) checks.
+#[trace("TC-1058")]
+#[test]
+fn a_commit_ordered_across_branches_is_not_yet_decided() {
+    let across = |receive: &str| {
+        let run = format!(
+            "run sequence Main {{\n\
+             parallel P {{\n\
+             branch s sequence S {{ {COMMITTED} send Tx via ch as (tx: M::Flag) {{ true }}; }}\n\
+             branch r sequence R {{ {TRIED} {receive} \
+             effect Applied of Tried as (applied: M::Receipt) {{ true }}; }}\n\
+             }} join all [s, r];\n}}"
+        );
+        let source = edit(
+            &with_run(&run),
+            "role Service on M::Node;",
+            "role Service on M::Node;\n\
+             channel ch from Service to Service carries M::Flag ordering unordered \
+             delivery unknown capacity 1 overflow block;",
+        );
+        let source = edit(
+            &source,
+            "compensate Refund for Main::Applied",
+            "compensate Refund for Main::P::r::R::Applied",
+        );
+        edit(
+            &source,
+            "commit Main::Committed;",
+            "commit Main::P::s::S::Committed;",
+        )
+    };
+
+    let ordered = across("receive Rx via ch of s::S::Tx as (rx: M::Flag) { true };");
+    let (text, cause) = only(&ordered);
+    let ObligationCause::CommitAcrossBranches {
+        compensation,
+        commit,
+        effect,
+        span,
+    } = &cause
+    else {
+        panic!("a commit-across-branches refusal, got {cause:?}");
+    };
+    assert_eq!(compensation, "Refund");
+    assert_eq!((commit.as_str(), effect.as_str()), ("Committed", "Applied"));
+    assert_eq!(
+        (cause.code(), cause.tag()),
+        (Code::UnsupportedConstruct, Some("not-yet-implemented"))
+    );
+    assert_eq!(cause.member(), Some("commit"));
+    assert_eq!(cause.reason(), Some("commit-dominance-across-branches"));
+    assert_eq!(&text[span.start..span.end], "Main::P::s::S::Committed");
+
+    checked(&across(
+        "event Heard by Service as (heard: M::Flag) { true };",
+    ));
+}
+
 /// FR-381-AC-12, the recorded half: a `Full` template with commit
 /// `Main::Committed` and a `Partial` template with commit `never`, of one
 /// effect, give two checked compensations with their own captures, maxima
