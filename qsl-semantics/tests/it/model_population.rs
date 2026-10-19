@@ -149,6 +149,7 @@ fn population_record(identity: &str, member_types: &[&str], extent: Extent) -> D
             .map(|type_name| DeclarationKey::fixture(*type_name))
             .collect(),
         extent,
+        symmetric: false,
     })
 }
 

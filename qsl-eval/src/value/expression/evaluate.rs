@@ -3549,6 +3549,7 @@ mod tests {
                     key: DeclarationKey::fixture("model.pop.p1"),
                     member_types: vec![DeclarationKey::fixture("model.A")],
                     extent: Extent::Closed,
+                    symmetric: false,
                 }),
             ],
         )

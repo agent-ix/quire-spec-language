@@ -50,6 +50,7 @@ fn ambiguous_population_model() -> SelectedModel {
             key: key(name),
             member_types: vec![key("Pool")],
             extent: Extent::Closed,
+            symmetric: false,
         })
     };
     obligation_model_with(vec![

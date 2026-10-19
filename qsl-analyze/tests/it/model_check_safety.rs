@@ -434,11 +434,12 @@ fn a_decided_bounded_claim_still_reads_every_atom_up_to_its_horizon() {
     assert_eq!(undefined(&world, &outcome), (2, vec![0, 1, 2]));
 }
 
-/// A TP-4 clause is not decided by the first phase and an `on each`
-/// activation with a `when` condition has no letter seam; both are refused
-/// before any state is explored.
+/// A TP-4 clause is decided by the liveness engine (here its proof waits for
+/// FR-339's component certificate) and an `on each` activation with a `when`
+/// condition has no letter seam, so it is refused before any state is
+/// explored.
 #[test]
-fn a_liveness_clause_and_a_guarded_activation_are_refused() {
+fn a_liveness_clause_is_decided_and_a_guarded_activation_is_refused() {
     let guarded = format!("{} when (true)", each("Counter"));
     let refused = |profile, activation: &str, formula| {
         let world = counter_world(
@@ -459,7 +460,12 @@ fn a_liveness_clause_and_a_guarded_activation_are_refused() {
     };
     let refusal = refused(INFINITE, ORIGIN, "always eventually holds(c.value = 3)");
     assert!(
-        matches!(refusal, ModelCheckRefusal::FormNotDecided { .. }),
+        matches!(
+            refusal,
+            ModelCheckRefusal::Liveness(
+                qsl_analyze::model_check::LivenessRefusal::ComponentCertificateNotBuilt { .. }
+            )
+        ),
         "{refusal:?}"
     );
     let refusal = refused(BOUNDED, &guarded, "eventually[0,1] holds(c.value = 3)");

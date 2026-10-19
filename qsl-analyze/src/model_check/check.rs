@@ -48,11 +48,11 @@
 //! Remaining work: QSL-878 gives the TP-2 and TP-3 translation states their
 //! FR-338 canonical keys. Until it lands such a `Holds` carries an empty
 //! closure certificate, which the core checker cannot admit, so it never
-//! settles `proved`. The liveness phase (TP-4, QSL-530) is not part of this
-//! module: a TP-4 clause is refused before any state is explored, as is an
-//! `on each` activation with a `when` condition, which [`ModelLetters`] does
-//! not read. A clause with no instance is `Undecided(NoInstance)` before any
-//! state is explored (FR-125).
+//! settles `proved`. A liveness clause (TP-4) is decided by `liveness`,
+//! which adds the second phase; an `on each` activation with a `when`
+//! condition is refused before any state is explored, as [`ModelLetters`]
+//! does not read it. A clause with no instance is `Undecided(NoInstance)`
+//! before any state is explored (FR-125).
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -138,6 +138,10 @@ pub enum ModelCheckRefusal {
     /// The item has no canonical translation.
     #[error(transparent)]
     Item(ItemRefusal),
+    /// A liveness clause this engine does not decide yet, or whose proof it
+    /// cannot certify yet.
+    #[error(transparent)]
+    Liveness(#[from] super::liveness::LivenessRefusal),
     /// An invariant of the engine or the subject broke.
     #[error("model check broke invariant {0:?}")]
     Fault(InternalFault),
@@ -257,13 +261,18 @@ type Prepared<'a> = (Item<'a>, Box<dyn SafetyAutomaton>, bool);
 /// # Errors
 ///
 /// [`ModelCheckRefusal`] when the subject does not admit, a root is
-/// unbounded, the item is a TP-4 clause, a guarded `on each` clause or has no
+/// unbounded, the item is a guarded `on each` clause or has no
 /// property automaton, or an identity cannot be encoded; no outcome is
 /// settled then.
 pub fn check_model(
     request: ModelCheckRequest<'_>,
     cancel: &Cancel,
 ) -> Result<ModelCheckOutcome, ModelCheckRefusal> {
+    if let ModelCheckItem::Clause { clause, .. } = request.item {
+        if clause.property_form() == Some(PropertyForm::Liveness) {
+            return super::liveness::check(request, cancel);
+        }
+    }
     let max_automaton_states = request.limits.max_automaton_states;
     // The form is refused before admission reads any snapshot.
     let (mut item, automaton, certified) = prepare(request.item, max_automaton_states)?;
@@ -370,7 +379,7 @@ pub fn check_model(
 
 /// FR-336 and FR-125: an unbounded root, or an admitting population with no
 /// universe, is `RequiresBound`; a stopped classification is `Extent`.
-fn not_simulated(refusal: NotSimulated) -> ModelCheckRefusal {
+pub(super) fn not_simulated(refusal: NotSimulated) -> ModelCheckRefusal {
     match refusal {
         NotSimulated::RequiresBound(roots) => ModelCheckRefusal::RequiresBound(roots),
         NotSimulated::Extent(failure) => ModelCheckRefusal::Extent(Box::new(failure)),
@@ -932,6 +941,7 @@ impl Run<'_, '_> {
             over_binding,
             fairness,
             kind,
+            lasso: None,
         }
     }
 }

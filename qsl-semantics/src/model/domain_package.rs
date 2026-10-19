@@ -720,7 +720,7 @@ pub enum Extent {
 }
 
 /// An FR-153/FR-208:50 population declaration record: `{key, member_types,
-/// extent}`. Lists the population's declared member types and carries one
+/// extent, symmetric}`. Lists the population's declared member types and carries one
 /// population-level `extent`; a member type carries no multiplicity of its
 /// own here — the declared maximum `N` stays on the binding
 /// ([`crate::model::population::admit_binding`]'s own `declared_maximum`
@@ -733,6 +733,10 @@ pub struct PopulationRecord {
     pub member_types: Vec<DeclarationKey>,
     /// The population's declared extent.
     pub extent: Extent,
+    /// Whether the population is declared `symmetric` (FR-150): the identities
+    /// of its objects are interchangeable in every clause that reads it.
+    /// `false` when the declaration does not carry the marker.
+    pub symmetric: bool,
 }
 
 /// A variant type's `enum` export (FR-056 "Variant types"): the type's
