@@ -38,8 +38,7 @@ use quire_semantic_value::model_transition::ModelTransition;
 use crate::bounds::ReplayLimits;
 use crate::execute::{recompile, request_limits, ReplayRefusal};
 use crate::model_check::counterexample::{
-    CounterexampleKind, TemporalCounterexample, UndefinedEvaluation, UndefinedLocus,
-    UndefinedSite,
+    CounterexampleKind, TemporalCounterexample, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
 use crate::request::{ReplayRequest, ReplayRequestWire};
 use crate::result::{DisagreementCause, Verdict};
@@ -263,11 +262,16 @@ struct Position {
 fn expand(
     system: &ModelSystem<'_>,
     state: &ModelSimState,
-) -> Result<Result<qsl_eval::simulation::Expansion<ModelTransition, ModelSimState, ModelFinding>, ExpansionStop>, ReplayRefusal>
-{
+) -> Result<
+    Result<
+        qsl_eval::simulation::Expansion<ModelTransition, ModelSimState, ModelFinding>,
+        ExpansionStop,
+    >,
+    ReplayRefusal,
+> {
     match system.successors(state) {
         Ok(expansion) => Ok(Ok(expansion)),
-        Err(stop) if stop.cause.code() == "runtime_invariant" => Err(fault("model-expansion")),
+        Err(stop) if stop.is_internal_failure() => Err(fault("model-expansion")),
         Err(stop) => Ok(Err(stop)),
     }
 }
@@ -335,7 +339,10 @@ fn settle(
     }
 }
 
-fn digest_of(system: &ModelSystem<'_>, state: &ModelSimState) -> Result<DigestRecord, ReplayRefusal> {
+fn digest_of(
+    system: &ModelSystem<'_>,
+    state: &ModelSimState,
+) -> Result<DigestRecord, ReplayRefusal> {
     system
         .state_key(state)
         .map(|(_, digest)| digest)
@@ -356,9 +363,7 @@ fn deadlock(
     };
     let class = match system.terminal_class(&last.state, !expansion.successors.is_empty()) {
         Ok(class) => class,
-        Err(stop) if stop.cause.code() == "runtime_invariant" => {
-            return Err(fault("terminal-predicate"))
-        }
+        Err(stop) if stop.is_internal_failure() => return Err(fault("terminal-predicate")),
         Err(_) => return Ok(no_value()),
     };
     Ok(match class {
@@ -424,9 +429,7 @@ fn undefined(
                     cause,
                 }),
                 Ok(_) => None,
-                Err(stop) if stop.cause.code() == "runtime_invariant" => {
-                    return Err(fault("terminal-predicate"))
-                }
+                Err(stop) if stop.is_internal_failure() => return Err(fault("terminal-predicate")),
                 Err(_) => return Ok(no_value()),
             }
         };

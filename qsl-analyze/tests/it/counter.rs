@@ -21,7 +21,9 @@ use qsl_semantics::check::{
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
 use qsl_semantics::model::key::{hex, DeclarationKey};
-use qsl_semantics::model::observation::{declared_type_universe_for, DocumentRef, ObservationLimits};
+use qsl_semantics::model::observation::{
+    declared_type_universe_for, DocumentRef, ObservationLimits,
+};
 use quire_exact::{Incomplete, Meter, ObjectId, ObjectReference, ScalarLimits, Value};
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
@@ -200,8 +202,13 @@ fn declarations(document: &[u8], body: &str) -> PackageDeclarations {
         qsl_forms::parse_clause_text(text, qsl_cst::Limits::default())
     })
     .expect("the operation clauses parse");
-    PackageDeclarations::assemble(parsed.source().reference().clone(), built, models, Vec::new())
-        .expect("the unit assembles")
+    PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        built,
+        models,
+        Vec::new(),
+    )
+    .expect("the unit assembles")
 }
 
 /// The checked package of `body` over `document`. A `terminal` declaration
@@ -347,7 +354,11 @@ pub(crate) fn subject<'a>(
 }
 
 /// The reference of the counter `object` in `package`'s universe rule.
-pub(crate) fn reference(package: &CheckedPackage, documents: &Documents, object: &str) -> ObjectReference {
+pub(crate) fn reference(
+    package: &CheckedPackage,
+    documents: &Documents,
+    object: &str,
+) -> ObjectReference {
     let (effective, universe) = declared_type_universe_for(
         package.graph().model_selections(),
         &documents.packages,

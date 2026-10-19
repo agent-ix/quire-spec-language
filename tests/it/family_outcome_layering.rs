@@ -470,7 +470,12 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
             normal.sort_unstable();
             assert_eq!(
                 normal,
-                ["qsl-foundation", "qsl-semantics", "quire-semantic-value", "thiserror"],
+                [
+                    "qsl-foundation",
+                    "qsl-semantics",
+                    "quire-semantic-value",
+                    "thiserror"
+                ],
                 "{crate_name}'s [dependencies]"
             );
             assert!(

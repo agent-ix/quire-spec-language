@@ -34,7 +34,10 @@ use qsl_replay::{
 use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::{Cancel, CancelCause, Identifier, Origin, Role};
 
-use crate::counter::{document, document_digest, package, subject, universe, unit_text, Documents, CONTRACT, UNLIMITED};
+use crate::counter::{
+    document, document_digest, package, subject, unit_text, universe, Documents, CONTRACT,
+    UNLIMITED,
+};
 
 const AUTHORITY: &str = "agent-ix";
 const IDENTITY: &str = "counter";
@@ -111,7 +114,9 @@ fn source_wire(bytes: &[u8]) -> SourceWire {
 }
 
 fn witness_source() -> ReplaySource {
-    ReplaySource::Witness(Witness::parse("<<<assertion|model_check|deadlock|>>>").expect("a transcript"))
+    ReplaySource::Witness(
+        Witness::parse("<<<assertion|model_check|deadlock|>>>").expect("a transcript"),
+    )
 }
 
 fn selected() -> QualifiedName {
@@ -209,7 +214,10 @@ fn trace_subject(case: &Case) -> ModelTraceSubject {
     }
 }
 
-fn replay(case: &Case, payload: TemporalCounterexample) -> Result<ModelTraceReplayResult, ReplayRefusal> {
+fn replay(
+    case: &Case,
+    payload: TemporalCounterexample,
+) -> Result<ModelTraceReplayResult, ReplayRefusal> {
     replay_model_trace(
         request(case, &case.unit, case.package_id),
         &trace_subject(case),
@@ -251,11 +259,16 @@ fn a_deadlock_counterexample_reproduces_and_a_truncated_one_disagrees() {
     else {
         panic!("a truncated deadlock disagrees");
     };
-    assert!(matches!(cause, DisagreementCause::Verdicts { .. }), "{cause:?}");
+    assert!(
+        matches!(cause, DisagreementCause::Verdicts { .. }),
+        "{cause:?}"
+    );
     assert_eq!(cause.replayed().category(), Category::Success);
 }
 
-fn refusal(result: Result<ModelTraceReplayResult, ReplayRefusal>) -> (ModelTraceRefusal, Code, &'static str) {
+fn refusal(
+    result: Result<ModelTraceReplayResult, ReplayRefusal>,
+) -> (ModelTraceRefusal, Code, &'static str) {
     match result {
         Err(ReplayRefusal::ModelTrace(refusal)) => {
             let error = ReplayRefusal::ModelTrace(refusal.clone());
@@ -302,13 +315,19 @@ fn a_counterexample_the_model_does_not_take_refuses_with_no_result() {
     let mut outside = payload.clone();
     outside.initial_state = 1;
     let (cause, code, _) = refusal(replay(&case, outside));
-    assert_eq!(cause, ModelTraceRefusal::InitialState { index: 1, count: 1 });
+    assert_eq!(
+        cause,
+        ModelTraceRefusal::InitialState { index: 1, count: 1 }
+    );
     assert_eq!(code, Code::InvalidRuntimeInput);
 
     let mut formula = payload.clone();
     formula.kind = CounterexampleKind::Formula;
     let (cause, code, tag) = refusal(replay(&case, formula));
-    assert!(matches!(cause, ModelTraceRefusal::UnknownTemporalClause { .. }));
+    assert!(matches!(
+        cause,
+        ModelTraceRefusal::UnknownTemporalClause { .. }
+    ));
     assert_eq!((code, tag), (Code::StaleDependency, "content-mismatch"));
 
     let edited = unit_text(
@@ -422,7 +441,13 @@ fn each_outcome_settles_its_row_of_the_map() {
         TerminalValue::Inconclusive(InconclusiveCause::BoundReached { depth: 2 })
     );
     assert_eq!(
-        (bound.label, bound.basis, bound.execution, bound.truth, bound.depth),
+        (
+            bound.label,
+            bound.basis,
+            bound.execution,
+            bound.truth,
+            bound.depth
+        ),
         (
             ResultLabel::Inconclusive,
             SettlementBasis::Unsettled,
@@ -434,8 +459,14 @@ fn each_outcome_settles_its_row_of_the_map() {
     assert_eq!(bound.value.category(), Category::Inconclusive);
 
     for (cause, expected) in [
-        (UndecidedCause::UndecidedSuccessor, InconclusiveCause::UndecidedSuccessor),
-        (UndecidedCause::NoInitialState, InconclusiveCause::NoInitialState),
+        (
+            UndecidedCause::UndecidedSuccessor,
+            InconclusiveCause::UndecidedSuccessor,
+        ),
+        (
+            UndecidedCause::NoInitialState,
+            InconclusiveCause::NoInitialState,
+        ),
     ] {
         let record = settle(&ModelCheckOutcome::Undecided { cause, stats });
         assert_eq!(record.value, TerminalValue::Inconclusive(expected));
@@ -460,7 +491,12 @@ fn each_outcome_settles_its_row_of_the_map() {
     assert_eq!(limit_reached.as_str(), "limit-reached");
     assert_eq!(ModelCheckLimit::MaxStates.setting(), "max_states");
     assert_eq!(
-        (stopped.label, stopped.basis, stopped.execution, stopped.truth),
+        (
+            stopped.label,
+            stopped.basis,
+            stopped.execution,
+            stopped.truth
+        ),
         (
             ResultLabel::Failed,
             SettlementBasis::Unavailable,
@@ -521,7 +557,9 @@ fn a_deadlock_violation_settles_refuted_through_its_replay() {
     );
     assert_eq!(record.value.category(), Category::Violation);
     assert_eq!(
-        record.counterexample.map(|counterexample| counterexample.kind),
+        record
+            .counterexample
+            .map(|counterexample| counterexample.kind),
         Some(CounterexampleKind::Deadlock)
     );
 }
@@ -574,7 +612,12 @@ fn a_disagreeing_or_refused_replay_never_settles_refuted() {
     let failed = settle_model_check(
         &violated(counterexample(&case)),
         &ModelCheckLimits::default(),
-        |_| Err(ReplayRefusal::Fault(InternalFault::new("test", "replay-faults"))),
+        |_| {
+            Err(ReplayRefusal::Fault(InternalFault::new(
+                "test",
+                "replay-faults",
+            )))
+        },
     );
     assert_eq!(failed.value, TerminalValue::Failed);
     assert_eq!(failed.label, ResultLabel::Failed);

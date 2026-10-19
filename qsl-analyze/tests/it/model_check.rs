@@ -120,7 +120,11 @@ fn system<'w>(world: &'w World, keys: &[&str]) -> ModelSystem<'w> {
 /// The value of `object` at each position of `counterexample`, read by
 /// re-executing its steps: each step's post-state is the successor of its
 /// transition identity whose state-key digest it records.
-fn positions(world: &World, keys: &[&str], counterexample: &TemporalCounterexample) -> Vec<ModelSimState> {
+fn positions(
+    world: &World,
+    keys: &[&str],
+    counterexample: &TemporalCounterexample,
+) -> Vec<ModelSimState> {
     let system = system(world, keys);
     let mut current = system.initial()[counterexample.initial_state].clone();
     let mut states = vec![current.clone()];
@@ -225,6 +229,9 @@ fn deadlock_freedom_is_violated_at_the_unintended_terminal_state() {
     }
 }
 
+/// A two-counter state: `(a, b)`.
+type Pair = (i64, i64);
+
 /// A breadth-first enumeration of the two-counter subject, written from
 /// FR-120's semantics of the fixture: `inc` with receiver `x` needs `x < 3`
 /// and sets `x` to `x + 1`, and since its frame grants the `value` field of
@@ -234,7 +241,7 @@ fn deadlock_freedom_is_violated_at_the_unintended_terminal_state() {
 /// post-state, `(a, b)` ascending. Returns the reachable states in
 /// discovery order, the number of edges, and each state's first-found
 /// predecessor.
-fn pairs() -> (Vec<(i64, i64)>, usize, BTreeMap<(i64, i64), (i64, i64)>) {
+fn pairs() -> (Vec<Pair>, usize, BTreeMap<Pair, Pair>) {
     let mut order = vec![(0, 0)];
     let mut parent = BTreeMap::new();
     let mut queue = VecDeque::from([(0, 0)]);
@@ -358,11 +365,15 @@ fn invariant(
 #[test]
 fn a_reachable_invariant_holds_or_is_violated_at_its_first_bad_state() {
     let world = self::world("", &[&[("c", 0)]]);
-    match invariant(&world, &["c"], "always holds(c.value <= 3)", |v| Some(v <= 3)) {
+    match invariant(&world, &["c"], "always holds(c.value <= 3)", |v| {
+        Some(v <= 3)
+    }) {
         ModelCheckOutcome::Holds { stats } => assert_eq!(stats.product_states, 4),
         other => panic!("expected Holds, got {other:?}"),
     }
-    let outcome = invariant(&world, &["c"], "always holds(c.value != 2)", |v| Some(v != 2));
+    let outcome = invariant(&world, &["c"], "always holds(c.value != 2)", |v| {
+        Some(v != 2)
+    });
     let counterexample = violated(&outcome);
     assert_eq!(counterexample.kind, CounterexampleKind::Formula);
     assert_eq!(values(&world, counterexample, "c"), [0, 1, 2]);
@@ -405,7 +416,9 @@ fn a_violation_names_the_first_bound_instance_that_is_false() {
 fn an_undefined_atom_refutes_at_the_first_position_it_is_undefined() {
     let world = self::world("", &[&[("c", 0)]]);
     let formula = "always holds(6 / (2 - c.value) >= 0)";
-    let outcome = invariant(&world, &["c"], formula, |v| (v != 2).then(|| 6 / (2 - v) >= 0));
+    let outcome = invariant(&world, &["c"], formula, |v| {
+        (v != 2).then(|| 6 / (2 - v) >= 0)
+    });
     let counterexample = violated(&outcome);
     assert_eq!(values(&world, counterexample, "c"), [0, 1, 2]);
     let CounterexampleKind::UndefinedEvaluation(evaluation) = &counterexample.kind else {
@@ -447,7 +460,10 @@ fn an_undefined_model_side_expression_refutes_the_deadlock_item() {
         panic!("expected an undefined evaluation: {counterexample:?}");
     };
     assert_eq!(evaluation.site.position, 3);
-    assert_eq!(evaluation.site.locus, UndefinedLocus::Terminal("M".to_owned()));
+    assert_eq!(
+        evaluation.site.locus,
+        UndefinedLocus::Terminal("M".to_owned())
+    );
     assert_eq!(
         evaluation.cause,
         UndefinedCause::Kernel(quire_exact::Undefined::DivisionByZero)

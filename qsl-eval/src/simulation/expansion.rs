@@ -2,6 +2,7 @@
 //! What one expansion of one state returns, and the findings the engine
 //! records from it (FR-101).
 
+use qsl_foundation::diagnostic::{category_of, Category};
 use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::CatalogCode;
 
@@ -27,6 +28,14 @@ pub struct ExpansionStop {
     /// The caller-raisable budget the expansion ran out of, when one did:
     /// a model check names it in its stopped outcome (FR-126).
     pub limit: Option<ExpansionLimit>,
+}
+
+impl ExpansionStop {
+    /// Whether an invariant of the system broke (ADR-013 O-17
+    /// `internal-failure`), rather than a budget or input stopping it.
+    pub fn is_internal_failure(&self) -> bool {
+        category_of(&self.cause) == Some(Category::InternalFailure)
+    }
 }
 
 /// A caller-raisable budget of one expansion (FR-120): what

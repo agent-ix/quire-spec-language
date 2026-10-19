@@ -56,7 +56,10 @@ impl TransitionSystem for Model {
     }
     fn successors(&self, state: &usize) -> Result<Expansion<String, usize, usize>, ExpansionStop> {
         if self.stop == Some(*state) {
-            return Err(ExpansionStop { cause: STOP, limit: None });
+            return Err(ExpansionStop {
+                cause: STOP,
+                limit: None,
+            });
         }
         Ok(Expansion {
             successors: self.edges.get(state).cloned().unwrap_or_default(),
@@ -436,7 +439,10 @@ impl PropertyComponent<Model> for Property {
         target: &usize,
     ) -> Result<Vec<u8>, ExpansionStop> {
         if self.stop {
-            return Err(ExpansionStop { cause: STOP, limit: None });
+            return Err(ExpansionStop {
+                cause: STOP,
+                limit: None,
+            });
         }
         Ok(match (*state, target % 3 == 2) {
             (0, false) => vec![1, 0],

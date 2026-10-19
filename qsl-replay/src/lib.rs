@@ -71,21 +71,6 @@ pub use certificate::closed_form::task_set::{
 };
 pub use certificate::{CertificateLocus, CertificateRule, QueryPart};
 pub use compile::{compile_package, CompiledPackage};
-pub use model_check::counterexample::{
-    CounterexampleKind, ModelStep, TemporalCounterexample, UndefinedEvaluation, UndefinedLocus,
-    UndefinedSite,
-};
-pub use model_check::limits::{
-    ModelCheckLimit, ModelCheckLimits, ReachedLimit, DEFAULT_MAX_AUTOMATON_STATES,
-};
-pub use model_check::outcome::{ModelCheckOutcome, RunStats, UndecidedCause};
-pub use model_check::replay::{
-    replay_model_trace, ModelTraceRefusal, ModelTraceReplayResult, ModelTraceSettlement,
-    ModelTraceSubject, ModelTraceValue,
-};
-pub use model_check::settle::{
-    settle_model_check, Execution, ModelCheckRecord, ResultLabel, Truth, EXPLICIT_STATE,
-};
 pub use composite::{
     CompositeEvidence, CompositeIdentity, CompositeParityClaim, CompositeParityReport,
     CompositeParityResult, EqualityOutcome, FalsifiedParity, IncompleteStage, NativeCause,
@@ -104,6 +89,21 @@ pub use identity::{
     RawSourceRef, TracePosition,
 };
 pub use limits::{AccountingLimits, CallerLimits};
+pub use model_check::counterexample::{
+    CounterexampleKind, ModelStep, TemporalCounterexample, UndefinedEvaluation, UndefinedLocus,
+    UndefinedSite,
+};
+pub use model_check::limits::{
+    ModelCheckLimit, ModelCheckLimits, ReachedLimit, DEFAULT_MAX_AUTOMATON_STATES,
+};
+pub use model_check::outcome::{ModelCheckOutcome, RunStats, UndecidedCause};
+pub use model_check::replay::{
+    replay_model_trace, ModelTraceRefusal, ModelTraceReplayResult, ModelTraceSettlement,
+    ModelTraceSubject, ModelTraceValue,
+};
+pub use model_check::settle::{
+    settle_model_check, Execution, ModelCheckRecord, ResultLabel, Truth, EXPLICIT_STATE,
+};
 // The equality operator a composite parity claim names (FR-358).
 pub use quire_semantic_value::declaration::EqualityOperator;
 // The typed identity and catalog code a `TerminalRecord` and a

@@ -40,8 +40,8 @@ use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::InternalFault;
 use qsl_replay::{
     CounterexampleKind, IncompleteCause, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome,
-    ModelStep, ReachedLimit, RunStats, TemporalCounterexample, UndecidedCause,
-    UndefinedEvaluation, UndefinedLocus, UndefinedSite,
+    ModelStep, ReachedLimit, RunStats, TemporalCounterexample, UndecidedCause, UndefinedEvaluation,
+    UndefinedLocus, UndefinedSite,
 };
 use qsl_semantics::check::{CheckedTemporalClause, FormulaNode, FormulaNodeId};
 use qsl_semantics::model::observation::AdmissionFailure;
@@ -134,9 +134,23 @@ struct Node {
 
 /// Why the run ended before its frontier emptied.
 enum Finish {
-    Violated(CounterexampleKind, usize, Option<ObjectReference>),
+    Violated(Box<Violation>),
     Undecided(UndecidedCause),
     Stopped(IncompleteCause, Option<ReachedLimit>),
+}
+
+/// A violation: its kind, the node it is at, and the `over` binding the
+/// counterexample names.
+struct Violation {
+    kind: CounterexampleKind,
+    at: usize,
+    binding: Option<ObjectReference>,
+}
+
+impl Finish {
+    fn violated(kind: CounterexampleKind, at: usize, binding: Option<ObjectReference>) -> Self {
+        Self::Violated(Box::new(Violation { kind, at, binding }))
+    }
 }
 
 type Step<T> = Result<T, Halt>;
@@ -252,7 +266,8 @@ pub fn check_model(
             limit,
             stats: run.stats(),
         }),
-        Err(Halt::Finish(Finish::Violated(kind, at, binding))) => {
+        Err(Halt::Finish(Finish::Violated(violation))) => {
+            let Violation { kind, at, binding } = *violation;
             let counterexample = run.counterexample(kind, at, binding);
             Ok(ModelCheckOutcome::Violated {
                 counterexample: Box::new(counterexample),
@@ -352,7 +367,10 @@ impl Run<'_, '_> {
     /// The breadth-first first phase.
     fn explore(&mut self) -> Step<()> {
         self.poll()?;
-        let before = self.monitor.initial().map_err(|error| self.automaton(error))?;
+        let before = self
+            .monitor
+            .initial()
+            .map_err(|error| self.automaton(error))?;
         let mut initial = Vec::new();
         for (index, state) in self.system.initial().into_iter().enumerate() {
             let (key, digest) = self.system.state_key(&state)?;
@@ -458,7 +476,7 @@ impl Run<'_, '_> {
             .is_rejecting(after)
             .map_err(|error| self.automaton(error))?
         {
-            return Err(Finish::Violated(kind, at, binding).into());
+            return Err(Finish::violated(kind, at, binding).into());
         }
         Ok(after)
     }
@@ -498,7 +516,7 @@ impl Run<'_, '_> {
                 }
                 AtomReading::Undefined(cause) => {
                     let site = self.site(at, UndefinedLocus::Atom(*atom), None);
-                    return Err(Finish::Violated(
+                    return Err(Finish::violated(
                         CounterexampleKind::UndefinedEvaluation(UndefinedEvaluation {
                             site,
                             cause,
@@ -537,7 +555,7 @@ impl Run<'_, '_> {
                 UndefinedLocus::Contract(contract.clause),
                 contract.guard_of,
             );
-            return Err(Finish::Violated(
+            return Err(Finish::violated(
                 CounterexampleKind::UndefinedEvaluation(UndefinedEvaluation {
                     site,
                     cause: contract.cause,
@@ -582,7 +600,7 @@ impl Run<'_, '_> {
             TerminalClass::Deadlocked => true,
             TerminalClass::Undefined { model, cause } => {
                 let site = self.site(at, UndefinedLocus::Terminal(model), None);
-                return Err(Finish::Violated(
+                return Err(Finish::violated(
                     CounterexampleKind::UndefinedEvaluation(UndefinedEvaluation { site, cause }),
                     at,
                     None,
@@ -611,9 +629,7 @@ impl Run<'_, '_> {
             Some(ExpansionLimit::MaxCandidates) => {
                 Self::stopped(ModelCheckLimit::MaxCandidates, self.max_candidates).into()
             }
-            None if stop.cause.code() == "runtime_invariant" => {
-                fault("model-expansion-invariant").into()
-            }
+            None if stop.is_internal_failure() => fault("model-expansion-invariant").into(),
             None => Finish::Stopped(IncompleteCause::ResourceExhausted, None).into(),
         }
     }

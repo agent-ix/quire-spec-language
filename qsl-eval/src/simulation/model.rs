@@ -49,8 +49,8 @@ use crate::simulation::trace::{replay, ReplayError, Trace};
 use crate::value::QualifiedName;
 
 pub use encode::ModelKey;
-pub use terminal::TerminalClass;
 use encode::{declaration_enc, declaration_text, Enc};
+pub use terminal::TerminalClass;
 
 /// `resource_exhausted`/`insufficient-next-charge`: a candidate count, or an
 /// evaluation meter, ran out (FR-120 "Post-states", "Contract clauses").
@@ -744,7 +744,10 @@ fn identity_limits() -> IdentityLimits {
 ///
 /// [`NotSimulated::RequiresBound`] when a root is unbounded;
 /// [`NotSimulated::Extent`] when classification stops.
-pub fn check_model_bounds(system: &ModelSystem<'_>, position_limit: u64) -> Result<(), NotSimulated> {
+pub fn check_model_bounds(
+    system: &ModelSystem<'_>,
+    position_limit: u64,
+) -> Result<(), NotSimulated> {
     let domains = system.domains();
     let roots: Vec<(WireNodeId, &ValueType)> = domains
         .iter()

@@ -971,7 +971,10 @@ pub(crate) fn run_spine(
 /// package the provision carries under its `sha256-jcs` digest as I1's
 /// package input, applying ADR-015 D-4's seven rules in order: each rule
 /// over every entry, in entry order, before the next.
-pub(crate) fn recompile(request: &ReplayRequest, limits: &CallerLimits) -> Result<Recompiled, ReplayRefusal> {
+pub(crate) fn recompile(
+    request: &ReplayRequest,
+    limits: &CallerLimits,
+) -> Result<Recompiled, ReplayRefusal> {
     // Rule 1: strictly ascending identities, before anything is built.
     for (index, pair) in request.dependencies().windows(2).enumerate() {
         if let [before, entry] = pair {
