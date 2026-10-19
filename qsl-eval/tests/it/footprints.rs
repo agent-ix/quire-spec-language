@@ -375,8 +375,21 @@ impl Subject {
         .expect("the system admits")
     }
 
-    /// The symbolic footprint of `operation` on `object_type`.
+    /// The symbolic footprint of `operation` on `object_type`, with each
+    /// reference parameter bound to an object of its declared type.
     fn symbolic(&self, object_type: &str, operation: &str) -> SymbolicFootprint {
+        self.symbolic_for(object_type, operation, &[])
+    }
+
+    /// The symbolic footprint of `operation` on `object_type`, with the
+    /// reference parameters named in `bound` bound to objects of the given
+    /// types and the others bound to objects of their declared types.
+    fn symbolic_for(
+        &self,
+        object_type: &str,
+        operation: &str,
+        bound: &[(&str, &str)],
+    ) -> SymbolicFootprint {
         let graph = self.package.graph();
         let model = self.model();
         let identity = model
@@ -392,7 +405,26 @@ impl Subject {
         else {
             panic!("{object_type} declares no operation {operation}");
         };
-        derive_footprint(graph, &model, identity, declaring, operation)
+        let arguments: Vec<(String, quire_exact::EffectiveId)> = operation
+            .parameters()
+            .iter()
+            .filter_map(|(name, value_type)| {
+                let declared = match value_type {
+                    quire_exact::ValueType::Reference(declared) => *declared,
+                    _ => return None,
+                };
+                let actual = bound
+                    .iter()
+                    .find(|(parameter, _)| parameter == name)
+                    .map_or(declared, |(_, type_name)| {
+                        model
+                            .type_identity(&key(type_name))
+                            .expect("the type is declared")
+                    });
+                Some((name.clone(), actual))
+            })
+            .collect();
+        derive_footprint(graph, &model, identity, declaring, operation, &arguments)
             .expect("a footprint derives")
     }
 }
@@ -1391,13 +1423,12 @@ fn a_non_canonical_or_miscounted_transition_has_no_footprint() {
 }
 
 /// A receiver whose type has two direct supertypes: `C` extends `A` and `B`,
-/// `A` declares `cancel` framed `deletes self`, and a holder's field names a
-/// `B`. A deletion of a `C` reads the field that could name it, whichever
-/// supertype declared the operation; a field naming an unrelated type is not
-/// read.
+/// `A` declares `cancel` framed `deletes self`, and populations hold `A`s and
+/// `B`s. A deletion of a `C` writes its membership in both populations and
+/// reads the fields that name a type `C` conforms to, and no others.
 #[trace("TC-589")]
 #[test]
-fn a_deletion_of_a_receiver_with_two_supertypes_reads_the_fields_naming_either() {
+fn a_deletion_of_a_receiver_with_two_supertypes_follows_the_identitys_type() {
     let subject = subject(
         document(
             vec![
@@ -1418,20 +1449,108 @@ fn a_deletion_of_a_receiver_with_two_supertypes_reads_the_fields_naming_either()
                 object_type(
                     "Holder",
                     vec![
+                        field("Holder", "viaA", &ident("A"), "optional"),
                         field("Holder", "viaB", &ident("B"), "optional"),
                         field("Holder", "viaD", &ident("D"), "optional"),
                     ],
                     vec![],
                 ),
             ],
-            &[("cs", "C"), ("bs", "B"), ("holders", "Holder")],
+            &[("as", "A"), ("bs", "B"), ("holders", "Holder")],
         ),
         &[],
     );
+    let receiver = FootprintObject::Receiver;
     let cancel = subject.symbolic("C", "cancel");
-    assert!(cancel.reads.contains(&any_field("Holder/viaB")));
-    assert!(!cancel.reads.contains(&any_field("Holder/viaD")));
-    assert!(cancel
-        .writes
-        .contains(&membership("cs", &FootprintObject::Receiver)));
+    assert_eq!(
+        cancel.writes,
+        symbolic([membership("as", &receiver), membership("bs", &receiver)])
+    );
+    assert_eq!(
+        cancel.reads,
+        symbolic([
+            membership("as", &receiver),
+            membership("bs", &receiver),
+            any_field("Holder/viaA"),
+            any_field("Holder/viaB"),
+        ])
+    );
+}
+
+/// A deletion of an argument, and a type-wide deletion, follow QSpec FR-383
+/// exactly: `deletes p` is about the type of the object bound to `p`, and
+/// `deletes T` about `T` itself.
+#[trace("TC-589")]
+#[test]
+fn argument_and_type_wide_deletions_follow_the_types_fr_383_names() {
+    let subject = subject(
+        document(
+            vec![
+                object_type(
+                    "Base",
+                    vec![],
+                    vec![
+                        operation(
+                            "Base",
+                            "kill",
+                            &[("victim", &ident("Base"))],
+                            None,
+                            &frame(&json!({"deletes_parameters": ["victim"]})),
+                        ),
+                        operation(
+                            "Base",
+                            "purge",
+                            &[],
+                            None,
+                            &frame(&json!({"deletes": [ident("Base")]})),
+                        ),
+                    ],
+                ),
+                object_type_extending("Sub", &["Base"], vec![], vec![]),
+                object_type(
+                    "Holder",
+                    vec![
+                        field("Holder", "r", &ident("Sub"), "optional"),
+                        field("Holder", "rb", &ident("Base"), "optional"),
+                    ],
+                    vec![],
+                ),
+            ],
+            &[("bases", "Base"), ("subs", "Sub"), ("holders", "Holder")],
+        ),
+        &[],
+    );
+    let victim = FootprintObject::Param("victim".to_owned());
+    let receiver = FootprintObject::Receiver;
+
+    // Bound to a `Sub`, `victim` leaves both populations and is named by
+    // both reference fields.
+    let kill_sub = subject.symbolic_for("Base", "kill", &[("victim", "Sub")]);
+    assert_eq!(
+        kill_sub.writes,
+        symbolic([membership("bases", &victim), membership("subs", &victim)])
+    );
+    assert!(kill_sub.reads.contains(&any_field("Holder/r")));
+    assert!(kill_sub.reads.contains(&any_field("Holder/rb")));
+    assert!(kill_sub.reads.contains(&membership("subs", &victim)));
+
+    // Bound to a `Base`, `victim` is in `bases` alone and no `Sub` field
+    // names it.
+    let kill_base = subject.symbolic_for("Base", "kill", &[("victim", "Base")]);
+    assert_eq!(kill_base.writes, symbolic([membership("bases", &victim)]));
+    assert!(!kill_base.reads.contains(&any_field("Holder/r")));
+    assert!(kill_base.reads.contains(&any_field("Holder/rb")));
+    assert!(!kill_base.reads.contains(&membership("subs", &victim)));
+
+    // `deletes Base` writes the membership of every population of a type
+    // conforming to `Base`, and reads the fields naming a type `Base`
+    // conforms to.
+    let purge = subject.symbolic("Base", "purge");
+    assert_eq!(
+        purge.writes,
+        symbolic([any_membership("bases"), any_membership("subs")])
+    );
+    assert!(purge.reads.contains(&any_field("Holder/rb")));
+    assert!(!purge.reads.contains(&any_field("Holder/r")));
+    assert!(purge.reads.contains(&membership("bases", &receiver)));
 }

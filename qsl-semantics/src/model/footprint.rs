@@ -108,7 +108,9 @@ pub enum FootprintRefusal {
 /// Derive the symbolic footprints of `operation`, declared by `declaring` and
 /// applied to a receiver of the object type `receiver_type`, which is
 /// `declaring` or a type conforming to it: the receiver's membership and the
-/// objects a deletion of it affects follow the receiver's own type.
+/// objects a deletion of it affects follow the receiver's own type. `arguments`
+/// gives the object type of each reference parameter's bound argument; a
+/// parameter with no entry has no argument, and contributes no location.
 ///
 /// # Errors
 ///
@@ -122,6 +124,7 @@ pub fn derive_footprint(
     receiver_type: EffectiveId,
     declaring: EffectiveId,
     operation: &OperationDeclaration,
+    arguments: &[(String, EffectiveId)],
 ) -> Result<SymbolicFootprint, FootprintRefusal> {
     let derivation = Derivation {
         graph,
@@ -129,6 +132,7 @@ pub fn derive_footprint(
         receiver_type,
         declaring,
         operation,
+        arguments,
         populations: populations(model)?,
     };
     derivation.run()
@@ -204,6 +208,7 @@ struct Derivation<'a> {
     receiver_type: EffectiveId,
     declaring: EffectiveId,
     operation: &'a OperationDeclaration,
+    arguments: &'a [(String, EffectiveId)],
     populations: Vec<PopulationTypes>,
 }
 
@@ -272,6 +277,14 @@ impl Derivation<'_> {
         })
     }
 
+    /// The object type of the argument bound to the parameter `name`.
+    fn argument_type(&self, name: &str) -> Option<EffectiveId> {
+        self.arguments
+            .iter()
+            .find(|(parameter, _)| parameter == name)
+            .map(|(_, object_type)| *object_type)
+    }
+
     fn run(&self) -> Result<SymbolicFootprint, FootprintRefusal> {
         let effect = self.operation.effect();
         let mut writes = BTreeSet::new();
@@ -299,17 +312,11 @@ impl Derivation<'_> {
             }
         }
         for name in &effect.deletes_arguments {
-            let target = self
-                .operation
-                .parameters()
-                .iter()
-                .find(|(parameter, _)| parameter == name)
-                .and_then(|(_, value_type)| parameter_target(value_type))
-                .ok_or(FootprintRefusal::Unresolved {
-                    what: "deleted parameter",
-                })?;
+            let Some(target) = self.argument_type(name) else {
+                continue;
+            };
             deleted_types.push(target);
-            for population in self.populations_relating(target) {
+            for population in self.populations_holding(target) {
                 writes.insert(SymbolicLocation::Membership {
                     population: population.clone(),
                     object: FootprintObject::Param(name.clone()),
@@ -343,9 +350,9 @@ impl Derivation<'_> {
                 object: FootprintObject::Receiver,
             });
         }
-        for (name, value_type) in self.operation.parameters() {
-            if let Some(target) = parameter_target(value_type) {
-                for population in self.populations_relating(target) {
+        for (name, _) in self.operation.parameters() {
+            if let Some(target) = self.argument_type(name) {
+                for population in self.populations_holding(target) {
                     reads.insert(SymbolicLocation::Membership {
                         population: population.clone(),
                         object: FootprintObject::Param(name.clone()),

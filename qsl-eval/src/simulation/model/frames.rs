@@ -134,7 +134,7 @@ pub(super) fn apply(
         let footprint = walk
             .enforcement
             .map(|enforcement| {
-                enforcement.footprint_of(application, &row.reference, &args, &transition)
+                enforcement.footprint_of(system, application, &row.reference, &args, &transition)
             })
             .transpose()?;
 

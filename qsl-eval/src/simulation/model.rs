@@ -27,7 +27,6 @@ use qsl_package::CheckedPackage;
 use qsl_semantics::check::Observation;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::domain_package::OperationEffect;
-use qsl_semantics::model::footprint::{derive_footprint, FootprintRefusal, SymbolicFootprint};
 use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::observation::{
     AdmissionFailure, AdmissionRecord, AnchorKind, DocumentRef, ObservationLimits, SelectedAnchor,
@@ -246,7 +245,6 @@ struct Application {
     declaring: EffectiveId,
     declaration: OperationDeclaration,
     text: String,
-    footprint: Result<SymbolicFootprint, FootprintRefusal>,
 }
 
 /// A checked state clause, resolved for evaluation.
@@ -280,6 +278,7 @@ pub struct ModelSystem<'a> {
     populations: Vec<qsl_semantics::model::state::StatePopulation>,
     limits: ExpansionLimits,
     meter: ScalarLimits,
+    footprints: footprints::FootprintCache,
 }
 
 fn refused(code: Code, cause: &'static str, fields: &[(&'static str, String)]) -> AdmissionFailure {
@@ -420,6 +419,7 @@ impl<'a> ModelSystem<'a> {
             populations,
             limits: request.expansion,
             meter: request.meter,
+            footprints: footprints::FootprintCache::default(),
         })
     }
 
@@ -460,7 +460,6 @@ impl<'a> ModelSystem<'a> {
             applications.push(Application {
                 name,
                 declaring,
-                footprint: derive_footprint(graph, model, identity, declaring, operation),
                 declaration: operation.clone(),
                 text,
             });

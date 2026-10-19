@@ -10,17 +10,18 @@
 //! attached to their observations and compares the log with the footprint.
 
 use std::cell::RefCell;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::{Mutex, PoisonError};
 
 use qsl_semantics::check::Observation;
 use qsl_semantics::model::footprint::{
-    FootprintObject, FootprintRefusal, SymbolicFootprint, SymbolicLocation,
+    derive_footprint, FootprintObject, FootprintRefusal, SymbolicFootprint, SymbolicLocation,
 };
 use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::object_environment::{ObservedRead, ReadLog};
 use qsl_semantics::model::observation::AdmittedObservations;
 use qsl_semantics::model::state::StateModel;
-use quire_exact::{ObjectReference, Value, ValueType};
+use quire_exact::{EffectiveId, ObjectReference, Value, ValueType};
 use quire_semantic_value::model_transition::ModelTransition;
 
 use super::encode::{parse_optional_reference, parse_reference};
@@ -79,6 +80,15 @@ pub(super) enum Fault {
     Violation(Box<FootprintViolation>),
 }
 
+type CacheKey = (EffectiveId, String, Vec<(String, EffectiveId)>);
+
+/// Symbolic footprints already derived, by the receiver's type, the operation
+/// and the types of the bound reference arguments.
+#[derive(Default)]
+pub(super) struct FootprintCache(
+    Mutex<BTreeMap<CacheKey, Result<SymbolicFootprint, FootprintRefusal>>>,
+);
+
 /// The footprints an enforcing expansion checks each step against.
 pub(super) struct Enforcement<'e> {
     withhold: &'e dyn Fn(&ModelTransition) -> BTreeSet<Location>,
@@ -91,18 +101,18 @@ impl Enforcement<'_> {
     /// withholds.
     pub(super) fn footprint_of(
         &self,
+        system: &ModelSystem<'_>,
         application: &Application,
         receiver: &ObjectReference,
         arguments: &[(String, Value)],
         transition: &ModelTransition,
     ) -> Result<Footprint, ExpansionStop> {
-        match &application.footprint {
-            Ok(symbolic) => {
-                let bound: Vec<(String, Option<ObjectReference>)> = arguments
-                    .iter()
-                    .map(|(name, value)| (name.clone(), referenced(value).cloned()))
-                    .collect();
-                let mut footprint = instantiate(symbolic, receiver, &bound);
+        let bound: Vec<(String, Option<ObjectReference>)> = arguments
+            .iter()
+            .map(|(name, value)| (name.clone(), referenced(value).cloned()))
+            .collect();
+        match system.footprint_for(application, receiver, &bound) {
+            Ok(mut footprint) => {
                 let withheld = (self.withhold)(transition);
                 for locations in [
                     &mut footprint.reads,
@@ -114,7 +124,7 @@ impl Enforcement<'_> {
                 Ok(footprint)
             }
             Err(refusal) => {
-                self.fail(Fault::Footprint(FootprintError::Refused(refusal.clone())));
+                self.fail(Fault::Footprint(FootprintError::Refused(refusal)));
                 Err(stop(BROKEN))
             }
         }
@@ -317,6 +327,45 @@ fn binds_object(value_type: &ValueType) -> bool {
 }
 
 impl<'a> ModelSystem<'a> {
+    /// The footprint of `application` on `receiver` with the reference
+    /// arguments `arguments`, derived from the object types the identities
+    /// carry (QSpec FR-383) and instantiated.
+    pub(super) fn footprint_for(
+        &self,
+        application: &Application,
+        receiver: &ObjectReference,
+        arguments: &[(String, Option<ObjectReference>)],
+    ) -> Result<Footprint, FootprintRefusal> {
+        let types: Vec<(String, EffectiveId)> = arguments
+            .iter()
+            .filter_map(|(name, bound)| {
+                bound
+                    .as_ref()
+                    .map(|bound| (name.clone(), bound.object_type()))
+            })
+            .collect();
+        let key = (receiver.object_type(), application.text.clone(), types);
+        let mut cache = self
+            .footprints
+            .0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let symbolic = cache.entry(key).or_insert_with_key(|(_, _, types)| {
+            derive_footprint(
+                self.package.graph(),
+                &self.model,
+                receiver.object_type(),
+                application.declaring,
+                &application.declaration,
+                types,
+            )
+        });
+        symbolic
+            .as_ref()
+            .map(|symbolic| instantiate(symbolic, receiver, arguments))
+            .map_err(Clone::clone)
+    }
+
     /// The footprint of `transition` (FR-155 "Instantiation"): the operation's
     /// symbolic footprint with the receiver replaced by the transition's
     /// receiver and each reference parameter by its argument. It reads the
@@ -345,7 +394,6 @@ impl<'a> ModelSystem<'a> {
                     .find(|application| application.text == transition.operation())
             })
             .ok_or_else(unknown)?;
-        let symbolic = application.footprint.as_ref().map_err(Clone::clone)?;
 
         if application.declaration.parameters().len() != transition.arguments().len() {
             return Err(unknown());
@@ -364,7 +412,7 @@ impl<'a> ModelSystem<'a> {
                 ));
             }
         }
-        Ok(instantiate(symbolic, &receiver, &arguments))
+        Ok(self.footprint_for(application, &receiver, &arguments)?)
     }
 
     /// Expand `state` as `successors` does, holding every step's `pre` and
