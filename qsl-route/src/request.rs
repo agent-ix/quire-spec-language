@@ -390,7 +390,8 @@ impl RequirementItem {
 /// The requested items of a checked package's requirement `records`
 /// (`CheckedPackage::graph().requirements()`), one per record in the
 /// records' occurrence-key order, each with its candidate outcome from
-/// `registry` for the backend `named`, when the request names one, and the
+/// `registry` for the backend `named`, when the request names one, filtered
+/// by the fairness kinds the record's requirements use (FR-134), and the
 /// record's canonical path condition. An item whose candidate set is empty
 /// or whose extent is unbounded is written like any other; negotiation
 /// settles it.
@@ -422,10 +423,20 @@ pub fn items_from_requirements(
                 result_bound: record.result_bound().node(),
                 conversion_context: record.conversion_context().cloned(),
                 path_condition: record.path_condition().to_vec(),
-                candidates: registry.candidates(requirements.kind(), named),
+                candidates: candidates_of(requirements, registry, named),
             }
         })
         .collect()
+}
+
+/// The candidate outcome of one item's `requirements`: backends of its
+/// capability kind that advertise every fairness kind it uses (FR-134).
+fn candidates_of(
+    requirements: &Requirements,
+    registry: &Registry,
+    named: Option<&BackendId>,
+) -> CandidateOutcome {
+    registry.candidates_for_fairness(requirements.kind(), named, requirements.fairness())
 }
 
 #[cfg(test)]
@@ -752,5 +763,49 @@ mod tests {
             );
             assert!(writer.items().is_empty(), "nothing is written");
         }
+    }
+
+    /// FR-134: an item whose requirements carry `strong` is given only the
+    /// backend that advertises it; the same item without the kind is given
+    /// both.
+    #[test]
+    fn candidates_of_filters_by_the_requirements_fairness() {
+        use crate::{BackendDescriptor, Candidate, ManifestDigest, Mode, ProviderOrigin};
+        use quire_semantic_value::fairness::FairnessKind::{Strong, Weak};
+
+        let temporal =
+            |id: &str, seed: u8, kinds: &[quire_semantic_value::fairness::FairnessKind]| {
+                BackendDescriptor::new(
+                    Candidate::new(BackendId::new(id)),
+                    ProviderOrigin::Linked,
+                    ManifestDigest::from_digest([seed; 32]),
+                    [(Capability::TemporalSatisfaction, Mode::Unbounded)],
+                    None,
+                )
+                .expect("a well-formed descriptor")
+                .with_fairness_kinds(kinds.iter().copied())
+            };
+        let mut registry = Registry::new();
+        registry
+            .register(temporal("both", 1, &[Weak, Strong]))
+            .expect("admitted");
+        registry
+            .register(temporal("weak-only", 2, &[Weak]))
+            .expect("admitted");
+        let item = Requirements::new(Capability::TemporalSatisfaction, ClaimExtent::Bounded);
+
+        let CandidateOutcome::Candidates(strong) =
+            candidates_of(&item.clone().with_fairness([Strong]), &registry, None)
+        else {
+            panic!("a candidate outcome");
+        };
+        assert_eq!(
+            strong.candidates(),
+            [Candidate::new(BackendId::new("both"))]
+        );
+        let CandidateOutcome::Candidates(plain) = candidates_of(&item, &registry, None) else {
+            panic!("a candidate outcome");
+        };
+        assert_eq!(plain.candidates().len(), 2);
     }
 }

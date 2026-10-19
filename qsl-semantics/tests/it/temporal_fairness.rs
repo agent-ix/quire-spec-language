@@ -368,3 +368,37 @@ fn clauses_over_a_model_subject_classify_into_their_property_form() {
     assert_eq!(form, None);
     assert_eq!(clause.profile(), TemporalProfile::FixedSampleFalseExtension);
 }
+
+/// FR-134 (item path): the requirements recorded for a clause carry the
+/// fairness kinds its fairness set uses, so a strong constraint reaches
+/// candidate filtering; a clause with no fairness set carries none.
+#[trace("TC-535")]
+#[test]
+fn a_clauses_requirements_carry_its_fairness_kinds() {
+    let kinds = |body: &str| {
+        let (_, clause) = checked(INFINITE, body);
+        let [claim] = TemporalTraceFamily::requirements(&clause)
+            .try_into()
+            .expect("one claim");
+        claim
+            .requirements(
+                WireNodeId::from_digest([1; 32]),
+                &[WireNodeId::from_digest([2; 32])],
+            )
+            .expect("the record is keyed")
+            .fairness()
+            .clone()
+    };
+    use std::collections::BTreeSet;
+    assert_eq!(
+        kinds(&format!("fair strong {ATTEMPT_UPDATE}; {EVENTUALLY_TWO}")),
+        BTreeSet::from([FairnessKind::Strong])
+    );
+    assert_eq!(
+        kinds(&format!(
+            "fair weak {ATTEMPT_UPDATE}; fair strong {ATTEMPT_UPDATE}; {EVENTUALLY_TWO}"
+        )),
+        BTreeSet::from([FairnessKind::Weak, FairnessKind::Strong])
+    );
+    assert!(kinds(EVENTUALLY_TWO).is_empty());
+}

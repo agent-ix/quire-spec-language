@@ -35,7 +35,7 @@
 //! [`not_emitted`] refuses a clause that checks, so it is never compiled
 //! into a package that silently lacks it.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_forms::{
     ActivationForm, FairnessConstraintForm, FairnessGranularity as FormGranularity,
@@ -255,6 +255,9 @@ pub struct TemporalClaim {
     parameter_domains: BTreeMap<(usize, Vec<u32>), DomainKind>,
     /// Whether the formula is itself an infinite-trace domain.
     infinite_trace: bool,
+    /// The fairness kinds the clause's fairness set uses (FR-134): the
+    /// backend must decide each of them.
+    fairness: BTreeSet<FairnessKind>,
 }
 
 impl TemporalClaim {
@@ -293,10 +296,10 @@ impl TemporalClaim {
                 DomainKind::InfiniteTrace,
             );
         }
-        Ok(Requirements::new(
-            self.kind,
-            ClaimExtent::from_domains(domains),
-        ))
+        Ok(
+            Requirements::new(self.kind, ClaimExtent::from_domains(domains))
+                .with_fairness(self.fairness.iter().copied()),
+        )
     }
 }
 
@@ -601,6 +604,7 @@ fn check_clause(
             kind: Capability::TemporalSatisfaction,
             parameter_domains,
             infinite_trace: !bounded,
+            fairness: fairness.iter().map(FairnessConstraint::kind).collect(),
         },
         formula,
         activation: match &form.activation {
