@@ -271,41 +271,37 @@ pub fn map_state(
     Ok(MappedState { visible, hidden })
 }
 
+/// The identities of the two domain packages `refinement` maps between,
+/// concrete first, read off the declarations its rows name; `None` for a
+/// refinement with no population or object row.
+pub fn subject_models(refinement: &CheckedRefinement) -> Option<(&str, &str)> {
+    if let Some(row) = refinement.populations().first() {
+        return Some((
+            &row.concrete_population.package,
+            &row.abstract_population.package,
+        ));
+    }
+    refinement
+        .objects()
+        .first()
+        .map(|row| (&*row.concrete_type.package, &*row.abstract_type.package))
+}
+
 /// Check that `concrete_system` is over the refinement's concrete model and
-/// `abstract_system` over its abstract one, reading the models off the
-/// declarations its rows name.
+/// `abstract_system` over its abstract one.
 fn check_systems(
     refinement: &CheckedRefinement,
     concrete_system: &ModelSystem<'_>,
     abstract_system: &ModelSystem<'_>,
 ) -> Result<(), MappingFailure> {
-    let concrete = refinement
-        .populations()
-        .first()
-        .map(|row| &row.concrete_population.package)
-        .or_else(|| {
-            refinement
-                .objects()
-                .first()
-                .map(|row| &row.concrete_type.package)
-        });
-    let abstracted = refinement
-        .populations()
-        .first()
-        .map(|row| &row.abstract_population.package)
-        .or_else(|| {
-            refinement
-                .objects()
-                .first()
-                .map(|row| &row.abstract_type.package)
-        });
-    let over = |system: &ModelSystem<'_>, model: Option<&String>| {
-        model.is_none_or(|model| system.model() == Some(model.as_str()))
-    };
-    if over(concrete_system, concrete) && over(abstract_system, abstracted) {
-        Ok(())
-    } else {
-        Err(MappingFailure::WrongSystem(WRONG_ROLE_MAPPING))
+    let over = |system: &ModelSystem<'_>, model: &str| system.model() == Some(model);
+    match subject_models(refinement) {
+        Some((concrete, abstracted))
+            if !(over(concrete_system, concrete) && over(abstract_system, abstracted)) =>
+        {
+            Err(MappingFailure::WrongSystem(WRONG_ROLE_MAPPING))
+        }
+        _ => Ok(()),
     }
 }
 

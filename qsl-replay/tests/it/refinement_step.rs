@@ -18,7 +18,12 @@ use crate::refinement_fixture::{
 
 /// The concrete transition `operation` takes `pre` to `post`, with the state
 /// it reaches, found in the concrete system's own expansion.
-fn step(world: &World, pre: &ModelState, operation: &str, post: &ModelState) -> (ModelTransition, ModelSimState) {
+fn step(
+    world: &World,
+    pre: &ModelState,
+    operation: &str,
+    post: &ModelState,
+) -> (ModelTransition, ModelSimState) {
     let system = world.concrete_system(UNLIMITED);
     let text = qsl_eval::simulation::model::operation_identity_text(&key(
         CAS,
@@ -54,7 +59,13 @@ fn position(world: &World, concrete: &ModelState) -> RefinementPosition {
 }
 
 /// `check_step` on `operation` from `pre` to `post` at position `at`.
-fn verdict(world: &World, pre: &ModelState, operation: &str, post: &ModelState, at: u64) -> StepVerdict {
+fn verdict(
+    world: &World,
+    pre: &ModelState,
+    operation: &str,
+    post: &ModelState,
+    at: u64,
+) -> StepVerdict {
     let (transition, reached) = step(world, pre, operation, post);
     check_step(
         world.refinement(),
@@ -151,7 +162,13 @@ fn a_lost_update_fails_the_increment_postcondition() {
 #[trace("TC-546", "FR-141-AC-2")]
 #[test]
 fn an_initial_state_with_another_value_is_not_abstract() {
-    let world = World::with(Variant { concrete_value: 1, ..Variant::CAS }, &cas_refines_counter());
+    let world = World::with(
+        Variant {
+            concrete_value: 1,
+            ..Variant::CAS
+        },
+        &cas_refines_counter(),
+    );
     assert_eq!(
         fails_with(check_initial(
             world.refinement(),
@@ -247,10 +264,7 @@ fn an_increment_at_the_top_is_rejected_by_its_precondition() {
         panic!("the abstract step is rejected: {failure:?}");
     };
     assert_eq!(position, 3);
-    assert_eq!(
-        transition.operation(),
-        inc(&abstract_system, 0).operation()
-    );
+    assert_eq!(transition.operation(), inc(&abstract_system, 0).operation());
     assert_eq!(
         cause,
         StepRejection::Precondition {

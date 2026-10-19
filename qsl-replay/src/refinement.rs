@@ -8,11 +8,13 @@
 
 mod failure;
 mod map;
+mod outcome;
 mod step;
 
 pub use failure::{RefinementFailure, StepRejection, StepVerdict, Taken, Undetermined};
 pub use map::{
-    map_state, EvalFailure, HiddenSlot, MappedState, MappingFailure, MappingRowRef,
+    map_state, subject_models, EvalFailure, HiddenSlot, MappedState, MappingFailure, MappingRowRef,
     MappingUndetermined, ObjectKey, StepArgument,
 };
+pub use outcome::{RefinementOutcome, SafetyOutcome, SafetyUndecided};
 pub use step::{check_initial, check_step, ConcreteStep, RefinementPosition};

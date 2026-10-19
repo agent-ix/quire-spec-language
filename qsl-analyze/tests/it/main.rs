@@ -16,6 +16,9 @@ mod model_settle;
 mod model_world;
 mod reduction;
 mod reduction_world;
+#[path = "../../../tests/support/refinement_cas.rs"]
+mod refinement_fixture;
+mod refinement_safety;
 mod schedulability;
 mod state_graph;
 mod state_graph_certificate;

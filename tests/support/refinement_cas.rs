@@ -145,12 +145,7 @@ fn operation(package: &str, name: &str, modifies: &[&str]) -> Json {
     })
 }
 
-fn document(
-    package: &str,
-    fields: Vec<Json>,
-    operations: Vec<Json>,
-    sub_counter: bool,
-) -> Vec<u8> {
+fn document(package: &str, fields: Vec<Json>, operations: Vec<Json>, sub_counter: bool) -> Vec<u8> {
     let counter = ident(package, "Counter");
     let constructs: Vec<Json> = [
         ("object_type", meaning::OBJECT_TYPE),
@@ -593,10 +588,7 @@ impl World {
     }
 
     /// A system over `model`, a model the unit does not select.
-    pub fn unselected_system(
-        &self,
-        model: &str,
-    ) -> Result<ModelSystem<'_>, AdmissionFailure> {
+    pub fn unselected_system(&self, model: &str) -> Result<ModelSystem<'_>, AdmissionFailure> {
         self.try_system(model, &self.cas_initial, UNLIMITED)
     }
 }
@@ -624,13 +616,7 @@ pub fn spec_state(value: i64) -> ModelState {
 
 /// The concrete state `(value, tmpA, busyA, tmpB, busyB)` of the one counter
 /// `c`.
-pub fn cas_state(
-    value: i64,
-    tmp_a: i64,
-    busy_a: bool,
-    tmp_b: i64,
-    busy_b: bool,
-) -> ModelState {
+pub fn cas_state(value: i64, tmp_a: i64, busy_a: bool, tmp_b: i64, busy_b: bool) -> ModelState {
     let field = |name: &str, value: Value| (key(CAS, &format!("Counter/{name}")), value);
     ModelState {
         populations: BTreeMap::from([(
