@@ -1489,6 +1489,7 @@ dependencies = [
 name = "qsl-replay"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "ix-trace-rs",
  "num-bigint",
  "num-integer",
