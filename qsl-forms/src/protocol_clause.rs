@@ -930,6 +930,23 @@ impl<'c> ControlWalk<'c, '_, '_> {
                 // control (FR-112 "Behavior": "No other position yields one").
                 self.collector.body(cst, &matched_items, matched, owner)
             }
+            Production::Fence => {
+                // `fence` is a contextual word, so it is the first identifier
+                // token; the control's name is the second.
+                let identifiers = tokens_of(&matched_items, TokenKind::Identifier);
+                let token = identifiers.get(1).ok_or_else(|| unexpected(matched))?;
+                let name = DeclaredName {
+                    name: text(token, matched)?,
+                    span: token.span(),
+                };
+                declare(
+                    self.collector.declarations,
+                    ProtocolNodeKind::Fence,
+                    name,
+                    self.scope,
+                );
+                Ok(())
+            }
             Production::Commit => {
                 let (kind, name) = named(ProtocolNodeKind::Commit)?;
                 let owner = self.collector.declarations.len();

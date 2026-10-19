@@ -1062,6 +1062,15 @@ impl<'c> Mapping<'c> {
             | Production::Compensation
             | Production::ProtocolTerminal
             | Production::ProtocolScheduling
+            | Production::MemoryClause
+            | Production::MemoryOrder
+            | Production::FenceOrder
+            | Production::Fence
+            | Production::Refinement
+            | Production::StepRow
+            | Production::StepSource
+            | Production::StepTarget
+            | Production::StepArgument
             | Production::Control
             | Production::Sequence
             | Production::Visibility
@@ -1638,6 +1647,15 @@ impl<'c> Mapping<'c> {
             | Production::Compensation
             | Production::ProtocolTerminal
             | Production::ProtocolScheduling
+            | Production::MemoryClause
+            | Production::MemoryOrder
+            | Production::FenceOrder
+            | Production::Fence
+            | Production::Refinement
+            | Production::StepRow
+            | Production::StepSource
+            | Production::StepTarget
+            | Production::StepArgument
             | Production::Control
             | Production::Sequence
             | Production::Visibility

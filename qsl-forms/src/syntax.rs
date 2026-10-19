@@ -2405,6 +2405,8 @@ pub enum ProtocolNodeKind {
     Await,
     /// A `check` control.
     Check,
+    /// A `fence` control.
+    Fence,
 }
 
 impl ProtocolNodeKind {
@@ -2428,6 +2430,7 @@ impl ProtocolNodeKind {
             Self::Case => "case",
             Self::Await => "await",
             Self::Check => "check",
+            Self::Fence => "fence",
         }
     }
 }

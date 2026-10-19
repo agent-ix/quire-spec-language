@@ -510,3 +510,35 @@ fn a_recovering_cst_refuses_and_a_rebuilt_declaration_is_equal() {
     let second = build(&full);
     assert_eq!(protocol(&first), protocol(&second));
 }
+
+/// FR-220-AC-2: a `fence` control and a `parallel` with a `memory` clause
+/// build as protocol nodes beside the controls around them; the `memory`
+/// words do not become the parallel's name or join labels.
+#[trace("FR-220-AC-2", "FR-219-AC-1")]
+#[test]
+fn a_fence_and_a_memory_clause_build_beside_their_controls() {
+    let run = format!(
+        "sequence Main {{ parallel P memory tso {PARALLEL_BRANCHES} join all [a, b]; \
+         fence Barrier ordering seq_cst; }}"
+    );
+    let text = source("", &run);
+    let unit = build(&text);
+    let form = protocol(&unit);
+    let [parallel] = &form.parallels[..] else {
+        panic!("one parallel: {:?}", form.parallels);
+    };
+    assert_eq!(parallel.name.name, "P");
+    let labels: Vec<&str> = parallel
+        .labels
+        .iter()
+        .map(|label| label.name.as_str())
+        .collect();
+    assert_eq!(labels, ["a", "b"]);
+    let fences: Vec<&str> = form
+        .declarations
+        .iter()
+        .filter(|declaration| declaration.kind == ProtocolNodeKind::Fence)
+        .map(|declaration| declaration.name.name.as_str())
+        .collect();
+    assert_eq!(fences, ["Barrier"]);
+}
