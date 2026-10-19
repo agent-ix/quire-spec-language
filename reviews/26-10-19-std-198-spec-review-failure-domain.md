@@ -36,3 +36,12 @@ FND-004 are classification and locus gaps that AC-6 needs filled to be
 testable. Clean: absence is empty and not a refusal, which matches QSpec
 FR-432-AC-5. A model-subject refinement with a non-empty list refuses. A
 member object for a refinement that does not exist refuses `missing-name`.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | deferred | STD-199 item 3 (lock sources and replay). Until it is decided the build supplies no list and refuses a non-empty one, so replay never recompiles a list it cannot reproduce. |
+| FND-002 | fixed | Round 1: the Defects table refuses a non-spelling entry `malformed-declaration`, and a well-spelled entry that does not resolve `missing-name`. AC-6 adds `""`, `frob x`, `spawn Spec::Twice::r`, `Spec::Twice`, leading whitespace and `Other::Twice::finish`. |
+| FND-003 | fixed | Round 1: the locus is an RFC 6901 JSON Pointer into the value (both pointers for a conflict), and AC-6 states each pointer. |
+| FND-004 | fixed | Round 1: Resolution says the order of objects and entries is free, and AC-5 and TC-552 step 5 add permuted and swapped values. |

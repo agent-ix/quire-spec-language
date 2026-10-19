@@ -15,7 +15,8 @@ the profile's internal list (its shape, resolution and refusal), the
 `refinement` requirement record and the unsupported liveness half.
 
 Scope: FR-147-AC-1 to FR-147-AC-7. Steps 1, 3 and 4 wait on STD-199 and
-STD-182 (FR-147 Remaining work); steps 2 and 5 to 7 run now.
+STD-182 (FR-147 Remaining work); step 2 runs now only for its `CasRefinesCounter` node-row
+vector, and steps 5 to 7 run now.
 
 ## Test Procedure
 
@@ -53,7 +54,8 @@ Tag the tests `#[trace("TC-552", "FR-147-AC-n")]`.
   list, ordered by the bytes of the canonical spellings.
 - Step 6: each variant refuses with FR-147-AC-6's code and subcode at its
   JSON Pointer (both pointers for a conflict) and gives no list.
-- Step 7: the two non-empty lists refuse
-  `unsupported_construct`/`not-yet-implemented` at the `<protocol>` name span
-  with no `CheckedRefinement`, classified `unsupported`; the empty list is not
-  refused for the list.
+- Step 7: the two non-empty lists each refuse once
+  `unsupported_construct`/`not-yet-implemented` at the first token of the name
+  after `abstract`, naming `refinement-internal-list`, the refinement and the
+  profile, with no `CheckedRefinement`, classified `unsupported`; the empty
+  list is not refused for the list.

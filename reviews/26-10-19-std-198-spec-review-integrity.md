@@ -47,3 +47,20 @@ member uses (`malformed-declaration`, `missing-name`, `conflicting-binding`)
 is in FR-272's closed lists. The conflicting-binding addition keeps its
 QSL-addition label in AC-2 and AC-4. ADR-020 RM-9 and FR-147 Remaining
 work cite STD-199.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | high | AC-2 and AC-7 give the same input two different refusals. A non-empty list for `CasRefinesCounter`, which has a model abstract side, refuses `invalid_model_binding`/`malformed-declaration` under "Internal abstract steps" and AC-2's last vector. AC-7 and TC-552 step 7 refuse `unsupported_construct`/`not-yet-implemented` for it "at the span of the `<protocol>` name", but `CasRefinesCounter` (`abstract Spec`) has no protocol name. Resolution also runs "against its abstract protocol clause", which a model side lacks. State which rule decides a model-side refinement and its span, and make AC-2, AC-7 and TC-552 step 7 agree. | spec/functional/FR-147-check-a-refinement-whose-abstract-side-is-a-protocol.md:125-126,150-156,174-175,209,214; spec/test-cases/TC-552-s3-checks-a-refinement-whose-abstract-side-is-a-protocol.md:36-37,56-59 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | deferred | STD-199 item 1. FR-147 no longer claims a host: Inputs reads "No document of the build hosts one yet, so it is absent", and Remaining work lists the host as undecided. |
+| FND-002 | fixed | Round 1: the claim that `abstract_internal` enters the node and `package_id` is removed. "Until QSpec decides the host" leaves the node member and identity undecided, and STD-199 item 2 asks QSpec for them. |
+| FND-003 | fixed | Round 1: the Shape table closes the spellings to four forms. fork, join, cend, spawn, retire and activate "cannot be named internal, so each stays visible", recorded in Remaining work and STD-199 item 5. |
+| FND-004 | fixed | Round 1: the order is ascending UTF-8 bytes of the canonical spelling, which Shape defines, and "without repeats" is removed. |
+| FND-005 | fixed | Round 1: the rationale now quotes FR-271 correctly and gives FR-272's missing cause as the reason; the code moved to `unsupported_construct`/`not-yet-implemented` per FR-341-AC-5 and ADR-017 Q-6. |
+| FND-006 | fixed | Round 1: the spec picks the `<protocol>` name span and one refusal per row, both matching #970 at b68219026, which now returns the same code and cause. #970 still differs from FR-135 in three ways: its `Unsupported { construct }` carries free text, not `history-row`/`protocol-abstract-side`, and no profile identity; it returns early after the protocol-side refusal although FR-135 checks the rest of the declaration; and it refuses at `row.span`, not the `history` keyword token. Those are #970 changes. |

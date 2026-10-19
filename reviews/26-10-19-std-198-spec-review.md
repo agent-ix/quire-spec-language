@@ -44,3 +44,19 @@ FND-002 and FND-003 leave TC-552 step 5 and TC-540 step 5 impossible to
 write without guessing. FND-004 is a marking fix. Clean units: FR-147-AC-1
 to AC-4 as edited, FR-147-AC-6, ADR-020 RM-9, FR-147 Remaining work and its
 STD-199 citation, and TC-552 step 6.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | medium | FR-147-AC-5 resolves `["Spec::Twice::finish", "lose Spec::Twice::ch"]` to a two-element list, but fixture `Twice` declares no channel. Under FR-147's Defects table, and by AC-6's own `lose Spec::Twice::nochan` vector, `lose Spec::Twice::ch` refuses `missing_declaration`/`missing-name`, so the AC-5 vector cannot resolve. AC-6's "a `parallel` node" vector has the same gap: `Twice` has no parallel node, so the vector passes as an unknown name and never exercises the "not an attempt, event, send, receive or finish node" rule. Add a channel `ch` and a parallel node to the fixture. | spec/functional/FR-147-check-a-refinement-whose-abstract-side-is-a-protocol.md:194-201,212-213 |
+| FND-006 | medium | Remaining work says "FR-147-AC-1, AC-3 and AC-4 … wait on both; AC-5 to AC-7 are testable now", and leaves AC-2 out of both lists. AC-2 is not marked as waiting, but most of its vectors cannot run in this build. `abstract Spec::Thrice` is a protocol abstract side, which FR-135 refuses `unsupported_construct`/`not-yet-implemented` before the feature's own checks. The conflicting-binding vector needs a non-empty list to reach the check, which AC-7 refuses. Mark AC-2's protocol-side vectors "Waits on STD-199 and STD-182", or split AC-2. | spec/functional/FR-147-check-a-refinement-whose-abstract-side-is-a-protocol.md:209,214,236-237; spec/functional/FR-135-check-a-refinement-declaration-s-subjects-and-state-mapping.md:157-163 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Round 1 (5537b4c33): AC-5 now covers resolution only and makes no `package_id` claim; identity is deferred to STD-199 item 2. |
+| FND-002 | fixed | Round 1: the fixture declares `CasRefinesCounter`, and AC-5 and TC-552 step 5 use `{"refinement": "CasRefinesCounter", "internal": []}`. |
+| FND-003 | fixed | Round 1: the support set is "a build capability constant and not a request or test parameter"; AC-5 and TC-540 step 5 run against the build as it stands and select no set. |
+| FND-004 | fixed | Round 1: FR-135's section opens "QSL-proposed pending QSpec (Linear STD-199, item 4)", and STD-199 carries the updated question. |
