@@ -112,7 +112,10 @@ fn state_clause(form: &DeclarationForm) -> &StateClauseForm {
         | DeclarationForm::PopulationBound(_)
         | DeclarationForm::Protocol(_)
         | DeclarationForm::Temporal(_)
-        | DeclarationForm::Terminal(_) => panic!("a state clause form, not {form:?}"),
+        | DeclarationForm::Terminal(_)
+        | DeclarationForm::HyperBehaviours(_)
+        | DeclarationForm::HyperFinite(_)
+        | DeclarationForm::ModelRelation(_) => panic!("a state clause form, not {form:?}"),
     }
 }
 
@@ -131,7 +134,10 @@ fn operation_body(form: &DeclarationForm) -> &OperationBodyForm {
         | DeclarationForm::PopulationBound(_)
         | DeclarationForm::Protocol(_)
         | DeclarationForm::Temporal(_)
-        | DeclarationForm::Terminal(_) => panic!("an operation body form, not {form:?}"),
+        | DeclarationForm::Terminal(_)
+        | DeclarationForm::HyperBehaviours(_)
+        | DeclarationForm::HyperFinite(_)
+        | DeclarationForm::ModelRelation(_) => panic!("an operation body form, not {form:?}"),
     }
 }
 
@@ -150,7 +156,10 @@ fn protocol_form(form: &DeclarationForm) -> &ProtocolDeclarationForm {
         | DeclarationForm::PopulationBound(_)
         | DeclarationForm::StateClause(_)
         | DeclarationForm::Temporal(_)
-        | DeclarationForm::Terminal(_) => panic!("a protocol form, not {form:?}"),
+        | DeclarationForm::Terminal(_)
+        | DeclarationForm::HyperBehaviours(_)
+        | DeclarationForm::HyperFinite(_)
+        | DeclarationForm::ModelRelation(_) => panic!("a protocol form, not {form:?}"),
     }
 }
 
@@ -915,6 +924,8 @@ fn show(expression: ExprRef<'_>) -> String {
         ExprNode::Result => "Result".into(),
         ExprNode::Reaches { edge, .. } => format!("Reaches[{edge}]"),
         ExprNode::ProtocolReference { target } => format!("ProtocolReference[{target}]"),
+        ExprNode::Indexed { trace, .. } => format!("Indexed[{trace}]"),
+        ExprNode::StepLabel { trace, label } => format!("StepLabel[{trace},{label:?}]"),
         other => panic!("this fixture's bodies use no other form: {other:?}"),
     };
     if children.is_empty() {

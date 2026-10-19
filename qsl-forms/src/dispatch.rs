@@ -23,6 +23,7 @@ use qsl_cst::{CstElement, CstNode, LosslessCst, ParsedSource, Production, Recove
 use qsl_foundation::selection::SourceSelections;
 use qsl_foundation::{Code, Span};
 
+use super::hyper_clause;
 use super::protocol_clause;
 use super::state_model;
 use super::sum_case;
@@ -185,6 +186,11 @@ pub enum LeadingTokenKind {
     /// `terminal`: the `TemporalTrace` terminal declaration form, holding
     /// its `when` predicate or `any` (FR-382).
     Terminal,
+    /// `hyper`: the `TemporalTrace` hyper clause form, over `behaviours` or
+    /// over a finite trace domain (FR-171).
+    Hyper,
+    /// `relation`: the `TemporalTrace` relation clause form (FR-171).
+    Relation,
     /// Test-only: never constructed outside this crate's own tests, and
     /// absent from every non-test build.
     #[cfg(test)]
@@ -391,6 +397,8 @@ fn dispatch(
         LeadingTokenKind::Protocol => protocol_clause::protocol_declaration(construct),
         LeadingTokenKind::Temporal => temporal_clause::temporal_clause(construct),
         LeadingTokenKind::Terminal => terminal_declaration::terminal_declaration(construct),
+        LeadingTokenKind::Hyper => hyper_clause::hyper_clause(construct),
+        LeadingTokenKind::Relation => hyper_clause::relation_clause(construct),
         #[cfg(test)]
         LeadingTokenKind::TestProbe => test_support::stub_production(construct),
     }
@@ -431,6 +439,8 @@ fn from_spelling(spelling: &[u8]) -> Option<LeadingTokenKind> {
         b"protocol" => Some(LeadingTokenKind::Protocol),
         b"temporal" => Some(LeadingTokenKind::Temporal),
         b"terminal" => Some(LeadingTokenKind::Terminal),
+        b"hyper" => Some(LeadingTokenKind::Hyper),
+        b"relation" => Some(LeadingTokenKind::Relation),
         _ => None,
     }
 }

@@ -967,6 +967,7 @@ fn expressions(g: &mut Grammar) {
         ]),
     );
     scrutinee_rules(g);
+    hyper_expression_rules(g);
 }
 
 /// Derive the scrutinee precedence tree from the ordinary expression rules.
@@ -987,35 +988,6 @@ fn scrutinee_rules(g: &mut Grammar) {
         (P::Postfix, P::ScrutineePostfix),
         (P::Primary, P::ScrutineePrimary),
     ];
-    fn copy(rule: &Rule, delimited: bool) -> Rule {
-        match rule {
-            Rule::Terminal(terminal) => Rule::Terminal(terminal.clone()),
-            Rule::Production(production) => r(if delimited {
-                *production
-            } else {
-                PAIRS
-                    .iter()
-                    .find_map(|(base, restricted)| (base == production).then_some(*restricted))
-                    .unwrap_or(*production)
-            }),
-            Rule::Sequence(rules) => s(rules.iter().map(|rule| copy(rule, delimited)).collect()),
-            Rule::Choice(rules) => c(rules
-                .iter()
-                .filter(|rule| !matches!(rule, Rule::Production(P::RecordValue)))
-                .map(|rule| copy(rule, delimited))
-                .collect()),
-            Rule::Optional(rule) => opt(copy(rule, delimited)),
-            Rule::Repeat {
-                rule,
-                minimum,
-                commit_on_progress,
-            } => Rule::Repeat {
-                rule: Box::new(copy(rule, delimited)),
-                minimum: *minimum,
-                commit_on_progress: *commit_on_progress,
-            },
-        }
-    }
     for &(base, restricted) in PAIRS {
         let rule = g.get(&base).expect("expression rule was installed");
         // Postfix's Primary edge is unbracketed; its later Expression
@@ -1027,12 +999,88 @@ fn scrutinee_rules(g: &mut Grammar) {
             s(rules
                 .iter()
                 .enumerate()
-                .map(|(index, rule)| copy(rule, index != 0))
+                .map(|(index, rule)| copy_rule(rule, PAIRS, index != 0, true))
                 .collect())
         } else {
-            copy(rule, base == P::Primary)
+            copy_rule(rule, PAIRS, base == P::Primary, true)
         };
         g.insert(restricted, restricted_rule);
+    }
+}
+
+/// Copy `rule`, replacing each reference to a base production in `pairs` by
+/// its counterpart. A `delimited` copy keeps every reference as written, and
+/// `drop_records` leaves record constructors out of a choice.
+fn copy_rule(rule: &Rule, pairs: &[(P, P)], delimited: bool, drop_records: bool) -> Rule {
+    match rule {
+        Rule::Terminal(terminal) => Rule::Terminal(terminal.clone()),
+        Rule::Production(production) => r(if delimited {
+            *production
+        } else {
+            pairs
+                .iter()
+                .find_map(|(base, restricted)| (base == production).then_some(*restricted))
+                .unwrap_or(*production)
+        }),
+        Rule::Sequence(rules) => s(rules
+            .iter()
+            .map(|rule| copy_rule(rule, pairs, delimited, drop_records))
+            .collect()),
+        Rule::Choice(rules) => c(rules
+            .iter()
+            .filter(|rule| !(drop_records && matches!(rule, Rule::Production(P::RecordValue))))
+            .map(|rule| copy_rule(rule, pairs, delimited, drop_records))
+            .collect()),
+        Rule::Optional(rule) => opt(copy_rule(rule, pairs, delimited, drop_records)),
+        Rule::Repeat {
+            rule,
+            minimum,
+            commit_on_progress,
+        } => Rule::Repeat {
+            rule: Box::new(copy_rule(rule, pairs, delimited, drop_records)),
+            minimum: *minimum,
+            commit_on_progress: *commit_on_progress,
+        },
+    }
+}
+
+/// Derive the expression tree a `hyper` clause reads its `match` block and
+/// its `holds` conditions with. It is the ordinary expression tree with two
+/// additions: an indexed read `e @ t` binds tighter than every operator and
+/// looser than member navigation, and a step label `t.step.op` and the
+/// `stutter` label are primaries.
+/// Every reference inside the copy, including a bracketed operand, stays in
+/// the copy, so a read or label is admitted wherever the ordinary tree admits
+/// a postfix or a primary.
+fn hyper_expression_rules(g: &mut Grammar) {
+    const PAIRS: &[(P, P)] = &[
+        (P::Expression, P::HyperExpression),
+        (P::Implication, P::HyperImplication),
+        (P::Disjunction, P::HyperDisjunction),
+        (P::Conjunction, P::HyperConjunction),
+        (P::Comparison, P::HyperComparison),
+        (P::Sum, P::HyperSum),
+        (P::Product, P::HyperProduct),
+        (P::Unary, P::HyperUnary),
+        (P::Postfix, P::HyperPostfix),
+        (P::Primary, P::HyperPrimary),
+    ];
+    for &(base, hyper) in PAIRS {
+        let rule = g.get(&base).expect("expression rule was installed");
+        let copied = copy_rule(rule, PAIRS, false, false);
+        let rule = match (base, copied) {
+            (P::Unary, Rule::Choice(mut alternatives)) => {
+                alternatives.insert(alternatives.len() - 1, r(P::IndexedRead));
+                c(alternatives)
+            }
+            (P::Primary, Rule::Choice(mut alternatives)) => {
+                alternatives.insert(0, literal("stutter"));
+                alternatives.insert(0, r(P::StepLabel));
+                c(alternatives)
+            }
+            (_, copied) => copied,
+        };
+        g.insert(hyper, rule);
     }
 }
 
@@ -1168,6 +1216,7 @@ fn temporal(g: &mut Grammar) {
             x("false"),
             s(vec![x("("), r(P::TemporalExpression), x(")")]),
             s(vec![x("holds"), x("("), r(P::Expression), x(")")]),
+            s(vec![x("holds"), x("("), r(P::HyperExpression), x(")")]),
         ]),
     );
 }
@@ -1642,9 +1691,55 @@ fn analysis(g: &mut Grammar) {
         ]),
     );
     g.insert(
-        P::Quantifier,
-        s(vec![c(vec![x("forall"), x("exists")]), x("trace"), ident()]),
+        P::BehavioursDomain,
+        s(vec![
+            literal("behaviours"),
+            opt(s(vec![
+                x("("),
+                r(P::Parameter),
+                star(s(vec![x(","), r(P::Parameter)])),
+                x(")"),
+            ])),
+        ]),
     );
+    g.insert(
+        P::Quantifier,
+        s(vec![
+            c(vec![x("forall"), x("exists")]),
+            x("trace"),
+            ident(),
+            opt(s(vec![x("of"), ident(), star(r(P::Fairness))])),
+        ]),
+    );
+    g.insert(
+        P::AlignSkip,
+        s(vec![
+            literal("align"),
+            literal("skip"),
+            x("{"),
+            opt(list(|| r(P::QualifiedName))),
+            x("}"),
+        ]),
+    );
+    g.insert(
+        P::MatchBlock,
+        s(vec![x("match"), x("{"), r(P::HyperExpression), x("}")]),
+    );
+    g.insert(
+        P::StepLabel,
+        s(vec![
+            ident(),
+            x("."),
+            literal("step"),
+            x("."),
+            c(vec![
+                literal("op"),
+                literal("receiver"),
+                s(vec![r(P::QualifiedName), x("."), member()]),
+            ]),
+        ]),
+    );
+    g.insert(P::IndexedRead, s(vec![r(P::HyperPostfix), x("@"), ident()]));
     g.insert(
         P::HyperClause,
         s(vec![
@@ -1653,9 +1748,18 @@ fn analysis(g: &mut Grammar) {
             x("using"),
             ident(),
             x("over"),
-            r(P::TraceDomain),
-            plus(r(P::Quantifier)),
-            r(P::Block),
+            c(vec![
+                s(vec![
+                    r(P::BehavioursDomain),
+                    plus(r(P::Quantifier)),
+                    opt(r(P::AlignSkip)),
+                    opt(r(P::MatchBlock)),
+                    x("{"),
+                    r(P::TemporalExpression),
+                    x("}"),
+                ]),
+                s(vec![r(P::TraceDomain), plus(r(P::Quantifier)), r(P::Block)]),
+            ]),
         ]),
     );
     g.insert(

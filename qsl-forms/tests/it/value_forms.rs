@@ -58,7 +58,10 @@ fn function(form: &DeclarationForm) -> &FunctionDeclaration {
         | DeclarationForm::PopulationBound(_)
         | DeclarationForm::Protocol(_)
         | DeclarationForm::Temporal(_)
-        | DeclarationForm::Terminal(_) => panic!("a function form, not {form:?}"),
+        | DeclarationForm::Terminal(_)
+        | DeclarationForm::HyperBehaviours(_)
+        | DeclarationForm::HyperFinite(_)
+        | DeclarationForm::ModelRelation(_) => panic!("a function form, not {form:?}"),
     }
 }
 
@@ -149,6 +152,9 @@ fn show(expression: ExprRef<'_>) -> String {
         ExprNode::Result => "Result".into(),
         ExprNode::Reaches { edge, .. } => format!("Reaches[{edge}]"),
         ExprNode::ProtocolReference { target } => format!("ProtocolReference[{target}]"),
+        ExprNode::Indexed { trace, .. } => format!("Indexed[{trace}]"),
+        ExprNode::StepLabel { trace, label } => format!("StepLabel[{trace},{label:?}]"),
+        ExprNode::Stutter => "Stutter".into(),
     };
     if children.is_empty() {
         head
@@ -199,6 +205,9 @@ fn a_unit_builds_one_form_per_declaration_in_source_order() {
             DeclarationForm::Protocol(_) => "protocol",
             DeclarationForm::Temporal(_) => "temporal",
             DeclarationForm::Terminal(_) => "terminal",
+            DeclarationForm::HyperBehaviours(_) => "hyper_behaviours",
+            DeclarationForm::HyperFinite(_) => "hyper_finite",
+            DeclarationForm::ModelRelation(_) => "model_relation",
         })
         .collect();
     assert_eq!(kinds, ["alias", "function", "record", "tuple"]);

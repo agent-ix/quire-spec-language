@@ -21,7 +21,7 @@ use super::syntax::{
 };
 use super::value::{
     declared_name, expression, has_token, items, name_form, nodes_of, only, production_node, text,
-    tokens_of, type_form, unexpected, Item,
+    tokens_of, type_form, unexpected, unrepresented, Item,
 };
 
 /// `temporal Name using p over (x: T) clock "c" activation { fairness*
@@ -75,7 +75,7 @@ pub(crate) fn temporal_clause(construct: Construct<'_>) -> Result<DeclarationFor
         activation,
         fairness,
         captures,
-        formula: formula_form(cst, formula)?,
+        formula: formula_form(cst, formula, false)?,
     })))
 }
 
@@ -119,7 +119,7 @@ pub(crate) fn expression_form(
 /// `fair [weak | strong] [whole | each] Operation ;`: an unwritten kind or
 /// granularity stays `None`, for S3 to read as `weak` (FR-129) or `whole`
 /// (FR-123).
-fn fairness_form(
+pub(crate) fn fairness_form(
     cst: &LosslessCst,
     constraint: &CstNode,
 ) -> Result<FairnessConstraintForm, FormsRefusal> {
@@ -180,10 +180,17 @@ pub(crate) fn interval_form(
 }
 
 /// A formula CST node (`TemporalExpression` or any production under it) as
-/// a formula arena.
-fn formula_form(cst: &LosslessCst, root: &CstNode) -> Result<TemporalFormulaForm, FormsRefusal> {
+/// a formula arena. `hyper` admits the indexed reads and step labels of a
+/// `hyper` clause's body in a `holds` condition; elsewhere a condition that
+/// uses them is unrepresented.
+pub(crate) fn formula_form(
+    cst: &LosslessCst,
+    root: &CstNode,
+    hyper: bool,
+) -> Result<TemporalFormulaForm, FormsRefusal> {
     let mut build = Formula {
         cst,
+        hyper,
         nodes: Vec::new(),
         work: vec![Task {
             node: root,
@@ -210,6 +217,7 @@ struct Task<'c> {
 
 struct Formula<'c> {
     cst: &'c LosslessCst,
+    hyper: bool,
     nodes: Vec<TemporalNodeForm>,
     work: Vec<Task<'c>>,
 }
@@ -460,6 +468,9 @@ impl<'c> Formula<'c> {
             [Item::Token(holds), Item::Token(_), Item::Node(condition), Item::Token(_)]
                 if holds.spelling() == b"holds" =>
             {
+                if condition.production() == Production::HyperExpression && !self.hyper {
+                    return Err(unrepresented(Production::HyperExpression, condition.span()));
+                }
                 let condition = expression_form(self.cst, condition)?;
                 self.add(
                     TemporalNodeForm::Holds {

@@ -1,3 +1,36 @@
+    lookup_operation(scope, object, operation, name)
+}
+
+/// The operation `operation` of the object type `object` as its effective
+/// view declares it. `name` is the operation as written, which a refusal
+/// names.
+pub(crate) fn lookup_operation(
+    scope: &Scope,
+    object: Option<EffectiveId>,
+    operation: &str,
+    name: &NameForm,
+) -> Result<FairnessOperation, TemporalCause> {
+    let unresolved = || TemporalCause::UnresolvedFairnessOperation {
+        name: name.name.clone(),
+        span: name.span,
+    };
+    let object = object.ok_or_else(unresolved)?;
+    match scope.operations().resolve(scope.types(), object, operation) {
+        OperationLookup::Declared {
+            declaring,
+            operation,
+        } => Ok(FairnessOperation::new(
+            declaring,
+            operation.name().to_owned(),
+        )),
+        OperationLookup::Missing => Err(unresolved()),
+        OperationLookup::Ambiguous(_) => Err(TemporalCause::AmbiguousFairnessOperation {
+            name: name.name.clone(),
+            span: name.span,
+        }),
+    }
+}
+
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-326: the `TemporalTrace` family's S3 check of one `temporal` clause
 //! (ADR-012 §12.2 Check row; ADR-014 §3 TR-3 and TR-4, §5 A-2 and A-3).
@@ -39,8 +72,8 @@ use std::collections::BTreeMap;
 
 use qsl_forms::{
     ActivationForm, FairnessConstraintForm, FairnessGranularity as FormGranularity,
-    FairnessKind as FormKind, IntervalForm, IntervalUpper, ParameterForm, TemporalClauseForm,
-    TemporalNodeForm, TemporalNodeId, TemporalOperator,
+    FairnessKind as FormKind, IntervalForm, IntervalUpper, NameForm, ParameterForm, TemporalClauseForm,
+    TemporalFormulaForm, TemporalNodeForm, TemporalNodeId, TemporalOperator,
 };
 use qsl_foundation::bound::{DomainKey, DomainKind, IntervalKey, TemporalInterval, TemporalUpper};
 use qsl_foundation::diagnostic::{LimitExceeded, Locus, StageFailure, Staged};
@@ -49,7 +82,7 @@ use qsl_foundation::selection::DefinitionRef;
 use qsl_foundation::source::provenance::RawSourceRef;
 use qsl_foundation::source_map::SourceMap;
 use qsl_foundation::{InternalFault, Setting, Span};
-use quire_exact::ValueType;
+use quire_exact::{EffectiveId, ValueType};
 use quire_semantic_value::fairness::{
     FairnessConstraint, FairnessGranularity, FairnessKind, FairnessOperation, PropertyForm,
 };
@@ -403,11 +436,11 @@ impl FamilyContract for TemporalTraceFamily {
     }
 }
 
-fn refuse(cause: TemporalCause) -> StageFailure<CheckRefusal> {
+pub(crate) fn refuse(cause: TemporalCause) -> StageFailure<CheckRefusal> {
     StageFailure::Refused(refusal(cause))
 }
 
-fn refusal(cause: TemporalCause) -> CheckRefusal {
+pub(crate) fn refusal(cause: TemporalCause) -> CheckRefusal {
     CheckRefusal {
         // A clause has no expression tree for a `Location` path to walk;
         // `region::DeclarationRegions::refusal_region` reads a `Temporal`
@@ -417,7 +450,7 @@ fn refusal(cause: TemporalCause) -> CheckRefusal {
     }
 }
 
-fn fault(invariant: &'static str) -> StageFailure<CheckRefusal> {
+pub(crate) fn fault(invariant: &'static str) -> StageFailure<CheckRefusal> {
     StageFailure::Fault(InternalFault::new(STAGE, invariant))
 }
 
@@ -469,6 +502,51 @@ fn build_interval(interval: &IntervalForm) -> Result<TemporalInterval, TemporalC
     })
 }
 
+/// The checked operators of `formula`, connectives included, in arena
+/// order. Under a `bounded` profile every temporal operator needs a closed
+/// interval; under every profile an interval with `a > b` refuses. Each
+/// refusal goes onto `refusals` and the operator keeps no interval.
+pub(crate) fn checked_operators(
+    formula: &TemporalFormulaForm,
+    bounded: bool,
+    refusals: &mut Vec<TemporalCause>,
+) -> Result<Vec<CheckedOperator>, StageFailure<CheckRefusal>> {
+    let mut operators = Vec::new();
+    for (id, node) in formula.iter() {
+        let TemporalNodeForm::Operator(operator) = node else {
+            continue;
+        };
+        let interval = match (&operator.interval, is_temporal(operator.operator)) {
+            (Some(_), false) => return Err(fault("connective-carries-no-interval")),
+            (None, true) if bounded => {
+                refusals.push(TemporalCause::MissingInterval {
+                    span: operator.operator_span,
+                });
+                None
+            }
+            (None, _) => None,
+            (Some(written), true) => match build_interval(written) {
+                Err(cause) => {
+                    refusals.push(cause);
+                    None
+                }
+                Ok(interval) => {
+                    if bounded && interval.upper() == TemporalUpper::Open {
+                        refusals.push(TemporalCause::OpenInterval { span: written.span });
+                    }
+                    Some(interval)
+                }
+            },
+        };
+        operators.push(CheckedOperator {
+            node: id,
+            operator: operator.operator,
+            interval,
+        });
+    }
+    Ok(operators)
+}
+
 /// The parameters whose types the clause's extent ranges over: `over`, the
 /// `on each` parameter and each capture, in that order.
 fn parameters(form: &TemporalClauseForm) -> Vec<&ParameterForm> {
@@ -481,7 +559,7 @@ fn parameters(form: &TemporalClauseForm) -> Vec<&ParameterForm> {
 }
 
 /// The region of `span` as a located stage limit.
-fn located(
+pub(crate) fn located(
     limit: LimitExceeded,
     declarations: &TemporalDeclarations<'_>,
     span: Span,
@@ -525,40 +603,8 @@ fn check_clause(
     }
 
     let bounded = profile.is_bounded();
-    let mut operators = Vec::new();
     let mut refusals: Vec<TemporalCause> = Vec::new();
-    for (id, node) in form.formula.iter() {
-        let TemporalNodeForm::Operator(operator) = node else {
-            continue;
-        };
-        let interval = match (&operator.interval, is_temporal(operator.operator)) {
-            (Some(_), false) => return Err(fault("connective-carries-no-interval")),
-            (None, true) if bounded => {
-                refusals.push(TemporalCause::MissingInterval {
-                    span: operator.operator_span,
-                });
-                None
-            }
-            (None, _) => None,
-            (Some(written), true) => match build_interval(written) {
-                Err(cause) => {
-                    refusals.push(cause);
-                    None
-                }
-                Ok(interval) => {
-                    if bounded && interval.upper() == TemporalUpper::Open {
-                        refusals.push(TemporalCause::OpenInterval { span: written.span });
-                    }
-                    Some(interval)
-                }
-            },
-        };
-        operators.push(CheckedOperator {
-            node: id,
-            operator: operator.operator,
-            interval,
-        });
-    }
+    let operators = checked_operators(&form.formula, bounded, &mut refusals)?;
     let fairness = checked_fairness(form, bounded, declarations, types.first(), &mut refusals);
     if let Some(first) = refusals.into_iter().min_by_key(|cause| cause.span().start) {
         return Err(refuse(first));
@@ -585,7 +631,7 @@ fn check_clause(
         .iter()
         .map(|operator| (operator.node, operator.interval))
         .collect();
-    let formula = build_formula(form, &intervals)?;
+    let formula = build_formula(&form.formula, &intervals)?;
     let model_subject = matches!(types.first(), Some(ValueType::Reference(_)));
     let property_form = property_form(profile, model_subject, &formula);
 
@@ -639,22 +685,31 @@ fn checked_fairness(
                 continue;
             }
         };
-        let constraint = FairnessConstraint::new(
-            match written.kind {
-                None | Some(FormKind::Weak) => FairnessKind::Weak,
-                Some(FormKind::Strong) => FairnessKind::Strong,
-            },
-            operation,
-            match written.granularity {
-                None | Some(FormGranularity::Whole) => FairnessGranularity::Whole,
-                Some(FormGranularity::Each) => FairnessGranularity::Each,
-            },
-        );
+        let constraint = checked_constraint(written, operation);
         if !set.contains(&constraint) {
             set.push(constraint);
         }
     }
     set
+}
+
+/// `written` with its resolved `operation`: an unmarked kind is `weak` and an
+/// unmarked granularity is `whole` (ADR-018 FA-6).
+pub(crate) fn checked_constraint(
+    written: &FairnessConstraintForm,
+    operation: FairnessOperation,
+) -> FairnessConstraint {
+    FairnessConstraint::new(
+        match written.kind {
+            None | Some(FormKind::Weak) => FairnessKind::Weak,
+            Some(FormKind::Strong) => FairnessKind::Strong,
+        },
+        operation,
+        match written.granularity {
+            None | Some(FormGranularity::Whole) => FairnessGranularity::Whole,
+            Some(FormGranularity::Each) => FairnessGranularity::Each,
+        },
+    )
 }
 
 /// The operation a fairness constraint names, resolved in an admitted
@@ -759,7 +814,7 @@ fn is_closed(interval: Option<TemporalInterval>) -> bool {
 /// negated `eventually` is an `always`, a negated `until` a `release`, and
 /// the reverse. The arena puts an operator before its operands, so one pass
 /// reaches every node after its parent.
-fn in_safety_fragment(formula: &CheckedFormula) -> bool {
+pub(crate) fn in_safety_fragment(formula: &CheckedFormula) -> bool {
     let nodes = formula.nodes();
     let mut negated = vec![false; nodes.len()];
     for (index, node) in nodes.iter().enumerate() {
@@ -805,13 +860,13 @@ fn in_safety_fragment(formula: &CheckedFormula) -> bool {
 
 /// The checked formula of `form`: the arena order is kept, so an operator
 /// still precedes its operands.
-fn build_formula(
-    form: &TemporalClauseForm,
+pub(crate) fn build_formula(
+    form: &TemporalFormulaForm,
     intervals: &BTreeMap<TemporalNodeId, Option<TemporalInterval>>,
 ) -> Result<CheckedFormula, StageFailure<CheckRefusal>> {
     let node = |id: &TemporalNodeId| FormulaNodeId(id.index());
-    let mut nodes = Vec::with_capacity(form.formula.nodes().len());
-    for (id, written) in form.formula.iter() {
+    let mut nodes = Vec::with_capacity(form.nodes().len());
+    for (id, written) in form.iter() {
         let checked = match written {
             TemporalNodeForm::Constant { value, .. } => FormulaNode::Constant(*value),
             TemporalNodeForm::Holds { span, .. } => FormulaNode::Holds { span: *span },
@@ -874,7 +929,7 @@ fn build_formula(
         };
         nodes.push(checked);
     }
-    let root = FormulaNodeId(form.formula.root().index());
+    let root = FormulaNodeId(form.root().index());
     for (index, node) in nodes.iter().enumerate() {
         if node
             .operands()
