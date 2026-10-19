@@ -70,6 +70,54 @@ pub fn evaluate<L: TemporalLetters>(
     )
 }
 
+/// Evaluate `clause` on `trace` like [`evaluate`], for a caller whose trace
+/// carries the enabledness a fairness set needs and who has checked the set
+/// itself (replay re-executes a model, FR-128): the clause's fairness set
+/// does not make the evaluation `MissingFairnessPremise`, and it does not
+/// otherwise enter the formula's value.
+pub fn evaluate_with_enabledness<L: TemporalLetters>(
+    clause: &CheckedTemporalClause,
+    trace: TemporalTrace,
+    letters: &mut L,
+    meter: &mut Meter,
+) -> Result<TemporalOutcome, TemporalRefusal> {
+    engine::run(
+        engine::Subject {
+            fairness: &[],
+            ..engine::Subject::of_clause(clause)
+        },
+        trace,
+        engine::Goal::Clause,
+        letters,
+        meter,
+    )
+}
+
+/// Evaluate `clause` on a finite prefix of `len` positions whose continuation
+/// is unknown, under any profile: the three-valued reading of an
+/// infinite-trace prefix (FR-328), where a position past the prefix is
+/// neither true nor false. `Violated` is a falsity every continuation shares;
+/// `Pending` is a prefix that decides nothing. The clause's fairness set is
+/// not read (see [`evaluate_with_enabledness`]).
+pub fn evaluate_open_prefix<L: TemporalLetters>(
+    clause: &CheckedTemporalClause,
+    len: u64,
+    letters: &mut L,
+    meter: &mut Meter,
+) -> Result<TemporalOutcome, TemporalRefusal> {
+    engine::run(
+        engine::Subject {
+            fairness: &[],
+            profile: qsl_semantics::check::TemporalProfile::InfiniteTrace,
+            ..engine::Subject::of_clause(clause)
+        },
+        TemporalTrace::Finite { len },
+        engine::Goal::Clause,
+        letters,
+        meter,
+    )
+}
+
 /// Evaluate `clause`'s formula at `position` of `trace`, ignoring its
 /// activation and fairness (ADR-018 SM-8; FR-125 "Reading a lasso"). A
 /// lasso reaches every position by wrapping; a finite trace refuses a
