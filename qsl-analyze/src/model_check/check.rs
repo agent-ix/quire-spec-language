@@ -25,9 +25,10 @@
 //! horizon with a state left unexpanded settles V-5; a run that reaches a
 //! limit or is cancelled settles V-7; neither is ever `Holds`.
 //!
-//! The liveness phase (TP-4) and the bounded and interval monitors (TP-2,
-//! TP-3) are not part of this module yet: a clause of another property form
-//! is refused before any state is explored. A clause with no instance is
+//! A liveness clause (TP-4) is decided by `liveness`, which adds the second
+//! phase. The bounded and interval monitors (TP-2, TP-3) are not part of this
+//! module yet: a clause of another property form is refused before any state
+//! is explored. A clause with no instance is
 //! `Undecided(NoInstance)` before any state is explored (FR-125).
 
 use std::collections::{BTreeMap, VecDeque};
@@ -113,6 +114,10 @@ pub enum ModelCheckRefusal {
     /// The item has no canonical translation.
     #[error(transparent)]
     Item(ItemRefusal),
+    /// A liveness clause this engine does not decide yet, or whose proof it
+    /// cannot certify yet.
+    #[error(transparent)]
+    Liveness(#[from] super::liveness::LivenessRefusal),
     /// An invariant of the engine or the subject broke.
     #[error("model check broke invariant {0:?}")]
     Fault(InternalFault),
@@ -207,6 +212,11 @@ pub fn check_model(
     request: ModelCheckRequest<'_>,
     cancel: &Cancel,
 ) -> Result<ModelCheckOutcome, ModelCheckRefusal> {
+    if let ModelCheckItem::Clause { clause, .. } = request.item {
+        if clause.property_form() == Some(PropertyForm::Liveness) {
+            return super::liveness::check(request, cancel);
+        }
+    }
     let item = match request.item {
         ModelCheckItem::Clause { clause, letters } => {
             let form = clause.property_form();
@@ -707,6 +717,7 @@ impl Run<'_, '_> {
             over_binding,
             fairness,
             kind,
+            lasso: None,
         }
     }
 }

@@ -521,6 +521,20 @@ impl<'a> ModelSystem<'a> {
         crate::simulation::key::canonical_bytes(transition, identity_limits())
     }
 
+    /// The operation text a transition of `operation` carries (FR-181): the
+    /// declaration identity text of the operation `name` that `declaring`
+    /// declares, which [`ModelTransition::operation`] returns for each of its
+    /// applications. `None` when the subject's package declares no such
+    /// operation on a type the subject admits. A fairness constraint covers
+    /// the transitions that carry its operation's text (ADR-018 FA-1).
+    pub fn operation_text(&self, declaring: EffectiveId, name: &str) -> Option<&str> {
+        self.applications
+            .values()
+            .flatten()
+            .find(|application| application.declaring == declaring && application.name == name)
+            .map(|application| application.text.as_str())
+    }
+
     /// The operations in `identity`'s effective view (FR-103, FR-081), by name.
     fn applications_of(
         graph: &qsl_semantics::check::CheckedGraph,
