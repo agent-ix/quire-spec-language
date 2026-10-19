@@ -334,7 +334,10 @@ impl OutcomeItem {
             ),
             TerminalValue::Unsupported(cause) => (
                 ItemLabel::Unsupported,
-                Some(ItemCause::kind(cause.as_str())),
+                Some(ItemCause {
+                    code: cause.code().map(str::to_owned),
+                    ..ItemCause::kind(cause.as_str())
+                }),
             ),
             TerminalValue::Incomplete(cause) => {
                 let mut item = ItemCause::kind(cause.as_str());
