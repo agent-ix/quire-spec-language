@@ -130,9 +130,10 @@ Each carries its instance's `over` binding.
   other edge out of that position's node into `H`, the prefix, that edge,
   then the shortest path on. The stem is the canonical breadth-first path to
   the node.
-- Otherwise `UniquePath` SHALL return `Trapped` for the first closed node in
+- Otherwise `UniquePath` SHALL return `Trapped` for the first known node in
   discovery order where `from` holds and that counts 0, with its canonical
-  breadth-first stem.
+  breadth-first stem. A closed node that counts 0 only because the nodes it
+  reaches are open is not known and is no trap.
 - `UniquePath` SHALL return `Holds` when no node is open and every reachable
   node where `from` holds counts exactly 1.
 

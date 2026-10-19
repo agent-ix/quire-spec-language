@@ -7,6 +7,18 @@ use qsl_eval::simulation::Limits;
 /// FR-126's published default for `max_automaton_states`: 2^20.
 pub const DEFAULT_MAX_AUTOMATON_STATES: u64 = 1_048_576;
 
+/// FR-166's published default for `witness_samples`: 64 phase 0 walks per
+/// initial state (QSpec FR-392).
+pub const DEFAULT_WITNESS_SAMPLES: u64 = 64;
+
+/// FR-166's published default for `max_walk_steps`: 4,096 steps per phase 0
+/// walk (ADR-022 GE-2).
+pub const DEFAULT_MAX_WALK_STEPS: u64 = 4_096;
+
+/// FR-166's published default seed, which a request that names none runs
+/// under (QSpec FR-392, ADR-022 QS-7).
+pub const DEFAULT_WITNESS_SEED: u64 = 0;
+
 /// The caller-raisable ADR-014 B-5 budgets of one EN-1 run. The search
 /// horizon `max_depth` is a request member beside these, never one of them.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -15,14 +27,22 @@ pub struct ModelCheckLimits {
     pub limits: Limits,
     /// The most distinct automaton states the run materializes.
     pub max_automaton_states: u64,
+    /// The phase 0 walks drawn per initial state for a `possible` item
+    /// (FR-166); 0 turns phase 0 off.
+    pub witness_samples: u64,
+    /// The most steps one phase 0 walk takes (FR-166).
+    pub max_walk_steps: u64,
 }
 
 impl Default for ModelCheckLimits {
-    /// FR-101's `Limits::default()` and `max_automaton_states` 1,048,576.
+    /// FR-101's `Limits::default()`, `max_automaton_states` 1,048,576,
+    /// `witness_samples` 64 and `max_walk_steps` 4,096.
     fn default() -> Self {
         Self {
             limits: Limits::default(),
             max_automaton_states: DEFAULT_MAX_AUTOMATON_STATES,
+            witness_samples: DEFAULT_WITNESS_SAMPLES,
+            max_walk_steps: DEFAULT_MAX_WALK_STEPS,
         }
     }
 }
@@ -65,6 +85,10 @@ pub enum ModelCheckLimit {
     SolverTime,
     /// FR-250: a hybrid solver's step budget.
     SolverSteps,
+    /// `ModelCheckLimits::witness_samples` (FR-166).
+    WitnessSamples,
+    /// `ModelCheckLimits::max_walk_steps` (FR-166).
+    MaxWalkSteps,
 }
 
 impl ModelCheckLimit {
@@ -78,6 +102,8 @@ impl ModelCheckLimit {
             Self::MaxCandidates => "max-candidates",
             Self::SolverTime => "solver-time",
             Self::SolverSteps => "solver-steps",
+            Self::WitnessSamples => "witness-samples",
+            Self::MaxWalkSteps => "max-walk-steps",
         }
     }
 
@@ -91,6 +117,8 @@ impl ModelCheckLimit {
             Self::MaxCandidates => "max_candidates",
             Self::SolverTime => "max_solver_time",
             Self::SolverSteps => "max_solver_steps",
+            Self::WitnessSamples => "witness_samples",
+            Self::MaxWalkSteps => "max_walk_steps",
         }
     }
 }
