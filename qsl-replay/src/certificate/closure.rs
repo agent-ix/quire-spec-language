@@ -529,3 +529,43 @@ fn fault(invariant: &'static str) -> ClosureRefusal {
 fn widen(value: usize) -> u64 {
     u64::try_from(value).unwrap_or(u64::MAX)
 }
+
+#[cfg(test)]
+mod tests {
+    use base64::Engine as _;
+    use ix_trace_rs::trace;
+    use qsl_eval::automaton::{SafetyState, SafetyTranslation};
+
+    use super::*;
+
+    /// A product-state locus is written as its model-state digest record
+    /// and its automaton key's octets in unpadded base64url, which decode
+    /// back to the exact key.
+    #[trace("TC-525")]
+    #[test]
+    fn a_product_state_locus_writes_its_digest_and_key_octets() {
+        let key = SafetyTranslation::deadlock_freedom()
+            .and_then(|translation| translation.key(SafetyState::Carried))
+            .expect("the key encodes");
+        let at = CertificateLocus::ProductState(ProductStateRef {
+            model_state: DigestRecord::mint(DigestDomain::SimulationStateKeyV1, [1; 32]),
+            automaton_state: key.clone(),
+        });
+        let written = serde_json::to_value(&at).expect("serializes");
+        assert_eq!(
+            written["model_state"],
+            serde_json::json!({
+                "domain": "quire.simulation.state-key/v1",
+                "digest": "01".repeat(32),
+            })
+        );
+        let octets = written["automaton_state"].as_str().expect("a string");
+        assert!(!octets.contains(['=', '+', '/']), "{octets}");
+        assert_eq!(
+            base64::engine::general_purpose::URL_SAFE_NO_PAD
+                .decode(octets)
+                .expect("base64url"),
+            key.as_bytes()
+        );
+    }
+}
