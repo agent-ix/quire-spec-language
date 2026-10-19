@@ -31,3 +31,20 @@ Ticket: QSL-873 (narrowed: the instancing derivation moved to QSL-886, blocked b
 ## Verdict
 
 No production code changed, and none was needed: NoInstance is already wired end to end (check.rs:260-264, settle.rs:202/216, proof_result.rs:279/315). No test goes beyond the acceptance. The problem is accuracy of the trace tags, not missing behaviour. Both new tests claim FR-125-AC-7 in full on evidence for one of its clauses, while the QSpec AC they do match, FR-361-AC-8, is left untagged (FND-001, FND-002). Both are tag-only fixes within this PR. FR-169-AC-1 cannot be tested until QSL-536 lands (FND-004).
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | medium | The new `a_clause_over_a_subject_with_no_initial_state_explores_nothing` is tagged `FR-125-AC-4`, so `quire matrix` now reports AC-4 as `tagged` (model_check.rs:776). The test covers only AC-4's second sentence (an empty `initial` list is `NoInitialState` before exploration). The first sentence, 'a clause with `over (c: Config::ConfigVersion)` yields one instance per object of `{a, b}`', is the instancing derivation, which is unimplemented and untested (QSL-886). This is the same partial-AC overclaim that FND-001 removed for AC-7. The repo's own precedent refuses it: model_check.rs:875-881 leaves FR-336-AC-2 untagged because its test covers only the refusal half. Drop `FR-125-AC-4` and keep `#[trace("TC-520")]`, leaving AC-4 to QSL-886. The test body itself is sound: it is the only clause-item NoInitialState check (the others use DeadlockFreedom) and asserts zero product states. | qsl-analyze/tests/it/model_check.rs:774-777 |
+
+## Dispositions
+
+Round 1, reviewed at 55d60775348fff9b91c8c231c415069c3bc7acbc: fix commit 9576eb311, plus merge 55d607753 of origin/main. The merge brings in unrelated QSL-542/QSL-568/STD-193 work and touches none of the three test files' QSL-873 hunks. At this head, run with the lane's warm cache (`CARGO_HOME=~/.cargo-draco-lane2`, `--offline`): `cargo test -p qsl-analyze --test it` passes 67/67, including all five touched tests; `cargo clippy -p qsl-analyze --tests -D warnings` is clean; rustfmt --check is clean on the three files. `quire trace --id QSpec-FR-361-AC-8` resolves both retagged tests (closure_certificate.rs:670, model_check.rs:707). `quire matrix` shows FR-125-AC-7 untagged, FR-125-AC-4 tagged (model_check.rs:776), FR-127-AC-1 tagged by three tests (closure_certificate.rs:474, model_settle.rs:523, model_settle.rs:633), and FR-169-AC-1 untagged.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 9576eb311 |
+| FND-002 | fixed | 9576eb311 |
+| FND-003 | fixed | 9576eb311 |
+| FND-004 | deferred | The PR body's reason is corrected: it now says #968 landed the S3 checker, while FR-169's engine outcomes, `ProofBasis::Witness` and the state-graph settle do not exist yet (QSL-536 area). The QSL-873 description still lists TC-594 and QSpec TC-294 as tags. That edit is the lead's Linear bookkeeping, not a PR change, and does not block. |
