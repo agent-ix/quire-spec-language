@@ -328,7 +328,6 @@ fn the_deadlock_path_and_counts_match_an_explicit_enumeration() {
     assert_eq!((stats.product_states, stats.product_edges), (16, 96));
 }
 
-
 fn invariant(
     world: &World,
     keys: &[&str],
@@ -374,10 +373,7 @@ fn a_reachable_invariant_holds_or_is_violated_at_its_first_bad_state() {
     let counterexample = violated(&outcome);
     assert_eq!(counterexample.kind, CounterexampleKind::Formula);
     assert_eq!(values(&world, counterexample, "c"), [0, 1, 2]);
-    assert_eq!(
-        counterexample.over_binding,
-        Some(instance("c"))
-    );
+    assert_eq!(counterexample.over_binding, Some(instance("c")));
     assert_eq!(counterexample.trace_position(), Some(2));
 }
 
@@ -398,10 +394,7 @@ fn a_violation_names_the_first_bound_instance_that_is_false() {
         .map(|state| (value(state, "a"), value(state, "b")))
         .expect("a state");
     assert_eq!(last, (3, 0));
-    assert_eq!(
-        counterexample.over_binding,
-        Some(instance("a"))
-    );
+    assert_eq!(counterexample.over_binding, Some(instance("a")));
 }
 
 /// Verifies the TP-1 half of FR-126-AC-9; its TP-4 claim, the `kind:
@@ -668,7 +661,9 @@ fn an_empty_or_unbounded_subject_and_an_undecided_form_explore_nothing() {
         "",
         "always (holds(c.value <= 0) and holds(c.value >= 0))",
     );
-    let letters = Letters { atom: |_| Some(true) };
+    let letters = Letters {
+        atom: |_| Some(true),
+    };
     let refusal = run(
         &world,
         &["c"],
@@ -699,7 +694,9 @@ fn zero_instances_report_no_instance_after_the_requires_bound_pre_check() {
     let empty = self::world("", &[&[]]);
     let world = self::world("", &[&[("c", 0)]]);
     let clause = clause(&world.documents.document, "", "always holds(c.value <= 3)");
-    let letters = Letters { atom: |_| Some(true) };
+    let letters = Letters {
+        atom: |_| Some(true),
+    };
     let ident = identity();
     let item = || ModelCheckItem::Clause {
         clause: &clause,
@@ -782,7 +779,9 @@ fn a_clause_over_a_subject_with_no_initial_state_explores_nothing() {
     );
 
     let world = self::world("", &[]);
-    let bound = Letters { atom: |_| Some(true) };
+    let bound = Letters {
+        atom: |_| Some(true),
+    };
     let ident = identity();
     let outcome = run(
         &world,

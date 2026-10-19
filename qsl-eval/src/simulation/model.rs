@@ -733,14 +733,16 @@ impl<'a> ModelSystem<'a> {
         let mut unbounded = Vec::new();
         for (_, population) in &admitting {
             if !self.universes.contains_key(*population) {
-                let digest =
-                    quire_canonical::sha256(&declaration_enc(population), CanonicalLimits::new(u64::MAX))
-                        .map_err(|_| {
-                            NotSimulated::Extent(ClassifyFailure::Fault(InternalFault::new(
-                                "model-simulation",
-                                "population-root-digest",
-                            )))
-                        })?;
+                let digest = quire_canonical::sha256(
+                    &declaration_enc(population),
+                    CanonicalLimits::new(u64::MAX),
+                )
+                .map_err(|_| {
+                    NotSimulated::Extent(ClassifyFailure::Fault(InternalFault::new(
+                        "model-simulation",
+                        "population-root-digest",
+                    )))
+                })?;
                 unbounded.push((
                     WireNodeId::from_digest(*digest.as_bytes()),
                     ValueType::Population(None),

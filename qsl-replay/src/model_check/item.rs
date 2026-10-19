@@ -21,8 +21,8 @@ use qsl_eval::simulation::model::ModelSystem;
 use qsl_eval::simulation::NotSimulated;
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
-use qsl_semantics::check::CheckedTemporalClause;
 use qsl_foundation::InternalFault;
+use qsl_semantics::check::CheckedTemporalClause;
 use quire_exact::{Value, ValueType};
 
 /// A clause's identity in its package: the checked occurrence and the node of
