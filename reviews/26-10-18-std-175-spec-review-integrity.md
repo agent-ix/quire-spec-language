@@ -64,3 +64,22 @@ reading fails both runs.
 | FND-002 | fixed | - |
 | FND-003 | fixed | - |
 | FND-004 | fixed | - |
+
+Round 2, reviewed at 6b569e4ada6b8615a75ed82fa1807d481fbe278a. FR-125
+Instancing now has separate rules:
+
+- Temporal clauses and state-graph claims are instanced by conformance over
+  `over` (lines 99-117), with their own RequiresBound and NoInstance SHALLs.
+- Hyper clauses are instanced per key of the one population each parameter
+  resolves to, over the product (lines 118-123). They have their own
+  RequiresBound-first SHALL and an any-empty-factor NoInstance SHALL
+  (lines 124-126).
+
+The instance-count rules no longer overlap. FR-172 S3 (per key, product,
+NoInstance by FR-125), FR-182 V-6, FR-182-AC-9 and TC-607 step 7 all agree
+with the new bullets.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-005 | fixed | - |
+| FND-006 | fixed | - |

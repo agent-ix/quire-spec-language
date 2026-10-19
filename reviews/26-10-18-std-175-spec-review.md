@@ -53,3 +53,12 @@ Round 1, reviewed at 470eeeb35 (merge of origin/main 7915615f1).
 | FND | outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | - |
+
+Round 2, reviewed at 6b569e4ada6b8615a75ed82fa1807d481fbe278a.
+FR-182-AC-9 and TC-607 step 7 now cite ADR-023 §1 for SavesPower. Repeating
+"ADR-023 §1's" after NonInterference reads correctly, because both clauses
+are declared in §1.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-002 | fixed | - |
