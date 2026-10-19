@@ -175,6 +175,9 @@ pub enum Code {
     /// Distinct from [`Self::UnsupportedConstruct`], a source form the
     /// selected profile prohibits. Category unsupported, exit 21.
     UnimplementedCapability,
+    /// QSpec FR-405, FR-407: a random parameter, reward, workload or
+    /// `probabilistic` claim that breaks the rule its cause names.
+    InvalidProbabilisticModel,
 }
 
 impl Code {
@@ -230,6 +233,7 @@ impl Code {
             Self::StageLimitExceeded => "stage_limit_exceeded",
             Self::NoncanonicalWire => "noncanonical_wire",
             Self::UnimplementedCapability => "unimplemented_capability",
+            Self::InvalidProbabilisticModel => "invalid_probabilistic_model",
         }
     }
 
@@ -285,6 +289,7 @@ impl Code {
             Self::StageLimitExceeded,
             Self::NoncanonicalWire,
             Self::UnimplementedCapability,
+            Self::InvalidProbabilisticModel,
         ]
     }
 
@@ -977,7 +982,7 @@ impl InternalFault {
 /// codes (`unsupported_construct`, `unknown_required_feature`,
 /// `unsupported_projection`) and the incomplete `resource_exhausted` that
 /// this table files under `Refusal`.
-const CATALOG_CATEGORIES: [(&str, Category); 49] = [
+const CATALOG_CATEGORIES: [(&str, Category); 50] = [
     ("invalid_syntax", Category::Refusal),
     ("unsupported_construct", Category::Refusal),
     ("unknown_language", Category::Refusal),
@@ -1020,6 +1025,7 @@ const CATALOG_CATEGORIES: [(&str, Category); 49] = [
     ("duplicate_selection", Category::Refusal),
     ("stage_limit_exceeded", Category::Incomplete),
     ("noncanonical_wire", Category::Refusal),
+    ("invalid_probabilistic_model", Category::Refusal),
     ("unsupported_projection", Category::Refusal),
     ("invalid_capability", Category::Refusal),
     ("invalid_projection_correspondence", Category::Refusal),

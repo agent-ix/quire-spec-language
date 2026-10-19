@@ -2764,7 +2764,13 @@ fn closure(package: &CheckedPackage) -> Vec<(LibraryName, PackageId, Vec<Library
     package
         .dependency_selections()
         .iter()
-        .map(|(identity, resolved)| (identity.clone(), resolved.package_id, resolved.path.clone()))
+        .map(|(identity, resolved)| {
+            (
+                identity.clone(),
+                resolved.package_id,
+                resolved.path(identity),
+            )
+        })
         .collect()
 }
 
@@ -2855,7 +2861,7 @@ fn a_diamond_selecting_one_package_unifies() {
     .expect("one selection of test/units by two paths unifies");
     let units = &root.dependency_selections()[&lib("test/units")];
     assert_eq!(units.package_id, d);
-    assert_eq!(units.path, path(&["test/units"]));
+    assert_eq!(units.path(&lib("test/units")), path(&["test/units"]));
     read_linked(&root);
 }
 
@@ -2916,9 +2922,15 @@ fn e4_refuses_a_conflicting_diamond() {
     };
     assert_eq!(*identity, lib("test/units"));
     assert_eq!(selections[0].package_id, d);
-    assert_eq!(selections[0].path, path(&["test/mid", "test/units"]));
+    assert_eq!(
+        selections[0].path(identity),
+        path(&["test/mid", "test/units"])
+    );
     assert_eq!(selections[1].package_id, another_id);
-    assert_eq!(selections[1].path, path(&["test/mid2", "test/units"]));
+    assert_eq!(
+        selections[1].path(identity),
+        path(&["test/mid2", "test/units"])
+    );
 
     // A dependency whose occurrences have no source region does not emit,
     // so its `package_id` cannot be recomputed.
@@ -3719,4 +3731,42 @@ fn a_node_a_state_clause_places_does_not_move_to_a_type_name() {
         generated_texts(&emitted.wire, &unit, &integer["node_id"]),
         ["1 < 2"]
     );
+}
+
+/// ADR-013 O-02: the emission a package remembers is the emitter's own, and a
+/// repeat emit and a `link_with` reuse it rather than emitting again.
+#[test]
+fn a_package_remembers_its_emission_and_link_with_reuses_it() {
+    let shared = Arc::new(dependency());
+    assert!(shared.remembered_emission().is_none());
+    let first = emit_checked(&shared).expect("the dependency emits");
+    let remembered = shared
+        .remembered_emission()
+        .expect("the emit remembers its emission");
+    assert_eq!(remembered.package(), first.package());
+    let again = emit_checked(&shared).expect("a repeat emit");
+    assert_eq!(again.package(), first.package());
+    let linked = CheckedPackage::link_with(
+        root_graph(),
+        vec![crate::Import {
+            identity: lib("test/units"),
+            package: Arc::clone(&shared),
+        }],
+    )
+    .expect("the root links");
+    assert_eq!(
+        linked.dependency_selections()[&lib("test/units")].package_id,
+        first.package().package_id()
+    );
+
+    let unemitted = Arc::new(dependency());
+    CheckedPackage::link_with(
+        root_graph(),
+        vec![crate::Import {
+            identity: lib("test/units"),
+            package: Arc::clone(&unemitted),
+        }],
+    )
+    .expect("the root links");
+    assert!(unemitted.remembered_emission().is_some());
 }

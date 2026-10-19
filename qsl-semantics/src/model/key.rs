@@ -40,6 +40,16 @@ const LIMITS: Limits = Limits::new(u64::MAX);
 /// site.
 pub use quire_exact::EffectiveId;
 
+/// The [`EffectiveId`] whose 32 digest bytes a model-owned canonical text
+/// carried (ADR-013 O-05: only `model` calls the kernel constructor). A
+/// consumer that decodes a reference's canonical text, such as the
+/// simulation's parameter decoder, rebuilds the type component through this
+/// function rather than minting it.
+#[must_use]
+pub fn effective_id_from_digest(digest: [u8; 32]) -> EffectiveId {
+    EffectiveId::from_digest(digest)
+}
+
 /// The fixed digest domain of a declaration key and a domain package
 /// selection (`model-complete.md`, "Identity domains").
 pub const SHA256_JCS_DIGEST_DOMAIN: &str = "sha256-jcs";
