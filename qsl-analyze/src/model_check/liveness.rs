@@ -20,8 +20,18 @@
 //! state already covers, ranks its findings with the first phase's by depth.
 //! Those states are not product states and count toward no limit or total.
 //!
-//! The second phase runs only when no binding's first phase ended the run.
-//! It decomposes the retained graph into strongly connected components in
+//! The bindings are ranked across (FR-126 "Bindings and ranking"): the first
+//! phase runs over every binding in canonical instance order and the finding
+//! that ranks first by depth wins, a tie going to the earlier binding. Once a
+//! binding has a finding at depth `d`, each later binding is explored only
+//! through depth `d - 1`, since it wins only with a strictly shallower one; a
+//! later binding that stops before it completes that depth answers with its
+//! stop.
+//!
+//! The second phase runs only when no binding's first phase ended the run; it
+//! then runs over every binding and the shortest lasso, stem and loop together,
+//! wins, a tie again going to the earlier binding. Each binding's second phase
+//! decomposes the retained graph into strongly connected components in
 //! `qsl-eval`'s fairness kernels, passes a component that is non-trivial,
 //! holds a state of every acceptance set and satisfies every weak
 //! constraint (FA-4), and builds the canonical lasso (CX-5): the stem is the
@@ -722,39 +732,63 @@ struct Run<'r, 'a> {
 impl<'r, 'a> Run<'r, 'a> {
     fn decide(&self, mut totals: Totals) -> Result<ModelCheckOutcome, ModelCheckRefusal> {
         let mut explored = Vec::with_capacity(self.bindings.len());
+        // The finding that ranks first so far, with its depth: a later
+        // binding replaces it only with a strictly shallower one (a tie goes
+        // to the earlier binding), so it is explored through `depth - 1`
+        // alone and not at all past a finding at depth 0.
+        let mut best: Option<(usize, FirstHit)> = None;
         for binding in self.bindings {
-            let mut run = match self.explore(binding, &mut totals)? {
+            let cap = match best {
+                Some((0, _)) => break,
+                Some((depth, _)) => Some(depth - 1),
+                None => None,
+            };
+            let mut run = match self.explore(binding, cap, &mut totals)? {
                 Ok(run) => run,
                 Err(outcome) => return Ok(outcome),
             };
             let live = self.first_phase(&run)?;
             if let Ending::Stopped(cause, limit) = &run.ending {
+                // A later binding that stops before it completed the depth it
+                // is explored through answers with its stop; the first
+                // binding's finding stands, as it is canonical-first.
                 return Ok(match live {
-                    Some((_, hit)) => hit.outcome(totals.stats()),
-                    None => stopped(*cause, *limit, totals.stats()),
+                    Some((_, hit)) if best.is_none() => hit.outcome(totals.stats()),
+                    _ => stopped(*cause, *limit, totals.stats()),
                 });
             }
-            let dead =
-                self.dead_phase(&run, live.as_ref().map(|(depth, _)| *depth), &mut totals)?;
+            let bound = [
+                live.as_ref().map(|(depth, _)| *depth),
+                cap.map(|cap| cap + 1),
+            ]
+            .into_iter()
+            .flatten()
+            .min();
+            let dead = self.dead_phase(&run, bound, &mut totals)?;
             run.dead_cut = dead.cut;
             if let Some(Ending::Stopped(cause, limit)) = dead.stopped {
                 return Ok(match live {
-                    Some((_, hit)) => hit.outcome(totals.stats()),
-                    None => stopped(cause, limit, totals.stats()),
+                    Some((_, hit)) if best.is_none() => hit.outcome(totals.stats()),
+                    _ => stopped(cause, limit, totals.stats()),
                 });
             }
             match (live, dead.hit) {
                 (Some((live_depth, _)), Some((dead_depth, hit))) if dead_depth < live_depth => {
-                    return Ok(hit.outcome(totals.stats()))
+                    best = Some((dead_depth, hit));
                 }
-                (Some((_, hit)), _) | (None, Some((_, hit))) => {
-                    return Ok(hit.outcome(totals.stats()))
-                }
+                (Some(found), _) | (None, Some(found)) => best = Some(found),
                 (None, None) => {}
             }
             explored.push(run);
         }
+        if let Some((_, hit)) = best {
+            return Ok(hit.outcome(totals.stats()));
+        }
+        // No binding's first phase ended: the shortest lasso across the
+        // bindings, measured in transitions, the earlier binding winning a
+        // tie.
         let mut cut = false;
+        let mut shortest: Option<Box<TemporalCounterexample>> = None;
         for run in &explored {
             cut |= run.dead_cut
                 || run
@@ -764,10 +798,12 @@ impl<'r, 'a> Run<'r, 'a> {
                     .any(|state| state.findings.contains(&Finding::HorizonCut));
             match self.second_phase(run)? {
                 Second::Lasso(counterexample) => {
-                    return Ok(ModelCheckOutcome::Violated {
-                        counterexample,
-                        stats: totals.stats(),
-                    })
+                    if shortest
+                        .as_ref()
+                        .is_none_or(|known| counterexample.len() < known.len())
+                    {
+                        shortest = Some(counterexample);
+                    }
                 }
                 Second::Cancelled(source) => {
                     return Ok(stopped(
@@ -778,6 +814,12 @@ impl<'r, 'a> Run<'r, 'a> {
                 }
                 Second::NoneFair => {}
             }
+        }
+        if let Some(counterexample) = shortest {
+            return Ok(ModelCheckOutcome::Violated {
+                counterexample,
+                stats: totals.stats(),
+            });
         }
         match (cut, self.request.max_depth) {
             (true, Some(depth)) => Ok(ModelCheckOutcome::BoundReached {
@@ -791,11 +833,13 @@ impl<'r, 'a> Run<'r, 'a> {
         }
     }
 
-    /// Explore `binding`'s product. `Err(outcome)` is a run that ended
-    /// before it had a graph to examine.
+    /// Explore `binding`'s product, through depth `cap` when there is one
+    /// (and no deeper than the request's own horizon). `Err(outcome)` is a
+    /// run that ended before it had a graph to examine.
     fn explore(
         &self,
         binding: &'r ModelInstance,
+        cap: Option<usize>,
         totals: &mut Totals,
     ) -> Result<Result<Explored<'r, 'a>, ModelCheckOutcome>, ModelCheckRefusal> {
         let mut automaton = translate(self.clause, self.request.limits.max_automaton_states)
@@ -829,7 +873,7 @@ impl<'r, 'a> Run<'r, 'a> {
             dead: RefCell::new(Vec::new()),
             meter: self.request.meter,
             cancel: self.cancel,
-            max_depth: self.request.max_depth,
+            max_depth: [self.request.max_depth, cap].into_iter().flatten().min(),
             halt: RefCell::new(None),
         };
         if product.start_states().is_err() {
@@ -1059,6 +1103,9 @@ impl<'r, 'a> Run<'r, 'a> {
         let mut nodes: Vec<DeadNode> = Vec::new();
         let mut frontier: BTreeSet<(usize, usize)> = BTreeSet::new();
         for (root, entry) in roots.iter().enumerate() {
+            if bound.is_some_and(|bound| entry.depth >= bound) {
+                continue;
+            }
             if examined.reach(self.digest(&entry.model)?, entry.depth) {
                 if *states_left == 0 {
                     phase.stopped = out_of(ModelCheckLimit::MaxStates, limits.max_states);
@@ -1150,6 +1197,12 @@ impl<'r, 'a> Run<'r, 'a> {
                 .is_some_and(|horizon| depth >= horizon)
             {
                 phase.cut = true;
+                continue;
+            }
+            // A state at the bound ranks no better than the finding that set
+            // it, so the successors that would sit there are neither created
+            // nor charged.
+            if bound.is_some_and(|bound| depth.saturating_add(1) >= bound) {
                 continue;
             }
             let root = nodes.get(index).map_or(0, |node| node.root);
