@@ -535,6 +535,8 @@ pub(crate) fn check(
     let mut pass = Pass {
         input,
         model: CheckedProbabilisticModel::default(),
+        distributions: Vec::new(),
+        rewards: Vec::new(),
         refusals: Vec::new(),
     };
     for (index, declaration) in declarations.iter().enumerate() {
@@ -555,6 +557,11 @@ pub(crate) fn check(
 struct Pass<'i, 'a> {
     input: &'i ProbabilisticInput<'a>,
     model: CheckedProbabilisticModel,
+    /// Each (operation, parameter) a `random` declaration resolved to, so a
+    /// second is a duplicate whether or not the first was admitted.
+    distributions: Vec<(DeclarationKey, String)>,
+    /// Each (operation, name) a `reward` declaration resolved to.
+    rewards: Vec<(DeclarationKey, String)>,
     refusals: Vec<CheckRefusal>,
 }
 
@@ -588,11 +595,8 @@ impl Pass<'_, '_> {
             });
         };
         let names = || (form.operation.name.clone(), parameter.to_owned());
-        if self
-            .model
-            .random_parameter(&operation.key, parameter)
-            .is_some()
-        {
+        let distribution = (operation.key.clone(), parameter.to_owned());
+        if self.distributions.contains(&distribution) {
             let (operation, parameter) = names();
             return self.refuse(ProbabilisticCause::DuplicateDistribution {
                 operation,
@@ -600,6 +604,7 @@ impl Pass<'_, '_> {
                 span: form.span,
             });
         }
+        self.distributions.push(distribution);
         let mut causes = Vec::new();
         let mut support: Vec<(CheckedLiteral, Rational)> = Vec::with_capacity(form.support.len());
         let mut seen: Vec<CheckedLiteral> = Vec::with_capacity(form.support.len());
@@ -696,18 +701,15 @@ impl Pass<'_, '_> {
             Err(fault) => return self.refuse(unresolved(fault, &form.operation)),
         };
         let name = form.name.name.as_str();
-        if self
-            .model
-            .rewards
-            .iter()
-            .any(|reward| reward.operation.key == operation.key && reward.name.as_str() == name)
-        {
+        let declared = (operation.key.clone(), name.to_owned());
+        if self.rewards.contains(&declared) {
             return self.refuse(ProbabilisticCause::DuplicateReward {
                 reward: name.to_owned(),
                 operation: form.operation.name.clone(),
                 span: form.span,
             });
         }
+        self.rewards.push(declared);
         let parameters = declaration.parameters().to_vec();
         let location = site_location(index, Site::Reward);
         match self.typed_reward(form, &parameters, &location, cx, nodes) {

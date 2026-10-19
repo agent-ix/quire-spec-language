@@ -968,3 +968,32 @@ fn a_quantile_over_a_fraction_refuses() {
         [invalid("quantile-over-fraction", measure)]
     );
 }
+
+/// A second distribution or reward is a duplicate even when the first was
+/// refused.
+#[trace("TC-620")]
+#[test]
+fn a_duplicate_of_a_refused_declaration_is_still_a_duplicate() {
+    let first = "random Server::attempt(d) ~ { 1: 0 };";
+    let second = "random Server::attempt(d) ~ { 3: 1 };";
+    let body = service(Some((D, first)), second);
+    assert_eq!(
+        located(&body),
+        [
+            invalid("invalid-weight", "0"),
+            invalid("duplicate-distribution", second)
+        ]
+    );
+    let second = "reward duration on Server::attempt = true;";
+    let body = service(
+        Some((DURATION, "reward duration on Server::attempt = outcome;")),
+        second,
+    );
+    assert_eq!(
+        located(&body),
+        [
+            invalid("reward-type", "outcome"),
+            invalid("duplicate-reward", second)
+        ]
+    );
+}
