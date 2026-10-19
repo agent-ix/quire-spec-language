@@ -1541,6 +1541,10 @@ pub enum CheckCause {
         /// The argument text as written (decoded).
         argument: String,
     },
+    /// `ill_typed` / `identity-observing-form` (FR-150): a form that
+    /// observes the identity of a `symmetric` population's objects, at the
+    /// form's node. Boxed like the other payload-bearing causes.
+    IdentityObservingForm(Box<IdentityObserving>),
     /// `ill_typed` / `non-boolean-root` (FR-104): a state clause body whose
     /// type is not `Boolean`, at the body.
     NonBooleanRoot,
@@ -1980,6 +1984,7 @@ impl CheckCause {
             Self::ModelIncomplete(_) => Code::ResourceExhausted,
             Self::TypeAdmission { code, .. } => *code,
             Self::IllTyped(_)
+            | Self::IdentityObservingForm(_)
             | Self::NonBooleanRoot
             | Self::IntegerOutsideI128(_)
             | Self::MalformedUuidLiteral { .. } => Code::IllTyped,
@@ -2046,6 +2051,7 @@ impl CheckCause {
             Self::IllTyped(cause) => cause.tag(),
             Self::WrongSnapshot(cause) => Some(cause.as_str()),
             Self::NonBooleanRoot => Some("non-boolean-root"),
+            Self::IdentityObservingForm(_) => Some("identity-observing-form"),
             Self::IntegerOutsideI128(_) | Self::MalformedUuidLiteral { .. } => {
                 Some("type-mismatch")
             }
@@ -2098,6 +2104,41 @@ impl CheckCause {
             Self::__SeamProbe => None,
         }
     }
+}
+
+/// The form an `identity-observing-form` refusal names (FR-150, QSpec
+/// FR-381).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum IdentityForm {
+    /// A `fold` or `reduce` whose result depends on the order of a `Set` or
+    /// `Bag` of references.
+    OrderSensitiveTraversal,
+    /// A conversion of a reference to a value of another type.
+    ReferenceConversion,
+}
+
+/// The kind of node an `identity-observing-form` refusal is at.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum IdentityNode {
+    /// A `fold`.
+    Fold,
+    /// A `reduce`.
+    Reduce,
+    /// A `convert<T>(e)`.
+    Convert,
+}
+
+/// What an `identity-observing-form` refusal retains (FR-150): the refused
+/// node's kind and form, and the `symmetric` population whose identity the
+/// form observes.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct IdentityObserving {
+    /// The refused node's kind.
+    pub node: IdentityNode,
+    /// The form of identity observation.
+    pub form: IdentityForm,
+    /// The population's declaration key.
+    pub population: crate::model::key::DeclarationKey,
 }
 
 /// A located checking refusal, made before any charge.
