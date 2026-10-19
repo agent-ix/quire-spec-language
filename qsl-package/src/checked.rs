@@ -470,6 +470,17 @@ impl CheckedPackage {
         self.emission.get()
     }
 
+    /// The `package_id` the emitter computed for this package, if it was
+    /// emitted through `emit_checked` or `emit_checked_with_cancel`, which
+    /// record the emission: the identity Contract IR's admission of those
+    /// bytes declares. A package emitted only through `emit_package` has
+    /// none.
+    pub fn emitted_package_id(&self) -> Option<PackageId> {
+        self.emission
+            .get()
+            .map(|emission| emission.package.package_id())
+    }
+
     /// This package's own checked declarations (S3's stage output) -- the
     /// delegation point FR-087-AC-9/TC-256 names: every check-owned-type
     /// accessor a consumer needs is reached through this method, not by
