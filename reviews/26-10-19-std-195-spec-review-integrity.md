@@ -42,3 +42,4 @@ FND-001 must be fixed together with SR-12928 FND-001, because both come from the
 | FND-002 | fixed | 01f5d081c: duplicate FR-120 edge removed; FR-104 listed under Dependencies. |
 | FND-003 | fixed | 01f5d081c: Remaining work cites QSL FR-120 for the key-list shape and says QSpec FR-331 names `universes` without a shape. |
 | FND-004 | fixed | 01f5d081c: FR-169 instances under these rules; FR-182 instances by the hyper bullet and takes only the reference reading and the absent-key rule. |
+| FND-005 | fixed | d25057781: the Behavior bullet says the admits rule follows QSpec FR-361 and FR-153 and that the key-as-instance is QSL-proposed; Remaining work separates what follows QSpec from what is QSL-proposed, and STD-196 has a correction comment closing the supertype question as answered by FR-153. |

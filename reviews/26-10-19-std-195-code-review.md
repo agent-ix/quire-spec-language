@@ -36,3 +36,4 @@ No behavioural risk. Neither consumer of `bindings()` (`qsl-analyze/src/model_ch
 | FND | outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | 01f5d081c: the `atom` doc now states matching by population and key, reading the state's own reference, and absent-key for no conforming object; the `bindings` doc says 'instances', not objects. |
+| FND-002 | deferred | QSL-886 (FR-125 instancing code, Backlog): FR-125 Remaining work names it as the code follow-up that makes `ModelLetters::bindings` name the population and key only; the trait has no production impl yet, so nothing ships the unspecified type. |
