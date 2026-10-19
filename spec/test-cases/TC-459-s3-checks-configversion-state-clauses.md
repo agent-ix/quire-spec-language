@@ -5,8 +5,6 @@ type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-104
     type: verifies
-  - target: ix://agent-ix/quire-spec-language/FR-104-AC-9
-    type: verifies
 ---
 # TC-459: S3 checks the ConfigVersion state clauses and types self, result and pre
 
