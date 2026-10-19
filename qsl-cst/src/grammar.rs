@@ -1658,10 +1658,7 @@ fn protocol(g: &mut Grammar) {
             ]),
         ]),
     );
-    g.insert(
-        P::StepArgument,
-        c(vec![literal("_"), r(P::Expression)]),
-    );
+    g.insert(P::StepArgument, c(vec![literal("_"), r(P::Expression)]));
     g.insert(
         P::StepTarget,
         c(vec![

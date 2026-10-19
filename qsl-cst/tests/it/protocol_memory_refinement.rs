@@ -68,7 +68,11 @@ fn refused_at(declaration: &str) -> String {
     let parsed = parse(&text);
     assert!(!parsed.is_admissible(), "{declaration}");
     let diagnostic = &parsed.diagnostics()[0];
-    assert_eq!(diagnostic.code, CompleteCode::InvalidSyntax, "{declaration}");
+    assert_eq!(
+        diagnostic.code,
+        CompleteCode::InvalidSyntax,
+        "{declaration}"
+    );
     let Span { start, end } = diagnostic.byte_span().expect("located");
     text[start..end].to_owned()
 }
@@ -90,7 +94,10 @@ fn a_protocol_parses_terminal_scheduling_and_on_each_activation() {
         texts(&text, &parsed, Production::Activation),
         ["on each (trigger: M::Trigger) when (true)"]
     );
-    assert_eq!(texts(&text, &parsed, Production::ProtocolTerminal), ["terminal any;"]);
+    assert_eq!(
+        texts(&text, &parsed, Production::ProtocolTerminal),
+        ["terminal any;"]
+    );
     assert_eq!(
         texts(&text, &parsed, Production::ProtocolScheduling),
         ["scheduling adversarial;"]
@@ -239,10 +246,19 @@ fn a_refinement_parses_its_step_rows() {
         rows.join("\n")
     );
     let (text, parsed) = parse_admitted(&declaration);
-    assert_eq!(texts(&text, &parsed, Production::Refinement), [declaration.as_str()]);
+    assert_eq!(
+        texts(&text, &parsed, Production::Refinement),
+        [declaration.as_str()]
+    );
     assert_eq!(texts(&text, &parsed, Production::StepRow), rows);
-    assert_eq!(texts(&text, &parsed, Production::StepSource).len(), rows.len());
-    assert_eq!(texts(&text, &parsed, Production::StepTarget).len(), rows.len());
+    assert_eq!(
+        texts(&text, &parsed, Production::StepSource).len(),
+        rows.len()
+    );
+    assert_eq!(
+        texts(&text, &parsed, Production::StepTarget).len(),
+        rows.len()
+    );
     assert_eq!(
         texts(&text, &parsed, Production::StepArgument),
         ["1", "_", "_", "1"]
