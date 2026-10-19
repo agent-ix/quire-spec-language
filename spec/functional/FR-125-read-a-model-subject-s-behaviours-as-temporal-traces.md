@@ -111,7 +111,8 @@ reports.
   SHALL return `NotSimulated::RequiresBound` naming it (FR-120), before
   instantiating.
 - When the universes hold no object conforming to `T`, including an empty
-  universe and a type no population holds, the claim has zero instances.
+  universe and a type no population holds, the claim or hyperproperty clause
+  (one instance per key, FR-172) has zero instances.
   QSL SHALL then report `NoInstance` for the item before it explores any
   state, and FR-127 settles it `inconclusive`, so an item that was never
   evaluated is never read as holding.
