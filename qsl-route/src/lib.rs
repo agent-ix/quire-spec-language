@@ -169,15 +169,18 @@ pub struct BackendDescriptor {
 /// sole manifest conversion entry point shared by linked and process
 /// providers (FR-288, C-28).
 ///
-/// The manifest's `fairness_kinds` are not read here: the descriptor is built
-/// with no fairness kinds. Until the item path is wired, [`BackendDescriptor::with_fairness_kinds`]
-/// is the only way to set them.
+/// `fairness_kinds` is the manifest's `fairness_kinds` (QSpec FR-368), a
+/// subset of the closed labels `weak` and `strong`; `None` is a manifest with
+/// none, which advertises no fairness kind. A label outside that set refuses
+/// `invalid_capability`/`unknown-kind` with the received bytes: the spec names
+/// no cause for it, so the closest existing registration cause is used.
 pub fn descriptor_from_manifest<'a>(
     backend: Candidate,
     origin: ProviderOrigin,
     manifest_digest: ManifestDigest,
     advertised: impl IntoIterator<Item = (Option<&'a str>, Option<&'a str>)>,
     domains: Option<&[&str]>,
+    fairness_kinds: Option<&[&str]>,
 ) -> Result<BackendDescriptor, RegistrationRefusal> {
     let refuse = |cause| RegistrationRefusal {
         backend: backend.clone(),
@@ -202,14 +205,32 @@ pub fn descriptor_from_manifest<'a>(
         .any(|&(_, mode)| matches!(mode, Mode::Bounded));
     let domains = admit_domains(domains, advertises_bounded)
         .map_err(|defect| refuse(RegistrationCause::InvalidDomains(defect)))?;
+    let fairness_kinds = fairness_kinds
+        .unwrap_or_default()
+        .iter()
+        .map(|&label| {
+            fairness_kind_from_wire(label)
+                .ok_or_else(|| refuse(RegistrationCause::UnknownKind(label.to_owned())))
+        })
+        .collect::<Result<BTreeSet<_>, _>>()?;
     Ok(BackendDescriptor {
         backend,
         origin,
         manifest_digest,
         advertises,
         domains,
-        fairness_kinds: BTreeSet::new(),
+        fairness_kinds,
     })
+}
+
+/// Read a fairness kind from its exact manifest spelling, `weak` or `strong`
+/// (QSpec FR-368), with no normalization.
+fn fairness_kind_from_wire(label: &str) -> Option<FairnessKind> {
+    match label {
+        "weak" => Some(FairnessKind::Weak),
+        "strong" => Some(FairnessKind::Strong),
+        _ => None,
+    }
 }
 
 impl BackendDescriptor {

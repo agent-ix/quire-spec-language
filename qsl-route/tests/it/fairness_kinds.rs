@@ -7,8 +7,8 @@ use std::collections::BTreeSet;
 use ix_trace_rs::trace;
 use qsl_foundation::BackendId;
 use qsl_route::{
-    BackendDescriptor, Candidate, CandidateOutcome, CandidateSet, ManifestDigest, Mode,
-    ProviderOrigin, Registry,
+    descriptor_from_manifest, BackendDescriptor, Candidate, CandidateOutcome, CandidateSet,
+    ManifestDigest, Mode, ProviderOrigin, RegistrationCause, Registry,
 };
 use qsl_semantics::check::Capability;
 use quire_semantic_value::fairness::FairnessKind;
@@ -140,4 +140,58 @@ fn registrations_differing_in_fairness_kinds_conflict() {
         .register(temporal("EN-1", 1, &[Weak, Strong]))
         .is_err());
     assert_eq!(registry.backends().count(), 0);
+}
+
+/// A manifest-built temporal backend with the given `fairness_kinds` labels.
+fn manifest(
+    id: &str,
+    seed: u8,
+    kinds: Option<&[&str]>,
+) -> Result<BackendDescriptor, qsl_route::RegistrationRefusal> {
+    descriptor_from_manifest(
+        candidate(id),
+        ProviderOrigin::Process,
+        ManifestDigest::from_digest([seed; 32]),
+        [(Some("temporal-satisfaction"), Some("unbounded"))],
+        None,
+        kinds,
+    )
+}
+
+/// QSpec FR-368: the manifest's `fairness_kinds` reach the registry, so a
+/// manifest-registered backend advertising `strong` is a candidate for a
+/// strong item and one advertising only `weak` is not.
+#[test]
+#[trace("TC-535")]
+fn manifest_fairness_kinds_filter_candidates() {
+    let registry = registry([
+        manifest("both", 1, Some(&["weak", "strong"])).expect("valid"),
+        manifest("weak-only", 2, Some(&["weak"])).expect("valid"),
+        manifest("none", 3, None).expect("a manifest without the member is valid"),
+    ]);
+    assert_eq!(
+        set_for(&registry, &[Strong]).candidates(),
+        [candidate("both")]
+    );
+    assert_eq!(
+        set_for(&registry, &[Weak]).candidates(),
+        [candidate("both"), candidate("weak-only")]
+    );
+    assert_eq!(
+        set_for(&registry, &[]).candidates(),
+        [candidate("both"), candidate("none"), candidate("weak-only")]
+    );
+}
+
+/// QSpec FR-368: `fairness_kinds` is the closed set {`weak`, `strong`}; any
+/// other spelling is refused, never read as a near label.
+#[test]
+fn an_unknown_manifest_fairness_label_is_refused() {
+    for label in ["Strong", "strong ", "fair", ""] {
+        let refusal = manifest("x", 1, Some(&["weak", label])).expect_err("outside the set");
+        assert_eq!(
+            refusal.cause(),
+            &RegistrationCause::UnknownKind(label.to_owned())
+        );
+    }
 }
