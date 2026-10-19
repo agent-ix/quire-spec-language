@@ -17,6 +17,7 @@
 
 pub mod automaton;
 pub mod fairness;
+pub mod model_subject;
 pub mod simulation;
 pub mod temporal;
 pub mod value;
