@@ -39,3 +39,18 @@ Ticket: STD-207. Consistency of the new FR-250 solver budget text with the rest 
 ## Verdict
 
 Findings: FND-001 (high), FND-002 (medium). The `solver-steps` statement agrees with FR-293 and the deterministic-budget cause; AC-3's vectors agree with the Behavior bullets; TC-705 step 3 agrees with AC-3.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | medium | The fix routes a solver-time stop to `TimedOut` in a new bullet, but FR-250's verdict map still sends every `Stopped(limit)` to `Incomplete(LimitReached{limit, value, setting})`, and AC-2 still says "`Stopped` settles `incomplete`, `LimitReached`". FR-250 now gives two results for a solver-time stop. Split the map row (and AC-2) into a solver-steps stop, `LimitReached`, and a solver-time stop, `TimedOut`, or narrow both to the steps budget. | spec/functional/FR-250-map-a-hybrid-solver-result-to-a-verdict.md:74,89-92,107 |
+
+## Dispositions
+
+Round 1, against head 594d3e3e1 (fix commit 594d3e3e1).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | still-open | The cause is fixed ("SHALL settle `incomplete` with the time-limit cause `IncompleteCause::TimedOut` (FR-293), not `LimitReached`"), but the record half is not: the bullet before it says the request writer SHALL "state it as `max_solver_time` in the record", a member holding seconds, while this bullet says "The stored record SHALL hold no member that records wall time" (FR-293-AC-2: "no member that records a time"). Pick one: keep the seconds out of the record, or state why a budget in seconds is not a member that records a time and amend FR-293 to match. |
+| FND-002 | deferred | Nothing for #1037 to change. PR #1031 (head f39f2a1f1, unchanged) still has its "`solver-time` ... the record's `value` SHALL be the budget's value" bullet, which now also contradicts #1037's `TimedOut` rule; `git merge-tree` of the two heads is still clean. Whichever merges second reconciles: with #1037 first, #1031 drops that bullet on rebase. Left for the lead and planner on STD-207 and QSL-586. |

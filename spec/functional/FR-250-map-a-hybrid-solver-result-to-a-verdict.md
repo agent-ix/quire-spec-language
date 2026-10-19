@@ -71,7 +71,8 @@ The FR-331 terminal record of the claim.
 | --- | --- | --- | --- | --- |
 | `Unsat` or `EnclosureDisjoint` from a method sound for that outcome | `proved`, labelled `uncertified` | `closed-scope` | `Proved{basis: BoundedSolver{method, horizon, jumps}, certification: Uncertified}` | success |
 | `DeltaSat`, `EnclosureMeetsUnsafe`, `Unknown`, or a result from a method not sound for its outcome | `inconclusive` | `unsettled` | `Inconclusive(SolverInconclusive)` | inconclusive |
-| `Stopped(limit)` | `incomplete`, execution `resource-incomplete` | `unavailable` | `Incomplete(LimitReached{limit, value, setting})` (ADR-018 V-7) | incomplete |
+| `Stopped(solver-steps)`, or any deterministic budget | `incomplete`, execution `resource-incomplete` | `unavailable` | `Incomplete(LimitReached{limit, value, setting})` (ADR-018 V-7) | incomplete |
+| `Stopped(solver-time)` | `incomplete`, execution `resource-incomplete` | `unavailable` | `Incomplete(TimedOut)` (FR-293), distinct from `Cancelled(Deadline)` | incomplete |
 
 - No provider result SHALL settle `refuted`.
 - A `BoundedSolver` proof SHALL carry the label `uncertified`: a solver
@@ -79,17 +80,17 @@ The FR-331 terminal record of the claim.
   PC-1, ADR-026 HY-2).
 - A `BoundedSolver` proof SHALL hold for the claim within its horizon and
   jump bound, and the record SHALL carry both.
-- The `max_solver_time` request member SHALL be a count of whole seconds of
-  solver wall-clock time. The request's deadline duration (FR-293) is the
-  input that accepts a fractional number of seconds. If it has a fractional
-  part, then the request writer SHALL round it up to the next whole second
-  when the request is admitted, give the solver that rounded budget, and state
-  it as `max_solver_time` in the record. `max_solver_time` has the published
-  default 60 seconds.
+- `max_solver_time` SHALL be a request setting of its own, independent of
+  FR-276's deadline, that accepts a possibly fractional duration in seconds,
+  with the published default 60 seconds. When a request is admitted with a
+  fractional `max_solver_time`, the request writer SHALL round it up to the next
+  whole second and give the solver that whole-second budget; the run uses the
+  rounded value. It is a wall-clock setting, so it is no member of the
+  canonical request key (FR-292) and no member of a stored record.
 - A solver that exhausts `max_solver_time` SHALL settle `incomplete` with the
-  time-limit cause `IncompleteCause::TimedOut` (FR-293), not
-  `LimitReached`. The stored record SHALL hold no member that records wall
-  time, and QSpec FR-306 does not cache it.
+  time-limit cause `IncompleteCause::TimedOut` (FR-293), not `LimitReached`
+  and not `Cancelled(Deadline)`. The stored record SHALL hold no member that
+  records wall time, and QSpec FR-306 does not cache it.
 - The `max_solver_steps` request member SHALL be a count of solver steps:
   whole and non-negative, as the provider counts its own steps, with the
   published default 1,000,000 steps. QSL SHALL compare and report a
@@ -104,8 +105,8 @@ The FR-331 terminal record of the claim.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-250-AC-1 | A model with a variable `v` of rate `-a` and a clock `t` classifies `v` as hybrid and `t` as a clock; its claim routes to the registered fixture provider. With no provider registered it settles `unsupported`, `unsupported-requested-capability`. | Test (TC-705) |
-| FR-250-AC-2 | Fixture results map as the table states: a δ-complete `Unsat` with horizon 10 and jumps 3 settles `Proved{BoundedSolver{…, horizon: 10, jumps: 3}, Uncertified}`; `DeltaSat` settles `inconclusive`, `SolverInconclusive`; `EnclosureDisjoint` from a flowpipe method without outward rounding settles `inconclusive`, `SolverInconclusive`; `Stopped` settles `incomplete`, `LimitReached`. No fixture result settles `refuted`. | Test (TC-705) |
-| FR-250-AC-3 | A request with a deadline duration of 1.5 s is admitted with `max_solver_time` 2 and the solver is given 2 s; 2 s stays 2 and 0.2 s becomes 1; a request that sets none uses 60. A solver that exhausts the time budget settles `incomplete` with cause `TimedOut`, and the stored record holds no wall-time member. A solver that stops at 1,000 steps settles `incomplete`, `LimitReached{limit: solver-steps, value: 1000, setting: max_solver_steps}`, unchanged and in steps; a request that sets none uses 1,000,000. | Test (TC-705) |
+| FR-250-AC-2 | Fixture results map as the table states: a δ-complete `Unsat` with horizon 10 and jumps 3 settles `Proved{BoundedSolver{…, horizon: 10, jumps: 3}, Uncertified}`; `DeltaSat` settles `inconclusive`, `SolverInconclusive`; `EnclosureDisjoint` from a flowpipe method without outward rounding settles `inconclusive`, `SolverInconclusive`; a `solver-steps` stop settles `incomplete`, `LimitReached{limit: solver-steps, ...}`; a `solver-time` stop settles `incomplete`, `TimedOut`. No fixture result settles `refuted`. | Test (TC-705) |
+| FR-250-AC-3 | A request with `max_solver_time` 1.5 s is admitted with a 2 s solver budget and the run uses 2; 2 s stays 2 and 0.2 s becomes 1; a request that sets none uses 60. A solver that exhausts the time budget, with no `Cancel` raised, settles `incomplete` with cause `TimedOut`, distinct from `Cancelled(Deadline)` raised on a run with an FR-276 deadline; the stored record holds no wall-time member, and two requests that differ only in `max_solver_time` have equal canonical key bytes. A solver that stops at 1,000 steps settles `incomplete`, `LimitReached{limit: solver-steps, value: 1000, setting: max_solver_steps}`, unchanged and in steps; a request that sets none uses 1,000,000. | Test (TC-705) |
 
 ## Dependencies
 

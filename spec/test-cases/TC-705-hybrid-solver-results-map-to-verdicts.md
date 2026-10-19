@@ -20,7 +20,7 @@ Fixtures: a braking model with `v` of rate `-a` and a clock `t`; a fixture provi
 
 1. Classify the variables and route the claim, with the fixture provider registered and with none.
 2. Map each fixture result.
-3. Admit requests with deadline durations of 1.5 s, 2 s and 0.2 s and with none, and with `max_solver_steps` unset and 1,000; stop the fixture provider on time and on steps.
+3. Admit requests with `max_solver_time` 1.5 s, 2 s, 0.2 s and unset, and with `max_solver_steps` unset and 1,000; stop the fixture provider on time with no `Cancel` raised, and again with an FR-276 deadline that fires; stop it on steps; compare the canonical key bytes of two requests that differ only in `max_solver_time`.
 
 Tag the tests `#[trace("TC-705", "FR-250-AC-n")]`.
 
@@ -28,4 +28,4 @@ Tag the tests `#[trace("TC-705", "FR-250-AC-n")]`.
 
 - Step 1: `v` hybrid, `t` a clock; routed to the fixture; `unsupported`, `unsupported-requested-capability` with none.
 - Step 2: the rows of FR-250's table, with no `refuted`.
-- Step 3: `max_solver_time` 2, 2, 1 and 60, the solver given the rounded budget; the time stop is `incomplete` with cause `TimedOut` and no wall-time member in the stored record; the step stop is `LimitReached{solver-steps, 1000, max_solver_steps}`, the default 1,000,000.
+- Step 3: solver budgets 2, 2, 1 and 60 s, the run using the rounded value; the time stop is `incomplete` with cause `TimedOut`, the deadline stop `Cancelled(Deadline)`, and the stored record holds no wall-time member; the key bytes are equal; the step stop is `LimitReached{solver-steps, 1000, max_solver_steps}`, the default 1,000,000.

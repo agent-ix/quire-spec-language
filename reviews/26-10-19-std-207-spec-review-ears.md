@@ -31,3 +31,12 @@ Ticket: STD-207. EARS conformance of the two requirement statements this PR adds
 ## Verdict
 
 Findings: FND-001 (low), FND-002 (low). The unit statements themselves ("SHALL be a count of whole seconds of wall-clock time", "SHALL be a count of solver steps") are atomic and testable.
+
+## Dispositions
+
+Round 1, against head 594d3e3e1 (fix commit 594d3e3e1).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-250: "If it has a fractional part, then the request writer SHALL round it up to the next whole second when the request is admitted". |
+| FND-002 | fixed | FR-250: "QSL SHALL compare and report a `solver-steps` value as the provider counts it, and SHALL NOT convert it to time." |

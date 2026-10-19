@@ -40,3 +40,18 @@ Not done by this PR, for the planner: STD-207 also asks to state the units in th
 ## Verdict
 
 Findings: FND-001 (medium), FND-002 (medium). The units the ticket asked for are stated and the rounding direction is pinned by a vector a test can fail (2 s exact, 1.5 s and 0.2 s up); AC-3 traces to TC-705 step 3 with matching expected values. See the integrity review (SR-13232) for the conflict with FR-293 and the duplication with PR #1031.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | high | The fix names "The request's deadline duration (FR-293)" as the input that takes fractional seconds. No such request member exists: FR-293 names no deadline duration, and FR-276 makes the deadline a timer the frontend owns, which cancels the run with `Cancelled(Deadline)` ("The library reads no clock"); FR-292 keeps the wall-clock deadline out of the cache key. Tying the solver budget to that deadline also makes AC-3's time row unreachable: a 1.5 s deadline cancels at 1.5 s with `Cancelled{source: deadline}`, before the solver's rounded 2 s budget can end with `TimedOut`, and FR-293-AC-1 requires those two causes to stay distinct. Give `max_solver_time` its own input that accepts a fractional duration (for example the request member itself, in decimal seconds, rounded up at admission), independent of the FR-276 deadline. | spec/functional/FR-250-map-a-hybrid-solver-result-to-a-verdict.md:83-88,108 |
+
+## Dispositions
+
+Round 1, against head 594d3e3e1 (fix commit 594d3e3e1).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-250: "If it has a fractional part, then the request writer SHALL round it up to the next whole second when the request is admitted, give the solver that rounded budget, and state it as `max_solver_time` in the record." AC-3: "is admitted with `max_solver_time` 2 and the solver is given 2 s". The input it names is a new defect, FND-003. |
+| FND-002 | fixed | FR-250: "`max_solver_time` has the published default 60 seconds"; "with the published default 1,000,000 steps"; AC-3 checks both. The values are the author's picks; the planner should confirm them. |
