@@ -4,8 +4,10 @@
 //! `qsl-source`.
 
 mod clause_text;
+mod hyper_clause_forms;
 mod identity_free_forms;
 mod model_source_forms;
+mod probabilistic_forms;
 mod protocol_clause_forms;
 mod protocol_control_forms;
 mod protocol_member_forms;

@@ -1658,6 +1658,19 @@ mod tests {
             Expression::boolean(true),
             Expression::integer(3_i64),
             Expression::rational(Integer::from(1_i64), Integer::from(3_i64)),
+            Expression::quantity(qsl_forms::QuantityForm {
+                magnitude: qsl_forms::ExactValueForm {
+                    kind: qsl_forms::ExactValueKind::Natural,
+                    first: Integer::from(5_i64),
+                    second: Integer::from(1_i64),
+                    span: qsl_foundation::Span { start: 0, end: 0 },
+                },
+                unit: qsl_forms::NameForm {
+                    name: "ms".to_owned(),
+                    span: qsl_foundation::Span { start: 0, end: 0 },
+                },
+                span: qsl_foundation::Span { start: 0, end: 0 },
+            }),
             Expression::string("abc"),
             o(),
         ];
@@ -1752,11 +1765,12 @@ mod tests {
     }
 
     /// Every name [`form_name`] gives, one per `Expression` form.
-    const FORM_NAMES: [&str; 33] = [
+    const FORM_NAMES: [&str; 34] = [
         "Case",
         "Boolean",
         "Integer",
         "Rational",
+        "Quantity",
         "String",
         "Name",
         "Let",
@@ -1798,6 +1812,7 @@ mod tests {
             ExprNode::Boolean(_) => "Boolean",
             ExprNode::Integer(_) => "Integer",
             ExprNode::Rational(..) => "Rational",
+            ExprNode::Quantity(_) => "Quantity",
             ExprNode::String(_) => "String",
             ExprNode::Name(_) => "Name",
             ExprNode::Let { .. } => "Let",
@@ -1828,6 +1843,9 @@ mod tests {
             ExprNode::Result => "Result",
             ExprNode::Reaches { .. } => "Reaches",
             ExprNode::ProtocolReference { .. } => "ProtocolReference",
+            ExprNode::Indexed { .. } => "Indexed",
+            ExprNode::StepLabel { .. } => "StepLabel",
+            ExprNode::Stutter => "Stutter",
         }
     }
 

@@ -77,6 +77,7 @@ mod check;
 mod checked_dispatch;
 mod claims;
 mod dispatch_link;
+pub mod footprint;
 pub use abstraction::{
     AbstractionKey, AbstractionRefusal, AuthoredBinding, CheckedAbstractionRelation,
     CheckedBinding, CheckedFrameBinding, FrameBinding, FrameNodes, MalformedEntry, ObjectBinding,
@@ -113,10 +114,13 @@ mod layer;
 mod lowering;
 pub(crate) use assemble::variant_type_declarations;
 pub(crate) use lowering::record_node_key;
+mod hyper_clause;
+mod hyper_typing;
 mod node_key;
 mod observation;
 mod operation_body;
 mod operation_clause;
+mod probabilistic;
 mod profile;
 mod protocol_clause;
 mod protocol_controls;
@@ -133,6 +137,9 @@ mod state_model;
 mod sum_case;
 mod temporal_clause;
 mod terminal;
+pub use probabilistic::{
+    ConfidenceFault, ProbabilisticCause, ProbabilisticDeclaration, WeightOwner,
+};
 pub use state_model::StateModelRefusal;
 pub use sum_case::{mint_union_member_key, ExhaustivenessObligation, SumCaseCause};
 #[cfg(any(test, feature = "test-support"))]
@@ -209,8 +216,8 @@ pub use family::fixtures::{
 };
 pub use ir::{
     Arithmetic, CaseArm, CheckedBody, CheckedLiteral, CheckedNode, Connective,
-    IntegerDivisionOperator, Node, NodeId, NodeKind, Observation, OrderedKind, RecordField,
-    RecordSlot, Slot, Visit,
+    IntegerDivisionOperator, Node, NodeId, NodeKind, OrderedKind, RecordField, RecordSlot, Slot,
+    Visit,
 };
 
 pub use assemble::{
@@ -250,6 +257,14 @@ pub use type_form::{I128Limit, IntegerOutsideI128, IntegerSite, TypeFormFault};
 // conversion does, and both are `check`-core call sites of one canonical
 // function rather than two.
 pub use field_refinement::RefinementObligation;
+#[cfg(any(test, feature = "test-support"))]
+pub use hyper_clause::check_hyper_clauses;
+pub use hyper_clause::{
+    ArgumentRead, CheckedHyper, CheckedHyperClause, CheckedModelRelation, CheckedQuantifier,
+    CheckedStepPredicate, CopyGroup, HyperCause, HyperDeclaration, HyperDeclarations, HyperForm,
+    HyperIdentity, HyperTraceFamily, HyperUnsupported, ModelAlias, ObjectParameter,
+    OperationContractClaim, StepRead,
+};
 pub use identity::{
     to_kernel_value_type, CheckedClauseKind, CheckedTypeNode, CorrespondenceConflict,
     InvalidSumVariants, ModelCorrespondence, ScalarShape, SumVariant, SumVariants,
@@ -1836,6 +1851,11 @@ impl PackageDeclarations {
                 Err(StageFailure::Refused(refusal)) => refusals.push(refusal),
             }
         }
+        // FR-185, FR-186: the `random`, `reward`, `workload` and
+        // `probabilistic` declarations. What the forms alone let S3 refuse is
+        // refused; the rest refuses `not-yet-implemented`, so nothing
+        // probabilistic compiles unchecked (`probabilistic::check`).
+        refusals.extend(probabilistic::check(&self.probabilistic));
         // FR-165: each state-graph claim, checked through the `StateGraph`
         // family's contract once every function signature is known, against
         // the same package-wide node total and contract meter.
@@ -1890,6 +1910,54 @@ impl PackageDeclarations {
                         return Err(refusals);
                     }
                 }
+            }
+        }
+        // FR-172: each `hyper` clause and `relation`, checked through the
+        // `TemporalTrace` family under the unit's one temporal profile. A
+        // clause that checks is refused as not emitted, as a `temporal`
+        // clause is.
+        let hyper_declarations = hyper_clause::HyperDeclarations {
+            temporal: temporal_clause::TemporalDeclarations {
+                scope: &scope,
+                selections: &self.temporal_selections,
+                source: &source,
+                embedding: embedding.as_deref(),
+                position_limit: limits.nodes(),
+            },
+            models: &models,
+            signatures: &signatures,
+        };
+        for clause in &self.hyper_clauses {
+            let mut contract_cx = crate::family::CheckContext::new(
+                &hyper_declarations,
+                contract_limits,
+                &mut contract_meter,
+                &mut contract_diagnostics,
+                &mut contract_scopes,
+            );
+            match hyper_clause::HyperTraceFamily::check(clause, &mut contract_cx) {
+                Ok(staged) => {
+                    let (name, span) = staged.into_value().name_and_span();
+                    refusals.push(hyper_clause::not_emitted(name, span));
+                }
+                Err(StageFailure::Limit(limit)) => {
+                    refusals.push(CheckRefusal {
+                        location: root(Origin::Expression),
+                        cause: limit_cause(&limit),
+                    });
+                    if cancel.tripped().is_some() {
+                        return Err(refusals);
+                    }
+                }
+                Err(StageFailure::Cancelled(_)) => return Err(refusals),
+                Err(StageFailure::Fault(fault)) => {
+                    refusals.push(CheckRefusal {
+                        location: root(Origin::Expression),
+                        cause: CheckCause::InternalFault(Box::new(KeyFault::StageFault(fault))),
+                    });
+                    return Err(refusals);
+                }
+                Err(StageFailure::Refused(refusal)) => refusals.push(refusal),
             }
         }
         if !refusals.is_empty() {

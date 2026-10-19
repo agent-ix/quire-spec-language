@@ -8,8 +8,9 @@
 use std::collections::BTreeMap;
 
 use qsl_foundation::diagnostic::InternalFault;
-use qsl_semantics::check::{CheckedGraph, Observation, ProtocolClauseFamily};
+use qsl_semantics::check::{CheckedGraph, ProtocolClauseFamily};
 use qsl_semantics::family::{EvalOutcome, FamilyOutcome, FamilyResult};
+use qsl_semantics::model::clause_observation::Observation;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::observation::{AdmittedInvocation, FrameVerdict, FrameWitness};
 use quire_exact::{Meter, NodeKey, Outcome, Value};

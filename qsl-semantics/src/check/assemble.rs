@@ -704,6 +704,10 @@ struct Unit {
     /// Each `temporal` clause's form, in source order, for FR-326's
     /// `check::temporal_clause` checker to resolve at S3.
     temporal_clauses: Vec<super::temporal_clause::TemporalDeclaration>,
+    /// Each `hyper` clause and `relation`, in source order, for
+    /// `check::hyper_clause` to resolve at S3.
+    hyper_clauses: Vec<super::hyper_clause::HyperDeclaration>,
+    probabilistic: Vec<super::ProbabilisticDeclaration>,
     /// Each `terminal` declaration's form, in source order, resolved by the
     /// caller into the model's `TerminalClauseDeclaration`s (FR-124).
     terminals: Vec<TerminalDeclarationForm>,
@@ -727,6 +731,8 @@ impl Unit {
             population_bounds: Vec::new(),
             protocols: Vec::new(),
             temporal_clauses: Vec::new(),
+            hyper_clauses: Vec::new(),
+            probabilistic: Vec::new(),
             terminals: Vec::new(),
             state_graph_claims: Vec::new(),
         };
@@ -770,6 +776,27 @@ impl Unit {
                     });
                 }
                 DeclarationForm::Terminal(terminal) => unit.terminals.push(*terminal),
+                DeclarationForm::HyperBehaviours(clause) => unit
+                    .hyper_clauses
+                    .push(super::hyper_clause::HyperDeclaration::Behaviours(*clause)),
+                DeclarationForm::HyperFinite(clause) => unit
+                    .hyper_clauses
+                    .push(super::hyper_clause::HyperDeclaration::Finite(*clause)),
+                DeclarationForm::ModelRelation(clause) => unit
+                    .hyper_clauses
+                    .push(super::hyper_clause::HyperDeclaration::Relation(*clause)),
+                DeclarationForm::Random(random) => unit
+                    .probabilistic
+                    .push(super::ProbabilisticDeclaration::Random(random)),
+                DeclarationForm::Reward(reward) => unit
+                    .probabilistic
+                    .push(super::ProbabilisticDeclaration::Reward(reward)),
+                DeclarationForm::Workload(workload) => unit
+                    .probabilistic
+                    .push(super::ProbabilisticDeclaration::Workload(workload)),
+                DeclarationForm::Probabilistic(claim) => unit
+                    .probabilistic
+                    .push(super::ProbabilisticDeclaration::Claim(claim)),
                 DeclarationForm::StateGraphClaim(claim) => unit.state_graph_claims.push(*claim),
                 DeclarationForm::Temporal(clause) => {
                     unit.temporal_clauses
@@ -1751,6 +1778,7 @@ fn expression_type_forms<'e>(roots: impl IntoIterator<Item = &'e Expression>) ->
                 ExprNode::Boolean(_)
                 | ExprNode::Integer(_)
                 | ExprNode::Rational(..)
+                | ExprNode::Quantity(_)
                 | ExprNode::String(_)
                 | ExprNode::Name(_)
                 | ExprNode::Let { .. }
@@ -1776,6 +1804,9 @@ fn expression_type_forms<'e>(roots: impl IntoIterator<Item = &'e Expression>) ->
                 | ExprNode::SelfRef
                 | ExprNode::Result
                 | ExprNode::Reaches { .. }
+                | ExprNode::Indexed { .. }
+                | ExprNode::StepLabel { .. }
+                | ExprNode::Stutter
                 | ExprNode::ProtocolReference { .. } => {}
                 // Not the S2 seam (`Typer::infer_form`'s own doc,
                 // `qsl-semantics/src/check/check/typing.rs`): an
@@ -2519,6 +2550,23 @@ impl PackageDeclarations {
                 });
             }
         }
+        // FR-172: a `hyper` clause's and a `relation`'s `using` alias names one
+        // of the unit's profile selections, as a `temporal` clause's does.
+        for clause in &unit.hyper_clauses {
+            let using = clause.profile();
+            if !selections
+                .profiles
+                .iter()
+                .any(|profile| profile.alias == using.alias)
+            {
+                errors.push(AssemblyError {
+                    cause: AssemblyCause::UndeclaredAlias {
+                        alias: using.alias.clone(),
+                    },
+                    span: using.span,
+                });
+            }
+        }
         // FR-361: S3 refuses each model construct the unit writes unless its
         // header selects the model profile.
         errors.extend(model_gate::refusals(
@@ -3221,6 +3269,8 @@ impl PackageDeclarations {
             .collect();
         package.protocols = unit.protocols;
         package.temporal_clauses = unit.temporal_clauses;
+        package.hyper_clauses = unit.hyper_clauses;
+        package.probabilistic = unit.probabilistic;
         package.temporal_selections = selections
             .profiles
             .iter()

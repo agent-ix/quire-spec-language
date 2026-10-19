@@ -133,6 +133,42 @@ productions! {
     TemporalConjunction, TemporalRelation, TemporalUnary, TemporalPrimary,
     #[doc = "`terminal <identifier> using <identifier> on <identifier> (when <block> | any) ;`: a model's intended terminal states."]
     TerminalDeclaration,
+    #[doc = "`random <qualified-name> ( <identifier> ) ~ { <weighted-value>, ... } ;`: a distribution on an operation parameter."]
+    RandomDeclaration,
+    #[doc = "`<expression> : <exact-value>`: one value of a random parameter's distribution and its weight."]
+    WeightedValue,
+    #[doc = "`reward <identifier> on <qualified-name> = <expression> ;`: a named reward on an operation."]
+    RewardDeclaration,
+    #[doc = "`workload <identifier> on <identifier> { <workload-weight>+ }`: a weight for each operation of a model."]
+    WorkloadDeclaration,
+    #[doc = "`weight <qualified-name> = <exact-value> ;`: one operation's weight in a workload."]
+    WorkloadWeight,
+    #[doc = "`probabilistic <identifier> using <identifier> on <identifier> [over (<parameter>)] <scheduler-clause> <activation> [<confidence>] { <probabilistic-form> }`: a statistical claim over a model."]
+    ProbabilisticClause,
+    #[doc = "`under <identifier>` or `under every scheduler <fairness-item>*`: the scheduler a probabilistic claim holds under."]
+    SchedulerClause,
+    #[doc = "`fair (weak | strong) [each] <qualified-name>`: one fairness item of `under every scheduler`."]
+    FairnessItem,
+    #[doc = "`with <confidence-item>, ...`: a probabilistic claim's confidence parameters."]
+    Confidence,
+    #[doc = "`(alpha | beta | indifference) <exact-value>`: one confidence parameter."]
+    ConfidenceItem,
+    #[doc = "`probability`, `quantile`, `mean of`, `long_run_fraction` or `expected`: the body of a probabilistic claim."]
+    ProbabilisticForm,
+    #[doc = "A temporal formula, or a measure compared with a threshold: a `probability` claim's event."]
+    Event,
+    #[doc = "`accumulate`, `steps` or `elapsed` from a predicate until a predicate within a horizon, or a fraction."]
+    Measure,
+    #[doc = "`fraction holds ( <expression> ) over [0, <horizon>] [<weighting>]`."]
+    Fraction,
+    #[doc = "`weighted by <identifier>`: weights a fraction or a long-run fraction."]
+    Weighting,
+    #[doc = "An unsigned integer or a quantity literal: a measure's window."]
+    Horizon,
+    #[doc = "An unsigned integer, a decimal literal or an exact number."]
+    ExactValue,
+    #[doc = "`<exact-value> <qualified-name>`: a magnitude and its unit."]
+    QuantityLiteral,
     #[doc = "`possible`, `always possible` or `unique path` followed by a name, `using`, `over ( <parameter> )` and the form's predicates: a claim about a model's state graph."]
     StateGraphClaim,
     #[doc = "`{ <fairness>* <predicate> }`: the braced predicate of a `possible` or `always possible` claim, whose fairness constraints the checker refuses."]
@@ -190,7 +226,21 @@ productions! {
     #[doc = "`related by <identifier> ( <expression>, <expression> )`: attached to an event node to correlate it with another by a named relation."]
     Related,
     EventNode, Check, Commit, Finish,
-    RelationClause, ExecutionBinding, HyperClause, TraceDomain, Quantifier,
+    RelationClause, ExecutionBinding, HyperClause, TraceDomain,
+    #[doc = "`behaviours [( <parameter> {, <parameter>} )]`: a `hyper` clause whose trace variables range over behaviours of model subjects."]
+    BehavioursDomain,
+    #[doc = "`(forall | exists) trace <identifier> [of <identifier> <fairness>*]`: one trace quantifier of a `hyper` clause."]
+    Quantifier,
+    #[doc = "`align skip { <qualified-name> {, <qualified-name>} }`: the operations whose steps a `hyper` clause skips when it aligns its traces."]
+    AlignSkip,
+    #[doc = "`match <block>`: the step labels a `hyper` clause's traces must agree on."]
+    MatchBlock,
+    #[doc = "`<identifier> . step . (op | receiver | <qualified-name> . <member>)`: one trace's step label, read in a `hyper` clause's `match` block."]
+    StepLabel,
+    #[doc = "`<postfix> @ <identifier>`: a model member read from the named trace of a `hyper` clause."]
+    IndexedRead,
+    HyperExpression, HyperImplication, HyperDisjunction, HyperConjunction,
+    HyperComparison, HyperSum, HyperProduct, HyperUnary, HyperPostfix, HyperPrimary,
     HybridDeclaration, HybridMode, Equation, SynthesisDeclaration,
     VerificationPlan, VerificationStep,
 }

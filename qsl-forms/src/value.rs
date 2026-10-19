@@ -23,9 +23,10 @@ use super::spans::{DeclarationSpans, ExpressionSpans};
 use super::syntax::{
     Accumulation, AliasForm, ArmForm, BinaryOperator, BinderQuery, BuiltinType, CaseForm,
     DeclarationForm, DeclarationKind, DeclaredName, DimensionForm, DimensionTermForm, EnumForm,
-    EnumMemberForm, ExactNumberForm, ExactNumberKind, ExprId, ExprNode, Expression,
-    ExpressionBuilder, FieldInitializer, FunctionDeclaration, NameForm, RecordFieldForm,
-    RecordForm, TermOperator, TupleForm, TypeForm, TypeFormHead, UnitForm, UsingAlias,
+    EnumMemberForm, ExactNumberForm, ExactNumberKind, ExactValueForm, ExactValueKind, ExprId,
+    ExprNode, Expression, ExpressionBuilder, FieldInitializer, FunctionDeclaration, NameForm,
+    QuantityForm, RecordFieldForm, RecordForm, StepLabelForm, TermOperator, TupleForm, TypeForm,
+    TypeFormHead, UnitForm, UsingAlias,
 };
 
 /// One significant child of a CST node: a token or a node.
@@ -130,7 +131,7 @@ pub(crate) fn significant_tokens<'c>(cst: &'c LosslessCst, node: &CstNode) -> Ve
 }
 
 /// An integer literal's value.
-fn integer(spelling: &str, node: &CstNode) -> Result<Integer, FormsRefusal> {
+pub(crate) fn integer(spelling: &str, node: &CstNode) -> Result<Integer, FormsRefusal> {
     spelling.parse().map_err(|_| unexpected(node))
 }
 
@@ -333,7 +334,10 @@ pub(crate) fn dimension(construct: Construct<'_>) -> Result<DeclarationForm, For
 }
 
 /// An `ExactNumber` node as written.
-fn exact_number(cst: &LosslessCst, node: &CstNode) -> Result<ExactNumberForm, FormsRefusal> {
+pub(crate) fn exact_number(
+    cst: &LosslessCst,
+    node: &CstNode,
+) -> Result<ExactNumberForm, FormsRefusal> {
     let items = items(cst, node);
     let signed = nodes_of(&items, Production::SignedInteger);
     let (kind, first, second) = if has_token(&items, b"rational") {
@@ -362,6 +366,71 @@ fn exact_number(cst: &LosslessCst, node: &CstNode) -> Result<ExactNumberForm, Fo
         second,
         span: node.span(),
     })
+}
+
+/// A `QuantityLiteral` node: a magnitude and a unit name.
+pub(crate) fn quantity_form(
+    cst: &LosslessCst,
+    quantity: &CstNode,
+) -> Result<QuantityForm, FormsRefusal> {
+    let quantity_items = items(cst, quantity);
+    Ok(QuantityForm {
+        magnitude: exact_value(
+            cst,
+            only(&quantity_items, Production::ExactValue, quantity)?,
+        )?,
+        unit: name_form(
+            cst,
+            only(&quantity_items, Production::QualifiedName, quantity)?,
+        )?,
+        span: quantity.span(),
+    })
+}
+
+/// An `ExactValue` node as written: a `uint`, a decimal literal or an exact
+/// number.
+pub(crate) fn exact_value(
+    cst: &LosslessCst,
+    value: &CstNode,
+) -> Result<ExactValueForm, FormsRefusal> {
+    let span = value.span();
+    match items(cst, value)[..] {
+        [Item::Node(number)] if number.production() == Production::ExactNumber => {
+            let number = exact_number(cst, number)?;
+            Ok(ExactValueForm {
+                kind: match number.kind {
+                    ExactNumberKind::Rational => ExactValueKind::Rational,
+                    ExactNumberKind::Decimal => ExactValueKind::Decimal,
+                },
+                first: number.first,
+                second: number.second,
+                span,
+            })
+        }
+        [Item::Token(token)] if token.kind() == TokenKind::Integer => Ok(ExactValueForm {
+            kind: ExactValueKind::Natural,
+            first: integer(&text(token, value)?, value)?,
+            second: integer("1", value)?,
+            span,
+        }),
+        [Item::Token(token)] => {
+            // A decimal literal `a.b`: the digits without the point over
+            // the count of digits after it.
+            let spelling = text(token, value)?;
+            let Some((whole, fraction)) = spelling.split_once('.') else {
+                return Err(unexpected(value));
+            };
+            let digits = format!("{whole}{fraction}");
+            let digits = digits.trim_start_matches('0');
+            Ok(ExactValueForm {
+                kind: ExactValueKind::DecimalLiteral,
+                first: integer(if digits.is_empty() { "0" } else { digits }, value)?,
+                second: integer(&fraction.len().to_string(), value)?,
+                span,
+            })
+        }
+        _ => Err(unexpected(value)),
+    }
 }
 
 /// `unit name : Dimension = scale [* target] [+ offset];` (FR-091 "Unit
@@ -571,6 +640,7 @@ enum Shape {
     Boolean(bool),
     Integer(Integer),
     Rational(Integer, Integer),
+    Quantity(QuantityForm),
     String(String),
     Name(String),
     Let(String),
@@ -614,6 +684,12 @@ enum Shape {
     Reaches(String, Span),
     /// `protocol <qualified-name>` (FR-308): the written target.
     ProtocolReference(String),
+    /// `read @ trace` (FR-171): the trace variable.
+    Indexed(String),
+    /// `trace.step.<label>` (FR-171).
+    StepLabel(String, StepLabelForm),
+    /// `stutter` (FR-171).
+    Stutter,
 }
 
 /// The built subexpressions of one node, consumed in order.
@@ -655,6 +731,10 @@ impl Shape {
             Self::Rational(numerator, denominator) => {
                 arity(0)?;
                 ExprNode::Rational(numerator, denominator)
+            }
+            Self::Quantity(quantity) => {
+                arity(0)?;
+                ExprNode::Quantity(quantity)
             }
             Self::String(text) => {
                 arity(0)?;
@@ -876,6 +956,21 @@ impl Shape {
                 arity(0)?;
                 ExprNode::ProtocolReference { target }
             }
+            Self::Indexed(trace) => {
+                arity(1)?;
+                ExprNode::Indexed {
+                    read: operands.next()?,
+                    trace,
+                }
+            }
+            Self::StepLabel(trace, label) => {
+                arity(0)?;
+                ExprNode::StepLabel { trace, label }
+            }
+            Self::Stutter => {
+                arity(0)?;
+                ExprNode::Stutter
+            }
         };
         Some(node)
     }
@@ -970,9 +1065,9 @@ impl<'c> Mapping<'c> {
         let node = task.node;
         let items = items(self.cst, node);
         match node.production() {
-            Production::Expression | Production::ScrutineeExpression => {
-                self.expression(task, &items)
-            }
+            Production::Expression
+            | Production::ScrutineeExpression
+            | Production::HyperExpression => self.expression(task, &items),
             Production::CaseExpression => self.case(task, &items),
             Production::Implication
             | Production::Disjunction
@@ -985,10 +1080,23 @@ impl<'c> Mapping<'c> {
             | Production::ScrutineeConjunction
             | Production::ScrutineeComparison
             | Production::ScrutineeSum
-            | Production::ScrutineeProduct => self.chain(task, &items),
-            Production::Unary | Production::ScrutineeUnary => self.unary(task, &items),
-            Production::Postfix | Production::ScrutineePostfix => self.postfix(task, &items),
-            Production::Primary | Production::ScrutineePrimary => self.primary(task, &items),
+            | Production::ScrutineeProduct
+            | Production::HyperImplication
+            | Production::HyperDisjunction
+            | Production::HyperConjunction
+            | Production::HyperComparison
+            | Production::HyperSum
+            | Production::HyperProduct => self.chain(task, &items),
+            Production::Unary | Production::ScrutineeUnary | Production::HyperUnary => {
+                self.unary(task, &items)
+            }
+            Production::Postfix | Production::ScrutineePostfix | Production::HyperPostfix => {
+                self.postfix(task, &items)
+            }
+            Production::Primary | Production::ScrutineePrimary | Production::HyperPrimary => {
+                self.primary(task, &items)
+            }
+            Production::IndexedRead => self.indexed_read(task, &items),
             Production::CompleteUnit
             | Production::Header
             | Production::Profile
@@ -1048,6 +1156,24 @@ impl<'c> Mapping<'c> {
             | Production::TemporalUnary
             | Production::TemporalPrimary
             | Production::TerminalDeclaration
+            | Production::RandomDeclaration
+            | Production::WeightedValue
+            | Production::RewardDeclaration
+            | Production::WorkloadDeclaration
+            | Production::WorkloadWeight
+            | Production::ProbabilisticClause
+            | Production::SchedulerClause
+            | Production::FairnessItem
+            | Production::Confidence
+            | Production::ConfidenceItem
+            | Production::ProbabilisticForm
+            | Production::Event
+            | Production::Measure
+            | Production::Fraction
+            | Production::Weighting
+            | Production::Horizon
+            | Production::ExactValue
+            | Production::QuantityLiteral
             | Production::StateGraphClaim
             | Production::StateGraphBody
             | Production::StateGraphPredicate
@@ -1105,7 +1231,11 @@ impl<'c> Mapping<'c> {
             | Production::ExecutionBinding
             | Production::HyperClause
             | Production::TraceDomain
+            | Production::BehavioursDomain
             | Production::Quantifier
+            | Production::AlignSkip
+            | Production::MatchBlock
+            | Production::StepLabel
             | Production::HybridDeclaration
             | Production::HybridMode
             | Production::Equation
@@ -1113,6 +1243,16 @@ impl<'c> Mapping<'c> {
             | Production::VerificationPlan
             | Production::VerificationStep => Err(unexpected(node)),
         }
+    }
+
+    /// `postfix @ trace`: the member read, indexed by its trace variable.
+    fn indexed_read(&mut self, task: Task<'c>, items: &[Item<'c>]) -> Result<(), FormsRefusal> {
+        let node = task.node;
+        let read = only(items, Production::HyperPostfix, node)?;
+        let [trace] = tokens_of(items, TokenKind::Identifier)[..] else {
+            return Err(unexpected(node));
+        };
+        self.with_children(Shape::Indexed(text(trace, node)?), &task, vec![read])
     }
 
     /// Continue with `child` in `task`'s place: `(e)` and single-operand
@@ -1132,7 +1272,9 @@ impl<'c> Mapping<'c> {
                 Item::Node(child)
                     if matches!(
                         child.production(),
-                        Production::Expression | Production::ScrutineeExpression
+                        Production::Expression
+                            | Production::ScrutineeExpression
+                            | Production::HyperExpression
                     ) =>
                 {
                     Some(*child)
@@ -1328,7 +1470,10 @@ impl<'c> Mapping<'c> {
                         loop {
                             match rest.next() {
                                 Some(Item::Node(argument))
-                                    if argument.production() == Production::Expression =>
+                                    if matches!(
+                                        argument.production(),
+                                        Production::Expression | Production::HyperExpression
+                                    ) =>
                                 {
                                     arguments.push(*argument);
                                 }
@@ -1393,7 +1538,8 @@ impl<'c> Mapping<'c> {
 
     fn primary(&mut self, task: Task<'c>, items: &[Item<'c>]) -> Result<(), FormsRefusal> {
         let node = task.node;
-        let operands = nodes_of(items, Production::Expression);
+        let mut operands = nodes_of(items, Production::Expression);
+        operands.extend(nodes_of(items, Production::HyperExpression));
         match items.first() {
             Some(Item::Node(child)) => self.primary_node(task, child),
             Some(Item::Token(token)) => match token.kind() {
@@ -1407,6 +1553,13 @@ impl<'c> Mapping<'c> {
                     let decoded = qsl_cst::token::decode_quoted(&text(token, node)?)
                         .ok_or_else(|| unexpected(node))?;
                     self.leaf(Shape::String(decoded), &task)
+                }
+                TokenKind::Identifier
+                    if node.production() == Production::HyperPrimary
+                        && token.spelling() == b"stutter"
+                        && items.len() == 1 =>
+                {
+                    self.leaf(Shape::Stutter, &task)
                 }
                 TokenKind::Identifier => {
                     // `name(arguments)`: a call of an unqualified name.
@@ -1537,6 +1690,10 @@ impl<'c> Mapping<'c> {
                 self.leaf(Shape::Rational(numerator, denominator), &task)
             }
             Production::FloatValue => Err(unrepresented(Production::FloatValue, child.span())),
+            Production::QuantityLiteral => {
+                let quantity = quantity_form(self.cst, child)?;
+                self.leaf(Shape::Quantity(quantity), &task)
+            }
             Production::CollectionValue => {
                 let kind = match items.first() {
                     Some(Item::Token(token)) => match token.spelling() {
@@ -1576,6 +1733,7 @@ impl<'c> Mapping<'c> {
                 self.with_children(Shape::Call(name), &task, arguments)
             }
             Production::CollectionCall => self.collection_call(task, child, &items),
+            Production::StepLabel => self.step_label(task, child, &items),
             Production::UnionDeclaration
             | Production::UnionMember
             | Production::CaseExpression
@@ -1648,6 +1806,23 @@ impl<'c> Mapping<'c> {
             | Production::TemporalUnary
             | Production::TemporalPrimary
             | Production::TerminalDeclaration
+            | Production::RandomDeclaration
+            | Production::WeightedValue
+            | Production::RewardDeclaration
+            | Production::WorkloadDeclaration
+            | Production::WorkloadWeight
+            | Production::ProbabilisticClause
+            | Production::SchedulerClause
+            | Production::FairnessItem
+            | Production::Confidence
+            | Production::ConfidenceItem
+            | Production::ProbabilisticForm
+            | Production::Event
+            | Production::Measure
+            | Production::Fraction
+            | Production::Weighting
+            | Production::Horizon
+            | Production::ExactValue
             | Production::StateGraphClaim
             | Production::StateGraphBody
             | Production::StateGraphPredicate
@@ -1705,7 +1880,21 @@ impl<'c> Mapping<'c> {
             | Production::ExecutionBinding
             | Production::HyperClause
             | Production::TraceDomain
+            | Production::BehavioursDomain
             | Production::Quantifier
+            | Production::AlignSkip
+            | Production::MatchBlock
+            | Production::IndexedRead
+            | Production::HyperExpression
+            | Production::HyperImplication
+            | Production::HyperDisjunction
+            | Production::HyperConjunction
+            | Production::HyperComparison
+            | Production::HyperSum
+            | Production::HyperProduct
+            | Production::HyperUnary
+            | Production::HyperPostfix
+            | Production::HyperPrimary
             | Production::HybridDeclaration
             | Production::HybridMode
             | Production::Equation
@@ -1713,6 +1902,36 @@ impl<'c> Mapping<'c> {
             | Production::VerificationPlan
             | Production::VerificationStep => Err(unexpected(child)),
         }
+    }
+
+    /// `trace.step.op`, `trace.step.receiver` or
+    /// `trace.step.Operation::name.parameter`.
+    fn step_label(
+        &mut self,
+        task: Task<'c>,
+        node: &'c CstNode,
+        items: &[Item<'c>],
+    ) -> Result<(), FormsRefusal> {
+        let trace = tokens_of(items, TokenKind::Identifier)
+            .first()
+            .copied()
+            .ok_or_else(|| unexpected(node))?;
+        let label = match nodes_of(items, Production::QualifiedName).first() {
+            Some(operation) => {
+                let parameter = tokens_of(items, TokenKind::Identifier)
+                    .last()
+                    .copied()
+                    .ok_or_else(|| unexpected(node))?;
+                StepLabelForm::Argument {
+                    operation: spelled(self.cst, operation)?,
+                    parameter: text(parameter, node)?,
+                }
+            }
+            None if has_token(items, b"op") => StepLabelForm::Operation,
+            None if has_token(items, b"receiver") => StepLabelForm::Receiver,
+            None => return Err(unexpected(node)),
+        };
+        self.leaf(Shape::StepLabel(text(trace, node)?, label), &task)
     }
 
     /// `map`/`collect`/`filter`/`flatMap`/`forall`/`exists`, `flatten`,

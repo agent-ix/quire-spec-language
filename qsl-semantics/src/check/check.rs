@@ -445,6 +445,10 @@ pub struct PackageDeclarations {
     /// FR-325, FR-326: the unit's `temporal` clauses in declaration order,
     /// each as S2 built it, for the `TemporalTrace` family's `check`.
     pub temporal_clauses: Vec<super::temporal_clause::TemporalDeclaration>,
+    /// FR-311, FR-392: the unit's `random`, `reward`, `workload` and
+    /// `probabilistic` declarations in declaration order, each as S2 built
+    /// it, for the `Probabilistic` family's check (FR-185, FR-186).
+    pub probabilistic: Vec<super::ProbabilisticDeclaration>,
     /// FR-165: the unit's state-graph claims in declaration order, each with
     /// its profile and `over` type resolved, for the `StateGraph` family's
     /// `check`.
@@ -454,6 +458,10 @@ pub struct PackageDeclarations {
     /// checked under the one of them, or refuses when there is none or
     /// several.
     pub temporal_selections: Vec<super::temporal_clause::TemporalSelection>,
+    /// FR-171, FR-172: the unit's `hyper` clauses and `relation`s in
+    /// declaration order, each as S2 built it, for the `TemporalTrace`
+    /// family's `check`.
+    pub hyper_clauses: Vec<super::hyper_clause::HyperDeclaration>,
     /// FR-103: each domain-package operation `requires`/`ensures` clause the
     /// driver parsed, with its operation resolved, checked beside the state
     /// clauses. Checking yields a refusal or nothing.
@@ -576,8 +584,10 @@ impl PackageDeclarations {
             protocols: Vec::new(),
             protocol_attempts: Vec::new(),
             temporal_clauses: Vec::new(),
+            probabilistic: Vec::new(),
             state_graph_claims: Vec::new(),
             temporal_selections: Vec::new(),
+            hyper_clauses: Vec::new(),
             operation_clauses: Vec::new(),
             type_invariants: Vec::new(),
             terminals: Vec::new(),

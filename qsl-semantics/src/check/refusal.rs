@@ -1242,6 +1242,10 @@ pub enum CheckCause {
     /// FR-366: a refusal in a type-level invariant clause, with the clause
     /// it is about.
     TypeInvariant(Box<super::type_invariant::TypeInvariantRefusal>),
+    /// FR-185, FR-186: the `Probabilistic` family's check refused a
+    /// declaration, or a quantity literal reached a position no checker
+    /// reads yet.
+    Probabilistic(Box<super::probabilistic::ProbabilisticCause>),
     /// A `terminal when` predicate's checking refused (FR-124), with the
     /// declaration it is about.
     Terminal(Box<super::terminal::TerminalRefusal>),
@@ -1426,6 +1430,9 @@ pub enum CheckCause {
     /// FR-326: the `TemporalTrace` family refused a `temporal` clause.
     /// Boxed for the same reason as `ProtocolAnchor` above.
     Temporal(Box<TemporalCause>),
+    /// FR-172: the `TemporalTrace` family refused a `hyper` clause or a
+    /// `relation`. Boxed for the same reason as `ProtocolAnchor` above.
+    Hyper(Box<super::hyper_clause::HyperCause>),
     /// FR-165: the `StateGraph` family refused a state-graph claim. Boxed
     /// for the same reason as `ProtocolAnchor` above.
     StateGraph(Box<StateGraphCause>),
@@ -1734,6 +1741,7 @@ impl CheckCause {
             Self::TypeInvariant(cause) => cause.cause.code(),
             Self::Terminal(cause) => cause.cause.code(),
             Self::TerminalNotEmitted { .. } => Code::UnsupportedConstruct,
+            Self::Probabilistic(cause) => cause.code(),
             Self::ModelConformance(failure) => failure.code,
             Self::ModelIncomplete(_) => Code::ResourceExhausted,
             Self::TypeAdmission { code, .. } => *code,
@@ -1766,6 +1774,7 @@ impl CheckCause {
             Self::ProtocolAnchor(cause) => cause.code(),
             Self::ProtocolReference(cause) => cause.code(),
             Self::Temporal(cause) => cause.code(),
+            Self::Hyper(cause) => cause.code(),
             Self::StateGraph(cause) => cause.code(),
             Self::ProtocolObligation(cause) => cause.code(),
             Self::DispatchLink(cause) => cause.code,
@@ -1791,6 +1800,7 @@ impl CheckCause {
             Self::TypeInvariant(cause) => cause.cause.cause(),
             Self::Terminal(cause) => cause.cause.cause(),
             Self::TerminalNotEmitted { .. } => Some("not-yet-implemented"),
+            Self::Probabilistic(cause) => Some(cause.tag()),
             Self::ModelConformance(failure) => Some(failure.cause.as_str()),
             // The model ceilings are the caller's budget (FR-255), so a denied
             // charge is an insufficient next charge, never a stage limit.
@@ -1838,6 +1848,7 @@ impl CheckCause {
             Self::ProtocolAnchor(cause) => Some(cause.tag()),
             Self::ProtocolReference(cause) => Some(cause.tag()),
             Self::Temporal(cause) => Some(cause.tag()),
+            Self::Hyper(cause) => Some(cause.tag()),
             Self::StateGraph(cause) => cause.tag(),
             Self::ProtocolObligation(cause) => cause.tag(),
             Self::DispatchLink(cause) => Some(cause.catalog.cause()),

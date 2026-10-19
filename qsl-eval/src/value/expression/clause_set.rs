@@ -2,8 +2,8 @@
 //! FR-107 "Clause sets": the state clauses of one invocation, one object or
 //! one state evaluated together, and their combined outcome (FR-120).
 
-use qsl_semantics::check::Observation;
 use qsl_semantics::family::FamilyOutcome;
+use qsl_semantics::model::clause_observation::Observation;
 use qsl_semantics::model::observation::AdmittedObservations;
 use quire_semantic_value::call::InputRefusal;
 use std::collections::BTreeSet;

@@ -287,12 +287,19 @@ impl DeclarationRegions {
             CheckCause::Temporal(cause) => {
                 region(&self.source, self.embedding.as_deref(), cause.span())
             }
+            CheckCause::Hyper(cause) if cause.span().is_some() => {
+                region(&self.source, self.embedding.as_deref(), cause.span()?)
+            }
             CheckCause::StateGraph(cause) => {
                 region(&self.source, self.embedding.as_deref(), cause.span()?)
             }
             CheckCause::ProtocolObligation(cause) => {
                 region(&self.source, self.embedding.as_deref(), cause.span())
             }
+            CheckCause::Probabilistic(cause) => match cause.span() {
+                Some(span) => region(&self.source, self.embedding.as_deref(), span),
+                None => self.region(&refusal.location),
+            },
             CheckCause::TerminalNotEmitted { span, .. } => {
                 region(&self.source, self.embedding.as_deref(), *span)
             }
