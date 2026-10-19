@@ -15,6 +15,12 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-104
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-106
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-107
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-155
+    type: traces_to
   - target: ix://agent-ix/quire-spec-language/FR-380
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-153
@@ -26,15 +32,21 @@ relationships:
 
 `allInstances<T>(p)` and `lookup<T>(p, r)` read an explicit population
 binding `p` (QSpec FR-153). A function names one through a
-`Population<T>[N]` parameter, but a state clause has no parameters of that
-kind, so no clause could quantify over the objects of a model. This
+`Population<T>[N]` parameter, but a state clause has no such operand: the
+clause checker and the clause evaluator admit neither form today. This
 requirement lets a state clause name a population the domain package
 declares by the qualified name `M::P`, where `M` is a model alias of the
 unit and `P` is a population of `M`'s domain package. The name is the same
-`M::member` spelling that `bound` (FR-380) uses for a population, and the
-QSpec complete-V1 `primary` already derives it (`qualified-name` without a
-call), so S1 and S2 need no new production (FR-091 builds it as a `Name`)
-and QSpec's grammar is unchanged.
+`M::member` spelling that `bound` (FR-380) uses for a population.
+
+"QSpec unchanged" holds for syntax only: the complete-V1 `primary` already
+derives `qualified-name` without a call, and FR-091 builds it as a `Name`,
+so S1 and S2 need no new production. The meaning is QSL's own. QSpec
+FR-153 and `shared-grammar.md` state that no population binding is ambient,
+and QSpec FR-383-AC-13 still writes `forall o in counters`. Here the binding
+of `M::P` comes from the admitted observation (FR-106), not from the
+environment. QSpec needs a follow-up that states this name-to-binding rule and
+the spelling of a population in a state clause, so the two specifications agree.
 
 A population is a binding, not a value. The name therefore denotes the
 population only as the population operand of `allInstances` or `lookup`;
@@ -99,10 +111,36 @@ read that FR-155 derives `AnyMembership{counters}` from.
   "Observations of reads"): `current` in an invariant, `pre` in a
   precondition, `post` in a postcondition and `pre` inside `pre(e)`.
 
-### Lowering and requirements
+### Lowering
 
-- The operand lowers as FR-093 lowers the population operand of `AllInstances`
-  or `Lookup`, over the `Population<U>[N]` type node FR-094 keys.
+- The operand lowers to a population-reference operand term that carries the
+  population's declaration key (package, then node, each as UTF-8 bytes), in
+  the slot where FR-093's `AllInstances` and `Lookup` rows take `ref(p)`. A
+  named domain population has no binder to reference and the
+  `Population<U>[N]` type node is anonymous, keyed by `(U, N)` alone (FR-094),
+  so the type node cannot identify the population. `allInstances<Counter>(M::counters)`
+  and `allInstances<Counter>(M::archive)` therefore lower to different terms.
+  The FR-322 encoding of this operand term is a follow-up to IR; this
+  requirement fixes only that it carries the declaration key.
+
+### Evaluation
+
+- The `ProtocolClause` evaluator SHALL evaluate `allInstances` and `lookup`
+  in a state clause (FR-107), reading the population named by the operand
+  term's declaration key from the snapshot of the clause's observation: the
+  `pre` snapshot for `pre` and the `post` snapshot for `post` (a `current`
+  invariant reads the current snapshot), and under `pre(e)` the `pre`
+  snapshot. The snapshot's population row whose `population` is that key's
+  identity is the binding. FR-106 requires it (FR-106, "required
+  population"), so a population that is not marked `complete` returns
+  `Incomplete` with `incomplete_population`/`incomplete-scope` before
+  evaluation, and an admitted one is a closed binding in FR-084's sense.
+- The result, the coverage check of `T` and the `population.visit` charges
+  per member are FR-084's and QSpec's `value-accounting.md`, unchanged: the
+  coverage check charges nothing, each member visited charges once.
+
+### Requirements
+
 - The named population SHALL be a domain of the clause's requirement record
   (FR-104, "Requirements"), keyed as FR-104 keys it. A clause that names its
   context population adds no second domain. A clause that names a different
@@ -110,6 +148,12 @@ read that FR-155 derives `AnyMembership{counters}` from.
   domain.
 - Naming a population does not select the context population of FR-104; the
   ambiguity rule there still applies to the clause's `on` type.
+- The footprint (FR-155) of a clause that names `P` SHALL hold
+  `AnyMembership{P}` for that read: the named population, and no other
+  population of the same member type. With populations `counters` and
+  `archive` of `Counter`, a clause naming `M::counters` reads
+  `AnyMembership{counters}` only and a clause naming `M::archive` reads
+  `AnyMembership{archive}` only.
 
 ## Acceptance Criteria
 
@@ -118,13 +162,13 @@ read that FR-155 derives `AnyMembership{counters}` from.
 | FR-391-AC-1 | Over the `Counter` unit (model alias `M`, `Counter` with `v: Int[0, 2]`, operation `bump()`, population `counters`), `pre Room using v on M::Counter::bump { forall(o in allInstances<M::Counter>(M::counters) : o.v < 2) }` checks as a `Precondition` with the population operand typed `Population<Counter>`, the `allInstances` result `Set<Reference<Counter>>` and every read at `pre`; the invariant `invariant Cap using v on M::Counter at current { count<M::Counter>(o in allInstances<M::Counter>(M::counters) : true) < 4 }` checks with reads at `current`. | Test (TC-1076) |
 | FR-391-AC-2 | `M::nothing` as the operand refuses `missing_declaration`/`missing-name` at `nothing`; an alias `M` that is also an enum name refuses `ambiguous_declaration`/`ambiguous-name` at the name. | Test (TC-1076) |
 | FR-391-AC-3 | `M::counters = M::counters`, `let q = M::counters in allInstances<M::Counter>(q)`, `size(M::counters)` and a clause body that is `M::counters` each refuse `ill_typed`/`operator-ineligible` at the name; in a function body `allInstances<M::Counter>(M::counters)` names no population and refuses as an unresolved name did before. | Test (TC-1076) |
-| FR-391-AC-4 | With `bound B on M::counters [3]` the operand is `Population<Counter>[3]` and `allInstances<M::Counter>(M::counters)` is `Set<Reference<Counter>>[0,3]`; the record's `counters` domain is `Population(Some(3))`. With a second population `archive` of `Counter`, a clause on `M::Counter` still refuses `ambiguous_declaration`/`ambiguous-name` at its `on` (FR-104-AC-5) whichever population its body names; where only `archive` covers the context type, a body naming `M::counters` records both the context population `archive` and `counters` as domains. | Test (TC-1076) |
+| FR-391-AC-4 | With `bound B on M::counters [3]` the operand is `Population<Counter>[3]` and `allInstances<M::Counter>(M::counters)` is `Set<Reference<Counter>>[0,3]`; the record's `counters` domain is `Population(Some(3))`. With a second population `archive` of `Counter`, a clause on `M::Counter` refuses `ambiguous_declaration`/`ambiguous-name` at its `on` (FR-104-AC-5) whichever population its body names. With a type `Widget` that only a population `widgets` covers, a clause on `M::Widget` whose body names `M::counters` records `widgets` (the context population) and `counters` as its two domains. | Test (TC-1076) |
 | FR-391-AC-5 | Evaluated at S6a over a snapshot whose `counters` holds `a`, `b` and `c`, the precondition of AC-1 decides over exactly those three, in canonical reference-key order; over a snapshot in which `counters` is not marked `complete`, it returns `Incomplete` with `incomplete_population`/`incomplete-scope`, as for a parameter operand; `allInstances<M::Other>(M::counters)` with `Other` uncovered by the population is FR-084's typed incomplete result. | Test (TC-1076) |
-| FR-391-AC-6 | FR-155-AC-2's precondition, quantifying over `counters` through this form, yields the read footprint `AnyField{v}` and `AnyMembership{counters}`. | Test (TC-574) |
+| FR-391-AC-6 | With populations `counters` and `archive` of `Counter`, `allInstances<M::Counter>(M::counters)` and `allInstances<M::Counter>(M::archive)` lower to two different checked terms, each carrying its own population's declaration key, and the footprint of a precondition naming `M::counters` holds `AnyMembership{counters}` and not `AnyMembership{archive}`; the precondition of FR-155-AC-2 over `counters` holds `AnyField{v}` and `AnyMembership{counters}`. | Test (TC-1076) |
 
 ## Dependencies
 
-- FR-084 (population binding and query results), FR-091 (`Name` forms), FR-093 and
+- FR-106 (required populations) and FR-107 (clause evaluation), which this requirement amends; FR-084 (population binding and query results), FR-091 (`Name` forms), FR-093 and
   FR-094 (lowering and type nodes), FR-104 (state clause checking and the
   requirement record), FR-380 (the authored bound).
 - QSpec FR-153 and `shared-grammar.md` (`qualified-name` primary,
