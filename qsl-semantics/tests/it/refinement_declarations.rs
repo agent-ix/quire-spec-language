@@ -1592,7 +1592,6 @@ fn simulation_records(graph: &CheckedGraph) -> Vec<StepSimulationRecord> {
         refinement_key(),
         only_refinement(graph),
         graph.state_clauses(),
-        operation_key,
     )
     .expect("the rows fit a step row reference")
 }

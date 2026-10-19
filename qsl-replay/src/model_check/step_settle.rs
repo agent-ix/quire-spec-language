@@ -67,27 +67,31 @@ pub struct StepSimulationSettlement {
 /// FR-146: settle `outcome` as one terminal value. Never `Refuted`.
 pub fn settle_step_simulation(outcome: StepBackendOutcome) -> StepSimulationSettlement {
     match outcome {
-        StepBackendOutcome::Holds {
-            certificate: BackendCertificate::Rejected { rule, at },
-        } => StepSimulationSettlement {
-            value: TerminalValue::Inconclusive(InconclusiveCause::CertificateRejected { rule, at }),
-            basis: SettlementBasis::Unsettled,
-            truth: Truth::Pending,
-        },
-        StepBackendOutcome::Holds { certificate } => StepSimulationSettlement {
-            value: TerminalValue::Proved {
-                basis: ProofBasis::Inductive {
-                    depth: STEP_INDUCTION_DEPTH,
-                },
-                certification: match certificate {
-                    BackendCertificate::Verified => Certification::Certified,
-                    BackendCertificate::Absent
-                    | BackendCertificate::Unverifiable
-                    | BackendCertificate::Rejected { .. } => Certification::Uncertified,
-                },
+        StepBackendOutcome::Holds { certificate } => match certificate {
+            BackendCertificate::Rejected { rule, at } => StepSimulationSettlement {
+                value: TerminalValue::Inconclusive(InconclusiveCause::CertificateRejected {
+                    rule,
+                    at,
+                }),
+                basis: SettlementBasis::Unsettled,
+                truth: Truth::Pending,
             },
-            basis: SettlementBasis::DecisiveWitness,
-            truth: Truth::Satisfied,
+            BackendCertificate::Absent
+            | BackendCertificate::Unverifiable
+            | BackendCertificate::Verified => StepSimulationSettlement {
+                value: TerminalValue::Proved {
+                    basis: ProofBasis::Inductive {
+                        depth: STEP_INDUCTION_DEPTH,
+                    },
+                    certification: if certificate == BackendCertificate::Verified {
+                        Certification::Certified
+                    } else {
+                        Certification::Uncertified
+                    },
+                },
+                basis: SettlementBasis::DecisiveWitness,
+                truth: Truth::Satisfied,
+            },
         },
         StepBackendOutcome::Counterexample => StepSimulationSettlement {
             value: TerminalValue::Inconclusive(InconclusiveCause::InductionNotClosed {

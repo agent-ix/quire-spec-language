@@ -42,8 +42,9 @@ pub struct StepRowOverflow;
 /// The per-step simulation records of `refinement`, keyed by its node
 /// `refinement_key`, with `clauses` the declaring package's checked state
 /// clauses: those that are invariants of a concrete-model object type are
-/// the hypotheses, sorted by node key. `operation_key` gives the node key of
-/// a concrete operation, which orders the step rows as FR-375 orders them.
+/// the hypotheses, sorted by node key.
+/// The records name rows by position in FR-375's order; [`step_row_refs`]
+/// maps a source row to its position.
 ///
 /// Empty when the refinement has a hidden field or an `any` row.
 ///
@@ -54,7 +55,6 @@ pub fn step_simulation_records(
     refinement_key: NodeKey,
     refinement: &CheckedRefinement,
     clauses: &[CheckedStateClause],
-    operation_key: impl Fn(&DeclarationKey) -> NodeKey,
 ) -> Result<Vec<StepSimulationRecord>, StepRowOverflow> {
     let has_hidden = refinement
         .objects()
@@ -84,9 +84,8 @@ pub fn step_simulation_records(
         StepObligation::Initial,
         hypotheses.clone(),
     )];
-    let mut rows = step_row_refs(refinement, operation_key)?;
-    rows.sort_unstable();
-    for row in rows {
+    for index in 0..refinement.steps().len() {
+        let row = StepRowRef::new(u32::try_from(index).map_err(|_| StepRowOverflow)?);
         records.push(StepSimulationRecord::new(
             refinement_key,
             StepObligation::Step { row },
