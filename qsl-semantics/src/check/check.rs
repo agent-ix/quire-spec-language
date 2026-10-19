@@ -483,6 +483,10 @@ pub struct PackageDeclarations {
     /// The byte limit every node identity of this package encodes under
     /// (`identity.input_bytes`), carried from the assembly that built it.
     pub identity: qsl_foundation::IdentityLimits,
+    /// The most bits one probabilistic exact value may be written at
+    /// (`s3.rational_bits`, FR-185), carried from the assembly that built
+    /// this package.
+    pub rational_bits: u64,
 }
 
 impl PackageDeclarations {
@@ -585,6 +589,7 @@ impl PackageDeclarations {
             operation_bodies: Vec::new(),
             selected_views: BTreeMap::new(),
             identity,
+            rational_bits: super::assemble::DEFAULT_RATIONAL_BITS,
         }
     }
 

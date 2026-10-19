@@ -336,7 +336,8 @@ impl CompileRefusal {
                 Setting::S3Nodes | Setting::S3InputBytes | Setting::S3WorkUnits => {
                     SpineStage::Check
                 }
-                Setting::S3DecimalScale
+                Setting::S3RationalBits
+                | Setting::S3DecimalScale
                 | Setting::EnvironmentAncestorSteps
                 | Setting::EnvironmentWorkUnits
                 | Setting::IdentityInputBytes => SpineStage::Assembly,
@@ -816,6 +817,13 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                     operation,
                     ..
                 } => format!("{message}: workload `{workload}` weights `{operation}` twice"),
+                ProbabilisticCause::DuplicateReward {
+                    reward, operation, ..
+                } => format!("{message}: reward `{reward}` is already declared on `{operation}`"),
+                ProbabilisticCause::QuantileOverFraction { claim, .. } => format!(
+                    "{message}: claim `{claim}` takes a quantile of a fraction, which has none"
+                ),
+                ProbabilisticCause::RationalBits { limit, .. } => format!("{message}: {limit}"),
                 ProbabilisticCause::StateReadInReward {
                     reward, operation, ..
                 } => format!(

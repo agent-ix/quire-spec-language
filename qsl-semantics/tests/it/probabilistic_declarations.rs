@@ -14,7 +14,8 @@
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::Span;
-use qsl_semantics::check::CheckRefusal;
+use qsl_semantics::check::{CheckCause, CheckRefusal, ProbabilisticCause};
+use quire_exact::Integer;
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::json;
 
@@ -186,6 +187,152 @@ fn a_reward_that_reads_state_refuses() {
     assert_eq!(located(free), [not_yet(free)]);
 }
 
+/// FR-185 "Rewards": a second reward of one name on one operation refuses
+/// `duplicate-reward` at the second; the same name on another operation, and
+/// another name on the same operation, are other rewards.
+#[trace("TC-620")]
+#[test]
+fn a_second_reward_of_one_name_on_one_operation_refuses() {
+    let first = "reward duration on Server::attempt = d;";
+    let second = "reward duration on Server::attempt = 2 * d;";
+    assert_eq!(
+        located(&format!("{first}\n{second}")),
+        [not_yet(first), invalid("duplicate-reward", second)]
+    );
+    let other = "reward duration on Server::reset = 1;\nreward cost on Server::reset = 1;";
+    assert!(located(other)
+        .iter()
+        .all(|(code, ..)| *code == Code::UnsupportedConstruct));
+}
+
+/// FR-185 "Random parameters": a weight `rational(-1, 1)` is an exact value
+/// below zero and refuses `invalid-weight`; the bare `-1` is S1's refusal.
+#[trace("TC-620")]
+#[test]
+fn a_negative_rational_weight_refuses_invalid_weight() {
+    assert_eq!(
+        located("random Server::attempt(d) ~ { 1 ms: rational(-1, 1) };"),
+        [invalid("invalid-weight", "rational(-1, 1)")]
+    );
+}
+
+/// `2^(bits - 1)`, an integer of exactly `bits` bits, in decimal.
+fn integer_of_bits(bits: u64) -> String {
+    Integer::one().shifted_left(bits - 1).to_string()
+}
+
+/// The code, cause, bound, counter and setting of every limit outcome among
+/// `body`'s refusals.
+fn limit_outcomes(body: &str) -> Vec<(Code, Option<&'static str>, u64, u128, &'static str)> {
+    refusals_of(body)
+        .iter()
+        .filter_map(|refusal| match &refusal.cause {
+            CheckCause::Probabilistic(cause) => match cause.as_ref() {
+                ProbabilisticCause::RationalBits { limit, .. } => Some((
+                    refusal.cause.code(),
+                    refusal.cause.cause(),
+                    limit.configured_bound(),
+                    limit.actual(),
+                    limit.setting().name(),
+                )),
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect()
+}
+
+fn weight_of(value: &str) -> String {
+    format!("random Server::attempt(d) ~ {{ 1 ms: {value} }};")
+}
+
+/// FR-185 "Exact values": the written bit length is measured before any
+/// reduction, against the inclusive `s3.rational_bits` ceiling (65,536 by
+/// default).
+#[trace("TC-620")]
+#[test]
+fn exact_values_past_the_rational_bits_ceiling_are_a_limit_outcome() {
+    let limit = (
+        Code::StageLimitExceeded,
+        Some("rational-bits-exceeded"),
+        65_536,
+    );
+    let outcome = |source: String, actual: u128| {
+        let [(code, cause, bound, counter, setting)] = limit_outcomes(&source)[..] else {
+            panic!(
+                "exactly one limit outcome for {}",
+                &source[..60.min(source.len())]
+            );
+        };
+        assert_eq!(
+            ((code, cause, bound), counter, setting),
+            (limit, actual, "s3.rational_bits")
+        );
+    };
+    outcome(weight_of("decimal(1, 4294967295)"), 14_267_572_524);
+    // `rational(n, n)` reduces to 1, and is refused as written.
+    let n = integer_of_bits(70_000);
+    outcome(weight_of(&format!("rational({n}, {n})")), 70_000);
+    outcome(
+        weight_of(&format!("rational({}, 1)", integer_of_bits(65_537))),
+        65_537,
+    );
+    outcome(weight_of("decimal(1, 19729)"), 65_539);
+    // Admitted: the ceiling is inclusive.
+    for value in [
+        format!("rational({}, 1)", integer_of_bits(65_536)),
+        "decimal(1, 19728)".to_owned(),
+        "decimal(25, 3)".to_owned(),
+        "decimal(5, 0)".to_owned(),
+    ] {
+        assert!(limit_outcomes(&weight_of(&value)).is_empty());
+    }
+}
+
+/// The ceiling is the package's `s3.rational_bits` bound, and it applies to
+/// every exact value a claim reads, not only a weight.
+#[trace("TC-620", "TC-621")]
+#[test]
+fn the_rational_bits_bound_applies_to_every_exact_value() {
+    let source = claim(
+        "with alpha decimal(1, 4294967295), beta 0.01, indifference 0.0005 \
+         { probability >= 0.999 [ holds(true) ] }",
+    );
+    assert_eq!(
+        limit_outcomes(&source),
+        [(
+            Code::StageLimitExceeded,
+            Some("rational-bits-exceeded"),
+            65_536,
+            14_267_572_524,
+            "s3.rational_bits"
+        )]
+    );
+    // A lower bound refuses a value the default admits, and the weight of a
+    // workload and a threshold are measured too.
+    let mut declarations = admit_and_assemble_with_body(
+        &document(),
+        "workload Steady on Config { weight Server::request = 1000; }",
+    )
+    .expect("assembles");
+    declarations.rational_bits = 9;
+    let refusals = declarations
+        .check(CheckingLimits::default())
+        .expect_err("the unit refuses");
+    assert_eq!(refusals.len(), 1);
+    assert_eq!(refusals[0].cause.code(), Code::StageLimitExceeded);
+    let mut declarations = admit_and_assemble_with_body(
+        &document(),
+        "workload Steady on Config { weight Server::request = 1000; }",
+    )
+    .expect("assembles");
+    declarations.rational_bits = 10;
+    let refusals = declarations
+        .check(CheckingLimits::default())
+        .expect_err("the unit refuses");
+    assert_eq!(refusals[0].cause.code(), Code::UnsupportedConstruct);
+}
+
 fn claim(body: &str) -> String {
     format!("probabilistic C using v on Config under Steady on origin {body}")
 }
@@ -316,6 +463,22 @@ fn confidence_parameters_keep_their_ranges() {
         "with alpha 0.01, beta 0.01, indifference 0.0004 { probability >= 0.9995 [ holds(true) ] }",
     );
     assert_eq!(located(&source), [not_yet(&source)]);
+}
+
+/// FR-186 "Events and measures": a `quantile` over a `fraction` measure
+/// refuses `quantile-over-fraction` at the measure; over an accumulation it
+/// does not.
+#[trace("TC-621")]
+#[test]
+fn a_quantile_over_a_fraction_refuses() {
+    let measure = "fraction holds(v.up) over [0, 10]";
+    let source = claim(&format!(
+        "{{ quantile 0.95 of ({measure}) <= rational(1, 2) }}"
+    ));
+    assert_eq!(
+        located(&source),
+        [invalid("quantile-over-fraction", measure)]
+    );
 }
 
 /// FR-186 "Events and measures": an event's window is not checked yet, so a

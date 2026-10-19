@@ -17,7 +17,11 @@
 //!   long-run threshold outside `(0, 1)` (`qualitative-threshold`), a
 //!   confidence clause that omits or repeats a parameter
 //!   (`partial-confidence`) or whose parameters leave no indifference region
-//!   (`invalid-confidence`).
+//!   (`invalid-confidence`);
+//! - a second `reward` of one name on one operation (`duplicate-reward`) and
+//!   a `quantile` over a `fraction` measure (`quantile-over-fraction`);
+//! - an exact value written past the `s3.rational_bits` ceiling, refused as
+//!   a limit outcome before the value is reduced or expanded.
 //!
 //! Resolving a model, an operation, a parameter, a profile or a workload,
 //! typing a support value, a reward or a threshold, reading preconditions,
@@ -27,11 +31,11 @@
 
 use qsl_forms::{
     ConfidenceItemForm, ConfidenceKey, ExactValueForm, ExactValueKind, ExprNode, Expression,
-    ProbabilisticBody, ProbabilisticForm, RandomForm, RewardForm, WorkloadForm,
+    MeasureForm, ProbabilisticBody, ProbabilisticForm, RandomForm, RewardForm, WorkloadForm,
 };
-use qsl_foundation::diagnostic::Code;
-use qsl_foundation::Span;
-use quire_exact::Integer;
+use qsl_foundation::diagnostic::{Code, LimitExceeded};
+use qsl_foundation::{Setting, Span};
+use quire_exact::{Integer, NonZeroInteger};
 use quire_semantic_value::location::{Location, Origin};
 
 use super::layer::visit_located;
@@ -133,6 +137,33 @@ pub enum ProbabilisticCause {
         /// The second weight's span.
         span: Span,
     },
+    /// A second reward of one name on one operation.
+    /// `invalid_probabilistic_model`/`duplicate-reward`.
+    DuplicateReward {
+        /// The reward.
+        reward: String,
+        /// The operation, as written.
+        operation: String,
+        /// The second declaration's span.
+        span: Span,
+    },
+    /// A `quantile` claim over a `fraction` measure, which has no quantile.
+    /// `invalid_probabilistic_model`/`quantile-over-fraction`.
+    QuantileOverFraction {
+        /// The claim.
+        claim: String,
+        /// The measure's span.
+        span: Span,
+    },
+    /// An exact value written with more bits than `s3.rational_bits` allows
+    /// (FR-185). A limit outcome, not a refusal of the model:
+    /// `stage_limit_exceeded`/`rational-bits-exceeded`.
+    RationalBits {
+        /// The bound, the counter and the setting that raises the bound.
+        limit: LimitExceeded,
+        /// The value's span.
+        span: Span,
+    },
     /// A reward that reads state or an ambient value.
     /// `invalid_probabilistic_model`/`state-read-in-reward`.
     StateReadInReward {
@@ -199,6 +230,9 @@ impl ProbabilisticCause {
             | Self::RepeatedSupportValue { span, .. }
             | Self::DuplicateDistribution { span, .. }
             | Self::DuplicateWeight { span, .. }
+            | Self::DuplicateReward { span, .. }
+            | Self::QuantileOverFraction { span, .. }
+            | Self::RationalBits { span, .. }
             | Self::StateReadInReward { span, .. }
             | Self::QualitativeThreshold { span, .. }
             | Self::PartialConfidence { span, .. }
@@ -215,10 +249,13 @@ impl ProbabilisticCause {
             | Self::RepeatedSupportValue { .. }
             | Self::DuplicateDistribution { .. }
             | Self::DuplicateWeight { .. }
+            | Self::DuplicateReward { .. }
+            | Self::QuantileOverFraction { .. }
             | Self::StateReadInReward { .. }
             | Self::QualitativeThreshold { .. }
             | Self::PartialConfidence { .. }
             | Self::InvalidConfidence { .. } => Code::InvalidProbabilisticModel,
+            Self::RationalBits { .. } => Code::StageLimitExceeded,
             Self::ZeroDenominator { .. } => Code::UndefinedExpression,
             Self::QuantityLiteral | Self::NotYetImplemented { .. } => Code::UnsupportedConstruct,
         }
@@ -232,6 +269,9 @@ impl ProbabilisticCause {
             Self::RepeatedSupportValue { .. } => "repeated-support-value",
             Self::DuplicateDistribution { .. } => "duplicate-distribution",
             Self::DuplicateWeight { .. } => "duplicate-weight",
+            Self::DuplicateReward { .. } => "duplicate-reward",
+            Self::QuantileOverFraction { .. } => "quantile-over-fraction",
+            Self::RationalBits { limit, .. } => limit.kind().catalog_cause(),
             Self::StateReadInReward { .. } => "state-read-in-reward",
             Self::QualitativeThreshold { .. } => "qualitative-threshold",
             Self::PartialConfidence { .. } => "partial-confidence",
@@ -262,10 +302,22 @@ fn refusal(cause: ProbabilisticCause) -> CheckRefusal {
 
 /// Checks `declarations`: every refusal their forms give, and for a
 /// declaration that gives none, one `not-yet-implemented` refusal.
-pub(crate) fn check(declarations: &[ProbabilisticDeclaration]) -> Vec<CheckRefusal> {
+pub(crate) fn check(
+    declarations: &[ProbabilisticDeclaration],
+    rational_bits: u64,
+) -> Vec<CheckRefusal> {
     let mut refusals = Vec::new();
     let mut distributions: Vec<(&str, &str)> = Vec::new();
+    let mut rewards: Vec<(&str, &str)> = Vec::new();
     for declaration in declarations {
+        // FR-185: every written exact value is measured before any is
+        // reduced or expanded; an over-long one is a limit outcome and the
+        // declaration is checked no further.
+        let over = over_long(declaration, rational_bits);
+        if !over.is_empty() {
+            refusals.extend(over.into_iter().map(refusal));
+            continue;
+        }
         let (mut causes, construct, name, span) = match declaration {
             ProbabilisticDeclaration::Random(form) => {
                 let key = (form.operation.name.as_str(), form.parameter.name.as_str());
@@ -284,7 +336,18 @@ pub(crate) fn check(declarations: &[ProbabilisticDeclaration]) -> Vec<CheckRefus
                 (causes, "random", format!("{}({})", key.0, key.1), form.span)
             }
             ProbabilisticDeclaration::Reward(form) => {
-                (reward(form), "reward", form.name.name.clone(), form.span)
+                let key = (form.operation.name.as_str(), form.name.name.as_str());
+                let mut causes = Vec::new();
+                if rewards.contains(&key) {
+                    causes.push(ProbabilisticCause::DuplicateReward {
+                        reward: key.1.to_owned(),
+                        operation: key.0.to_owned(),
+                        span: form.span,
+                    });
+                }
+                rewards.push(key);
+                causes.extend(reward(form));
+                (causes, "reward", form.name.name.clone(), form.span)
             }
             ProbabilisticDeclaration::Workload(form) => (
                 workload(form),
@@ -309,6 +372,87 @@ pub(crate) fn check(declarations: &[ProbabilisticDeclaration]) -> Vec<CheckRefus
         refusals.extend(causes.into_iter().map(refusal));
     }
     refusals
+}
+
+/// The bit length of `10^scale`, `⌊scale · log₂ 10⌋ + 1`, in exact integer
+/// arithmetic: `scale · ⌊log₂ 10 · 2^128⌋` shifted right by 128. The
+/// truncation error is below `scale · 2^-128`, far under the distance from
+/// `scale · log₂ 10` to an integer for any `scale` a `u64` holds.
+fn power_of_ten_bits(scale: u64) -> u128 {
+    // `⌊log₂ 10 · 2^128⌋`.
+    const LOG2_10: &str = "1130393554869435518674010122299176348979";
+    let log2_10: Integer = LOG2_10.parse().unwrap_or_else(|_| Integer::zero());
+    let product = log2_10.mul(&Integer::from(scale));
+    let divisor = Integer::one().shifted_left(128);
+    let floor = match NonZeroInteger::try_from(&divisor) {
+        Ok(divisor) => product.div_mod_floor(divisor).0,
+        Err(_) => Integer::zero(),
+    };
+    floor
+        .to_u64()
+        .map_or(u128::MAX, |bits| u128::from(bits) + 1)
+}
+
+/// The bit length `value` is written at: the largest of its written
+/// integers' magnitudes, and for a decimal the bit length of `10^s`.
+fn written_bits(value: &ExactValueForm) -> u128 {
+    match value.kind {
+        ExactValueKind::Natural => u128::from(value.first.magnitude_bits()),
+        ExactValueKind::Rational => u128::from(
+            value
+                .first
+                .magnitude_bits()
+                .max(value.second.magnitude_bits()),
+        ),
+        ExactValueKind::DecimalLiteral | ExactValueKind::Decimal => {
+            let coefficient = u128::from(value.first.magnitude_bits());
+            // A scale a `u64` cannot hold is past every ceiling.
+            let denominator = value.second.to_u64().map_or(u128::MAX, power_of_ten_bits);
+            coefficient.max(denominator)
+        }
+    }
+}
+
+/// Every exact value `declaration` writes, which FR-185 and FR-186 read.
+fn exact_values(declaration: &ProbabilisticDeclaration) -> Vec<&ExactValueForm> {
+    match declaration {
+        ProbabilisticDeclaration::Random(form) => {
+            form.support.iter().map(|pair| &pair.weight).collect()
+        }
+        ProbabilisticDeclaration::Reward(_) => Vec::new(),
+        ProbabilisticDeclaration::Workload(form) => {
+            form.weights.iter().map(|weight| &weight.weight).collect()
+        }
+        ProbabilisticDeclaration::Claim(form) => {
+            let mut values: Vec<&ExactValueForm> = match &form.body {
+                ProbabilisticBody::Probability { threshold, .. }
+                | ProbabilisticBody::MeanOfFraction { threshold, .. }
+                | ProbabilisticBody::LongRunFraction { threshold, .. } => vec![threshold],
+                ProbabilisticBody::Quantile { level, .. } => vec![level],
+                ProbabilisticBody::ExpectedUntil { .. } => Vec::new(),
+            };
+            values.extend(form.confidence.iter().map(|item| &item.value));
+            values
+        }
+    }
+}
+
+/// The limit outcome of each exact value of `declaration` written past
+/// `rational_bits` (inclusive ceiling), in source order.
+fn over_long(
+    declaration: &ProbabilisticDeclaration,
+    rational_bits: u64,
+) -> Vec<ProbabilisticCause> {
+    exact_values(declaration)
+        .into_iter()
+        .filter_map(|value| {
+            let bits = written_bits(value);
+            (bits > u128::from(rational_bits)).then(|| ProbabilisticCause::RationalBits {
+                limit: LimitExceeded::new(Setting::S3RationalBits, rational_bits, bits),
+                span: value.span,
+            })
+        })
+        .collect()
 }
 
 /// Whether an exact value is a weight or threshold in `(0, 1)`, `[1, ∞)`, or
@@ -545,6 +689,16 @@ fn claim(form: &ProbabilisticForm) -> Vec<ProbabilisticCause> {
         | ProbabilisticBody::LongRunFraction { threshold, .. } => Some(threshold),
         ProbabilisticBody::ExpectedUntil { .. } => None,
     };
+    if let ProbabilisticBody::Quantile {
+        measure: MeasureForm::Fraction(fraction),
+        ..
+    } = &form.body
+    {
+        causes.push(ProbabilisticCause::QuantileOverFraction {
+            claim: claim.clone(),
+            span: fraction.span,
+        });
+    }
     let theta = theta.filter(|theta| qualitative(theta, &mut causes));
     confidence(form, theta, &mut causes);
     causes
