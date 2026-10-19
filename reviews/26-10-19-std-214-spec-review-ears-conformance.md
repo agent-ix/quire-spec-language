@@ -30,3 +30,9 @@ refused). It describes behaviour, not a change log.
 
 One low finding. Examined and found clean: the Outputs sentence (lines
 103-108), which is a declarative statement of the rule set.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Disposition round 1, head 9838c06bb. The trigger is now "the expansion of a reached `closure` state records `ContractUndetermined` (FR-120)", and "could fire there" is gone. The prohibition is its own bullet: "The checker SHALL NOT read an undefined or refused contract conjunction as false or as true." The acceptance claim is replaced by the unreached-entry sentence. |

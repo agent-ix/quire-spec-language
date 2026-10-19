@@ -47,3 +47,9 @@ Examined and found clean:
 - the TC-644 scope line and trace-tag instruction;
 - AC id continuity, with no renumbering;
 - the absence of any id collision on main or in open PRs.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | deferred | Belongs to QSL-538 / PR #1046, not this spec PR. At #1046 head 07fd24df7, its only state-graph `BadState` test (`an_undetermined_contract_at_a_reached_state_is_bad`, qsl-analyze/tests/it/state_graph_certificate.rs:558-584) uses a `Fork` fixture and is tagged `#[trace("TC-644")]` alone. AC-11's guarded §7.1 vector and the `FR-169-AC-11` tag are still to be added there before #1046 merges. |

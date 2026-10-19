@@ -79,3 +79,13 @@ Examined and found clean:
 The `ModelState(DigestRecord)` state-key digest is a canonical identity of
 proof content, where trust is the feature. It is pre-existing and not in
 this diff.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Disposition round 1, head 9838c06bb. FR-169's Check bullet now says the checker evaluates the rules in the listed order, each over every reached state, and rejects with the first rule that fails, with `OrderBroken` before `CountBroken`. That matches PR #1046's order. |
+| FND-002 | fixed | Disposition round 1, head 9838c06bb. `SuccessorMissing`, `BadState` and `PredicateUndefined` now say "reached `closure` state". The "never accepted, whatever its closure" clause is gone. A new bullet says an unreached closure entry is never expanded and never decides `BadState`. |
+| FND-003 | fixed | Disposition round 1, head 9838c06bb. AC-10 and TC-644 now name the engine's loci: (1, 2), (2, 0) and tff. |
+| FND-004 | fixed | Disposition round 1, head 9838c06bb. The all-count-1 `InOneWay` certificate now carries "a valid reverse topological order", in AC-10 and in TC-644 step 3's expected result. |
+| FND-005 | fixed | Disposition round 1, head 9838c06bb. AC-11 now cites "the guard of TC-592's FR-167-AC-2 fixture", and TC-644's fixtures and step 5 name TC-592's guarded subject. |
