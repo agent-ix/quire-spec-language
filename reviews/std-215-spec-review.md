@@ -76,3 +76,7 @@ AC-3 and TC-705, and the "positive" wording for steps (was "non-negative").
 | FND-005 | fixed | The bullet now reads "with the cause `IncompleteCause::TimedOut`". |
 | FND-006 | fixed | A new bullet states that the writer omits an unset budget, that the provider applies its descriptor `bounds`, and that 60 s and 1,000,000 steps are QSL's built-in solver bounds. AC-3 and TC-705 check the omission. |
 | FND-007 | fixed | The Behavior bullets are rewrapped within 80 columns; only table rows exceed it. |
+| FND-001 | fixed | Round 2: the blank line is removed. The frontend-deadline row is now the last row of the verdict-map table (FR-250:81). |
+| FND-008 | fixed | Round 2: both refusal bullets now cite "QSpec FR-331". |
+| FND-009 | fixed | Round 2: Inputs and the TC-705 fixture now say the host ends the provider at `deadline_ms` and settles each item still open as `TimedOut`, as QSpec FR-462 states. |
+| FND-010 | fixed | Round 2: the FR-250 bullet, AC-3 and TC-705 step 3 now name an empty `hybrid` and a `hybrid` with an empty `limits` as separate cases. |

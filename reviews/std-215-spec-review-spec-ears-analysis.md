@@ -42,3 +42,4 @@ the frontend-deadline sentence, and the `max_solver_steps` bullet.
 | FND | Outcome | Reason |
 | --- | --- | --- |
 | FND-001 | fixed | Both obligations now name the agent, the hybrid provider, in their own "If ..., then the hybrid provider SHALL refuse the request before consumption" bullets. AC-3 says "refused by the hybrid provider". The mis-cited FR-331 in those bullets is SR-13340 FND-008. |
+| FND-002 | fixed | Round 2: the condition is reworded, and `make check-spec-validation` reports no warning on FR-250. |
