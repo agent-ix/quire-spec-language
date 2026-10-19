@@ -16,11 +16,11 @@ Scope: FR-104-AC-12.
 
 ## Test Procedure
 
-Fixture: `record Counter { tally: Int[0,3]; next: Int[0,3]; }`, an operation `bump` on `Counter`, and `n` of `Integer`.
+Fixture: a model `M` with the object type `Counter { tally: Int[0,3]; next: Int[0,3]; }` and an operation `bump` declared on it; the header of FR-108's unit; a function `f(earlier: Counter, later: Counter, n: Integer)`.
 
-1. Check `self.tally < 3 and self.next = self.tally + 1` as the `pre` guard of `bump` and as an invariant over `self`; check the function `f(earlier: Counter, later: Counter)` with body `earlier.tally < 3 and later.tally = earlier.tally + 1`. Then each without its `tally < 3 and` guard.
-2. Check `later.tally = earlier.tally` in `f`.
-3. Check `later.tally = -earlier.tally` and `later.tally = n` in `f`.
+1. Check `pre G using v on M::Counter::bump { self.tally < 3 and self.next = self.tally + 1 }` and `invariant I using v on M::Counter at current { self.tally < 3 and self.next = self.tally + 1 }`; check `f` with body `earlier.tally < 3 and later.tally = earlier.tally + 1`. Then each without its `tally < 3 and` guard.
+2. Check `later.tally = earlier.tally` as the body of `f`.
+3. Check `later.tally = -earlier.tally` and `later.tally = n` as the body of `f`.
 
 ## Expected Results
 

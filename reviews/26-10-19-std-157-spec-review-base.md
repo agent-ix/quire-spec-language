@@ -53,6 +53,16 @@ Against head 5dadb78aa.
 | FND-006 | low | The TC-1084 fixture is under-specified. It gives "parameters `earlier` and `later`" of the record but checks the same text "as a guard, as an invariant and as a function body". An invariant binds `self`, not parameters, and "a guard" does not say which clause's guard. FR-104's new bullet also lists "a function body" among positions "in a clause". Name the clause, or the binder, for each position. | spec/test-cases/TC-1084-equality-types-an-arithmetic-operand-against-a-bounded-integer.md:19-21; spec/functional/FR-104-check-state-clauses.md:141-144 |
 | FND-007 | low | FR-104 now restates QSpec FR-149's rule as normative, but its frontmatter has no `ix://agent-ix/quire-specification/FR-149` relationship, so the cross-repo dependency is invisible to link and blast-radius queries. Add a `depends_on` edge. | spec/functional/FR-104-check-state-clauses.md:1-32 |
 
+## New findings (disposition pass 2)
+
+Against head 57228a451.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | medium | FR-104-AC-12 and TC-1084 make `record Counter` the context of a `pre` guard ("an operation `bump` on `Counter`") and of an invariant "over `self`". FR-104:80-82 refuses a clause whose `T` names no object type, state machine or process, with `missing_declaration`/`missing-name`, and operations belong to object types and processes (FR-104:84-91, FR-104-AC-10's `Flow`). So the two guarded clause vectors refuse at the context before reaching the expected-type rule, and the AC contradicts its own FR. Fix: make `Counter` an object type of a model (clauses `on M::Counter`, operation `bump` declared on it); `f` can keep record or reference parameters. | spec/functional/FR-104-check-state-clauses.md:313; spec/test-cases/TC-1084-equality-types-an-arithmetic-operand-against-a-bounded-integer.md:19-21 |
+| FND-009 | low | Step 3 checks `later.tally = n` "in `f`", but `f(earlier: Counter, later: Counter)` has no `n`. The fixture's free-standing "`n` of `Integer`" is not in scope in `f`'s body, so the vector refuses `missing_declaration`, not the `type-mismatch` it asserts. Fix: declare `f(earlier: Counter, later: Counter, n: Integer)`. | spec/test-cases/TC-1084-equality-types-an-arithmetic-operand-against-a-bounded-integer.md:19,23; spec/functional/FR-104-check-state-clauses.md:313 |
+| FND-010 | medium | The fix round committed four Linear comment bodies as files under `reviews/`: `c-base.md`, `c-ears.md`, `d1-base.md` and `d1-ears.md`. They are not SpecReview artifacts, `quire validate` rejects them ("required 'type' is missing from frontmatter"), and their generic names will collide with later reviews. Only the two `26-10-19-std-157-spec-review-*.md` SR files belong in `reviews/`; delete the other four. | reviews/c-base.md; reviews/c-ears.md; reviews/d1-base.md; reviews/d1-ears.md |
+
 ## Dispositions
 
 Round 1, against head 5dadb78aa.
@@ -63,3 +73,11 @@ Round 1, against head 5dadb78aa.
 | FND-002 | fixed | FR-104 bullet: "an `Integer`-typed unary `-`, path, call, ..." plus "An operand of the same `Int[..]` type as its peer is accepted unchanged" |
 | FND-003 | fixed | FR-104 bullet lists `sum`, the `Rational[..]`/`Decimal[..]` case and `<`, `<=`, `>` and `>=` |
 | FND-004 | fixed | The rule is stated once in FR-104 for every `=`/`!=` (FR-104-AC-12, TC-1084); FR-381 refers to it |
+
+Round 2, against head 57228a451.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-005 | fixed | FR-104 and FR-381 now accept an ordering between `Integer` and `Int[..]`, matching the checker; the `<=` refusal vector is gone. STD-210 tracks the matching QSpec FR-149-AC-21 amendment |
+| FND-006 | fixed | TC-1084 now names each position: the `pre` of `bump`, an invariant over `self` and `f(earlier, later)` (their validity is FND-008 and FND-009) |
+| FND-007 | fixed | FR-104 frontmatter gains `ix://agent-ix/quire-specification/FR-149` `depends_on` |
