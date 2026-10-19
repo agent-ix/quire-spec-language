@@ -164,7 +164,8 @@ pub(super) fn parse_optional_reference(text: &str) -> Option<Option<ObjectRefere
 }
 
 fn unhex(text: &str) -> Option<Vec<u8>> {
-    if !text.len().is_multiple_of(2) || !text.is_ascii() {
+    let lower_hex = |byte: u8| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte);
+    if !text.len().is_multiple_of(2) || !text.bytes().all(lower_hex) {
         return None;
     }
     (0..text.len())

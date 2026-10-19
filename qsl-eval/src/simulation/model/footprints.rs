@@ -347,6 +347,9 @@ impl<'a> ModelSystem<'a> {
             .ok_or_else(unknown)?;
         let symbolic = application.footprint.as_ref().map_err(Clone::clone)?;
 
+        if application.declaration.parameters().len() != transition.arguments().len() {
+            return Err(unknown());
+        }
         let mut arguments = Vec::new();
         for ((name, value_type), text) in application
             .declaration

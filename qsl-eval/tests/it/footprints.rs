@@ -1345,3 +1345,93 @@ fn a_transition_over_an_object_not_yet_created_has_a_footprint() {
         &footprint_of(&system, "bump", &a, &[])
     ));
 }
+
+/// A transition text that is not the canonical text of a reference, or whose
+/// arguments do not match the operation's parameters, names no footprint.
+#[test]
+fn a_non_canonical_or_miscounted_transition_has_no_footprint() {
+    let mut subject = counters_subject();
+    let start = counters_start(&mut subject);
+    let system = subject.system(start, &COUNTER_KEYS);
+    let a = subject.reference("Counter", "a");
+    let operation = transition("Counter", "bump", &a, Vec::new());
+
+    // The identity `j` is hex `6a`; the same object spelled `6A` or `+1` is
+    // not canonical text.
+    let j = subject.reference("Counter", "j");
+    let canonical = reference_text(&j);
+    assert!(canonical.contains("\"6a\""));
+    let shouting = canonical.replace("\"6a\"", "\"6A\"");
+    let signed = canonical.replace("\"6a\"", "\"+1\"");
+    let with_receiver = |receiver: String, arguments: Vec<String>| {
+        ModelTransition::new(
+            operation.operation().to_owned(),
+            Some(receiver),
+            arguments,
+            quire_canonical::Limits::new(1 << 20),
+        )
+        .expect("a transition")
+    };
+    assert!(system
+        .footprint(&with_receiver(canonical, Vec::new()))
+        .is_ok());
+    let upper = shouting;
+    let shouting = signed;
+    for receiver in [shouting, upper] {
+        assert_eq!(
+            system.footprint(&with_receiver(receiver, Vec::new())),
+            Err(qsl_eval::simulation::model::FootprintError::UnknownTransition)
+        );
+    }
+    assert_eq!(
+        system.footprint(&with_receiver(reference_text(&a), vec![reference_text(&a)])),
+        Err(qsl_eval::simulation::model::FootprintError::UnknownTransition)
+    );
+    assert!(system.footprint(&operation).is_ok());
+}
+
+/// A receiver whose type has two direct supertypes: `C` extends `A` and `B`,
+/// `A` declares `cancel` framed `deletes self`, and a holder's field names a
+/// `B`. A deletion of a `C` reads the field that could name it, whichever
+/// supertype declared the operation; a field naming an unrelated type is not
+/// read.
+#[trace("TC-589")]
+#[test]
+fn a_deletion_of_a_receiver_with_two_supertypes_reads_the_fields_naming_either() {
+    let subject = subject(
+        document(
+            vec![
+                object_type(
+                    "A",
+                    vec![],
+                    vec![operation(
+                        "A",
+                        "cancel",
+                        &[],
+                        None,
+                        &frame(&json!({"deletes_receiver": true})),
+                    )],
+                ),
+                object_type("B", vec![], vec![]),
+                object_type("D", vec![], vec![]),
+                object_type_extending("C", &["A", "B"], vec![], vec![]),
+                object_type(
+                    "Holder",
+                    vec![
+                        field("Holder", "viaB", &ident("B"), "optional"),
+                        field("Holder", "viaD", &ident("D"), "optional"),
+                    ],
+                    vec![],
+                ),
+            ],
+            &[("cs", "C"), ("bs", "B"), ("holders", "Holder")],
+        ),
+        &[],
+    );
+    let cancel = subject.symbolic("C", "cancel");
+    assert!(cancel.reads.contains(&any_field("Holder/viaB")));
+    assert!(!cancel.reads.contains(&any_field("Holder/viaD")));
+    assert!(cancel
+        .writes
+        .contains(&membership("cs", &FootprintObject::Receiver)));
+}

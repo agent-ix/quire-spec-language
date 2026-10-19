@@ -58,3 +58,13 @@ with the tag narrowed to match.
 | FND-003 | medium | FR-155-AC-4 says "every step of AC-1's reduced run passes the frame decision with its receiver". The test expands only the initial state, and its oracle is `!enforced.successors.is_empty()`; no step's frame decision is checked. The determinism half is tautological for instantiation: `footprint_of` twice reads the same `Application.footprint` cached at `ModelSystem::new`. The symbolic half re-derives from the same in-memory graph, not from a second check of the package. The hand-built `b.v` frame violation is properly tested. | qsl-eval/tests/it/footprints.rs:777-865 |
 | FND-004 | medium | FR-155-AC-2's two quantification clauses, "pre is `forall o in counters: o.v < 2` reads `AnyField{v}` and `AnyMembership{counters}`" and "pre quantifies over `counters` reads `AnyMembership{counters}`", have no test. The `AllInstances`/`Lookup` arm of `node_reads` and the binder-field arm, where `Holder::Other` gives `AnyField`, never run. The PR says no clause can name a population today. If so, the AC is not satisfiable as written and needs an owner ruling; it should not be tagged as covered. | qsl-eval/tests/it/footprints.rs:642-712; qsl-semantics/src/model/footprint.rs:523-536 |
 | FND-005 | medium | FR-383 read-footprint item 6 has no assertion. `spawn()` (`creates Counter`) should read `AnyMembership{counters}`, plus `peer`'s target population, but only `spawn.writes` is checked. `unlink()` writes the reference field `Job/peer` and should read `AnyMembership{jobs}`, but only its writes are checked. Mutation evidence: with both `read_target_memberships` calls replaced by no-ops on the scratch copy, every `footprints` test still passes. | qsl-eval/tests/it/footprints.rs:700-712; qsl-eval/tests/it/footprints.rs:1155-1160; qsl-semantics/src/model/footprint.rs:361-383 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | deferred | Planner ruling: the reduced run of FR-155-AC-6 needs the partial-order engine (FR-156/FR-162), which this repository does not have yet. The test's AC-6 tag was removed (now `trace("TC-589")` only), so AC-6 is unbacked until that engine lands. |
+| FND-003 | fixed | - |
+| FND-004 | deferred | Planner ruling: the tag was narrowed, so the test no longer claims FR-155-AC-2. The quantification clauses are tracked as STD-165, because no state clause can name a population today. |
+| FND-005 | fixed | - |
