@@ -221,12 +221,14 @@ impl Accesses {
     /// The existence of the receiver and of each argument, which every
     /// operation reads, is not a data access.
     fn of(footprint: &SymbolicFootprint) -> Self {
-        let mut accesses = Self::default();
-        accesses.reads = footprint
-            .reads
-            .iter()
-            .any(|location| !matches!(location, SymbolicLocation::Membership { .. }));
-        accesses.writes = !footprint.writes.is_empty();
+        let mut accesses = Self {
+            reads: footprint
+                .reads
+                .iter()
+                .any(|location| !matches!(location, SymbolicLocation::Membership { .. })),
+            writes: !footprint.writes.is_empty(),
+            ..Self::default()
+        };
         for location in &footprint.writes {
             match location {
                 SymbolicLocation::Field { .. } => {}
