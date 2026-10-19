@@ -47,8 +47,9 @@ same directory: `spine-unit.native` (the shared `1-draft` unit),
 | below-range | refused: root version -1 is outside the domain's nominal bounds |
 | above-range | refused: child version 1001 is outside the domain's nominal bounds |
 
-Completed false and refusal exit 1; incomplete exits 3. Only completed execution
-includes truth. The Markdown path retains Quire's unchecked-language advisory
+Completed true exits 0, completed false 10, refused 20 and incomplete 22 (see
+[the diagnostic catalog](../../docs/native-error-codes.md)). Only completed
+execution includes truth. The Markdown path retains Quire's unchecked-language advisory
 and available/lossy extraction separately from native execution. These are real
 reference-runtime examples. The model declares integer bounds and explicit
 finite input populations, without adding a new schema-level
