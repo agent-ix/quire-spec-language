@@ -661,6 +661,15 @@ pub enum HyperCause {
         /// The operand's span.
         span: Span,
     },
+    /// A `let` binder that names a binder in scope or a variable of the
+    /// clause, as the value typer refuses it. `ambiguous_declaration`/
+    /// `ambiguous-name`, at the `let`.
+    BodyShadows {
+        /// The binder as written.
+        name: String,
+        /// The `let`'s span.
+        span: Span,
+    },
     /// A body form that atoms and relation bodies do not admit.
     /// `unsupported_construct`/`expression-form`, at the form.
     BodyUnsupported {
@@ -700,6 +709,7 @@ impl HyperCause {
             | Self::DuplicateName { span, .. }
             | Self::BodyMissing { span, .. }
             | Self::BodyIllTyped { span }
+            | Self::BodyShadows { span, .. }
             | Self::BodyUnsupported { span } => Some(*span),
             Self::OutsideHyperClause => None,
         }
@@ -727,7 +737,9 @@ impl HyperCause {
             | Self::UnknownTrace { .. }
             | Self::BodyMissing { .. }
             | Self::UnresolvedStepLabel { .. } => Code::MissingDeclaration,
-            Self::AmbiguousPopulation { .. } => Code::AmbiguousDeclaration,
+            Self::AmbiguousPopulation { .. } | Self::BodyShadows { .. } => {
+                Code::AmbiguousDeclaration
+            }
             Self::UnboundParameterAlias { .. }
             | Self::ParameterNotAnObject { .. }
             | Self::UnindexedRead { .. }
@@ -758,7 +770,7 @@ impl HyperCause {
             | Self::UnknownTrace { .. }
             | Self::BodyMissing { .. }
             | Self::UnresolvedStepLabel { .. } => "missing-name",
-            Self::AmbiguousPopulation { .. } => "ambiguous-name",
+            Self::AmbiguousPopulation { .. } | Self::BodyShadows { .. } => "ambiguous-name",
             Self::UnboundParameterAlias { .. }
             | Self::ParameterNotAnObject { .. }
             | Self::UnindexedRead { .. }
@@ -1266,6 +1278,7 @@ fn body_fault(fault: BodyFault) -> Found {
         BodyFault::Missing { name, span } => HyperCause::BodyMissing { name, span },
         BodyFault::IllTyped { span } => HyperCause::BodyIllTyped { span },
         BodyFault::Unsupported { span } => HyperCause::BodyUnsupported { span },
+        BodyFault::Shadows { name, span } => HyperCause::BodyShadows { name, span },
     })
 }
 

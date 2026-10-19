@@ -1152,3 +1152,82 @@ fn numbers_of_different_kinds_do_not_compare() {
     ))
     .expect("same kinds compare");
 }
+
+/// Whether the value typer admits `body` as the body of a Boolean function
+/// over `parameters`, among `declarations`.
+fn value_typer_admits(declarations: &str, parameters: &str, body: &str) -> bool {
+    let (_, package) = assemble(
+        &["V"],
+        INFINITE,
+        &format!("{declarations}function probe using v({parameters}): Boolean pure {{ {body} }}"),
+    );
+    package.check(CheckingLimits::default()).is_ok()
+}
+
+/// The forms a hyper body shares with the value profile are typed as the
+/// value typer types them: for each body, the relation body is admitted
+/// exactly when the same body of a Boolean function is. Where the value
+/// typer needs a proof the hyper typer does not ask for (a `Rational` result
+/// range compared with a literal), the two differ; unifying the typers is
+/// remaining work.
+#[trace("TC-597")]
+#[test]
+fn a_shared_value_form_is_admitted_as_the_value_typer_admits_it() {
+    let declarations = format!("{PHASE}{FUNCTIONS}");
+    for body in [
+        "Phase::OPEN != Phase::SHUT",
+        "Phase::NONE = Phase::OPEN",
+        "Phase::OPEN = 1",
+        "f(1) = f(2)",
+        "abs(0 - 3) >= 0",
+        "g(1) = 1",
+        "f(1, 2) = 1",
+        "f(true) = 1",
+        "let n = 1 in n = 2",
+        "(let n = 1 in n = 1) and n = 1",
+        "let n = true in n = 1",
+        "let n = 1 in let n = true in n = 1",
+        "let n = 1 in let n = true in n",
+        "let n = true in let n = 1 in n = 1",
+        "(let n = 1 in n = 1) and (let n = true in n)",
+        "1 = rational(1, 2)",
+        "1 + rational(1, 2) = 1",
+        "1 + 2 = 3",
+    ] {
+        let hyper = body_outcome(&format!("{declarations}{}", relation_over(body))).is_ok();
+        let value = value_typer_admits(&declarations, "", body);
+        assert_eq!(hyper, value, "{body}: hyper {hyper}, value {value}");
+    }
+}
+
+/// A `let` may not rebind a binder in scope or a variable of the clause, as
+/// the value typer refuses a `let` that rebinds a parameter.
+#[trace("TC-597")]
+#[test]
+fn a_let_binder_may_not_shadow_a_binder_or_a_variable() {
+    for body in [
+        "let n = 1 in let n = true in n = 1",
+        "let n = 1 in let n = true in n",
+        "let x = 1 in x = 1",
+        "let y = 1 in y = 1",
+    ] {
+        let faults = body_outcome(&relation_over(body)).expect_err(body);
+        assert!(
+            faults
+                .iter()
+                .any(|fault| matches!(fault, HyperCause::BodyShadows { .. })),
+            "{body}: {faults:?}"
+        );
+        assert_eq!(
+            faults[0].code(),
+            Code::AmbiguousDeclaration,
+            "{body}: {faults:?}"
+        );
+    }
+    assert!(!value_typer_admits("", "x: Integer", "let x = 1 in x = 1"));
+    // Two lets in separate operands do not shadow each other.
+    body_outcome(&relation_over(
+        "(let n = 1 in n = 1) and (let n = true in n)",
+    ))
+    .expect("sibling binders");
+}

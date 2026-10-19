@@ -91,3 +91,4 @@ needed to judge the diff's own tags.
 | FND-003 | fixed | The FR-172-AC-1, FR-173-AC-2 and FR-173-AC-3 tags are narrowed to their TC ids, so the matrix no longer reports the unbuilt halves as backed (26a263afd). |
 | FND-004 | fixed | The new test `an_examined_body_refuses_by_its_own_fault_under_either_profile` shows that the relation and hyper bodies are examined: an ill-typed body refuses BodyMissing under both layers, never a layer refusal. The existing ungated test still admits valid Det and NonInterference under both (26a263afd). |
 | FND-005 | still-open | The fix round changed no spec file. FR-362-AC-7 (lines 67 and 96) and TC-1026 step 5 still say a relation or hyper clause is refused at S2. Retire those sentences, since the families have moved, or record them as remaining work. |
+| FND-005 | deferred | STD-166: retiring the stale FR-362-AC-7 sentences (lines 67 and 96) and TC-1026 step 5 is routed to that spec ticket. |

@@ -132,6 +132,8 @@ pub(crate) enum BodyFault {
     IllTyped { span: Span },
     /// A form this typing does not cover.
     Unsupported { span: Span },
+    /// A `let` binder named as another binder in scope or as a root.
+    Shadows { name: String, span: Span },
 }
 
 /// What a body is typed against.
@@ -247,7 +249,22 @@ pub(crate) fn type_condition(
                     missing(&mut faults, name)
                 }
             }
-            ExprNode::Let { body, .. } => child(*body),
+            ExprNode::Let { name, body, .. } => {
+                let index = node.id().index();
+                let encloses = |bound: &Binding| {
+                    bound.name == *name
+                        && bound.body != body.index()
+                        && bound.body_start <= index
+                        && index <= bound.body
+                };
+                if env.roots.contains_key(name.as_str()) || lets.iter().any(encloses) {
+                    faults.push(BodyFault::Shadows {
+                        name: name.clone(),
+                        span: at,
+                    });
+                }
+                child(*body)
+            }
             ExprNode::Call { name, arguments } if !silent => match env.signatures.callable(name) {
                 None => missing(&mut faults, name),
                 Some((_, signature)) => {
@@ -397,9 +414,12 @@ pub(crate) fn type_condition(
             *slot = ty;
         }
     }
-    if !types
-        .get(expression.root().id().index())
-        .is_none_or(boolean)
+    // A body already refused for another fault is not refused again for the
+    // type those faults left behind.
+    if faults.is_empty()
+        && !types
+            .get(expression.root().id().index())
+            .is_none_or(boolean)
     {
         faults.push(BodyFault::IllTyped {
             span: span_of(expression.root().id().index()),
