@@ -36,7 +36,7 @@ pub enum UndecidedCause {
 }
 
 /// Why a run under reductions settles `inconclusive` (ADR-021 RV-2 to
-/// RV-4, FR-160).
+/// RV-4, FR-160) or `unsupported` (RV-6).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ReductionCause {
     /// A selected reduction's preservation-table row reads "no"; settled in
@@ -54,6 +54,12 @@ pub enum ReductionCause {
         population: DeclarationKey,
         /// Why.
         cause: SymmetryBrokenCause,
+    },
+    /// ADR-018 V-8: a selected reduction the system does not offer; settled
+    /// `unsupported` in the pre-check, with no state explored.
+    Unsupported {
+        /// The first selected reduction not offered.
+        reduction: ReductionKind,
     },
     /// The run completed with no counterexample and stored boundary states
     /// of its state constraint.
@@ -86,7 +92,8 @@ pub enum ModelCheckOutcome {
         /// The run's counts.
         stats: RunStats,
     },
-    /// A run under reductions settled `inconclusive` (ADR-021 RV-2 to RV-4).
+    /// A run under reductions settled `inconclusive` (ADR-021 RV-2 to RV-4)
+    /// or `unsupported` (RV-6).
     Reduction {
         /// Why.
         cause: ReductionCause,

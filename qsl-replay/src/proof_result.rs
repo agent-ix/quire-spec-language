@@ -98,7 +98,7 @@ pub enum AppliedReduction {
 }
 
 /// A reduction a request selects (FR-160 `ReductionKind`).
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ReductionKind {
     /// Symmetry over population universes.
     Symmetry,
@@ -273,6 +273,14 @@ pub enum UnavailabilityCause {
         /// The first constraint of the checked fairness set.
         constraint: FairnessConstraint,
     },
+    /// ADR-018 V-8, ADR-021 RV-6: the item selects a reduction its system
+    /// does not offer. Wire cause
+    /// `unsupported_projection`/`unsupported-requested-capability`.
+    UnsupportedReduction {
+        /// The first selected reduction, in the order symmetry,
+        /// partial-order, constraint, that is not offered.
+        reduction: ReductionKind,
+    },
 }
 
 impl UnavailabilityCause {
@@ -282,6 +290,7 @@ impl UnavailabilityCause {
             Self::SolverAbsent => "solver-absent",
             Self::BackendAbsent => "backend-absent",
             Self::MissingFairnessPremise { .. } => "missing-fairness-premise",
+            Self::UnsupportedReduction { .. } => "unsupported-requested-capability",
         }
     }
 
@@ -290,7 +299,9 @@ impl UnavailabilityCause {
     pub const fn code(&self) -> Option<&'static str> {
         match self {
             Self::SolverAbsent | Self::BackendAbsent => None,
-            Self::MissingFairnessPremise { .. } => Some("unsupported_projection"),
+            Self::MissingFairnessPremise { .. } | Self::UnsupportedReduction { .. } => {
+                Some("unsupported_projection")
+            }
         }
     }
 

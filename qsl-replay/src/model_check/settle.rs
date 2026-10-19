@@ -28,6 +28,7 @@ use crate::model_check::outcome::{ModelCheckOutcome, ReductionCause, UndecidedCa
 use crate::model_check::replay::{ModelTraceReplayResult, ModelTraceSettlement};
 use crate::proof_result::{
     Certification, IncompleteCause, InconclusiveCause, ProofBasis, SettlementBasis, TerminalValue,
+    UnavailabilityCause,
 };
 
 /// The settlement method every EN-1 record states (FR-127).
@@ -244,25 +245,34 @@ pub fn settle_model_check(
             Execution::Completed,
             Truth::Satisfied,
         ),
-        ModelCheckOutcome::Reduction { cause, .. } => inconclusive(match cause {
+        ModelCheckOutcome::Reduction { cause, .. } => match cause {
+            ReductionCause::Unsupported { reduction } => record(
+                TerminalValue::Unsupported(UnavailabilityCause::UnsupportedReduction {
+                    reduction: *reduction,
+                }),
+                ResultLabel::Unsupported,
+                SettlementBasis::Unavailable,
+                Execution::Completed,
+                Truth::Unavailable,
+            ),
             ReductionCause::NotPreserving { reduction, form } => {
-                InconclusiveCause::ReductionNotPreserving {
+                inconclusive(InconclusiveCause::ReductionNotPreserving {
                     reduction: *reduction,
                     form: *form,
-                }
+                })
             }
             ReductionCause::SymmetryBroken { population, cause } => {
-                InconclusiveCause::SymmetryBroken {
+                inconclusive(InconclusiveCause::SymmetryBroken {
                     population: population.clone(),
                     cause: cause.clone(),
-                }
+                })
             }
             ReductionCause::ConstraintReached { boundary_states } => {
-                InconclusiveCause::ConstraintReached {
+                inconclusive(InconclusiveCause::ConstraintReached {
                     boundary_states: *boundary_states,
-                }
+                })
             }
-        }),
+        },
         ModelCheckOutcome::BoundReached { depth, .. } => ModelCheckRecord {
             depth: Some(*depth),
             ..inconclusive(InconclusiveCause::BoundReached { depth: *depth })
