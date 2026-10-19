@@ -117,6 +117,7 @@ mod node_key;
 mod observation;
 mod operation_body;
 mod operation_clause;
+mod probabilistic;
 mod profile;
 mod protocol_clause;
 mod protocol_controls;
@@ -131,6 +132,9 @@ mod state_model;
 mod sum_case;
 mod temporal_clause;
 mod terminal;
+pub use probabilistic::{
+    ConfidenceFault, ProbabilisticCause, ProbabilisticDeclaration, WeightOwner,
+};
 pub use state_model::StateModelRefusal;
 pub use sum_case::{mint_union_member_key, ExhaustivenessObligation, SumCaseCause};
 #[cfg(any(test, feature = "test-support"))]
@@ -1672,6 +1676,11 @@ impl PackageDeclarations {
                 Err(StageFailure::Refused(refusal)) => refusals.push(refusal),
             }
         }
+        // FR-185, FR-186: the `random`, `reward`, `workload` and
+        // `probabilistic` declarations. What the forms alone let S3 refuse is
+        // refused; the rest refuses `not-yet-implemented`, so nothing
+        // probabilistic compiles unchecked (`probabilistic::check`).
+        refusals.extend(probabilistic::check(&self.probabilistic));
         if !refusals.is_empty() {
             return Err(refusals);
         }

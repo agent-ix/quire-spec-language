@@ -202,6 +202,7 @@ pub(super) fn expression_form(node: &ExprNode, predicates: &BTreeSet<&str>) -> O
         ExprNode::Boolean(_)
         | ExprNode::Integer(_)
         | ExprNode::Rational(..)
+        | ExprNode::Quantity(_)
         | ExprNode::String(_)
         | ExprNode::Name(_)
         | ExprNode::Let { .. }

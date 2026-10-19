@@ -440,6 +440,10 @@ pub struct PackageDeclarations {
     /// FR-325, FR-326: the unit's `temporal` clauses in declaration order,
     /// each as S2 built it, for the `TemporalTrace` family's `check`.
     pub temporal_clauses: Vec<super::temporal_clause::TemporalDeclaration>,
+    /// FR-311, FR-392: the unit's `random`, `reward`, `workload` and
+    /// `probabilistic` declarations in declaration order, each as S2 built
+    /// it, for the `Probabilistic` family's check (FR-185, FR-186).
+    pub probabilistic: Vec<super::ProbabilisticDeclaration>,
     /// FR-110, FR-326: the unit's header profile selections the
     /// `TemporalTrace` family's catalog holds, in source order. A clause is
     /// checked under the one of them, or refuses when there is none or
@@ -552,6 +556,7 @@ impl PackageDeclarations {
             protocols: Vec::new(),
             protocol_attempts: Vec::new(),
             temporal_clauses: Vec::new(),
+            probabilistic: Vec::new(),
             temporal_selections: Vec::new(),
             operation_clauses: Vec::new(),
             type_invariants: Vec::new(),

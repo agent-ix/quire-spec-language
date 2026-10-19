@@ -1152,6 +1152,11 @@ impl Expression {
         Self::single(ExprNode::Rational(numerator, denominator))
     }
 
+    /// A quantity literal such as `5 ms` (FR-393).
+    pub fn quantity(quantity: QuantityForm) -> Self {
+        Self::single(ExprNode::Quantity(quantity))
+    }
+
     /// A name.
     pub fn name(name: impl Into<String>) -> Self {
         Self::single(ExprNode::Name(name.into()))
