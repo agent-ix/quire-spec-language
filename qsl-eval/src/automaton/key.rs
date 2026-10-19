@@ -48,12 +48,20 @@ const DEADLOCK_FREEDOM: &str = "deadlock-freedom";
 /// automaton state under its context. Equality compares complete octets;
 /// order is ascending unsigned lexicographic octet order.
 ///
-/// A key is built only by a [`SafetyTranslation`], by encoding one of its
-/// states or by admitting octets against its context.
+/// A [`SafetyTranslation`] builds a key by encoding one of its states or by
+/// admitting octets against its context. [`AutomatonStateKey::imported`]
+/// wraps octets read from a certificate as they arrived: such a key is
+/// unadmitted, and a checker admits it against its own context before it
+/// is used for membership.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct AutomatonStateKey(Vec<u8>);
 
 impl AutomatonStateKey {
+    /// The octets of a key as a certificate carried them, not yet admitted.
+    pub fn imported(octets: Vec<u8>) -> Self {
+        Self(octets)
+    }
+
     /// The key's canonical UTF-8 octets.
     pub fn as_bytes(&self) -> &[u8] {
         &self.0

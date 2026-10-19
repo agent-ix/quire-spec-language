@@ -96,10 +96,14 @@ pub struct ModelCheckRecord {
 }
 
 /// FR-127: settle `outcome`, a run under `limits` over the package
-/// `package_id`, as one terminal record. A `Holds` outcome's certificate is
-/// checked by [`check_closure`] for `certificate`, under `limits` and
-/// `cancel`; a refused check settles `inconclusive` by `NoInstance` for an
-/// item with no instance and `failed` otherwise. A `Violated` outcome's
+/// `package_id`, as one terminal record. A `Holds` outcome settles only
+/// after the request's own package is emitted and its `package_id` equals
+/// `package_id` (another package settles
+/// `Inconclusive(ReplayRefused(stale_dependency))`, one that does not emit
+/// settles `failed`, or `Incomplete(Cancelled)` when `cancel` stopped it) and [`check_closure`] checks its certificate for
+/// `certificate` under `limits` and `cancel`; a refused check settles
+/// `inconclusive` by `NoInstance` or `NoInitialState` and `failed`
+/// otherwise. A `Violated` outcome's
 /// counterexample is handed to `replay` (FR-128) and settles by its result:
 /// reproduced against `package_id` is `Refuted`; a result settled against
 /// any other package is `Inconclusive(ReplayRefused(stale_dependency))`; a
@@ -159,36 +163,48 @@ pub fn settle_model_check(
         ModelCheckOutcome::Holds {
             certificate: closure,
             ..
-        } => match check_closure(certificate, closure, limits, cancel) {
-            Ok(TemporalCertificateCheck::Accepted) => record(
-                TerminalValue::Proved {
-                    basis: ProofBasis::Exhaustive,
-                    certification: Certification::Certified,
-                },
-                ResultLabel::Proved,
-                SettlementBasis::ClosedScope,
-                Execution::Completed,
-                Truth::Satisfied,
-            ),
-            Ok(TemporalCertificateCheck::Rejected(CertificateRejection { rule, at })) => {
-                inconclusive(InconclusiveCause::CertificateRejected { rule, at })
+        } => match certificate_package(certificate, cancel) {
+            Some(checked) if checked != *package_id => {
+                inconclusive(InconclusiveCause::ReplayRefused(Code::StaleDependency))
             }
-            Ok(TemporalCertificateCheck::Stopped(cause)) => {
-                let limit_reached = match cause {
-                    IncompleteCause::LimitReached { limit, value } => {
-                        Some(ReachedLimit { limit, value })
-                    }
-                    IncompleteCause::TimedOut
-                    | IncompleteCause::Cancelled { .. }
-                    | IncompleteCause::ResourceExhausted => None,
-                };
-                ModelCheckRecord {
-                    limit_reached,
-                    ..incomplete(cause)
+            None => match cancel.cause() {
+                Some(source) => incomplete(IncompleteCause::Cancelled { source }),
+                None => failed(),
+            },
+            Some(_) => match check_closure(certificate, closure, limits, cancel) {
+                Ok(TemporalCertificateCheck::Accepted) => record(
+                    TerminalValue::Proved {
+                        basis: ProofBasis::Exhaustive,
+                        certification: Certification::Certified,
+                    },
+                    ResultLabel::Proved,
+                    SettlementBasis::ClosedScope,
+                    Execution::Completed,
+                    Truth::Satisfied,
+                ),
+                Ok(TemporalCertificateCheck::Rejected(CertificateRejection { rule, at })) => {
+                    inconclusive(InconclusiveCause::CertificateRejected { rule, at })
                 }
-            }
-            Err(ClosureRefusal::NoInstance) => inconclusive(InconclusiveCause::NoInstance),
-            Err(_) => failed(),
+                Ok(TemporalCertificateCheck::Stopped(cause)) => {
+                    let limit_reached = match cause {
+                        IncompleteCause::LimitReached { limit, value } => {
+                            Some(ReachedLimit { limit, value })
+                        }
+                        IncompleteCause::TimedOut
+                        | IncompleteCause::Cancelled { .. }
+                        | IncompleteCause::ResourceExhausted => None,
+                    };
+                    ModelCheckRecord {
+                        limit_reached,
+                        ..incomplete(cause)
+                    }
+                }
+                Err(ClosureRefusal::NoInstance) => inconclusive(InconclusiveCause::NoInstance),
+                Err(ClosureRefusal::NoInitialState) => {
+                    inconclusive(InconclusiveCause::NoInitialState)
+                }
+                Err(_) => failed(),
+            },
         },
         ModelCheckOutcome::BoundReached { depth, .. } => ModelCheckRecord {
             depth: Some(*depth),
@@ -242,4 +258,13 @@ pub fn settle_model_check(
             Err(refusal) => inconclusive(InconclusiveCause::ReplayRefused(refusal.code())),
         },
     }
+}
+
+/// The `package_id` of the certificate request's own package, by emitting
+/// it (FR-322) under `cancel`; `None` when it does not emit or the handle
+/// stopped it.
+fn certificate_package(request: &CertificateRequest<'_>, cancel: &Cancel) -> Option<DigestRecord> {
+    qsl_package::emit_checked_with_cancel(request.subject.simulation.package, cancel)
+        .ok()
+        .map(|emission| emission.package().package_id().record())
 }

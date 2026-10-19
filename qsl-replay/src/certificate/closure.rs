@@ -16,8 +16,11 @@
 //!   or, for the deadlock-freedom item alone, it is deadlocked (ADR-018
 //!   DL-6).
 //!
-//! Before any key is used for membership, each certificate state's key is
-//! admitted against one instance's context; a key no instance admits
+//! A subject with no initial state is refused: no behaviour is examined, so
+//! no certificate of it is accepted. Admission polls the cancel handle at
+//! every certificate entry and reads at most `max_states` entries per
+//! instance. Before any key is used for membership, each certificate
+//! state's key is admitted against one instance's context; a key no instance admits
 //! (malformed, non-canonical, another item's, profile's or activation's)
 //! rejects the certificate `ShapeMismatch` at that state. The checker
 //! expands only model states the certificate holds, so its work is bounded
@@ -145,6 +148,10 @@ pub enum ClosureRefusal {
     /// The item has no instance (FR-125), so there is nothing to certify.
     #[error("the item has no instance")]
     NoInstance,
+    /// The subject has no initial state (ADR-016 EX-10), so no behaviour is
+    /// examined and there is nothing to certify.
+    #[error("the subject has no initial state")]
+    NoInitialState,
     /// A state identity or an automaton key has no canonical encoding.
     #[error("a state or automaton key has no canonical encoding")]
     Encoding,
@@ -185,10 +192,31 @@ pub fn check_closure(
         .map_err(|failure| ClosureRefusal::Admission(Box::new(failure)))?;
     check_model_bounds(&system, BOUND_POSITIONS)
         .map_err(|refusal| ClosureRefusal::NotSimulated(Box::new(refusal)))?;
+    if system.initial().is_empty() {
+        return Err(ClosureRefusal::NoInitialState);
+    }
 
+    // Admission reads at most one entry per product state the state budget
+    // admits for each instance, and polls the handle at every entry.
+    let entries = limits.limits.max_states.saturating_mul(instances.len());
     let mut members = BTreeSet::new();
     let mut models = BTreeSet::new();
-    for state in &certificate.states {
+    for (read, state) in certificate.states.iter().enumerate() {
+        if cancel.poll() {
+            if let Some(source) = cancel.cause() {
+                return Ok(TemporalCertificateCheck::Stopped(
+                    IncompleteCause::Cancelled { source },
+                ));
+            }
+        }
+        if read >= entries {
+            return Ok(TemporalCertificateCheck::Stopped(
+                IncompleteCause::LimitReached {
+                    limit: ModelCheckLimit::MaxStates,
+                    value: widen(limits.limits.max_states),
+                },
+            ));
+        }
         let admitted = state.model_state.domain() == DigestDomain::SimulationStateKeyV1
             && instances.iter().any(|instance| {
                 instance

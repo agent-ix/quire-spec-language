@@ -19,22 +19,24 @@ use qsl_analyze::model_check::{check_model, ModelCheckRequest};
 use qsl_eval::automaton::{SafetyState, SafetyTranslation, StateContext};
 use qsl_eval::simulation::model::{ModelSimState, ModelSystem};
 use qsl_eval::simulation::TransitionSystem;
+use qsl_foundation::diagnostic::Code;
+use qsl_foundation::SourceIdentity;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
-    check_closure, settle_model_check, CertificateLocus, CertificateRejection, CertificateRequest,
-    CertificateRule, Certification, ClauseIdentity, ClosureCertificate, ClosureRefusal,
-    DigestDomain, DigestRecord, Execution, IncompleteCause, InconclusiveCause, ModelCheckItem,
-    ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ProductStateRef, ProofBasis,
-    ReachedLimit, ResultLabel, SettlementBasis, TemporalCertificateCheck, TerminalValue,
-    UndecidedCause,
+    check_closure, compile_package, settle_model_check, CertificateLocus, CertificateRejection,
+    CertificateRequest, CertificateRule, Certification, ClauseIdentity, ClosureCertificate,
+    ClosureRefusal, DependencyInput, DigestDomain, DigestRecord, Execution, IncompleteCause,
+    InconclusiveCause, ModelCheckItem, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome,
+    ProductStateRef, ProofBasis, ReachedLimit, ReplayLimits, ResultLabel, SettlementBasis,
+    StageLimits, TemporalCertificateCheck, TerminalValue, UndecidedCause,
 };
 use qsl_semantics::check::CheckedTemporalClause;
 use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::{Cancel, CancelCause, ObjectReference, ScalarLimits, Value};
 
 use crate::counter::{
-    clause, document, identity, package, reference, subject, value, Documents, Letters, CONTRACT,
-    UNLIMITED, ZERO,
+    clause, document, identity, package, reference, subject, unit_text, value, Documents, Letters,
+    CONTRACT, UNLIMITED, ZERO,
 };
 
 const GUARDED: &str = "pre CanInc using v on M::Counter::inc { 6 mod (2 - self.value) >= 0 }\n\
@@ -42,6 +44,7 @@ const GUARDED: &str = "pre CanInc using v on M::Counter::inc { 6 mod (2 - self.v
 
 /// A Counter subject over the counters `keys`, from one initial snapshot.
 struct World {
+    body: String,
     package: CheckedPackage,
     documents: Documents,
     initial: Vec<DocumentRef>,
@@ -54,6 +57,7 @@ fn world(body: &str, start: &[(&'static str, i64)]) -> World {
     let mut documents = Documents::new(document);
     let initial = vec![documents.start("s0", start)];
     World {
+        body: body.to_owned(),
         package,
         documents,
         initial,
@@ -102,6 +106,22 @@ impl World {
             ),
             item,
         }
+    }
+
+    /// The `package_id` FR-098's recompile of the unit gives.
+    fn package_id(&self) -> DigestRecord {
+        let unit = unit_text(&self.documents.document, &self.body);
+        compile_package(
+            SourceIdentity::new("agent-ix", "counter", "git", "1"),
+            "counter.native",
+            unit.as_bytes(),
+            [self.documents.document.as_slice()],
+            &DependencyInput::default(),
+            StageLimits::default(),
+            ReplayLimits::default(),
+        )
+        .expect("the unit compiles")
+        .package_id()
     }
 
     fn system(&self) -> ModelSystem<'_> {
@@ -429,10 +449,12 @@ fn a_certificate_of_another_item_is_not_admitted() {
 }
 
 /// FR-127's certificate rows: the settlement map runs the core checker on
-/// a `Holds` outcome's certificate itself. The engine's certificate settles
+/// a `Holds` outcome's certificate itself, over the request's own package. The engine's certificate settles
 /// `proved`, `closed-scope`, `Proved{Exhaustive, Certified}`; the same
 /// outcome with a state removed settles `inconclusive`, `unsettled`,
-/// `CertificateRejected{SuccessorMissing, at}`, never `proved`.
+/// `CertificateRejected{SuccessorMissing, at}`, never `proved`; settled
+/// against another `package_id` than the request's package it is
+/// `ReplayRefused(stale_dependency)`, never `proved`.
 #[trace("TC-525")]
 #[test]
 fn a_proof_settles_certified_only_when_its_certificate_is_accepted() {
@@ -440,17 +462,19 @@ fn a_proof_settles_certified_only_when_its_certificate_is_accepted() {
     let invariant = world.invariant("always holds(c.value <= 3)", |v| Some(v <= 3));
     let outcome = world.run(invariant.item());
     let request = world.request(invariant.item(), UNLIMITED);
-    let package = DigestRecord::mint(DigestDomain::PackageSemanticV2, [0; 32]);
-    let settle = |outcome: &ModelCheckOutcome, cancel: &Cancel| {
+    let package = world.package_id();
+    let settle_at = |outcome: &ModelCheckOutcome, package: &DigestRecord, cancel: &Cancel| {
         settle_model_check(
             outcome,
             &ModelCheckLimits::default(),
-            &package,
+            package,
             &request,
             cancel,
             |_| panic!("a proof replays nothing"),
         )
     };
+    let settle =
+        |outcome: &ModelCheckOutcome, cancel: &Cancel| settle_at(outcome, &package, cancel);
     let proved = settle(&outcome, &Cancel::new());
     assert_eq!(
         proved.value,
@@ -466,6 +490,12 @@ fn a_proof_settles_certified_only_when_its_certificate_is_accepted() {
             SettlementBasis::ClosedScope,
             Execution::Completed
         )
+    );
+
+    let elsewhere = DigestRecord::mint(DigestDomain::PackageSemanticV2, [9; 32]);
+    assert_eq!(
+        settle_at(&outcome, &elsewhere, &Cancel::new()).value,
+        TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(Code::StaleDependency))
     );
 
     let ModelCheckOutcome::Holds { certificate, stats } = outcome else {
@@ -567,7 +597,7 @@ fn a_stopped_check_names_what_stopped_it() {
     let record = settle_model_check(
         &outcome,
         &states,
-        &DigestRecord::mint(DigestDomain::PackageSemanticV2, [0; 32]),
+        &world.package_id(),
         &request,
         &Cancel::new(),
         |_| panic!("a proof replays nothing"),
@@ -614,4 +644,126 @@ fn a_clause_with_no_instance_is_never_certified() {
         ),
         Err(ClosureRefusal::NoInstance)
     ));
+}
+
+/// ADR-016 EX-10: a subject with no initial state examines no behaviour, so
+/// the checker refuses it and an empty certificate offered with a `Holds`
+/// settles `inconclusive`, `NoInitialState`, never `Certified`.
+#[trace("TC-525")]
+#[test]
+fn a_subject_with_no_initial_state_is_never_certified() {
+    let mut world = world(CONTRACT, &[("c", 0)]);
+    world.initial.clear();
+    let request = world.request(ModelCheckItem::DeadlockFreedom, UNLIMITED);
+    let empty = ClosureCertificate::default();
+    assert!(matches!(
+        check_closure(
+            &request,
+            &empty,
+            &ModelCheckLimits::default(),
+            &Cancel::new()
+        ),
+        Err(ClosureRefusal::NoInitialState)
+    ));
+    let record = settle_model_check(
+        &ModelCheckOutcome::Holds {
+            certificate: empty,
+            stats: qsl_replay::RunStats::default(),
+        },
+        &ModelCheckLimits::default(),
+        &world.package_id(),
+        &request,
+        &Cancel::new(),
+        |_| panic!("a proof replays nothing"),
+    );
+    assert_eq!(
+        record.value,
+        TerminalValue::Inconclusive(InconclusiveCause::NoInitialState)
+    );
+    assert_eq!(record.label, ResultLabel::Inconclusive);
+}
+
+/// Key admission is bounded and cancellable before any state is explored:
+/// a certificate padded past `max_states` entries per instance stops at
+/// that limit before its padding is read, and a cancelled handle stops it
+/// before a malformed first entry is examined.
+#[trace("TC-525")]
+#[test]
+fn key_admission_is_bounded_and_cancellable() {
+    let world = world(CONTRACT, &[("c", 0)]);
+    let invariant = world.invariant("always holds(c.value <= 3)", |v| Some(v <= 3));
+    let mut certificate = certificate(&world.run(invariant.item()));
+    let padding = certificate.states[0].clone();
+    certificate.states.extend(std::iter::repeat_n(
+        ProductStateRef {
+            automaton_state: qsl_eval::automaton::AutomatonStateKey::imported(b"[".to_vec()),
+            ..padding
+        },
+        10,
+    ));
+    let request = world.request(invariant.item(), UNLIMITED);
+    let mut limits = ModelCheckLimits::default();
+    limits.limits.max_states = 4;
+    assert_eq!(
+        check_closure(&request, &certificate, &limits, &Cancel::new()).expect("checked"),
+        TemporalCertificateCheck::Stopped(IncompleteCause::LimitReached {
+            limit: ModelCheckLimit::MaxStates,
+            value: 4
+        })
+    );
+    certificate.states.reverse();
+    let cancel = Cancel::new();
+    cancel.cancel(CancelCause::Requested);
+    assert_eq!(
+        check_closure(
+            &request,
+            &certificate,
+            &ModelCheckLimits::default(),
+            &cancel
+        )
+        .expect("checked"),
+        TemporalCertificateCheck::Stopped(IncompleteCause::Cancelled {
+            source: CancelCause::Requested
+        })
+    );
+}
+
+/// FR-338's admission negatives reach the checker as imported octets: a
+/// malformed key, a non-canonical decimal path and a reordered set are each
+/// refused before membership, rejecting the certificate `ShapeMismatch` at
+/// that entry rather than reading it as a missing or member state.
+#[trace("TC-525")]
+#[test]
+fn a_malformed_key_in_a_certificate_is_refused_before_membership() {
+    let world = world(CONTRACT, &[("c", 0)]);
+    let reachable = world.reachable();
+    let deadlock = SafetyTranslation::deadlock_freedom().expect("translates");
+    let request = world.request(ModelCheckItem::DeadlockFreedom, UNLIMITED);
+    let carried = String::from_utf8(
+        deadlock
+            .key(SafetyState::Carried)
+            .expect("encodes")
+            .as_bytes()
+            .to_vec(),
+    )
+    .expect("UTF-8");
+    for octets in [
+        "[".to_owned(),
+        carried.replace(r#"[[],"positive"]"#, r#"[["01"],"positive"]"#),
+        carried.replace(",", ", "),
+    ] {
+        let mut certificate = closure(&reachable, &deadlock);
+        let at = ProductStateRef {
+            automaton_state: qsl_eval::automaton::AutomatonStateKey::imported(
+                octets.clone().into_bytes(),
+            ),
+            ..certificate.states[0].clone()
+        };
+        certificate.states.insert(0, at.clone());
+        assert_eq!(
+            check(&request, &certificate),
+            rejected(CertificateRule::ShapeMismatch, at),
+            "{octets}"
+        );
+    }
 }
