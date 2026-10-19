@@ -66,6 +66,26 @@ pub enum RowClass {
     Step,
 }
 
+/// A spelling of a refinement declaration that S3 has no checker for yet.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum UnsupportedFeature {
+    /// A `history` row (FR-138).
+    HistoryRow,
+    /// An abstract protocol side (FR-147; QSpec has no production for it
+    /// yet, Linear STD-182).
+    ProtocolAbstractSide,
+}
+
+impl UnsupportedFeature {
+    /// The feature's name in a refusal.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::HistoryRow => "history-row",
+            Self::ProtocolAbstractSide => "protocol-abstract-side",
+        }
+    }
+}
+
 /// Why a refinement declaration was refused.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum RefinementCause {
@@ -118,8 +138,10 @@ pub enum RefinementCause {
     /// which the spine classifies `unsupported`). A declaration holding one
     /// is refused rather than checked with the row ignored.
     Unsupported {
-        /// What the declaration spells.
-        construct: &'static str,
+        /// The feature the declaration spells.
+        feature: UnsupportedFeature,
+        /// The identity of the profile the declaration selects.
+        profile: String,
     },
     /// A row's expression or type refused.
     Check(CheckCause),
@@ -485,18 +507,18 @@ pub(crate) fn check_refinement<'a, 'c>(
     }
     let abstract_alias = match &form.abstract_side {
         AbstractSideForm::Model(alias) => alias,
-        AbstractSideForm::Protocol { clause, .. } => {
-            // FR-147: QSpec has no production for the protocol side yet
-            // (Linear STD-182), so the checker has no source to check it
-            // against.
+        AbstractSideForm::Protocol { alias, clause } => {
+            // FR-147: the protocol side has no checker yet. Its model alias
+            // still resolves, so the rest of the declaration is checked and
+            // its refusals reported beside this one.
             findings.refuse(
                 clause.span,
                 RefinementCause::Unsupported {
-                    construct: "an abstract protocol side (waits on QSpec STD-182, FR-147)",
+                    feature: UnsupportedFeature::ProtocolAbstractSide,
+                    profile: declaration.selection.identity.clone(),
                 },
             );
-            // Nothing more is checked against a side that cannot be built.
-            return Err((findings.refusals, nodes));
+            alias
         }
     };
     let side = |alias: &'c qsl_forms::DeclaredName| {
@@ -529,7 +551,7 @@ pub(crate) fn check_refinement<'a, 'c>(
         baseline: 0,
     };
     checker.baseline = checker.findings.refusals.len();
-    checker.refuse_history_rows(form);
+    checker.refuse_history_rows(form, &declaration.selection.identity);
     let populations = checker.populations(form);
     let objects = checker.objects(form, cx);
     let steps = checker.steps(form, cx);
@@ -580,13 +602,14 @@ impl<'c, 'a> Checker<'c, 'a> {
 
     /// FR-138: a history field is not checked yet, so a declaration that
     /// writes one is refused rather than checked with the row ignored.
-    fn refuse_history_rows(&mut self, form: &RefinementForm) {
+    fn refuse_history_rows(&mut self, form: &RefinementForm, profile: &str) {
         for row in &form.rows {
             if let RefinementRowForm::History(row) = row {
                 self.findings.refuse(
-                    row.span,
+                    row.keyword,
                     RefinementCause::Unsupported {
-                        construct: "a history row (FR-138)",
+                        feature: UnsupportedFeature::HistoryRow,
+                        profile: profile.to_owned(),
                     },
                 );
             }

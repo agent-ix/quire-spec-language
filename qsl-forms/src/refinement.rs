@@ -215,6 +215,8 @@ pub enum ArgumentForm {
 /// auxiliary field added to a concrete object type (QSpec FR-375).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HistoryRowForm {
+    /// The span of the `history` keyword.
+    pub keyword: Span,
     /// The concrete object type the field is added to.
     pub object: NameForm,
     /// The field.
@@ -519,7 +521,11 @@ fn history_form(
             })
         })
         .collect::<Result<_, FormsRefusal>>()?;
+    let Some(Item::Token(keyword)) = row_items.first() else {
+        return Err(unexpected(row));
+    };
     Ok(RefinementRowForm::History(HistoryRowForm {
+        keyword: keyword.span(),
         object: name_form(cst, only(row_items, Production::TypeName, row)?)?,
         field: declared(field, row)?,
         ty: type_form(cst, only(row_items, Production::TypeReference, row)?)?,

@@ -11,7 +11,7 @@
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
-use qsl_forms::{AbstractSideForm, DeclaredName};
+use qsl_forms::{AbstractSideForm, DeclaredName, RefinementRowForm, StepSourceForm};
 use qsl_foundation::Code;
 use qsl_semantics::check::{
     AssemblyRefusal, CheckCause, CheckRefusal, CheckedGraph, CheckedRefinement,
@@ -1266,9 +1266,10 @@ fn protocol_step_rows_refuse_over_a_model_subject() {
 
 /// FR-138: a history row is not checked yet, so a declaration that writes
 /// one refuses `unsupported_construct`/`not-yet-implemented` (FR-341-AC-5:
-/// S3's refusal of a construct it has no checker for) rather than checking
+/// S3's refusal of a construct it has no checker for) at the row's `history`
+/// keyword, naming the feature and the selected profile, rather than checking
 /// with the row ignored.
-#[trace("TC-540")]
+#[trace("TC-540", "FR-135-AC-5")]
 #[test]
 fn a_history_row_is_refused_until_it_is_checked() {
     let base = cas_refines_counter();
@@ -1280,16 +1281,21 @@ fn a_history_row_is_refused_until_it_is_checked() {
         refused.code_and_cause(),
         (Code::UnsupportedConstruct, Some("not-yet-implemented"))
     );
-    assert_eq!(refused.at, history);
+    assert_eq!(refused.at, "history");
+    let RefinementCause::Unsupported { feature, profile } = refused.refinement() else {
+        panic!("an unsupported feature: {:?}", refused.refinement());
+    };
+    assert_eq!(feature.name(), "history-row");
+    assert_eq!(profile, "quire.temporal.infinite-trace/v1");
 }
 
 /// FR-147: an abstract protocol side is a form QSpec has no production for
 /// (STD-182), so S2 never builds it from source; built by hand, S3 refuses it
-/// `unsupported_construct`/`not-yet-implemented` at the clause name and
-/// checks nothing else against it.
+/// `unsupported_construct`/`not-yet-implemented` at the clause name and still
+/// checks, and reports, the rest of the declaration.
 #[trace("TC-540")]
 #[test]
-fn a_protocol_abstract_side_is_the_only_refusal() {
+fn a_protocol_abstract_side_refuses_and_the_rest_is_still_checked() {
     let (spec, cas) = counters();
     let (text, declarations) = assemble(
         "",
@@ -1309,15 +1315,35 @@ fn a_protocol_abstract_side_is_the_only_refusal() {
         span: alias.span,
     };
     declaration.form.abstract_side = AbstractSideForm::Protocol { alias, clause };
+    // A step row the concrete model needs is missing.
+    declaration.form.rows.retain(|row| {
+        !matches!(row, RefinementRowForm::Step(step)
+            if matches!(&step.source, StepSourceForm::Named { name, .. }
+                if name.name == "Impl::Counter::peek"))
+    });
     let found = check_declarations(&text, declarations).expect_err("the protocol side refuses");
-    let refused = only(&found);
+    let [protocol, missing] = &found[..] else {
+        panic!(
+            "two refusals: {:?}",
+            found.iter().map(|r| &r.refusal).collect::<Vec<_>>()
+        );
+    };
     assert_eq!(
-        refused.code_and_cause(),
+        protocol.code_and_cause(),
         (Code::UnsupportedConstruct, Some("not-yet-implemented"))
     );
+    assert_eq!(protocol.at, "Spec");
+    let RefinementCause::Unsupported { feature, profile } = protocol.refinement() else {
+        panic!("an unsupported feature: {:?}", protocol.refinement());
+    };
+    assert_eq!(feature.name(), "protocol-abstract-side");
+    assert_eq!(profile, "quire.temporal.infinite-trace/v1");
     assert!(matches!(
-        refused.refinement(),
-        RefinementCause::Unsupported { .. }
+        missing.refinement(),
+        RefinementCause::MissingRow {
+            class: RowClass::Step,
+            ..
+        }
     ));
 }
 
