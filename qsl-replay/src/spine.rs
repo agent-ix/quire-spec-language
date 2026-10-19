@@ -69,7 +69,7 @@ mod clause;
 pub use clause::{
     run_clause, ClauseArgument, ClauseArgumentValue, ClauseDisposition, ClauseRunRefusal,
     ClauseRunReport, ClauseRunRequest, ClauseRunSelection, ClauseRunSource, ClauseRunStage,
-    OperationName,
+    OperationName, OverObject, TraceInput,
 };
 mod refinement;
 pub use refinement::{

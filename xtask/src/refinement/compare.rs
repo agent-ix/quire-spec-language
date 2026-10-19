@@ -9,7 +9,7 @@ use serde::Serialize;
 /// The kind of selection a case makes (FR-109, FR-115).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SelectionKind {
-    /// A state clause.
+    /// A state clause or a temporal clause.
     Clause,
     /// A Boolean function run as a claim.
     Function,
@@ -21,7 +21,9 @@ impl SelectionKind {
     /// The kind of `selection`.
     pub fn of(selection: &ClauseRunSelection) -> Self {
         match selection {
-            ClauseRunSelection::Clause(_) => Self::Clause,
+            // A temporal clause is a clause: one declared by name, whose
+            // absence in the superseding revision drops a constraint.
+            ClauseRunSelection::Clause(_) | ClauseRunSelection::Temporal { .. } => Self::Clause,
             ClauseRunSelection::Function { .. } => Self::Function,
             ClauseRunSelection::Frame { .. } => Self::Frame,
         }

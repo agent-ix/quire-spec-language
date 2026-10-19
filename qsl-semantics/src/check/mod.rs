@@ -524,12 +524,15 @@ pub struct CheckedGraph {
 /// `temporal`/`temporal_clause` node, the `claim` occurrence of this
 /// declaration and its `over` parameter's node. Two structurally equal
 /// declarations share one node and differ in their `claim` occurrence.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct TemporalClauseNode {
     clause: CheckedTemporalClause,
     identity: quire_exact::NodeKey,
     claim: quire_exact::Origin,
     over: quire_exact::NodeKey,
+    /// Each `holds` atom's checked condition and its slot count, by the
+    /// atom's formula node index.
+    conditions: BTreeMap<usize, (CheckedBody, usize)>,
 }
 
 impl TemporalClauseNode {
@@ -551,6 +554,16 @@ impl TemporalClauseNode {
     /// The `value`/`parameter` node of the clause's `over` parameter.
     pub fn over(&self) -> quire_exact::NodeKey {
         self.over
+    }
+
+    /// The checked Boolean condition of the `holds` atom `atom` and its
+    /// evaluation slot count (FR-337). The condition reads the `over`
+    /// parameter at slot 0 and nothing else of the clause. `None` for a node
+    /// that is no `holds` atom of this clause.
+    pub fn condition(&self, atom: FormulaNodeId) -> Option<(CheckedNode<'_>, usize)> {
+        self.conditions
+            .get(&atom.index())
+            .map(|(body, slots)| (body.root(), *slots))
     }
 }
 
@@ -2641,6 +2654,10 @@ impl PackageDeclarations {
                     identity: lowered.key,
                     claim,
                     over: lowered.over,
+                    conditions: conditions
+                        .into_iter()
+                        .map(|(atom, condition)| (atom, (condition.body, condition.slots)))
+                        .collect(),
                 })
             })
             .collect::<Result<Vec<_>, Vec<CheckRefusal>>>()?;

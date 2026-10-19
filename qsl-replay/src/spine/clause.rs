@@ -28,6 +28,9 @@ use qsl_semantics::model::observation::{
 };
 use quire_exact::{Cancel, Identifier, Meter, ScalarLimits, Value, ValueType};
 
+mod temporal;
+pub use temporal::{OverObject, TraceInput};
+
 use super::call::{convert_call_failure, convert_outcome, select};
 pub use super::call::{CallOutcome, CallValue, RunRefusal};
 use super::lifecycle as front_end;
@@ -63,7 +66,8 @@ pub struct ClauseArgument {
 }
 
 /// FR-109's selection: a state clause (FR-106's [`ClauseSelection`]), a
-/// Boolean function run as a claim, or (FR-115) an operation frame.
+/// Boolean function run as a claim, (FR-115) an operation frame, or (FR-330)
+/// a temporal clause over a supplied trace.
 #[derive(Clone, Debug)]
 pub enum ClauseRunSelection {
     /// A state clause, admitted per FR-106.
@@ -87,6 +91,16 @@ pub enum ClauseRunSelection {
         /// The `quire.state.invocation/v1` document, with its pre and post
         /// snapshots in the provision.
         invocation: DocumentRef,
+    },
+    /// FR-330: a temporal clause, run over a supplied trace.
+    Temporal {
+        /// The temporal clause's declared name.
+        name: String,
+        /// The observations the clause is run over.
+        trace: TraceInput,
+        /// The object the clause's `over` parameter names, resolved in the
+        /// observation at position 0.
+        over: OverObject,
     },
 }
 
@@ -277,6 +291,14 @@ pub enum ClauseDisposition {
     /// frame witness, whose cause is `frame_violation`/`unauthorized-change`.
     /// A verdict that evaluated, not a refusal.
     FrameViolation(Box<FrameWitness>),
+    /// Stage `evaluate` (FR-330): the TemporalTrace evaluator's outcome for
+    /// a `Temporal` selection. Its category is the outcome's: a pending
+    /// result is `inconclusive`, a missing fairness premise `unsupported`,
+    /// and a false or undefined clause a `violation` at its position.
+    Temporal(qsl_eval::temporal::TemporalOutcome),
+    /// Stage `evaluate`, category `refusal` (FR-330): the evaluator refused
+    /// the supplied trace (a lasso with an empty loop, for one).
+    TemporalRefusal(qsl_eval::temporal::TemporalRefusal),
     /// Stage `evaluate`, category `internal-failure`: a broken S6a
     /// invariant reached outside the outcome mapping (FR-100's own
     /// internal-failure exit status).
@@ -292,9 +314,11 @@ impl ClauseDisposition {
             }
             Self::MissingName { .. } | Self::NotAPredicate { .. } => ClauseRunStage::Select,
             Self::Admit(_) | Self::ArgumentRefusal(_) => ClauseRunStage::Admit,
-            Self::Evaluate(_) | Self::FrameViolation(_) | Self::EvaluateFault(_) => {
-                ClauseRunStage::Evaluate
-            }
+            Self::Evaluate(_)
+            | Self::Temporal(_)
+            | Self::TemporalRefusal(_)
+            | Self::FrameViolation(_)
+            | Self::EvaluateFault(_) => ClauseRunStage::Evaluate,
         }
     }
 
@@ -322,6 +346,8 @@ impl ClauseDisposition {
                 Category::InternalFailure
             }
             Self::FrameViolation(_) => Category::Violation,
+            Self::Temporal(outcome) => outcome.category(),
+            Self::TemporalRefusal(_) => Category::Refusal,
             Self::Evaluate(CallOutcome::Completed(CallValue::Boolean(false))) => {
                 Category::Violation
             }
@@ -337,6 +363,8 @@ impl ClauseDisposition {
         match self {
             Self::Evaluate(CallOutcome::Completed(CallValue::Boolean(value))) => Some(*value),
             Self::FrameViolation(_) => Some(false),
+            Self::Temporal(qsl_eval::temporal::TemporalOutcome::Holds) => Some(true),
+            Self::Temporal(qsl_eval::temporal::TemporalOutcome::Violated { .. }) => Some(false),
             _ => None,
         }
     }
@@ -618,6 +646,11 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
             ref operation,
             ref invocation,
         } => Ok(run_frame(&run, operation, invocation)),
+        ClauseRunSelection::Temporal {
+            ref name,
+            ref trace,
+            ref over,
+        } => Ok(temporal::run_temporal(&run, name, trace, over)),
     }
 }
 
