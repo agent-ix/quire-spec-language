@@ -77,3 +77,18 @@ FR-332-AC-3 are each backed by a test that fails on its AC's behaviour.
 No production code in the diff is without an owning requirement.
 `ResultLabel::category` has no production caller yet, but FR-332's A-5
 mapping owns it and FR-332-AC-3 tests it.
+
+## Dispositions
+
+Round 1, reviewed at `adbda88e4b1c444eec5c5389fef9062ab7f781f6`. All seven
+`#[trace]` tags left in the diff were re-read against their AC text: TC-840
+on FR-330-AC-1 to AC-4, TC-848 on FR-330-AC-6, and TC-842 on FR-332-AC-1 and
+AC-3. None over-claims. FR-330-AC-5, FR-332-AC-2 and FR-332-AC-4 are
+untagged.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | adbda88e4: the FR-332-AC-2 tag is removed, and the hand-built `route(..)` assertions are deleted. The test is renamed `an_infinite_trace_items_candidates_follow_the_registry`, is untagged, and keeps only the candidate-set checks. The warned settlement is the lead's to ticket. |
+| FND-002 | fixed | adbda88e4: the FR-332-AC-4 tag is removed. The doc comment says the accounting-record half does not exist in QSL yet. |
+| FND-003 | accepted-no-change | The report carries no catalog code for `MissingFairnessPremise`, and its only writer refuses temporal dispositions until the wire form is specified (declared). The test now documents that the cause is implied by the variant. Assert the code when an outcome-to-code mapping lands. |
+| FND-004 | fixed | adbda88e4: the repeat list now holds all eight AC-1 to AC-3 requests, including `ghost` and the empty-loop lasso. |

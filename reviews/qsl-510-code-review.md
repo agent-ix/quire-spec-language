@@ -94,3 +94,16 @@ What holds:
   stays inside the `clause::tests` module.
 - Rust lane: no `unsafe`, and the new public enums carry doc comments. The
   `seam_probe_eval_downstream` arm follows the crate's existing pattern.
+
+## Dispositions
+
+Round 1, reviewed at `adbda88e4b1c444eec5c5389fef9062ab7f781f6` (the fix
+commit `adbda88e4` on top of a merge of main). Static review only.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | adbda88e4: `TemporalRefusal`'s category now comes from `Code::from_code(refusal.catalog_code().code())`, so `ProfileNotEvaluated` is unsupported. `run_temporal` sends `TemporalRefusal::Fault` to `EvaluateFault` (internal failure). The new untagged test `a_temporal_refusal_takes_its_category_from_its_catalog_code` checks refusal, unsupported and internal failure. |
+| FND-002 | fixed | adbda88e4: a refused condition is kept as `HoldsStop::Refused(evaluation)`, and `run_temporal` reports it through `convert_outcome`, exactly as FR-109 does (refusal with its record; `CheckedInvariant` stays a fault). A failed call is kept as `HoldsStop::Failed` and mapped by `convert_call_failure`. The `_ =>` arm is gone. No test drives a refusing condition, and FR-330 states no AC for this path. The fix reuses FR-109's tested mapping, so this is accepted without a new test. |
+| FND-003 | fixed | adbda88e4: the three post-admission returns go through `late`, which keeps `admission_consumed: admitted`. |
+| FND-004 | fixed | adbda88e4: the Temporal arm returns `io::Error(InvalidInput, "a temporal selection has no clause-run/1 wire form")`. |
+| FND-005 | fixed | adbda88e4: `SelectionKind::Temporal` is its own kind. `(Admitted, Absent)` gives `ToolFailure` for it, which agrees with `classify_disposition`'s tool-failure arm. The compare table test's `KINDS` still lists three kinds, so the new row is not exercised. The arm cannot be reached, so this is not a new finding. |
