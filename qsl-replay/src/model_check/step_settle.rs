@@ -123,7 +123,7 @@ mod tests {
 
     /// TC-551 step 4, settlement only: a holding obligation settles
     /// `Proved{Inductive{1}}`, `Certified` only on a verified certificate.
-    #[trace("TC-551")]
+    #[trace("TC-551", "FR-146-AC-7")]
     #[test]
     fn a_holding_record_settles_proved_with_the_certificates_standing() {
         for (certificate, certification) in [
@@ -161,7 +161,7 @@ mod tests {
 
     /// ADR-018 PC-2: a certificate the core shows wrong never settles
     /// `proved`.
-    #[trace("TC-551")]
+    #[trace("TC-551", "FR-146-AC-7")]
     #[test]
     fn a_rejected_certificate_settles_inconclusive_never_proved() {
         let at = CertificateLocus::Query {
