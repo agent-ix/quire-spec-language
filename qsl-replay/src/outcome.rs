@@ -278,7 +278,10 @@ impl ItemCause {
                 | InconclusiveCause::NoInitialState
                 | InconclusiveCause::NoInstance
                 | InconclusiveCause::SufficientTestFailed
-                | InconclusiveCause::SolverInconclusive,
+                | InconclusiveCause::SolverInconclusive
+                | InconclusiveCause::ReductionNotPreserving { .. }
+                | InconclusiveCause::SymmetryBroken { .. }
+                | InconclusiveCause::ConstraintReached { .. },
             ) => {}
             ReportedInconclusiveCause::KaniVacuousProof => {}
             ReportedInconclusiveCause::Cause(InconclusiveCause::ReplayParity(parity)) => {

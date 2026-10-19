@@ -5,7 +5,9 @@
 use crate::certificate::closure::ClosureCertificate;
 use crate::model_check::counterexample::TemporalCounterexample;
 use crate::model_check::limits::ReachedLimit;
-use crate::proof_result::IncompleteCause;
+use crate::proof_result::{AppliedReduction, IncompleteCause, ReductionKind, SymmetryBrokenCause};
+use qsl_semantics::model::key::DeclarationKey;
+use quire_semantic_value::fairness::PropertyForm;
 
 /// The counts of one run, whatever ended it.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -33,6 +35,34 @@ pub enum UndecidedCause {
     NoInstance,
 }
 
+/// Why a run under reductions settles `inconclusive` (ADR-021 RV-2 to
+/// RV-4, FR-160).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ReductionCause {
+    /// A selected reduction's preservation-table row reads "no"; settled in
+    /// the pre-check, with no state explored.
+    NotPreserving {
+        /// The first refused reduction.
+        reduction: ReductionKind,
+        /// The claim's property form.
+        form: PropertyForm,
+    },
+    /// The initial states are not closed under a symmetry declaration's
+    /// group; settled in the pre-check, with no state explored.
+    SymmetryBroken {
+        /// The declaration's population.
+        population: DeclarationKey,
+        /// Why.
+        cause: SymmetryBrokenCause,
+    },
+    /// The run completed with no counterexample and stored boundary states
+    /// of its state constraint.
+    ConstraintReached {
+        /// The boundary states stored.
+        boundary_states: u64,
+    },
+}
+
 /// One EN-1 run's outcome (FR-126 Outputs).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ModelCheckOutcome {
@@ -42,6 +72,24 @@ pub enum ModelCheckOutcome {
     Holds {
         /// The explored product states.
         certificate: ClosureCertificate,
+        /// The run's counts.
+        stats: RunStats,
+    },
+    /// Every reachable product state of the reduced product was examined
+    /// and none is bad (ADR-021 RV-1). With no reduction listed, only a
+    /// state constraint was applied and the run reached no boundary state.
+    /// No core checker covers the reduced graph, so it carries no
+    /// certificate.
+    HoldsReduced {
+        /// The applied reductions, in the order symmetry, partial-order.
+        reductions: Vec<AppliedReduction>,
+        /// The run's counts.
+        stats: RunStats,
+    },
+    /// A run under reductions settled `inconclusive` (ADR-021 RV-2 to RV-4).
+    Reduction {
+        /// Why.
+        cause: ReductionCause,
         /// The run's counts.
         stats: RunStats,
     },
@@ -83,6 +131,8 @@ impl ModelCheckOutcome {
     pub fn stats(&self) -> RunStats {
         match self {
             Self::Holds { stats, .. }
+            | Self::HoldsReduced { stats, .. }
+            | Self::Reduction { stats, .. }
             | Self::Violated { stats, .. }
             | Self::BoundReached { stats, .. }
             | Self::Undecided { stats, .. }
