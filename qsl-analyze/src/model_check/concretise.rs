@@ -226,16 +226,3 @@ impl<'s, 'a> Lift<'s, 'a> {
         Ok(())
     }
 }
-
-/// The order of `permutation`: the least `k >= 1` with `permutation^k` the
-/// identity. Each power is one composition, so it is bounded by the order
-/// of the group, which is finite.
-pub(super) fn order(permutation: &Permutation) -> usize {
-    let mut power = permutation.clone();
-    let mut order = 1_usize;
-    while !power.is_identity() {
-        power = power.compose(permutation);
-        order = order.saturating_add(1);
-    }
-    order
-}

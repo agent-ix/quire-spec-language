@@ -114,12 +114,10 @@ pub(crate) enum Verdict {
     /// A weak constraint fails.
     UnfairWeak,
     /// Strong constraints fail: the states `R` where a lift enables a
-    /// failing identity are removed, and `sub` analyses the SCCs of the rest,
-    /// which together hold every state not removed.
-    UnfairStrong {
-        /// The analyses of the SCCs left, in discovery order.
-        sub: Vec<Analysis>,
-    },
+    /// failing identity are removed, and the SCCs of the rest, which
+    /// together hold every state not removed, follow as the analyses whose
+    /// `parent` is this one.
+    UnfairStrong,
     /// The component holds a fair accepting cycle.
     Fair,
 }
@@ -134,20 +132,33 @@ pub(crate) struct Analysis {
     pub(crate) spanning: Option<Spanning>,
     /// What the filter found.
     pub(crate) verdict: Verdict,
+    /// The index of the component whose refinement this one is a component
+    /// of; `None` for an SCC of the analysed set.
+    pub(crate) parent: Option<usize>,
 }
 
 impl Analysis {
-    /// The first fair component among `analyses`, depth first through each
-    /// refinement (ADR-019 FS-6).
+    /// The first fair component among `analyses`, which [`Analyzer::analyze`]
+    /// lists depth first through each refinement (ADR-019 FS-6).
     pub(crate) fn first_fair_in(analyses: &[Self]) -> Option<&Self> {
         analyses
             .iter()
-            .find_map(|analysis| match &analysis.verdict {
-                Verdict::Fair => Some(analysis),
-                Verdict::UnfairStrong { sub, .. } => Self::first_fair_in(sub),
-                Verdict::Trivial | Verdict::MissingAcceptance | Verdict::UnfairWeak => None,
-            })
+            .find(|analysis| matches!(analysis.verdict, Verdict::Fair))
     }
+}
+
+/// A component waiting in [`Analyzer::analyze`]'s worklist.
+struct Pending {
+    states: Vec<ProductStateId>,
+    trivial: bool,
+    parent: Option<usize>,
+}
+
+/// What classifying one component found, and the states its refinement
+/// keeps when strong constraints fail.
+struct Classified {
+    analysis: Analysis,
+    refined: Option<BTreeSet<ProductStateId>>,
 }
 
 /// Why the analysis stopped.
@@ -175,7 +186,7 @@ pub(crate) struct Analyzer<'q, I> {
     quotient: &'q Quotient<I>,
     constraints: &'q [QuotientConstraint<I>],
     rename: Rename<'q, I>,
-    meter: Meter,
+    meter: &'q mut Meter,
     cancel: &'q Cancel,
     /// The quotient as the SCC kernel reads it.
     graph: Graph,
@@ -184,8 +195,8 @@ pub(crate) struct Analyzer<'q, I> {
 }
 
 impl<'q, I: Clone + Ord> Analyzer<'q, I> {
-    /// The filter over `quotient` for `constraints`, charging `meter` and
-    /// polling `cancel`.
+    /// The filter over `quotient` for `constraints`, charging `meter` (the
+    /// run's) and polling `cancel`.
     ///
     /// # Errors
     ///
@@ -195,7 +206,7 @@ impl<'q, I: Clone + Ord> Analyzer<'q, I> {
         quotient: &'q Quotient<I>,
         constraints: &'q [QuotientConstraint<I>],
         rename: Rename<'q, I>,
-        meter: Meter,
+        meter: &'q mut Meter,
         cancel: &'q Cancel,
     ) -> Result<Self, QuotientStop> {
         let mut graph = Graph::new();
@@ -253,8 +264,12 @@ impl<'q, I: Clone + Ord> Analyzer<'q, I> {
     }
 
     /// `fair` over `within`: its SCCs in discovery order, each classified,
-    /// a component that fails a strong constraint refined and analysed
-    /// again.
+    /// a component that fails a strong constraint refined and the SCCs of
+    /// what is left analysed again. The result lists every component depth
+    /// first (a refined component, then its refinement's components, then
+    /// its next sibling), each naming the component it refines. A worklist
+    /// replaces recursion, so a refinement that peels one state per round
+    /// deepens no stack; each component charges the meter.
     ///
     /// # Errors
     ///
@@ -264,6 +279,43 @@ impl<'q, I: Clone + Ord> Analyzer<'q, I> {
         &mut self,
         within: &BTreeSet<ProductStateId>,
     ) -> Result<Vec<Analysis>, QuotientStop> {
+        let mut analyses = Vec::new();
+        // Components still to classify, the next on top.
+        let mut pending: Vec<Pending> = Vec::new();
+        self.push_components(within, None, &mut pending)?;
+        while let Some(next) = pending.pop() {
+            self.charge()?;
+            let index = analyses.len();
+            if next.trivial {
+                analyses.push(Analysis {
+                    states: next.states,
+                    spanning: None,
+                    verdict: Verdict::Trivial,
+                    parent: next.parent,
+                });
+                continue;
+            }
+            let Classified {
+                mut analysis,
+                refined,
+            } = self.classify(next.states)?;
+            analysis.parent = next.parent;
+            analyses.push(analysis);
+            if let Some(rest) = refined {
+                self.push_components(&rest, Some(index), &mut pending)?;
+            }
+        }
+        Ok(analyses)
+    }
+
+    /// The SCCs of `within`, pushed so the first in discovery order is on
+    /// top.
+    fn push_components(
+        &mut self,
+        within: &BTreeSet<ProductStateId>,
+        parent: Option<usize>,
+        pending: &mut Vec<Pending>,
+    ) -> Result<(), QuotientStop> {
         let vertices: BTreeSet<Vertex> = within
             .iter()
             .map(|id| self.vertices.get(id.index()).copied())
@@ -276,29 +328,23 @@ impl<'q, I: Clone + Ord> Analyzer<'q, I> {
                     QuotientStop::Fault("a-component-is-built-from-quotient-states")
                 }
             })?;
-        let mut analyses = Vec::with_capacity(found.len());
-        for component in found {
-            let states: Vec<ProductStateId> = component
-                .vertices()
-                .iter()
-                .map(|vertex| ProductStateId(vertex.index()))
-                .collect();
-            if component.is_trivial() {
-                analyses.push(Analysis {
-                    states,
-                    spanning: None,
-                    verdict: Verdict::Trivial,
-                });
-                continue;
-            }
-            analyses.push(self.classify(states)?);
+        for component in found.into_iter().rev() {
+            pending.push(Pending {
+                states: component
+                    .vertices()
+                    .iter()
+                    .map(|vertex| ProductStateId(vertex.index()))
+                    .collect(),
+                trivial: component.is_trivial(),
+                parent,
+            });
         }
-        Ok(analyses)
+        Ok(())
     }
 
     /// The verdict for a component that holds an edge: acceptance, then the
     /// weak constraints in fairness-set order, then the strong ones together.
-    fn classify(&mut self, states: Vec<ProductStateId>) -> Result<Analysis, QuotientStop> {
+    fn classify(&mut self, states: Vec<ProductStateId>) -> Result<Classified, QuotientStop> {
         let members: BTreeSet<ProductStateId> = states.iter().copied().collect();
         if self
             .quotient
@@ -306,10 +352,14 @@ impl<'q, I: Clone + Ord> Analyzer<'q, I> {
             .iter()
             .any(|accepting| accepting.is_disjoint(&members))
         {
-            return Ok(Analysis {
-                states,
-                spanning: None,
-                verdict: Verdict::MissingAcceptance,
+            return Ok(Classified {
+                analysis: Analysis {
+                    states,
+                    spanning: None,
+                    verdict: Verdict::MissingAcceptance,
+                    parent: None,
+                },
+                refined: None,
             });
         }
         let spanning = self.spanning(&members)?;
@@ -335,10 +385,14 @@ impl<'q, I: Clone + Ord> Analyzer<'q, I> {
                 }
             };
             if !fair {
-                return Ok(Analysis {
-                    states,
-                    spanning: Some(spanning),
-                    verdict: Verdict::UnfairWeak,
+                return Ok(Classified {
+                    analysis: Analysis {
+                        states,
+                        spanning: Some(spanning),
+                        verdict: Verdict::UnfairWeak,
+                        parent: None,
+                    },
+                    refined: None,
                 });
             }
         }
@@ -381,18 +435,24 @@ impl<'q, I: Clone + Ord> Analyzer<'q, I> {
             }
         }
         if !failing {
-            return Ok(Analysis {
-                states,
-                spanning: Some(spanning),
-                verdict: Verdict::Fair,
+            return Ok(Classified {
+                analysis: Analysis {
+                    states,
+                    spanning: Some(spanning),
+                    verdict: Verdict::Fair,
+                    parent: None,
+                },
+                refined: None,
             });
         }
-        let rest: BTreeSet<ProductStateId> = members.difference(&removed).copied().collect();
-        let sub = self.analyze(&rest)?;
-        Ok(Analysis {
-            states,
-            spanning: Some(spanning),
-            verdict: Verdict::UnfairStrong { sub },
+        Ok(Classified {
+            analysis: Analysis {
+                states,
+                spanning: Some(spanning),
+                verdict: Verdict::UnfairStrong,
+                parent: None,
+            },
+            refined: Some(members.difference(&removed).copied().collect()),
         })
     }
 
@@ -851,9 +911,10 @@ impl<'s> Walker<'s> {
 
     fn step<I: Clone + Ord>(
         &mut self,
-        analyzer: &Analyzer<'_, I>,
+        analyzer: &mut Analyzer<'_, I>,
         edge: LoopEdge,
     ) -> Result<ProductStateId, QuotientStop> {
+        analyzer.charge()?;
         let held = analyzer
             .edges(edge.0)
             .get(edge.1)
@@ -866,7 +927,7 @@ impl<'s> Walker<'s> {
     /// The tree path from the entry to `state`.
     fn tree<I: Clone + Ord>(
         &mut self,
-        analyzer: &Analyzer<'_, I>,
+        analyzer: &mut Analyzer<'_, I>,
         state: ProductStateId,
     ) -> Result<(), QuotientStop> {
         let mut path = Vec::new();
@@ -889,7 +950,7 @@ impl<'s> Walker<'s> {
     /// The shortest way back from `state` to the entry.
     fn back<I: Clone + Ord>(
         &mut self,
-        analyzer: &Analyzer<'_, I>,
+        analyzer: &mut Analyzer<'_, I>,
         mut state: ProductStateId,
     ) -> Result<(), QuotientStop> {
         while state != self.entry {
@@ -905,7 +966,7 @@ impl<'s> Walker<'s> {
     /// The tree path to `state` and back.
     fn visit<I: Clone + Ord>(
         &mut self,
-        analyzer: &Analyzer<'_, I>,
+        analyzer: &mut Analyzer<'_, I>,
         state: ProductStateId,
     ) -> Result<(), QuotientStop> {
         self.tree(analyzer, state)?;
@@ -915,7 +976,7 @@ impl<'s> Walker<'s> {
     /// The tree path to `edge`'s source, `edge`, and the way back.
     fn take<I: Clone + Ord>(
         &mut self,
-        analyzer: &Analyzer<'_, I>,
+        analyzer: &mut Analyzer<'_, I>,
         edge: LoopEdge,
     ) -> Result<(), QuotientStop> {
         self.tree(analyzer, edge.0)?;
@@ -925,7 +986,10 @@ impl<'s> Walker<'s> {
 
     /// The shortest cycle through the entry: its first edge, in canonical
     /// order, of the least length back.
-    fn cycle<I: Clone + Ord>(&mut self, analyzer: &Analyzer<'_, I>) -> Result<(), QuotientStop> {
+    fn cycle<I: Clone + Ord>(
+        &mut self,
+        analyzer: &mut Analyzer<'_, I>,
+    ) -> Result<(), QuotientStop> {
         let mut best: Option<(usize, LoopEdge)> = None;
         for (position, edge) in analyzer.edges(self.entry).iter().enumerate() {
             if edge.target != self.entry && !self.toward_entry.contains_key(&edge.target) {
@@ -934,6 +998,7 @@ impl<'s> Walker<'s> {
             let mut length = 1_usize;
             let mut cursor = edge.target;
             while cursor != self.entry {
+                analyzer.charge()?;
                 let next = self
                     .toward_entry
                     .get(&cursor)
@@ -1184,13 +1249,14 @@ mod tests {
     fn filter<'q>(
         quotient: &'q Quotient<String>,
         constraints: &'q [QuotientConstraint<String>],
+        meter: &'q mut Meter,
         cancel: &'q Cancel,
     ) -> Analyzer<'q, String> {
         Analyzer::new(
             quotient,
             constraints,
             &|identity: &String, permutation: &Permutation| rename(identity, permutation),
-            Meter::new(limits(1 << 30)),
+            meter,
             cancel,
         )
         .expect("the quotient is well formed")
@@ -1226,7 +1292,8 @@ mod tests {
         quotient.acceptance = vec![waiting.clone()];
         let constraints = [weak_each(ids(&["upd(a)", "upd(b)", "upd(c)"]))];
         let cancel = Cancel::new();
-        let mut analyzer = filter(&quotient, &constraints, &cancel);
+        let mut meter = Meter::new(limits(1 << 30));
+        let mut analyzer = filter(&quotient, &constraints, &mut meter, &cancel);
         let analyses = analyzer.analyze(&waiting).expect("the analysis completes");
         let accepting = analyses
             .iter()
@@ -1310,7 +1377,8 @@ mod tests {
         assert_eq!(labels, ids(&["upd(a)", "upd(b)", "upd(c)"]));
         let constraints = [weak_each(labels)];
         let cancel = Cancel::new();
-        let mut analyzer = filter(&quotient, &constraints, &cancel);
+        let mut meter = Meter::new(limits(1 << 30));
+        let mut analyzer = filter(&quotient, &constraints, &mut meter, &cancel);
         let analyses = analyzer.analyze(&all).expect("the analysis completes");
         assert_eq!(analyses.len(), 1, "one SCC");
         let fair = Analysis::first_fair_in(&analyses).expect("the SCC passes");
@@ -1385,17 +1453,22 @@ mod tests {
             },
         ];
         let cancel = Cancel::new();
-        let mut analyzer = filter(&quotient, &constraints, &cancel);
+        let mut meter = Meter::new(limits(1 << 30));
+        let mut analyzer = filter(&quotient, &constraints, &mut meter, &cancel);
         let analyses = analyzer.analyze(&all).expect("the analysis completes");
-        let looping = analyses
+        let (index, looping) = analyses
             .iter()
-            .find(|analysis| analysis.states.contains(&ProductStateId(0)))
+            .enumerate()
+            .find(|(_, analysis)| analysis.states.contains(&ProductStateId(0)))
             .expect("the initial state's component");
-        let Verdict::UnfairStrong { sub } = &looping.verdict else {
-            panic!("the component fails strong each: {:?}", looping.verdict);
-        };
-        let kept: BTreeSet<ProductStateId> = sub
+        assert!(
+            matches!(looping.verdict, Verdict::UnfairStrong),
+            "the component fails strong each: {:?}",
+            looping.verdict
+        );
+        let kept: BTreeSet<ProductStateId> = analyses
             .iter()
+            .filter(|analysis| analysis.parent == Some(index))
             .flat_map(|analysis| analysis.states.iter().copied())
             .collect();
         let removed: BTreeSet<ProductStateId> = looping
@@ -1416,14 +1489,16 @@ mod tests {
         // Without the strong constraint the loop that only flips is fair:
         // each `fire` is disabled somewhere in it.
         let weak = [weak_each(ids(&["flip(a)", "flip(b)"])), weak_each(fires)];
-        let mut analyzer = filter(&quotient, &weak, &cancel);
+        let mut meter = Meter::new(limits(1 << 30));
+        let mut analyzer = filter(&quotient, &weak, &mut meter, &cancel);
         let analyses = analyzer.analyze(&all).expect("the analysis completes");
         let fair = Analysis::first_fair_in(&analyses).expect("a fair component");
         assert!(fair.states.contains(&ProductStateId(0)));
     }
 
     /// FR-153 "Limits": a meter too small for the spanning tree stops the
-    /// analysis with `Meter`.
+    /// analysis with `Meter` (the meter clause of FR-153-AC-4).
+    #[trace("TC-571")]
     #[test]
     fn the_analysis_charges_the_meter() {
         let (states, mut quotient) = configs();
@@ -1431,14 +1506,8 @@ mod tests {
         quotient.acceptance = vec![all.clone()];
         let constraints = [weak_each(ids(&["upd(a)", "upd(b)", "upd(c)"]))];
         let cancel = Cancel::new();
-        let mut analyzer = Analyzer::new(
-            &quotient,
-            &constraints,
-            &|identity: &String, permutation: &Permutation| rename(identity, permutation),
-            Meter::new(limits(10)),
-            &cancel,
-        )
-        .expect("the quotient is well formed");
+        let mut meter = Meter::new(limits(10));
+        let mut analyzer = filter(&quotient, &constraints, &mut meter, &cancel);
         assert!(matches!(analyzer.analyze(&all), Err(QuotientStop::Meter)));
     }
 }

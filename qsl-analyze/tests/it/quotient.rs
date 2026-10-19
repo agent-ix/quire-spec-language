@@ -17,8 +17,7 @@
 //! component certificate after exploring the whole product; a strong
 //! constraint is refused unreduced (`LivenessRefusal::StrongFairness`), so
 //! AC-3's strong run has no unreduced verdict to compare, and AC-4 stays
-//! untagged. FR-161-AC-3's replay waits on FR-128's replay of an authored
-//! clause, so the concretised `each` loop is checked by re-execution only.
+//! untagged. Every concretised lasso also replays through FR-128.
 
 use ix_trace_rs::trace;
 use qsl_analyze::model_check::{
@@ -27,16 +26,16 @@ use qsl_analyze::model_check::{
 use qsl_eval::simulation::model::ModelSimState;
 use qsl_replay::{
     AppliedReduction, IncompleteCause, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome,
-    ReachedLimit, TemporalCounterexample,
+    ModelTraceSettlement, ModelTraceValue, ReachedLimit, TemporalCounterexample,
 };
 use quire_exact::ScalarLimits;
 
 use crate::counter::UNLIMITED;
+use crate::flag_world::{Subject, World as Flags, KEYS as FLAGS};
 use crate::reduction::CYCLE;
 use crate::reduction_world::{
     atom, counters, start, value, values, Clause, Shape, World, INFINITE,
 };
-use crate::toggle_world::{flag, toggles, World as Toggles, TOGGLES};
 
 const KEYS: [&str; 3] = ["a", "b", "c"];
 
@@ -159,9 +158,11 @@ fn an_each_proof_on_the_annotated_quotient_holds_over_thirty_product_states() {
 /// is refuted on the annotated quotient, bound to `c = a`. The concretised
 /// lasso has an empty stem and a loop from `(0,0,0)` back to `(0,0,0)` that
 /// updates `a`, `b` and `c` and passes `a = 2`; it is a path of the
-/// subject, and repeating the run gives the equal counterexample. The
+/// subject, and repeating the run gives the equal counterexample. FR-128
+/// replays it, re-checking the `each` constraint over the loop, and
+/// settles `reproduced-with-evaluated-witness` (FR-161-AC-3). The
 /// unreduced run refutes the item too.
-#[trace("TC-570", "FR-153-AC-2")]
+#[trace("TC-570", "FR-153-AC-2", "TC-586", "FR-161-AC-3")]
 #[test]
 fn an_each_refutation_concretises_to_a_loop_through_every_receiver() {
     let world = configs(REFUTATION);
@@ -191,18 +192,36 @@ fn an_each_refutation_concretises_to_a_loop_through_every_receiver() {
         outcome.as_ref().ok(),
         run(&world, |v| Some(v != 2), symmetric()).as_ref().ok()
     );
+    // FR-161-AC-3: the concretised loop replays, its `each` identities
+    // re-checked against the loop, and reproduces the violation.
+    assert!(reproduced(&world.replay_clause(
+        0,
+        vec![atom(|v| Some(v != 2))],
+        counterexample.clone()
+    )));
     violation(&run(&world, |v| Some(v != 2), Reductions::default()));
 }
 
-/// The full class `[a, b]` of `toggles`.
-fn toggled() -> Reductions {
+/// The full class `[a, b]` of `subject`'s population.
+fn flagged(subject: Subject) -> Reductions {
     Reductions {
         symmetry: vec![SymmetryDeclaration {
-            population: toggles(),
-            classes: vec![keys(&TOGGLES)],
+            population: subject.population(),
+            classes: vec![keys(&FLAGS)],
         }],
         ..Reductions::default()
     }
+}
+
+/// The settlement replay gives a refutation's counterexample.
+fn reproduced(settlement: &ModelTraceSettlement) -> bool {
+    matches!(
+        settlement,
+        ModelTraceSettlement::Reproduced {
+            value: ModelTraceValue::Truth(false),
+            ..
+        }
+    )
 }
 
 /// AC-3's claim, `eventually` every toggle fired. A temporal atom cannot
@@ -210,6 +229,9 @@ fn toggled() -> Reductions {
 /// so the atom is spelled over the bound watcher and read by the test's
 /// letters as "every toggle has fired".
 const EVENTUALLY_FIRED: &str = "eventually holds(w = w)";
+
+const WEAK: &str = "fair weak each M::Toggle::flip; fair weak each M::Toggle::fire;";
+const STRONG: &str = "fair weak each M::Toggle::flip; fair strong each M::Toggle::fire;";
 
 /// FR-153-AC-3: over the `Toggle` subject under its full group, `fair weak
 /// each flip` and `fair weak each fire` refute the claim with a loop that
@@ -223,16 +245,15 @@ const EVENTUALLY_FIRED: &str = "eventually holds(w = w)";
 #[trace("TC-571", "FR-153-AC-3")]
 #[test]
 fn strong_each_holds_where_weak_each_admits_a_loop_that_never_fires() {
-    let weak = Toggles::new(
-        "fair weak each M::Toggle::flip; fair weak each M::Toggle::fire;",
-        EVENTUALLY_FIRED,
-    );
-    let outcome = weak.run(toggled());
+    let toggle = Subject::Toggle;
+    let flag = |state: &ModelSimState, key: &str, field: &str| toggle.flag(state, key, field);
+    let weak = Flags::new(toggle, WEAK, EVENTUALLY_FIRED);
+    let outcome = weak.run(flagged(toggle));
     let counterexample = violation(&outcome);
     let states = weak.positions(counterexample);
     let cycle = looped(counterexample, &states);
     assert!(cycle.len() > 1, "a loop with steps");
-    for toggle in TOGGLES {
+    for toggle in FLAGS {
         assert!(
             cycle.iter().all(|state| !flag(state, toggle, "fired")),
             "{toggle} never fires"
@@ -248,23 +269,26 @@ fn strong_each_holds_where_weak_each_admits_a_loop_that_never_fires() {
             "fire({toggle}) is disabled in the loop"
         );
     }
+    assert!(reproduced(&weak.replay(counterexample.clone())));
     violation(&weak.run(Reductions::default()));
-    let strong = Toggles::new(
-        "fair weak each M::Toggle::flip; fair strong each M::Toggle::fire;",
-        EVENTUALLY_FIRED,
-    );
-    let outcome = strong.run(toggled());
+    let strong = Flags::new(toggle, STRONG, EVENTUALLY_FIRED);
+    let outcome = strong.run(flagged(toggle));
     assert!(
         matches!(outcome, Ok(ModelCheckOutcome::HoldsReduced { .. })),
         "{outcome:?}"
     );
-    assert_eq!(outcome.as_ref().ok(), strong.run(toggled()).as_ref().ok());
+    assert_eq!(
+        outcome.as_ref().ok(),
+        strong.run(flagged(toggle)).as_ref().ok()
+    );
 }
 
 /// FR-153 "Limits": with the run's meter large enough for every expansion
 /// but below the cost of AC-2's cycle groups and orbit closures, the run
 /// explores the whole quotient product (18 states) and then stops
-/// `Stopped(ResourceExhausted, …)` naming the evaluation meter.
+/// `Stopped(ResourceExhausted, …)` naming the evaluation meter (the meter
+/// clause of FR-153-AC-4).
+#[trace("TC-571")]
 #[test]
 fn the_annotated_quotient_charges_the_run_meter() {
     let mut world = configs(REFUTATION);
@@ -288,6 +312,7 @@ fn the_annotated_quotient_charges_the_run_meter() {
 
 /// FR-161 "Length and limits": a `max_transitions` that admits the reduced
 /// product's edges but not the concretised loop stops the run naming it.
+#[trace("TC-586")]
 #[test]
 fn concretising_the_loop_counts_against_max_transitions() {
     let world = configs(REFUTATION);
@@ -314,4 +339,87 @@ fn concretising_the_loop_counts_against_max_transitions() {
         }) => {}
         other => panic!("expected max_transitions to stop the run: {other:?}"),
     }
+}
+
+/// SR-12211 FND-001: bound over the toggles themselves, the one orbit
+/// `[a, b]` runs under a trivial stabiliser. Strong `each` fire is still
+/// decided on the annotated quotient, not as weak: the claim holds, as it
+/// does under the full group.
+#[trace("TC-571")]
+#[test]
+fn strong_each_under_a_trivial_stabiliser_is_decided_on_the_quotient() {
+    let toggle = Subject::Toggle;
+    let strong = Flags::over(toggle, "x: M::Toggle", STRONG, "eventually holds(x = x)");
+    let outcome = strong.run(flagged(toggle));
+    let Ok(ModelCheckOutcome::HoldsReduced { reductions, .. }) = &outcome else {
+        panic!("expected a reduced proof, got {outcome:?}");
+    };
+    let [AppliedReduction::Symmetry {
+        orbit, stabiliser, ..
+    }] = reductions.as_slice()
+    else {
+        panic!("one symmetry record: {reductions:?}");
+    };
+    assert_eq!(*orbit, keys(&FLAGS));
+    assert!(stabiliser.is_empty(), "the stabiliser of a is trivial");
+    // Under weak `each` fire the flip-only loop is a fair refutation.
+    let weak = Flags::over(toggle, "x: M::Toggle", WEAK, "eventually holds(x = x)");
+    violation(&weak.run(flagged(toggle)));
+}
+
+/// FR-161-AC-1: ADR-021 §7.1 under `fair weak whole attemptUpdate`,
+/// instance `c = a`: the canonical loop over the reduced graph is CX-5's
+/// greedy walk `(0,0,0) -upd(b)-> (0,0,1) -upd(c)-> (0,0,2) -upd(c)->
+/// (0,0,0)`, which concretises to `upd(b)` three times through `(0,1,0)`,
+/// `(0,2,0)` and `(0,0,0)`, closing after one pass, and replays to
+/// `reproduced-with-evaluated-witness`.
+#[trace("TC-585", "FR-161-AC-1")]
+#[test]
+fn a_whole_loop_under_symmetry_concretises_in_one_pass() {
+    let world = configs("fair weak whole M::Counter::bump; always eventually holds(x.v = 2)");
+    let outcome = run(&world, |v| Some(v == 2), symmetric());
+    let counterexample = violation(&outcome);
+    assert_eq!(counterexample.lasso.map(|lasso| lasso.entry), Some(0));
+    let states = world.positions(counterexample);
+    let visited: Vec<(i64, i64, i64)> = states.iter().map(values).collect();
+    assert_eq!(visited, [(0, 0, 0), (0, 1, 0), (0, 2, 0), (0, 0, 0)]);
+    assert_eq!(moved(&states), ["b", "b", "b"]);
+    assert!(reproduced(&world.replay_clause(
+        0,
+        vec![atom(|v| Some(v == 2))],
+        counterexample.clone()
+    )));
+}
+
+/// FR-161-AC-2: over the `Token` subject (`a.tok` false, `b.tok` true,
+/// full group), `eventually holds(forall x in holders: x.tok)` with no
+/// fairness: the quotient is one state with a `pass(b)` self-loop whose `π`
+/// is `(a b)`, so the concretised lasso has an empty stem and the loop
+/// `pass(b)`, `pass(a)`: two passes of the quotient loop. It replays. The
+/// AC's one initial state is not closed under `(a b)` (SYM-4 would settle
+/// `SymmetryBroken`), so the subject also lists its image, which coalesces
+/// into the same canonical state; the lasso starts from the AC's state.
+#[trace("TC-585", "FR-161-AC-2")]
+#[test]
+fn a_loop_that_needs_two_passes_closes_at_the_concrete_entry() {
+    let token = Subject::Token;
+    let world = Flags::new(token, "", EVENTUALLY_FIRED);
+    let outcome = world.run(flagged(token));
+    let counterexample = violation(&outcome);
+    let Ok(ModelCheckOutcome::Violated { stats, .. }) = &outcome else {
+        unreachable!("a violation");
+    };
+    assert_eq!(stats.product_states, 1, "one quotient state");
+    assert_eq!(counterexample.lasso.map(|lasso| lasso.entry), Some(0));
+    assert_eq!(counterexample.initial_state, 0, "b holds the token");
+    let states = world.positions(counterexample);
+    let holder = |state: &ModelSimState| {
+        FLAGS
+            .into_iter()
+            .find(|key| token.flag(state, key, "tok"))
+            .expect("one holder has the token")
+    };
+    let holders: Vec<&str> = states.iter().map(holder).collect();
+    assert_eq!(holders, ["b", "a", "b"], "pass(b), then pass(a)");
+    assert!(reproduced(&world.replay(counterexample.clone())));
 }

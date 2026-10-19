@@ -77,7 +77,7 @@ use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
 use quire_semantic_value::model_transition::ModelTransition;
 
 use super::check::{not_simulated, precheck, Admitted, ModelCheckRefusal, ModelCheckRequest};
-use super::concretise::{order, Lift, LiftStop};
+use super::concretise::{Lift, LiftStop};
 use super::graph::{retain_reduced, ProductStateId, RetainedEdge, RetainedGraph};
 use super::product::{ProductKey, ProductTransition};
 use super::quotient::{
@@ -246,6 +246,7 @@ pub(super) fn check(
             max_candidates,
         },
         cancel,
+        meter: RefCell::new(Meter::new(meter)),
     };
     run.decide(totals)
 }
@@ -876,6 +877,9 @@ struct Run<'r, 'a> {
     bindings: &'r [Binding],
     request: RunRequest,
     cancel: &'r Cancel,
+    /// The run's meter, which the annotated quotient's work of every
+    /// product charges (FR-153 "Limits").
+    meter: RefCell<Meter>,
 }
 
 impl<'r, 'a> Run<'r, 'a> {
@@ -1545,7 +1549,10 @@ impl<'r, 'a> Run<'r, 'a> {
     /// passing component, if some component passes. A reduced graph is read
     /// as the annotated quotient.
     fn second_phase(&self, run: &Explored<'_, '_>) -> Result<Second, ModelCheckRefusal> {
-        if !run.binding.group.is_trivial() {
+        // A reduced run reads its product as the annotated quotient even
+        // under a trivial stabiliser: only the quotient decides strong
+        // fairness, which the request admits under symmetry.
+        if run.binding.applied.is_some() {
             return self.quotient_phase(run);
         }
         let model = FairModel::build(self.system, self.clause, run)?;
@@ -1582,7 +1589,7 @@ impl<'r, 'a> Run<'r, 'a> {
     /// greedy walk when every constraint is weak and `whole` (EI-6), and
     /// AQ-7's otherwise.
     fn quotient_phase(&self, run: &Explored<'_, '_>) -> Result<Second, ModelCheckRefusal> {
-        let mut meter = Meter::new(self.request.meter);
+        let mut meter = self.meter.borrow_mut();
         let (quotient, constraints) = match self.quotient(run, &mut meter)? {
             Ok(built) => built,
             Err(stop) => return self.quotient_stop(stop),
@@ -1590,11 +1597,11 @@ impl<'r, 'a> Run<'r, 'a> {
         let rename = |transition: &ModelTransition, permutation: &Permutation| {
             self.system.permute_transition(transition, permutation)
         };
-        let mut analyzer = match Analyzer::new(&quotient, &constraints, &rename, meter, self.cancel)
-        {
-            Ok(analyzer) => analyzer,
-            Err(stop) => return self.quotient_stop(stop),
-        };
+        let mut analyzer =
+            match Analyzer::new(&quotient, &constraints, &rename, &mut meter, self.cancel) {
+                Ok(analyzer) => analyzer,
+                Err(stop) => return self.quotient_stop(stop),
+            };
         let all: BTreeSet<ProductStateId> =
             (0..quotient.enabled.len()).map(ProductStateId).collect();
         let analyses = match analyzer.analyze(&all) {
@@ -1762,7 +1769,9 @@ impl<'r, 'a> Run<'r, 'a> {
     /// breadth-first tree path, and `pass` gives one pass of the loop from
     /// the entry, given `σ` there. Both are concretised, and the loop is
     /// repeated until the concrete state equals the concrete entry state,
-    /// at most the order of the pass's word (FR-161 "Loop closure").
+    /// which it does within the order of the pass's word (FR-161 "Loop
+    /// closure"); every pass polls the cancellation and every concrete step
+    /// spends `max_transitions`, so no pass count is computed up front.
     fn lasso(
         &self,
         run: &Explored<'_, '_>,
@@ -1777,14 +1786,12 @@ impl<'r, 'a> Run<'r, 'a> {
             let entry_state = lift.digest();
             let loop_edges = pass(lift.sigma())?;
             let mut edges = Vec::with_capacity(loop_edges.len());
-            let mut word = Permutation::identity();
             for (source, position) in loop_edges {
                 let edge = run
                     .graph
                     .outgoing(source)
                     .nth(position)
                     .ok_or_else(|| fault("a-loop-edge-is-retained"))?;
-                word = word.compose(&edge.permutation.inverse());
                 edges.push(edge);
             }
             // A terminal model state has only its stutter edge, so a loop
@@ -1799,18 +1806,20 @@ impl<'r, 'a> Run<'r, 'a> {
                     LiftStop::from(fault("a-loop-is-all-stutter-or-all-model-steps")).into(),
                 );
             }
-            let passes = order(&word);
-            let mut done = 0_usize;
+            // Each pass of a reduced loop with a model step spends the
+            // concrete-step budget, so the repetition ends at the concrete
+            // entry or at `max_transitions`; a concrete (trivial-group) loop
+            // closes after one pass.
             loop {
+                if self.cancel.poll() && self.cancel.cause().is_some() {
+                    return Err(LoopStop::Quotient(QuotientStop::Cancelled));
+                }
                 self.lift_edges(run, &mut lift, &edges)?;
-                done += 1;
                 if lift.digest() == entry_state {
                     break;
                 }
-                if done >= passes {
-                    return Err(
-                        LiftStop::from(fault("a-lifted-loop-closes-within-its-order")).into(),
-                    );
+                if run.binding.group.is_trivial() {
+                    return Err(LiftStop::from(fault("a-concrete-loop-closes-in-one-pass")).into());
                 }
             }
             Ok(TemporalCounterexample {
