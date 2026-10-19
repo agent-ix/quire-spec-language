@@ -12,7 +12,9 @@
 //!
 //! The classification of the unit language's forms is [`expression_form`]:
 //! one exhaustive `match` over [`ExprNode`] with no wildcard arm, so a new
-//! expression form does not compile until it is classified.
+//! expression form does not compile until it is classified. The reads and
+//! labels of a `hyper` clause belong to the temporal family, which no layer
+//! gates.
 
 use std::collections::BTreeSet;
 
@@ -233,6 +235,9 @@ pub(super) fn expression_form(node: &ExprNode, predicates: &BTreeSet<&str>) -> O
         | ExprNode::SelfRef
         | ExprNode::Result
         | ExprNode::AllInstances { .. }
+        | ExprNode::Indexed { .. }
+        | ExprNode::StepLabel { .. }
+        | ExprNode::Stutter
         | ExprNode::ProtocolReference { .. } => None,
         ExprNode::Lookup { .. } => Some(LayerForm::Lookup),
         ExprNode::Dispatch { .. } => Some(LayerForm::DispatchCall),

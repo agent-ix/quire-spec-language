@@ -14,6 +14,8 @@ mod business_meanings;
 mod child_composite;
 mod complete_value_lock;
 mod dispatch_linking;
+#[cfg(feature = "test-support")]
+mod hyper_clauses;
 mod identity_golden_vectors;
 mod ieee_profiles;
 mod import_view_names;
