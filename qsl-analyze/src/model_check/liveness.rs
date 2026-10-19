@@ -14,9 +14,11 @@
 //! The first phase is a scan of the retained states in discovery order for
 //! the first whose letter is undefined, whose expansion evaluated a contract
 //! conjunction undefined (UE-6), or whose expansion left one refused (V-6).
-//! A property automaton with no move on a letter goes to a dead state, so a
-//! behaviour that cannot violate the clause is still explored and still has
-//! its letters and contracts examined, and no dead state is ever accepting.
+//! A model state reached where the negation automaton has no move starts no
+//! violating run, but its letters and contracts are still examined (UE-1):
+//! a model-only pass from those states, over the model states no product
+//! state already covers, ranks its findings with the first phase's by depth.
+//! Those states are not product states and count toward no limit or total.
 //!
 //! The second phase runs only when no binding's first phase ended the run.
 //! It decomposes the retained graph into strongly connected components in
@@ -42,20 +44,18 @@ use qsl_eval::fairness::{
     analyze, Analysis, Constraint, Edge, EdgeLabel, FairnessError, Graph, Identity, Vertex,
 };
 use qsl_eval::model_subject::ModelLetters;
-use qsl_eval::simulation::model::{
-    check_model_bounds, ModelFinding, ModelSimState, ModelSystem, ModelSystem as System,
-};
+use qsl_eval::simulation::model::{check_model_bounds, ModelFinding, ModelSimState, ModelSystem};
 use qsl_eval::simulation::{
-    EncodingRefusal, Expansion, ExpansionLimit, ExpansionStop, Limit, NotSimulated, Outcome,
-    TransitionSystem,
+    EncodingRefusal, Expansion, ExpansionLimit, ExpansionStop, Limit, Limits, NotSimulated,
+    Outcome, TransitionSystem,
 };
 use qsl_eval::temporal::{AtomReading, UndefinedCause};
 use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::{CatalogCode, IdentityLimits, InternalFault};
 use qsl_replay::{
-    CounterexampleKind, IncompleteCause, Lasso, ModelCheckItem, ModelCheckLimit, ModelCheckOutcome,
-    ModelStep, ReachedLimit, RunStats, TemporalCounterexample, UndecidedCause, UndefinedEvaluation,
-    UndefinedLocus, UndefinedSite,
+    ClauseIdentity, ClauseRootRefusal, CounterexampleKind, IncompleteCause, ItemRefusal, Lasso,
+    ModelCheckItem, ModelCheckLimit, ModelCheckOutcome, ModelStep, ReachedLimit, RunStats,
+    TemporalCounterexample, UndecidedCause, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
 use qsl_semantics::check::{Activation, CheckedTemporalClause, FormulaNodeId};
 use quire_canonical::{Encode, Sink, Writer};
@@ -127,6 +127,18 @@ pub(super) fn check(
     if matches!(clause.activation(), Activation::Each { guarded: true }) {
         return Err(LivenessRefusal::GuardedActivation.into());
     }
+    // The clause's identity is resolved from the package, as the safety path
+    // does (FR-337-AC-5): a package that gives it no root refuses.
+    let root_cancelled = match ClauseIdentity::resolve(
+        request.subject.simulation.package,
+        request.subject.simulation.packages,
+        clause,
+        cancel,
+    ) {
+        Ok(_) => None,
+        Err(ClauseRootRefusal::Cancelled(cause)) => Some(cause),
+        Err(refusal) => return Err(ModelCheckRefusal::Item(ItemRefusal::ClauseRoot(refusal))),
+    };
     let bindings = letters.bindings();
     let meter = request.subject.simulation.meter;
     let max_candidates = request.subject.simulation.expansion.max_candidates;
@@ -139,6 +151,13 @@ pub(super) fn check(
         _ => fault("bounds-precheck-returns-only-requires-bound-or-extent"),
     })?;
     let totals = Totals::default();
+    if let Some(source) = root_cancelled {
+        return Ok(stopped(
+            IncompleteCause::Cancelled { source },
+            None,
+            totals.stats(),
+        ));
+    }
     if cancel.poll() {
         if let Some(source) = cancel.cause() {
             return Ok(stopped(
@@ -226,7 +245,8 @@ impl Totals {
     fn add(&mut self, graph: &RetainedGraph<LState, PT, Finding>, edges: usize, automaton: u64) {
         self.states = self.states.saturating_add(widen(graph.states().len()));
         self.edges = self.edges.saturating_add(widen(edges));
-        self.automaton_states = self.automaton_states.saturating_add(automaton);
+        // Every binding translates the same clause into the same automaton.
+        self.automaton_states = self.automaton_states.max(automaton);
         let depth = graph
             .states()
             .iter()
@@ -262,8 +282,6 @@ enum Reading {
 enum Property {
     /// A state of the negation automaton.
     After(StateId),
-    /// The automaton has no move: no violating run goes through here.
-    Dead,
     /// The letter at this position is undefined.
     Undefined {
         atom: FormulaNodeId,
@@ -274,7 +292,6 @@ enum Property {
 /// A product state's canonical property key.
 enum PropertyKey {
     After(usize),
-    Dead,
     Undefined,
 }
 
@@ -289,7 +306,6 @@ impl Encode for PropertyKey {
                 writer.string("after")?;
                 writer.integer(i128::try_from(*index).unwrap_or(i128::MAX))?;
             }
-            Self::Dead => writer.string("dead")?,
             Self::Undefined => writer.string("undefined")?,
         }
         writer.end_array()
@@ -338,12 +354,20 @@ enum Halt {
 enum Before {
     Start,
     At(StateId),
-    Dead,
+}
+
+/// A model state reached where the negation automaton has no move.
+struct DeadRoot {
+    /// The product state it was reached from, by its model state's digest and
+    /// automaton state, and the transition taken; `None` for an initial state.
+    via: Option<(DigestRecord, StateId, PT)>,
+    model: ModelSimState,
+    depth: usize,
 }
 
 /// One binding's product as a `TransitionSystem`.
 struct LassoSystem<'r, 'a> {
-    system: &'r System<'a>,
+    system: &'r ModelSystem<'a>,
     letters: &'r dyn ModelLetters,
     binding: &'r ObjectReference,
     atoms: Vec<FormulaNodeId>,
@@ -351,6 +375,7 @@ struct LassoSystem<'r, 'a> {
     start: StateId,
     readings: RefCell<BTreeMap<DigestRecord, Reading>>,
     initial: Vec<LState>,
+    dead: RefCell<Vec<DeadRoot>>,
     meter: ScalarLimits,
     cancel: &'r Cancel,
     max_depth: Option<usize>,
@@ -380,12 +405,26 @@ impl LassoSystem<'_, '_> {
         Ok(())
     }
 
+    /// The model's expansion of `state`, recording why when it stops.
+    fn expand(
+        &self,
+        state: &ModelSimState,
+    ) -> Result<Expansion<ModelTransition, ModelSimState, ModelFinding>, ExpansionStop> {
+        self.system.successors(state).inspect_err(|&stop| {
+            self.record(Halt::Expansion(stop));
+        })
+    }
+
+    fn digest_of(&self, state: &ModelSimState) -> Result<DigestRecord, ExpansionStop> {
+        self.system
+            .state_key(state)
+            .map(|(_, digest)| digest)
+            .map_err(|refusal| self.record(Halt::Refusal(ModelCheckRefusal::Encoding(refusal))))
+    }
+
     /// The letter of `state` for this binding, read once per model state.
     fn reading(&self, state: &ModelSimState) -> Result<Reading, ExpansionStop> {
-        let (_, digest) = self
-            .system
-            .state_key(state)
-            .map_err(|refusal| self.record(Halt::Refusal(ModelCheckRefusal::Encoding(refusal))))?;
+        let digest = self.digest_of(state)?;
         if let Some(known) = self.readings.borrow().get(&digest) {
             return Ok(known.clone());
         }
@@ -416,7 +455,8 @@ impl LassoSystem<'_, '_> {
         Ok(reading)
     }
 
-    /// The property states a position reads into, from `before`.
+    /// The property states a position reads into, from `before`; none when
+    /// the automaton has no move on the letter.
     fn step(&self, before: Before, reading: &Reading) -> Result<Vec<Property>, ExpansionStop> {
         let letter = match reading {
             Reading::Undefined { atom, cause } => {
@@ -428,7 +468,6 @@ impl LassoSystem<'_, '_> {
             Reading::Defined(letter) => *letter,
         };
         let from = match before {
-            Before::Dead => return Ok(vec![Property::Dead]),
             Before::Start => self.start,
             Before::At(state) => state,
         };
@@ -440,11 +479,7 @@ impl LassoSystem<'_, '_> {
                 AutomatonError::StateLimit { limit } => self.record(Halt::Automaton(limit)),
                 other => self.record(Halt::Refusal(LivenessRefusal::Automaton(other).into())),
             })?;
-        Ok(if targets.is_empty() {
-            vec![Property::Dead]
-        } else {
-            targets.into_iter().map(Property::After).collect()
-        })
+        Ok(targets.into_iter().map(Property::After).collect())
     }
 
     /// The initial product states: each initial model state paired with each
@@ -453,7 +488,15 @@ impl LassoSystem<'_, '_> {
         let mut initial = Vec::new();
         for model in self.system.initial() {
             let reading = self.reading(&model)?;
-            for property in self.step(Before::Start, &reading)? {
+            let properties = self.step(Before::Start, &reading)?;
+            if properties.is_empty() {
+                self.dead.borrow_mut().push(DeadRoot {
+                    via: None,
+                    model: model.clone(),
+                    depth: 0,
+                });
+            }
+            for property in properties {
                 initial.push(LState {
                     model: model.clone(),
                     property,
@@ -469,7 +512,7 @@ impl LassoSystem<'_, '_> {
 impl<'a> TransitionSystem for LassoSystem<'_, 'a> {
     type State = LState;
     type TransitionId = PT;
-    type Key = ProductKey<<System<'a> as TransitionSystem>::Key, PropertyKey>;
+    type Key = ProductKey<<ModelSystem<'a> as TransitionSystem>::Key, PropertyKey>;
     type Finding = Finding;
 
     fn initial(&self) -> Vec<LState> {
@@ -481,7 +524,6 @@ impl<'a> TransitionSystem for LassoSystem<'_, 'a> {
             model: self.system.key(&state.model),
             property: match &state.property {
                 Property::After(state) => PropertyKey::After(state.index()),
-                Property::Dead => PropertyKey::Dead,
                 Property::Undefined { .. } => PropertyKey::Undefined,
             },
         }
@@ -497,12 +539,9 @@ impl<'a> TransitionSystem for LassoSystem<'_, 'a> {
                     findings: Vec::new(),
                 })
             }
-            Property::Dead => Before::Dead,
             Property::After(at) => Before::At(*at),
         };
-        let expansion = self.system.successors(&state.model).inspect_err(|&stop| {
-            self.record(Halt::Expansion(stop));
-        })?;
+        let expansion = self.expand(&state.model)?;
         let mut findings: Vec<Finding> = expansion
             .findings
             .into_iter()
@@ -540,7 +579,15 @@ impl<'a> TransitionSystem for LassoSystem<'_, 'a> {
         let mut successors = Vec::new();
         for (transition, model) in steps {
             let reading = self.reading(&model)?;
-            for property in self.step(before, &reading)? {
+            let properties = self.step(before, &reading)?;
+            if let (true, Before::At(at)) = (properties.is_empty(), before) {
+                self.dead.borrow_mut().push(DeadRoot {
+                    via: Some((self.digest_of(&state.model)?, at, transition.clone())),
+                    model: model.clone(),
+                    depth: state.depth.saturating_add(1),
+                });
+            }
+            for property in properties {
                 successors.push((
                     transition.clone(),
                     LState {
@@ -572,18 +619,46 @@ struct Explored<'r, 'a> {
     graph: RetainedGraph<LState, PT, Finding>,
     binding: &'r ObjectReference,
     ending: Ending,
+    /// Whether a model state reached where the automaton has no move was
+    /// left unexpanded at the search horizon.
+    dead_cut: bool,
 }
 
-/// What a scan of one graph's states found.
-enum FirstPhase {
-    Clear,
-    Violated(Box<Violation>),
+/// The first phase's finding: a counterexample, or a refused contract.
+enum FirstHit {
+    Violated(Box<TemporalCounterexample>),
     Undecided,
 }
 
-struct Violation {
-    state: ProductStateId,
-    kind: CounterexampleKind,
+impl FirstHit {
+    fn outcome(self, stats: RunStats) -> ModelCheckOutcome {
+        match self {
+            Self::Violated(counterexample) => ModelCheckOutcome::Violated {
+                counterexample,
+                stats,
+            },
+            Self::Undecided => ModelCheckOutcome::Undecided {
+                cause: UndecidedCause::UndecidedSuccessor,
+                stats,
+            },
+        }
+    }
+}
+
+/// A model state of the model-only pass over the states a dead automaton
+/// leaves: how it was reached, from a root or from another such state.
+struct DeadNode {
+    model: ModelSimState,
+    parent: Option<(usize, ModelTransition)>,
+    root: usize,
+}
+
+/// What the model-only pass found.
+#[derive(Default)]
+struct DeadPhase {
+    hit: Option<(usize, FirstHit)>,
+    cut: bool,
+    stopped: Option<Ending>,
 }
 
 /// What the second phase found in one graph.
@@ -595,7 +670,7 @@ enum Second {
 
 /// The run: the subject's system, the item and the request.
 struct Run<'r, 'a> {
-    system: &'r System<'a>,
+    system: &'r ModelSystem<'a>,
     clause: &'r CheckedTemporalClause,
     letters: &'r dyn ModelLetters,
     bindings: &'r [ObjectReference],
@@ -607,39 +682,44 @@ impl<'r, 'a> Run<'r, 'a> {
     fn decide(&self, mut totals: Totals) -> Result<ModelCheckOutcome, ModelCheckRefusal> {
         let mut explored = Vec::with_capacity(self.bindings.len());
         for binding in self.bindings {
-            let run = match self.explore(binding, &mut totals)? {
+            let mut run = match self.explore(binding, &mut totals)? {
                 Ok(run) => run,
                 Err(outcome) => return Ok(outcome),
             };
-            match self.first_phase(&run)? {
-                FirstPhase::Clear => {}
-                FirstPhase::Undecided => {
-                    return Ok(ModelCheckOutcome::Undecided {
-                        cause: UndecidedCause::UndecidedSuccessor,
-                        stats: totals.stats(),
-                    })
-                }
-                FirstPhase::Violated(violation) => {
-                    let Violation { state, kind } = *violation;
-                    let counterexample = self.prefix_counterexample(&run, state, kind)?;
-                    return Ok(ModelCheckOutcome::Violated {
-                        counterexample: Box::new(counterexample),
-                        stats: totals.stats(),
-                    });
-                }
+            let live = self.first_phase(&run)?;
+            if let Ending::Stopped(cause, limit) = &run.ending {
+                return Ok(match live {
+                    Some((_, hit)) => hit.outcome(totals.stats()),
+                    None => stopped(*cause, *limit, totals.stats()),
+                });
             }
-            if let Ending::Stopped(cause, limit) = run.ending {
-                return Ok(stopped(cause, limit, totals.stats()));
+            let dead = self.dead_phase(&run, live.as_ref().map(|(depth, _)| *depth))?;
+            run.dead_cut = dead.cut;
+            if let Some(Ending::Stopped(cause, limit)) = dead.stopped {
+                return Ok(match live {
+                    Some((_, hit)) => hit.outcome(totals.stats()),
+                    None => stopped(cause, limit, totals.stats()),
+                });
+            }
+            match (live, dead.hit) {
+                (Some((live_depth, _)), Some((dead_depth, hit))) if dead_depth < live_depth => {
+                    return Ok(hit.outcome(totals.stats()))
+                }
+                (Some((_, hit)), _) | (None, Some((_, hit))) => {
+                    return Ok(hit.outcome(totals.stats()))
+                }
+                (None, None) => {}
             }
             explored.push(run);
         }
         let mut cut = false;
         for run in &explored {
-            cut |= run
-                .graph
-                .states()
-                .iter()
-                .any(|state| state.findings.contains(&Finding::HorizonCut));
+            cut |= run.dead_cut
+                || run
+                    .graph
+                    .states()
+                    .iter()
+                    .any(|state| state.findings.contains(&Finding::HorizonCut));
             match self.second_phase(run)? {
                 Second::Lasso(counterexample) => {
                     return Ok(ModelCheckOutcome::Violated {
@@ -704,6 +784,7 @@ impl<'r, 'a> Run<'r, 'a> {
             start,
             readings: RefCell::new(BTreeMap::new()),
             initial: Vec::new(),
+            dead: RefCell::new(Vec::new()),
             meter: self.request.meter,
             cancel: self.cancel,
             max_depth: self.request.max_depth,
@@ -712,13 +793,19 @@ impl<'r, 'a> Run<'r, 'a> {
         if product.start_states().is_err() {
             return self.halted(&product, totals).map(Err);
         }
-        let exploration = retain(
-            &product,
-            self.request.limits.limits,
-            IdentityLimits::default(),
-            None,
-            || self.cancel.poll() && self.cancel.cause().is_some(),
-        )
+        // The budgets are the run's, shared by every binding.
+        let spent = self.request.limits.limits;
+        let remaining = Limits {
+            max_states: spent
+                .max_states
+                .saturating_sub(usize::try_from(totals.states).unwrap_or(usize::MAX)),
+            max_transitions: spent
+                .max_transitions
+                .saturating_sub(usize::try_from(totals.edges).unwrap_or(usize::MAX)),
+        };
+        let exploration = retain(&product, remaining, IdentityLimits::default(), None, || {
+            self.cancel.poll() && self.cancel.cause().is_some()
+        })
         .map_err(|error| {
             ModelCheckRefusal::Encoding(EncodingRefusal::of(&error, IdentityLimits::default()))
         })?;
@@ -735,8 +822,11 @@ impl<'r, 'a> Run<'r, 'a> {
             Outcome::Exhaustive(_) => Ending::Complete,
             Outcome::Bounded { limit, .. } => {
                 let (limit, value) = match limit {
-                    Limit::States(value) => (ModelCheckLimit::MaxStates, widen(*value)),
-                    Limit::Transitions(value) => (ModelCheckLimit::MaxTransitions, widen(*value)),
+                    Limit::States(_) => (ModelCheckLimit::MaxStates, widen(spent.max_states)),
+                    Limit::Transitions(_) => (
+                        ModelCheckLimit::MaxTransitions,
+                        widen(spent.max_transitions),
+                    ),
                 };
                 Ending::Stopped(
                     IncompleteCause::ResourceExhausted,
@@ -760,6 +850,7 @@ impl<'r, 'a> Run<'r, 'a> {
             graph: exploration.graph,
             binding,
             ending,
+            dead_cut: false,
         }))
     }
 
@@ -816,20 +907,29 @@ impl<'r, 'a> Run<'r, 'a> {
     /// The first phase over one graph: the first state in discovery order
     /// whose letter is undefined or whose expansion evaluated a contract
     /// conjunction undefined ends the run; failing that, a refused one
-    /// leaves it undecided.
-    fn first_phase(&self, run: &Explored<'_, '_>) -> Result<FirstPhase, ModelCheckRefusal> {
+    /// leaves it undecided. The finding comes with the depth it was at.
+    fn first_phase(
+        &self,
+        run: &Explored<'_, '_>,
+    ) -> Result<Option<(usize, FirstHit)>, ModelCheckRefusal> {
         let mut refused = false;
         for (index, state) in run.graph.states().iter().enumerate() {
             let id = ProductStateId(index);
+            let violated = |kind| -> Result<Option<(usize, FirstHit)>, ModelCheckRefusal> {
+                let counterexample = self.prefix_counterexample(run, id, kind)?;
+                Ok(Some((
+                    state.state.depth,
+                    FirstHit::Violated(Box::new(counterexample)),
+                )))
+            };
             if let Property::Undefined { atom, cause } = &state.state.property {
                 let site = self.site(&state.state, UndefinedLocus::Atom(*atom), None)?;
-                return Ok(FirstPhase::Violated(Box::new(Violation {
-                    state: id,
-                    kind: CounterexampleKind::UndefinedEvaluation(UndefinedEvaluation {
+                return violated(CounterexampleKind::UndefinedEvaluation(
+                    UndefinedEvaluation {
                         site,
                         cause: cause.clone(),
-                    }),
-                })));
+                    },
+                ));
             }
             for finding in &state.findings {
                 let Finding::Contract(contract) = finding else {
@@ -841,21 +941,223 @@ impl<'r, 'a> Run<'r, 'a> {
                         UndefinedLocus::Contract(undefined.clause),
                         undefined.guard_of,
                     )?;
-                    return Ok(FirstPhase::Violated(Box::new(Violation {
-                        state: id,
-                        kind: CounterexampleKind::UndefinedEvaluation(UndefinedEvaluation {
+                    return violated(CounterexampleKind::UndefinedEvaluation(
+                        UndefinedEvaluation {
                             site,
                             cause: undefined.cause,
-                        }),
-                    })));
+                        },
+                    ));
                 }
                 refused |= contract.is_refused_contract();
             }
             if refused {
-                return Ok(FirstPhase::Undecided);
+                return Ok(Some((state.state.depth, FirstHit::Undecided)));
             }
         }
-        Ok(FirstPhase::Clear)
+        Ok(None)
+    }
+
+    /// The model-only pass over the states reached where the automaton has
+    /// no move (UE-1 reads every position of an admitted behaviour): in
+    /// breadth-first order from those states, over the model states no
+    /// product state covers, the first whose letter is undefined or whose
+    /// expansion evaluates a contract conjunction undefined ends the first
+    /// phase, and a refused one leaves it undecided. It stops at `bound`, the
+    /// depth of a finding the product already has, which wins ties.
+    fn dead_phase(
+        &self,
+        run: &Explored<'_, '_>,
+        bound: Option<usize>,
+    ) -> Result<DeadPhase, ModelCheckRefusal> {
+        let roots = std::mem::take(&mut *run.product.dead.borrow_mut());
+        let mut phase = DeadPhase::default();
+        if roots.is_empty() {
+            return Ok(phase);
+        }
+        let mut examined: BTreeSet<DigestRecord> = BTreeSet::new();
+        let mut live: BTreeMap<(DigestRecord, StateId), ProductStateId> = BTreeMap::new();
+        for (index, state) in run.graph.states().iter().enumerate() {
+            let digest = self.digest(&state.state.model)?;
+            examined.insert(digest);
+            if let Property::After(at) = &state.state.property {
+                live.insert((digest, *at), ProductStateId(index));
+            }
+        }
+        let mut nodes: Vec<DeadNode> = Vec::new();
+        let mut frontier: BTreeSet<(usize, usize)> = BTreeSet::new();
+        for (root, entry) in roots.iter().enumerate() {
+            if examined.insert(self.digest(&entry.model)?) {
+                frontier.insert((entry.depth, nodes.len()));
+                nodes.push(DeadNode {
+                    model: entry.model.clone(),
+                    parent: None,
+                    root,
+                });
+            }
+        }
+        let stop = |phase: &mut DeadPhase| -> Result<(), ModelCheckRefusal> {
+            phase.stopped = self.halt_ending(&run.product)?;
+            Ok(())
+        };
+        while let Some((depth, index)) = frontier.pop_first() {
+            if bound.is_some_and(|live_depth| depth >= live_depth) {
+                break;
+            }
+            let Some(model) = nodes.get(index).map(|node| node.model.clone()) else {
+                return Err(fault("a-frontier-index-names-a-node"));
+            };
+            if run.product.poll().is_err() {
+                stop(&mut phase)?;
+                return Ok(phase);
+            }
+            let reading = match run.product.reading(&model) {
+                Ok(reading) => reading,
+                Err(_) => {
+                    stop(&mut phase)?;
+                    return Ok(phase);
+                }
+            };
+            let expansion = match run.product.expand(&model) {
+                Ok(expansion) => expansion,
+                Err(_) => {
+                    stop(&mut phase)?;
+                    return Ok(phase);
+                }
+            };
+            let kind = if let Reading::Undefined { atom, cause } = reading {
+                Some((UndefinedLocus::Atom(atom), None, cause))
+            } else {
+                expansion
+                    .findings
+                    .iter()
+                    .find_map(ModelFinding::undefined_contract)
+                    .map(|undefined| {
+                        (
+                            UndefinedLocus::Contract(undefined.clause),
+                            undefined.guard_of,
+                            undefined.cause,
+                        )
+                    })
+            };
+            if let Some(found) = kind {
+                let (locus, transition, cause) = found;
+                let site = UndefinedSite {
+                    position: widen(depth),
+                    state_key: self.digest(&model)?,
+                    locus,
+                    transition,
+                };
+                let counterexample = self.dead_counterexample(
+                    run,
+                    &roots,
+                    &nodes,
+                    &live,
+                    index,
+                    CounterexampleKind::UndefinedEvaluation(UndefinedEvaluation { site, cause }),
+                )?;
+                phase.hit = Some((depth, FirstHit::Violated(Box::new(counterexample))));
+                return Ok(phase);
+            }
+            if expansion
+                .findings
+                .iter()
+                .any(ModelFinding::is_refused_contract)
+            {
+                phase.hit = Some((depth, FirstHit::Undecided));
+                return Ok(phase);
+            }
+            if self
+                .request
+                .max_depth
+                .is_some_and(|horizon| depth >= horizon)
+            {
+                phase.cut = true;
+                continue;
+            }
+            let root = nodes.get(index).map_or(0, |node| node.root);
+            for (transition, next) in expansion.successors {
+                if examined.insert(self.digest(&next)?) {
+                    frontier.insert((depth.saturating_add(1), nodes.len()));
+                    nodes.push(DeadNode {
+                        model: next,
+                        parent: Some((index, transition)),
+                        root,
+                    });
+                }
+            }
+        }
+        Ok(phase)
+    }
+
+    /// The counterexample to dead-pass node `at`: the product's tree path to
+    /// the state its root was reached from, the root's transition, and the
+    /// model path from the root.
+    fn dead_counterexample(
+        &self,
+        run: &Explored<'_, '_>,
+        roots: &[DeadRoot],
+        nodes: &[DeadNode],
+        live: &BTreeMap<(DigestRecord, StateId), ProductStateId>,
+        at: usize,
+        kind: CounterexampleKind,
+    ) -> Result<TemporalCounterexample, ModelCheckRefusal> {
+        let mut chain = Vec::new();
+        let mut cursor = at;
+        while let Some(node) = nodes.get(cursor) {
+            chain.push(cursor);
+            match &node.parent {
+                Some((parent, _)) => cursor = *parent,
+                None => break,
+            }
+        }
+        chain.reverse();
+        let Some(root) = chain
+            .first()
+            .and_then(|first| nodes.get(*first))
+            .and_then(|node| roots.get(node.root))
+        else {
+            return Err(fault("a-dead-node-has-a-root"));
+        };
+        let mut prefix = Vec::new();
+        let initial_state = match &root.via {
+            Some((digest, at, transition)) => {
+                let Some(parent) = live.get(&(*digest, *at)) else {
+                    return Err(fault("a-dead-root-was-reached-from-a-product-state"));
+                };
+                let (start, path) = tree_path(&run.graph, *parent);
+                prefix = self.steps(
+                    &run.graph,
+                    path.iter().map(|edge| (&edge.transition, edge.target)),
+                )?;
+                if let ProductTransition::Model(transition) = transition {
+                    prefix.push(ModelStep {
+                        transition: transition.clone(),
+                        post_state: self.digest(&root.model)?,
+                    });
+                }
+                self.initial_index(&run.graph, start)?
+            }
+            None => self.initial_position(&root.model)?,
+        };
+        for index in chain.iter().skip(1) {
+            let Some(node) = nodes.get(*index) else {
+                return Err(fault("a-chain-index-names-a-node"));
+            };
+            if let Some((_, transition)) = &node.parent {
+                prefix.push(ModelStep {
+                    transition: transition.clone(),
+                    post_state: self.digest(&node.model)?,
+                });
+            }
+        }
+        Ok(TemporalCounterexample {
+            initial_state,
+            prefix,
+            over_binding: Some(run.binding.clone()),
+            fairness: self.clause.fairness().to_vec(),
+            kind,
+            lasso: None,
+        })
     }
 
     fn site(
@@ -931,7 +1233,12 @@ impl<'r, 'a> Run<'r, 'a> {
         let state = graph
             .state(root)
             .ok_or_else(|| fault("a-path-starts-at-a-retained-state"))?;
-        let wanted = self.digest(&state.state.model)?;
+        self.initial_position(&state.state.model)
+    }
+
+    /// The index of the subject's first initial state with `model`'s key.
+    fn initial_position(&self, model: &ModelSimState) -> Result<usize, ModelCheckRefusal> {
+        let wanted = self.digest(model)?;
         for (index, initial) in self.system.initial().iter().enumerate() {
             if self.digest(initial)? == wanted {
                 return Ok(index);
@@ -1061,7 +1368,7 @@ struct FairModel {
 
 impl FairModel {
     fn build(
-        system: &System<'_>,
+        system: &ModelSystem<'_>,
         clause: &CheckedTemporalClause,
         run: &Explored<'_, '_>,
     ) -> Result<Self, ModelCheckRefusal> {
@@ -1140,19 +1447,6 @@ impl FairModel {
             fair.add_acceptance_set(members)
                 .map_err(|_| fault("an-acceptance-member-is-a-vertex"))?;
         }
-        // No run through a dead state violates the clause: a set of the
-        // states that still can keeps a dead state out of every candidate,
-        // including when the negation has no acceptance set of its own.
-        let live: Vec<Vertex> = graph
-            .states()
-            .iter()
-            .enumerate()
-            .filter(|(_, state)| matches!(&state.state.property, Property::After(_)))
-            .filter_map(|(index, _)| vertices.get(index).copied())
-            .collect();
-        fair.add_acceptance_set(live)
-            .map_err(|_| fault("an-acceptance-member-is-a-vertex"))?;
-
         let mut constraints = Vec::new();
         for constraint in clause.fairness() {
             let operation = constraint.operation();
@@ -1235,7 +1529,7 @@ impl FairModel {
         let mut candidates: Vec<(Vertex, Option<usize>)> = Vec::new();
         while let Some(vertex) = queue.pop_front() {
             let reached = *distance.get(&vertex)?;
-            if best.is_some_and(|length| reached >= length) {
+            if best.is_some_and(|length| reached > length) {
                 break;
             }
             let mut consider = |length: usize, candidate: (Vertex, Option<usize>)| {
@@ -1417,5 +1711,41 @@ impl Open {
                 .get(*constraint)
                 .is_some_and(|constraint| constraint.is_taken_by(label))
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ix_trace_rs::trace;
+
+    /// CX-5 tie: from the entry v0, edge 0 reaches v1 (an acceptance-set
+    /// state) and edge 1 takes the weak constraint; both obligations are at
+    /// distance 1 and edge 0 is canonically first, so the walk is
+    /// v0 v1 v0 v2 v0, not the edge obligation first.
+    #[trace("TC-521")]
+    #[test]
+    fn a_vertex_obligation_ties_an_edge_obligation_at_the_same_distance() {
+        let id0 = Identity::new(0);
+        let id1 = Identity::new(1);
+        let mut graph = Graph::new();
+        let v0 = graph.add_vertex([id0, id1]);
+        let v1 = graph.add_vertex([id0, id1]);
+        let v2 = graph.add_vertex([id0, id1]);
+        for (from, to, label) in [(v0, v1, id0), (v0, v2, id1), (v1, v0, id0), (v2, v0, id0)] {
+            graph
+                .add_edge(from, to, EdgeLabel::Transition(label))
+                .expect("both vertices exist");
+        }
+        graph.add_acceptance_set([v1]).expect("v1 exists");
+        let model = FairModel {
+            graph,
+            constraints: vec![Constraint::weak([id1])],
+            transitions: Vec::new(),
+        };
+        let component: BTreeSet<Vertex> = [v0, v1, v2].into_iter().collect();
+        let walk = model.greedy_loop(&component, v0).expect("a walk exists");
+        let targets: Vec<usize> = walk.iter().map(|(_, edge)| edge.target.index()).collect();
+        assert_eq!(targets, [1, 0, 2, 0]);
     }
 }

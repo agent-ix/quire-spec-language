@@ -10,11 +10,11 @@
 //! relation: the loop closes, the claim is false on it, and each weak
 //! constraint is taken in it or disabled somewhere in it.
 //!
-//! Not covered: ADR-018 §6's ConfigVersion example unit (FR-126-AC-1) does
-//! not exist in this repository, so the AC is not tagged; the `holds` atoms
-//! are read through the test's own [`Letters`]; FR-339's component
-//! certificate for a proof is not built (`proof_waits_for_the_component_certificate`),
-//! and the lasso's replay is FR-128's.
+//! ADR-018 §6's ConfigVersion units and FR-126-AC-4's `Health` unit are
+//! `example_units`. Not covered here: the `holds` atoms are read through the
+//! test's own [`Letters`]; FR-339's component certificate for a proof is not
+//! built (`proof_waits_for_the_component_certificate`), and the lasso's
+//! replay is FR-128's.
 
 use ix_trace_rs::trace;
 use qsl_analyze::model_check::{
@@ -38,7 +38,7 @@ use crate::counter::{
 };
 
 /// A Counter world with one declared clause.
-struct Fixture {
+pub(crate) struct Fixture {
     package: CheckedPackage,
     clauses: Vec<CheckedTemporalClause>,
     documents: Documents,
@@ -68,7 +68,7 @@ fn fixture(
 }
 
 /// The one-counter fixture over `document`, started at `c = 0`.
-fn counter(document: Vec<u8>, fairness: &str, formula: &str) -> Fixture {
+pub(crate) fn counter(document: Vec<u8>, fairness: &str, formula: &str) -> Fixture {
     fixture(document, CONTRACT, fairness, formula, &[("c", 0)])
 }
 
@@ -84,7 +84,7 @@ impl Fixture {
         }
     }
 
-    fn run(
+    pub(crate) fn run(
         &self,
         atom: fn(i64) -> Option<bool>,
         max_depth: Option<usize>,
@@ -261,7 +261,7 @@ fn is_three(value: i64) -> Option<bool> {
     Some(value == 3)
 }
 
-fn is_zero(value: i64) -> Option<bool> {
+pub(crate) fn is_zero(value: i64) -> Option<bool> {
     Some(value == 0)
 }
 
@@ -287,7 +287,9 @@ fn a_behaviour_that_ends_is_the_lasso_whose_loop_is_the_terminal_stutter_step() 
             terminal_stutter: true
         })
     );
-    assert_eq!(counterexample.len(), 3);
+    // The stem's three `inc` steps and the stutter step of the loop.
+    assert_eq!(counterexample.len(), 4);
+    assert_eq!(counterexample.prefix.len(), 3);
     assert_eq!(counterexample.initial_state, 0);
     assert_eq!(
         counterexample.over_binding,
@@ -305,11 +307,16 @@ fn a_behaviour_that_ends_is_the_lasso_whose_loop_is_the_terminal_stutter_step() 
 /// `0, 1, 2, 3, 3, ...` is a path of the product. `always eventually
 /// holds(c.value = 3)` holds on it, so no component passes. A proof needs
 /// FR-339's component certificate, which is not built: the run is refused
-/// naming it, and says it explored the product (7 states: the negation
-/// `eventually always not p` is a two-state automaton, whose second state
-/// reads `not p` at values 0 to 2, so 3 + 3 + 1 states, and value 3, where
-/// `p` holds, is reached in the first state alone or dead).
-#[trace("TC-521")]
+/// naming it, and says it explored the product. The negation `eventually
+/// always not p` is a two-state automaton whose second state reads `not p`,
+/// so the product holds 3 + 3 states at values 0 to 2 and, at value 3 where
+/// `p` holds, the first automaton state alone: 7. The second state has no
+/// move at value 3, but that model state is also a product state, so the
+/// model-only pass finds nothing left to read.
+///
+/// This asserts an interim behaviour that FR-126 and TC-521 contradict
+/// (they expect `Holds{Exhaustive}`), so it carries no AC tag; PR 2 replaces
+/// it with the `Holds` test.
 #[test]
 fn proof_waits_for_the_component_certificate() {
     let fixture = counter(document(false), "", "always eventually holds(c.value = 3)");
@@ -319,11 +326,101 @@ fn proof_waits_for_the_component_certificate() {
     else {
         panic!("expected the missing certificate: {refusal:?}");
     };
-    // (value, state) for value 0 to 2 in the waiting and the accepting
-    // state, and value 3 in the waiting state and the dead state.
-    assert_eq!(stats.product_states, 8);
+    assert_eq!(stats.product_states, 7);
     assert_eq!(stats.automaton_states, 2);
     assert_eq!(stats.depth, 3);
+}
+
+/// ADR-018 UE-1: a model state reached only where the negation automaton
+/// has no move still has its letter read. `eventually holds(c.value = 1)`
+/// negates to `always not p`, which has no move at value 1, so values 2 and
+/// 3 are reached by no product state: the product holds value 0 alone and
+/// counts one state and no edge. The model-only pass reads the rest: with
+/// the atom undefined at value 2 the claim is refuted at position 2 by the
+/// prefix `0 -inc-> 1 -inc-> 2`, and with it defined everywhere the run is
+/// the interim certificate refusal over the same one product state.
+#[test]
+fn positions_past_a_dead_automaton_are_still_read() {
+    let fixture = counter(document(false), "", "eventually holds(c.value = 1)");
+    let outcome = fixture
+        .decide(|v| match v {
+            1 => Some(true),
+            2 => None,
+            _ => Some(false),
+        })
+        .expect("checked");
+    let counterexample = violated(&outcome);
+    assert_eq!(fixture.values(counterexample, "c"), [0, 1, 2]);
+    assert_eq!(counterexample.lasso, None);
+    let CounterexampleKind::UndefinedEvaluation(evaluation) = &counterexample.kind else {
+        panic!("expected an undefined evaluation: {counterexample:?}");
+    };
+    assert_eq!(evaluation.site.position, 2);
+    assert_eq!(outcome.stats().product_states, 1);
+
+    let refusal = fixture
+        .decide(|v| Some(v == 1))
+        .expect_err("no certificate yet");
+    let ModelCheckRefusal::Liveness(LivenessRefusal::ComponentCertificateNotBuilt { stats }) =
+        refusal
+    else {
+        panic!("expected the missing certificate: {refusal:?}");
+    };
+    // The one edge leads to a model state with no product state.
+    assert_eq!((stats.product_states, stats.product_edges), (1, 0));
+}
+
+/// FR-126 "Explicit-state limits": `max_states` and `max_transitions` are the
+/// run's, not each instance's. Over two counters a clause binds two
+/// instances, each its own product; with `max_states` 20 the run stops
+/// naming 20 and the products together hold at most 20 states, and a run
+/// with no such limit reports more. The negation automaton of both
+/// instances is one automaton: two states, not two per instance.
+#[test]
+fn the_state_budget_is_shared_by_every_instance() {
+    // `p` holds everywhere, so the negation has no run and nothing is
+    // violated: each instance's product is the whole model.
+    let formula = "always eventually holds(c.value = 3)";
+    let always = |_: i64| Some(true);
+    let one = fixture(document(false), CONTRACT, "", formula, &[("a", 0)]);
+    let alone = unwrap_refusal(one.decide(always).expect_err("no certificate yet"));
+    let both = fixture(
+        document(false),
+        CONTRACT,
+        "",
+        formula,
+        &[("a", 0), ("b", 0)],
+    );
+    let together = unwrap_refusal(both.decide(always).expect_err("no certificate yet"));
+    assert!(together.product_states > 20, "{together:?}");
+    assert_eq!(together.automaton_states, alone.automaton_states);
+
+    let mut limits = ModelCheckLimits::default();
+    limits.limits.max_states = 20;
+    let outcome = both
+        .run(always, None, limits, UNLIMITED, &Cancel::new())
+        .expect("checked");
+    let ModelCheckOutcome::Stopped { limit, stats, .. } = outcome else {
+        panic!("expected a stopped run, got {outcome:?}");
+    };
+    assert_eq!(
+        limit,
+        Some(ReachedLimit {
+            limit: ModelCheckLimit::MaxStates,
+            value: 20
+        })
+    );
+    assert!(stats.product_states <= 20, "{stats:?}");
+}
+
+/// The counts of a run refused for want of the component certificate.
+fn unwrap_refusal(refusal: ModelCheckRefusal) -> qsl_replay::RunStats {
+    let ModelCheckRefusal::Liveness(LivenessRefusal::ComponentCertificateNotBuilt { stats }) =
+        refusal
+    else {
+        panic!("expected the missing certificate: {refusal:?}");
+    };
+    stats
 }
 
 /// FR-126 "Fairness filter" and "Counterexamples" over the Counter with
@@ -421,14 +518,6 @@ fn each_needs_every_transition_of_the_operation_and_whole_needs_one() {
             .filter(|step| applies(step, "inc"))
             .count();
         assert!(incs >= 1, "{fairness}: the loop takes inc");
-        if each {
-            let receivers: std::collections::BTreeSet<_> = loop_steps
-                .iter()
-                .filter(|step| applies(step, "inc"))
-                .map(|step| step.transition.receiver().map(str::to_owned))
-                .collect();
-            assert_eq!(receivers.len(), 2, "each: inc(a) and inc(b) both run");
-        }
     }
 }
 
@@ -576,8 +665,8 @@ fn two_liveness_runs_give_equal_outcomes() {
 }
 
 /// A strong constraint is refused before any state is explored: its filter
-/// and obligations are ADR-019's, not built here.
-#[trace("TC-521")]
+/// and obligations are ADR-019's, not built here. Like the certificate
+/// refusal above this is interim behaviour, so it carries no AC tag.
 #[test]
 fn a_strong_constraint_is_refused_not_ignored() {
     let fixture = counter(

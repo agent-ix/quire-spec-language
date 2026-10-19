@@ -131,16 +131,19 @@ pub struct TemporalCounterexample {
 }
 
 impl TemporalCounterexample {
-    /// The counterexample's length: its number of transitions (ADR-018
-    /// "Length").
+    /// The counterexample's length: its number of transitions, stem and loop
+    /// together (ADR-018 "Length"). A terminal stutter loop is one transition
+    /// (ADR-018 SM-4) that [`Self::prefix`] does not list.
     pub fn len(&self) -> usize {
-        self.prefix.len()
+        self.prefix.len().saturating_add(usize::from(
+            self.lasso.is_some_and(|lasso| lasso.terminal_stutter),
+        ))
     }
 
     /// Whether the counterexample has no transition: it ends at an initial
     /// state.
     pub fn is_empty(&self) -> bool {
-        self.prefix.is_empty()
+        self.len() == 0
     }
 
     /// QSpec FR-364's `trace_position`: the prefix's last position for a
