@@ -469,7 +469,7 @@ nested in a record, present optional or sequence, and,
 repeatedly, every population named by a `reference` value anywhere in a field of
 any object of a required population, and every population named by an end of an
 instance of a listed relationship whose other end names an object of a required
-population, in the observations the clause reads.
+population, in the observations the clause reads, and every population the clause names by `M::P` ([FR-391](FR-391-name-a-population-in-a-state-clause.md)).
 A required population absent from its snapshot is not marked `complete`. A
 parameter reference naming no declared population makes no population
 required; check 10 settles it.

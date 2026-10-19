@@ -37,8 +37,8 @@ exactly as they were.
 
 ## Inputs
 
-- The parsed `history` rows: `history <C>::<Type>.<field>: <bounded type> =
-  <literal> { on <C>::<Type>::<op>: <expression>; … }`, with spans.
+- The parsed `history` rows, as QSpec FR-375's history-row production
+  defines them, with spans.
 - The concrete model's object types, fields and operations.
 - In `qsl-replay`: a concrete state, the history values at it, and a concrete
   step (its transition identity and post-state).
@@ -67,8 +67,11 @@ exactly as they were.
 - A history field whose name equals a declared field of the concrete type,
   or another history field of the same type, SHALL refuse
   `invalid_model_binding`/`conflicting-binding`.
-- The initial literal SHALL conform to the declared type, refusing
-  `ill_typed`/`type-mismatch` otherwise.
+- The initial `history-literal` SHALL conform to the declared type under
+  QSpec FR-375's history-literal rule (FR-375-AC-9), which covers value-set
+  membership including range, `none`, `true`/`false` and enum members. A
+  non-member refuses `ill_typed`/`type-mismatch` at the literal, decided
+  statically and not at run time.
 - An operation with two updates for one history field SHALL refuse
   `invalid_model_binding`/`conflicting-binding`.
 - Each update SHALL be checked with `self` bound to the step's receiver
@@ -114,15 +117,15 @@ frame `modifies [value]` and postcondition `self.value = x`; initial `value`
 0. Refinement `RegisterHistory`: `prev = self.last`, `value = self.value`,
 `history Impl::Register.last: Int[0, 1] = 0 { on Impl::Register::write:
 pre(self.value); }`, `step Impl::Register::write ->
-Spec::Register::write(self, x)`. S3 admits an update such as
-`pre(self.writes) + 1` against a field declared `Int[0, 1]`: static
-conformance compares the native type `Integer` and not its range, so the
-range is left only at run time.
+Spec::Register::write(self, x)`. For an update expression, which is
+computed and not a literal, S3 admits `pre(self.writes) + 1` against a field
+declared `Int[0, 1]`: static conformance compares the native type `Integer`
+and not its range, so the range is left only at run time.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-138-AC-1 | `RegisterHistory` checks with one `HistoryRow` (`last`, `Int[0, 1]`, initial 0, one update on `write`). The concrete model's state nodes, the node identities of its clauses and the successors `ModelSystem` gives from its initial state are equal whether or not the refinement declares the history row. | Test (TC-543) |
-| FR-138-AC-2 | Refusals: `history Impl::Register.value: …` (`invalid_model_binding`/`conflicting-binding`); `last: Int` with no bounds (`ill_typed`/`type-mismatch`); initial literal `true` (`ill_typed`/`type-mismatch`); two `on write` updates (`invalid_model_binding`/`conflicting-binding`); `on Impl::Register::erase` (`missing_declaration`/`missing-name`); an invariant of `Impl::Register` reading `self.last` (`missing_declaration`/`missing-name`). | Test (TC-543) |
+| FR-138-AC-2 | Refusals: `history Impl::Register.value: …` (`invalid_model_binding`/`conflicting-binding`); `last: Int` with no bounds (`ill_typed`/`type-mismatch`); initial literal `true` or `5`, a non-member of `Int[0, 1]` (each `ill_typed`/`type-mismatch` at the literal); two `on write` updates (`invalid_model_binding`/`conflicting-binding`); `on Impl::Register::erase` (`missing_declaration`/`missing-name`); an invariant of `Impl::Register` reading `self.last` (`missing_declaration`/`missing-name`). | Test (TC-543) |
 | FR-138-AC-3 | Along `write(r, 1)`, `write(r, 0)`, `write(r, 1)` from the initial state, `step_history` gives `last` = 0, 1, 0 after each step. | Test (TC-543) |
 | FR-138-AC-4 | With a second history field `writes: Int[0, 1] = 0 { on Impl::Register::write: pre(self.writes) + 1; }` added, `step_history` along `write(r, 0)`, `write(r, 0)` gives `writes` 1 after the first step and returns `MappingFailure::Undetermined(MappingUndetermined)` naming `writes`, `r` and the second step, whose post-state is still the concrete successor `ModelSystem` gives. | Test (TC-543) |
 | FR-138-AC-5 | With a second history field `inv: Int[0, 1] = 0 { on Impl::Register::write: 1 / x; }` added, `step_history` along `write(r, 1)` gives `inv` 1, and along `write(r, 0)` returns `MappingFailure::Undefined` naming `inv`, `r`, the step and cause `division-by-zero`; the post-state is still the concrete successor `ModelSystem` gives. | Test (TC-554) |
@@ -138,3 +141,7 @@ range is left only at run time.
 ## References
 
 - The QSpec half (history field semantics): QSpec FR-378 (Linear STD-133).
+- The history-row production, the `history-literal` spellings and the
+  history-literal conformance rule: QSpec FR-375. The covering test for the
+  `none`, `true`/`false` and enum-member cases, which FR-138 does not
+  restate, is QSpec TC-310 mutation 10 (FR-375-AC-9).
