@@ -445,6 +445,10 @@ pub struct PackageDeclarations {
     /// checked under the one of them, or refuses when there is none or
     /// several.
     pub temporal_selections: Vec<super::temporal_clause::TemporalSelection>,
+    /// FR-171, FR-172: the unit's `hyper` clauses and `relation`s in
+    /// declaration order, each as S2 built it, for the `TemporalTrace`
+    /// family's `check`.
+    pub hyper_clauses: Vec<super::hyper_clause::HyperDeclaration>,
     /// FR-103: each domain-package operation `requires`/`ensures` clause the
     /// driver parsed, with its operation resolved, checked beside the state
     /// clauses. Checking yields a refusal or nothing.
@@ -553,6 +557,7 @@ impl PackageDeclarations {
             protocol_attempts: Vec::new(),
             temporal_clauses: Vec::new(),
             temporal_selections: Vec::new(),
+            hyper_clauses: Vec::new(),
             operation_clauses: Vec::new(),
             type_invariants: Vec::new(),
             terminals: Vec::new(),

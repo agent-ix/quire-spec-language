@@ -1034,6 +1034,9 @@ pub enum CheckCause {
     /// FR-326: the `TemporalTrace` family refused a `temporal` clause.
     /// Boxed for the same reason as `ProtocolAnchor` above.
     Temporal(Box<TemporalCause>),
+    /// FR-172: the `TemporalTrace` family refused a `hyper` clause or a
+    /// `relation`. Boxed for the same reason as `ProtocolAnchor` above.
+    Hyper(Box<super::hyper_clause::HyperCause>),
     /// FR-302: a called operation's dispatch family did not link at S3.
     /// Boxed for the same reason as `ProtocolAnchor` above.
     DispatchLink(Box<DispatchLinkCause>),
@@ -1367,6 +1370,7 @@ impl CheckCause {
             Self::ProtocolAnchor(cause) => cause.code(),
             Self::ProtocolReference(cause) => cause.code(),
             Self::Temporal(cause) => cause.code(),
+            Self::Hyper(cause) => cause.code(),
             Self::DispatchLink(cause) => cause.code,
             // Downstream crates (`qsl-eval`, `qsl-route`, the root crate)
             // have their own real seams over other enums, probed in the
@@ -1437,6 +1441,7 @@ impl CheckCause {
             Self::ProtocolAnchor(cause) => Some(cause.tag()),
             Self::ProtocolReference(cause) => Some(cause.tag()),
             Self::Temporal(cause) => Some(cause.tag()),
+            Self::Hyper(cause) => Some(cause.tag()),
             Self::DispatchLink(cause) => Some(cause.catalog.cause()),
             // Not a seam-probe location (unlike `code()`, above --
             // deliberately left non-exhaustive there): this arm keeps

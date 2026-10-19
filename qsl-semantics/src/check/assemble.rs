@@ -674,6 +674,9 @@ struct Unit {
     /// Each `temporal` clause's form, in source order, for FR-326's
     /// `check::temporal_clause` checker to resolve at S3.
     temporal_clauses: Vec<super::temporal_clause::TemporalDeclaration>,
+    /// Each `hyper` clause and `relation`, in source order, for
+    /// `check::hyper_clause` to resolve at S3.
+    hyper_clauses: Vec<super::hyper_clause::HyperDeclaration>,
     /// Each `terminal` declaration's form, in source order, resolved by the
     /// caller into the model's `TerminalClauseDeclaration`s (FR-124).
     terminals: Vec<TerminalDeclarationForm>,
@@ -694,6 +697,7 @@ impl Unit {
             population_bounds: Vec::new(),
             protocols: Vec::new(),
             temporal_clauses: Vec::new(),
+            hyper_clauses: Vec::new(),
             terminals: Vec::new(),
         };
         for form in forms {
@@ -736,6 +740,15 @@ impl Unit {
                     });
                 }
                 DeclarationForm::Terminal(terminal) => unit.terminals.push(*terminal),
+                DeclarationForm::HyperBehaviours(clause) => unit
+                    .hyper_clauses
+                    .push(super::hyper_clause::HyperDeclaration::Behaviours(*clause)),
+                DeclarationForm::HyperFinite(clause) => unit
+                    .hyper_clauses
+                    .push(super::hyper_clause::HyperDeclaration::Finite(*clause)),
+                DeclarationForm::ModelRelation(clause) => unit
+                    .hyper_clauses
+                    .push(super::hyper_clause::HyperDeclaration::Relation(*clause)),
                 DeclarationForm::Temporal(clause) => {
                     unit.temporal_clauses
                         .push(super::temporal_clause::TemporalDeclaration {
@@ -1710,6 +1723,9 @@ fn expression_type_forms<'e>(roots: impl IntoIterator<Item = &'e Expression>) ->
                 | ExprNode::SelfRef
                 | ExprNode::Result
                 | ExprNode::Reaches { .. }
+                | ExprNode::Indexed { .. }
+                | ExprNode::StepLabel { .. }
+                | ExprNode::Stutter
                 | ExprNode::ProtocolReference { .. } => {}
                 // Not the S2 seam (`Typer::infer_form`'s own doc,
                 // `qsl-semantics/src/check/check/typing.rs`): an
@@ -2450,6 +2466,23 @@ impl PackageDeclarations {
                 });
             }
         }
+        // FR-172: a `hyper` clause's and a `relation`'s `using` alias names one
+        // of the unit's profile selections, as a `temporal` clause's does.
+        for clause in &unit.hyper_clauses {
+            let using = clause.profile();
+            if !selections
+                .profiles
+                .iter()
+                .any(|profile| profile.alias == using.alias)
+            {
+                errors.push(AssemblyError {
+                    cause: AssemblyCause::UndeclaredAlias {
+                        alias: using.alias.clone(),
+                    },
+                    span: using.span,
+                });
+            }
+        }
         let mut function_selections = BTreeMap::new();
         for (index, function) in unit.functions.iter().enumerate() {
             if let Some(using) = function.using() {
@@ -3050,6 +3083,7 @@ impl PackageDeclarations {
             .collect();
         package.protocols = unit.protocols;
         package.temporal_clauses = unit.temporal_clauses;
+        package.hyper_clauses = unit.hyper_clauses;
         package.temporal_selections = selections
             .profiles
             .iter()

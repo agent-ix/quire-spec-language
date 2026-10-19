@@ -786,6 +786,16 @@ impl<'a> Typer<'a> {
                 ResolvedTarget::Value(()) => self.name(name, hint.as_deref(), &location)?,
             },
             ExprNode::ProtocolReference { target } => self.protocol_reference(target, &location)?,
+            // A `hyper` clause's reads and labels have a meaning only inside
+            // the clause; S2 builds them nowhere else.
+            ExprNode::Indexed { .. } | ExprNode::StepLabel { .. } | ExprNode::Stutter => {
+                return Err(CheckRefusal {
+                    location,
+                    cause: CheckCause::Hyper(Box::new(
+                        crate::check::hyper_clause::HyperCause::OutsideHyperClause,
+                    )),
+                })
+            }
             ExprNode::Case(case) => {
                 return Ok(Self::case(
                     Branches::Inferred(hint),

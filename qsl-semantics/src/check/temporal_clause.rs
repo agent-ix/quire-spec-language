@@ -1,36 +1,3 @@
-    lookup_operation(scope, object, operation, name)
-}
-
-/// The operation `operation` of the object type `object` as its effective
-/// view declares it. `name` is the operation as written, which a refusal
-/// names.
-pub(crate) fn lookup_operation(
-    scope: &Scope,
-    object: Option<EffectiveId>,
-    operation: &str,
-    name: &NameForm,
-) -> Result<FairnessOperation, TemporalCause> {
-    let unresolved = || TemporalCause::UnresolvedFairnessOperation {
-        name: name.name.clone(),
-        span: name.span,
-    };
-    let object = object.ok_or_else(unresolved)?;
-    match scope.operations().resolve(scope.types(), object, operation) {
-        OperationLookup::Declared {
-            declaring,
-            operation,
-        } => Ok(FairnessOperation::new(
-            declaring,
-            operation.name().to_owned(),
-        )),
-        OperationLookup::Missing => Err(unresolved()),
-        OperationLookup::Ambiguous(_) => Err(TemporalCause::AmbiguousFairnessOperation {
-            name: name.name.clone(),
-            span: name.span,
-        }),
-    }
-}
-
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-326: the `TemporalTrace` family's S3 check of one `temporal` clause
 //! (ADR-012 §12.2 Check row; ADR-014 §3 TR-3 and TR-4, §5 A-2 and A-3).
@@ -72,7 +39,7 @@ use std::collections::BTreeMap;
 
 use qsl_forms::{
     ActivationForm, FairnessConstraintForm, FairnessGranularity as FormGranularity,
-    FairnessKind as FormKind, IntervalForm, IntervalUpper, NameForm, ParameterForm, TemporalClauseForm,
+    FairnessKind as FormKind, IntervalForm, IntervalUpper, ParameterForm, TemporalClauseForm,
     TemporalFormulaForm, TemporalNodeForm, TemporalNodeId, TemporalOperator,
 };
 use qsl_foundation::bound::{DomainKey, DomainKind, IntervalKey, TemporalInterval, TemporalUpper};
@@ -82,7 +49,7 @@ use qsl_foundation::selection::DefinitionRef;
 use qsl_foundation::source::provenance::RawSourceRef;
 use qsl_foundation::source_map::SourceMap;
 use qsl_foundation::{InternalFault, Setting, Span};
-use quire_exact::{EffectiveId, ValueType};
+use quire_exact::ValueType;
 use quire_semantic_value::fairness::{
     FairnessConstraint, FairnessGranularity, FairnessKind, FairnessOperation, PropertyForm,
 };
@@ -291,6 +258,20 @@ pub struct TemporalClaim {
 }
 
 impl TemporalClaim {
+    /// A `temporal-satisfaction` claim over the unbounded type positions
+    /// `parameter_domains` of its parameters, and over its formula when
+    /// `infinite_trace`.
+    pub(crate) fn new(
+        parameter_domains: BTreeMap<(usize, Vec<u32>), DomainKind>,
+        infinite_trace: bool,
+    ) -> Self {
+        Self {
+            kind: Capability::TemporalSatisfaction,
+            parameter_domains,
+            infinite_trace,
+        }
+    }
+
     /// The capability kind the claim requests.
     pub fn kind(&self) -> Capability {
         self.kind
@@ -436,11 +417,11 @@ impl FamilyContract for TemporalTraceFamily {
     }
 }
 
-pub(crate) fn refuse(cause: TemporalCause) -> StageFailure<CheckRefusal> {
+fn refuse(cause: TemporalCause) -> StageFailure<CheckRefusal> {
     StageFailure::Refused(refusal(cause))
 }
 
-pub(crate) fn refusal(cause: TemporalCause) -> CheckRefusal {
+fn refusal(cause: TemporalCause) -> CheckRefusal {
     CheckRefusal {
         // A clause has no expression tree for a `Location` path to walk;
         // `region::DeclarationRegions::refusal_region` reads a `Temporal`
@@ -450,7 +431,7 @@ pub(crate) fn refusal(cause: TemporalCause) -> CheckRefusal {
     }
 }
 
-pub(crate) fn fault(invariant: &'static str) -> StageFailure<CheckRefusal> {
+fn fault(invariant: &'static str) -> StageFailure<CheckRefusal> {
     StageFailure::Fault(InternalFault::new(STAGE, invariant))
 }
 
@@ -643,11 +624,7 @@ fn check_clause(
         clock_binding: clock_binding(&form.clock.text),
         operators,
         horizon,
-        claim: TemporalClaim {
-            kind: Capability::TemporalSatisfaction,
-            parameter_domains,
-            infinite_trace: !bounded,
-        },
+        claim: TemporalClaim::new(parameter_domains, !bounded),
         formula,
         activation: match &form.activation {
             ActivationForm::Origin => Activation::Origin,
