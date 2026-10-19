@@ -40,3 +40,18 @@ Ticket: QSL-530. Consistency of T-12 items (1)-(4) with the edited item (2), wit
 ## Verdict
 
 Findings: 1 high, 1 medium. Items (1), (3) and (4) are unchanged and consistent with each other; item (2) conflicts with ADR-013 O-04 and ADR-012 and gives a false reason for where the allow-list lives.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | medium | The new sentence says emitted code and RT resolve a key literal 'to a `NodeKey` only by lookup in the admitted node table', and item (2) still gives 'a backend' a module that decodes `NodeKey`s. ADR-013 O-04 (ADR-013:185), which the PR's decision says stands, says 'RT and CG hold no `NodeKey`: they handle only `WireNodeId`s, and only QSL (E4 and the layer-6 `replay` facade) converts a `WireNodeId` to a `NodeKey`'. ADR-012:875 and :1099 say the same for RT. So the sentence written to follow O-04 still contradicts it. The RT side is the IR-882 conflict that the PR body leaves with RT's owner, but that is recorded only on GitHub. Either drop 'to a `NodeKey`' and say the emitted code resolves the `WireNodeId` by lookup without holding a key, or record the O-04/ADR-012 conflict and its owner in the spec. | spec/decisions/ADR-011-stage-dag-and-dependency-architecture.md:1488 |
+
+## Dispositions
+
+Round 1, head fd0e59362 (fix commit fd0e59362 over merge e8907f963).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |

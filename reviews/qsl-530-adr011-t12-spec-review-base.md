@@ -36,3 +36,12 @@ Ticket: QSL-530. Wording, behaviour-not-changelog and TC/AC need for the edited 
 ## Verdict
 
 Findings: 1 medium, 1 low. Behaviour wording and the no-new-TC call are sound; the blocking issues are in SR-13358 and SR-13359.
+
+## Dispositions
+
+Round 1, head fd0e59362 (fix commit fd0e59362 over merge e8907f963).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |

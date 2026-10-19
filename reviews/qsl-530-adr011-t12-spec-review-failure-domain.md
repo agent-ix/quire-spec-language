@@ -37,3 +37,12 @@ Ticket: QSL-530. Whether a reader set that includes emitted-oracle and generated
 ## Verdict
 
 Findings: 1 high, 1 medium. Not mergeable as written: the set's generated members break the provenance chain that (3) and (4) rely on, and nothing named can enforce the set.
+
+## Dispositions
+
+Round 1, head fd0e59362 (fix commit fd0e59362 over merge e8907f963).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | still-open | Partly fixed. The row now says RT#56 and CG#89 'adopt `quire-exact` and are not API-surface gates' and that '#216 and #219 check all four by inspection' until a backend gate exists. Two problems remain. (a) Item (2) still says, in the present tense, that T12-F allow-lists 'in a backend, the one module that decodes an admitted package, named in that backend's own run of the check' and that 'a call from any other module fails the gate'. FR-060 T12-F says the same. No such run exists, and the tool cannot express one: T12-F is `Role::Qsl` with `allowed_callers: &[]`, `Role` is only Qsl\|Cg (api_surface.rs:95-100), and the CLI takes no allow-list input. With O-04 standing, no backend module is an allowed caller at all. Say instead that a backend has no allowed caller until a backend gate with a ticket exists. (b) The T-12 row's owner column still reads 'agent-ix/quire-contract-runtime#56 and agent-ix/quire-contract-codegen#89 run it', which contradicts the row's own new sentence. |
