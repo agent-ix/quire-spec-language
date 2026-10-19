@@ -11,7 +11,6 @@
 //! conforms to `P`'s `self`. The state graph alone decides; no fairness
 //! constraint is read.
 
-use qsl_foundation::diagnostic::UndefinedRecord;
 use qsl_semantics::check::{CheckedTerminalPredicate, TerminalDeclaration};
 use quire_exact::{Meter, ValueType};
 
@@ -134,23 +133,13 @@ impl ModelSystem<'_> {
                 Verdict::True => {}
                 Verdict::False => holds = false,
                 Verdict::Undecided(outcome) => {
-                    return match outcome {
-                        ClauseOutcome::KernelUndefined(undefined) => {
-                            Ok(Reading::Undefined(UndefinedCause::Kernel(undefined)))
-                        }
-                        ClauseOutcome::FamilyUndefined(reason) => {
-                            Ok(Reading::Undefined(UndefinedCause::Family(UndefinedRecord {
-                                reason,
-                                fields: std::collections::BTreeMap::new(),
-                            })))
-                        }
-                        ClauseOutcome::Incomplete(_) => {
-                            Err(exhausted(ExpansionLimit::EvaluationMeter))
-                        }
-                        ClauseOutcome::KernelRefused(_)
-                        | ClauseOutcome::FamilyRefused(_)
-                        | ClauseOutcome::NotBoolean => Ok(Reading::Refused),
+                    if let Some(cause) = outcome.undefined_cause() {
+                        return Ok(Reading::Undefined(cause));
                     }
+                    if matches!(outcome, ClauseOutcome::Incomplete(_)) {
+                        return Err(exhausted(ExpansionLimit::EvaluationMeter));
+                    }
+                    return Ok(Reading::Refused);
                 }
             }
         }

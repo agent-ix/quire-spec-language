@@ -1369,8 +1369,10 @@ dependencies = [
  "qsl-eval",
  "qsl-foundation",
  "qsl-replay",
+ "qsl-semantics",
  "quire-canonical",
  "quire-exact",
+ "quire-semantic-value",
  "thiserror",
 ]
 

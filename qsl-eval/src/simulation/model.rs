@@ -178,6 +178,70 @@ impl ClauseOutcome {
     pub fn incomplete_code(&self) -> Option<CatalogCode> {
         matches!(self, Self::Incomplete(_)).then_some(EXHAUSTED)
     }
+
+    /// The undefined value's cause (ADR-018 UE-2) for an undefined
+    /// evaluation; `None` for every other outcome.
+    pub fn undefined_cause(&self) -> Option<crate::temporal::UndefinedCause> {
+        match self {
+            Self::KernelUndefined(undefined) => {
+                Some(crate::temporal::UndefinedCause::Kernel(undefined.clone()))
+            }
+            Self::FamilyUndefined(reason) => Some(crate::temporal::UndefinedCause::Family(
+                qsl_foundation::diagnostic::UndefinedRecord {
+                    reason: *reason,
+                    fields: BTreeMap::new(),
+                },
+            )),
+            Self::KernelRefused(_)
+            | Self::FamilyRefused(_)
+            | Self::Incomplete(_)
+            | Self::NotBoolean => None,
+        }
+    }
+}
+
+/// A contract conjunction an expansion evaluated undefined (ADR-018 UE-6):
+/// the clause, the transition when it is that transition's guard, and the
+/// cause.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UndefinedContract {
+    /// The `pre` or `post` clause's name.
+    pub clause: String,
+    /// The guarded transition, for a precondition; `None` for a
+    /// postcondition.
+    pub guard_of: Option<ModelTransition>,
+    /// The undefined value's cause.
+    pub cause: crate::temporal::UndefinedCause,
+}
+
+impl ModelFinding {
+    /// This finding as an undefined contract conjunction, when it is one.
+    pub fn undefined_contract(&self) -> Option<UndefinedContract> {
+        let Self::ContractUndetermined {
+            transition,
+            candidate,
+            clause,
+            evaluation,
+        } = self
+        else {
+            return None;
+        };
+        Some(UndefinedContract {
+            clause: clause.clone(),
+            guard_of: candidate.is_none().then(|| transition.clone()),
+            cause: evaluation.undefined_cause()?,
+        })
+    }
+
+    /// Whether this finding is a contract conjunction that was refused, so
+    /// the successor relation is not exactly known (ADR-018 V-6).
+    pub fn is_refused_contract(&self) -> bool {
+        matches!(
+            self,
+            Self::ContractUndetermined { evaluation, .. }
+                if evaluation.undefined_cause().is_none()
+        )
+    }
 }
 
 /// What a state or a successor set found (FR-120 "Contract clauses",
@@ -424,6 +488,37 @@ impl<'a> ModelSystem<'a> {
         })
     }
 
+    /// FR-101's `quire.simulation.state-key/v1` digest of `state`, and its
+    /// full key bytes, under the identity limits exploration encodes with.
+    ///
+    /// # Errors
+    ///
+    /// [`crate::simulation::EncodingRefusal`] when the key has no RFC 8785
+    /// encoding under those limits.
+    pub fn state_key(
+        &self,
+        state: &ModelSimState,
+    ) -> Result<(Vec<u8>, DigestRecord), crate::simulation::EncodingRefusal> {
+        let (key, digest) = crate::simulation::key::state_key(
+            &encode::model_key(&self.model, &state.state),
+            identity_limits(),
+        )?;
+        Ok((key.as_bytes().to_vec(), digest))
+    }
+
+    /// FR-101's canonical bytes of `transition`, which order successors.
+    ///
+    /// # Errors
+    ///
+    /// [`crate::simulation::EncodingRefusal`] when the identity has no RFC
+    /// 8785 encoding under exploration's identity limits.
+    pub fn transition_key(
+        &self,
+        transition: &ModelTransition,
+    ) -> Result<Vec<u8>, crate::simulation::EncodingRefusal> {
+        crate::simulation::key::canonical_bytes(transition, identity_limits())
+    }
+
     /// The operations in `identity`'s effective view (FR-103, FR-081), by name.
     fn applications_of(
         model: &StateModel,
@@ -640,6 +735,22 @@ impl TransitionSystem for ModelSystem<'_> {
 /// The identity limits `explore_model` and `sample_model` encode under.
 fn identity_limits() -> IdentityLimits {
     IdentityLimits::default()
+}
+
+/// FR-101's requires-bound pre-check over `system`'s [`ModelSystem::domains`]
+/// alone, with no state explored (ADR-018 "EN-1 pre-check").
+///
+/// # Errors
+///
+/// [`NotSimulated::RequiresBound`] when a root is unbounded;
+/// [`NotSimulated::Extent`] when classification stops.
+pub fn check_model_bounds(system: &ModelSystem<'_>, position_limit: u64) -> Result<(), NotSimulated> {
+    let domains = system.domains();
+    let roots: Vec<(WireNodeId, &ValueType)> = domains
+        .iter()
+        .map(|(id, value_type)| (*id, value_type))
+        .collect();
+    crate::simulation::not_simulated::check_requires_bound(&roots, system.types, position_limit)
 }
 
 /// FR-101's `explore_request` over `system`, its [`ModelSystem::domains`] and

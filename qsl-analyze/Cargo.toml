@@ -19,6 +19,10 @@ description = "ADR-011 §6.1 layer A: in-process analysis engines, including ret
 qsl-eval = { path = "../qsl-eval" }
 qsl-foundation = { path = "../qsl-foundation" }
 qsl-replay = { path = "../qsl-replay" }
+# EN-1 reads the checked temporal clause and the subject's admission
+# failure (layer 3), and the fairness set and property form (SV).
+qsl-semantics = { path = "../qsl-semantics" }
+quire-semantic-value = { workspace = true }
 quire-canonical = { workspace = true }
 quire-exact = { workspace = true }
 num-bigint = "0.4.8"
