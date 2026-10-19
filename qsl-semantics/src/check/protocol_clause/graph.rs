@@ -12,7 +12,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use qsl_forms::{AnchorSite, ProtocolDeclarationForm, ProtocolNodeKind};
+use qsl_forms::{AnchorSite, JoinPolicy, ParallelForm, ProtocolDeclarationForm, ProtocolNodeKind};
 use qsl_foundation::Span;
 
 use super::refusal;
@@ -361,7 +361,6 @@ pub(super) fn compile(
 /// The ports of the tree as dense indices, with the adjacency of `edges`
 /// (those `keep` admits) and every leaf's enter-before-exit edge.
 struct PortGraph {
-    index: BTreeMap<PortRef, usize>,
     ports: Vec<PortRef>,
     next: Vec<Vec<usize>>,
 }
@@ -407,32 +406,7 @@ impl PortGraph {
         for edge in edges.iter().filter(|edge| keep(edge)) {
             link(edge.from, edge.to);
         }
-        Self { index, ports, next }
-    }
-
-    /// The ports reachable from `start` without passing a port of
-    /// `avoid`.
-    fn reachable(&self, start: PortRef, avoid: Option<ProtocolNodeId>) -> BTreeSet<PortRef> {
-        let mut seen = BTreeSet::new();
-        let Some(&start) = self.index.get(&start) else {
-            return seen;
-        };
-        if Some(self.ports[start].node) == avoid {
-            return seen;
-        }
-        let mut stack = vec![start];
-        let mut visited = vec![false; self.ports.len()];
-        visited[start] = true;
-        while let Some(port) = stack.pop() {
-            seen.insert(self.ports[port]);
-            for &to in &self.next[port] {
-                if !visited[to] && Some(self.ports[to].node) != avoid {
-                    visited[to] = true;
-                    stack.push(to);
-                }
-            }
-        }
-        seen
+        Self { ports, next }
     }
 
     /// The strongly connected components of more than one port, by
@@ -605,27 +579,133 @@ fn progress(
     refusals
 }
 
-/// Whether `commit` lies on every path of the compiled edge relation from
-/// the `run` root's entry to the entry of `effect` (FR-381 "Retry, commit
-/// and recovery"), so every execution takes it before the effect.
+/// The labels of `parallel`'s branches its join requires: those in every
+/// set of completed branches that satisfies the policy (FR-381 "Retry,
+/// commit and recovery"). `join all` requires every branch it lists; a
+/// `quorum(n)` whose `n` is the number of distinct labels it lists, and a
+/// `join any` listing one label, require each of their labels; any other
+/// `join any` or `quorum(n)`, and every `join predicate`, require none.
+fn required_labels(parallel: &ParallelForm) -> BTreeSet<&str> {
+    let listed: BTreeSet<&str> = parallel
+        .labels
+        .iter()
+        .map(|label| label.name.as_str())
+        .collect();
+    let all = match &parallel.join.value {
+        JoinPolicy::All => true,
+        JoinPolicy::Quorum(count) => usize::try_from(*count).is_ok_and(|n| n == listed.len()),
+        JoinPolicy::Any => listed.len() == 1,
+        JoinPolicy::Predicate(_) => false,
+    };
+    if all {
+        listed
+    } else {
+        BTreeSet::new()
+    }
+}
+
+/// Whether `commit` dominates `effect` (FR-381 "Retry, commit and
+/// recovery"): every execution that reaches the effect has passed the
+/// commit first. Dominance is read off the control tree, not off paths of
+/// the causal edge relation: an execution of a control *passes* the commit
+/// when the commit is the control itself, a child of a `sequence` passes it,
+/// a branch the `parallel`'s join requires passes it, every case of a
+/// `choice` passes it, or both the `then` and the `timeout` of an `await`
+/// pass it; a `repeat` is skippable whatever its guard and never passes it.
+/// The commit dominates the effect when some `sequence` holding the effect
+/// holds, before the child that holds the effect, a child that passes it.
 pub(crate) fn dominates(
+    protocol: &ProtocolDeclarationForm,
     tree: &CheckedControlTree,
-    edges: &[CausalEdge],
     commit: ProtocolNodeId,
     effect: ProtocolNodeId,
 ) -> bool {
-    let Some(root) = tree.root() else {
-        return false;
-    };
-    let start = PortRef {
-        node: root.node,
-        port: Port::Enter,
-    };
-    let target = PortRef {
-        node: effect,
-        port: Port::Enter,
-    };
-    let graph = PortGraph::new(tree, edges, |_| true);
-    graph.reachable(start, None).contains(&target)
-        && !graph.reachable(start, Some(commit)).contains(&target)
+    use ProtocolNodeKind as K;
+    let mut passes: BTreeMap<ProtocolNodeId, bool> = BTreeMap::new();
+    // Children follow their parent in tree order, so the reverse order
+    // decides every child before its parent.
+    for control in tree.controls.iter().rev() {
+        let child = |node: &ProtocolNodeId| passes.get(node).copied().unwrap_or(false);
+        let passed = match control.kind {
+            K::Sequence | K::Branch | K::Case => control.children.iter().any(child),
+            K::Parallel => {
+                let required = protocol
+                    .parallels
+                    .iter()
+                    .find(|parallel| parallel.declaration == control.node.0)
+                    .map(required_labels)
+                    .unwrap_or_default();
+                control.children.iter().any(|branch| {
+                    protocol
+                        .declarations
+                        .get(branch.0)
+                        .is_some_and(|declaration| {
+                            required.contains(declaration.name.name.as_str())
+                        })
+                        && child(branch)
+                })
+            }
+            K::Choice => !control.children.is_empty() && control.children.iter().all(child),
+            K::Await => {
+                let matched = protocol
+                    .awaits
+                    .iter()
+                    .find(|form| form.declaration == control.node.0)
+                    .map(|form| form.matched.span);
+                let mut paths = control.children.iter().filter(|node| {
+                    protocol
+                        .declarations
+                        .get(node.0)
+                        .is_some_and(|declaration| Some(declaration.name.span) != matched)
+                });
+                let mut any = false;
+                let all = paths.all(|node| {
+                    any = true;
+                    child(node)
+                });
+                any && all
+            }
+            K::Repeat => false,
+            K::Send
+            | K::Receive
+            | K::Attempt
+            | K::Effect
+            | K::Event
+            | K::Commit
+            | K::Check
+            | K::Fence
+            | K::Finish
+            | K::CompensateTemplate => control.node == commit,
+        };
+        passes.insert(control.node, passed);
+    }
+
+    let mut parent: BTreeMap<ProtocolNodeId, &CheckedControl> = BTreeMap::new();
+    for control in &tree.controls {
+        for child in &control.children {
+            parent.insert(*child, control);
+        }
+    }
+    let mut current = effect;
+    // Each step moves to a strict ancestor, so the walk ends within the
+    // tree's size; the bound guards a malformed parent map.
+    for _ in 0..tree.controls.len() {
+        let Some(holder) = parent.get(&current) else {
+            return false;
+        };
+        if holder.kind == K::Sequence {
+            let earlier = holder
+                .children
+                .iter()
+                .take_while(|child| **child != current);
+            if earlier
+                .into_iter()
+                .any(|child| passes.get(child).copied().unwrap_or(false))
+            {
+                return true;
+            }
+        }
+        current = holder.node;
+    }
+    false
 }

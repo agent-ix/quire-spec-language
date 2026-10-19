@@ -729,6 +729,9 @@ fn located_causes(source: &str) -> Vec<(ProtocolAnchorCause, String)> {
 /// protocol's activation binder, an unlisted fact and a fact reachable only
 /// inside a composite entry each refuse `wrong_snapshot`/
 /// `wrong-observation` at the read, retaining node, owner, read and reason;
+/// a `finish` record read by a decision, and a read that is out of scope and
+/// also unlisted, refuse `missing_declaration`/`missing-name` as
+/// out-of-scope reads only;
 /// a discarded `let` that reads a fact still needs the fact listed; a read
 /// of the `over` input refuses `ill_typed`/`operator-ineligible` at the read,
 /// naming the guard; a read of a protocol capture checks without listing.
@@ -880,6 +883,45 @@ fn a_decision_reads_only_listed_facts_of_its_owner() {
     assert_eq!(
         (node.as_str(), *slot, at.as_str()),
         ("Pick", SlotKind::Guard, "input")
+    );
+
+    // A `finish` record, and a read both out of scope and unlisted, refuse
+    // only as out-of-scope reads: the scope refusal precedes the
+    // decision-fact refusal, so no wrong observation is reported (TC-1056
+    // rows 49 and 50).
+    let unscoped = |source: &str, binder: &str| {
+        let found = located_causes(source);
+        assert!(!found.is_empty(), "{source}: refuses");
+        for (cause, at) in &found {
+            let ProtocolAnchorCause::SlotClause { cause: inner, .. } = cause else {
+                panic!("an out-of-scope read, got {cause:?}");
+            };
+            assert_eq!(
+                (cause.code().as_str(), cause.tag()),
+                ("missing_declaration", "missing-name")
+            );
+            assert!(
+                matches!(inner.as_ref(), crate::check::CheckCause::MissingName(name) if name == binder),
+                "{inner:?}"
+            );
+            assert_eq!(at, binder);
+        }
+    };
+    unscoped(
+        &flow("", &pick("R", "outcome", "outcome", "not outcome")),
+        "outcome",
+    );
+    unscoped(
+        &flow(
+            &channel("ch", "Plain"),
+            &format!(
+                "parallel Both {{ branch left sequence Left {{ send Tx via ch as (tx: Plain) \
+                 {{ true }}; receive Rx via ch of Tx as (rx: Plain) {{ true }}; }} \
+                 branch right {} }} join all [left, right];",
+                pick("S", "true", "rx.ready", "not rx.ready")
+            ),
+        ),
+        "rx",
     );
 
     let captured = received(&pick("S", "", "kept", "not kept")).replacen(

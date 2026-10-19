@@ -255,9 +255,8 @@ pub enum ObligationCause {
         span: Span,
     },
     /// `unsupported_construct`/`declaration-form`: a template's `commit`
-    /// node dominates its forward effect in the compiled causal edge
-    /// relation, so every execution takes it before the effect registers
-    /// the obligation (member `commit`, reason `commit-precedes-effect`).
+    /// node dominates its forward effect: every execution that reaches the
+    /// effect has passed it, before the effect registers the obligation (member `commit`, reason `commit-precedes-effect`).
     CommitPrecedesEffect {
         /// The identity of the selected protocol profile that prohibits the
         /// form, when one is selected.

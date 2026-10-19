@@ -183,8 +183,11 @@ fn attempted(binder_type: &str, visible: &str, yes: &str, no: &str) -> String {
 
 /// FR-218-AC-2: a `choice` guard that reads the `over` input's field `k.v`
 /// refuses `ill_typed`/`operator-ineligible` at the read; a two-case
-/// `choice` whose guards are `m.n > 0` and `m.n > 1` refuses
-/// `undefined_expression`/`unproved-exhaustiveness`; a join that names a
+/// `choice` whose `visible` entry `attempted.n` is an individual non-Boolean
+/// fact, admitted as a decision fact, and whose guards are
+/// `attempted.n > 0` and `attempted.n > 1`, refuses
+/// `undefined_expression`/`unproved-exhaustiveness` with both arm faults,
+/// while `attempted.n > 0` and `not (attempted.n > 0)` check; a join that names a
 /// label that is no branch refuses `missing_declaration`/`missing-name` at
 /// the label.
 #[trace("TC-663", "FR-218-AC-2")]
@@ -229,8 +232,32 @@ fn a_guard_reads_no_model_state_and_partitions_its_facts() {
         pair,
         ("undefined_expression", Some("unproved-exhaustiveness"))
     );
-    assert!(matches!(cause, ProtocolAnchorCause::Exhaustiveness { .. }));
+    let ProtocolAnchorCause::Exhaustiveness { failed, .. } = &cause else {
+        panic!("an exhaustiveness refusal, got {cause:?}");
+    };
+    // `attempted.n > 0` and `attempted.n > 1` are two independent atoms.
+    assert_eq!(
+        failed,
+        &[
+            crate::check::ArmFault::MissingArm,
+            crate::check::ArmFault::DuplicateArm
+        ]
+    );
     assert_eq!(at, "Pick");
+    // TC-1056 row 45: one atom and its negation partition, over the
+    // individual non-Boolean entry. The negation is parenthesized: `not`
+    // binds tighter than `>`, so the row's `not got.count > 0` would negate
+    // the integer.
+    check(&decide(
+        "",
+        &attempted(
+            "M::Receipt",
+            "attempted.n",
+            "attempted.n > 0",
+            "not (attempted.n > 0)",
+        ),
+    ))
+    .expect("an atom and its negation partition");
 
     let text = decide(
         "",

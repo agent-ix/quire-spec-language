@@ -751,8 +751,8 @@ impl Checker<'_, '_> {
     }
 
     /// FR-381 "Retry, commit and recovery": a `commit` node that dominates
-    /// the forward effect in the compiled causal edge relation refuses at
-    /// the commit anchor.
+    /// the forward effect -- every execution reaching the effect has passed
+    /// it -- refuses at the commit anchor.
     fn commit_dominance(
         &mut self,
         form: &CompensationForm,
@@ -762,7 +762,7 @@ impl Checker<'_, '_> {
         let (Some(checked), CompensationCommit::Node(anchor)) = (self.anchors, &form.commit) else {
             return;
         };
-        if !super::protocol_clause::dominates(&checked.controls, &checked.edges, commit, effect) {
+        if !super::protocol_clause::dominates(self.protocol, &checked.controls, commit, effect) {
             return;
         }
         let name = |node: ProtocolNodeId| {

@@ -305,13 +305,33 @@ const TRIED: &str =
 const APPLIED: &str = "effect Applied of Main::Tried as (applied: M::Receipt) { true };";
 const COMMITTED: &str = "commit Committed by Service as (committed: M::Flag) { true };";
 
+/// `run` with a `parallel P` between the attempt and the effect: branch
+/// `a` holds the commit and branch `b` a `check`, joined by `join`; the
+/// template's commit names `Main::P::a::Committed`.
+fn joined(join: &str) -> String {
+    edit(
+        &with_run(&format!(
+            "run sequence Main {{\n{TRIED}\n\
+             parallel P {{ branch a {COMMITTED} branch b check Idle using v {{ true }}; }} \
+             join {join};\n{APPLIED}\n}}"
+        )),
+        "commit Main::Committed;",
+        "commit Main::P::a::Committed;",
+    )
+}
+
 /// FR-381-AC-11: `commit never` and `commit Main::Committed` check and the
 /// checked compensation holds `Never` and `Node` of the commit's id; a
-/// commit that dominates the forward effect in the compiled edges refuses
-/// `unsupported_construct`/`declaration-form` at the commit anchor,
+/// commit that every execution reaching the forward effect has passed
+/// refuses `unsupported_construct`/`declaration-form` at the commit anchor,
 /// retaining the selected protocol profile, compensation, member `commit`,
-/// commit, effect and reason `commit-precedes-effect`; a commit that follows
-/// the effect, one in a parallel branch with no edge to it and one in one
+/// commit, effect and reason `commit-precedes-effect` -- a commit sequenced
+/// between the attempt and its effect, and one inside a `join all` branch,
+/// a branch of `quorum(2) [a, b]` and the one branch of `join any [a]`, each
+/// with the effect after the parallel; a commit that follows the effect, one
+/// in a parallel branch whose sibling holds the effect, one in a branch of
+/// `join any [a, b]` or of `quorum(1) [a, b]` with the effect after the
+/// parallel, one in the body of a `repeat` before the effect and one in one
 /// `case` of a `choice` before the effect check.
 #[trace("TC-1058", "FR-381-AC-11")]
 #[test]
@@ -331,13 +351,12 @@ fn a_commit_that_dominates_its_effect_refuses() {
         CheckedCommit::Never
     );
 
-    // The commit first on the one thread lies on every path to the effect.
-    // (A commit between the attempt and the effect does not: the
-    // attempt.out -> effect.in edge is a path that avoids it.)
-    let before = with_run(&format!(
-        "run sequence Main {{\n{COMMITTED}\n{TRIED}\n{APPLIED}\n}}"
+    // TC-1058 row 19: the commit between the attempt and the effect. The
+    // attempt-to-effect edge lets no execution skip it.
+    let between = with_run(&format!(
+        "run sequence Main {{\n{TRIED}\n{COMMITTED}\n{APPLIED}\n}}"
     ));
-    let (text, cause) = only(&before);
+    let (text, cause) = only(&between);
     let ObligationCause::CommitPrecedesEffect {
         profile,
         compensation,
@@ -357,64 +376,71 @@ fn a_commit_that_dominates_its_effect_refuses() {
     assert_eq!(cause.reason(), Some("commit-precedes-effect"));
     assert_eq!(&text[span.start..span.end], "Main::Committed");
 
-    // A commit nested before the effect inside a sequence still dominates.
-    let nested = with_run(&format!(
-        "run sequence Main {{\nsequence Early {{ {COMMITTED} }}\n{TRIED}\n{APPLIED}\n}}"
-    ));
+    // A commit nested before the effect inside a sequence still dominates,
+    // and so does a commit in a branch the join requires (rows 19a, 19c).
     let nested = edit(
-        &nested,
+        &with_run(&format!(
+            "run sequence Main {{\nsequence Early {{ {COMMITTED} }}\n{TRIED}\n{APPLIED}\n}}"
+        )),
         "commit Main::Committed;",
         "commit Main::Early::Committed;",
     );
-    let (_, cause) = only(&nested);
-    assert!(matches!(
-        cause,
-        ObligationCause::CommitPrecedesEffect { .. }
-    ));
+    let required = ["all [a, b]", "quorum(2) [a, b]", "any [a]"].map(joined);
+    for source in std::iter::once(nested).chain(required) {
+        let (text, cause) = only(&source);
+        let ObligationCause::CommitPrecedesEffect { commit, span, .. } = &cause else {
+            panic!("{source}: a commit-precedes-effect refusal, got {cause:?}");
+        };
+        assert_eq!(commit, "Committed");
+        assert!(text[span.start..span.end].ends_with("::Committed"));
+    }
 
-    for (name, run) in [
-        (
-            "after",
-            format!("run sequence Main {{\n{TRIED}\n{APPLIED}\n{COMMITTED}\n}}"),
-        ),
-        (
-            "parallel",
-            format!(
+    // Rows 19b and 19d: a join that requires no branch admits the commit.
+    for join in ["any [a, b]", "quorum(1) [a, b]"] {
+        checked(&joined(join));
+    }
+    let after = with_run(&format!(
+        "run sequence Main {{\n{TRIED}\n{APPLIED}\n{COMMITTED}\n}}"
+    ));
+    let sibling = edit(
+        &edit(
+            &with_run(&format!(
                 "run parallel Main {{\n\
                  branch work sequence Work {{ {TRIED}\n\
                  effect Applied of Tried as (applied: M::Receipt) {{ true }}; }}\n\
                  branch close {COMMITTED}\n\
                  }} join all [work, close];"
-            ),
+            )),
+            "compensate Refund for Main::Applied",
+            "compensate Refund for Main::work::Work::Applied",
         ),
-        (
-            "case",
-            format!(
-                "run sequence Main {{\n{TRIED}\n\
-                 choice Decide by Service visible () {{\n\
-                 case early when {{ true }} {COMMITTED}\n\
-                 case late when {{ false }} sequence Skip {{ }}\n\
-                 }}\n{APPLIED}\n}}"
-            ),
-        ),
-    ] {
-        let source = match name {
-            "parallel" => edit(
-                &edit(
-                    &with_run(&run),
-                    "compensate Refund for Main::Applied",
-                    "compensate Refund for Main::work::Work::Applied",
-                ),
-                "commit Main::Committed;",
-                "commit Main::close::Committed;",
-            ),
-            "case" => edit(
-                &with_run(&run),
-                "commit Main::Committed;",
-                "commit Main::Decide::early::Committed;",
-            ),
-            _ => with_run(&run),
-        };
+        "commit Main::Committed;",
+        "commit Main::close::Committed;",
+    );
+    // Row 19e: a `repeat` is skippable whatever its guard.
+    let repeated = edit(
+        &with_run(&format!(
+            "run sequence Main {{\n{TRIED}\n\
+             repeat Again by Service visible (attempted.ready) max 2 while {{ attempted.ready }} \
+             sequence Body {{ commit Committed by Service as (committed: M::Flag) \
+             {{ committed.ready }}; event Beat by Service as (beat: M::Flag) {{ true }}; }} \
+             exhausted check Out using v {{ true }};\n{APPLIED}\n}}"
+        )),
+        "commit Main::Committed;",
+        "commit Main::Again::Body::Committed;",
+    );
+    let case = edit(
+        &with_run(&format!(
+            "run sequence Main {{\n{TRIED}\n\
+             choice Decide by Service visible () {{\n\
+             case early when {{ true }} {COMMITTED}\n\
+             case late when {{ false }} sequence Skip {{ }}\n\
+             }}\n{APPLIED}\n}}"
+        )),
+        "commit Main::Committed;",
+        "commit Main::Decide::early::Committed;",
+    );
+    for source in [after, sibling, repeated, case] {
         checked(&source);
     }
 }
