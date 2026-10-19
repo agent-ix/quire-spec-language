@@ -56,3 +56,10 @@ FND-004 are declared or scope-adjacent gaps, recorded as mediums and not
 blocking.
 
 ## Dispositions
+
+- FND-001: fixed 8bd6b9d24 with `strong_each_under_a_trivial_stabiliser_is_decided_on_the_quotient` (it fails without the fix).
+- FND-002: deferred. The unreduced strong filter (ADR-019) is not on main; AC-4 stays untagged and is ticketed as remainder.
+- FND-003: fixed 8bd6b9d24.
+  - `a_whole_loop_under_symmetry_concretises_in_one_pass` covers FR-161-AC-1: upd(b) three times, one pass, replayed.
+  - `a_loop_that_needs_two_passes_closes_at_the_concrete_entry` covers FR-161-AC-2: two passes, replayed. The AC's single initial state fails SYM-4, so the subject also lists its image under (a b), which is a spec gap.
+- FND-004: fixed 8bd6b9d24. With #1044 on main, the `each` refutation now replays through FR-128 to `reproduced-with-evaluated-witness`, and FR-161-AC-3 is tagged.

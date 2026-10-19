@@ -82,3 +82,10 @@ no CI or workflow change. Narrow test run at the reviewed sha:
 plus the scratch probe for FND-001, which failed as described.
 
 ## Dispositions
+
+- FND-001: fixed 8bd6b9d24. Every product of a symmetry run reads its graph as the annotated quotient, including one under a trivial stabiliser (`second_phase` routes on `binding.applied`). The regression `strong_each_under_a_trivial_stabiliser_is_decided_on_the_quotient` fails without the fix.
+- FND-002: fixed 8bd6b9d24. `order()` is deleted. The pass loop stops at the concrete entry, polls cancellation each pass, and spends `max_transitions` per concrete step. A trivial-group loop must close in one pass.
+- FND-003: fixed 8bd6b9d24. `analyze` uses a worklist with no recursion. It lists components depth first, each naming its `parent`, so `first_fair_in` is a flat scan. Each component charges the meter.
+- FND-004: fixed 8bd6b9d24. `Walker::step` and `cycle`'s length walk charge the meter.
+- FND-005: fixed 8bd6b9d24. The run holds one meter that every product's quotient work charges.
+- FND-006: fixed 8bd6b9d24. The meter tests carry `TC-571` and the `max_transitions` test `TC-586`.
