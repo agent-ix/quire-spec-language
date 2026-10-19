@@ -78,3 +78,42 @@ The `u64::try_from(..).unwrap_or(u64::MAX)` widening is consistent with the
 crate. `check_reduced` is long (about 190 lines) but follows `check_model`'s
 shape. The `TransitionSystem` hooks are additive, with defaults that offer
 nothing.
+
+## Dispositions
+
+Round 1, reviewed at `0f70ab51e61f8e77809be97ec3f8fdffe674d91a` (fix commit
+`1263568b05c07035cdde6bf7a5c73d06c185189b`). Each outcome was checked against
+the code at that head, not against the fix round's claims.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 1263568b05c07035cdde6bf7a5c73d06c185189b |
+| FND-002 | fixed | 1263568b05c07035cdde6bf7a5c73d06c185189b |
+| FND-003 | deferred | QSL-913 item 7: charge the canonicaliser's comparisons to the meter and count concretisation steps against `max_transitions`. Bounded by admitted work, so no wrong verdict follows. |
+| FND-004 | fixed | 1263568b05c07035cdde6bf7a5c73d06c185189b |
+| FND-005 | deferred | QSL-913 item 2: one record per orbit key (FR-160 "Instances"), which replaces the interim one-record shape. |
+| FND-006 | fixed | 1263568b05c07035cdde6bf7a5c73d06c185189b |
+| FND-007 | fixed | 1263568b05c07035cdde6bf7a5c73d06c185189b |
+
+FND-001: `admit` now keeps `seen` per population across every declaration.
+The overlapping pair `[[a, b]]`, `[[a, c]]` refuses `RepeatedKey{declaration:
+1, key: a}`, and a regression assertion was added to the FR-151-AC-2 test.
+`Permutation::insert` carries a `debug_assert!` that the new moves are
+disjoint from the existing ones, in domain and image. `compose` now walks each
+population once, so the assertion holds on every caller.
+
+FND-002: `replay_model_trace`'s `undefined()` re-evaluates the constraint
+named by `UndefinedLocus::Constraint` at each position, before expansion,
+which is where the engine reads it. It reproduces only when the site and
+cause match. An unknown constraint name disagrees.
+
+FND-004: `ItemCause` writes `reduction` and `form`, `population`, `initial`
+and `generator`, and `boundary_states`, pinned by
+`reduction_cause_wire_keeps_its_payload`.
+
+FND-006: `permute` and `Renaming::value` are now fallible. An unordered
+renamed set or bag stops with `established-invariant-broken`, and `closure`
+maps that to a fault.
+
+FND-007: the concretised guard must be the `guard_of` of an undefined
+contract in the concrete state's own expansion, or the run faults.

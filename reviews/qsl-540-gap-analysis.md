@@ -75,3 +75,20 @@ behaviour broke. FND-001 over-claims FR-158-AC-3's replay clause. Fix it by
 adding the replay or by removing the tag. The overlapping-declaration
 soundness defect (SR-12205 FND-001) has no test. Its regression test belongs
 in that fix, traced to FR-151-AC-2 only if the AC is widened to name it.
+
+## Dispositions
+
+Round 1, reviewed at `0f70ab51e61f8e77809be97ec3f8fdffe674d91a` (fix commit
+`1263568b05c07035cdde6bf7a5c73d06c185189b`).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 1263568b05c07035cdde6bf7a5c73d06c185189b |
+
+FND-001: the FR-158-AC-3 test now runs the deadlock-freedom item under the
+undefined constraint `Odd`. It asserts the `Constraint("Odd")` locus and
+replays the counterexample through FR-128's `replay_model_trace` (the
+`World::replay` helper) to `Reproduced` with the claimed undefined
+evaluation. The test can fail on the AC's replay clause. Authored-clause
+replay still refuses until FR-337. That is a pre-existing limit, outside
+this AC's constraint behaviour, and it is recorded in QSL-913 item 8.
