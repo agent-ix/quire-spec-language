@@ -37,7 +37,7 @@ pub fn unit_text(model_digest_hex: &str) -> String {
     format!(
         "// SPDX-License-Identifier: AGPL-3.0-only\n\
          language \"ix:native\" edition \"1-draft\";\n\
-         profile v = \"quire.value.complete/v1\";\n\
+         profile v = \"quire.model.complete/v1\";\n\
          model Config = {PACKAGE_IDENTITY:?} version {PACKAGE_VERSION:?} digest \"sha256-jcs:{model_digest_hex}\";\n\
          invariant ParentOrder using v on Config::ConfigVersion at current {{ \
          present(self.parent) implies deref(value(self.parent)).versionNumber < self.versionNumber }}\n\

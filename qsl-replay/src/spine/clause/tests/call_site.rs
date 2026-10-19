@@ -75,7 +75,7 @@ fn two_operation_unit(clauses: bool) -> (String, Vec<u8>) {
     };
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
-         profile v = \"quire.value.complete/v1\";\n\
+         profile v = \"quire.model.complete/v1\";\n\
          model Config = {CONFIG_VERSION_PACKAGE_IDENTITY:?} version \"1.0.0\" \
          digest \"sha256-jcs:{digest}\";\n\
          invariant ParentOrder using v on Config::ConfigVersion at current {{ \
@@ -398,7 +398,7 @@ fn function_nodes_declaring(
 #[test]
 fn function_site_names_its_function_node_and_declaration_occurrence() {
     const PQ: &str = "language \"ix:native\" edition \"1-draft\";\n\
-        profile v = \"quire.value.complete/v1\";\n\
+        profile v = \"quire.model.complete/v1\";\n\
         function p using v(x: Int[0, 9]): Boolean pure { x < 5 }\n\
         function q using v(x: Int[0, 9]): Boolean pure { x < 5 }\n";
     let site = |unit: &str, name: &str| {

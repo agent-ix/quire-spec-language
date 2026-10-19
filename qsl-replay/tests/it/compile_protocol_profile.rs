@@ -29,8 +29,8 @@ fn unit(profile: Option<&str>, declarations: &str) -> String {
         format!("profile p = \"{identity}\";\n")
     });
     let fixture = FIXTURE.replace(
-        "profile v = \"quire.value.complete/v1\";\n",
-        &format!("profile v = \"quire.value.complete/v1\";\n{header}"),
+        "profile v = \"quire.model.complete/v1\";\n",
+        &format!("profile v = \"quire.model.complete/v1\";\n{header}"),
     );
     format!("{fixture}{declarations}")
 }

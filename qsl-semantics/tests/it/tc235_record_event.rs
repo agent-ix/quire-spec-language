@@ -849,7 +849,7 @@ fn tc235_m22_flags_parameter_is_assembled_as_a_record() {
     let unit = format!(
         concat!(
             "language \"ix:native\" edition \"1-draft\";\n",
-            "profile v = \"quire.value.complete/v1\";\n",
+            "profile v = \"quire.model.complete/v1\";\n",
             "model K2 = {PACKAGE:?} version \"1\" digest \"sha256-jcs:{digest}\";\n",
             "function noop using v(): Boolean pure {{ true }}\n",
         ),
