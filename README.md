@@ -337,7 +337,7 @@ only depend on the layers below it, and a lint (`make arch-lint`) enforces that.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/layers-dark.svg">
-  <img alt="The QSL workspace in layers, bottom to top: the shared no_std libraries quire-exact, quire-semantic-value and quire-walk; qsl-foundation; qsl-cst; qsl-forms; qsl-semantics; qsl-package; then qsl-eval and qsl-route; and at the top qsl-replay, qsl-analyze and the quire-spec command line." src="docs/images/layers-light.svg">
+  <img alt="The QSL workspace in layers, bottom to top: the shared no_std libraries quire-exact, quire-semantic-value, quire-walk and quire-canonical; qsl-foundation; qsl-cst; qsl-forms; qsl-semantics; qsl-package; then qsl-eval and qsl-route; and at the top qsl-replay, qsl-analyze and the quire-spec command line." src="docs/images/layers-light.svg">
 </picture>
 
 | Crate | Does |
@@ -355,6 +355,13 @@ only depend on the layers below it, and a lint (`make arch-lint`) enforces that.
 | `qsl-attrs`, `qsl-walk-grow`, `qsl-bench` | A lint marker attribute, deep-recursion stack growth, benchmarks. |
 | root crate | The `quire-spec` binary and the library facade. |
 | `xtask`, `tools/arch-lint` | Repository checks: dependency direction, API surface, conformance. |
+
+The chart counts the tests in each crate, straight from the tree:
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/crate-tests-dark.svg">
+  <img alt="A column chart of the number of tests in each QSL workspace crate with at least ten, largest first. The root crate, with the command line and the integration tests, is shown as root." src="docs/images/crate-tests-light.svg">
+</picture>
 
 The rest of the tree:
 
