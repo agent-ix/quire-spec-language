@@ -74,7 +74,7 @@ pub struct ModelCheckRequest<'a> {
 - `DEFAULT_WITNESS_SEED: u64 = 0`, the published default seed of QSpec
   FR-392 (ADR-022 QS-7).
 - The subject (FR-125), its `ModelSystem` (FR-120), and each `Possible` item
-  (FR-165) with its instances.
+  (FR-165) with its instances (FR-125).
 - The sampler `quire.simulation.sampler/v1`, which `sample_request` selects
   by identity (FR-101).
 

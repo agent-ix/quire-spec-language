@@ -25,6 +25,7 @@ use qsl_foundation::{Code, Span};
 
 use super::hyper_clause;
 use super::protocol_clause;
+use super::state_graph;
 use super::state_model;
 use super::sum_case;
 use super::syntax::DeclarationForm;
@@ -191,6 +192,10 @@ pub enum LeadingTokenKind {
     Hyper,
     /// `relation`: the `TemporalTrace` relation clause form (FR-171).
     Relation,
+    /// `possible`, `always` or `unique`: the `StateGraph` claim form, whose
+    /// head is `possible`, `always possible` or `unique path` (FR-165,
+    /// ADR-022 SG-1 to SG-3). `always` leads no other declaration.
+    StateGraph,
     /// Test-only: never constructed outside this crate's own tests, and
     /// absent from every non-test build.
     #[cfg(test)]
@@ -399,6 +404,7 @@ fn dispatch(
         LeadingTokenKind::Terminal => terminal_declaration::terminal_declaration(construct),
         LeadingTokenKind::Hyper => hyper_clause::hyper_clause(construct),
         LeadingTokenKind::Relation => hyper_clause::relation_clause(construct),
+        LeadingTokenKind::StateGraph => state_graph::state_graph_claim(construct),
         #[cfg(test)]
         LeadingTokenKind::TestProbe => test_support::stub_production(construct),
     }
@@ -441,6 +447,7 @@ fn from_spelling(spelling: &[u8]) -> Option<LeadingTokenKind> {
         b"terminal" => Some(LeadingTokenKind::Terminal),
         b"hyper" => Some(LeadingTokenKind::Hyper),
         b"relation" => Some(LeadingTokenKind::Relation),
+        b"possible" | b"always" | b"unique" => Some(LeadingTokenKind::StateGraph),
         _ => None,
     }
 }

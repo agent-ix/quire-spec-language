@@ -571,7 +571,13 @@ fn a_terminal_declaration_using_no_profile_refuses_at_the_alias() {
 #[test]
 fn nested_constructs_of_other_families_refuse_with_their_own_causes() {
     let checked = |declarations: &str| {
-        let (_, assembled) = assemble(declarations);
+        // `deref` is `state.graph`'s (FR-361 item 17), so the unit selects
+        // the model profile, which holds it.
+        let text = text(
+            &PROFILE_V.replace("quire.value.complete", "quire.model.complete"),
+            declarations,
+        );
+        let assembled = assemble_as("a", "u", &text);
         let refusals = assembled
             .expect("the unit assembles")
             .check(CheckingLimits::default())

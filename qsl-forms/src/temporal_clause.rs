@@ -223,7 +223,7 @@ struct Formula<'c> {
 }
 
 /// The operator a temporal keyword spells.
-fn operator_of(spelling: &[u8]) -> Option<TemporalOperator> {
+pub(crate) fn operator_of(spelling: &[u8]) -> Option<TemporalOperator> {
     match spelling {
         b"eventually" => Some(TemporalOperator::Eventually),
         b"always" => Some(TemporalOperator::Always),

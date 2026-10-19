@@ -107,7 +107,9 @@ lexical form is `"0"` or `[1-9][0-9]*`, with value at most
 Thus checked ordinal 0 becomes `"0"`, never `0`; the u64 maximum is
 lexically admissible only when that actual occurrence exists, while
 `"18446744073709551616"` refuses. The checker resolves this triple in the
-request's recompiled package, rederives its checked formula and rejects a
+request's recompiled package through FR-337's clause node (the node is the
+clause's emitted `temporal_clause` node, its `over` node the first
+argument's parameter node), rederives its checked formula and rejects a
 foreign occurrence. For the derived deadlock item, root is the closed
 alternative `["deadlock-freedom"]`, selecting the fixed formula below.
 `binding` is the ordered vector of `[parameter_node,typed_value]` for the
@@ -557,6 +559,28 @@ different materialization orders SHALL produce identical full octets.
 - The checker SHALL rebuild the item's property automaton with
   `qsl-eval`'s translation, and SHALL read nothing from the engine but the
   certificate.
+- If an `AutomatonStateKey` in a certificate state is admitted by no
+  instance's translation context (a listed admission negative; an item's
+  instances each have their own context), then the checker SHALL return
+  `Rejected` with `ShapeMismatch` at `ProductState` carrying that state's
+  refused key and model state.
+- The checker SHALL NOT use a refused key for membership, expansion or
+  acceptance, and one refused key SHALL reject the whole certificate however
+  many other states are valid.
+- When more than one state's key is refused, the checker SHALL report the
+  least refused `ProductStateRef`, ordered by the `model_state` digest
+  octets and then the `automaton_state` octets, ascending unsigned
+  lexicographic, so the locus does not depend on the order of `states`.
+- If the request's own clause root does not resolve in the recompiled
+  package (FR-337's `clause-root-unresolved`), then the checker SHALL refuse
+  the request without running the check, because that is a fault in the
+  request, not in the certificate; FR-127 settles it `Failed`. A key whose
+  context root differs from the request's is a foreign context and follows
+  the refused-key rule above.
+
+Note: a rejected certificate settles `inconclusive`, `CertificateRejected`
+(FR-127 V-6), never `proved`.
+
 - The checker SHALL reject with `InitialMissing` when an initial product
   state is not in the certificate.
 - Starting from the initial product states, the checker SHALL expand each
@@ -586,6 +610,7 @@ different materialization orders SHALL produce identical full octets.
 | FR-338-AC-5 | Each listed admission negative refuses before the key is used for membership; the same state under a different item/profile/activation is not admitted by the original context. | Test |
 | FR-338-AC-6 | `eventually[0,1] p` on origin with p false then true advances to accept, false then false to reject; the final counted-distance region and terminal false-extension give the evaluator's same result; zero-distance protocol steps read letters without reducing debts, open-upper until/release retain IV-2 prefix semantics; the non-progress lasso vectors distinguish starvation from actual counted progress without invented fairness, and on each retains an older unfulfilled activation after creating a new one; auxiliary exhaustion/cancellation returns typed Stopped with exact limit/value/setting/source and settles Incomplete rather than a certificate defect. | Test |
 | FR-338-AC-7 | Canonical keys retain past memory, general offset sets, shifts and Büchi acceptance facts; changing any fact affecting a future move changes the key, while common IV-3 subsumption produces one identical counter key. u64::MAX bounds and b+1 saturation remain exact, and a reached resource budget yields no truncated key. | Analysis |
+| FR-338-AC-8 | AC-1's certificate with one product state's key replaced in turn by each of three admission negatives (a foreign context, a non-canonical encoding, an unsorted set) is rejected `ShapeMismatch` at `ProductState` carrying that refused key and its model state, never `Accepted`, and settles `inconclusive`/`CertificateRejected`, not `proved`; the certificate with that state's valid key restored is accepted. With two states' keys refused, both orderings of `states` report the same, least refused `ProductStateRef`. A request whose clause root does not resolve is refused, not rejected, and settles `Failed`. | Test (TC-1080) |
 
 ## Dependencies
 

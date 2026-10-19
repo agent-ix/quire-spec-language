@@ -33,10 +33,11 @@ use qsl_semantics::check::{Activation, CheckedFormula, CheckedTemporalClause, Te
 use quire_exact::{Charge, ChargePoint, Incomplete, Meter};
 
 use super::input::TemporalTrace;
-use super::letters::{AtomReading, TemporalLetters, UndefinedCause};
+use super::letters::{AtomReading, LetterStop, TemporalLetters, UndefinedCause};
 use super::outcome::{TemporalOutcome, TemporalRefusal, UndefinedEvaluation};
 use super::plan::{fault, slot, Direction, Node, Plan, Scan, Window};
 use super::position::TemporalPosition;
+use super::window::{WindowLimitReached, WindowRefusal};
 
 /// The named point every visit charges, one work unit each. `quire-exact`
 /// names no temporal point; a node visit of the formula's position graph is
@@ -100,7 +101,20 @@ impl Tri {
 /// Why evaluation stopped before a value.
 enum Stop {
     Incomplete(Incomplete),
+    WindowLimit(WindowLimitReached),
+    Window(WindowRefusal),
     Fault(InternalFault),
+}
+
+impl From<LetterStop> for Stop {
+    fn from(stop: LetterStop) -> Self {
+        match stop {
+            LetterStop::Incomplete(incomplete) => Self::Incomplete(incomplete),
+            LetterStop::WindowLimit(limit) => Self::WindowLimit(limit),
+            LetterStop::Window(refusal) => Self::Window(refusal),
+            LetterStop::Fault(fault) => Self::Fault(fault),
+        }
+    }
 }
 
 impl From<Incomplete> for Stop {
@@ -283,6 +297,8 @@ pub(super) fn run<L: TemporalLetters>(
     match evaluation {
         Ok(outcome) => Ok(outcome),
         Err(Stop::Incomplete(incomplete)) => Ok(TemporalOutcome::Incomplete(incomplete)),
+        Err(Stop::WindowLimit(limit)) => Ok(TemporalOutcome::WindowLimitReached(limit)),
+        Err(Stop::Window(refusal)) => Err(TemporalRefusal::Window(refusal)),
         Err(Stop::Fault(internal)) => Err(TemporalRefusal::Fault(internal)),
     }
 }

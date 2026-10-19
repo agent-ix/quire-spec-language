@@ -61,7 +61,8 @@ fn function(form: &DeclarationForm) -> &FunctionDeclaration {
         | DeclarationForm::Terminal(_)
         | DeclarationForm::HyperBehaviours(_)
         | DeclarationForm::HyperFinite(_)
-        | DeclarationForm::ModelRelation(_) => panic!("a function form, not {form:?}"),
+        | DeclarationForm::ModelRelation(_)
+        | DeclarationForm::StateGraphClaim(_) => panic!("a function form, not {form:?}"),
     }
 }
 
@@ -208,6 +209,7 @@ fn a_unit_builds_one_form_per_declaration_in_source_order() {
             DeclarationForm::HyperBehaviours(_) => "hyper_behaviours",
             DeclarationForm::HyperFinite(_) => "hyper_finite",
             DeclarationForm::ModelRelation(_) => "model_relation",
+            DeclarationForm::StateGraphClaim(_) => "state-graph",
         })
         .collect();
     assert_eq!(kinds, ["alias", "function", "record", "tuple"]);

@@ -31,8 +31,8 @@ fn protocol(name: &str) -> String {
 fn unit(header: &str, declarations: &str) -> String {
     let fixture = spine_model_without(&[FIELD_ACCESS, CONFORMING_EQUALITY]);
     let fixture = fixture.replace(
-        "profile v = \"quire.value.complete/v1\";\n",
-        &format!("profile v = \"quire.value.complete/v1\";\n{header}"),
+        "profile v = \"quire.model.complete/v1\";\n",
+        &format!("profile v = \"quire.model.complete/v1\";\n{header}"),
     );
     format!("{fixture}{declarations}")
 }
@@ -70,7 +70,7 @@ fn rooted(root: &str, profile: bool, reference: bool) -> String {
     };
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
-         profile v = \"quire.value.complete/v1\";\n{profile}\
+         profile v = \"quire.model.complete/v1\";\n{profile}\
          model Config = \"example/config-version\" version \"1\" digest \
          \"sha256-jcs:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\";\n\
          {function}\

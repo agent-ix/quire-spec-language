@@ -20,6 +20,7 @@
 
 use std::collections::BTreeMap;
 
+use qsl_attrs::string_edge;
 use qsl_forms::{BinaryOperator, ExprNode, Expression, ExpressionSpans, StepLabelForm};
 use qsl_foundation::Span;
 use quire_exact::{EffectiveId, UnitId, ValueType};
@@ -488,7 +489,10 @@ enum Field {
     Passed,
 }
 
-/// The member `field` of a value of type `operand`.
+/// The member `field` of a value of type `operand`. `#[string_edge]`: an
+/// execution's reserved `self` and `result` members are read by their source
+/// spelling, which is the language's own canonical text.
+#[string_edge]
 fn field_type(env: &Env<'_>, operand: &Ty, field: &str) -> Field {
     let attribute = |object: EffectiveId| {
         env.scope
