@@ -25,10 +25,11 @@ use crate::certificate::closure::{
 use crate::execute::ReplayRefusal;
 use crate::model_check::counterexample::TemporalCounterexample;
 use crate::model_check::limits::{ModelCheckLimit, ModelCheckLimits, ReachedLimit};
-use crate::model_check::outcome::{ModelCheckOutcome, UndecidedCause};
+use crate::model_check::outcome::{ModelCheckOutcome, ReductionCause, UndecidedCause};
 use crate::model_check::replay::{ModelTraceReplayResult, ModelTraceSettlement};
 use crate::proof_result::{
     Certification, IncompleteCause, InconclusiveCause, ProofBasis, SettlementBasis, TerminalValue,
+    UnavailabilityCause,
 };
 
 /// The settlement method every EN-1 record states (FR-127).
@@ -157,6 +158,48 @@ pub fn settle_model_check(
                 })
             },
         ),
+        // ADR-021 RV-1: a reduced proof is its own technique, and a
+        // constraint-only proof explored the subject without a certificate.
+        ModelCheckOutcome::HoldsReduced { reductions, .. } => Row::proof(
+            if reductions.is_empty() {
+                ProofBasis::Exhaustive
+            } else {
+                ProofBasis::Reduced {
+                    reductions: reductions.clone(),
+                }
+            },
+            Certification::Uncertified,
+            SettlementBasis::ClosedScope,
+        ),
+        ModelCheckOutcome::Reduction { cause, .. } => match cause {
+            ReductionCause::Unsupported { reduction } => Row {
+                value: TerminalValue::Unsupported(UnavailabilityCause::UnsupportedReduction {
+                    reduction: *reduction,
+                }),
+                label: ResultLabel::Unsupported,
+                basis: SettlementBasis::Unavailable,
+                execution: Execution::Completed,
+                truth: Truth::Unavailable,
+                limit_reached: None,
+            },
+            ReductionCause::NotPreserving { reduction, form } => {
+                Row::inconclusive(InconclusiveCause::ReductionNotPreserving {
+                    reduction: *reduction,
+                    form: *form,
+                })
+            }
+            ReductionCause::SymmetryBroken { population, cause } => {
+                Row::inconclusive(InconclusiveCause::SymmetryBroken {
+                    population: population.clone(),
+                    cause: cause.clone(),
+                })
+            }
+            ReductionCause::ConstraintReached { boundary_states } => {
+                Row::inconclusive(InconclusiveCause::ConstraintReached {
+                    boundary_states: *boundary_states,
+                })
+            }
+        },
         ModelCheckOutcome::BoundReached { depth: reached, .. } => {
             depth = Some(*reached);
             Row::inconclusive(InconclusiveCause::BoundReached { depth: *reached })

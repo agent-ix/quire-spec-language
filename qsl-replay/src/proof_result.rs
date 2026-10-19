@@ -17,14 +17,16 @@ use crate::model_check::limits::ModelCheckLimit;
 use crate::model_check::state_graph::WitnessSource;
 use crate::result::{DisagreementCause, ReplayResult, WitnessSettlement};
 use crate::scalar::ScalarAgreement;
+use qsl_eval::simulation::{Permutation, SymmetryClass};
 use qsl_eval::temporal::TemporalOutcome;
 use qsl_foundation::diagnostic::{Category, Code};
 use qsl_foundation::BackendId;
 use qsl_foundation::RequestIndex;
+use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_contract_model::Std001Code;
 use quire_exact::CancelCause;
-use quire_semantic_value::fairness::FairnessConstraint;
+use quire_semantic_value::fairness::{FairnessConstraint, PropertyForm};
 use serde::Serialize;
 
 /// FR-127: how a proof established its claim, independently of certification.
@@ -76,6 +78,66 @@ pub enum ProofBasis {
     Witness {
         /// One source per initial state, in initial-state order.
         sources: Vec<WitnessSource>,
+    },
+    /// ADR-021 RV-1 (FR-160): a model check that completed with a reduction
+    /// applied and found no counterexample, a technique of its own and never
+    /// `Exhaustive`. Always paired with [`Certification::Uncertified`]: no
+    /// core checker covers a reduced graph.
+    Reduced {
+        /// Each applied reduction, in the order symmetry, partial-order.
+        reductions: Vec<AppliedReduction>,
+    },
+}
+
+/// One reduction a [`ProofBasis::Reduced`] proof applied (FR-160).
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "type", rename_all = "kebab-case")]
+pub enum AppliedReduction {
+    /// Symmetry: the run's group, the keys the checked instance stands for,
+    /// and the stabiliser it ran under.
+    Symmetry {
+        /// The run's group, class by class.
+        groups: Vec<SymmetryClass>,
+        /// Every key of the checked instance's orbit; empty for an item with
+        /// no `over` binding.
+        orbit: Vec<String>,
+        /// The group the instance ran under.
+        stabiliser: Vec<SymmetryClass>,
+    },
+}
+
+/// A reduction a request selects (FR-160 `ReductionKind`).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ReductionKind {
+    /// Symmetry over population universes.
+    Symmetry,
+    /// Partial-order reduction.
+    PartialOrder,
+    /// A state constraint.
+    StateConstraint,
+}
+
+impl ReductionKind {
+    /// The reduction's advertised spelling (FR-159 "Capability").
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Symmetry => "symmetry",
+            Self::PartialOrder => "partial-order",
+            Self::StateConstraint => "state-constraint",
+        }
+    }
+}
+
+/// Why a symmetry declaration does not admit its subject (FR-160).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SymmetryBrokenCause {
+    /// ADR-021 SYM-4: the generator maps the initial state with index
+    /// `initial` in the subject's list to no initial state.
+    InitialStatesNotClosed {
+        /// The initial state's index in the subject's list.
+        initial: u64,
+        /// The generator.
+        generator: Permutation,
     },
 }
 
@@ -231,6 +293,14 @@ pub enum UnavailabilityCause {
         /// The first constraint of the checked fairness set.
         constraint: FairnessConstraint,
     },
+    /// ADR-018 V-8, ADR-021 RV-6: the item selects a reduction its system
+    /// does not offer. Wire cause
+    /// `unsupported_projection`/`unsupported-requested-capability`.
+    UnsupportedReduction {
+        /// The first selected reduction, in the order symmetry,
+        /// partial-order, constraint, that is not offered.
+        reduction: ReductionKind,
+    },
 }
 
 impl UnavailabilityCause {
@@ -240,6 +310,7 @@ impl UnavailabilityCause {
             Self::SolverAbsent => "solver-absent",
             Self::BackendAbsent => "backend-absent",
             Self::MissingFairnessPremise { .. } => "missing-fairness-premise",
+            Self::UnsupportedReduction { .. } => "unsupported-requested-capability",
         }
     }
 
@@ -248,7 +319,9 @@ impl UnavailabilityCause {
     pub const fn code(&self) -> Option<&'static str> {
         match self {
             Self::SolverAbsent | Self::BackendAbsent => None,
-            Self::MissingFairnessPremise { .. } => Some("unsupported_projection"),
+            Self::MissingFairnessPremise { .. } | Self::UnsupportedReduction { .. } => {
+                Some("unsupported_projection")
+            }
         }
     }
 
@@ -337,6 +410,28 @@ pub enum InconclusiveCause {
         /// Each witness's source, in initial-state order.
         sources: Vec<WitnessSource>,
     },
+    /// ADR-021 RV-2: a selected reduction's preservation-table row reads
+    /// "no" for the claim's form.
+    ReductionNotPreserving {
+        /// The first selected reduction the table refuses.
+        reduction: ReductionKind,
+        /// The claim's property form.
+        form: PropertyForm,
+    },
+    /// ADR-021 RV-3: a symmetry declaration's initial states are not closed
+    /// under its group.
+    SymmetryBroken {
+        /// The declaration's population.
+        population: DeclarationKey,
+        /// Why.
+        cause: SymmetryBrokenCause,
+    },
+    /// ADR-021 RV-4: the run completed with no counterexample and reached
+    /// boundary states of its state constraint.
+    ConstraintReached {
+        /// The boundary states the run stored.
+        boundary_states: u64,
+    },
 }
 
 impl InconclusiveCause {
@@ -355,6 +450,9 @@ impl InconclusiveCause {
             Self::SolverInconclusive => "solver-inconclusive",
             Self::SufficientTestFailed => "sufficient-test-failed",
             Self::WellDefinednessUnchecked { .. } => "well-definedness-unchecked",
+            Self::ReductionNotPreserving { .. } => "reduction-not-preserving",
+            Self::SymmetryBroken { .. } => "symmetry-broken",
+            Self::ConstraintReached { .. } => "constraint-reached",
         }
     }
 
@@ -370,7 +468,26 @@ impl InconclusiveCause {
             | Self::SufficientTestFailed
             | Self::CertificateRejected { .. }
             | Self::SolverInconclusive
-            | Self::WellDefinednessUnchecked { .. } => 0,
+            | Self::ReductionNotPreserving { .. }
+            | Self::ConstraintReached { .. } => 0,
+            Self::SymmetryBroken { population, cause } => {
+                let SymmetryBrokenCause::InitialStatesNotClosed { generator, .. } = cause;
+                let moved: usize = generator
+                    .maps()
+                    .values()
+                    .map(|map| {
+                        map.iter()
+                            .map(|(from, to)| from.len().saturating_add(to.len()))
+                            .sum::<usize>()
+                    })
+                    .sum();
+                population
+                    .package
+                    .len()
+                    .saturating_add(population.node.len())
+                    .saturating_add(moved)
+            }
+            Self::WellDefinednessUnchecked { .. } => 0,
             Self::ReplayParity(cause) => cause.measured_bytes(),
             Self::ReplayRefused(_) => 0,
             Self::ScalarAgrees(agreement) => agreement.measured_bytes(),
@@ -478,7 +595,8 @@ impl TerminalValue {
                     | ProofBasis::Inductive { .. }
                     | ProofBasis::ClosedForm { .. }
                     | ProofBasis::BoundedSolver { .. }
-                    | ProofBasis::Witness { .. },
+                    | ProofBasis::Witness { .. }
+                    | ProofBasis::Reduced { .. },
                 ..
             }
             | Self::Tested => Category::Success,

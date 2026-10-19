@@ -123,6 +123,11 @@ pub struct ModelTrace {
 
 - `ModelSystem::new` returns the system or FR-106's `AdmissionFailure`
   (`Refused` or `Incomplete`, one record).
+- `ModelSystem::over_model` builds the system of one model of a refinement
+  unit (ADR-020 RM-1) and SHALL refuse a model that the unit does not select
+  with `invalid_runtime_input`/`wrong-role-mapping`. A `ModelSystem` reports
+  the model it is over, so a caller can check that it holds the system it
+  meant to (FR-140).
 - `explore_model` is FR-101's `explore_request` over the system, its
   `domains()` and the package's `TypeEnvironment`. `sample_model` is FR-101's
   `sample_request` over the same inputs, followed by `replay` of the sampled
@@ -551,6 +556,7 @@ identity text of operation `op`.
 | FR-120-AC-11 | For `increment` (post `Inc`), `spawn` and `remove` over `s0` and state `w` = {`c1` (`value` 0), `c2` (`value` 0)}: the step `increment` from `v0` has effect `created: []`, `deleted: []`, `changed: [{object: c1, field: value, pre: {"type":"integer","value":"0"}, post: {"type":"integer","value":"1"}}]`, result none; `spawn` from `s0` to `s0` plus `c2` (`value` 1, `label` 0, `next` absent) has `created: [<c2>]` and `changed: []`; `remove` with receiver `c1` from `w` to {`c2`} has `deleted: [<c1>]`. Exploring the AC-5 package twice, the second time in a child process started in an empty temporary directory, gives equal `Exploration`s, and `s0`'s key bytes are equal before and after exploring. | Test (TC-473) |
 | FR-120-AC-12 | A unit whose function body reads `self`, whose invariant reads `result`, whose invariant reads `pre(self.value)`, or whose function calls `reaches`, refuses at S3 with `missing_declaration`/`missing-name`, `wrong_snapshot`/`wrong-anchor`, `wrong_snapshot`/`forbidden-pre-read` or `ill_typed`/`operator-ineligible`, each at the source span of that form, and yields no `CheckedPackage` to simulate. | Test (TC-473) |
 | FR-120-AC-13 | With `spawn()` over a population whose universe has 30 unused keys and each created object's fields ranging over `Int[0, 2]`, `Int[0, 1]` and `Option<Reference<Counter>>`, so the candidate product exceeds 10^9, and `max_candidates` 10, exploration returns `Outcome::Stopped` with `resource_exhausted`/`insufficient-next-charge` after generating at most 11 candidates, and does not allocate the product. | Test (TC-472) |
+| FR-120-AC-14 | `ModelSystem::over_model` over a model identity that the refinement unit does not select (`example/not-selected`) refuses `invalid_runtime_input`/`wrong-role-mapping`; over each of the unit's two selected models it returns a system that reports that model. | Test (TC-1086) |
 
 ## Dependencies
 
