@@ -91,7 +91,9 @@ pub fn replay_sampled_witness(
   `invalid-value`.
 - It SHALL recompute each choice with FR-188's `weighted_choice` from the
   seed, the trace index, the step and the choice index, and check that it
-  selects the recorded operation, scheduled identity and values.
+  selects the recorded operation, scheduled identity and values; a
+  `TotalAboveDrawRange` from `weighted_choice` SHALL refuse with
+  `invalid_runtime_input`/`invalid-value`, since no sample takes such a step.
 - It SHALL recompute the path probability exactly and compare it with the
   recorded one.
 - For an `Undefined` witness, the replayed value SHALL be the first

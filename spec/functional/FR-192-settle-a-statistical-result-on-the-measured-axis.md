@@ -68,7 +68,7 @@ pub struct StatisticalBasis {
     pub coverage: Coverage,
 }
 pub enum Coverage { FiniteSample, Asymptotic }
-// UnsupportedCause gains: NotMarkov{…}, EveryScheduler, MissingConfidence, ExactOnlyForm
+// UnsupportedCause gains: NotMarkov{…}, TotalAboveDrawRange{total}, EveryScheduler, MissingConfidence, ExactOnlyForm
 ```
 
 ## Behavior
