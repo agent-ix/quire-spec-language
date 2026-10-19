@@ -416,7 +416,13 @@ pub fn check_model(
         }),
         Err(Halt::Finish(Finish::Violated(violation))) => {
             let Violation { kind, at, binding } = *violation;
-            let counterexample = run.counterexample(kind, at, binding)?;
+            // Under the trivial group the path is already concrete, so no
+            // expansion runs that could stop.
+            let counterexample = match run.counterexample(kind, at, binding) {
+                Ok(counterexample) => counterexample,
+                Err(Halt::Refusal(refusal)) => return Err(refusal),
+                Err(Halt::Finish(_)) => return Err(fault("an-unreduced-path-is-concrete")),
+            };
             Ok(ModelCheckOutcome::Violated {
                 counterexample: Box::new(counterexample),
                 stats: run.stats(),
@@ -593,11 +599,31 @@ fn check_reduced(
             }
             Err(Halt::Finish(Finish::Violated(violation))) => {
                 let Violation { kind, at, binding } = *violation;
-                let counterexample = run.counterexample(kind, at, binding)?;
-                return Ok(ModelCheckOutcome::Violated {
-                    counterexample: Box::new(counterexample),
-                    stats: total,
-                });
+                // FR-161 "Length and limits": a stop while concretising
+                // settles V-7.
+                return match run.counterexample(kind, at, binding) {
+                    Ok(counterexample) => Ok(ModelCheckOutcome::Violated {
+                        counterexample: Box::new(counterexample),
+                        stats: total,
+                    }),
+                    Err(Halt::Finish(Finish::Stopped(cause, limit))) => {
+                        Ok(ModelCheckOutcome::Stopped {
+                            cause,
+                            limit,
+                            stats: total,
+                        })
+                    }
+                    Err(Halt::Finish(Finish::Undecided(cause))) => {
+                        Ok(ModelCheckOutcome::Undecided {
+                            cause,
+                            stats: total,
+                        })
+                    }
+                    Err(Halt::Finish(Finish::Violated(_))) => {
+                        Err(fault("a-concretised-path-ends-once"))
+                    }
+                    Err(Halt::Refusal(refusal)) => Err(refusal),
+                };
             }
         }
     }
@@ -1227,7 +1253,7 @@ impl Run<'_, '_> {
         mut kind: CounterexampleKind,
         at: usize,
         over_binding: Option<ModelInstance>,
-    ) -> Result<TemporalCounterexample, ModelCheckRefusal> {
+    ) -> Step<TemporalCounterexample> {
         let mut path = vec![at];
         let mut cursor = at;
         while let Some((parent, _)) = &self.nodes[cursor].parent {
@@ -1275,7 +1301,7 @@ impl Run<'_, '_> {
         &self,
         path: &[usize],
         kind: &mut CounterexampleKind,
-    ) -> Result<Vec<ModelStep>, ModelCheckRefusal> {
+    ) -> Step<Vec<ModelStep>> {
         let first = &self.nodes[*path.first().ok_or_else(|| fault("a-path-has-a-root"))?];
         let mut sigma = first.permutation.inverse();
         let mut concrete = self.system.permute(&first.state, &sigma);
@@ -1297,7 +1323,7 @@ impl Run<'_, '_> {
             let expansion = self
                 .system
                 .successors(&concrete)
-                .map_err(|_| fault("a-concrete-state-expands"))?;
+                .map_err(|stop| self.expansion_stop(stop))?;
             let mut matched = false;
             for (candidate, state) in &expansion.successors {
                 if *candidate == step && self.system.state_key(state)?.1 == next_digest {
@@ -1306,7 +1332,7 @@ impl Run<'_, '_> {
                 }
             }
             if !matched {
-                return Err(fault("a-concretised-step-is-a-subject-step"));
+                return Err(fault("a-concretised-step-is-a-subject-step").into());
             }
             prefix.push(ModelStep {
                 transition: step,

@@ -23,13 +23,18 @@ use qsl_eval::simulation::TransitionSystem;
 use qsl_eval::temporal::{AtomReading, UndefinedCause};
 use qsl_foundation::SourceIdentity;
 use qsl_package::CheckedPackage;
-use qsl_replay::{ModelCheckItem, ModelCheckLimits, ModelCheckOutcome, TemporalCounterexample};
+use qsl_replay::{
+    compile_package, deadlock_freedom_clause, replay_model_trace, DependencyInput, DigestDomain,
+    DigestRecord, ModelCheckItem, ModelCheckLimits, ModelCheckOutcome, ModelTraceSettlement,
+    ModelTraceSubject, QualifiedName, ReplayLimits, ReplayRequestWire, ReplaySource,
+    StateEnvironment, TemporalCounterexample, Witness, WitnessEnvelope, WitnessPacket,
+};
 use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId, PackageDeclarations};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
 use qsl_semantics::model::key::{hex, DeclarationKey};
 use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
-use quire_exact::{Cancel, Incomplete, Meter, Value};
+use quire_exact::{Cancel, Identifier, Incomplete, Meter, Value};
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
 
@@ -196,6 +201,8 @@ pub(crate) struct World {
     /// The universe of `counters`; `None` gives the subject no universe.
     pub(crate) keys: Option<Vec<String>>,
     digest: [u8; 32],
+    document: Vec<u8>,
+    text: String,
 }
 
 impl World {
@@ -285,6 +292,8 @@ impl World {
             initial: Vec::new(),
             keys: Some(keys.iter().map(|key| (*key).to_owned()).collect()),
             digest,
+            document,
+            text,
         };
         for (index, objects) in starts.iter().enumerate() {
             let start = world.snapshot(&format!("s{index}"), objects);
@@ -408,6 +417,140 @@ impl World {
             states.push(current.clone());
         }
         states
+    }
+}
+
+const AUTHORITY: &str = "agent-ix";
+const IDENTITY: &str = "reduction";
+
+fn source_digest(bytes: &[u8]) -> DigestRecord {
+    DigestRecord::mint(
+        DigestDomain::SourceBytesV1,
+        qsl_foundation::ByteDigest::of(bytes).as_bytes(),
+    )
+}
+
+type SourceWire = (String, String, String, String, Option<String>, String);
+
+fn source_wire(bytes: &[u8]) -> SourceWire {
+    (
+        AUTHORITY.to_owned(),
+        IDENTITY.to_owned(),
+        "git".to_owned(),
+        "1".to_owned(),
+        Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
+        source_digest(bytes).hex(),
+    )
+}
+
+fn witness_source() -> ReplaySource {
+    ReplaySource::Witness(
+        Witness::parse("<<<assertion|model_check|deadlock|>>>").expect("a transcript"),
+    )
+}
+
+fn selected() -> QualifiedName {
+    QualifiedName::new(vec![Identifier::new("Noop").expect("an identifier")]).expect("a name")
+}
+
+impl World {
+    /// FR-128: replay `payload`, a deadlock-freedom counterexample, through
+    /// `replay_model_trace`: the unit is recompiled from its source bytes and
+    /// the subject re-admitted from the byte provision.
+    pub(crate) fn replay(&self, payload: TemporalCounterexample) -> ModelTraceSettlement {
+        let unit = self.text.as_bytes();
+        let package_id = compile_package(
+            SourceIdentity::new(AUTHORITY, IDENTITY, "git", "1"),
+            "reduction.native",
+            unit,
+            [self.document.as_slice()],
+            &DependencyInput::default(),
+            qsl_replay::StageLimits::default(),
+            ReplayLimits::default(),
+        )
+        .expect("the unit compiles")
+        .package_id();
+        let sha256_jcs = |digest: &[u8; 32]| {
+            (
+                Some(DigestDomain::Sha256Jcs.as_str().to_owned()),
+                DigestRecord::mint(DigestDomain::Sha256Jcs, *digest).hex(),
+            )
+        };
+        let mut byte_provision = vec![
+            (
+                Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
+                source_digest(unit).hex(),
+                unit.to_vec(),
+            ),
+            {
+                let (domain, hex) = sha256_jcs(&self.digest);
+                (domain, hex, self.document.clone())
+            },
+        ];
+        for (digest, bytes) in &self.snapshots {
+            let (domain, hex) = sha256_jcs(digest);
+            byte_provision.push((domain, hex, bytes.clone()));
+        }
+        let wire = ReplayRequestWire {
+            profile_selections: Vec::new(),
+            package_id: (
+                Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
+                package_id.hex(),
+            ),
+            source_digests: vec![source_wire(unit)],
+            dependencies: Vec::new(),
+            selected_function: selected(),
+            source: witness_source(),
+            obligation_identity: [3; 32],
+            backend: "qsl-en-1".to_owned(),
+            state_environment: StateEnvironment::new(Vec::new()),
+            accounting_limits: UNLIMITED,
+            stage_limits: BTreeMap::new(),
+            supplied_limits: None,
+            object_environment: None,
+            declared_domains: Vec::new(),
+            byte_provision,
+        };
+        let (node, occurrence) = deadlock_freedom_clause(&package_id);
+        let envelope = WitnessEnvelope::reconstruct(
+            WitnessPacket {
+                obligation_identity: Some([3; 32]),
+                occurrence_key: Some(occurrence),
+                clause_node: Some(node),
+                selected_function: Some(selected()),
+                package_id: Some((
+                    Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
+                    package_id.hex(),
+                )),
+                source_digests: Some(vec![source_wire(unit)]),
+                profile_selections: Some(Vec::new()),
+                run_limits: Some(UNLIMITED),
+                declared_domains: Some(Vec::new()),
+                backend: Some("qsl-en-1".to_owned()),
+                trace_position: Some(None),
+                source: Some(witness_source()),
+                family_payload: Some(payload),
+            },
+            ReplayLimits::default(),
+        )
+        .expect("a complete packet reconstructs");
+        let subject = ModelTraceSubject {
+            initial: self.initial.clone(),
+            universes: self
+                .keys
+                .iter()
+                .map(|keys| PopulationUniverse {
+                    population: counters(),
+                    keys: keys.clone(),
+                })
+                .collect(),
+            expansion: ExpansionLimits {
+                max_candidates: 1_000_000,
+            },
+        };
+        replay_model_trace(wire, &subject, &envelope, ReplayLimits::default())
+            .expect("the counterexample replays")
+            .settlement
     }
 }
 

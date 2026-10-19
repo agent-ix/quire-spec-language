@@ -27,7 +27,8 @@ use qsl_foundation::diagnostic::Category;
 use qsl_replay::{
     settle_model_check, AppliedReduction, CertificateRequest, Certification, CounterexampleKind,
     DigestDomain, DigestRecord, IncompleteCause, InconclusiveCause, ModelCheckItem,
-    ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ProofBasis, ReachedLimit, ReductionCause,
+    ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ModelTraceSettlement, ModelTraceValue,
+    ProofBasis, ReachedLimit, ReductionCause,
     ReductionKind, ResultLabel, RunStats, SettlementBasis, SymmetryBrokenCause, TerminalValue,
     UndefinedLocus,
 };
@@ -1149,7 +1150,8 @@ fn an_undefined_evaluation_on_a_reduced_run_refutes_with_a_concrete_prefix() {
 /// deadlock-freedom item of counters that stop at 2 under `[[a, b, c]]`
 /// reaches its deadlock through canonical states, and the concretised
 /// prefix is a path of the subject, six steps from `(0,0,0)` to
-/// `(2,2,2)`, whose recorded digests and transitions re-execute.
+/// `(2,2,2)`, whose recorded digests and transitions re-execute, and which
+/// FR-128's `replay_model_trace` reproduces with no reduction.
 #[test]
 fn a_reduced_prefix_concretises_to_a_subject_path() {
     let stop = "pre Below using v on M::Counter::bump { self.v < 2 }\n\
@@ -1161,6 +1163,13 @@ fn a_reduced_prefix_concretises_to_a_subject_path() {
     assert_eq!(states.len(), 7);
     assert_eq!(states.first(), Some(&(0, 0, 0)));
     assert_eq!(states.last(), Some(&(2, 2, 2)));
+    assert_eq!(
+        world.replay(violation(&reduced).clone()),
+        ModelTraceSettlement::Reproduced {
+            value: ModelTraceValue::Truth(false),
+            trace_position: None,
+        }
+    );
     let unreduced = run(&world, None, Vec::new(), Reductions::default());
     assert_eq!(violation(&unreduced).prefix.len(), 6);
     assert!(reduced.stats().product_states < unreduced.stats().product_states);

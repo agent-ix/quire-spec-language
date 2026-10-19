@@ -163,6 +163,7 @@ impl ModelSystem<'_> {
             return universes;
         };
         for member in &declared.member_types {
+            // A reference's universe is its type's; any key names it.
             if let Ok(reference) = self.model.object_reference(member, "k") {
                 if !universes.contains(&reference.universe()) {
                     universes.push(reference.universe());
