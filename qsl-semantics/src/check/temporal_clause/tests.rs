@@ -367,47 +367,94 @@ fn an_unresolved_over_type_refuses_at_the_type() {
     assert_eq!(cause.span(), first(&text, "Missing"));
 }
 
-/// FR-326: a clause that checks is still refused by `check` itself until
-/// FR-337 emits it, as `unsupported_construct`/`not-yet-implemented`, and
-/// a clause that does not check reports its own refusal instead.
+/// The one temporal refusal `text`'s package check gives.
+fn package_refusal(text: &str) -> TemporalCause {
+    let refusals = assemble(text)
+        .check(CheckingLimits::default())
+        .expect_err("the clause is refused");
+    let [CheckRefusal {
+        cause: CheckCause::Temporal(cause),
+        ..
+    }] = refusals.as_slice()
+    else {
+        panic!("one temporal refusal: {refusals:?}");
+    };
+    (**cause).clone()
+}
+
+/// FR-326, FR-337: a clause that activates `on origin` and declares no
+/// capture checks and compiles into the package; one that activates `on
+/// each`, or declares a capture, checks but no S4 emission writes it, so
+/// `check` refuses it as `unsupported_construct`/`not-yet-implemented` at
+/// the clause; a clause that does not check reports its own refusal.
 #[trace("FR-326")]
 #[test]
-fn the_package_check_refuses_a_clause_no_emission_writes_yet() {
-    let package = assemble(&source(
+fn the_package_check_refuses_a_clause_no_emission_writes() {
+    let graph = assemble(&source(
         &[INFINITE],
         "Counter",
         "eventually holds(c.level = 3)",
+    ))
+    .check(CheckingLimits::default())
+    .expect("an `on origin` clause compiles");
+    let [clause] = graph.temporal_clauses() else {
+        panic!("one emitted clause");
+    };
+    assert_eq!(clause.clause().name(), "C");
+
+    let origin = source(&[INFINITE], "Counter", "eventually holds(c.level = 3)");
+    let each = origin.replace("on origin", "on each (d: Counter) when (d.level = 1)");
+    let captured = origin.replace(
+        "{ eventually",
+        "{ capture before: Int[0, 9] = c.level; eventually",
+    );
+    for text in [each, captured] {
+        let cause = package_refusal(&text);
+        assert!(
+            matches!(cause, TemporalCause::NotEmitted { .. }),
+            "{cause:?}"
+        );
+        assert_eq!(cause.code(), Code::UnsupportedConstruct);
+        assert_eq!(cause.tag(), "not-yet-implemented");
+        assert_eq!(cause.span().start, text.find("temporal C").expect("clause"));
+    }
+
+    let bounded = source(&[EVENT], "Counter", "eventually holds(c.level = 3)");
+    assert!(matches!(
+        package_refusal(&bounded),
+        TemporalCause::MissingInterval { .. }
     ));
-    let text = source(&[INFINITE], "Counter", "eventually holds(c.level = 3)");
+}
+
+/// FR-337: a `holds` condition is typed over the clause's `over` parameter
+/// as a Boolean: a condition naming no binding refuses at its own source,
+/// and a non-Boolean condition refuses as a non-Boolean root.
+#[trace("FR-337")]
+#[test]
+fn a_holds_condition_is_typed_over_the_over_parameter() {
+    let text = source(&[INFINITE], "Counter", "eventually holds(d.level = 3)");
+    let package = assemble(&text);
+    let regions = package.regions();
     let refusals = package
         .check(CheckingLimits::default())
-        .expect_err("a temporal clause is not emitted yet");
-    let [CheckRefusal {
-        cause: CheckCause::Temporal(cause),
-        ..
-    }] = refusals.as_slice()
-    else {
-        panic!("one temporal refusal: {refusals:?}");
+        .expect_err("an unbound name is refused");
+    let [refusal] = refusals.as_slice() else {
+        panic!("one refusal: {refusals:?}");
     };
-    assert!(matches!(**cause, TemporalCause::NotEmitted { .. }));
-    assert_eq!(cause.code(), Code::UnsupportedConstruct);
-    assert_eq!(cause.tag(), "not-yet-implemented");
-    assert_eq!(cause.span().start, text.find("temporal C").expect("clause"));
+    assert!(
+        matches!(&refusal.cause, CheckCause::MissingName(name) if name == "d"),
+        "{refusal:?}"
+    );
+    let region = regions.refusal_region(refusal).expect("a located refusal");
+    let at = text.find("d.level").expect("the read");
+    assert_eq!(region.start(), u64::try_from(at).unwrap());
 
-    let bounded = assemble(&source(
-        &[EVENT],
-        "Counter",
-        "eventually holds(c.level = 3)",
-    ));
-    let refusals = bounded
+    let text = source(&[INFINITE], "Counter", "eventually holds(c.level)");
+    let refusals = assemble(&text)
         .check(CheckingLimits::default())
-        .expect_err("a bare operator is refused");
-    let [CheckRefusal {
-        cause: CheckCause::Temporal(cause),
-        ..
-    }] = refusals.as_slice()
-    else {
-        panic!("one temporal refusal: {refusals:?}");
+        .expect_err("a non-Boolean condition is refused");
+    let [refusal] = refusals.as_slice() else {
+        panic!("one refusal: {refusals:?}");
     };
-    assert!(matches!(**cause, TemporalCause::MissingInterval { .. }));
+    assert_eq!(refusal.cause, CheckCause::NonBooleanRoot, "{refusal:?}");
 }

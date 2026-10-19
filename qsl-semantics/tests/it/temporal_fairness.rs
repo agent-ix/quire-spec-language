@@ -3,8 +3,9 @@
 //! constraints, interval operators and property forms, over TC-458's
 //! `ConfigVersion` fixture package (`crate::model_operations`).
 //!
-//! `holds` conditions are not checked at S3, so the atoms read
-//! `c.versionNumber` and `c.healthy` as text only.
+//! The family check does not type `holds` conditions (the package check
+//! does, FR-337), so the atoms read `c.versionNumber` and `c.healthy` as
+//! text only here; [`node_identity`] runs the whole package check.
 
 use ix_trace_rs::trace;
 use qsl_foundation::bound::{DomainKind, TemporalInterval, TemporalUpper};
@@ -69,6 +70,24 @@ fn check_in(document: &[u8], profile: &str, over: &str, body: &str) -> (String, 
     (text, outcome)
 }
 
+/// The node identity of the one clause `C` with `body`, under the
+/// infinite-trace profile, through the whole package check (FR-337).
+fn node_identity(body: &str) -> quire_exact::NodeKey {
+    let package = admit_and_assemble_with_profiles(
+        &config_version(),
+        &profile_header(INFINITE),
+        &clause_body(CONFIG_VERSION, body),
+    )
+    .unwrap_or_else(|refusal| panic!("{body}: the unit assembles: {refusal:?}"));
+    let graph = package
+        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("{body}: the package checks: {refusals:?}"));
+    let [clause] = graph.temporal_clauses() else {
+        panic!("{body}: one emitted clause");
+    };
+    clause.identity()
+}
+
 fn checked(profile: &str, body: &str) -> (String, CheckedTemporalClause) {
     match check_in(&config_version(), profile, CONFIG_VERSION, body) {
         (text, Ok(clause)) => (text, clause),
@@ -112,13 +131,13 @@ fn only_constraint(clause: &CheckedTemporalClause) -> &FairnessConstraint {
 
 const EVENTUALLY_TWO: &str = "always eventually holds(c.versionNumber = 2)";
 
-/// Verifies the fairness-set half of FR-123-AC-1 (the node-identity half
-/// needs S4 emission and is not tested): a weak constraint written with no granularity and one
-/// written `whole` check to equal sets with granularity `Whole`; one written
-/// `each` checks to `Each`; the operation is read as `Model::Type::op` or,
-/// written alone, in the view of the clause's `over` type, and resolves to
-/// the declaring type's identity.
-#[trace("TC-518")]
+/// FR-123-AC-1: a weak constraint written with no granularity and one
+/// written `whole` check to equal sets with granularity `Whole` and give the
+/// clause one node identity; one written `each` checks to `Each` and gives
+/// it a different node identity; the operation is read as
+/// `Model::Type::op` or, written alone, in the view of the clause's `over`
+/// type, and resolves to the declaring type's identity.
+#[trace("TC-518", "FR-123-AC-1")]
 #[test]
 fn an_unmarked_granularity_checks_as_whole_and_each_differs() {
     let fair = |written: &str| {
@@ -150,13 +169,17 @@ fn an_unmarked_granularity_checks_as_whole_and_each_differs() {
     )
     .1;
     assert_eq!(alone.fairness(), unmarked.fairness());
+
+    let identity =
+        |written: &str| node_identity(&format!("fair {written}{ATTEMPT_UPDATE}; {EVENTUALLY_TWO}"));
+    assert_eq!(identity("weak "), identity("weak whole "));
+    assert_ne!(identity("weak whole "), identity("weak each "));
 }
 
-/// Verifies the distinct-constraint half of FR-123-AC-1 (not node identity):
-/// same-named operations declared by two distinct model types
+/// FR-123-AC-1: same-named operations declared by two distinct model types
 /// check to distinct constraints with distinct declaring-type identities; an
 /// operation both of two unrelated supertypes declare is ambiguous.
-#[trace("TC-518")]
+#[trace("TC-518", "FR-123-AC-1")]
 #[test]
 fn same_named_operations_of_different_types_stay_distinct() {
     let document = ambiguous_operation_document();
