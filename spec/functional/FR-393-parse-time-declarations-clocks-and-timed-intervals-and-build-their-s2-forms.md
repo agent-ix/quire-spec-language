@@ -1,5 +1,5 @@
 ---
-id: FR-392
+id: FR-393
 title: "Parse time declarations, Clock fields, quantity literals and timed intervals, and build their S2 forms"
 type: FR
 relationships:
@@ -20,7 +20,7 @@ relationships:
   - target: ix://agent-ix/quire-specification/FR-142
     type: depends_on
 ---
-# FR-392: Parse time declarations, Clock fields, quantity literals and timed intervals, and build their S2 forms
+# FR-393: Parse time declarations, Clock fields, quantity literals and timed intervals, and build their S2 forms
 
 ## Description
 
@@ -115,10 +115,10 @@ pub struct TimedIntervalForm {          // timed-interval
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-392-AC-1 | ADR-026 §11's `Rpc` unit, written in the shared grammar's productions, builds one `TimeSourceForm` (`Dense`, unit `ms`), one `TimeInvariantForm` per `time invariant` with its `when` expression and clock bounds in declared order, one `UrgentForm` for `urgent timeout;`, and a `Clock`-typed field; every form carries the span of its source text. A `time tick send period 1/2 ms unit ms;` builds `Tick{send, 1/2 ms}`. | Test (TC-1077) |
-| FR-392-AC-2 | A unit whose declaration begins `time` then `invariant`, `time` then anything else, or `urgent` dispatches to `time_invariant`, `time_decl` or `urgent_decl` respectively, and to no other production. | Test (TC-1077) |
-| FR-392-AC-3 | `eventually[0 ms, 3 ms) holds(p)`, `once(1 ms, 2 ms] holds(p)` and `always (holds(p))` parse; the first two hold `TimedIntervalForm` values with `(lower_closed, upper_closed)` of `(true, false)` and `(false, true)`, magnitudes `0`, `3`, `1`, `2` and unit `ms`, and `interval: None`; the third holds neither interval. `eventually[0, 3] holds(p)` still holds FR-325's `interval` and `timed_interval: None`. | Test (TC-1077) |
-| FR-392-AC-4 | `eventually[0 s, 0.003 s]` builds an upper magnitude of `3/1000`; `(2 ms, 2 ms]`, `[3 ms, 2 ms]` and a second `time` declaration all build at S2 and are refused only at S3 (FR-234-AC-2, FR-230-AC-2). `eventually[0 ms, x] holds(p)` fails at S1 with a parse diagnostic at `x`'s span and builds no form. | Test (TC-1077) |
+| FR-393-AC-1 | ADR-026 §11's `Rpc` unit, written in the shared grammar's productions, builds one `TimeSourceForm` (`Dense`, unit `ms`), one `TimeInvariantForm` per `time invariant` with its `when` expression and clock bounds in declared order, one `UrgentForm` for `urgent timeout;`, and a `Clock`-typed field; every form carries the span of its source text. A `time tick send period 1/2 ms unit ms;` builds `Tick{send, 1/2 ms}`. | Test (TC-1078) |
+| FR-393-AC-2 | A unit whose declaration begins `time` then `invariant`, `time` then anything else, or `urgent` dispatches to `time_invariant`, `time_decl` or `urgent_decl` respectively, and to no other production. | Test (TC-1078) |
+| FR-393-AC-3 | `eventually[0 ms, 3 ms) holds(p)`, `once(1 ms, 2 ms] holds(p)` and `always (holds(p))` parse; the first two hold `TimedIntervalForm` values with `(lower_closed, upper_closed)` of `(true, false)` and `(false, true)`, magnitudes `0`, `3`, `1`, `2` and unit `ms`, and `interval: None`; the third holds neither interval. `eventually[0, 3] holds(p)` still holds FR-325's `interval` and `timed_interval: None`. | Test (TC-1078) |
+| FR-393-AC-4 | `eventually[0 s, 0.003 s]` builds an upper magnitude of `3/1000`; `(2 ms, 2 ms]`, `[3 ms, 2 ms]` and a second `time` declaration all build at S2 and are refused only at S3 (FR-234-AC-2, FR-230-AC-2). `eventually[0 ms, x] holds(p)` fails at S1 with a parse diagnostic at `x`'s span and builds no form. | Test (TC-1078) |
 
 ## Dependencies
 
