@@ -660,6 +660,45 @@ fn a_clause_with_no_instance_is_never_certified() {
     ));
 }
 
+/// FR-125-AC-7 and FR-127 (QSpec FR-361-AC-8, TC-294, cited only): a clause
+/// whose empty universe gives it zero instances settles `inconclusive` with
+/// the wire cause `no-instance` and basis `unsettled`, never `proved` or
+/// `refuted`. The instances come from `Letters.bindings`; deriving them from
+/// the subject's universes is not covered here.
+#[trace("TC-520", "FR-125-AC-7")]
+#[test]
+fn a_clause_with_no_instance_settles_inconclusive_never_proved_or_refuted() {
+    let world = world(CONTRACT, &[("c", 0)]);
+    let mut invariant = world.invariant("always holds(c.value <= 3)", |v| Some(v <= 3));
+    invariant.letters.bindings.clear();
+    let outcome = world.run(invariant.item());
+    assert!(matches!(
+        outcome,
+        ModelCheckOutcome::Undecided {
+            cause: UndecidedCause::NoInstance,
+            stats,
+        } if stats.product_states == 0
+    ));
+    let request = world.request(invariant.item(), UNLIMITED);
+    let record = settle_model_check(
+        &outcome,
+        &ModelCheckLimits::default(),
+        &world.package_id(),
+        &request,
+        &Cancel::new(),
+        |_| panic!("no instance replays nothing"),
+    );
+    assert_eq!(
+        record.value,
+        TerminalValue::Inconclusive(InconclusiveCause::NoInstance)
+    );
+    assert_eq!(InconclusiveCause::NoInstance.as_str(), "no-instance");
+    assert_eq!(record.label, ResultLabel::Inconclusive);
+    assert_eq!(record.basis, SettlementBasis::Unsettled);
+    assert_eq!(record.execution, Execution::Completed);
+    assert!(record.counterexample.is_none());
+}
+
 /// ADR-016 EX-10: a subject with no initial state examines no behaviour, so
 /// the checker refuses it and an empty certificate offered with a `Holds`
 /// settles `inconclusive`, `NoInitialState`, never `Certified`.

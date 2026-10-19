@@ -518,7 +518,7 @@ fn settle(case: &Case, outcome: &ModelCheckOutcome) -> qsl_replay::ModelCheckRec
 /// `Incomplete(LimitReached{MaxStates, 2})` naming `max_states`; a
 /// cancelled run keeps its source. Every record states method
 /// `explicit-state` and the three limits used.
-#[trace("TC-522")]
+#[trace("TC-522", "FR-127-AC-1")]
 #[test]
 fn each_outcome_settles_its_row_of_the_map() {
     let case = case(CONTRACT, &[0]);

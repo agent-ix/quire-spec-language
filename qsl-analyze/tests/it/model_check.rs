@@ -697,6 +697,82 @@ fn an_empty_or_unbounded_subject_and_an_undecided_form_explore_nothing() {
     );
 }
 
+/// FR-125-AC-4 and AC-7 (QSpec FR-361-AC-8, TC-294, cited only): a clause
+/// with zero instances is `Undecided(NoInstance)` before any state is
+/// explored; the same clause over a population with no universe is refused
+/// `RequiresBound`, never `NoInstance`; a subject with no initial state is
+/// `NoInitialState`.
+#[trace("TC-520", "FR-125-AC-7")]
+#[test]
+fn zero_instances_report_no_instance_after_the_requires_bound_pre_check() {
+    let world = self::world("", &[&[("c", 0)]]);
+    let clause = clause(&world.documents.document, "", "always holds(c.value <= 3)");
+    let empty = letters(&world, &[], |_| Some(true));
+    let ident = identity();
+    let item = || ModelCheckItem::Clause {
+        clause: &clause,
+        letters: &empty,
+        identity: &ident,
+    };
+    let outcome = run(
+        &world,
+        &["c"],
+        item(),
+        None,
+        ModelCheckLimits::default(),
+        UNLIMITED,
+    )
+    .expect("checked");
+    assert!(matches!(
+        outcome,
+        ModelCheckOutcome::Undecided {
+            cause: UndecidedCause::NoInstance,
+            stats,
+        } if stats.product_states == 0
+    ));
+
+    let mut no_universe = subject(
+        &world.package,
+        &world.documents,
+        world.initial.clone(),
+        &["c"],
+        UNLIMITED,
+    );
+    no_universe.simulation.universes = Vec::new();
+    let refusal = check_model(
+        ModelCheckRequest {
+            subject: no_universe,
+            item: item(),
+            max_depth: None,
+            limits: ModelCheckLimits::default(),
+        },
+        &Cancel::new(),
+    )
+    .expect_err("no universe");
+    assert!(
+        matches!(refusal, ModelCheckRefusal::RequiresBound(_)),
+        "{refusal:?}"
+    );
+
+    let none = self::world("", &[]);
+    let outcome = run(
+        &none,
+        &["c"],
+        item(),
+        None,
+        ModelCheckLimits::default(),
+        UNLIMITED,
+    )
+    .expect("checked");
+    assert!(matches!(
+        outcome,
+        ModelCheckOutcome::Undecided {
+            cause: UndecidedCause::NoInitialState,
+            ..
+        }
+    ));
+}
+
 /// FR-126 "Determinism": two runs of one request give equal outcomes and
 /// equal counterexamples.
 #[trace("TC-521")]
