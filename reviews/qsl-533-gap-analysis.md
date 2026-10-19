@@ -56,3 +56,21 @@ fixed by adding the variant with its wire spelling, plus a test that
 with label `unsupported` and basis `unavailable`. That leaves the AC-1 tag
 honest. TC-841 step 4 and FR-330-AC-6 are correctly declared not covered and
 belong to QSL-510.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | medium | The AC-1 basis clause is asserted only through the new `UnavailabilityCause::basis()`, a `const fn` that returns `SettlementBasis::Unavailable` for every cause. Nothing in production reads it. The wire item carries no basis for `unsupported`, and clause reports take their basis from `spine/clause.rs` `undecided_basis`. So `assert_eq!(cause.basis().as_str(), "unavailable")` cannot fail on any path that emits a basis. The real basis check belongs with QSL-510's temporal `run_clause` report. | qsl-replay/src/proof_result.rs:224-226, qsl-replay/src/proof_result.rs:933 |
+
+## Dispositions
+
+Round 1, reviewed at `5cf839d42c3acb491e3cf646765168450a0d3cb1`. The fix
+commit is `5cf839d42`. Static review only; no build was run.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 5cf839d42: `UnavailabilityCause::MissingFairnessPremise { constraint: FairnessConstraint }` exists, with wire spelling `missing-fairness-premise` and code `unsupported_projection`. `OutcomeItem::from_terminal` now emits the code. `TerminalValue::category` maps `Unsupported(_)` to unsupported. `Copy` is dropped and `as_str` takes `&self`; the only caller (`outcome.rs:335`) already holds a reference. |
+| FND-002 | fixed | 5cf839d42: `a_missing_fairness_premise_settles_unsupported_naming_the_first_constraint` (qsl-replay, `#[trace("TC-533", "FR-132-AC-1")]`) fails if the terminal value is missing (compile), names the wrong constraint (`assert_eq` plus an `assert_ne` against `weak whole release`), has the wrong category, wire `result`, cause `kind` or `code`. With the evaluator test, the AC-1 binding now claims what the tests can fail on, except the basis clause (FND-004). |
+| FND-003 | deferred | Low, recorded only: fixture translation (mutex to `Counter`, no steps, prefix/loop split) is declared in the PR body and does not affect the oracle. |
+| FND-004 | deferred | Medium, recorded only (major bugs only): the basis clause is backed by a constant with no production reader. Bring it to QSL-510's temporal `run_clause` report, or delete `basis()` there. |

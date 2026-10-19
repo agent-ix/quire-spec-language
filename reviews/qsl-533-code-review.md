@@ -59,3 +59,20 @@ are strong:
 - Rust lane: no production code changed. There is no new panic surface beyond
   test assertions, and no `unsafe` or integer conversion. The `shape` borrow
   lifetime is sound. The `#[trace]` style matches the file.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | low | `UnavailabilityCause::from_temporal_outcome` has no production caller. Only the new test joins an evaluator outcome to a terminal record, so no production path turns `TemporalOutcome::MissingFairnessPremise` into `TerminalValue::Unsupported` yet. QSL-510's temporal `run_clause` is where it would be called. | qsl-replay/src/proof_result.rs:230-243 |
+
+## Dispositions
+
+Round 1, reviewed at `5cf839d42c3acb491e3cf646765168450a0d3cb1`. The fix
+commit is `5cf839d42`. Static review only; no build was run.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | deferred | Low, recorded only (major bugs only): the AC-1 evaluator test still runs on an unlimited meter. The TC-848 tests cover "evaluates no formula" on the same engine branch with `limits(0)` and an empty read list. |
+| FND-002 | fixed | 5cf839d42: the expected constraint is now built with `FairnessConstraint::new` from the case's own kind and granularity, on the operation of the clause's first constraint. It fails if the engine returns a constraint of another kind, granularity or operation. |
+| FND-003 | deferred | Low, recorded only: the conversion has no production caller until QSL-510 wires the temporal `run_clause`. |
