@@ -138,6 +138,24 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
   into an invariant's scope.
 - Equality of two `Reference<M::T>` values SHALL check as identity equality,
   as it does for function parameters today.
+- The checker SHALL type every `=` and `!=` in a clause by QSpec FR-149's
+  expected-type rule for an arithmetic operand against a bounded integer,
+  wherever the equality is written: a guard, a capture, an invariant, a
+  function body, a retry relation or a recovery predicate. When one operand has
+  type `Int[lo,hi]` and the other, ignoring parentheses, is a binary `+`, `-`
+  or `*` whose operands are `Integer` or `Int[..]`, the checker SHALL type the
+  arithmetic node `Int[lo,hi]` with the obligation that its interval, under the
+  facts that hold where it executes, lies inside `[lo,hi]`, and SHALL refuse an
+  unproved obligation with `undefined_expression`/`unproved-range` located at
+  the arithmetic node, never at the equality, without clamping, wrapping or
+  widening the value.
+- The checker SHALL NOT apply that rule to any other form: an `Integer`-typed
+  unary `-`, path, call, `div`, `rem`, `count`, `sum` or unannotated
+  `let`-bound name against an `Int[..]` operand, and an arithmetic operand
+  against a `Rational[..]` or `Decimal[..]` operand, each refuse
+  `ill_typed`/`type-mismatch` at the comparison, and `<`, `<=`, `>` and `>=`
+  supply no expected type. An operand of the same `Int[..]` type as its peer
+  is accepted unchanged.
 
 ### Observations of reads
 
@@ -288,6 +306,7 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
 | FR-104-AC-9 | Under `quire.model.complete/v1`, `reaches(self, target, parent)` on a `ConfigVersion` subtype with its inherited `parent: Option<Reference<ConfigVersion>>` field checks with `self` retained as the subtype reference and `target` as the base reference, without erasing the operand identity FR-043 evaluates; a target type not conforming to the edge owner refuses `ill_typed`/`operator-ineligible`. The subtype/base operands under any other admitted model selection refuse `ill_typed`/`operator-ineligible` by the exact-type rule. | Test |
 | FR-104-AC-10 | Over the ConfigVersion package (TC-458's) with a process `Flow` (identity field `x`, field `n: Integer`) that declares operation `go` whose frame is `modifies [Flow/n]` and a closed population of `Flow`, `pre P using v on Config::Flow::go { self.n < 3 }`, `post Q using v on Config::Flow::go { self.n = pre(self.n) + 1 }` and `invariant I using v on Config::Flow at current { self.n >= 0 }` each check, `self` being `Reference<Config::Flow>` and `self.n` an `Attribute` of type `Integer`; `P`'s read is `pre`, `Q`'s reads are `post` and `pre`, `I`'s read is `current`. `pre M using v on Config::Flow::missing { true }` refuses `missing_declaration`/`missing-name` at `missing`. | Test (TC-459, TC-460) |
 | FR-104-AC-11 | Over the ConfigVersion package with `bound HistoryBound on Config::config_history [8]` (FR-380), `NoCycle` yields an `operation-contract` record whose one domain, the `config_history` population keyed as in FR-104-AC-5, is a `Population(Some(8))` domain with available finite bound `Cardinality{8}` and is not listed among the unbounded domains, so a clause whose only domains are bounded has extent `Bounded`; the population covering `ConfigVersion` is still the one `config_history`, and a second population `archive` of `ConfigVersion` with or without a bound of its own still refuses `ambiguous_declaration`/`ambiguous-name` at each clause's `on`. Without the `bound` declaration the record is FR-104-AC-5's. | Test (TC-1054) |
+| FR-104-AC-12 | With `tally` of `Int[0,3]`, `earlier.tally < 3 and later.tally = earlier.tally + 1` checks in a guard, an invariant and a function body alike; with the guard removed each refuses `undefined_expression`/`unproved-range` at `earlier.tally + 1`. `later.tally = earlier.tally` checks; `later.tally = -earlier.tally`, `later.tally = n` for `n` of `Integer`, and `earlier.tally + 1 <= later.tally` each refuse `ill_typed`/`type-mismatch` at the comparison. | Test (TC-1084) |
 
 ## Dependencies
 
