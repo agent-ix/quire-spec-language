@@ -470,9 +470,11 @@ impl CheckedPackage {
         self.emission.get()
     }
 
-    /// The `package_id` the emitter computed for this package, if it has
-    /// been emitted: the identity Contract IR's admission of those bytes
-    /// declares.
+    /// The `package_id` the emitter computed for this package, if it was
+    /// emitted through `emit_checked` or `emit_checked_with_cancel`, which
+    /// record the emission: the identity Contract IR's admission of those
+    /// bytes declares. A package emitted only through `emit_package` has
+    /// none.
     pub fn emitted_package_id(&self) -> Option<PackageId> {
         self.emission
             .get()
