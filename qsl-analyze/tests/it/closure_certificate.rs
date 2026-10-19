@@ -216,6 +216,7 @@ impl World {
                 item,
                 max_depth: None,
                 limits: ModelCheckLimits::default(),
+                reductions: Default::default(),
             },
             &Cancel::new(),
         )
@@ -631,6 +632,7 @@ fn a_request_whose_clause_root_does_not_resolve_settles_failed() {
             item: foreign,
             max_depth: None,
             limits: ModelCheckLimits::default(),
+            reductions: Default::default(),
         },
         &Cancel::new(),
     );
