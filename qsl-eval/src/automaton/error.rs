@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! The one refusal type of the automaton kernels.
+//! The one refusal type of the automaton kernels and of the property-automaton
+//! translation built on them.
 
+use qsl_semantics::check::TemporalProfile;
 use thiserror::Error;
 
 use crate::automaton::state::StateId;
@@ -43,5 +45,22 @@ pub enum AutomatonError {
         lower: u64,
         /// The upper bound.
         upper: u64,
+    },
+    /// A past operator's operand holds a future operator: its truth at the
+    /// previous position is not a function of the history, so the automaton
+    /// cannot track it as state (ADR-018 SM-6).
+    #[error("a past operator's operand holds a future operator")]
+    PastOverFuture,
+    /// The clause's profile has no property automaton.
+    #[error("the {profile:?} profile has no property automaton")]
+    ProfileNotTranslated {
+        /// The profile the clause was checked under.
+        profile: TemporalProfile,
+    },
+    /// The translation's own invariant broke.
+    #[error("the property-automaton translation broke its invariant `{invariant}`")]
+    Invariant {
+        /// The stable name of the invariant.
+        invariant: &'static str,
     },
 }

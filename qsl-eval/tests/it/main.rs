@@ -31,6 +31,7 @@ mod model_reference_queries;
 mod model_simulation;
 mod native_literals;
 mod native_scalar_equality;
+mod property_automata;
 mod protocol_reference;
 mod relationship_navigation;
 mod relationship_reachability;

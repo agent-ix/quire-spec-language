@@ -15,20 +15,22 @@ use crate::check::Scope;
 /// a `sequence` (a name and its children), a `parallel` and its `branch`es
 /// (their join, checked by `protocol_controls`), an `attempt` (its
 /// operation and `contracts`, FR-114; its role, binder and body are checked
-/// by [`content`]) and the `finish` node (its binder and body, the same).
-/// Every other kind carries content -- a channel, a guard, a join policy,
-/// a compensation's blocks, an anchor's target semantics -- that nothing
-/// checks yet. Exhaustive, so a new node kind must be classified here.
+/// by [`content`]), the `finish` node (its binder and body, the same) and a
+/// `compensate` template (its stages, FR-381, are checked by
+/// `protocol_obligation`). Every other kind carries content -- a channel, a
+/// guard, a join policy, an anchor's target semantics -- that nothing checks
+/// yet. Exhaustive, so a new node kind must be classified here.
 fn covered_kind(kind: ProtocolNodeKind) -> bool {
     use ProtocolNodeKind as K;
     match kind {
-        K::Sequence | K::Parallel | K::Branch | K::Attempt | K::Finish => true,
+        K::Sequence | K::Parallel | K::Branch | K::Attempt | K::Finish | K::CompensateTemplate => {
+            true
+        }
         K::Send
         | K::Receive
         | K::Effect
         | K::Event
         | K::Commit
-        | K::CompensateTemplate
         | K::Choice
         | K::Repeat
         | K::Case
@@ -37,15 +39,31 @@ fn covered_kind(kind: ProtocolNodeKind) -> bool {
     }
 }
 
+/// Whether a protocol construct of `kind` is checked: a protocol-level
+/// `capture` and an `activation on each` are (FR-381, `protocol_obligation`),
+/// and a plain `channel` is (FR-218, `protocol_controls`).
+/// Exhaustive, so a new construct kind must be classified here.
+fn covered_construct(kind: ProtocolConstructKind) -> bool {
+    use ProtocolConstructKind as K;
+    match kind {
+        K::Capture | K::ActivationEach | K::Channel => true,
+        K::ReplicatedRole
+        | K::Relationship
+        | K::Requirement
+        | K::Related
+        | K::FifoOrdering
+        | K::JoinPredicate
+        | K::TerminalWhen => false,
+    }
+}
+
 /// The rest of a protocol's content, once
 /// [`check`](super::check) has resolved its anchors, binders and attempt bindings.
 ///
 /// FR-113 and FR-114 check only those three parts. A protocol holding
 /// anything else -- a node kind [`covered_kind`] rejects, any
-/// [`qsl_forms::ProtocolConstructKind`] other than a plain channel
-/// (relationship, requirement, capture, `activation on each`, replicated
-/// role, `related by`, a `fifo` ordering, a `predicate` join, a `terminal
-/// when` member), or a body
+/// [`qsl_forms::ProtocolConstructKind`] ([`covered_construct`] says which are
+/// checked), or a body
 /// other than a bare Boolean literal -- refuses `unsupported_construct`/
 /// `not-yet-implemented` once, at the earliest such construct, rather than
 /// compiling with unchecked content that the emitted package then silently
@@ -72,7 +90,7 @@ pub fn content(
             protocol
                 .constructs
                 .iter()
-                .filter(|construct| construct.kind != ProtocolConstructKind::Channel)
+                .filter(|construct| !covered_construct(construct.kind))
                 .map(|construct| (construct.span, construct.kind.label())),
         )
         .chain(
