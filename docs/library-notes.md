@@ -77,11 +77,8 @@ cargo test -p qsl-source --features quire-extraction
 
 - [Source correspondence](source-correspondence.md): mapping extracted bodies
   back to the original document.
-- [Run requests](native-standalone.md): the `native-run/1` and
+- [Run and compile requests](native-standalone.md): the `native-run/1` and
   `native-compile/1` request envelopes.
-- [Checked packages](native-linked-packages.md),
-  [runtime inputs](native-runtime-inputs.md) and
-  [evaluation](native-runtime-evaluation.md).
 - [Diagnostic codes](native-error-codes.md).
 - [Compiled protocol wire formats](compiled-protocol-v1.md) and
   [v2](compiled-protocol-v2.md).

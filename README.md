@@ -366,7 +366,7 @@ The rest of the tree:
 - [`docs/`](docs/) holds reference pages: the
   [library notes](docs/library-notes.md), the
   [diagnostic codes](docs/native-error-codes.md), the
-  [run request format](docs/native-standalone.md), the
+  [run and compile requests](docs/native-standalone.md), the
   [compiled protocol wire format](docs/compiled-protocol-v2.md) and others.
 
 ## Contributing
