@@ -124,7 +124,7 @@ pub(crate) fn checked_refinement_failures(
                     established.conjoin(typed.facts.attribute(
                         0,
                         &reference,
-                        super::ir::Observation::Post,
+                        crate::model::clause_observation::Observation::Post,
                     ));
                 }
             }
