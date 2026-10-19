@@ -256,7 +256,7 @@ pub use state_clause::{
     AttemptDeclaration, CheckedOperationFrame, CheckedStateClause, ClauseOperation,
     OperationSelection, PopulationDomain, ProtocolClauseFamily, StateClauseDeclaration,
 };
-pub use step_simulation::{step_simulation_records, StepRowOverflow};
+pub use step_simulation::{step_row_refs, step_simulation_records, StepRowOverflow};
 pub use type_form::{I128Limit, IntegerOutsideI128, IntegerSite, TypeFormFault};
 // PR #300 review finding 4: `mint_type_declaration_identity` was `pub(super)`
 // in `identity` for the same reason: no consumer outside `check` minted an

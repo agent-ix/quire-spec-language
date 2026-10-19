@@ -9,6 +9,7 @@
 //! `Proved{Inductive{depth: 1}}` with basis `decisive-witness`; a record no
 //! candidate settles is `unsupported` (V-8).
 
+use crate::certificate::{CertificateLocus, CertificateRule};
 use crate::model_check::settle::Truth;
 use crate::proof_result::{
     Certification, InconclusiveCause, ProofBasis, SettlementBasis, TerminalValue,
@@ -19,7 +20,7 @@ use crate::proof_result::{
 pub const STEP_INDUCTION_DEPTH: u64 = 1;
 
 /// What the core's checker (FR-314) made of a backend's proof certificate.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum BackendCertificate {
     /// The backend supplied none.
     Absent,
@@ -27,10 +28,18 @@ pub enum BackendCertificate {
     Unverifiable,
     /// The core verified it.
     Verified,
+    /// The core checked it and it is wrong (ADR-018 PC-2, PC-6): the failing
+    /// rule and where it failed. The record never settles `proved`.
+    Rejected {
+        /// The check rule that failed.
+        rule: CertificateRule,
+        /// Where the rule failed.
+        at: CertificateLocus,
+    },
 }
 
 /// What the SMT backend returned for one per-step simulation record.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum StepBackendOutcome {
     /// No candidate backend settled the record (V-8).
     NoCandidate,
@@ -58,6 +67,13 @@ pub struct StepSimulationSettlement {
 /// FR-146: settle `outcome` as one terminal value. Never `Refuted`.
 pub fn settle_step_simulation(outcome: StepBackendOutcome) -> StepSimulationSettlement {
     match outcome {
+        StepBackendOutcome::Holds {
+            certificate: BackendCertificate::Rejected { rule, at },
+        } => StepSimulationSettlement {
+            value: TerminalValue::Inconclusive(InconclusiveCause::CertificateRejected { rule, at }),
+            basis: SettlementBasis::Unsettled,
+            truth: Truth::Pending,
+        },
         StepBackendOutcome::Holds { certificate } => StepSimulationSettlement {
             value: TerminalValue::Proved {
                 basis: ProofBasis::Inductive {
@@ -65,9 +81,9 @@ pub fn settle_step_simulation(outcome: StepBackendOutcome) -> StepSimulationSett
                 },
                 certification: match certificate {
                     BackendCertificate::Verified => Certification::Certified,
-                    BackendCertificate::Absent | BackendCertificate::Unverifiable => {
-                        Certification::Uncertified
-                    }
+                    BackendCertificate::Absent
+                    | BackendCertificate::Unverifiable
+                    | BackendCertificate::Rejected { .. } => Certification::Uncertified,
                 },
             },
             basis: SettlementBasis::DecisiveWitness,
@@ -101,7 +117,7 @@ mod tests {
         }
     }
 
-    /// FR-146-AC-4 (TC-551 step 4), settlement: a holding obligation settles
+    /// TC-551 step 4, settlement only: a holding obligation settles
     /// `Proved{Inductive{1}}`, `Certified` only on a verified certificate.
     #[trace("TC-551")]
     #[test]
@@ -118,7 +134,7 @@ mod tests {
         }
     }
 
-    /// FR-146-AC-4 (TC-551 step 4), settlement: a counterexample settles
+    /// TC-551 step 4, settlement only: a counterexample settles
     /// `Inconclusive(InductionNotClosed{1})`, never `refuted`; no candidate
     /// settles `unsupported`.
     #[trace("TC-551")]
@@ -137,5 +153,30 @@ mod tests {
             TerminalValue::Unsupported(UnavailabilityCause::BackendAbsent)
         );
         assert_eq!(none.truth, Truth::Unavailable);
+    }
+
+    /// ADR-018 PC-2: a certificate the core shows wrong never settles
+    /// `proved`.
+    #[trace("TC-551")]
+    #[test]
+    fn a_rejected_certificate_settles_inconclusive_never_proved() {
+        let at = CertificateLocus::Query {
+            part: crate::certificate::QueryPart::Step,
+        };
+        let settled = settle_step_simulation(StepBackendOutcome::Holds {
+            certificate: BackendCertificate::Rejected {
+                rule: CertificateRule::QueryMismatch,
+                at: at.clone(),
+            },
+        });
+        assert_eq!(
+            settled.value,
+            TerminalValue::Inconclusive(InconclusiveCause::CertificateRejected {
+                rule: CertificateRule::QueryMismatch,
+                at,
+            })
+        );
+        assert_eq!(settled.basis, SettlementBasis::Unsettled);
+        assert_eq!(settled.truth, Truth::Pending);
     }
 }
