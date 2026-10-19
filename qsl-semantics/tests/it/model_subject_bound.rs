@@ -6,17 +6,20 @@
 
 use ix_trace_rs::trace;
 use qsl_foundation::bound::{DomainKey, DomainKind};
+use qsl_foundation::diagnostic::{Code, StageFailure};
 use qsl_foundation::digest::WireNodeId;
 use qsl_semantics::check::{
-    check_clauses, Capability, CheckedGraph, CheckedTemporalClause, TemporalTraceFamily,
+    check_clauses, Capability, CheckCause, CheckRefusal, CheckedGraph, CheckedTemporalClause,
+    TemporalCause, TemporalTraceFamily,
 };
 use qsl_semantics::family::{ClaimExtent, FamilyContract};
 use quire_exact::Identifier;
 use quire_semantic_value::checking::CheckingLimits;
 
 use crate::model_operations::{
-    admit_and_assemble, admit_and_assemble_with_profiles, attempt_update_modifies_version_number,
-    config_version_document,
+    admit_and_assemble, admit_and_assemble_with_profiles, archive_population,
+    attempt_update_modifies_version_number, config_version_document,
+    config_version_document_with_population,
 };
 
 const INFINITE: &str = "quire.temporal.infinite-trace/v1";
@@ -105,7 +108,7 @@ fn an_unbounded_population_stays_in_the_requirement_record() {
 
 /// FR-380: an authored `bound` makes the population finite, so the record
 /// holds no population domain and needs no key for one.
-#[trace("FR-336")]
+#[trace("TC-846")]
 #[test]
 fn a_bounded_population_joins_no_domain() {
     let (_, clause) = reaches_two("bound Cap on Config::config_history [3]");
@@ -124,4 +127,41 @@ fn a_bounded_population_joins_no_domain() {
         panic!("the formula is infinite-trace: {:?}", record.extent());
     };
     assert_eq!(domains.len(), 1);
+}
+
+/// A second population over the `over` type leaves no single population to
+/// name, so the clause refuses `ambiguous_declaration`/`ambiguous-name`
+/// naming both populations in `DeclarationKey` order.
+#[trace("TC-846")]
+#[test]
+fn two_populations_of_the_over_type_refuse_the_clause() {
+    let document = config_version_document_with_population(
+        attempt_update_modifies_version_number(),
+        archive_population(),
+    );
+    let clause = "temporal ReachesTwo using t over (c: Config::ConfigVersion) \
+         clock \"model-steps\" on origin { always eventually holds(c.versionNumber = 2) }";
+    let package = admit_and_assemble_with_profiles(
+        &document,
+        &format!("profile t = \"{INFINITE}\";\n"),
+        clause,
+    )
+    .unwrap_or_else(|refusal| panic!("the unit assembles: {refusal:?}"));
+    let Some(Err(StageFailure::Refused(CheckRefusal {
+        cause: CheckCause::Temporal(cause),
+        ..
+    }))) = check_clauses(&package).pop()
+    else {
+        panic!("a temporal refusal");
+    };
+    let TemporalCause::AmbiguousPopulation { populations, .. } = cause.as_ref() else {
+        panic!("an ambiguous population: {cause:?}");
+    };
+    assert_eq!(cause.code(), Code::AmbiguousDeclaration);
+    assert_eq!(cause.tag(), "ambiguous-name");
+    let names: Vec<&str> = populations
+        .iter()
+        .map(|key| key.node.rsplit('/').next().expect("a node identity"))
+        .collect();
+    assert_eq!(names, ["archive", "config_history"]);
 }

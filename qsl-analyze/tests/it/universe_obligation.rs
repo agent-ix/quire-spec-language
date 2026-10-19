@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-336-AC-4 (TC-846 step 4): a temporal item's obligation identity binds
-//! the model subject's universes, and a `proved` result joins only the
-//! request index of its own item. The `Counter` subject (`crate::counter`)
-//! stands in for ADR-018 §6's `ConfigVersion`: both are one object type in
-//! one unbounded population, checked under infinite-trace with
-//! `fair weak each`.
+//! TC-846 step 4: the `ModelRequest` seam. Two items for one clause over
+//! subjects that differ only in a universe get two request indices, one
+//! item per obligation, and a `proved` result joins only the obligation at
+//! its own index. The test's own `Subject` holds the universe (the writer is
+//! generic over the subject), so this verifies the writer's dedup, index and
+//! join, not that a production subject's universes enter the identity:
+//! FR-336-AC-4 is not claimed until the EN-1 request path builds the
+//! subject. The `Counter` fixture (`crate::counter`) stands in for ADR-018
+//! §6's `ConfigVersion`.
 
 use ix_trace_rs::trace;
 use qsl_foundation::digest::WireNodeId;
@@ -35,12 +38,11 @@ fn occurrence() -> OccurrenceKey {
     )
 }
 
-/// FR-336-AC-4: `ReachesTwo`-shaped liveness under `fair weak each` over
-/// universe `{a, b}` and over `{a, b, c}` gives two obligation identities
-/// that differ only in the subject's universe, with the same requirement
-/// record and no proof bounds; each `proved` result joins its own request
-/// index and no other.
-#[trace("TC-846", "FR-336-AC-4")]
+/// `ReachesTwo`-shaped liveness under `fair weak each` over universe
+/// `{a, b}` and over `{a, b, c}` gives two obligations with the same
+/// requirement record and no proof bounds; each `proved` result joins its
+/// own request index and no other.
+#[trace("TC-846")]
 #[test]
 fn two_universes_are_two_obligations_and_each_result_joins_its_own_index() {
     let document = document(false);

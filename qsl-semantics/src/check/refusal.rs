@@ -789,8 +789,8 @@ pub enum TemporalCause {
     /// populations, so its population cannot be named exactly once. Located
     /// at the clause.
     AmbiguousPopulation {
-        /// The declaration keys of the covering populations.
-        name: String,
+        /// The covering populations, in ascending `DeclarationKey` order.
+        populations: Vec<crate::model::key::DeclarationKey>,
         /// The clause's span.
         span: Span,
     },

@@ -646,11 +646,7 @@ fn check_clause(
             population_of(declarations.models, *object, declarations.scope.types())
                 .map_err(|populations| {
                     refuse(TemporalCause::AmbiguousPopulation {
-                        name: populations
-                            .iter()
-                            .map(|key| key.node.as_str())
-                            .collect::<Vec<_>>()
-                            .join(", "),
+                        populations,
                         span: declaration.span,
                     })
                 })?
