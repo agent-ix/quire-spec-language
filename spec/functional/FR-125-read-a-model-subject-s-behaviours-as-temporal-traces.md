@@ -23,8 +23,6 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-104
     type: depends_on
-  - target: ix://agent-ix/quire-spec-language/FR-120
-    type: depends_on
   - target: ix://agent-ix/quire-specification/FR-361
     type: depends_on
 ---
@@ -106,41 +104,45 @@ reports.
   request time, from the subject's `universes`: one instance per object of
   the subject's universes whose type conforms to the `over` parameter's type
   `T` (QSpec FR-361), with the parameter bound to that object. An object of
-  a subtype of `T` conforms. S3 records the `over` binding and does not
+  a subtype of `T` conforms. The next bullets state how QSL realizes this
+  over universes of keys. S3 records the `over` binding and does not
   instantiate, because the universes are not an S3 input; one checked claim
   serves every subject.
 - Universes are kept per population (FR-120). When several populations hold
   objects conforming to `T`, the instances are the objects of all of them;
   instances are ordered by population declaration identity text, then by
   the order of the population's universe list, which is the canonical order.
-  The canonical order is the instance order everywhere QSL lists instances,
-  including `ModelLetters::bindings`; no other order (such as ascending
-  reference order) applies.
+  QSL SHALL list instances, including in `ModelLetters::bindings`, in the
+  canonical order.
 - A universe is a list of keys, and a key has no type until a state holds its
-  object (FR-120). QSL SHALL therefore instantiate a key, not a typed object:
-  each key of each population that covers `T` (FR-104: `T` or a supertype of
-  `T` is one of its member types) is one instance, whatever number of its
-  member types conform to `T`, so a key is never instantiated twice for
-  two member types. A population that does not cover `T` yields no instance.
-- QSL SHALL give each instance's binding the population's `UniverseId`, its
-  key, and, as the reference's type, the population's canonical member type
-  (FR-104: the least declared member type in ascending `DeclarationKey`
-  order). That type only completes the reference; QSL SHALL match a state's
-  object to the binding by population and key, not by type. At a position
-  where the population holds no object under the key whose most-specific type
-  conforms to `T`, a read through the bound parameter SHALL return the
-  `absent-key` undefined value QSpec FR-361 states for an absent object. A
-  reference a state yields carries that object's most-specific type (FR-120),
-  so a binding and a state reference of one object differ in type only when
-  the object's type is not the canonical member type.
-- When a population whose member type conforms to `T` has no universe, QSL
-  SHALL return `NotSimulated::RequiresBound` naming it (FR-120), before
-  instantiating.
-- When the universes hold no object conforming to `T`, including an empty
-  universe and a type no population holds, the claim has zero instances.
-  QSL SHALL then report `NoInstance` for the item before it explores any
-  state, and FR-127 settles it `inconclusive`, so an item that was never
-  evaluated is never read as holding.
+  object (FR-120). A population **holds `T`** when one of its member types is
+  `T` or a subtype of `T` (FR-104 conformance). QSL SHALL instantiate each key
+  of each population that holds `T` exactly once, whatever number of its
+  member types conform to `T`. A population that does not hold `T`, including
+  one whose member types are all proper supertypes of `T`, yields no instance:
+  a key has no type before a state, so QSL cannot tell which of its objects
+  would conform.
+- QSL SHALL identify an instance by its population's declaration identity text
+  and its key. That pair is the instance in the obligation identity
+  (ADR-013 O-09) and the name of a refuted binding (QSpec FR-361); neither
+  carries an object type.
+- QSL SHALL read the bound parameter at a position as the reference of the
+  state's object under the instance's population and key, carrying that
+  object's own most-specific type and the population's `UniverseId` (FR-120),
+  so FR-107's comparison by (universe, object type, key), `x = r` and
+  `contains(allInstances<T>(P), x)` treat the bound object as they treat any
+  reference to it. The bound value conforms to `T` at every position where it
+  is read.
+- Where the population holds no object under the key whose most-specific type
+  conforms to `T`, QSL SHALL return, for a read through the bound parameter,
+  the `absent-key` undefined value QSpec FR-361 states for an absent object.
+- When a population that holds `T` has no universe, QSL SHALL return
+  `NotSimulated::RequiresBound` naming it (FR-120), before instantiating.
+- When no population that holds `T` has a key, including an empty universe and
+  a type no population holds, the claim has zero instances. QSL SHALL then
+  report `NoInstance` for the item before it explores any state, and FR-127
+  settles it `inconclusive`, so an item that was never evaluated is never read
+  as holding.
 - QSL SHALL instantiate a checked hyper clause (FR-172) at request time with
   one instance per key of the universe of the one population each object
   parameter `v: V::T` resolves to, the instances ranging over the product of
@@ -210,25 +212,36 @@ reports.
 | FR-125-AC-5 | On the same lasso, `always eventually (holds(a.versionNumber = 0) and once[1,1] holds(a.versionNumber = 2))` has past reach 1 and is evaluated over `m = 2` loop copies, 6 positions: the conjunction is `false` at position 0, which has no previous position, and `true` at position 3, whose previous position holds version 2, and the formula evaluates `true`. The same conjunction read at position 9 by congruence is `true`. | Test (TC-520) |
 | FR-125-AC-6 | Over the `Counter` subject, the letter of `always holds(6 / (2 - c.value) >= 0)` under infinite-trace is defined at positions 0 and 1 and undefined at position 2, cause `division-by-zero`. `eventually[0,1] holds(6 / (2 - c.value) = 6)` under event-position false-extension, `on origin`, reads positions 0 and 1 only and evaluates `true`. | Test (TC-537) |
 | FR-125-AC-7 | Over ADR-018 §6's subject (universe `{a, b}`), the state-graph claims `ReachesTwo` and `ReachesThree` (`over (c: Config::ConfigVersion)`) each yield two instances, `a` then `b`; `possible Anything using v { true }` with no `over` yields one instance with no bound object. `ReachesTwo`, checked once, yields `a`, `b` over `{a, b}` and `a` over a subject whose universe is `{a}`, without being re-checked. A claim over a subtype-conforming population yields its objects; a universe-less population is `RequiresBound`; an empty universe yields zero instances and the item reports `NoInstance`, settled `inconclusive`, never proved. | Test (TC-520) |
-| FR-125-AC-8 | (QSL-proposed rule, STD-196) For a population declaring member types `Lamp` and `Switch` (neither a subtype of the other) and a claim `over (x: Lamp)`, each key of its universe is one instance and the population covers `Lamp`; for a claim `over (x: Thing)` where both are subtypes of `Thing`, each key is still one instance, not two. A population whose member types neither conform to nor are supertypes of `T` yields no instance. | Test (TC-520) |
-| FR-125-AC-9 | (QSL-proposed rule, STD-196) The binding of an instance carries the population's `UniverseId`, its key and the population's canonical member type, the least declared member type in ascending `DeclarationKey` order, whichever member type the key's object has in a state. A position whose object under the key is of another member type that conforms to `T` is still read through the binding; a position whose object under the key does not conform to `T`, or with no object, reads through the bound parameter as `absent-key` undefined. | Test (TC-520) |
-| FR-125-AC-10 | (QSL-proposed rule, STD-196) With populations `P1` and `P2`, whose declaration identity texts order `P1` before `P2`, holding universes `[d, c]` and `[b, a]` respectively, the instances of a claim covering both are ordered `P1/d`, `P1/c`, `P2/b`, `P2/a`, and `ModelLetters::bindings` returns that order, not an ascending reference order. | Test (TC-520) |
+| FR-125-AC-8 | (QSL-proposed rule, STD-196) For a population `P` declaring member types `Lamp` and `Switch`, both subtypes of `Thing`, each key of its universe is one instance of `over (x: Lamp)`, and one instance (not two) of `over (x: Thing)`. A population declaring only `Thing` yields no instance for `over (x: Lamp)`, and a population none of whose member types is `T` or a subtype of `T` yields none. A population with no universe that holds `T` is `RequiresBound`; one whose universes are all empty gives `NoInstance`. | Test (TC-520) |
+| FR-125-AC-9 | (QSL-proposed rule, STD-196) With `Lamp`'s `DeclarationKey` ordering before `Switch`'s, an instance of `over (x: Thing)` reads at a position whose object under the key is a `Switch` as the reference with type `Switch`, and at one whose object is a `Lamp` as the reference with type `Lamp`; for `over (x: Lamp)` the position whose object is a `Switch`, or has no object, reads `absent-key` undefined. The instance is named by its population and key in the obligation identity and in a refuted binding, without a type. | Test (TC-520) |
+| FR-125-AC-10 | (QSL-proposed rule, STD-196) With populations `P1` and `P2`, whose declaration identity texts order `P1` before `P2`, holding universes `[d, c]` and `[b, a]` respectively, the instances of a claim holding both are ordered `P1/d`, `P1/c`, `P2/b`, `P2/a`, and `ModelLetters::bindings` returns that order, not an ascending reference order. | Test (TC-520) |
+| FR-125-AC-11 | (QSL-proposed rule, STD-196) For an instance of `over (x: Thing)` whose object is a `Switch` (not the least member type), `holds(x = r)` where `r` is the state's reference to that object, and `holds(contains(allInstances<Thing>(P), x))`, each evaluate `true`; for a `Lamp` object likewise. | Test (TC-520) |
 
 ## Remaining work
 
-- The reference type, key-level instancing and absent-key reading of AC-8 and
-  AC-9, and the instance order of AC-10, are QSL-proposed because QSpec
-  FR-361 says "each object of the subject's universe" while FR-331 supplies
-  only keys. QSpec follow-up: Linear STD-196. If QSpec rules otherwise, its
-  rule replaces these.
-- FR-169 (state-graph claims) and FR-182 (hyper clauses) instance under the
-  same rules; no checker in the repository exercises them yet, so AC-8 to
-  AC-10 are tested through the temporal claim only.
+- AC-8 to AC-11 are QSL-proposed. QSpec FR-361 says "each object of the subject's
+  universe whose type conforms to `T`" and binds `x` to the object's reference;
+  the key-list shape of a universe is QSL FR-120's (`keys: Vec<String>`) and
+  QSpec FR-331 names `universes` without a shape, so QSL assumes keys, which
+  makes a key's type unknown before a state. QSpec follow-up: Linear STD-196,
+  with these open questions: whether an instance is a key or a typed object;
+  whether a population of proper supertypes of `T` holds objects conforming
+  to `T` and is instanced; how a clause guards a read through `x` when a key's
+  object does not conform (population membership is true there, so QSpec
+  FR-361's membership guard does not prevent the `absent-key` refutation); and
+  the instance order. If QSpec rules otherwise, its rule replaces these.
+- FR-169 (state-graph claims) instances under these rules. FR-182 (hyper
+  clauses) instances by the hyper bullet above and takes the reference reading
+  (the bound value is the state's own reference) and the `absent-key` rule;
+  no checker in the repository exercises either yet, so AC-8 to AC-11 are
+  tested through the temporal claim only.
 
 ## Dependencies
 
 - ADR-018 §1 UE-1, §2 SM-1 to SM-5 and SM-8, §10 DL-6, §11 IV-2; ADR-014 §3 TR-2 and TR-5, §5 A-4;
   ADR-016 ID-10 (synthesized state observation) and EX-10.
+- [FR-104](FR-104-check-state-clauses.md) (member-type conformance and the
+  canonical member type).
 - [FR-120](FR-120-simulate-a-checked-package-s-state-family.md) (successor
   relation), [FR-106](FR-106-admit-snapshots-and-invocations.md) (initial
   snapshots), [FR-107](FR-107-evaluate-state-clauses-at-s6a.md) (clause
