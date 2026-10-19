@@ -1144,6 +1144,7 @@ fn wraps(cause: &CheckCause) -> bool {
     matches!(
         cause,
         CheckCause::IllTyped(_)
+            | CheckCause::IdentityObservingForm(_)
             | CheckCause::NonBooleanRoot
             | CheckCause::WrongSnapshot(_)
             | CheckCause::MissingName(_)
