@@ -113,4 +113,37 @@ impl Guard {
     pub const fn admits(self, letter: Letter) -> bool {
         letter.0 & self.required == self.required && letter.0 & self.forbidden == 0
     }
+
+    /// This guard and `other` together: the letters both admit.
+    #[must_use]
+    pub(crate) const fn conjoined(self, other: Self) -> Self {
+        Self {
+            required: self.required | other.required,
+            forbidden: self.forbidden | other.forbidden,
+        }
+    }
+
+    /// Whether every letter `other` admits is admitted by this guard too:
+    /// this guard's literals are among `other`'s.
+    pub(crate) const fn covers(self, other: Self) -> bool {
+        self.required & !other.required == 0 && self.forbidden & !other.forbidden == 0
+    }
+
+    /// The one-literal guards whose disjunction is the negation of this
+    /// guard: the negation of each of its literals.
+    pub(crate) fn negated_literals(self) -> impl Iterator<Item = Self> {
+        let required = (0..MAX_ATOMS).filter_map(move |bit| {
+            (self.required >> bit & 1 == 1).then_some(Self {
+                required: 0,
+                forbidden: 1 << bit,
+            })
+        });
+        let forbidden = (0..MAX_ATOMS).filter_map(move |bit| {
+            (self.forbidden >> bit & 1 == 1).then_some(Self {
+                required: 1 << bit,
+                forbidden: 0,
+            })
+        });
+        required.chain(forbidden)
+    }
 }
