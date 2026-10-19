@@ -60,9 +60,16 @@ interval and `to` coverage gaps are recorded in the base review.
 | --- | --- | --- | --- |
 | FND-003 | low | The location rule for a fairness constraint inside a `from` or `to` operand is "at the `;` that follows the predicate". That holds for `from (c.versionNumber = 1; fair weak ...)`, but a constraint written first, `from (fair weak Config::ConfigVersion::attemptUpdate; c.versionNumber = 1)`, has no predicate before it; a parser fails at `fair` there, and the rule names no token. QSpec is silent on this placement. | spec/functional/FR-165-check-state-graph-claims-at-s3.md:109-110 |
 
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | medium | The round-2 fix moved one case to the wrong token. FR-165 now says a fairness constraint inside a `from` or `to` operand fails "at the `fair` token itself". That only holds when the constraint comes first. For QSpec SG-R15's own vector, `from (c.a; fair weak C::Cfg::step)`, the operand is `'(' graph-predicate ')'`, so after `c.a` the parser expects `)` and fails at the `;`, just as it does in a body. PR #968's grammar (`x("("), r(P::StateGraphPredicate), x(")")`) reports the `;`. The SHALL contradicts the parser for SG-R15's vector, and AC-6 dropped that vector, so no test catches it. Fix: after the predicate in a `from`/`to` operand, error at the `;`; at `fair` only when the constraint leads. Put the SG-R15 vector back in AC-6. | spec/functional/FR-165-check-state-graph-claims-at-s3.md:109-112,191 |
+
 ## Dispositions
 
 | FND | outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | 0a710fa5e names the token for every S1 case. Fairness after a body predicate or inside `from`/`to` is at the `;` after the predicate, matching QSpec TC-330 SG-R13. AC-6 and TC-590 step 5 now say "at the token FR-165-AC-6 names". |
 | FND-002 | fixed | 0a710fa5e reads "an operand of `and`, `or` or `implies`, of a binary temporal operator, of a unary operator, of a parenthesised group or of a branch of an `if` or the body of a `let`" in FR-165, and ADR-022 line 98 matches. |
+| FND-003 | fixed | 664a00491 adds the leading-fairness `from (fair weak Config::ConfigVersion::attemptUpdate; c.versionNumber = 1)` vector to AC-6, located at `fair`, so that placement now has a stated token. The rewrite it came with is FND-004. |
