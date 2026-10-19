@@ -12,7 +12,7 @@
 //! `Inconclusive(CertificateRejected{rule, at})`, and a stopped check is
 //! `Incomplete` with its exact limit or cancellation source.
 
-use qsl_foundation::diagnostic::Code;
+use qsl_foundation::diagnostic::{Category, Code};
 use qsl_foundation::digest::DigestRecord;
 
 use quire_exact::Cancel;
@@ -42,8 +42,28 @@ pub enum ResultLabel {
     Refuted,
     /// `inconclusive`.
     Inconclusive,
+    /// `unsupported`.
+    Unsupported,
     /// `failed`.
     Failed,
+}
+
+impl ResultLabel {
+    /// The ADR-013 O-16 category a backend's result settles in (FR-332,
+    /// ADR-014 A-5): `proved` is success, `refuted` violation, `inconclusive`
+    /// inconclusive, `unsupported` unsupported, `failed` with execution
+    /// `resource-incomplete` incomplete, and every other `failed` an
+    /// internal failure.
+    pub fn category(self, execution: Execution) -> Category {
+        match (self, execution) {
+            (Self::Proved, _) => Category::Success,
+            (Self::Refuted, _) => Category::Violation,
+            (Self::Inconclusive, _) => Category::Inconclusive,
+            (Self::Unsupported, _) => Category::Unsupported,
+            (Self::Failed, Execution::ResourceIncomplete) => Category::Incomplete,
+            (Self::Failed, Execution::Completed | Execution::Failed) => Category::InternalFailure,
+        }
+    }
 }
 
 /// The record's execution status.

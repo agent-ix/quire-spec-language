@@ -10,7 +10,7 @@ use crate::spine::{CallOutcome, OperationName};
 use qsl_semantics::model::observation::FrameChange;
 
 #[path = "../../../../../qsl-semantics/tests/support/receiver_frames.rs"]
-mod fixture;
+pub(super) mod fixture;
 
 fn type_of(name: &str) -> String {
     fixture::id(name)
@@ -22,7 +22,7 @@ fn population() -> String {
 
 /// The unit selecting the fixture's package for `operations`, and its
 /// package input.
-fn unit_and_packages(operations: &[&str]) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
+pub(super) fn unit_and_packages(operations: &[&str]) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
     let document = serde_json::to_vec(&fixture::document(operations, &[])).expect("fixture");
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
@@ -40,7 +40,7 @@ fn unit_and_packages(operations: &[&str]) -> (String, BTreeMap<[u8; 32], Vec<u8>
     (unit, packages)
 }
 
-fn counter(key: &str, value: i64) -> serde_json::Value {
+pub(super) fn counter(key: &str, value: i64) -> serde_json::Value {
     json!({
         "key": key, "type": type_of("Counter"),
         "fields": {
@@ -51,7 +51,7 @@ fn counter(key: &str, value: i64) -> serde_json::Value {
     })
 }
 
-fn snapshot(
+pub(super) fn snapshot(
     operations: &[&str],
     label: &DocumentRef,
     observation: &str,
