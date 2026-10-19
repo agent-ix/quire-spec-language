@@ -6,10 +6,10 @@
 use ix_trace_rs::trace;
 use qsl_forms::ProtocolNodeKind;
 
-use super::{assemble, checks, protocol_causes, refusals};
+use super::{assemble, assemble_with, checks, protocol_causes, refusals, HEADER};
 use crate::check::protocol_clause::{CausalEdge, EdgeKind, Port, PortRef, ProtocolNodeId};
 use crate::check::refusal::{ArmFault, ObservationReason, ProtocolAnchorCause, SlotKind};
-use crate::check::{CheckRefusal, CheckedGraph};
+use crate::check::{CheckRefusal, CheckedAwait, CheckedDeadline, CheckedGraph};
 
 /// A protocol `Flow` with roles `R` and `S` on `M::Actor`, a record type
 /// `Plain`, the `members` written before `run` and the `run` control.
@@ -78,8 +78,8 @@ fn catalog(refusal: &CheckRefusal) -> (&'static str, Option<&'static str>) {
 }
 
 /// TC-663, the edges of ADR-027 §7's `Fill` and of FR-212's `Chatter`
-/// (FR-218-AC-1 is not claimed: its replicated-role protocol and bodies
-/// that read names are not checked yet). `Fill`'s relation holds in -> `A`,
+/// (FR-218-AC-1 is not claimed: its replicated-role protocol is refused as
+/// not yet implemented). `Fill`'s relation holds in -> `A`,
 /// in -> `B`, `A` -> join and `B` -> join; `Chatter`'s holds `Tx`.out ->
 /// `Rx`.in.
 #[trace("TC-663")]
@@ -382,6 +382,123 @@ fn an_await_after_a_later_control_is_a_cycle() {
         .any(|edge| edge.kind == EdgeKind::RepeatBack));
 }
 
+/// An `await` after `Start` matching `matched`, with `within` and an empty
+/// `then` and `timeout`, in a `Main` sequence after the attempt `Start`.
+fn awaiting(members: &str, within: &str, matched: &str) -> String {
+    flow(
+        members,
+        &format!(
+            "sequence Main {{ {} await Wait after Start using v clock \"wall\" within {within} \
+             match {matched} then sequence Then {{ }} timeout sequence Late {{ }} }}",
+            attempt("Start")
+        ),
+    )
+}
+
+/// QSpec FR-466 "Per-operator checks" 2 and 6 and FR-464 "Profiles and
+/// laws": an `await` matching an `event` in a closed window checks and
+/// records its clock and window; matching a `send` or an `attempt` refuses
+/// `unsupported_construct`/`declaration-form` at the `await`, naming the
+/// form; an inverted or open `within` refuses `ill_typed`/`type-mismatch`
+/// at the interval; a unit selecting no temporal profile refuses
+/// `missing_declaration`/`missing-selection` at the `await`.
+#[trace("TC-663")]
+#[test]
+fn an_await_matches_an_event_in_a_closed_window_under_a_temporal_profile() {
+    let event = "event Seen by R as (seen: Boolean) { true };";
+    let source = awaiting("", "[2,5]", event);
+    let graph = checks(&source);
+    let protocol = graph.protocol("Flow").expect("the checked protocol");
+    assert_eq!(
+        protocol.awaits,
+        [CheckedAwait {
+            node: node(&source, "Wait", ProtocolNodeKind::Await),
+            clock: "wall".to_owned(),
+            within: CheckedDeadline { lower: 2, upper: 5 },
+        }]
+    );
+
+    let matches = [
+        (
+            awaiting(
+                &channel("ch", "Boolean"),
+                "[0,1]",
+                "send Out via ch as (sent: Boolean) { true };",
+            ),
+            "send",
+            "Out",
+        ),
+        (
+            awaiting(
+                "",
+                "[0,1]",
+                "attempt Try by R on M::Actor::op contracts [] as (try_it: Boolean) { true };",
+            ),
+            "attempt",
+            "Try",
+        ),
+    ];
+    for (source, expected_form, expected_event) in matches {
+        let (text, refusal, cause) = only(&source);
+        assert_eq!(
+            catalog(&refusal),
+            ("unsupported_construct", Some("declaration-form")),
+            "{expected_form}"
+        );
+        let ProtocolAnchorCause::AwaitedForm {
+            node, event, form, ..
+        } = &cause
+        else {
+            panic!("an awaited-form refusal, got {cause:?}");
+        };
+        assert_eq!(
+            (node.as_str(), event.as_str(), *form),
+            ("Wait", expected_event, expected_form)
+        );
+        assert_eq!(located(&text, &cause), "Wait");
+    }
+
+    for (within, upper) in [("[5,1]", Some(1)), ("[0,*]", None)] {
+        let (text, refusal, cause) = only(&awaiting("", within, event));
+        assert_eq!(catalog(&refusal), ("ill_typed", Some("type-mismatch")));
+        let ProtocolAnchorCause::AwaitWindow {
+            node,
+            lower,
+            upper: written,
+            ..
+        } = &cause
+        else {
+            panic!("a window refusal, got {cause:?}");
+        };
+        assert_eq!(node, "Wait");
+        assert_eq!(*written, upper);
+        assert_eq!(*lower, if upper.is_some() { 5 } else { 0 });
+        assert_eq!(located(&text, &cause), within);
+    }
+
+    let header = HEADER.replace("profile t = \"quire.temporal.infinite-trace/v1\";\n", "");
+    assert_ne!(
+        header, HEADER,
+        "the fixture header selects a temporal profile"
+    );
+    let (text, assembled) = assemble_with(&header, &source);
+    let found = assembled
+        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .expect_err("an await under no temporal profile refuses");
+    let [cause] = protocol_causes(&found)[..] else {
+        panic!("one refusal: {found:?}");
+    };
+    assert_eq!(
+        (cause.code().as_str(), cause.tag()),
+        ("missing_declaration", "missing-selection")
+    );
+    assert!(matches!(
+        cause,
+        ProtocolAnchorCause::MissingTemporalProfile { node, .. } if node == "Wait"
+    ));
+    assert_eq!(located(&text, cause), "Wait");
+}
+
 /// FR-218-AC-11: a `send` via a name that is no channel refuses
 /// `missing_declaration`/`missing-name` at the name; a `send` or `receive`
 /// whose binder type differs from the channel's `carries` type refuses
@@ -451,8 +568,8 @@ fn a_message_names_a_channel_and_carries_its_type() {
 }
 
 /// FR-218 "Choice and repeat decisions", the owner and the constant
-/// guards (FR-218-AC-17 and AC-19 are not claimed: guards that read visible
-/// facts are not checked yet): a `choice` or `repeat` owned by an
+/// guards (guards over visible facts are FR-218-AC-17's and AC-19's tests
+/// below): a `choice` or `repeat` owned by an
 /// undeclared role refuses `missing_declaration`/`missing-name` at the
 /// owner; constant guards that both hold refuse
 /// `undefined_expression`/`unproved-exhaustiveness` with `duplicate-arm`,
@@ -635,19 +752,22 @@ fn a_decision_reads_only_listed_facts_of_its_owner() {
     };
     assert_eq!((choice.owner, choice.visible.len()), (1, 1));
 
-    let observed = |source: &str| -> Vec<(String, Option<String>, ObservationReason, String)> {
+    let observed = |expected_owner: &str,
+                    source: &str|
+     -> Vec<(String, Option<String>, ObservationReason, String)> {
         located_causes(source)
             .into_iter()
             .map(|(cause, at)| match cause {
                 ProtocolAnchorCause::WrongObservation {
                     node,
-                    owner: _,
+                    owner,
                     binder,
                     field,
                     reason,
                     ..
                 } => {
                     assert_eq!(node, "Pick");
+                    assert_eq!(owner, expected_owner);
                     (binder, field, reason, at)
                 }
                 other => panic!("a wrong observation, got {other:?}"),
@@ -663,49 +783,46 @@ fn a_decision_reads_only_listed_facts_of_its_owner() {
         )
     };
     assert_eq!(
-        observed(&received(&pick(
+        observed(
             "R",
-            "rx.ready",
-            "rx.ready",
-            "not rx.ready"
-        ))),
+            &received(&pick("R", "rx.ready", "rx.ready", "not rx.ready"))
+        ),
         [read("rx", ObservationReason::OtherRole, "rx.ready")]
     );
     assert_eq!(
-        observed(&received(&pick(
+        observed(
             "S",
-            "tx.ready",
-            "tx.ready",
-            "not tx.ready"
-        ))),
+            &received(&pick("S", "tx.ready", "tx.ready", "not tx.ready"))
+        ),
         [read("tx", ObservationReason::IneligibleKind, "tx.ready")]
     );
     assert_eq!(
-        observed(&received(&pick("S", "", "rx.ready", "not rx.ready"))),
+        observed("S", &received(&pick("S", "", "rx.ready", "not rx.ready"))),
         [
             read("rx", ObservationReason::Unlisted, "rx.ready"),
             read("rx", ObservationReason::Unlisted, "rx.ready"),
         ]
     );
     assert_eq!(
-        observed(&received(&pick(
+        observed(
             "S",
-            "rx.ready and rx.done",
-            "rx.ready",
-            "not rx.ready"
-        ))),
+            &received(&pick(
+                "S",
+                "rx.ready and rx.done",
+                "rx.ready",
+                "not rx.ready"
+            ))
+        ),
         [
             read("rx", ObservationReason::Unlisted, "rx.ready"),
             read("rx", ObservationReason::Unlisted, "rx.ready"),
         ]
     );
     assert_eq!(
-        observed(&received(&pick(
+        observed(
             "S",
-            "",
-            "let unused = rx.ready in true",
-            "false"
-        ))),
+            &received(&pick("S", "", "let unused = rx.ready in true", "false"))
+        ),
         [read("rx", ObservationReason::Unlisted, "rx.ready")]
     );
     for (binder, node) in [
@@ -734,7 +851,7 @@ fn a_decision_reads_only_listed_facts_of_its_owner() {
             ),
         );
         assert_eq!(
-            observed(&source),
+            observed("R", &source),
             [read(
                 binder,
                 ObservationReason::IneligibleKind,
@@ -748,7 +865,7 @@ fn a_decision_reads_only_listed_facts_of_its_owner() {
         1,
     );
     assert_eq!(
-        observed(&activated),
+        observed("R", &activated),
         [read(
             "tick",
             ObservationReason::IneligibleKind,
@@ -831,8 +948,13 @@ fn a_record_outside_its_scope_is_an_unresolved_name() {
         let found = located_causes(&flow("", &run));
         let reads: Vec<(&str, &str)> = found
             .iter()
-            .map(|(cause, at)| match cause {
+            .map(|(refused, at)| match refused {
                 ProtocolAnchorCause::SlotClause { cause, .. } => {
+                    assert_eq!(
+                        (refused.code().as_str(), refused.tag()),
+                        ("missing_declaration", "missing-name"),
+                        "{case}"
+                    );
                     let crate::check::CheckCause::MissingName(name) = cause.as_ref() else {
                         panic!("{case}: a missing name, got {cause:?}");
                     };
@@ -904,7 +1026,7 @@ fn guards_partition_the_visible_facts() {
         };
         assert_eq!(choice, "Pick");
         assert_eq!(found, &failed, "{yes} / {no}");
-        assert!(!cases.is_empty());
+        assert_eq!(cases, &["yes".to_owned(), "no".to_owned()], "{yes} / {no}");
         assert_eq!(located(&text, &cause), "Pick");
     }
     checks(&received(&pick(

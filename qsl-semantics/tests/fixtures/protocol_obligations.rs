@@ -72,7 +72,13 @@ fn native(native: NativeValueType) -> ValueTypeRef {
 /// `Hop{ready, node}`; and the event type `Pulse{ready, occurred}`; all
 /// normalized to a [`SelectedModel`] aliased `M`.
 pub fn obligation_model() -> SelectedModel {
-    let records = vec![
+    obligation_model_with(Vec::new())
+}
+
+/// Fixture R's records followed by `extra`, normalized to a
+/// [`SelectedModel`] aliased `M`.
+pub fn obligation_model_with(extra: Vec<DomainPackageRecord>) -> SelectedModel {
+    let mut records = vec![
         scalar("Total", 0, 1000),
         scalar("Tally", 0, 3),
         scalar("Digit", 0, 9),
@@ -150,6 +156,7 @@ pub fn obligation_model() -> SelectedModel {
         field("Pulse", "ready", native(NativeValueType::Boolean)),
         field("Pulse", "occurred", native(NativeValueType::Timestamp)),
     ];
+    records.extend(extra);
     let package = DomainPackage::new(
         DomainPackageRef {
             identity: "example/protocol-obligations".to_owned(),

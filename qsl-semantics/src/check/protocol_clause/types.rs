@@ -93,6 +93,21 @@ pub struct CheckedProtocol {
     /// index-aligned with `obligations.compensations`, filled in after S4
     /// (FR-381 "Compensation registration").
     pub compensation_operations: Vec<CheckedOperationNodes>,
+    /// Every `await` with its clock and window, in source order (QSpec
+    /// FR-466 `await` layout).
+    pub awaits: Vec<CheckedAwait>,
+}
+
+/// One checked `await` (QSpec FR-466 `await` layout): its node, the clock
+/// role it reads and its closed activation-relative `within` window.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedAwait {
+    /// The `await` control.
+    pub node: ProtocolNodeId,
+    /// The `clock "<string>"` text: the clock role.
+    pub clock: String,
+    /// The `within [lower, upper]` window, `lower <= upper`.
+    pub within: crate::check::protocol_obligation::CheckedDeadline,
 }
 
 /// One port of a control (FR-218 "Outputs", QSpec FR-464 "Derived causal

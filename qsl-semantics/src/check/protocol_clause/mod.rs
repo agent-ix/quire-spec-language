@@ -39,6 +39,7 @@
 
 mod anchors;
 mod attempts;
+mod awaits;
 mod binders;
 mod coverage;
 mod graph;
@@ -47,10 +48,11 @@ mod types;
 #[cfg(test)]
 mod tests;
 
+pub use awaits::Selections;
 pub use coverage::content;
 pub(crate) use graph::dominates;
 pub use types::{
-    BoundAttempt, CausalEdge, CheckedAttempt, CheckedControl, CheckedControlTree,
+    BoundAttempt, CausalEdge, CheckedAttempt, CheckedAwait, CheckedControl, CheckedControlTree,
     CheckedOperationNodes, CheckedProtocol, EdgeKind, Port, PortRef, ProtocolNodeId,
 };
 
@@ -96,8 +98,10 @@ fn refusal(cause: ProtocolAnchorCause) -> CheckRefusal {
 /// the protocol's own form. Once every anchor resolves, the `run` control
 /// tree and its compiled causal edge relation are built (FR-218), and a
 /// cycle without the `repeat` back edges, or a `repeat` whose body does not
-/// necessarily step, is refused; `profile` is the selected protocol
-/// profile's identity, which the latter refusal names. Returns the checked
+/// necessarily step, is refused. Each `await` is checked too: its awaited
+/// event's form, its `within` window and the unit's `temporal_profile`
+/// selection (`selections`; the protocol profile's identity is what the
+/// awaited-form and progress refusals name). Returns the checked
 /// protocol (its `attempts` empty: S4/lowering fills it in) alongside the
 /// S3-level `BoundAttempt`s `check::mod`'s own pipeline lowers next.
 #[allow(clippy::too_many_arguments)] // each input is a distinct package table the check reads
@@ -109,7 +113,7 @@ pub fn check(
     signatures: &Signatures,
     attempts: &[AttemptDeclaration],
     state_clauses: &[StateClauseDeclaration],
-    profile: Option<&str>,
+    selections: Selections<'_>,
 ) -> Result<(CheckedProtocol, Vec<BoundAttempt>), Vec<CheckRefusal>> {
     let mut refusals: Vec<(Span, CheckRefusal)> = Vec::new();
 
@@ -174,8 +178,16 @@ pub fn check(
         bind_attempts(protocol, attempts, state_clauses, scope.types());
     refusals.extend(contract_refusals);
 
+    let awaits = match awaits::check(protocol, selections) {
+        Ok(awaits) => awaits,
+        Err(await_refusals) => {
+            refusals.extend(await_refusals);
+            Vec::new()
+        }
+    };
+
     let compiled = if refusals.is_empty() {
-        match graph::compile(protocol, &resolved, profile) {
+        match graph::compile(protocol, &resolved, selections.protocol) {
             Ok(compiled) => Some(compiled),
             Err(graph_refusals) => {
                 refusals.extend(graph_refusals);
@@ -206,6 +218,7 @@ pub fn check(
             edges: compiled.edges,
             slots: crate::check::protocol_slots::CheckedSlots::default(),
             compensation_operations: Vec::new(),
+            awaits,
         },
         bound_attempts,
     ))

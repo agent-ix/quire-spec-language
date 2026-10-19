@@ -44,7 +44,7 @@ fn a_contract_entry_naming_two_clauses_of_one_name_refuses() {
         &signatures,
         &assembled.protocol_attempts[0],
         &assembled.state_clauses,
-        None,
+        super::super::Selections::default(),
     )
     .map(|_| ())
     .expect_err("an ambiguous contracts entry refuses");

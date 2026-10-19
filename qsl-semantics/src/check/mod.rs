@@ -256,8 +256,8 @@ pub use model_conformance::ModelConformanceFailure;
 pub use navigation::{EndDeclaration, EndSide, RelationshipDeclaration, Relationships};
 pub use profile::TemporalProfile;
 pub use protocol_clause::{
-    CausalEdge, CheckedAttempt, CheckedControl, CheckedControlTree, CheckedOperationNodes,
-    CheckedProtocol, EdgeKind, Port, PortRef, ProtocolNodeId,
+    CausalEdge, CheckedAttempt, CheckedAwait, CheckedControl, CheckedControlTree,
+    CheckedOperationNodes, CheckedProtocol, EdgeKind, Port, PortRef, ProtocolNodeId,
 };
 pub use protocol_controls::{CheckedChannel, CheckedOrdering};
 pub use protocol_obligation::{
@@ -1569,7 +1569,10 @@ impl PackageDeclarations {
                 &signatures,
                 attempts,
                 &state_clause_forms,
-                protocol_profile.as_deref(),
+                protocol_clause::Selections {
+                    protocol: protocol_profile.as_deref(),
+                    temporal: !self.temporal_selections.is_empty(),
+                },
             );
             // FR-381: the protocol's activation, captures and compensation
             // templates, through the clause checker over the names each

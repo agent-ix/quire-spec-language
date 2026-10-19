@@ -29,12 +29,61 @@ mod fixture {
     use crate as semantics;
     include!("../../../tests/fixtures/protocol_obligations.rs");
 }
-use fixture::{obligation_model, HEADER};
+use crate::model::intake::SelectedModel;
+use fixture::{obligation_model, obligation_model_with, HEADER};
+
+/// Fixture R with the object type `Pool` and its operation `drain`, `Pool`
+/// a member type of the two populations `Pools` and `Reserves`, so a frame
+/// over it has an undecided extent.
+fn ambiguous_population_model() -> SelectedModel {
+    use crate::model::domain_package::{
+        DomainPackageRecord, Extent, ObjectTypeRecord, OperationEffect, OperationMemberRecord,
+        PopulationRecord,
+    };
+    use crate::model::key::DeclarationKey;
+    let key = |name: &str| DeclarationKey {
+        package: "example/protocol-obligations".to_owned(),
+        node: format!("ix://example/protocol-obligations/{name}"),
+    };
+    let population = |name: &str| {
+        DomainPackageRecord::Population(PopulationRecord {
+            key: key(name),
+            member_types: vec![key("Pool")],
+            extent: Extent::Closed,
+        })
+    };
+    obligation_model_with(vec![
+        DomainPackageRecord::ObjectType(ObjectTypeRecord {
+            key: key("Pool"),
+            interface_features: None,
+            abstract_type: false,
+            supertypes: Vec::new(),
+        }),
+        DomainPackageRecord::OperationMember(OperationMemberRecord {
+            key: key("Pool/drain"),
+            owner: key("Pool"),
+            parameters: Vec::new(),
+            result: None,
+            effect: OperationEffect::default(),
+            requires: Vec::new(),
+            ensures: Vec::new(),
+            has_body: false,
+            redefines: None,
+        }),
+        population("Pools"),
+        population("Reserves"),
+    ])
+}
 
 /// S1, S2 and the assembler over `declarations`, against fixture R. A
 /// leading `profile` line of `declarations` is a header selection: it is
 /// written among the header's profiles, before the model.
 fn assemble(declarations: &str) -> (String, PackageDeclarations) {
+    assemble_against(obligation_model(), declarations)
+}
+
+/// [`assemble`] against `model` in place of fixture R.
+fn assemble_against(model: SelectedModel, declarations: &str) -> (String, PackageDeclarations) {
     let (profile, declarations) = match declarations.split_once('\n') {
         Some((first, rest)) if first.starts_with("profile ") => (format!("{first}\n"), rest),
         _ => (String::new(), declarations),
@@ -53,7 +102,7 @@ fn assemble(declarations: &str) -> (String, PackageDeclarations) {
     let assembled = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         unit,
-        vec![obligation_model()],
+        vec![model],
         Vec::new(),
     )
     .unwrap_or_else(|refusal| panic!("{declarations}: the assembler refuses: {refusal:?}"));

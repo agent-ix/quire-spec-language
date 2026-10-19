@@ -360,6 +360,46 @@ pub enum ProtocolAnchorCause {
         /// The `choice`'s name span.
         span: Span,
     },
+    /// QSpec FR-466 "Per-operator checks" 2: an `await` whose matched event
+    /// is a `send` or an `attempt`. `unsupported_construct`/
+    /// `declaration-form`, at the `await`, naming the form and the selected
+    /// protocol profile.
+    AwaitedForm {
+        /// The `await` control's declared name.
+        node: String,
+        /// The matched event node's declared name.
+        event: String,
+        /// The matched node's form keyword (`send` or `attempt`).
+        form: &'static str,
+        /// The identity of the selected protocol profile, when one is
+        /// selected.
+        profile: Option<String>,
+        /// The `await`'s name span.
+        span: Span,
+    },
+    /// QSpec FR-466 "Per-operator checks" 6: an `await`'s `within` with
+    /// `lower > upper` or an open upper bound. `ill_typed`/`type-mismatch`
+    /// at the interval (member `within`, expected a closed interval with
+    /// `lower <= upper`, actual the interval as written).
+    AwaitWindow {
+        /// The `await` control's declared name.
+        node: String,
+        /// The lower bound as written.
+        lower: u64,
+        /// The upper bound as written; `None` for `*`.
+        upper: Option<u64>,
+        /// The interval's span.
+        span: Span,
+    },
+    /// QSpec FR-464 "Profiles and laws": an `await` reads a clock role, so
+    /// the unit selects a `temporal_profile`; without one,
+    /// `missing_declaration`/`missing-selection` at the `await`.
+    MissingTemporalProfile {
+        /// The `await` control's declared name.
+        node: String,
+        /// The `await`'s name span.
+        span: Span,
+    },
 }
 
 /// Which expression slot of a protocol node a refusal is about (FR-218
@@ -590,7 +630,10 @@ impl ProtocolAnchorCause {
             | Self::KeyEquality { span, .. }
             | Self::SlotClause { span, .. }
             | Self::SlotModelState { span, .. }
-            | Self::WrongObservation { span, .. } => *span,
+            | Self::WrongObservation { span, .. }
+            | Self::AwaitedForm { span, .. }
+            | Self::AwaitWindow { span, .. }
+            | Self::MissingTemporalProfile { span, .. } => *span,
         }
     }
 
@@ -604,18 +647,22 @@ impl ProtocolAnchorCause {
             | Self::MissingRole { .. }
             | Self::ChannelRole { .. }
             | Self::NodeRole { .. }
-            | Self::MissingChannel { .. } => Code::MissingDeclaration,
+            | Self::MissingChannel { .. }
+            | Self::MissingTemporalProfile { .. } => Code::MissingDeclaration,
             Self::Ambiguous { .. } | Self::Shadow { .. } => Code::AmbiguousDeclaration,
             Self::WrongKind { .. }
             | Self::ChannelMismatch { .. }
             | Self::CarriesMismatch { .. }
+            | Self::AwaitWindow { .. }
             | Self::KeyModelState { .. }
             | Self::KeyEquality { .. }
             | Self::SlotModelState { .. } => Code::IllTyped,
             Self::KeyClause { cause, .. } | Self::SlotClause { cause, .. } => cause.code(),
             Self::WrongObservation { .. } => Code::WrongSnapshot,
             Self::WrongContractAnchor { .. } => Code::WrongSnapshot,
-            Self::Unimplemented { .. } | Self::NoProgress { .. } => Code::UnsupportedConstruct,
+            Self::Unimplemented { .. } | Self::NoProgress { .. } | Self::AwaitedForm { .. } => {
+                Code::UnsupportedConstruct
+            }
             Self::CausalCycle { .. } => Code::InvalidPackage,
             Self::Exhaustiveness { .. } => Code::UndefinedExpression,
             Self::BinderType { fault, .. } | Self::ChannelType { fault, .. } => {
@@ -642,7 +689,8 @@ impl ProtocolAnchorCause {
             Self::Ambiguous { .. } | Self::Shadow { .. } => "ambiguous-name",
             Self::WrongKind { .. }
             | Self::ChannelMismatch { .. }
-            | Self::CarriesMismatch { .. } => "type-mismatch",
+            | Self::CarriesMismatch { .. }
+            | Self::AwaitWindow { .. } => "type-mismatch",
             Self::KeyModelState { .. } | Self::KeyEquality { .. } | Self::SlotModelState { .. } => {
                 "operator-ineligible"
             }
@@ -654,7 +702,8 @@ impl ProtocolAnchorCause {
             Self::WrongObservation { .. } => "wrong-observation",
             Self::WrongContractAnchor { .. } => "wrong-anchor",
             Self::Unimplemented { .. } => "not-yet-implemented",
-            Self::NoProgress { .. } => "declaration-form",
+            Self::NoProgress { .. } | Self::AwaitedForm { .. } => "declaration-form",
+            Self::MissingTemporalProfile { .. } => "missing-selection",
             Self::CausalCycle { .. } => "definition-cycle",
             Self::Exhaustiveness { .. } => "unproved-exhaustiveness",
             Self::BinderType { fault, .. } | Self::ChannelType { fault, .. } => {

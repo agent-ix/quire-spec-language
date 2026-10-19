@@ -6,7 +6,10 @@ use ix_trace_rs::trace;
 use qsl_forms::ProtocolNodeKind;
 use qsl_foundation::diagnostic::Code;
 
-use super::{assemble, changed, checked, edit, only, other, refusals, BASE};
+use super::{
+    ambiguous_population_model, assemble, assemble_against, changed, checked, edit,
+    obligation_causes, only, other, refusals, BASE,
+};
 use crate::check::protocol_clause::ProtocolNodeId;
 use crate::check::{
     CaptureOwner, CaptureStage, CheckCause, CheckedActivation, CheckedCommit, CheckedGraph,
@@ -489,4 +492,49 @@ fn a_full_and_a_partial_recovery_are_two_compensations() {
         })
         .collect();
     assert_eq!(names, ["Full", "Partial"]);
+}
+
+/// A template whose operation's type is a member type of two populations
+/// refuses `ambiguous_declaration`/`ambiguous-name` at the operation, naming
+/// both populations: its frame's extent is undecided, as FR-114 refuses an
+/// attempt's.
+#[test]
+fn a_template_over_two_populations_refuses_its_operation() {
+    let source = changed(
+        "by Service on M::Node::step using v",
+        "by Service on M::Pool::drain using v",
+    );
+    let (text, assembled) = assemble_against(ambiguous_population_model(), &source);
+    let found = assembled
+        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .expect_err("an operation over two populations refuses");
+    let causes = obligation_causes(&found);
+    let [cause] = causes.as_slice() else {
+        panic!("one obligation refusal: {found:?}");
+    };
+    assert_eq!(
+        (cause.code(), cause.tag()),
+        (Code::AmbiguousDeclaration, Some("ambiguous-name"))
+    );
+    let ObligationCause::AmbiguousPopulation {
+        compensation,
+        populations,
+        span,
+    } = cause
+    else {
+        panic!("an ambiguous population, got {cause:?}");
+    };
+    assert_eq!(compensation, "Refund");
+    let names: Vec<&str> = populations
+        .iter()
+        .map(|population| population.node.as_str())
+        .collect();
+    assert_eq!(
+        names,
+        [
+            "ix://example/protocol-obligations/Pools",
+            "ix://example/protocol-obligations/Reserves"
+        ]
+    );
+    assert_eq!(&text[span.start..span.end], "M::Pool::drain");
 }

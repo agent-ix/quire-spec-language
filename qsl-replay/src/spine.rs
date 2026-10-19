@@ -776,7 +776,8 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                     format!("{message}: `{node}` names `{name}`, which is no role of the protocol")
                 }
                 ProtocolAnchorCause::MissingChannel { node, name, .. } => format!(
-                    "{message}: `{node}` is written via `{name}`, which is no channel of the                      protocol"
+                    "{message}: `{node}` is written via `{name}`, which is no channel of the \
+                     protocol"
                 ),
                 ProtocolAnchorCause::CarriesMismatch { channel, .. } => format!(
                     "{message}: the binder's type is not the type channel `{channel}` carries"
@@ -817,12 +818,27 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                     reason.identifier()
                 ),
                 ProtocolAnchorCause::Exhaustiveness { choice, failed, .. } => format!(
-                    "{message}: the guards of `choice {choice}` are not exhaustive and exclusive                      ({})",
+                    "{message}: the guards of `choice {choice}` are not exhaustive and exclusive \
+                     ({})",
                     failed
                         .iter()
                         .map(|fault| fault.identifier())
                         .collect::<Vec<_>>()
                         .join(", ")
+                ),
+                ProtocolAnchorCause::AwaitedForm {
+                    node, event, form, ..
+                } => format!(
+                    "{message}: `await {node}` matches `{form} {event}`; an await matches a \
+                     receive, an effect or an event"
+                ),
+                ProtocolAnchorCause::AwaitWindow { node, .. } => format!(
+                    "{message}: the `within` of `await {node}` is not a closed interval with \
+                     lower <= upper"
+                ),
+                ProtocolAnchorCause::MissingTemporalProfile { node, .. } => format!(
+                    "{message}: `await {node}` reads a clock, but the unit selects no temporal \
+                     profile"
                 ),
             };
         }
