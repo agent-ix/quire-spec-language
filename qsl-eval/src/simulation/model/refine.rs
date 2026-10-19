@@ -34,35 +34,49 @@ pub enum RowReading {
     Undetermined(ClauseOutcome),
 }
 
+/// The observation of one state, which [`ModelSystem::read_row`] reads.
+#[derive(Clone, Debug)]
+pub struct StateObservation(qsl_semantics::model::observation::Observation);
+
 impl ModelSystem<'_> {
-    /// Evaluate `row` over the observation of `state`, with `bindings` for
+    /// Evaluate `row` over `observed`, with `bindings` for
     /// its parameters (`self` first) and a fresh meter of this system's
     /// budget.
     ///
     /// # Errors
     ///
-    /// `runtime_invariant`/`established-invariant-broken` when `state` is
-    /// not a state of this system or the evaluator faults.
+    /// `runtime_invariant`/`established-invariant-broken` when the evaluator
+    /// faults.
     pub fn read_row(
         &self,
         row: &CheckedRow,
-        state: &ModelState,
+        observed: &StateObservation,
         bindings: Vec<Value>,
     ) -> Result<RowReading, ExpansionStop> {
-        let (_, digest) = self.state_key_of(state).map_err(|_| stop(BROKEN))?;
-        let observation = self
-            .model
-            .observation(state, state_document(&digest))
-            .map_err(|_| stop(BROKEN))?;
         let evaluation = evaluate_refinement_row(
             self.package,
             row,
-            &observation.environment,
+            &observed.0.environment,
             bindings,
             &mut Meter::new(self.meter),
         )
         .map_err(|_| stop(BROKEN))?;
-        Ok(reading(&evaluation.outcome))
+        reading(&evaluation.outcome)
+    }
+
+    /// The synthesized observation of `state`, built once for every row read
+    /// over it.
+    ///
+    /// # Errors
+    ///
+    /// `runtime_invariant`/`established-invariant-broken` when `state` is not
+    /// a state of this system.
+    pub fn observe(&self, state: &ModelState) -> Result<StateObservation, ExpansionStop> {
+        let (_, digest) = self.state_key_of(state).map_err(|_| stop(BROKEN))?;
+        self.model
+            .observation(state, state_document(&digest))
+            .map(StateObservation)
+            .map_err(|_| stop(BROKEN))
     }
 
     /// FR-101's `quire.simulation.state-key/v1` digest of `state`, and its
@@ -112,9 +126,9 @@ impl ModelSystem<'_> {
 ///
 /// A `match` over [`FamilyOutcome`] would have to name its probe-only
 /// variant (FR-063), so the two real arms are tested in turn.
-fn reading(outcome: &FamilyOutcome<Value>) -> RowReading {
+fn reading(outcome: &FamilyOutcome<Value>) -> Result<RowReading, ExpansionStop> {
     if let FamilyOutcome::Evaluated(kernel) = outcome {
-        return match kernel {
+        return Ok(match kernel {
             Outcome::Completed(value) => RowReading::Value(value.clone()),
             Outcome::Undefined(undefined) => {
                 RowReading::Undefined(UndefinedCause::Kernel(undefined.clone()))
@@ -125,17 +139,18 @@ fn reading(outcome: &FamilyOutcome<Value>) -> RowReading {
             Outcome::Incomplete(incomplete) => {
                 RowReading::Undetermined(ClauseOutcome::Incomplete(incomplete.clone()))
             }
-        };
+        });
     }
     if let FamilyOutcome::FamilyEvaluated(family) = outcome {
-        return match family {
+        return Ok(match family {
             FamilyResult::Refused(cause) => {
                 RowReading::Undetermined(ClauseOutcome::FamilyRefused(cause.catalog_code()))
             }
             FamilyResult::Undefined(cause) => {
                 RowReading::Undefined(UndefinedCause::Family(cause.undefined_record()))
             }
-        };
+        });
     }
-    RowReading::Undetermined(ClauseOutcome::NotBoolean)
+    // The probe-only variant is never built by a real evaluation.
+    Err(stop(BROKEN))
 }

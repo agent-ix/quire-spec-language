@@ -15,7 +15,7 @@ use qsl_semantics::check::{CheckedGraph, CheckedRefinement, PackageDeclarations}
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
 use qsl_semantics::model::key::{hex, DeclarationKey};
-use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
+use qsl_semantics::model::observation::{AdmissionFailure, DocumentRef, ObservationLimits};
 use qsl_semantics::model::state::{ModelState, StateObject};
 use quire_exact::{Integer, ScalarLimits, Value};
 use quire_semantic_value::checking::CheckingLimits;
@@ -416,6 +416,17 @@ impl World {
     }
 
     fn system(&self, model: &str, initial: &DocumentRef, meter: ScalarLimits) -> ModelSystem<'_> {
+        self.try_system(model, initial, meter)
+            .expect("the model system admits")
+    }
+
+    /// A system over the model `model`, or why it does not admit.
+    pub(crate) fn try_system(
+        &self,
+        model: &str,
+        initial: &DocumentRef,
+        meter: ScalarLimits,
+    ) -> Result<ModelSystem<'_>, AdmissionFailure> {
         ModelSystem::over_model(
             ModelSimulationRequest {
                 package: &self.package,
@@ -435,7 +446,14 @@ impl World {
             },
             model,
         )
-        .expect("the model system admits")
+    }
+
+    /// A system over `model`, a model the unit does not select.
+    pub(crate) fn unselected_system(
+        &self,
+        model: &str,
+    ) -> Result<ModelSystem<'_>, AdmissionFailure> {
+        self.try_system(model, &self.cas_initial, UNLIMITED)
     }
 }
 

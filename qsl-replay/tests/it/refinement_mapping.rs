@@ -7,7 +7,7 @@ use qsl_semantics::model::state::ModelState;
 use quire_exact::ScalarLimits;
 
 use crate::refinement_fixture::{
-    cas_refines_counter, cas_state, key, mutated, spec_state, World, SPEC, UNLIMITED, ZERO,
+    cas_refines_counter, cas_state, key, mutated, spec_state, World, CAS, SPEC, UNLIMITED, ZERO,
 };
 
 /// The state key of the abstract state `concrete` maps to, under a clause
@@ -132,4 +132,35 @@ fn a_field_with_no_row_is_listed_as_hidden() {
     );
     let counter = &mapped.visible.populations[&key(SPEC, "counters")]["c"];
     assert!(counter.fields.is_empty(), "{:?}", counter.fields);
+}
+
+/// FR-140 "Behavior": a concrete object whose most-specific type no object
+/// row names is reported as an unmapped type, never dropped from the image.
+#[trace("TC-545")]
+#[test]
+fn an_object_of_an_unmapped_type_is_reported_not_dropped() {
+    let world = World::new(&cas_refines_counter());
+    let mut state = cas_state(1, 0, false, 0, true);
+    let stray = key(CAS, "Stray");
+    for object in state.populations.values_mut().flat_map(|o| o.values_mut()) {
+        object.type_identity = stray.clone();
+    }
+    let MappingFailure::Undetermined(undetermined) = failure(&world, UNLIMITED, &state) else {
+        panic!("the mapping is undetermined");
+    };
+    assert_eq!(undetermined.cause, EvalFailure::UnmappedType(stray.clone()));
+    assert_eq!(
+        undetermined.row,
+        MappingRowRef::Object {
+            concrete_type: stray
+        }
+    );
+}
+
+/// `ModelSystem::over_model` refuses a model the unit does not select.
+#[trace("TC-545")]
+#[test]
+fn a_system_over_an_unselected_model_is_refused() {
+    let world = World::new(&cas_refines_counter());
+    assert!(world.unselected_system("example/not-selected").is_err());
 }

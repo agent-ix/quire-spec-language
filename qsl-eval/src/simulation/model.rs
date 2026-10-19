@@ -55,7 +55,7 @@ use crate::value::QualifiedName;
 pub use encode::ModelKey;
 use encode::{declaration_enc, declaration_text, Enc};
 pub use footprints::{FootprintError, FootprintViolation, WithinStop};
-pub use refine::RowReading;
+pub use refine::{RowReading, StateObservation};
 pub use terminal::TerminalClass;
 
 /// `resource_exhausted`/`insufficient-next-charge`: a candidate count, or an

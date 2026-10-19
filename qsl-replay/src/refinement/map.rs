@@ -12,7 +12,7 @@
 
 use std::collections::BTreeMap;
 
-use qsl_eval::simulation::model::{ClauseOutcome, ModelSystem, RowReading};
+use qsl_eval::simulation::model::{ClauseOutcome, ModelSystem, RowReading, StateObservation};
 use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::CatalogCode;
 use qsl_semantics::check::{CheckedRefinement, FieldRow, ObjectRow};
@@ -63,6 +63,8 @@ pub enum MappingFeature {
     /// A reference nested inside an option, record, union or collection
     /// value, which reference lifting (RM-3) does not yet rewrite.
     NestedReference,
+    /// An abstract field declared `?`, which FR-140 gives no rule for.
+    OptionalField,
 }
 
 /// Why a row evaluation gave no value and no refutation (ADR-020 RE-4).
@@ -145,6 +147,8 @@ pub fn map_state(
         extents: Vec::new(),
     };
     let mut hidden = Vec::new();
+    // The concrete state's observation, built once for every row read.
+    let mut observed: Option<StateObservation> = None;
     for row in refinement.populations() {
         let mut image = BTreeMap::new();
         if let Some(objects) = state.populations.get(&row.concrete_population) {
@@ -160,11 +164,23 @@ pub fn map_state(
                 else {
                     return Err(unmapped(&object.type_identity, at));
                 };
+                if observed.is_none() {
+                    observed = Some(concrete_system.observe(state).map_err(|stop| {
+                        object_failure(
+                            &object.type_identity,
+                            at.clone(),
+                            EvalFailure::Stopped(stop.cause),
+                        )
+                    })?);
+                }
+                let Some(observed) = observed.as_ref() else {
+                    continue;
+                };
                 let mapped = map_object(
                     refinement,
                     concrete_system,
                     abstract_system,
-                    state,
+                    observed,
                     object_row,
                     &at,
                 )?;
@@ -223,7 +239,7 @@ fn map_object(
     refinement: &CheckedRefinement,
     concrete_system: &ModelSystem<'_>,
     abstract_system: &ModelSystem<'_>,
-    state: &ModelState,
+    observed: &StateObservation,
     object_row: &ObjectRow,
     at: &ObjectKey,
 ) -> Result<StateObject, MappingFailure> {
@@ -249,7 +265,7 @@ fn map_object(
         let reading = concrete_system
             .read_row(
                 &row.expression,
-                state,
+                observed,
                 vec![Value::Reference(receiver.clone())],
             )
             .map_err(|stop| stopped(row, EvalFailure::Stopped(stop.cause)))?;
@@ -266,19 +282,19 @@ fn map_object(
                 return Err(stopped(row, EvalFailure::Evaluation(Box::new(outcome))))
             }
         };
-        let optional = declared
+        // FR-140 states no rule for a `?` field, whose row has type
+        // `Option<T>` while a state holds the bare value or nothing, so it
+        // is refused rather than guessed.
+        if declared
             .and_then(|fields| fields.iter().find(|field| field.key == row.field))
-            .is_some_and(|field| field.optional);
-        let present = if optional {
-            match &value {
-                Value::Option(option) => option.payload().cloned(),
-                _ => Some(value),
-            }
-        } else {
-            Some(value)
-        };
-        let Some(present) = present else { continue };
-        let lifted = lift(refinement, concrete_system, abstract_system, present)
+            .is_some_and(|field| field.optional)
+        {
+            return Err(stopped(
+                row,
+                EvalFailure::Unsupported(MappingFeature::OptionalField),
+            ));
+        }
+        let lifted = lift(refinement, concrete_system, abstract_system, value)
             .map_err(|cause| stopped(row, cause))?;
         fields.insert(row.field.clone(), lifted);
     }
