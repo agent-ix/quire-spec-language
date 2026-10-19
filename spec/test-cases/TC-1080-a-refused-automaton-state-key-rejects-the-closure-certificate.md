@@ -22,6 +22,9 @@ Use FR-338-AC-1's certificate over ADR-018 §6's subject.
 2. Repeat with a non-canonical encoding and with an unsorted set.
 3. Settle each proof through FR-127.
 4. Restore the valid key and check again.
+5. Refuse the keys of two states and check the certificate in both orderings
+   of `states`.
+6. Check a request whose clause root does not resolve in the package.
 
 Tag the tests `#[trace("TC-1080", "FR-338-AC-8")]`.
 
@@ -30,3 +33,5 @@ Tag the tests `#[trace("TC-1080", "FR-338-AC-8")]`.
 - Steps 1 and 2: `Rejected` with `ShapeMismatch` at `ProductState` carrying the refused key and its model state; never `Accepted`.
 - Step 3: `inconclusive`, `CertificateRejected`; never `proved`.
 - Step 4: `Accepted`.
+- Step 5: both orderings report the same, least refused `ProductStateRef`.
+- Step 6: the request is refused and settles `Failed`.

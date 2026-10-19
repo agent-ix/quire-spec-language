@@ -13,6 +13,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-123
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-125
+    type: depends_on
 ---
 # FR-337: Emit a checked temporal clause as a v2 temporal clause node
 
@@ -56,12 +58,17 @@ reader returns.
 - One v2 node per temporal clause, its body as FR-370 states, with
   `semantic_type` the package's `scalar_type`/`boolean` node and every
   occurrence of role `claim`.
-- The clause's identity triple `[node, role, ordinal]`: `node` is the
-  emitted node's FR-322 NodeId, `role` is `claim`, and `ordinal` is the
-  occurrence ordinal the package assigns that node (O-07). The triple is
-  the clause root of FR-338's automaton-state context.
+- One identity triple `[node, role, ordinal]` per `claim` occurrence of the
+  clause node: `node` is the emitted node's FR-322 NodeId, `role` is
+  `claim`, and `ordinal` is that occurrence's ordinal (O-07). Node ids are
+  content-addressed, so two structurally identical clause declarations share
+  one node and differ only by occurrence ordinal (FR-088-AC-3); each
+  declaration has its own triple. The triple is the clause root of FR-338's
+  automaton-state context.
 - The clause's `over` node: the NodeId of the parameter node the first
-  argument of the `quire.op.temporal.clause` application references.
+  argument of the `quire.op.temporal.clause` application references. A
+  clause with no `over` parameter (FR-125-AC-7) has no `over` node; that
+  absence is a valid result, not a refusal.
 - From the I2 reader: the checked clause's v2 view, or FR-370's refusal
   with its locus.
 
@@ -84,19 +91,29 @@ reader returns.
   its written `weak whole` form emit identical bytes (ADR-018 FA-6).
 - The emitter SHALL write strong previous as `quire.op.temporal.once` with
   interval `{lower: "1", upper: "1"}`.
-- The emitter SHALL emit the clause node as the only source of the clause's
-  identity: a consumer resolves a clause root `[node, role, ordinal]` by
-  looking `node` up in the recompiled package and requiring a
-  `temporal`/`temporal_clause` node whose occurrence carries that role and
-  ordinal, and reads the clause's `over` node from that node's first
-  argument. No consumer supplies either from outside the package.
+- The emitter SHALL emit, for every clause, a node that carries the
+  clause's `over` reference and one `claim` occurrence per declaration, so
+  the identity triple and `over` node are derivable from the package alone.
 - The emitter SHALL write the `over` argument as a reference to the
-  parameter node, never as a value; the concrete binding of an `over`
-  parameter comes from the model subject a check explores (FR-125), not
-  from the package.
-- The I2 reader SHALL return the clause's identity triple and `over` node
-  with its v2 view, and SHALL refuse a lookup whose node is absent, is not
-  a temporal clause node, or whose occurrence role or ordinal differs.
+  parameter node, never as a value.
+- The concrete binding of an `over` parameter comes from the model subject
+  a check explores (FR-125), not from the package.
+- A consumer resolves a clause root against the package (FR-338 states the
+  checker's resolution) and takes the `over` node only from the package;
+  it takes neither a clause the package does not hold nor an `over` node
+  from its caller.
+- The I2 reader SHALL return, for each `claim` occurrence, its identity
+  triple and its `over` node, or no `over` node for a clause without an
+  `over` parameter.
+- If a looked-up clause root names a NodeId the package does not hold, a
+  node that is not a `temporal`/`temporal_clause` node, or an occurrence
+  whose role or ordinal differs, then the I2 reader SHALL return the lookup
+  refusal `clause-root-unresolved` at the looked-up triple. This is a
+  QSL lookup result, not an FR-370 package refusal, because the package
+  itself is well-formed. Whether it rejects a certificate or refuses a
+  request is decided by the caller: FR-338 refuses the request when the
+  request's own clause root is unresolved and rejects the certificate when
+  a key's context root is.
 - The emitter SHALL key the node and its dependencies by FR-322's
   application-node rule, so equal checked clauses emit equal node keys and
   a different interval, fairness set or profile emits a different key.
@@ -112,14 +129,19 @@ reader returns.
 | FR-337-AC-2 | The clause written with `fair weak attemptUpdate` and with `fair weak whole attemptUpdate` emits byte-identical fairness applications and equal node keys; changing `each` to `whole`, or the formula's `eventually` to `eventually[0,5]`, changes the node key and the `package_id`. | Test (TC-524) |
 | FR-337-AC-3 | `eventually[0,5] holds(c.versionNumber = 2)` under event-position false-extension emits `quire.op.temporal.eventually` with member `temporal_interval` `{lower: "0", upper: "5"}` and an empty fairness argument; strong previous emits `quire.op.temporal.once` with `{lower: "1", upper: "1"}`; under infinite-trace `eventually[3,*] holds(c.versionNumber = 2)` emits `{lower: "3", upper: null}`. | Test (TC-524) |
 | FR-337-AC-4 | Fed to QSL's I2 reader, AC-1's node with its arguments reordered fails the schema; with a `null` interval under a bounded profile it refuses `invalid_package`/`operation-member-mismatch`; with a fairness member naming an absent operation it refuses `missing_declaration`/`missing-name`; with a `quire.op.temporal.fair` application inside the formula it refuses `ill_typed`/`operator-ineligible`, each at FR-370's locus. | Test (TC-524) |
-| FR-337-AC-5 | Compiling ADR-018 §6's example unit, the I2 reader returns for `ReachesTwo` the triple `[node, "claim", ordinal]` with `node` equal to the emitted node's NodeId and the `over` node equal to `c`'s parameter node; resolving that triple in the recompiled package finds the clause, while a triple with an unknown NodeId, a non-temporal node's NodeId, role `invariant` or another ordinal is refused. | Test (TC-1079) |
+| FR-337-AC-5 | Compiling ADR-018 §6's example unit, the I2 reader returns for `ReachesTwo` the triple `[node, "claim", ordinal]` with `node` equal to the emitted node's NodeId and the `over` node equal to `c`'s parameter node; resolving that triple in the recompiled package finds the clause. Two structurally identical clause declarations share one node and the reader returns two triples with distinct ordinals, each resolving to its own declaration. A clause with no `over` parameter (FR-125-AC-7's `possible Anything using v { true }` shape) returns its triple and no `over` node, not a refusal. A triple with an unknown NodeId, a non-temporal node's NodeId, role `invariant` or another ordinal returns `clause-root-unresolved` at that triple. | Test (TC-1079) |
 
 ## Dependencies
 
 - ADR-011 §6.1 layer 4 `package` and §2.1 E4; ADR-018 QS-11, FA-6, IV-1.
 - [FR-123](FR-123-check-fairness-and-interval-operators-of-infinite-trace-clauses.md)
   (the checked clause), [FR-093](FR-093-lower-checked-value-expressions-to-fr-322-terms.md)
-  (lowering a Boolean operand), FR-092 (node keys).
+  (lowering a Boolean operand), FR-092 (node keys),
+  [FR-125](FR-125-read-a-model-subject-s-behaviours-as-temporal-traces.md)
+  (the `over` binding and parameter-free clauses),
+  [FR-338](FR-338-check-an-en-1-closure-certificate.md) (the clause root
+  that consumes the triple), ADR-013 O-07 (occurrence ordinals), QSpec
+  FR-322 (NodeId).
 
 ## References
 
