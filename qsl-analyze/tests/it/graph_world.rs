@@ -6,8 +6,8 @@
 //!
 //! ADR-022 §7's worked examples are built here: §7.1's `ConfigVersion`
 //! ([`config_version`]), §7.2's game ([`game`]), §7.3's job ([`job`]) and
-//! FR-168-AC-9's `Fork` ([`fork_world`]); the path-pair choice's `Ladder`
-//! ([`ladder_world`]).
+//! FR-168-AC-9's `Fork` ([`fork_world`]); FR-168-AC-10's `Ladder`
+//! ([`ladder_world`]) and `Detour` ([`detour_world`]).
 
 use std::collections::BTreeMap;
 
@@ -679,7 +679,7 @@ pub(crate) fn fork_world(body: &str) -> World {
     )
 }
 
-/// The `Ladder` of the path-pair choice: `pos: Int[0, 3]`, initially 0;
+/// FR-168-AC-10's `Ladder`: `pos: Int[0, 3]`, initially 0;
 /// `a` (0 to 1), `b` (0 to 2), `c` and `d` (each 1 to 3) and `e` (2 to 3).
 pub(crate) fn ladder_world(body: &str) -> World {
     moves_world(
@@ -691,6 +691,25 @@ pub(crate) fn ladder_world(body: &str) -> World {
             ("c", 1, 3),
             ("d", 1, 3),
             ("e", 2, 3),
+        ],
+        body,
+    )
+}
+
+/// FR-168-AC-10's `Detour`: `pos: Int[0, 5]`, initially 0;
+/// `s` (0 to 1), `t` (0 to 2), `u` (1 to 4), `w` (2 to 5), `y` (2 to 4)
+/// and `x` (4 to 5).
+pub(crate) fn detour_world(body: &str) -> World {
+    moves_world(
+        ["test/detour", "D", "Detour", "detours"],
+        5,
+        &[
+            ("s", 0, 1),
+            ("t", 0, 2),
+            ("u", 1, 4),
+            ("w", 2, 5),
+            ("y", 2, 4),
+            ("x", 4, 5),
         ],
         body,
     )

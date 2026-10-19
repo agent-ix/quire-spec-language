@@ -458,6 +458,25 @@ impl<'g> Reader<'g> {
     /// The path pair from `node`: the shortest path to `to`, ties broken by
     /// canonical edge order, and the least, by length then canonical edge
     /// order, of the paths that first deviate from it.
+    fn path_pair(
+        &self,
+        node: usize,
+        d_y: &[usize],
+        h_edge: &impl Fn(usize) -> bool,
+    ) -> Result<Evidence, ModelCheckRefusal> {
+        let first = self.descend_edges(node, d_y, h_edge);
+        let second = self
+            .second_path(&first, d_y, h_edge)
+            .ok_or_else(|| fault("count-2-node-has-a-second-path"))?;
+        Ok(Evidence::PairOf {
+            first: first.iter().map(|edge| self.step(*edge)).collect(),
+            second: second.iter().map(|edge| self.step(*edge)).collect(),
+        })
+    }
+
+    /// The edges of the least path that first deviates from `first`, by
+    /// length then canonical edge order; `None` when no edge out of a node
+    /// of `first` other than its own leads into `H` toward `to`.
     ///
     /// A deviation at a position of `first` by one of its node's other edges
     /// has the length of the prefix, the edge and the target's distance, so
@@ -466,15 +485,14 @@ impl<'g> Reader<'g> {
     /// own edge and the later one takes `first`'s; edges out of one node
     /// have distinct canonical ranks, so the earlier is the lesser exactly
     /// when its edge ranks below `first`'s there. One scan of the edges out
-    /// of `first`'s nodes, in position then canonical order, finds the pair,
+    /// of `first`'s nodes, in position then canonical order, finds it,
     /// linear in nodes and edges.
-    fn path_pair(
+    fn second_path(
         &self,
-        node: usize,
+        first: &[usize],
         d_y: &[usize],
         h_edge: &impl Fn(usize) -> bool,
-    ) -> Result<Evidence, ModelCheckRefusal> {
-        let first = self.descend_edges(node, d_y, h_edge);
+    ) -> Option<Vec<usize>> {
         let mut best: Option<Deviation> = None;
         for (position, taken) in first.iter().enumerate() {
             let source = self.graph.edges[*taken].source.0;
@@ -508,14 +526,11 @@ impl<'g> Reader<'g> {
                 }
             }
         }
-        let deviation = best.ok_or_else(|| fault("count-2-node-has-a-second-path"))?;
+        let deviation = best?;
         let mut second = first[..deviation.position].to_vec();
         second.push(deviation.edge);
         second.extend(self.descend_edges(self.graph.edges[deviation.edge].target.0, d_y, h_edge));
-        Ok(Evidence::PairOf {
-            first: first.iter().map(|edge| self.step(*edge)).collect(),
-            second: second.iter().map(|edge| self.step(*edge)).collect(),
-        })
+        Some(second)
     }
 
     /// Settle with refuting `evidence` at its node, unless an undefined
@@ -658,11 +673,13 @@ mod tests {
         GraphWitness, ModelPath, OpenCause, RunEnd, StateGraphOutcome, WitnessSource,
     };
     use qsl_semantics::check::{CheckedStatePredicate, PredicateRole, StateGraphForm};
+    use quire_semantic_value::model_transition::ModelTransition;
 
     use super::super::{
-        ExploredStateGraph, GraphNode, GraphStats, InstanceView, NodeIndex, PredicateLabel,
+        ExploredStateGraph, GraphEdge, GraphNode, GraphStats, InstanceView, NodeIndex,
+        PredicateLabel,
     };
-    use super::decide;
+    use super::{decide, Reader, FAR};
 
     /// Item `item`'s one instance, `possible` with an unwritten target.
     fn view(item: usize) -> InstanceView<'static> {
@@ -720,6 +737,169 @@ mod tests {
         assert_eq!(
             decide(&graph, &form, &view(1), &[]).expect("decides"),
             StateGraphOutcome::Witnessed { paths }
+        );
+    }
+
+    /// A closed, completed graph over `count` nodes with `edges`, each
+    /// `(source, target)`; each node's outgoing edges rank in list order.
+    fn graph_of(count: usize, edges: &[(usize, usize)]) -> ExploredStateGraph {
+        let transition = |index: usize| {
+            ModelTransition::new(
+                format!("\"e{index}\""),
+                None,
+                Vec::new(),
+                quire_canonical::Limits::new(1 << 10),
+            )
+            .expect("a transition")
+        };
+        let mut outgoing = vec![Vec::new(); count];
+        for (index, (source, _)) in edges.iter().enumerate() {
+            outgoing[*source].push(index);
+        }
+        ExploredStateGraph {
+            nodes: (0..count)
+                .map(|node| GraphNode {
+                    key: DigestRecord::mint(
+                        DigestDomain::SimulationStateKeyV1,
+                        [u8::try_from(node).expect("a small graph"); 32],
+                    ),
+                    depth: 0,
+                    labels: Vec::new(),
+                })
+                .collect(),
+            edges: edges
+                .iter()
+                .enumerate()
+                .map(|(index, (source, target))| GraphEdge {
+                    source: NodeIndex(*source),
+                    transition: transition(index),
+                    target: NodeIndex(*target),
+                })
+                .collect(),
+            open: BTreeMap::new(),
+            end: RunEnd::Completed,
+            stats: GraphStats::default(),
+            outgoing,
+            parent: vec![None; count],
+            root: vec![0; count],
+            initial: vec![NodeIndex(0)],
+        }
+    }
+
+    /// The second path as the scan replaced in QSL-537 chose it: build every
+    /// path that first deviates from `first` and keep the least by length
+    /// then the canonical ranks of its edges.
+    fn by_candidates(
+        reader: &Reader<'_>,
+        first: &[usize],
+        d_y: &[usize],
+        h_edge: &impl Fn(usize) -> bool,
+    ) -> Option<Vec<usize>> {
+        let graph = reader.graph;
+        let ranks = |path: &[usize]| -> Vec<usize> {
+            path.iter()
+                .map(|edge| {
+                    let source = graph.edges[*edge].source.0;
+                    graph.outgoing[source]
+                        .iter()
+                        .position(|candidate| candidate == edge)
+                        .expect("an edge is out of its source")
+                })
+                .collect()
+        };
+        let mut best: Option<Vec<usize>> = None;
+        for (position, taken) in first.iter().enumerate() {
+            let source = graph.edges[*taken].source.0;
+            for &edge in &graph.outgoing[source] {
+                let target = graph.edges[edge].target.0;
+                if edge == *taken || !h_edge(edge) || d_y[target] == FAR {
+                    continue;
+                }
+                let mut candidate = first[..position].to_vec();
+                candidate.push(edge);
+                candidate.extend(reader.descend_edges(target, d_y, h_edge));
+                let better = best.as_ref().is_none_or(|current| {
+                    (candidate.len(), ranks(&candidate)) < (current.len(), ranks(current))
+                });
+                if better {
+                    best = Some(candidate);
+                }
+            }
+        }
+        best
+    }
+
+    /// The scan's second path from every node of `graph` with a path to
+    /// `to`, against [`by_candidates`]; `H`'s edges are those out of a node
+    /// that is not a `to` node. Returns the number of nodes compared.
+    fn agrees(graph: &ExploredStateGraph, to: &[usize]) -> usize {
+        let view = view(0);
+        let reader = Reader::new(graph, &view);
+        let h_edge = |edge: usize| !to.contains(&graph.edges[edge].source.0);
+        let d_y = reader.backward_over(to, &h_edge);
+        let mut compared = 0;
+        for node in (0..graph.nodes.len()).filter(|node| d_y[*node] != FAR && d_y[*node] > 0) {
+            let first = reader.descend_edges(node, &d_y, &h_edge);
+            assert_eq!(
+                reader.second_path(&first, &d_y, &h_edge),
+                by_candidates(&reader, &first, &d_y, &h_edge),
+                "node {node} of {:?} to {to:?}",
+                graph
+                    .edges
+                    .iter()
+                    .map(|edge| (edge.source.0, edge.target.0))
+                    .collect::<Vec<_>>()
+            );
+            compared += 1;
+        }
+        compared
+    }
+
+    /// FR-168's second-path choice: the one scan picks the path the old
+    /// build-every-candidate comparison picks, over the shapes of §7.3's
+    /// jobs, `Ladder` and `Detour` and over 2,000 seeded random graphs of up
+    /// to seven nodes, cycles, self-loops and parallel edges included.
+    #[test]
+    fn the_second_path_scan_agrees_with_building_every_candidate() {
+        // §7.3's job: 0 -stepA-> 1, 0 -stepB-> 2, both -> 3, 3 -finish-> 4.
+        assert!(
+            agrees(
+                &graph_of(5, &[(0, 1), (0, 2), (1, 3), (2, 3), (3, 4)]),
+                &[4]
+            ) > 0
+        );
+        // The sequenced job with `reset`: 0 -stepA-> 1, 1 -stepB-> 2,
+        // 1 -reset-> 0, 2 -finish-> 3.
+        assert!(agrees(&graph_of(4, &[(0, 1), (1, 2), (1, 0), (2, 3)]), &[3]) > 0);
+        // `Ladder`: a, b, c, d, e.
+        assert!(
+            agrees(
+                &graph_of(4, &[(0, 1), (0, 2), (1, 3), (1, 3), (2, 3)]),
+                &[3]
+            ) > 0
+        );
+        // `Detour`: s, t, u, w, y, x.
+        let detour = graph_of(6, &[(0, 1), (0, 2), (1, 4), (2, 5), (2, 4), (4, 5)]);
+        assert!(agrees(&detour, &[5]) > 0);
+        let mut state: u64 = 0x9E37_79B9_7F4A_7C15;
+        let mut next = |bound: usize| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            usize::try_from(state % u64::try_from(bound).expect("fits")).expect("fits")
+        };
+        let mut compared = 0;
+        for _ in 0..2_000 {
+            let count = 2 + next(6);
+            let edges: Vec<(usize, usize)> = (0..next(3 * count))
+                .map(|_| (next(count), next(count)))
+                .collect();
+            let to: Vec<usize> = (0..1 + next(2)).map(|_| next(count)).collect();
+            compared += agrees(&graph_of(count, &edges), &to);
+        }
+        assert!(
+            compared > 1_000,
+            "the random graphs compared {compared} nodes"
         );
     }
 }
