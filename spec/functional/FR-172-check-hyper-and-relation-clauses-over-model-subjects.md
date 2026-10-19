@@ -5,6 +5,8 @@ type: FR
 relationships:
   - target: ix://agent-ix/quire-spec-language/US-021
     type: implements
+  - target: ix://agent-ix/quire-spec-language/FR-125
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/ADR-012
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/ADR-013
@@ -91,9 +93,8 @@ pub struct CheckedModelRelation {
   `V`'s model whose element type is `T`. The clause SHALL check to one
   instance per key of each parameter's universe, and to the product of the
   universes for parameters over several aliases (ADR-023 HS-3). A clause
-  one of whose parameters has an empty universe, or a type no object of the
-  universes conforms to, has zero instances and is reported `NoInstance` by
-  FR-125 Instancing, the same as a temporal clause or state-graph claim.
+  one of whose parameters has an empty universe has zero instances and is
+  reported `NoInstance` by FR-125 Instancing, the same as a temporal clause or state-graph claim.
 - If an object parameter names a population of an alias the clause does not
   bind, then S3 SHALL refuse `ill_typed` at the parameter (QSpec FR-395).
 

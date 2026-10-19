@@ -96,7 +96,8 @@ reports.
 
 ### Instancing
 
-- QSL SHALL instantiate a checked temporal clause or state-graph claim at
+- QSL SHALL instantiate a checked temporal clause, state-graph claim or hyper
+  clause at
   request time, from the subject's `universes`: one instance per object of
   the subject's universes whose type conforms to the `over` parameter's type
   `T` (QSpec FR-361), with the parameter bound to that object. An object of
@@ -109,11 +110,16 @@ reports.
   the order of the population's universe list, which is the canonical order.
 - When a population whose member type conforms to `T` has no universe, QSL
   SHALL return `NotSimulated::RequiresBound` naming it (FR-120), before
-  instantiating.
+  instantiating. A hyper clause is classified the same way for each of its
+  object parameters (FR-172), and a population with no universe is
+  `RequiresBound` before `NoInstance` is considered.
 - When the universes hold no object conforming to `T`, including an empty
-  universe and a type no population holds, the claim or hyperproperty clause
-  (one instance per key, FR-172) has zero instances.
-  QSL SHALL then report `NoInstance` for the item before it explores any
+  universe and a type no population holds, the claim has zero instances.
+- A hyper clause has one instance per key of each object parameter's
+  population (FR-172). When any one parameter's population has an empty
+  universe the instances, a product, are zero.
+  QSL SHALL then report `NoInstance` for a claim or hyper clause with zero
+  instances before it explores any
   state, and FR-127 settles it `inconclusive`, so an item that was never
   evaluated is never read as holding.
 - QSL SHALL give a clause or claim with no `over` parameter one instance, with
