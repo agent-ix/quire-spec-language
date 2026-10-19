@@ -43,14 +43,14 @@ use qsl_eval::simulation::model::{
 use qsl_eval::simulation::{ExpansionStop, TransitionSystem};
 use qsl_eval::temporal::AtomReading;
 use qsl_eval::temporal::{
-    evaluate, evaluate_at, LetterStop, TemporalLetters, TemporalOutcome, TemporalPosition,
+    evaluate_with_enabledness, LetterStop, TemporalLetters, TemporalOutcome, TemporalPosition,
     TemporalTrace,
 };
 use qsl_foundation::diagnostic::{Category, Code, InternalFault};
 use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::CheckedPackage;
-use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId};
+use qsl_semantics::check::{Activation, CheckedTemporalClause, FormulaNodeId};
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::{Meter, ScalarLimits};
@@ -142,6 +142,29 @@ pub enum ModelTraceRefusal {
         /// The stutter loop's position.
         position: usize,
     },
+    /// A bounded-profile prefix that neither ends at a terminal state nor
+    /// covers the formula's horizon from the activation it refutes: read as
+    /// a closed trace it would show a falsity its continuation may not
+    /// (ADR-018 CX-1).
+    #[error("invalid_runtime_input/invalid-value: the prefix of {positions} positions neither ends at a terminal state nor covers the horizon {horizon} from the activation at {at}")]
+    PrefixShort {
+        /// The activation the evaluator found false.
+        at: u64,
+        /// The formula's horizon.
+        horizon: u64,
+        /// The positions the prefix holds.
+        positions: usize,
+    },
+    /// An undefined-evaluation counterexample of an authored clause, whose
+    /// replay (FR-128-AC-5) is not built.
+    #[error("unsupported_construct/not-yet-implemented: replay of an authored clause's undefined evaluation")]
+    AuthoredUndefined,
+    /// A clause with a guarded `on each ... when` activation, which EN-1
+    /// refuses and replay does not read.
+    #[error(
+        "unsupported_construct/not-yet-implemented: the clause has a guarded `on each` activation"
+    )]
+    GuardedActivation,
     /// The recompiled clause's fairness set holds a strong constraint,
     /// whose lasso check (ADR-019 FS-8) is not built.
     #[error("unsupported_construct/not-yet-implemented: the clause's fairness set holds a strong constraint")]
@@ -173,10 +196,13 @@ impl ModelTraceRefusal {
             | Self::ItemIdentity { .. }
             | Self::PostState { .. } => Code::StaleDependency,
             Self::FairnessSet { .. } => Code::StaleDependency,
-            Self::StrongFairness => Code::UnsupportedConstruct,
+            Self::StrongFairness | Self::AuthoredUndefined | Self::GuardedActivation => {
+                Code::UnsupportedConstruct
+            }
             Self::InitialState { .. }
             | Self::NotEnabled { .. }
             | Self::OverBinding
+            | Self::PrefixShort { .. }
             | Self::LoopOpen { .. }
             | Self::StutterNotTerminal { .. } => Code::InvalidRuntimeInput,
         }
@@ -189,10 +215,13 @@ impl ModelTraceRefusal {
             | Self::ItemIdentity { .. }
             | Self::FairnessSet { .. }
             | Self::PostState { .. } => "content-mismatch",
-            Self::StrongFairness => "not-yet-implemented",
+            Self::StrongFairness | Self::AuthoredUndefined | Self::GuardedActivation => {
+                "not-yet-implemented"
+            }
             Self::InitialState { .. }
             | Self::NotEnabled { .. }
             | Self::OverBinding
+            | Self::PrefixShort { .. }
             | Self::LoopOpen { .. }
             | Self::StutterNotTerminal { .. } => "invalid-value",
         }
@@ -385,6 +414,12 @@ fn resolve_item<'p>(
             payload: payload.fairness.clone(),
             recompiled: clause.fairness().to_vec(),
         }));
+    }
+    if matches!(payload.kind, CounterexampleKind::UndefinedEvaluation(_)) {
+        return Err(refused(ModelTraceRefusal::AuthoredUndefined));
+    }
+    if matches!(clause.activation(), Activation::Each { guarded: true }) {
+        return Err(refused(ModelTraceRefusal::GuardedActivation));
     }
     Ok(Some(clause))
 }
@@ -610,7 +645,7 @@ fn check_formula(
         positions,
     };
     let mut meter = Meter::new(formula.meter);
-    let outcome = match payload.lasso {
+    let trace = match payload.lasso {
         Some(lasso) => {
             match loop_fairness(system, payload, positions, lasso, formula.clause)? {
                 LoopFairness::Fair => {}
@@ -620,36 +655,37 @@ fn check_formula(
                 LoopFairness::Stopped => return Ok(no_value()),
             }
             let steps = positions.len() - 1;
-            let trace = TemporalTrace::Lasso {
+            TemporalTrace::Lasso {
                 prefix: position_of(lasso.entry),
                 loop_len: if lasso.terminal_stutter {
                     1
                 } else {
                     position_of(steps - lasso.entry)
                 },
-            };
-            evaluate_at(
-                formula.clause,
-                trace,
-                TemporalPosition::new(0),
-                &mut letters,
-                &mut meter,
-            )
+            }
         }
-        None => evaluate(
-            formula.clause,
-            TemporalTrace::Finite {
-                len: position_of(positions.len()),
-            },
-            &mut letters,
-            &mut meter,
-        ),
-    };
-    Ok(match outcome {
-        Ok(TemporalOutcome::Violated { .. }) => ModelTraceSettlement::Reproduced {
-            value: ModelTraceValue::Truth(false),
-            trace_position: payload.trace_position(),
+        None => TemporalTrace::Finite {
+            len: position_of(positions.len()),
         },
+    };
+    // The fairness set is checked above against the replayed enabledness; a
+    // bad prefix refutes whatever the set says about the continuation.
+    let outcome = evaluate_with_enabledness(formula.clause, trace, &mut letters, &mut meter);
+    Ok(match outcome {
+        // A lasso is evaluated from its origin (ADR-018 section 6): a clause
+        // false only at a later activation is not the refutation EN-1 found.
+        Ok(TemporalOutcome::Violated { at }) if payload.lasso.is_some() && at.index() != 0 => {
+            disagrees(Category::Success)
+        }
+        Ok(TemporalOutcome::Violated { at }) => {
+            if payload.lasso.is_none() {
+                short_prefix(system, formula.clause, positions, at)?;
+            }
+            ModelTraceSettlement::Reproduced {
+                value: ModelTraceValue::Truth(false),
+                trace_position: payload.trace_position(),
+            }
+        }
         Ok(TemporalOutcome::Holds) => disagrees(Category::Success),
         Ok(_) => no_value(),
         Err(qsl_eval::temporal::TemporalRefusal::Fault(_)) => {
@@ -657,6 +693,42 @@ fn check_formula(
         }
         Err(_) => no_value(),
     })
+}
+
+/// ADR-018 CX-1: under a bounded profile a finite prefix reads as a closed
+/// trace, so a falsity at the activation `at` is shown only when the prefix
+/// holds the formula's horizon from `at` or ends at a terminal state (SM-4).
+/// Otherwise the continuation, which the prefix does not carry, may satisfy
+/// the formula, and the prefix refutes nothing.
+fn short_prefix(
+    system: &ModelSystem<'_>,
+    clause: &CheckedTemporalClause,
+    positions: &[Position],
+    at: TemporalPosition,
+) -> Result<(), ReplayRefusal> {
+    if !clause.profile().is_bounded() {
+        return Ok(());
+    }
+    let horizon = clause.horizon().unwrap_or(0);
+    let last = position_of(positions.len().saturating_sub(1));
+    if at.index().saturating_add(horizon) <= last {
+        return Ok(());
+    }
+    let ends_terminal = match positions.last() {
+        Some(position) => matches!(
+            expand(system, &position.state)?,
+            Ok(expansion) if expansion.successors.is_empty()
+        ),
+        None => false,
+    };
+    if ends_terminal {
+        return Ok(());
+    }
+    Err(refused(ModelTraceRefusal::PrefixShort {
+        at: at.index(),
+        horizon,
+        positions: positions.len(),
+    }))
 }
 
 /// Whether a lasso's loop is fair under the clause's fairness set.
