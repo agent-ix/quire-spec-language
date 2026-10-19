@@ -72,6 +72,14 @@ pub enum StepTarget {
 
 ## Behavior
 
+### Order of the checked rows
+
+- `CheckedRefinement.steps` SHALL hold the rows in the order QSpec FR-375
+  gives the refinement node's `steps` array: ascending by the node-key
+  digest of the row's first named declaration, then by member name as UTF-8
+  bytes. It is not source order. A row's position in it, counted from zero,
+  is its `StepRowRef` (FR-146).
+
 ### Coverage over a model subject
 
 - For each operation of the concrete model, the checker SHALL require
@@ -139,6 +147,7 @@ pub enum StepTarget {
 | FR-136-AC-2 | Removing the `peek` row refuses `missing_declaration`/`missing-name` naming `Impl::Counter::peek`; writing `peek` twice, once `-> stutter` and once `-> any`, refuses `invalid_model_binding`/`conflicting-binding` naming both rows. A row `step Impl::Counter::nope -> stutter` refuses `missing_declaration`/`missing-name`. | Test (TC-541) |
 | FR-136-AC-3 | `step Impl::Counter::commitA -> Spec::Counter::inc(self, 1)` refuses `ill_typed`/`operator-ineligible` (one argument too many). In `RingIsQueue`, `put -> enq(self.ring, self.index = 0)` refuses `ill_typed`/`type-mismatch` at the argument; `put -> enq(self.ring, _)` checks with `arguments [None]`; `take` mapped to an abstract operation whose result is `Boolean` refuses `ill_typed`/`type-mismatch`. | Test (TC-541) |
 | FR-136-AC-4 | Over a concrete protocol subject whose model has the two operations `incA` and `incB`, each mapped `-> Spec::Counter::inc(self)`, and whose `run` is a `parallel` with branches `A` and `B` holding one attempt of `incA` and one of `incB`, with rows for both operations and no `fork`, `join` or `finish` row, the checker refuses `missing_declaration`/`missing-name` naming the `fork` node first in source order. With node rows for `fork`, `join` and `finish` written `-> stutter` it checks; a further row naming branch `A`'s attempt node `-> any` checks and takes precedence over `incA`'s row for that node; two rows for the `join` node refuse `invalid_model_binding`/`conflicting-binding`. | Test (TC-541) |
+| FR-136-AC-5 | `CasRefinesCounter` checked with its seven `step` rows in source order and in the reverse source order gives the same `steps`, each row at the same position, and the positions follow ascending node-key digest of the row's first named declaration; two rows whose first named declarations have equal digests are ordered by member name bytes. | Test (TC-541) |
 
 ## Dependencies
 

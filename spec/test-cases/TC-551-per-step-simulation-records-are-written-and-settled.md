@@ -13,7 +13,7 @@ relationships:
 Verify which `operation-contract` records the refinement's `requirements`
 hook writes, their hypotheses, and how their backend outcomes settle.
 
-Scope: FR-146-AC-1 to FR-146-AC-4.
+Scope: FR-146-AC-1 to FR-146-AC-8.
 
 ## Test Procedure
 
@@ -28,6 +28,15 @@ Fixtures: `CasRefinesCounter` and its lost-update model (ADR-020 §8);
 4. Settle a backend "holds" for the `commitA` record, a backend
    counterexample for the lost-update `commitB` record from `(1, 0, f, 0,
    t)`, and each record with no SMT candidate registered.
+5. Write the requests for `CasRefinesCounter` with its seven `step` rows in
+   reverse source order.
+6. Add `AbsInv` on `Spec::Counter` beside `CasInv`, write the request, then
+   write the clauses in the opposite source order.
+7. Read the eight records' occurrence keys and the source map; compare the
+   obligation identities across steps 1, 3, 5 and 6.
+8. Settle a backend "holds" for the `commitA` record with the certificate
+   of FR-314-AC-2 whose step proof has a premise replaced, and with one
+   that uses `hole`.
 
 Tag the tests `#[trace("TC-551", "FR-146-AC-n")]`.
 
@@ -41,3 +50,11 @@ Tag the tests `#[trace("TC-551", "FR-146-AC-n")]`.
 - Step 4: `proved`, `decisive-witness`, `Proved{Inductive{depth: 1}, Uncertified}` with no certificate;
   `inconclusive`, `Inconclusive(InductionNotClosed{depth: 1})`;
   `unsupported`.
+- Step 5: the same eight records with the same `StepRowRef`s, keys and
+  identities as step 1.
+- Step 6: `CasInv` listed and `AbsInv` not; unchanged by clause order.
+- Step 7: nine distinct keys, ordinals 0, 1 and 2 to 8; regions as
+  FR-146-AC-7 states; identities differ exactly where the
+  `StepObligation` or `hypotheses` differ.
+- Step 8: `inconclusive`, `CertificateRejected{ProofStepInvalid, at}`;
+  `proved`, `Uncertified`.

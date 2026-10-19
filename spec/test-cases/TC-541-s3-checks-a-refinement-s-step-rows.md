@@ -14,7 +14,7 @@ Verify that every concrete operation, and over a protocol subject every
 concrete step class, needs exactly one written-out step row, and that
 receivers, arguments and results are typed against the abstract operation.
 
-Scope: FR-136-AC-1 to FR-136-AC-4.
+Scope: FR-136-AC-1 to FR-136-AC-5.
 
 ## Test Procedure
 
@@ -28,6 +28,8 @@ protocol subject over a model with operations `incA` and `incB`.
 4. Check the protocol subject with no control-node rows, then with `fork`,
    `join` and `finish` rows, then with an extra attempt-node row, then with
    two `join` rows.
+5. Check `CasRefinesCounter` with its rows in reverse source order and
+   compare `steps`.
 
 Tag the tests `#[trace("TC-541", "FR-136-AC-n")]`.
 
@@ -43,3 +45,4 @@ Tag the tests `#[trace("TC-541", "FR-136-AC-n")]`.
 - Step 4: `missing_declaration`/`missing-name` naming the `fork` node;
   checks; checks with the node row recorded;
   `invalid_model_binding`/`conflicting-binding`.
+- Step 5: the same `steps`, in ascending node-key digest order.
