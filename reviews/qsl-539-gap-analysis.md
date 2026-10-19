@@ -35,3 +35,24 @@ Checked each `#[trace]` tag in `symmetric_population.rs` against the AC it names
 Changes requested at medium: FND-001 to FND-004 are medium and FND-005 is low; none blocks on its own. The blocking gap for this PR is SR-12147 FND-001 (Set/Bag to Sequence conversion unrefused and untested).
 
 Clean: FR-150-AC-1's test can fail on each clause; the annotated half of AC-2, the `reduce` and conversion refusals, the `terminal when` refusal and source-order reporting are asserted with code, cause, payload and exact span.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | medium | The fix round tags three new tests to ACs that do not state what they test. `a_set_converted_to_a_sequence_refuses` and `a_supertype_reference_into_a_symmetric_subtype_population_refuses` carry `FR-150-AC-3`, but AC-3 lists a reference literal, a temporal-atom text conversion, a `terminal when` `reduce` over a `Bag` and a state-constraint `fold`. `an_identity_conversion_in_an_equality_operand_checks` is now the only test tagged `FR-150-AC-4`, and it asserts none of AC-4's clauses (`forall` invariant, `holds` atom, `fold` over `Set<Int[0, 3]>`). The matrix therefore reports AC-4 tagged while none of its clauses is tested. Tag these tests `TC-566` only (they verify FR-150 Behavior items 1, 2 and the passing-as-a-value rule), or add an AC for them. | qsl-semantics/tests/it/symmetric_population.rs:283-327; spec/functional/FR-150-check-the-symmetric-population-annotation.md:94-95 |
+| FND-007 | low | `a_malformed_marker_and_another_extra_member_refuse` identifies each refusal by `format!("{refusals:?}").contains(member)`, a Debug-text match. Assert the refusal code (`malformed-declaration` / the schema violation) and its pointer instead. | qsl-semantics/tests/it/symmetric_population.rs:330-346 |
+
+## Dispositions
+
+Round 1, reviewed at `d3106bf0c52706799742af9fac544e9ca4c1fc47`.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | deferred | The false trace claim is gone: d3106bf0c retags the test `TC-565` only and its doc says it does not verify the unannotated half. The spec conflict itself (FR-150-AC-2 and QSpec FR-381-AC-2 against FR-145) needs a spec restatement, routed to the planner in PR body item 1; no ticket yet. FR-150-AC-2 now has no tagged test. |
+| FND-002 | deferred | d3106bf0c removes the AC-4 tag from `transparent_uses_of_an_annotated_population_check` and corrects its doc comment. The `forall` invariant and the `fold` over `Set<Int[0, 3]>` are still untested (`holds` has no S3 typing). Medium, recorded and not fixed under the majors-only review rule. |
+| FND-003 | deferred | No `Bag` `reduce` case was added; reference literal, temporal atom and state constraint still have no S3 form. Medium, recorded and not fixed under the majors-only review rule. |
+| FND-004 | deferred | No test reaches a reference through an `Option`, record field or union payload yet (the new tests use `Set<Reference>` and a direct `Reference`). Medium, recorded and not fixed under the majors-only review rule. |
+| FND-005 | fixed | d3106bf0c52706799742af9fac544e9ca4c1fc47 |
+
+FND-005: `a_malformed_marker_and_another_extra_member_refuse` asserts that `symmetric: "yes"` and an extra `unknown` population member each refuse at `read_records` (see FND-007 for the assertion style).

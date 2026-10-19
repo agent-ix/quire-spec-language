@@ -35,3 +35,23 @@ The three areas the brief named:
 Changes requested. One high finding blocks: FND-001 (a Set/Bag to Sequence conversion of symmetric references passes S3 silently). FND-002 to FND-004 are medium, FND-005 is low; none of them blocks on its own.
 
 What is correct: the marker is read as an optional Boolean (absent is `false`, non-Boolean refuses `malformed-declaration`); the new cause has code `ill_typed` and cause `identity-observing-form`; protocol-obligation wrapping and the refinement limit match list the new variant; refusals are located at the refused node; all fixture `PopulationRecord` literals carry `symmetric: false`; unannotated units are unchanged on every touched path.
+
+## Dispositions
+
+Round 1, reviewed at `d3106bf0c52706799742af9fac544e9ca4c1fc47`.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | d3106bf0c52706799742af9fac544e9ca4c1fc47 |
+| FND-002 | deferred | QSL-871 (Backlog) adds optional Boolean `symmetric` to the FCD population schema, bumps the rev and deletes the filter in the same QSL PR; its description states that expiry. The intake comment now cites QSL-871 and QSL-872. Keeping the shim until then is the user's decision under the global no-shim rule. |
+| FND-003 | fixed | d3106bf0c52706799742af9fac544e9ca4c1fc47 |
+| FND-004 | fixed | d3106bf0c52706799742af9fac544e9ca4c1fc47 |
+| FND-005 | fixed | d3106bf0c52706799742af9fac544e9ca4c1fc47 |
+
+FND-001: the `(Collection, Collection)` arm of `convert` refuses `identity-observing-form` (`IdentityNode::Convert`, `OrderSensitiveTraversal`) when the source kind is unordered, the target is ordered and the operand reads a symmetric population. `a_set_converted_to_a_sequence_refuses` asserts it at the `convert` span.
+
+FND-003: the equality-operand path refuses only when `typed.value_type != target`. `an_identity_conversion_in_an_equality_operand_checks` asserts `convert<Config::ConfigVersion>(self) = self` checks.
+
+FND-004: `symmetric_object_types` also covers a supertype of a member type (`conforms(*id, target)`). `a_supertype_reference_into_a_symmetric_subtype_population_refuses` makes `Sub` the population member and refuses the `fold` over `Set<Reference<ConfigVersion>>`, naming `config_history`.
+
+FND-005: `IdentityObserving.node` is `IdentityNode { Fold, Reduce, Convert }`.
