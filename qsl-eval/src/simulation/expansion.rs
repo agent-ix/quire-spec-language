@@ -24,6 +24,19 @@ pub struct ExpansionStop {
     /// Why the expansion stopped, e.g.
     /// `resource_exhausted`/`insufficient-next-charge`.
     pub cause: CatalogCode,
+    /// The caller-raisable budget the expansion ran out of, when one did:
+    /// a model check names it in its stopped outcome (FR-126).
+    pub limit: Option<ExpansionLimit>,
+}
+
+/// A caller-raisable budget of one expansion (FR-120): what
+/// `resource_exhausted`/`insufficient-next-charge` ran out of.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ExpansionLimit {
+    /// A clause evaluation exhausted the evaluation meter.
+    EvaluationMeter,
+    /// The expansion reached `max_candidates`.
+    MaxCandidates,
 }
 
 /// The findings of one expanded state (FR-101-AC-13).

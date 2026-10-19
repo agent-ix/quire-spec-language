@@ -144,7 +144,7 @@ impl TransitionSystem for EdgeGraph {
         state: &String,
     ) -> Result<Expansion<Transition, String, String>, ExpansionStop> {
         if let Some((_, cause)) = self.stops.iter().find(|(at, _)| at == state) {
-            return Err(ExpansionStop { cause: *cause });
+            return Err(ExpansionStop { cause: *cause, limit: None });
         }
         Ok(Expansion {
             successors: self

@@ -14,6 +14,7 @@ mod contracts;
 mod domain;
 mod encode;
 mod frames;
+mod terminal;
 mod walk;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -48,6 +49,7 @@ use crate::simulation::trace::{replay, ReplayError, Trace};
 use crate::value::QualifiedName;
 
 pub use encode::ModelKey;
+pub use terminal::TerminalClass;
 use encode::{declaration_enc, declaration_text, Enc};
 
 /// `resource_exhausted`/`insufficient-next-charge`: a candidate count, or an

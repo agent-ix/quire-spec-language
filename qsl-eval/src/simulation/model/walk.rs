@@ -12,12 +12,21 @@ use super::{
     contracts, encode, frames, identity_limits, state_document, ClauseInfo, ModelFinding,
     ModelSimState, ModelSystem, BROKEN, EXHAUSTED,
 };
-use crate::simulation::expansion::{Expansion, ExpansionStop};
+use crate::simulation::expansion::{Expansion, ExpansionLimit, ExpansionStop};
 use crate::simulation::key;
 
 /// A stop with `cause`.
 pub(super) const fn stop(cause: qsl_foundation::CatalogCode) -> ExpansionStop {
-    ExpansionStop { cause }
+    ExpansionStop { cause, limit: None }
+}
+
+/// `resource_exhausted`/`insufficient-next-charge` naming the budget `limit`
+/// that ran out.
+pub(super) const fn exhausted(limit: ExpansionLimit) -> ExpansionStop {
+    ExpansionStop {
+        cause: EXHAUSTED,
+        limit: Some(limit),
+    }
 }
 
 /// The candidates one expansion has generated, against its bound
@@ -37,7 +46,7 @@ impl Budget {
     pub(super) fn charge(&mut self) -> Result<(), ExpansionStop> {
         self.used = self.used.saturating_add(1);
         if self.used > self.max {
-            Err(stop(EXHAUSTED))
+            Err(exhausted(ExpansionLimit::MaxCandidates))
         } else {
             Ok(())
         }
@@ -132,11 +141,12 @@ fn rows_of(
     Ok(rows)
 }
 
-/// Expand `state`: its findings and every successor (FR-120).
-pub(super) fn expand_state(
-    system: &ModelSystem<'_>,
-    state: &ModelSimState,
-) -> Result<Expansion<ModelTransition, ModelSimState, ModelFinding>, ExpansionStop> {
+/// What an expansion of `state` reads: its synthesized observation and its
+/// objects (FR-120 "Frame and observation seam").
+pub(super) fn walk_of<'s, 'a>(
+    system: &'s ModelSystem<'a>,
+    state: &'s ModelSimState,
+) -> Result<Walk<'s, 'a>, ExpansionStop> {
     let identity = identity_limits();
     let state_key = encode::model_key(&system.model, &state.state);
     let (_, digest) = key::state_key(&state_key, identity).map_err(|_| stop(BROKEN))?;
@@ -144,12 +154,20 @@ pub(super) fn expand_state(
         .model
         .observation(&state.state, state_document(&digest))
         .map_err(|_| stop(BROKEN))?;
-    let walk = Walk {
+    Ok(Walk {
         system,
         state,
         observation,
         rows: rows_of(system, &state.state)?,
-    };
+    })
+}
+
+/// Expand `state`: its findings and every successor (FR-120).
+pub(super) fn expand_state(
+    system: &ModelSystem<'_>,
+    state: &ModelSimState,
+) -> Result<Expansion<ModelTransition, ModelSimState, ModelFinding>, ExpansionStop> {
+    let walk = walk_of(system, state)?;
     let mut budget = Budget {
         used: 0,
         max: system.limits.max_candidates,
