@@ -1554,3 +1554,159 @@ fn argument_and_type_wide_deletions_follow_the_types_fr_383_names() {
     assert!(!purge.reads.contains(&any_field("Holder/r")));
     assert!(purge.reads.contains(&membership("bases", &receiver)));
 }
+
+/// FR-155-AC-7, the type-dependent half: footprints follow the `object_type`
+/// of the identity's reference triples, not the declared types of the
+/// operation or its parameters.
+#[trace("TC-1075", "FR-155-AC-7")]
+#[test]
+fn footprints_follow_the_object_types_of_the_identitys_triples() {
+    let none = || json!({"modifies": []});
+    let mut subject = subject(
+        document(
+            vec![
+                object_type(
+                    "Base",
+                    vec![],
+                    vec![operation(
+                        "Base",
+                        "cancel",
+                        &[],
+                        None,
+                        &frame(&json!({"deletes_receiver": true})),
+                    )],
+                ),
+                object_type_extending("Sub", &["Base"], vec![], vec![]),
+                object_type(
+                    "A",
+                    vec![],
+                    vec![operation(
+                        "A",
+                        "cancel",
+                        &[],
+                        None,
+                        &frame(&json!({"deletes_receiver": true})),
+                    )],
+                ),
+                object_type("B", vec![], vec![]),
+                object_type_extending("C", &["A", "B"], vec![], vec![]),
+                object_type(
+                    "K",
+                    vec![],
+                    vec![
+                        operation(
+                            "K",
+                            "drop",
+                            &[("p", &ident("A"))],
+                            None,
+                            &frame(&json!({"deletes_parameters": ["p"]})),
+                        ),
+                        operation("K", "touch", &[("p", &ident("A"))], None, &frame(&none())),
+                    ],
+                ),
+                object_type(
+                    "Holder",
+                    vec![
+                        field("Holder", "q", &ident("Base"), "optional"),
+                        field("Holder", "r", &ident("Sub"), "optional"),
+                        field("Holder", "h", &ident("B"), "optional"),
+                    ],
+                    vec![],
+                ),
+            ],
+            &[
+                ("bases", "Base"),
+                ("subs", "Sub"),
+                ("as", "A"),
+                ("bs", "B"),
+                ("ks", "K"),
+                ("holders", "Holder"),
+            ],
+        ),
+        &[],
+    );
+    let populations = ["bases", "subs", "as", "bs", "ks", "holders"];
+    let start = subject.start("s0", &populations, &[]);
+    let universes: Vec<(&str, &[&str])> = populations.iter().map(|name| (*name, &[][..])).collect();
+    let system = subject.system(start, &universes);
+
+    let of = |type_name: &str, object: &str| subject.reference(type_name, object);
+    let footprint = |owner: &str,
+                     operation: &str,
+                     receiver: &ObjectReference,
+                     arguments: &[&ObjectReference]| {
+        let arguments = arguments
+            .iter()
+            .map(|argument| reference_text(argument))
+            .collect();
+        system
+            .footprint(&transition(owner, operation, receiver, arguments))
+            .expect("a footprint")
+    };
+    let (sub_s, base_s, c, k, x) = (
+        of("Sub", "s"),
+        of("Base", "s"),
+        of("C", "c"),
+        of("K", "k"),
+        of("A", "x"),
+    );
+    let q = Location::AnyField {
+        field: key("Holder/q"),
+    };
+    let r = Location::AnyField {
+        field: key("Holder/r"),
+    };
+    let h = Location::AnyField {
+        field: key("Holder/h"),
+    };
+
+    let cancel_sub = footprint("Base", "cancel", &sub_s, &[]);
+    let writes = locations([member_of("bases", &sub_s), member_of("subs", &sub_s)]);
+    assert_eq!(cancel_sub.writes, writes);
+    assert_eq!(
+        cancel_sub.reads,
+        writes.iter().cloned().chain([q.clone(), r]).collect()
+    );
+
+    let cancel_base = footprint("Base", "cancel", &base_s, &[]);
+    assert_eq!(cancel_base.writes, locations([member_of("bases", &base_s)]));
+    assert_eq!(
+        cancel_base.reads,
+        locations([member_of("bases", &base_s), q])
+    );
+
+    let cancel_c = footprint("A", "cancel", &c, &[]);
+    let writes = locations([member_of("as", &c), member_of("bs", &c)]);
+    assert_eq!(cancel_c.writes, writes);
+    assert_eq!(
+        cancel_c.reads,
+        writes.iter().cloned().chain([h.clone()]).collect()
+    );
+
+    let drop = footprint("K", "drop", &k, &[&c]);
+    assert_eq!(drop.writes, writes);
+    assert_eq!(
+        drop.reads,
+        writes
+            .iter()
+            .cloned()
+            .chain([member_of("ks", &k), h])
+            .collect()
+    );
+
+    let touch_c = footprint("K", "touch", &k, &[&c]);
+    assert!(touch_c.writes.is_empty());
+    assert_eq!(
+        touch_c.reads,
+        locations([
+            member_of("ks", &k),
+            member_of("as", &c),
+            member_of("bs", &c)
+        ])
+    );
+    let touch_x = footprint("K", "touch", &k, &[&x]);
+    assert_eq!(
+        touch_x.reads,
+        locations([member_of("ks", &k), member_of("as", &x)])
+    );
+}

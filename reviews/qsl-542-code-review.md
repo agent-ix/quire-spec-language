@@ -80,3 +80,12 @@ needs an owner ruling before the hook is wired. The rest are lows.
 | FND-004 | fixed | - |
 | FND-005 | accepted-no-change | The over-approximation is sound, and its precision cost is now documented on `Location::meets`. Member types belong with the partial-order engine. |
 | FND-006 | accepted-no-change | This is latent and consistent with the engine, which neither encodes composite field values nor scans them for references. `referenced_types` now documents it. |
+| FND-001 | fixed | - |
+| FND-007 | fixed | - |
+| FND-008 | fixed | - |
+
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-009 | low | Owner question, not a code defect: for a type-wide `deletes T`, FR-383 item 5 read literally ("whose referenced type the deleted type conforms to") does not read a field typed as a strict subtype of `T`, such as `Holder.r: Reference<Sub>` for `purge()` framed `deletes Base`. The code follows the literal text, and the test `argument_and_type_wide_deletions_follow_the_types_fr_383_names` pins it (`!purge.reads.contains(Holder/r)`). But `deletes Base` may delete `Sub` objects that `Holder.r` names. Today the dependence is still kept, because `purge` writes `AnyMembership{subs}`, which meets every `Field`. The gap would show only in the enabling footprint of a disabled type-wide delete, if one can be disabled by a referrer. For the QSpec FR-383 owner: should item 5 for a type-wide entry cover fields typed as any subtype of `T`? | qsl-semantics/src/model/footprint.rs:326-334; qsl-semantics/src/model/footprint.rs:364-373; qsl-eval/tests/it/footprints.rs:1485-1556 |

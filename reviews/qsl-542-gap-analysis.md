@@ -68,3 +68,10 @@ with the tag narrowed to match.
 | FND-003 | fixed | - |
 | FND-004 | deferred | Planner ruling: the tag was narrowed, so the test no longer claims FR-155-AC-2. The quantification clauses are tracked as STD-165, because no state clause can name a population today. |
 | FND-005 | fixed | - |
+
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | medium | FR-155-AC-7, merged on main through STD-164/PR #969 and covered by TC-1075, has no tagged test, and its argument half is unpinned. No test calls `ModelSystem::footprint` with an argument whose triple `object_type` differs from the declared parameter type. `drop(k, c)`, `touch(k, c)` and `touch(k, x)` are absent. `kill`'s argument types are passed straight into `derive_footprint`, which skips `footprint_for`'s triple-to-type step. The Sub/Base/C cases assert `contains` or symbolic sets, not AC-7's exact instantiated sets; `bump(d)` asserts writes but not reads. The new tests are tagged `TC-589` with no criterion, so the matrix shows AC-7 untested. Mutation evidence: making `footprint_for` derive argument types from the declared parameter type, which is exactly the derivation AC-7 says must fail, passes every committed `footprints` test. A probe through `ModelSystem::footprint` confirms the current code gives AC-7's exact sets for all six cases, so the code is right and the oracle is missing. Fix: add a `#[trace("TC-1075", "FR-155-AC-7")]` test of the six exact sets and of `bump(d)`'s exact reads. | qsl-eval/tests/it/footprints.rs:1292-1556; qsl-eval/src/simulation/model/footprints.rs:330-367 |
+
