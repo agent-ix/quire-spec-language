@@ -356,13 +356,6 @@ only depend on the layers below it, and a lint (`make arch-lint`) enforces that.
 | root crate | The `quire-spec` binary and the library facade. |
 | `xtask`, `tools/arch-lint` | Repository checks: dependency direction, API surface, conformance. |
 
-The chart counts the tests in each crate, straight from the tree:
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/crate-tests-dark.svg">
-  <img alt="A column chart of the number of tests in each QSL workspace crate with at least ten, largest first. The root crate, with the command line and the integration tests, is shown as root." src="docs/images/crate-tests-light.svg">
-</picture>
-
 The rest of the tree:
 
 - [`spec/`](spec/) holds the requirements. Each requirement, acceptance

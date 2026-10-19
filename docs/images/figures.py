@@ -375,31 +375,4 @@ def layers():
     return f
 
 
-def crate_tests():
-    """Tests per workspace crate, counted from the #[test] attributes in the tree."""
-    counts = {}
-    for crate in sorted(ROOT.glob("qsl-*/")):
-        counts[crate.name.removeprefix("qsl-")] = sum(
-            path.read_text(errors="replace").count("#[test]") for path in crate.rglob("*.rs")
-        )
-    counts["root"] = sum(
-        path.read_text(errors="replace").count("#[test]")
-        for folder in ("src", "tests")
-        for path in (ROOT / folder).rglob("*.rs")
-    )
-    names = sorted((n for n in counts if counts[n] >= 10), key=counts.get, reverse=True)
-    f = Figure(
-        "crate-tests",
-        980,
-        260,
-        "A column chart of the number of tests in each QSL workspace crate with at least ten, "
-        "largest first. "
-        "The root crate, with the command line and the integration tests, is shown as root.",
-    )
-    f.columns(0, 0, 980, 230, [counts[n] for n in names], labels=names,
-              role=["logic" if n != "root" else "model" for n in names])
-    f.legend(0, 256, [("logic", "library crate", "fill"), ("model", "command line and integration tests", "fill")])
-    return f
-
-
-FIGURES = [hero, first_rule, outcomes, pipeline, capabilities, ecosystem, layers, crate_tests]
+FIGURES = [hero, first_rule, outcomes, pipeline, capabilities, ecosystem, layers]
