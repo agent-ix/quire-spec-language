@@ -62,12 +62,14 @@ pub struct RefinementPosition {
 
 pub fn check_initial(
     refinement: &CheckedRefinement,
+    concrete_system: &ModelSystem<'_>,   // FR-140's row evaluator; a model subject
     abstract_system: AbstractSystem<'_>,
     concrete_initial: &SideState,
 ) -> StepVerdict;
 
 pub fn check_step(
     refinement: &CheckedRefinement,
+    concrete_system: &ModelSystem<'_>,   // FR-140's row evaluator; a model subject
     abstract_system: AbstractSystem<'_>,
     pre: &RefinementPosition,
     step: &ConcreteStep,              // transition identity, post-state, result
@@ -82,6 +84,7 @@ pub enum StepVerdict {
     Fails(RefinementFailure),
     Undefined(UndefinedEvaluation),   // ADR-020 RE-5: a mapping row, argument or history update
     Undetermined(InconclusiveCause),  // MappingUndetermined, UndecidedSuccessor
+    Fault(InternalFault),             // FR-140's Fault or WrongSystem; not a verdict
 }
 
 pub enum Taken { Stutter, Abstract(Vec<ModelTransition>) }  // abstract identities matched
@@ -165,12 +168,19 @@ how it evaluates them and what it reports:
   rules to each member of `pre.abstract_states` and return the post set
   sorted by state key. Each abstract successor computed SHALL count toward
   FR-101's `max_transitions` of the run that called `check_step`.
+- A `MappingFailure::Fault` or `MappingFailure::WrongSystem` from FR-140
+  SHALL return `StepVerdict::Fault`. A `WrongSystem` arising inside
+  `check_step` or `check_initial` means the engine code that called them
+  (FR-142, FR-145) passed a system that is not the refinement's own, which
+  is an internal fault of that code, not a verdict. The engine (FR-142), replay (FR-145)
+  and FR-144 carry it unchanged and the item settles `failed` (QSpec
+  FR-383); it is never `Fails`, `Undefined` or `Undetermined`.
 - An undecided contract conjunction of either model SHALL return
   `Undetermined(UndecidedSuccessor)`.
 
 ### Purity
 
-- `check_initial` and `check_step` SHALL be functions of their inputs.
+- `check_initial` and `check_step` SHALL be functions of their inputs, the two systems included.
 
 ## Acceptance Criteria
 
@@ -182,7 +192,8 @@ how it evaluates them and what it reports:
 | FR-141-AC-4 | Fixture `Coin`: abstract `Spec::Coin` with `tossed: Boolean`, `side: Int[0, 1]`, `shown: Boolean`, `face: Int[0, 1]`, operation `toss()` (precondition `not self.tossed`, frame `modifies [tossed, side]`, postcondition `self.tossed`) and `show()` (precondition `self.tossed and not self.shown`, frame `modifies [shown, face]`, postcondition `self.shown and self.face = self.side`), initial all false and 0; concrete `Impl::Coin` with `tossed`, `shown`, `face`, operations `toss()` (precondition `not self.tossed`, frame `modifies [tossed]`, postcondition `self.tossed`) and `reveal()` (precondition `self.tossed and not self.shown`, frame `modifies [shown, face]`, postcondition `self.shown`); rows `tossed`, `shown` and `face` mapped by name, `side` hidden, `toss -> Spec::Coin::toss(self)`, `reveal -> Spec::Coin::show(self)`. After concrete `toss` the candidate set holds two states, `side` 0 and `side` 1; after `reveal` to `face = 1` it holds the one with `side` 1. With the row `side = self.face` added, `reveal` to `face = 1` fails `AbstractStepRejected{transition: show(c), cause: Frame{…}}`. | Test (TC-546) |
 | FR-141-AC-5 | Over FR-136-AC-4's protocol subject with branch `A`'s attempt node mapped `-> any` and `incA` mapped `-> Spec::Counter::inc(self)`, a step of that attempt node that leaves `value` unchanged passes RS-5 with `Taken::Stutter`, so the node row was selected; the `fork` step, mapped `-> stutter`, passes RS-3. | Test (TC-546) |
 | FR-141-AC-6 | Over `RegisterHistory` with FR-138's `inv` update, `check_step` on `write(r, 0)` from the initial state returns `Undefined` with `where` position 1, the `inv` update and object `r`, cause `division-by-zero`; with the `writes` update of FR-138-AC-4 instead, the second `write(r, 0)` returns `Undetermined(MappingUndetermined)`. | Test (TC-554) |
-| FR-141-AC-7 | Over `RingIsQueue` with the row `put -> enq(self.ring, 2 / self.size)`, `check_step` on `put(1)` from the empty queue returns `Undefined` naming the step-row argument, cause `division-by-zero`, with `RefinementFailure::Undefined{position: 1, row: put}` written by the engine; with the original row and a per-evaluation meter budget of zero for the argument `self.ring`, it returns `Undetermined(MappingUndetermined)`. | Test (TC-555) |
+| FR-141-AC-7 | Over `RingIsQueue` with the pure function `g using v(i: Int[0, 1]): Int[0, 1] pure { if 1 mod i = 0 then 0 else 1 }` and the row `put -> enq(self.ring, g(self.index))` (`mod` is always Euclidean, so no division law is selected), `check_step` on `put(1)` with receiver `s0` (index 0) from the empty queue (`head = 0`, `size = 0`) returns `Undefined` naming the step-row argument, cause `division-by-zero`, with `RefinementFailure::Undefined{position: 1, row: put}` written by the engine; with receiver `s1` (index 1) the argument is `g(1)` = 0, since `1 mod 1 = 0`. With the original row and a per-evaluation meter budget of zero for the argument `self.ring`, `check_step` returns `Undetermined(MappingUndetermined)`. | Test (TC-555) |
+| FR-141-AC-8 | A `MappingFailure::Fault` from FR-140 during `check_step`, and a `WrongSystem` from a swapped system passed to it, each return `StepVerdict::Fault`; FR-144 settles the item `failed`, not `refuted` or `inconclusive`, even when an earlier step of the run was undefined. | Test (TC-555) |
 
 ## Dependencies
 
