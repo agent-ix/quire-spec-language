@@ -36,9 +36,7 @@ use std::collections::{BTreeSet, VecDeque};
 
 use qsl_eval::automaton::{AutomatonStateKey, SafetyItem, SafetyState};
 use qsl_eval::model_subject::{ModelLetters, ModelSubject};
-use qsl_eval::simulation::model::{
-    ModelFinding, ModelSimState, ModelSystem, TerminalClass,
-};
+use qsl_eval::simulation::model::{ModelFinding, ModelSimState, ModelSystem, TerminalClass};
 use qsl_eval::simulation::{
     EncodingRefusal, Expansion, ExpansionStop, NotSimulated, TransitionSystem,
 };

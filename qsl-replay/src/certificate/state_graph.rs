@@ -24,7 +24,10 @@
 //!    (`OrderBroken`, `CountBroken`).
 //!
 //! Only states reached from the initial states are checked; an unreached
-//! closure entry is never used, so it cannot help a false claim pass.
+//! closure entry is never used, so it cannot help a false claim pass. The
+//! reached states count against `max_states` and the recomputed successors
+//! against `max_transitions`; `Malformed` reads the certificate once,
+//! linearly, before any of that.
 //!
 //! **Counts.** A reached state with no count entry counts 0, so the states
 //! with count 0 are closed under successors and hold no `to` node: none
@@ -106,12 +109,6 @@ pub fn check_state_graph(
     let over = bound_over(request, &system)?;
     if system.initial().is_empty() {
         return Err(ClosureRefusal::NoInitialState);
-    }
-    if certificate.closure.len() > limits.limits.max_states {
-        return finish(Err(stopped(
-            ModelCheckLimit::MaxStates,
-            widen(limits.limits.max_states),
-        )));
     }
     let predicates = predicates(request.claim.form());
     let check = Check {
@@ -273,7 +270,11 @@ impl Check<'_, '_> {
             .ok()
             .and_then(|at| self.certificate.closure.get(at))
             .copied()
-            .ok_or_else(|| Checker::StateGraph.fault("admitted-entry-names-a-closure-state").into())
+            .ok_or_else(|| {
+                Checker::StateGraph
+                    .fault("admitted-entry-names-a-closure-state")
+                    .into()
+            })
     }
 
     fn run(&self, form: &StateGraphForm) -> Step<()> {
@@ -520,12 +521,14 @@ mod tests {
     }
 
     /// FR-169's `Malformed` rule, applied before any recomputation: an
-    /// unsorted or duplicated closure, a rank naming no closure state, an
+    /// unsorted or duplicated closure, a closure digest outside the
+    /// state-key domain, a rank naming no closure state, an
     /// unsorted rank and a count above 2 each reject at their entry.
     #[trace("TC-644")]
     #[test]
     fn malformed_entries_reject_before_recomputation() {
         let closure = vec![digest(1), digest(2)];
+        let foreign = DigestRecord::mint(DigestDomain::PackageFingerprint, [3; 32]);
         let at = |certificate: StateGraphCertificate| {
             malformed(&certificate).map(|rejection| (rejection.rule, rejection.at))
         };
@@ -536,6 +539,13 @@ mod tests {
                 ..StateGraphCertificate::default()
             }),
             malformed_at(CertificateLocus::ModelState(digest(1)))
+        );
+        assert_eq!(
+            at(StateGraphCertificate {
+                closure: vec![digest(1), foreign],
+                ..StateGraphCertificate::default()
+            }),
+            malformed_at(CertificateLocus::ModelState(foreign))
         );
         assert_eq!(
             at(StateGraphCertificate {

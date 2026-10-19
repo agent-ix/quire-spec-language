@@ -23,10 +23,12 @@ use qsl_replay::{
     ModelCheckLimit, ModelCheckLimits, StateGraphCertificate, StateGraphCertificateRequest,
     StateGraphOutcome, TemporalCertificateCheck,
 };
-use quire_exact::{Cancel, ObjectReference};
+use quire_exact::{Cancel, CancelCause, ObjectReference};
 
 use crate::counter::UNLIMITED;
-use crate::graph_world::{config_world, game_world, job_world, World, DIVIDES, REACHES_TWO};
+use crate::graph_world::{
+    config_world, fork_world, game_world, job_world, World, DIVIDES, REACHES_TWO,
+};
 use crate::state_graph::{no_samples, reachable, run, system, AB};
 
 /// Check `certificate` for `claim`'s instance bound to `over` over `world`
@@ -39,12 +41,33 @@ fn check(
     certificate: &StateGraphCertificate,
     limits: &ModelCheckLimits,
 ) -> TemporalCertificateCheck {
+    check_cancelled(
+        world,
+        keys,
+        claim,
+        over,
+        certificate,
+        limits,
+        &Cancel::new(),
+    )
+}
+
+/// [`check`] polling `cancel`.
+fn check_cancelled(
+    world: &World,
+    keys: &[&str],
+    claim: &str,
+    over: Option<ObjectReference>,
+    certificate: &StateGraphCertificate,
+    limits: &ModelCheckLimits,
+    cancel: &Cancel,
+) -> TemporalCertificateCheck {
     let request = StateGraphCertificateRequest {
         subject: world.subject(keys, UNLIMITED),
         claim: world.claim(claim),
         over,
     };
-    check_state_graph(&request, certificate, limits, &Cancel::new()).expect("the request admits")
+    check_state_graph(&request, certificate, limits, cancel).expect("the request admits")
 }
 
 fn rejected(rule: CertificateRule, at: DigestRecord) -> TemporalCertificateCheck {
@@ -327,7 +350,6 @@ fn the_checker_rejects_altered_rank_certificates() {
         value: 2,
     });
     assert_eq!(checked(&certificate, &limits), stopped);
-    assert_eq!(checked(&certificate, &limits), stopped);
 }
 
 /// FR-169-AC-10 (check half): a hand-built certificate for FR-168-AC-5's
@@ -456,5 +478,176 @@ fn the_checker_rejects_altered_count_certificates() {
             &ModelCheckLimits::default()
         ),
         rejected(CertificateRule::OrderBroken, first_not_to)
+    );
+}
+
+/// The checker's budgets and cancellation over AC-9's `ReachesTwo`
+/// certificate: `max_states` 8 stops at the ninth reached state, although
+/// the closure is read whole; `max_transitions` 1 stops at the second
+/// recomputed successor; a cancelled handle stops it `Cancelled`. None of
+/// them is an acceptance.
+#[trace("TC-644")]
+#[test]
+fn the_checker_stops_at_its_budgets_and_on_cancellation() {
+    let world = config_world(REACHES_TWO, &[(0, 0)]);
+    let (over, certificate) = reaches_two(&world);
+    assert_eq!(certificate.closure.len(), 9);
+    let mut limits = ModelCheckLimits::default();
+    limits.limits.max_states = 8;
+    assert_eq!(
+        check(
+            &world,
+            AB,
+            "ReachesTwo",
+            over.clone(),
+            &certificate,
+            &limits
+        ),
+        TemporalCertificateCheck::Stopped(IncompleteCause::LimitReached {
+            limit: ModelCheckLimit::MaxStates,
+            value: 8,
+        })
+    );
+    limits.limits.max_states = 9;
+    assert_eq!(
+        check(
+            &world,
+            AB,
+            "ReachesTwo",
+            over.clone(),
+            &certificate,
+            &limits
+        ),
+        TemporalCertificateCheck::Accepted
+    );
+
+    let mut limits = ModelCheckLimits::default();
+    limits.limits.max_transitions = 1;
+    assert_eq!(
+        check(
+            &world,
+            AB,
+            "ReachesTwo",
+            over.clone(),
+            &certificate,
+            &limits
+        ),
+        TemporalCertificateCheck::Stopped(IncompleteCause::LimitReached {
+            limit: ModelCheckLimit::MaxTransitions,
+            value: 1,
+        })
+    );
+
+    let cancel = Cancel::new();
+    cancel.cancel(CancelCause::Requested);
+    assert_eq!(
+        check_cancelled(
+            &world,
+            AB,
+            "ReachesTwo",
+            over,
+            &certificate,
+            &ModelCheckLimits::default(),
+            &cancel
+        ),
+        TemporalCertificateCheck::Stopped(IncompleteCause::Cancelled {
+            source: CancelCause::Requested,
+        })
+    );
+}
+
+/// Departure 4: over `Fork` with `fromB`'s second precondition
+/// `6 mod (2 - self.pos) >= 0`, which has no value at `pos = 2`, a
+/// certificate holding every reachable state is rejected `BadState` at
+/// `pos = 2`: its successors are not known.
+#[trace("TC-644")]
+#[test]
+fn an_undetermined_contract_at_a_reached_state_is_bad() {
+    let world = fork_world(
+        "pre Odd using v on F::Fork::fromB { 6 mod (2 - self.pos) >= 0 }\n\
+         possible ReachesOne using v over (x: F::Fork) { x.pos = 1 }\n",
+    );
+    let states = reachable(&world, &["f"]).0;
+    let ranks: BTreeMap<DigestRecord, u32> = BTreeMap::new();
+    let certificate = with_ranks(states.keys().copied().collect(), &ranks);
+    let two = state_where(&world, &["f"], |state| world.value(state, "f", "pos") == 2);
+    assert_eq!(
+        check(
+            &world,
+            &["f"],
+            "ReachesOne",
+            Some(world.reference("f")),
+            &certificate,
+            &ModelCheckLimits::default()
+        ),
+        rejected(CertificateRule::BadState, two)
+    );
+}
+
+/// Departure 2, both sides, over `Fork` (`0 -> 1 -> 3 -> 0` and
+/// `0 -> 2 -> 4`) with `to (x.pos = 4)`: `H` holds the cycle `{0, 1, 3}`,
+/// counted 2 with no topological order. With `from (x.pos = 2)` the claim
+/// holds, and the engine's certificate, cycle included, is accepted. The
+/// same certificate checked for `from (x.pos = 0)`, a node on the cycle, is
+/// rejected `CountBroken` at `pos = 0`: a count of 2 never certifies a
+/// `from` node.
+#[trace("TC-643", "TC-644")]
+#[test]
+fn a_count_two_cycle_certifies_only_where_no_from_node_sits() {
+    let world = fork_world(
+        "unique path FromTwo using v over (x: F::Fork) from (x.pos = 2) to (x.pos = 4);\n\
+         unique path FromZero using v over (x: F::Fork) from (x.pos = 0) to (x.pos = 4);\n",
+    );
+    let result = run(world.request(&["f"], vec![world.item("FromTwo")], no_samples()));
+    let instance = &result.items[0][0];
+    let StateGraphOutcome::Holds { certificate } = &instance.outcome else {
+        panic!("holds: {:?}", instance.outcome);
+    };
+    let pos = |value| {
+        state_where(&world, &["f"], |state| {
+            world.value(state, "f", "pos") == value
+        })
+    };
+    let counts: BTreeMap<DigestRecord, u8> = certificate
+        .counts
+        .iter()
+        .map(|(index, count, _)| {
+            (
+                certificate.closure[usize::try_from(*index).expect("fits")],
+                *count,
+            )
+        })
+        .collect();
+    assert_eq!(
+        counts,
+        BTreeMap::from([
+            (pos(0), 2),
+            (pos(1), 2),
+            (pos(3), 2),
+            (pos(2), 1),
+            (pos(4), 1)
+        ])
+    );
+    assert_eq!(
+        check(
+            &world,
+            &["f"],
+            "FromTwo",
+            instance.over.clone(),
+            certificate,
+            &ModelCheckLimits::default()
+        ),
+        TemporalCertificateCheck::Accepted
+    );
+    assert_eq!(
+        check(
+            &world,
+            &["f"],
+            "FromZero",
+            instance.over.clone(),
+            certificate,
+            &ModelCheckLimits::default()
+        ),
+        rejected(CertificateRule::CountBroken, pos(0))
     );
 }
