@@ -106,6 +106,7 @@ fn run(
             },
             max_depth,
             limits,
+            reductions: Default::default(),
         },
         cancel,
     )

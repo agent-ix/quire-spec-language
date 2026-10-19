@@ -375,6 +375,14 @@ pub(crate) enum StateModelUndefined {
         /// The queried type as the minimal uncovered-subtype witness.
         uncovered_subtypes: Vec<String>,
     },
+    /// FR-139: an `only(x in P where c: e)` form found no object of the
+    /// population satisfying `c`, or several.
+    OnlyNotOne {
+        /// The population's declaration identity.
+        population: String,
+        /// How many objects satisfied the condition.
+        found: u64,
+    },
 }
 
 impl std::fmt::Debug for StateModelUndefined {
@@ -417,6 +425,13 @@ impl UndefinedCoded for StateModelUndefined {
                     ("closure", "subtype".to_owned()),
                     ("queried_type", queried_type.clone()),
                     ("uncovered_subtypes", uncovered_subtypes.join(", ")),
+                ]),
+            },
+            Self::OnlyNotOne { population, found } => UndefinedRecord {
+                reason: UndefinedReason::OnlyNotOne,
+                fields: BTreeMap::from([
+                    ("population", population.clone()),
+                    ("found", found.to_string()),
                 ]),
             },
         }

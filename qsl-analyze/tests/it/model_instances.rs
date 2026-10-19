@@ -260,6 +260,7 @@ impl World {
                 },
                 max_depth: None,
                 limits: ModelCheckLimits::default(),
+                reductions: Default::default(),
             },
             &Cancel::new(),
         )

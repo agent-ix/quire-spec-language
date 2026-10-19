@@ -20,6 +20,7 @@ use crate::model::accounting::ModelNormalizationLimits;
 use crate::model::domain_package::{DomainPackageRecord, DomainPackageRef};
 use crate::model::index::ModelIndex;
 use crate::model::key::DeclarationKey;
+use crate::model::normalize::EffectiveView;
 use crate::model::observation::{
     admit_initial_state, model_views, observe_state, state_fields, state_reference,
     AdmissionFailure, DocumentRef, ModelView, Observation, ObservationLimits, SelectedAnchor,
@@ -69,6 +70,8 @@ pub struct StatePopulation {
     pub key: DeclarationKey,
     /// The population's declared member types, in declaration order.
     pub member_types: Vec<DeclarationKey>,
+    /// Whether the population is declared `symmetric` (FR-150).
+    pub symmetric: bool,
 }
 
 /// FR-106's re-derived model views and the checked type environment.
@@ -98,6 +101,21 @@ impl StateModel {
             types: types.clone(),
             limits,
         })
+    }
+
+    /// The model of a package still being checked, over the effective views
+    /// its `model` declarations admitted. The views stand for the same
+    /// packages [`Self::new`] re-admits from their bytes.
+    pub(crate) fn from_views(
+        views: impl IntoIterator<Item = EffectiveView>,
+        types: &TypeEnvironment,
+        limits: ModelNormalizationLimits,
+    ) -> Self {
+        Self {
+            views: views.into_iter().map(ModelView::new).collect(),
+            types: types.clone(),
+            limits,
+        }
     }
 
     /// Admit the `quire.state.snapshot/v1` document `selected` names in
@@ -167,6 +185,7 @@ impl StateModel {
                 DomainPackageRecord::Population(population) => Some(StatePopulation {
                     key: population.key.clone(),
                     member_types: population.member_types.clone(),
+                    symmetric: population.symmetric,
                 }),
                 _ => None,
             })

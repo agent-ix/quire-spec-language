@@ -102,6 +102,7 @@ fn case(body: &str, values: &[i64]) -> Case {
             item: ModelCheckItem::DeadlockFreedom,
             max_depth: None,
             limits: ModelCheckLimits::default(),
+            reductions: Default::default(),
         },
         &Cancel::new(),
     )

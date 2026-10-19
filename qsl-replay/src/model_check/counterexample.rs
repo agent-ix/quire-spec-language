@@ -59,6 +59,8 @@ pub enum UndefinedLocus {
     Contract(String),
     /// The `terminal when` predicate declared for the model alias.
     Terminal(String),
+    /// The request's state constraint (ADR-021 SC-2), by its clause name.
+    Constraint(String),
 }
 
 /// QSpec FR-364's `where` of an undefined evaluation.
