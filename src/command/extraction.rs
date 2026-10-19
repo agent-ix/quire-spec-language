@@ -451,7 +451,7 @@ mod tests {
         let models = [setup::native_rule_model::parts().model()];
         let ctx = context();
         for (expression, code) in [
-            ("@", Code::InvalidSyntax),
+            ("#", Code::InvalidSyntax),
             ("collect(self.items)", Code::UnsupportedConstruct),
         ] {
             let original = document(&models[0], expression, true);
