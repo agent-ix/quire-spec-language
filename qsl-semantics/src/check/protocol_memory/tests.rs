@@ -252,7 +252,7 @@ fn a_weak_default_requires_join_all_without_outstanding() {
 
 /// A `fence` records its ordering, whichever of the four it is written
 /// with.
-#[trace("TC-665", "FR-220-AC-2")]
+#[trace("TC-665")]
 #[test]
 fn each_fence_ordering_is_recorded() {
     let orderings = [
