@@ -769,9 +769,9 @@ fn zero_instances_report_no_instance_after_the_requires_bound_pre_check() {
     );
 }
 
-/// FR-125-AC-4: a subject whose `initial` list is empty is `NoInitialState`
+/// FR-125 Instancing (AC-4 stays untagged: its first sentence is QSL-886): a subject whose `initial` list is empty is `NoInitialState`
 /// before any state is explored, for a clause item.
-#[trace("TC-520", "FR-125-AC-4")]
+#[trace("TC-520")]
 #[test]
 fn a_clause_over_a_subject_with_no_initial_state_explores_nothing() {
     let world = self::world("", &[]);
