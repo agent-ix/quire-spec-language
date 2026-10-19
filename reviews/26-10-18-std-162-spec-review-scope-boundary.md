@@ -59,6 +59,7 @@ ordinary name resolution.
 | FND | Outcome | Reason |
 | --- | --- | --- |
 | FND-001 | fixed | 2fbe63ee5: FR-165 Parsing now defines the widening concretely: unary and binary temporal operators, each with an optional interval, at any operand position, and fairness constraints at body start, recognition only, with the refusal in QSpec FR-390. It names the missing QSpec `graph-predicate` production, and the QSpec follow-up is filed as STD-171. |
+| FND-002 | fixed | ffa87d0f8: FR-165 Parsing now says "QSL's S1 implements the `graph-predicate` widening now, ahead of QSpec, so the S3 refusal below is reachable from source text", and names STD-171 as the QSpec alignment. This matches FR-165-AC-2, FR-165-AC-4 and PR #968. |
 
 ## New findings (disposition pass 1)
 
