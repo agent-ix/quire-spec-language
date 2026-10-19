@@ -63,20 +63,29 @@ bind a graph, a type report and a selected formal source only when the
    and the spine's `LockEvidence`; a revision or digest never belongs to the
    source.
 8. **Moved families.** The producer admits a family only once its
-   type phase runs in S3 over S2 forms. The `relation` and `hyper` clauses
-   run there: S2 builds their forms and S3 checks them. A checked `relation`
-   or `hyper` clause is refused only as not emitted, the typed temporal cause
-   `NotEmitted` that a checked `temporal` clause is refused with, because no S4
-   emission writes it. A clause whose body does not check is refused with its
-   typed hyper cause instead. A construct of a family whose type phase has not
-   moved is refused with `unsupported_construct` at the construct, and no unit
-   is read by two parsers.
+   type phase runs in S3 over S2 forms. S2 builds a form for a `relation`
+   clause and for a `hyper` clause over `behaviours`, and S3 checks them
+   (FR-171, FR-172); S2 refuses neither with `NoDispatchEntry` or
+   `UnrepresentedConstruct`. A checked clause is refused only as not emitted,
+   the typed temporal cause `NotEmitted` that a checked `temporal` clause is
+   refused with, because no S4 emission writes it. A clause with a fault keeps
+   the refusal of its own fault (FR-172, FR-173), a typed hyper cause or, for
+   its temporal operators, fairness and profile selection, a typed temporal
+   cause, and is never refused `NotEmitted`. A `hyper` clause over a finite
+   trace domain and a `relation` over names that are not model operations keep
+   the finite reading of QSpec FR-191 (FR-171, FR-172). A construct of a family
+   whose type phase has not moved is refused with `unsupported_construct` at
+   the construct, and no unit is read by two parsers.
 9. **Composed requirements during the migration.** FR-035, FR-036, FR-040 and
-   FR-049 stay normative for the families whose type phase has not moved to S3.
-   The PR that moves a family retires or amends the parts of those
-   requirements and of their test cases that name that family, and deletes that
-   family's composed parser arm, syntax, linker and checker. The PR that moves
-   the last family retires them. This requirement amends none of them.
+   FR-049 stay normative for the composed lane until it is retired. The PR that
+   moves a family retires or amends the parts of those requirements and of
+   their test cases that name that family, and deletes that family's composed
+   parser arm, syntax, linker and checker. The PR that moves the last family
+   retires them. This requirement amends none of them. Open work, not owed by
+   the change that moved `relation` and `hyper`: the composed lane
+   (`src/linking/composed`, `src/checking/composed`, `src/parser/composed*`,
+   `src/syntax/composed*` and the callers of `parse_native` and
+   `parse_native_source`) is still present and is retired family by family.
 10. **The inventory.** The owner-issued source inventory of QSL's checked
    requirements and pending obligations is built from the checked unit and
    from nothing else. A unit that the S3 type phase refuses is an error outcome
