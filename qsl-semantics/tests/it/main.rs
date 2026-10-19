@@ -14,6 +14,8 @@ mod business_meanings;
 mod child_composite;
 mod complete_value_lock;
 mod dispatch_linking;
+#[cfg(feature = "test-support")]
+mod hyper_clauses;
 mod identity_golden_vectors;
 mod ieee_profiles;
 mod import_view_names;
@@ -78,6 +80,8 @@ mod tc235_business_meanings;
 mod temporal_fairness;
 #[cfg(feature = "test-support")]
 mod terminal_declarations;
+#[cfg(feature = "test-support")]
+mod timed_declarations;
 #[cfg(feature = "test-support")]
 mod type_environment_model;
 mod variant_fields;

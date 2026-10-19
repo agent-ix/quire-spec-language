@@ -902,6 +902,7 @@ mod tc_282_duplicate_backend_identity {
                     d2,
                     [(Some("value-validity"), Some("finite"))],
                     Some(&["collection"]),
+                    None,
                 )
                 .expect_err("`finite` is not an FR-290 mode")
             };
@@ -1276,6 +1277,7 @@ mod permutation_equality {
                     }),
                 )],
                 Some(&["collection"]),
+                None,
             )
             .expect("generated item manifest is valid");
             let irrelevant = descriptor_from_manifest(
@@ -1284,6 +1286,7 @@ mod permutation_equality {
                 digest(format!("irrelevant-manifest-{seed}").as_bytes()),
                 [(Some(other_label), Some("bounded"))],
                 Some(&["collection"]),
+                None,
             )
             .expect("generated irrelevant manifest is valid");
             let relevant = descriptor_from_manifest(
@@ -1292,6 +1295,7 @@ mod permutation_equality {
                 digest(format!("relevant-manifest-{seed}").as_bytes()),
                 [(Some(item_label), Some("unbounded"))],
                 Some(&["collection"]),
+                None,
             )
             .expect("generated relevant manifest is valid");
 

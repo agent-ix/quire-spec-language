@@ -55,7 +55,7 @@ use super::model_gate::{self, ModelGateRefusal};
 use super::node_key::{declared_type_handle, nominal_key, NodeKeyRefusal, SourceOwner};
 use super::operation_body::OperationBodyDeclaration;
 use super::operation_clause::OperationClauseDeclaration;
-use super::refusal::AliasKind;
+use super::refusal::{AliasKind, TimedConstruct};
 use super::state_clause::{
     population_of, AttemptDeclaration, ClauseOperation, StateClauseDeclaration,
 };
@@ -453,6 +453,10 @@ pub enum AssemblyCause {
     /// `quire.model.complete/v1` (FR-361): `unsupported_construct`/
     /// `declaration-form` or `expression-form`.
     UnselectedModelConstruct(ModelGateRefusal),
+    /// A timed declaration or the `Clock` type, which S2 builds (FR-393)
+    /// and no S3 check reads yet (FR-230): `unsupported_construct`/
+    /// `not-yet-implemented`, never compiled unchecked.
+    TimedNotChecked(super::refusal::TimedConstruct),
 }
 
 impl AssemblyCause {
@@ -513,9 +517,9 @@ impl AssemblyCause {
             | Self::StorageAllocation { .. }
             | Self::StorageCapacity { .. } => Code::ResourceExhausted,
             Self::Handle(_) | Self::NominalAdmission(_) => Code::RuntimeInvariant,
-            Self::UnsupportedLayerForm { .. } | Self::UnselectedModelConstruct(_) => {
-                Code::UnsupportedConstruct
-            }
+            Self::UnsupportedLayerForm { .. }
+            | Self::UnselectedModelConstruct(_)
+            | Self::TimedNotChecked(_) => Code::UnsupportedConstruct,
         }
     }
 
@@ -601,6 +605,7 @@ impl AssemblyCause {
             Self::Handle(_) | Self::NominalAdmission(_) => "established-invariant-broken",
             Self::UnsupportedLayerForm { form, .. } => form.refusal_cause(),
             Self::UnselectedModelConstruct(refusal) => refusal.family.refusal_cause(),
+            Self::TimedNotChecked(_) => "not-yet-implemented",
         };
         CatalogCode::new(self.code().as_str(), cause)
     }
@@ -704,6 +709,9 @@ struct Unit {
     /// Each `temporal` clause's form, in source order, for FR-326's
     /// `check::temporal_clause` checker to resolve at S3.
     temporal_clauses: Vec<super::temporal_clause::TemporalDeclaration>,
+    /// Each `hyper` clause and `relation`, in source order, for
+    /// `check::hyper_clause` to resolve at S3.
+    hyper_clauses: Vec<super::hyper_clause::HyperDeclaration>,
     probabilistic: Vec<super::ProbabilisticDeclaration>,
     /// Each `terminal` declaration's form, in source order, resolved by the
     /// caller into the model's `TerminalClauseDeclaration`s (FR-124).
@@ -711,6 +719,8 @@ struct Unit {
     /// Each `refinement` declaration's form, in source order, resolved by the
     /// caller into the unit's `RefinementDeclaration`s (FR-135).
     refinements: Vec<qsl_forms::RefinementForm>,
+    /// The timed declarations (FR-393), refused until FR-230 checks them.
+    timed: Vec<(TimedConstruct, Span)>,
     /// Each state-graph claim's form, in source order, resolved by the
     /// caller into `StateGraphDeclaration`s (FR-165).
     state_graph_claims: Vec<qsl_forms::StateGraphClaimForm>,
@@ -731,9 +741,11 @@ impl Unit {
             population_bounds: Vec::new(),
             protocols: Vec::new(),
             temporal_clauses: Vec::new(),
+            hyper_clauses: Vec::new(),
             probabilistic: Vec::new(),
             terminals: Vec::new(),
             refinements: Vec::new(),
+            timed: Vec::new(),
             state_graph_claims: Vec::new(),
         };
         for form in forms {
@@ -777,6 +789,25 @@ impl Unit {
                 }
                 DeclarationForm::Terminal(terminal) => unit.terminals.push(*terminal),
                 DeclarationForm::Refinement(refinement) => unit.refinements.push(*refinement),
+                DeclarationForm::TimeSource(time) => {
+                    unit.timed.push((TimedConstruct::TimeSource, time.span));
+                }
+                DeclarationForm::TimeInvariant(invariant) => {
+                    unit.timed
+                        .push((TimedConstruct::TimeInvariant, invariant.span));
+                }
+                DeclarationForm::Urgent(urgent) => {
+                    unit.timed.push((TimedConstruct::Urgent, urgent.span));
+                }
+                DeclarationForm::HyperBehaviours(clause) => unit
+                    .hyper_clauses
+                    .push(super::hyper_clause::HyperDeclaration::Behaviours(*clause)),
+                DeclarationForm::HyperFinite(clause) => unit
+                    .hyper_clauses
+                    .push(super::hyper_clause::HyperDeclaration::Finite(*clause)),
+                DeclarationForm::ModelRelation(clause) => unit
+                    .hyper_clauses
+                    .push(super::hyper_clause::HyperDeclaration::Relation(*clause)),
                 DeclarationForm::Random(random) => unit
                     .probabilistic
                     .push(super::ProbabilisticDeclaration::Random(random)),
@@ -1796,6 +1827,9 @@ fn expression_type_forms<'e>(roots: impl IntoIterator<Item = &'e Expression>) ->
                 | ExprNode::SelfRef
                 | ExprNode::Result
                 | ExprNode::Reaches { .. }
+                | ExprNode::Indexed { .. }
+                | ExprNode::StepLabel { .. }
+                | ExprNode::Stutter
                 | ExprNode::ProtocolReference { .. } => {}
                 // Not the S2 seam (`Typer::infer_form`'s own doc,
                 // `qsl-semantics/src/check/check/typing.rs`): an
@@ -1840,6 +1874,10 @@ fn check_names(
                     }
                 }
             }
+            TypeFormHead::Builtin(BuiltinType::Clock) => errors.push(AssemblyError {
+                cause: AssemblyCause::TimedNotChecked(TimedConstruct::Clock),
+                span: form.span,
+            }),
             TypeFormHead::Builtin(BuiltinType::Reference) => {
                 for target in &form.arguments {
                     let name = match &target.head {
@@ -1933,6 +1971,7 @@ fn resolution_error(unit: &Unit, error: TypeFormError) -> AssemblyError {
         | TypeFormFault::MalformedDecimal
         | TypeFormFault::EmptyTextBounds
         | TypeFormFault::EmptyCardinality) => AssemblyCause::IllFormedBounds(fault),
+        TypeFormFault::ClockNotChecked => AssemblyCause::TimedNotChecked(TimedConstruct::Clock),
     };
     AssemblyError {
         cause,
@@ -2380,7 +2419,16 @@ impl PackageDeclarations {
     ) -> Result<Self, AssemblyRefusal> {
         let (selections, forms) = unit.into_parts();
         let unit = Unit::new(forms);
-        let mut errors = Vec::new();
+        // FR-393: the timed declarations build at S2; until FR-230's check
+        // reads them, each refuses here rather than compile unchecked.
+        let mut errors: Vec<AssemblyError> = unit
+            .timed
+            .iter()
+            .map(|(construct, span)| AssemblyError {
+                cause: AssemblyCause::TimedNotChecked(*construct),
+                span: *span,
+            })
+            .collect();
         let owner = SourceOwner::from(&source);
         // The models and the one meter their admission counted on; checking
         // continues that meter into the conformance stage.
@@ -2526,6 +2574,23 @@ impl PackageDeclarations {
         // alias's (ADR-014 A-2), and `check::temporal_clause` decides it.
         for clause in &unit.temporal_clauses {
             let using = &clause.form.profile;
+            if !selections
+                .profiles
+                .iter()
+                .any(|profile| profile.alias == using.alias)
+            {
+                errors.push(AssemblyError {
+                    cause: AssemblyCause::UndeclaredAlias {
+                        alias: using.alias.clone(),
+                    },
+                    span: using.span,
+                });
+            }
+        }
+        // FR-172: a `hyper` clause's and a `relation`'s `using` alias names one
+        // of the unit's profile selections, as a `temporal` clause's does.
+        for clause in &unit.hyper_clauses {
+            let using = clause.profile();
             if !selections
                 .profiles
                 .iter()
@@ -3251,6 +3316,7 @@ impl PackageDeclarations {
             .collect();
         package.protocols = unit.protocols;
         package.temporal_clauses = unit.temporal_clauses;
+        package.hyper_clauses = unit.hyper_clauses;
         package.probabilistic = unit.probabilistic;
         package.temporal_selections = selections
             .profiles

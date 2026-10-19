@@ -34,7 +34,7 @@ use quire_exact::{Cancel, CancelCause, ScalarLimits};
 use quire_exact::{Integer, ValueType};
 
 use crate::counter::{
-    clause, document, document_with_ranged_parameter, identity, package, reference, subject,
+    document, document_with_ranged_parameter, package, package_with_clauses, reference, subject,
     universe, value, Documents, Letters, CONTRACT, UNLIMITED, ZERO,
 };
 
@@ -44,6 +44,7 @@ const ANY: &str = "terminal Halt using v on M any;\n";
 /// The Counter world: its package with `terminal`, the documents and the
 /// initial snapshots of `starts`, each a list of `(key, value)`.
 struct World {
+    body: String,
     package: CheckedPackage,
     documents: Documents,
     initial: Vec<DocumentRef>,
@@ -62,6 +63,7 @@ fn world_with(document: Vec<u8>, body: &str, starts: &[&[(&str, i64)]]) -> World
         .map(|(index, objects)| documents.start(&format!("s{index}"), objects))
         .collect();
     World {
+        body: body.to_owned(),
         package,
         documents,
         initial,
@@ -76,10 +78,23 @@ fn run(
     limits: ModelCheckLimits,
     meter: ScalarLimits,
 ) -> Result<ModelCheckOutcome, ModelCheckRefusal> {
+    run_in(world, &world.package, keys, item, max_depth, limits, meter)
+}
+
+/// [`run`] over `package`, the world's package with a clause declared.
+fn run_in(
+    world: &World,
+    package: &CheckedPackage,
+    keys: &[&str],
+    item: ModelCheckItem<'_>,
+    max_depth: Option<usize>,
+    limits: ModelCheckLimits,
+    meter: ScalarLimits,
+) -> Result<ModelCheckOutcome, ModelCheckRefusal> {
     check_model(
         ModelCheckRequest {
             subject: subject(
-                &world.package,
+                package,
                 &world.documents,
                 world.initial.clone(),
                 keys,
@@ -344,15 +359,22 @@ fn invariant(
     formula: &str,
     atom: fn(i64) -> Option<bool>,
 ) -> ModelCheckOutcome {
-    let clause = clause(&world.documents.document, "", formula);
+    let (package, clauses) = package_with_clauses(
+        &world.documents.document,
+        &world.body,
+        &[("C", "", formula)],
+    );
+    let [clause] = clauses.as_slice() else {
+        panic!("one declared clause");
+    };
     let letters = letters(world, keys, atom);
-    run(
+    run_in(
         world,
+        &package,
         keys,
         ModelCheckItem::Clause {
-            clause: &clause,
+            clause,
             letters: &letters,
-            identity: &identity(),
         },
         None,
         ModelCheckLimits::default(),
@@ -415,17 +437,18 @@ fn a_violation_names_the_first_bound_instance_that_is_false() {
 
 /// Verifies the TP-1 half of FR-126-AC-9; its TP-4 claim, the `kind:
 /// Formula` conjunction and the TP-2 `Holds` are not verified. Over the
-/// Counter subject: `always holds(6 / (2 -
-/// c.value) >= 0)` is violated with the prefix `0 -inc-> 1 -inc-> 2` and
+/// Counter subject: `always holds(6 mod (2 -
+/// c.value) >= 0)` (the spec writes the division `/`; S3 types `mod`, not
+/// `/`, over integers, so the test uses `mod`) is violated with the prefix `0 -inc-> 1 -inc-> 2` and
 /// `kind: UndefinedEvaluation{where: position 2, cause: division-by-zero}`,
 /// at the clause's atom.
 #[trace("TC-537")]
 #[test]
 fn an_undefined_atom_refutes_at_the_first_position_it_is_undefined() {
     let world = self::world("", &[&[("c", 0)]]);
-    let formula = "always holds(6 / (2 - c.value) >= 0)";
+    let formula = "always holds(6 mod (2 - c.value) >= 0)";
     let outcome = invariant(&world, &["c"], formula, |v| {
-        (v != 2).then(|| 6 / (2 - v) >= 0)
+        (v != 2).then(|| 6 % (2 - v) >= 0)
     });
     let counterexample = violated(&outcome);
     assert_eq!(values(&world, counterexample, "c"), [0, 1, 2]);
@@ -596,6 +619,59 @@ fn limits_and_cancellation_stop_the_run_naming_what_stopped_it() {
     );
 }
 
+/// Verifies the cancelled-handle row of FR-126-AC-5 over a TP-1 clause: the
+/// clause's root is resolved from the package, and a handle cancelled before
+/// the call stops that resolution, so the run returns `Stopped{Cancelled,
+/// None}` rather than refusing.
+#[trace("TC-521", "FR-126-AC-5")]
+#[test]
+fn a_cancelled_handle_stops_a_tp1_clause_run_rather_than_refusing() {
+    let world = self::world("", &[&[("c", 0)]]);
+    let (package, clauses) = package_with_clauses(
+        &world.documents.document,
+        &world.body,
+        &[("C", "", "always holds(c.value <= 3)")],
+    );
+    let [clause] = clauses.as_slice() else {
+        panic!("one declared clause");
+    };
+    let letters = letters(&world, &["c"], |v| Some(v <= 3));
+    let cancel = Cancel::new();
+    cancel.cancel(CancelCause::Requested);
+    let outcome = check_model(
+        ModelCheckRequest {
+            subject: subject(
+                &package,
+                &world.documents,
+                world.initial.clone(),
+                &["c"],
+                UNLIMITED,
+            ),
+            item: ModelCheckItem::Clause {
+                clause,
+                letters: &letters,
+            },
+            max_depth: None,
+            limits: ModelCheckLimits::default(),
+        },
+        &cancel,
+    )
+    .expect("a cancelled handle is an outcome, not a refusal");
+    assert!(
+        matches!(
+            outcome,
+            ModelCheckOutcome::Stopped {
+                cause: IncompleteCause::Cancelled {
+                    source: CancelCause::Requested
+                },
+                limit: None,
+                ..
+            }
+        ),
+        "{outcome:?}"
+    );
+}
+
 /// Verifies the limits half of FR-126-AC-8, not all of it:
 /// `ModelCheckLimits::default()` is FR-101's
 /// `Limits::default()` (10,000,000 states, 100,000,000 transitions) and
@@ -672,19 +748,26 @@ fn an_empty_or_unbounded_subject_and_an_undecided_form_explore_nothing() {
     );
 
     let world = self::world("", &[&[("c", 0)]]);
-    let safety = clause(
+    let (package, clauses) = package_with_clauses(
         &world.documents.document,
-        "",
-        "always (holds(c.value <= 0) and holds(c.value >= 0))",
+        &world.body,
+        &[(
+            "C",
+            "",
+            "always (holds(c.value <= 0) and holds(c.value >= 0))",
+        )],
     );
+    let [safety] = clauses.as_slice() else {
+        panic!("one declared clause");
+    };
     let letters = letters(&world, &["c"], |_| Some(true));
-    let refusal = run(
+    let refusal = run_in(
         &world,
+        &package,
         &["c"],
         ModelCheckItem::Clause {
-            clause: &safety,
+            clause: safety,
             letters: &letters,
-            identity: &identity(),
         },
         None,
         ModelCheckLimits::default(),
@@ -695,6 +778,121 @@ fn an_empty_or_unbounded_subject_and_an_undecided_form_explore_nothing() {
         matches!(refusal, ModelCheckRefusal::FormNotDecided { .. }),
         "{refusal:?}"
     );
+}
+
+/// QSpec FR-361-AC-8 (QSpec TC-294): a clause with zero instances is
+/// `Undecided(NoInstance)` before any state is explored; the same clause
+/// over a population with no universe is refused `RequiresBound` naming that
+/// population, never `NoInstance`. The zero instances are made by clearing
+/// `Letters.bindings`; deriving them from the universes is QSL-886's.
+#[trace("TC-520", "QSpec-FR-361-AC-8")]
+#[test]
+fn zero_instances_report_no_instance_after_the_requires_bound_pre_check() {
+    let world = self::world("", &[&[("c", 0)]]);
+    let (package, clauses) = package_with_clauses(
+        &world.documents.document,
+        &world.body,
+        &[("C", "", "always holds(c.value <= 3)")],
+    );
+    let [clause] = clauses.as_slice() else {
+        panic!("one declared clause");
+    };
+    let empty = letters(&world, &[], |_| Some(true));
+    let item = || ModelCheckItem::Clause {
+        clause,
+        letters: &empty,
+    };
+    let outcome = run_in(
+        &world,
+        &package,
+        &["c"],
+        item(),
+        None,
+        ModelCheckLimits::default(),
+        UNLIMITED,
+    )
+    .expect("checked");
+    assert!(matches!(
+        outcome,
+        ModelCheckOutcome::Undecided {
+            cause: UndecidedCause::NoInstance,
+            stats,
+        } if stats.product_states == 0
+    ));
+
+    let mut no_universe = subject(
+        &package,
+        &world.documents,
+        world.initial.clone(),
+        &["c"],
+        UNLIMITED,
+    );
+    no_universe.simulation.universes = Vec::new();
+    let refusal = check_model(
+        ModelCheckRequest {
+            subject: no_universe,
+            item: item(),
+            max_depth: None,
+            limits: ModelCheckLimits::default(),
+        },
+        &Cancel::new(),
+    )
+    .expect_err("no universe");
+    let roots = unbounded_roots(&refusal);
+    assert_eq!(roots.len(), 1, "{roots:?}");
+    assert_eq!(roots[0].1, DomainKind::Population);
+    let held: Vec<_> = system_without_universe(&world)
+        .domains()
+        .into_iter()
+        .filter(|(_, value_type)| matches!(value_type, ValueType::Population(_)))
+        .collect();
+    let [(population, _)] = held.as_slice() else {
+        panic!("one population root: {held:?}");
+    };
+    assert_eq!(
+        roots[0].0,
+        DomainKey::Node {
+            node: *population,
+            path: Vec::new()
+        }
+    );
+}
+
+/// FR-125 Instancing (AC-4 stays untagged: its first sentence is QSL-886): a subject whose `initial` list is empty is `NoInitialState`
+/// before any state is explored, for a clause item.
+#[trace("TC-520")]
+#[test]
+fn a_clause_over_a_subject_with_no_initial_state_explores_nothing() {
+    let world = self::world("", &[]);
+    let (package, clauses) = package_with_clauses(
+        &world.documents.document,
+        &world.body,
+        &[("C", "", "always holds(c.value <= 3)")],
+    );
+    let [clause] = clauses.as_slice() else {
+        panic!("one declared clause");
+    };
+    let bound = letters(&world, &["c"], |_| Some(true));
+    let outcome = run_in(
+        &world,
+        &package,
+        &["c"],
+        ModelCheckItem::Clause {
+            clause,
+            letters: &bound,
+        },
+        None,
+        ModelCheckLimits::default(),
+        UNLIMITED,
+    )
+    .expect("checked");
+    assert!(matches!(
+        outcome,
+        ModelCheckOutcome::Undecided {
+            cause: UndecidedCause::NoInitialState,
+            stats,
+        } if stats.product_states == 0
+    ));
 }
 
 /// FR-126 "Determinism": two runs of one request give equal outcomes and

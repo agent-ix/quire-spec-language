@@ -7,6 +7,7 @@ mod complete_cst;
 mod complete_grammar;
 mod cst_identity;
 mod deep_sources;
+mod hyper_clause;
 mod limits;
 mod model_source;
 mod nesting_levels;

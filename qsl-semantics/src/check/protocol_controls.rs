@@ -1122,7 +1122,7 @@ mod tests {
     /// rather than compile unchecked.
     #[trace("TC-1065")]
     #[test]
-    fn a_predicate_join_and_a_terminal_predicate_are_not_compiled_unchecked() {
+    fn a_predicate_join_and_memory_constructs_are_not_compiled_unchecked() {
         let predicate_join = parallel("predicate(done) [east, west]");
         let with_memory = |model: &str| {
             parallel("all [east, west]").replacen(
@@ -1136,7 +1136,6 @@ mod tests {
         let fence = "sequence Main { fence F ordering seq_cst; }";
         for (members, run, construct) in [
             ("", predicate_join.as_str(), "join predicate"),
-            ("terminal when { true };", RUN, "terminal when"),
             ("", sc.as_str(), "parallel memory"),
             ("", tso.as_str(), "parallel memory"),
             ("", ra.as_str(), "parallel memory"),

@@ -219,6 +219,8 @@ pub fn check(
             slots: crate::check::protocol_slots::CheckedSlots::default(),
             compensation_operations: Vec::new(),
             awaits,
+            requirements: Vec::new(),
+            relationships: Vec::new(),
         },
         bound_attempts,
     ))

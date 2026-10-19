@@ -10,10 +10,9 @@ use crate::check::refusal::ProtocolAnchorCause;
 /// protocol whose anchors (FR-113) and attempt bindings (FR-114) all resolve
 /// and that holds an `effect`, an `event` and a `commit` checks, and a body
 /// that reads its node's own binder checks too, while the same protocol
-/// with a `related by` clause still refuses
-/// `unsupported_construct`/`not-yet-implemented` once, at that clause,
-/// rather than compiling with the clause unchecked and silently missing
-/// from the emitted package.
+/// with a `related by` clause naming no relationship refuses
+/// `missing_declaration`/`missing-name` at the name (FR-218
+/// "Relationships") rather than compiling with the clause unchecked.
 #[trace("TC-511", "FR-113")]
 #[test]
 fn a_resolving_protocol_with_unchecked_content_still_refuses() {
@@ -30,24 +29,14 @@ fn a_resolving_protocol_with_unchecked_content_still_refuses() {
         1,
     );
     let (refusal, cause) = only_cause(&source);
-    assert_eq!(refusal.cause.code().as_str(), "unsupported_construct");
-    assert_eq!(refusal.cause.cause(), Some("not-yet-implemented"));
-    match cause {
-        ProtocolAnchorCause::Unimplemented {
-            name,
-            construct,
-            span,
-        } => {
-            assert_eq!(name, "RecoveryFlow");
-            assert_eq!(construct, "related by");
-            let (text, _) = assemble(&source);
-            assert!(
-                text[span.start..].starts_with("related by Pays"),
-                "{span:?}"
-            );
-        }
-        other => panic!("an Unimplemented cause, got {other:?}"),
-    }
+    assert_eq!(refusal.cause.code().as_str(), "missing_declaration");
+    assert_eq!(refusal.cause.cause(), Some("missing-name"));
+    let ProtocolAnchorCause::MissingRelated { name, span, .. } = cause else {
+        panic!("a missing relationship, got {cause:?}");
+    };
+    assert_eq!(name, "Pays");
+    let (text, _) = assemble(&source);
+    assert_eq!(&text[span.start..span.end], "Pays");
 }
 
 /// A `fence` control, whose memory semantics nothing checks yet, refuses
@@ -154,4 +143,43 @@ fn each_unchecked_part_of_an_attempt_protocol_refuses() {
             assert_eq!(refusal.cause.cause(), Some(tag), "{source}: {found:?}");
         }
     }
+}
+
+/// QSpec FR-464 "Profiles and laws": a `compensate` template reads a clock
+/// role, so under no temporal profile it refuses `missing_declaration`/
+/// `missing-selection` at the template's name, naming it; with one selected
+/// the same protocol checks.
+#[trace("QSpec-FR-464")]
+#[test]
+fn a_compensate_template_needs_a_temporal_profile() {
+    let source = recovery_flow("Main::Committed", "");
+    checks(&source);
+    let header = super::HEADER.replace("profile t = \"quire.temporal.infinite-trace/v1\";\n", "");
+    assert_ne!(
+        header,
+        super::HEADER,
+        "the fixture header selects a temporal profile"
+    );
+    let (text, assembled) = super::assemble_with(&header, &source);
+    let found = assembled
+        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .expect_err("a template under no temporal profile refuses");
+    let [refusal] = found.as_slice() else {
+        panic!("one refusal: {found:?}");
+    };
+    assert_eq!(refusal.cause.code().as_str(), "missing_declaration");
+    assert_eq!(refusal.cause.cause(), Some("missing-selection"));
+    let crate::check::CheckCause::ProtocolAnchor(cause) = &refusal.cause else {
+        panic!("a protocol cause: {refusal:?}");
+    };
+    let ProtocolAnchorCause::MissingTemporalProfile {
+        construct,
+        node,
+        span,
+    } = cause.as_ref()
+    else {
+        panic!("a missing temporal profile, got {cause:?}");
+    };
+    assert_eq!((*construct, node.as_str()), ("compensate", "Undo"));
+    assert_eq!(&text[span.start..span.end], "Undo");
 }

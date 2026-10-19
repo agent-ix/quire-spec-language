@@ -13,23 +13,16 @@ use qsl_eval::simulation::model::{
     ExpansionLimits, ModelSimState, ModelSimulationRequest, PopulationUniverse,
 };
 use qsl_eval::temporal::{AtomReading, UndefinedCause};
-use qsl_foundation::digest::WireNodeId;
-use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::SourceIdentity;
 use qsl_package::CheckedPackage;
-use qsl_replay::ClauseIdentity;
-use qsl_semantics::check::{
-    check_clauses, CheckedTemporalClause, FormulaNodeId, PackageDeclarations,
-};
+use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId, PackageDeclarations};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
 use qsl_semantics::model::key::{hex, DeclarationKey};
 use qsl_semantics::model::observation::{
     declared_type_universe_for, DocumentRef, ObservationLimits,
 };
-use quire_exact::{
-    Incomplete, Meter, ObjectId, ObjectReference, Origin, Role, ScalarLimits, Value,
-};
+use quire_exact::{Incomplete, Meter, ObjectId, ObjectReference, ScalarLimits, Value};
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
 
@@ -239,17 +232,38 @@ pub(crate) fn package(document: &[u8], body: &str) -> CheckedPackage {
     CheckedPackage::link(graph)
 }
 
-/// The one temporal clause `C` over `c: M::Counter`, `on origin`, whose
-/// formula is `formula` under infinite-trace.
-pub(crate) fn clause(document: &[u8], fairness: &str, formula: &str) -> CheckedTemporalClause {
-    let body = format!(
-        "temporal C using t0 over (c: M::Counter) clock \"model-steps\" on origin {{ {fairness} {formula} }}\n"
-    );
-    let mut checked = check_clauses(&declarations(document, &body));
-    match checked.pop() {
-        Some(Ok(clause)) if checked.is_empty() => clause,
-        other => panic!("{formula}: one checked clause, not {other:?}"),
-    }
+/// The text of the temporal clause `name` over `c: M::Counter`, `on origin`,
+/// whose formula is `formula` under infinite-trace.
+pub(crate) fn clause_text(name: &str, fairness: &str, formula: &str) -> String {
+    format!(
+        "temporal {name} using t0 over (c: M::Counter) clock \"model-steps\" on origin {{ {fairness} {formula} }}\n"
+    )
+}
+
+/// The checked package of `body` over `document` with the clauses `declared`
+/// (name, fairness, formula) written after it, and each clause the package
+/// declares, in declaration order.
+pub(crate) fn package_with_clauses(
+    document: &[u8],
+    body: &str,
+    declared: &[(&str, &str, &str)],
+) -> (CheckedPackage, Vec<CheckedTemporalClause>) {
+    let body = declared
+        .iter()
+        .fold(body.to_owned(), |text, (name, fairness, formula)| {
+            text + &clause_text(name, fairness, formula)
+        });
+    let graph = declarations(document, &body)
+        .with_unwritten_terminals()
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}"));
+    let clauses = graph
+        .temporal_clauses()
+        .iter()
+        .map(|node| node.clause().clone())
+        .collect::<Vec<_>>();
+    assert_eq!(clauses.len(), declared.len(), "{body}");
+    (CheckedPackage::link(graph), clauses)
 }
 
 /// A subject's documents: the domain package and the snapshots.
@@ -395,18 +409,6 @@ pub(crate) fn value(state: &ModelSimState, object: &str) -> i64 {
     {
         Some(Value::Integer(value)) => value.to_string().parse().expect("a small value"),
         other => panic!("{object}.value is not an integer: {other:?}"),
-    }
-}
-
-/// The identity of the clause [`clause`] builds: S4 emits no temporal clause
-/// node yet (FR-337), so its occurrence and `over` node are fixture ids.
-pub(crate) fn identity() -> ClauseIdentity {
-    ClauseIdentity {
-        occurrence: OccurrenceKey::new(
-            WireNodeId::from_digest([0x51; 32]),
-            Origin::new(Role::new("temporal"), 0),
-        ),
-        over: Some(WireNodeId::from_digest([0x52; 32])),
     }
 }
 

@@ -260,7 +260,8 @@ fn assembly_limit(cause: &AssemblyCause) -> Option<ReachedLimit> {
         | AssemblyCause::AmbiguousTerminalState { .. }
         | AssemblyCause::AmbiguousPopulation { .. }
         | AssemblyCause::UnsupportedLayerForm { .. }
-        | AssemblyCause::UnselectedModelConstruct(_) => None,
+        | AssemblyCause::UnselectedModelConstruct(_)
+        | AssemblyCause::TimedNotChecked(_) => None,
     }
 }
 
@@ -332,7 +333,9 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
         | CheckCause::TerminalNotEmitted { .. }
         | CheckCause::RefinementNotEmitted { .. }
         | CheckCause::Probabilistic(_)
+        | CheckCause::TimedNotChecked { .. }
         | CheckCause::Temporal(_)
+        | CheckCause::Hyper(_)
         | CheckCause::StateGraph(_) => None,
         #[cfg(seam_probe)]
         CheckCause::__SeamProbe => None,

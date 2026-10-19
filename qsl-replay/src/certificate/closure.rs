@@ -51,6 +51,7 @@ use quire_semantic_value::model_transition::ModelTransition;
 use serde::{ser::SerializeStruct, Serialize, Serializer};
 
 use crate::certificate::{CertificateLocus, CertificateRule};
+use crate::model_check::identity::ClauseRootRefusal;
 use crate::model_check::item::{Instance, ItemRefusal, ModelCheckItem};
 use crate::model_check::limits::{ModelCheckLimit, ModelCheckLimits};
 use crate::proof_result::IncompleteCause;
@@ -182,7 +183,15 @@ pub fn check_closure(
     limits: &ModelCheckLimits,
     cancel: &Cancel,
 ) -> Result<TemporalCertificateCheck, ClosureRefusal> {
-    let instances = request.item.instances()?;
+    let instances = match request.item.instances(&request.subject, cancel) {
+        Ok(instances) => instances,
+        Err(ItemRefusal::ClauseRoot(ClauseRootRefusal::Cancelled(cause))) => {
+            return Ok(TemporalCertificateCheck::Stopped(
+                IncompleteCause::Cancelled { source: cause },
+            ));
+        }
+        Err(refusal) => return Err(refusal.into()),
+    };
     if instances.is_empty() {
         return Err(ClosureRefusal::NoInstance);
     }

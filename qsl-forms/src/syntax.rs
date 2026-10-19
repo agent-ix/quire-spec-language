@@ -50,6 +50,9 @@ pub enum BuiltinType {
     Option,
     /// `Reference<T>`.
     Reference,
+    /// `Clock`, the built-in clock type: only an unqualified `Clock`
+    /// (FR-393). Whether a unit admits it is S3's decision (FR-230).
+    Clock,
 }
 
 /// A [`TypeForm`]'s head.
@@ -478,6 +481,23 @@ impl fmt::Debug for ExprId {
     }
 }
 
+/// Which label of a step a `trace.step.<label>` read names (FR-171).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum StepLabelForm {
+    /// `trace.step.op`: the operation of the step into the current position.
+    Operation,
+    /// `trace.step.receiver`: the step's receiver key.
+    Receiver,
+    /// `trace.step.Operation::name.parameter`: one argument of the step, as
+    /// the qualified operation name and the parameter name were written.
+    Argument {
+        /// The operation's qualified name, segments joined by `::`.
+        operation: String,
+        /// The parameter name.
+        parameter: String,
+    },
+}
+
 /// One node of a value expression: its payload, with each subexpression
 /// named by its [`ExprId`] in the same [`Expression`] arena.
 ///
@@ -723,6 +743,27 @@ pub enum ExprNode {
         /// The written qualified name, segments joined by `::`.
         target: String,
     },
+    /// `read @ trace` (FR-171): a model member read taken from one trace
+    /// variable of a `hyper` clause. S3 binds `trace` to its quantifier.
+    Indexed {
+        /// The member read, as written.
+        read: ExprId,
+        /// The trace variable's name.
+        trace: String,
+    },
+    /// `trace.step.op`, `trace.step.receiver` or
+    /// `trace.step.Operation::name.parameter` (FR-171): one label of the step
+    /// into a trace's current position, read in a `hyper` clause's `match`
+    /// block.
+    StepLabel {
+        /// The trace variable's name.
+        trace: String,
+        /// Which label.
+        label: StepLabelForm,
+    },
+    /// `stutter` (FR-171): the step label of a terminal stutter step, read in
+    /// a `hyper` clause's `match` block.
+    Stutter,
     /// FR-063/S2: exists only so `--cfg seam_probe` makes every
     /// match over `ExprNode` outside this module non-exhaustive. Never
     /// constructed outside the probe build.
@@ -746,7 +787,9 @@ impl ExprNode {
             | Self::Name(_)
             | Self::SelfRef
             | Self::Result
-            | Self::ProtocolReference { .. } => Vec::new(),
+            | Self::ProtocolReference { .. }
+            | Self::Stutter
+            | Self::StepLabel { .. } => Vec::new(),
             Self::Let { value, body, .. } => vec![*value, *body],
             Self::If {
                 condition,
@@ -763,6 +806,7 @@ impl ExprNode {
             | Self::Size(operand)
             | Self::Field { operand, .. }
             | Self::Convert { operand, .. }
+            | Self::Indexed { read: operand, .. }
             | Self::Pre(operand) => vec![*operand],
             Self::Call { arguments, .. } => arguments.clone(),
             Self::Record { fields, .. } => fields
@@ -860,6 +904,9 @@ impl ExprNode {
             | Self::Lookup { .. }
             | Self::Dispatch { .. }
             | Self::Reaches { .. }
+            | Self::Indexed { .. }
+            | Self::StepLabel { .. }
+            | Self::Stutter
             | Self::ProtocolReference { .. } => Vec::new(),
             #[cfg(seam_probe)]
             Self::__SeamProbe => unreachable!("never constructed outside the probe build"),
@@ -926,6 +973,9 @@ impl ExprNode {
             | Self::Lookup { .. }
             | Self::Dispatch { .. }
             | Self::Reaches { .. }
+            | Self::Indexed { .. }
+            | Self::StepLabel { .. }
+            | Self::Stutter
             | Self::ProtocolReference { .. } => Spellings {
                 reference: None,
                 binders: Vec::new(),
@@ -953,6 +1003,8 @@ impl ExprNode {
             | Self::Name(_)
             | Self::SelfRef
             | Self::Result
+            | Self::StepLabel { .. }
+            | Self::Stutter
             | Self::ProtocolReference { .. } => {}
             Self::Negate(operand)
             | Self::Not(operand)
@@ -967,6 +1019,7 @@ impl ExprNode {
                 population: operand,
                 ..
             }
+            | Self::Indexed { read: operand, .. }
             | Self::Pre(operand) => one(operand),
             Self::Let {
                 value: first,
@@ -1262,6 +1315,25 @@ impl Expression {
     /// `pre(operand)`.
     pub fn pre(operand: Self) -> Self {
         Self::compose([operand], |[operand]| ExprNode::Pre(operand))
+    }
+
+    /// `read @ trace`.
+    pub fn indexed(read: Self, trace: impl Into<String>) -> Self {
+        let trace = trace.into();
+        Self::compose([read], |[read]| ExprNode::Indexed { read, trace })
+    }
+
+    /// `stutter`.
+    pub fn stutter() -> Self {
+        Self::single(ExprNode::Stutter)
+    }
+
+    /// `trace.step.<label>`.
+    pub fn step_label(trace: impl Into<String>, label: StepLabelForm) -> Self {
+        Self::single(ExprNode::StepLabel {
+            trace: trace.into(),
+            label,
+        })
     }
 
     /// `flatten(operand)`.
@@ -3023,6 +3095,44 @@ pub struct IntervalForm {
     pub span: Span,
 }
 
+/// A `timed-interval` as written (FR-393): each end's quantity and whether
+/// its bracket closes it. S2 checks neither its order, its punctuality nor
+/// which profile admits it; S3 does (FR-234).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TimedIntervalForm {
+    /// The lower end's quantity.
+    pub lower: QuantityForm,
+    /// Whether the lower end is closed: `[` (true) or `(` (false).
+    pub lower_closed: bool,
+    /// The upper end's quantity.
+    pub upper: QuantityForm,
+    /// Whether the upper end is closed: `]` (true) or `)` (false).
+    pub upper_closed: bool,
+    /// The span of the whole bracketed interval.
+    pub span: Span,
+}
+
+/// A temporal operator's interval (FR-325 as amended by FR-393): one member
+/// that holds a step interval or a timed interval.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum OperatorInterval {
+    /// FR-325's `[a, b]` or `[a, *]`.
+    Steps(IntervalForm),
+    /// FR-393's timed interval, boxed: it is several times a step
+    /// interval's size.
+    Timed(Box<TimedIntervalForm>),
+}
+
+impl OperatorInterval {
+    /// The span of the whole bracketed interval.
+    pub fn span(&self) -> Span {
+        match self {
+            Self::Steps(interval) => interval.span,
+            Self::Timed(interval) => interval.span,
+        }
+    }
+}
+
 /// The index of one node of a [`TemporalFormulaForm`] arena. Minted only by
 /// the arena that holds the node.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -3051,7 +3161,7 @@ pub struct TemporalOperatorForm {
     /// Which operator.
     pub operator: TemporalOperator,
     /// The operator's interval; `None` when it is written with none.
-    pub interval: Option<IntervalForm>,
+    pub interval: Option<OperatorInterval>,
     /// The operands in source order: one for a unary operator, two for a
     /// binary one.
     pub operands: Vec<TemporalNodeId>,
@@ -3650,6 +3760,80 @@ pub struct StateGraphClaimForm {
     pub span: Span,
 }
 
+/// A `time-decl`'s time source as written (FR-393).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TimeSourceSyntax {
+    /// `dense`: real-valued clocks.
+    Dense,
+    /// `tick O period p`: digital time counted by occurrences of `O`.
+    Tick {
+        /// The counted operation's qualified name.
+        operation: NameForm,
+        /// The period quantity, boxed so the variant stays near `Dense`'s size.
+        period: Box<QuantityForm>,
+    },
+}
+
+/// `time Model (dense | tick O period p) unit u;` (FR-393). S2 checks
+/// neither uniqueness nor the unit's dimension (FR-230).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TimeSourceForm {
+    /// The model alias the declaration names.
+    pub model: DeclaredName,
+    /// The time source.
+    pub source: TimeSourceSyntax,
+    /// The unit's qualified name.
+    pub unit: NameForm,
+    /// The span of the whole declaration, `;` included.
+    pub span: Span,
+}
+
+/// One `clock-bound`, `clock (< | <=) quantity` (FR-393).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClockBoundForm {
+    /// The clock operand as written (a `postfix` expression).
+    pub clock: ExpressionForm,
+    /// `<` (true) or `<=` (false).
+    pub strict: bool,
+    /// The bound.
+    pub bound: QuantityForm,
+    /// The span of the whole bound.
+    pub span: Span,
+}
+
+/// `time invariant Name when { P } { bound (and bound)* }` (FR-393).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TimeInvariantForm {
+    /// The declared name.
+    pub name: DeclaredName,
+    /// The `when` block's expression.
+    pub guard: ExpressionForm,
+    /// The clock bounds, in declared order.
+    pub bounds: Vec<ClockBoundForm>,
+    /// The span of the whole declaration.
+    pub span: Span,
+}
+
+/// What an `urgent` declaration makes urgent (FR-393).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum UrgentTarget {
+    /// `when { P }`: the states where the predicate holds.
+    When(ExpressionForm),
+    /// `O`: the states where operation `O` is enabled.
+    Operation(NameForm),
+}
+
+/// `urgent Name (when { P } | O);` (FR-393).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UrgentForm {
+    /// The declared name.
+    pub name: DeclaredName,
+    /// The urgency target.
+    pub target: UrgentTarget,
+    /// The span of the whole declaration, `;` included.
+    pub span: Span,
+}
+
 /// One `Value` parsed declaration form (FR-091 "What a `Value` parsed form
 /// carries").
 #[derive(Clone, Debug)]
@@ -3690,6 +3874,15 @@ pub enum DeclarationForm {
     /// A `refinement` declaration (FR-310), boxed for the same reason as
     /// [`Self::Function`].
     Refinement(Box<super::refinement::RefinementForm>),
+    /// A `hyper` clause over `behaviours` (FR-171), boxed for the same
+    /// reason as [`Self::Function`].
+    HyperBehaviours(Box<crate::hyper_clause::HyperBehavioursForm>),
+    /// A `hyper` clause over a finite trace domain, boxed for the same
+    /// reason as [`Self::Function`].
+    HyperFinite(Box<crate::hyper_clause::HyperFiniteForm>),
+    /// A `relation` clause (FR-171), boxed for the same reason as
+    /// [`Self::Function`].
+    ModelRelation(Box<crate::hyper_clause::ModelRelationForm>),
     /// A `random` declaration (FR-311), boxed for the same reason as
     /// [`Self::Function`].
     Random(Box<RandomForm>),
@@ -3702,6 +3895,12 @@ pub enum DeclarationForm {
     /// A `possible`, `always possible` or `unique path` claim (FR-165),
     /// boxed for the same reason as [`Self::Function`].
     StateGraphClaim(Box<StateGraphClaimForm>),
+    /// A `time` declaration (FR-393).
+    TimeSource(Box<TimeSourceForm>),
+    /// A `time invariant` declaration (FR-393).
+    TimeInvariant(Box<TimeInvariantForm>),
+    /// An `urgent` declaration (FR-393).
+    Urgent(Box<UrgentForm>),
 }
 
 /// The longest each explicit heap stack grew in this thread, by name, so a
