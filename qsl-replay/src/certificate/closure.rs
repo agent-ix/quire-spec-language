@@ -20,9 +20,10 @@
 //! no certificate of it is accepted. Admission polls the cancel handle at
 //! every certificate entry and reads at most `max_states` entries per
 //! instance. Before any key is used for membership, each certificate
-//! state's key is admitted against one instance's context; a key no instance admits
-//! (malformed, non-canonical, another item's, profile's or activation's)
-//! rejects the certificate `ShapeMismatch` at that state. The checker
+//! state's key is admitted against one instance's context; a key no
+//! instance admits (malformed, non-canonical, another item's, profile's or
+//! activation's) rejects the whole certificate `ShapeMismatch` at the least
+//! refused state, by model-state digest octets then key octets. The checker
 //! expands only model states the certificate holds, so its work is bounded
 //! by the certificate. A budget or a cancellation stops it with the typed
 //! `Stopped` cause, which is never an acceptance.
@@ -201,6 +202,7 @@ pub fn check_closure(
     let entries = limits.limits.max_states.saturating_mul(instances.len());
     let mut members = BTreeSet::new();
     let mut models = BTreeSet::new();
+    let mut refused: Option<ProductStateRef> = None;
     for (read, state) in certificate.states.iter().enumerate() {
         if cancel.poll() {
             if let Some(source) = cancel.cause() {
@@ -225,10 +227,28 @@ pub fn check_closure(
                     .is_ok()
             });
         if !admitted {
-            return Ok(rejected(CertificateRule::ShapeMismatch, state.clone()));
+            let order = |state: &ProductStateRef| {
+                (
+                    *state.model_state.as_bytes(),
+                    state.automaton_state.as_bytes().to_vec(),
+                )
+            };
+            if refused
+                .as_ref()
+                .is_none_or(|least: &ProductStateRef| order(state) < order(least))
+            {
+                refused = Some(state.clone());
+            }
+            continue;
         }
         members.insert(state.clone());
         models.insert(state.model_state);
+    }
+    // FR-338: one refused key rejects the whole certificate, at the least
+    // refused state by model-state digest octets then key octets, so the
+    // locus does not depend on the order of `states`.
+    if let Some(least) = refused {
+        return Ok(rejected(CertificateRule::ShapeMismatch, least));
     }
 
     let mut check = Check {

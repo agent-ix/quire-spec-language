@@ -231,6 +231,20 @@ fn rejected(rule: CertificateRule, at: ProductStateRef) -> TemporalCertificateCh
     })
 }
 
+/// The least of `states` by model-state digest octets then key octets.
+fn least(states: &[ProductStateRef]) -> ProductStateRef {
+    states
+        .iter()
+        .min_by(|left, right| {
+            (left.model_state.as_bytes(), left.automaton_state.as_bytes()).cmp(&(
+                right.model_state.as_bytes(),
+                right.automaton_state.as_bytes(),
+            ))
+        })
+        .cloned()
+        .expect("a state")
+}
+
 /// Every state of `states` under `translation`'s `state`.
 fn closure(
     states: &[(DigestRecord, Vec<i64>)],
@@ -403,9 +417,9 @@ fn an_undetermined_contract_or_a_failing_atom_is_a_bad_state() {
 /// The certificate is checked against the request's own item: the
 /// deadlock-freedom item's certificate offered for a clause, or a clause's
 /// certificate offered for the clause at another occurrence, is rejected
-/// `ShapeMismatch` at its first state, before any key is used for
+/// `ShapeMismatch`, before any key is used for
 /// membership; a model state digest of another domain is rejected the same
-/// way.
+/// way. Every key refused, the locus is the least refused state.
 #[trace("TC-525")]
 #[test]
 fn a_certificate_of_another_item_is_not_admitted() {
@@ -418,7 +432,7 @@ fn a_certificate_of_another_item_is_not_admitted() {
     );
     assert_eq!(
         check(&world.request(invariant.item(), UNLIMITED), &deadlock),
-        rejected(CertificateRule::ShapeMismatch, deadlock.states[0].clone())
+        rejected(CertificateRule::ShapeMismatch, least(&deadlock.states))
     );
 
     let own = closure(&reachable, &invariant.translation(&world.objects()[0]));
@@ -434,7 +448,7 @@ fn a_certificate_of_another_item_is_not_admitted() {
     };
     assert_eq!(
         check(&world.request(moved.item(), UNLIMITED), &own),
-        rejected(CertificateRule::ShapeMismatch, own.states[0].clone())
+        rejected(CertificateRule::ShapeMismatch, least(&own.states))
     );
 
     let mut foreign = own.clone();
@@ -766,4 +780,90 @@ fn a_malformed_key_in_a_certificate_is_refused_before_membership() {
             "{octets}"
         );
     }
+}
+
+/// FR-338's refused-key outcome on the two-counter Counter subject standing
+/// in for ADR-018 §6's: the engine's certificate with one state's key
+/// replaced in turn by a foreign-context key, a non-canonical encoding and
+/// an unsorted set is rejected `ShapeMismatch` at that state, carrying the
+/// refused key and its model state, and settles `CertificateRejected`, not
+/// `proved`; restored, it is accepted. With two states' keys refused, both
+/// orderings of `states` report the least refused `ProductStateRef`.
+#[trace("TC-1080")]
+#[test]
+fn a_refused_key_rejects_the_certificate_at_the_least_refused_state() {
+    let world = world(CONTRACT, &[("a", 0), ("b", 0)]);
+    let invariant = world.invariant("always holds(c.value <= 3)", |v| Some(v <= 3));
+    let outcome = world.run(invariant.item());
+    let full = certificate(&outcome);
+    let request = world.request(invariant.item(), UNLIMITED);
+    let package = world.package_id();
+    let imported =
+        |octets: String| qsl_eval::automaton::AutomatonStateKey::imported(octets.into_bytes());
+    let valid =
+        String::from_utf8(full.states[5].automaton_state.as_bytes().to_vec()).expect("UTF-8");
+    let carried_body = r#"["safety",[[[[[],"positive"]],[],[],[]]]]"#;
+    assert!(valid.ends_with(&format!("{carried_body}]")), "{valid}");
+    let deadlock = SafetyTranslation::deadlock_freedom()
+        .expect("translates")
+        .key(SafetyState::Carried)
+        .expect("encodes");
+    for refused_key in [
+        deadlock,
+        imported(valid.replacen(",", ", ", 1)),
+        imported(valid.replace(
+            carried_body,
+            r#"["safety",[[[],[],[],[]],[[[[],"positive"]],[],[],[]]]]"#,
+        )),
+    ] {
+        let mut certificate = full.clone();
+        certificate.states[5].automaton_state = refused_key;
+        let at = certificate.states[5].clone();
+        assert_eq!(
+            check(&request, &certificate),
+            rejected(CertificateRule::ShapeMismatch, at.clone())
+        );
+        let record = settle_model_check(
+            &ModelCheckOutcome::Holds {
+                certificate,
+                stats: outcome.stats(),
+            },
+            &ModelCheckLimits::default(),
+            &package,
+            &request,
+            &Cancel::new(),
+            |_| panic!("a proof replays nothing"),
+        );
+        assert_eq!(
+            record.value,
+            TerminalValue::Inconclusive(InconclusiveCause::CertificateRejected {
+                rule: CertificateRule::ShapeMismatch,
+                at: CertificateLocus::ProductState(at),
+            })
+        );
+    }
+    assert_eq!(check(&request, &full), TemporalCertificateCheck::Accepted);
+
+    let mut two = full.clone();
+    for index in [3, 11] {
+        two.states[index].automaton_state = imported(valid.replacen(",", ", ", 1));
+    }
+    let least = [two.states[3].clone(), two.states[11].clone()]
+        .into_iter()
+        .min_by(|left, right| {
+            (left.model_state.as_bytes(), left.automaton_state.as_bytes()).cmp(&(
+                right.model_state.as_bytes(),
+                right.automaton_state.as_bytes(),
+            ))
+        })
+        .expect("two refused states");
+    assert_eq!(
+        check(&request, &two),
+        rejected(CertificateRule::ShapeMismatch, least.clone())
+    );
+    two.states.reverse();
+    assert_eq!(
+        check(&request, &two),
+        rejected(CertificateRule::ShapeMismatch, least)
+    );
 }
