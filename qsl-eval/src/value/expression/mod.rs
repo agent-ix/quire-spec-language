@@ -129,6 +129,35 @@ pub fn evaluate_refinement_row(
     .run(row.body(), row.slots(), bindings)
 }
 
+/// FR-167 (ADR-022 GM-3): evaluate the state-graph predicate `predicate` of
+/// `package` with its `over` parameter bound to `over` (`None` for a claim
+/// with no `over`) at the state whose objects are `current`, through the one
+/// clause evaluator (FR-107). The predicate is checked as an invariant body
+/// is, so every read observes `current`.
+pub fn evaluate_state_predicate(
+    package: &CheckedPackage,
+    predicate: &qsl_semantics::check::CheckedPredicateBody,
+    current: &ObjectEnvironment,
+    over: Option<quire_exact::ObjectReference>,
+    meter: &mut Meter,
+) -> Result<Evaluation, InternalFault> {
+    let reads = std::collections::BTreeMap::new();
+    Machine::with_pre(
+        package.graph().scope(),
+        package.graph(),
+        current,
+        None,
+        Some(&reads),
+        meter,
+        package.graph().dispatch_tables(),
+    )
+    .run(
+        predicate.body(),
+        predicate.slots(),
+        over.map(Value::Reference).into_iter().collect(),
+    )
+}
+
 /// The F-layer diagnostic code of an [`InputRefusal`], as the catalog enum.
 /// The refusal lives in the `no_std` leaf `quire-semantic-value`, which
 /// names the same code as a string ([`InputRefusal::code`]) but cannot name

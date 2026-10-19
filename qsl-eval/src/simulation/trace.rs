@@ -33,6 +33,9 @@ pub enum StopReason {
     /// The system returned an `ExpansionStop` with this cause at the
     /// trace's last state (FR-101-AC-14).
     Stopped(CatalogCode),
+    /// The caller's end condition held at the trace's last state, which the
+    /// run did not expand (`sample_request_until`, FR-166).
+    Reached,
 }
 
 /// How a sampled trace was drawn (FR-101, ADR-014 TR-1: replaces
@@ -164,13 +167,21 @@ pub fn replay<S: TransitionSystem>(
         })?;
     let recorded_stop = match trace.provenance.as_ref().map(|p| p.stopped) {
         Some(StopReason::Stopped(cause)) => Some(cause),
-        Some(StopReason::StepLimit | StopReason::NoSuccessors) | None => None,
+        Some(StopReason::StepLimit | StopReason::NoSuccessors | StopReason::Reached) | None => None,
     };
+    let reached = trace
+        .provenance
+        .as_ref()
+        .is_some_and(|provenance| provenance.stopped == StopReason::Reached);
     let last = trace.steps.len();
     let mut check = FindingsCheck::new(&trace.findings);
     let mut current_digest = trace.initial;
 
     for index in 0..=last {
+        // A trace its end condition ended never expanded its last state.
+        if reached && index == last {
+            break;
+        }
         let recorded = if index == last { recorded_stop } else { None };
         let (successors, findings) = match expand(system, &current, identity)? {
             Expanded::Successors {
