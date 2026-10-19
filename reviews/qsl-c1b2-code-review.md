@@ -110,6 +110,13 @@ recorded, not blocking.
 | --- | --- | --- | --- |
 | FND-007 | low | QSpec FR-466 step 6 says the window refusal retains `member` (`within`), `expected` (a closed interval with `lower <= upper`) and `actual`. `ProtocolAnchorCause::AwaitWindow` holds `node`, `lower`, `upper` and `span`: the actual interval is there, but `member` and `expected` are only implied by the variant, not held as fields. | qsl-semantics/src/check/refusal.rs:380-393 |
 
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | medium | `dominates()` reads dominance off the control tree alone. It ignores the cross-branch causal edges: send to receive, attempt to effect, and await anchor. Example: `parallel { branch s sequence { commit C; send Tx via ch ... } branch r sequence { attempt T; receive Rx via ch of s::...::Tx; effect E of T } } join all [s, r]`. Every execution that reaches `E` has passed `C`, so by FR-381's governing definition ("every execution that reaches the effect has passed the commit first"; admitted only when "executions can reach the effect without passing it") `C` dominates `E`. The code admits it, because `C` and `E` are in sibling branches. AC-11's row for that case ("a commit in a parallel branch whose sibling branch holds the effect ... check") is unconditional, so the merged STD-184 text contradicts itself here. The code follows the AC. Route to a spec ticket: either the definition is tree-only, saying so and dropping the "executions can reach" wording, or dominance must also follow the cross-branch edges, adding an AC row with a message edge. | qsl-semantics/src/check/protocol_clause/graph.rs:582-711 (`required_labels` 588, `dominates` 617); spec/functional/FR-381-check-protocol-captures-activation-and-compensation-recovery-at-s3.md:226-252 |
+| FND-009 | low | Spec finding, confirmed. FR-218 "Choice and repeat decisions" says "`got.count > 0` and `not got.count > 0` partition", and TC-1056 row 45 writes the same guard. The QSL grammar makes `not` a `Unary` operand of `Comparison` (qsl-cst/src/grammar.rs:679-708), so `not got.count > 0` parses as `(not got.count) > 0`, which negates an integer and is ill-typed. The test correctly uses `not (attempted.n > 0)`. Route to the spec owner: write `not (got.count > 0)` in both places. | spec/functional/FR-218-check-every-protocol-control-construct-at-s3.md:327; spec/test-cases/TC-1056-s3-checks-channels-relationships-requirements-and-choice-visibility.md:94; qsl-cst/src/grammar.rs:706-708 |
+
 ## Dispositions
 
 Round 1, reviewed at 837a476a67d36fb7f671e1ed35ae2bbd3f80854b: fix commit
@@ -139,3 +146,25 @@ because `content` refuses every fence anyway.
 | FND-004 | fixed | 56c826467 |
 | FND-005 | deferred | Not addressed in the fix round. It is low and recorded: `KeyEquality` still holds no `operator` member. |
 | FND-006 | fixed | 56c826467 |
+
+Round 2, reviewed at 765ac39919e7edda36b18e56b74ca87e4cc9e2bd: commit
+765ac3991 against the merged STD-184 (0bbbba485). `dominates()` matches the
+merged definition's enumerated rules:
+
+- an enclosing `sequence` with an earlier child that passes the commit;
+- `join all`, `quorum(n)` with n equal to the distinct labels, and
+  `join any` over exactly one label each require their labels;
+- every other `any` or `quorum`, and every `predicate`, require none;
+- a `choice` passes only when every case passes;
+- an `await` passes only when both `then` and `timeout` pass;
+- a `repeat` never passes, and a leaf passes only when it is the commit.
+
+`join predicate` stays refused as `not-yet-implemented` (coverage.rs
+`JoinPredicate`). The AC-11 rows 19, 19a, 19b, 19c, 19d (quorum half) and
+19e are each tested, and the trace stays honest. The one case where a commit
+that dominates by the governing definition passes silently is FND-008. It
+is a spec contradiction, not a deviation from the AC.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-002 | fixed | 765ac3991 |

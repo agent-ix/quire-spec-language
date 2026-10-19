@@ -72,6 +72,12 @@ the PR is SR-12153 FND-001.
 | FND-003 | low | AC-19 asserts `!cases.is_empty()` rather than the case names the AC says are retained. AC-18 never asserts the `missing_declaration`/`missing-name` code or cause. Its comment says the reads check "on the await's then path", but only the all-branch-join positive case is written. | qsl-semantics/src/check/protocol_clause/tests/graph.rs:907; qsl-semantics/src/check/protocol_clause/tests/graph.rs:848 |
 | FND-004 | low | FR-218 "Choice and repeat decisions" says "A decision fact is a Boolean field read of a record binder", but `visible` entries are typed with `Goal::Infer`, so a non-Boolean entry such as `attempted.n` is admitted. AC-2's own test relies on this (`visible (attempted.n)` with guards `attempted.n > 0` and `attempted.n > 1`). The partition proof stays sound, because guard subterms are independent atoms. The spec and AC-2 disagree on whether non-Boolean facts may be listed, and the spec should settle it. | qsl-semantics/src/check/protocol_slots.rs:700; qsl-semantics/src/check/protocol_controls/model_state_tests.rs |
 
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | low | TC-1058 row 19d says `join predicate(Ready) [a, b]` checks. While `join predicate` is refused as `not-yet-implemented` (coverage.rs `JoinPredicate`), that half cannot pass and is untested. The AC-11 test covers only the `quorum(1)` half. The AC-11 text does not name `predicate`, so the trace is still honest. Record it as the row's unreachable half until a slice checks `join predicate`. | spec/test-cases/TC-1058-s3-checks-compensation-registration-retry-commit-and-recovery.md:59; qsl-semantics/src/check/protocol_clause/coverage.rs |
+
 ## Dispositions
 
 Round 1, reviewed at 837a476a67d36fb7f671e1ed35ae2bbd3f80854b: fix commit
@@ -85,3 +91,20 @@ memory-clause and access-ordering refusal tests, which are untagged.
 | FND-002 | fixed | 56c826467 |
 | FND-003 | deferred | Partly fixed in 56c826467, which now asserts the AC-19 case names and the AC-18 code. The await-`then` positive case that the comment at graph.rs:969-970 claims is still not written. It is low and does not block. |
 | FND-004 | deferred | Spec ambiguity. FR-218 says a decision fact is a Boolean field read, while AC-2's own example lists `m.n`. Nothing changed in the fix round, and it is low. Route it to the same FR-218 spec follow-up. |
+
+Round 2, reviewed at 765ac39919e7edda36b18e56b74ca87e4cc9e2bd (commit
+765ac3991; merged STD-184 0bbbba485). Re-read against the merged text:
+
+- FR-218-AC-2's test now lists `attempted.n` as an individual non-Boolean
+  fact, asserts both arm faults, and checks an atom against its
+  parenthesized negation.
+- FR-218-AC-17's test now asserts that a `finish` record, and a read that is
+  both out of scope and unlisted, refuse only `missing-name` (TC-1056 rows
+  49 and 50).
+- FR-381-AC-11's test covers rows 19, 19a, 19b, 19c, 19d (quorum) and 19e.
+
+Every `#[trace]` stays honest.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-004 | fixed | 765ac3991 |
