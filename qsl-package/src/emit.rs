@@ -994,23 +994,27 @@ fn encoding(error: impl std::fmt::Display) -> EmitRefusal {
 /// Emit `package` as `quire.checked-package/v2` bytes (FR-322), placing each
 /// occurrence at the region of the checked unit its location names
 /// (`CheckedGraph::region`, FR-096).
+///
+/// A package emitted before (by this function or
+/// [`emit_checked_with_cancel`]) returns its remembered emission: a checked
+/// package does not change, so a dependency reached again, or a caller that
+/// emits what the lifecycle already emitted, does not emit it twice.
 pub fn emit_checked(package: &CheckedPackage) -> Result<Emission, EmitRefusal> {
+    if let Some(emission) = package.remembered_emission() {
+        return Ok(emission.clone());
+    }
     emit_checked_with_cancel(package, &Cancel::new())
 }
 
 /// [`emit_checked`] under the caller's [`Cancel`] handle, polled once at
 /// entry and at every node it writes (FR-276). A cancelled handle stops the
-/// emitter with [`EmitRefusal::Cancelled`] and writes no bytes.
+/// emitter with [`EmitRefusal::Cancelled`] and writes no bytes. It always
+/// emits, so every node is polled; the emission it returns is remembered for
+/// [`emit_checked`].
 pub fn emit_checked_with_cancel(
     package: &CheckedPackage,
     cancel: &Cancel,
 ) -> Result<Emission, EmitRefusal> {
-    if let Some(emission) = package.remembered_emission() {
-        return match cancellation(cancel) {
-            Some(refusal) => Err(refusal),
-            None => Ok(emission.clone()),
-        };
-    }
     let graph = package.graph();
     let emission = emit_package_inner(
         package,
@@ -1021,15 +1025,6 @@ pub fn emit_checked_with_cancel(
     )?;
     package.remember_emission(&emission);
     Ok(emission)
-}
-
-/// The refusal for a cancelled `cancel`, if it is.
-fn cancellation(cancel: &Cancel) -> Option<EmitRefusal> {
-    cancel
-        .poll()
-        .then(|| cancel.cause())
-        .flatten()
-        .map(|cause| EmitRefusal::Cancelled { cause })
 }
 
 /// Emit `package` as `quire.checked-package/v2` bytes (FR-322). `regions`
@@ -1137,7 +1132,13 @@ fn emit_package_inner(
     cancel: &Cancel,
     decodes: &dyn Fn(CheckedNodeTag, &str) -> bool,
 ) -> Result<Emission, EmitRefusal> {
-    let denied = || cancellation(cancel);
+    let denied = || {
+        cancel
+            .poll()
+            .then(|| cancel.cause())
+            .flatten()
+            .map(|cause| EmitRefusal::Cancelled { cause })
+    };
     if let Some(refusal) = denied() {
         return Err(refusal);
     }
