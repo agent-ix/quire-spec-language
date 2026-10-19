@@ -113,7 +113,11 @@ fn identity_refusal(document: &[u8], body: &str, needle: &str) -> IdentityObserv
         panic!("{body}: one refusal, not {refusals:?}");
     };
     assert_eq!(refusal.cause.code(), Code::IllTyped);
-    assert_eq!(refusal.cause.cause(), Some("identity-observing-form"));
+    assert_eq!(
+        refusal.cause.cause(),
+        Some("identity-observing-form"),
+        "{body}"
+    );
     let regions = admit_and_assemble_with_body(document, body)
         .expect("the unit assembles")
         .regions();
@@ -197,24 +201,24 @@ fn a_fold_over_references_into_an_annotated_population_refuses() {
 #[test]
 fn a_reduce_and_a_reference_conversion_refuse() {
     let document = annotated(&with_peers(&document()));
-    let reduce = "reduce<Flag>(acc, p in self.peers: p = self)";
+    let reduce = "reduce<Peer>(acc, p in self.peers: acc)";
     let body = format!(
-        "{FLAG}invariant Last using v on Config::ConfigVersion at current {{ not {reduce} }}\n"
+        "type Peer = Config::ConfigVersion;\ninvariant Last using v on Config::ConfigVersion at current {{ self = {reduce} }}\n"
     );
     let payload = identity_refusal(&document, &body, reduce);
     assert_eq!(payload.node, "reduce");
 
     let convert = "convert<String>(self)";
     let body = format!(
-        "invariant Text using v on Config::ConfigVersion at current {{ {convert} = \"a\" }}\n"
+        "invariant Rendered using v on Config::ConfigVersion at current {{ {convert} = \"a\" }}\n"
     );
     let payload = identity_refusal(&document, &body, convert);
     assert_eq!(payload.node, "convert");
     assert_eq!(payload.form, IdentityForm::ReferenceConversion);
 
     let body = format!(
-        "invariant Text using v on Config::ConfigVersion at current {{ \
-         let s = {convert} in s = \"a\" }}\n"
+        "invariant Rendered using v on Config::ConfigVersion at current {{ \
+         let x = {convert} in x = \"a\" }}\n"
     );
     let payload = identity_refusal(&document, &body, convert);
     assert_eq!(payload.node, "convert");
