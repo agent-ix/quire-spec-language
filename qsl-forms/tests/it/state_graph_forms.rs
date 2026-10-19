@@ -60,7 +60,7 @@ fn operand_text<'t>(text: &'t str, operand: &ExpressionForm) -> &'t str {
 
 /// FR-165-AC-1: `possible` builds its name, `using` alias, `over` parameter
 /// and one predicate, each spanned over its source text.
-#[trace("TC-590", "FR-165-AC-1")]
+#[trace("TC-590")]
 #[test]
 fn possible_builds_its_name_alias_over_parameter_and_predicate() {
     let (text, claim) = build(
@@ -79,7 +79,7 @@ fn possible_builds_its_name_alias_over_parameter_and_predicate() {
 
 /// FR-165-AC-1: `always possible` without `from` builds no `from`; with
 /// `from (Q)` it builds `Q` beside the target.
-#[trace("TC-590", "FR-165-AC-1")]
+#[trace("TC-590")]
 #[test]
 fn always_possible_builds_its_optional_from() {
     let (_, bare) =
@@ -103,7 +103,7 @@ fn always_possible_builds_its_optional_from() {
 }
 
 /// FR-165-AC-1: `unique path` builds `from` and `to`.
-#[trace("TC-590", "FR-165-AC-1")]
+#[trace("TC-590")]
 #[test]
 fn unique_path_builds_from_and_to() {
     let (text, claim) = build(
@@ -146,10 +146,38 @@ fn temporal_operators_and_fairness_are_kept_at_their_spans() {
 }
 
 /// FR-165-AC-1: `possible`, `unique` and `path` stay usable as names.
-#[trace("TC-590", "FR-165-AC-1")]
+#[trace("TC-590")]
 #[test]
 fn the_claim_words_stay_usable_as_names() {
     let (_, claim) = build("possible possible using v over (path: M::Job) { path.unique }");
     assert_eq!(claim.name.name, "possible");
     assert_eq!(claim.over.name.name, "path");
+}
+
+/// FR-165-AC-2: a temporal operator inside a connective, a negation or
+/// parentheses is kept at its span, as one leading an operand is.
+#[trace("TC-590", "FR-165-AC-2")]
+#[test]
+fn a_temporal_operator_inside_a_formula_is_kept_at_its_span() {
+    for predicate in [
+        "c.n = 1 and eventually c.n = 2",
+        "(eventually c.n = 2)",
+        "not eventually c.n = 2",
+    ] {
+        let (text, claim) = build(&format!(
+            "possible P using v over (c: M::Thing) {{ {predicate} }}"
+        ));
+        let StateGraphClaimKind::Possible { target } = &claim.kind else {
+            panic!("possible: {:?}", claim.kind);
+        };
+        let [operator] = target.temporal_operators.as_slice() else {
+            panic!("{predicate}: one operator: {target:?}");
+        };
+        assert_eq!(
+            operator.operator,
+            TemporalOperator::Eventually,
+            "{predicate}"
+        );
+        assert_eq!(slice(&text, operator.span), "eventually", "{predicate}");
+    }
 }

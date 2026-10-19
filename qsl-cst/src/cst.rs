@@ -139,6 +139,10 @@ productions! {
     StateGraphBody,
     #[doc = "A state-graph claim predicate: an expression, which may carry leading or joining temporal operators for the checker to refuse at their spans."]
     StateGraphPredicate,
+    #[doc = "A predicate with a temporal operator inside a connective, a negation or parentheses: S1 reads it only so the checker can refuse the operator at its span."]
+    StateGraphFormula,
+    #[doc = "One operand of a `StateGraphFormula`: a negation, a temporal operator applied to an operand, a parenthesized formula, or a comparison."]
+    StateGraphTerm,
     ProtocolClause, Role, RoleLifetime, Relationship, Channel, Ordering, DeliveryPolicy,
     Capacity, OverflowPolicy, ProtocolRequirement, NodeReference, Compensation,
     #[doc = "`terminal when <block>;` or `terminal any;`: a protocol clause's intended terminal states."]

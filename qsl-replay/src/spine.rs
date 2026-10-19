@@ -617,6 +617,9 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
             bodies.len(),
             operation.node
         ),
+        AssemblyCause::DuplicateStateGraphClaim { name, .. } => {
+            format!("a second state-graph claim is named `{name}`")
+        }
         AssemblyCause::UnresolvedPopulationBound { name } => {
             format!("`bound` names `{name}`, which no declaration resolves")
         }

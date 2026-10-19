@@ -250,6 +250,7 @@ fn assembly_limit(cause: &AssemblyCause) -> Option<ReachedLimit> {
         | AssemblyCause::UnresolvedOperation { .. }
         | AssemblyCause::AmbiguousOperation { .. }
         | AssemblyCause::DuplicateOperationBody { .. }
+        | AssemblyCause::DuplicateStateGraphClaim { .. }
         | AssemblyCause::UnresolvedPopulationBound { .. }
         | AssemblyCause::AmbiguousPopulationBound { .. }
         | AssemblyCause::UnresolvedTerminalModel { .. }

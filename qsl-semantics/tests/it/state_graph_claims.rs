@@ -11,8 +11,8 @@ use qsl_foundation::bound::{DomainKey, DomainKind};
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::digest::WireNodeId;
 use qsl_semantics::check::{
-    Capability, CheckCause, CheckRefusal, CheckedGraph, CheckedStateGraphClaim, StateGraphCause,
-    StateGraphForm,
+    Capability, CheckCause, CheckRefusal, CheckedGraph, CheckedNode, CheckedStateGraphClaim,
+    NodeKind, StateGraphCause, StateGraphForm,
 };
 use qsl_semantics::family::ClaimExtent;
 use quire_semantic_value::checking::CheckingLimits;
@@ -35,25 +35,31 @@ fn document() -> Vec<u8> {
 /// The checked graph of `body`'s claims, or every refusal with the source
 /// text range each names.
 fn check(body: &str) -> Result<CheckedGraph, Vec<(CheckRefusal, Option<String>)>> {
+    check_under(body, CheckingLimits::default())
+}
+
+fn check_under(
+    body: &str,
+    limits: CheckingLimits,
+) -> Result<CheckedGraph, Vec<(CheckRefusal, Option<String>)>> {
     let document = document();
     let (unit, _) = config_unit_with_body(&document, body);
     let declarations = admit_and_assemble_with_body(&document, body)
-        .unwrap_or_else(|refusal| panic!("assembly refused: {refusal:?}"));
+        .unwrap_or_else(|refusal| panic!("assembly refused: {refusal:?}"))
+        .with_unwritten_state_graph_claims();
     let regions = declarations.regions();
-    declarations
-        .check(CheckingLimits::default())
-        .map_err(|refusals| {
-            refusals
-                .into_iter()
-                .map(|refusal| {
-                    let named = regions.refusal_region(&refusal).map(|region| {
-                        let (start, end) = (region.start() as usize, region.end() as usize);
-                        unit[start..end].to_owned()
-                    });
-                    (refusal, named)
-                })
-                .collect()
-        })
+    declarations.check(limits).map_err(|refusals| {
+        refusals
+            .into_iter()
+            .map(|refusal| {
+                let named = regions.refusal_region(&refusal).map(|region| {
+                    let (start, end) = (region.start() as usize, region.end() as usize);
+                    unit[start..end].to_owned()
+                });
+                (refusal, named)
+            })
+            .collect()
+    })
 }
 
 fn claim<'g>(graph: &'g CheckedGraph, name: &str) -> &'g CheckedStateGraphClaim {
@@ -84,9 +90,37 @@ fn sole_refusal(body: &str) -> (Code, Option<&'static str>, Option<String>, Chec
     (refusal.cause.code(), refusal.cause.cause(), named, refusal)
 }
 
-/// FR-165-AC-1: `possible` checks to `Possible` with its target checked as a
-/// Boolean state body over the `over` parameter.
-#[trace("TC-590", "FR-165-AC-1")]
+/// The integer literals of a checked predicate body in tree order: what
+/// tells one comparison from another among predicates over one field.
+fn literals(node: CheckedNode<'_>) -> Vec<String> {
+    let mut found = Vec::new();
+    let mut pending = vec![node];
+    while let Some(node) = pending.pop() {
+        if let NodeKind::Literal(literal) = node.kind() {
+            found.push(format!("{:?}", literal.0));
+        }
+        pending.extend(node.children().into_iter().rev());
+    }
+    found
+}
+
+/// The literals of the target of the `possible` claim `P` over `predicate`,
+/// checked on its own: the reference a predicate of another claim must equal.
+fn reference(predicate: &str) -> Vec<String> {
+    let graph = check(&format!(
+        "possible Ref using v over (c: Config::ConfigVersion) {{ {predicate} }}\n"
+    ))
+    .expect("the reference claim checks");
+    let StateGraphForm::Possible { target } = claim(&graph, "Ref").form() else {
+        panic!("possible");
+    };
+    literals(target.body().expect("checked"))
+}
+
+/// Part of FR-165-AC-1 (per-object instances and node identity are deferred):
+/// `possible` checks to `Possible` with its target checked as a Boolean state
+/// body over the `over` parameter.
+#[trace("TC-590")]
 #[test]
 fn possible_checks_to_the_possible_form() {
     let graph = check(&format!("{REACHES_TWO}{REACHES_THREE}")).expect("both claims check");
@@ -99,13 +133,23 @@ fn possible_checks_to_the_possible_form() {
         assert!(!target.is_constant_true());
         let body = target.body().expect("a written target is checked");
         assert_eq!(body.value_type(), &quire_exact::ValueType::Boolean);
+        let expected = if name == "ReachesTwo" {
+            "c.versionNumber = 2"
+        } else {
+            "c.versionNumber = 3"
+        };
+        assert_eq!(literals(body), reference(expected), "{name}'s target");
     }
+    assert_ne!(
+        reference("c.versionNumber = 2"),
+        reference("c.versionNumber = 3")
+    );
     assert_eq!(graph.state_graph_claims().len(), 2);
 }
 
 /// FR-165-AC-1: an `always possible` claim without `from` checks with `from`
 /// the constant `true`; with `from` it checks that predicate.
-#[trace("TC-590", "FR-165-AC-1")]
+#[trace("TC-590")]
 #[test]
 fn always_possible_checks_with_the_constant_true_or_the_written_from() {
     let graph = check(&format!("{STILL_TWO}{GUARDED}")).expect("both claims check");
@@ -114,29 +158,44 @@ fn always_possible_checks_with_the_constant_true_or_the_written_from() {
     };
     assert!(from.is_constant_true());
     assert!(from.body().is_none());
-    assert!(target.body().is_some());
+    assert_eq!(
+        literals(target.body().expect("checked")),
+        reference("c.versionNumber = 2")
+    );
 
     let StateGraphForm::AlwaysPossible { from, target } = claim(&graph, "Guarded").form() else {
         panic!("always possible");
     };
     assert!(!from.is_constant_true());
-    assert!(from.body().is_some() && target.body().is_some());
+    let (from, target) = (
+        literals(from.body().expect("checked")),
+        literals(target.body().expect("checked")),
+    );
+    assert_eq!(from, reference("c.versionNumber != 0"));
+    assert_eq!(target, reference("c.versionNumber = 2"));
+    assert_ne!(from, target);
 }
 
 /// FR-165-AC-1: `unique path` checks to `UniquePath` with `from` and `to`.
-#[trace("TC-590", "FR-165-AC-1")]
+#[trace("TC-590")]
 #[test]
 fn unique_path_checks_to_the_unique_path_form() {
     let graph = check(UNIQUE).expect("the claim checks");
     let StateGraphForm::UniquePath { from, to } = claim(&graph, "InOneWay").form() else {
         panic!("unique path");
     };
-    assert!(from.body().is_some() && to.body().is_some());
+    let (from, to) = (
+        literals(from.body().expect("checked")),
+        literals(to.body().expect("checked")),
+    );
+    assert_eq!(from, reference("c.versionNumber = 0"));
+    assert_eq!(to, reference("c.versionNumber = 2"));
+    assert_ne!(from, to);
 }
 
 /// FR-165-AC-1: `possible P` and `always possible P` over one `P` record
 /// different forms.
-#[trace("TC-590", "FR-165-AC-1")]
+#[trace("TC-590")]
 #[test]
 fn possible_and_always_possible_over_one_predicate_differ_in_form() {
     let graph = check(&format!("{REACHES_TWO}{STILL_TWO}")).expect("both claims check");
@@ -152,7 +211,7 @@ fn possible_and_always_possible_over_one_predicate_differ_in_form() {
 
 /// FR-165-AC-1: every claim records (`temporal-satisfaction`, `Unbounded`)
 /// over a domain that names the claim's node.
-#[trace("TC-590", "FR-165-AC-1")]
+#[trace("TC-590")]
 #[test]
 fn a_claim_records_temporal_satisfaction_over_an_unbounded_extent() {
     let graph = check(&format!("{REACHES_TWO}{GUARDED}{UNIQUE}")).expect("the claims check");
@@ -171,6 +230,14 @@ fn a_claim_records_temporal_satisfaction_over_an_unbounded_extent() {
         };
         assert_eq!(domains.len(), 1);
         assert_eq!(domains.kind(&key), Some(DomainKind::InfiniteTrace));
+        assert_eq!(requirements.extent().to_wire(), "unbounded");
+        // The record names the node it is keyed by and no other.
+        let other = WireNodeId::from_digest([8; 32]);
+        let ClaimExtent::Unbounded(other_domains) = record.requirements(other).extent().clone()
+        else {
+            panic!("{name}: an unbounded extent");
+        };
+        assert_eq!(other_domains.kind(&key), None);
     }
 }
 
@@ -267,4 +334,83 @@ fn a_non_boolean_predicate_refuses_as_an_invariant_body_does() {
     assert_eq!(code, Code::IllTyped);
     assert_eq!(cause, Some("non-boolean-root"));
     assert_eq!(named.as_deref(), Some("c.versionNumber + 1"));
+}
+
+/// FR-165-AC-2: a temporal operator inside a connective, a negation or
+/// parentheses is refused at the operator, as one leading an operand is.
+#[trace("TC-590", "FR-165-AC-2")]
+#[test]
+fn a_temporal_operator_inside_a_connective_negation_or_parentheses_refuses_at_the_operator() {
+    for predicate in [
+        "c.versionNumber = 1 and eventually c.versionNumber = 2",
+        "(eventually c.versionNumber = 2)",
+        "not eventually c.versionNumber = 2",
+    ] {
+        let (code, cause, named, _) = sole_refusal(&format!(
+            "possible P using v over (c: Config::ConfigVersion) {{ {predicate} }}\n"
+        ));
+        assert_eq!(code, Code::UnsupportedConstruct, "{predicate}");
+        assert_eq!(cause, Some("expression-form"), "{predicate}");
+        assert_eq!(named.as_deref(), Some("eventually"), "{predicate}");
+    }
+}
+
+/// FR-165 "Requirement record": a claim that checks is refused as not
+/// emitted unless the caller asks to see the checked claim, so a compiled
+/// package never silently lacks it.
+#[trace("TC-590")]
+#[test]
+fn a_checked_claim_is_refused_as_not_emitted_by_default() {
+    let document = document();
+    let (unit, _) = config_unit_with_body(&document, REACHES_TWO);
+    let declarations =
+        admit_and_assemble_with_body(&document, REACHES_TWO).expect("the unit assembles");
+    let regions = declarations.regions();
+    let Err(refusals) = declarations.check(CheckingLimits::default()) else {
+        panic!("a state-graph claim is not emitted yet");
+    };
+    let [refusal] = refusals.as_slice() else {
+        panic!("one refusal: {refusals:?}");
+    };
+    assert_eq!(refusal.cause.code(), Code::UnsupportedConstruct);
+    assert_eq!(refusal.cause.cause(), Some("not-yet-implemented"));
+    let region = regions
+        .refusal_region(refusal)
+        .expect("located at the claim");
+    assert_eq!(
+        unit[region.start() as usize..region.end() as usize].trim_end(),
+        REACHES_TWO.trim_end()
+    );
+}
+
+/// Two claims named alike refuse at the second, so a name keys one claim.
+#[trace("TC-590")]
+#[test]
+fn a_second_claim_with_a_name_refuses_at_the_second() {
+    let body = format!("{REACHES_TWO}{REACHES_TWO}");
+    let document = document();
+    let (unit, _) = config_unit_with_body(&document, &body);
+    let refusal = admit_and_assemble_with_body(&document, &body)
+        .expect_err("a duplicate name refuses at assembly");
+    let [error] = refusal.errors.as_slice() else {
+        panic!("one error: {refusal:?}");
+    };
+    assert_eq!(error.cause.code(), Code::ConflictingDeclaration);
+    assert_eq!(&unit[error.span.start..error.span.end], "ReachesTwo");
+    assert_eq!(error.span.start, unit.rfind("ReachesTwo").expect("second"));
+}
+
+/// The node limit applies to the claim's cumulative total: a limit one
+/// predicate fits under refuses a claim of two such predicates.
+#[trace("TC-590")]
+#[test]
+fn the_node_limit_applies_to_the_claims_cumulative_total() {
+    let one = "possible P using v over (c: Config::ConfigVersion) { c.versionNumber = 2 }\n";
+    let two = "unique path P using v over (c: Config::ConfigVersion) \
+        from (c.versionNumber = 2) to (c.versionNumber = 2)\n";
+    let fits = (1..400)
+        .find(|nodes| check_under(one, CheckingLimits::new(*nodes)).is_ok())
+        .expect("a limit one predicate fits under");
+    assert!(check_under(two, CheckingLimits::new(fits)).is_err());
+    assert!(check_under(two, CheckingLimits::new(fits * 2 + 8)).is_ok());
 }

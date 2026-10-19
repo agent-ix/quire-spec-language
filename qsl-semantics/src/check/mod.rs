@@ -2203,6 +2203,13 @@ impl PackageDeclarations {
                 .map(|terminal| terminal::not_emitted(terminal.name.clone(), terminal.span))
                 .collect());
         }
+        // FR-165: likewise, no S4 emission writes a state-graph claim yet.
+        if !self.emit_unwritten_state_graph_claims && !checked_state_graph_claims.is_empty() {
+            return Err(checked_state_graph_claims
+                .iter()
+                .map(state_graph_claim::not_emitted)
+                .collect());
+        }
         Ok(CheckedGraph {
             source,
             scope,

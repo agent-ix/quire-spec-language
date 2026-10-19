@@ -1051,6 +1051,8 @@ impl<'c> Mapping<'c> {
             | Production::StateGraphClaim
             | Production::StateGraphBody
             | Production::StateGraphPredicate
+            | Production::StateGraphFormula
+            | Production::StateGraphTerm
             | Production::ProtocolClause
             | Production::Role
             | Production::RoleLifetime
@@ -1630,6 +1632,8 @@ impl<'c> Mapping<'c> {
             | Production::StateGraphClaim
             | Production::StateGraphBody
             | Production::StateGraphPredicate
+            | Production::StateGraphFormula
+            | Production::StateGraphTerm
             | Production::ProtocolClause
             | Production::Role
             | Production::RoleLifetime

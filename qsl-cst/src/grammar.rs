@@ -141,6 +141,23 @@ fn list(item: impl Fn() -> Rule) -> Rule {
     // delimiter when it is not followed by an item so that outer grammar owns it.
     s(vec![item(), backtracking_star(s(vec![x(","), item()]))])
 }
+/// `eventually`, `always`, `once` or `historically`.
+fn temporal_unary() -> Rule {
+    c(vec![
+        x("eventually"),
+        x("always"),
+        x("once"),
+        x("historically"),
+    ])
+}
+/// A unary temporal operator with its optional interval.
+fn temporal_lead() -> Rule {
+    s(vec![temporal_unary(), opt(r(P::Interval))])
+}
+/// `until`, `release`, `since` or `triggered`.
+fn temporal_binary() -> Rule {
+    c(vec![x("until"), x("release"), x("since"), x("triggered")])
+}
 /// `( <parameter> )`: one bracket pair around a single bound parameter.
 fn bound_parameter() -> Rule {
     s(vec![x("("), r(P::Parameter), x(")")])
@@ -1139,33 +1156,48 @@ fn temporal(g: &mut Grammar) {
             x("}"),
         ]),
     );
+    // A plain predicate is an expression with temporal operators leading or
+    // joining expression operands. A temporal operator anywhere else (inside
+    // a connective, a negation or parentheses) reads as a `StateGraphFormula`,
+    // which exists only so the checker can refuse the operator at its span.
     g.insert(
         P::StateGraphPredicate,
-        s(vec![
-            star(s(vec![
-                c(vec![
-                    x("eventually"),
-                    x("always"),
-                    x("once"),
-                    x("historically"),
-                ]),
-                opt(r(P::Interval)),
-            ])),
-            r(P::Expression),
-            star(s(vec![
-                c(vec![x("until"), x("release"), x("since"), x("triggered")]),
-                opt(r(P::Interval)),
-                star(s(vec![
-                    c(vec![
-                        x("eventually"),
-                        x("always"),
-                        x("once"),
-                        x("historically"),
-                    ]),
-                    opt(r(P::Interval)),
-                ])),
+        c(vec![
+            s(vec![
+                star(temporal_lead()),
                 r(P::Expression),
+                star(s(vec![
+                    temporal_binary(),
+                    opt(r(P::Interval)),
+                    star(temporal_lead()),
+                    r(P::Expression),
+                ])),
+            ]),
+            r(P::StateGraphFormula),
+        ]),
+    );
+    g.insert(
+        P::StateGraphFormula,
+        s(vec![
+            r(P::StateGraphTerm),
+            star(s(vec![
+                c(vec![x("and"), x("or"), x("implies"), temporal_binary()]),
+                opt(r(P::Interval)),
+                r(P::StateGraphTerm),
             ])),
+        ]),
+    );
+    g.insert(
+        P::StateGraphTerm,
+        c(vec![
+            s(vec![x("not"), r(P::StateGraphTerm)]),
+            s(vec![
+                temporal_unary(),
+                opt(r(P::Interval)),
+                r(P::StateGraphTerm),
+            ]),
+            r(P::Comparison),
+            s(vec![x("("), r(P::StateGraphFormula), x(")")]),
         ]),
     );
     g.insert(

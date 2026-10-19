@@ -19,6 +19,8 @@
 //! re-exports none of them (ADR-011 §7.2).
 
 #![forbid(unsafe_code)]
+// The production list macro recurses once per production.
+#![recursion_limit = "256"]
 
 pub mod cst;
 pub mod diagnostic;

@@ -242,6 +242,16 @@ fn refusal(cause: StateGraphCause) -> CheckRefusal {
     }
 }
 
+/// The refusal for a claim that checks but that no S4 emission writes yet
+/// (FR-165): refused rather than compiled and silently missing from the
+/// package.
+pub(crate) fn not_emitted(checked: &CheckedStateGraphClaim) -> CheckRefusal {
+    refusal(StateGraphCause::NotEmitted {
+        name: checked.name.clone(),
+        span: checked.span,
+    })
+}
+
 /// The predicates of a claim form, each with its role, in source order.
 pub(crate) fn predicates(
     kind: &StateGraphClaimKind,
@@ -325,6 +335,7 @@ fn check_predicate<'a>(
     predicate: &StateGraphPredicateForm,
     declaration: &StateGraphDeclaration,
     declarations: &ClauseDeclarations<'a>,
+    nodes_used: u64,
     cx: &mut CheckContext<'a, ClauseDeclarations<'a>>,
 ) -> Result<(CheckedStatePredicate, u64), StageFailure<CheckRefusal>> {
     // The syntactic refusals ran first: what reaches here is one operand.
@@ -335,6 +346,19 @@ fn check_predicate<'a>(
         )));
     };
     let body: &Expression = &operand.expression;
+    // Each predicate continues from the nodes the claim's earlier ones used,
+    // so the node limit applies to the claim's cumulative total.
+    let declarations = &ClauseDeclarations {
+        scope: declarations.scope,
+        signatures: declarations.signatures,
+        dispatch_tables: declarations.dispatch_tables,
+        models: declarations.models,
+        checking_limits: declarations.checking_limits,
+        location: declarations.location,
+        nodes_used,
+        cancel: declarations.cancel,
+        staged: declarations.staged,
+    };
     let view = ClauseView {
         kind: StateClauseKind::Invariant,
         complete_value: super::state_clause::is_complete_value(&declaration.selection),
@@ -348,7 +372,9 @@ fn check_predicate<'a>(
     };
     let typed = check_clause(&view, declarations, &mut cx.reborrow(declarations.scope)).map_err(
         |inner| {
-            let span = span_at(operand, &inner.location);
+            let span = span_at(operand, &inner.location)
+                .or_else(|| operand.spans.span(operand.spans.root()))
+                .unwrap_or(declaration.form.span);
             refuse(StateGraphCause::Predicate {
                 role,
                 span,
@@ -377,13 +403,11 @@ fn check_claim<'a>(
     if let Some(cause) = syntactic_refusal(form) {
         return Err(refuse(cause));
     }
-    // Each predicate is typed from the package's node total before the
-    // claim, so the claim's own total is that base plus what each used.
-    let base = declarations.nodes_used;
-    let mut nodes_used = base;
+    let mut nodes_used = declarations.nodes_used;
     let mut check = |role, predicate: &StateGraphPredicateForm| {
-        let (checked, used) = check_predicate(role, predicate, declaration, declarations, cx)?;
-        nodes_used = nodes_used.saturating_add(used.saturating_sub(base));
+        let (checked, used) =
+            check_predicate(role, predicate, declaration, declarations, nodes_used, cx)?;
+        nodes_used = used;
         Ok::<_, StageFailure<CheckRefusal>>(checked)
     };
     let checked_form = match &form.kind {

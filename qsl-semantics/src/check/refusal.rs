@@ -572,14 +572,23 @@ pub enum StateGraphCause {
         /// The constraint's span.
         span: Span,
     },
+    /// A claim whose parts all check, but that no S4 emission writes yet:
+    /// refused rather than compiled and silently missing from the package.
+    /// Located at the claim.
+    NotEmitted {
+        /// The declared claim name.
+        name: String,
+        /// The claim's span.
+        span: Span,
+    },
     /// The state clause checker refused a predicate, as it refuses an
     /// invariant body.
     Predicate {
         /// The refused predicate's role in the claim.
         role: PredicateRole,
-        /// The span of the node the refusal names, when the predicate's
-        /// spans reach it.
-        span: Option<Span>,
+        /// The span of the node the refusal names, or of the whole predicate
+        /// when its spans do not reach that node.
+        span: Span,
         /// The clause checker's refusal.
         cause: Box<CheckCause>,
     },
@@ -602,8 +611,9 @@ impl StateGraphCause {
         match self {
             Self::ReadsBeyondState { span }
             | Self::TemporalOperator { span }
-            | Self::Fairness { span } => Some(*span),
-            Self::Predicate { span, .. } => *span,
+            | Self::Fairness { span }
+            | Self::NotEmitted { span, .. }
+            | Self::Predicate { span, .. } => Some(*span),
         }
     }
 
@@ -612,7 +622,8 @@ impl StateGraphCause {
         match self {
             Self::ReadsBeyondState { .. }
             | Self::TemporalOperator { .. }
-            | Self::Fairness { .. } => Code::UnsupportedConstruct,
+            | Self::Fairness { .. }
+            | Self::NotEmitted { .. } => Code::UnsupportedConstruct,
             Self::Predicate { cause, .. } => cause.code(),
         }
     }
@@ -623,6 +634,7 @@ impl StateGraphCause {
             Self::ReadsBeyondState { .. }
             | Self::TemporalOperator { .. }
             | Self::Fairness { .. } => Some("expression-form"),
+            Self::NotEmitted { .. } => Some("not-yet-implemented"),
             Self::Predicate { cause, .. } => cause.cause(),
         }
     }
