@@ -6,6 +6,7 @@ mod counter;
 mod deadlock_item;
 mod graph_core;
 mod model_check;
+mod model_instances;
 mod model_settle;
 mod schedulability;
 mod universe_obligation;

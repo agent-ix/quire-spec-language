@@ -16,7 +16,8 @@
 
 use qsl_foundation::bound::ProofBound;
 use qsl_semantics::check::FormulaNodeId;
-use quire_exact::{Incomplete, Meter, ObjectReference};
+use qsl_semantics::model::key::DeclarationKey;
+use quire_exact::{Incomplete, Meter};
 
 use crate::simulation::model::{ModelSimState, ModelSimulationRequest};
 use crate::temporal::AtomReading;
@@ -30,31 +31,36 @@ pub struct ModelSubject<'a> {
     pub proof_bounds: Vec<ProofBound>,
 }
 
-/// Reads the letter of a clause over a model subject at one state: the
-/// value of each `holds` atom for one binding of the clause's `over`
-/// parameter (ADR-018 UE-1, QSpec FR-361's `over` binding).
-pub trait ModelLetters {
-    /// The instances of the clause's `over` parameter: one per key of each
-    /// population that admits the parameter's type `T` (a member type that is
-    /// `T`, a subtype or a supertype of `T`), in
-    /// FR-125's canonical order: population declaration identity text, then
-    /// the population's universe-list order. A binding names its instance by
-    /// population and key; its object type only completes the reference and
-    /// is not compared.
-    fn bindings(&self) -> Vec<ObjectReference>;
+/// FR-125 Instancing: one instance of a clause's `over` parameter, a key
+/// of a population that admits the parameter's type. The pair is the
+/// instance in the obligation identity and the name of a refuted binding;
+/// it carries no object type, since a key has no type until a state holds
+/// its object.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ModelInstance {
+    /// The population's declaration key.
+    pub population: DeclarationKey,
+    /// The key in the population's universe.
+    pub key: String,
+}
 
-    /// The `holds` atom `atom` for the instance `binding` at `state`,
-    /// charging `meter`. The implementation matches the state's object to
-    /// `binding` by population and key, never by comparing the whole
-    /// reference, and reads the bound parameter as the state's own reference
-    /// to that object (FR-125 Instancing); where the population has no object
-    /// under the key conforming to the parameter's type, the read is
-    /// `absent-key` undefined. An exhausted meter is `Err(Incomplete)`, never a
-    /// reading.
+/// Reads the letter of a clause over a model subject at one state: the
+/// value of each `holds` atom for one instance of the clause's `over`
+/// parameter (ADR-018 UE-1, QSpec FR-361's `over` binding). The instances
+/// are derived from the subject's universes
+/// ([`crate::simulation::model::ModelSystem::instances`]), never supplied
+/// here.
+pub trait ModelLetters {
+    /// The `holds` atom `atom` for `instance` at `state`, charging `meter`.
+    /// The implementation reads the bound parameter as the state's own
+    /// reference to the object under the instance's population and key
+    /// (FR-125 Instancing); where the population has no object under the
+    /// key conforming to the parameter's type, the read is `absent-key`
+    /// undefined. An exhausted meter is `Err(Incomplete)`, never a reading.
     fn atom(
         &self,
         atom: FormulaNodeId,
-        binding: &ObjectReference,
+        instance: &ModelInstance,
         state: &ModelSimState,
         meter: &mut Meter,
     ) -> Result<AtomReading, Incomplete>;
