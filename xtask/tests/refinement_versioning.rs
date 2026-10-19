@@ -67,16 +67,19 @@ fn broken() -> String {
     broken
 }
 
-/// The unit with a protocol whose attempt body the checker does not read yet
-/// (`unsupported_construct`/`not-yet-implemented`).
+/// The unit with a well-typed protocol whose `join predicate` join the checker
+/// does not read yet (`unsupported_construct`/`not-yet-implemented`). A
+/// predicate join stays unchecked until its vector spec (STD-190) lands, so the
+/// fixture does not depend on a construct the clause checker is gaining.
 fn unsupported() -> String {
     unit()
         + "protocol Flow using v over (input: Boolean) on origin {\n\
            role R on Config::ConfigVersion;\n\
-           run sequence Main {\n\
-           attempt Tried by R on Config::ConfigVersion::attemptUpdate contracts [] \
-           as (tried: Boolean) { 1 + true };\n\
-           }\n\
+           run parallel P { \
+           branch east sequence E { attempt Tried by R on Config::ConfigVersion::attemptUpdate \
+           contracts [] as (tried: Boolean) { true }; } \
+           branch west sequence W { } } \
+           join predicate(done) [east, west];\n\
            finish End as (outcome: Boolean) { true };\n\
            }\n"
 }
