@@ -788,6 +788,34 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 ProtocolAnchorCause::NoProgress { repeat, .. } => format!(
                     "{message}: the body of `repeat {repeat}` does not necessarily take a step"
                 ),
+                ProtocolAnchorCause::KeyClause { channel, cause, .. } => format!(
+                    "{message}: the FIFO key of channel `{channel}` does not check ({})",
+                    cause.cause().unwrap_or_default()
+                ),
+                ProtocolAnchorCause::KeyModelState { channel, .. } => {
+                    format!("{message}: the FIFO key of channel `{channel}` reads model state")
+                }
+                ProtocolAnchorCause::KeyEquality { channel, .. } => format!(
+                    "{message}: the FIFO key of channel `{channel}` is of a type with no `=`"
+                ),
+                ProtocolAnchorCause::SlotClause { node, slot, cause, .. } => format!(
+                    "{message}: the {slot:?} of `{node}` does not check ({})",
+                    cause.cause().unwrap_or_default()
+                ),
+                ProtocolAnchorCause::SlotModelState { node, slot, .. } => {
+                    format!("{message}: the {slot:?} of `{node}` reads model state")
+                }
+                ProtocolAnchorCause::WrongObservation {
+                    node,
+                    owner,
+                    binder,
+                    reason,
+                    ..
+                } => format!(
+                    "{message}: `{node}` reads `{binder}`, which is no listed fact of `{owner}` \
+                     ({})",
+                    reason.identifier()
+                ),
                 ProtocolAnchorCause::Exhaustiveness { choice, failed, .. } => format!(
                     "{message}: the guards of `choice {choice}` are not exhaustive and exclusive                      ({})",
                     failed
@@ -1317,13 +1345,15 @@ mod tests {
         .expect_err("a protocol with unchecked content must not compile to a package");
         match refusal.as_ref() {
             CompileRefusal::Check { refusals, .. } => {
+                // Every part is checked now: the undeclared input, role and
+                // binder types and the undeclared channel each refuse.
                 assert!(
                     refusals.iter().any(|refusal| matches!(
                         &refusal.cause,
                         qsl_semantics::check::CheckCause::ProtocolAnchor(cause)
                             if matches!(
                                 cause.as_ref(),
-                                qsl_semantics::check::ProtocolAnchorCause::Unimplemented { name, .. } if name == "Flow"
+                                qsl_semantics::check::ProtocolAnchorCause::MissingChannel { node, .. } if node == "S"
                             )
                     )),
                     "{refusals:?}"

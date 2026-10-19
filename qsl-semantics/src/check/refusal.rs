@@ -106,13 +106,12 @@ pub enum ProtocolAnchorCause {
         /// The entry's own span.
         span: Span,
     },
-    /// A protocol whose anchors, binders and attempt bindings all
-    /// check, but which holds a construct no checker reads yet (a node kind
-    /// other than `sequence`, `attempt`, `finish` and `compensate`, a
-    /// channel, a relationship, a requirement, a replicated role, a
-    /// `related by` clause, or a body other than a bare Boolean literal). Refused rather than compiled with unchecked content
-    /// and silently missing from the emitted package (SR-753 FND-002,
-    /// SR-761 FND-001, SR-770 FND-001).
+    /// A protocol whose anchors, binders and attempt bindings all check,
+    /// but which holds a construct no checker reads yet (a relationship, a
+    /// requirement, a replicated role, a `related by` clause, a `predicate`
+    /// join or a `terminal when` member). Refused rather than compiled with
+    /// unchecked content and silently missing from the emitted package
+    /// (SR-753 FND-002, SR-761 FND-001, SR-770 FND-001).
     Unimplemented {
         /// The declared protocol name.
         name: String,

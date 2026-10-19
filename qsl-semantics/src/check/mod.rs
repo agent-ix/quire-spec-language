@@ -1538,17 +1538,17 @@ impl PackageDeclarations {
         // and the unit's own checked state clauses (`state_clause_forms`).
         // Independent of every other declaration kind otherwise: a
         // protocol's own content is checked from its own form alone.
-        // Once those pass, `protocol_clause::
-        // content` checks the rest -- the `using` alias, roles, attempt
-        // roles and binder types -- and refuses `unsupported_construct`/
-        // `not-yet-implemented` at any construct no checker reads yet
-        // (every node kind but `sequence`/`parallel`/`attempt`/`finish`/
-        // `compensate`, a `fifo` channel ordering, a `predicate` join, a
-        // `terminal when` member, relationships, requirements, replicated
-        // roles, `related by`, and any body but a bare Boolean literal).
-        // `protocol_controls::check` then checks the channels, joins and
-        // `terminal`/`scheduling` members (FR-218). A protocol compiles only
-        // when every part is checked.
+        // Once those pass and the control tree and its causal edges compile
+        // (FR-218), `protocol_clause::content` checks the rest -- the `using`
+        // aliases, roles, node roles and owners, and binder types -- and
+        // refuses `unsupported_construct`/`not-yet-implemented` at any
+        // construct no checker reads yet (a `predicate` join, a `terminal
+        // when` member, relationships, requirements, replicated roles and
+        // `related by`). `protocol_slots::check` checks every body, guard,
+        // `visible` entry and loop proof over its readable binders, and
+        // `protocol_controls::check` the channels with their FIFO keys,
+        // messages, joins and `terminal`/`scheduling` members (FR-218). A
+        // protocol compiles only when every part is checked.
         let mut checked_protocols = Vec::with_capacity(self.protocols.len());
         let mut protocol_bindings = Vec::with_capacity(self.protocols.len());
         // The selected protocol profile, which the structural refusals of a
