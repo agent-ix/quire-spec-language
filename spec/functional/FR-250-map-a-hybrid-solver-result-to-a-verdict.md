@@ -79,6 +79,14 @@ The FR-331 terminal record of the claim.
   PC-1, ADR-026 HY-2).
 - A `BoundedSolver` proof SHALL hold for the claim within its horizon and
   jump bound, and the record SHALL carry both.
+- The `solver-time` budget of a `Stopped(limit)` result, request member
+  `max_solver_time`, SHALL be a count of whole seconds of wall-clock time. A
+  duration with a fractional part SHALL round up to the next whole second, so
+  a stop SHALL NOT report a budget smaller than the time the solver was
+  allowed.
+- The `solver-steps` budget, request member `max_solver_steps`, SHALL be a
+  count of solver steps: whole, non-negative, as the provider counts its own
+  steps, which QSL compares and reports unchanged and does not convert to time.
 - A further hybrid engine SHALL be one more negotiated backend whose
   results take this map.
 
@@ -88,6 +96,7 @@ The FR-331 terminal record of the claim.
 |----|----------|--------------|
 | FR-250-AC-1 | A model with a variable `v` of rate `-a` and a clock `t` classifies `v` as hybrid and `t` as a clock; its claim routes to the registered fixture provider. With no provider registered it settles `unsupported`, `unsupported-requested-capability`. | Test (TC-705) |
 | FR-250-AC-2 | Fixture results map as the table states: a δ-complete `Unsat` with horizon 10 and jumps 3 settles `Proved{BoundedSolver{…, horizon: 10, jumps: 3}, Uncertified}`; `DeltaSat` settles `inconclusive`, `SolverInconclusive`; `EnclosureDisjoint` from a flowpipe method without outward rounding settles `inconclusive`, `SolverInconclusive`; `Stopped` settles `incomplete`, `LimitReached`. No fixture result settles `refuted`. | Test (TC-705) |
+| FR-250-AC-3 | A `Stopped` result for the `solver-time` budget with a requested limit of 1.5 s settles `incomplete`, `LimitReached{limit: solver-time, value: 2, setting: max_solver_time}`; a limit of exactly 2 s reports 2; a limit of 0.2 s reports 1. A `Stopped` result for the `solver-steps` budget with a limit of 1,000 steps reports `value: 1000`, `setting: max_solver_steps`, in steps and unchanged. | Test (TC-705) |
 
 ## Dependencies
 
