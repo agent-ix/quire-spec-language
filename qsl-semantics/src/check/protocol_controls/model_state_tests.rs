@@ -153,7 +153,7 @@ fn a_fifo_key_admits_equality() {
         panic!("a key-equality refusal, got {cause:?}");
     };
     assert_eq!(channel, "Q");
-    assert!(matches!(key_type, ValueType::Composite(_)));
+    assert!(matches!(**key_type, ValueType::Composite(_)));
     assert_eq!(at, "m");
 }
 

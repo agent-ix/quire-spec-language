@@ -49,9 +49,9 @@ pub enum CheckedOrdering {
     /// `ordering fifo by (binder: T) { key }`.
     Fifo {
         /// The message binder, of the channel's `carries` type.
-        binder: CheckedBinder,
+        binder: Box<CheckedBinder>,
         /// The checked key, whose type admits `=`.
-        key: CheckedBody,
+        key: Box<CheckedBody>,
     },
 }
 
@@ -274,8 +274,8 @@ fn check_fifo(
                 binder.value_type.span,
                 refusal(ProtocolAnchorCause::CarriesMismatch {
                     channel: name.to_owned(),
-                    expected: carries.clone(),
-                    actual: binder_type.clone(),
+                    expected: Box::new(carries.clone()),
+                    actual: Box::new(binder_type.clone()),
                     span: binder.value_type.span,
                 }),
             ));
@@ -335,18 +335,18 @@ fn check_fifo(
             span,
             refusal(ProtocolAnchorCause::KeyEquality {
                 channel: name.to_owned(),
-                key_type,
+                key_type: Box::new(key_type),
                 span,
             }),
         ));
         return None;
     }
     Some(CheckedOrdering::Fifo {
-        binder: CheckedBinder {
+        binder: Box::new(CheckedBinder {
             name: binder.name.name.clone(),
             value_type: binder_type,
-        },
-        key: body,
+        }),
+        key: Box::new(body),
     })
 }
 
@@ -418,8 +418,8 @@ fn check_messages(
                 binder.value_type.span,
                 refusal(ProtocolAnchorCause::CarriesMismatch {
                     channel: channel.name.name.clone(),
-                    expected,
-                    actual,
+                    expected: Box::new(expected),
+                    actual: Box::new(actual),
                     span: binder.value_type.span,
                 }),
             ));

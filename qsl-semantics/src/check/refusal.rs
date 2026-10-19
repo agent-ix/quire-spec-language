@@ -242,9 +242,9 @@ pub enum ProtocolAnchorCause {
         /// The channel's declared name.
         channel: String,
         /// The channel's `carries` type.
-        expected: quire_exact::ValueType,
+        expected: Box<quire_exact::ValueType>,
         /// The binder's declared type.
-        actual: quire_exact::ValueType,
+        actual: Box<quire_exact::ValueType>,
         /// The binder type's span.
         span: Span,
     },
@@ -276,7 +276,7 @@ pub enum ProtocolAnchorCause {
         /// The channel's declared name.
         channel: String,
         /// The key's type.
-        key_type: quire_exact::ValueType,
+        key_type: Box<quire_exact::ValueType>,
         /// The key.
         span: Span,
     },

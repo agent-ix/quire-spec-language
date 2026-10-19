@@ -437,7 +437,7 @@ fn a_message_names_a_channel_and_carries_its_type() {
         };
         assert_eq!(channel, "ch");
         assert_ne!(expected, actual);
-        assert_eq!(*actual, quire_exact::ValueType::Boolean);
+        assert_eq!(**actual, quire_exact::ValueType::Boolean);
         assert_eq!(located(&text, &cause), at);
     }
 
