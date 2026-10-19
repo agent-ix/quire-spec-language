@@ -790,7 +790,8 @@ fn a_proof_bound_does_not_make_an_unranged_parameter_finite() {
     assert_eq!(roots.len(), 1, "{roots:?}");
     assert_eq!(roots[0].1, DomainKind::Integer);
 
-    let range = FiniteBound::integer_range(Integer::from(0), Integer::from(3)).expect("a range");
+    let range =
+        FiniteBound::integer_range(Integer::from(0_i64), Integer::from(3_i64)).expect("a range");
     let proof = ProofBound::new(roots[0].0.clone(), Some(DomainKind::Integer), range)
         .expect("an integer range pairs with an integer domain");
     let bounded = run_with(&world, universe(&["c"]), vec![proof], UNLIMITED)
