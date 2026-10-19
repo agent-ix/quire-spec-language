@@ -2253,10 +2253,9 @@ impl PackageDeclarations {
                         claims::wire(lowered.boolean),
                         references.take().ok_or_else(unkeyable)?,
                     );
-                    match requirements.entry(OccurrenceKey::new(
-                        claims::wire(lowered.key),
-                        claim.clone(),
-                    )) {
+                    match requirements
+                        .entry(OccurrenceKey::new(claims::wire(lowered.key), claim.clone()))
+                    {
                         std::collections::btree_map::Entry::Vacant(slot) => {
                             slot.insert(record);
                         }

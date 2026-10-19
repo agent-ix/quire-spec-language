@@ -3122,7 +3122,8 @@ impl PackageDeclarations {
                     }
                     qsl_forms::TemporalNodeForm::Operator(operator) => operator.span,
                 };
-                declared_type_spans.insert(temporal_site(index, TemporalSite::Node(id.index())), span);
+                declared_type_spans
+                    .insert(temporal_site(index, TemporalSite::Node(id.index())), span);
             }
             for (constraint, written) in form.fairness.iter().enumerate() {
                 declared_type_spans.insert(

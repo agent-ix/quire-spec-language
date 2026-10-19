@@ -220,7 +220,10 @@ fn reaches_two_emits_as_a_v2_temporal_clause_node_the_i2_read_admits() {
     };
     assert_eq!(fair["semantic_form"], "fairness");
     assert_eq!(fair["body"]["operator"], "temporal_fairness");
-    assert_eq!(fair["body"]["operation"]["identity"], "quire.op.temporal.fair");
+    assert_eq!(
+        fair["body"]["operation"]["identity"],
+        "quire.op.temporal.fair"
+    );
     let member = &fair["body"]["operation"]["member"];
     assert_eq!(member["kind"], "fairness");
     assert_eq!(member["fairness_kind"], "weak");
@@ -245,7 +248,10 @@ fn reaches_two_emits_as_a_v2_temporal_clause_node_the_i2_read_admits() {
             json!({"kind": "temporal_interval", "interval": null})
         );
     }
-    assert_eq!(holds["body"]["operation"]["identity"], "quire.op.temporal.holds");
+    assert_eq!(
+        holds["body"]["operation"]["identity"],
+        "quire.op.temporal.holds"
+    );
     assert_eq!(holds["body"]["operation"]["member"], Value::Null);
     let condition = node_with(wire, target(&holds["body"]["arguments"][0]));
     assert_eq!(condition["node_tag"], "expression");
@@ -257,11 +263,16 @@ fn reaches_two_emits_as_a_v2_temporal_clause_node_the_i2_read_admits() {
         assert_eq!(node["occurrences"][0]["role"], "expression");
     }
     assert_eq!(body["result_type"], *boolean);
-    assert_eq!(clause["occurrences"], json!([{"role": "claim", "ordinal": 0}]));
+    assert_eq!(
+        clause["occurrences"],
+        json!([{"role": "claim", "ordinal": 0}])
+    );
     // QSL's I2 read admits the package at its own `package_id`.
-    let Read::Verified { package, .. } =
-        read_bytes(compiled.emission.package.bytes(), wire, package_id(&compiled))
-    else {
+    let Read::Verified { package, .. } = read_bytes(
+        compiled.emission.package.bytes(),
+        wire,
+        package_id(&compiled),
+    ) else {
         panic!("the I2 read admits the clause");
     };
     assert_eq!(package.package_id(), package_id(&compiled));
@@ -366,7 +377,11 @@ fn each_interval_form_emits_its_temporal_interval_member() {
         );
         assert!(
             matches!(
-                read_bytes(compiled.emission.package.bytes(), wire, package_id(&compiled)),
+                read_bytes(
+                    compiled.emission.package.bytes(),
+                    wire,
+                    package_id(&compiled)
+                ),
                 Read::Verified { .. }
             ),
             "{body}: the I2 read admits it"
@@ -396,7 +411,10 @@ fn edited(
 
 /// QSL's I2 read of `envelope` at its own `package_id`, expected to refuse
 /// in IR's reader: the IR refusal.
-fn ir_refusal(compiled: &Compiled, envelope: &Value) -> quire_contract_model::CheckedPackageRefusal {
+fn ir_refusal(
+    compiled: &Compiled,
+    envelope: &Value,
+) -> quire_contract_model::CheckedPackageRefusal {
     let package_id =
         qsl_semantics::library::PackageId::of_preimage(&jcs(&envelope["identity_preimage"]));
     match read_bytes(&jcs(envelope), &compiled.wire, package_id) {
@@ -424,7 +442,10 @@ fn position(envelope: &Value, digest: &str) -> usize {
 
 /// `digest` after `renames`.
 fn renamed(renames: &BTreeMap<String, String>, digest: &str) -> String {
-    renames.get(digest).cloned().unwrap_or_else(|| digest.to_owned())
+    renames
+        .get(digest)
+        .cloned()
+        .unwrap_or_else(|| digest.to_owned())
 }
 
 /// FR-337-AC-4: fed to QSL's I2 read, AC-1's node with its arguments
@@ -499,11 +520,17 @@ fn the_i2_read_refuses_each_fr370_defect_at_its_locus() {
     let refusal = ir_refusal(&compiled, &envelope);
     assert_eq!(
         (refusal.code, refusal.cause),
-        (CheckedPackageRefusalCode::IllTyped, Some(Cause::OperatorIneligible)),
+        (
+            CheckedPackageRefusalCode::IllTyped,
+            Some(Cause::OperatorIneligible)
+        ),
         "{refusal:?}"
     );
     let eventually_at = position(&envelope, &renamed(&renames, &eventually_digest));
-    assert_eq!(path(&refusal), format!("/semantic_graph/nodes/{eventually_at}"));
+    assert_eq!(
+        path(&refusal),
+        format!("/semantic_graph/nodes/{eventually_at}")
+    );
 
     // A `null` interval under a bounded profile.
     let bounded = compile(&unit(
@@ -525,7 +552,10 @@ fn the_i2_read_refuses_each_fr370_defect_at_its_locus() {
         "{refusal:?}"
     );
     let root_at = position(&envelope, &renamed(&renames, &root_digest));
-    assert_eq!(path(&refusal), format!("/semantic_graph/nodes/{root_at}/body"));
+    assert_eq!(
+        path(&refusal),
+        format!("/semantic_graph/nodes/{root_at}/body")
+    );
 }
 
 /// `key` as a wire node id.
@@ -549,14 +579,21 @@ fn the_i2_lookup_returns_the_clause_triple_and_its_over_node() {
         panic!("one emitted clause");
     };
     let clause = clause_node(&compiled.wire);
-    assert_eq!(clause["node_id"]["digest"], wire_id(checked.identity()).to_string());
+    assert_eq!(
+        clause["node_id"]["digest"],
+        wire_id(checked.identity()).to_string()
+    );
     let over = node_with(&compiled.wire, target(&clause["body"]["arguments"][0]));
-    assert_eq!(over["node_id"]["digest"], wire_id(checked.over()).to_string());
+    assert_eq!(
+        over["node_id"]["digest"],
+        wire_id(checked.over()).to_string()
+    );
 
     let admitted = admit(&compiled);
-    let [root] = clause_roots(&admitted).expect("the roots read").try_into().unwrap_or_else(
-        |roots: Vec<ClauseRoot>| panic!("one root: {roots:?}"),
-    );
+    let [root] = clause_roots(&admitted)
+        .expect("the roots read")
+        .try_into()
+        .unwrap_or_else(|roots: Vec<ClauseRoot>| panic!("one root: {roots:?}"));
     let triple = root.occurrence().clone();
     assert_eq!(triple.node(), wire_id(checked.identity()));
     assert_eq!(triple.origin().role().as_str(), "claim");
@@ -598,7 +635,9 @@ fn identical_declarations_share_one_node_and_keep_their_own_triples() {
     let triples: Vec<&OccurrenceKey> = roots.iter().map(ClauseRoot::occurrence).collect();
     let declared: Vec<OccurrenceKey> = [first, second]
         .iter()
-        .map(|declaration| OccurrenceKey::new(wire_id(declaration.identity()), declaration.claim().clone()))
+        .map(|declaration| {
+            OccurrenceKey::new(wire_id(declaration.identity()), declaration.claim().clone())
+        })
         .collect();
     assert_eq!(triples, declared.iter().collect::<Vec<_>>());
     for (root, declaration) in roots.iter().zip([first, second]) {

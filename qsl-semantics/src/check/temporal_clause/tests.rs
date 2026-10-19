@@ -390,26 +390,30 @@ fn package_refusal(text: &str) -> TemporalCause {
 #[trace("FR-326")]
 #[test]
 fn the_package_check_refuses_a_clause_no_emission_writes() {
-    let graph = assemble(&source(&[INFINITE], "Counter", "eventually holds(c.level = 3)"))
-        .check(CheckingLimits::default())
-        .expect("an `on origin` clause compiles");
+    let graph = assemble(&source(
+        &[INFINITE],
+        "Counter",
+        "eventually holds(c.level = 3)",
+    ))
+    .check(CheckingLimits::default())
+    .expect("an `on origin` clause compiles");
     let [clause] = graph.temporal_clauses() else {
         panic!("one emitted clause");
     };
     assert_eq!(clause.clause().name(), "C");
 
     let origin = source(&[INFINITE], "Counter", "eventually holds(c.level = 3)");
-    let each = origin.replace(
-        "on origin",
-        "on each (d: Counter) when (d.level = 1)",
-    );
+    let each = origin.replace("on origin", "on each (d: Counter) when (d.level = 1)");
     let captured = origin.replace(
         "{ eventually",
         "{ capture before: Int[0, 9] = c.level; eventually",
     );
     for text in [each, captured] {
         let cause = package_refusal(&text);
-        assert!(matches!(cause, TemporalCause::NotEmitted { .. }), "{cause:?}");
+        assert!(
+            matches!(cause, TemporalCause::NotEmitted { .. }),
+            "{cause:?}"
+        );
         assert_eq!(cause.code(), Code::UnsupportedConstruct);
         assert_eq!(cause.tag(), "not-yet-implemented");
         assert_eq!(cause.span().start, text.find("temporal C").expect("clause"));

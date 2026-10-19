@@ -20,8 +20,8 @@ use quire_contract_model::{
     CheckedSemanticNodeV2, TemporalForm,
 };
 
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::diagnostic::InternalFault;
+use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use quire_exact::{Origin, Role};
 
@@ -70,9 +70,9 @@ const NODE_ID_FAULT: InternalFault = InternalFault::new("I2", "admitted-node-id-
 
 /// Whether `node` is a `temporal`/`temporal_clause` node.
 fn is_clause(node: &CheckedSemanticNodeV2) -> bool {
-    CheckedNodeTag::from_wire(&node.node_tag).and_then(|tag| {
-        CheckedNodeKind::decode(tag, &node.semantic_form)
-    }) == Some(CheckedNodeKind::Temporal(TemporalForm::TemporalClause))
+    CheckedNodeTag::from_wire(&node.node_tag)
+        .and_then(|tag| CheckedNodeKind::decode(tag, &node.semantic_form))
+        == Some(CheckedNodeKind::Temporal(TemporalForm::TemporalClause))
 }
 
 /// The `over` node of the clause node `node`: the target of the `reference`

@@ -464,10 +464,7 @@ fn rows() -> Vec<Row> {
             K::Protocol(ProtocolForm::ProtocolReference),
             F::ProtocolReference,
         ),
-        row(
-            K::Temporal(TemporalForm::TemporalClause),
-            F::TemporalClause,
-        ),
+        row(K::Temporal(TemporalForm::TemporalClause), F::TemporalClause),
         row(K::Temporal(TemporalForm::Formula), F::TemporalClause),
         row(K::Temporal(TemporalForm::Fairness), F::TemporalClause),
     ]

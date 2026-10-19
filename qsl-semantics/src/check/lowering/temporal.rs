@@ -183,9 +183,9 @@ impl Lowering<'_> {
                 vec![
                     MemberTerm::reference(over),
                     MemberTerm::Leaf(clock),
-                    MemberTerm::Group(GroupTerm::new(vec![GroupMember::Binding(
-                        Binding::new("kind", kind),
-                    )])),
+                    MemberTerm::Group(GroupTerm::new(vec![GroupMember::Binding(Binding::new(
+                        "kind", kind,
+                    ))])),
                     MemberTerm::Group(GroupTerm::new(Vec::new())),
                     MemberTerm::Group(GroupTerm::references(fairness)),
                     MemberTerm::reference(formula),
