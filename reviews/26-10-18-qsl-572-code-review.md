@@ -63,6 +63,15 @@ cannot be produced), one medium finding that needs a spec ruling, and lows.
 | FND-006 | low | No test covers an event-position window with `a > 0`, which is the `checked_sub(a)` path that gives an empty window when `a > i`. The code is correct by reading, but the path is unpinned. | qsl-eval/src/temporal/window.rs:212-217 |
 | FND-007 | low | A test comment says two errors "falsify the atom at position 1", but the assertion is `Violated { at: 0 }`, the activation position. The comment misleads. | qsl-eval/tests/it/window_aggregates.rs:531-538 |
 
+## New findings (disposition pass 2)
+
+Found at `e52200e1bd4915a04840647411cd0809683b5736` by the STD-163 spec review and confirmed against FR-327 "Undefined evaluation" and ADR-024 WA-4. Reviewed at `7fd0574d07a81097fb2f26031a9a397143201fbd`.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | high | `TemporalOutcome::category` mapped every `Undefined`, an insufficient-data window included, to `Category::Violation`. FR-327 says a window's `insufficient-data` settles the clause in the O-16 category `undefined`, "never `UndefinedEvaluation` and never violation", and ADR-024 WA-4 says the same. Failure scenario: a quiet monitor window reads as a violation of the claim. | qsl-eval/src/temporal/outcome.rs:58-65 |
+| FND-009 | low | An insufficient-data clause is still returned as `TemporalOutcome::Undefined(UndefinedEvaluation{at, cause: InsufficientData})`. Its category is now right, but FR-327 says this outcome is "never `UndefinedEvaluation`". The Rust struct shares its name with the wire cause `undefined-evaluation` (qsl-replay/src/outcome.rs:243-247). A later mapper from `TemporalOutcome::Undefined` to that cause would emit `refuted`/`undefined-evaluation` for a quiet window. No consumer exists yet. The variant doc ("it does not hold on it") is also wrong for this cause. Fix: give insufficient data its own outcome variant (pre-release, no shim needed). | qsl-eval/src/temporal/outcome.rs:37-38; qsl-eval/src/temporal/outcome.rs:58-65 |
+
 ## Dispositions
 
 Round 1, reviewed at `e52200e1bd4915a04840647411cd0809683b5736`. Focused
@@ -79,3 +88,14 @@ pass), `cargo clippy -p qsl-eval --all-targets -D warnings` (clean) and
 | FND-005 | accepted-no-change | Module docs now state that the quantile sort is bounded by `max_window_values` and is not charged separately. It stays a documented design choice. |
 | FND-006 | fixed | `an_event_position_window_with_a_nearest_offset_skips_the_newest_positions` covers `past[2, 3]` at positions 5 and 1. |
 | FND-007 | fixed | The comment now says the atom is falsified at position 1 and the clause is violated at its activation, position 0. |
+
+Round 2, reviewed at `7fd0574d07a81097fb2f26031a9a397143201fbd`, which includes
+the merge of origin/main and the `property_automata.rs` adaptation to
+`LetterStop`. Focused checks: `cargo test -p qsl-eval` (546 integration
+tests, 82 unit tests, all pass), clippy with `-D warnings` and `cargo fmt
+--check` both clean. FND-001 to FND-007 keep their round-1 outcomes.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-008 | fixed | `category()` maps `Undefined` with cause `InsufficientData` to `Category::Undefined`, and other causes stay `Violation`. `an_atom_with_too_few_values_makes_the_clause_undefined` asserts `Category::Undefined` through `evaluate` and fails on revert. `a_kernel_undefined_atom_is_a_violation` guards against an over-broad mapping; it stays green on a plain revert. |
+| FND-009 | deferred | Reviewer recommendation, not an owner ruling: fold the variant into the STD-163 code follow-up, which reworks this same outcome mapping. Behaviour and category are correct today, and nothing maps `TemporalOutcome` to wire causes yet. |
