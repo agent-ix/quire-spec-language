@@ -885,9 +885,9 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 TemporalCause::AmbiguousFairnessOperation { name, .. } => format!(
                     "{message}: the fairness operation `{name}` names operations of several types"
                 ),
-                TemporalCause::AmbiguousPopulation { name, .. } => format!(
-                    "{message}: the `over` type is covered by several populations: {name}"
-                ),
+                TemporalCause::AmbiguousPopulation { name, .. } => {
+                    format!("{message}: the `over` type is covered by several populations: {name}")
+                }
                 TemporalCause::FairnessUnderBoundedProfile { .. } => {
                     format!("{message}: this profile admits no fairness constraint")
                 }

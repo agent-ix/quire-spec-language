@@ -302,7 +302,9 @@ fn a_bounded_clause_over_a_bounded_type_is_bounded_and_keys_carry_the_profile() 
             .try_into()
             .expect("one claim");
         if profile != INFINITE {
-            let record = claim.requirements(node(1), &[node(2)], None).expect("keyed");
+            let record = claim
+                .requirements(node(1), &[node(2)], None)
+                .expect("keyed");
             assert_eq!(record.kind(), Capability::TemporalSatisfaction);
             assert_eq!(record.extent(), &ClaimExtent::Bounded);
         }
@@ -328,7 +330,9 @@ fn the_over_parameters_unbounded_positions_join_the_record() {
     let [claim] = TemporalTraceFamily::requirements(&clause)
         .try_into()
         .expect("one claim");
-    let record = claim.requirements(node(1), &[node(2)], None).expect("keyed");
+    let record = claim
+        .requirements(node(1), &[node(2)], None)
+        .expect("keyed");
     let ClaimExtent::Unbounded(domains) = record.extent() else {
         panic!("unbounded: {:?}", record.extent());
     };
@@ -345,7 +349,9 @@ fn the_over_parameters_unbounded_positions_join_the_record() {
     let [claim] = TemporalTraceFamily::requirements(&clause)
         .try_into()
         .expect("one claim");
-    let record = claim.requirements(node(1), &[node(2)], None).expect("keyed");
+    let record = claim
+        .requirements(node(1), &[node(2)], None)
+        .expect("keyed");
     let ClaimExtent::Unbounded(domains) = record.extent() else {
         panic!("a bounded profile over an unbounded type is unbounded");
     };

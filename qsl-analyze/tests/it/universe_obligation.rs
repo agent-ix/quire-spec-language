@@ -7,8 +7,8 @@
 //! `fair weak each`.
 
 use ix_trace_rs::trace;
-use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::digest::WireNodeId;
+use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::{BackendId, RequestIndex};
 use qsl_replay::TerminalRecord;
 use qsl_route::deadlock::{ItemObligation, ModelTemporalItem, ObligationKind};

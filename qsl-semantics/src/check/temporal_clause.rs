@@ -59,11 +59,11 @@ use quire_semantic_value::fairness::{
 };
 use quire_semantic_value::location::{Location, Origin};
 
+use super::lowering::AdmittedModel;
 use super::profile::TemporalProfile;
 use super::refusal::{CheckCause, CheckRefusal, TemporalCause};
-use super::Scope;
-use super::lowering::AdmittedModel;
 use super::state_clause::{population_of, PopulationDomain};
+use super::Scope;
 use crate::check::Capability;
 use crate::family::requirements::{classify_domains, ClassifyFailure};
 use crate::family::requirements::{ClaimExtent, Requirements};
