@@ -35,7 +35,9 @@ pub struct ModelSubject<'a> {
 /// parameter (ADR-018 UE-1, QSpec FR-361's `over` binding).
 pub trait ModelLetters {
     /// The objects the clause's `over` parameter binds to, one instance per
-    /// object of its population's universe, in ascending reference order.
+    /// key of each population covering the parameter's type, in FR-125's
+    /// canonical order: population declaration identity text, then the
+    /// population's universe-list order.
     fn bindings(&self) -> Vec<ObjectReference>;
 
     /// The `holds` atom `atom` for the instance `binding` at `state`,
