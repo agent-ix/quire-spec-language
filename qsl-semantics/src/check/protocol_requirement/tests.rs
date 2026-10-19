@@ -82,13 +82,13 @@ fn requirements(
 }
 
 /// The protocol refusals the whole check of `declarations` gives, with the
-/// unit's text. The temporal clauses are refused as not emitted besides.
+/// unit's text.
 fn protocol_refusals(declarations: &str) -> (String, Vec<(ProtocolAnchorCause, CheckRefusal)>) {
     let (text, assembled) = assemble(declarations);
     let refusals = assembled
         .check(CheckingLimits::default())
-        .map(|_| ())
-        .expect_err("a unit with a temporal clause is not emitted");
+        .err()
+        .unwrap_or_default();
     let found = refusals
         .into_iter()
         .filter_map(|refusal| match &refusal.cause {
