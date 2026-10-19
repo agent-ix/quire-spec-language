@@ -21,7 +21,8 @@ use std::convert::Infallible;
 use std::marker::PhantomData;
 use std::ops::ControlFlow;
 
-use super::ir::{CheckedNode, NodeKind, Observation, Slot};
+use super::ir::{CheckedNode, NodeKind, Slot};
+use crate::model::clause_observation::Observation;
 use quire_semantic_value::location::Location;
 
 /// The observation of every model read of one state clause body, by the

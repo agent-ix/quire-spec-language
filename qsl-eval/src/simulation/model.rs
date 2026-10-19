@@ -25,8 +25,8 @@ use qsl_foundation::digest::{DigestRecord, WireNodeId};
 use qsl_foundation::selection::DefinitionRef;
 use qsl_foundation::{CatalogCode, IdentityLimits};
 use qsl_package::CheckedPackage;
-use qsl_semantics::check::Observation;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
+use qsl_semantics::model::clause_observation::Observation;
 use qsl_semantics::model::domain_package::OperationEffect;
 use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::observation::{

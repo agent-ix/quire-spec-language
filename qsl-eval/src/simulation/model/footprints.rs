@@ -4,7 +4,7 @@
 //! nothing outside it.
 //!
 //! The symbolic footprint of an operation is derived once, from its checked
-//! clauses and frame, by `qsl_semantics::model::footprint`. Instantiating it
+//! clauses and frame, by `qsl_semantics::check::footprint`. Instantiating it
 //! replaces the receiver and each reference parameter with the object the
 //! transition binds. Enforcement runs a step's clauses with a read log
 //! attached to their observations and compares the log with the footprint.
@@ -13,10 +13,10 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Mutex, PoisonError};
 
-use qsl_semantics::check::Observation;
-use qsl_semantics::model::footprint::{
+use qsl_semantics::check::footprint::{
     derive_footprint, FootprintObject, FootprintRefusal, SymbolicFootprint, SymbolicLocation,
 };
+use qsl_semantics::model::clause_observation::Observation;
 use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::object_environment::{ObservedRead, ReadLog};
 use qsl_semantics::model::observation::AdmittedObservations;

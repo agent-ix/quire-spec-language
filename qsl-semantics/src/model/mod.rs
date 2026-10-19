@@ -13,6 +13,7 @@
 
 pub mod accounting;
 pub mod admitted;
+pub mod clause_observation;
 pub mod conformance;
 pub mod dispatch;
 pub mod domain_package;
@@ -20,7 +21,6 @@ pub mod domain_package;
 mod domain_package_fixture;
 pub mod effective_state_machine;
 mod event;
-pub mod footprint;
 pub mod index;
 pub mod intake;
 pub mod key;

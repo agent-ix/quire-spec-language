@@ -12,11 +12,12 @@ use qsl_eval::simulation::model::{
 };
 use qsl_eval::simulation::{independent, Footprint, Location, TransitionSystem};
 use qsl_package::CheckedPackage;
-use qsl_semantics::check::{Observation, PackageDeclarations};
-use qsl_semantics::model::accounting::ModelNormalizationLimits;
-use qsl_semantics::model::footprint::{
+use qsl_semantics::check::footprint::{
     derive_footprint, FootprintObject, SymbolicFootprint, SymbolicLocation,
 };
+use qsl_semantics::check::PackageDeclarations;
+use qsl_semantics::model::accounting::ModelNormalizationLimits;
+use qsl_semantics::model::clause_observation::Observation;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
 use qsl_semantics::model::key::{hex, DeclarationKey};
 use qsl_semantics::model::observation::{

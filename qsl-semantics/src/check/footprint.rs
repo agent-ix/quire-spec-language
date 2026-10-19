@@ -11,7 +11,8 @@ use std::collections::BTreeSet;
 
 use quire_exact::{EffectiveId, ValueType};
 
-use crate::check::{CheckedGraph, CheckedNode, CheckedStateClause, NodeKind, Observation};
+use crate::check::{CheckedGraph, CheckedNode, CheckedStateClause, NodeKind};
+use crate::model::clause_observation::Observation;
 use crate::model::key::DeclarationKey;
 use crate::model::operation::OperationDeclaration;
 use crate::model::state::StateModel;
