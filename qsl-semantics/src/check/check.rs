@@ -57,8 +57,8 @@ use super::ir::{
 };
 use super::navigation::Relationships;
 use super::refusal::{
-    CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, IdentityForm, IdentityObserving,
-    Obligation, StageLimitCause,
+    CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, IdentityForm, IdentityNode,
+    IdentityObserving, Obligation, StageLimitCause,
 };
 use crate::model::key::DeclarationKey;
 use crate::model::operation::OperationTable;
@@ -2951,7 +2951,7 @@ impl<'a> Typer<'a> {
     fn identity_observing(
         &self,
         location: &Location,
-        node: &'static str,
+        node: IdentityNode,
         form: IdentityForm,
         operand: &ValueType,
     ) -> Option<CheckRefusal> {
@@ -2977,6 +2977,18 @@ impl<'a> Typer<'a> {
             (ValueType::Collection(source), ValueType::Collection(to)) => {
                 if source.element() != to.element() {
                     return Err(mismatch(location));
+                }
+                // A Set or Bag read as an ordered collection is read in the
+                // identity-sorted order of its elements.
+                if !source.kind().is_ordered() && to.kind().is_ordered() {
+                    if let Some(refusal) = self.identity_observing(
+                        location,
+                        IdentityNode::Convert,
+                        IdentityForm::OrderSensitiveTraversal,
+                        &operand.value_type,
+                    ) {
+                        return Err(refusal);
+                    }
                 }
                 Ok(node(
                     NodeKind::ConvertCollection {
@@ -3016,7 +3028,7 @@ impl<'a> Typer<'a> {
                     return Err(self
                         .identity_observing(
                             location,
-                            "convert",
+                            IdentityNode::Convert,
                             IdentityForm::ReferenceConversion,
                             source,
                         )

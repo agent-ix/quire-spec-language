@@ -1435,7 +1435,9 @@ fn validate_with_semantic_ir(document: &PackageDocument) -> Result<(), Vec<Model
         .filter(|located| !process_subtype_generalization_schema_diagnostic(document, located))
         // FR-150: a population's `symmetric` marker is QSpec's (FR-381). The
         // pinned semantic-IR population schema does not list it yet and
-        // refuses it as an extra member; this reader owns the marker.
+        // refuses it as an extra member; this reader owns the marker. This
+        // filter is deleted by QSL-871 (the FCD schema change). QSL-872 owns
+        // the matching `quire-exact` cause variant.
         .filter(|located| !population_symmetric_schema_diagnostic(document, located))
         .filter_map(|located| {
             if let Some(refusal) = duplicate_member_identity_refusal(document, located) {

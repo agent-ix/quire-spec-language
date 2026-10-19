@@ -264,10 +264,10 @@ pub use protocol_obligation::{
 pub use refusal::{
     AliasKind, AmbiguousMember, AmbiguousQualified, ChannelEnd, CheckCause, CheckRefusal,
     CheckingLimitKind, CheckingStage, DispatchFunctionRole, DispatchLinkCause,
-    DispatchSubtypeFailure, IdentityForm, IdentityObserving, InvalidDispatchDeclaration, JoinFault,
-    KeyFault, MeasureObligation, MemberCandidate, NavigationBound, Obligation, ProtocolAnchorCause,
-    ProtocolReferenceCause, ProvedInterval, QualifiedCandidate, ShadowedDeclaration,
-    StageLimitCause, TemporalCause, WrongSnapshotCause,
+    DispatchSubtypeFailure, IdentityForm, IdentityNode, IdentityObserving,
+    InvalidDispatchDeclaration, JoinFault, KeyFault, MeasureObligation, MemberCandidate,
+    NavigationBound, Obligation, ProtocolAnchorCause, ProtocolReferenceCause, ProvedInterval,
+    QualifiedCandidate, ShadowedDeclaration, StageLimitCause, TemporalCause, WrongSnapshotCause,
 };
 #[cfg(any(test, feature = "test-support"))]
 pub use temporal_clause::check_clauses;

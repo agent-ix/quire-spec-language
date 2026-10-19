@@ -1471,13 +1471,24 @@ pub enum IdentityForm {
     ReferenceConversion,
 }
 
+/// The kind of node an `identity-observing-form` refusal is at.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum IdentityNode {
+    /// A `fold`.
+    Fold,
+    /// A `reduce`.
+    Reduce,
+    /// A `convert<T>(e)`.
+    Convert,
+}
+
 /// What an `identity-observing-form` refusal retains (FR-150): the refused
 /// node's kind and form, and the `symmetric` population whose identity the
 /// form observes.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct IdentityObserving {
-    /// The refused node's kind as written: `fold`, `reduce` or `convert`.
-    pub node: &'static str,
+    /// The refused node's kind.
+    pub node: IdentityNode,
     /// The form of identity observation.
     pub form: IdentityForm,
     /// The population's declaration key.

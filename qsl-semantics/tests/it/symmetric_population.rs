@@ -12,7 +12,7 @@ use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::{IntakeLimits, Span};
 use qsl_semantics::check::{
-    CheckCause, CheckRefusal, CheckedGraph, IdentityForm, IdentityObserving,
+    CheckCause, CheckRefusal, CheckedGraph, IdentityForm, IdentityNode, IdentityObserving,
 };
 use qsl_semantics::model::domain_package::DomainPackageRecord;
 use qsl_semantics::model::intake::{read_records, PackageDocument};
@@ -177,15 +177,17 @@ fn an_annotated_population_checks_and_changes_the_package_selection() {
 
 /// An order-dependent `fold` over a set of references into an annotated
 /// population refuses `identity-observing-form` at the `fold`, naming the
-/// form and the population; unannotated it keeps today's refusal.
-#[trace("TC-565", "FR-150-AC-2")]
+/// form and the population; unannotated it keeps today's FR-145 refusal
+/// (`operator-ineligible`), so this does not verify the AC's "unannotated
+/// checks" half.
+#[trace("TC-565")]
 #[test]
 fn a_fold_over_references_into_an_annotated_population_refuses() {
     let body = format!(
         "{FLAG}invariant Last using v on Config::ConfigVersion at current {{ not {LAST_PEER} }}\n"
     );
     let payload = identity_refusal(&annotated(&with_peers(&document())), &body, LAST_PEER);
-    assert_eq!(payload.node, "fold");
+    assert_eq!(payload.node, IdentityNode::Fold);
     assert_eq!(payload.form, IdentityForm::OrderSensitiveTraversal);
     assert_eq!(payload.population.node, POPULATION);
 
@@ -206,14 +208,14 @@ fn a_reduce_and_a_reference_conversion_refuse() {
         "type Peer = Config::ConfigVersion;\ninvariant Last using v on Config::ConfigVersion at current {{ self = {reduce} }}\n"
     );
     let payload = identity_refusal(&document, &body, reduce);
-    assert_eq!(payload.node, "reduce");
+    assert_eq!(payload.node, IdentityNode::Reduce);
 
     let convert = "convert<String>(self)";
     let body = format!(
         "invariant Rendered using v on Config::ConfigVersion at current {{ {convert} = \"a\" }}\n"
     );
     let payload = identity_refusal(&document, &body, convert);
-    assert_eq!(payload.node, "convert");
+    assert_eq!(payload.node, IdentityNode::Convert);
     assert_eq!(payload.form, IdentityForm::ReferenceConversion);
 
     let body = format!(
@@ -221,7 +223,7 @@ fn a_reduce_and_a_reference_conversion_refuse() {
          let x = {convert} in x = \"a\" }}\n"
     );
     let payload = identity_refusal(&document, &body, convert);
-    assert_eq!(payload.node, "convert");
+    assert_eq!(payload.node, IdentityNode::Convert);
 }
 
 /// The refusal reaches a `terminal when` predicate, and two refused forms of
@@ -259,9 +261,10 @@ fn a_terminal_predicate_refuses_and_two_refusals_report_in_source_order() {
     assert!(starts[0] < starts[1], "source order: {starts:?}");
 }
 
-/// Equality, dereference, `reaches`, quantification over the population and
-/// a `fold` over a set of integers still check over an annotated population.
-#[trace("TC-566", "FR-150-AC-4")]
+/// Dereference, `reaches`, `size`, `contains` and `count` over an annotated
+/// population's references still check. A `fold` over a `Set<Int[0, 3]>`,
+/// `forall` and `holds` are not exercised.
+#[trace("TC-566")]
 #[test]
 fn transparent_uses_of_an_annotated_population_check() {
     let document = annotated(&with_peers(&document()));
@@ -273,4 +276,71 @@ fn transparent_uses_of_an_annotated_population_check() {
            count<Tally>(p in self.peers: p = self) = 0 }}\n"
     );
     check(&document, &body).expect("transparent forms check");
+}
+
+/// `convert<Sequence<..>>` of a set of symmetric references reads the set in
+/// identity order, so it refuses as an order-sensitive traversal.
+#[trace("TC-566", "FR-150-AC-3")]
+#[test]
+fn a_set_converted_to_a_sequence_refuses() {
+    let document = annotated(&with_peers(&document()));
+    let convert = "convert<Sequence<Config::ConfigVersion>[0, 5]>(self.peers)";
+    let body = format!(
+        "invariant Order using v on Config::ConfigVersion at current {{ size({convert}) = 0 }}\n"
+    );
+    let payload = identity_refusal(&document, &body, convert);
+    assert_eq!(payload.node, IdentityNode::Convert);
+    assert_eq!(payload.form, IdentityForm::OrderSensitiveTraversal);
+}
+
+/// A reference typed as a supertype of a symmetric population's member type
+/// is a reference into that population.
+#[trace("TC-566", "FR-150-AC-3")]
+#[test]
+fn a_supertype_reference_into_a_symmetric_subtype_population_refuses() {
+    let mut envelope: serde_json::Value =
+        serde_json::from_slice(&annotated(&with_peers(&document()))).expect("valid JSON");
+    let sub = "ix://example/config-version/Sub";
+    envelope["populations"][0]["members"] = json!([sub]);
+    let document = serde_json::to_vec(&envelope).expect("valid JSON");
+    let document = crate::model_operations::add_sub_type(document, &[]);
+    let mut envelope: serde_json::Value = serde_json::from_slice(&document).expect("valid JSON");
+    envelope["populations"][0]["members"] = json!([sub]);
+    let document = serde_json::to_vec(&envelope).expect("valid JSON");
+    let body =
+        format!("{FLAG}invariant Last using v on Config::Sub at current {{ not {LAST_PEER} }}\n");
+    let payload = identity_refusal(&document, &body, LAST_PEER);
+    assert_eq!(payload.node, IdentityNode::Fold);
+    assert_eq!(payload.population.node, POPULATION);
+}
+
+/// An identity conversion of a reference in an equality operand is not a
+/// conversion to another type, so it checks.
+#[trace("TC-566", "FR-150-AC-4")]
+#[test]
+fn an_identity_conversion_in_an_equality_operand_checks() {
+    let document = annotated(&with_peers(&document()));
+    let body = "invariant Same using v on Config::ConfigVersion at current { \
+                convert<Config::ConfigVersion>(self) = self }\n";
+    check(&document, body).expect("an identity conversion checks");
+}
+
+/// A non-Boolean `symmetric` refuses as a malformed declaration, and another
+/// extra population member is still refused.
+#[trace("TC-565")]
+#[test]
+fn a_malformed_marker_and_another_extra_member_refuse() {
+    for (member, value) in [("symmetric", json!("yes")), ("unknown", json!(true))] {
+        let mut envelope: serde_json::Value =
+            serde_json::from_slice(&document()).expect("valid JSON");
+        envelope["populations"][0][member] = value;
+        let bytes = serde_json::to_vec(&envelope).expect("valid JSON");
+        let package = PackageDocument::parse(&bytes, IntakeLimits::default()).expect("parses");
+        let refusals =
+            read_records(PACKAGE_IDENTITY, &package).expect_err(&format!("{member} refuses"));
+        assert!(
+            format!("{refusals:?}").contains(member),
+            "{member}: {refusals:?}"
+        );
+    }
 }

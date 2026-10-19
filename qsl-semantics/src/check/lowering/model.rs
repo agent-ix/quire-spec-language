@@ -585,9 +585,13 @@ impl AdmittedModel {
             .collect();
         self.object_types()
             .filter_map(|(_, target)| {
+                // The population covers `target` as `populations_of` does, and
+                // also a supertype of a member type: a `Reference<Super>`
+                // may hold an object of the population.
                 let covers = |member: &DeclarationKey| {
                     self.types.iter().any(|(id, declared)| {
-                        declared == member && (*id == target || conforms(target, *id))
+                        declared == member
+                            && (*id == target || conforms(target, *id) || conforms(*id, target))
                     })
                 };
                 symmetric
