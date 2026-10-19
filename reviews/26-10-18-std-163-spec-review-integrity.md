@@ -61,3 +61,21 @@ Round 1 reviewed at `7d264fc5b` (fix commits `0c8174539`, `7d264fc5b`), with QSp
 | FND-005 | high | The same contradiction in QSpec PR #277. The new "Undefined positions" section says "The monitor clause at that position settles in the O-16 category `undefined` with that cause". That gives a kernel-undefined window position the treatment FR-414 reserves for `insufficient-data`, which it explains as "not an undefined evaluation of the claim". Align it with whatever FND-004 rules. | quire-specification:spec/functional/temporal/FR-414-evaluate-window-aggregates.md:88-89 |
 
 Observation outside this PR's scope, for PR #966: `TemporalOutcome::category` maps every `Undefined(_)`, `InsufficientData` included, to `Category::Violation`. FR-327 and ADR-024 WA-4 require O-16 `undefined` for `insufficient-data`.
+
+## Dispositions (disposition pass 2)
+
+Round 2 reviewed at `a173ab896` (#979) and `e938dee` (QSpec #277).
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-003 | fixed | The muddled clause is replaced: "This is an undefined evaluation, which `InsufficientData` is not: a window short of `min_count` values stays O-16 undefined and is never `UndefinedEvaluation`." |
+| FND-004 | fixed | FR-194 now applies FR-327's rule: `Undefined(UndefinedEvaluation{where, cause})`, O-16 category violation, as in a plain `holds` atom (FR-327-AC-5). |
+| FND-005 | fixed | FR-414's "Undefined positions" section, Outputs and AC-7 now give `UndefinedEvaluation` in the O-16 category violation, never `undefined`, and keep `insufficient-data` O-16 `undefined`. |
+
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | high | AC-5 expects the clause result `UndefinedEvaluation{where: position 3, ...}`. FR-327:97-107 reads every represented position in order, and `where` is the **first** position where an atom is undefined. At position 2 the window `past[0, 3]` is positions 0 to 2, which holds `x = 0`, so the atom is already undefined there and `where` is position 2; no clause shape over this trace yields 3 (an `on origin` activation reads only position 0, where the atom holds). Under `min_count 5` the atom at positions 0 and 1 is already `InsufficientData`, and FR-327 has no rule for an earlier insufficient-data position followed by a later undefined evaluation. Minimal fix: state AC-5's position-3 claims as atom readings (`Undefined` with cause `division-by-zero`), and state the clause result once, for the plain sum with `min_count` 1: `UndefinedEvaluation{where: position 2, cause: division-by-zero}`, category violation. | spec/functional/FR-194-evaluate-window-aggregates-in-monitors.md:146; spec/test-cases/TC-629-window-aggregates-in-monitors.md:35 |
+| FND-007 | high | AC-6 says "`where` names position 3, the evaluating position, and the cause identifies the window position that faulted". Under FR-327 the clause over `x = 1, 0, 2, 3` is first undefined at position 1 (window 0 to 1), so `where` is 1, not 3. Its visit charge across the clause is then 3 (1 at position 0, 2 at position 1), while 2 is the atom's charge at position 3. The cause is the atom's `UndefinedRecord{reason, fields}`, whose locus is the expression location (ADR-013); it carries no window position, so it cannot identify the faulting position. Minimal fix: make AC-6 an atom-level reading at position 3 (cause, 2 visit units, not `Incomplete`) and delete the clause about `where` and the cause naming a position. A window-position field would be a record design change, which these tests do not need. | spec/functional/FR-194-evaluate-window-aggregates-in-monitors.md:147; spec/test-cases/TC-629-window-aggregates-in-monitors.md:36 |
+| FND-008 | high | QSpec #277 TC-366 WA-08 has the same wrong oracle: `UndefinedEvaluation{where: position 3, cause: division-by-zero}`, where FR-327's first undefined position is 2. Its `min_count 5` row meets insufficient data at positions 0 and 1 first. Fix it as in FND-006: atom readings at position 3, or `where: position 2` for the plain sum. | quire-specification:spec/test-cases/TC-366-window-aggregates.md:31 |

@@ -66,3 +66,11 @@ Round 1 reviewed at `7d264fc5b` (fix commits `0c8174539`, `7d264fc5b`).
 | FND-002 | fixed | FR-194-AC-5 states `9` and true, `count` `2`, `fraction` `1` for `past[2, 3]`. |
 | FND-003 | fixed | AC-5 and AC-6 spell `sum of 6 / e.x`. |
 | FND-004 | fixed | AC-3 and AC-6 count "visit units", and FR-194 says visit units are separate from the units a filter, value or predicate charges. |
+
+## New findings (disposition pass 2)
+
+Round 2 reviewed at `a173ab896` (#979) and `e938dee` (QSpec #277). The round-1 rows above stay current for FND-001 to FND-004.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | low | AC-5's new vector "with `min_count 5` and a window of three defined values" names no term or window. Over `x = 2, 1, 0, 4`, every three-position window at position 3 contains the zero. Name the term: the guarded `sum of 6 / e.x where holds(e.x != 0) over past[0, 3]` with `min_count 5` is `InsufficientData{3, 5}`. TC-629 step 4 has the same wording. | spec/functional/FR-194-evaluate-window-aggregates-in-monitors.md:146; spec/test-cases/TC-629-window-aggregates-in-monitors.md:35 |

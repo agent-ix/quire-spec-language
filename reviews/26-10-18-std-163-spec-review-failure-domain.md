@@ -63,3 +63,11 @@ Round 1 reviewed at `7d264fc5b` (fix commits `0c8174539`, `7d264fc5b`), with QSp
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-004 | medium | The second cause in FR-194-AC-6 and TC-366 WA-09, "no `x` at position 4 (a different undefined cause)", is not a defined undefined cause. QSL nowhere makes an absent observation field undefined; FR-098-AC-8 refuses an absent field as `WrongValueKind`. A trace with a missing field can therefore be refused before any atom is evaluated. The output also cannot show "from position 1", because the atom's cause carries no window position (`UndefinedEvaluation.at` is the clause position). Oldest-first is then observable only if the second cause is a named, distinct undefined cause, for example a family `absent-key` lookup at position 4, or another kernel undefined variant. Name it. | spec/functional/FR-194-evaluate-window-aggregates-in-monitors.md:145; quire-specification:spec/test-cases/TC-366-window-aggregates.md:32 |
+
+## Dispositions (disposition pass 2)
+
+Round 2 reviewed at `a173ab896` (#979) and `e938dee` (QSpec #277).
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-004 | still-open | The second cause is now `none-value` from `value(o)` over `None`. FR-107:231 says that under `CheckMode::Linked` no clause reaches a kernel `Undefined` from `value(..)`, because it carries a presence obligation (FR-104: refused `undefined_expression`/`unproved-presence` without a presence fact). `quire-exact`'s `Undefined::NoneValue` doc says "Only direct kernel evaluation of an unlinked expression can meet it". So the vector may be refused at checking, or is out of reach in a monitor; FR-100 only spells the reason. Minimal fix: drop `o` and the second cause. With `sum of 6 / e.x over past[0, 3]` over `x = 1, 0, 2, 3` at position 3, oldest-first is already pinned: oldest first visits 0 and 1 and stops (2 units, `division-by-zero`); newest first would visit 3 and 2, then meet position 1 as the third admitted value with `max_window_values` 2 and give `Incomplete`, or charge 3 units without the limit. Same in QSpec TC-366 WA-09. |
