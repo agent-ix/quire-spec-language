@@ -33,3 +33,16 @@ The control-tree rule in FR-381 is coherent. A `sequence` orders a passing child
 ## Verdict
 
 Not mergeable yet: fix FND-001 first. FND-002 can be deferred to a named follow-up. Everything else in scope is correct. That covers the control-tree rule and its join classification, AC-11, rows 19a to 20a, 20b's conservative admitted expectation, and both negated-comparison fixes.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | low | Row 20b names a `send` and a `receive` but no channel. Fixture R (TC-1057's `Refunds`) declares no `channel` member, and its `receive` is written `receive Rx of Main::P::s::S::Tx ...`, with no `via`. The grammar requires `'receive', ident, 'via', ident, 'of', node-ref`, so `via` sits before `of`, where the row's trailing `...` cannot supply it. FR-218 refuses a `send` or `receive` whose `via` names no declared channel with `missing_declaration`/`missing-name`. As written, an implementer must invent the channel. The other TC rows write it out (`receive Got via D of S ...`). Add a channel member to the row, for example `channel Ch from Service to Service carries M::Flag ...`, and write `send Tx via Ch ...` and `receive Rx via Ch of Main::P::s::S::Tx ...`. | spec/test-cases/TC-1058-s3-checks-compensation-registration-retry-commit-and-recovery.md:63 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | 4c8265a4a: both branches now hold named sequences `S` and `R`. The anchors are fully qualified from the run `Main` (`Main::P::s::S::C`, `Main::P::s::S::Tx`, `Main::P::r::R::T`), and the template is `compensate Refund for Main::P::r::R::E`. Under FR-113, each later segment names what the previous target declares directly (`P` declares `s`, `s` declares `S`, `S` declares `C` and `Tx`), so every anchor resolves. The row now follows row 20a. (TC-1058:63) |
+| FND-002 | deferred | Deferred to STD-190 (Backlog), which restores the `join predicate` vector once predicate joins are checked. FR-381:238-240 now cites STD-190 next to the clause. |

@@ -28,3 +28,9 @@ No sentence still defines dominance over executions. The old "executions can rea
 ## Verdict
 
 Consistent apart from the low wording ambiguity in FND-001, which should land in the same fix round as SR-12913 FND-001.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | 4c8265a4a: AC-11 now reads 'a commit in the body of a `repeat` with the effect after the `repeat`, and a commit in one `case` of a `choice` with the effect after the `choice`'. The FR's admitted list reads 'one `case` of a `choice` with the effect after the `choice`', and row 20a states the effect position. (FR-381:254-255, 284; TC-1058:62) |
