@@ -95,6 +95,14 @@ Not mergeable: 3 high, 7 medium, 1 low. The ADR-020 section 8 guard is right and
 | FND-015 | medium | FR-140-AC-11's Verification cell 'Pending (TC-1086 step 7)' is the only such cell among about 2,400 FR ACs; the AC states it has no vector, though its None half is writable in the grammar. Every other FR AC is Test, Inspection or Analysis. An AC whose own text says 'No vector exists' cannot fail, and the matrix lists TC-1086 step 7 as covering it. The shared grammar has `none` as a primary, so a `head = none` row is writable. Only the engine's S2 refuses it today (probe: S2 UnrepresentedConstruct{Primary} at `none`). Either make AC-11 a Test of the None half for both `T?` and `Option<T>`, or drop the AC and record the rule under 'Remaining work:' with STD-211. | spec/functional/FR-140-evaluate-the-refinement-mapping-at-a-state.md:205 |
 | FND-016 | medium | The two new unsupported_construct/not-yet-implemented refusals bypass FR-135's own support-set mechanism: no feature name, not in the closed set, and not QSpec FR-375 features. FR-135 'Refinement features the build does not check': 'QSpec FR-375 owns the closed set of feature names ... It names three features', and the refusal 'names the feature, the refinement's name and the exact selected profile identity (QSpec FR-272's payload)'. The new refusals name no feature and are not in the set. FR-341-AC-5 classifies this pair `unsupported` (a QSL implementation gap), but a relationship refusal is a gap in QSpec, which defines no link mapping. Add feature names to the support set (and STD-211), or use a refusal that does not claim an unbuilt QSpec feature. | spec/functional/FR-135-check-a-refinement-declaration-s-subjects-and-state-mapping.md:143-148 |
 
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-017 | high | FR-140 still says a nested reference 'is not lifted: FR-135 refuses a row whose type nests a reference, so map_state never receives one', but FR-135 now admits population-reference rows (Set<Reference<T_C>>), so map_state receives them and no rule lifts their elements. FR-135-AC-6 now checks `cells = R::slots` (Set<Reference<R::Slot>>) against an abstract `Set<Reference<Q::Cell>>` field. Under FR-140 as written, the mapped `cells` value keeps concrete `Slot` references, so it does not match the field's abstract type and its state key differs from the abstract state's. State the element-wise lift by key for a population-reference row (each element to the abstract object with the same key; unmapped type gives UnmappedType), and narrow 'never receives one' to the rows FR-135 refuses. | spec/functional/FR-140-evaluate-the-refinement-mapping-at-a-state.md:126-129 |
+| FND-018 | medium | 'with receiver s1 (index 1) the argument is 1' is wrong: g(1) = 0, because 1 mod 1 = 0 takes the `then 0` branch. Engine probe (qsl-544 scratch clone, CasRefinesCounter): with `function g using v(i: Int[0, 1]): Int[0, 1] pure { if 1 mod i = 0 then 0 else 1 }`, the rows `value = g(0)` and `value = g(1)` check with no division law selected; map_state gives MappingFailure::Undefined (division by zero) for g(0), and maps value 0 for g(1). So with receiver s1 the step maps to `enq(r, 0)`, and RS-4 compares it with put(1)'s post-state (which holds value 1), so the step fails rather than passing. Correct the value to 0 and say what RS-4 returns, or swap the branches (`then 1 else 0`) so that g(1) = 1. | spec/functional/FR-141-decide-one-concrete-step-against-the-abstract-model.md:185 |
+| FND-019 | low | STD-211 is stale against the PR body: item 8 says no conforming undefined source exists, which FR-141-AC-7's mod function now disproves, and it lacks the FR-375 feature-name ask and an FR-377 failure-precedence ask. Correct item 8 (keep the division-law-in-source part). Add 'FR-375 closed set: nested-reference-row and abstract-relationships' from the PR body. Add 'FR-377: when a state has both an undefined and an undetermined row, the undefined one wins, except after an evaluator stop', which FR-140 now states and QSpec does not. | Linear STD-211:- |
+
 ## Dispositions
 
 Round 1, head 72d04b1dc (fix commits d561b72e7, 72d04b1dc).
@@ -112,5 +120,14 @@ Round 1, head 72d04b1dc (fix commits d561b72e7, 72d04b1dc).
 | FND-009 | fixed | - |
 | FND-010 | fixed | - |
 | FND-011 | fixed | - |
+| FND-012 | fixed | - |
+| FND-013 | fixed | - |
+| FND-014 | fixed | - |
+| FND-015 | fixed | - |
+| FND-016 | fixed | - |
 
 Disposition pass 1 (head 72d04b1dc): FND-001 to FND-011 fixed. New: FND-012 (high), FND-013 (high), FND-014 (medium), FND-015 (medium), FND-016 (medium). Not mergeable.
+
+Round 2, head f0b08808e (fix commit f0b08808e): rows after round 1's.
+
+Disposition pass 2 (head f0b08808e): FND-012 to FND-016 fixed. New: FND-017 (high), FND-018 (medium), FND-019 (low). Not mergeable.

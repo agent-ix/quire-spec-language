@@ -58,5 +58,10 @@ Round 1, head 72d04b1dc (fix commits d561b72e7, 72d04b1dc).
 | FND-001 | fixed | - |
 | FND-002 | fixed | - |
 | FND-003 | fixed | - |
+| FND-004 | deferred | The planner is to file the S3/FR-120 follow-up ticket for FR-135-AC-6/7 and FR-120-AC-14 (STD-206 comment 9d405efe, round-2 ownership). The history-row part no longer applies: FR-144-AC-6 and TC-555 now use FR-141-AC-7's mod-function source, not a history row. |
 
 Disposition pass 1 (head 72d04b1dc): all three fixed. New: FND-004 (low).
+
+Round 2, head f0b08808e (fix commit f0b08808e): rows after round 1's.
+
+Disposition pass 2 (head f0b08808e): FND-004 deferred to the planner. No new findings.

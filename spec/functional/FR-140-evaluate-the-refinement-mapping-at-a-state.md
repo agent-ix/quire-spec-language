@@ -124,9 +124,13 @@ step row, or a history update.
   to the concrete object, history fields read from `h`, and a fresh meter
   per evaluation.
 - A concrete reference value of top-level type `Reference<T_C>` SHALL map to
-  the abstract reference with the same key. A reference nested inside an
-  option, record, union or collection value is not lifted: FR-135 refuses a
-  row whose type nests a reference, so `map_state` never receives one.
+  the abstract reference with the same key. A whole-population
+  reference row (`Set<Reference<T_C>>`, FR-139) SHALL map element by
+  element: each concrete `Reference<T_C>` element becomes the abstract
+  `Reference<T_A>` with the same key, in the set's canonical element order.
+  A reference nested inside an option, record, union or collection value
+  that is not such a population reference is not lifted: FR-135 refuses a
+  row whose type nests one, so `map_state` never receives one.
 - If a reference points at an object whose most-specific type no object row
   names, then `map_state` SHALL return `MappingFailure::Undetermined` naming
   the row being evaluated and the object that holds the reference, with
@@ -148,7 +152,10 @@ step row, or a history update.
   QSpec keeps `null` distinct from `none` and from absence, and no rule
   fixes what an abstract field holds for it, so a row that evaluates to
   `null` SHALL make `map_state` return `MappingFailure::Undetermined` with
-  `EvalFailure::Stopped` carrying `unsupported_construct`/`not-yet-implemented`.
+  `EvalFailure::Refused` carrying an `unsupported_construct`/
+  `not-yet-implemented` record. It is a refused row, not a stop: the
+  observation is sound, so the other rows are still read and an earlier or
+  later Undefined row still refutes.
   Remaining work (STD-211): the optional-field rule has no test vector,
   because this build's S2 refuses `none` and the shared grammar has no
   constructor for `Some(v)`; the rule is recorded now so that a build does not
@@ -159,9 +166,9 @@ step row, or a history update.
   abstract model has no link for a mapped state to hold.
 - `map_state` SHALL evaluate population rows in declaration order, objects
   in key order, and per object its type's object row and then its field
-  rows in declaration order. It SHALL return the first
-  `MappingFailure::Undefined` in that order if any row is undefined;
-  otherwise the first `MappingFailure::Undetermined` in that order. An
+  rows in declaration order. Except after an evaluator stop (below),
+  `map_state` SHALL return the first `MappingFailure::Undefined` in that
+  order if any row is undefined; otherwise the first `MappingFailure::Undetermined` in that order. An
   undefined row therefore refutes the refinement at the state even when an
   earlier row is undetermined (a refutation of a reachable state is not
   made less true by another row's undetermined value), and the order fixes
@@ -209,6 +216,7 @@ step row, or a history update.
 | FR-140-AC-8 | With the two systems of AC-1, `map_state` reads the rows through the concrete system and builds the result in the abstract one, so the mapped state's key is the abstract system's key function's. With the two systems swapped, or with a system over a third model, it returns `MappingFailure::WrongSystem` with `invalid_runtime_input`/`wrong-role-mapping` and reads no row. | Test (TC-1086) |
 | FR-140-AC-9 | `RingIsQueue` with the `only` condition of AC-3: the failure's `UndefinedRecord` has reason `only-not-one`. The same variant at a state that also holds a `SubRing` object whose key sorts before `r` returns `MappingFailure::Undefined` (the undefined row outranks the unmapped type); with `RingIsQueue`'s original `items` row, which is defined at `head = 1`, `size = 2`, it returns `MappingFailure::Undetermined` for `SubRing`. The `SubRing` state is `head = 1`, `size = 2`. | Test (TC-1086) |
 | FR-140-AC-10 | The mapped state of AC-2 lists no relationship extent. | Test (TC-1086) |
+| FR-140-AC-12 | Over `RingIsQueue` with the abstract `Queue` also declaring `cells: Set<Reference<Cell>>[0, 2]`, an object row `Cell` from `Slot`, `population Q::cells from R::slots` and the row `cells = R::slots`, the state of AC-2 maps `cells` to the two `Cell` references with keys `s0` and `s1`, in key order, each of type `Cell`, not `Slot`. | Test (TC-1086) |
 
 ## Dependencies
 

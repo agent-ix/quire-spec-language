@@ -47,6 +47,13 @@ Findings: 4 medium.
 | --- | --- | --- | --- |
 | FND-005 | low | The first-Undefined-wins order is sound and fixes replay, but it keeps evaluating after a Stopped (broken invariant), QSpec FR-377 states no precedence and STD-211 has no ask, and AC-9's 'original items row' case names no state. An undefined row refutes a reachable state whatever other rows give, so letting Undefined outrank Undetermined is sound. Two things are left open: whether rows are still evaluated after an evaluator Stopped (an internal fault), and the QSpec FR-377 counterpart. FR-140-AC-9's last clause needs its state (head, size) for the original row to be defined. | spec/functional/FR-140-evaluate-the-refinement-mapping-at-a-state.md:155-163 |
 
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | medium | The precedence bullet ('SHALL return the first Undefined ... if any row is undefined') and the new Stopped bullet ('at once ... even when an earlier row was undefined') are two SHALLs that contradict each other. Returning Undetermined on a stop is sound: a stop means the evaluator's invariants broke, so an Undefined seen earlier over the same observation is no more trustworthy than the rows after it, and dropping it costs completeness only, never a false refutation. But the precedence bullet must carry the exception, for example: 'otherwise the first Undetermined; a Stopped returns at once and outranks an earlier Undefined'. Otherwise one build returns the earlier Undefined and another the Stopped. | spec/functional/FR-140-evaluate-the-refinement-mapping-at-a-state.md:160-168 |
+| FND-007 | medium | A `null` row value is reported as EvalFailure::Stopped, the broken-invariant arm, so under the new stop rule an unsupported but trustworthy value cuts evaluation short and drops a genuine earlier refutation. A null row is not an internal fault: the observation is sound and only the mapping rule is missing. Reporting it as Stopped (whose catalog code is otherwise a broken invariant) makes the short-circuit discard an Undefined that should refute. Use EvalFailure::Refused with an unsupported_construct/not-yet-implemented refusal record, which follows normal precedence, or add a dedicated arm. | spec/functional/FR-140-evaluate-the-refinement-mapping-at-a-state.md:147-151 |
+
 ## Dispositions
 
 Round 1, head 72d04b1dc (fix commits d561b72e7, 72d04b1dc).
@@ -57,5 +64,11 @@ Round 1, head 72d04b1dc (fix commits d561b72e7, 72d04b1dc).
 | FND-002 | fixed | - |
 | FND-003 | still-open | The rule now separates `T?` (absent on None) from `Option<T>` (explicit None), but a nullable field and a `null` row value (the grammar has `null` as a primary, distinct from `none` under QSpec FR-149) are still unmapped; one sentence closes it. |
 | FND-004 | fixed | - |
+| FND-003 | fixed | - |
+| FND-005 | fixed | - |
 
 Disposition pass 1 (head 72d04b1dc): FND-001, FND-002 and FND-004 fixed; FND-003 still open (nullable fields). New: FND-005 (low). Not mergeable while FND-003 is open.
+
+Round 2, head f0b08808e (fix commit f0b08808e): rows after round 1's.
+
+Disposition pass 2 (head f0b08808e): FND-003 and FND-005 fixed. New: FND-006 (medium), FND-007 (medium). Not mergeable.

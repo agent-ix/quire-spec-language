@@ -18,7 +18,7 @@ the two `ModelSystem` arguments and the `over_model` refusal, the order in
 which failures are returned, the `only-not-one` reason, and a mapped state
 with no relationship extent. Optional-field mapping has no vector (FR-140, remaining work STD-211).
 
-Scope: FR-140-AC-6 to FR-140-AC-10, FR-120-AC-14.
+Scope: FR-140-AC-6 to FR-140-AC-10, FR-140-AC-12, FR-120-AC-14.
 
 ## Test Procedure
 
@@ -35,6 +35,7 @@ FR-140-AC-7.
 5. Map the ring state of FR-140-AC-2 and read its relationship extents.
 6. Call `ModelSystem::over_model` over `example/not-selected`, and over each
    of the unit's selected models.
+7. Map the ring state of FR-140-AC-2 under the FR-140-AC-12 variant.
 
 Tag the tests `#[trace("TC-1086", "<AC id>")]`.
 
@@ -52,3 +53,4 @@ Tag the tests `#[trace("TC-1086", "<AC id>")]`.
 - Step 5: no relationship extent.
 - Step 6: `invalid_runtime_input`/`wrong-role-mapping`; then a system that
   reports its model.
+- Step 7: `cells` holds the `Cell` references `s0` and `s1`, in key order.
