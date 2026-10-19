@@ -107,7 +107,7 @@ fn always_possible_builds_its_optional_from() {
 #[test]
 fn unique_path_builds_from_and_to() {
     let (text, claim) = build(
-        "unique path InOneWay using v over (j: M::Job) from (not j.a and not j.b) to (j.done)",
+        "unique path InOneWay using v over (j: M::Job) from (not j.a and not j.b) to (j.done);",
     );
     let StateGraphClaimKind::UniquePath { from, to } = &claim.kind else {
         panic!("unique path: {:?}", claim.kind);
@@ -143,15 +143,6 @@ fn temporal_operators_and_fairness_are_kept_at_their_spans() {
     };
     assert_eq!(constraint.kind, Some(FairnessKind::Weak));
     assert_eq!(slice(&text, constraint.span), "fair weak attemptUpdate;");
-}
-
-/// TC-590, the form part of FR-165 (instances and node identity are deferred): `possible`, `unique` and `path` stay usable as names.
-#[trace("TC-590")]
-#[test]
-fn the_claim_words_stay_usable_as_names() {
-    let (_, claim) = build("possible possible using v over (path: M::Job) { path.unique }");
-    assert_eq!(claim.name.name, "possible");
-    assert_eq!(claim.over.as_ref().expect("over written").name.name, "path");
 }
 
 /// FR-165-AC-2: a temporal operator inside a connective, a negation or
@@ -190,7 +181,7 @@ fn each_form_parses_without_over() {
     let (_, possible) = build("possible Anything using v { true }");
     let (_, always) = build("always possible Still using v from (true) { true }");
     let (_, bare_always) = build("always possible Bare using v { true }");
-    let (_, unique) = build("unique path One using v from (true) to (false)");
+    let (_, unique) = build("unique path One using v from (true) to (false);");
     for claim in [&possible, &always, &bare_always, &unique] {
         assert!(claim.over.is_none(), "{:?}", claim.name);
     }
@@ -202,4 +193,156 @@ fn each_form_parses_without_over() {
         unique.kind,
         StateGraphClaimKind::UniquePath { .. }
     ));
+}
+
+/// The S1 diagnostic offset of `declaration`, when it is a syntax error.
+fn syntax_error(declaration: &str) -> Option<(String, usize)> {
+    let text = format!("{HEADER}{declaration}\n");
+    let parsed = qsl_cst::parse(
+        SourceIdentity::new("a", "u", "git", "1"),
+        "unit.native",
+        text.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 reads the unit");
+    let first = parsed.diagnostics().first()?;
+    let at = first.byte_span()?.start;
+    Some((text, at))
+}
+
+/// The operator spellings S2 kept for `declaration`, in source order.
+fn operators(declaration: &str) -> Vec<(TemporalOperator, String)> {
+    let (text, claim) = build(declaration);
+    let predicate = match &claim.kind {
+        StateGraphClaimKind::Possible { target } => target,
+        StateGraphClaimKind::AlwaysPossible { target, .. } => target,
+        StateGraphClaimKind::UniquePath { to, .. } => to,
+    };
+    predicate
+        .temporal_operators
+        .iter()
+        .map(|operator| (operator.operator, slice(&text, operator.span).to_owned()))
+        .collect()
+}
+
+/// SG-R09, SG-R10, SG-R14: temporal operators in a conjunction, under a
+/// negation with an interval, in parentheses, as a binary operator and with
+/// an open interval all parse, each kept at its operator.
+#[trace("TC-590", "FR-165-AC-4")]
+#[test]
+fn temporal_operators_at_any_operand_position_parse() {
+    for (declaration, expected) in [
+        (
+            "possible R using v over (c: C::Cfg) { c.n = 1 and eventually c.n = 2 }",
+            vec![(TemporalOperator::Eventually, "eventually")],
+        ),
+        (
+            "possible N using v over (c: C::Cfg) { not eventually[0,5] c.n = 2 }",
+            vec![(TemporalOperator::Eventually, "eventually")],
+        ),
+        (
+            "possible P using v over (c: C::Cfg) { (eventually c.n = 2) }",
+            vec![(TemporalOperator::Eventually, "eventually")],
+        ),
+        (
+            "possible U using v over (c: C::Cfg) { c.a until c.b }",
+            vec![(TemporalOperator::Until, "until")],
+        ),
+        (
+            "possible W using v over (c: C::Cfg) { eventually[1,*] c.done }",
+            vec![(TemporalOperator::Eventually, "eventually")],
+        ),
+        (
+            "possible B using v over (c: C::Cfg) { if c.a then eventually c.b else c.c }",
+            vec![(TemporalOperator::Eventually, "eventually")],
+        ),
+        (
+            "possible L using v over (c: C::Cfg) { let n = 1 in eventually c.n = n }",
+            vec![(TemporalOperator::Eventually, "eventually")],
+        ),
+    ] {
+        let expected: Vec<_> = expected
+            .into_iter()
+            .map(|(operator, text)| (operator, text.to_owned()))
+            .collect();
+        assert_eq!(operators(declaration), expected, "{declaration}");
+    }
+}
+
+/// SG-R11: a temporal operator in a `from` or `to` operand parses.
+#[trace("TC-590", "FR-165-AC-4")]
+#[test]
+fn temporal_operators_in_from_and_to_operands_parse() {
+    let (text, claim) =
+        build("always possible Rec using v over (c: C::Cfg) from (always c.ok) { c.done }");
+    let StateGraphClaimKind::AlwaysPossible {
+        from: Some(from), ..
+    } = &claim.kind
+    else {
+        panic!("always possible with from");
+    };
+    assert_eq!(slice(&text, from.temporal_operators[0].span), "always");
+    let (text, claim) =
+        build("unique path One using v over (c: C::Cfg) from (c.a) to (eventually c.done);");
+    let StateGraphClaimKind::UniquePath { to, .. } = &claim.kind else {
+        panic!("unique path");
+    };
+    assert_eq!(slice(&text, to.temporal_operators[0].span), "eventually");
+}
+
+/// SG-R16: `not c.n = 2` reads as the expression `(not c.n) = 2`, one operand
+/// and no temporal operator.
+#[trace("TC-590", "FR-165-AC-4")]
+#[test]
+fn a_predicate_that_derives_as_an_expression_is_read_as_one() {
+    let (_, claim) = build("possible N using v over (c: C::Cfg) { not c.n = 2 }");
+    let StateGraphClaimKind::Possible { target } = &claim.kind else {
+        panic!("possible");
+    };
+    assert!(target.temporal_operators.is_empty());
+    assert_eq!(target.operands.len(), 1);
+}
+
+/// SG-R18: a binary temporal operator chain is a syntax error at the second
+/// operator; the parenthesised chain parses and keeps the first operator
+/// first.
+#[trace("TC-590", "FR-165-AC-4")]
+#[test]
+fn a_flat_binary_temporal_chain_is_a_syntax_error_at_the_second_operator() {
+    let declaration = "possible C using v over (c: C::Cfg) { c.a until c.b until c.c }";
+    let (text, at) = syntax_error(declaration).expect("a syntax error");
+    assert_eq!(at, text.rfind("until").expect("second until"));
+    let ops = operators("possible C using v over (c: C::Cfg) { (c.a until c.b) until c.c }");
+    assert_eq!(ops.len(), 2);
+    assert_eq!(ops[0].0, TemporalOperator::Until);
+}
+
+/// SG-R13, SG-R15: a fairness constraint after the predicate, in a `from`
+/// operand or on a clause with no body, and a temporal operator in an `if`
+/// condition, a `let` binding or a call argument, are syntax errors.
+#[trace("TC-590", "FR-165-AC-4")]
+#[test]
+fn fairness_and_temporal_operators_are_confined_to_their_positions() {
+    for declaration in [
+        "possible P using v over (c: C::Cfg) { c.done; fair weak C::Cfg::step }",
+        "possible B using v over (c: C::Cfg) { if eventually c.a then c.b else c.c }",
+        "always possible F using v over (c: C::Cfg) from (c.a; fair weak C::Cfg::step) { c.done }",
+        "unique path One using v from (c.a) to (c.d); fair weak C::Cfg::step",
+        "possible L using v over (c: C::Cfg) { let n = eventually c.a in c.b }",
+        "possible A using v over (c: C::Cfg) { f(eventually c.a) }",
+    ] {
+        assert!(syntax_error(declaration).is_some(), "{declaration}");
+    }
+}
+
+/// SG-R08: `possible`, `unique` and `path` are reserved words, refused where
+/// an identifier stands.
+#[trace("TC-590", "FR-165-AC-4")]
+#[test]
+fn the_claim_words_are_reserved() {
+    let (text, at) = syntax_error("possible possible using v { true }").expect("a syntax error");
+    assert_eq!(at, text.rfind("possible").expect("second possible"));
+    let (text, at) =
+        syntax_error("predicate unique using v (): Boolean { true }").expect("a syntax error");
+    assert_eq!(at, text.rfind("unique").expect("unique"));
 }

@@ -201,6 +201,7 @@ vocabulary! {
     Grammar => "grammar", Satisfies => "satisfies", Verify => "verify", Claim => "claim",
     Method => "method", Domain => "domain", Depends => "depends", Bound => "bound",
     Body => "body",
+    Possible => "possible", Unique => "unique", Path => "path",
     Caret => "^", Question => "?", Apostrophe => "'"
 }
 

@@ -12,8 +12,8 @@ use qsl_cst::{CstNode, LosslessCst, Production, TokenKind};
 
 use super::dispatch::{Construct, FormsRefusal};
 use super::syntax::{
-    DeclarationForm, ExpressionForm, StateGraphClaimForm, StateGraphClaimKind,
-    StateGraphPredicateForm, TemporalOperatorUse, UsingAlias,
+    DeclarationForm, StateGraphClaimForm, StateGraphClaimKind, StateGraphPredicateForm,
+    TemporalOperatorUse, UsingAlias,
 };
 use super::temporal_clause::{expression_form, fairness_form, operator_of, parameter_form};
 use super::value::{
@@ -121,94 +121,51 @@ fn body_of(
 }
 
 /// One `StateGraphPredicate` node: its expression operands and the temporal
-/// operators written around them, in source order. A predicate S1 read as a
-/// `StateGraphFormula` (a temporal operator inside a connective, a negation
-/// or parentheses) keeps its comparison operands and its temporal operators;
-/// the connectives are dropped, since S3 refuses the predicate for the
-/// operator and never reads its operands.
+/// operators written in it, both in source order. A predicate that derives
+/// as an expression is that one operand with no operator. Otherwise the
+/// connectives, `let` and `if` around the operands are dropped: S3 refuses
+/// the predicate for its first temporal operator and never reads its
+/// operands as one expression.
 fn predicate_form(
     cst: &LosslessCst,
     predicate: &CstNode,
 ) -> Result<StateGraphPredicateForm, FormsRefusal> {
     let mut operands = Vec::new();
     let mut temporal_operators = Vec::new();
-    for item in items(cst, predicate) {
-        match item {
-            Item::Node(operand) if operand.production() == Production::Expression => {
-                operands.push(expression_form(cst, operand)?);
+    // Source order: the next node to read is the last one pushed, so each
+    // node's children go back in reverse.
+    let mut pending = vec![predicate];
+    while let Some(node) = pending.pop() {
+        let mut nested = Vec::new();
+        for item in items(cst, node) {
+            match item {
+                Item::Token(token) => {
+                    if let Some(operator) = operator_of(token.spelling()) {
+                        temporal_operators.push(TemporalOperatorUse {
+                            operator,
+                            span: token.span(),
+                        });
+                    }
+                }
+                Item::Node(child) => match child.production() {
+                    Production::Interval => {}
+                    Production::Expression | Production::Comparison => {
+                        operands.push(expression_form(cst, child)?);
+                    }
+                    Production::StateGraphPredicate
+                    | Production::StateGraphImplication
+                    | Production::StateGraphDisjunction
+                    | Production::StateGraphConjunction
+                    | Production::StateGraphRelation
+                    | Production::StateGraphUnary => nested.push(child),
+                    _ => return Err(unexpected(child)),
+                },
             }
-            Item::Node(interval) if interval.production() == Production::Interval => {}
-            Item::Node(formula) if formula.production() == Production::StateGraphFormula => {
-                formula_parts(cst, formula, &mut operands, &mut temporal_operators)?;
-            }
-            Item::Node(_) => return Err(unexpected(predicate)),
-            Item::Token(token) => temporal_operators.push(TemporalOperatorUse {
-                operator: operator_of(token.spelling()).ok_or_else(|| unexpected(predicate))?,
-                span: token.span(),
-            }),
         }
+        pending.extend(nested.into_iter().rev());
     }
     Ok(StateGraphPredicateForm {
         operands,
         temporal_operators,
     })
-}
-
-/// The comparison operands and temporal operators of a `StateGraphFormula`,
-/// in source order, walked with an explicit stack.
-fn formula_parts(
-    cst: &LosslessCst,
-    formula: &CstNode,
-    operands: &mut Vec<ExpressionForm>,
-    temporal_operators: &mut Vec<TemporalOperatorUse>,
-) -> Result<(), FormsRefusal> {
-    let mut pending = vec![formula];
-    while let Some(node) = pending.pop() {
-        let mut children = Vec::new();
-        for item in items(cst, node) {
-            match item {
-                Item::Token(token) => {
-                    if let Some(operator) = operator_of(token.spelling()) {
-                        children.push(Part::Operator(TemporalOperatorUse {
-                            operator,
-                            span: token.span(),
-                        }));
-                    }
-                }
-                Item::Node(child) => match child.production() {
-                    Production::Interval => {}
-                    Production::Comparison => {
-                        children.push(Part::Operand(expression_form(cst, child)?));
-                    }
-                    Production::StateGraphFormula | Production::StateGraphTerm => {
-                        children.push(Part::Nested(child));
-                    }
-                    _ => return Err(unexpected(child)),
-                },
-            }
-        }
-        // Source order: this node's parts are emitted before any later
-        // sibling's nested parts, so nested nodes go back on the stack in
-        // reverse beneath the parts already emitted.
-        let mut nested = Vec::new();
-        for part in children {
-            match part {
-                Part::Operand(operand) => operands.push(operand),
-                Part::Operator(operator) => temporal_operators.push(operator),
-                Part::Nested(child) => nested.push(child),
-            }
-        }
-        pending.extend(nested.into_iter().rev());
-    }
-    if temporal_operators.is_empty() {
-        return Err(unexpected(formula));
-    }
-    Ok(())
-}
-
-/// One part of a formula node.
-enum Part<'c> {
-    Operand(ExpressionForm),
-    Operator(TemporalOperatorUse),
-    Nested(&'c CstNode),
 }

@@ -77,7 +77,7 @@ const STILL_TWO: &str = "always possible StillTwo using v over (c: Config::Confi
 const GUARDED: &str = "always possible Guarded using v over (c: Config::ConfigVersion) \
     from (c.versionNumber != 0) { c.versionNumber = 2 }\n";
 const UNIQUE: &str = "unique path InOneWay using v over (c: Config::ConfigVersion) \
-    from (c.versionNumber = 0) to (c.versionNumber = 2)\n";
+    from (c.versionNumber = 0) to (c.versionNumber = 2);\n";
 
 /// The one refusal of a unit that must not check, as its catalog code, cause
 /// tag and the source text it names.
@@ -407,7 +407,7 @@ fn a_second_claim_with_a_name_refuses_at_the_second() {
 fn the_node_limit_applies_to_the_claims_cumulative_total() {
     let one = "possible P using v over (c: Config::ConfigVersion) { c.versionNumber = 2 }\n";
     let two = "unique path P using v over (c: Config::ConfigVersion) \
-        from (c.versionNumber = 2) to (c.versionNumber = 2)\n";
+        from (c.versionNumber = 2) to (c.versionNumber = 2);\n";
     let fits = (1..400)
         .find(|nodes| check_under(one, CheckingLimits::new(*nodes)).is_ok())
         .expect("a limit one predicate fits under");
@@ -442,7 +442,7 @@ fn a_claim_without_over_checks_and_records_no_binding() {
     let graph = check(concat!(
         "possible Anything using v { true }\n",
         "always possible Still using v from (true) { true }\n",
-        "unique path One using v from (true) to (false)\n",
+        "unique path One using v from (true) to (false);\n",
     ))
     .expect("the claims check");
     assert!(matches!(
@@ -529,4 +529,30 @@ fn an_operation_parameter_read_refuses_as_a_missing_name() {
     );
     assert_eq!(code, Code::UnsupportedConstruct);
     assert_eq!(cause, Some("expression-form"));
+}
+
+/// SG-R17, SG-R18, SG-R14: a temporal operator in an `if` branch, the first
+/// of two in a parenthesised chain, and one with an open interval are each
+/// refused `expression-form` at the first operator in source order.
+#[trace("TC-590", "FR-165-AC-4")]
+#[test]
+fn the_first_temporal_operator_in_source_order_is_refused() {
+    for (predicate, operator) in [
+        (
+            "if c.versionNumber = 1 then eventually c.versionNumber = 2 else c.versionNumber = 3",
+            "eventually",
+        ),
+        (
+            "(c.versionNumber = 1 until c.versionNumber = 2) until c.versionNumber = 3",
+            "until",
+        ),
+        ("eventually[1,*] c.versionNumber = 2", "eventually"),
+    ] {
+        let (code, cause, named, _) = sole_refusal(&format!(
+            "possible P using v over (c: Config::ConfigVersion) {{ {predicate} }}\n"
+        ));
+        assert_eq!(code, Code::UnsupportedConstruct, "{predicate}");
+        assert_eq!(cause, Some("expression-form"), "{predicate}");
+        assert_eq!(named.as_deref(), Some(operator), "{predicate}");
+    }
 }

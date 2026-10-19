@@ -17,6 +17,10 @@ pub(super) enum Terminal {
     /// compensation's `attempts` count.
     Bound,
     End,
+    /// Matches without consuming when the next token is one of these
+    /// spellings: a lookahead that lets a production end where its caller
+    /// resumes.
+    Peek(&'static [&'static str]),
 }
 
 /// One declarative grammar rule. Deliberately not `Clone`: the interpreter
@@ -149,10 +153,6 @@ fn temporal_unary() -> Rule {
         x("once"),
         x("historically"),
     ])
-}
-/// A unary temporal operator with its optional interval.
-fn temporal_lead() -> Rule {
-    s(vec![temporal_unary(), opt(r(P::Interval))])
 }
 /// `until`, `release`, `since` or `triggered`.
 fn temporal_binary() -> Rule {
@@ -1104,7 +1104,7 @@ fn temporal(g: &mut Grammar) {
         P::StateGraphClaim,
         c(vec![
             s(vec![
-                literal("possible"),
+                x("possible"),
                 ident(),
                 x("using"),
                 ident(),
@@ -1113,7 +1113,7 @@ fn temporal(g: &mut Grammar) {
             ]),
             s(vec![
                 x("always"),
-                literal("possible"),
+                x("possible"),
                 ident(),
                 x("using"),
                 ident(),
@@ -1127,8 +1127,8 @@ fn temporal(g: &mut Grammar) {
                 r(P::StateGraphBody),
             ]),
             s(vec![
-                literal("unique"),
-                literal("path"),
+                x("unique"),
+                x("path"),
                 ident(),
                 x("using"),
                 ident(),
@@ -1141,6 +1141,7 @@ fn temporal(g: &mut Grammar) {
                 x("("),
                 r(P::StateGraphPredicate),
                 x(")"),
+                x(";"),
             ]),
         ]),
     );
@@ -1153,48 +1154,81 @@ fn temporal(g: &mut Grammar) {
             x("}"),
         ]),
     );
-    // A plain predicate is an expression with temporal operators leading or
-    // joining expression operands. A temporal operator anywhere else (inside
-    // a connective, a negation or parentheses) reads as a `StateGraphFormula`,
-    // which exists only so the checker can refuse the operator at its span.
+    // QSpec's `graph-predicate`. A predicate that derives as an `expr` is
+    // read as that `expr` (the first alternative, taken only where the
+    // predicate ends); the `let`, `if` and graph alternatives apply to a
+    // phrase that does not. The graph levels read a temporal operator at any
+    // operand position so the checker can refuse it at its span.
     g.insert(
         P::StateGraphPredicate,
         c(vec![
             s(vec![
-                star(temporal_lead()),
                 r(P::Expression),
-                star(s(vec![
-                    temporal_binary(),
-                    opt(r(P::Interval)),
-                    star(temporal_lead()),
-                    r(P::Expression),
-                ])),
+                Rule::Terminal(Terminal::Peek(&["}", ")", "else"])),
             ]),
-            r(P::StateGraphFormula),
+            s(vec![
+                x("let"),
+                ident(),
+                x("="),
+                r(P::Expression),
+                x("in"),
+                r(P::StateGraphPredicate),
+            ]),
+            s(vec![
+                x("if"),
+                r(P::Expression),
+                x("then"),
+                r(P::StateGraphPredicate),
+                x("else"),
+                r(P::StateGraphPredicate),
+            ]),
+            r(P::StateGraphImplication),
         ]),
     );
     g.insert(
-        P::StateGraphFormula,
+        P::StateGraphImplication,
         s(vec![
-            r(P::StateGraphTerm),
-            star(s(vec![
-                c(vec![x("and"), x("or"), x("implies"), temporal_binary()]),
+            r(P::StateGraphDisjunction),
+            opt(s(vec![x("implies"), r(P::StateGraphImplication)])),
+        ]),
+    );
+    g.insert(
+        P::StateGraphDisjunction,
+        s(vec![
+            r(P::StateGraphConjunction),
+            star(s(vec![x("or"), r(P::StateGraphConjunction)])),
+        ]),
+    );
+    g.insert(
+        P::StateGraphConjunction,
+        s(vec![
+            r(P::StateGraphRelation),
+            star(s(vec![x("and"), r(P::StateGraphRelation)])),
+        ]),
+    );
+    // At most one binary temporal operator, as `temporal-relation`.
+    g.insert(
+        P::StateGraphRelation,
+        s(vec![
+            r(P::StateGraphUnary),
+            opt(s(vec![
+                temporal_binary(),
                 opt(r(P::Interval)),
-                r(P::StateGraphTerm),
+                r(P::StateGraphUnary),
             ])),
         ]),
     );
     g.insert(
-        P::StateGraphTerm,
+        P::StateGraphUnary,
         c(vec![
-            s(vec![x("not"), r(P::StateGraphTerm)]),
+            r(P::Comparison),
+            s(vec![x("not"), r(P::StateGraphUnary)]),
             s(vec![
                 temporal_unary(),
                 opt(r(P::Interval)),
-                r(P::StateGraphTerm),
+                r(P::StateGraphUnary),
             ]),
-            r(P::Comparison),
-            s(vec![x("("), r(P::StateGraphFormula), x(")")]),
+            s(vec![x("("), r(P::StateGraphPredicate), x(")")]),
         ]),
     );
     g.insert(
