@@ -35,3 +35,10 @@ Checked and clean:
 - `value.rs` adds the new productions to both exhaustive not-a-value arms. `protocol_reference::operator` classifies `Fence` with no catch-all.
 
 Test-oracle notes for `qsl-cst/tests/it/protocol_memory_refinement.rs`: each accepting test asserts the exact source text of every node of the production it targets, in order. Each refusing test asserts `InvalidSyntax` and the exact offending token, so a grammar that accepted too much or too little would fail it. `StepArgument` is asserted as `["1", "_", "_", "1"]`, which pins the rule that the receiver is an `Expression` and not a `StepArgument`. `StepSource` and `StepTarget` are asserted by count only. That weakness, and the trace-tag scope, are recorded in SR-12146.
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | accepted-no-change | Low. Unchanged in 067a8e327. A shadowed alias gives a syntax refusal, never a wrong result, and QSpec reserves `fork` and `stutter` outright, so an alias spelled like a step word is not admitted there either. |
+| FND-002 | fixed | 067a8e327: `src/complete/editor.rs` `is_symbol` now lists `Production::Refinement`, between `ProtocolClause` and `RelationClause`. |

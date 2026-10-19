@@ -32,3 +32,12 @@ No code defect was found in the behaviour the tests do cover:
 - Parse oracles are strong: exact node text per production, in order, and an exact offending token plus `InvalidSyntax` for each refusal (`pso`, a fence with no ordering at `;`, a missing `->`, a missing target, an application with no parentheses).
 - The `terminal` contextual-literal rule from #961 is unchanged, and the existing forms test with `sequence fork` and `attempt terminal` still exercises it.
 - Known and routed, not re-raised: FR-220-AC-2 against QSpec's `fence-order`, which excludes `relaxed`; and FR-375's population, object, history and fairness rows, which are not parsed.
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 067a8e327: every `#[trace]` and every AC id is gone from the parse tests in `qsl-cst/tests/it/protocol_memory_refinement.rs` and from `a_fence_and_a_memory_clause_build_beside_their_controls`, and each doc comment now reads "Verifies the parse only and claims no criterion." `git grep` on 067a8e327 finds none of the nine AC ids in any `.rs` file, so the matrix has no binder left for them. |
+| FND-002 | deferred | A spec-side conflict (FR-214-AC-1/AC-3 row spellings against QSpec's `protocol-step-source`/`step-target`), outside this grammar PR. No routing ticket exists yet; the leader routes it to the planner beside STD-167 (the FR-220-AC-2 relaxed fence). |
+| FND-003 | fixed | 067a8e327: `a_refinement_declaration_refuses_the_unit_with_no_dispatch_entry` (qsl-forms/tests/it/source_grammar_vectors.rs) asserts `NoDispatchEntry{spelling: "refinement"}`, `UnsupportedConstruct` and the declaration span. The TC-1065 table now runs `memory sc`, `memory tso` and `memory ra`, each expected to refuse `parallel memory`. |
+| FND-004 | fixed | 067a8e327: `a_refinement_parses_its_step_rows` now asserts the exact `StepSource` and `StepTarget` text per row, the two `OperationName` nodes (application targets only), and the `QualifiedName` list with step-kind words and `memory` rows outside the name, so a wrong alternative changes an asserted list. |
