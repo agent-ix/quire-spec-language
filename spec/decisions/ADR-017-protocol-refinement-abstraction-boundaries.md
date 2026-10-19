@@ -678,7 +678,8 @@ There is no totality check.
   `route`. It names no `BackendId` (ADR-012 §11). For an emission onto
   implementation code, the driver puts only the bound items in the QSpec
   FR-331 request it sends CG, so CG receives no new input; CG reads the
-  bindings from the v2 node.
+  bindings from the v2 node. The export's bound and refused result kinds, which the driver reads, are fixed by
+  [FR-307](../functional/FR-307-export-the-bindings-each-item-references.md)-AC-6.
 - **Referenced elements.** An item references: the receiver's static object
   type of every model member in its checked claim (the O-06 declaring node,
   which is the static type even when a supertype declares the member,

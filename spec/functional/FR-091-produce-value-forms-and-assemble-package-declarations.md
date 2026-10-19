@@ -472,8 +472,9 @@ and unit names are two namespaces of their own: a dimension term and a
 unit's `:` name look up dimension forms only, and a unit's `*` target looks
 up unit forms only. A type form looks up neither, so a type form that names
 a dimension or a unit is an unresolved type name: complete-V1 source has no
-quantity type reference (STD-113), and a source-declared unit has no use in
-source.
+quantity type reference (STD-113). A source-declared dimension and unit are
+used by name outside a type form: FR-230 reads them as the time dimension and
+its time units.
 
 The assembler refuses, reporting every error found. It runs the
 unit-graph topology checks only when every other check below passes, so a
