@@ -18,8 +18,9 @@ Scope: FR-214-AC-1 to FR-214-AC-4.
 
 1. Check FR-214-AC-1's refinement of `add()` by `Fill`; read the checked
    map.
-2. Remove the `join` row, then the `finish` row; add a second `inc` row.
-3. Add a node row for `A`; check ADR-027 §7.1 without the `cend` row and
+2. Remove the `step join M::Fill::Both` row, then the `step M::Fill::Done`
+   row; add a second `step M::Cell::inc` row.
+3. Add the node row `step M::Fill::A -> stutter`; check ADR-027 §7.1 without the `cend` row and
    `Chatter` without the channel row.
 4. Check an `-> any` row, and an abstract protocol whose profile lists
    `fork` as internal.
