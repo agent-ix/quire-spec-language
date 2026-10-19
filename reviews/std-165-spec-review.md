@@ -64,3 +64,11 @@ FR-104, FR-104 only references FR-391), and the spec index row.
 | FND-002 | fixed | 5604034c5: AC-4 and TC-1076 row 6 use a type `Widget` covered only by `widgets`; the case can now be built. |
 | FND-003 | fixed | 5604034c5: TC-1076 row 4 names `missing_declaration`/`missing-name`, and row 7 names `FamilyResult::Undefined` with reason `incomplete-closure`, naming `Other`, with no collection. AC-3's residual wording is FND-006. |
 | FND-004 | fixed | 5604034c5: the Description now reads "a state clause has no such operand: the clause checker and the clause evaluator admit neither form today". |
+| FND-005 | fixed | 4895e29c1 (round 2): AC-6 and TC-1076 row 8 put A (`M::counters`) and B (`M::archive`) on `M::Widget::grow`. `Widget` is covered only by `widgets`, so neither clause hits FR-104-AC-5's ambiguity, and both check. |
+| FND-006 | fixed | 4895e29c1 (round 2): AC-3 names `missing_declaration`/`missing-name` for the function-body case and for `M::Counter` used as a value, matching TC-1076 row 4. The fixture declares `grow()` on `Widget`. |
+
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | low | TC-1076 row 8 says "`A` reads `AnyMembership{counters}` only". Under FR-155, A's read footprint also holds the receiver's `Membership{widgets, Receiver}`, as FR-155-AC-1's `bump` holds `Membership{counters, Receiver}`. A test that asserts the read set equals `{AnyMembership{counters}}` would fail. AC-6's wording ("holds `AnyMembership{counters}` and not `AnyMembership{archive}`") is right; row 8 should say "of the population memberships, only `AnyMembership{counters}`" or match AC-6. | spec/test-cases/TC-1076-a-state-clause-names-a-population.md:30 |
