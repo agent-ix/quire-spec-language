@@ -44,7 +44,7 @@ to 1,000,000 (TC-472's 1,000 would stop the example at its first expansion); the
    from `t1`; a subject with an unbounded population root.
 7. Step 1's first two requests, twice each.
 8. The TP-4 claim with no granularity over the example unit with initial
-   versions `a` 2 and `b` 0 (FR-126-AC-10); `always holds(6 / (2 -
+   versions `a` 2 and `b` 0 (FR-126-AC-10); `always holds(6 mod (2 -
    c.versionNumber) >= 0)` over the example unit with both versions 0 and
    with `a` 0 and `b` 1 (FR-126-AC-11).
 
@@ -57,7 +57,7 @@ Tag the tests `#[trace("TC-521", "FR-126-AC-n")]`.
   empty stem and the three-step loop `(0,0) -upd(b)-> (0,1) -upd(b)-> (0,2)
   -upd(b)-> (0,0)` bound to `a`; `Violated` with
   the loop `(0,0) -upd(a)-> (0,0) -upd(b)-> (0,0)`.
-- Step 2: `Violated` with a five-step prefix on which `vb` is never 2;
+- Step 2: `Violated` with a five-step prefix bound to `a`, on which `va` is never 2;
   `Holds{Exhaustive}`; `Holds{Exhaustive}`; `Violated` with the prefix
   `0 -inc-> 1`.
 - Step 3: `Violated`, `kind: Deadlock`, prefix `0 -inc-> 1 -inc-> 2 -inc->

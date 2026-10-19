@@ -300,37 +300,50 @@ automaton states and the depth reached.
 - The engine SHALL explore one product for each binding of the clause's
   `over` parameter, taking the bindings in FR-125's canonical instance
   order (population, then key).
-- When more than one binding yields a counterexample, the engine SHALL
-  return the shortest, measured in transitions, stem and loop together (for an
-  undefined-evaluation counterexample, the transitions of its prefix). A tie
-  is decided by the earlier binding in canonical order. The counterexample
-  names its binding.
-- The same order decides which undefined letter or contract the engine
-  reports first: the shallowest position across bindings, then the earlier
-  binding. A binding's violation ranks against another binding's undefined
-  evaluation by the same rule (ADR-018 UE-4).
-- The run's `max_states` and `max_transitions` are shared by every binding;
-  the run's `automaton_states` is the largest count of any one binding; the
-  run's `product_states` is the sum over bindings.
+- The engine SHALL run the first phase over every binding before it runs the
+  second phase over any. If any binding's first phase ends with a violation
+  or an `Undecided`, then the engine SHALL return the finding that ranks first
+  across bindings by depth (the position of an undefined letter, the depth of
+  a rejecting state), and the second phase SHALL NOT run. A lasso therefore
+  never competes with a first-phase finding of another binding.
+- If no binding's first phase ends, then the engine SHALL run the second
+  phase over each binding and return the shortest lasso across bindings,
+  measured in transitions, stem and loop together. The engine SHALL decide a
+  tie in depth or in length by the earlier binding in canonical order, and
+  the counterexample SHALL name its binding. This order is for a TP-4 item:
+  the safety engines rank by depth, then canonical state order, then binding.
+- The engine SHALL return a counterexample only when every binding finished
+  its exploration, a binding that completes `max_depth` counting as finished.
+  If a binding stops on `max_states`, `max_transitions`, the evaluation meter
+  or cancellation before every binding finished, then the engine SHALL return
+  that `Stopped`, even when an earlier binding already holds a counterexample,
+  because a shorter one could remain in the unexplored binding.
+- The run's `max_states` and `max_transitions` SHALL be shared by every
+  binding; the run's `automaton_states` SHALL be the largest count of any one
+  binding; the run's `product_states` SHALL be the sum over bindings.
 
 ### Model-only pass (TP-4)
 
 - Where the negation automaton has no move on a position's letter, the
-  engine SHALL NOT create a product state for that position, and SHALL still
-  read the letters and the contract conjunctions of that model state and
-  of every model state reached from it that no product state covers, in a
-  model-only pass (ADR-018 UE-1, UE-6). The pass ranks its findings with the
-  product's by depth, the product's finding winning a tie at equal depth. An
-  undefined letter or contract conjunction ends the first phase with the
-  `UndefinedEvaluation` violation; a refused contract conjunction returns
-  `Undecided(UndecidedSuccessor)`.
+  engine SHALL NOT create a product state for that position.
+- The engine SHALL still read the letters and the contract conjunctions of
+  that model state and of every model state reached from it that no product
+  state covers, in a model-only pass (ADR-018 UE-1, UE-6).
+- The engine SHALL rank the pass's findings with the same binding's product
+  findings by depth, the product's finding winning a tie at equal depth; the
+  binding order then decides between bindings.
+- If the pass reads an undefined letter or contract conjunction, then the
+  engine SHALL end the first phase with the `UndefinedEvaluation` violation.
+- If the pass reads a refused contract conjunction, then the engine SHALL
+  return `Undecided(UndecidedSuccessor)`.
 - The pass SHALL charge each state it creates to `max_states` and each edge
-  it follows to `max_transitions`, and exhausting either settles
-  `Stopped{ResourceExhausted, {MaxStates | MaxTransitions, value}}`. A state
-  of the pass is no product state: it is counted in no product-state or
+  it follows to `max_transitions`, and exhausting either SHALL settle
+  `Stopped{ResourceExhausted, {MaxStates | MaxTransitions, value}}`: an
+  uncharged pass would be unbounded.
+- The engine SHALL count a state of the pass in no product-state or
   product-edge total, so ADR-018 §6's example reports 15 product states per
   bound instance whatever the pass reads.
-- With `max_depth = Some(k)` the pass reads positions to depth `k` and no
+- With `max_depth = Some(k)` the pass SHALL read positions to depth `k` and no
   further.
 
 ### Unsupported liveness clauses
@@ -340,14 +353,14 @@ automaton states and the depth reached.
   guarded `on each` activation (a `when` condition) with
   `LivenessRefusal::GuardedActivation`, each as `unsupported_construct`/
   `not-yet-implemented`, before it explores any state.
-- The engine SHALL NOT return `Holds` for a TP-4 item without the
-  `ComponentCertificate` that FR-339's checker accepts. When the second
-  phase finds no fair accepting cycle and the engine does not build that
-  certificate, it SHALL return `LivenessRefusal::ComponentCertificateNotBuilt`
-  as `unsupported_construct`/`not-yet-implemented`, carrying the run's
-  statistics, never `Holds` and never `BoundReached`. The `Holds` rows of the
-  acceptance criteria for a TP-4 item apply to an engine that builds the
-  certificate.
+- A TP-4 item SHALL NOT settle `Holds` without the `ComponentCertificate`
+  that FR-339's checker accepts. When the first phase completed with an empty
+  frontier and the second phase finds no fair accepting cycle, the engine
+  SHALL return `Holds{basis: Exhaustive}` with that certificate, and
+  without one SHALL return `LivenessRefusal::ComponentCertificateNotBuilt` as
+  `unsupported_construct`/`not-yet-implemented`, carrying the run's
+  statistics. A run stopped by `max_depth` is unaffected and returns
+  `BoundReached`.
 
 ### Counterexamples
 
@@ -414,9 +427,11 @@ automaton states and the depth reached.
 | FR-126-AC-8 | `ModelCheckLimits::default()` has `limits` equal to FR-101's `Limits::default()` (`max_states` 10,000,000, `max_transitions` 100,000,000) and `max_automaton_states` 1,048,576, with no depth member; a request with `max_depth: None` sets no horizon, `max_live_instances: None`, so FR-209's published default applies, and `max_store_buffer` and `max_messages` `None`, so FR-225's published defaults apply. AC-1's requests with the default limits return the AC-1 outcomes. A run stopped by `max_states` 2 with the other members at their defaults returns `Stopped{ResourceExhausted, {MaxStates, 2}}`, naming the `ModelCheckLimits` member that raises it. | Test (TC-536) |
 | FR-126-AC-9 | Over the `Counter` subject (no `terminal` declaration), `always holds(6 / (2 - c.value) >= 0)` under infinite-trace returns `Violated` with the prefix `0 -inc-> 1 -inc-> 2` and `kind: UndefinedEvaluation{where: position 2, cause: division-by-zero}`. The TP-4 claim `always eventually holds(6 / (2 - c.value) = 6)` returns the same counterexample, not the terminal stutter lasso. `always (holds(c.value <= 0) and holds(6 / (2 - c.value) >= 0))` returns `kind: Formula` with the prefix `0 -inc-> 1`, which violates before position 2. `eventually[0,1] holds(6 / (2 - c.value) = 6)` under event-position false-extension, `on origin`, returns `Holds{Exhaustive}`. With a `terminal when 6 / (3 - c.value) = 0` declaration, the `DeadlockFreedom` item returns `Violated` with the prefix to value 3 and `kind: UndefinedEvaluation{where: position 3, cause: division-by-zero}`. | Test (TC-537) |
 | FR-126-AC-10 | Over the example subject with initial versions `a` 2 and `b` 0, `always eventually holds(c.versionNumber = 2)` under a weak constraint with no granularity returns `Violated` bound to `b`, with an empty stem and the loop `(2,0) -upd(a)-> (0,0) -upd(a)-> (1,0) -upd(a)-> (2,0)`, length 3, though `a` is the first binding: the counterexample for `a` has a stem of one transition and a loop of three, length 4. | Test (TC-521) |
-| FR-126-AC-11 | Over the example subject with both versions 0, `always holds(6 / (2 - c.versionNumber) >= 0)` returns `Violated` bound to `a` with the prefix `(0,0) -upd(a)-> (1,0) -upd(a)-> (2,0)` and `kind: UndefinedEvaluation{where: position 2, cause: division-by-zero}`, since both bindings are undefined at depth 2 and `a` is the earlier. With initial versions `a` 0 and `b` 1, it returns `Violated` bound to `b` with the prefix `(0,1) -upd(b)-> (0,2)` and `where: position 1`. | Test (TC-521) |
-| FR-126-AC-12 | Over the example subject with both versions 0, `eventually (holds(c.versionNumber = 0) and holds(6 / (2 - c.versionNumber) >= 0))`, whose negation automaton has no move at position 0, returns `Violated` bound to `a` with `kind: UndefinedEvaluation{where: position 2, cause: division-by-zero}` and the prefix `(0,0) -upd(a)-> (1,0) -upd(a)-> (2,0)`, found by the model-only pass; the run's statistics report no product state for the dead positions. With `max_states` 1 it returns `Stopped{ResourceExhausted, {MaxStates, 1}}`, the pass's second state exhausting the budget. | Test (TC-1083) |
-| FR-126-AC-13 | The TP-4 claim of AC-1 under `fair strong each attemptUpdate` returns the `StrongFairness` refusal, `unsupported_construct`/`not-yet-implemented`, having explored no state; the same claim with a guarded `on each ... when` activation returns the `GuardedActivation` refusal; a TP-4 claim with no fair accepting cycle returns `ComponentCertificateNotBuilt` with its statistics, not `Holds`, from an engine that does not build the certificate. | Test (TC-1083) |
+| FR-126-AC-11 | Over the example subject with both versions 0, `always holds(6 mod (2 - c.versionNumber) >= 0)` returns `Violated` bound to `a` with the prefix `(0,0) -upd(a)-> (1,0) -upd(a)-> (2,0)` and `kind: UndefinedEvaluation{where: position 2, cause: division-by-zero}`, since both bindings are undefined at depth 2 and `a` is the earlier. With initial versions `a` 0 and `b` 1, it returns `Violated` bound to `b` with the prefix `(0,1) -upd(b)-> (0,2)` and `where: position 1`. | Test (TC-521) |
+| FR-126-AC-12 | Over the example subject with both versions 0, `eventually (holds(c.versionNumber = 0) and holds(6 mod (2 - c.versionNumber) >= 0))`, whose negation automaton has no move at position 0, returns `Violated` bound to `a` with `kind: UndefinedEvaluation{where: position 2, cause: division-by-zero}` and the prefix `(0,0) -upd(a)-> (1,0) -upd(a)-> (2,0)`, found by the model-only pass; the run's statistics report no product state for the dead positions. With `max_states` 1 it returns `Stopped{ResourceExhausted, {MaxStates, 1}}`, the pass's second state exhausting the budget. | Test (TC-1085) |
+| FR-126-AC-13 | The TP-4 claim of AC-1 under `fair strong each attemptUpdate` returns the `StrongFairness` refusal, `unsupported_construct`/`not-yet-implemented`, having explored no state; the same claim as a checked clause with a guarded `on each ... when` activation, given to the engine directly (S3/S4 refuse such a clause `NotEmitted`, FR-337), returns the `GuardedActivation` refusal. AC-1's weak `each` claim, whose second phase finds no fair accepting cycle, returns `Holds{Exhaustive}` with a `ComponentCertificate` that FR-339's checker accepts, and returns `ComponentCertificateNotBuilt` with its statistics when no certificate is built, never `Holds` without one. | Test (TC-1085) |
+| FR-126-AC-14 | With initial versions `a` 0 and `b` 1, the AC-12 claim returns `Violated` bound to `b` with the prefix `(0,1) -upd(b)-> (0,2)` and `where: position 1`, since `b`'s product reaches the undefined letter at depth 1 and `a`'s model-only pass at depth 2 (specified behaviour). | Test (TC-1085) |
+| FR-126-AC-15 | With `max_states` set so that binding `b` stops before it finishes while binding `a` already holds the AC-10 counterexample, the run returns `Stopped{ResourceExhausted, {MaxStates, value}}`, not the counterexample; with `max_depth` 3 both bindings finish and the shortest is returned. | Test (TC-1085) |
 
 ## Dependencies
 
