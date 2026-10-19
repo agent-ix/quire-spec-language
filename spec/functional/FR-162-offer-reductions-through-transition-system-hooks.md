@@ -77,7 +77,7 @@ pub struct RetainedEdge {
 - **State-free footprint hook.** The `footprint` hook takes a transition
   identity and no state, and SHALL return `Some` for every transition
   identity of the system, enabled or disabled and whether or not the objects
-  it names exist in any state (FR-155). `model_check` SHALL use it for the
+  it names exist in any state (FR-155), and SHALL NOT take a state. `model_check` SHALL use it for the
   enabled and the disabled members of a candidate (FR-156).
 - **Product delegation.** The product system SHALL answer
   `offered_reductions` with its model component's answer, and `canonical` by
@@ -119,7 +119,7 @@ pub struct RetainedEdge {
 | FR-162-AC-2 | The product system's `canonical` keeps the automaton state and canonicalises only the model state; its `footprint` for a model transition equals `ModelSystem::footprint`; the terminal stutter edge of FR-126-AC-3's subject has an empty footprint. Under symmetry every retained edge's target is canonical and `permutation` maps the concrete successor to it; without symmetry every `permutation` is the identity. | Test (TC-587) |
 | FR-162-AC-3 | Combination: ADR-021 §7.2's subject with `counters` annotated `symmetric`, `[[a, b, c]]` and partial-order reduction, instance `x = a` (group `{id, (b c)}`): the run stores 7 model states, `(0,0,0)`, `(0,0,1)`, `(0,1,1)`, `(0,1,2)`, `(0,2,2)`, `(1,2,2)` and `(2,2,2)`, and returns `Holds`, settling `Proved{Reduced{[Symmetry{…}, PartialOrder{BreadthFirstRevisit}]}, Uncertified}`. | Test (TC-587) |
 | FR-162-AC-4 | `max_states` 5 over ADR-021 §7.3's constrained run stops `Stopped(ResourceExhausted, MaxStates)` with boundary states counted toward the 5. Two runs of AC-3 retain equal edge lists. | Test (TC-587) |
-| FR-162-AC-5 | `ModelSystem`'s `footprint` hook, called with `bump(d)` while no state holds `d` and with `bump(a)` while it is disabled, returns `Some` in each case, equal to the footprint it returns when the transition is enabled; the product system's `footprint` for the same transition equals it. A test `TransitionSystem` whose hook is not implemented still settles a request for partial-order reduction V-8. | Test (TC-1075) |
+| FR-162-AC-5 | `ModelSystem`'s `footprint` hook is called with no state: for `bump(d)` of FR-155-AC-7, whose `d` no state holds, and for `bump(a)`, whose precondition is false at some state, it returns `Some` with the footprints FR-155 derives; the product system's `footprint` for the same transitions equals the model's. | Test (TC-1075) |
 
 ## Dependencies
 

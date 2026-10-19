@@ -29,12 +29,12 @@ step it takes for the model checker: writes through `decide_frame` at entry
 scope (FR-154), reads by evaluating each clause over an observation
 restricted to the read footprint (POR-2). A footprint is therefore a checked
 fact about the model. A footprint is also state-free: it is a function of
-the checked package and the transition identity alone, keyed on the declared
-types of the operation's receiver and reference parameters. The partial-order
-closure asks for the enabling footprint of every disabled transition, among
-them transitions whose receiver or arguments no state holds yet, such as
-`bump(d)` before `spawn` creates `d`, and an object's most-specific type is
-a fact of the state. The locations, their meets and the derivation of
+the checked package and the transition identity alone. The identity's
+receiver and reference arguments are FR-181 triples that carry the
+most-specific type (`object_type`, FR-120), so the derivation needs no state.
+The partial-order closure asks for the enabling footprint of every disabled
+transition, among them transitions whose objects no state holds yet, such as
+`bump(d)` before `spawn` creates `d`. The locations, their meets and the derivation of
 `W(t)`, `R(t)` and the enabling footprint are QSpec FR-383's; this
 requirement implements them and does not restate them. Two transitions are
 independent when neither writes a location the other reads or writes
@@ -101,17 +101,18 @@ receiver's and a reference parameter's membership as `Membership` over
 - **State-free.** `ModelSystem::footprint` SHALL take no state and SHALL
   return the footprint of every transition identity of the checked package,
   whether or not the transition is enabled and whether or not the objects it
-  names exist in any state; it SHALL NOT fail for want of an object.
-  Wherever FR-383 relates an object's type to a population or a field (the
-  populations whose membership a `deletes` writes or the receiver and
-  reference arguments read, and the reference-valued fields a `deletes`
-  reads), the derivation SHALL take the declared type of the receiver or
-  parameter, and SHALL relate it to each population member type and each
-  field's referenced type when either type conforms to the other. The
-  footprint of an inherited operation is therefore the same for a receiver
-  of any subtype. It contains every location FR-383 derives from the
-  object's most-specific type and may contain more, which keeps independence
-  sound and makes it slightly coarser.
+  names exist in any state; it SHALL NOT fail for want of an object. Every
+  place FR-383 uses an object's type (the populations whose membership a
+  `deletes` writes and the receiver and reference arguments read, and the
+  reference-valued fields a `deletes` reads) SHALL use the `object_type` of
+  that object's triple in the transition identity, exactly as FR-383 states
+  it, with no widening: an object whose type has several direct supertypes
+  conforms to each of them, so a receiver `c` of `C extends A, B` whose
+  operation `cancel()` is declared on `A` and framed `deletes self` writes
+  the membership of `c` in every population of `A` or `B`, and reads every
+  reference-valued field whose referenced type is `A`, `B` or `C`. A
+  footprint derived from the operation's declaring type would omit the
+  locations of `B`.
 - **Meeting.** Two locations SHALL meet exactly when QSpec FR-383 says they
   do; protocol locations meet as ADR-027 FT-1 states. A protocol step's
   enabling footprint SHALL be ADR-027 FT-3's set, which holds the binders
@@ -143,7 +144,7 @@ receiver's and a reference parameter's membership as `Membership` over
 | FR-155-AC-4 | Every step of AC-1's reduced run passes the frame decision with its receiver; a hand-built successor of `bump(a)` that also changes `b.v` is `frame_violation`. Deriving footprints twice from the same package gives equal footprints. | Test (TC-575) |
 | FR-155-AC-5 | ADR-021 §7.6's guard-in-postcondition subject: `boom`'s enabling footprint holds `(Receiver, armed)` and `AnyField{v}` from `pre(self.cell.v)`, so `set(a)` meets it. The deleting-the-receiver subject: `cancel()` deleting its receiver writes `Membership{jobs, Receiver}`, so `cancel(j)` is dependent with `boom(j)`, which reads `Membership{jobs, j}`. The type-wide-delete subject: `cancel()` framed `deletes Job` writes `AnyMembership{jobs}`, so `cancel(m)` is dependent with `boom(j)`. The blocked-delete subject: `cancel()` framed `deletes self` reads `AnyField{peer}`, which `unlink(j)` writes. The navigation subject: `boom`'s read footprint holds `(Receiver, cell)`, which `point()` writes. | Test (TC-589) |
 | FR-155-AC-6 | ADR-021 §7.6's result subject: `pick(): Reference<Cell>` with post `self.alarm and result.v = 1` has an enabling footprint holding `AnyField{v}` and `AnyMembership{cells}`, so `set(a)` meets it, and the reduced run returns `Violated` by `set, pick` over 6 states, as the unreduced run does. | Test (TC-589) |
-| FR-155-AC-7 | State-free footprints over the `Counter` unit of AC-1 plus `spawn()` framed `creates Counter`, with `counters` holding `a`, `b` and `c` and no `d`: `ModelSystem::footprint` of `bump(d)` returns reads `{Field{d, v}, Membership{counters, d}}` and writes `{Field{d, v}}` without error, equal to the footprint it returns after `spawn` creates `d`; `spawn`'s writes `AnyMembership{counters}` meet `Membership{counters, d}`, so `spawn` is in the candidate of the disabled `bump(d)`. With `Sub` extending `Base`, `Base` declaring `cancel()` framed `deletes self`, populations `bases: Base` and `subs: Sub` and a holder field `r: Reference<Sub>`, the footprint of `cancel(s)` writes `Membership{bases, s}` and `Membership{subs, s}` and reads `AnyField{Holder/r}`, for `s` of either type and whether or not `s` exists. | Test (TC-1075) |
+| FR-155-AC-7 | State-free footprints over the `Counter` unit of AC-1 plus `spawn()` framed `creates Counter`, with `counters` holding `a`, `b` and `c` and no `d`: `ModelSystem::footprint` of `bump(d)` (the triple of `d` carrying `Counter`) returns without error reads exactly `{Field{d, v}, Membership{counters, d}}` and writes exactly `{Field{d, v}}`; `spawn`, enabled at the initial state, writes `AnyMembership{counters}`, which meets `Membership{counters, d}`, so the candidate seeded by `spawn` holds the disabled `bump(d)`. With `Base`, `Sub extends Base` and `C extends A, B`, populations `bases: Base`, `subs: Sub`, `as: A`, `bs: B`, a holder with `q: Reference<Base>`, `r: Reference<Sub>` and `h: Reference<B>`, and operations `cancel()` with no clauses, framed `deletes self`, on `Base` and on `A`: `cancel(s)` with `object_type` `Sub` writes exactly `{Membership{bases, s}, Membership{subs, s}}` and reads exactly those two plus `{AnyField{Holder/q}, AnyField{Holder/r}}`; `cancel(s)` with `object_type` `Base` writes exactly `{Membership{bases, s}}` and reads that plus `{AnyField{Holder/q}}`; `cancel(c)` with `object_type` `C` writes exactly `{Membership{as, c}, Membership{bs, c}}` and reads those plus `{AnyField{Holder/h}}`. | Test (TC-1075) |
 
 ## Dependencies
 
