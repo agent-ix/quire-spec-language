@@ -20,14 +20,12 @@ use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::object_environment::{ObservedRead, ReadLog};
 use qsl_semantics::model::observation::AdmittedObservations;
 use qsl_semantics::model::state::StateModel;
-use quire_canonical::Limits as CanonicalLimits;
 use quire_exact::{ObjectReference, Value, ValueType};
 use quire_semantic_value::model_transition::ModelTransition;
 
-use super::domain::Domain;
-use super::encode::{reference_enc, value_enc};
-use super::walk::{rows_of, stop};
-use super::{identity_limits, Application, ModelSimState, ModelSystem, BROKEN};
+use super::encode::{parse_optional_reference, parse_reference};
+use super::walk::stop;
+use super::{Application, ModelSimState, ModelSystem, BROKEN};
 use crate::simulation::expansion::{Expansion, ExpansionStop};
 use crate::simulation::footprint::{Footprint, Location};
 
@@ -38,8 +36,9 @@ pub enum FootprintError {
     /// footprint rule.
     #[error(transparent)]
     Refused(#[from] FootprintRefusal),
-    /// The transition is no application of the state's objects.
-    #[error("the transition names no operation and receiver of the state")]
+    /// The transition names no operation of its receiver's type, or a
+    /// receiver or reference argument that is no reference text.
+    #[error("the transition names no operation of its receiver's type")]
     UnknownTransition,
 }
 
@@ -99,7 +98,11 @@ impl Enforcement<'_> {
     ) -> Result<Footprint, ExpansionStop> {
         match &application.footprint {
             Ok(symbolic) => {
-                let mut footprint = instantiate(symbolic, receiver, arguments);
+                let bound: Vec<(String, Option<ObjectReference>)> = arguments
+                    .iter()
+                    .map(|(name, value)| (name.clone(), referenced(value).cloned()))
+                    .collect();
+                let mut footprint = instantiate(symbolic, receiver, &bound);
                 let withheld = (self.withhold)(transition);
                 for locations in [
                     &mut footprint.reads,
@@ -263,15 +266,14 @@ fn referenced(value: &Value) -> Option<&ObjectReference> {
 fn instantiate(
     symbolic: &SymbolicFootprint,
     receiver: &ObjectReference,
-    arguments: &[(String, Value)],
+    arguments: &[(String, Option<ObjectReference>)],
 ) -> Footprint {
     let bind = |object: &FootprintObject| match object {
         FootprintObject::Receiver => Some(receiver.clone()),
         FootprintObject::Param(name) => arguments
             .iter()
             .find(|(parameter, _)| parameter == name)
-            .and_then(|(_, value)| referenced(value))
-            .cloned(),
+            .and_then(|(_, bound)| bound.clone()),
     };
     let locations = |symbolic: &BTreeSet<SymbolicLocation>| -> BTreeSet<Location> {
         symbolic
@@ -305,13 +307,6 @@ fn instantiate(
     }
 }
 
-/// The canonical text of `reference`, as a transition names its receiver.
-fn reference_text(reference: &ObjectReference) -> Option<String> {
-    reference_enc(reference)
-        .canonical_text(CanonicalLimits::new(identity_limits().input_bytes))
-        .ok()
-}
-
 /// Whether `value_type` holds an object reference a footprint can bind.
 fn binds_object(value_type: &ValueType) -> bool {
     match value_type {
@@ -322,32 +317,28 @@ fn binds_object(value_type: &ValueType) -> bool {
 }
 
 impl<'a> ModelSystem<'a> {
-    /// The footprint of `transition` at `state` (FR-155 "Instantiation"): the
-    /// operation's symbolic footprint with the receiver replaced by the
-    /// transition's receiver and each reference parameter by its argument.
-    /// The state supplies the objects the transition's canonical texts name.
-    /// A footprint depends on the checked package and the transition
-    /// identity alone.
+    /// The footprint of `transition` (FR-155 "Instantiation"): the operation's
+    /// symbolic footprint with the receiver replaced by the transition's
+    /// receiver and each reference parameter by its argument. It reads the
+    /// transition's canonical texts alone, so a disabled transition, or one
+    /// over an object that does not exist yet, has a footprint, and it
+    /// depends on the checked package and the transition identity alone.
     ///
     /// # Errors
     ///
     /// [`FootprintError::Refused`] when the operation's clauses read through a
     /// form with no footprint rule, and [`FootprintError::UnknownTransition`]
-    /// when `state` holds no object and application the transition names.
-    pub fn footprint(
-        &self,
-        state: &ModelSimState,
-        transition: &ModelTransition,
-    ) -> Result<Footprint, FootprintError> {
+    /// when the transition names no operation of its receiver's type, or a
+    /// receiver or reference argument that is no reference text.
+    pub fn footprint(&self, transition: &ModelTransition) -> Result<Footprint, FootprintError> {
         let unknown = || FootprintError::UnknownTransition;
-        let rows = rows_of(self, &state.state).map_err(|_| unknown())?;
-        let row = rows
-            .iter()
-            .find(|row| reference_text(&row.reference).as_deref() == transition.receiver())
+        let receiver = transition
+            .receiver()
+            .and_then(parse_reference)
             .ok_or_else(unknown)?;
         let application = self
             .applications
-            .get(&row.type_id())
+            .get(&receiver.object_type())
             .and_then(|applications| {
                 applications
                     .iter()
@@ -356,8 +347,6 @@ impl<'a> ModelSystem<'a> {
             .ok_or_else(unknown)?;
         let symbolic = application.footprint.as_ref().map_err(Clone::clone)?;
 
-        let references: Vec<ObjectReference> =
-            rows.iter().map(|row| row.reference.clone()).collect();
         let mut arguments = Vec::new();
         for ((name, value_type), text) in application
             .declaration
@@ -365,21 +354,14 @@ impl<'a> ModelSystem<'a> {
             .iter()
             .zip(transition.arguments())
         {
-            if !binds_object(value_type) {
-                continue;
+            if binds_object(value_type) {
+                arguments.push((
+                    name.clone(),
+                    parse_optional_reference(text).ok_or_else(unknown)?,
+                ));
             }
-            let domain = Domain::of(value_type, &references, self.types).ok_or_else(unknown)?;
-            let value = (0..domain.len())
-                .filter_map(|index| domain.nth(index))
-                .find(|value| {
-                    value_enc(value)
-                        .canonical_text(CanonicalLimits::new(identity_limits().input_bytes))
-                        .is_ok_and(|candidate| candidate == *text)
-                })
-                .ok_or_else(unknown)?;
-            arguments.push((name.clone(), value));
         }
-        Ok(instantiate(symbolic, &row.reference, &arguments))
+        Ok(instantiate(symbolic, &receiver, &arguments))
     }
 
     /// Expand `state` as `successors` does, holding every step's `pre` and

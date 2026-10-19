@@ -309,7 +309,7 @@ impl Derivation<'_> {
                     what: "deleted parameter",
                 })?;
             deleted_types.push(target);
-            for population in self.populations_holding(target) {
+            for population in self.populations_relating(target) {
                 writes.insert(SymbolicLocation::Membership {
                     population: population.clone(),
                     object: FootprintObject::Param(name.clone()),
@@ -345,7 +345,7 @@ impl Derivation<'_> {
         }
         for (name, value_type) in self.operation.parameters() {
             if let Some(target) = parameter_target(value_type) {
-                for population in self.populations_holding(target) {
+                for population in self.populations_relating(target) {
                     reads.insert(SymbolicLocation::Membership {
                         population: population.clone(),
                         object: FootprintObject::Param(name.clone()),

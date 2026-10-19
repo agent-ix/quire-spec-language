@@ -132,6 +132,51 @@ pub(super) fn reference_enc(reference: &ObjectReference) -> Enc {
     )
 }
 
+/// The reference [`reference_enc`] wrote as `text`: its canonical text names
+/// the members in sorted order, so the text is matched member by member.
+pub(super) fn parse_reference(text: &str) -> Option<ObjectReference> {
+    let rest = text.strip_prefix(r#"{"identity":""#)?;
+    let (identity, rest) = rest.split_once(r#"","object_type":""#)?;
+    let (object_type, rest) = rest.split_once(r#"","type":"reference","universe":""#)?;
+    let universe = rest.strip_suffix(r#""}"#)?;
+    let identity = String::from_utf8(unhex(identity)?).ok()?;
+    Some(ObjectReference::new(
+        quire_exact::UniverseId::from_digest(unhex32(universe)?),
+        quire_exact::EffectiveId::from_digest(unhex32(object_type)?),
+        quire_exact::ObjectId::new(identity).ok()?,
+    ))
+}
+
+/// The reference a parameter's canonical text names: the text of a reference,
+/// or of an option holding one. `Some(None)` is an absent option.
+pub(super) fn parse_optional_reference(text: &str) -> Option<Option<ObjectReference>> {
+    if let Some(inner) = text
+        .strip_prefix(r#"{"type":"option","value":"#)
+        .and_then(|rest| rest.strip_suffix('}'))
+    {
+        return if inner == "null" {
+            Some(None)
+        } else {
+            parse_reference(inner).map(Some)
+        };
+    }
+    parse_reference(text).map(Some)
+}
+
+fn unhex(text: &str) -> Option<Vec<u8>> {
+    if !text.len().is_multiple_of(2) || !text.is_ascii() {
+        return None;
+    }
+    (0..text.len())
+        .step_by(2)
+        .map(|at| u8::from_str_radix(&text[at..at + 2], 16).ok())
+        .collect()
+}
+
+fn unhex32(text: &str) -> Option<[u8; 32]> {
+    unhex(text)?.try_into().ok()
+}
+
 /// FR-181's typed canonical form of `value`.
 pub(super) fn value_enc(value: &Value) -> Enc {
     match value {

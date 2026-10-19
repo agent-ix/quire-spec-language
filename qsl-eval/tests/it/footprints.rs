@@ -597,16 +597,12 @@ fn footprint_of(
     receiver: &ObjectReference,
     arguments: &[&ObjectReference],
 ) -> Footprint {
-    let state = &system.initial()[0];
     let arguments = arguments
         .iter()
         .map(|argument| reference_text(argument))
         .collect();
     system
-        .footprint(
-            state,
-            &transition("Counter", operation, receiver, arguments),
-        )
+        .footprint(&transition("Counter", operation, receiver, arguments))
         .expect("a footprint instantiates")
 }
 
@@ -1038,10 +1034,7 @@ fn footprint_on(
     receiver: &ObjectReference,
 ) -> Footprint {
     system
-        .footprint(
-            &system.initial()[0],
-            &transition(object_type, operation, receiver, Vec::new()),
-        )
+        .footprint(&transition(object_type, operation, receiver, Vec::new()))
         .expect("a footprint instantiates")
 }
 
@@ -1331,4 +1324,24 @@ fn a_supertype_deletion_applied_to_a_subtype_uses_the_receivers_type() {
         field: key("Holder/r")
     }));
     assert!(!independent(&cancel_s, &unlink_h));
+}
+
+/// A transition over an object that does not exist yet has a footprint:
+/// `bump(d)` before `spawn` creates `d`, and `spawn` is dependent with it.
+#[trace("TC-574")]
+#[test]
+fn a_transition_over_an_object_not_yet_created_has_a_footprint() {
+    let mut subject = counters_subject();
+    let start = counters_start(&mut subject);
+    let system = subject.system(start, &COUNTER_KEYS);
+    let d = subject.reference("Counter", "d");
+    let bump_d = footprint_of(&system, "bump", &d, &[]);
+    assert_eq!(bump_d.writes, locations([field_at(&d, "Counter/v")]));
+    let spawn = footprint_of(&system, "spawn", &subject.reference("Counter", "a"), &[]);
+    assert!(!independent(&spawn, &bump_d));
+    let a = subject.reference("Counter", "a");
+    assert!(independent(
+        &bump_d,
+        &footprint_of(&system, "bump", &a, &[])
+    ));
 }
