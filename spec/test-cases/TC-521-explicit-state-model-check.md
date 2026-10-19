@@ -15,7 +15,7 @@ granularities, bounded clauses `on origin` and `on each`, an invariant,
 deadlock detection, a mixed formula, every limit with its value, the second
 phase at `max_depth`, `max_automaton_states`, and determinism.
 
-Scope: FR-126-AC-1 to FR-126-AC-7.
+Scope: FR-126-AC-1 to FR-126-AC-7, FR-126-AC-10 and FR-126-AC-11.
 
 ## Test Procedure
 
@@ -43,6 +43,10 @@ to 1,000,000 (TC-472's 1,000 would stop the example at its first expansion); the
    undefined; `always holds(true)` over FR-120-AC-9's `test/tallies` subject
    from `t1`; a subject with an unbounded population root.
 7. Step 1's first two requests, twice each.
+8. The TP-4 claim with no granularity over the example unit with initial
+   versions `a` 2 and `b` 0 (FR-126-AC-10); `always holds(6 / (2 -
+   c.versionNumber) >= 0)` over the example unit with both versions 0 and
+   with `a` 0 and `b` 1 (FR-126-AC-11).
 
 Tag the tests `#[trace("TC-521", "FR-126-AC-n")]`.
 
@@ -50,7 +54,8 @@ Tag the tests `#[trace("TC-521", "FR-126-AC-n")]`.
 
 - Step 1: `Holds{Exhaustive}` with 30 product states, the 15-state product of
   each bound instance; `Violated` with an
-  empty stem and the three-step loop of one receiver for the instance it leaves at version 0; `Violated` with
+  empty stem and the three-step loop `(0,0) -upd(b)-> (0,1) -upd(b)-> (0,2)
+  -upd(b)-> (0,0)` bound to `a`; `Violated` with
   the loop `(0,0) -upd(a)-> (0,0) -upd(b)-> (0,0)`.
 - Step 2: `Violated` with a five-step prefix on which `vb` is never 2;
   `Holds{Exhaustive}`; `Holds{Exhaustive}`; `Violated` with the prefix
@@ -72,3 +77,7 @@ Tag the tests `#[trace("TC-521", "FR-126-AC-n")]`.
   `t1`, `kind: UndefinedEvaluation`, cause `SumOutOfDomain`, at position 0;
   `RequiresBound` with no state explored.
 - Step 7: equal outcomes and byte-equal counterexamples.
+- Step 8: `Violated` bound to `b` with an empty stem and the loop through
+  `(2,0)`, length 3; `Violated` bound to `a` with the prefix to position 2,
+  `kind: UndefinedEvaluation`, cause division-by-zero; `Violated` bound to
+  `b` with the prefix `(0,1) -upd(b)-> (0,2)` at position 1.
