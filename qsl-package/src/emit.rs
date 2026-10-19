@@ -96,7 +96,7 @@ use qsl_semantics::library::PackageId;
 use qsl_semantics::model::key::hex;
 use qsl_semantics::value::{
     native_diagnostics_catalog, CatalogEntry, CatalogRole, DefinitionLock, DefinitionReference,
-    HeaderLayer, Member, NodeOwner,
+    HeaderLayer, Member, ModelEntry, NodeOwner,
 };
 use quire_exact::{Cancel, Integer, NodeKey, Origin, NODE_KEY_DOMAIN};
 use quire_semantic_value::location::Location;
@@ -872,6 +872,15 @@ fn catalog_selections(
                 .iter()
                 .filter(|role| **role != CatalogRole::Edition)
                 .map(|role| catalog_entry(lock, *role).reference()),
+        )
+        // FR-361 item 3: the complete-model lock's `package_selection.always`
+        // rows, for a unit whose layers hold the model layer.
+        .chain(
+            closure
+                .contains(&HeaderLayer::ModelComplete)
+                .then(|| lock.model_catalog().iter().map(ModelEntry::reference))
+                .into_iter()
+                .flatten(),
         )
         .chain(laws.iter().cloned());
     let mut definitions: Vec<CheckedArtifactRef> = Vec::new();
