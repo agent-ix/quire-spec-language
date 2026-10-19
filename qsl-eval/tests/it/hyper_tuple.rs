@@ -11,7 +11,7 @@
 use ix_trace_rs::trace;
 use qsl_eval::temporal::{
     evaluate_tuple, AtomReading, ComponentPosition, ComponentTrace, LetterStop, TemporalOutcome,
-    TemporalPosition, TemporalRefusal, TupleLetters,
+    TemporalPosition, TemporalRefusal, TupleLetters, UndefinedCause,
 };
 use qsl_foundation::SourceIdentity;
 use qsl_semantics::check::{
@@ -21,9 +21,9 @@ use qsl_semantics::check::{
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, package_input};
 use qsl_semantics::model::key::hex;
-use quire_exact::Meter;
+use quire_exact::{LimitKind, Meter, ScalarLimits, Undefined};
 
-use crate::model_simulation::{counters_document, increment, PACKAGE};
+use crate::model_simulation::{acquire, counters_document, increment, PACKAGE};
 
 const INFINITE: &str = "quire.temporal.infinite-trace/v1";
 
@@ -35,7 +35,13 @@ struct Fixture {
 }
 
 fn fixture(body: &str) -> Fixture {
-    let document = counters_document(vec![increment()], false);
+    fixture_with(vec![increment()], "", body)
+}
+
+/// [`fixture`] over a model that declares `operations`, with `alignment`
+/// (`align skip {...}` or empty) after the second trace variable.
+fn fixture_with(operations: Vec<serde_json::Value>, alignment: &str, body: &str) -> Fixture {
+    let document = counters_document(operations, false);
     let packages = package_input([document.as_slice()]);
     let digest = *packages.keys().next().expect("one model");
     let text = format!(
@@ -44,7 +50,7 @@ fn fixture(body: &str) -> Fixture {
          profile inf = \"{INFINITE}\";\n\
          model M = \"{PACKAGE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
          hyper H using inf over behaviours (c: M::Counter) \
-         forall trace a of M forall trace b of M {{ {body} }}\n",
+         forall trace a of M forall trace b of M {alignment} {{ {body} }}\n",
         hex(&digest)
     );
     let parsed = qsl_cst::parse(
@@ -85,6 +91,7 @@ struct Letters<'a> {
     fixture: &'a Fixture,
     observations: Vec<Vec<i64>>,
     joints: Vec<u64>,
+    reads: Vec<(FormulaNodeId, u64)>,
     stutters: Vec<(u64, Vec<bool>)>,
 }
 
@@ -94,6 +101,7 @@ impl<'a> Letters<'a> {
             fixture,
             observations,
             joints: Vec::new(),
+            reads: Vec::new(),
             stutters: Vec::new(),
         }
     }
@@ -116,6 +124,7 @@ impl TupleLetters for Letters<'_> {
         _meter: &mut Meter,
     ) -> Result<AtomReading, LetterStop> {
         self.joints.push(joint.index());
+        self.reads.push((atom, joint.index()));
         self.stutters.push((
             joint.index(),
             components.iter().map(|c| c.stutter).collect(),
@@ -139,6 +148,15 @@ impl TupleLetters for Letters<'_> {
         };
         let holds = match words.as_slice() {
             ["c.value", "@", x, "=", "c.value", "@", y] => read(x) == read(y),
+            ["1", "/", "c.value", "@", x, "=", k] => {
+                let divisor = read(x);
+                if divisor == 0 {
+                    return Ok(AtomReading::Undefined(UndefinedCause::Kernel(
+                        Undefined::DivisionByZero,
+                    )));
+                }
+                1 / divisor == k.parse::<i64>().expect("an integer")
+            }
             ["c.value", "@", x, "=", k] => read(x) == k.parse::<i64>().expect("an integer"),
             other => panic!("unmodelled atom {other:?}"),
         };
@@ -174,64 +192,227 @@ fn lasso(prefix: u64, loop_len: u64) -> ComponentTrace {
     ComponentTrace::Lasso { prefix, loop_len }
 }
 
-/// FR-175-AC-1: the leaky pair, outputs differing at joint position 1 and
-/// loop entry 1, is `false` at position 1; the secure pair is `true`.
+/// ADR-023 section 8: the vault `V`, an object with a secret `h` and a public
+/// output `l`, and the `step(i)` operation under its two post clauses. The
+/// tuple evaluator takes the traces' observations, so the test drives the
+/// vault's transition relation to produce them; the counters model's `value`
+/// stands for `l`, the observation the clause reads.
+#[derive(Clone, Copy)]
+enum Vault {
+    /// `self.l = (i + self.h) mod 2`.
+    Leaky,
+    /// `self.l = i`.
+    Secure,
+}
+
+impl Vault {
+    /// The state `(h, l)` after `step(input)` from `(h, _)`.
+    fn step(self, (h, _): (i64, i64), input: i64) -> (i64, i64) {
+        match self {
+            Self::Leaky => (h, (input + h) % 2),
+            Self::Secure => (h, input),
+        }
+    }
+
+    /// The `l` observations of the behaviour from `initial` taking `step(0)`
+    /// at every joint step, up to and including its loop entry position.
+    fn observations(self, initial: (i64, i64), positions: usize) -> Vec<i64> {
+        let mut state = initial;
+        let mut seen = vec![state.1];
+        for _ in 1..positions {
+            state = self.step(state, 0);
+            seen.push(state.1);
+        }
+        seen
+    }
+}
+
+/// FR-175-AC-1: ADR-023 section 8.1's leaky counterexample, `a` from `(0, 0)`
+/// and `b` from `(1, 0)` each taking `step(0)` with loop entry 1, is `false`
+/// at joint position 1; the same pair over the secure model is `true`.
 #[trace("TC-600", "FR-175-AC-1")]
 #[test]
-fn a_leaky_pair_is_false_at_the_first_differing_joint_position_and_a_secure_pair_holds() {
+fn the_vault_pair_is_false_at_joint_position_one_when_leaky_and_true_when_secure() {
     let fixture = fixture(ALWAYS_EQUAL);
+    // Two positions, the second the loop entry: loop entry 1.
     let shape = [lasso(1, 1), lasso(1, 1)];
-    let (leaky, _) = run(&fixture, &shape, vec![vec![0, 5], vec![0, 6]]);
+    let pair = |vault: Vault| vec![vault.observations((0, 0), 2), vault.observations((1, 0), 2)];
+    assert_eq!(pair(Vault::Leaky), [vec![0, 0], vec![0, 1]]);
+    let (leaky, _) = run(&fixture, &shape, pair(Vault::Leaky));
     assert_eq!(leaky, violated(1));
-    let (secure, _) = run(&fixture, &shape, vec![vec![0, 5], vec![0, 5]]);
+    let (secure, _) = run(&fixture, &shape, pair(Vault::Secure));
     assert_eq!(secure, TemporalOutcome::Holds);
 }
 
-/// FR-175-AC-2: a lasso of loop length 2 and one of length 3 are read over a
-/// joint period of 6 after the longest stem, each component by the
-/// prefix-then-loop rule, and `trace_position` names the joint position.
+/// FR-175-AC-2: a lasso with loop length 2 and one with loop length 3 are
+/// read over a joint period of 6. Joint offsets 0..=2 pair equal outputs and
+/// offset 3 pairs `a`'s second loop position with `b`'s first, so the body
+/// is `false` at joint position 3 and `trace_position` names it. A reading
+/// over the longer loop alone (period 3) would never reach offset 3. (The
+/// spec's "fifth position" cannot occur for this pair: the offsets 0..=3
+/// already tie every loop observation together.)
 #[trace("TC-600", "FR-175-AC-2")]
 #[test]
 fn a_tuple_of_two_and_three_position_loops_is_read_over_a_joint_period_of_six() {
     let fixture = fixture(ALWAYS_EQUAL);
-    // `a` has a stem of 3 and a loop of 2, `b` a loop of 3: the joint stem is
-    // 3 and the joint period 6. Joint positions 0..=3 pair equal outputs;
-    // joint position 4 pairs `a`'s second loop position (7) with `b`'s
-    // position 1 (1).
+    let shape = [lasso(0, 2), lasso(0, 3)];
+    let (differing, _) = run(&fixture, &shape, vec![vec![0, 1], vec![0, 1, 0]]);
+    assert_eq!(differing, violated(3));
+    // A difference at offset 2 is found at offset 2.
+    let (earlier, _) = run(&fixture, &shape, vec![vec![0, 1], vec![0, 1, 2]]);
+    assert_eq!(earlier, violated(2));
+    // Equal outputs hold and read exactly one period: joint positions 0..=5.
+    let (equal, letters) = run(&fixture, &shape, vec![vec![5, 5], vec![5, 5, 5]]);
+    assert_eq!(equal, TemporalOutcome::Holds);
+    assert_eq!(letters.joints, [0, 1, 2, 3, 4, 5]);
+}
+
+/// FR-175-AC-2: the joint stem is the longest component stem. `a` has a stem
+/// of 3 and a loop of 2, `b` a loop of 3, so the joint stem is 3; joint
+/// positions 0..=3 pair equal outputs and joint position 4 pairs `a`'s
+/// second loop position (7) with `b`'s position 1 (1).
+#[trace("TC-600", "FR-175-AC-2")]
+#[test]
+fn the_joint_stem_is_the_longest_component_stem() {
+    let fixture = fixture(ALWAYS_EQUAL);
     let shape = [lasso(3, 2), lasso(0, 3)];
     let (differing, letters) = run(&fixture, &shape, vec![vec![0, 1, 2, 0, 7], vec![0, 1, 2]]);
     assert_eq!(differing, violated(4));
     assert_eq!(letters.joints.iter().max(), Some(&8));
-
-    // Equal outputs throughout hold, and every joint position
-    // of the stem and of one period is read: 3 + 6 positions.
     let (equal, letters) = run(&fixture, &shape, vec![vec![5, 5, 5, 5, 5], vec![5, 5, 5]]);
     assert_eq!(equal, TemporalOutcome::Holds);
     assert_eq!(letters.joints.iter().max(), Some(&8));
-    assert!(letters.joints.iter().all(|joint| *joint < 9));
 }
 
-/// FR-175-AC-2: a past operator under `always` is the same at a loop
-/// position and at its unrolled copy, so the same behaviours written with
-/// their loops unrolled once evaluate alike.
+/// FR-175-AC-2: a past operator under `always` gives the same value at a loop
+/// position and at its unrolled copy, so a tuple and the same behaviours
+/// written with unrolled loops evaluate alike, `trace_position` included.
 #[trace("TC-600", "FR-175-AC-2")]
 #[test]
-fn a_past_operator_gives_the_same_value_at_a_loop_position_and_its_unrolled_copy() {
-    let fixture =
-        fixture("always (holds(c.value @ a = 1) implies once[1,1] holds(c.value @ b = 2))");
-    for (a, b, expected) in [
-        // `a` reads 1 at its loop position 1; `b` read 2 one joint step earlier.
-        (vec![0, 1], vec![0, 2], false),
-        (vec![0, 1], vec![2, 0], true),
+fn a_past_operator_gives_the_same_outcome_at_a_loop_position_and_its_unrolled_copy() {
+    let past =
+        fixture("always (holds(c.value @ a = 1) implies not once[2,2] holds(c.value @ b = 2))");
+    let unrolled = |values: &[i64], times: usize| values.repeat(times);
+    // The violation needs loop history: `a` reads 1 at joint position 2, two
+    // joint steps after `b` read 2 at position 0, which is only so in the
+    // second copy of a loop of length 2. Both encodings fix it at position 2.
+    let compact = run(
+        &past,
+        &[lasso(0, 2), lasso(0, 2)],
+        vec![vec![1, 0], vec![2, 0]],
+    )
+    .0;
+    let twice = run(
+        &past,
+        &[lasso(0, 4), lasso(0, 4)],
+        vec![unrolled(&[1, 0], 2), unrolled(&[2, 0], 2)],
+    )
+    .0;
+    assert_eq!(compact, violated(2));
+    assert_eq!(compact, twice);
+
+    // The 2-and-3 pair against its common unrolling (4 and 6).
+    for (a, b) in [
+        (vec![1, 0], vec![2, 0, 0]),
+        (vec![1, 0], vec![0, 0, 0]),
+        (vec![0, 1], vec![2, 0, 3]),
     ] {
-        let compact = [lasso(0, 2), lasso(0, 2)];
-        let (value, _) = run(&fixture, &compact, vec![a.clone(), b.clone()]);
-        let unrolled = [lasso(0, 4), lasso(0, 4)];
-        let twice = |values: &Vec<i64>| values.repeat(2);
-        let (unrolled_value, _) = run(&fixture, &unrolled, vec![twice(&a), twice(&b)]);
-        assert_eq!(value, unrolled_value);
-        assert_eq!(value == TemporalOutcome::Holds, expected, "{a:?} {b:?}");
+        let compact = run(
+            &past,
+            &[lasso(0, 2), lasso(0, 3)],
+            vec![a.clone(), b.clone()],
+        )
+        .0;
+        let twice = run(
+            &past,
+            &[lasso(0, 4), lasso(0, 6)],
+            vec![unrolled(&a, 2), unrolled(&b, 2)],
+        )
+        .0;
+        assert_eq!(compact, twice, "{a:?} {b:?}");
     }
+}
+
+/// FR-175 "Work": the position of a `false` is found from the readings of the
+/// one evaluation, so the clause meter charges one unit per node and joint
+/// position and each atom is read once per joint position.
+#[trace("TC-600", "FR-175-AC-2")]
+#[test]
+fn locating_the_false_position_charges_no_second_evaluation() {
+    let fixture = fixture(ALWAYS_EQUAL);
+    let shape = [lasso(0, 2), lasso(0, 3)];
+    let budget = |work_units| ScalarLimits {
+        work_units,
+        ..SCALAR_LIMITS_UNLIMITED
+    };
+    let consumed = |limits: ScalarLimits, values: Vec<Vec<i64>>| {
+        let mut letters = Letters::new(&fixture, values);
+        let mut meter = Meter::new(limits);
+        let outcome =
+            evaluate_tuple(&fixture.clause, &shape, &mut letters, &mut meter).expect("readable");
+        (outcome, meter.consumed(LimitKind::WorkUnits), letters.reads)
+    };
+    let (outcome, work, reads) = consumed(SCALAR_LIMITS_UNLIMITED, vec![vec![0, 1], vec![0, 1, 0]]);
+    assert_eq!(outcome, violated(3));
+    // One unit per (node, joint position) over one period, and no atom read twice.
+    let distinct: std::collections::BTreeSet<_> = reads.iter().collect();
+    assert_eq!(distinct.len(), reads.len());
+    let (_, equal_work, _) = consumed(SCALAR_LIMITS_UNLIMITED, vec![vec![5, 5], vec![5, 5, 5]]);
+    assert_eq!(work, equal_work);
+    // The evaluation fits the budget it consumed and not one unit less.
+    let (fits, _, _) = consumed(budget(work), vec![vec![0, 1], vec![0, 1, 0]]);
+    assert_eq!(fits, violated(3));
+    let (short, _, _) = consumed(budget(work - 1), vec![vec![0, 1], vec![0, 1, 0]]);
+    assert!(matches!(short, TemporalOutcome::Incomplete(_)), "{short:?}");
+}
+
+/// FR-175 "Outputs": a body that is undefined on the tuple is undefined at
+/// the first joint position an atom is, with its cause.
+#[trace("TC-600", "FR-175-AC-2")]
+#[test]
+fn an_atom_with_no_value_makes_the_body_undefined_at_the_first_such_joint_position() {
+    let fixture = fixture("always holds(1 / c.value @ a = 1)");
+    let shape = [lasso(0, 2), lasso(0, 3)];
+    // `a`'s second loop position reads 0, so `1 / value` has no value there:
+    // joint position 1.
+    let mut letters = Letters::new(&fixture, vec![vec![1, 0], vec![0, 0, 0]]);
+    let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+    let outcome =
+        evaluate_tuple(&fixture.clause, &shape, &mut letters, &mut meter).expect("readable");
+    let TemporalOutcome::Undefined(undefined) = outcome else {
+        panic!("{outcome:?}");
+    };
+    assert_eq!(undefined.at, TemporalPosition::new(1));
+    assert_eq!(
+        undefined.cause,
+        UndefinedCause::Kernel(Undefined::DivisionByZero)
+    );
+}
+
+/// FR-175 covers lockstep only: a clause with `align skip` (FR-178) is
+/// refused as not yet implemented.
+#[trace("TC-600")]
+#[test]
+fn a_clause_with_align_skip_is_refused_as_not_yet_implemented() {
+    let fixture = fixture_with(
+        vec![increment(), acquire()],
+        "align skip { M::Counter::acquire }",
+        ALWAYS_EQUAL,
+    );
+    let mut letters = Letters::new(&fixture, vec![vec![0], vec![0]]);
+    let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+    let refusal = evaluate_tuple(
+        &fixture.clause,
+        &[lasso(0, 1), lasso(0, 1)],
+        &mut letters,
+        &mut meter,
+    )
+    .expect_err("align skip is not lockstep");
+    assert_eq!(refusal, TemporalRefusal::AlignSkipNotImplemented);
+    assert_eq!(
+        refusal.catalog_code(),
+        qsl_foundation::CatalogCode::new("unsupported_construct", "not-yet-implemented")
+    );
 }
 
 /// FR-175-AC-3: a component that ends at a terminal state reads its terminal

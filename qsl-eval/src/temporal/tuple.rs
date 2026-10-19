@@ -17,10 +17,12 @@
 //! the tuple and by replay (FR-183), so the body is evaluated with no
 //! fairness set to check.
 
-use qsl_semantics::check::{Activation, CheckedHyperClause, FormulaNodeId};
-use quire_exact::Meter;
+use std::collections::HashMap;
 
-use super::engine::{self, Goal, Subject};
+use qsl_semantics::check::{Activation, CheckedHyperClause, FormulaNodeId};
+use quire_exact::{Meter, ScalarLimits};
+
+use super::engine::{self, unrolling_of, Goal, Subject};
 use super::input::TemporalTrace;
 use super::letters::{AtomReading, LetterStop, TemporalLetters};
 use super::outcome::{TemporalOutcome, TemporalRefusal};
@@ -132,11 +134,15 @@ fn gcd(mut left: u64, mut right: u64) -> u64 {
     left
 }
 
-/// The seam that turns the joint position into component positions.
+/// The seam that turns the joint position into component positions. A
+/// reading is made once per (atom, joint position): the position search
+/// below re-evaluates the body over shorter prefixes and takes the readings
+/// of the first pass from here.
 struct Lockstep<'a, L> {
     components: &'a [ComponentTrace],
     letters: &'a mut L,
     scratch: Vec<ComponentPosition>,
+    readings: HashMap<(FormulaNodeId, u64), AtomReading>,
 }
 
 impl<L: TupleLetters> TemporalLetters for Lockstep<'_, L> {
@@ -146,6 +152,9 @@ impl<L: TupleLetters> TemporalLetters for Lockstep<'_, L> {
         position: TemporalPosition,
         meter: &mut Meter,
     ) -> Result<AtomReading, LetterStop> {
+        if let Some(reading) = self.readings.get(&(atom, position.index())) {
+            return Ok(reading.clone());
+        }
         self.scratch.clear();
         for component in self.components {
             let read = component
@@ -153,7 +162,10 @@ impl<L: TupleLetters> TemporalLetters for Lockstep<'_, L> {
                 .map_err(|_| LetterStop::Fault(fault("tuple-component-readable")))?;
             self.scratch.push(read);
         }
-        self.letters.atom(atom, position, &self.scratch, meter)
+        let reading = self.letters.atom(atom, position, &self.scratch, meter)?;
+        self.readings
+            .insert((atom, position.index()), reading.clone());
+        Ok(reading)
     }
 
     fn activation(
@@ -175,37 +187,59 @@ fn subject(body: &CheckedHyperClause) -> Subject<'_> {
     }
 }
 
+/// A meter that stops nothing, for the position search.
+const UNBOUNDED: ScalarLimits = ScalarLimits {
+    integer_bits: u64::MAX,
+    decimal_digits: u64::MAX,
+    scale_expansion: u64::MAX,
+    text_input_bytes: u64::MAX,
+    text_scalars: u64::MAX,
+    normalized_scalars: u64::MAX,
+    unit_edges: u64::MAX,
+    value_occurrences: u64::MAX,
+    work_units: u64::MAX,
+    result_units: u64::MAX,
+};
+
 /// The first joint position at which the body's `false` is fixed (FR-175
-/// "Outputs"): the shortest joint prefix that is already a bad prefix of the
-/// body, read three-valued by the one evaluator (ADR-018 SM-6). A body whose
-/// falsity no finite prefix shows, a liveness body, is fixed only when the
-/// joint loop closes, at the last represented joint position.
-fn false_position<L: TemporalLetters>(
+/// "Outputs"): the shortest joint prefix, over the unrolled word the body is
+/// evaluated on (ADR-018 SM-8), that is already a bad prefix of the body
+/// (SM-6). A body whose falsity no finite prefix shows, a liveness body, is
+/// fixed only when the joint loop closes, at the last represented position.
+///
+/// The verdict was reached by the evaluation the caller's meter charged. The
+/// search only locates the position in it: it takes every reading the first
+/// pass made from `lockstep`'s record and runs on its own meter, so the
+/// caller's work (one unit per node and joint position, FR-175 "Work") is not
+/// charged again and no atom the first pass read is read twice.
+fn false_position<L: TupleLetters>(
     body: &CheckedHyperClause,
+    trace: TemporalTrace,
     represented: u64,
-    letters: &mut L,
-    meter: &mut Meter,
+    lockstep: &mut Lockstep<'_, L>,
 ) -> Result<TemporalPosition, TemporalRefusal> {
-    let bad = |len: u64, letters: &mut L, meter: &mut Meter| {
+    let unrolled = u64::try_from(unrolling_of(subject(body), trace)?.positions)
+        .map_err(|_| TemporalRefusal::TraceTooLong)?;
+    let mut meter = Meter::new(UNBOUNDED);
+    let mut bad = |len: u64| {
         engine::run(
             subject(body),
             TemporalTrace::Finite { len },
             Goal::Clause,
-            letters,
-            meter,
+            lockstep,
+            &mut meter,
         )
         .map(|outcome| matches!(outcome, TemporalOutcome::Violated { .. }))
     };
-    let last = TemporalPosition::new(represented - 1);
     // A bad prefix stays bad as it grows, so the shortest one is found by
     // bisection: `low` is not bad, `high` is.
-    if !bad(represented, letters, meter)? {
-        return Ok(last);
+    if !bad(unrolled)? {
+        return Ok(TemporalPosition::new(represented - 1));
     }
-    let (mut low, mut high) = (0, represented);
+    let (mut low, mut high) = (0, unrolled);
     while high - low > 1 {
         let middle = low + (high - low) / 2;
-        if bad(middle, letters, meter)? {
+        if bad(middle)? {
             high = middle;
         } else {
             low = middle;
@@ -235,17 +269,21 @@ pub fn evaluate_tuple<L: TupleLetters>(
             found: components.len(),
         });
     }
+    if !body.align_skip().is_empty() {
+        return Err(TemporalRefusal::AlignSkipNotImplemented);
+    }
     let trace = joint(components)?;
     let represented = trace.represented().ok_or(TemporalRefusal::TraceTooLong)?;
     let mut lockstep = Lockstep {
         components,
         letters,
         scratch: Vec::with_capacity(components.len()),
+        readings: HashMap::new(),
     };
     let outcome = engine::run(subject(body), trace, Goal::Clause, &mut lockstep, meter)?;
     match outcome {
         TemporalOutcome::Violated { .. } => Ok(TemporalOutcome::Violated {
-            at: false_position(body, represented, &mut lockstep, meter)?,
+            at: false_position(body, trace, represented, &mut lockstep)?,
         }),
         other => Ok(other),
     }

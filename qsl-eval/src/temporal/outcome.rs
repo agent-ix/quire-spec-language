@@ -85,6 +85,10 @@ pub enum TemporalRefusal {
         /// The components supplied.
         found: usize,
     },
+    /// A hyper clause with `align skip` (HP-6, FR-178), which is not
+    /// lockstep and is not built yet.
+    #[error("a clause with `align skip` is not evaluated in lockstep; FR-178 is not built")]
+    AlignSkipNotImplemented,
     /// A lasso with an empty loop (FR-329 "Lasso shape").
     #[error("a lasso holds at least one loop position")]
     EmptyLoop,
@@ -129,6 +133,9 @@ impl TemporalRefusal {
             | Self::TraceTooLong
             | Self::TupleArity { .. }
             | Self::Window(_) => CatalogCode::new("invalid_runtime_input", "invalid-value"),
+            Self::AlignSkipNotImplemented => {
+                CatalogCode::new("unsupported_construct", "not-yet-implemented")
+            }
             Self::LassoUnderBoundedProfile { .. } | Self::ProfileNotEvaluated { .. } => {
                 CatalogCode::new("unsupported_construct", "expression-form")
             }
