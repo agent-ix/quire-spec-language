@@ -457,6 +457,12 @@ pub struct PackageDeclarations {
     /// owner resolved, checked beside the state clauses. A checked invariant
     /// adds no declaration, claim or requirement record.
     pub type_invariants: Vec<super::TypeInvariantDeclaration>,
+    /// FR-124: the unit's `terminal` declarations in declaration order, each
+    /// resolved by the FR-091 assembler and checked beside the state clauses.
+    pub terminals: Vec<super::TerminalClauseDeclaration>,
+    /// Test-only: check a package that holds a `terminal` declaration
+    /// without refusing it as not emitted (FR-124).
+    pub emit_unwritten_terminals: bool,
     /// FR-103, FR-302: the unit's `operation-body` declarations in
     /// declaration order, each resolved to its operation's `DeclarationKey`
     /// by the FR-091 assembler. At most one per key.
@@ -473,6 +479,17 @@ pub struct PackageDeclarations {
 }
 
 impl PackageDeclarations {
+    /// These declarations, to be checked without refusing a `terminal`
+    /// declaration as not emitted, so the S3 value
+    /// (`CheckedGraph::terminals`) stays testable until S4 writes it
+    /// (FR-124).
+    #[cfg(any(test, feature = "test-support"))]
+    #[must_use]
+    pub fn with_unwritten_terminals(mut self) -> Self {
+        self.emit_unwritten_terminals = true;
+        self
+    }
+
     /// The work units the staged model type admission has spent so far
     /// (structural admission plus its metered reads), when one is staged.
     #[cfg(any(test, feature = "test-support"))]
@@ -543,6 +560,8 @@ impl PackageDeclarations {
             temporal_selections: Vec::new(),
             operation_clauses: Vec::new(),
             type_invariants: Vec::new(),
+            terminals: Vec::new(),
+            emit_unwritten_terminals: false,
             operation_bodies: Vec::new(),
             selected_views: BTreeMap::new(),
             identity,

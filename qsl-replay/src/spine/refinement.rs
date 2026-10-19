@@ -252,7 +252,10 @@ fn assembly_limit(cause: &AssemblyCause) -> Option<ReachedLimit> {
         | AssemblyCause::DuplicateOperationBody { .. }
         | AssemblyCause::UnresolvedPopulationBound { .. }
         | AssemblyCause::AmbiguousPopulationBound { .. }
-        | AssemblyCause::UnsupportedDeclarationForm { .. }
+        | AssemblyCause::UnresolvedTerminalModel { .. }
+        | AssemblyCause::UnresolvedTerminalState { .. }
+        | AssemblyCause::AmbiguousTerminal { .. }
+        | AssemblyCause::AmbiguousTerminalState { .. }
         | AssemblyCause::AmbiguousPopulation { .. }
         | AssemblyCause::UnsupportedLayerForm { .. } => None,
     }
@@ -275,6 +278,7 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
         CheckCause::TypeAdmission { limit, .. } => limit.as_deref().map(ReachedLimit::of),
         // A type invariant's wrapper classifies as the cause it wraps.
         CheckCause::TypeInvariant(refusal) => check_limit(&refusal.cause),
+        CheckCause::Terminal(refusal) => check_limit(&refusal.cause),
         CheckCause::DispatchLink(link) => link
             .denial
             .as_ref()
@@ -310,6 +314,7 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
         | CheckCause::NodePreimage(_)
         | CheckCause::ProtocolAnchor(_)
         | CheckCause::ProtocolReference(_)
+        | CheckCause::TerminalNotEmitted { .. }
         | CheckCause::Temporal(_)
         | CheckCause::StateGraph(_) => None,
         #[cfg(seam_probe)]

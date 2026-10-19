@@ -337,10 +337,7 @@ fn check_predicate<'a>(
     let body: &Expression = &operand.expression;
     let view = ClauseView {
         kind: StateClauseKind::Invariant,
-        complete_value: declaration.selection.identity
-            == crate::value::definition::DefinitionLock::pinned()
-                .entry(crate::value::definition::CatalogRole::Root)
-                .identity,
+        complete_value: super::state_clause::is_complete_value(&declaration.selection),
         context: declaration.context,
         receiver_name: &declaration.form.over.name.name,
         receiver: ValueType::Reference(declaration.context),

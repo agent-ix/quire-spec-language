@@ -23,18 +23,24 @@
 //! capture's type positions, plus, under infinite-trace, the formula itself
 //! as one infinite-trace domain no finite bound can stand for.
 //!
-//! This module checks the interval structure FR-326 states. A `holds`
-//! condition, the activation's `when`, a capture's value and the fairness
-//! constraints are FR-123's, and the emitted node is FR-337's: until those
-//! land, [`not_emitted`] refuses a clause that checks, so it is never
-//! compiled into a package that silently lacks it.
+//! FR-123 adds the fairness set and the property form. Each fairness
+//! constraint is checked into one shared `FairnessConstraint` (kind,
+//! resolved operation, granularity); a constraint under a bounded profile
+//! refuses `unsupported_construct`/`expression-form`, and one naming no
+//! operation of an admitted model refuses `missing_declaration`/`missing-name`.
+//! A clause over a model subject is classified into one `PropertyForm`.
+//!
+//! A `holds` condition, the activation's `when` and a capture's value are
+//! not checked here, and the emitted node is FR-337's: until it lands,
+//! [`not_emitted`] refuses a clause that checks, so it is never compiled
+//! into a package that silently lacks it.
 
 use std::collections::BTreeMap;
 
 use qsl_forms::{
-    ActivationForm, FairnessGranularity as FormGranularity, FairnessKind as FormKind, IntervalForm,
-    IntervalUpper, ParameterForm, TemporalClauseForm, TemporalNodeForm, TemporalNodeId,
-    TemporalOperator,
+    ActivationForm, FairnessConstraintForm, FairnessGranularity as FormGranularity,
+    FairnessKind as FormKind, IntervalForm, IntervalUpper, ParameterForm, TemporalClauseForm,
+    TemporalNodeForm, TemporalNodeId, TemporalOperator,
 };
 use qsl_foundation::bound::{DomainKey, DomainKind, IntervalKey, TemporalInterval, TemporalUpper};
 use qsl_foundation::diagnostic::{LimitExceeded, Locus, StageFailure, Staged};
@@ -44,6 +50,9 @@ use qsl_foundation::source::provenance::RawSourceRef;
 use qsl_foundation::source_map::SourceMap;
 use qsl_foundation::{InternalFault, Setting, Span};
 use quire_exact::ValueType;
+use quire_semantic_value::fairness::{
+    FairnessConstraint, FairnessGranularity, FairnessKind, FairnessOperation, PropertyForm,
+};
 use quire_semantic_value::location::{Location, Origin};
 
 use super::profile::TemporalProfile;
@@ -53,6 +62,7 @@ use crate::check::Capability;
 use crate::family::requirements::{classify_domains, ClassifyFailure};
 use crate::family::requirements::{ClaimExtent, Requirements};
 use crate::family::{CheckContext, CheckOutcome, FamilyContract};
+use crate::model::operation::OperationLookup;
 
 /// The stage name this module's faults report.
 const STAGE: &str = "check.temporal";
@@ -235,50 +245,6 @@ pub enum Activation {
     },
 }
 
-/// A fairness constraint's kind (QSpec FR-362, FR-129).
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum FairnessKind {
-    /// `weak`.
-    Weak,
-    /// `strong`.
-    Strong,
-}
-
-/// A fairness constraint's granularity (ADR-018 FA-1).
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum FairnessGranularity {
-    /// `whole`.
-    Whole,
-    /// `each`.
-    Each,
-}
-
-/// One checked fairness constraint. The operation is the spelled name until
-/// FR-123 resolves it to a declaration.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct FairnessConstraint {
-    /// The kind, `weak` when unmarked.
-    pub kind: FairnessKind,
-    /// The operation name as written.
-    pub operation: String,
-    /// The granularity, `whole` when unmarked.
-    pub granularity: FairnessGranularity,
-}
-
-impl std::fmt::Display for FairnessConstraint {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let kind = match self.kind {
-            FairnessKind::Weak => "weak",
-            FairnessKind::Strong => "strong",
-        };
-        let granularity = match self.granularity {
-            FairnessGranularity::Whole => "whole",
-            FairnessGranularity::Each => "each",
-        };
-        write!(formatter, "fair {kind} {granularity} {}", self.operation)
-    }
-}
-
 /// The `temporal-satisfaction` claim of a clause (ADR-014 §4), before the
 /// checked nodes it is keyed by exist.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -349,6 +315,7 @@ pub struct CheckedTemporalClause {
     formula: CheckedFormula,
     activation: Activation,
     fairness: Vec<FairnessConstraint>,
+    property_form: Option<PropertyForm>,
 }
 
 impl CheckedTemporalClause {
@@ -391,10 +358,16 @@ impl CheckedTemporalClause {
     }
 
     /// The clause's fairness set, each constraint once, in source order of
-    /// first occurrence. The operation stays a spelled name until FR-123
-    /// resolves it to a declaration.
+    /// first occurrence (FR-123).
     pub fn fairness(&self) -> &[FairnessConstraint] {
         &self.fairness
+    }
+
+    /// The clause's property form (FR-123 "Property form"); `None` for a
+    /// clause that is not over a model subject, or that selects the
+    /// fixed-sample or timestamped-event profile.
+    pub fn property_form(&self) -> Option<PropertyForm> {
+        self.property_form
     }
 
     /// The QSpec FR-255 key of the interval `node` carries, under the
@@ -586,6 +559,7 @@ fn check_clause(
             interval,
         });
     }
+    let fairness = checked_fairness(form, bounded, declarations, types.first(), &mut refusals);
     if let Some(first) = refusals.into_iter().min_by_key(|cause| cause.span().start) {
         return Err(refuse(first));
     }
@@ -612,6 +586,8 @@ fn check_clause(
         .map(|operator| (operator.node, operator.interval))
         .collect();
     let formula = build_formula(form, &intervals)?;
+    let model_subject = matches!(types.first(), Some(ValueType::Reference(_)));
+    let property_form = property_form(profile, model_subject, &formula);
 
     Ok(CheckedTemporalClause {
         name: form.name.name.clone(),
@@ -633,32 +609,198 @@ fn check_clause(
                 guarded: when.is_some(),
             },
         },
-        fairness: checked_fairness(form),
+        fairness,
+        property_form,
     })
 }
 
-/// The checked fairness set: each constraint once, in source order of first
-/// occurrence. An unmarked kind is `weak` (QSpec FR-362, FR-129) and an
-/// unmarked granularity is `whole` (ADR-018 FA-6).
-fn checked_fairness(form: &TemporalClauseForm) -> Vec<FairnessConstraint> {
+/// The checked fairness set (FR-123, FR-129): each constraint once, in
+/// source order of first occurrence. An unmarked kind is `weak` and an
+/// unmarked granularity is `whole` (ADR-018 FA-6). A constraint under a
+/// bounded profile, or naming no operation of an admitted model, pushes its
+/// refusal onto `refusals` and joins no set.
+fn checked_fairness(
+    form: &TemporalClauseForm,
+    bounded: bool,
+    declarations: &TemporalDeclarations<'_>,
+    over: Option<&ValueType>,
+    refusals: &mut Vec<TemporalCause>,
+) -> Vec<FairnessConstraint> {
     let mut set: Vec<FairnessConstraint> = Vec::new();
     for written in &form.fairness {
-        let constraint = FairnessConstraint {
-            kind: match written.kind {
+        if bounded {
+            refusals.push(TemporalCause::FairnessUnderBoundedProfile { span: written.span });
+            continue;
+        }
+        let operation = match resolve_fairness_operation(written, declarations.scope, over) {
+            Ok(operation) => operation,
+            Err(cause) => {
+                refusals.push(cause);
+                continue;
+            }
+        };
+        let constraint = FairnessConstraint::new(
+            match written.kind {
                 None | Some(FormKind::Weak) => FairnessKind::Weak,
                 Some(FormKind::Strong) => FairnessKind::Strong,
             },
-            operation: written.operation.name.clone(),
-            granularity: match written.granularity {
+            operation,
+            match written.granularity {
                 None | Some(FormGranularity::Whole) => FairnessGranularity::Whole,
                 Some(FormGranularity::Each) => FairnessGranularity::Each,
             },
-        };
+        );
         if !set.contains(&constraint) {
             set.push(constraint);
         }
     }
     set
+}
+
+/// The operation a fairness constraint names, resolved in an admitted
+/// model object type's effective view (FR-103): `Model::Type::operation`
+/// names the type, and an operation written alone is read in the view of the
+/// clause's `over` object type. The operation keeps its declaring type, so
+/// same-named operations of different types stay distinct.
+fn resolve_fairness_operation(
+    written: &FairnessConstraintForm,
+    scope: &Scope,
+    over: Option<&ValueType>,
+) -> Result<FairnessOperation, TemporalCause> {
+    let name = &written.operation;
+    let (object, operation) = match name.name.rsplit_once("::") {
+        Some((object, operation)) => (scope.object_type_named(object), operation),
+        None => (
+            match over {
+                Some(ValueType::Reference(object)) => Some(*object),
+                _ => None,
+            },
+            name.name.as_str(),
+        ),
+    };
+    let unresolved = || TemporalCause::UnresolvedFairnessOperation {
+        name: name.name.clone(),
+        span: name.span,
+    };
+    let object = object.ok_or_else(unresolved)?;
+    match scope.operations().resolve(scope.types(), object, operation) {
+        OperationLookup::Declared {
+            declaring,
+            operation,
+        } => Ok(FairnessOperation::new(
+            declaring,
+            operation.name().to_owned(),
+        )),
+        OperationLookup::Missing => Err(unresolved()),
+        OperationLookup::Ambiguous(_) => Err(TemporalCause::AmbiguousFairnessOperation {
+            name: name.name.clone(),
+            span: name.span,
+        }),
+    }
+}
+
+/// The clause's property form (FR-123 "Property form", ADR-018 TP-1 to
+/// TP-4), in the order the requirement states; `None` for a clause that is
+/// not over a model subject and for the fixed-sample and timestamped-event
+/// profiles, which negotiation settles unsupported.
+fn property_form(
+    profile: TemporalProfile,
+    model_subject: bool,
+    formula: &CheckedFormula,
+) -> Option<PropertyForm> {
+    if !model_subject {
+        return None;
+    }
+    match profile {
+        TemporalProfile::FixedSampleFalseExtension
+        | TemporalProfile::TimestampedEventFiniteWindow => return None,
+        TemporalProfile::EventPositionFalseExtension | TemporalProfile::InfiniteTrace => {}
+    }
+    if is_reachable_invariant(formula) {
+        Some(PropertyForm::ReachableInvariant)
+    } else if profile == TemporalProfile::EventPositionFalseExtension {
+        Some(PropertyForm::BoundedMltl)
+    } else if in_safety_fragment(formula) {
+        Some(PropertyForm::Safety)
+    } else {
+        Some(PropertyForm::Liveness)
+    }
+}
+
+/// Whether the formula is `always holds(I)` with no interval (TP-1).
+fn is_reachable_invariant(formula: &CheckedFormula) -> bool {
+    let nodes = formula.nodes();
+    let Some(FormulaNode::Unary {
+        operator: UnaryTemporal::Always,
+        interval: None,
+        operand,
+    }) = nodes.get(formula.root().index())
+    else {
+        return false;
+    };
+    matches!(nodes.get(operand.index()), Some(FormulaNode::Holds { .. }))
+}
+
+/// Whether the interval is closed: the one an interval operator needs to
+/// stay within the safety fragment when its operator is `eventually` or
+/// `until` (ADR-018 IV-4).
+fn is_closed(interval: Option<TemporalInterval>) -> bool {
+    matches!(
+        interval.map(|interval| interval.upper()),
+        Some(TemporalUpper::Finite(_))
+    )
+}
+
+/// Whether the formula, in negation normal form, is in ADR-014 A-4's safety
+/// fragment as ADR-018 IV-4 amends it (TP-3): atoms, `and`, `or`, `always`,
+/// `release`, the past operators, and `eventually` and `until` only with a
+/// closed interval. A top-down pass tracks each node's polarity, so `not`
+/// and `implies` are read as negation normal form would write them: a
+/// negated `eventually` is an `always`, a negated `until` a `release`, and
+/// the reverse. The arena puts an operator before its operands, so one pass
+/// reaches every node after its parent.
+fn in_safety_fragment(formula: &CheckedFormula) -> bool {
+    let nodes = formula.nodes();
+    let mut negated = vec![false; nodes.len()];
+    for (index, node) in nodes.iter().enumerate() {
+        let here = negated.get(index).copied().unwrap_or(false);
+        let (admitted, first, second) = match node {
+            FormulaNode::Constant(_)
+            | FormulaNode::Holds { .. }
+            | FormulaNode::And(..)
+            | FormulaNode::Or(..) => (true, here, here),
+            FormulaNode::Not(_) | FormulaNode::Implies(..) => (true, !here, here),
+            FormulaNode::Unary {
+                operator, interval, ..
+            } => {
+                let admitted = match operator {
+                    UnaryTemporal::Once | UnaryTemporal::Historically => true,
+                    UnaryTemporal::Always => !here || is_closed(*interval),
+                    UnaryTemporal::Eventually => here || is_closed(*interval),
+                };
+                (admitted, here, here)
+            }
+            FormulaNode::Binary {
+                operator, interval, ..
+            } => {
+                let admitted = match operator {
+                    BinaryTemporal::Since | BinaryTemporal::Triggered => true,
+                    BinaryTemporal::Release => !here || is_closed(*interval),
+                    BinaryTemporal::Until => here || is_closed(*interval),
+                };
+                (admitted, here, here)
+            }
+        };
+        if !admitted {
+            return false;
+        }
+        for (operand, polarity) in node.operands().zip([first, second]) {
+            if let Some(slot) = negated.get_mut(operand.index()) {
+                *slot = polarity;
+            }
+        }
+    }
+    true
 }
 
 /// The checked formula of `form`: the arena order is kept, so an operator

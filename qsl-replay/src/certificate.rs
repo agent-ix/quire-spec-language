@@ -84,4 +84,5 @@ impl Serialize for CertificateLocus {
     }
 }
 
+pub mod closed_form;
 pub mod zone;

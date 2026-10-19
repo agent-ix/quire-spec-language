@@ -9,6 +9,7 @@
 
 use crate::bounds::{BoundExceeded, ReplayLimits};
 use crate::call_site::CallSiteRefusal;
+use crate::certificate::closed_form::outcome::ClosedFormAnalysis;
 use crate::certificate::{CertificateLocus, CertificateRule};
 use crate::execute::ReplayRefusal;
 use crate::result::{DisagreementCause, ReplayResult, WitnessSettlement};
@@ -43,6 +44,12 @@ pub enum ProofBasis {
     Inductive {
         /// Induction depth.
         depth: u64,
+    },
+    /// A closed-form schedulability analysis whose evidence the core
+    /// recomputed (ADR-026 RT-7).
+    ClosedForm {
+        /// The analysis.
+        analysis: ClosedFormAnalysis,
     },
 }
 
@@ -235,6 +242,9 @@ pub enum InconclusiveCause {
     /// none of: a harness defect. The agreement names the claim and the
     /// outcome, and no predicate verdict.
     ScalarAgrees(ScalarAgreement),
+    /// AMC-rtb's high-mode criterion failed; the test is sufficient and
+    /// not necessary, so it decides nothing (ADR-026 RT-6).
+    SufficientTestFailed,
 }
 
 impl InconclusiveCause {
@@ -249,6 +259,7 @@ impl InconclusiveCause {
             Self::ReplayParity(_) => "replay-parity",
             Self::ReplayRefused(_) => "replay-refused",
             Self::ScalarAgrees(_) => "scalar-agrees",
+            Self::SufficientTestFailed => "sufficient-test-failed",
         }
     }
 
@@ -260,6 +271,7 @@ impl InconclusiveCause {
             | Self::InductionNotClosed { .. }
             | Self::UndecidedSuccessor
             | Self::NoInitialState
+            | Self::SufficientTestFailed
             | Self::CertificateRejected { .. } => 0,
             Self::ReplayParity(cause) => cause.measured_bytes(),
             Self::ReplayRefused(_) => 0,
@@ -365,7 +377,8 @@ impl TerminalValue {
                     ProofBasis::Checks { .. }
                     | ProofBasis::Exhaustive
                     | ProofBasis::BoundedComplete { .. }
-                    | ProofBasis::Inductive { .. },
+                    | ProofBasis::Inductive { .. }
+                    | ProofBasis::ClosedForm { .. },
                 ..
             }
             | Self::Tested => Category::Success,
