@@ -2565,6 +2565,10 @@ pub enum ProtocolConstructKind {
     JoinPredicate,
     /// A `terminal when { predicate };` member.
     TerminalWhen,
+    /// A `parallel`'s `memory sc | tso | ra` clause.
+    MemoryClause,
+    /// An `attempt`'s `ordering o` memory order.
+    AccessOrdering,
 }
 
 impl ProtocolConstructKind {
@@ -2581,6 +2585,8 @@ impl ProtocolConstructKind {
             Self::FifoOrdering => "channel ordering fifo",
             Self::JoinPredicate => "join predicate",
             Self::TerminalWhen => "terminal when",
+            Self::MemoryClause => "parallel memory",
+            Self::AccessOrdering => "attempt ordering",
         }
     }
 }

@@ -887,10 +887,17 @@ mod tests {
         let fifo = "channel Q from Seller to Buyer carries Plain ordering fifo by (m: Plain) \
             { m.ready } delivery unknown capacity 1 overflow reject;";
         let predicate_join = parallel("predicate(done) [east, west]");
+        let weak_memory =
+            parallel("all [east, west]").replacen("parallel P ", "parallel P memory tso ", 1);
+        let ordered = RUN.replacen("contracts", "ordering seq_cst contracts", 1);
+        let fence = "sequence Main { fence F ordering seq_cst; }";
         for (members, run, construct) in [
             (fifo, RUN, "channel ordering fifo"),
             ("", predicate_join.as_str(), "join predicate"),
             ("terminal when { true };", RUN, "terminal when"),
+            ("", weak_memory.as_str(), "parallel memory"),
+            ("", ordered.as_str(), "attempt ordering"),
+            ("", fence, "fence"),
         ] {
             let (_, cause, code, tag) = only_refusal(&pipeline(members, run));
             assert_eq!(

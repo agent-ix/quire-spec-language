@@ -33,7 +33,8 @@ fn covered_kind(kind: ProtocolNodeKind) -> bool {
         | K::Repeat
         | K::Case
         | K::Await
-        | K::Check => false,
+        | K::Check
+        | K::Fence => false,
     }
 }
 
@@ -44,7 +45,7 @@ fn covered_kind(kind: ProtocolNodeKind) -> bool {
 /// anything else -- a node kind [`covered_kind`] rejects, any
 /// [`qsl_forms::ProtocolConstructKind`] other than a plain channel
 /// (relationship, requirement, capture, `activation on each`, replicated
-/// role, `related by`, a `fifo` ordering, a `predicate` join, a `terminal
+/// role, `related by`, a `fifo` ordering, a `predicate` join, a `parallel` `memory` clause, an `attempt` `ordering`, a `terminal
 /// when` member), or a body
 /// other than a bare Boolean literal -- refuses `unsupported_construct`/
 /// `not-yet-implemented` once, at the earliest such construct, rather than

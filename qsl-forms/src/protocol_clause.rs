@@ -910,6 +910,12 @@ impl<'c> ControlWalk<'c, '_, '_> {
                         span: form.join.span,
                     });
                 }
+                if let Some(memory) = nodes_of(&matched_items, Production::MemoryClause).first() {
+                    self.collector.constructs.push(ProtocolConstructForm {
+                        kind: ProtocolConstructKind::MemoryClause,
+                        span: memory.span(),
+                    });
+                }
                 self.collector.parallels.push(form);
                 declare(self.collector.declarations, kind, name.clone(), self.scope);
                 self.open(name);
@@ -1122,6 +1128,12 @@ fn event_node_anchors(
         collector.constructs.push(ProtocolConstructForm {
             kind: ProtocolConstructKind::Related,
             span: related.span(),
+        });
+    }
+    for ordering in nodes_of(&event_items, Production::MemoryOrder) {
+        collector.constructs.push(ProtocolConstructForm {
+            kind: ProtocolConstructKind::AccessOrdering,
+            span: ordering.span(),
         });
     }
     // `attempt`'s own `on M::T::op` operation name and `contracts [...]`
