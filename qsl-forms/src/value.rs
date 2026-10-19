@@ -1071,6 +1071,13 @@ impl<'c> Mapping<'c> {
             | Production::StepSource
             | Production::StepTarget
             | Production::StepArgument
+            | Production::PopulationRow
+            | Production::ObjectRow
+            | Production::FieldRow
+            | Production::HistoryRow
+            | Production::HistoryUpdate
+            | Production::HistoryLiteral
+            | Production::FairnessRow
             | Production::Control
             | Production::Sequence
             | Production::Visibility
@@ -1656,6 +1663,13 @@ impl<'c> Mapping<'c> {
             | Production::StepSource
             | Production::StepTarget
             | Production::StepArgument
+            | Production::PopulationRow
+            | Production::ObjectRow
+            | Production::FieldRow
+            | Production::HistoryRow
+            | Production::HistoryUpdate
+            | Production::HistoryLiteral
+            | Production::FairnessRow
             | Production::Control
             | Production::Sequence
             | Production::Visibility
