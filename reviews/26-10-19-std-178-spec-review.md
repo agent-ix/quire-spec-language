@@ -36,3 +36,9 @@ The base checklist finds no defect beyond FND-001. AC-4 and TC-889 step 3
 trace one to one, and the step renumbering is consistent. The PR is not
 mergeable, because of the two highs in the integrity and scope-boundary
 reviews (SR-12900 FND-001, SR-12901 FND-001).
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | aea8326f7 rewrites the rule: "an unwritten granularity is built as absent, and S3 reads absent as `whole` (FR-137)". It now agrees with AC-4. |

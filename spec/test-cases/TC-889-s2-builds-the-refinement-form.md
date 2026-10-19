@@ -22,7 +22,8 @@ Fixtures: ADR-020 §8's `CasRefinesCounter`; FR-139's `RingIsQueue`;
 FR-147's `CasTwice`.
 
 1. Build the S2 form of `CasRefinesCounter`.
-2. Build the forms of `RingIsQueue` and `CasTwice`.
+2. Build the forms of `RingIsQueue` and `CasTwice`, and a refinement with
+   the step row `step Impl::P::a::S -> stutter;`.
 3. Build a declaration with history rows whose initial values are `-3`,
    `true`, `none`, `"a"`, `rational(1, 2)` and `Impl::Mode::idle`, and a
    fairness row `assume fair strong Impl::Counter::retryA;`.
@@ -36,8 +37,10 @@ Tag the tests `#[trace("TC-889", "<AC id>")]`.
 - Step 1: abstract side `Model(Spec)`, concrete `Impl`, the rows in source
   order with spans; the `ensure` granularity `each`.
 - Step 2: `seq` and `only` expression forms; `Apply` with `[self.ring,
-  Open]`; `Protocol(Spec, Twice)`, and a `Class` source with a `Node` target
-  for the protocol step row.
+  Open]`; `Protocol(Spec, Twice)`, a `Named` source of kind `fork` with a
+  `Node` target for the protocol step row; `step Impl::P::a::S -> stutter;`
+  builds a `Named` source with kind `None` and name `Impl::P::a::S`, and a
+  `memory` source builds `Memory`.
 - Step 3: the six history literals build as `Integer`, `Boolean`, `None`,
   `Text`, `Exact` and `EnumMember` forms, none as an expression form; the
   fairness row builds kind `Strong`, granularity absent.

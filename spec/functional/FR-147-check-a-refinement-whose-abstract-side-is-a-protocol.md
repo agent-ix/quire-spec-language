@@ -97,8 +97,9 @@ rows at compile time and requests one protocol refinement claim.
   node, or a channel or memory step kind of the abstract protocol, refusing
   `missing_declaration`/`missing-name` otherwise. The resolved entries are
   `abstract_internal`.
-- An abstract class named both by the profile's internal list and as the
-  right side of a step row SHALL refuse
+- QSL adds a refusal beyond QSpec FR-432: an abstract class named both by
+  the profile's internal list and as the right side of a step row SHALL
+  refuse
   `invalid_model_binding`/`conflicting-binding`, naming the entry and the
   row.
 - An abstract step class that the list does not name SHALL be visible with
@@ -136,9 +137,9 @@ mapped `-> stutter`, and a profile internal list that names `Spec::Twice::finish
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-147-AC-1 | `CasTwice` checks with `AbstractSide::Protocol` naming `Twice` and `abstract_internal = [finish]`, and writes one requirement record of kind `refinement` and no `temporal-satisfaction` record for the declaration. A row `step Impl::Counter::commitA -> node Spec::Twice::a1(self);` checks, naming node `a1`. | Test (TC-552) |
-| FR-147-AC-2 | Refusals: `abstract Spec::Thrice` (`missing_declaration`/`missing-name`); a profile internal list naming `Spec::Twice::zz` (`missing_declaration`/`missing-name`); a list naming `Spec::Twice::a1` beside a row `-> node Spec::Twice::a1(self)` (`invalid_model_binding`/`conflicting-binding`); `-> node Spec::Twice::a1(self)` in `CasRefinesCounter`, whose abstract side is a model (`invalid_model_binding`/`malformed-declaration`); a list naming `Spec::Twice::finish` in `CasRefinesCounter` (`invalid_model_binding`/`malformed-declaration`). | Test (TC-552) |
+| FR-147-AC-2 | Refusals: `abstract Spec::Thrice` (`missing_declaration`/`missing-name`); a profile internal list naming `Spec::Twice::zz` (`missing_declaration`/`missing-name`); a list naming `Spec::Twice::a1` beside a row `-> node Spec::Twice::a1(self)` (`invalid_model_binding`/`conflicting-binding`, a QSL addition to FR-432); `-> node Spec::Twice::a1(self)` in `CasRefinesCounter`, whose abstract side is a model (`invalid_model_binding`/`malformed-declaration`); a list naming `Spec::Twice::finish` in `CasRefinesCounter` (`invalid_model_binding`/`malformed-declaration`). | Test (TC-552) |
 | FR-147-AC-3 | `CasTwice` with `ensure fair weak Spec::Counter::inc` settles its liveness half `unsupported`, `unsupported-requested-capability`, naming hidden abstract fields, beside the safety result of FR-148. | Test (TC-552) |
-| FR-147-AC-4 | `CasTwice` with `finish` removed from the profile's internal list checks, with `finish` visible and `abstract_internal` empty; with the list naming `finish` it checks with `finish` internal; with the list naming `finish` and a step row `-> node Spec::Twice::finish(self)` it refuses `invalid_model_binding`/`conflicting-binding`. | Test (TC-552) |
+| FR-147-AC-4 | `CasTwice` with `finish` removed from the profile's internal list checks, with `finish` visible and `abstract_internal` empty; with the list naming `finish` it checks with `finish` internal; with the list naming `finish` and a step row `-> node Spec::Twice::finish(self)` it refuses `invalid_model_binding`/`conflicting-binding` (a QSL addition to FR-432). | Test (TC-552) |
 
 ## Dependencies
 

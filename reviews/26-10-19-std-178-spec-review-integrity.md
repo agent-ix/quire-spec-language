@@ -54,3 +54,15 @@ Open code PRs that follow from this:
   `History`/`StepSource`/`Node` form.
 
 Both have to be reshaped to the merged spec.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-002 | low | FR-147 keeps a QSL-only refusal. An abstract class that the profile's internal list names and a step row also targets refuses `conflicting-binding`, and so does FR-147-AC-4's `finish` vector. QSpec FR-432 has no such refusal; it only reads a list-named step as internal. QSL therefore refuses a declaration QSpec admits. Either QSpec should state the refusal, or FR-147 should cite it as a QSL addition. | spec/functional/FR-147-check-a-refinement-whose-abstract-side-is-a-protocol.md:99-103,139,141 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | aea8326f7 removes the `internal`/`visible` rows from FR-147 (Inputs, Behavior, fixture, AC-1, AC-2, AC-4), FR-148's closure, TC-552 steps 1 and 4, ADR-020 RM-9, ADR-020 section 1 lines 137-138, and ADR-020 QS-11. They now use the profile's internal list, and an unnamed abstract class is visible. Right sides are written `-> node Spec::Twice::a1(self)`. FR-310-AC-2's `CasTwice` no longer carries a row that S1 refuses. |
