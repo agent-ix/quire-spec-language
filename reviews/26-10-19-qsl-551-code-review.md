@@ -54,6 +54,12 @@ The rest of `tuple.rs` is sound: the joint stem (max) and period (lcm via gcd wi
 | --- | --- | --- | --- |
 | FND-009 | low | The position search runs on a new `Meter` built from the caller's limits with no work cap. A `Meter` built that way has no cancel handle (and no injected denial), so a caller's FR-276 cancel is not seen during the search. `quire_exact::Meter` has no accessor to copy the handle across. The search's cost is bounded at about 1 + log2(bound) evaluations, so cancellation is delayed rather than lost, hence low. Fix: pass the caller's `Cancel` into `evaluate_tuple`, or add a `Meter` method that forks an uncapped meter sharing the handle. Otherwise defer with a reason. | qsl-eval/src/temporal/tuple.rs:248-252 |
 
+## New findings (disposition pass 4)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-010 | low | `evaluate_tuple` now takes `cancel: Option<&Cancel>` beside a `meter` that may already carry the same handle. Nothing ties the two together. A caller that builds the meter `with_cancel(c)` but passes `None` (the obvious call, as every existing test does) gets a position search that is never cancelled, and passing a different handle splits the two. The doc says "`cancel` is the handle `meter` polls", but that is a convention, not something the code checks. It is a workaround for `quire_exact::Meter` having no way to read its own cancel handle. Follow-up: add a `Meter` accessor (or a method that makes an uncapped copy) in quire-exact and drop the parameter; until then, defer with that reason. The doc sentence at line 300 also runs past the wrap width. | qsl-eval/src/temporal/tuple.rs:296-308 |
+
 ## Dispositions
 
 | FND | outcome | reason |
@@ -67,3 +73,4 @@ The rest of `tuple.rs` is sound: the joint stem (max) and period (lcm via gcd wi
 | FND-006 | fixed | fixed at 158d7c97c |
 | FND-007 | fixed | fixed at f79c167d5 |
 | FND-008 | fixed | fixed at f79c167d5 |
+| FND-009 | fixed | fixed at 864eebeff |

@@ -250,9 +250,7 @@ fn the_vault_pair_is_false_at_joint_position_one_when_leaky_and_true_when_secure
 /// read over a joint period of 6. Joint offsets 0..=2 pair equal outputs and
 /// offset 3 pairs `a`'s second loop position with `b`'s first, so the body
 /// is `false` at joint position 3 and `trace_position` names it. A reading
-/// over the longer loop alone (period 3) would never reach offset 3. (The
-/// spec's "fifth position" cannot occur for this pair: the offsets 0..=3
-/// already tie every loop observation together.)
+/// over the longer loop alone (period 3) would never reach offset 3.
 #[trace("TC-600", "FR-175-AC-2")]
 #[test]
 fn a_tuple_of_two_and_three_position_loops_is_read_over_a_joint_period_of_six() {

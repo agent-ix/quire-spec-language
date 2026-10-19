@@ -296,8 +296,13 @@ fn false_position<L: TupleLetters>(
 /// `Violated`, whose `at` is the first joint position that fixes the
 /// `false`, the `trace_position` of a counterexample, not the activation;
 /// `Undefined` at the first joint position an atom is undefined, with its
-/// cause. `cancel` is the handle `meter` polls, if any; the position search
-/// polls it too, so a cancellation during the search is seen. A tuple whose count differs from the clause's variables, an empty
+/// cause.
+///
+/// `cancel` must be the same handle `meter` polls, if any (`Meter` exposes no
+/// accessor for it, so the caller passes it again): the position search
+/// polls it too, so a cancellation during the search is seen.
+///
+/// A tuple whose count differs from the clause's variables, an empty
 /// component, or a joint period that exceeds `u64` is refused.
 pub fn evaluate_tuple<L: TupleLetters>(
     body: &CheckedHyperClause,

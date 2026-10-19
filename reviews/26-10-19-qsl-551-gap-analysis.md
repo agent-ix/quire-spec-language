@@ -40,6 +40,12 @@ FR-175-AC-2 assessment: for two loops of lengths 2 and 3, joint-loop offset k re
 | FND-006 | low | `locating_the_false_position_charges_no_second_evaluation` is tagged FR-175-AC-2, but it verifies FR-175's "Work" rule. No AC states that rule. The tag inflates AC-2's binder count in the matrix. Tag it `TC-600` alone (as the refusal tests are), or get the planner to add a Work AC. | qsl-eval/tests/it/hyper_tuple.rs:339-341 |
 | FND-007 | low | `an_atom_with_no_value_makes_the_body_undefined_at_the_first_such_joint_position` is tagged FR-175-AC-2, but it verifies FR-175's Outputs undefined branch. No AC states that branch. Tag it `TC-600` alone, or get the planner to add an AC. | qsl-eval/tests/it/hyper_tuple.rs:371-373 |
 
+## New findings (disposition pass 4)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | low | FR-175-AC-2 and TC-600 Step 2 now say "fourth position of the joint loop (offset 3)" on main (merged into this branch at 864eebeff). The doc of `a_tuple_of_two_and_three_position_loops_is_read_over_a_joint_period_of_six` still says "(The spec's 'fifth position' cannot occur for this pair...)", which no longer matches the spec it traces to. Drop the parenthetical. The test body already matches the new AC exactly (a=(0,1), b=(0,1,0), violated at 3). | qsl-eval/tests/it/hyper_tuple.rs:248-254 |
+
 ## Dispositions
 
 | FND | outcome | reason |
