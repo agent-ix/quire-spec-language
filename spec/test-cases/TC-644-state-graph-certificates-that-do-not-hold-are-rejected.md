@@ -20,7 +20,7 @@ Scope: FR-169-AC-10, FR-169-AC-11.
 ## Test Procedure
 
 Fixtures: TC-643's `ReachesTwo` and sequenced `InOneWay` certificates;
-FR-168-AC-5's item; §7.3's unsequenced job; FR-167-AC-2's guarded subject.
+FR-168-AC-5's item; §7.3's unsequenced job; TC-592's guarded subject (FR-167-AC-2).
 
 1. Check `ReachesTwo`'s certificate with `(2, 2)` removed, with the rank of
    `(1, 0)` set to 2, and with `(0, 0)` unranked.
@@ -29,7 +29,7 @@ FR-168-AC-5's item; §7.3's unsequenced job; FR-167-AC-2's guarded subject.
 3. Check an `InOneWay` certificate over the unsequenced job with every
    count 1, and the sequenced certificate with its order reversed.
 4. Check `ReachesTwo`'s certificate with `max_states` 2.
-5. Check a hand-built certificate of FR-167-AC-2's 3 states, ranked 2, 1
+5. Check a hand-built certificate of TC-592's guarded subject's 3 states, ranked 2, 1
    and 0 for `ReachesTwo`, over the guarded subject, and over the same
    subject without the guard.
 6. Settle each step's result.
@@ -40,12 +40,13 @@ Tag the tests `#[trace("TC-644", "FR-169-AC-10")]` or
 ## Expected Results
 
 - Step 1: `SuccessorMissing` at the first, in certificate order, of
-  `(1, 2)` and `(2, 1)`; `RankBroken` at `(0, 0)`; `RankMissing` at
+  `(1, 2)` and `(2, 1)` (the engine: `(1, 2)`); `RankBroken` at `(0, 0)`; `RankMissing` at
   `(0, 0)`.
 - Step 2: `PredicateUndefined` at the first, in certificate order, of the
-  states where `va = 2`.
+  states where `va = 2` (the engine: `(2, 0)`).
 - Step 3: `CountBroken` at the node with two paths; `OrderBroken` at the
-  first, in certificate order, of the nodes other than the `to` node.
+  first, in certificate order, of the nodes other than the `to` node (the
+  engine: `tff`); the all-count-1 certificate carries a valid order.
 - Step 4: stopped, naming `max_states` and 2.
 - Step 5: over the guarded subject, `BadState` at the state where
   `va = 2`; over the unguarded subject, accepted.
