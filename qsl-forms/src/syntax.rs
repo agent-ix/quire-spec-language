@@ -406,6 +406,21 @@ pub enum BinderQuery {
     Exists,
 }
 
+/// A population-valued form of a refinement row (FR-139, ADR-020 RM-8).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum PopulationForm {
+    /// `count(x in P where c)`.
+    Count,
+    /// `sum(x in P where c: e)`.
+    Sum,
+    /// `exists(x in P where c)`.
+    Exists,
+    /// `all(x in P where c)`.
+    All,
+    /// `only(x in P where c: e)`.
+    Only,
+}
+
 /// An accumulating collection form.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Accumulation {
@@ -660,6 +675,35 @@ pub enum ExprNode {
         /// The summand.
         summand: ExprId,
     },
+    /// `count`, `sum`, `exists`, `all` or `only` over a concrete population
+    /// (FR-139): `form(binder in population where condition [: body])`.
+    Population {
+        /// The form.
+        form: PopulationForm,
+        /// The binder name.
+        binder: String,
+        /// The qualified name of the concrete population.
+        population: String,
+        /// The span of the population's name; empty when the form was not
+        /// read from a source unit.
+        population_span: Span,
+        /// The `where` condition, when written.
+        condition: Option<ExprId>,
+        /// The body of `sum` and `only`; `None` for the other forms.
+        body: Option<ExprId>,
+    },
+    /// `seq(binder in low .. high: body)` (FR-139): the sequence of `body`
+    /// for each integer from `low` to `high`.
+    Seq {
+        /// The binder name.
+        binder: String,
+        /// The first integer.
+        low: ExprId,
+        /// The last integer.
+        high: ExprId,
+        /// The element expression.
+        body: ExprId,
+    },
     /// `size(c)`.
     Size(ExprId),
     /// `contains(c, v)`.
@@ -834,6 +878,12 @@ impl ExprNode {
             Self::Sum {
                 source, summand, ..
             } => vec![*source, *summand],
+            Self::Population {
+                condition, body, ..
+            } => condition.iter().chain(body.iter()).copied().collect(),
+            Self::Seq {
+                low, high, body, ..
+            } => vec![*low, *high, *body],
             Self::Contains { collection, item } => vec![*collection, *item],
             Self::AllInstances { population, .. } => vec![*population],
             Self::Lookup {
@@ -870,7 +920,9 @@ impl ExprNode {
             Self::Let { name: binder, .. }
             | Self::Query { binder, .. }
             | Self::Count { binder, .. }
-            | Self::Sum { binder, .. } => vec![binder],
+            | Self::Sum { binder, .. }
+            | Self::Population { binder, .. }
+            | Self::Seq { binder, .. } => vec![binder],
             Self::Accumulate {
                 accumulator,
                 binder,
@@ -934,7 +986,9 @@ impl ExprNode {
             Self::Let { name: binder, .. }
             | Self::Query { binder, .. }
             | Self::Count { binder, .. }
-            | Self::Sum { binder, .. } => Spellings {
+            | Self::Sum { binder, .. }
+            | Self::Population { binder, .. }
+            | Self::Seq { binder, .. } => Spellings {
                 reference: None,
                 binders: vec![binder],
             },
@@ -1089,6 +1143,19 @@ impl ExprNode {
                 elements: arguments,
                 ..
             } => arguments.iter_mut().for_each(one),
+            Self::Population {
+                condition, body, ..
+            } => {
+                condition.iter_mut().for_each(one);
+                body.iter_mut().for_each(one);
+            }
+            Self::Seq {
+                low, high, body, ..
+            } => {
+                one(low);
+                one(high);
+                one(body);
+            }
             Self::Dispatch {
                 receiver,
                 arguments,
@@ -1463,6 +1530,41 @@ impl Expression {
             binder,
             source,
             summand,
+        })
+    }
+
+    /// `form(binder in population where condition [: body])` over a
+    /// concrete population (FR-139). `body` is the operand of `sum` and
+    /// `only`.
+    pub fn population_form(
+        form: PopulationForm,
+        binder: impl Into<String>,
+        population: DeclaredName,
+        condition: Option<Self>,
+        body: Option<Self>,
+    ) -> Self {
+        let mut nodes = Vec::new();
+        let condition = condition.map(|condition| append(&mut nodes, condition));
+        let body = body.map(|body| append(&mut nodes, body));
+        nodes.push(ExprNode::Population {
+            form,
+            binder: binder.into(),
+            population: population.name,
+            population_span: population.span,
+            condition,
+            body,
+        });
+        Self { nodes }
+    }
+
+    /// `seq(binder in low .. high: body)` (FR-139).
+    pub fn seq(binder: impl Into<String>, low: Self, high: Self, body: Self) -> Self {
+        let binder = binder.into();
+        Self::compose([low, high, body], |[low, high, body]| ExprNode::Seq {
+            binder,
+            low,
+            high,
+            body,
         })
     }
 

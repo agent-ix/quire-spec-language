@@ -93,6 +93,8 @@ pub(crate) fn read_object(node: CheckedNode<'_>) -> Option<EffectiveId> {
         | NodeKind::Dispatch { .. }
         | NodeKind::Pre(_)
         | NodeKind::ProtocolReference { .. }
+        | NodeKind::PopulationObjects { .. }
+        | NodeKind::Seq { .. }
         | NodeKind::Case { .. } => return None,
         #[cfg(seam_probe)]
         NodeKind::__SeamProbe => unreachable!("never constructed outside the probe build"),
