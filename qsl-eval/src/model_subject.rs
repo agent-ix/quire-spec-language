@@ -35,7 +35,8 @@ pub struct ModelSubject<'a> {
 /// parameter (ADR-018 UE-1, QSpec FR-361's `over` binding).
 pub trait ModelLetters {
     /// The instances of the clause's `over` parameter: one per key of each
-    /// population that holds the parameter's type (`T` or a subtype), in
+    /// population that admits the parameter's type `T` (a member type that is
+    /// `T`, a subtype or a supertype of `T`), in
     /// FR-125's canonical order: population declaration identity text, then
     /// the population's universe-list order. A binding names its instance by
     /// population and key; its object type only completes the reference and

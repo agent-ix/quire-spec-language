@@ -24,3 +24,15 @@ Ticket: STD-195. PR quire-spec-language#1013 at head 9a8a05e9d. The only Rust ch
 ## Verdict
 
 No behavioural risk. Neither consumer of `bindings()` (`qsl-analyze/src/model_check/check.rs:217`, `qsl-replay/src/model_check/item.rs:99`) sorts, deduplicates or binary-searches the result. Both iterate in the order returned, so moving from ascending reference order to canonical order breaks no consumer. The doc's new order matches FR-125.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-002 | low | `bindings()` still returns `ObjectReference`s, whose object type FR-125 no longer specifies: the canonical-member-type rule was deleted, and the doc says only that it "completes the reference and is not compared". Two implementations can return different types for one instance. The value flows into the replay `ContextBinding` (`qsl-replay/src/model_check/item.rs:99-113`), which FR-125 now says carries no type. Either name the type, or return the (population, key) pair the spec identifies an instance by. This is for QSL-873. | qsl-eval/src/model_subject.rs:37-43; qsl-replay/src/model_check/item.rs:99-113 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | 01f5d081c: the `atom` doc now states matching by population and key, reading the state's own reference, and absent-key for no conforming object; the `bindings` doc says 'instances', not objects. |

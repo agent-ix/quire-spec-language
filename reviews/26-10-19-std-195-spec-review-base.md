@@ -27,3 +27,10 @@ Ticket: STD-195. PR quire-spec-language#1013 at head 9a8a05e9d, scope `git diff 
 ## Verdict
 
 Not mergeable while FND-001 stands: AC-8 cannot pass against the rule it tests. Clean: ids FR-125-AC-8 to AC-10 are new and are used by no open PR (no open PR touches FR-125, TC-520 or `model_subject.rs`). Each new AC maps to a TC-520 step, and TC-520's scope line lists them. AC-10's fixture (`[d, c]`, `[b, a]`) separates universe-list order from key order within a population. The QSL-proposed marking names STD-196, and STD-196 asks QSpec to rule on all four points. The diff adds no hash, digest or pin.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | 01f5d081c: AC-8 now uses 'holds T' (a member type is T or a subtype). `Lamp` and `Switch` are subtypes of `Thing`, so `over (x: Thing)` yields one instance per key, which is consistent with the Behavior rule; TC-520 step 7 matches. |
+| FND-002 | fixed | 01f5d081c: AC-9 and TC-520 step 7 state that `Lamp`'s `DeclarationKey` orders before `Switch`'s; the binding type no longer depends on it, because x reads the state's own reference. |

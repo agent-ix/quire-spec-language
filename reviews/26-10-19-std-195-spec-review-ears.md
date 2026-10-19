@@ -25,3 +25,10 @@ Ticket: STD-195. PR quire-spec-language#1013 at head 9a8a05e9d. Checked the new 
 ## Verdict
 
 The key-instancing statement ("QSL SHALL therefore instantiate a key, not a typed object") is a conformant ubiquitous statement. Its explanation reads as rationale. The two findings concern form only.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | 01f5d081c: restated as 'QSL SHALL list instances, including in `ModelLetters::bindings`, in the canonical order'. |
+| FND-002 | fixed | 01f5d081c: split into separate identity, read and absent-key bullets, each with QSL as the subject; the absent-key one is state-driven ('Where the population holds no object ...'). |

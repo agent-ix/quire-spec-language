@@ -14,7 +14,7 @@ Verify positions and anchors of a model behaviour, the closed reading under
 a bounded profile and the terminal stutter under infinite-trace, interval
 and past operators over a lasso, the `over` binding, and the empty-initial subject.
 
-Scope: FR-125-AC-1 to FR-125-AC-5 and FR-125-AC-7 to FR-125-AC-11.
+Scope: FR-125-AC-1 to FR-125-AC-5 and FR-125-AC-7 to FR-125-AC-12.
 
 ## Test Procedure
 
@@ -37,8 +37,8 @@ Scope: FR-125-AC-1 to FR-125-AC-5 and FR-125-AC-7 to FR-125-AC-11.
 7. Build a population `P` with member types `Lamp` and `Switch`, both
    subtypes of `Thing`, where `Lamp`'s `DeclarationKey` orders before
    `Switch`'s; instantiate `over (x: Lamp)`, then `over (x: Thing)`; then
-   instantiate `over (x: Lamp)` over a population declaring only `Thing`, and
-   over a population with no related member type (FR-125-AC-8).
+   instantiate `over (x: Lamp)` over a population with no member type
+   comparable with `Lamp` (FR-125-AC-8).
 8. Read the bound parameter of `over (x: Thing)` at positions where the key's
    object is a `Lamp`, a `Switch`, and absent; read that of `over (x: Lamp)`
    at the same positions (FR-125-AC-9).
@@ -47,6 +47,10 @@ Scope: FR-125-AC-1 to FR-125-AC-5 and FR-125-AC-7 to FR-125-AC-11.
 10. At a position where the key's object is a `Switch`, evaluate `x = r` and
     `contains(allInstances<Thing>(P), x)` for `over (x: Thing)`, then the same
     at a position holding a `Lamp` (FR-125-AC-11).
+11. Build `Dogs` (member `Dog`) and `Animals` (member `Animal`, holding a `Dog`
+    under key `k`, a `Cat` at another position and no object at a third);
+    instantiate `over (x: Dog)`, and separately over only `Animals`
+    (FR-125-AC-12).
 
 Tag the tests `#[trace("TC-520", "FR-125-AC-n")]`.
 
@@ -69,10 +73,14 @@ Tag the tests `#[trace("TC-520", "FR-125-AC-n")]`.
   is `RequiresBound`; the empty universe gives zero instances and `NoInstance`, settled
   `inconclusive`.
 - Step 7: one instance per key for `Lamp`, one (not two) per key for `Thing`;
-  none for the `Thing`-only population and the unrelated one.
+  none for the unrelated population.
 - Step 8: `over (x: Thing)` reads a reference typed `Lamp`, a reference typed
   `Switch`, and `absent-key` undefined for the absent object; `over (x: Lamp)`
   reads the `Lamp` reference and `absent-key` undefined for the `Switch` and
   absent objects. The instance is named `P`/key in the identity, with no type.
 - Step 9: `P1/d`, `P1/c`, `P2/b`, `P2/a`.
 - Step 10: `true` for both formulas at both positions.
+- Step 11: instances for every key of `Dogs` and of `Animals`; `Animals/k` is
+  read as the `Dog` reference, and `absent-key` undefined at the `Cat` and
+  missing positions; over `Animals` alone the item has instances, not
+  `NoInstance`.

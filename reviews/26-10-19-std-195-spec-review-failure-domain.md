@@ -27,3 +27,18 @@ Ticket: STD-195. PR quire-spec-language#1013 at head 9a8a05e9d. Tested the four 
 ## Verdict
 
 Not mergeable: FND-001 and FND-002 give wrong instance sets and wrong equality results. Clean: canonical order is deterministic (population declaration identity text is unique per population, and universe lists refuse repeated keys, FR-120-AC-7). Instancing a key once, whatever number of member types conform, removes the double-instancing defect STD-195 names. 'Least declared member type' exists and is unique in FR-104 (`DeclarationKey` total `Ord`). The no-object case reads `absent-key`, matching FR-361's existing rule.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | high | A population that only declares proper supertypes of `T` is not instanced. But QSpec FR-153 admits into it members of any type that conforms to a member type ("A member type covers itself and every type that conforms to it"), so a population `[Animal]` can hold `Dog` objects, and QSpec FR-361 instances each of them for `over (x: Dog)`. The supertype-only case alone gives `NoInstance`/`inconclusive`, which is safe. The mixed case is not safe: a subject with a `[Dog]` population and an `[Animal]` population holding a `Dog` instances only the `[Dog]` keys and can settle `holds` while QSpec refutes it on the unchecked `Dog` in `[Animal]`. The stated reason ("QSL cannot tell which of its objects would conform") applies just as much to `[Lamp, Switch]` under `over (x: Lamp)`, whose `Switch` keys QSL does instance and reads as `absent-key`. Make the deviation fail-safe: when a population whose member types are proper supertypes of `T` exists, settle the item `inconclusive` with a named cause, or refuse, rather than silently omitting its keys. Alternatively, instance those keys too. Add an AC for the mixed case. | spec/functional/FR-125-read-a-model-subject-s-behaviours-as-temporal-traces.md:117-124,215; quire-specification/spec/functional/type-model/FR-153-query-closed-model-environments.md:67-68,89-91 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | 01f5d081c: 'holds T' includes populations whose member type is a subtype of T, so a `Dog` population is instanced for `over (x: Animal)`, consistent with AC-7 and line 106. The remaining supertype-only deviation is FND-005. |
+| FND-002 | fixed | 01f5d081c: x reads, at each position, the state's own reference (its most-specific type, the population's UniverseId), so FR-107's (universe, object type, key) equality and allInstances membership are unaffected; AC-11 and TC-520 step 10 test `x = r` and `contains(allInstances<Thing>(P), x)` for a non-least `Switch` object. |
+| FND-003 | deferred | Linear STD-196: the fix records the guard question in Remaining work and in an STD-196 comment (question 3: which guard idiom QSpec intends when a key's object exists but does not conform). The case still occurs (AC-9: `over (x: Lamp)` reading a `Switch` object is absent-key), and the guard idiom belongs to QSpec FR-361. |
+| FND-004 | fixed | 01f5d081c: an instance is identified by population declaration identity text plus key, with no object type, in the obligation identity and the refuted binding; the value read conforms to T at every position where it is read. |
