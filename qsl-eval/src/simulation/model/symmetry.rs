@@ -29,7 +29,11 @@ use crate::simulation::reduction::{Permutation, SymmetryGroup};
 /// Where a permutation's keys live: each moved population's universes and
 /// its key map.
 struct Renaming<'p> {
-    moved: Vec<(Vec<UniverseId>, &'p DeclarationKey, &'p BTreeMap<String, String>)>,
+    moved: Vec<(
+        Vec<UniverseId>,
+        &'p DeclarationKey,
+        &'p BTreeMap<String, String>,
+    )>,
 }
 
 impl Renaming<'_> {
@@ -90,7 +94,11 @@ impl Renaming<'_> {
             }
             Value::Union(union) => UnionValue::from_admitted(
                 union.member().clone(),
-                union.payload().iter().map(|value| self.value(value)).collect(),
+                union
+                    .payload()
+                    .iter()
+                    .map(|value| self.value(value))
+                    .collect(),
             ),
             Value::Boolean(_)
             | Value::Integer(_)

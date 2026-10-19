@@ -471,8 +471,8 @@ fn check_reduced(
     let system = ModelSystem::new(request.subject.simulation.clone())
         .map_err(|failure| ModelCheckRefusal::Admission(Box::new(failure)))?;
     check_model_bounds(&system, BOUND_POSITIONS).map_err(not_simulated)?;
-    let form = TableForm::of(&request.item)
-        .ok_or_else(|| fault("a-decided-item-has-a-table-row"))?;
+    let form =
+        TableForm::of(&request.item).ok_or_else(|| fault("a-decided-item-has-a-table-row"))?;
     if let Some(reduction) = reduce::not_preserving(reductions, form) {
         let form = match request.item {
             ModelCheckItem::Clause { clause, .. } => clause
@@ -482,7 +482,8 @@ fn check_reduced(
         };
         return Ok(settled(ReductionCause::NotPreserving { reduction, form }));
     }
-    let group = reduce::admit(&system, &reductions.symmetry).map_err(ModelCheckRefusal::Symmetry)?;
+    let group =
+        reduce::admit(&system, &reductions.symmetry).map_err(ModelCheckRefusal::Symmetry)?;
     if let Some(cause) = reduce::closure(&system, &group)? {
         return Ok(settled(cause));
     }

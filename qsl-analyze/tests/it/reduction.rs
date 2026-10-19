@@ -23,14 +23,14 @@ use qsl_eval::simulation::{
     SymmetryClass, SymmetryGroup, TransitionSystem,
 };
 use qsl_eval::temporal::UndefinedCause;
+use qsl_foundation::diagnostic::Category;
 use qsl_replay::{
     settle_model_check, AppliedReduction, CertificateRequest, Certification, CounterexampleKind,
     DigestDomain, DigestRecord, IncompleteCause, InconclusiveCause, ModelCheckItem,
-    ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ProofBasis, ReachedLimit,
-    ReductionCause, ReductionKind, ResultLabel, RunStats, SettlementBasis, SymmetryBrokenCause,
-    TerminalValue, UndefinedLocus,
+    ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ProofBasis, ReachedLimit, ReductionCause,
+    ReductionKind, ResultLabel, RunStats, SettlementBasis, SymmetryBrokenCause, TerminalValue,
+    UndefinedLocus,
 };
-use qsl_foundation::diagnostic::Category;
 use quire_exact::Cancel;
 use quire_semantic_value::fairness::PropertyForm;
 
@@ -84,7 +84,10 @@ fn keys(keys: &[&str]) -> Vec<String> {
     keys.iter().map(|key| (*key).to_owned()).collect()
 }
 
-fn class(population: &qsl_semantics::model::key::DeclarationKey, members: &[&str]) -> SymmetryClass {
+fn class(
+    population: &qsl_semantics::model::key::DeclarationKey,
+    members: &[&str],
+) -> SymmetryClass {
     SymmetryClass {
         population: population.clone(),
         keys: keys(members),
@@ -127,7 +130,12 @@ fn swap(left: &str, right: &str) -> Permutation {
     )
 }
 
-fn run(world: &World, clause: Option<usize>, atoms: Vec<Atom>, reductions: Reductions) -> ModelCheckOutcome {
+fn run(
+    world: &World,
+    clause: Option<usize>,
+    atoms: Vec<Atom>,
+    reductions: Reductions,
+) -> ModelCheckOutcome {
     world
         .run(clause, atoms, reductions, None, ModelCheckLimits::default())
         .expect("checked")
@@ -200,7 +208,10 @@ fn a_full_class_admits_with_its_generators_and_one_instance() {
     assert_eq!(instances.len(), 1);
     let instance = &instances[0];
     assert_eq!(
-        instance.representative.as_ref().map(|binding| binding.key.as_str()),
+        instance
+            .representative
+            .as_ref()
+            .map(|binding| binding.key.as_str()),
         Some("a")
     );
     assert_eq!(instance.orbit, keys(&["a", "b", "c"]));
@@ -238,7 +249,10 @@ fn malformed_declarations_refuse_before_any_expansion() {
             population: counters()
         }
     );
-    assert_eq!(refused.code(), qsl_foundation::diagnostic::Code::InvalidRuntimeInput);
+    assert_eq!(
+        refused.code(),
+        qsl_foundation::diagnostic::Code::InvalidRuntimeInput
+    );
     assert_eq!(refused.cause(), "invalid-value");
     assert_eq!(
         refusal(&annotated, symmetry(&[&["a", "b", "d"]])),
@@ -281,7 +295,12 @@ fn an_unclosed_initial_state_breaks_symmetry_and_a_finer_class_admits() {
     let world = cycle(true, &[[1, 0, 0]], &[infinite("always holds(x.v <= 2)")]);
     let holds = || vec![atom(|v| Some(v <= 2))];
     assert_eq!(
-        settled(&run(&world, Some(0), holds(), symmetry(&[&["a", "b", "c"]]))),
+        settled(&run(
+            &world,
+            Some(0),
+            holds(),
+            symmetry(&[&["a", "b", "c"]])
+        )),
         ReductionCause::SymmetryBroken {
             population: counters(),
             cause: SymmetryBrokenCause::InitialStatesNotClosed {
@@ -411,14 +430,19 @@ fn canonical_forms_coalesce_the_orbits_of_reachable_states() {
     let system = world.system();
     let states = every_state(&system);
     assert_eq!(states.len(), 27);
-    for (classes, orbits) in [(group(&[&["a", "b", "c"]]), 10), (group(&[&["b", "c"]]), 18)] {
+    for (classes, orbits) in [
+        (group(&[&["a", "b", "c"]]), 10),
+        (group(&[&["b", "c"]]), 18),
+    ] {
         let mut forms = BTreeSet::new();
         for state in &states {
             let (canonical, permutation) = system.canonicalise(state, &classes).expect("canonical");
             let key = system.state_key(&canonical).expect("encodes").0;
             let image = system.permute(state, &permutation);
             assert_eq!(system.state_key(&image).expect("encodes").0, key);
-            let (again, identity) = system.canonicalise(&canonical, &classes).expect("canonical");
+            let (again, identity) = system
+                .canonicalise(&canonical, &classes)
+                .expect("canonical");
             assert_eq!(system.state_key(&again).expect("encodes").0, key);
             assert!(identity.is_identity());
             forms.insert(key);
@@ -475,7 +499,8 @@ fn objects_with_equal_sort_keys_canonicalise_into_their_orbit() {
     let states = system.initial();
     let full = group(&[&["a", "b", "c"]]);
     let key = |state: &ModelSimState| system.state_key(state).expect("encodes").0;
-    let first = &states[(2 * 8) + 0]; // c unlinked, all at 0: a->b, b->a.
+    // The starts run over the unlinked key, then the eight value triples.
+    let first = &states[16]; // c unlinked, all at 0: a->b, b->a.
     let second = &states[0]; // a unlinked, all at 0: b->c, c->b.
     let orbit_of = |state: &ModelSimState| -> BTreeSet<Vec<u8>> {
         let mut permutations = vec![Permutation::identity()];
@@ -494,7 +519,10 @@ fn objects_with_equal_sort_keys_canonicalise_into_their_orbit() {
             .collect()
     };
     let orbit = orbit_of(first);
-    assert!(orbit.contains(&key(second)), "the two states share an orbit");
+    assert!(
+        orbit.contains(&key(second)),
+        "the two states share an orbit"
+    );
     for state in [first, second] {
         let (canonical, permutation) = system.canonicalise(state, &full).expect("canonical");
         assert!(orbit.contains(&key(&canonical)));
@@ -504,9 +532,16 @@ fn objects_with_equal_sort_keys_canonicalise_into_their_orbit() {
     for state in &states {
         let representative = orbit_of(state).into_iter().next().expect("an orbit");
         let (canonical, _) = system.canonicalise(state, &full).expect("canonical");
-        forms.entry(representative).or_default().insert(key(&canonical));
+        forms
+            .entry(representative)
+            .or_default()
+            .insert(key(&canonical));
     }
-    assert_eq!(forms.len(), 6, "one orbit per unlinked value and pair multiset");
+    assert_eq!(
+        forms.len(),
+        6,
+        "one orbit per unlinked value and pair multiset"
+    );
     assert!(forms.values().all(|stored| (1..=2).contains(&stored.len())));
 }
 
@@ -565,7 +600,9 @@ fn a_constraint_reports_real_violations_and_never_proves_past_its_boundary() {
     assert_eq!(
         outcome,
         ModelCheckOutcome::Reduction {
-            cause: ReductionCause::ConstraintReached { boundary_states: 12 },
+            cause: ReductionCause::ConstraintReached {
+                boundary_states: 12
+            },
             stats: outcome.stats(),
         }
     );
@@ -575,7 +612,9 @@ fn a_constraint_reports_real_violations_and_never_proves_past_its_boundary() {
     assert!(matches!(
         deadlock,
         ModelCheckOutcome::Reduction {
-            cause: ReductionCause::ConstraintReached { boundary_states: 12 },
+            cause: ReductionCause::ConstraintReached {
+                boundary_states: 12
+            },
             ..
         }
     ));
@@ -600,18 +639,30 @@ fn undefined_absent_and_initially_false_constraints_and_bounds() {
     let CounterexampleKind::UndefinedEvaluation(evaluation) = &violation(&outcome).kind else {
         panic!("expected an undefined evaluation: {outcome:?}");
     };
-    assert_eq!(evaluation.site.locus, UndefinedLocus::Constraint("Odd".to_owned()));
+    assert_eq!(
+        evaluation.site.locus,
+        UndefinedLocus::Constraint("Odd".to_owned())
+    );
     assert_eq!(
         evaluation.cause,
         UndefinedCause::Kernel(quire_exact::Undefined::DivisionByZero)
     );
     assert_eq!(path(&world, &outcome), [(0, 0, 0), (1, 0, 0), (2, 0, 0)]);
-    let last = world.positions(violation(&outcome)).pop().expect("a last state");
+    let last = world
+        .positions(violation(&outcome))
+        .pop()
+        .expect("a last state");
     assert_eq!(
         world.system().state_key(&last).expect("encodes").1,
         evaluation.site.state_key
     );
-    match world.run(Some(0), wide(), constraint("Absent"), None, ModelCheckLimits::default()) {
+    match world.run(
+        Some(0),
+        wide(),
+        constraint("Absent"),
+        None,
+        ModelCheckLimits::default(),
+    ) {
         Err(ModelCheckRefusal::UnknownConstraint { name }) => assert_eq!(name, "Absent"),
         other => panic!("expected a constraint refusal, got {other:?}"),
     }
@@ -627,7 +678,13 @@ fn undefined_absent_and_initially_false_constraints_and_bounds() {
     let mut unbounded = count(&[infinite("always holds(x.v <= 3)")]);
     unbounded.keys = None;
     assert!(matches!(
-        unbounded.run(Some(0), wide(), constraint("Low"), None, ModelCheckLimits::default()),
+        unbounded.run(
+            Some(0),
+            wide(),
+            constraint("Low"),
+            None,
+            ModelCheckLimits::default()
+        ),
         Err(ModelCheckRefusal::RequiresBound(_))
     ));
 }
@@ -637,8 +694,18 @@ fn undefined_absent_and_initially_false_constraints_and_bounds() {
 #[test]
 fn a_constrained_run_is_deterministic() {
     let world = count(&[infinite("always holds(x.v <= 2)")]);
-    let first = run(&world, Some(0), vec![atom(|v| Some(v <= 2))], constraint("Low"));
-    let second = run(&world, Some(0), vec![atom(|v| Some(v <= 2))], constraint("Low"));
+    let first = run(
+        &world,
+        Some(0),
+        vec![atom(|v| Some(v <= 2))],
+        constraint("Low"),
+    );
+    let second = run(
+        &world,
+        Some(0),
+        vec![atom(|v| Some(v <= 2))],
+        constraint("Low"),
+    );
     assert_eq!(first, second);
 }
 
@@ -778,16 +845,27 @@ impl TransitionSystem for Bare {
 #[test]
 fn a_reduction_the_system_does_not_offer_settles_unsupported() {
     assert_eq!(Bare.offered_reductions(), OfferedReductions::NONE);
-    assert_eq!(unoffered(&partial_order(), &Bare), Some(ReductionKind::PartialOrder));
+    assert_eq!(
+        unoffered(&partial_order(), &Bare),
+        Some(ReductionKind::PartialOrder)
+    );
     assert_eq!(
         unoffered(&symmetry(&[&["a", "b"]]), &Bare),
         Some(ReductionKind::Symmetry)
     );
-    assert_eq!(unoffered(&constraint("Low"), &Bare), Some(ReductionKind::StateConstraint));
+    assert_eq!(
+        unoffered(&constraint("Low"), &Bare),
+        Some(ReductionKind::StateConstraint)
+    );
     let world = count(&[infinite("always holds(x.v <= 3)")]);
     let system = world.system();
     assert_eq!(unoffered(&constraint("Low"), &system), None);
-    let outcome = run(&world, Some(0), vec![atom(|v| Some(v <= 3))], partial_order());
+    let outcome = run(
+        &world,
+        Some(0),
+        vec![atom(|v| Some(v <= 3))],
+        partial_order(),
+    );
     assert_eq!(
         settled(&outcome),
         ReductionCause::Unsupported {
@@ -821,10 +899,13 @@ fn model_hooks_answer_and_simulation_stays_unreduced() {
     for symmetric in [true, false] {
         let world = cycle(symmetric, &[[0, 0, 0]], &[]);
         let system = world.system();
-        let exploration = explore_model(&system, 1 << 20, Limits::default(), || false)
-            .expect("explored");
+        let exploration =
+            explore_model(&system, 1 << 20, Limits::default(), || false).expect("explored");
         let Outcome::Exhaustive(stats) = exploration.outcome else {
-            panic!("expected an exhaustive exploration: {:?}", exploration.outcome);
+            panic!(
+                "expected an exhaustive exploration: {:?}",
+                exploration.outcome
+            );
         };
         assert_eq!(stats.states, 27);
     }
@@ -843,7 +924,13 @@ fn boundary_states_count_toward_max_states() {
         ..ModelCheckLimits::default()
     };
     let outcome = world
-        .run(Some(0), vec![atom(|v| Some(v <= 2))], constraint("Low"), None, limits)
+        .run(
+            Some(0),
+            vec![atom(|v| Some(v <= 2))],
+            constraint("Low"),
+            None,
+            limits,
+        )
         .expect("checked");
     assert_eq!(
         outcome,
@@ -916,7 +1003,12 @@ fn reduced_outcomes_settle_through_the_one_map() {
     assert_eq!(record.basis, SettlementBasis::ClosedScope);
     assert_eq!(record.value.category(), Category::Success);
 
-    let refused = run(&bounded, Some(0), vec![atom(|v| Some(v == 0))], partial_order());
+    let refused = run(
+        &bounded,
+        Some(0),
+        vec![atom(|v| Some(v == 0))],
+        partial_order(),
+    );
     let record = settle(&bounded, &refused);
     assert_eq!(
         record.value,
@@ -947,7 +1039,9 @@ fn reduced_outcomes_settle_through_the_one_map() {
     let outcome = run(&counted, None, Vec::new(), constraint("Low"));
     assert_eq!(
         settle(&counted, &outcome).value,
-        TerminalValue::Inconclusive(InconclusiveCause::ConstraintReached { boundary_states: 12 })
+        TerminalValue::Inconclusive(InconclusiveCause::ConstraintReached {
+            boundary_states: 12
+        })
     );
 }
 
@@ -962,7 +1056,12 @@ fn a_constraint_only_proof_is_exhaustive_and_constraint_reached_wins_over_the_ho
         infinite("always holds(x.v <= 3)"),
         infinite("always holds(x.v <= 2)"),
     ]);
-    let outcome = run(&world, Some(0), vec![atom(|v| Some(v <= 3))], constraint("Wide"));
+    let outcome = run(
+        &world,
+        Some(0),
+        vec![atom(|v| Some(v <= 3))],
+        constraint("Wide"),
+    );
     assert_eq!(
         settle(&world, &outcome).value,
         TerminalValue::Proved {
@@ -1016,7 +1115,11 @@ fn a_symmetry_run_to_its_horizon_settles_bound_reached() {
 /// unreduced run's.
 #[test]
 fn an_undefined_evaluation_on_a_reduced_run_refutes_with_a_concrete_prefix() {
-    let world = cycle(true, &[[0, 0, 0]], &[infinite("always holds(6 mod (2 - x.v) >= 0)")]);
+    let world = cycle(
+        true,
+        &[[0, 0, 0]],
+        &[infinite("always holds(6 mod (2 - x.v) >= 0)")],
+    );
     let undefined = || vec![atom(|v| (v != 2).then(|| 6 % (2 - v) >= 0))];
     let reduced = run(&world, Some(0), undefined(), symmetry(&[&["a", "b", "c"]]));
     let unreduced = run(&world, Some(0), undefined(), Reductions::default());
@@ -1031,7 +1134,10 @@ fn an_undefined_evaluation_on_a_reduced_run_refutes_with_a_concrete_prefix() {
         );
         assert_eq!(counterexample.prefix.len(), 2);
         assert_eq!(
-            counterexample.over_binding.as_ref().map(|binding| binding.key.as_str()),
+            counterexample
+                .over_binding
+                .as_ref()
+                .map(|binding| binding.key.as_str()),
             Some("a")
         );
         let positions = world.positions(counterexample);

@@ -23,12 +23,12 @@ pub use graph::{
     RetainedState,
 };
 pub use liveness::LivenessRefusal;
-pub use reduce::{
-    admit, closure, generators, instance_groups, not_preserving, preserves, unoffered, InstanceGroup,
-    Reductions, SymmetryDeclaration, SymmetryRefusal, TableForm,
-};
 pub use product::{
     Product, ProductFinding, ProductKey, ProductState, ProductTransition, PropertyComponent,
+};
+pub use reduce::{
+    admit, closure, generators, instance_groups, not_preserving, preserves, unoffered,
+    InstanceGroup, Reductions, SymmetryDeclaration, SymmetryRefusal, TableForm,
 };
 pub use scc::Component;
 pub use state_graph::{

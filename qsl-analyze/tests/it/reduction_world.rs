@@ -230,7 +230,9 @@ impl World {
             _ => format!("profile {INFINITE} = \"quire.temporal.infinite-trace/v1\";\n"),
         };
         assert!(
-            clauses.windows(2).all(|pair| pair[0].profile == pair[1].profile),
+            clauses
+                .windows(2)
+                .all(|pair| pair[0].profile == pair[1].profile),
             "one temporal profile per unit"
         );
         let text = format!(

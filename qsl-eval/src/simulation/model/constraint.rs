@@ -60,7 +60,11 @@ impl ModelSystem<'_> {
             let observations = invariant_observations(&walk, clause, row);
             let evaluation = self
                 .package
-                .evaluate_clause(&clause.qualified, &observations, &mut Meter::new(self.meter))
+                .evaluate_clause(
+                    &clause.qualified,
+                    &observations,
+                    &mut Meter::new(self.meter),
+                )
                 .map_err(|_| stop(BROKEN))?;
             match verdict(&evaluation.evaluation.outcome) {
                 Verdict::True => {}

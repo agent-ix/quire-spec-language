@@ -114,7 +114,10 @@ impl Permutation {
 
     /// The permutation that maps each `(from, to)` of `population`; pairs
     /// with `from == to` are dropped. The caller supplies a bijection.
-    pub fn of(population: &DeclarationKey, pairs: impl IntoIterator<Item = (String, String)>) -> Self {
+    pub fn of(
+        population: &DeclarationKey,
+        pairs: impl IntoIterator<Item = (String, String)>,
+    ) -> Self {
         let mut permutation = Self::identity();
         permutation.insert(population, pairs);
         permutation
@@ -129,7 +132,10 @@ impl Permutation {
         let moved: BTreeMap<String, String> =
             pairs.into_iter().filter(|(from, to)| from != to).collect();
         if !moved.is_empty() {
-            self.maps.entry(population.clone()).or_default().extend(moved);
+            self.maps
+                .entry(population.clone())
+                .or_default()
+                .extend(moved);
         }
     }
 

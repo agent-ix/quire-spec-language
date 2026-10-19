@@ -159,11 +159,14 @@ pub fn not_preserving(reductions: &Reductions, form: TableForm) -> Option<Reduct
 /// partial-order, constraint, that `system` does not offer.
 pub fn unoffered(reductions: &Reductions, system: &impl TransitionSystem) -> Option<ReductionKind> {
     let offered = system.offered_reductions();
-    reductions.selected().into_iter().find(|reduction| match reduction {
-        ReductionKind::Symmetry => !offered.symmetry,
-        ReductionKind::PartialOrder => !offered.partial_order,
-        ReductionKind::StateConstraint => !offered.constraint,
-    })
+    reductions
+        .selected()
+        .into_iter()
+        .find(|reduction| match reduction {
+            ReductionKind::Symmetry => !offered.symmetry,
+            ReductionKind::PartialOrder => !offered.partial_order,
+            ReductionKind::StateConstraint => !offered.constraint,
+        })
 }
 
 /// Why a symmetry declaration's form refuses the request (FR-151 "Form"):
