@@ -1366,13 +1366,17 @@ dependencies = [
  "num-bigint",
  "num-integer",
  "num-traits",
+ "qsl-cst",
  "qsl-eval",
+ "qsl-forms",
  "qsl-foundation",
+ "qsl-package",
  "qsl-replay",
  "qsl-semantics",
  "quire-canonical",
  "quire-exact",
  "quire-semantic-value",
+ "serde_json",
  "thiserror",
 ]
 
