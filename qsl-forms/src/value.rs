@@ -1140,6 +1140,14 @@ impl<'c> Mapping<'c> {
             | Production::Horizon
             | Production::ExactValue
             | Production::QuantityLiteral
+            | Production::StateGraphClaim
+            | Production::StateGraphBody
+            | Production::StateGraphPredicate
+            | Production::StateGraphImplication
+            | Production::StateGraphDisjunction
+            | Production::StateGraphConjunction
+            | Production::StateGraphRelation
+            | Production::StateGraphUnary
             | Production::ProtocolClause
             | Production::Role
             | Production::RoleLifetime
@@ -1753,6 +1761,14 @@ impl<'c> Mapping<'c> {
             | Production::Weighting
             | Production::Horizon
             | Production::ExactValue
+            | Production::StateGraphClaim
+            | Production::StateGraphBody
+            | Production::StateGraphPredicate
+            | Production::StateGraphImplication
+            | Production::StateGraphDisjunction
+            | Production::StateGraphConjunction
+            | Production::StateGraphRelation
+            | Production::StateGraphUnary
             | Production::ProtocolClause
             | Production::Role
             | Production::RoleLifetime

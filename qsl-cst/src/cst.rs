@@ -169,6 +169,14 @@ productions! {
     ExactValue,
     #[doc = "`<exact-value> <qualified-name>`: a magnitude and its unit."]
     QuantityLiteral,
+    #[doc = "`possible`, `always possible` or `unique path` followed by a name, `using`, `over ( <parameter> )` and the form's predicates: a claim about a model's state graph."]
+    StateGraphClaim,
+    #[doc = "`{ <fairness>* <predicate> }`: the braced predicate of a `possible` or `always possible` claim, whose fairness constraints the checker refuses."]
+    StateGraphBody,
+    #[doc = "A state-graph claim predicate: an expression, which may carry leading or joining temporal operators for the checker to refuse at their spans."]
+    StateGraphPredicate,
+    StateGraphImplication, StateGraphDisjunction, StateGraphConjunction,
+    StateGraphRelation, StateGraphUnary,
     ProtocolClause, Role, RoleLifetime, Relationship, Channel, Ordering, DeliveryPolicy,
     Capacity, OverflowPolicy, ProtocolRequirement, NodeReference, Compensation,
     #[doc = "`terminal when <block>;` or `terminal any;`: a protocol clause's intended terminal states."]

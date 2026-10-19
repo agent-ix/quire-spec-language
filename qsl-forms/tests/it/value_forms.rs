@@ -62,7 +62,8 @@ fn function(form: &DeclarationForm) -> &FunctionDeclaration {
         | DeclarationForm::Random(_)
         | DeclarationForm::Reward(_)
         | DeclarationForm::Workload(_)
-        | DeclarationForm::Probabilistic(_) => panic!("a function form, not {form:?}"),
+        | DeclarationForm::Probabilistic(_)
+        | DeclarationForm::StateGraphClaim(_) => panic!("a function form, not {form:?}"),
     }
 }
 
@@ -213,6 +214,7 @@ fn a_unit_builds_one_form_per_declaration_in_source_order() {
             DeclarationForm::Reward(_) => "reward",
             DeclarationForm::Workload(_) => "workload",
             DeclarationForm::Probabilistic(_) => "probabilistic",
+            DeclarationForm::StateGraphClaim(_) => "state-graph",
         })
         .collect();
     assert_eq!(kinds, ["alias", "function", "record", "tuple"]);

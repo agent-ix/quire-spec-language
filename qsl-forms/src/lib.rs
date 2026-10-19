@@ -34,6 +34,7 @@ mod probabilistic;
 mod protocol_clause;
 mod protocol_control;
 mod spans;
+mod state_graph;
 mod state_model;
 mod sum_case;
 mod syntax;
@@ -67,8 +68,9 @@ pub use syntax::{
     ProtocolNodeKind, QuantityForm, RandomForm, RecordFieldForm, RecordForm, RelatedForm,
     RelationshipForm, RequirementForm, RewardForm, RoleForm, SchedulerForm, ScopeEntry, ScopeId,
     ScopeName, ScopedAnchorForm, ShapeChanged, Spellings, StateClauseForm, StateClauseKind,
-    TemporalClauseForm, TemporalFormulaForm, TemporalNodeForm, TemporalNodeId, TemporalOperator,
-    TemporalOperatorForm, TermOperator, TerminalDeclarationForm, TerminalDeclarationKind,
+    StateGraphClaimForm, StateGraphClaimKind, StateGraphPredicateForm, TemporalClauseForm,
+    TemporalFormulaForm, TemporalNodeForm, TemporalNodeId, TemporalOperator, TemporalOperatorForm,
+    TemporalOperatorUse, TermOperator, TerminalDeclarationForm, TerminalDeclarationKind,
     TreeRefusal, TupleForm, TypeForm, TypeFormHead, UnionForm, UnionMemberForm, UnitForm,
     UsingAlias, WeightedValueForm, WeightingForm, WorkloadForm, WorkloadWeightForm,
 };

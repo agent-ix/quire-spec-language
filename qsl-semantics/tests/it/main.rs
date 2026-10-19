@@ -69,6 +69,8 @@ mod relationship_reachability;
 mod relationship_snapshots;
 mod state_clauses;
 #[cfg(feature = "test-support")]
+mod state_graph_claims;
+#[cfg(feature = "test-support")]
 mod tc235_business_meanings;
 #[cfg(feature = "test-support")]
 mod temporal_fairness;

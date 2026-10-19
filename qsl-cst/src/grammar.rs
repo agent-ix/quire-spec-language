@@ -19,6 +19,10 @@ pub(super) enum Terminal {
     /// compensation's `attempts` count.
     Bound,
     End,
+    /// Matches without consuming when the next token is one of these
+    /// spellings: a lookahead that lets a production end where its caller
+    /// resumes.
+    Peek(&'static [&'static str]),
 }
 
 /// One declarative grammar rule. Deliberately not `Clone`: the interpreter
@@ -145,6 +149,19 @@ fn list(item: impl Fn() -> Rule) -> Rule {
     // The caller may admit one trailing comma after this list. Retain the
     // delimiter when it is not followed by an item so that outer grammar owns it.
     s(vec![item(), backtracking_star(s(vec![x(","), item()]))])
+}
+/// `eventually`, `always`, `once` or `historically`.
+fn temporal_unary() -> Rule {
+    c(vec![
+        x("eventually"),
+        x("always"),
+        x("once"),
+        x("historically"),
+    ])
+}
+/// `until`, `release`, `since` or `triggered`.
+fn temporal_binary() -> Rule {
+    c(vec![x("until"), x("release"), x("since"), x("triggered")])
 }
 /// `( <parameter> )`: one bracket pair around a single bound parameter.
 fn bound_parameter() -> Rule {
@@ -296,6 +313,7 @@ fn source_and_types(g: &mut Grammar) {
         r(P::RewardDeclaration),
         r(P::WorkloadDeclaration),
         r(P::ProbabilisticClause),
+        r(P::StateGraphClaim),
         r(P::ProtocolClause),
         r(P::Refinement),
         r(P::RelationClause),
@@ -1092,6 +1110,137 @@ fn temporal(g: &mut Grammar) {
             ident(),
             c(vec![s(vec![x("when"), r(P::Block)]), x("any")]),
             x(";"),
+        ]),
+    );
+    g.insert(
+        P::StateGraphClaim,
+        c(vec![
+            s(vec![
+                x("possible"),
+                ident(),
+                x("using"),
+                ident(),
+                opt(s(vec![x("over"), bound_parameter()])),
+                r(P::StateGraphBody),
+            ]),
+            s(vec![
+                x("always"),
+                x("possible"),
+                ident(),
+                x("using"),
+                ident(),
+                opt(s(vec![x("over"), bound_parameter()])),
+                opt(s(vec![
+                    x("from"),
+                    x("("),
+                    r(P::StateGraphPredicate),
+                    x(")"),
+                ])),
+                r(P::StateGraphBody),
+            ]),
+            s(vec![
+                x("unique"),
+                x("path"),
+                ident(),
+                x("using"),
+                ident(),
+                opt(s(vec![x("over"), bound_parameter()])),
+                x("from"),
+                x("("),
+                r(P::StateGraphPredicate),
+                x(")"),
+                x("to"),
+                x("("),
+                r(P::StateGraphPredicate),
+                x(")"),
+                x(";"),
+            ]),
+        ]),
+    );
+    g.insert(
+        P::StateGraphBody,
+        s(vec![
+            x("{"),
+            star(r(P::Fairness)),
+            r(P::StateGraphPredicate),
+            x("}"),
+        ]),
+    );
+    // QSpec's `graph-predicate`. A predicate that derives as an `expr` is
+    // read as that `expr` (the first alternative, taken only where the
+    // predicate ends); the `let`, `if` and graph alternatives apply to a
+    // phrase that does not. The graph levels read a temporal operator at any
+    // operand position so the checker can refuse it at its span.
+    g.insert(
+        P::StateGraphPredicate,
+        c(vec![
+            s(vec![
+                r(P::Expression),
+                Rule::Terminal(Terminal::Peek(&["}", ")", "else"])),
+            ]),
+            s(vec![
+                x("let"),
+                ident(),
+                x("="),
+                r(P::Expression),
+                x("in"),
+                r(P::StateGraphPredicate),
+            ]),
+            s(vec![
+                x("if"),
+                r(P::Expression),
+                x("then"),
+                r(P::StateGraphPredicate),
+                x("else"),
+                r(P::StateGraphPredicate),
+            ]),
+            r(P::StateGraphImplication),
+        ]),
+    );
+    g.insert(
+        P::StateGraphImplication,
+        s(vec![
+            r(P::StateGraphDisjunction),
+            opt(s(vec![x("implies"), r(P::StateGraphImplication)])),
+        ]),
+    );
+    g.insert(
+        P::StateGraphDisjunction,
+        s(vec![
+            r(P::StateGraphConjunction),
+            star(s(vec![x("or"), r(P::StateGraphConjunction)])),
+        ]),
+    );
+    g.insert(
+        P::StateGraphConjunction,
+        s(vec![
+            r(P::StateGraphRelation),
+            star(s(vec![x("and"), r(P::StateGraphRelation)])),
+        ]),
+    );
+    // At most one binary temporal operator, as `temporal-relation`.
+    g.insert(
+        P::StateGraphRelation,
+        s(vec![
+            r(P::StateGraphUnary),
+            opt(s(vec![
+                temporal_binary(),
+                opt(r(P::Interval)),
+                r(P::StateGraphUnary),
+            ])),
+        ]),
+    );
+    g.insert(
+        P::StateGraphUnary,
+        c(vec![
+            r(P::Comparison),
+            s(vec![x("not"), r(P::StateGraphUnary)]),
+            s(vec![
+                temporal_unary(),
+                opt(r(P::Interval)),
+                r(P::StateGraphUnary),
+            ]),
+            s(vec![x("("), r(P::StateGraphPredicate), x(")")]),
         ]),
     );
     g.insert(
